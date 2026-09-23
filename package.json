@@ -1,0 +1,79 @@
+{
+  "name": "@moku-labs/editor",
+  "version": "0.0.0",
+  "description": "Editor, devtools and MCP layer for @moku-labs/game: one registry of sources and commands, panels in an in-game overlay and a dev-server tools page.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "license": "MIT",
+  "files": ["dist", "LICENSE", "README.md"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moku-labs/editor.git"
+  },
+  "homepage": "https://github.com/moku-labs/editor#readme",
+  "bugs": {
+    "url": "https://github.com/moku-labs/editor/issues"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "lint": "biome check . && eslint .",
+    "lint:fix": "biome check --write . && eslint --fix .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:coverage": "vitest run --project unit --project integration --coverage",
+    "build": "tsdown",
+    "validate": "publint && attw --pack . --profile node16",
+    "release:setup": "moku-release setup",
+    "release:doctor": "moku-release doctor",
+    "release": "moku-release"
+  },
+  "dependencies": {
+    "@moku-labs/common": "0.3.3",
+    "@moku-labs/core": "1.7.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.3",
+    "@arethetypeswrong/core": "0.18.3",
+    "@biomejs/biome": "2.4.16",
+    "@moku-labs/ci": "1.2.6",
+    "@types/bun": "1.3.14",
+    "@vitest/coverage-istanbul": "4.0.18",
+    "eslint": "9.39.3",
+    "eslint-config-biome": "2.1.3",
+    "eslint-plugin-jsdoc": "62.6.0",
+    "eslint-plugin-sonarjs": "4.0.0",
+    "eslint-plugin-unicorn": "63.0.0",
+    "globals": "17.4.0",
+    "jiti": "2.6.1",
+    "lefthook": "2.1.1",
+    "publint": "0.3.21",
+    "tsdown": "0.22.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.58.0",
+    "vitest": "4.0.18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
