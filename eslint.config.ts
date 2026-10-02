@@ -28,6 +28,16 @@ export default [
       "unicorn/prevent-abbreviations": [
         "error",
         {
+          replacements: {
+            ctx: false,
+            params: false,
+            props: false,
+            ref: false,
+            args: false,
+            dev: false,
+            var: false,
+            dir: false
+          },
           // Pre-expanded so builds don't have to widen this mid-flight. See references/glossary.md.
           allowList: {
             ctx: true,
@@ -100,7 +110,7 @@ export default [
 
   // 6. Source files: strict JSDoc requirements
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.{ts,tsx}"],
     rules: {
       "jsdoc/require-jsdoc": [
         "error",
@@ -126,9 +136,19 @@ export default [
     }
   },
 
+  // 6b. File names: Preact components are PascalCase (.tsx), Preact hooks are camelCase (useX.ts).
+  {
+    files: ["src/**/*.tsx"],
+    rules: { "unicorn/filename-case": ["error", { cases: { kebabCase: true, pascalCase: true } }] }
+  },
+  {
+    files: ["src/**/use[A-Z]*.ts"],
+    rules: { "unicorn/filename-case": ["error", { cases: { camelCase: true } }] }
+  },
+
   // 7. Test files: relaxed rules
   {
-    files: ["tests/**/*.ts", "src/plugins/**/__tests__/**/*.ts"],
+    files: ["tests/**/*.{ts,tsx}", "src/plugins/**/__tests__/**/*.{ts,tsx}"],
     rules: {
       "jsdoc/require-jsdoc": "off",
       "jsdoc/require-description": "off",

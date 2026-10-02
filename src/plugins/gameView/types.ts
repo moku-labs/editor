@@ -1,0 +1,252 @@
+/**
+ * @file gameView plugin — type definitions: config, state, recording, contact sheet, style card,
+ * capture and series shapes, the api, the domain context and the hooks. The scene types are
+ * declared once in panels/shared/scene (R8) and re-exported here for `GameView.ElementRef`.
+ */
+import type { Log } from "@moku-labs/common/browser";
+import type { EmitFn } from "@moku-labs/core";
+import type { Require, ToolsEvents } from "../../config";
+import type {
+  Calibration,
+  ElementRef,
+  PageRect,
+  SceneSnapshot,
+  TextureCatalogue
+} from "../panels/shared/scene";
+import type { StyleBlock, StyleBlockRef, StyleEditError } from "../panels/shared/style-edit";
+import type { FileText, Json } from "../registry/protocol";
+
+export type {
+  Calibration,
+  ElementRef,
+  PageRect,
+  SceneNode,
+  SceneSnapshot,
+  TextureCatalogue,
+  TextureInfo
+} from "../panels/shared/scene";
+
+/**
+ * gameView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { gameView: { manifestPaths: ["public/manifest.json"] } } });
+ * ```
+ */
+export type GameViewConfig = {
+  /** Folder of screenshots and series, relative to the files root. */
+  capturesDir: string;
+  /** Folder of notes, relative to the files root. */
+  notesDir: string;
+  /** Where the game's asset manifest may live, tried in order. */
+  manifestPaths: readonly string[];
+  /** The capture card hides after this unless hovered or focused. */
+  captureCardMs: number;
+  /** Duration chips of the series popover (the longest equals capture's maxDurationMs). */
+  seriesDurationsMs: readonly number[];
+  /** Interval chips of the series popover (the shortest equals capture's minIntervalMs). */
+  seriesIntervalsMs: readonly number[];
+  /** Above this many planned shots the popover warns. */
+  seriesWarnShots: number;
+  /** Source search for the style block of a picked element. */
+  sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
+};
+
+/**
+ * A series being recorded or written.
+ */
+export type Recording = {
+  readonly folder: string;
+  readonly label: string;
+  /** performance.now() at start. */
+  readonly startedAt: number;
+  readonly durationMs: number;
+  readonly intervalMs: number;
+  readonly planned: number;
+  phase: "recording" | "writing";
+  written: number;
+  stopRequested: boolean;
+};
+
+/**
+ * One shot of a saved series (index.json).
+ */
+export type SeriesShot = {
+  readonly file: string;
+  readonly frame: number;
+  readonly atMs: number;
+  bug: boolean;
+};
+
+/**
+ * `index.json` of a series folder (filesView reads the same shape).
+ */
+export type SeriesIndex = {
+  label: string;
+  durationMs: number;
+  intervalMs: number;
+  fromFrame: number;
+  shots: SeriesShot[];
+  device?: { name: string; w: number; h: number; orientation: "portrait" | "landscape" };
+  stoppedEarly?: boolean;
+};
+
+/**
+ * The open contact sheet.
+ */
+export type Sheet = {
+  indexPath: string;
+  index: SeriesIndex;
+  images: readonly (string | undefined)[];
+  version: string | undefined;
+  /** Shot index of the large view. */
+  big: number | undefined;
+};
+
+/**
+ * A stepper burst waiting for its debounce.
+ */
+export type PendingEdit = {
+  readonly path: string;
+  readonly raw: string;
+  readonly next: number;
+};
+
+/**
+ * The layout style card of the selected element.
+ */
+export type StyleCard = {
+  path: string;
+  current: FileText;
+  ref: StyleBlockRef;
+  block: StyleBlock;
+  pending: PendingEdit | undefined;
+  error: StyleEditError | undefined;
+};
+
+/**
+ * A saved screenshot.
+ */
+export type CaptureFile = {
+  readonly path: string;
+  readonly frame: number;
+  /** "iPhone 15 portrait". */
+  readonly device: string;
+  readonly image: string;
+};
+
+/**
+ * A written series.
+ */
+export type SeriesResult = {
+  readonly folder: string;
+  readonly indexPath: string;
+  readonly shots: number;
+};
+
+/**
+ * The Game panel's commands (declared on the panel; gameView runs them through panels.run, R9).
+ */
+export type GameCommands = {
+  readonly capture: "editor.capture";
+  readonly series: "editor.series";
+  readonly seriesStop: "editor.seriesStop";
+};
+
+/**
+ * gameView state (the api never returns listeners, watching, run, timers or disposers).
+ */
+export type GameViewState = {
+  tab: "element" | "device";
+  zoom: "fit" | "100";
+  safeArea: boolean;
+  picker: { on: boolean; hover: string | undefined };
+  selected: ElementRef | undefined;
+  treeHover: ElementRef | undefined;
+  sources: { ui?: Json; entities?: Json; projections?: Json };
+  watching: (() => void)[];
+  scene: SceneSnapshot | undefined;
+  calibration: Calibration | undefined;
+  /** undefined = not read, null = not found. */
+  manifest: TextureCatalogue | null | undefined;
+  card: CaptureFile | undefined;
+  series: {
+    popover: boolean;
+    durationMs: number;
+    intervalMs: number;
+    recording: Recording | undefined;
+    sheet: Sheet | undefined;
+  };
+  styles: StyleCard | undefined;
+  overlayRoot: HTMLElement | undefined;
+  listeners: Set<() => void>;
+  timers: {
+    card?: ReturnType<typeof setTimeout>;
+    sheetSave?: ReturnType<typeof setTimeout>;
+    styleSave?: ReturnType<typeof setTimeout>;
+  };
+  disposers: (() => void)[];
+};
+
+/**
+ * The gameView api (`app.gameView`).
+ *
+ * @example
+ * ```ts
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", … }
+ * ```
+ */
+export type GameViewApi = {
+  /** Turns the picker on (default: toggles); on shows Game. */
+  pick(on?: boolean): void;
+  selected(): ElementRef | undefined;
+  select(ref: ElementRef | undefined): void;
+  /** select, Element tab, show Game (the workspace:inspect hook calls it, R9). */
+  inspect(ref: ElementRef): void;
+  /** The scene from the watched sources, or one read of them while Game is hidden. */
+  scene(): Promise<SceneSnapshot>;
+  locate(ref: ElementRef): Promise<PageRect | undefined>;
+  /** Pink box in gameView's root inside gameFrame().overlay(); undefined clears it. */
+  highlight(ref: ElementRef | undefined): void;
+  manifest(): Promise<TextureCatalogue | undefined>;
+  /** One screenshot through panels.run (editor.capture, R9); undefined when no game. */
+  capture(): Promise<CaptureFile | undefined>;
+  /** One editor.series call; PNGs + index.json; opens the contact sheet. */
+  series(options: {
+    durationMs: number;
+    intervalMs: number;
+    label?: string;
+  }): Promise<SeriesResult | undefined>;
+  /** editor.seriesStop through panels.run (R9). */
+  stopSeries(): void;
+  /** Opens a saved series' contact sheet (the workspace:open-sheet hook calls it). */
+  openSheet(indexPath: string): Promise<void>;
+  /** Adds a capture to a note's front matter (shared codec). */
+  attach(capture: string, notePath: string): Promise<void>;
+  /** Notes for the D6 select, newest first. */
+  notes(): Promise<readonly { path: string; title: string }[]>;
+};
+
+/**
+ * Domain context of gameView: the kernel context is assignable to it.
+ */
+export type GameViewCtx = {
+  readonly config: Readonly<GameViewConfig>;
+  state: GameViewState;
+  readonly emit: EmitFn<
+    Pick<ToolsEvents, "workspace:reveal" | "workspace:new-note" | "workspace:open-file">
+  >;
+  readonly log: Log.LogApi;
+  readonly require: Require;
+};
+
+/**
+ * gameView's hooks (global tools events, R4, R9).
+ */
+export type GameViewHooks = {
+  readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
+  readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
+  readonly "workspace:open-sheet": (payload: ToolsEvents["workspace:open-sheet"]) => void;
+  readonly "workspace:inspect": (payload: ToolsEvents["workspace:inspect"]) => void;
+};

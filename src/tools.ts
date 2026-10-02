@@ -1,0 +1,106 @@
+// biome-ignore-all assist/source/organizeImports: sectioned entry (Framework API → Plugins → Types) is house style
+/**
+ * The `@moku-labs/editor/tools` entry: the tools core for the tools page. Default plugins: link
+ * (the websocket to the hub), workspace (the shell and the one game frame), panels (the panel
+ * host) and the six workspaces flowView, gameView, renderView, stateView, filesView, consoleView.
+ * The prebuilt tools page composes it in `src/plugins/pages/page/main.tsx` (D-06).
+ *
+ * Plugin options and their defaults, set through `pluginConfigs`:
+ *
+ * | Plugin | Option | Default |
+ * |---|---|---|
+ * | link | retryMs | 1000 |
+ * | link | boot | "#moku-editor-boot" |
+ * | workspace | defaultWorkspace | "flow" |
+ * | workspace | storageKey | "moku-editor" |
+ * | workspace | reloadTimeoutMs | 15000 |
+ * | workspace | toastMs | 2600 |
+ * | flowView | historyLast, trailLength, stylesFile, layoutWorker … | see src/plugins/flowView/README.md |
+ * | gameView | capturesDir, notesDir, manifestPaths … | see src/plugins/gameView/README.md |
+ * | renderView | fpsSamples | 60 |
+ * | renderView | releaseLogMax | 50 |
+ * | stateView | expandDepth | 2 |
+ * | stateView | maxPatches | 200 |
+ * | filesView | maxFiles | 5000 |
+ * | consoleView | maxLines | 5000 |
+ * | consoleView | preserveLog | false |
+ *
+ * @file The tools page entry: the tools core and its plugins.
+ * @example
+ * ```ts
+ * const tools = createApp({});
+ * await tools.start();
+ * tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
+ * ```
+ */
+import { createToolsCore, toolsCoreConfig } from "./config";
+import { consoleViewPlugin } from "./plugins/consoleView";
+import { filesViewPlugin } from "./plugins/filesView";
+import { flowViewPlugin } from "./plugins/flowView";
+import { gameViewPlugin } from "./plugins/gameView";
+import { linkPlugin } from "./plugins/link";
+import { panelsPlugin } from "./plugins/panels";
+import { renderViewPlugin } from "./plugins/renderView";
+import { stateViewPlugin } from "./plugins/stateView";
+import { workspacePlugin } from "./plugins/workspace";
+
+const framework = createToolsCore(toolsCoreConfig, {
+  // Dependency order: workspace requires link; panels requires link and workspace; every view
+  // requires link and panels (all but stateView also workspace). No view depends on another view.
+  plugins: [
+    linkPlugin,
+    workspacePlugin,
+    panelsPlugin,
+    flowViewPlugin,
+    gameViewPlugin,
+    renderViewPlugin,
+    stateViewPlugin,
+    filesViewPlugin,
+    consoleViewPlugin
+  ]
+});
+
+// ─── Framework API ────────────────────────────────────────────
+/**
+ * Creates the tools page app. The tools page entry starts it, then mounts the workspace (R3).
+ *
+ * @example
+ * ```ts
+ * const tools = createApp({});
+ * await tools.start();
+ * tools.workspace.mount(root);
+ * ```
+ */
+export const createApp = framework.createApp;
+
+/**
+ * Creates a plugin for the tools core, e.g. a test plugin that hooks `workspace:ran`.
+ *
+ * @example
+ * ```ts
+ * export const ranLogPlugin = createPlugin("ranLog", { hooks: createRanLogHooks });
+ * ```
+ */
+export const createPlugin = framework.createPlugin;
+
+// ─── Plugins ──────────────────────────────────────────────────
+export { consoleViewPlugin } from "./plugins/consoleView";
+export { filesViewPlugin } from "./plugins/filesView";
+export { flowViewPlugin } from "./plugins/flowView";
+export { gameViewPlugin } from "./plugins/gameView";
+export { linkPlugin } from "./plugins/link";
+export { panelsPlugin } from "./plugins/panels";
+export { renderViewPlugin } from "./plugins/renderView";
+export { stateViewPlugin } from "./plugins/stateView";
+export { workspacePlugin } from "./plugins/workspace";
+
+// ─── Plugin Types (namespace re-exports) ──────────────────────
+export * as ConsoleView from "./plugins/consoleView/types";
+export * as FilesView from "./plugins/filesView/types";
+export * as FlowView from "./plugins/flowView/types";
+export * as GameView from "./plugins/gameView/types";
+export * as Link from "./plugins/link/types";
+export * as Panels from "./plugins/panels/types";
+export * as RenderView from "./plugins/renderView/types";
+export * as StateView from "./plugins/stateView/types";
+export * as Workspace from "./plugins/workspace/types";
