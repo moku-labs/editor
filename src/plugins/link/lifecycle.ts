@@ -2,32 +2,59 @@
  * @file link plugin — onStart (read the boot tag, open the socket, start the silence watch) and
  * onStop (close the socket, clear every timer, reject pending calls with link_closed).
  */
+import { failAll, linkClosedError } from "./rpc/calls";
+import { connect } from "./socket/connect";
+import { clearRetry } from "./state";
+import { startSilenceWatch } from "./status/silence";
 import type { LinkCtx, LinkState } from "./types";
 
 /**
- * onStart: reads `#moku-editor-boot`, opens the websocket, starts the silence interval. Does not
- * await the socket.
+ * Close code of a normal stop.
+ */
+const NORMAL_CLOSE = 1000;
+
+/**
+ * onStart: starts the silence interval, reads `#moku-editor-boot` and opens the websocket. Does
+ * not await the socket, so `app.start()` resolves with status `connecting` (or lost `no_boot`).
  *
- * @param _ctx - Domain context of link.
+ * @param ctx - Domain context of link.
  * @example
  * ```ts
  * createToolsPlugin("link", { onStart: startLink });
  * ```
  */
-export function startLink(_ctx: LinkCtx): void {
-  throw new Error("not implemented");
+export function startLink(ctx: LinkCtx): void {
+  startSilenceWatch(ctx);
+  connect(ctx);
 }
 
 /**
- * onStop: stopped = true, clears the timers, rejects pending calls, closes the socket (1000).
+ * onStop: stopped = true (every socket callback returns early from now on), clears the retry and
+ * silence timers, rejects pending calls with `link_closed`, closes the socket with 1000 and
+ * forgets the watches and the manifest listeners.
  *
- * @param _ctx - Teardown context.
- * @param _ctx.state - Own state.
+ * @param ctx - Teardown context.
+ * @param ctx.state - Own state.
  * @example
  * ```ts
  * createToolsPlugin("link", { onStop: stopLink });
  * ```
  */
-export function stopLink(_ctx: { readonly state: LinkState }): void {
-  throw new Error("not implemented");
+export function stopLink(ctx: { readonly state: LinkState }): void {
+  const { state } = ctx;
+  const { socket } = state;
+
+  state.stopped = true;
+  clearRetry(state);
+  clearInterval(state.silenceTimer);
+  state.silenceTimer = undefined;
+  failAll(ctx, linkClosedError());
+
+  state.socket = undefined;
+  state.open = false;
+  socket?.close(NORMAL_CLOSE, "stop");
+
+  state.subs.clear();
+  state.wire.clear();
+  state.manifestListeners.clear();
 }

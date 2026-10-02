@@ -1,18 +1,18 @@
 /**
  * @file files plugin — state factory.
  */
-import type { FilesConfig, FilesState } from "./types";
+import type { FilesState } from "./types";
 
 /**
- * Creates the initial files state: no root yet, no compiled globs, no locks.
+ * Creates the initial files state: no root yet, no compiled globs, no locks. onInit fills the root
+ * and the globs.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @returns A fresh state.
  * @example
  * ```ts
- * const state = createFilesState({ config });
+ * createServerPlugin("files", { createState: createFilesState });
  * ```
  */
-export function createFilesState(_ctx: { readonly config: Readonly<FilesConfig> }): FilesState {
-  throw new Error("not implemented");
+export function createFilesState(): FilesState {
+  return { rootReal: "", allowGlobs: [], denyGlobs: [], locks: new Map() };
 }

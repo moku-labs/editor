@@ -1,68 +1,186 @@
 /**
- * @file link plugin — subscriptions/watch.ts (skeleton stubs, implemented in its wave).
+ * @file link plugin — watch records (kept while disconnected, R4) and their numeric wire subs
+ * (R6: taken from `nextSub`, never reused, so a late value of an old sub is dropped).
  */
-
 import type { Json, SubId } from "../../registry/protocol";
-import type { LinkCtx } from "../types";
+import { describeError, request } from "../rpc/calls";
+import { isAttached } from "../state";
+import type { LinkCtx, Subscription } from "../types";
 
 /**
- * Skeleton stub for `addWatch`; implemented in its wave.
+ * True when watches can be sent now: the chosen session is attached and its manifest is in.
  *
- * @param _ctx - The ctx.
- * @param _id - The id.
- * @param _input - The input.
- * @param _onValue - The onValue.
+ * @param ctx - Domain context of link.
+ * @returns Whether a new watch goes out at once.
  * @example
  * ```ts
- * addWatch();
+ * if (isReady(ctx)) sendWatch(ctx, sub);
+ * ```
+ */
+function isReady(ctx: LinkCtx): boolean {
+  const { state } = ctx;
+  return isAttached(state) && state.chosen !== undefined && state.manifests.has(state.chosen);
+}
+
+/**
+ * Sends `unwatch { sub }`; the answer is ignored, a failure is logged at debug.
+ *
+ * @param ctx - Domain context of link.
+ * @param sub - The wire sub.
+ * @param session - The session it was sent to.
+ * @example
+ * ```ts
+ * sendUnwatch(ctx, 3, "s-1");
+ * ```
+ */
+function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): void {
+  request(ctx, "game", "unwatch", { sub }, session).catch((error: unknown) => {
+    ctx.log.debug("link:unwatch-failed", { sub, ...describeError(error) });
+  });
+}
+
+/**
+ * Sends `watch { sub, id, input? }` with a new wire sub. An error answer is logged as
+ * `link:watch-failed`; the record stays and is sent again on the next attach.
+ *
+ * @param ctx - Domain context of link.
+ * @param sub - The record.
+ * @example
+ * ```ts
+ * sendWatch(ctx, sub);
+ * ```
+ */
+function sendWatch(ctx: LinkCtx, sub: Subscription): void {
+  const { state } = ctx;
+  const wireSub = state.nextSub;
+
+  state.nextSub += 1;
+  sub.wireSub = wireSub;
+  state.wire.set(wireSub, sub);
+
+  const params: Json =
+    sub.input === undefined
+      ? { sub: wireSub, id: sub.id }
+      : { sub: wireSub, id: sub.id, input: sub.input };
+  request(ctx, "game", "watch", params, state.chosen).catch((error: unknown) => {
+    ctx.log.error("link:watch-failed", { id: sub.id, ...describeError(error) });
+    if (state.wire.get(wireSub) !== sub) return;
+    state.wire.delete(wireSub);
+    sub.wireSub = undefined;
+  });
+}
+
+/**
+ * Records a watch; sends it now when attached, otherwise on the next attach.
+ *
+ * @param ctx - Domain context of link.
+ * @param id - Source id.
+ * @param input - Source input, omitted on the wire when undefined.
+ * @param onValue - Called with every value (the agent's immediate read first).
+ * @returns Unsubscribe: forgets the record and sends `unwatch` when attached; twice is a no-op.
+ * @example
+ * ```ts
+ * const stop = addWatch(ctx, "game.history", { last: 20 }, history => draw(history));
  * ```
  */
 export function addWatch(
-  _ctx: LinkCtx,
-  _id: string,
-  _input: Json | undefined,
-  _onValue: (value: Json) => void
+  ctx: LinkCtx,
+  id: string,
+  input: Json | undefined,
+  onValue: (value: Json) => void
 ): () => void {
-  throw new Error("not implemented");
+  const { state } = ctx;
+  const sub: Subscription = { key: state.nextKey, id, input, onValue, wireSub: undefined };
+
+  state.nextKey += 1;
+  state.subs.set(sub.key, sub);
+  if (isReady(ctx)) sendWatch(ctx, sub);
+
+  return () => {
+    if (!state.subs.delete(sub.key)) return;
+
+    const { wireSub } = sub;
+    if (wireSub === undefined) return;
+    state.wire.delete(wireSub);
+    sub.wireSub = undefined;
+    if (isAttached(state)) sendUnwatch(ctx, wireSub, state.chosen);
+  };
 }
 
 /**
- * Skeleton stub for `resubscribeAll`; implemented in its wave.
+ * Sends every record to the chosen session with a new wire sub. A source the manifest does not
+ * list is skipped with `link:source-missing` (the record stays for a later session).
  *
- * @param _ctx - The ctx.
+ * @param ctx - Domain context of link.
  * @example
  * ```ts
- * resubscribeAll();
+ * resubscribeAll(ctx); // after the manifest of an attach arrived
  * ```
  */
-export function resubscribeAll(_ctx: LinkCtx): void {
-  throw new Error("not implemented");
+export function resubscribeAll(ctx: LinkCtx): void {
+  const { state } = ctx;
+  const manifest = state.chosen === undefined ? undefined : state.manifests.get(state.chosen);
+  const known = new Set(manifest?.sources.map(source => source.id));
+
+  for (const sub of state.subs.values()) {
+    if (known.has(sub.id)) sendWatch(ctx, sub);
+    else ctx.log.warn("link:source-missing", { id: sub.id });
+  }
 }
 
 /**
- * Skeleton stub for `detachAll`; implemented in its wave.
+ * Sends `unwatch` for every wire sub of the current attach (a voluntary switch).
  *
- * @param _ctx - The ctx.
+ * @param ctx - Domain context of link.
+ * @param session - The session the subs were sent to.
  * @example
  * ```ts
- * detachAll();
+ * unwatchAll(ctx, previous);
  * ```
  */
-export function detachAll(_ctx: LinkCtx): void {
-  throw new Error("not implemented");
+export function unwatchAll(ctx: LinkCtx, session: string): void {
+  for (const wireSub of ctx.state.wire.keys()) sendUnwatch(ctx, wireSub, session);
 }
 
 /**
- * Skeleton stub for `deliver`; implemented in its wave.
+ * Forgets every wire sub; the records stay for the next attach.
  *
- * @param _ctx - The ctx.
- * @param _sub - The sub.
- * @param _value - The value.
+ * @param ctx - Domain context of link.
  * @example
  * ```ts
- * deliver();
+ * detachAll(ctx); // socket closed or session lost
  * ```
  */
-export function deliver(_ctx: LinkCtx, _sub: SubId, _value: Json): void {
-  throw new Error("not implemented");
+export function detachAll(ctx: LinkCtx): void {
+  const { wire } = ctx.state;
+
+  for (const sub of wire.values()) sub.wireSub = undefined;
+  wire.clear();
+}
+
+/**
+ * Delivers a value to the watch of a wire sub; an unknown sub (an older attach) is dropped, a
+ * throwing `onValue` is logged.
+ *
+ * @param ctx - Domain context of link.
+ * @param sub - The wire sub.
+ * @param value - The value.
+ * @example
+ * ```ts
+ * deliver(ctx, 3, { path: "board" });
+ * ```
+ */
+export function deliver(ctx: LinkCtx, sub: SubId, value: Json): void {
+  const record = ctx.state.wire.get(sub);
+  if (record === undefined) return;
+
+  try {
+    record.onValue(value);
+  } catch (error) {
+    ctx.log.error(
+      "link:on-value-failed",
+      { id: record.id },
+      error instanceof Error ? error : undefined
+    );
+  }
 }

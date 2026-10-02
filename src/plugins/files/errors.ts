@@ -1,83 +1,114 @@
 /**
- * @file files plugin — errors.ts (skeleton stubs, implemented in its wave).
+ * @file files plugin — the error factories. Each returns the protocol's `wireError(...)`
+ * (`Error & WireError`, R1); there is no own error class. Messages name the requested relative
+ * path only, never the absolute root.
  */
 import type { WireError } from "../registry/protocol";
+import { errorCode, wireError } from "../registry/protocol";
 
 /**
- * Skeleton stub for `forbidden`; implemented in its wave.
+ * A path that fails any sandbox rule: -32004 `forbidden_path`.
  *
- * @param _path - The path.
+ * @param path - The requested path, as given.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * forbidden();
+ * throw forbidden("../x.ts"); // "[moku-editor] forbidden path: ../x.ts"
  * ```
  */
-export function forbidden(_path: string): Error & WireError {
-  throw new Error("not implemented");
+export function forbidden(path: string): Error & WireError {
+  return wireError(errorCode.forbiddenPath, `forbidden path: ${path}`, {
+    reason: "forbidden_path",
+    retryable: false,
+    id: path
+  });
 }
 
 /**
- * Skeleton stub for `notFound`; implemented in its wave.
+ * A file or folder that does not exist: -32601 `unknown_id`.
  *
- * @param _path - The path.
+ * @param path - The requested path.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * notFound();
+ * throw notFound("src/missing.ts");
  * ```
  */
-export function notFound(_path: string): Error & WireError {
-  throw new Error("not implemented");
+export function notFound(path: string): Error & WireError {
+  return wireError(errorCode.unknownMethod, `not found: ${path}`, {
+    reason: "unknown_id",
+    retryable: false,
+    id: path
+  });
 }
 
 /**
- * Skeleton stub for `conflict`; implemented in its wave.
+ * A stale `version`, or a version given for a missing file: -32005 `version_conflict`.
  *
- * @param _path - The path.
+ * @param path - The requested path.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * conflict();
+ * if (sha1(current) !== version) throw conflict(path);
  * ```
  */
-export function conflict(_path: string): Error & WireError {
-  throw new Error("not implemented");
+export function conflict(path: string): Error & WireError {
+  return wireError(errorCode.versionConflict, `version conflict: ${path}`, {
+    reason: "version_conflict",
+    retryable: false,
+    id: path
+  });
 }
 
 /**
- * Skeleton stub for `invalid`; implemented in its wave.
+ * An input that cannot be written (text or data too large, bad data URL): -32602 `invalid_input`.
  *
- * @param _field - The field.
- * @param _message - The message.
+ * @param field - The offending field of the files-channel params.
+ * @param message - What is wrong, naming the relative path.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * invalid();
+ * throw invalid("text", "write: text over 2 MiB: src/a.ts");
  * ```
  */
-export function invalid(_field: "text" | "data", _message: string): Error & WireError {
-  throw new Error("not implemented");
+export function invalid(field: "text" | "data", message: string): Error & WireError {
+  return wireError(errorCode.invalidInput, message, {
+    reason: "invalid_input",
+    retryable: false,
+    field
+  });
 }
 
 /**
- * Skeleton stub for `tooLarge`; implemented in its wave.
+ * A file too large to read back (text over 2 MiB, image over 16 MiB): -32000 `command_failed`.
  *
- * @param _path - The path.
+ * @param path - The requested path.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * tooLarge();
+ * if (size > limit) throw tooLarge(path);
  * ```
  */
-export function tooLarge(_path: string): Error & WireError {
-  throw new Error("not implemented");
+export function tooLarge(path: string): Error & WireError {
+  return wireError(errorCode.commandFailed, `file too large: ${path}`, {
+    reason: "command_failed",
+    retryable: false
+  });
 }
 
 /**
- * Skeleton stub for `ioFailed`; implemented in its wave.
+ * Any other IO failure: -32000 `command_failed`.
  *
- * @param _message - The message.
+ * @param message - What failed, naming the relative path and the errno code only.
+ * @returns The error, ready to throw.
  * @example
  * ```ts
- * ioFailed();
+ * throw ioFailed("write failed: src/a.ts (EACCES)");
  * ```
  */
-export function ioFailed(_message: string): Error & WireError {
-  throw new Error("not implemented");
+export function ioFailed(message: string): Error & WireError {
+  return wireError(errorCode.commandFailed, message, {
+    reason: "command_failed",
+    retryable: false
+  });
 }
