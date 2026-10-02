@@ -1,32 +1,39 @@
 /**
- * @file registry plugin — entries/envelope.ts (skeleton stubs, implemented in its wave).
+ * @file registry plugin — where the game stands (R2, R6): the run state of editor commands and the
+ * clock the channel heartbeat reads.
  */
-
+import { read, sources } from "@moku-labs/game/inspect";
 import type { RunState } from "../protocol";
 import type { Clock, GameLike } from "../types";
 
 /**
- * Skeleton stub for `envelopeOf`; implemented in its wave.
+ * The run state now: the `game.position` path, the clock frame and the `game.tainted` flag.
  *
- * @param _game - The game.
+ * @param game - The game app.
+ * @returns `{ path, frame, tainted }`.
  * @example
  * ```ts
- * envelopeOf();
+ * envelopeOf(game); // { path: "board/awaitIntent", frame: 1840, tainted: false }
  * ```
  */
-export function envelopeOf(_game: GameLike): RunState {
-  throw new Error("not implemented");
+export function envelopeOf(game: GameLike): RunState {
+  return {
+    path: read(game, sources.position).path,
+    frame: clockOf(game).frame,
+    tainted: read(game, sources.tainted) === true
+  };
 }
 
 /**
- * Skeleton stub for `clockOf`; implemented in its wave.
+ * The frame and the pause flag of the game clock (every pause reason sets `time.isPaused()`).
  *
- * @param _game - The game.
+ * @param game - The game app.
+ * @returns `{ frame, paused }`.
  * @example
  * ```ts
- * clockOf();
+ * clockOf(game); // { frame: 1840, paused: false }
  * ```
  */
-export function clockOf(_game: GameLike): Clock {
-  throw new Error("not implemented");
+export function clockOf(game: GameLike): Clock {
+  return { frame: game.time.snapshot().frame, paused: game.time.isPaused() };
 }

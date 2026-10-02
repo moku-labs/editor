@@ -1,20 +1,18 @@
 /**
  * @file registry plugin — state factory.
  */
-import type { RegistryConfig, RegistryState } from "./types";
+import type { RegistryState } from "./types";
 
 /**
  * Creates the initial registry state: empty maps and no manifest.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @returns Fresh maps for sources, commands and origins, and `manifest: undefined`.
  * @example
  * ```ts
- * const state = createRegistryState({ config: { game: undefined, modules: [], name: undefined } });
+ * const state = createRegistryState();
+ * state.sources.size; // 0
  * ```
  */
-export function createRegistryState(_ctx: {
-  readonly config: Readonly<RegistryConfig>;
-}): RegistryState {
-  throw new Error("not implemented");
+export function createRegistryState(): RegistryState {
+  return { sources: new Map(), commands: new Map(), origins: new Map(), manifest: undefined };
 }

@@ -19,7 +19,7 @@ import type {
 } from "./protocol";
 
 /**
- * Registry ids: camelCase words joined by dots, same pattern as the game's defineCommand.
+ * Registry ids: camelCase words joined by dots, the pattern the game's defineCommand uses.
  */
 export const ID_PATTERN = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
 
@@ -101,7 +101,7 @@ export type CommandEntry = {
 };
 
 /**
- * The game clock as the channel heartbeat needs it (R6).
+ * The game clock, in the shape the channel heartbeat needs (R6).
  */
 export type Clock = { readonly frame: number; readonly paused: boolean };
 

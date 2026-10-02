@@ -6,7 +6,7 @@
  */
 
 /**
- * A JSON value as it travels on the wire.
+ * A JSON value, the way it travels on the wire.
  *
  * @example
  * ```ts
@@ -53,7 +53,7 @@ type RequiredKeys<S extends InputSchema> = {
 }[keyof S];
 
 /**
- * Shows an intersection as one object type.
+ * Shows an intersection in one object type.
  */
 type Flat<T> = { [K in keyof T]: T[K] };
 
@@ -82,7 +82,7 @@ export type Changes = "frame" | "commit" | "edge";
 export type Effect = "read" | "route" | "cosmetic" | "cheat" | "raw";
 
 /**
- * A source as the manifest describes it (no functions).
+ * A source the way the manifest describes it (no functions).
  */
 export type SourceDescriptor = {
   readonly id: string;
@@ -92,7 +92,7 @@ export type SourceDescriptor = {
 };
 
 /**
- * A command as the manifest describes it (no functions).
+ * A command the way the manifest describes it (no functions).
  */
 export type CommandDescriptor = {
   readonly id: string;
@@ -312,7 +312,7 @@ export type WriteParams = { path: string; text: string; version?: string };
 export type WriteBinaryParams = { path: string; data: string };
 
 /**
- * One game session as the tools page sees it (R1: exactly these five fields).
+ * One game session the way the tools page sees it (R1: exactly these five fields).
  */
 export type SessionInfo = {
   readonly id: string;
@@ -339,7 +339,7 @@ export type FileEntry = {
 export type FileText = { readonly text: string; readonly version: string };
 
 /**
- * An image read back as a data URL, with its version.
+ * An image read back in a data URL, with its version.
  */
 export type FileBinary = { readonly dataUrl: string; readonly version: string };
 
