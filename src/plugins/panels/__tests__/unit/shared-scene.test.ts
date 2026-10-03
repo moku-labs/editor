@@ -693,18 +693,44 @@ describe("elementAt", () => {
     });
   });
 
-  it("lets a full-device node win only when nothing else contains the point", () => {
+  it("lets the elements painted after a full-device root win, the root only where none does", () => {
     const tree = ui("root", "screen", rect(0, 0, 100, 100), [
-      ui("button", "button", rect(10, 10, 20, 20)),
-      ui("veil", "stack", rect(0, 0, 99, 99))
+      ui("button", "button", rect(10, 10, 20, 20))
     ]);
     const scene = sceneOf({ ui: tree, entities: [], projections: {} });
     const device = { w: 100, h: 100 };
 
     expect(elementAt(scene, { x: 15, y: 15 }, device)?.id).toBe("ui:root/button");
-    expect(elementAt(scene, { x: 50, y: 50 }, device)?.id).toBe("ui:root/veil");
+    expect(elementAt(scene, { x: 50, y: 50 }, device)?.id).toBe("ui:root");
     expect(elementAt(sceneOf(), { x: 10, y: 10 }, DEVICE)?.id).toBe(
       "ui:boardScreen/boardBackground"
+    );
+  });
+
+  it("blocks everything painted before a full-device backdrop: the backdrop wins there", () => {
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("button", "button", rect(10, 10, 20, 20)),
+      ui("veil", "stack", rect(0, 0, 99, 99), [ui("ok", "button", rect(40, 40, 20, 20))])
+    ]);
+    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+    const device = { w: 100, h: 100 };
+
+    expect(elementAt(scene, { x: 15, y: 15 }, device)?.id).toBe("ui:root/veil");
+    expect(elementAt(scene, { x: 45, y: 45 }, device)?.id).toBe("ui:root/veil/ok");
+  });
+
+  it("gives the settings backdrop, not the board's settings icon under it", () => {
+    const scene = sceneOf({
+      ui: SETTINGS.ui,
+      entities: SETTINGS.entities,
+      projections: SETTINGS.projections
+    });
+
+    expect(elementAt(scene, { x: 980, y: 112 }, DEVICE)?.id).toBe(
+      "ui:settingsScreen/settingsBackdrop"
+    );
+    expect(elementAt(sceneOf(), { x: 980, y: 112 }, DEVICE)?.id).toBe(
+      "ui:boardScreen/hudRow/settings/settingsIcon"
     );
   });
 

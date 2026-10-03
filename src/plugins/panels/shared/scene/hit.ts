@@ -26,56 +26,36 @@ function contains(rect: PageRect, point: Point): boolean {
 }
 
 /**
- * Tells whether a rect covers the whole device (one px of slack on each axis).
- *
- * @param rect - The rect.
- * @param device - Device W×H.
- * @param device.w - Device width.
- * @param device.h - Device height.
- * @returns True when w ≥ W − 1 and h ≥ H − 1.
- * @example
- * ```ts
- * coversDevice({ x: 0, y: 0, w: 393, h: 852 }, { w: 393, h: 852 }); // true
- * ```
- */
-function coversDevice(rect: PageRect, device: { readonly w: number; readonly h: number }): boolean {
-  return rect.w >= device.w - 1 && rect.h >= device.h - 1;
-}
-
-/**
- * The last node in paint order that contains the point; a node covering the whole device only
- * wins when no other node contains the point (the topmost such node then).
+ * The last node in paint order that contains the point (rule 6). A node covering the whole device
+ * (w ≥ W − 1 and h ≥ H − 1, a popup backdrop) contains every point, so it blocks everything painted
+ * before it: a node painted after it wins where it contains the point, the backdrop wins elsewhere.
  *
  * @param scene - The scene.
  * @param point - A point in page px (reference units when the scene is not calibrated).
  * @param point.x - Page x.
  * @param point.y - Page y.
- * @param device - Device W×H.
- * @param device.w - Device width.
- * @param device.h - Device height.
+ * @param _device - Device W×H. Unused: the full-device rule needs no size, see above.
+ * @param _device.w - Device width.
+ * @param _device.h - Device height.
  * @returns The node, or undefined when no placed node contains the point.
  * @example
  * ```ts
  * elementAt(scene, { x: 540, y: 990 }, { w: 1080, h: 1440 })?.ref; // { kind: "entity", id: 1048628 }
+ * elementAt(settingsScene, { x: 980, y: 112 }, { w: 1080, h: 1440 })?.id; // "ui:settingsScreen/settingsBackdrop"
  * ```
  */
 export function elementAt(
   scene: SceneSnapshot,
   point: { readonly x: number; readonly y: number },
-  device: { readonly w: number; readonly h: number }
+  _device: { readonly w: number; readonly h: number }
 ): SceneNode | undefined {
-  let fullDevice: SceneNode | undefined;
-
   for (const id of scene.paintOrder.toReversed()) {
     const node = scene.nodes.get(id);
 
-    if (node?.rect === undefined || !contains(node.rect, point)) continue;
-    if (!coversDevice(node.rect, device)) return node;
-
-    fullDevice ??= node;
+    if (node?.rect !== undefined && contains(node.rect, point)) return node;
   }
 
-  return fullDevice;
+  return undefined;
 }
 
 /**

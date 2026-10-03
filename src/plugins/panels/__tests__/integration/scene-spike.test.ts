@@ -479,6 +479,13 @@ describe("scene on the live settings popup (board/settings/open)", () => {
 
     expect(hit?.id.startsWith("ui:settingsScreen/settingsBoard")).toBe(true);
   });
+
+  it("blocks the board under the backdrop: the settings icon's spot gives the backdrop", () => {
+    const hit = elementAt(sceneOf(settings), { x: 980, y: 112 }, DEVICE);
+
+    expect(hit?.id).toBe("ui:settingsScreen/settingsBackdrop");
+    expect(hit?.id.startsWith("ui:boardScreen")).toBe(false);
+  });
 });
 
 describe("calibration on the inert renderer", () => {
