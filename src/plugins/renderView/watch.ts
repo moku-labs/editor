@@ -229,32 +229,11 @@ function listsEffects(manifest: Manifest | undefined): boolean {
 }
 
 /**
- * Starts the game.effects watch once, while renderView runs and the current manifest lists it.
- *
- * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * queueMicrotask(() => startEffects(ctx));
- * ```
- */
-function startEffects(ctx: RenderViewCtx): void {
-  const { state } = ctx;
-  // Stopped meanwhile, already watching, or a newer manifest without the source.
-  if (state.tracker.length === 0 || state.effectsWatch !== undefined) return;
-
-  const link = ctx.require(linkPlugin);
-  if (!listsEffects(link.manifest())) return;
-  state.effectsWatch = link.watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
-}
-
-/**
  * Follows the manifest: one game.effects watch while it lists the source (game 0.0.3); a
  * manifest without it (an older game) stops the watch and clears the value; an undefined
- * manifest (session lost) keeps the watch, which link re-sends on attach.
- *
- * The start waits one microtask (no timer): link tells the manifest listeners before it
- * re-sends the watches of an attach, so a watch added inside the listener would go out twice.
- * The stop is at once, so link does not re-send a source the new manifest lacks.
+ * manifest (session lost) keeps the watch, which link re-sends on attach. Both happen at once:
+ * link sends a watch added inside the listener once per attach, and does not re-send a source
+ * the new manifest lacks.
  *
  * @param ctx - Domain context of renderView.
  * @param manifest - The manifest of the session, undefined while none is attached.
@@ -266,12 +245,15 @@ function startEffects(ctx: RenderViewCtx): void {
 export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined): void {
   if (manifest === undefined) return;
 
+  const { state } = ctx;
   if (listsEffects(manifest)) {
-    queueMicrotask(() => startEffects(ctx));
+    state.effectsWatch ??= ctx
+      .require(linkPlugin)
+      .watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
     return;
   }
-  stopEffects(ctx.state);
-  notify(ctx.state);
+  stopEffects(state);
+  notify(state);
 }
 
 /**

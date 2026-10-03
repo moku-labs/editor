@@ -68,6 +68,22 @@ function short(value: number): string {
 }
 
 /**
+ * A count and its noun, singular for exactly one.
+ *
+ * @param count - The count.
+ * @param one - The noun for one.
+ * @param many - The noun for any other count.
+ * @returns The text.
+ * @example
+ * ```ts
+ * counted(1, "render pass", "render passes"); // "1 render pass"
+ * ```
+ */
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/**
  * A tile waiting for its source.
  *
  * @param id - The tile.
@@ -136,14 +152,16 @@ function shown(
  * @example
  * ```ts
  * drawsView({ kind: "absent" }).value; // "Not counted in a production build"
- * drawsView({ kind: "value", value: 14, renderPasses: 1 }).sub; // "1 render passes"
+ * drawsView({ kind: "value", value: 14, renderPasses: 1 }).sub; // "1 render pass"
  * ```
  */
 function drawsView(draws: MetricTiles["drawCalls"]): TileView {
   const label = "Draw calls";
   if (draws === undefined) return waiting("draws", label, "Waiting for game.render");
   const passes =
-    draws.renderPasses === undefined ? undefined : `${draws.renderPasses} render passes`;
+    draws.renderPasses === undefined
+      ? undefined
+      : counted(draws.renderPasses, "render pass", "render passes");
   if (draws.kind === "value") {
     return shown("draws", label, String(draws.value), "per frame", passes ?? "game.render");
   }
@@ -222,7 +240,7 @@ export function tileViews(tiles: MetricTiles): readonly TileView[] {
           "FPS",
           String(Math.round(fps.now)),
           "fps",
-          `last ${fps.samples.length} samples · low ${Math.round(fps.low)}`
+          `last ${counted(fps.samples.length, "sample", "samples")} · low ${Math.round(fps.low)}`
         ),
     frameMs === undefined
       ? waiting("frame", "Frame time", "Waiting for game.render")

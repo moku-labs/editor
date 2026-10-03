@@ -118,7 +118,7 @@ describe("RenderWorkspace", () => {
     await fill();
 
     expect(q("h1")?.textContent).toBe("Render · game.render · frame 1841");
-    expect(q("[data-tile='fps']")?.textContent).toContain("last 1 samples · low 60");
+    expect(q("[data-tile='fps']")?.textContent).toContain("last 1 sample · low 60");
     expect(q("[data-tile='fps'] svg polyline")).not.toBeNull();
     expect(q("[data-tile='draws']")?.getAttribute("aria-label")).toBe(
       "Draw calls: not counted in a production build"
@@ -152,7 +152,7 @@ describe("RenderWorkspace", () => {
       "18 particles · 1 emitters · 24 filters"
     );
     expect(q("[data-tile='draws'] [data-value]")?.textContent).toBe("14per frame");
-    expect(q("[data-tile='draws'] [data-sub]")?.textContent).toBe("1 render passes");
+    expect(q("[data-tile='draws'] [data-sub]")?.textContent).toBe("1 render pass");
     expect(q("[data-tile='draws']")?.hasAttribute("data-absent")).toBe(false);
   });
 

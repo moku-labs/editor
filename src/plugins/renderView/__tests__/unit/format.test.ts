@@ -105,11 +105,23 @@ describe("tileViews on game 0.0.3", () => {
     expect(views[0]?.note).toBeUndefined();
   });
 
+  it("names one FPS sample in the singular", () => {
+    const [fps] = tileViews({
+      fps: { now: 60, samples: [60], low: 60 },
+      frameMs: undefined,
+      drawCalls: undefined,
+      textures: undefined,
+      scene: undefined,
+      heap: { kind: "absent" }
+    });
+    expect(fps?.sub).toBe("last 1 sample · low 60");
+  });
+
   it("names the Draw calls texts with and without render passes", () => {
     expect(draws({ kind: "value", value: 14, renderPasses: 1 })).toMatchObject({
       value: "14",
       unit: "per frame",
-      sub: "1 render passes",
+      sub: "1 render pass",
       absent: false
     });
     expect(draws({ kind: "value", value: 14 })).toMatchObject({ value: "14", sub: "game.render" });

@@ -110,7 +110,9 @@ export function addWatch(
 
 /**
  * Sends every record to the chosen session with a new wire sub. A source the manifest does not
- * list is skipped with `link:source-missing` (the record stays for a later session).
+ * list is skipped with `link:source-missing` (the record stays for a later session). A record that
+ * already has a wire sub was sent in this attach (a manifest listener added it) and is skipped;
+ * attach clears every wire sub first, so each record goes out once per attach.
  *
  * @param ctx - Domain context of link.
  * @example
@@ -124,8 +126,8 @@ export function resubscribeAll(ctx: LinkCtx): void {
   const known = new Set(manifest?.sources.map(source => source.id));
 
   for (const sub of state.subs.values()) {
-    if (known.has(sub.id)) sendWatch(ctx, sub);
-    else ctx.log.warn("link:source-missing", { id: sub.id });
+    if (!known.has(sub.id)) ctx.log.warn("link:source-missing", { id: sub.id });
+    else if (sub.wireSub === undefined) sendWatch(ctx, sub);
   }
 }
 

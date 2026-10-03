@@ -142,7 +142,7 @@ describe("tracker", () => {
 });
 
 /**
- * Attaches a manifest and lets the deferred effects start run.
+ * Attaches a manifest and lets pending promise callbacks run.
  *
  * @param manifest - The manifest, undefined for a lost session.
  */
@@ -164,10 +164,11 @@ describe("effects watch", () => {
     expect(ctx.state.effectsWatch).toBeUndefined();
 
     ctx.link.attach(WITH_EFFECTS);
-    expect(ctx.link.active("game.effects")).toEqual([]);
-    await attach(WITH_EFFECTS);
     expect(ctx.link.active("game.effects")).toHaveLength(1);
     expect(ctx.state.effectsWatch).toBeTypeOf("function");
+
+    await attach(WITH_EFFECTS);
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
   });
 
   it("starts when the manifest is there before onStart", async () => {
@@ -182,7 +183,7 @@ describe("effects watch", () => {
     ]);
   });
 
-  it("does not start when stopped or when a newer manifest lacks it before the start", async () => {
+  it("a newer manifest without it stops it at once; stop leaves no watch", async () => {
     startRenderView(ctx);
     ctx.link.attach(WITH_EFFECTS);
     ctx.link.attach(WITHOUT_EFFECTS);

@@ -27,8 +27,8 @@ once per session and again after a device change. The asset manifest is read thr
 
 `game.effects` follows `link.onManifest`: a manifest that lists it starts one watch, a manifest
 without it (a game older than 0.0.3) stops the watch and clears the value, and a lost session
-keeps it. The start waits one microtask, because link tells the manifest listeners before it
-re-sends the watches of an attach. A 0.0.3 game without the effects plugin still lists the source:
+keeps it. The start is at once: link sends a watch added inside a manifest listener once per
+attach. A 0.0.3 game without the effects plugin still lists the source:
 its read fails and link logs one `link:watch-failed { id: "game.effects" }`, like `game.render`
 on a screenless game. A value of the wrong shape warns once and the last good value stays.
 
@@ -70,7 +70,7 @@ app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
 
 | Output | Rule |
 |---|---|
-| Draw calls tile | The `game.render` counter, a dev-build counter on any backend; without it "Not counted in a production build". Sub-line "R render passes" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
+| Draw calls tile | The `game.render` counter, a dev-build counter on any backend; without it "Not counted in a production build". Sub-line "R render pass(es)" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
 | Scene tile | Entities, "V display objects · P pooled", and a third line "P particles · E emitters · F filters" from `game.effects`; on an older game "Particles and filters are not reported (follow-up F-R1)". |
 | Texture rows | Catalogue textures whose bundle is in `game.assets`; GPU MB = w × h × 4 / 2^20. |
 | Texture use | Per scene: referenced keys are in use; a key seen before and not referenced now is "unused since fF"; a key never seen is "not seen since f<firstFrame>". Precision is one delivered value, only while Render is shown. |

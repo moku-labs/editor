@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toWireValue } from "../../../registry/protocol";
 import { stopLink } from "../../lifecycle";
 import { attach } from "../../sessions/choose";
+import { addManifestListener } from "../../sessions/manifest";
 import { addWatch, deliver, detachAll } from "../../subscriptions/watch";
 import {
   connected,
@@ -153,6 +154,35 @@ describe("addWatch", () => {
     socket.reject(socket.last("unwatch"), { code: -32_600, message: "[moku-editor] x" });
     await flush();
     expect(ctx.log.debug).toHaveBeenCalledWith("link:unwatch-failed", { sub: 1, code: -32_600 });
+  });
+});
+
+describe("a watch added by a manifest listener", () => {
+  it("is sent once per attach, and a reconnect re-sends it once", async () => {
+    let stop: (() => void) | undefined;
+    addManifestListener(ctx, manifest => {
+      if (manifest === undefined || stop !== undefined) return;
+      stop = addWatch(ctx, "game.position", undefined, vi.fn());
+    });
+
+    const socket = await connected(ctx);
+    expect(socket.requests("watch").map(watch => watch.params)).toEqual([
+      { sub: 1, id: "game.position" }
+    ]);
+    expect([...ctx.state.wire.keys()]).toEqual([1]);
+
+    socket.drop(1001);
+    await vi.advanceTimersByTimeAsync(1000);
+    const next = latestSocket();
+    next.open();
+    sendSessions(next, [sessionOf("s-1")]);
+    await flush();
+
+    expect(next).not.toBe(socket);
+    expect(next.requests("watch").map(watch => watch.params)).toEqual([
+      { sub: 2, id: "game.position" }
+    ]);
+    expect([...ctx.state.wire.keys()]).toEqual([2]);
   });
 });
 
