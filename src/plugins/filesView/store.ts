@@ -22,10 +22,6 @@ export function notify(state: FilesViewState): void {
  */
 export function subscribe(state: FilesViewState, fn: () => void): () => void {
   /**
-   *
-   * @example
-   */
-  /**
    * A listener of its own, so the same function subscribed twice unsubscribes once each.
    */
   const listener = (): void => {

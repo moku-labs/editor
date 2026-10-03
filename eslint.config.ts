@@ -167,6 +167,26 @@ export default [
     }
   },
 
+  // 6c. No signature echo: an example whose whole body is one call with bare identifiers
+  // (`shut(gate);`, `const api = createClockApi(ctx);`) tells the reader nothing. `contexts: ["any"]`
+  // makes the rule read type members too; its default reads functions only.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "jsdoc/match-description": [
+        "error",
+        {
+          mainDescription: false,
+          contexts: ["any"],
+          tags: {
+            example:
+              "^(?!\\s*```(?:ts|typescript)\\n\\s*(?:(?:const|let) \\w+(?:: [\\w.<>\\[\\]]+)? = )?(?:await )?[\\w.]+\\((?:[\\w.]+(?:, [\\w.]+)*)?\\);?\\s*```\\s*$)[\\s\\S]+$"
+          }
+        }
+      ]
+    }
+  },
+
   // 6b. File names: Preact components are PascalCase (.tsx), Preact hooks are camelCase (useX.ts).
   {
     files: ["src/**/*.tsx"],
@@ -186,6 +206,7 @@ export default [
       "jsdoc/require-param": "off",
       "jsdoc/require-returns": "off",
       "jsdoc/require-example": "off",
+      "jsdoc/match-description": "off",
       "unicorn/no-useless-undefined": "off",
       "sonarjs/no-duplicate-string": "off",
       "unicorn/prevent-abbreviations": "off"

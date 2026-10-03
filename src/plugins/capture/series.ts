@@ -30,10 +30,6 @@ export const browserClock: CaptureClock = {
    * The current time in ms (performance.now).
    *
    * @returns Milliseconds since the page started.
-   * @example
-   * ```ts
-   * const start = browserClock.now();
-   * ```
    */
   now(): number {
     return performance.now();
