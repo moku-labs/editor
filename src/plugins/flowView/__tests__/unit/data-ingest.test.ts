@@ -35,7 +35,7 @@ describe("ingest", () => {
     await flush(10);
     expect(ctx.state.layout.result?.byKey["main/board>board/awaitIntent"]?.kind).toBe("hub");
     const nodes = fakes.palette.flat().filter(item => item.group === "Nodes");
-    expect(nodes.length).toBe(28);
+    expect(nodes.length).toBe(29);
     expect(nodes[0]).toMatchObject({ label: "main/boot", mono: true });
   });
 

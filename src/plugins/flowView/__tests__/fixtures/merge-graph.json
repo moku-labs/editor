@@ -56,7 +56,7 @@
           "over": false,
           "checkpoint": true,
           "barrier": false,
-          "outcomes": ["play", "gift", "openSettings"],
+          "outcomes": ["play", "gift", "openSettings", "back"],
           "scene": "home"
         },
         "dailyGift": {
@@ -67,6 +67,15 @@
           "checkpoint": false,
           "barrier": false,
           "outcomes": ["claim", "close"]
+        },
+        "leaveGame": {
+          "flow": "main",
+          "node": "leaveGame",
+          "rest": false,
+          "over": false,
+          "checkpoint": false,
+          "barrier": false,
+          "outcomes": ["leave", "stay"]
         },
         "settings": {
           "flow": "main",
@@ -122,11 +131,16 @@
         "home": {
           "play": "board",
           "gift": "dailyGift",
-          "openSettings": "settings"
+          "openSettings": "settings",
+          "back": "leaveGame"
         },
         "dailyGift": {
           "claim": "home",
           "close": "home"
+        },
+        "leaveGame": {
+          "leave": "home",
+          "stay": "home"
         },
         "settings": {
           "closed": "home"

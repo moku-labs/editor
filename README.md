@@ -401,7 +401,7 @@ bun run validate           # publint + attw (esm-only profile)
 **Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.0.3
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.1.0
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 

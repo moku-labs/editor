@@ -6,12 +6,12 @@
  * - otherwise `<repo root>/../game-fixture`.
  *
  * `../game-fixture` is a detached worktree of the game repository, pinned to the tag that matches
- * the `@moku-labs/game` dev dependency in package.json (now `v0.0.3`). The live sibling `../game`
+ * the `@moku-labs/game` dev dependency in package.json (now `v0.1.0`). The live sibling `../game`
  * may hold work in progress that breaks the fixture, so the tests never read it. Create the
  * worktree once, with its dependencies (the bin test bundles the fixture page with Bun):
  *
  * ```sh
- * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.0.3
+ * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.1.0
  * bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
  * ```
  *

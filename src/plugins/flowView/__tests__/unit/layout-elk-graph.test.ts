@@ -35,9 +35,10 @@ describe("toElkGraph", () => {
     expect(east?.map(port => port.id)).toEqual([
       "p:home:play",
       "p:home:gift",
-      "p:home:openSettings"
+      "p:home:openSettings",
+      "p:home:back"
     ]);
-    expect(east?.map(port => port.layoutOptions?.["elk.port.index"])).toEqual(["0", "1", "2"]);
+    expect(east?.map(port => port.layoutOptions?.["elk.port.index"])).toEqual(["0", "1", "2", "3"]);
     expect(home?.ports?.some(port => port.id === "in:home")).toBe(true);
   });
 
@@ -49,6 +50,8 @@ describe("toElkGraph", () => {
         "s:board:left",
         "s:dailyGift:claim",
         "s:dailyGift:close",
+        "s:leaveGame:leave",
+        "s:leaveGame:stay",
         "s:loadFailed:done",
         "s:retryLoading:done",
         "s:setLoading:done",
@@ -80,7 +83,7 @@ describe("fromElkGraph", () => {
     const output = await engine.layout(toElkGraph("main", main, classes));
     const box = fromElkGraph("main", main, classes, output);
     const byKey = new Map(box.items.map(entry => [entry.key, entry]));
-    expect(box.items.filter(entry => entry.kind === "node")).toHaveLength(10);
+    expect(box.items.filter(entry => entry.kind === "node")).toHaveLength(11);
     const stub = byKey.get("stub:main/dailyGift:claim");
     const source = byKey.get("main/dailyGift");
     expect(stub?.kind).toBe("stub");

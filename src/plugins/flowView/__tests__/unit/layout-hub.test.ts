@@ -30,8 +30,8 @@ describe("detectHub (design §7.1)", () => {
   });
 
   it("finds no hub in main, settingsPopup and rewardPopup", () => {
-    // Fixed: the spec says 3 returns; splash, dailyGift, settings and board all lead to home.
-    expect(returnsOf(flowOf("main"), "home")).toBe(4);
+    // Fixed: the spec says 3 returns; splash, dailyGift, leaveGame, settings and board all lead to home.
+    expect(returnsOf(flowOf("main"), "home")).toBe(5);
     expect(detectHub(flowOf("main"), config)).toBeUndefined();
     // merge-game v5: settingsPopup/open has 5 outcomes and 5 returns, one outcome short of a hub.
     expect(flowOf("settingsPopup").nodes.open?.outcomes).toHaveLength(5);
