@@ -11,10 +11,6 @@ import type { Clock, GameLike } from "../types";
  *
  * @param game - The game app.
  * @returns `{ path, frame, tainted }`.
- * @example
- * ```ts
- * envelopeOf(game); // { path: "board/awaitIntent", frame: 1840, tainted: false }
- * ```
  */
 export function envelopeOf(game: GameLike): RunState {
   return {
@@ -29,10 +25,6 @@ export function envelopeOf(game: GameLike): RunState {
  *
  * @param game - The game app.
  * @returns `{ frame, paused }`.
- * @example
- * ```ts
- * clockOf(game); // { frame: 1840, paused: false }
- * ```
  */
 export function clockOf(game: GameLike): Clock {
   return { frame: game.time.snapshot().frame, paused: game.time.isPaused() };

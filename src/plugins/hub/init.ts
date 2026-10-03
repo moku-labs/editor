@@ -124,10 +124,6 @@ function checkMs(field: string, value: unknown, example: number): void {
  *
  * @param ctx - Domain context of the hub.
  * @throws {Error} On a bad path, allow entry, callTimeoutMs or silentAfterMs.
- * @example
- * ```ts
- * createServerPlugin("hub", { onInit: validateHubConfig });
- * ```
  */
 export function validateHubConfig(ctx: HubCtx): void {
   const { path, allow, callTimeoutMs, silentAfterMs } = ctx.config;

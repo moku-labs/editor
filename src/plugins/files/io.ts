@@ -54,10 +54,6 @@ const DECODER = new TextDecoder("utf-8", { ignoreBOM: true });
  * Settles a lock tail whatever the task did.
  *
  * @returns Nothing.
- * @example
- * ```ts
- * run.then(settled, settled);
- * ```
  */
 function settled(): undefined {
   return undefined;
@@ -149,10 +145,6 @@ async function modeOf(real: string): Promise<number> {
  * @param real - The real absolute target (already resolved by the sandbox).
  * @param bytes - The bytes to write.
  * @param beforeRename - Optional last check, run right before the rename.
- * @example
- * ```ts
- * await atomicWrite(real, new TextEncoder().encode(text), () => recheckParent(real));
- * ```
  */
 export async function atomicWrite(
   real: string,
@@ -189,10 +181,6 @@ export async function atomicWrite(
  * @param left - One entry.
  * @param right - The other entry.
  * @returns A negative number when left comes first.
- * @example
- * ```ts
- * entries.toSorted(byKindThenPath);
- * ```
  */
 function byKindThenPath(left: FileEntry, right: FileEntry): number {
   if (left.kind !== right.kind) return left.kind === "dir" ? -1 : 1;
@@ -208,10 +196,6 @@ function byKindThenPath(left: FileEntry, right: FileEntry): number {
  * @param real - Its real absolute path.
  * @param describe - The entry of a child (relative and absolute path), or undefined to skip it.
  * @returns Folders first, then files, each sorted by path.
- * @example
- * ```ts
- * await listDir("src", real, (child, absolute) => describeChild(ctx, child, absolute));
- * ```
  */
 export async function listDir(
   dir: string,
@@ -233,10 +217,6 @@ export async function listDir(
  * @param path - The relative path the lock is for.
  * @param task - The work to run under the lock.
  * @returns The task's result.
- * @example
- * ```ts
- * await withLock(ctx.state, "src/a.ts", () => writeText(ctx, "src/a.ts", text));
- * ```
  */
 export async function withLock<T>(
   state: FilesState,

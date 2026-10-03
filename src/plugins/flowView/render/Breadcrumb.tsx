@@ -17,10 +17,6 @@ export type BreadcrumbProps = { readonly ctx: FlowCtx; readonly actions: FlowAct
  *
  * @param props - Context and actions.
  * @returns The navigation.
- * @example
- * ```tsx
- * <Breadcrumb ctx={ctx} actions={actions} />
- * ```
  */
 export function Breadcrumb(props: BreadcrumbProps): VNode {
   const { ctx, actions } = props;

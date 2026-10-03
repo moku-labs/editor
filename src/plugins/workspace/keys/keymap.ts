@@ -134,7 +134,8 @@ export function matchCombo(combo: ParsedCombo, event: KeyboardEvent, apple: bool
  * @returns Whether `mod` means ⌘.
  * @example
  * ```ts
- * isApplePlatform(globalThis.navigator);
+ * isApplePlatform({ platform: "MacIntel" }); // true
+ * isApplePlatform({ platform: "", userAgent: "Mozilla/5.0 (X11; Linux x86_64)" }); // false
  * ```
  */
 export function isApplePlatform(
@@ -182,6 +183,41 @@ function sameCombo(a: ParsedCombo, b: ParsedCombo): boolean {
 }
 
 /**
+ * Throws when an unconditional binding presses the same keys as another unconditional binding of
+ * its scope. A binding with a `when` condition never clashes.
+ *
+ * @param bindings - The registered bindings.
+ * @param binding - The new binding.
+ * @param texts - Its combo texts.
+ * @param combos - Its parsed combos, one per text.
+ * @throws {Error} `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash.
+ */
+function assertNoClash(
+  bindings: readonly KeyBindingEntry[],
+  binding: KeyBinding,
+  texts: readonly string[],
+  combos: readonly ParsedCombo[]
+): void {
+  if (binding.when !== undefined) return;
+
+  const scope = binding.workspace ?? "global";
+  for (const entry of bindings) {
+    const isSameScope = (entry.binding.workspace ?? "global") === scope;
+    const isRival = isSameScope && entry.binding.when === undefined;
+    if (!isRival) continue;
+
+    const clash = texts.find((_text, index) =>
+      entry.combos.some(combo => sameCombo(combo, combos[index] ?? combo))
+    );
+    if (clash === undefined) continue;
+
+    throw new Error(
+      `${ERROR_PREFIX}Key "${clash}" is already bound in ${scope}.\n  Pick another key, or give both bindings a when condition.`
+    );
+  }
+}
+
+/**
  * Registers a key binding. Two bindings of one scope may share a combo only when one of them has
  * a `when` condition.
  *
@@ -189,32 +225,12 @@ function sameCombo(a: ParsedCombo, b: ParsedCombo): boolean {
  * @param binding - The binding.
  * @returns Removes the binding.
  * @throws {Error} `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash.
- * @example
- * ```ts
- * const off = bindKey(ctx, { keys: "n", label: "New note", workspace: "flow", run: openNote });
- * ```
  */
 export function bindKey(ctx: Pick<WorkspaceCtx, "state">, binding: KeyBinding): () => void {
   const texts = typeof binding.keys === "string" ? [binding.keys] : [...binding.keys];
   const combos = texts.map(text => parseCombo(text));
-  const scope = binding.workspace ?? "global";
   const { bindings } = ctx.state.keys;
-
-  if (binding.when === undefined) {
-    for (const entry of bindings) {
-      if ((entry.binding.workspace ?? "global") !== scope || entry.binding.when !== undefined) {
-        continue;
-      }
-      const clash = texts.find((_text, index) =>
-        entry.combos.some(combo => sameCombo(combo, combos[index] ?? combo))
-      );
-      if (clash !== undefined) {
-        throw new Error(
-          `${ERROR_PREFIX}Key "${clash}" is already bound in ${scope}.\n  Pick another key, or give both bindings a when condition.`
-        );
-      }
-    }
-  }
+  assertNoClash(bindings, binding, texts, combos);
 
   const entry: KeyBindingEntry = { combos, binding };
   bindings.push(entry);
@@ -229,10 +245,6 @@ export function bindKey(ctx: Pick<WorkspaceCtx, "state">, binding: KeyBinding): 
  *
  * @param target - The event target.
  * @returns Whether single keys belong to the field.
- * @example
- * ```ts
- * isEditableTarget(event.target);
- * ```
  */
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (globalThis.Element === undefined || !(target instanceof Element)) return false;
@@ -246,10 +258,6 @@ export function isEditableTarget(target: EventTarget | null): boolean {
  * @param ctx - Domain context of workspace.
  * @param event - The keydown.
  * @returns The entry, undefined when none applies.
- * @example
- * ```ts
- * findBinding(ctx, event)?.binding.run(event);
- * ```
  */
 function findBinding(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -276,10 +284,6 @@ function findBinding(
  * @param ctx - Domain context of workspace.
  * @param event - The keydown (window, capture phase).
  * @returns True when the key was handled.
- * @example
- * ```ts
- * globalThis.addEventListener("keydown", event => dispatchKey(ctx, event), true);
- * ```
  */
 export function dispatchKey(ctx: Pick<WorkspaceCtx, "state">, event: KeyboardEvent): boolean {
   if (event.key === "Escape" && unwind(ctx)) {

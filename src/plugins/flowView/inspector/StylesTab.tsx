@@ -94,10 +94,6 @@ function Field(props: {
  *
  * @param props - Context, actions and the scene of the shown node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <StylesTab ctx={ctx} actions={actions} scene="board" />
- * ```
  */
 export function StylesTab(props: StylesTabProps): VNode {
   const { ctx, actions, scene } = props;

@@ -52,10 +52,6 @@ export function round2(value: number): number {
  *
  * @param state - renderView state (`seen`, `firstFrame`).
  * @param scene - The scene just built.
- * @example
- * ```ts
- * updateTextureUse(ctx.state, scene); // ctx.state.seen.get("board.cell") → { lastSeen: 1841, unusedSince: undefined }
- * ```
  */
 export function updateTextureUse(state: RenderViewState, scene: SceneSnapshot): void {
   const { frame, referencedTextures } = scene;
@@ -77,10 +73,6 @@ export function updateTextureUse(state: RenderViewState, scene: SceneSnapshot): 
  * @param state - renderView state (`seen`, `firstFrame`).
  * @param key - The texture key.
  * @returns in-use, unused-since F, or not-seen since firstFrame.
- * @example
- * ```ts
- * textureUseOf(ctx.state, "ui.hud-pill"); // { kind: "unused-since", frame: 212 }
- * ```
  */
 function textureUseOf(state: RenderViewState, key: string): TextureUse {
   const entry = state.seen.get(key);
@@ -96,10 +88,6 @@ function textureUseOf(state: RenderViewState, key: string): TextureUse {
  *
  * @param state - renderView state.
  * @returns The rows; empty without a catalogue or without game.assets.
- * @example
- * ```ts
- * textureRowsOf(ctx.state).map(row => row.key); // ["board.board-tray", "board.cell", "ui.hud-pill"]
- * ```
  */
 export function textureRowsOf(state: RenderViewState): TextureRow[] {
   const { catalogue, assets } = state;
@@ -157,10 +145,6 @@ function sortValueOf(row: TextureRow, key: TextureSortKey): number | string {
  * @param table.sort - The sort key.
  * @param table.dir - 1 ascending, -1 descending.
  * @returns Negative, zero or positive.
- * @example
- * ```ts
- * rows.toSorted((a, b) => compareRows(a, b, { sort: "gpuMb", dir: -1 }));
- * ```
  */
 function compareRows(
   first: TextureRow,
@@ -179,10 +163,6 @@ function compareRows(
  *
  * @param state - renderView state (`table`).
  * @returns The visible rows.
- * @example
- * ```ts
- * visibleTextureRows(ctx.state)[0]?.key; // "ui.hud-pill": the largest GPU MB first
- * ```
  */
 export function visibleTextureRows(state: RenderViewState): TextureRow[] {
   const { table } = state;
@@ -220,7 +200,8 @@ export function nextSort(
  * @returns Bundle → count, in row order.
  * @example
  * ```ts
- * bundleCounts(textureRowsOf(ctx.state)); // Map { "board" => 2, "ui" => 1 }
+ * const cell = { key: "board.cell", bundle: "board", width: 224, height: 219, gpuMb: 0.19, fileMb: 0.187 };
+ * bundleCounts([{ ...cell, use: { kind: "in-use" } }]); // Map { "board" => 1 }
  * ```
  */
 export function bundleCounts(rows: readonly TextureRow[]): Map<string, number> {
@@ -235,10 +216,6 @@ export function bundleCounts(rows: readonly TextureRow[]): Map<string, number> {
  *
  * @param state - renderView state.
  * @returns The rows; empty without game.assets.
- * @example
- * ```ts
- * bundleRowsOf(ctx.state)[0]; // { name: "board", tier: "scene", mb: 4, files: 2, fileMb: 1.728, share: 1 }
- * ```
  */
 export function bundleRowsOf(state: RenderViewState): BundleRow[] {
   const { assets, catalogue } = state;
@@ -292,10 +269,6 @@ export function releasesOf(
  * @param depth - Its depth.
  * @param open - The open node ids.
  * @param rows - The rows, filled in.
- * @example
- * ```ts
- * appendRows(scene, "ui:boardScreen", 0, open, rows);
- * ```
  */
 function appendRows(
   scene: SceneSnapshot,
@@ -414,10 +387,6 @@ function drawCallsOf(render: RenderStats | undefined): MetricTiles["drawCalls"] 
  *
  * @param state - renderView state (`render`, `scene`, `effects`).
  * @returns The tile data, undefined before game.render or the scene.
- * @example
- * ```ts
- * sceneOf(ctx.state); // { entities: 104, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }
- * ```
  */
 function sceneOf(state: RenderViewState): MetricTiles["scene"] {
   const { render, scene, effects } = state;
@@ -431,39 +400,70 @@ function sceneOf(state: RenderViewState): MetricTiles["scene"] {
 }
 
 /**
+ * The FPS tile: the current fps and the lowest of the kept samples.
+ *
+ * @param render - The last game.render value.
+ * @param samples - The kept fps samples, oldest first.
+ * @returns The tile data, undefined before game.render.
+ * @example
+ * ```ts
+ * fpsTileOf({ fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 }, [58, 60]);
+ * // { now: 60, samples: [58, 60], low: 58 }
+ * ```
+ */
+function fpsTileOf(
+  render: RenderStats | undefined,
+  samples: readonly number[]
+): MetricTiles["fps"] {
+  if (render === undefined) return undefined;
+  const low = samples.length > 0 ? Math.min(...samples) : render.fps;
+  return { now: render.fps, samples: [...samples], low };
+}
+
+/**
+ * The textures tile: GPU size and count of game.render, bundles and budget of game.assets, and
+ * the textures not in use.
+ *
+ * @param render - The last game.render value.
+ * @param assets - The last game.assets value.
+ * @param rows - The loaded texture rows.
+ * @returns The tile data, undefined until both values arrived.
+ * @example
+ * ```ts
+ * texturesTileOf(render, { textureMb: 3.5, budgetMb: 192, bundles: [] }, [])?.unused; // 0
+ * ```
+ */
+function texturesTileOf(
+  render: RenderStats | undefined,
+  assets: AssetsUsage | undefined,
+  rows: readonly TextureRow[]
+): MetricTiles["textures"] {
+  if (render === undefined || assets === undefined) return undefined;
+  const unused = rows.filter(row => row.use.kind !== "in-use");
+  return {
+    gpuMb: render.textureMb,
+    count: render.textures,
+    bundles: assets.bundles.length,
+    budgetMb: assets.budgetMb,
+    unused: unused.length,
+    unusedMb: round2(unused.reduce((total, row) => total + row.gpuMb, 0))
+  };
+}
+
+/**
  * The six metric tiles from game.render, game.assets, the scene and the texture rows.
  *
  * @param state - renderView state.
  * @param rows - The loaded texture rows (for the unused count).
  * @returns The tiles; a tile without its data is undefined, heap is always absent.
- * @example
- * ```ts
- * tilesOf(ctx.state, textureRowsOf(ctx.state)).drawCalls; // { kind: "absent" }
- * ```
  */
 export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): MetricTiles {
   const { render, assets } = state;
-  const unused = rows.filter(row => row.use.kind !== "in-use");
-  const samples = [...state.fps];
-
   return {
-    fps:
-      render === undefined
-        ? undefined
-        : { now: render.fps, samples, low: samples.length > 0 ? Math.min(...samples) : render.fps },
+    fps: fpsTileOf(render, state.fps),
     frameMs: render?.frameMs,
     drawCalls: drawCallsOf(render),
-    textures:
-      render === undefined || assets === undefined
-        ? undefined
-        : {
-            gpuMb: render.textureMb,
-            count: render.textures,
-            bundles: assets.bundles.length,
-            budgetMb: assets.budgetMb,
-            unused: unused.length,
-            unusedMb: round2(unused.reduce((total, row) => total + row.gpuMb, 0))
-          },
+    textures: texturesTileOf(render, assets, rows),
     scene: sceneOf(state),
     heap: { kind: "absent" }
   };
@@ -474,10 +474,6 @@ export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): Me
  *
  * @param state - renderView state.
  * @returns The snapshot.
- * @example
- * ```ts
- * deriveSnapshot(ctx.state).tiles.heap; // { kind: "absent" }
- * ```
  */
 export function deriveSnapshot(state: RenderViewState): RenderSnapshot {
   const { render } = state;

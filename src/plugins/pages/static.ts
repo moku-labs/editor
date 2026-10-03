@@ -82,7 +82,7 @@ async function realInside(rootReal: string, relativePath: string): Promise<strin
  * @returns A function that resolves the real root.
  * @example
  * ```ts
- * const rootReal = await realRoot(root)();
+ * await realRoot("/tmp")(); // "/private/tmp" on macOS
  * ```
  */
 function realRoot(root: string): () => Promise<string | undefined> {

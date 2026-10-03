@@ -49,7 +49,17 @@ export type GameViewConfig = {
   seriesIntervalsMs: readonly number[];
   /** Above this many planned shots the popover warns. */
   seriesWarnShots: number;
-  /** Source search for the style block of a picked element. */
+  /**
+   * Source search for the style block of a picked element. Config merges shallowly, so an
+   * override replaces this object as a whole: pass both fields.
+   *
+   * @example
+   * ```ts
+   * createApp({
+   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 800, skip: ["node_modules", "dist", ".git", ".moku"] } } }
+   * });
+   * ```
+   */
   sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
 };
 
@@ -317,6 +327,7 @@ export type GameViewApi = {
    *
    * @param ref - The element.
    * @returns Its rect in page CSS px, undefined when it is unknown or could not be placed.
+   * @throws {Error} What `scene()` throws: the link's WireError, or a wrong game.ui shape.
    * @example
    * ```ts
    * // The first board item of merge-game at board/awaitIntent.

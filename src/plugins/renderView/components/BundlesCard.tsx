@@ -18,10 +18,6 @@ export type BundlesCardProps = {
  *
  * @param props - The bundle rows and game.assets.
  * @returns The card.
- * @example
- * ```tsx
- * <BundlesCard rows={snapshot.bundles} assets={ctx.state.assets} />
- * ```
  */
 export function BundlesCard(props: BundlesCardProps): JSX.Element {
   const { rows, assets } = props;

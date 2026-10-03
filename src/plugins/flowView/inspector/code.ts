@@ -20,10 +20,6 @@ export const CHANGED_ON_DISK = "! The file changed on disk";
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns The lookup.
- * @example
- * ```ts
- * const lookup = await lookupOf(ctx, env);
- * ```
  */
 export async function lookupOf(ctx: FlowCtx, env: FlowEnvironment): Promise<SourceLookup> {
   ctx.state.inspector.sources ??= await loadSourceLookup(env.files(), ctx.log);
@@ -38,10 +34,6 @@ export async function lookupOf(ctx: FlowCtx, env: FlowEnvironment): Promise<Sour
  * @param id - The node id.
  * @param isCurrent - False once a newer request started (its result is dropped).
  * @returns Resolves when the tab shows the file or a placeholder.
- * @example
- * ```ts
- * await openCode(ctx, env, "board/merge", () => true);
- * ```
  */
 export async function openCode(
   ctx: FlowCtx,
@@ -92,10 +84,6 @@ export async function openCode(
  * @param env - Services and actions.
  * @param force - "Save anyway": re-read the version first.
  * @returns Resolves when the result line is set.
- * @example
- * ```ts
- * await saveCode(ctx, env, false);
- * ```
  */
 export async function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolean): Promise<void> {
   const code = ctx.state.inspector.code;
@@ -153,10 +141,6 @@ export async function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolea
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns Resolves when the tab shows the fresh text.
- * @example
- * ```ts
- * await reloadCode(ctx, env);
- * ```
  */
 export async function reloadCode(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
   const code = ctx.state.inspector.code;

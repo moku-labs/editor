@@ -65,10 +65,6 @@ export function highlight(label: string, match: PaletteMatch | undefined): (stri
  * @param ctx - Domain context of workspace.
  * @param event - The keydown in the input.
  * @param shown - The shown items.
- * @example
- * ```ts
- * onKey(ctx, event, flat);
- * ```
  */
 function onKey(ctx: WorkspaceCtx, event: KeyboardEvent, shown: readonly ShownItem[]): void {
   const { palette } = ctx.state;
@@ -102,10 +98,6 @@ function onKey(ctx: WorkspaceCtx, event: KeyboardEvent, shown: readonly ShownIte
  * @param props.index - Its index in the shown list.
  * @param props.active - Whether it is the active option.
  * @returns The option.
- * @example
- * ```tsx
- * <Option ctx={ctx} entry={entry} index={0} active />
- * ```
  */
 function Option(props: {
   readonly ctx: WorkspaceCtx;
@@ -148,10 +140,6 @@ function Option(props: {
  *
  * @param props - The workspace domain context.
  * @returns The dialog.
- * @example
- * ```tsx
- * <Palette ctx={ctx} />
- * ```
  */
 export function Palette(props: PaletteProps): VNode {
   const { ctx } = props;

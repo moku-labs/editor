@@ -45,10 +45,6 @@ function rectStyle(rect: PageRect): Record<string, string> {
  * @param props.scale - The frame scale.
  * @param props.device - The device size.
  * @returns The box and the label.
- * @example
- * ```tsx
- * <HoverBox node={node} rect={node.rect} scale={0.5} device={size} />
- * ```
  */
 function HoverBox(props: {
   readonly node: SceneNode;
@@ -121,10 +117,6 @@ function SafeGuides(props: {
  *
  * @param props - The gameView domain context.
  * @returns The overlay content.
- * @example
- * ```tsx
- * render(<OverlayRoot ctx={ctx} />, root);
- * ```
  */
 export function OverlayRoot(props: OverlayRootProps): VNode {
   const { ctx } = props;
@@ -173,10 +165,6 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
  *
  * @param ctx - Domain context of gameView.
  * @returns The root element, undefined without a DOM.
- * @example
- * ```ts
- * ensureOverlayRoot(ctx)?.dataset.game; // "overlay"
- * ```
  */
 export function ensureOverlayRoot(ctx: GameViewCtx): HTMLElement | undefined {
   const { state } = ctx;

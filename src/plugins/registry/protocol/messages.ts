@@ -269,7 +269,7 @@ export function encode(message: Message): string {
  * @throws {Error} A ProtocolError -32600 naming what is wrong; it cannot be answered.
  * @example
  * ```ts
- * const message = decode(event.data);
+ * decode('{"jsonrpc":"2.0","channel":"game","method":"bye"}'); // { jsonrpc: "2.0", channel: "game", method: "bye" }
  * ```
  */
 export function decode(text: string): Message {
@@ -328,7 +328,7 @@ export function request(
  * @returns The notification.
  * @example
  * ```ts
- * notification("game", "bye");
+ * notification("game", "bye"); // { jsonrpc: "2.0", channel: "game", method: "bye" }
  * ```
  */
 export function notification(
@@ -353,7 +353,7 @@ export function notification(
  * @returns The response.
  * @example
  * ```ts
- * success(7, null);
+ * success(7, null); // { jsonrpc: "2.0", id: 7, result: null }
  * ```
  */
 export function success(id: number, result: Json): Response {

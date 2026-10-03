@@ -9,11 +9,6 @@ import type { BridgeConfig, BridgeState } from "./types";
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
  * @returns A fresh state with its own maps and remover list.
- * @example
- * ```ts
- * const state = createBridgeState({ config });
- * state.phase; // "idle"
- * ```
  */
 export function createBridgeState(_ctx: { readonly config: Readonly<BridgeConfig> }): BridgeState {
   return {

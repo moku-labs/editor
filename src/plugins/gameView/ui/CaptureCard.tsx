@@ -22,10 +22,6 @@ export type CaptureCardProps = { readonly ctx: GameViewCtx; readonly node: strin
  *
  * @param props - The context and the node of the watched position.
  * @returns The card, undefined without a capture.
- * @example
- * ```tsx
- * <CaptureCard ctx={ctx} node="board/awaitIntent" />
- * ```
  */
 export function CaptureCard(props: CaptureCardProps): VNode | undefined {
   const { ctx, node } = props;

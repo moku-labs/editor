@@ -58,10 +58,6 @@ function manifestOf(params: Json | undefined): Manifest | undefined {
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
  * @param message - The decoded message.
- * @example
- * ```ts
- * if (conn.session === undefined) onHello(ctx, conn, message);
- * ```
  */
 function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
   if (
@@ -95,10 +91,6 @@ function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
  * @param conn - The agent connection.
  * @param session - Its session.
  * @param note - The heartbeat notification.
- * @example
- * ```ts
- * onHeartbeat(ctx, conn, session, note);
- * ```
  */
 function onHeartbeat(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
   const beat = readHeartbeat(note.params);
@@ -120,10 +112,6 @@ function onHeartbeat(ctx: HubCtx, conn: AgentConn, session: Session, note: Notif
  * @param conn - The agent connection.
  * @param session - Its session.
  * @param note - The value notification.
- * @example
- * ```ts
- * onValue(ctx, conn, session, note);
- * ```
  */
 function onValue(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
   const { params } = note;
@@ -145,10 +133,6 @@ function onValue(ctx: HubCtx, conn: AgentConn, session: Session, note: Notificat
  * @param conn - The agent connection.
  * @param session - Its session.
  * @param note - The notification.
- * @example
- * ```ts
- * onNotification(ctx, conn, session, note);
- * ```
  */
 function onNotification(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
   switch (note.channel === "game" ? note.method : "") {
@@ -180,10 +164,6 @@ function onNotification(ctx: HubCtx, conn: AgentConn, session: Session, note: No
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
  * @param message - The decoded message.
- * @example
- * ```ts
- * onAgentMessage(ctx, conn, decode(text));
- * ```
  */
 export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): void {
   if (conn.session === undefined) {
@@ -213,10 +193,6 @@ export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): 
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
- * @example
- * ```ts
- * onAgentClose(ctx, conn);
- * ```
  */
 export function onAgentClose(ctx: HubCtx, conn: AgentConn): void {
   if (conn.session === undefined) return;

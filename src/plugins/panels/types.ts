@@ -147,18 +147,67 @@ export type PanelsState = {
  *
  * @example
  * ```ts
- * panels.register(flowPanel);
- * await panels.run("game.step", { frames: 1 });
+ * // A view registers its panel at init, then runs commands from its handlers.
+ * ctx.require(panelsPlugin).register(createFlowPanel(ctx));
+ * await ctx.require(panelsPlugin).run("game.step", { frames: 1 });
  * ```
  */
 export type PanelsApi = {
-  /** Registers a panel built with definePanel; throws on a duplicate id. */
+  /**
+   * Registers a panel built with definePanel. After start, a panel of an already mounted
+   * workspace is mounted at once and gets a palette item (group Panels).
+   *
+   * @param panel - The PanelSpec.
+   * @throws {Error} `[moku-editor] Panel "<id>" is already registered.` for a duplicate id.
+   * @example
+   * ```ts
+   * // flowView registers its panel when it starts.
+   * ctx.require(panelsPlugin).register(createFlowPanel(ctx));
+   * ```
+   */
   register(panel: PanelSpec): void;
-  /** Runs a command outside any render: link.run, then workspace:ran with the origin (R9). */
+
+  /**
+   * Runs a registry command outside any render (R9): link.run, then the global `workspace:ran`
+   * with the origin. A rejection emits `workspace:ran` with `ok: false` and still rejects.
+   *
+   * @param id - Command id.
+   * @param input - Command input.
+   * @param origin - Where the run started; default "panel".
+   * @returns The RunResult; rejects like link.run.
+   * @example
+   * ```ts
+   * await app.panels.run("game.step", { frames: 1 });
+   * // { value: null, state: { path: "board/awaitIntent", frame: 1841, tainted: false } }
+   * ```
+   */
   run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>;
-  /** Every registered panel, in registration order. */
+
+  /**
+   * Every registered panel, in registration order.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // After flowView and stateView registered their panels.
+   * app.panels.list().map(panel => panel.id); // ["flow", "state"]
+   * ```
+   */
   list(): readonly PanelSpec[];
-  /** Mounts every panel of a workspace into an element; returns the unmount function. */
+
+  /**
+   * Mounts every panel of a workspace into an element, one `<section data-panel>` each, in
+   * registration order. Idempotent for the same element; another element moves the mount.
+   *
+   * @param ws - The workspace.
+   * @param element - The element, usually `workspace.host(ws)`.
+   * @returns The unmount function: removes every section and unwatches.
+   * @example
+   * ```ts
+   * const unmount = app.panels.mountInto("flow", app.workspace.host("flow"));
+   * unmount(); // the sections are gone
+   * ```
+   */
   mountInto(ws: WorkspaceId, element: HTMLElement): () => void;
 };
 

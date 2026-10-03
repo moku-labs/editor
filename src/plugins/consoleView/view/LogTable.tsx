@@ -11,11 +11,6 @@ import type { ConsoleApi, ConsoleCtx, FrameMark, LogLine } from "../types";
 
 /**
  * Props of `LogTable`.
- *
- * @example
- * ```tsx
- * const props: LogTableProps = { ctx, api, lines: api.visible(), query: "", selected: undefined };
- * ```
  */
 export type LogTableProps = {
   readonly ctx: ConsoleCtx;
@@ -59,10 +54,6 @@ const COLUMNS = ["Frame", "Level", "Source", "Message"] as const;
  * @param props.frame - The frame mark.
  * @param props.tabbable - True on the selected row and in the drawer.
  * @returns The button.
- * @example
- * ```tsx
- * <FrameLink api={api} frame={{ value: 1778, exact: true }} tabbable /> // "1778"
- * ```
  */
 export function FrameLink(props: {
   readonly api: ConsoleApi;
@@ -126,10 +117,6 @@ function Hits(props: { readonly text: string; readonly query: string }): VNode {
  * @param props.selected - Whether the drawer shows it.
  * @param props.freshMs - How long a fresh error is highlighted.
  * @returns The row.
- * @example
- * ```tsx
- * <Row line={line} index={0} api={api} query="" selected={false} freshMs={1200} />
- * ```
  */
 function Row(props: {
   readonly line: LogLine;
@@ -185,10 +172,6 @@ function Row(props: {
  *
  * @param target - The event target.
  * @returns The line key, or undefined outside a line row.
- * @example
- * ```ts
- * rowKeyOf(cell); // 5 for a cell of the row data-key="5"
- * ```
  */
 function rowKeyOf(target: EventTarget | null): number | undefined {
   if (!(target instanceof Element)) return undefined;
@@ -218,10 +201,6 @@ function nextIndex(current: number, step: 1 | -1, count: number): number {
  *
  * @param element - The scroller element.
  * @param index - The row index.
- * @example
- * ```ts
- * revealRow(scroller, 40); // scroller.scrollTop moves so row 40 shows
- * ```
  */
 function revealRow(element: HTMLElement, index: number): void {
   const top = index * ROW;
@@ -237,10 +216,6 @@ function revealRow(element: HTMLElement, index: number): void {
  *
  * @param element - The scroller.
  * @returns True when new lines should keep it at the bottom.
- * @example
- * ```ts
- * isAtBottom(scroller); // true right after mount
- * ```
  */
 function isAtBottom(element: HTMLElement): boolean {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= BOTTOM_SLACK;
@@ -251,10 +226,6 @@ function isAtBottom(element: HTMLElement): boolean {
  *
  * @param api - The console api.
  * @param target - The click target.
- * @example
- * ```ts
- * selectRow(api, cell); // api.selected()?.key === 5 for a cell of row 5
- * ```
  */
 function selectRow(api: ConsoleApi, target: EventTarget | null): void {
   const key = rowKeyOf(target);
@@ -271,10 +242,6 @@ function selectRow(api: ConsoleApi, target: EventTarget | null): void {
  * @param grid.lines - The visible lines.
  * @param grid.selected - The selected key.
  * @param grid.scroller - The scroller, once mounted.
- * @example
- * ```ts
- * onGridKey(arrowDown, { api, lines, selected: 5, scroller }); // api.selected()?.key === 6
- * ```
  */
 function onGridKey(
   event: JSX.TargetedKeyboardEvent<HTMLTableElement>,
@@ -307,10 +274,6 @@ function onGridKey(
  *
  * @param props - The ctx, the api, the visible lines, the query and the selected key.
  * @returns The table element.
- * @example
- * ```tsx
- * <LogTable ctx={ctx} api={api} lines={api.visible()} query="" selected={undefined} />
- * ```
  */
 export function LogTable(props: LogTableProps): VNode {
   const { ctx, api, lines, query, selected } = props;

@@ -117,7 +117,7 @@ describe("typing spike (S1)", () => {
     const { app } = createGame();
     const input: InputOf<InputSchema> = {};
 
-    expect(readErased(app, sources.position, input)).toMatchObject({ path: expect.any(String) });
+    expect(readErased(app, sources.position, input)).toEqual(read(app, sources.position));
     const stop = watchErased(app, sources.position, input, () => undefined);
     stop();
     await expect(runErased(app, commands.step, { frames: 1 })).rejects.toThrow(/dev builds only/);

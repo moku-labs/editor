@@ -94,10 +94,6 @@ export function formatIndex(index: SeriesIndex): string {
  * @param ctx - Domain context of gameView.
  * @param open - The wanted state.
  * @returns True when the state changed.
- * @example
- * ```ts
- * workspace.keys.escape("seriesPopover", () => setPopover(ctx, false));
- * ```
  */
 export function setPopover(ctx: Pick<GameViewCtx, "state">, open: boolean): boolean {
   const { series } = ctx.state;
@@ -105,6 +101,85 @@ export function setPopover(ctx: Pick<GameViewCtx, "state">, open: boolean): bool
   series.popover = open;
   notify(ctx.state);
   return true;
+}
+
+/** Toast when a series is asked for while another one records. */
+const BUSY_TEXT = "A series is already recording.";
+
+/** Label of a series when neither the caller nor the flow position names it. */
+const DEFAULT_LABEL = "series";
+
+/**
+ * The shots written so far and the first write failure, if any.
+ */
+type WrittenShots = {
+  readonly shots: SeriesShot[];
+  readonly images: string[];
+  readonly failure: unknown;
+};
+
+/**
+ * Writes the PNGs in order and counts them on the recording; stops at the first failed write.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param recording - The recording.
+ * @param value - The editor.series value.
+ * @returns The written shots, their images and the failure.
+ */
+async function writeShots(
+  ctx: GameViewCtx,
+  recording: Recording,
+  value: SeriesValue
+): Promise<WrittenShots> {
+  const { state } = ctx;
+  const link = ctx.require(linkPlugin);
+  const shots: SeriesShot[] = [];
+  const images: string[] = [];
+  for (const [index, shot] of value.shots.entries()) {
+    const file = shotName(index, value.shots.length);
+    try {
+      await link.files.writeBinary(`${recording.folder}${file}`, shot.image);
+    } catch (error) {
+      return { shots, images, failure: error };
+    }
+    shots.push({ file, frame: shot.frame, atMs: shot.atMs, bug: false });
+    images.push(shot.image);
+    recording.written = shots.length;
+    notify(state);
+  }
+  return { shots, images, failure: undefined };
+}
+
+/**
+ * The index.json of a series. A series stopped by the user or by a failed write keeps its real
+ * length and is marked stoppedEarly.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param recording - The recording.
+ * @param value - The editor.series value.
+ * @param written - The written shots.
+ * @param elapsedMs - Tools-side length of the call.
+ * @returns The index.
+ */
+function seriesIndex(
+  ctx: GameViewCtx,
+  recording: Recording,
+  value: SeriesValue,
+  written: WrittenShots,
+  elapsedMs: number
+): SeriesIndex {
+  const { shots } = written;
+  const stoppedEarly = recording.stopRequested || written.failure !== undefined;
+  const index: SeriesIndex = {
+    label: recording.label,
+    durationMs: stoppedEarly ? elapsedMs : recording.durationMs,
+    intervalMs: recording.intervalMs,
+    fromFrame: shots[0]?.frame ?? 0,
+    shots,
+    device: { name: ctx.require(workspacePlugin).device().preset.name, ...value.device }
+  };
+  if (stoppedEarly) index.stoppedEarly = true;
+  return index;
 }
 
 /**
@@ -115,10 +190,6 @@ export function setPopover(ctx: Pick<GameViewCtx, "state">, open: boolean): bool
  * @param value - The editor.series value.
  * @param elapsedMs - Tools-side length of the call.
  * @returns The written series.
- * @example
- * ```ts
- * await writeSeries(ctx, recording, value, 2004); // { folder, indexPath, shots: 20 }
- * ```
  */
 async function writeSeries(
   ctx: GameViewCtx,
@@ -132,53 +203,75 @@ async function writeSeries(
   recording.phase = "writing";
   notify(state);
 
-  const shots: SeriesShot[] = [];
-  const images: string[] = [];
-  let failure: unknown;
-  for (const [index, shot] of value.shots.entries()) {
-    const file = shotName(index, value.shots.length);
-    try {
-      await link.files.writeBinary(`${recording.folder}${file}`, shot.image);
-    } catch (error) {
-      failure = error;
-      break;
-    }
-    shots.push({ file, frame: shot.frame, atMs: shot.atMs, bug: false });
-    images.push(shot.image);
-    recording.written = shots.length;
-    notify(state);
-  }
-
-  const stopped = recording.stopRequested || failure !== undefined;
-  const index: SeriesIndex = {
-    label: recording.label,
-    durationMs: stopped ? elapsedMs : recording.durationMs,
-    intervalMs: recording.intervalMs,
-    fromFrame: shots[0]?.frame ?? 0,
-    shots,
-    device: { name: workspace.device().preset.name, ...value.device }
-  };
-  if (stopped) index.stoppedEarly = true;
-
+  // The PNGs first, then the index that lists the ones that made it.
+  const written = await writeShots(ctx, recording, value);
+  const index = seriesIndex(ctx, recording, value, written, elapsedMs);
   const indexPath = `${recording.folder}index.json`;
+  let failure = written.failure;
   let version: string | undefined;
   try {
-    const written = await link.files.write(indexPath, formatIndex(index));
-    version = written.version;
+    const saved = await link.files.write(indexPath, formatIndex(index));
+    version = saved.version;
   } catch (error) {
     failure ??= error;
   }
 
+  // Tell the user, then swap the recording for the contact sheet.
   if (failure === undefined) {
-    workspace.toast(`✓ ${shots.length} shots saved`, recording.folder);
+    workspace.toast(`✓ ${written.shots.length} shots saved`, recording.folder);
   } else {
     reportFailure(ctx, "Series not fully saved", "gameView: series write failed", failure);
   }
   state.series.recording = undefined;
   state.series.popover = false;
-  state.series.sheet = { indexPath, index, images, version, big: undefined };
+  state.series.sheet = { indexPath, index, images: written.images, version, big: undefined };
   notify(state);
-  return { folder: recording.folder, indexPath, shots: shots.length };
+  return { folder: recording.folder, indexPath, shots: written.shots.length };
+}
+
+/**
+ * Toasts and refuses when a series already records.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns True when another series records.
+ */
+function refuseWhileRecording(ctx: GameViewCtx): boolean {
+  if (ctx.state.series.recording === undefined) return false;
+  ctx.require(workspacePlugin).toast(BUSY_TEXT);
+  return true;
+}
+
+/**
+ * Runs editor.series through panels and reads its value; on failure clears the recording and
+ * toasts.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param options - Length and spacing.
+ * @returns The value, undefined when the call failed.
+ */
+async function runSeries(
+  ctx: GameViewCtx,
+  options: SeriesOptions
+): Promise<SeriesValue | undefined> {
+  const { state } = ctx;
+  const { durationMs, intervalMs } = options;
+  try {
+    const ran = await ctx
+      .require(panelsPlugin)
+      .run(GAME_COMMANDS.series, { durationMs, intervalMs });
+    const value = seriesValueOf(ran.value);
+    if (value === undefined) {
+      throw new Error(
+        "[moku-editor] editor.series returned no shots.\n  Update the game's capturePlugin."
+      );
+    }
+    return value;
+  } catch (error) {
+    state.series.recording = undefined;
+    notify(state);
+    reportFailure(ctx, "Series failed", "gameView: series failed", error);
+    return undefined;
+  }
 }
 
 /**
@@ -187,10 +280,6 @@ async function writeSeries(
  * @param ctx - Domain context of gameView.
  * @param options - Length, spacing and an optional label.
  * @returns The written series, undefined when refused or failed (toasted).
- * @example
- * ```ts
- * await recordSeries(ctx, { durationMs: 200, intervalMs: 50 }); // { folder: ".moku/captures/series-2026-09-24-1015/", …, shots: 4 }
- * ```
  */
 export async function recordSeries(
   ctx: GameViewCtx,
@@ -198,28 +287,22 @@ export async function recordSeries(
 ): Promise<SeriesResult | undefined> {
   const { state, config } = ctx;
   const workspace = ctx.require(workspacePlugin);
-  const busy = "A series is already recording.";
-  if (state.series.recording !== undefined) {
-    workspace.toast(busy);
-    return undefined;
-  }
+  if (refuseWhileRecording(ctx)) return undefined;
   if (!gameReady(ctx.require(linkPlugin), GAME_COMMANDS.series)) {
     workspace.toast(NO_GAME_TEXT);
     return undefined;
   }
 
+  // Name the folder; another series may have started while the position and the list loaded.
   workspace.show("game");
   const position = await currentPosition(ctx);
   const taken = await listTaken(ctx, config.capturesDir);
-  if (state.series.recording !== undefined) {
-    workspace.toast(busy);
-    return undefined;
-  }
+  if (refuseWhileRecording(ctx)) return undefined;
 
   const { durationMs, intervalMs } = options;
   const recording: Recording = {
     folder: seriesFolder(config.capturesDir, stamp(new Date()), taken),
-    label: options.label ?? position.path ?? "series",
+    label: options.label ?? position.path ?? DEFAULT_LABEL,
     startedAt: performance.now(),
     durationMs,
     intervalMs,
@@ -233,23 +316,8 @@ export async function recordSeries(
   state.series.intervalMs = intervalMs;
   notify(state);
 
-  let value: SeriesValue | undefined;
-  try {
-    const ran = await ctx
-      .require(panelsPlugin)
-      .run(GAME_COMMANDS.series, { durationMs, intervalMs });
-    value = seriesValueOf(ran.value);
-    if (value === undefined) {
-      throw new Error(
-        "[moku-editor] editor.series returned no shots.\n  Update the game's capturePlugin."
-      );
-    }
-  } catch (error) {
-    state.series.recording = undefined;
-    notify(state);
-    reportFailure(ctx, "Series failed", "gameView: series failed", error);
-    return undefined;
-  }
+  const value = await runSeries(ctx, options);
+  if (value === undefined) return undefined;
   return writeSeries(ctx, recording, value, Math.round(performance.now() - recording.startedAt));
 }
 
@@ -258,10 +326,6 @@ export async function recordSeries(
  * (R2, R9). The pending editor.series call then resolves with the shots taken so far.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * stopRecording(ctx); // panels.run("editor.seriesStop")
- * ```
  */
 export function stopRecording(ctx: GameViewCtx): void {
   const { recording } = ctx.state.series;

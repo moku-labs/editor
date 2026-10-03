@@ -10,10 +10,6 @@ import type { RenderViewConfig, RenderViewState } from "./types";
  * @param _ctx - Minimal context (the config shapes nothing here yet).
  * @param _ctx.config - Resolved plugin config.
  * @returns The fresh state.
- * @example
- * ```ts
- * createRenderViewState({ config }).table; // { sort: "gpuMb", dir: -1, bundle: "all", hover: undefined }
- * ```
  */
 export function createRenderViewState(_ctx: {
   readonly config: Readonly<RenderViewConfig>;
@@ -53,11 +49,6 @@ export function createRenderViewState(_ctx: {
  * Calls every UI listener.
  *
  * @param state - renderView state.
- * @example
- * ```ts
- * ctx.state.fps.push(60);
- * notify(ctx.state); // the mounted Render workspace re-renders
- * ```
  */
 export function notify(state: RenderViewState): void {
   for (const listener of state.listeners) listener();
@@ -69,10 +60,6 @@ export function notify(state: RenderViewState): void {
  * @param state - renderView state.
  * @param fn - The listener.
  * @returns The remover.
- * @example
- * ```ts
- * useLayoutEffect(() => subscribe(ctx.state, () => setVersion(version => version + 1)), []);
- * ```
  */
 export function subscribe(state: RenderViewState, fn: () => void): () => void {
   state.listeners.add(fn);

@@ -55,10 +55,6 @@ function isPositive(value: number): boolean {
  *
  * @param config - The resolved config.
  * @throws {Error} `[moku-editor] workspace.<field> is invalid.\n  <fix>.`
- * @example
- * ```ts
- * validateConfig(ctx.config);
- * ```
  */
 export function validateConfig(config: Readonly<WorkspaceConfig>): void {
   if (!isWorkspaceId(config.defaultWorkspace)) {
@@ -81,10 +77,6 @@ export function validateConfig(config: Readonly<WorkspaceConfig>): void {
  *
  * @param ctx - Domain context of workspace.
  * @throws {Error} `[moku-editor] workspace.<field> is invalid.`
- * @example
- * ```ts
- * createToolsPlugin("workspace", { onInit: initWorkspace });
- * ```
  */
 export function initWorkspace(ctx: WorkspaceCtx): void {
   validateConfig(ctx.config);
@@ -110,10 +102,6 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
  * @param type - The event type.
  * @param listener - The listener.
  * @param capture - Capture phase.
- * @example
- * ```ts
- * listen(state, globalThis, "resize", onResize, false);
- * ```
  */
 function listen(
   state: WorkspaceState,
@@ -134,15 +122,12 @@ function listen(
  * `link.onManifest` (palette counts, everLive, overlay re-apply). No shell mount here (R3).
  *
  * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * createToolsPlugin("workspace", { onStart: startWorkspace });
- * ```
  */
 export function startWorkspace(ctx: WorkspaceCtx): void {
   const { state } = ctx;
   const window = typeof globalThis.addEventListener === "function" ? globalThis : undefined;
 
+  // Keys: one capture-phase listener dispatches every binding and Esc.
   listen(
     state,
     window,
@@ -152,6 +137,8 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
     },
     true
   );
+
+  // Layout: a resize re-renders the shell and re-places the frame; any scroll re-places it.
   listen(
     state,
     window,
@@ -163,10 +150,14 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
     false
   );
   listen(state, globalThis.document, "scroll", () => syncFrame(ctx), true);
+
+  // Theme: follow the OS theme as it changes.
   trackCleanup(
     state,
     watchOsTheme(theme => osThemeChanged(ctx, theme))
   );
+
+  // Manifest: everLive, the overlay flag and the palette counts follow the attached game.
   trackCleanup(
     state,
     ctx.require(linkPlugin).onManifest(manifest => {
@@ -184,10 +175,6 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("workspace", { onStop: stopWorkspace });
- * ```
  */
 export function stopWorkspace(ctx: { readonly state: WorkspaceState }): void {
   const { state } = ctx;

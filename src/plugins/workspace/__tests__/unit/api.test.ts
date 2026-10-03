@@ -231,7 +231,7 @@ describe("gameFrame / previewZone", () => {
     expect(api.gameFrame()).toBe(frame);
     expect(frame.url).toBe(new URL("/game/", location.href).href);
     expect(frame.box()).toBeUndefined();
-    expect(frame.overlay().dataset.frameOverlay).toBeDefined();
+    expect(frame.overlay().dataset.frameOverlay).toBe("");
     await expect(frame.reload()).resolves.toEqual({ restored: false, reason: "not_mounted" });
   });
 

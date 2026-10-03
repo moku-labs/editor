@@ -12,24 +12,14 @@ import { refreshRenderView } from "./watch";
  *
  * @param ctx - Domain context of renderView.
  * @returns The api.
- * @example
- * ```ts
- * createToolsPlugin("renderView", { api: createRenderViewApi });
- * ```
  */
 export function createRenderViewApi(ctx: RenderViewCtx): RenderViewApi {
   return {
-    /** @inheritDoc */
     refresh: () => refreshRenderView(ctx),
-    /** @inheritDoc */
     snapshot: () => deriveSnapshot(ctx.state),
-    /** @inheritDoc */
     reveal: ref => revealRef(ctx, ref),
-    /** @inheritDoc */
     highlight: ref => highlightRef(ctx, ref),
-    /** @inheritDoc */
     sortTextures: key => sortBy(ctx, key),
-    /** @inheritDoc */
     filterBundle: bundle => filterTo(ctx, bundle)
   };
 }

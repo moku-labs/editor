@@ -116,7 +116,7 @@ export default [
         "error",
         {
           require: {
-            ArrowFunctionExpression: true,
+            ArrowFunctionExpression: false,
             ClassDeclaration: true,
             FunctionDeclaration: true,
             FunctionExpression: true,
@@ -130,9 +130,40 @@ export default [
       "jsdoc/require-param-description": "error",
       "jsdoc/require-returns": "error",
       "jsdoc/require-returns-description": "error",
-      "jsdoc/require-example": "error",
+      // An example is required only where a consumer reads it: see block 6a. A required example on
+      // a private function becomes a copy of its signature.
+      "jsdoc/require-example": "off",
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "unicorn/require-module-specifiers": "off"
+    }
+  },
+
+  // 6a. The public contract carries the docs and a scenario example. A consumer reads the members
+  // of the `…Api` types, never the implementation, so every member needs JSDoc and an example.
+  {
+    files: ["src/**/types.ts"],
+    rules: {
+      "jsdoc/require-jsdoc": [
+        "error",
+        {
+          require: { FunctionDeclaration: true, ClassDeclaration: true, MethodDefinition: true },
+          contexts: [
+            "TSInterfaceDeclaration",
+            "TSTypeAliasDeclaration",
+            "TSTypeAliasDeclaration[id.name=/Api$/] > TSTypeLiteral > :matches(TSMethodSignature, TSPropertySignature)",
+            "TSInterfaceDeclaration[id.name=/Api$/] > TSInterfaceBody > :matches(TSMethodSignature, TSPropertySignature)"
+          ]
+        }
+      ],
+      "jsdoc/require-example": [
+        "error",
+        {
+          contexts: [
+            "TSTypeAliasDeclaration[id.name=/Api$/] > TSTypeLiteral > :matches(TSMethodSignature, TSPropertySignature)",
+            "TSInterfaceDeclaration[id.name=/Api$/] > TSInterfaceBody > :matches(TSMethodSignature, TSPropertySignature)"
+          ]
+        }
+      ]
     }
   },
 

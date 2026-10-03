@@ -53,10 +53,6 @@ export type BundleChipProps = {
  *
  * @param props - ctx, the bundle and its label.
  * @returns The chip.
- * @example
- * ```tsx
- * <BundleChip ctx={ctx} bundle="board" label="board 2" />
- * ```
  */
 export function BundleChip(props: BundleChipProps): JSX.Element {
   const { ctx, bundle, label } = props;
@@ -79,10 +75,6 @@ export function BundleChip(props: BundleChipProps): JSX.Element {
  *
  * @param ctx - Domain context of renderView.
  * @returns The line, or undefined when there are rows to show.
- * @example
- * ```ts
- * emptyLine(ctx); // "No asset manifest found at manifest.json, ... (follow-up F-R2)"
- * ```
  */
 function emptyLine(ctx: RenderViewCtx): string | undefined {
   const { catalogue, assets } = ctx.state;
@@ -100,10 +92,6 @@ function emptyLine(ctx: RenderViewCtx): string | undefined {
  *
  * @param props - ctx and the visible rows.
  * @returns The card.
- * @example
- * ```tsx
- * <TexturesCard ctx={ctx} rows={snapshot.textures} />
- * ```
  */
 export function TexturesCard(props: TexturesCardProps): JSX.Element {
   const { ctx, rows } = props;

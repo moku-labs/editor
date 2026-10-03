@@ -45,10 +45,6 @@ export const browserClock: CaptureClock = {
    * @param ms - Milliseconds to wait.
    * @param run - The running series.
    * @returns A promise that resolves after `ms`, or at once on a stop.
-   * @example
-   * ```ts
-   * await browserClock.wait(100, run);
-   * ```
    */
   wait(ms: number, run: SeriesRun): Promise<void> {
     if (run.stopRequested) return Promise.resolve();
@@ -56,11 +52,6 @@ export const browserClock: CaptureClock = {
     return new Promise<void>(resolve => {
       /**
        * Ends the wait: clears the timer, forgets the resolver and resolves.
-       *
-       * @example
-       * ```ts
-       * run.wake?.(); // the series loop goes on at once
-       * ```
        */
       const finish = (): void => {
         clearTimeout(run.timer);
@@ -166,10 +157,6 @@ type Collected = { readonly shots: SeriesShot[]; state: RunState | undefined; sk
  * @param collected - The collection so far.
  * @param atMs - When the shot started, in ms since the series start.
  * @returns A promise that resolves once the shot is collected or skipped.
- * @example
- * ```ts
- * await collectShot(registry, collected, 100);
- * ```
  */
 async function collectShot(
   registry: CaptureRegistry,
@@ -193,10 +180,6 @@ async function collectShot(
  * @param clock - The clock.
  * @param run - The running series.
  * @returns What the series collected.
- * @example
- * ```ts
- * const collected = await loop(plan, registry, clock, run);
- * ```
  */
 async function loop(
   plan: SeriesPlan,
@@ -230,10 +213,6 @@ async function loop(
  * @param registry - The registry slice (game.capture entry).
  * @param deps - Config, state, log and clock.
  * @returns The shots, the state of the last good shot and the skipped count.
- * @example
- * ```ts
- * const { shots } = await recordSeries(plan, registry, deps);
- * ```
  */
 export async function recordSeries(
   plan: SeriesPlan,
@@ -260,10 +239,6 @@ export async function recordSeries(
  *
  * @param state - The capture state.
  * @returns True when a series was running.
- * @example
- * ```ts
- * stopSeries(ctx.state); // false when idle
- * ```
  */
 export function stopSeries(state: CaptureState): boolean {
   const run = state.series;

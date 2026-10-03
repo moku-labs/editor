@@ -22,7 +22,7 @@ import {
 } from "../element/select";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
 import { readManifest } from "../scene/manifest";
-import type { GameViewCtx, StyleCard } from "../types";
+import type { GameViewCtx, StyleCard, StyleLookup } from "../types";
 import { useGameView } from "./useGameView";
 
 /**
@@ -51,10 +51,6 @@ function styleValue(value: Json): string {
  * @param props.ctx - Domain context of gameView.
  * @param props.node - The node.
  * @returns The chip button.
- * @example
- * ```tsx
- * <NodeChip ctx={ctx} node={parent} />
- * ```
  */
 function NodeChip(props: { readonly ctx: GameViewCtx; readonly node: SceneNode }): VNode {
   const { ctx, node } = props;
@@ -81,10 +77,6 @@ function NodeChip(props: { readonly ctx: GameViewCtx; readonly node: SceneNode }
  * @param props.card - The style card.
  * @param props.field - The field.
  * @returns The field row.
- * @example
- * ```tsx
- * <FieldRow ctx={ctx} card={card} field={field} />
- * ```
  */
 function FieldRow(props: {
   readonly ctx: GameViewCtx;
@@ -131,10 +123,6 @@ function FieldRow(props: {
  * @param props.ctx - Domain context of gameView.
  * @param props.card - The style card.
  * @returns The card body.
- * @example
- * ```tsx
- * <StyleCardView ctx={ctx} card={ctx.state.styles!} />
- * ```
  */
 function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleCard }): VNode {
   const { ctx, card } = props;
@@ -173,39 +161,52 @@ function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleC
 }
 
 /**
+ * What the style card section says while no card is shown: the search failed, found no source,
+ * or still runs.
+ *
+ * @param props - The context, the lookup and the ui key.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.lookup - The style search of the selected element.
+ * @param props.nodeKey - The ui key.
+ * @returns The note.
+ */
+function LookupNote(props: {
+  readonly ctx: GameViewCtx;
+  readonly lookup: StyleLookup | undefined;
+  readonly nodeKey: string;
+}): VNode {
+  const { ctx, lookup, nodeKey } = props;
+  if (lookup?.status === "failed") {
+    return (
+      <p data-part="error" role="alert">
+        {styleErrorText(lookup.error)}{" "}
+        <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}>
+          Open in Files
+        </button>
+      </p>
+    );
+  }
+  if (lookup?.status === "missing") return <p>Source not found for key {nodeKey}</p>;
+  return <p>Searching the sources for {nodeKey}…</p>;
+}
+
+/**
  * The style card section of a keyed ui node: searching, missing, refused, or the card.
  *
  * @param props - The context and the ui key.
  * @param props.ctx - Domain context of gameView.
  * @param props.nodeKey - The ui key.
  * @returns The section.
- * @example
- * ```tsx
- * <StyleSection ctx={ctx} nodeKey="coinPill" />
- * ```
  */
 function StyleSection(props: { readonly ctx: GameViewCtx; readonly nodeKey: string }): VNode {
   const { ctx, nodeKey } = props;
   const { styles, lookup } = ctx.state;
   return (
     <section data-part="style-card" aria-label="Layout style">
-      {styles !== undefined && <StyleCardView ctx={ctx} card={styles} />}
-      {styles === undefined && lookup?.status === "failed" && (
-        <p data-part="error" role="alert">
-          {styleErrorText(lookup.error)}{" "}
-          <button
-            type="button"
-            onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}
-          >
-            Open in Files
-          </button>
-        </p>
-      )}
-      {styles === undefined && lookup?.status === "missing" && (
-        <p>Source not found for key {nodeKey}</p>
-      )}
-      {styles === undefined && (lookup === undefined || lookup.status === "searching") && (
-        <p>Searching the sources for {nodeKey}…</p>
+      {styles === undefined ? (
+        <LookupNote ctx={ctx} lookup={lookup} nodeKey={nodeKey} />
+      ) : (
+        <StyleCardView ctx={ctx} card={styles} />
       )}
     </section>
   );
@@ -218,10 +219,6 @@ function StyleSection(props: { readonly ctx: GameViewCtx; readonly nodeKey: stri
  * @param props.ctx - Domain context of gameView.
  * @param props.texture - The texture key.
  * @returns The box.
- * @example
- * ```tsx
- * <TextureBox ctx={ctx} texture="board.item-wood-3" />
- * ```
  */
 function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string }): VNode {
   const { ctx, texture } = props;
@@ -247,10 +244,6 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
  * @param props.scene - The scene.
  * @param props.node - The selected node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <NodeDetails ctx={ctx} scene={scene} node={node} />
- * ```
  */
 function NodeDetails(props: {
   readonly ctx: GameViewCtx;
@@ -360,10 +353,6 @@ function NodeDetails(props: {
  * @param ctx - Domain context of gameView.
  * @param selected - The selected element.
  * @param texture - Its texture key.
- * @example
- * ```ts
- * useEffect(() => loadDetails(ctx, selected, node?.texture), [id]);
- * ```
  */
 function loadDetails(
   ctx: GameViewCtx,
@@ -387,10 +376,6 @@ function loadDetails(
  *
  * @param props - The gameView domain context.
  * @returns The tab.
- * @example
- * ```tsx
- * <ElementTab ctx={ctx} />
- * ```
  */
 export function ElementTab(props: ElementTabProps): VNode {
   const { ctx } = props;

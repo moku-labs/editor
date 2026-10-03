@@ -28,10 +28,6 @@ const CLOSE_AFTER_MS = 4000;
  * @param props - The run.
  * @param props.ran - The settled step run.
  * @returns The lines.
- * @example
- * ```tsx
- * <StepResult ran={state.step} />
- * ```
  */
 function StepResult(props: { readonly ran: RanEvent }): VNode {
   const { ran } = props;
@@ -63,10 +59,6 @@ function StepResult(props: { readonly ran: RanEvent }): VNode {
  *
  * @param props - The workspace domain context.
  * @returns The popover.
- * @example
- * ```tsx
- * <StepPopover ctx={ctx} />
- * ```
  */
 export function StepPopover(props: StepPopoverProps): VNode {
   const { ctx } = props;

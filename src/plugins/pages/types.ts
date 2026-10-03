@@ -43,11 +43,21 @@ export type PagesState = {
  *
  * @example
  * ```ts
- * Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+ * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
  * ```
  */
 export type PagesApi = {
-  /** The routes this plugin registered with the hub in onInit (the same frozen object). */
+  /**
+   * The routes this plugin registered with the hub in onInit: the same frozen object, keyed by
+   * URL path under the hub path.
+   *
+   * @returns The four routes `P`, `P/`, `P/hello` and `P/assets/*`.
+   * @example
+   * ```ts
+   * // Check which editor URLs the server answers.
+   * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+   * ```
+   */
   routes(): EditorRoutes;
 };
 

@@ -13,10 +13,6 @@ import type { FilesViewCtx } from "../types";
  * @param path - Relative file path.
  * @param line - 1-based line; 1 when omitted.
  * @returns The link, or undefined without boot data.
- * @example
- * ```ts
- * editorUrlFor(ctx, "nodes/merge.ts", 12); // "vscode://file/Users/moku/game/nodes/merge.ts:12"
- * ```
  */
 export function editorUrlFor(ctx: FilesViewCtx, path: string, line?: number): string | undefined {
   const boot = ctx.require(linkPlugin).boot();

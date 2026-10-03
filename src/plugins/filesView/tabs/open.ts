@@ -25,10 +25,6 @@ type OpenOptions = { readonly line?: number; readonly edit?: boolean };
  * @param path - Relative file path.
  * @param options - `line` and `edit`.
  * @returns When the tab is loaded or checked.
- * @example
- * ```ts
- * await openTab(ctx, "nodes/merge.ts", { line: 12 });
- * ```
  */
 export async function openTab(
   ctx: FilesViewCtx,
@@ -59,10 +55,6 @@ export async function openTab(
  * @param ctx - Domain context of filesView.
  * @param path - Relative file path.
  * @param options - `line` and `edit`.
- * @example
- * ```ts
- * openOrLog(ctx, "flows/board.ts", { line: 3 });
- * ```
  */
 export function openOrLog(ctx: FilesViewCtx, path: string, options: OpenOptions): void {
   openTab(ctx, path, options).catch((error: unknown) => {
@@ -78,10 +70,6 @@ export function openOrLog(ctx: FilesViewCtx, path: string, options: OpenOptions)
  * @param path - The tab's path.
  * @param discard - Drop unsaved changes.
  * @returns Whether the tab was closed.
- * @example
- * ```ts
- * closeTab(ctx, "nodes/merge.ts", false); // false while modified
- * ```
  */
 export function closeTab(ctx: FilesViewCtx, path: string, discard: boolean): boolean {
   const { state } = ctx;
@@ -109,10 +97,6 @@ export function closeTab(ctx: FilesViewCtx, path: string, discard: boolean): boo
  *
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
- * @example
- * ```ts
- * activateTab(ctx, "flows/board.ts");
- * ```
  */
 export function activateTab(ctx: FilesViewCtx, path: string): void {
   const tab = findTab(ctx.state, path);

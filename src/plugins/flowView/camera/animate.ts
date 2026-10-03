@@ -38,7 +38,8 @@ export function easeOutCubic(t: number): number {
  * @returns Whether moves jump.
  * @example
  * ```ts
- * if (prefersReducedMotion()) jump();
+ * // The OS setting "Reduce motion" is on: camera moves jump to their target.
+ * prefersReducedMotion(); // true
  * ```
  */
 export function prefersReducedMotion(): boolean {
@@ -79,11 +80,6 @@ export function tween(from: Camera, to: Camera, t: number, view: ViewSize): Came
  * offset on the canvas — then notifies the camera subscribers only.
  *
  * @param ctx - Anything with the flowView state.
- * @example
- * ```ts
- * ctx.state.camera.cam = next;
- * applyCamera(ctx);
- * ```
  */
 export function applyCamera(ctx: CameraHost): void {
   const { cam } = ctx.state.camera;
@@ -105,10 +101,6 @@ export function applyCamera(ctx: CameraHost): void {
  * Cancels the running tween.
  *
  * @param ctx - Anything with the flowView state.
- * @example
- * ```ts
- * cancelAnimation(ctx); // before a pan
- * ```
  */
 export function cancelAnimation(ctx: CameraHost): void {
   const { camera } = ctx.state;
@@ -125,10 +117,6 @@ export function cancelAnimation(ctx: CameraHost): void {
  * @param ctx - Anything with the flowView state.
  * @param target - The target camera.
  * @param durationMs - The duration.
- * @example
- * ```ts
- * animateTo(ctx, focusCamera(item, cam, view, insets), DURATION.camera);
- * ```
  */
 export function animateTo(ctx: CameraHost, target: Camera, durationMs: number): void {
   cancelAnimation(ctx);
@@ -146,10 +134,6 @@ export function animateTo(ctx: CameraHost, target: Camera, durationMs: number): 
    * One frame of the tween.
    *
    * @param time - The rAF timestamp.
-   * @example
-   * ```ts
-   * requestAnimationFrame(step);
-   * ```
    */
   function step(time: number): void {
     start ??= time;

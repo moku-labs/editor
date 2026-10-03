@@ -19,10 +19,6 @@ export type MetricTileProps = {
  *
  * @param props - The tile texts and an optional chart.
  * @returns The tile.
- * @example
- * ```tsx
- * <MetricTile view={tileViews(snapshot.tiles)[2]} />
- * ```
  */
 export function MetricTile(props: MetricTileProps): JSX.Element {
   const { view, children } = props;

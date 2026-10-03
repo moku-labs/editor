@@ -31,10 +31,6 @@ export function badgeOf(counts: LevelCounts): Badge | undefined {
  * Sends the badge of the held lines to the workspace rail (R4 workspace api).
  *
  * @param ctx - Domain context of consoleView.
- * @example
- * ```ts
- * pushBadge(ctx); // the rail shows "2" in amber after the design log
- * ```
  */
 export function pushBadge(ctx: ConsoleCtx): void {
   ctx.require(workspacePlugin).badge("console", badgeOf(countLevels(ctx.state.lines)));

@@ -71,11 +71,6 @@ export function useWorkspace<T>(store: UiStore, select: () => T): T {
   useLayoutEffect(() => {
     /**
      * Copies the store version into the component state (a changed number re-renders).
-     *
-     * @example
-     * ```ts
-     * store.subscribe(sync);
-     * ```
      */
     const sync = (): void => {
       setVersion(store.version);
@@ -113,10 +108,6 @@ export function useElement<T>(): ElementHolder<T> {
        * Stores the element Preact attached (undefined after unmount).
        *
        * @param element - The element, or null on unmount.
-       * @example
-       * ```tsx
-       * <div ref={holder.ref} />
-       * ```
        */
       ref: element => {
         created.current = element ?? undefined;

@@ -290,7 +290,14 @@ describe("mountPanel: status and stale marking", () => {
   });
 });
 
+/** The fixed clock of the run tests: `at` is Date.now() when the call settled. */
+const NOW = 1_700_000_000_000;
+
 describe("mountPanel: tools", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+
   it("tools.run.step calls link.run once and emits one workspace:ran with origin panel", async () => {
     const deps = createDeps();
     deps.linkMock.run.mockResolvedValue(resultOf(1841));
@@ -313,7 +320,7 @@ describe("mountPanel: tools", () => {
       id: "game.step",
       input: { frames: 1 },
       origin: "panel",
-      at: expect.any(Number),
+      at: NOW,
       ok: true,
       result: resultOf(1841)
     });
@@ -331,7 +338,7 @@ describe("mountPanel: tools", () => {
       id: "game.step",
       input: { frames: 1 },
       origin: "panel",
-      at: expect.any(Number),
+      at: NOW,
       ok: false,
       error: {
         code: -32_003,

@@ -18,10 +18,6 @@ import { bindKey } from "./keymap";
  * @param label - Shown in tooltips and the palette.
  * @param run - The action.
  * @param inInputs - Also while typing in a field.
- * @example
- * ```ts
- * bind(ctx, "g", "Game preview", () => togglePreview(ctx));
- * ```
  */
 function bind(
   ctx: WorkspaceCtx,
@@ -37,10 +33,6 @@ function bind(
  * Registers the built-in key bindings and Esc layers.
  *
  * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * registerBuiltIns(ctx); // onInit
- * ```
  */
 export function registerBuiltIns(ctx: WorkspaceCtx): void {
   const { state } = ctx;

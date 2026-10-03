@@ -12,10 +12,6 @@ import type { LinkCtx, Subscription } from "../types";
  *
  * @param ctx - Domain context of link.
  * @returns Whether a new watch goes out at once.
- * @example
- * ```ts
- * if (isReady(ctx)) sendWatch(ctx, sub);
- * ```
  */
 function isReady(ctx: LinkCtx): boolean {
   const { state } = ctx;
@@ -28,10 +24,6 @@ function isReady(ctx: LinkCtx): boolean {
  * @param ctx - Domain context of link.
  * @param sub - The wire sub.
  * @param session - The session it was sent to.
- * @example
- * ```ts
- * sendUnwatch(ctx, 3, "s-1");
- * ```
  */
 function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): void {
   request(ctx, "game", "unwatch", { sub }, session).catch((error: unknown) => {
@@ -46,10 +38,6 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
  *
  * @param ctx - Domain context of link.
  * @param sub - The record.
- * @example
- * ```ts
- * sendWatch(ctx, sub);
- * ```
  */
 function sendWatch(ctx: LinkCtx, sub: Subscription): void {
   const { state } = ctx;
@@ -79,10 +67,6 @@ function sendWatch(ctx: LinkCtx, sub: Subscription): void {
  * @param input - Source input, omitted on the wire when undefined.
  * @param onValue - Called with every value (the agent's immediate read first).
  * @returns Unsubscribe: forgets the record and sends `unwatch` when attached; twice is a no-op.
- * @example
- * ```ts
- * const stop = addWatch(ctx, "game.history", { last: 20 }, history => draw(history));
- * ```
  */
 export function addWatch(
   ctx: LinkCtx,
@@ -115,10 +99,6 @@ export function addWatch(
  * attach clears every wire sub first, so each record goes out once per attach.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * resubscribeAll(ctx); // after the manifest of an attach arrived
- * ```
  */
 export function resubscribeAll(ctx: LinkCtx): void {
   const { state } = ctx;
@@ -136,10 +116,6 @@ export function resubscribeAll(ctx: LinkCtx): void {
  *
  * @param ctx - Domain context of link.
  * @param session - The session the subs were sent to.
- * @example
- * ```ts
- * unwatchAll(ctx, previous);
- * ```
  */
 export function unwatchAll(ctx: LinkCtx, session: string): void {
   for (const wireSub of ctx.state.wire.keys()) sendUnwatch(ctx, wireSub, session);
@@ -149,10 +125,6 @@ export function unwatchAll(ctx: LinkCtx, session: string): void {
  * Forgets every wire sub; the records stay for the next attach.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * detachAll(ctx); // socket closed or session lost
- * ```
  */
 export function detachAll(ctx: LinkCtx): void {
   const { wire } = ctx.state;
@@ -168,10 +140,6 @@ export function detachAll(ctx: LinkCtx): void {
  * @param ctx - Domain context of link.
  * @param sub - The wire sub.
  * @param value - The value.
- * @example
- * ```ts
- * deliver(ctx, 3, { path: "board" });
- * ```
  */
 export function deliver(ctx: LinkCtx, sub: SubId, value: Json): void {
   const record = ctx.state.wire.get(sub);

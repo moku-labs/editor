@@ -1,13 +1,18 @@
 // @vitest-environment happy-dom
 import type { VNode } from "preact";
 import { render } from "preact";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRenderView } from "../../components/useRenderView";
 import { notify } from "../../state";
 import type { RenderViewState } from "../../types";
 import { createCtx } from "../helpers";
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = "";
 });
 
@@ -25,12 +30,13 @@ function Probe(props: { readonly state: RenderViewState }): VNode {
 }
 
 /**
- * Lets Preact's after-paint effects (a 100 ms fallback timer) and the re-render run.
+ * Lets Preact's after-paint effects and the re-render run: runs every pending fake timer, with
+ * the microtasks between them.
  *
- * @returns Resolves after 150 ms.
+ * @returns Resolves when no timer is pending.
  */
 async function afterPaint(): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await vi.runAllTimersAsync();
 }
 
 describe("useRenderView", () => {

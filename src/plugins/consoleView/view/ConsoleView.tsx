@@ -15,11 +15,6 @@ import { useConsole } from "./useConsole";
 
 /**
  * Props of `ConsoleView`.
- *
- * @example
- * ```tsx
- * const props: ConsoleViewProps = { ctx, status: { kind: "live", frame: 1840 } };
- * ```
  */
 export type ConsoleViewProps = { readonly ctx: ConsoleCtx; readonly status: LinkStatus };
 
@@ -42,10 +37,6 @@ function isAttached(status: LinkStatus): boolean {
  *
  * @param props - The ctx and the link status of this render.
  * @returns The workspace element.
- * @example
- * ```tsx
- * <ConsoleView ctx={ctx} status={tools.status} />
- * ```
  */
 export function ConsoleView(props: ConsoleViewProps): VNode {
   const { ctx, status } = props;

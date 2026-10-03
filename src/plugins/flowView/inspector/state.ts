@@ -7,10 +7,6 @@ import type { InspectorState } from "./types";
  * Creates the inspector slice: Info tab, nothing loaded.
  *
  * @returns The inspector state.
- * @example
- * ```ts
- * createInspectorState().tab; // "info"
- * ```
  */
 export function createInspectorState(): InspectorState {
   return {

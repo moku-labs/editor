@@ -17,11 +17,6 @@ import type { ChannelDeps } from "./types";
  * @param onValue - Called with the current value, then with every change.
  * @returns An idempotent stop that closes the door watch and forgets it.
  * @throws {Error} -32601 for an unknown id; the entry's ProtocolError for an invalid input.
- * @example
- * ```ts
- * const stop = openWatch(deps, "game.position", undefined, position => show(position)); // show() ran once
- * stop();
- * ```
  */
 export function openWatch(
   deps: ChannelDeps,
@@ -41,11 +36,6 @@ export function openWatch(
 
   /**
    * Closes the door watch once and forgets the watch.
-   *
-   * @example
-   * ```ts
-   * stop(); stop(); // the door stop ran once
-   * ```
    */
   const stop = (): void => {
     if (closed) return;
@@ -58,10 +48,6 @@ export function openWatch(
    * Passes a door delivery on; the first one is dropped when it repeats the immediate read.
    *
    * @param value - What the door read on this frame.
-   * @example
-   * ```ts
-   * deliver({ path: "board/awaitIntent" }); // onValue runs
-   * ```
    */
   const deliver = (value: Json): void => {
     if (closed) return;

@@ -103,7 +103,9 @@ export type PinsFile = {
  * The ELK runner: a worker (default) or inline.
  */
 export type LayoutEngine = {
+  /** Lays out one ELK graph and resolves the laid-out graph. */
   layout(input: ElkNode): Promise<ElkNode>;
+  /** Frees the engine once: terminates the worker and revokes its Blob URL (inline: nothing). */
   dispose(): void;
 };
 

@@ -14,10 +14,6 @@ import type { RenderViewState } from "../types";
  * @param state - renderView state.
  * @param select - Reads what the component shows.
  * @returns The selected value.
- * @example
- * ```tsx
- * const snapshot = useRenderView(ctx.state, () => deriveSnapshot(ctx.state));
- * ```
  */
 export function useRenderView<T>(state: RenderViewState, select: () => T): T {
   const [, setVersion] = useState(0);

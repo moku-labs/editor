@@ -23,11 +23,6 @@ const INDENT = "  ";
 
 /**
  * Props of `CodeEditor`.
- *
- * @example
- * ```tsx
- * <CodeEditor api={api} tab={tab} />
- * ```
  */
 export type CodeEditorProps = { readonly api: FilesViewApi; readonly tab: OpenTab };
 
@@ -36,10 +31,6 @@ export type CodeEditorProps = { readonly api: FilesViewApi; readonly tab: OpenTa
  *
  * @param event - The key event of the textarea.
  * @param write - Writes the new buffer.
- * @example
- * ```ts
- * onTab(event, text => api.setBuffer(path, text));
- * ```
  */
 function onTab(event: KeyboardEvent, write: (text: string) => void): void {
   if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
@@ -60,10 +51,6 @@ function onTab(event: KeyboardEvent, write: (text: string) => void): void {
  *
  * @param props - The api and the tab.
  * @returns The editor.
- * @example
- * ```tsx
- * <CodeEditor api={api} tab={tab} />
- * ```
  */
 export function CodeEditor(props: CodeEditorProps): VNode {
   const { api, tab } = props;

@@ -11,10 +11,6 @@ import type { LastCommit, StateViewApi } from "../types";
  *
  * @param api - The stateView api.
  * @returns The last commit, or undefined.
- * @example
- * ```tsx
- * const last = useTracker(api); // last?.patches.length === 4 after the tap at f1503
- * ```
  */
 export function useTracker(api: StateViewApi): LastCommit | undefined {
   const [, setVersion] = useState(0);

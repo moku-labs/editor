@@ -37,10 +37,6 @@ export type RenderWorkspaceProps = {
  *
  * @param props - ctx, the link status of this render and the workspace api.
  * @returns The workspace.
- * @example
- * ```tsx
- * <RenderWorkspace ctx={ctx} status={tools.status} workspace={tools.workspace} />
- * ```
  */
 export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
   const { ctx, status, workspace } = props;

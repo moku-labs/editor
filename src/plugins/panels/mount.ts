@@ -94,10 +94,6 @@ type Controller = {
  * `requestAnimationFrame` is missing.
  *
  * @param draw - The render.
- * @example
- * ```ts
- * scheduleFrame(() => draw(controller));
- * ```
  */
 export function scheduleFrame(draw: () => void): void {
   if (typeof globalThis.requestAnimationFrame === "function") {
@@ -116,10 +112,6 @@ export function scheduleFrame(draw: () => void): void {
  * @param input - Command input, undefined for none.
  * @param origin - Where the run started.
  * @returns The RunResult of link.run.
- * @example
- * ```ts
- * await runFromPanel(deps, "game.step", { frames: 1 }, "panel");
- * ```
  */
 export async function runFromPanel(
   deps: RunDeps,
@@ -170,10 +162,6 @@ function entriesOf(spec: PanelSpec): Entry[] {
  * @param spec - The panel.
  * @param deps - link and emit.
  * @returns name → (input?) => runFromPanel(…, "panel").
- * @example
- * ```ts
- * await runMapOf(spec, deps).step?.({ frames: 1 });
- * ```
  */
 function runMapOf(spec: PanelSpec, deps: RunDeps): ErasedTools["run"] {
   return Object.freeze(
@@ -192,10 +180,6 @@ function runMapOf(spec: PanelSpec, deps: RunDeps): ErasedTools["run"] {
  *
  * @param deps - link and emit.
  * @returns The EditorChannel.
- * @example
- * ```ts
- * await channelOf(deps).read("game.rect", { key: "coins" });
- * ```
  */
 function channelOf(deps: RunDeps): EditorChannel {
   const { link } = deps;
@@ -263,10 +247,6 @@ function channelOf(deps: RunDeps): EditorChannel {
  *
  * @param panel - The mounted panel.
  * @param key - The source key.
- * @example
- * ```ts
- * forget(panel, "history");
- * ```
  */
 function forget(panel: MountedPanel, key: string): void {
   panel.values = Object.fromEntries(Object.entries(panel.values).filter(([name]) => name !== key));
@@ -278,10 +258,6 @@ function forget(panel: MountedPanel, key: string): void {
  * Schedules one render for the next frame; a second call before it runs does nothing.
  *
  * @param controller - The panel controller.
- * @example
- * ```ts
- * schedule(controller);
- * ```
  */
 function schedule(controller: Controller): void {
   const { panel } = controller;
@@ -299,10 +275,6 @@ function schedule(controller: Controller): void {
  *
  * @param controller - The panel controller.
  * @param entry - The source.
- * @example
- * ```ts
- * watchEntry(controller, { key: "position", id: "game.position", input: undefined });
- * ```
  */
 function watchEntry(controller: Controller, entry: Entry): void {
   const { panel } = controller;
@@ -323,10 +295,6 @@ function watchEntry(controller: Controller, entry: Entry): void {
  *
  * @param controller - The panel controller.
  * @param manifest - The manifest of the chosen session, if any.
- * @example
- * ```ts
- * syncWatches(controller, link.manifest());
- * ```
  */
 function syncWatches(controller: Controller, manifest: Manifest | undefined): void {
   const { panel } = controller;
@@ -353,10 +321,6 @@ function syncWatches(controller: Controller, manifest: Manifest | undefined): vo
  *
  * @param controller - The panel controller.
  * @returns Unique ids, in declaration order.
- * @example
- * ```ts
- * pendingIds(controller); // ["game.history"]
- * ```
  */
 function pendingIds(controller: Controller): string[] {
   const { panel } = controller;
@@ -371,10 +335,6 @@ function pendingIds(controller: Controller): string[] {
  *
  * @param controller - The panel controller.
  * @returns error, missing, ready, no-game or waiting.
- * @example
- * ```ts
- * stateOf(controller); // "waiting"
- * ```
  */
 function stateOf(controller: Controller): SectionState {
   if (controller.failed) return "error";
@@ -389,10 +349,6 @@ function stateOf(controller: Controller): SectionState {
  * @param controller - The panel controller.
  * @param state - A placeholder state.
  * @returns The text ("" while the waiting placeholder is still quiet).
- * @example
- * ```ts
- * placeholderText(controller, "missing"); // "This game does not provide game.history."
- * ```
  */
 function placeholderText(
   controller: Controller,
@@ -412,10 +368,6 @@ function placeholderText(
  * Clears the waiting timers and resets the phase.
  *
  * @param controller - The panel controller.
- * @example
- * ```ts
- * clearTimers(controller);
- * ```
  */
 function clearTimers(controller: Controller): void {
   for (const timer of controller.timers) clearTimeout(timer);
@@ -429,10 +381,6 @@ function clearTimers(controller: Controller): void {
  *
  * @param controller - The panel controller.
  * @param state - The state being drawn.
- * @example
- * ```ts
- * updateTimers(controller, "waiting");
- * ```
  */
 function updateTimers(controller: Controller, state: SectionState): void {
   if (state !== "waiting") {
@@ -453,10 +401,6 @@ function updateTimers(controller: Controller, state: SectionState): void {
  * @param controller - The panel controller.
  * @param phase - The phase to enter.
  * @returns The callback.
- * @example
- * ```ts
- * setTimeout(stepTo(controller, "spinner"), SPINNER_AFTER_MS);
- * ```
  */
 function stepTo(controller: Controller, phase: Phase): () => void {
   return () => {
@@ -471,10 +415,6 @@ function stepTo(controller: Controller, phase: Phase): () => void {
  *
  * @param controller - The panel controller.
  * @returns The callback.
- * @example
- * ```ts
- * h(PanelBoundary, { panel, values, tools, onError: errorReporter(controller) });
- * ```
  */
 function errorReporter(
   controller: Pick<Controller, "panel" | "deps" | "failed">
@@ -494,10 +434,6 @@ function errorReporter(
  * empty as lost; connecting, live and paused as `resync` while a received value is not fresh.
  *
  * @param controller - The panel controller.
- * @example
- * ```ts
- * applyStale(controller);
- * ```
  */
 function applyStale(controller: Controller): void {
   const { panel, status } = controller;
@@ -517,10 +453,6 @@ function applyStale(controller: Controller): void {
  * placeholder.
  *
  * @param controller - The panel controller.
- * @example
- * ```ts
- * draw(controller);
- * ```
  */
 function draw(controller: Controller): void {
   const { panel, deps } = controller;
@@ -569,10 +501,6 @@ function draw(controller: Controller): void {
  * @param spec - The panel.
  * @param element - The workspace element.
  * @returns The section.
- * @example
- * ```ts
- * const section = createSection(spec, host);
- * ```
  */
 function createSection(spec: PanelSpec, element: HTMLElement): HTMLElement {
   const section = document.createElement("section");
@@ -592,10 +520,6 @@ function createSection(spec: PanelSpec, element: HTMLElement): HTMLElement {
  * @param element - The workspace element (`workspace.host(ws)`).
  * @param deps - link, workspace, log, emit, the starting status and the frame scheduler.
  * @returns The mounted panel (setStatus, recheck, unmount).
- * @example
- * ```ts
- * const mounted = mountPanel(flowPanel, workspace.host("flow"), depsOf(ctx));
- * ```
  */
 export function mountPanel(spec: PanelSpec, element: HTMLElement, deps: MountDeps): MountedPanel {
   const panel: MountedPanel = {
@@ -611,10 +535,6 @@ export function mountPanel(spec: PanelSpec, element: HTMLElement, deps: MountDep
      * Follows a new link status.
      *
      * @param next - The status.
-     * @example
-     * ```ts
-     * mounted.setStatus({ kind: "silent", since: 1, lastFrame: 1840 });
-     * ```
      */
     setStatus(next) {
       setStatus(controller, next);
@@ -623,21 +543,12 @@ export function mountPanel(spec: PanelSpec, element: HTMLElement, deps: MountDep
      * Re-checks the sources against a manifest.
      *
      * @param manifest - The manifest, undefined when the session went away.
-     * @example
-     * ```ts
-     * mounted.recheck(link.manifest());
-     * ```
      */
     recheck(manifest) {
       recheck(controller, manifest);
     },
     /**
      * Unwatches every source and removes the section.
-     *
-     * @example
-     * ```ts
-     * mounted.unmount();
-     * ```
      */
     unmount() {
       unmount(controller);
@@ -667,10 +578,6 @@ export function mountPanel(spec: PanelSpec, element: HTMLElement, deps: MountDep
  *
  * @param controller - The panel controller.
  * @param next - The new status.
- * @example
- * ```ts
- * setStatus(controller, { kind: "live", frame: 1841 });
- * ```
  */
 function setStatus(controller: Controller, next: LinkStatus): void {
   if (controller.unmounted) return;
@@ -686,10 +593,6 @@ function setStatus(controller: Controller, next: LinkStatus): void {
  *
  * @param controller - The panel controller.
  * @param manifest - The new manifest, undefined when the session went away.
- * @example
- * ```ts
- * recheck(controller, manifest);
- * ```
  */
 function recheck(controller: Controller, manifest: Manifest | undefined): void {
   if (controller.unmounted) return;
@@ -702,10 +605,6 @@ function recheck(controller: Controller, manifest: Manifest | undefined): void {
  * Unwatches every source, clears the timers, empties and removes the section; twice is a no-op.
  *
  * @param controller - The panel controller.
- * @example
- * ```ts
- * unmount(controller);
- * ```
  */
 function unmount(controller: Controller): void {
   if (controller.unmounted) return;

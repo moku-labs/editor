@@ -27,10 +27,6 @@ const SHORT_ID = 8;
  *
  * @param ctx - Domain context of workspace.
  * @param session - The session.
- * @example
- * ```ts
- * choose(ctx, session);
- * ```
  */
 function choose(ctx: WorkspaceCtx, session: SessionInfo): void {
   closePopover(ctx.state, "session");
@@ -47,10 +43,6 @@ function choose(ctx: WorkspaceCtx, session: SessionInfo): void {
  *
  * @param props - The workspace domain context.
  * @returns The chip.
- * @example
- * ```tsx
- * <SessionChip ctx={ctx} />
- * ```
  */
 export function SessionChip(props: SessionChipProps): VNode {
   const { ctx } = props;

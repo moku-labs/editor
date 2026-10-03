@@ -103,10 +103,6 @@ function nodeInfoOf(value: JsonObject): NodeInfo {
  * @param map - The map being built.
  * @param path - The file path.
  * @returns The entry.
- * @example
- * ```ts
- * entryOf(map, "nodes/merge.ts").nodes.push({ flow: "board", node: "merge" });
- * ```
  */
 function entryOf(map: Map<string, Entry>, path: string): Entry {
   const existing = map.get(path);
@@ -141,6 +137,44 @@ export function nodeFileOf(
 }
 
 /**
+ * The nodes of a flow value of the graph.
+ *
+ * @param value - One entry of the graph's `flows`.
+ * @returns Its `nodes`, empty when the value has none.
+ * @example
+ * ```ts
+ * nodesOfFlow({ start: "merge", nodes: { merge: {} } }); // { merge: {} }
+ * ```
+ */
+function nodesOfFlow(value: Json | undefined): JsonObject {
+  return isObject(value) && isObject(value.nodes) ? value.nodes : {};
+}
+
+/**
+ * Adds every node of one flow to the entry of its file.
+ *
+ * @param map - The reverse map being built.
+ * @param flow - The flow name.
+ * @param nodes - The flow's nodes.
+ * @param overrides - The parsed override map.
+ * @param exists - The file index (`index.files.has`).
+ */
+function addFlowNodes(
+  map: Map<string, Entry>,
+  flow: string,
+  nodes: JsonObject,
+  overrides: SourceOverrides,
+  exists: (path: string) => boolean
+): void {
+  for (const [node, body] of Object.entries(nodes)) {
+    if (!isObject(body)) continue;
+    const ref: NodeRef = { flow, node };
+    const path = nodeFileOf(ref, nodeInfoOf(body), overrides, exists);
+    if (path !== undefined) entryOf(map, path).nodes.push(ref);
+  }
+}
+
+/**
  * The reverse map path → Used by: every flow whose `flowFile` is the path and every node whose
  * `nodeFileOf` is the path (own `file`, else `nodeFile`). Main flow first, then key order; nodes
  * in key order.
@@ -164,17 +198,10 @@ export function buildUsedBy(
   if (flows === undefined || !isObject(graph)) return map;
 
   for (const flow of flowOrder(graph, flows)) {
+    // The flow's own file, then the file of each of its nodes.
     const file = flowFile(flow, overrides, exists);
     if (file !== undefined) entryOf(map, file).flows.push(flow);
-
-    const value = flows[flow];
-    const nodes = isObject(value) && isObject(value.nodes) ? value.nodes : {};
-    for (const [node, body] of Object.entries(nodes)) {
-      if (!isObject(body)) continue;
-      const ref: NodeRef = { flow, node };
-      const path = nodeFileOf(ref, nodeInfoOf(body), overrides, exists);
-      if (path !== undefined) entryOf(map, path).nodes.push(ref);
-    }
+    addFlowNodes(map, flow, nodesOfFlow(flows[flow]), overrides, exists);
   }
   return map;
 }
@@ -219,10 +246,6 @@ export function flowStartOf(graph: Json | undefined, flow: string): string | und
  *
  * @param state - filesView state.
  * @returns `path => index.files.has(path)`.
- * @example
- * ```ts
- * existsIn(ctx.state)("nodes/merge.ts"); // true once indexed
- * ```
  */
 export function existsIn(state: FilesViewState): (path: string) => boolean {
   const files = state.index?.files;
@@ -234,11 +257,6 @@ export function existsIn(state: FilesViewState): (path: string) => boolean {
  * graph.
  *
  * @param ctx - Domain context of filesView.
- * @example
- * ```ts
- * ctx.state.overrides = await loadOverrides(ctx);
- * rebuildUsedBy(ctx);
- * ```
  */
 export function rebuildUsedBy(ctx: FilesViewCtx): void {
   const { state } = ctx;
@@ -254,10 +272,6 @@ export function rebuildUsedBy(ctx: FilesViewCtx): void {
  *
  * @param ctx - Domain context of filesView.
  * @returns The override map.
- * @example
- * ```ts
- * ctx.state.overrides = await loadOverrides(ctx);
- * ```
  */
 export async function loadOverrides(ctx: FilesViewCtx): Promise<SourceOverrides> {
   let text: string;
@@ -279,10 +293,6 @@ export async function loadOverrides(ctx: FilesViewCtx): Promise<SourceOverrides>
  *
  * @param ctx - Domain context of filesView.
  * @returns When the graph is stored.
- * @example
- * ```ts
- * link.onManifest(() => { loadGraph(ctx).catch(() => undefined); });
- * ```
  */
 export async function loadGraph(ctx: FilesViewCtx): Promise<void> {
   const link = ctx.require(linkPlugin);

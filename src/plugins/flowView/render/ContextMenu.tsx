@@ -57,10 +57,6 @@ function menuItem(label: string, run: () => void, disabled = false): MenuItem {
  * @param actions - The flowView actions.
  * @param key - The node's item key.
  * @returns The items.
- * @example
- * ```ts
- * nodeItems(ctx, actions, "main/settings").map(item => item.label);
- * ```
  */
 function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] {
   const item = ctx.state.layout.result?.byKey[key];
@@ -123,11 +119,6 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
  * @param actions - The flowView actions.
  * @param menu - The open menu.
  * @returns The items in order.
- * @example
- * ```ts
- * menuItems(ctx, actions, { target: "canvas", key: undefined, outcome: undefined, x: 0, y: 0 }).map(item => item.label);
- * // ["Add note here", "Fit all", "Reset layout"]
- * ```
  */
 export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): MenuItem[] {
   if (menu.target === "node" && menu.key !== undefined) return nodeItems(ctx, actions, menu.key);
@@ -175,10 +166,6 @@ export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): 
  *
  * @param props - Context and actions.
  * @returns The menu, or an empty fragment when none is open.
- * @example
- * ```tsx
- * <ContextMenu ctx={ctx} actions={actions} />
- * ```
  */
 export function ContextMenu(props: ContextMenuProps): VNode {
   const { ctx, actions } = props;

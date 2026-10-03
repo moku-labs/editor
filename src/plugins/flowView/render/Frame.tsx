@@ -22,10 +22,6 @@ export type FrameProps = {
  *
  * @param props - Context, actions, the frame item and its view.
  * @returns The frame.
- * @example
- * ```tsx
- * <Frame ctx={ctx} actions={actions} item={frame} view={view} />
- * ```
  */
 export function Frame(props: FrameProps): VNode {
   const { actions, item, view } = props;

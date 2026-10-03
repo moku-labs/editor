@@ -35,10 +35,6 @@ export const ESC_RANK: readonly EscLayer[] = [
  * @param layer - The layer.
  * @param close - Closes the thing and returns true, or returns false when nothing is open.
  * @returns Removes the closer.
- * @example
- * ```ts
- * const off = addEscapeLayer(ctx, "noteEditor", () => (editor.open ? (editor.close(), true) : false));
- * ```
  */
 export function addEscapeLayer(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -62,10 +58,6 @@ export function addEscapeLayer(
  *
  * @param ctx - Domain context of workspace.
  * @returns True when something closed.
- * @example
- * ```ts
- * if (event.key === "Escape" && unwind(ctx)) event.preventDefault();
- * ```
  */
 export function unwind(ctx: Pick<WorkspaceCtx, "state">): boolean {
   const entries = ctx.state.keys.escape.toSorted(

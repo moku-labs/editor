@@ -111,10 +111,6 @@ export function helloOrigin(
  * @returns The HelloBody `{ ws, token }`.
  * @throws {Error} `[moku-editor] hello unreachable`, `[moku-editor] hello <status>` or
  *   `[moku-editor] hello answered without ws and token`.
- * @example
- * ```ts
- * const { ws, token } = await fetchHello(net, url, { origin: url.origin });
- * ```
  */
 export async function fetchHello(
   net: BridgeNet,

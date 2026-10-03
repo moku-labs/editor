@@ -11,11 +11,6 @@ import type { OverlayCtx, OverlayPluginCtx } from "./types";
  *
  * @param ctx - Plugin context of the overlay.
  * @returns The domain context of the overlay modules.
- * @example
- * ```ts
- * const octx = overlayCtxOf(ctx);
- * octx.registry.manifest().commands.length; // 14
- * ```
  */
 export function overlayCtxOf(ctx: OverlayPluginCtx): OverlayCtx {
   return {

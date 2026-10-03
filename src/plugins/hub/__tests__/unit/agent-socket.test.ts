@@ -65,21 +65,27 @@ describe("agent hello", () => {
       throw new Error("hook exploded");
     });
 
-    expect(() => harness.hello()).not.toThrow();
-    expect(harness.ctx.log.error).toHaveBeenCalledWith("hub:emit-failed", expect.any(Object));
+    let session: string | undefined;
+    expect(() => {
+      session = harness.hello().session;
+    }).not.toThrow();
+    expect(harness.ctx.log.error).toHaveBeenCalledWith("hub:emit-failed", {
+      id: session,
+      error: "Error: hook exploded"
+    });
   });
 
   it("logs an emit that rejects asynchronously", async () => {
     const harness = createHarness();
     harness.ctx.emit.mockImplementation(() => Promise.reject(new Error("hook rejected")));
 
-    harness.hello();
+    const { session } = harness.hello();
 
     await vi.waitFor(() => {
-      expect(harness.ctx.log.error).toHaveBeenCalledWith(
-        "hub:emit-failed",
-        expect.objectContaining({ error: "Error: hook rejected" })
-      );
+      expect(harness.ctx.log.error).toHaveBeenCalledWith("hub:emit-failed", {
+        id: session,
+        error: "Error: hook rejected"
+      });
     });
   });
 

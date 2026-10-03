@@ -10,10 +10,6 @@ import type { Config, OverlayState } from "./types";
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
  * @returns Closed, empty state.
- * @example
- * ```ts
- * createOverlayState({ config }).open; // false
- * ```
  */
 export function createOverlayState(_ctx: { readonly config: Readonly<Config> }): OverlayState {
   return {

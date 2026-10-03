@@ -13,10 +13,6 @@ import type { ConsoleApi } from "../types";
  * @param api - The console api.
  * @param select - Reads what the component shows.
  * @returns The selected value.
- * @example
- * ```tsx
- * const counts = useConsole(api, () => api.counts()); // { all: 8, debug: 0, info: 6, warn: 2, error: 0 }
- * ```
  */
 export function useConsole<T>(api: ConsoleApi, select: () => T): T {
   const [, setVersion] = useState(0);

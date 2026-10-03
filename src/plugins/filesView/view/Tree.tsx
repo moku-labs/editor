@@ -36,11 +36,6 @@ const GLYPHS: Readonly<Record<string, string>> = {
 
 /**
  * Props of `Tree`.
- *
- * @example
- * ```tsx
- * <Tree ctx={ctx} api={api} />
- * ```
  */
 export type TreeProps = { readonly ctx: FilesViewCtx; readonly api: FilesViewApi };
 
@@ -112,14 +107,87 @@ function moveTo(rows: readonly TreeRow[], position: number, key: string): number
 }
 
 /**
+ * What a key on a focused row does: focus another row, activate this one (open the file or
+ * toggle the folder), or nothing while still consuming the key.
+ */
+type RowKeyAction =
+  | { readonly kind: "focus"; readonly path: string }
+  | { readonly kind: "activate" }
+  | { readonly kind: "stay" };
+
+/** Activate the focused row. */
+const ACTIVATE: RowKeyAction = { kind: "activate" };
+
+/** Consume the key without a change. */
+const STAY: RowKeyAction = { kind: "stay" };
+
+/**
+ * ArrowRight on a folder: a closed folder opens, an open one moves to its first child.
+ *
+ * @param rows - The visible rows.
+ * @param position - Index of the folder.
+ * @param row - The folder.
+ * @returns The action.
+ * @example
+ * ```ts
+ * enterFolder(rows, 0, { path: "flows", name: "flows", kind: "dir", level: 1, expanded: false }); // { kind: "activate" }
+ * ```
+ */
+function enterFolder(rows: readonly TreeRow[], position: number, row: TreeRow): RowKeyAction {
+  if (!row.expanded) return ACTIVATE;
+  const next = rows[position + 1];
+  const hasChildShown = next !== undefined && next.level > row.level;
+  return hasChildShown ? { kind: "focus", path: next.path } : STAY;
+}
+
+/**
+ * ArrowLeft: an open folder closes, any other row moves to its parent folder.
+ *
+ * @param row - The focused row.
+ * @returns The action.
+ * @example
+ * ```ts
+ * leaveRow({ path: "nodes/merge.ts", name: "merge.ts", kind: "file", level: 2, expanded: false }); // { kind: "focus", path: "nodes" }
+ * ```
+ */
+function leaveRow(row: TreeRow): RowKeyAction {
+  if (row.kind === "dir" && row.expanded) return ACTIVATE;
+  const parent = parentOf(row.path);
+  return parent === "" ? STAY : { kind: "focus", path: parent };
+}
+
+/**
+ * The action of a key on a focused row (WAI-ARIA tree keys).
+ *
+ * @param rows - The visible rows.
+ * @param position - Index of the row.
+ * @param row - The row.
+ * @param key - `KeyboardEvent.key`.
+ * @returns The action, undefined when the tree does not handle the key.
+ * @example
+ * ```ts
+ * rowKeyAction(rows, 0, rows[0], "Enter"); // { kind: "activate" }
+ * ```
+ */
+function rowKeyAction(
+  rows: readonly TreeRow[],
+  position: number,
+  row: TreeRow,
+  key: string
+): RowKeyAction | undefined {
+  const target = moveTo(rows, position, key);
+  if (target !== undefined) return { kind: "focus", path: rows[target]?.path ?? row.path };
+  if (key === "Enter" || key === " ") return ACTIVATE;
+  if (key === "ArrowRight" && row.kind === "dir") return enterFolder(rows, position, row);
+  if (key === "ArrowLeft") return leaveRow(row);
+  return undefined;
+}
+
+/**
  * The project tree.
  *
  * @param props - Context and api.
  * @returns The tree region.
- * @example
- * ```tsx
- * <Tree ctx={ctx} api={api} />
- * ```
  */
 export function Tree(props: TreeProps): VNode {
   const { ctx, api } = props;
@@ -143,10 +211,6 @@ export function Tree(props: TreeProps): VNode {
    * Focuses a row (after the render that shows it).
    *
    * @param path - The row's path.
-   * @example
-   * ```ts
-   * focusRow("flows");
-   * ```
    */
   const focusRow = (path: string): void => {
     setFocused(path);
@@ -157,10 +221,6 @@ export function Tree(props: TreeProps): VNode {
    * Opens a file or toggles a folder.
    *
    * @param row - The row.
-   * @example
-   * ```ts
-   * activate(row);
-   * ```
    */
   const activate = (row: TreeRow): void => {
     focusRow(row.path);
@@ -178,27 +238,12 @@ export function Tree(props: TreeProps): VNode {
    * @param row - The row.
    * @param position - Its index.
    * @param event - The key event.
-   * @example
-   * ```ts
-   * onRowKey(row, 0, event);
-   * ```
    */
   const onRowKey = (row: TreeRow, position: number, event: KeyboardEvent): void => {
-    const target = moveTo(rows, position, event.key);
-    const next = rows[position + 1];
-    if (target !== undefined) {
-      focusRow(rows[target]?.path ?? row.path);
-    } else if (event.key === "Enter" || event.key === " ") {
-      activate(row);
-    } else if (event.key === "ArrowRight" && row.kind === "dir") {
-      if (!row.expanded) activate(row);
-      else if (next !== undefined && next.level > row.level) focusRow(next.path);
-    } else if (event.key === "ArrowLeft") {
-      if (row.kind === "dir" && row.expanded) activate(row);
-      else if (parentOf(row.path) !== "") focusRow(parentOf(row.path));
-    } else {
-      return;
-    }
+    const action = rowKeyAction(rows, position, row, event.key);
+    if (action === undefined) return;
+    if (action.kind === "focus") focusRow(action.path);
+    if (action.kind === "activate") activate(row);
     event.preventDefault();
   };
 

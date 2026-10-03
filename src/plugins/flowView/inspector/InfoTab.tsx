@@ -22,10 +22,6 @@ export type InfoTabProps = {
  *
  * @param props - Context, actions and the info of the shown node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <InfoTab ctx={ctx} actions={actions} info={info} />
- * ```
  */
 export function InfoTab(props: InfoTabProps): VNode {
   const { ctx, actions, info } = props;

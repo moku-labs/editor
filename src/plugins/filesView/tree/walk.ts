@@ -34,10 +34,6 @@ type Walked = {
  * @param client - The files client.
  * @param dir - Folder path.
  * @returns The entries, or undefined.
- * @example
- * ```ts
- * await listOne(ctx, link.files, "nodes"); // [{ path: "nodes/merge.ts", kind: "file", size: 24 }]
- * ```
  */
 async function listOne(ctx: FilesViewCtx, client: FilesClient, dir: string): Promise<Listing> {
   try {
@@ -55,10 +51,6 @@ async function listOne(ctx: FilesViewCtx, client: FilesClient, dir: string): Pro
  * @param client - The files client.
  * @param directories - Folder paths.
  * @returns One listing per folder.
- * @example
- * ```ts
- * await listAll(ctx, link.files, ["flows", "nodes"]); // [[…], […]]
- * ```
  */
 async function listAll(
   ctx: FilesViewCtx,
@@ -90,10 +82,6 @@ async function listAll(
  * @param entries - Its listing.
  * @param maxFiles - The file cap.
  * @returns The sub-folders.
- * @example
- * ```ts
- * record(walked, "", entries, 5000); // ["flows", "nodes"]
- * ```
  */
 function record(
   walked: Walked,
@@ -127,10 +115,6 @@ function record(
  * @param level - The folders of this level.
  * @param depth - Their depth (the root is 0).
  * @returns The next level, or undefined when the root list failed.
- * @example
- * ```ts
- * await walkLevel(ctx, walked, [""], 0); // [".moku", "flows", "nodes"]
- * ```
  */
 async function walkLevel(
   ctx: FilesViewCtx,
@@ -157,10 +141,6 @@ async function walkLevel(
  *
  * @param ctx - Domain context of filesView.
  * @returns The index, or undefined when the root list failed.
- * @example
- * ```ts
- * ctx.state.index = (await walk(ctx)) ?? ctx.state.index;
- * ```
  */
 async function walk(ctx: FilesViewCtx): Promise<FileIndex | undefined> {
   const walked: Walked = { files: new Map(), children: new Map(), truncated: false };
@@ -182,11 +162,6 @@ async function walk(ctx: FilesViewCtx): Promise<FileIndex | undefined> {
  *
  * @param ctx - Domain context of filesView.
  * @returns When the build is done.
- * @example
- * ```ts
- * await buildIndex(ctx);
- * ctx.state.index?.files.size; // 24
- * ```
  */
 export function buildIndex(ctx: FilesViewCtx): Promise<void> {
   const { state } = ctx;

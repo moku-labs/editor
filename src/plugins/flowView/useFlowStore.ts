@@ -37,10 +37,6 @@ export function shallowEqual(a: unknown, b: unknown): boolean {
  * @param select - Reads the value from the state.
  * @param channel - "data" (default) or "camera".
  * @returns The selected value.
- * @example
- * ```tsx
- * const selected = useFlowStore(ctx, state => state.focus.selected);
- * ```
  */
 export function useFlowStore<T>(
   ctx: FlowCtx,

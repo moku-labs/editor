@@ -28,10 +28,6 @@ type Route = (ctx: LinkCtx, note: Notification) => void;
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
- * @example
- * ```ts
- * onSessions(ctx, note);
- * ```
  */
 function onSessions(ctx: LinkCtx, note: Notification): void {
   const list = readSessions(note.params);
@@ -46,10 +42,6 @@ function onSessions(ctx: LinkCtx, note: Notification): void {
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
- * @example
- * ```ts
- * onSession(ctx, note);
- * ```
  */
 function onSession(ctx: LinkCtx, note: Notification): void {
   const params = objectOf(note.params);
@@ -68,10 +60,6 @@ function onSession(ctx: LinkCtx, note: Notification): void {
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
- * @example
- * ```ts
- * onHeartbeat(ctx, note);
- * ```
  */
 function onHeartbeat(ctx: LinkCtx, note: Notification): void {
   const { state } = ctx;
@@ -89,10 +77,6 @@ function onHeartbeat(ctx: LinkCtx, note: Notification): void {
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
- * @example
- * ```ts
- * onValue(ctx, note);
- * ```
  */
 function onValue(ctx: LinkCtx, note: Notification): void {
   const params = objectOf(note.params);
@@ -118,10 +102,6 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
  *
  * @param ctx - Domain context of link.
  * @param text - The frame text.
- * @example
- * ```ts
- * socket.addEventListener("message", event => onSocketMessage(ctx, event.data));
- * ```
  */
 export function onSocketMessage(ctx: LinkCtx, text: string): void {
   if (ctx.state.stopped) return;

@@ -12,10 +12,6 @@ import type { StateViewCtx, StateViewState } from "./types";
  * onInit: registers the State panel, so the host knows every workspace before it mounts (D-04).
  *
  * @param ctx - Domain context of stateView.
- * @example
- * ```ts
- * createToolsPlugin("stateView", { onInit: registerStatePanel });
- * ```
  */
 export function registerStatePanel(ctx: StateViewCtx): void {
   ctx.require(panelsPlugin).register(createStatePanel(ctx));
@@ -27,10 +23,6 @@ export function registerStatePanel(ctx: StateViewCtx): void {
  * they live for the whole app, across workspace switches.
  *
  * @param ctx - Domain context of stateView.
- * @example
- * ```ts
- * createToolsPlugin("stateView", { onStart: startStateView });
- * ```
  */
 export function startStateView(ctx: StateViewCtx): void {
   const link = ctx.require(linkPlugin);
@@ -47,10 +39,6 @@ export function startStateView(ctx: StateViewCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("stateView", { onStop: stopStateView });
- * ```
  */
 export function stopStateView(ctx: { readonly state: StateViewState }): void {
   const { state } = ctx;

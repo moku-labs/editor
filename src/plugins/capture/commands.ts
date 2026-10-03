@@ -25,10 +25,6 @@ const SERIES_INPUT: { readonly durationMs: "number"; readonly intervalMs: "numbe
  *
  * @param registry - The registry slice.
  * @returns The entry.
- * @example
- * ```ts
- * await captureEntry(registry).run(null); // { value: { image, frame, device }, state }
- * ```
  */
 function captureEntry(registry: CaptureRegistry): CommandEntry {
   return {
@@ -38,10 +34,6 @@ function captureEntry(registry: CaptureRegistry): CommandEntry {
      *
      * @param raw - Raw input (`null` or `{}`).
      * @returns The shot and the state game.capture ran with.
-     * @example
-     * ```ts
-     * (await entry.run(null)).value; // { image: "data:image/png;base64,…", frame: 1841, device }
-     * ```
      */
     run: async (raw: Json): Promise<RunResult> => {
       checkInput({}, raw);
@@ -59,10 +51,6 @@ function captureEntry(registry: CaptureRegistry): CommandEntry {
  * @param registry - The registry slice.
  * @param deps - Config, state, log and clock.
  * @returns The entry.
- * @example
- * ```ts
- * await seriesEntry(registry, deps).run({ durationMs: 2000, intervalMs: 100 }); // { value: { shots, device }, state }
- * ```
  */
 function seriesEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry {
   return {
@@ -72,10 +60,6 @@ function seriesEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry
      *
      * @param raw - Raw input `{ durationMs, intervalMs }`.
      * @returns The shots and the device, with the state of the last good shot.
-     * @example
-     * ```ts
-     * (await entry.run({ durationMs: 2000, intervalMs: 100 })).value; // { shots: [ … 20 ], device }
-     * ```
      */
     run: async (raw: Json): Promise<RunResult> => {
       const plan = planSeries(checkInput(SERIES_INPUT, raw), deps.config);
@@ -110,10 +94,6 @@ function seriesEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry
  * @param registry - The registry slice.
  * @param deps - The capture deps (state).
  * @returns The entry.
- * @example
- * ```ts
- * await seriesStopEntry(registry, deps).run(null); // { value: { stopped: true }, state }
- * ```
  */
 function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry {
   return {
@@ -123,10 +103,6 @@ function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandE
      *
      * @param raw - Raw input (`null` or `{}`).
      * @returns Whether a series was stopped, with the registry envelope.
-     * @example
-     * ```ts
-     * (await entry.run(null)).value; // { stopped: false }
-     * ```
      */
     run: async (raw: Json): Promise<RunResult> => {
       checkInput({}, raw);
@@ -142,10 +118,6 @@ function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandE
  * @param registry - The registry slice (add, command, envelope).
  * @param deps - Config, state, log and clock.
  * @throws {Error} When an id is already in the registry.
- * @example
- * ```ts
- * registerCaptureCommands(ctx.require(registryPlugin), { config, state, log, clock: browserClock });
- * ```
  */
 export function registerCaptureCommands(registry: CaptureRegistry, deps: CaptureDeps): void {
   registry.add(captureEntry(registry));

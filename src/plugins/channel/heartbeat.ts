@@ -23,11 +23,6 @@ const MIN_HEARTBEAT_MS = 100;
  * @param ctx - Plugin context.
  * @param ctx.config - Resolved plugin config.
  * @throws {Error} `[moku-editor] channel.heartbeatMs must be a whole number of at least 100.`
- * @example
- * ```ts
- * checkConfig({ config: { heartbeatMs: 1000 } }); // passes
- * checkConfig({ config: { heartbeatMs: 50 } }); // throws
- * ```
  */
 export function checkConfig(ctx: { readonly config: Readonly<ChannelConfig> }): void {
   const { heartbeatMs } = ctx.config;
@@ -44,10 +39,6 @@ export function checkConfig(ctx: { readonly config: Readonly<ChannelConfig> }): 
  * @param registry - The registry slice with `clock()`.
  * @param now - Epoch ms of the beat.
  * @returns `{ frame, paused, at }`, frozen.
- * @example
- * ```ts
- * beatOf(registry, Date.now()); // { frame: 1840, paused: true, at: 1790000000000 }
- * ```
  */
 export function beatOf(registry: ChannelRegistry, now: number): Heartbeat {
   const { frame, paused } = registry.clock();
@@ -73,10 +64,6 @@ function messageOf(error: unknown): string {
  * return a number).
  *
  * @param timer - The interval handle.
- * @example
- * ```ts
- * unrefTimer(setInterval(tick, 1000));
- * ```
  */
 function unrefTimer(timer: unknown): void {
   if (typeof timer === "object" && timer !== null && "unref" in timer) {
@@ -90,10 +77,6 @@ function unrefTimer(timer: unknown): void {
  * logged and the others still run.
  *
  * @param deps - Domain deps of the channel.
- * @example
- * ```ts
- * setInterval(() => tick(deps), deps.config.heartbeatMs);
- * ```
  */
 function tick(deps: ChannelDeps): void {
   const beat = beatOf(deps.registry, Date.now());
@@ -111,10 +94,6 @@ function tick(deps: ChannelDeps): void {
  * at start.
  *
  * @param deps - Domain deps of the channel.
- * @example
- * ```ts
- * beginHeartbeat(deps); // listeners get a beat every deps.config.heartbeatMs
- * ```
  */
 export function beginHeartbeat(deps: ChannelDeps): void {
   const { state } = deps;
@@ -129,10 +108,6 @@ export function beginHeartbeat(deps: ChannelDeps): void {
  * onStart: starts the setInterval heartbeat (unref'd in Bun).
  *
  * @param ctx - Domain context of the channel.
- * @example
- * ```ts
- * createAgentPlugin("channel", { onStart: startHeartbeat });
- * ```
  */
 export function startHeartbeat(ctx: ChannelCtx): void {
   beginHeartbeat(depsOf(ctx));
@@ -143,10 +118,6 @@ export function startHeartbeat(ctx: ChannelCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createAgentPlugin("channel", { onStop: stopChannel });
- * ```
  */
 export function stopChannel(ctx: { readonly state: ChannelState }): void {
   const { state } = ctx;

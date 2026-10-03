@@ -15,10 +15,6 @@ import type { GameViewCtx, GameViewHooks } from "./types";
  *
  * @param ctx - Domain context of gameView.
  * @returns The four hooks.
- * @example
- * ```ts
- * createToolsPlugin("gameView", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: GameViewCtx): GameViewHooks {
   return {
@@ -36,10 +32,6 @@ export function createHandlers(ctx: GameViewCtx): GameViewHooks {
  *
  * @param ctx - Domain context of gameView.
  * @param payload - The link:status payload.
- * @example
- * ```ts
- * applyLinkStatus(ctx, { status: { kind: "live", frame: 2 }, session: "s-2" });
- * ```
  */
 function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]): void {
   const { state } = ctx;
@@ -69,10 +61,6 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "empty" } });
- * ```
  */
 export function onLinkStatus(ctx: GameViewCtx): (payload: ToolsEvents["link:status"]) => void {
   return payload => applyLinkStatus(ctx, payload);
@@ -84,10 +72,6 @@ export function onLinkStatus(ctx: GameViewCtx): (payload: ToolsEvents["link:stat
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.
- * @example
- * ```ts
- * onWorkspaceChanged(ctx)({ ws: "game" });
- * ```
  */
 export function onWorkspaceChanged(
   ctx: GameViewCtx
@@ -108,10 +92,6 @@ export function onWorkspaceChanged(
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.
- * @example
- * ```ts
- * onOpenSheet(ctx)({ index: ".moku/captures/series-2026-09-24-1015/index.json" });
- * ```
  */
 export function onOpenSheet(
   ctx: GameViewCtx
@@ -126,10 +106,6 @@ export function onOpenSheet(
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.
- * @example
- * ```ts
- * onInspect(ctx)({ ref: { kind: "entity", id: 1_048_580 } });
- * ```
  */
 export function onInspect(ctx: GameViewCtx): (payload: ToolsEvents["workspace:inspect"]) => void {
   return ({ ref }) => {

@@ -23,6 +23,14 @@ What it does:
 | `seriesWarnShots` | `number` | `200` | The popover warns above this many planned shots. |
 | `sourceSearch` | `{ maxFiles: number; skip: readonly string[] }` | `{ maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }` | Search for the style block of a picked element. |
 
+`sourceSearch` is replaced as a whole: config merges shallowly. Pass both fields when you override it.
+
+```ts
+createApp({
+  pluginConfigs: { gameView: { sourceSearch: { maxFiles: 800, skip: ["node_modules", "dist", ".git", ".moku"] } } }
+});
+```
+
 ## API
 
 `app.gameView` is `GameViewApi` (`types.ts`).

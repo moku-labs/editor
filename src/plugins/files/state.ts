@@ -8,10 +8,6 @@ import type { FilesState } from "./types";
  * and the globs.
  *
  * @returns A fresh state.
- * @example
- * ```ts
- * createServerPlugin("files", { createState: createFilesState });
- * ```
  */
 export function createFilesState(): FilesState {
   return { rootReal: "", allowGlobs: [], denyGlobs: [], locks: new Map() };

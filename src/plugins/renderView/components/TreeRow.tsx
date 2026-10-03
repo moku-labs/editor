@@ -32,10 +32,6 @@ export type TreeDetailProps = { readonly ctx: RenderViewCtx; readonly node: Scen
  * @param ctx - Domain context of renderView.
  * @param key - The texture key.
  * @returns The line.
- * @example
- * ```ts
- * textureLine(ctx, "board.cell"); // "board.cell · 224×219 · 0.19 MB"
- * ```
  */
 function textureLine(ctx: RenderViewCtx, key: string): string {
   const info = ctx.state.catalogue?.textures.get(key);
@@ -49,10 +45,6 @@ function textureLine(ctx: RenderViewCtx, key: string): string {
  *
  * @param props - ctx and the scene node.
  * @returns The detail list.
- * @example
- * ```tsx
- * <TreeDetail ctx={ctx} node={scene.nodes.get("entity:3145728")} />
- * ```
  */
 export function TreeDetail(props: TreeDetailProps): JSX.Element {
   const { ctx, node } = props;
@@ -98,10 +90,6 @@ export function TreeDetail(props: TreeDetailProps): JSX.Element {
  *
  * @param props - ctx, the row, whether it is selected and shows its detail.
  * @returns The treeitem.
- * @example
- * ```tsx
- * <TreeRow ctx={ctx} row={row} selected={row.id === selected} detail={false} />
- * ```
  */
 export function TreeRow(props: TreeRowProps): JSX.Element {
   const { ctx, row, selected, detail } = props;

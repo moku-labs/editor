@@ -80,7 +80,8 @@ export function isWorkspaceId(value: unknown): value is WorkspaceId {
  * @returns Whether it is not Game.
  * @example
  * ```ts
- * if (isPreviewWorkspace(state.active)) togglePreview(ctx);
+ * isPreviewWorkspace("flow"); // true
+ * isPreviewWorkspace("game"); // false
  * ```
  */
 export function isPreviewWorkspace(ws: WorkspaceId): ws is PreviewWorkspace {

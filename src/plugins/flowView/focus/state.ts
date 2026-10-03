@@ -7,10 +7,6 @@ import type { FocusState } from "./types";
  * Creates the focus slice: nothing selected, strip and history closed, no menu.
  *
  * @returns The focus state.
- * @example
- * ```ts
- * createFocusState().selected; // undefined
- * ```
  */
 export function createFocusState(): FocusState {
   return {

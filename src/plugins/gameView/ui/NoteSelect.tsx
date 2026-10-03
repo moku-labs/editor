@@ -29,10 +29,6 @@ const NEW_NOTE = "new";
  *
  * @param props - The context, the capture path and the node.
  * @returns The select row.
- * @example
- * ```tsx
- * <NoteSelect ctx={ctx} capture={card.path} node="board/awaitIntent" />
- * ```
  */
 export function NoteSelect(props: NoteSelectProps): VNode {
   const { ctx, capture, node } = props;

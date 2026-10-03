@@ -54,7 +54,13 @@ describe("initFlowView", () => {
     commands.find(item => item.label === "Follow the game")?.run();
     expect(ctx.state.camera.follow).toBe(true);
     commands.find(item => item.label === "Add a note")?.run();
-    expect(ctx.state.notes.editor).toBeDefined();
+    expect(ctx.state.notes.editor).toEqual({
+      title: "",
+      body: "",
+      from: undefined,
+      captures: [],
+      anchor: { x: 1110, y: 258 }
+    });
     commands.find(item => item.label === "Go to current node")?.run();
     expect(ctx.state.focus.selected).toBe("main/board>board/awaitIntent");
   });

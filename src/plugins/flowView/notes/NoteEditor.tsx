@@ -21,10 +21,6 @@ export type NoteEditorProps = { readonly ctx: FlowCtx; readonly actions: FlowAct
  * @param props.ctx - Domain context of flowView.
  * @param props.captures - Capture paths.
  * @returns The thumbnail row.
- * @example
- * ```tsx
- * <Thumbnails ctx={ctx} captures={[".moku/captures/a.png"]} />
- * ```
  */
 function Thumbnails(props: { readonly ctx: FlowCtx; readonly captures: readonly string[] }): VNode {
   const { ctx, captures } = props;
@@ -80,10 +76,6 @@ function contextText(
  *
  * @param props - Context and actions.
  * @returns The dialog, or an empty fragment while closed.
- * @example
- * ```tsx
- * <NoteEditor ctx={ctx} actions={actions} />
- * ```
  */
 export function NoteEditor(props: NoteEditorProps): VNode {
   const { ctx, actions } = props;
@@ -110,11 +102,6 @@ export function NoteEditor(props: NoteEditorProps): VNode {
   if (draft === undefined) return <span data-closed="note-editor" hidden />;
   /**
    * Saves the draft (a failure is logged).
-   *
-   * @example
-   * ```ts
-   * save();
-   * ```
    */
   const save = (): void => {
     actions.notes.save().catch((error: unknown) => {

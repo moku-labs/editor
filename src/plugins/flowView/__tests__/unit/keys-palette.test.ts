@@ -25,7 +25,7 @@ describe("Flow keys", () => {
         typeof entry.keys === "string" ? entry.keys === combo : entry.keys.includes(combo)
       );
     binding("n")?.run(key("n"));
-    expect(ctx.state.notes.editor?.anchor).toBeDefined();
+    expect(ctx.state.notes.editor?.anchor).toEqual({ x: 1110, y: 609 });
     actions.notes.close();
 
     const fit = vi.spyOn(actions.camera, "fitAll");

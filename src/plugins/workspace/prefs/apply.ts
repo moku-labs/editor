@@ -33,10 +33,6 @@ export type PrefsCtx = Pick<WorkspaceCtx, "state" | "config" | "log">;
  *
  * @param state - Workspace state.
  * @returns Effective theme, a copy of the previews, the device choice.
- * @example
- * ```ts
- * currentPrefs(ctx.state).device.preset.name; // "iPhone 15"
- * ```
  */
 export function currentPrefs(state: WorkspaceState): Prefs {
   return {
@@ -51,11 +47,6 @@ export function currentPrefs(state: WorkspaceState): Prefs {
  * re-docks the frame.
  *
  * @param ctx - State, config and log.
- * @example
- * ```ts
- * ctx.state.device.orientation = "landscape";
- * commitPrefs(ctx);
- * ```
  */
 export function commitPrefs(ctx: PrefsCtx): void {
   const { state } = ctx;
@@ -85,10 +76,6 @@ export function commitPrefs(ctx: PrefsCtx): void {
  * Shows the effective theme on `<html>` (where there is a document).
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * showTheme(ctx.state);
- * ```
  */
 export function showTheme(state: WorkspaceState): void {
   const root = globalThis.document?.documentElement;
@@ -100,10 +87,6 @@ export function showTheme(state: WorkspaceState): void {
  *
  * @param ctx - State, config and log.
  * @param theme - The theme, undefined to toggle.
- * @example
- * ```ts
- * chooseTheme(ctx); // light → dark
- * ```
  */
 export function chooseTheme(ctx: PrefsCtx, theme?: Theme): void {
   const { state } = ctx;
@@ -117,10 +100,6 @@ export function chooseTheme(ctx: PrefsCtx, theme?: Theme): void {
  *
  * @param ctx - State, config and log.
  * @param theme - The new OS theme.
- * @example
- * ```ts
- * watchOsTheme(theme => osThemeChanged(ctx, theme));
- * ```
  */
 export function osThemeChanged(ctx: PrefsCtx, theme: Theme): void {
   ctx.state.theme.os = theme;
@@ -134,10 +113,6 @@ export function osThemeChanged(ctx: PrefsCtx, theme: Theme): void {
  * @param state - Workspace state.
  * @param ws - A workspace with a preview.
  * @returns A copy.
- * @example
- * ```ts
- * previewState(ctx.state, "flow").width; // 150
- * ```
  */
 export function previewState(state: WorkspaceState, ws: PreviewWorkspace): PreviewState {
   const prefs = state.previews[ws];
@@ -152,10 +127,6 @@ export function previewState(state: WorkspaceState, ws: PreviewWorkspace): Previ
  * @param ctx - State, config and log.
  * @param ws - A workspace with a preview.
  * @param patch - Fields to change.
- * @example
- * ```ts
- * patchPreview(ctx, "render", { visible: false });
- * ```
  */
 export function patchPreview(
   ctx: PrefsCtx,
@@ -186,10 +157,6 @@ export function patchPreview(
  * @param patch.preset - A preset id.
  * @param patch.orientation - portrait or landscape.
  * @throws {Error} `[moku-editor] Unknown device "<id>".` for an unknown preset.
- * @example
- * ```ts
- * patchDevice(ctx, { orientation: "landscape" });
- * ```
  */
 export function patchDevice(
   ctx: PrefsCtx,
@@ -213,20 +180,12 @@ export function patchDevice(
  * @param state - Workspace state.
  * @param fn - Called after every preference change.
  * @returns Removes it.
- * @example
- * ```ts
- * const off = addPrefsListener(ctx.state, prefs => redraw(prefs));
- * ```
  */
 export function addPrefsListener(state: WorkspaceState, fn: (prefs: Prefs) => void): () => void {
   /**
    * A wrapper, so the same function added twice gets two entries.
    *
    * @param prefs - The preferences.
-   * @example
-   * ```ts
-   * listener(currentPrefs(state));
-   * ```
    */
   const listener = (prefs: Prefs): void => {
     fn(prefs);

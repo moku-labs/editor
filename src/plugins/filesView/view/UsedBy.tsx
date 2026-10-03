@@ -10,11 +10,6 @@ import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
 
 /**
  * Props of `UsedBy`.
- *
- * @example
- * ```tsx
- * <UsedBy ctx={ctx} api={api} tab={tab} status={status} />
- * ```
  */
 export type UsedByProps = {
   readonly ctx: FilesViewCtx;
@@ -28,10 +23,6 @@ export type UsedByProps = {
  *
  * @param props - Context, api, the tab and the link status.
  * @returns The row, or nothing for files under `.moku/`.
- * @example
- * ```tsx
- * <UsedBy ctx={ctx} api={api} tab={tab} status={status} />
- * ```
  */
 export function UsedBy(props: UsedByProps): VNode | undefined {
   const { ctx, api, tab, status } = props;
@@ -59,10 +50,6 @@ export function UsedBy(props: UsedByProps): VNode | undefined {
    * Asks flowView to focus a node.
    *
    * @param id - `"<flow>/<node>"`.
-   * @example
-   * ```ts
-   * select("board/merge");
-   * ```
    */
   const select = (id: string): void => {
     ctx.emit("workspace:select-node", { id });

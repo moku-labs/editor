@@ -92,10 +92,6 @@ type Press = {
  * @param ctx - Domain context of workspace.
  * @param ws - The workspace.
  * @returns The zone rect and its insets.
- * @example
- * ```ts
- * zoneOf(ctx, "flow").rect.width;
- * ```
  */
 function zoneOf(
   ctx: WorkspaceCtx,
@@ -128,10 +124,6 @@ export function cornerAfter(corner: PreviewCorner, key: string): PreviewCorner |
  * @param section - The float element.
  * @param ws - The workspace.
  * @param prefs - Its preview prefs.
- * @example
- * ```ts
- * placeFloat(ctx, section, "flow", ctx.state.previews.flow);
- * ```
  */
 function placeFloat(
   ctx: WorkspaceCtx,
@@ -156,10 +148,6 @@ function placeFloat(
  * @param delta - How far it was dragged.
  * @param delta.x - Horizontal travel.
  * @param delta.y - Vertical travel.
- * @example
- * ```ts
- * dropFloat(ctx, section, "flow", { x: -800, y: -600 });
- * ```
  */
 function dropFloat(
   ctx: WorkspaceCtx,
@@ -187,10 +175,6 @@ function dropFloat(
  * @param props.ws - The workspace.
  * @param props.prefs - Its preview prefs.
  * @returns The header.
- * @example
- * ```tsx
- * <PreviewHead ctx={ctx} ws="flow" prefs={prefs} />
- * ```
  */
 function PreviewHead(props: {
   readonly ctx: WorkspaceCtx;
@@ -261,10 +245,6 @@ function PreviewHead(props: {
  *
  * @param props - The workspace domain context.
  * @returns The float (hidden in Game and while the preview of the workspace is hidden).
- * @example
- * ```tsx
- * <Preview ctx={ctx} />
- * ```
  */
 export function Preview(props: PreviewProps): VNode {
   const { ctx } = props;

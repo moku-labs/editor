@@ -8,11 +8,6 @@ import type { FilesViewCtx, OpenTab } from "../types";
 
 /**
  * Props of `ImagePreview`.
- *
- * @example
- * ```tsx
- * <ImagePreview ctx={ctx} tab={tab} />
- * ```
  */
 export type ImagePreviewProps = { readonly ctx: FilesViewCtx; readonly tab: OpenTab };
 
@@ -37,10 +32,6 @@ function kilobytes(size: number | undefined, dataUrl: string): number {
  *
  * @param props - Context and the image tab.
  * @returns The figure.
- * @example
- * ```tsx
- * <ImagePreview ctx={ctx} tab={tab} />
- * ```
  */
 export function ImagePreview(props: ImagePreviewProps): VNode {
   const { ctx, tab } = props;

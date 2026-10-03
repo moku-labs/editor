@@ -14,7 +14,7 @@ import type { Json, LinkStatus, RunResult, ToolsBoot } from "../registry/protoco
 import type { PreviewState, ReloadResult } from "../workspace/types";
 import type { CameraActions, CameraApi, CameraState } from "./camera/types";
 import type { FocusActions, FocusApi, FocusState } from "./focus/types";
-import type { InspectorApi, InspectorState } from "./inspector/types";
+import type { InspectorActions, InspectorState } from "./inspector/types";
 import type { FlowsApi, LayoutActions, LayoutApi, LayoutState } from "./layout/types";
 import type { NotesActions, NotesApi, NotesState } from "./notes/types";
 
@@ -298,10 +298,55 @@ export type FlowViewState = {
  * ```
  */
 export type FlowViewApi = {
+  /**
+   * The camera: fit all, fit the selection, zoom, Follow the game.
+   *
+   * @example
+   * ```ts
+   * app.flowView.camera.zoomTo(1); // 100 %
+   * ```
+   */
   camera: CameraApi;
+
+  /**
+   * Focus: select a node, walk the graph, focus the edge of a frame, Step, the history strip.
+   *
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge"); // true, the neighbours strip opens
+   * ```
+   */
   focus: FocusApi;
+
+  /**
+   * Sub-flows: expand and collapse in place, enter as the canvas root, go back up.
+   *
+   * @example
+   * ```ts
+   * app.flowView.flows.enter("main/board"); // breadcrumb main › board
+   * ```
+   */
   flows: FlowsApi;
+
+  /**
+   * Pinned positions: how many are pinned in the visible flows, and Reset layout.
+   *
+   * @example
+   * ```ts
+   * // merge and toast were dragged on the board.
+   * app.flowView.layout.pinnedCount(); // 2
+   * ```
+   */
   layout: LayoutApi;
+
+  /**
+   * Notes: the note files, the note editor, create and attach captures.
+   *
+   * @example
+   * ```ts
+   * app.flowView.notes.list()[0]?.path; // ".moku/notes/2026-09-24-first-top-item.md"
+   * ```
+   */
   notes: NotesApi;
 };
 
@@ -315,7 +360,7 @@ export type FlowActions = {
   readonly flows: FlowsApi;
   readonly layout: LayoutActions;
   readonly notes: NotesActions;
-  readonly inspector: InspectorApi;
+  readonly inspector: InspectorActions;
 };
 
 /**

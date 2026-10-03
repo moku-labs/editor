@@ -59,10 +59,6 @@ function toFilesError(operation: string, path: string, error: unknown): Error {
  * @param path - The requested path.
  * @param task - The call.
  * @returns The call's result.
- * @example
- * ```ts
- * await guard("read", path, () => readFile(ctx, path));
- * ```
  */
 async function guard<T>(operation: string, path: string, task: () => Promise<T>): Promise<T> {
   try {
@@ -80,10 +76,6 @@ async function guard<T>(operation: string, path: string, task: () => Promise<T>)
  * @param real - The real target.
  * @param path - The requested path, for the error message.
  * @throws {Error} -32004 when the folder moved or left the root.
- * @example
- * ```ts
- * await atomicWrite(real, bytes, () => recheckParent(ctx, real, path));
- * ```
  */
 async function recheckParent(ctx: FilesCtx, real: string, path: string): Promise<void> {
   const folder = dirname(real);
@@ -100,7 +92,7 @@ async function recheckParent(ctx: FilesCtx, real: string, path: string): Promise
  * @param onFailure - Logs the failure.
  * @example
  * ```ts
- * emitLogged(() => ctx.emit("files:written", payload), error => ctx.log.error("files:emit-failed", { error }));
+ * emitLogged(() => Promise.reject(new Error("x")), console.error); // returns; logs "Error: x" later
  * ```
  */
 function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
@@ -121,10 +113,6 @@ function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): v
  * @param real - The real target.
  * @param bytes - The bytes to write.
  * @returns `{ path, bytes, version }`.
- * @example
- * ```ts
- * return commit(ctx, path, real, ENCODER.encode(text));
- * ```
  */
 async function commit(
   ctx: FilesCtx,
@@ -150,10 +138,6 @@ async function commit(
  * @param path - The requested path.
  * @param version - The version the caller saw.
  * @throws {Error} -32005 when the file is missing or changed.
- * @example
- * ```ts
- * if (version !== undefined) await checkVersion(real, path, version);
- * ```
  */
 async function checkVersion(real: string, path: string, version: string): Promise<void> {
   let current: Uint8Array;
@@ -175,10 +159,6 @@ async function checkVersion(real: string, path: string, version: string): Promis
  * @param text - The new text.
  * @param version - Optional version the caller saw.
  * @returns The write result.
- * @example
- * ```ts
- * await withLock(ctx.state, path, () => writeText(ctx, path, text, version));
- * ```
  */
 async function writeText(
   ctx: FilesCtx,
@@ -203,10 +183,6 @@ async function writeText(
  * @param path - The requested capture path.
  * @param bytes - The image bytes.
  * @returns The write result.
- * @example
- * ```ts
- * await withLock(ctx.state, path, () => writeImage(ctx, path, bytes));
- * ```
  */
 async function writeImage(ctx: FilesCtx, path: string, bytes: Uint8Array): Promise<WriteResult> {
   const real = await resolveReal(ctx, path, "writeBinary");
@@ -226,10 +202,6 @@ async function writeImage(ctx: FilesCtx, path: string, bytes: Uint8Array): Promi
  * @param ctx - Domain context of files.
  * @param path - The requested image path.
  * @returns The data URL and the version.
- * @example
- * ```ts
- * await readImage(ctx, ".moku/captures/a.png"); // { dataUrl: "data:image/png;base64,…", version }
- * ```
  */
 async function readImage(ctx: FilesCtx, path: string): Promise<FileBinary> {
   const bytes = await readBytes(await resolveReal(ctx, path, "readBinary"), MAX_BINARY_BYTES, path);
@@ -243,10 +215,6 @@ async function readImage(ctx: FilesCtx, path: string): Promise<FileBinary> {
  * @param ctx - Domain context of files.
  * @param dir - The requested folder; `""` or `"."` for the root.
  * @returns The visible children.
- * @example
- * ```ts
- * await listFolder(ctx, "src");
- * ```
  */
 async function listFolder(ctx: FilesCtx, dir: string): Promise<FileEntry[]> {
   const real = await resolveReal(ctx, dir, "list");
@@ -260,10 +228,6 @@ async function listFolder(ctx: FilesCtx, dir: string): Promise<FileEntry[]> {
  * @param ctx - Domain context of files.
  * @param path - The requested path.
  * @returns The text and its version.
- * @example
- * ```ts
- * await readFile(ctx, "src/a.ts");
- * ```
  */
 async function readFile(ctx: FilesCtx, path: string): Promise<FileText> {
   return readText(await resolveReal(ctx, path, "read"), path);
@@ -274,87 +238,20 @@ async function readFile(ctx: FilesCtx, path: string): Promise<FileText> {
  *
  * @param ctx - Domain context of files.
  * @returns The api mounted at `app.files`.
- * @example
- * ```ts
- * const saved = await createFilesApi(ctx).write(".moku/editor/layout.json", text, version);
- * ```
  */
 export function createFilesApi(ctx: FilesCtx): FilesApi {
   return {
-    /**
-     * Lists the direct children of a folder inside the project root.
-     *
-     * @param dir - Relative folder path; "" or "." for the root.
-     * @returns Folders first, then allowed files, sorted by path.
-     * @example
-     * ```ts
-     * await app.files.list("src/nodes"); // [{ path: "src/nodes/await-intent.ts", kind: "file", size: 812 }, …]
-     * ```
-     */
     list: dir => guard("list", dir, () => listFolder(ctx, dir)),
-    /**
-     * Reads a regular file as UTF-8 with its version (sha1 of the bytes).
-     *
-     * @param path - Relative file path.
-     * @returns `{ text, version }`.
-     * @example
-     * ```ts
-     * const { text, version } = await app.files.read("features/ui/styles.ts");
-     * ```
-     */
     read: path => guard("read", path, () => readFile(ctx, path)),
-    /**
-     * Atomic text write; `version` makes it fail with -32005 when the file changed meanwhile.
-     *
-     * @param path - Relative file path; missing parent folders are created inside the root.
-     * @param text - The new content.
-     * @param version - Optional version from the last read.
-     * @returns `{ path, bytes, version }`.
-     * @example
-     * ```ts
-     * await app.files.write(".moku/editor/layout.json", json, current.version);
-     * ```
-     */
     write: (path, text, version) =>
       guard("write", path, () =>
         withLock(ctx.state, path, () => writeText(ctx, path, text, version))
       ),
-    /**
-     * Atomic image write under `.moku/captures/` (png, jpg, jpeg, webp, gif).
-     *
-     * @param path - Relative capture path; missing parent folders are created inside the root.
-     * @param bytes - The image bytes (hub decodes them with decodeDataUrl).
-     * @returns `{ path, bytes, version }`.
-     * @example
-     * ```ts
-     * await app.files.writeBinary(".moku/captures/2026-09-24-1012-board.png", bytes);
-     * ```
-     */
     writeBinary: (path, bytes) =>
       guard("writeBinary", path, () =>
         withLock(ctx.state, path, () => writeImage(ctx, path, bytes))
       ),
-    /**
-     * Reads an image back as a data URL with its version (R3).
-     *
-     * @param path - Relative image path.
-     * @returns `{ dataUrl, version }`.
-     * @example
-     * ```ts
-     * const { dataUrl } = await app.files.readBinary(".moku/captures/a.png");
-     * ```
-     */
     readBinary: path => guard("readBinary", path, () => readImage(ctx, path)),
-    /**
-     * Synchronous full check; the absolute real path (of a missing file: where it would be).
-     *
-     * @param path - Relative file path.
-     * @returns The real absolute path.
-     * @example
-     * ```ts
-     * app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
-     * ```
-     */
     resolve: path => {
       try {
         return resolveRealSync(ctx, path, "write");
@@ -362,15 +259,6 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
         throw toFilesError("resolve", path, error);
       }
     },
-    /**
-     * The real project root (R3), for "Open in editor" links.
-     *
-     * @returns The symlink-resolved absolute root.
-     * @example
-     * ```ts
-     * app.files.root(); // "/Users/alex/game"
-     * ```
-     */
     root: () => ctx.state.rootReal
   };
 }

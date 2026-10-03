@@ -198,7 +198,6 @@ describe("channel types", () => {
       pluginConfigs: { registry: { game: game.app } }
     });
 
-    expect(seen).toBeDefined();
-    expect(seen?.status().kind).toBe(app.channel.status().kind);
+    expect(seen?.status()).toEqual(app.channel.status());
   });
 });

@@ -38,17 +38,38 @@ export type ChannelState = {
 };
 
 /**
- * The channel api: the in-process EditorChannel plus the heartbeat.
- *
- * @example
- * ```ts
- * const stop = editor.channel.watch("game.position", undefined, position => show(position));
- * ```
+ * The channel api (`app.channel`, `ctx.require(channelPlugin)`): the in-process EditorChannel of
+ * the game page plus the heartbeat. `read`, `watch`, `run` and `status` are documented on
+ * EditorChannel. Here `watch` delivers the current value before it returns, and an unknown id, an
+ * invalid input or a throwing first `onValue` throws synchronously and opens no watch.
  */
 export type ChannelApi = EditorChannel & {
-  /** A fresh frozen beat now. */
+  /**
+   * A fresh frozen beat now, from the registry clock.
+   *
+   * @returns `{ frame, paused, at }`, `at` in epoch ms.
+   * @example
+   * ```ts
+   * // The bridge sends a beat right after the socket opens.
+   * ctx.require(channelPlugin).heartbeat(); // { frame: 1840, paused: false, at: 1790000000000 }
+   * ```
+   */
   heartbeat(): Heartbeat;
-  /** Adds a listener called on every interval tick; returns an idempotent remover. */
+  /**
+   * Adds a listener called on every interval tick (`heartbeatMs`), in subscription order. A
+   * throwing listener is logged at warn and the others still run. No beat is sent at start.
+   *
+   * @param fn - The listener.
+   * @returns An idempotent remover.
+   * @example
+   * ```ts
+   * // The bridge pushes every beat to the editor server until it stops.
+   * const off = ctx.require(channelPlugin).onHeartbeat(beat => {
+   *   socket.send(encode(notification("game", "heartbeat", beat)));
+   * });
+   * off();
+   * ```
+   */
   onHeartbeat(fn: HeartbeatListener): () => void;
 };
 

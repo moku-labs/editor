@@ -38,10 +38,6 @@ export function newTab(path: string): OpenTab {
  * @param state - filesView state.
  * @param path - A relative path.
  * @returns The tab, or undefined.
- * @example
- * ```ts
- * findTab(ctx.state, "nodes/merge.ts")?.status; // "ready"
- * ```
  */
 export function findTab(state: FilesViewState, path: string): OpenTab | undefined {
   return state.tabs.find(tab => tab.path === path);
@@ -52,10 +48,6 @@ export function findTab(state: FilesViewState, path: string): OpenTab | undefine
  *
  * @param state - filesView state.
  * @returns The tab, or undefined with no tab open.
- * @example
- * ```ts
- * activeTab(ctx.state)?.editing; // true while editing
- * ```
  */
 export function activeTab(state: FilesViewState): OpenTab | undefined {
   return state.active === undefined ? undefined : findTab(state, state.active);

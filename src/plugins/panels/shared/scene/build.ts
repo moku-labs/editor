@@ -211,10 +211,6 @@ function placeRect(rect: PageRect, calibration: Calibration | undefined): PageRe
  * @param lists - Key → items.
  * @param key - The key.
  * @param item - The item.
- * @example
- * ```ts
- * appendTo(children, "ui:boardScreen", "ui:boardScreen/hudRow");
- * ```
  */
 function appendTo<Item>(lists: Map<string, Item[]>, key: string, item: Item): void {
   const list = lists.get(key);
@@ -611,10 +607,6 @@ function linkEntities(builder: Builder, placed: readonly Placed[]): string[] {
  * @param id - The node id.
  * @param children - Parent id → child ids.
  * @param order - The paint order, filled in.
- * @example
- * ```ts
- * appendPainted("ui:boardScreen", children, order);
- * ```
  */
 function appendPainted(
   id: string,

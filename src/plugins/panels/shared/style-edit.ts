@@ -245,10 +245,6 @@ function commentEnd(text: string, start: number): number {
  * Classifies one step of template text: an escape, the closing backtick, a `${` or one character.
  *
  * @param cursor - The classifier cursor, inside template text.
- * @example
- * ```ts
- * stepTemplate(cursor);
- * ```
  */
 function stepTemplate(cursor: Cursor): void {
   const { text, index } = cursor;
@@ -273,10 +269,6 @@ function stepTemplate(cursor: Cursor): void {
  *
  * @param cursor - The classifier cursor, on a `{` or `}` of code.
  * @param char - The brace.
- * @example
- * ```ts
- * stepBrace(cursor, "}");
- * ```
  */
 function stepBrace(cursor: Cursor, char: string): void {
   const top = cursor.holes.length - 1;
@@ -301,10 +293,6 @@ function stepBrace(cursor: Cursor, char: string): void {
  * Classifies one step of code: a comment, a string, a template start, a brace or one character.
  *
  * @param cursor - The classifier cursor, in code.
- * @example
- * ```ts
- * stepCode(cursor);
- * ```
  */
 function stepCode(cursor: Cursor): void {
   const { text, index } = cursor;
@@ -403,10 +391,6 @@ function pairBraces(
  *
  * @param text - The file text.
  * @returns The scan.
- * @example
- * ```ts
- * const scan = scanText(text);
- * ```
  */
 function scanText(text: string): Scan {
   const kinds = classify(text);
@@ -485,10 +469,6 @@ const CLOSERS = new Set(["}", "]", ")"]);
  * @param scan - The scan.
  * @param index - A character index.
  * @returns Whether the character is significant.
- * @example
- * ```ts
- * isSignificant(scan, 4);
- * ```
  */
 function isSignificant(scan: Scan, index: number): boolean {
   return scan.kinds[index] !== COMMENT && (scan.text[index] ?? " ").trim() !== "";
@@ -501,10 +481,6 @@ function isSignificant(scan: Scan, index: number): boolean {
  * @param start - First index.
  * @param end - End index (exclusive).
  * @returns The trimmed range; empty when start equals end.
- * @example
- * ```ts
- * const [from, to] = trimRange(scan, 10, 20);
- * ```
  */
 function trimRange(scan: Scan, start: number, end: number): [number, number] {
   let from = start;
@@ -563,10 +539,6 @@ function splitMembers(scan: Scan, start: number, end: number): [number, number][
  * @param start - First index of the member.
  * @param end - End index of the member.
  * @returns The colon index, or -1 for a shorthand or a spread.
- * @example
- * ```ts
- * memberColon(scan, from, to);
- * ```
  */
 function memberColon(scan: Scan, start: number, end: number): number {
   let nesting = 0;
@@ -665,10 +637,6 @@ function readMembers(
  * @param to - End index of the member.
  * @param prefix - "" for the block, "shadow." for a nested object.
  * @param fields - Where the fields go.
- * @example
- * ```ts
- * readMember(scan, from, to, "", fields);
- * ```
  */
 function readMember(
   scan: Scan,
@@ -869,7 +837,7 @@ export function findBlock(file: StyleFile, ref: StyleBlockRef): StyleBlock | Sty
  * @returns The rule.
  * @example
  * ```ts
- * rule(0, 1, 0.05, 0.1);
+ * rule(0, 1, 0.05, 0.1); // { min: 0, max: 1, step: 0.05, bigStep: 0.1, integer: false }
  * ```
  */
 function rule(min: number, max: number, step: number, bigStep: number): FieldRule {
@@ -1044,10 +1012,6 @@ function lineStartOf(text: string, line: number): number {
  * @param raw - The literal that was written.
  * @param line - The edited line.
  * @returns Whether the edit is exactly the one literal.
- * @example
- * ```ts
- * isCleanEdit(text, edited, target, "64", 74);
- * ```
  */
 function isCleanEdit(
   before: string,
@@ -1171,10 +1135,6 @@ export async function loadStyleFile(
  * @param edited - The edited text and line.
  * @param version - The version the edit was made from.
  * @returns The write, `no-file`, or undefined on a version conflict; other rejections propagate.
- * @example
- * ```ts
- * await tryWrite(files, path, edited, "v1");
- * ```
  */
 async function tryWrite(
   files: StyleFiles,
@@ -1206,10 +1166,6 @@ async function tryWrite(
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns The write, `no-file` or `changed-on-disk`.
- * @example
- * ```ts
- * await retryWrite(files, path, target, 64);
- * ```
  */
 async function retryWrite(
   files: StyleFiles,

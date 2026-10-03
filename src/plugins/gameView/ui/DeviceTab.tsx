@@ -48,10 +48,6 @@ function renderChipsOf(value: Json): RenderChips | undefined {
  *
  * @param ctx - Domain context of gameView.
  * @returns The chips.
- * @example
- * ```ts
- * await readRender(ctx); // { fps: 60, frameMs: 4.2, textureMb: 12.5 }
- * ```
  */
 async function readRender(ctx: GameViewCtx): Promise<RenderChips | undefined> {
   try {
@@ -66,10 +62,6 @@ async function readRender(ctx: GameViewCtx): Promise<RenderChips | undefined> {
  *
  * @param props - The gameView domain context.
  * @returns The tab.
- * @example
- * ```tsx
- * <DeviceTab ctx={ctx} />
- * ```
  */
 export function DeviceTab(props: DeviceTabProps): VNode {
   const { ctx } = props;

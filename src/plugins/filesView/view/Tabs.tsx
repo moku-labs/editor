@@ -14,11 +14,6 @@ import { useElement } from "./useFiles";
 
 /**
  * Props of `Tabs`.
- *
- * @example
- * ```tsx
- * <Tabs ctx={ctx} />
- * ```
  */
 export type TabsProps = { readonly ctx: FilesViewCtx };
 
@@ -27,10 +22,6 @@ export type TabsProps = { readonly ctx: FilesViewCtx };
  * the DOM when it closes, which also leaves the top layer).
  *
  * @param element - The popover element, when rendered.
- * @example
- * ```ts
- * showInTopLayer(dialog);
- * ```
  */
 function showInTopLayer(element: HTMLElement | undefined): void {
   if (element === undefined || typeof element.showPopover !== "function") return;
@@ -42,10 +33,6 @@ function showInTopLayer(element: HTMLElement | undefined): void {
  *
  * @param props - Context.
  * @returns The tabs.
- * @example
- * ```tsx
- * <Tabs ctx={ctx} />
- * ```
  */
 export function Tabs(props: TabsProps): VNode {
   const { ctx } = props;
@@ -62,10 +49,6 @@ export function Tabs(props: TabsProps): VNode {
    * Activates the tab next to the active one and focuses it.
    *
    * @param step - -1 for left, 1 for right.
-   * @example
-   * ```ts
-   * move(1);
-   * ```
    */
   const move = (step: number): void => {
     const position = state.tabs.findIndex(tab => tab.path === state.active);

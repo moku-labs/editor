@@ -15,10 +15,6 @@ import type { GameViewState } from "../types";
  * @param state - gameView state.
  * @param select - Reads what the component shows.
  * @returns The selected value.
- * @example
- * ```tsx
- * const on = useGameView(ctx.state, () => ctx.state.picker.on);
- * ```
  */
 export function useGameView<T>(state: GameViewState, select: () => T): T {
   const [, setVersion] = useState(0);
@@ -31,10 +27,6 @@ export function useGameView<T>(state: GameViewState, select: () => T): T {
  *
  * @param active - Whether the clock runs.
  * @param everyMs - The tick.
- * @example
- * ```tsx
- * useTicker(recording !== undefined, 100);
- * ```
  */
 export function useTicker(active: boolean, everyMs: number): void {
   const [tick, setTick] = useState(0);

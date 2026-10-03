@@ -17,10 +17,6 @@ import { INDEX_STALE_MS } from "./types";
  *
  * @param ctx - Domain context of filesView.
  * @returns The three hooks.
- * @example
- * ```ts
- * createToolsPlugin("filesView", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: FilesViewCtx): FilesViewHooks {
   return {
@@ -36,10 +32,6 @@ export function createHandlers(ctx: FilesViewCtx): FilesViewHooks {
  *
  * @param ctx - Domain context of filesView.
  * @returns The `link:status` hook.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "live", frame: 12 } });
- * ```
  */
 export function onLinkStatus(ctx: FilesViewCtx): (payload: ToolsEvents["link:status"]) => void {
   return () => {
@@ -55,10 +47,6 @@ export function onLinkStatus(ctx: FilesViewCtx): (payload: ToolsEvents["link:sta
  *
  * @param ctx - Domain context of filesView.
  * @returns The `workspace:changed` hook.
- * @example
- * ```ts
- * onWorkspaceChanged(ctx)({ ws: "files" });
- * ```
  */
 export function onWorkspaceChanged(
   ctx: FilesViewCtx
@@ -80,10 +68,6 @@ export function onWorkspaceChanged(
  *
  * @param ctx - Domain context of filesView.
  * @returns The `workspace:open-file` hook.
- * @example
- * ```ts
- * handleOpenFile(ctx)({ path: "flows/board.ts", line: 3 });
- * ```
  */
 export function handleOpenFile(
   ctx: FilesViewCtx

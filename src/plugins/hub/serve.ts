@@ -61,7 +61,7 @@ function isEditorKey(path: string, key: string): boolean {
  * @returns A 404.
  * @example
  * ```ts
- * const fetch = options.fetch ?? notFound;
+ * notFound().status; // 404
  * ```
  */
 function notFound(): Response {
@@ -76,10 +76,6 @@ function notFound(): Response {
  *
  * @param ctx - Domain context of the hub.
  * @returns The route handler.
- * @example
- * ```ts
- * routes[`${path}/ws`] = upgradeRoute(ctx);
- * ```
  */
 function upgradeRoute(ctx: HubCtx): RouteHandler {
   return function upgrade(req: Request, server: HubServer): Response | undefined {
@@ -95,10 +91,6 @@ function upgradeRoute(ctx: HubCtx): RouteHandler {
  * @param routes - Editor routes, keyed under config.path.
  * @throws {Error} After serve(), on a key registered before, on `{path}/ws`, or on a key outside
  * the editor path.
- * @example
- * ```ts
- * registerRoutes(ctx, { "/__editor/hello": helloRoute });
- * ```
  */
 export function registerRoutes(ctx: HubCtx, routes: EditorRoutes): void {
   const { state, config } = ctx;
@@ -134,10 +126,6 @@ export function registerRoutes(ctx: HubCtx, routes: EditorRoutes): void {
  * @param options - The game's serve options.
  * @throws {Error} Before start, on a second call, on a websocket handler, on unix or tls, on a
  * hostname other than 127.0.0.1 / localhost, or on a game route under the editor path.
- * @example
- * ```ts
- * checkServeOptions(ctx, options);
- * ```
  */
 function checkServeOptions(ctx: HubCtx, options: ServeOptions): void {
   const { state, config } = ctx;
@@ -190,10 +178,6 @@ function checkServeOptions(ctx: HubCtx, options: ServeOptions): void {
  * @param websocket - The hub websocket handler.
  * @returns The merged options.
  * @throws {Error} See checkServeOptions.
- * @example
- * ```ts
- * mergeServeOptions(ctx, { port: 3000, routes: { "/": index } }, websocket).hostname; // "127.0.0.1"
- * ```
  */
 export function mergeServeOptions(
   ctx: HubCtx,
@@ -222,10 +206,6 @@ export function mergeServeOptions(
  * @returns Options ready for Bun.serve.
  * @throws {Error} Before start, on a second call, on hostname other than 127.0.0.1/localhost, on
  * unix/tls, on a websocket or a route under the editor path.
- * @example
- * ```ts
- * Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
- * ```
  */
 export function serveWith(
   ctx: HubCtx,

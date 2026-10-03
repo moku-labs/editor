@@ -114,10 +114,6 @@ function BarButton(props: {
  *
  * @param props - The workspace domain context.
  * @returns The bar.
- * @example
- * ```tsx
- * <TopBar ctx={ctx} />
- * ```
  */
 export function TopBar(props: TopBarProps): VNode {
   const { ctx } = props;

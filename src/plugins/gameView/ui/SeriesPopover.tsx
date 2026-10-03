@@ -64,10 +64,6 @@ function Chips(props: ChipsProps): VNode {
  * Shows a popover element in the top layer where the Popover API exists.
  *
  * @param element - The popover element.
- * @example
- * ```ts
- * showInTopLayer(popoverRef.current);
- * ```
  */
 export function showInTopLayer(element: HTMLElement | null): void {
   if (element === null || typeof element.showPopover !== "function") return;
@@ -83,10 +79,6 @@ export function showInTopLayer(element: HTMLElement | null): void {
  *
  * @param props - The gameView domain context.
  * @returns The popover, undefined while closed.
- * @example
- * ```tsx
- * <SeriesPopover ctx={ctx} />
- * ```
  */
 export function SeriesPopover(props: SeriesPopoverProps): VNode | undefined {
   const { ctx } = props;

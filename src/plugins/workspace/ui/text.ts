@@ -81,10 +81,6 @@ export function secondsOf(ms: number): number {
  *
  * @param epoch - Epoch ms.
  * @returns HH:MM:SS.
- * @example
- * ```ts
- * clockTime(session.connectedAt);
- * ```
  */
 export function clockTime(epoch: number): string {
   const date = new Date(epoch);

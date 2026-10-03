@@ -101,6 +101,48 @@ function inChrome(target: EventTarget | null): boolean {
 }
 
 /**
+ * True for a `data-hit` a double-click enters: a card or a frame head.
+ *
+ * @param hit - The `data-hit` value.
+ * @returns Whether a double-click enters the item.
+ * @example
+ * ```ts
+ * entersOnDoubleClick("frame-head"); // true
+ * ```
+ */
+function entersOnDoubleClick(hit: string | undefined): boolean {
+  return hit === "card" || hit === "frame-head";
+}
+
+/**
+ * True for a `data-hit` the node menu opens on: a card, the hub head or a note.
+ *
+ * @param hit - The `data-hit` value.
+ * @returns Whether a right click opens the node menu.
+ * @example
+ * ```ts
+ * opensNodeMenu("hub-head"); // true
+ * ```
+ */
+function opensNodeMenu(hit: string | undefined): boolean {
+  return hit === "card" || hit === "hub-head" || hit === "note";
+}
+
+/**
+ * True for a `data-hit` the outcome menu opens on: a stub or an outcome row.
+ *
+ * @param hit - The `data-hit` value.
+ * @returns Whether a right click opens the outcome menu.
+ * @example
+ * ```ts
+ * opensOutcomeMenu("stub"); // true
+ * ```
+ */
+function opensOutcomeMenu(hit: string | undefined): boolean {
+  return hit === "stub" || hit === "outcome";
+}
+
+/**
  * The world with one item moved by a drag offset: the item and only the edges touching it change.
  *
  * @param world - The world view.
@@ -133,10 +175,6 @@ function dragged(
  * @param props.drag - The dragged item.
  * @param props.hover - The hovered stub key.
  * @returns The world element.
- * @example
- * ```tsx
- * <World ctx={ctx} actions={actions} world={world} drag={undefined} hover={undefined} />
- * ```
  */
 function World(props: {
   readonly ctx: FlowCtx;
@@ -210,10 +248,6 @@ function World(props: {
  *
  * @param props - Context, actions, the world view and the canvas chrome.
  * @returns The canvas.
- * @example
- * ```tsx
- * <Canvas ctx={ctx} actions={actions} world={world}><ZoomBar ctx={ctx} actions={actions} /></Canvas>
- * ```
  */
 export function Canvas(props: CanvasProps): VNode {
   const { ctx, actions, world, children } = props;
@@ -228,11 +262,6 @@ export function Canvas(props: CanvasProps): VNode {
     if (element === undefined) return;
     /**
      * Records the canvas size when it has one.
-     *
-     * @example
-     * ```ts
-     * measure();
-     * ```
      */
     const measure = (): void => {
       const rect = element.getBoundingClientRect();
@@ -408,12 +437,7 @@ export function Canvas(props: CanvasProps): VNode {
       if (inChrome(event.target)) return;
       const element = hitOf(event.target);
       const key = element?.dataset.key;
-      if (
-        key !== undefined &&
-        (element?.dataset.hit === "card" || element?.dataset.hit === "frame-head")
-      ) {
-        actions.flows.enter(key);
-      }
+      if (key !== undefined && entersOnDoubleClick(element?.dataset.hit)) actions.flows.enter(key);
     },
     [actions]
   );
@@ -428,7 +452,7 @@ export function Canvas(props: CanvasProps): VNode {
       const y = event.clientY - (rect?.top ?? 0);
       const hit = element?.dataset.hit;
       const key = element?.dataset.key;
-      if ((hit === "card" || hit === "hub-head" || hit === "note") && key !== undefined) {
+      if (opensNodeMenu(hit) && key !== undefined) {
         actions.focus.openMenu({ target: "node", key, outcome: undefined, x, y });
         return;
       }
@@ -438,7 +462,7 @@ export function Canvas(props: CanvasProps): VNode {
           : undefined;
       const source = into?.from ?? element?.dataset.source ?? key;
       const outcome = into?.outcome ?? element?.dataset.outcome;
-      if ((hit === "stub" || hit === "outcome") && source !== undefined && outcome !== undefined) {
+      if (opensOutcomeMenu(hit) && source !== undefined && outcome !== undefined) {
         actions.focus.openMenu({ target: "outcome", key: source, outcome, x, y });
         return;
       }

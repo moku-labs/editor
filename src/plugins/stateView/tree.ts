@@ -39,10 +39,6 @@ function childrenOf(value: Json): [string, Json][] | undefined {
  * @param row.label - Its key, index or root name.
  * @param row.depth - Its depth.
  * @param row.parent - Pointer of the parent row.
- * @example
- * ```ts
- * visit(rows, options, { value: { a: 1 }, pointer: "/player", label: "player", depth: 0, parent: undefined });
- * ```
  */
 function visit(
   rows: TreeRow[],

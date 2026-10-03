@@ -154,18 +154,64 @@ export type LinkStatus =
   | { kind: "empty" };
 
 /**
- * The channel every panel reads through: in process (agent channel) or remote (tools link).
- *
- * @example
- * ```ts
- * const stop = channel.watch("game.position", undefined, position => show(position));
- * ```
+ * The channel every panel reads through: in process (`app.channel`, the agent channel of the game
+ * page) or remote (`app.link`, the tools link to the editor server). The base of `ChannelApi` and
+ * `LinkApi`. Errors reject as wire errors: -32601 `unknown_id`, -32602 `invalid_input`, the
+ * command's own error; the remote link adds its transport reasons (`timeout`, `link_closed` …).
  */
 export type EditorChannel = {
+  /**
+   * Reads a source now.
+   *
+   * @param id - The source id, e.g. "game.position".
+   * @param input - The source input; omit it for a source without input.
+   * @returns A promise of the wire value. It never throws synchronously.
+   * @example
+   * ```ts
+   * // A panel shows where the game stands.
+   * await app.channel.read("game.position"); // { path: "home", … }
+   * await app.channel.read("game.history", { last: 1 }); // [{ path: "home", outcome: "play", … }]
+   * ```
+   */
   read(id: string, input?: Json): Promise<Json>;
-  /** Delivers the current value first, then every change. */
+  /**
+   * Follows a source: delivers the current value first, then every change.
+   *
+   * @param id - The source id.
+   * @param input - The source input; `undefined` means none, but the argument is required.
+   * @param onValue - Called with each value.
+   * @returns An idempotent stop.
+   * @example
+   * ```ts
+   * // The state view follows the position until the view closes.
+   * const stop = app.channel.watch("game.position", undefined, position => show(position));
+   * stop();
+   * ```
+   */
   watch(id: string, input: Json | undefined, onValue: (value: Json) => void): () => void;
+  /**
+   * Runs a command. The in-process channel runs it in a microtask, off the game's frame loop.
+   *
+   * @param id - The command id, e.g. "game.step".
+   * @param input - The command input; omit it for a command without input.
+   * @returns A promise of the command's value and where the game stands after it.
+   * @example
+   * ```ts
+   * // The flow view steps one frame.
+   * (await app.channel.run("game.step", { frames: 1 })).state; // { path: "home", frame: 1841, tainted: false }
+   * ```
+   */
   run(id: string, input?: Json): Promise<RunResult>;
+  /**
+   * The link state now. The in-process channel answers live or paused only.
+   *
+   * @returns A fresh LinkStatus.
+   * @example
+   * ```ts
+   * app.channel.status(); // { kind: "live", frame: 1840 }
+   * ctx.require(linkPlugin).status(); // { kind: "silent", since: 1790000000000, lastFrame: 1840 }
+   * ```
+   */
   status(): LinkStatus;
 };
 

@@ -59,10 +59,6 @@ export function isConflict(error: unknown): boolean {
  * @param what - The first words of the toast, e.g. "Screenshot failed".
  * @param event - The log event, e.g. "gameView: capture failed".
  * @param error - What was thrown.
- * @example
- * ```ts
- * reportFailure(ctx, "Screenshot failed", "gameView: capture failed", error); // toast "Screenshot failed · timeout"
- * ```
  */
 export function reportFailure(ctx: GameViewCtx, what: string, event: string, error: unknown): void {
   ctx.require(workspacePlugin).toast(`${what} · ${uiMessage(error)}`);

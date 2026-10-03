@@ -36,10 +36,6 @@ function flowKey(
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
  * @returns The bindings.
- * @example
- * ```ts
- * for (const binding of flowKeys(ctx, actions)) removers.push(workspace.keys.bind(binding));
- * ```
  */
 export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
   /**
@@ -111,10 +107,6 @@ export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
  *
  * @param actions - The flowView actions.
  * @returns Layer and close pairs.
- * @example
- * ```ts
- * for (const [layer, close] of escapeLayers(actions)) removers.push(workspace.keys.escape(layer, close));
- * ```
  */
 export function escapeLayers(actions: FlowActions): [EscLayer, () => boolean][] {
   return [

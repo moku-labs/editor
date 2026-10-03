@@ -22,10 +22,6 @@ const ACK: Json = null;
  * @param deps - The domain deps.
  * @param request - The request.
  * @param error - What was thrown.
- * @example
- * ```ts
- * answerError(deps, request, error);
- * ```
  */
 function answerError(deps: BridgeDeps, request: RpcRequest, error: unknown): void {
   sendNow(deps, failure(request.id, toWireError(error)));
@@ -37,10 +33,6 @@ function answerError(deps: BridgeDeps, request: RpcRequest, error: unknown): voi
  * @param deps - The domain deps.
  * @param record - A subscription.
  * @returns Whether it was neither replaced nor removed.
- * @example
- * ```ts
- * if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
- * ```
  */
 function isCurrent(deps: Pick<BridgeDeps, "state">, record: Subscription): boolean {
   return deps.state.subs.get(record.sub) === record;
@@ -56,10 +48,6 @@ function isCurrent(deps: Pick<BridgeDeps, "state">, record: Subscription): boole
  * @param deps - The domain deps.
  * @param record - The edge or commit subscription.
  * @param value - The value the post-run read returned.
- * @example
- * ```ts
- * refollow(deps, record, { path: "visit/enter" }); // sends it; the next frame's "home" follows
- * ```
  */
 function refollow(deps: BridgeDeps, record: Subscription, value: Json): void {
   if (JSON.stringify(value) === record.lastSent) return;
@@ -88,10 +76,6 @@ function refollow(deps: BridgeDeps, record: Subscription, value: Json): void {
  * @param deps - The domain deps.
  * @param record - The subscription.
  * @param event - The debug event of a failed read.
- * @example
- * ```ts
- * reread(deps, record, "bridge:sample-failed");
- * ```
  */
 function reread(deps: BridgeDeps, record: Subscription, event: string): void {
   deps.channel.read(record.id, record.input).then(
@@ -112,10 +96,6 @@ function reread(deps: BridgeDeps, record: Subscription, event: string): void {
  * @param deps - The domain deps.
  * @param request - The watch request.
  * @param record - The new subscription (stop undefined).
- * @example
- * ```ts
- * await followFrames(deps, request, record);
- * ```
  */
 async function followFrames(
   deps: BridgeDeps,
@@ -142,10 +122,6 @@ async function followFrames(
  * @param deps - The domain deps.
  * @param request - The watch request.
  * @param record - The new subscription.
- * @example
- * ```ts
- * followDoor(deps, request, record);
- * ```
  */
 function followDoor(deps: BridgeDeps, request: RpcRequest, record: Subscription): void {
   const buffer: Json[] = [];
@@ -155,10 +131,6 @@ function followDoor(deps: BridgeDeps, request: RpcRequest, record: Subscription)
    * Holds values until the response is sent, then pushes them while the subscription lives.
    *
    * @param value - A value of the channel watch.
-   * @example
-   * ```ts
-   * deliver({ path: "home" });
-   * ```
    */
   const deliver = (value: Json): void => {
     if (!acked) buffer.push(value);
@@ -185,10 +157,6 @@ function followDoor(deps: BridgeDeps, request: RpcRequest, record: Subscription)
  * @param deps - The domain deps.
  * @param request - The watch request (answered exactly once).
  * @param params - Its checked params.
- * @example
- * ```ts
- * await subscribe(deps, request, { sub: 1, id: "game.position" });
- * ```
  */
 export async function subscribe(
   deps: BridgeDeps,
@@ -227,10 +195,6 @@ export async function subscribe(
  *
  * @param deps - The state.
  * @param sub - The subscription id.
- * @example
- * ```ts
- * unsubscribe(deps, 1);
- * ```
  */
 export function unsubscribe(deps: Pick<BridgeDeps, "state">, sub: SubId): void {
   const { state } = deps;
@@ -243,10 +207,6 @@ export function unsubscribe(deps: Pick<BridgeDeps, "state">, sub: SubId): void {
  * Ends every subscription (socket closed, stop).
  *
  * @param deps - The state.
- * @example
- * ```ts
- * dropAll({ state });
- * ```
  */
 export function dropAll(deps: Pick<BridgeDeps, "state">): void {
   const { state } = deps;
@@ -260,10 +220,6 @@ export function dropAll(deps: Pick<BridgeDeps, "state">): void {
  * socket is congested.
  *
  * @param deps - The domain deps.
- * @example
- * ```ts
- * channel.onHeartbeat(() => sampleFrames(deps));
- * ```
  */
 export function sampleFrames(deps: BridgeDeps): void {
   const { socket, subs } = deps.state;
@@ -279,10 +235,6 @@ export function sampleFrames(deps: BridgeDeps): void {
  * commit value that changed opens its channel watch again (`refollow`).
  *
  * @param deps - The domain deps.
- * @example
- * ```ts
- * await channel.run(id, input).finally(() => refreshAll(deps));
- * ```
  */
 export function refreshAll(deps: BridgeDeps): void {
   for (const record of deps.state.subs.values()) reread(deps, record, "bridge:refresh-failed");
@@ -294,10 +246,6 @@ export function refreshAll(deps: BridgeDeps): void {
  * @param deps - The state and the log.
  * @param sub - The subscription id.
  * @param value - The value.
- * @example
- * ```ts
- * pushValue(deps, 1, { path: "board/awaitIntent" });
- * ```
  */
 export function pushValue(deps: Pick<BridgeDeps, "state" | "log">, sub: SubId, value: Json): void {
   const record = deps.state.subs.get(sub);

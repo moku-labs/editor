@@ -14,10 +14,6 @@ const TICK_MS = 1000;
  *
  * @param ctx - Domain context of workspace.
  * @returns The hooks.
- * @example
- * ```ts
- * createToolsPlugin("workspace", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: WorkspaceCtx): WorkspaceHooks {
   return { "link:status": handleLinkStatus(ctx) };
@@ -27,10 +23,6 @@ export function createHandlers(ctx: WorkspaceCtx): WorkspaceHooks {
  * Stops the 1 s ticker.
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * stopTicker(ctx.state);
- * ```
  */
 export function stopTicker(state: WorkspaceState): void {
   clearInterval(state.ticker);
@@ -43,10 +35,6 @@ export function stopTicker(state: WorkspaceState): void {
  *
  * @param ctx - Domain context of workspace.
  * @returns The `link:status` handler.
- * @example
- * ```ts
- * handleLinkStatus(ctx)({ status: { kind: "live", frame: 1840 } });
- * ```
  */
 export function handleLinkStatus(
   ctx: Pick<WorkspaceCtx, "state">

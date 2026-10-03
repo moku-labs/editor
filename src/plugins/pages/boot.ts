@@ -40,10 +40,6 @@ export function wsUrlOf(req: Request, path: string): string {
  * @param deps - Hub, files and config.
  * @returns The ToolsBoot (R1): exactly its eight keys.
  * @throws {Error} When the hub has no token (before start, after stop).
- * @example
- * ```ts
- * buildBoot(req, deps).ws; // "ws://127.0.0.1:3000/__editor/ws"
- * ```
  */
 export function buildBoot(req: Request, deps: RouteDeps): ToolsBoot {
   const { hub, files, config } = deps;

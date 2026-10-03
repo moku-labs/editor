@@ -4,10 +4,18 @@
  * (M5), Pause and Resume through panels.run (R9), the history strip and the context menu.
  */
 import { notify } from "../state";
-import type { FlowCtx, FlowEnvironment, Item, ItemKey, NodeId, Rect } from "../types";
+import type {
+  FlowCtx,
+  FlowEnvironment,
+  HistoryEntryJson,
+  Item,
+  ItemKey,
+  NodeId,
+  Rect
+} from "../types";
 import { incoming, nodeOf, outgoing, parentsOf, resolveStack, splitId } from "./graph";
 import { entryFrame, entryKey, trailRanks } from "./trail";
-import type { CurrentSpot, FocusActions } from "./types";
+import type { FocusActions } from "./types";
 import { moveHighlight, walkTarget } from "./walk";
 
 /**
@@ -21,10 +29,6 @@ const NODE_KINDS: ReadonlySet<Item["kind"]> = new Set(["node", "hub", "frame"]);
  * @param ctx - Domain context of flowView.
  * @param id - A node id.
  * @returns The item, or undefined.
- * @example
- * ```ts
- * firstInstance(ctx, "board/merge")?.key; // "main/board>board/merge"
- * ```
  */
 function firstInstance(ctx: FlowCtx, id: NodeId): Item | undefined {
   return ctx.state.layout.result?.items.find(
@@ -37,10 +41,6 @@ function firstInstance(ctx: FlowCtx, id: NodeId): Item | undefined {
  *
  * @param ctx - Domain context of flowView.
  * @returns The id, or undefined.
- * @example
- * ```ts
- * currentId(ctx); // "board/awaitIntent"
- * ```
  */
 function currentId(ctx: FlowCtx): NodeId | undefined {
   const { graph, position } = ctx.state.data;
@@ -54,10 +54,6 @@ function currentId(ctx: FlowCtx): NodeId | undefined {
  * @param ctx - Domain context of flowView.
  * @param id - A node id inside the flow.
  * @returns The parent node id, or undefined.
- * @example
- * ```ts
- * soleParent(ctx, "board/giveToOrder"); // "main/board"
- * ```
  */
 function soleParent(ctx: FlowCtx, id: NodeId): NodeId | undefined {
   const { graph } = ctx.state.data;
@@ -88,16 +84,34 @@ function union(items: readonly Item[]): Rect | undefined {
 }
 
 /**
+ * The history entries whose frame is known (their own, or seen live), oldest first.
+ *
+ * @param history - Entries, oldest first.
+ * @param frames - Entry index → frame seen live.
+ * @returns Each entry with its frame.
+ * @example
+ * ```ts
+ * const rows = framedEntries([{ index: 4, … }, { index: 5, frame: 1778, … }], new Map());
+ * rows.map(row => row.at); // [1778]: entry 4 has no known frame
+ * ```
+ */
+function framedEntries(
+  history: readonly HistoryEntryJson[],
+  frames: ReadonlyMap<number, number>
+): { readonly entry: HistoryEntryJson; readonly at: number }[] {
+  return history.flatMap(entry => {
+    const at = entryFrame(entry, frames);
+    return at === undefined ? [] : [{ entry, at }];
+  });
+}
+
+/**
  * Logs and toasts a failed command run (the Console line comes from workspace:ran).
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @param id - The command id.
  * @param error - The rejection.
- * @example
- * ```ts
- * reportRun(ctx, env, "game.pause", error);
- * ```
  */
 function reportRun(ctx: FlowCtx, env: FlowEnvironment, id: string, error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -111,21 +125,12 @@ function reportRun(ctx: FlowCtx, env: FlowEnvironment, id: string, error: unknow
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
  * @returns The focus actions.
- * @example
- * ```ts
- * createFocusApi(ctx, env).select("board/merge"); // true
- * ```
  */
 export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions {
   const { focus } = ctx.state;
 
   /**
    * Leaves focus: no selection, no edge, strip closed.
-   *
-   * @example
-   * ```ts
-   * clear();
-   * ```
    */
   function clear(): void {
     focus.selected = undefined;
@@ -135,14 +140,11 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
   }
 
   /**
-   * Selects an item key that exists in the layout (or will after a relayout).
+   * Selects an item key that exists in the layout (or will after a relayout); a note opens no
+   * strip, an item on screen gets the focus move.
    *
    * @param key - The item key.
    * @param item - The item when it is on screen.
-   * @example
-   * ```ts
-   * take("main/home", item);
-   * ```
    */
   function take(key: ItemKey, item?: Item): void {
     focus.selected = key;
@@ -154,18 +156,19 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
     if (item !== undefined) env.actions().camera.focusItem(item);
   }
 
+  /**
+   * The selected item on screen.
+   *
+   * @returns The item, or undefined without a selection or before its layout.
+   */
+  function selectedItem(): Item | undefined {
+    return focus.selected === undefined
+      ? undefined
+      : ctx.state.layout.result?.byKey[focus.selected];
+  }
+
   const actions: FocusActions = {
-    /**
-     * Select = focus.
-     *
-     * @param key - An item key, a node id, or undefined.
-     * @returns False for an unknown key.
-     * @example
-     * ```ts
-     * actions.focus.select("board/merge"); // true
-     * ```
-     */
-    select(key) {
+    select: key => {
       if (key === undefined) {
         clear();
         notify(ctx.state);
@@ -184,98 +187,45 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       return true;
     },
 
-    /**
-     * The selected key.
-     *
-     * @returns The key, or undefined.
-     * @example
-     * ```ts
-     * actions.focus.selected();
-     * ```
-     */
-    selected() {
-      return focus.selected;
-    },
+    selected: () => focus.selected,
 
-    /**
-     * The node id of the current position.
-     *
-     * @returns The id, or undefined.
-     * @example
-     * ```ts
-     * actions.focus.current(); // "board/awaitIntent"
-     * ```
-     */
-    current() {
-      return currentId(ctx);
-    },
+    current: () => currentId(ctx),
 
-    /**
-     * Walks the strip.
-     *
-     * @param direction - "prev" or "next".
-     * @example
-     * ```ts
-     * actions.focus.walk("next");
-     * ```
-     */
-    walk(direction) {
+    walk: direction => {
       const { graph, history } = ctx.state.data;
-      const selected =
-        focus.selected === undefined ? undefined : ctx.state.layout.result?.byKey[focus.selected];
-      const id = selected?.id ?? currentId(ctx);
+      const id = selectedItem()?.id ?? currentId(ctx);
       if (graph === undefined || id === undefined) return;
       const trail = trailRanks(history, graph, ctx.config.trailLength);
       const target = walkTarget(graph, id, direction, focus.highlight, trail, soleParent(ctx, id));
       if (target !== undefined) actions.select(target);
     },
 
-    /**
-     * Focuses the edge taken at a frame.
-     *
-     * @param frame - A game frame.
-     * @returns False without frame data.
-     * @example
-     * ```ts
-     * actions.focus.focusFrame(1778);
-     * ```
-     */
-    focusFrame(frame) {
+    focusFrame: frame => {
       const { graph, history } = ctx.state.data;
-      const known = history.flatMap(entry => {
-        const at = entryFrame(entry, focus.frames);
-        return at === undefined ? [] : [{ entry, at }];
-      });
+      const known = framedEntries(history, focus.frames);
       if (known.length === 0 || graph === undefined) {
         env.toast("Frames are not recorded in this history");
         return false;
       }
+
+      // The last edge at or before the frame; only an exact match is selected.
       const before = known.findLast(row => row.at <= frame);
       if (before === undefined) {
         env.toast(`No edge at frame ${frame}`);
         return true;
       }
-      if (before.at !== frame) {
-        env.toast(
-          `No edge at frame ${frame} · last edge before it f${before.at} · ${before.entry.path}`
-        );
+      const { entry, at } = before;
+      if (at !== frame) {
+        env.toast(`No edge at frame ${frame} · last edge before it f${at} · ${entry.path}`);
         return true;
       }
-      actions.selectHistory(before.entry.index);
-      env.toast(`Frame ${frame} · ${before.entry.path} · ${before.entry.outcome}`);
+
+      actions.selectHistory(entry.index);
+      env.toast(`Frame ${frame} · ${entry.path} · ${entry.outcome}`);
       return true;
     },
 
-    /**
-     * Steps one frame when paused (M5).
-     *
-     * @returns The run result, or undefined.
-     * @example
-     * ```ts
-     * await actions.focus.step();
-     * ```
-     */
-    async step() {
+    step: async () => {
       if (!actions.isPaused()) return;
       try {
         return await env.run("game.step", { frames: 1 });
@@ -285,48 +235,19 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       }
     },
 
-    /**
-     * Toggles or sets the history strip.
-     *
-     * @param open - The new value; omitted = toggle.
-     * @returns Whether it is open.
-     * @example
-     * ```ts
-     * actions.focus.history();
-     * ```
-     */
-    history(open) {
+    history: open => {
       focus.historyOpen = open ?? !focus.historyOpen;
       notify(ctx.state);
       return focus.historyOpen;
     },
 
-    /**
-     * Selects an edge and focuses its source.
-     *
-     * @param edge - "<id>:<outcome>".
-     * @param source - The source node id.
-     * @example
-     * ```ts
-     * actions.focus.selectEdge("board/merge:rejected", "board/merge");
-     * ```
-     */
-    selectEdge(edge, source) {
+    selectEdge: (edge, source) => {
       actions.select(source);
       focus.edge = edge;
       notify(ctx.state);
     },
 
-    /**
-     * The selected item and its neighbours.
-     *
-     * @returns Item keys, or undefined without a selection.
-     * @example
-     * ```ts
-     * actions.focus.related()?.has("main/home");
-     * ```
-     */
-    related() {
+    related: () => {
       const selected = focus.selected;
       const result = ctx.state.layout.result;
       if (selected === undefined || result === undefined) return;
@@ -339,16 +260,7 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       return keys;
     },
 
-    /**
-     * The rect of the selection and its neighbours, else of the current node.
-     *
-     * @returns The world rect, or undefined.
-     * @example
-     * ```ts
-     * actions.focus.relatedRect();
-     * ```
-     */
-    relatedRect() {
+    relatedRect: () => {
       const result = ctx.state.layout.result;
       const keys = actions.related();
       if (result === undefined) return;
@@ -359,163 +271,73 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       return union([...keys].flatMap(key => result.byKey[key] ?? []));
     },
 
-    /**
-     * Where the current node is on the canvas.
-     *
-     * @returns Its item, or the collapsed parent it is inside.
-     * @example
-     * ```ts
-     * actions.focus.locateCurrent()?.inside; // "main/board" while the board is collapsed
-     * ```
-     */
-    locateCurrent() {
+    locateCurrent: () => {
       const stack = actions.stack();
-      const index = stack.findLastIndex(entry => firstInstance(ctx, entry.id) !== undefined);
-      const item = index === -1 ? undefined : firstInstance(ctx, stack[index]?.id ?? "");
-      const spot: CurrentSpot | undefined =
-        item === undefined
-          ? undefined
-          : { item, inside: index === stack.length - 1 ? undefined : item.id };
-      return spot;
+      // The deepest stack level with an instance on screen: the current node itself, or the
+      // collapsed parent the current node sits inside.
+      const shown = stack
+        .map((entry, index) => ({ index, item: firstInstance(ctx, entry.id) }))
+        .findLast(level => level.item !== undefined);
+      if (shown?.item === undefined) return;
+      const isCurrent = shown.index === stack.length - 1;
+      return { item: shown.item, inside: isCurrent ? undefined : shown.item.id };
     },
 
-    /**
-     * Whether the game is paused.
-     *
-     * @returns True while the link status is paused.
-     * @example
-     * ```ts
-     * actions.focus.isPaused(); // false while the game runs
-     * ```
-     */
-    isPaused() {
-      return env.status().kind === "paused";
-    },
+    isPaused: () => env.status().kind === "paused",
 
-    /**
-     * The runtime stack of the current position.
-     *
-     * @returns Stack entries, outermost first (empty before the first position).
-     * @example
-     * ```ts
-     * actions.focus.stack().map(entry => entry.id); // ["main/board", "board/awaitIntent"]
-     * ```
-     */
-    stack() {
+    stack: () => {
       const { graph, position } = ctx.state.data;
       return graph === undefined || position === undefined
         ? []
         : resolveStack(graph, position.path);
     },
 
-    /**
-     * Moves the strip highlight to a row.
-     *
-     * @param side - "from" or "to".
-     * @param index - The row.
-     * @example
-     * ```ts
-     * actions.focus.highlight("to", 2);
-     * ```
-     */
-    highlight(side, index) {
+    highlight: (side, index) => {
       focus.highlight = { side, index };
       notify(ctx.state);
     },
 
-    /**
-     * Moves the strip highlight up or down.
-     *
-     * @param delta - -1 or 1.
-     * @example
-     * ```ts
-     * actions.focus.moveHighlight(1);
-     * ```
-     */
-    moveHighlight(delta) {
+    moveHighlight: delta => {
       const { graph } = ctx.state.data;
-      const selected =
-        focus.selected === undefined ? undefined : ctx.state.layout.result?.byKey[focus.selected];
+      const selected = selectedItem();
       if (graph === undefined || selected === undefined) return;
-      const counts = {
-        from: incoming(graph, selected.id).length,
-        to: outgoing(graph, selected.id).length
-      };
-      const start = focus.highlight.index < 0 ? { ...focus.highlight, index: 0 } : focus.highlight;
-      focus.highlight = focus.highlight.index < 0 ? start : moveHighlight(start, delta, counts);
+
+      // The first press highlights row 0 of the column; later presses move inside it.
+      const unset = focus.highlight.index < 0;
+      focus.highlight = unset
+        ? { ...focus.highlight, index: 0 }
+        : moveHighlight(focus.highlight, delta, {
+            from: incoming(graph, selected.id).length,
+            to: outgoing(graph, selected.id).length
+          });
       notify(ctx.state);
     },
 
-    /**
-     * Opens a context menu.
-     *
-     * @param menu - Target, key, outcome and position.
-     * @example
-     * ```ts
-     * actions.focus.openMenu({ target: "canvas", key: undefined, outcome: undefined, x: 10, y: 10 });
-     * ```
-     */
-    openMenu(menu) {
+    openMenu: menu => {
       focus.menu = menu;
       notify(ctx.state);
     },
 
-    /**
-     * Closes the context menu.
-     *
-     * @returns False when none was open.
-     * @example
-     * ```ts
-     * actions.focus.closeMenu();
-     * ```
-     */
-    closeMenu() {
+    closeMenu: () => {
       if (focus.menu === undefined) return false;
       focus.menu = undefined;
       notify(ctx.state);
       return true;
     },
 
-    /**
-     * Leaves focus (Esc layer selection).
-     *
-     * @returns False when nothing was selected.
-     * @example
-     * ```ts
-     * actions.focus.leave();
-     * ```
-     */
-    leave() {
+    leave: () => {
       if (focus.selected === undefined && !focus.strip) return false;
       clear();
       notify(ctx.state);
       return true;
     },
 
-    /**
-     * Hovers a history dot.
-     *
-     * @param index - The entry index, or undefined.
-     * @example
-     * ```ts
-     * actions.focus.hoverHistory(12);
-     * ```
-     */
-    hoverHistory(index) {
+    hoverHistory: index => {
       focus.historyHover = index;
       notify(ctx.state);
     },
 
-    /**
-     * Selects a history entry's edge.
-     *
-     * @param index - The entry index.
-     * @example
-     * ```ts
-     * actions.focus.selectHistory(12);
-     * ```
-     */
-    selectHistory(index) {
+    selectHistory: index => {
       const { graph, history } = ctx.state.data;
       const entry = history.find(item => item.index === index);
       if (graph === undefined || entry === undefined) return;
@@ -526,15 +348,7 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       else notify(ctx.state);
     },
 
-    /**
-     * Pauses the game through panels.run.
-     *
-     * @example
-     * ```ts
-     * await actions.focus.pause();
-     * ```
-     */
-    async pause() {
+    pause: async () => {
       try {
         await env.run("game.pause");
       } catch (error) {
@@ -542,15 +356,7 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       }
     },
 
-    /**
-     * Resumes the game through panels.run.
-     *
-     * @example
-     * ```ts
-     * await actions.focus.resume();
-     * ```
-     */
-    async resume() {
+    resume: async () => {
       try {
         await env.run("game.resume");
       } catch (error) {

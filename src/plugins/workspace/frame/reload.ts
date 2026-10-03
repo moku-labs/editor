@@ -56,10 +56,6 @@ function messageOf(error: unknown): string {
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
  * @returns The new manifest, or undefined on timeout or stop.
- * @example
- * ```ts
- * const next = nextManifest(ctx, link); // subscribe before reloading the frame
- * ```
  */
 function nextManifest(ctx: WorkspaceCtx, link: LinkApi): Promise<Manifest | undefined> {
   return new Promise(resolve => {
@@ -80,10 +76,6 @@ function nextManifest(ctx: WorkspaceCtx, link: LinkApi): Promise<Manifest | unde
      * Ends the wait once: clears the timer, the listener and the stop cleanup.
      *
      * @param manifest - The new manifest, omitted on timeout or stop.
-     * @example
-     * ```ts
-     * finish(manifest);
-     * ```
      */
     finish = manifest => {
       clearTimeout(timer);
@@ -100,10 +92,6 @@ function nextManifest(ctx: WorkspaceCtx, link: LinkApi): Promise<Manifest | unde
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
  * @returns The bookmark (or undefined) and the reason it is missing.
- * @example
- * ```ts
- * const { bookmark, reason } = await takeBookmark(ctx, link);
- * ```
  */
 async function takeBookmark(
   ctx: WorkspaceCtx,
@@ -128,10 +116,6 @@ async function takeBookmark(
  * @param link - The link api.
  * @param bookmark - The bookmark taken before the reload.
  * @returns The result.
- * @example
- * ```ts
- * return await restore(ctx, link, bookmark);
- * ```
  */
 async function restore(ctx: WorkspaceCtx, link: LinkApi, bookmark: Json): Promise<ReloadResult> {
   try {
@@ -153,10 +137,6 @@ async function restore(ctx: WorkspaceCtx, link: LinkApi, bookmark: Json): Promis
  * @param iframe - The game frame.
  * @param restoreState - Bookmark before and restore after.
  * @returns The result.
- * @example
- * ```ts
- * await runOnce(ctx, iframe, true);
- * ```
  */
 async function runOnce(
   ctx: WorkspaceCtx,
@@ -202,10 +182,6 @@ async function runOnce(
  * @param iframe - The game frame.
  * @param restoreState - Bookmark before and restore after.
  * @returns The run's result.
- * @example
- * ```ts
- * return startRun(ctx, iframe, opts.restore === true);
- * ```
  */
 function startRun(
   ctx: WorkspaceCtx,
@@ -233,10 +209,6 @@ function startRun(
  * @param opts - `restore: true` bookmarks first and restores after.
  * @param opts.restore - Bookmark and restore the game state.
  * @returns The result; a call during a run shares that run's promise.
- * @example
- * ```ts
- * await reloadFrame(ctx, { restore: true }); // { restored: true }
- * ```
  */
 export function reloadFrame(
   ctx: WorkspaceCtx,

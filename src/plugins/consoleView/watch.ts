@@ -18,10 +18,6 @@ import type { ConsoleCtx } from "./types";
  *
  * @param ctx - Domain context of consoleView.
  * @param value - The game.log value.
- * @example
- * ```ts
- * accept(ctx, designLog); // 8 lines, badge "2 warn"
- * ```
  */
 function accept(ctx: ConsoleCtx, value: Json): void {
   const { state, config } = ctx;
@@ -58,10 +54,6 @@ function codeOf(error: unknown): number | undefined {
  *
  * @param ctx - Domain context of consoleView.
  * @returns The unsubscribe.
- * @example
- * ```ts
- * ctx.state.stopLog = startLogWatch(ctx); // one game.log watch for the session
- * ```
  */
 export function startLogWatch(ctx: ConsoleCtx): () => void {
   return ctx.require(linkPlugin).watch("game.log", undefined, value => accept(ctx, value));
@@ -73,10 +65,6 @@ export function startLogWatch(ctx: ConsoleCtx): () => void {
  *
  * @param ctx - Domain context of consoleView.
  * @returns Resolves when the read settled; never rejects.
- * @example
- * ```ts
- * await readOnce(ctx); // ingest is idempotent: no line is added twice
- * ```
  */
 export async function readOnce(ctx: ConsoleCtx): Promise<void> {
   try {

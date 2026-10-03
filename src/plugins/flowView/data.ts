@@ -15,7 +15,8 @@ import type {
   GraphJson,
   GraphNodeJson,
   HistoryEntryJson,
-  PositionJson
+  PositionJson,
+  SlotContribution
 } from "./types";
 
 /**
@@ -23,6 +24,26 @@ import type {
  */
 // eslint-disable-next-line unicorn/no-null -- JSON null is a wire value, not an absent one
 const JSON_NULL: Json = null;
+
+/**
+ * The 32-bit FNV-1a offset basis: the hash of the empty text.
+ */
+const FNV_OFFSET_BASIS = 0x81_1c_9d_c5;
+
+/**
+ * The 32-bit FNV-1a prime.
+ */
+const FNV_PRIME = 0x01_00_01_93;
+
+/**
+ * Radix of the hash text.
+ */
+const HEX = 16;
+
+/**
+ * Hex digits of a 32-bit hash.
+ */
+const HASH_DIGITS = 8;
 
 /**
  * A plain record.
@@ -142,6 +163,27 @@ function readFlow(name: string, value: unknown): GraphJson["flows"][string] | st
 }
 
 /**
+ * Reads one slot contribution.
+ *
+ * @param value - The wire contribution.
+ * @returns The contribution, or undefined when malformed.
+ * @example
+ * ```ts
+ * readContribution({ feature: "reward", flow: "rewardPopup", order: 10, extra: 1 });
+ * // { feature: "reward", flow: "rewardPopup", order: 10 }
+ * readContribution({ feature: "reward" }); // undefined
+ * ```
+ */
+function readContribution(value: unknown): SlotContribution | undefined {
+  if (!isRecord(value)) return undefined;
+  const { feature, flow, order } = value;
+  if (typeof feature !== "string" || typeof flow !== "string" || typeof order !== "number") {
+    return undefined;
+  }
+  return { feature, flow, order };
+}
+
+/**
  * Reads the slots map; on a malformed slot returns its field path.
  *
  * @param value - The wire slots.
@@ -149,6 +191,8 @@ function readFlow(name: string, value: unknown): GraphJson["flows"][string] | st
  * @example
  * ```ts
  * readSlots({ afterOrder: [{ feature: "reward", flow: "rewardPopup", order: 10 }] });
+ * // { afterOrder: [{ feature: "reward", flow: "rewardPopup", order: 10 }] }
+ * readSlots({ afterOrder: [{ feature: "reward" }] }); // "slots.afterOrder"
  * ```
  */
 function readSlots(value: unknown): GraphJson["slots"] | string {
@@ -156,14 +200,7 @@ function readSlots(value: unknown): GraphJson["slots"] | string {
   const slots: GraphJson["slots"] = {};
   for (const [slot, raw] of Object.entries(value)) {
     if (!Array.isArray(raw)) return `slots.${slot}`;
-    const entries = raw.map(item =>
-      isRecord(item) &&
-      typeof item.feature === "string" &&
-      typeof item.flow === "string" &&
-      typeof item.order === "number"
-        ? { feature: item.feature, flow: item.flow, order: item.order }
-        : undefined
-    );
+    const entries = raw.map(item => readContribution(item));
     if (entries.includes(undefined)) return `slots.${slot}`;
     slots[slot] = entries.filter(item => item !== undefined);
   }
@@ -300,12 +337,12 @@ export function parseHistory(value: unknown): readonly HistoryEntryJson[] | unde
  * ```
  */
 export function hashText(text: string): string {
-  let hash = 0x81_1c_9d_c5;
+  let hash = FNV_OFFSET_BASIS;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.codePointAt(index) ?? 0;
-    hash = Math.imul(hash, 0x01_00_01_93) >>> 0;
+    hash = Math.imul(hash, FNV_PRIME) >>> 0;
   }
-  return hash.toString(16).padStart(8, "0");
+  return hash.toString(HEX).padStart(HASH_DIGITS, "0");
 }
 
 /**
@@ -314,10 +351,6 @@ export function hashText(text: string): string {
  * @param ctx - Domain context of flowView.
  * @param history - The new entries.
  * @param baseline - False for the first batch (past entries).
- * @example
- * ```ts
- * recordFrames(ctx, history, true);
- * ```
  */
 function recordFrames(ctx: FlowCtx, history: readonly HistoryEntryJson[], baseline: boolean): void {
   const { frames } = ctx.state.focus;
@@ -337,10 +370,6 @@ function recordFrames(ctx: FlowCtx, history: readonly HistoryEntryJson[], baseli
  *
  * @param ctx - Domain context of flowView.
  * @returns The frame, or undefined.
- * @example
- * ```ts
- * actionsStatus(ctx); // 1900
- * ```
  */
 function actionsStatus(ctx: FlowCtx): number | undefined {
   const status = ctx.require(linkPlugin).status();
@@ -354,10 +383,6 @@ function actionsStatus(ctx: FlowCtx): number | undefined {
  * @param ctx - Domain context of flowView.
  * @param values - The panel values.
  * @returns Whether a relayout is needed.
- * @example
- * ```ts
- * if (takeGraph(ctx, values)) await actions.layout.relayout();
- * ```
  */
 function takeGraph(ctx: FlowCtx, values: FlowValues): boolean {
   const { data } = ctx.state;
@@ -388,10 +413,6 @@ function takeGraph(ctx: FlowCtx, values: FlowValues): boolean {
  * @param ctx - Domain context of flowView.
  * @param values - The panel values.
  * @param firstValues - True for the first render's values.
- * @example
- * ```ts
- * takeRuntime(ctx, values, false);
- * ```
  */
 function takeRuntime(ctx: FlowCtx, values: FlowValues, firstValues: boolean): void {
   const { data } = ctx.state;
@@ -417,10 +438,6 @@ function takeRuntime(ctx: FlowCtx, values: FlowValues, firstValues: boolean): vo
  *
  * @param ctx - Domain context of flowView.
  * @param values - The panel values.
- * @example
- * ```ts
- * ingest(ctx, values); // from the FlowWorkspace effect
- * ```
  */
 export function ingest(ctx: FlowCtx, values: FlowValues): void {
   const actions = actionsOf(ctx);

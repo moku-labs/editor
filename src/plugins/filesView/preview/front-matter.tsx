@@ -112,10 +112,6 @@ function scalarRows(note: Note): Row[] {
  *
  * @param props - The file text and the opener.
  * @returns The rows, the raw block, or nothing.
- * @example
- * ```tsx
- * <FrontMatterRows text={text} onOpenPath={path => openOrLog(ctx, path, {})} />
- * ```
  */
 export function FrontMatterRows(props: FrontMatterRowsProps): VNode | undefined {
   const parts = noteParts(props.text);

@@ -127,7 +127,10 @@ describe("slot frames and back edges", () => {
     const second = result.byKey["m/s>two/y"];
     expect(frame?.kind).toBe("frame");
     expect((second?.y ?? 0) > (first?.y ?? 0)).toBe(true);
-    expect(result.origins["m/s|two"]).toBeDefined();
+    expect(result.origins).toMatchObject({
+      "m/s|one": { x: 44, y: 80 },
+      "m/s|two": { x: 44, y: 148 }
+    });
   });
 
   it("classifies the edges of nodes the start does not reach", () => {

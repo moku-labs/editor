@@ -25,10 +25,6 @@ export type ShellProps = { readonly ctx: WorkspaceCtx };
  *
  * @param props - The workspace domain context.
  * @returns The shell.
- * @example
- * ```tsx
- * render(<Shell ctx={ctx} />, element);
- * ```
  */
 export function Shell(props: ShellProps): VNode {
   const { ctx } = props;

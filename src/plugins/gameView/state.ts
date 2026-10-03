@@ -17,10 +17,6 @@ const DEFAULT_INTERVAL_MS = 100;
  * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read.
  *
  * @returns A fresh state for one app.
- * @example
- * ```ts
- * createGameViewState().series.durationMs; // 2000
- * ```
  */
 export function createGameViewState(): GameViewState {
   return {
@@ -61,10 +57,6 @@ export function createGameViewState(): GameViewState {
  * Calls every UI listener (a listener may unsubscribe while called).
  *
  * @param state - gameView state.
- * @example
- * ```ts
- * notify(createGameViewState()); // no listener, nothing happens
- * ```
  */
 export function notify(state: GameViewState): void {
   for (const listener of state.listeners) listener();
@@ -76,10 +68,6 @@ export function notify(state: GameViewState): void {
  * @param state - gameView state.
  * @param fn - The listener.
  * @returns Removes the listener.
- * @example
- * ```ts
- * const off = subscribe(createGameViewState(), () => {}); // off() removes it
- * ```
  */
 export function subscribe(state: GameViewState, fn: () => void): () => void {
   state.listeners.add(fn);

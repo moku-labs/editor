@@ -1,12 +1,17 @@
 // @vitest-environment happy-dom
 import { render } from "preact";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Manifest } from "../../../registry/protocol";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, manifestOf, type TestCtx } from "../helpers";
 import { find } from "../ui";
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = "";
 });
 
@@ -33,12 +38,13 @@ function liveManifest(ctx: TestCtx): (manifest: Manifest | undefined) => void {
 }
 
 /**
- * Lets Preact's after-paint effects (a 100 ms fallback timer) and the re-render run.
+ * Lets Preact's after-paint effects and the re-render run: runs every pending fake timer, with
+ * the microtasks between them.
  *
- * @returns Resolves after 150 ms.
+ * @returns Resolves when no timer is pending.
  */
 async function afterPaint(): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await vi.runAllTimersAsync();
 }
 
 describe("DeviceToolbar manifest", () => {

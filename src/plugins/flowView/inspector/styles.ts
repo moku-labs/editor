@@ -96,10 +96,6 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
  * @param env - Services and actions.
  * @param key - The card to select; default the card already chosen, else the first key.
  * @returns Resolves when loaded.
- * @example
- * ```ts
- * await openStyles(ctx, env, "ui.number");
- * ```
  */
 export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
   const { inspector } = ctx.state;
@@ -143,10 +139,6 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns Resolves when the result line is set.
- * @example
- * ```ts
- * await writeStyle(ctx, env);
- * ```
  */
 export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
   const styles = ctx.state.inspector.styles;
@@ -209,10 +201,6 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
  * @param path - The field path ("size", "shadow.dy").
  * @param direction - 1 up, -1 down.
  * @param big - Shift held.
- * @example
- * ```ts
- * stepStyle(ctx, env, "size", 1, false);
- * ```
  */
 export function stepStyle(
   ctx: FlowCtx,
@@ -272,10 +260,6 @@ export function usedByOf(ui: Json, key: string): string[] {
    * Collects the matching nodes of one value and its children.
    *
    * @param value - A part of game.ui.
-   * @example
-   * ```ts
-   * visit(ui);
-   * ```
    */
   function visit(value: Json): void {
     if (Array.isArray(value)) {

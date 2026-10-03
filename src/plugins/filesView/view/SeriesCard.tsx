@@ -10,11 +10,6 @@ import type { FilesViewCtx, OpenTab } from "../types";
 
 /**
  * Props of `SeriesCard`.
- *
- * @example
- * ```tsx
- * <SeriesCard ctx={ctx} tab={tab} />
- * ```
  */
 export type SeriesCardProps = { readonly ctx: FilesViewCtx; readonly tab: OpenTab };
 
@@ -23,10 +18,6 @@ export type SeriesCardProps = { readonly ctx: FilesViewCtx; readonly tab: OpenTa
  *
  * @param props - Context and the tab of the index.json.
  * @returns The card.
- * @example
- * ```tsx
- * <SeriesCard ctx={ctx} tab={tab} />
- * ```
  */
 export function SeriesCard(props: SeriesCardProps): VNode {
   const { ctx, tab } = props;

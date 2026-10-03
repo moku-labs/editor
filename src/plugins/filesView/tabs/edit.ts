@@ -13,10 +13,6 @@ import { activeTab, findTab } from "./model";
  * @param ctx - Domain context of filesView.
  * @param path - A tab path, or undefined for the active tab.
  * @returns The tab, or undefined.
- * @example
- * ```ts
- * targetOf(ctx, undefined)?.path; // the active path
- * ```
  */
 function targetOf(ctx: FilesViewCtx, path: string | undefined): OpenTab | undefined {
   return path === undefined ? activeTab(ctx.state) : findTab(ctx.state, path);
@@ -29,10 +25,6 @@ function targetOf(ctx: FilesViewCtx, path: string | undefined): OpenTab | undefi
  * @param ctx - Domain context of filesView.
  * @param on - Edit mode on or off.
  * @param path - The tab's path; the active tab when omitted.
- * @example
- * ```ts
- * setEditing(ctx, true); // the active tab is in edit mode
- * ```
  */
 export function setEditing(ctx: FilesViewCtx, on: boolean, path?: string): void {
   const tab = targetOf(ctx, path);
@@ -49,10 +41,6 @@ export function setEditing(ctx: FilesViewCtx, on: boolean, path?: string): void 
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
  * @param text - The new buffer.
- * @example
- * ```ts
- * setBuffer(ctx, "nodes/merge.ts", "export const merge = 2;\n");
- * ```
  */
 export function setBuffer(ctx: FilesViewCtx, path: string, text: string): void {
   const tab = findTab(ctx.state, path);
@@ -68,10 +56,6 @@ export function setBuffer(ctx: FilesViewCtx, path: string, text: string): void {
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
  * @param mode - "preview" or "source".
- * @example
- * ```ts
- * setMode(ctx, ".moku/notes/a.md", "source");
- * ```
  */
 export function setMode(ctx: FilesViewCtx, path: string, mode: "preview" | "source"): void {
   const tab = findTab(ctx.state, path);
@@ -86,10 +70,6 @@ export function setMode(ctx: FilesViewCtx, path: string, mode: "preview" | "sour
  *
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
- * @example
- * ```ts
- * cancelEdit(ctx, "nodes/merge.ts");
- * ```
  */
 export function cancelEdit(ctx: FilesViewCtx, path: string): void {
   const tab = findTab(ctx.state, path);
@@ -104,10 +84,6 @@ export function cancelEdit(ctx: FilesViewCtx, path: string): void {
  * Keep: closes the discard popover without closing the tab.
  *
  * @param ctx - Domain context of filesView.
- * @example
- * ```ts
- * dismissConfirm(ctx); // ctx.state.confirmClose === undefined
- * ```
  */
 export function dismissConfirm(ctx: FilesViewCtx): void {
   ctx.state.confirmClose = undefined;
@@ -119,10 +95,6 @@ export function dismissConfirm(ctx: FilesViewCtx): void {
  *
  * @param ctx - Domain context of filesView.
  * @returns Whether it closed something.
- * @example
- * ```ts
- * workspace.keys.escape("fileEdit", () => closeTopmost(ctx));
- * ```
  */
 export function closeTopmost(ctx: FilesViewCtx): boolean {
   if (ctx.state.confirmClose !== undefined) {

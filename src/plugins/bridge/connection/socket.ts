@@ -48,7 +48,7 @@ function socketConstructorOf(scope: typeof globalThis): SocketConstructor | unde
  * @returns Whether the bridge can connect in this runtime.
  * @example
  * ```ts
- * if (!hasNetwork(globalThis)) fail(deps, "no WebSocket in this runtime", false);
+ * hasNetwork(globalThis); // true in a browser and in Bun
  * ```
  */
 export function hasNetwork(scope: typeof globalThis): boolean {
@@ -94,39 +94,8 @@ function openSocketIn(
  */
 export function defaultNet(scope: typeof globalThis): BridgeNet {
   return {
-    /**
-     * The scope's fetch.
-     *
-     * @param url - The hello URL.
-     * @param init - Cache, credentials and optional headers.
-     * @returns The response.
-     * @example
-     * ```ts
-     * await net.fetch(url, { cache: "no-store", credentials: "same-origin" });
-     * ```
-     */
     fetch: (url, init) => scope.fetch(url, init),
-    /**
-     * Opens a websocket; the origin becomes Bun's `headers` option.
-     *
-     * @param url - The socket URL.
-     * @param origin - The Origin header outside a browser, or undefined.
-     * @returns The socket.
-     * @example
-     * ```ts
-     * net.openSocket(url, undefined);
-     * ```
-     */
     openSocket: (url, origin) => openSocketIn(scope, url, origin),
-    /**
-     * Math.random, for the backoff jitter.
-     *
-     * @returns A number in [0, 1).
-     * @example
-     * ```ts
-     * net.random(); // 0.42
-     * ```
-     */
     // eslint-disable-next-line sonarjs/pseudo-random -- backoff jitter only, nothing secret
     random: () => Math.random()
   };

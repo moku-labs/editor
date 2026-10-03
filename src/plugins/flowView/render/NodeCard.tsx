@@ -24,10 +24,6 @@ export type NodeCardProps = {
  *
  * @param props - Context, actions, the item and its view.
  * @returns The card.
- * @example
- * ```tsx
- * <Card ctx={ctx} actions={actions} item={item} view={view} />
- * ```
  */
 function Card(props: NodeCardProps): VNode {
   const { actions, item, view } = props;
@@ -82,11 +78,6 @@ function Card(props: NodeCardProps): VNode {
 
 /**
  * The node card: re-renders only when its item or a field of its view changes.
- *
- * @example
- * ```tsx
- * <NodeCard ctx={ctx} actions={actions} item={item} view={world.cards.get(item.key)} />
- * ```
  */
 export const NodeCard = memo(
   Card,

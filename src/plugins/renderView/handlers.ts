@@ -15,10 +15,6 @@ import { refreshRenderView, startScene, stopScene } from "./watch";
  * watches, R4).
  *
  * @param state - renderView state.
- * @example
- * ```ts
- * clearSession(ctx.state); // ctx.state.releases → []
- * ```
  */
 function clearSession(state: RenderViewState): void {
   state.fps = [];
@@ -36,10 +32,6 @@ function clearSession(state: RenderViewState): void {
  * Forgets every value (no game left): the session data, the last values, the scene and the box.
  *
  * @param state - renderView state.
- * @example
- * ```ts
- * clearAll(ctx.state); // ctx.state.render → undefined
- * ```
  */
 function clearAll(state: RenderViewState): void {
   clearSession(state);
@@ -60,10 +52,6 @@ function clearAll(state: RenderViewState): void {
  *
  * @param ctx - Domain context of renderView.
  * @returns The hook.
- * @example
- * ```ts
- * onWorkspaceChanged(ctx)({ ws: "render" }); // watches game.ui, game.entities, game.projections
- * ```
  */
 export function onWorkspaceChanged(
   ctx: RenderViewCtx
@@ -89,10 +77,6 @@ export function onWorkspaceChanged(
  *
  * @param ctx - Domain context of renderView.
  * @returns The hook.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "live", frame: 12 }, session: "s-7f3a" });
- * ```
  */
 export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:status"]) => void {
   return ({ status, session }) => {
@@ -119,10 +103,6 @@ export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:st
  *
  * @param ctx - Domain context of renderView.
  * @returns The hook.
- * @example
- * ```ts
- * onReveal(ctx)({ ref: { kind: "entity", id: 3_145_728 } });
- * ```
  */
 export function onReveal(ctx: RenderViewCtx): (payload: ToolsEvents["workspace:reveal"]) => void {
   return ({ ref }) => revealRef(ctx, ref);
@@ -133,10 +113,6 @@ export function onReveal(ctx: RenderViewCtx): (payload: ToolsEvents["workspace:r
  *
  * @param ctx - Domain context of renderView.
  * @returns The three hooks.
- * @example
- * ```ts
- * createToolsPlugin("renderView", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: RenderViewCtx): RenderViewHooks {
   return {

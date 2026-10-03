@@ -19,10 +19,6 @@ export type RecordingViewProps = { readonly ctx: GameViewCtx; readonly recording
  *
  * @param props - The context and the running recording.
  * @returns The view.
- * @example
- * ```tsx
- * <RecordingView ctx={ctx} recording={ctx.state.series.recording!} />
- * ```
  */
 export function RecordingView(props: RecordingViewProps): VNode {
   const { ctx, recording } = props;

@@ -49,7 +49,7 @@ export function notFound(path: string): Error & WireError {
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * if (sha1(current) !== version) throw conflict(path);
+ * conflict("src/a.ts").code; // -32005, message "[moku-editor] version conflict: src/a.ts"
  * ```
  */
 export function conflict(path: string): Error & WireError {
@@ -86,7 +86,7 @@ export function invalid(field: "text" | "data", message: string): Error & WireEr
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * if (size > limit) throw tooLarge(path);
+ * tooLarge("src/a.ts").code; // -32000
  * ```
  */
 export function tooLarge(path: string): Error & WireError {

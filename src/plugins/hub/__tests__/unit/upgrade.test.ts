@@ -112,13 +112,16 @@ describe("handleUpgrade checks, in order", () => {
     const { ctx, server } = started();
     const first = ctx.state.nextConn;
 
-    expect(handleUpgrade(ctx, upgradeRequest({ kind: "agent" }), server)).toBeUndefined();
-    expect(handleUpgrade(ctx, upgradeRequest({ kind: "tools" }), server)).toBeUndefined();
+    const agentRequest = upgradeRequest({ kind: "agent" });
+    const toolsRequest = upgradeRequest({ kind: "tools" });
 
-    expect(server.upgrade).toHaveBeenNthCalledWith(1, expect.any(Request), {
+    expect(handleUpgrade(ctx, agentRequest, server)).toBeUndefined();
+    expect(handleUpgrade(ctx, toolsRequest, server)).toBeUndefined();
+
+    expect(server.upgrade).toHaveBeenNthCalledWith(1, agentRequest, {
       data: { kind: "agent", conn: first }
     });
-    expect(server.upgrade).toHaveBeenNthCalledWith(2, expect.any(Request), {
+    expect(server.upgrade).toHaveBeenNthCalledWith(2, toolsRequest, {
       data: { kind: "tools", conn: first + 1 }
     });
     expect(ctx.state.nextConn).toBe(first + 2);

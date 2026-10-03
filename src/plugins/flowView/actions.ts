@@ -25,10 +25,6 @@ const built = new WeakMap<FlowViewState, FlowActions>();
  * @param ctx - Domain context of flowView.
  * @param actions - The late-bound actions (for the palette items).
  * @returns The services.
- * @example
- * ```ts
- * servicesOf(ctx, () => actionsOf(ctx)).toast("Layout saved", ".moku/editor/layout.json");
- * ```
  */
 export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServices {
   return {
@@ -108,11 +104,6 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
 
     /**
      * workspace.show("flow").
-     *
-     * @example
-     * ```ts
-     * services.show();
-     * ```
      */
     show: () => {
       ctx.require(workspacePlugin).show("flow");
@@ -185,10 +176,6 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
  *
  * @param ctx - Domain context of flowView.
  * @returns The actions.
- * @example
- * ```ts
- * actionsOf(ctx).focus.select("board/merge");
- * ```
  */
 export function actionsOf(ctx: FlowCtx): FlowActions {
   const existing = built.get(ctx.state);

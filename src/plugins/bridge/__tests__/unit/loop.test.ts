@@ -310,7 +310,7 @@ describe("connect — failures", () => {
     expect(deps.log.error).toHaveBeenCalledWith(
       "bridge:connect-crashed",
       undefined,
-      expect.any(Error)
+      new Error("hook broke")
     );
   });
 });

@@ -19,10 +19,6 @@ export type ElementHolder<T> = {
  * @param api - The filesView api.
  * @param select - Reads what the component shows.
  * @returns The selection of this render.
- * @example
- * ```ts
- * const tabs = useFiles(api, () => api.tabs());
- * ```
  */
 export function useFiles<T>(api: FilesViewApi, select: () => T): T {
   const [, setVersion] = useState(0);
@@ -48,10 +44,6 @@ export function useElement<T>(): ElementHolder<T> {
        * Stores the element Preact attached (undefined after unmount).
        *
        * @param element - The element, or null on unmount.
-       * @example
-       * ```tsx
-       * <div ref={holder.ref} />
-       * ```
        */
       ref: element => {
         created.current = element ?? undefined;

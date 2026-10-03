@@ -17,10 +17,6 @@ const MAX_PAGE_LENGTH = 2048;
  * @param state - Registry state.
  * @param name - Display name of the game.
  * @returns The frozen manifest; `panels` is omitted (reserved).
- * @example
- * ```ts
- * const manifest = buildManifest(state, "merge-game 0.0.0");
- * ```
  */
 export function buildManifest(state: RegistryState, name: string): Manifest {
   const { page, embedded } = pageInfo();
@@ -91,10 +87,6 @@ export function gameName(config: Readonly<RegistryConfig>): string {
  * @param state - Registry state (holds the cache).
  * @param config - Resolved registry config.
  * @returns The frozen manifest.
- * @example
- * ```ts
- * currentManifest(ctx.state, ctx.config).commands.length; // 14 door commands + module + editor commands
- * ```
  */
 export function currentManifest(state: RegistryState, config: Readonly<RegistryConfig>): Manifest {
   const game = gameName(config);

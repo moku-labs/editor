@@ -45,11 +45,6 @@ export function cheatCommands(manifest: Manifest): readonly CommandDescriptor[] 
  * @param octx - Domain context.
  * @param id - The cheat command id.
  * @returns Settles when the result is recorded; never rejects.
- * @example
- * ```ts
- * await runCheat(octx, "merge.addCoins");
- * octx.state.results.get("merge.addCoins")?.ok; // true
- * ```
  */
 export async function runCheat(octx: OverlayCtx, id: string): Promise<void> {
   const { state } = octx;

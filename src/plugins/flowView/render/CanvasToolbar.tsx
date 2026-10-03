@@ -17,10 +17,6 @@ export type CanvasToolbarProps = { readonly ctx: FlowCtx; readonly actions: Flow
  *
  * @param props - Context and actions.
  * @returns The toolbar.
- * @example
- * ```tsx
- * <CanvasToolbar ctx={ctx} actions={actions} />
- * ```
  */
 export function CanvasToolbar(props: CanvasToolbarProps): VNode {
   const { ctx, actions } = props;

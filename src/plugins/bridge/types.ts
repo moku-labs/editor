@@ -11,6 +11,16 @@ import type { Changes, Json, LinkStatus, SubId } from "../registry/protocol";
 import type { RegistryApi } from "../registry/types";
 
 /**
+ * Default first reconnect delay (config `retryMs`).
+ */
+export const DEFAULT_RETRY_MS = 1000;
+
+/**
+ * Default deadline of one hub request (config `callTimeoutMs`).
+ */
+export const DEFAULT_CALL_TIMEOUT_MS = 5000;
+
+/**
  * Cap of the reconnect backoff.
  */
 export const MAX_RETRY_MS = 30_000;
@@ -105,14 +115,31 @@ export type HelloResponse = {
 };
 
 /**
- * The network seam (fetch, socket, random), injectable for tests.
+ * The network seam (fetch, socket, random), injectable for tests. `defaultNet(globalThis)` is the
+ * real one.
+ *
+ * @example
+ * ```ts
+ * // A unit test answers the hello with a fixed body and never opens a real socket.
+ * const net: BridgeNet = {
+ *   fetch: async () => ({ ok: true, status: 200, json: async () => ({ ws: "/__editor/ws", token: "t1" }) }),
+ *   openSocket: () => fakeSocket,
+ *   random: () => 0.5
+ * };
+ * ```
  */
 export type BridgeNet = {
+  /** Fetches the hello route: cache, credentials and optional headers (the Origin outside a browser). */
   fetch(
     url: string,
     init: { cache: "no-store"; credentials: "same-origin"; headers?: Record<string, string> }
   ): Promise<HelloResponse>;
+  /**
+   * Opens a websocket. The real seam passes `{ headers: { origin } }` only when an origin is
+   * given: Bun reads it as client headers, a browser would read it as a sub-protocol.
+   */
   openSocket(url: string, origin: string | undefined): SocketLike;
+  /** A number in [0, 1) for the backoff jitter (`Math.random` in the real seam). */
   random(): number;
 };
 
@@ -141,15 +168,33 @@ export type BridgeState = {
 };
 
 /**
- * The bridge api (`app.bridge`).
- *
- * @example
- * ```ts
- * editor.bridge.status(); // { kind: "live", frame: 1840 }
- * ```
+ * The bridge api (`app.bridge`): the state of the dev link from the game page to the editor
+ * server. Both methods read state only.
  */
 export type BridgeApi = {
+  /**
+   * The link status: connecting before the socket opens, live or paused from the channel
+   * heartbeat while open, lost with the reason and the retry delay after a failure, lost
+   * "stopped" after stop. Never `silent` or `empty`: those are tools-side kinds.
+   *
+   * @returns A fresh LinkStatus.
+   * @example
+   * ```ts
+   * // A dev entry shows the editor link next to the fps counter.
+   * app.bridge.status(); // { kind: "connecting" } right after start, then { kind: "live", frame: 12 }
+   * ```
+   */
   status(): LinkStatus;
+  /**
+   * The session id the hub gave this page after its hello (R6).
+   *
+   * @returns The id, or undefined before it arrives and after the socket closes.
+   * @example
+   * ```ts
+   * // Wait for the editor server to accept the page.
+   * app.bridge.session(); // "s-7f3a" once the hub answered; undefined before and after stop
+   * ```
+   */
   session(): string | undefined;
 };
 

@@ -56,10 +56,6 @@ function unknownMethod(name: string): Error {
  * @param id - The source or command id.
  * @param work - The channel call.
  * @returns A promise that settles with `work`, never rejects.
- * @example
- * ```ts
- * await answerWithin(deps, request, "game.step", channel.run("game.step", { frames: 1 }));
- * ```
  */
 function answerWithin(
   deps: BridgeDeps,
@@ -84,10 +80,6 @@ function answerWithin(
    * Responds unless the deadline fired or the socket closed in between.
    *
    * @param response - The response of the settled call.
-   * @example
-   * ```ts
-   * settle(success(7, value));
-   * ```
    */
   const settle = (response: RpcResponse): void => {
     if (state.inflight.get(request.id) !== timer) {
@@ -115,10 +107,6 @@ function answerWithin(
  * @param deps - The domain deps.
  * @param request - The request.
  * @throws {Error} -32601 unknown method, -32602 bad params, or what the registry threw.
- * @example
- * ```ts
- * await route(deps, request);
- * ```
  */
 async function route(deps: BridgeDeps, request: RpcRequest): Promise<void> {
   const { channel, method, params } = request;
@@ -163,10 +151,6 @@ async function route(deps: BridgeDeps, request: RpcRequest): Promise<void> {
  * @param deps - The domain deps.
  * @param request - The decoded request.
  * @returns A promise that settles when the request is served (never rejects in practice).
- * @example
- * ```ts
- * await handleRequest(deps, request(7, "game", "read", { id: "game.position" }));
- * ```
  */
 export async function handleRequest(deps: BridgeDeps, request: RpcRequest): Promise<void> {
   try {
@@ -205,10 +189,6 @@ function sessionAfter(
  *
  * @param deps - The domain deps.
  * @param message - The notification.
- * @example
- * ```ts
- * handleNotification(deps, notification("editor", "session", { id: "s-7f3a", game, open: true }));
- * ```
  */
 function handleNotification(deps: BridgeDeps, message: Notification): void {
   if (message.channel !== "editor" || message.method !== "session") {
@@ -234,10 +214,6 @@ function handleNotification(deps: BridgeDeps, message: Notification): void {
  *
  * @param deps - The domain deps.
  * @param data - The `data` of the message event.
- * @example
- * ```ts
- * socket.addEventListener("message", event => handleText(deps, event.data));
- * ```
  */
 export function handleText(deps: BridgeDeps, data: unknown): void {
   if (typeof data !== "string") {

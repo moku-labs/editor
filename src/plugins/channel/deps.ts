@@ -19,11 +19,6 @@ const NO_INPUT: Json = null;
  *
  * @param ctx - Domain context of the channel.
  * @returns Config, state, log and the registry slice the channel uses.
- * @example
- * ```ts
- * const deps = depsOf(ctx);
- * deps.registry.clock(); // { frame: 1840, paused: false }
- * ```
  */
 export function depsOf(ctx: ChannelCtx): ChannelDeps {
   return {
@@ -75,10 +70,6 @@ function unknownId(id: string, kind: "source" | "command"): Error {
  * @param id - The source id.
  * @returns The entry.
  * @throws {Error} -32601 `[moku-editor] <id>: unknown source` with `data.id`.
- * @example
- * ```ts
- * sourceOf(registry, "game.position").read(null); // { path: "home", … }
- * ```
  */
 export function sourceOf(registry: ChannelRegistry, id: string): SourceEntry {
   const entry = registry.source(id);
@@ -93,10 +84,6 @@ export function sourceOf(registry: ChannelRegistry, id: string): SourceEntry {
  * @param id - The command id.
  * @returns The entry.
  * @throws {Error} -32601 `[moku-editor] <id>: unknown command` with `data.id`.
- * @example
- * ```ts
- * await commandOf(registry, "game.step").run({ frames: 1 });
- * ```
  */
 export function commandOf(registry: ChannelRegistry, id: string): CommandEntry {
   const entry = registry.command(id);

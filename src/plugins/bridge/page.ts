@@ -11,10 +11,6 @@ import type { BridgeDeps } from "./types";
  *
  * @param deps - The domain deps.
  * @returns The remover (a no-op outside a browser).
- * @example
- * ```ts
- * state.off.push(watchVisibility(deps));
- * ```
  */
 export function watchVisibility(deps: BridgeDeps): () => void {
   const doc = deps.page.document;
@@ -22,11 +18,6 @@ export function watchVisibility(deps: BridgeDeps): () => void {
 
   /**
    * Queues one heartbeat after the event.
-   *
-   * @example
-   * ```ts
-   * doc.addEventListener("visibilitychange", onVisibility);
-   * ```
    */
   const onVisibility = (): void => {
     queueMicrotask(() => {

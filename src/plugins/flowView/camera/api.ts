@@ -17,7 +17,7 @@ import {
   followCamera,
   zoomAt
 } from "./math";
-import type { CameraActions, CameraOp, ViewInsets } from "./types";
+import type { CameraActions, ViewInsets } from "./types";
 
 /**
  * Height of the open neighbours strip.
@@ -46,10 +46,6 @@ const PREVIEW_MARGIN = 24;
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns The insets.
- * @example
- * ```ts
- * insetsOf(ctx, env); // { top: 0, right: 224, bottom: 224, left: 0 }
- * ```
  */
 function insetsOf(ctx: FlowCtx, env: FlowEnvironment): ViewInsets {
   const bottom = ctx.state.focus.strip ? STRIP_H : 0;
@@ -69,10 +65,6 @@ function insetsOf(ctx: FlowCtx, env: FlowEnvironment): ViewInsets {
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns The frame rect and the current item.
- * @example
- * ```ts
- * currentFrame(ctx, env).frame; // the board frame while the game waits on the board
- * ```
  */
 function currentFrame(
   ctx: FlowCtx,
@@ -86,41 +78,19 @@ function currentFrame(
 }
 
 /**
- * Creates the camera actions.
+ * Creates the camera actions. Fits and focus moves animate over 420 ms, the zoom buttons over
+ * 200 ms, Follow moves over 500 ms; pans and wheel zooms apply at once.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
  * @returns The camera actions.
- * @example
- * ```ts
- * createCameraApi(ctx, env).zoomBy(1.25);
- * ```
  */
 export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActions {
   const { camera } = ctx.state;
   const actions: CameraActions = {
-    /**
-     * A copy of the camera.
-     *
-     * @returns The camera.
-     * @example
-     * ```ts
-     * actions.camera.get().z; // 1
-     * ```
-     */
-    get() {
-      return { ...camera.cam };
-    },
+    get: () => ({ ...camera.cam }),
 
-    /**
-     * Fits the root frame, 420 ms.
-     *
-     * @example
-     * ```ts
-     * actions.camera.fitAll();
-     * ```
-     */
-    fitAll() {
+    fitAll: () => {
       const result = ctx.state.layout.result;
       if (result === undefined) return;
       const target = fitRect(
@@ -134,15 +104,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       animateTo(ctx, target, DURATION.camera);
     },
 
-    /**
-     * Fits the selection and its neighbours (or the current node), 420 ms.
-     *
-     * @example
-     * ```ts
-     * actions.camera.fitSelection();
-     * ```
-     */
-    fitSelection() {
+    fitSelection: () => {
       const rect = env.actions().focus.relatedRect();
       if (rect === undefined) return;
       const target = fitRect(
@@ -156,16 +118,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       animateTo(ctx, target, DURATION.camera);
     },
 
-    /**
-     * Zooms by a factor around the viewport centre, 200 ms.
-     *
-     * @param factor - The factor.
-     * @example
-     * ```ts
-     * actions.camera.zoomBy(0.8);
-     * ```
-     */
-    zoomBy(factor: number) {
+    zoomBy: factor => {
       const target = zoomAt(
         camera.cam,
         camera.viewport.w / 2,
@@ -176,30 +129,11 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       animateTo(ctx, target, DURATION.zoom);
     },
 
-    /**
-     * Sets an absolute zoom around the viewport centre, 200 ms.
-     *
-     * @param z - The zoom.
-     * @example
-     * ```ts
-     * actions.camera.zoomTo(1);
-     * ```
-     */
-    zoomTo(z: number) {
+    zoomTo: z => {
       actions.zoomBy(clampZoom(z, ctx.config) / camera.cam.z);
     },
 
-    /**
-     * Toggles or sets Follow; turning it on moves to the current node (500 ms).
-     *
-     * @param on - The new value; omitted = toggle.
-     * @returns The new value.
-     * @example
-     * ```ts
-     * actions.camera.follow(); // true
-     * ```
-     */
-    follow(on?: boolean) {
+    follow: on => {
       camera.follow = on ?? !camera.follow;
       const spot = camera.follow ? env.actions().focus.locateCurrent() : undefined;
       if (spot !== undefined) actions.followItem(spot.item);
@@ -207,51 +141,19 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       return camera.follow;
     },
 
-    /**
-     * Pans by screen px at once.
-     *
-     * @param dx - Horizontal px.
-     * @param dy - Vertical px.
-     * @example
-     * ```ts
-     * actions.camera.panBy(-40, 0);
-     * ```
-     */
-    panBy(dx: number, dy: number) {
+    panBy: (dx, dy) => {
       cancelAnimation(ctx);
       camera.cam = { x: camera.cam.x + dx, y: camera.cam.y + dy, z: camera.cam.z };
       applyCamera(ctx);
     },
 
-    /**
-     * Zooms around a screen point at once.
-     *
-     * @param px - Canvas x.
-     * @param py - Canvas y.
-     * @param factor - The factor.
-     * @example
-     * ```ts
-     * actions.camera.zoomAround(300, 200, 1.1);
-     * ```
-     */
-    zoomAround(px: number, py: number, factor: number) {
+    zoomAround: (px, py, factor) => {
       cancelAnimation(ctx);
       camera.cam = zoomAt(camera.cam, px, py, factor, ctx.config);
       applyCamera(ctx);
     },
 
-    /**
-     * Centres a world point, animated or live.
-     *
-     * @param x - World x.
-     * @param y - World y.
-     * @param animate - True for a 420 ms move (minimap click), false for a live drag.
-     * @example
-     * ```ts
-     * actions.camera.centreOn(640, 480, true);
-     * ```
-     */
-    centreOn(x: number, y: number, animate: boolean) {
+    centreOn: (x, y, animate) => {
       const target = centreAt({ x, y }, camera.cam.z, camera.viewport, insetsOf(ctx, env));
       if (animate) {
         animateTo(ctx, target, DURATION.camera);
@@ -262,16 +164,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       applyCamera(ctx);
     },
 
-    /**
-     * Focus move onto an item, 420 ms.
-     *
-     * @param item - The item.
-     * @example
-     * ```ts
-     * actions.camera.focusItem(item);
-     * ```
-     */
-    focusItem(item: Item) {
+    focusItem: item => {
       animateTo(
         ctx,
         focusCamera(item, camera.cam, camera.viewport, insetsOf(ctx, env)),
@@ -279,16 +172,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       );
     },
 
-    /**
-     * Follow move onto an item, 500 ms.
-     *
-     * @param item - The current item.
-     * @example
-     * ```ts
-     * actions.camera.followItem(item);
-     * ```
-     */
-    followItem(item: Item) {
+    followItem: item => {
       animateTo(
         ctx,
         followCamera(item, camera.cam, camera.viewport, insetsOf(ctx, env)),
@@ -296,15 +180,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       );
     },
 
-    /**
-     * Applies the default camera once per root (M11), without a tween.
-     *
-     * @example
-     * ```ts
-     * actions.camera.applyDefault();
-     * ```
-     */
-    applyDefault() {
+    applyDefault: () => {
       if (camera.initialised || camera.viewport.w === 0) return;
       const { frame, current } = currentFrame(ctx, env);
       if (frame === undefined) return;
@@ -314,68 +190,23 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       applyCamera(ctx);
     },
 
-    /**
-     * Records the canvas size.
-     *
-     * @param view - Width and height in px.
-     * @example
-     * ```ts
-     * actions.camera.setView({ w: 960, h: 720 });
-     * ```
-     */
-    setView(view) {
+    setView: view => {
       camera.viewport = { w: view.w, h: view.h };
       if (!camera.initialised && env.active()) actions.applyDefault();
       else applyCamera(ctx);
     },
 
-    /**
-     * The insets of the available rect.
-     *
-     * @returns The insets.
-     * @example
-     * ```ts
-     * actions.camera.insets().bottom; // 224 while the strip is open
-     * ```
-     */
-    insets() {
-      return insetsOf(ctx, env);
-    },
+    insets: () => insetsOf(ctx, env),
 
-    /**
-     * Cancels the running tween.
-     *
-     * @example
-     * ```ts
-     * actions.camera.cancel();
-     * ```
-     */
-    cancel() {
+    cancel: () => {
       cancelAnimation(ctx);
     },
 
-    /**
-     * Writes the camera to the DOM.
-     *
-     * @example
-     * ```ts
-     * actions.camera.apply();
-     * ```
-     */
-    apply() {
+    apply: () => {
       applyCamera(ctx);
     },
 
-    /**
-     * Runs a camera op of input.ts.
-     *
-     * @param op - The op.
-     * @example
-     * ```ts
-     * actions.camera.run({ kind: "pan", dx: 0, dy: -48 });
-     * ```
-     */
-    run(op: CameraOp) {
+    run: op => {
       switch (op.kind) {
         case "pan": {
           actions.panBy(op.dx, op.dy);

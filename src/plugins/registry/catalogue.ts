@@ -30,10 +30,6 @@ type Origin = "door" | "module" | "editor";
  * @param config - Resolved registry config.
  * @returns The game app.
  * @throws {Error} `[moku-editor] registry.game is missing.` when it is undefined.
- * @example
- * ```ts
- * clockOf(requireGame(ctx.config));
- * ```
  */
 export function requireGame(config: Readonly<RegistryConfig>): GameLike {
   if (config.game !== undefined) return config.game;
@@ -71,10 +67,6 @@ function isGameApp(game: GameLike): boolean {
  * @param id - The id.
  * @param origin - Where the entry came from.
  * @throws {Error} `[moku-editor] Duplicate registry id …` when it is taken.
- * @example
- * ```ts
- * claim(state, "game.step", "door");
- * ```
  */
 function claim(state: RegistryState, id: string, origin: Origin): void {
   if (state.origins.has(id)) {
@@ -96,10 +88,6 @@ function claim(state: RegistryState, id: string, origin: Origin): void {
  * @param game - The game app.
  * @param doors - The sources.
  * @param origin - "door" or "module".
- * @example
- * ```ts
- * addSources(ctx, game, Object.values(sources), "door");
- * ```
  */
 function addSources(
   ctx: { readonly state: RegistryState; readonly log: Log.LogApi },
@@ -123,10 +111,6 @@ function addSources(
  * @param game - The game app.
  * @param doors - The commands.
  * @param origin - "door" or "module".
- * @example
- * ```ts
- * addCommands(ctx, game, Object.values(commands), "door");
- * ```
  */
 function addCommands(
   ctx: { readonly state: RegistryState; readonly log: Log.LogApi },
@@ -147,10 +131,6 @@ function addCommands(
  *
  * @param ctx - Domain context of the registry.
  * @throws {Error} The missing-game, not-an-app, duplicate-id and descriptor errors.
- * @example
- * ```ts
- * createAgentPlugin("registry", { onInit: buildCatalogue });
- * ```
  */
 export function buildCatalogue(ctx: RegistryCtx): void {
   const game = requireGame(ctx.config);
@@ -191,10 +171,6 @@ export function buildCatalogue(ctx: RegistryCtx): void {
  * @param state - Registry state.
  * @param entry - The editor command.
  * @throws {Error} The invalid-id, duplicate-id, effect and input-kind errors.
- * @example
- * ```ts
- * addEditorCommand(ctx.state, overlayCommand);
- * ```
  */
 export function addEditorCommand(state: RegistryState, entry: CommandEntry): void {
   const { id, effect } = entry.descriptor;

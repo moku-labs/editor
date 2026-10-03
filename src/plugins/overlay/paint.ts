@@ -25,15 +25,15 @@ import { OverlayCard } from "./view/OverlayCard";
 const UNAVAILABLE_TITLE = "game.render is not available in this build";
 
 /**
+ * Milliseconds in a second, for the retry countdown of the link label.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
  * Renders the card (and, without an adopted sheet, its `<style>`) into the shadow root. Does
  * nothing before mount. Clicks run the cheat through runCheat.
  *
  * @param octx - Domain context.
- * @example
- * ```ts
- * octx.state.render = { fps: 60, frameMs: 4.1, textureMb: 31.1 };
- * paint(octx); // the chips read "fps 60", "4.1 ms", "textures 31.1 MB"
- * ```
  */
 export function paint(octx: OverlayCtx): void {
   const { root } = octx.state;
@@ -44,10 +44,6 @@ export function paint(octx: OverlayCtx): void {
    *
    * @param id - The cheat id.
    * @returns Settles when the result is recorded.
-   * @example
-   * ```ts
-   * await onCheat("merge.addCoins");
-   * ```
    */
   const onCheat = (id: string): Promise<void> => runCheat(octx, id);
   const card = h(OverlayCard, { ...viewOf(octx.state, octx.config, Date.now()), onCheat });
@@ -78,10 +74,6 @@ function isShowing(result: CheatResult, now: number): boolean {
  * @param title - The cheat title.
  * @param now - Epoch milliseconds.
  * @returns The button view.
- * @example
- * ```ts
- * cheatView(state, "merge.addCoins", "Add coins", Date.now()).state; // "idle"
- * ```
  */
 function cheatView(state: OverlayState, id: string, title: string, now: number): CheatView {
   if (state.busy.has(id)) return { id, title, state: "busy", message: undefined };
@@ -101,10 +93,6 @@ function cheatView(state: OverlayState, id: string, title: string, now: number):
  * @param state - Overlay state.
  * @param now - Epoch milliseconds.
  * @returns "Cheat sent: <title>", "Cheat failed: <message>" or "".
- * @example
- * ```ts
- * announceOf(state, Date.now()); // "Cheat sent: Add 100 coins"
- * ```
  */
 function announceOf(state: OverlayState, now: number): string {
   let newest: [string, CheatResult] | undefined;
@@ -128,10 +116,6 @@ function announceOf(state: OverlayState, now: number): string {
  * @param config - Overlay config (the corner).
  * @param now - Epoch milliseconds; results older than OK_MS / ERROR_MS are idle again.
  * @returns The view.
- * @example
- * ```ts
- * viewOf(state, config, Date.now()).chips[0]?.text; // "fps 60"
- * ```
  */
 export function viewOf(state: OverlayState, config: Readonly<Config>, now: number): OverlayView {
   const status: LinkStatus = state.link ?? { kind: "connecting" };
@@ -169,7 +153,7 @@ export function linkLabel(status: LinkStatus): string {
       return `Editor silent · last frame ${status.lastFrame}`;
     }
     case "lost": {
-      return `Editor link lost · retry in ${Math.ceil(status.retryInMs / 1000)} s`;
+      return `Editor link lost · retry in ${Math.ceil(status.retryInMs / MS_PER_SECOND)} s`;
     }
     default: {
       return "No editor session";

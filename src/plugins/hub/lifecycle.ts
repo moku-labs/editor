@@ -34,10 +34,6 @@ function unref(timer: ReturnType<typeof setInterval>): void {
  * min(1000, silentAfterMs / 2) ms.
  *
  * @param ctx - Domain context of the hub.
- * @example
- * ```ts
- * createServerPlugin("hub", { onStart: startHub });
- * ```
  */
 export function startHub(ctx: HubCtx): void {
   const { state, config } = ctx;
@@ -57,10 +53,6 @@ export function startHub(ctx: HubCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createServerPlugin("hub", { onStop: stopHub });
- * ```
  */
 export function stopHub(ctx: { readonly state: HubState }): void {
   const { state } = ctx;

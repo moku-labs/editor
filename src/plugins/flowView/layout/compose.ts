@@ -148,10 +148,6 @@ function contentBounds(items: readonly Item[]): Rect {
  * @param dx - Delta x.
  * @param dy - Delta y.
  * @returns The moved items and edges.
- * @example
- * ```ts
- * shift(block, 0, 982);
- * ```
  */
 function shift(
   box: FlowBox,
@@ -215,10 +211,6 @@ function reroute(
  * @param items - The items.
  * @param bounds - The content bounds.
  * @returns The keys of the ports that moved.
- * @example
- * ```ts
- * const moved = reseatPorts(items, bounds);
- * ```
  */
 function reseatPorts(items: Item[], bounds: Rect): Set<string> {
   const moved = new Set<string>();
@@ -243,10 +235,6 @@ function reseatPorts(items: Item[], bounds: Rect): Set<string> {
  * @param box - The flow box.
  * @param pins - The pins.
  * @returns The box with pins applied.
- * @example
- * ```ts
- * applyPins(box, pins);
- * ```
  */
 function applyPins(box: FlowBox, pins: PinsFile): FlowBox {
   const deltas = new Map<string, { dx: number; dy: number }>();
@@ -311,7 +299,101 @@ async function withUnreached(
 }
 
 /**
- * Lays out one flow (and, first, the flows inside its expanded nodes).
+ * The box of a flow the graph does not have: no items, the bounds of an empty card.
+ *
+ * @returns The empty box.
+ * @example
+ * ```ts
+ * emptyBox().bounds; // { x: 0, y: 0, w: 172, h: 44 }
+ * ```
+ */
+function emptyBox(): FlowBox {
+  return { items: [], edges: [], lanes: [], heads: [], bounds: contentBounds([]), unreached: [] };
+}
+
+/**
+ * The size of an expanded node's frame: the widest child flow plus the padding, the child flows
+ * stacked under the frame head with SLOT_GAP between them.
+ *
+ * @param inner - The bounds of the child flows, top to bottom.
+ * @returns Width and height.
+ * @example
+ * ```ts
+ * frameSize([{ x: 0, y: 0, w: 172, h: 44 }]); // { w: 216, h: 106 }
+ * ```
+ */
+function frameSize(inner: readonly Rect[]): { w: number; h: number } {
+  return {
+    w: Math.max(...inner.map(rect => rect.w)) + 2 * FRAME_PAD,
+    h:
+      FRAME_HEAD +
+      inner.reduce((sum, rect) => sum + rect.h, 0) +
+      SLOT_GAP * (inner.length - 1) +
+      FRAME_PAD
+  };
+}
+
+/**
+ * Lays out the child flows of a flow's expanded nodes (down to MAX_DEPTH) and the frame size each
+ * expanded node gets.
+ *
+ * @param input - The compose input.
+ * @param flowName - The flow name.
+ * @param flow - The flow.
+ * @param prefix - The frame key the flow is laid out in ("" for the root).
+ * @param depth - Nesting depth of the flow.
+ * @returns Frame sizes and child flows, by node name.
+ */
+async function layoutChildren(
+  input: ComposeInput,
+  flowName: string,
+  flow: FlowJson,
+  prefix: string,
+  depth: number
+): Promise<{ sizes: Map<string, { w: number; h: number }>; children: Map<string, Placed[]> }> {
+  const sizes = new Map<string, { w: number; h: number }>();
+  const children = new Map<string, Placed[]>();
+  for (const [name, node] of Object.entries(flow.nodes)) {
+    const key = instanceKey(prefix, `${flowName}/${name}`);
+    if (depth >= MAX_DEPTH || !input.expanded.has(key)) continue;
+    const placed: Placed[] = [];
+    for (const child of childFlows(input.graph, node)) {
+      placed.push(await layoutFlow(input, child, key, depth + 1));
+    }
+    if (placed.length === 0) continue;
+    children.set(name, placed);
+    sizes.set(name, frameSize(placed.map(entry => entry.box.bounds)));
+  }
+  return { sizes, children };
+}
+
+/**
+ * Lays out the nodes of one flow: around its hub (plus an ELK block for the nodes the lanes do not
+ * reach), else with ELK.
+ *
+ * @param input - The compose input.
+ * @param flowName - The flow name.
+ * @param flow - The flow.
+ * @param sizes - Frame sizes of the expanded nodes.
+ * @returns The flow box.
+ */
+async function layoutNodes(
+  input: ComposeInput,
+  flowName: string,
+  flow: FlowJson,
+  sizes: ReadonlyMap<string, { w: number; h: number }>
+): Promise<FlowBox> {
+  const hub = detectHub(flow, input.config);
+  if (hub !== undefined) {
+    return withUnreached(input, flowName, flow, layoutLanes(flowName, flow, hub, sizes), sizes);
+  }
+  const classes = classifyEdges(flow);
+  const output = await input.engine.layout(toElkGraph(flowName, flow, classes, sizes));
+  return fromElkGraph(flowName, flow, classes, output);
+}
+
+/**
+ * Lays out one flow: first the flows inside its expanded nodes, then its own nodes, then the pins.
  *
  * @param input - The compose input.
  * @param flowName - The flow name.
@@ -330,52 +412,74 @@ async function layoutFlow(
   depth: number
 ): Promise<Placed> {
   const flow = input.graph.flows[flowName];
-  if (flow === undefined) {
-    return {
-      flowName,
-      box: { items: [], edges: [], lanes: [], heads: [], bounds: contentBounds([]), unreached: [] },
-      children: new Map()
-    };
-  }
+  if (flow === undefined) return { flowName, box: emptyBox(), children: new Map() };
 
-  const sizes = new Map<string, { w: number; h: number }>();
-  const children = new Map<string, Placed[]>();
-  for (const [name, node] of Object.entries(flow.nodes)) {
-    const key = instanceKey(prefix, `${flowName}/${name}`);
-    if (depth >= MAX_DEPTH || !input.expanded.has(key)) continue;
-    const placed: Placed[] = [];
-    for (const child of childFlows(input.graph, node)) {
-      placed.push(await layoutFlow(input, child, key, depth + 1));
-    }
-    if (placed.length === 0) continue;
-    children.set(name, placed);
-    const inner = placed.map(entry => entry.box.bounds);
-    sizes.set(name, {
-      w: Math.max(...inner.map(rect => rect.w)) + 2 * FRAME_PAD,
-      h:
-        FRAME_HEAD +
-        inner.reduce((sum, rect) => sum + rect.h, 0) +
-        SLOT_GAP * (inner.length - 1) +
-        FRAME_PAD
+  const { sizes, children } = await layoutChildren(input, flowName, flow, prefix, depth);
+  const box = await layoutNodes(input, flowName, flow, sizes);
+  return { flowName, box: applyPins(box, input.pins), children };
+}
+
+/**
+ * The child flows laid out inside a local item: set for an expanded node only.
+ *
+ * @param placed - The placed flow the item belongs to.
+ * @param local - A local item of that flow.
+ * @returns The child flows, or undefined when the item is not expanded.
+ */
+function nestedFlows(placed: Placed, local: Item): readonly Placed[] | undefined {
+  if (local.kind !== "node") return undefined;
+  return placed.children.get(local.id.slice(placed.flowName.length + 1));
+}
+
+/**
+ * Stacks the child flows of an expanded node inside its frame: top to bottom under the frame
+ * head, SLOT_GAP apart, each flattened at its own content origin.
+ *
+ * @param frame - The frame item, already at world coordinates.
+ * @param children - The child flows.
+ * @param flat - The flat result.
+ */
+function flattenFrame(frame: Item, children: readonly Placed[], flat: Flat): void {
+  flat.frames.push(frame);
+  let top = frame.y + FRAME_HEAD;
+  for (const child of children) {
+    const origin = { x: frame.x + FRAME_PAD - child.box.bounds.x, y: top - child.box.bounds.y };
+    flatten(child, origin, frame.key, frame.key, flat);
+    top += child.box.bounds.h + SLOT_GAP;
+  }
+}
+
+/**
+ * Adds the edges, lane bands and column heads of a flow box at a content origin.
+ *
+ * @param box - The flow box.
+ * @param origin - World point of its content origin.
+ * @param origin.x - World x.
+ * @param origin.y - World y.
+ * @param prefix - Its frame key ("" for the root flow).
+ * @param flat - The flat result.
+ */
+function flattenPaths(
+  box: FlowBox,
+  origin: { readonly x: number; readonly y: number },
+  prefix: string,
+  flat: Flat
+): void {
+  for (const edge of box.edges) {
+    const to = edge.to === undefined ? undefined : instanceKey(prefix, edge.to);
+    flat.edges.push({
+      ...edge,
+      from: instanceKey(prefix, edge.from),
+      to,
+      points: edge.points.map(point => ({ x: origin.x + point.x, y: origin.y + point.y }))
     });
   }
-
-  const hub = detectHub(flow, input.config);
-  let box: FlowBox;
-  if (hub === undefined) {
-    const classes = classifyEdges(flow);
-    const output = await input.engine.layout(toElkGraph(flowName, flow, classes, sizes));
-    box = fromElkGraph(flowName, flow, classes, output);
-  } else {
-    box = await withUnreached(
-      input,
-      flowName,
-      flow,
-      layoutLanes(flowName, flow, hub, sizes),
-      sizes
-    );
+  for (const lane of box.lanes) {
+    flat.lanes.push({ ...lane, x: origin.x + lane.x, y: origin.y + lane.y });
   }
-  return { flowName, box: applyPins(box, input.pins), children };
+  for (const head of box.heads) {
+    flat.heads.push({ ...head, x: origin.x + head.x, y: origin.y + head.y });
+  }
 }
 
 /**
@@ -388,10 +492,6 @@ async function layoutFlow(
  * @param prefix - Its frame key ("" for the root flow).
  * @param frame - The key of the frame item it sits in.
  * @param flat - The flat result.
- * @example
- * ```ts
- * flatten(placed, { x: 22, y: 40 }, "", "#main", flat);
- * ```
  */
 function flatten(
   placed: Placed,
@@ -402,60 +502,28 @@ function flatten(
 ): void {
   flat.origins[originKey(frame, placed.flowName)] = { x: origin.x, y: origin.y };
 
+  // Items at world coordinates and instance keys; an expanded node becomes a frame.
   for (const local of placed.box.items) {
-    const key = instanceKey(prefix, local.key);
-    const nested =
-      local.kind === "node"
-        ? placed.children.get(local.id.slice(placed.flowName.length + 1))
-        : undefined;
+    const nested = nestedFlows(placed, local);
     const item: Item = {
       ...local,
-      key,
+      key: instanceKey(prefix, local.key),
       kind: nested === undefined ? local.kind : "frame",
       x: origin.x + local.x,
       y: origin.y + local.y,
       parent: frame
     };
     flat.items.push(item);
-    if (nested === undefined) continue;
-
-    flat.frames.push(item);
-    let top = item.y + FRAME_HEAD;
-    for (const child of nested) {
-      const childOrigin = {
-        x: item.x + FRAME_PAD - child.box.bounds.x,
-        y: top - child.box.bounds.y
-      };
-      flatten(child, childOrigin, key, key, flat);
-      top += child.box.bounds.h + SLOT_GAP;
-    }
+    if (nested !== undefined) flattenFrame(item, nested, flat);
   }
 
-  for (const edge of placed.box.edges) {
-    const to = edge.to === undefined ? undefined : instanceKey(prefix, edge.to);
-    flat.edges.push({
-      ...edge,
-      from: instanceKey(prefix, edge.from),
-      to,
-      points: edge.points.map(point => ({ x: origin.x + point.x, y: origin.y + point.y }))
-    });
-  }
-  for (const lane of placed.box.lanes) {
-    flat.lanes.push({ ...lane, x: origin.x + lane.x, y: origin.y + lane.y });
-  }
-  for (const head of placed.box.heads) {
-    flat.heads.push({ ...head, x: origin.x + head.x, y: origin.y + head.y });
-  }
+  flattenPaths(placed.box, origin, prefix, flat);
 }
 
 /**
  * Re-routes the edges that leave or enter an expanded frame through its exit and entry ports.
  *
  * @param flat - The flat result.
- * @example
- * ```ts
- * routeFrames(flat);
- * ```
  */
 function routeFrames(flat: Flat): void {
   const byKey = new Map(flat.items.map(entry => [entry.key, entry]));
@@ -573,6 +641,53 @@ function noteSpot(input: ComposeInput, flat: Flat, anchor: NoteAnchor): NoteSpot
 }
 
 /**
+ * Moves an unpinned note down by the grid snap until it overlaps no blocker, at most NOTE_STEPS
+ * times (then it stays where it is). A pinned note never moves.
+ *
+ * @param note - The note item (moved in place).
+ * @param blockers - The rects it must not cover.
+ */
+function nudgeDown(note: Item, blockers: readonly Rect[]): void {
+  if (note.pinned) return;
+  const collides = (): boolean => blockers.some(rect => overlaps(note, rect));
+  for (let step = 0; step < NOTE_STEPS && collides(); step += 1) note.y += SNAP;
+}
+
+/**
+ * The item of one note at its position.
+ *
+ * @param anchor - The note anchor.
+ * @param spot - Where the note goes and what it hangs on.
+ * @param position - Its world position.
+ * @param position.x - World x.
+ * @param position.y - World y.
+ * @param input - The compose input (for the root flow).
+ * @param root - The root frame.
+ * @returns The note item.
+ */
+function noteItem(
+  anchor: NoteAnchor,
+  spot: NoteSpot,
+  position: { readonly x: number; readonly y: number },
+  input: ComposeInput,
+  root: Item
+): Item {
+  return {
+    key: `note:${anchor.path}`,
+    id: anchor.path,
+    kind: "note",
+    x: position.x,
+    y: position.y,
+    w: NOTE_W,
+    h: NOTE_H,
+    flow: spot.flow ?? input.root,
+    parent: spot.source?.parent ?? spot.frame?.key ?? root.key,
+    pinned: spot.pinned,
+    label: anchor.title
+  };
+}
+
+/**
  * Places the notes: a pinned note at its pin, an outcome note beside its anchor, a free note under
  * the root content; collisions shift a note down by 12 (at most 50 steps). Anchored notes get a
  * dashed note edge.
@@ -580,10 +695,6 @@ function noteSpot(input: ComposeInput, flat: Flat, anchor: NoteAnchor): NoteSpot
  * @param input - The compose input.
  * @param flat - The flat result.
  * @param root - The root frame.
- * @example
- * ```ts
- * placeNotes(input, flat, rootFrame);
- * ```
  */
 function placeNotes(input: ComposeInput, flat: Flat, root: Item): void {
   const blockers: Rect[] = flat.items.filter(
@@ -597,6 +708,8 @@ function placeNotes(input: ComposeInput, flat: Flat, root: Item): void {
 
   for (const anchor of input.notes) {
     const spot = noteSpot(input, flat, anchor);
+
+    // A free note without a pin stacks under the root content.
     let position = spot.position;
     if (position === undefined && anchor.from === undefined) {
       position = { x: rootOrigin.x, y: freeY };
@@ -604,28 +717,12 @@ function placeNotes(input: ComposeInput, flat: Flat, root: Item): void {
     }
     if (position === undefined) continue;
 
-    const note: Item = {
-      key: `note:${anchor.path}`,
-      id: anchor.path,
-      kind: "note",
-      x: position.x,
-      y: position.y,
-      w: NOTE_W,
-      h: NOTE_H,
-      flow: spot.flow ?? input.root,
-      parent: spot.source?.parent ?? spot.frame?.key ?? root.key,
-      pinned: spot.pinned,
-      label: anchor.title
-    };
-    for (
-      let step = 0;
-      !note.pinned && step < NOTE_STEPS && blockers.some(rect => overlaps(note, rect));
-      step += 1
-    ) {
-      note.y += SNAP;
-    }
+    const note = noteItem(anchor, spot, position, input, root);
+    nudgeDown(note, blockers);
     blockers.push(note);
     flat.items.push(note);
+
+    // An anchored note hangs on its source by a dashed note edge.
     if (spot.source !== undefined && spot.point !== undefined) {
       flat.edges.push({
         key: `note:${anchor.path}`,
@@ -660,10 +757,6 @@ function originOf(flat: Flat, frame: Item, flow: string): { x: number; y: number
  *
  * @param frame - The frame item.
  * @param items - Items that must fit.
- * @example
- * ```ts
- * grow(rootFrame, flat.items);
- * ```
  */
 function grow(frame: Item, items: readonly Item[]): void {
   for (const entry of items) {

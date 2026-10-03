@@ -18,10 +18,6 @@ const STEP_COMMAND = "game.step";
  *
  * @param ctx - Domain context of workspace.
  * @param ran - The settled run.
- * @example
- * ```ts
- * showStep(ctx, ran);
- * ```
  */
 function showStep(ctx: Pick<WorkspaceCtx, "state">, ran: RanEvent): void {
   if (ran.id !== STEP_COMMAND) return;
@@ -38,10 +34,6 @@ function showStep(ctx: Pick<WorkspaceCtx, "state">, ran: RanEvent): void {
  * @param input - Command input, undefined for none.
  * @param origin - What started it: topbar, palette, key or panel.
  * @returns The RunResult; rejects with the link's error.
- * @example
- * ```ts
- * await runCommand(ctx, "game.step", { frames: 1 }, "topbar");
- * ```
  */
 export async function runCommand(
   ctx: WorkspaceCtx,

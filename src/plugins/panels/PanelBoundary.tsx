@@ -81,10 +81,6 @@ export function Placeholder(props: PlaceholderProps): PanelElement {
  *
  * @param props - Panel, values and tools.
  * @returns What the view returns.
- * @example
- * ```tsx
- * <PanelView panel={spec} values={values} tools={tools} />
- * ```
  */
 function PanelView(props: PanelViewProps): PanelElement {
   return props.panel.view(props.values, props.tools);
@@ -98,10 +94,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Starts without an error.
    *
    * @param props - Boundary props.
-   * @example
-   * ```tsx
-   * <PanelBoundary panel={spec} values={values} tools={tools} onError={onError} />
-   * ```
    */
   constructor(props: PanelBoundaryProps) {
     super(props);

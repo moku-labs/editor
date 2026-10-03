@@ -24,10 +24,6 @@ const RELOAD_PRESERVED: MetaText = "Game page reloaded · log preserved";
  * @param state - consoleView state.
  * @param line - The new line.
  * @param maxLines - Most lines kept.
- * @example
- * ```ts
- * pushLine(ctx.state, line, 5000); // ctx.state.lines.at(-1) === line
- * ```
  */
 export function pushLine(state: ConsoleState, line: LogLine, maxLines: number): void {
   state.lines.push(line);
@@ -40,10 +36,6 @@ export function pushLine(state: ConsoleState, line: LogLine, maxLines: number): 
  * @param state - consoleView state.
  * @param text - The meta text.
  * @param maxLines - Most lines kept.
- * @example
- * ```ts
- * pushMeta(ctx.state, "Console cleared", 5000); // a meta row with the next key
- * ```
  */
 export function pushMeta(state: ConsoleState, text: MetaText, maxLines: number): void {
   pushLine(state, { kind: "meta", key: state.nextKey, text, addedAt: Date.now() }, maxLines);
@@ -59,10 +51,6 @@ export function pushMeta(state: ConsoleState, text: MetaText, maxLines: number):
  * @param first - The first trace entry, if valid.
  * @param session - The link session the value came from, if known.
  * @returns True on a game page reload.
- * @example
- * ```ts
- * isNewInstance(state, 2, undefined, "s-7f3a"); // true once a game was ingested: the trace lost its first entry
- * ```
  */
 function isNewInstance(
   state: ConsoleState,
@@ -93,10 +81,6 @@ function isNewInstance(
  * @param config - Resolved plugin config.
  * @param session - The link session the value came from (`link.session()`), if known.
  * @returns Whether the lines changed; `invalid` when the value is not an array.
- * @example
- * ```ts
- * ingestTrace(ctx.state, designLog, 1840, ctx.config, "s-7f3a"); // { changed: true }, 8 lines
- * ```
  */
 export function ingestTrace(
   state: ConsoleState,

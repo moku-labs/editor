@@ -27,7 +27,7 @@ const SERIES_ID = "editor.series";
  * @returns A retryable wire error.
  * @example
  * ```ts
- * failAll(ctx, linkClosedError());
+ * linkClosedError().data; // { reason: "link_closed", retryable: true }
  * ```
  */
 export function linkClosedError(): Error & WireError {
@@ -43,7 +43,7 @@ export function linkClosedError(): Error & WireError {
  * @returns A -32003 `no_session` wire error.
  * @example
  * ```ts
- * return Promise.reject(noSessionError());
+ * noSessionError().code; // -32003
  * ```
  */
 export function noSessionError(): Error & WireError {
@@ -60,7 +60,8 @@ export function noSessionError(): Error & WireError {
  * @returns `{ code, reason }`, each only when present.
  * @example
  * ```ts
- * ctx.log.error("link:watch-failed", { id, ...describeError(error) });
+ * describeError(noSessionError()); // { code: -32003, reason: "no_session" }
+ * describeError(new Error("x")); // {}
  * ```
  */
 export function describeError(error: unknown): { code?: number; reason?: string } {
@@ -120,10 +121,6 @@ export function timeoutFor(method: string, params: Json | undefined): number {
  * @param params - Params, omitted when undefined.
  * @param session - Session id (game channel).
  * @returns The result.
- * @example
- * ```ts
- * const list = await request(ctx, "files", "list", { dir: ".moku/notes" });
- * ```
  */
 export function request(
   ctx: LinkCtx,
@@ -171,10 +168,6 @@ export function request(
  * @param method - Game method (`read`, `run`).
  * @param params - Params.
  * @returns The result.
- * @example
- * ```ts
- * const graph = await gameRequest(ctx, "read", { id: "game.graph" });
- * ```
  */
 export function gameRequest(ctx: LinkCtx, method: string, params: Json): Promise<Json> {
   const { open, chosen } = ctx.state;
@@ -188,10 +181,6 @@ export function gameRequest(ctx: LinkCtx, method: string, params: Json): Promise
  *
  * @param ctx - Domain context of link.
  * @param response - A decoded response.
- * @example
- * ```ts
- * if (isResponse(message)) settle(ctx, message);
- * ```
  */
 export function settle(ctx: LinkCtx, response: RpcResponse): void {
   const call = ctx.state.pending.get(response.id);
@@ -213,10 +202,6 @@ export function settle(ctx: LinkCtx, response: RpcResponse): void {
  * @param ctx - Any context holding the link state (onStop has only `{ state }`).
  * @param ctx.state - Link state.
  * @param error - The error, usually `linkClosedError()`.
- * @example
- * ```ts
- * failAll({ state }, linkClosedError());
- * ```
  */
 export function failAll(ctx: { readonly state: LinkState }, error: Error & WireError): void {
   const { pending } = ctx.state;

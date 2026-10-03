@@ -38,6 +38,22 @@ async function loadMergeGameBoard(): Promise<BoardHelpers> {
   return helpers;
 }
 
+/**
+ * Polls until a check holds: the scene builds on the next animation frame, whose timing the test
+ * does not own.
+ *
+ * @param check - The condition to wait for.
+ * @param label - What is awaited, for the timeout message.
+ * @returns Resolves once the check holds.
+ */
+async function until(check: () => boolean, label: string): Promise<void> {
+  const deadline = performance.now() + 3000;
+  while (!check()) {
+    if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
+
 const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
 
 let ctx: TestCtx;
@@ -102,7 +118,7 @@ describe("gameView on merge-game", () => {
       "game.projections"
     ]);
     expect(Object.keys(ctx.state.sources).toSorted()).toEqual(["entities", "projections", "ui"]);
-    await new Promise(resolve => setTimeout(resolve, 40));
+    await until(() => ctx.state.scene !== undefined, "the scene");
     expect(ctx.state.scene?.nodes.has("ui:boardScreen/hudRow/coinPill")).toBe(true);
     expect(ctx.state.scene?.calibrated).toBe(true);
   });

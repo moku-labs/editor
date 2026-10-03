@@ -15,10 +15,6 @@ import type { GameViewCtx } from "../types";
  * @param ctx - Domain context of gameView.
  * @param path - A candidate path.
  * @returns The catalogue, or undefined.
- * @example
- * ```ts
- * await readCandidate(ctx, "public/manifest.json"); // { path: "public/manifest.json", textures, bundles }
- * ```
  */
 async function readCandidate(
   ctx: GameViewCtx,
@@ -37,10 +33,6 @@ async function readCandidate(
  *
  * @param ctx - Domain context of gameView.
  * @returns The catalogue, undefined when no manifest was found.
- * @example
- * ```ts
- * (await readManifest(ctx))?.textures.get("board.cell")?.gpuMb; // 4
- * ```
  */
 export async function readManifest(ctx: GameViewCtx): Promise<TextureCatalogue | undefined> {
   const { state } = ctx;

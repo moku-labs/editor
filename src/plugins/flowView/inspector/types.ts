@@ -79,10 +79,10 @@ export type InspectorState = {
 /**
  * The inspector actions (used by the components, the palette items and the hooks).
  */
-export type InspectorApi = {
-  /** Switches the tab; Code and Styles load their file. */
+export type InspectorActions = {
+  /** Switches the tab; Code reads the shown node's file, Styles loads stylesFile once. */
   setTab(tab: InspectorTab): void;
-  /** Reads the node's file into the Code tab. */
+  /** Reads the node's file into the Code tab; a newer request drops the result of an older one. */
   openCode(id: NodeId): Promise<void>;
   /** Starts editing: the draft is the file text. */
   edit(): void;
@@ -96,21 +96,24 @@ export type InspectorApi = {
   saveCode(force?: boolean): Promise<void>;
   /** Reads the file again and drops the draft ("Reload file"). */
   reloadCode(): Promise<void>;
-  /** Reads stylesFile into the Styles tab; selects a key's card. */
+  /** Shows the Styles tab and reads stylesFile into it; selects a key's card. */
   openStyles(key?: string): Promise<void>;
   /** Selects a style card. */
   selectStyle(key: string): void;
   /** One stepper press; a burst is written once after styleSaveDelayMs. */
   stepStyle(path: string, direction: 1 | -1, big: boolean): void;
-  /** Reads stylesFile and replaces the palette group Styles (no tab change). */
+  /**
+   * Reads stylesFile and replaces the palette group Styles (no tab change); an unreadable file
+   * empties the group.
+   */
   readStyleKeys(): Promise<void>;
-  /** The file and line of a node, or undefined. */
+  /** The file and line of a node (line 1 when the file cannot be read), or undefined. */
   fileOf(id: NodeId): Promise<{ readonly path: string; readonly line: number } | undefined>;
   /** "Open in Files": emits workspace:open-file (R4). */
   openInFiles(path: string, line?: number): void;
   /** "Open in editor" link from link.boot() (D-08), undefined without boot. */
   editorUrl(path: string, line?: number): string | undefined;
-  /** UI nodes whose text style is the key, from one game.ui read (F-G1). */
+  /** UI nodes whose text style is the key, from one game.ui read (F-G1); empty when it fails. */
   usedBy(key: string): Promise<readonly string[]>;
 };
 

@@ -15,10 +15,6 @@ import { recalibrate, startTracker, stopEffects } from "./watch";
  * onInit: registers the Render panel. Sync (spec/06 §2).
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * createToolsPlugin("renderView", { onInit: initRenderView }); // app.panels.list() has "render"
- * ```
  */
 export function initRenderView(ctx: RenderViewCtx): void {
   ctx.require(panelsPlugin).register(createRenderPanel(ctx));
@@ -30,10 +26,6 @@ export function initRenderView(ctx: RenderViewCtx): void {
  * Render is the restored workspace (it emits no `workspace:changed`).
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * createToolsPlugin("renderView", { onStart: startRenderView }); // link watches game.render, game.assets
- * ```
  */
 export function startRenderView(ctx: RenderViewCtx): void {
   const workspace = ctx.require(workspacePlugin);
@@ -58,10 +50,6 @@ export function startRenderView(ctx: RenderViewCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("renderView", { onStop: stopRenderView }); // no watch left after app.stop()
- * ```
  */
 export function stopRenderView(ctx: { readonly state: RenderViewState }): void {
   const { state } = ctx;

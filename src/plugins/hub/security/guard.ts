@@ -62,7 +62,9 @@ export function allowedOrigins(port: number, allow: ReadonlySet<string>): Readon
  * @returns The failing check, or undefined.
  * @example
  * ```ts
- * refusalOf(req, server, "upgrade", state.origins); // "origin" for a foreign page
+ * const headers = { host: "127.0.0.1:3000", origin: "http://evil.com" };
+ * const req = new Request("http://127.0.0.1:3000/__editor/ws", { headers });
+ * refusalOf(req, { port: 3000, upgrade: () => false }, "upgrade", new Set()); // "origin"
  * ```
  */
 export function refusalOf(
@@ -78,9 +80,7 @@ export function refusalOf(
   if (host === undefined || !allowedHosts(port).has(host)) return "host";
 
   const origin = req.headers.get("origin")?.toLowerCase();
-  if (origin === undefined ? mode === "upgrade" : !isAllowedOrigin(origin, port, allow)) {
-    return "origin";
-  }
+  if (isOriginRefused(origin, mode, port, allow)) return "origin";
 
   const site = req.headers.get("sec-fetch-site");
   if (mode === "same-origin" && site !== null && !SAME_ORIGIN_SITES.has(site.toLowerCase())) {
@@ -104,6 +104,32 @@ export function refusalOf(
  */
 function isAllowedOrigin(origin: string, port: number, allow: ReadonlySet<string>): boolean {
   return origin !== "null" && allowedOrigins(port, allow).has(origin);
+}
+
+/**
+ * True when the Origin check refuses: a missing Origin is refused only on upgrade, a present one
+ * must be in the allowlist.
+ *
+ * @param origin - The lowercased Origin header, or undefined when absent.
+ * @param mode - Which rules apply.
+ * @param port - The server port.
+ * @param allow - Extra origins.
+ * @returns Whether the origin check fails.
+ * @example
+ * ```ts
+ * isOriginRefused(undefined, "navigate", 3000, new Set()); // false
+ * isOriginRefused("http://evil.com", "navigate", 3000, new Set()); // true
+ * ```
+ */
+function isOriginRefused(
+  origin: string | undefined,
+  mode: GuardMode,
+  port: number,
+  allow: ReadonlySet<string>
+): boolean {
+  if (origin === undefined) return mode === "upgrade";
+
+  return !isAllowedOrigin(origin, port, allow);
 }
 
 /**
@@ -143,8 +169,9 @@ export function refuse(status: number, word: string): Response {
  * @returns A 403 response, or undefined.
  * @example
  * ```ts
- * const refused = guard(req, server, "same-origin", state.origins);
- * if (refused) return refused;
+ * const headers = { host: "127.0.0.1:3000", origin: "http://evil.com" };
+ * const req = new Request("http://127.0.0.1:3000/__editor/ws", { headers });
+ * guard(req, { port: 3000, upgrade: () => false }, "upgrade", new Set())?.status; // 403
  * ```
  */
 export function guard(

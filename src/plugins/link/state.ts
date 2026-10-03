@@ -9,10 +9,6 @@ import type { Config, LinkState } from "./types";
  * @param _ctx - Minimal context (unused: the state does not depend on the config).
  * @param _ctx.config - Resolved plugin config.
  * @returns A fresh state.
- * @example
- * ```ts
- * const state = createLinkState({ config: { retryMs: 1000, boot: "#moku-editor-boot" } });
- * ```
  */
 export function createLinkState(_ctx: { readonly config: Readonly<Config> }): LinkState {
   return {
@@ -48,10 +44,6 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
  *
  * @param state - Link state.
  * @returns Whether `chosen` is attached on the current socket.
- * @example
- * ```ts
- * if (isAttached(state)) sendWatch(ctx, sub);
- * ```
  */
 export function isAttached(state: LinkState): boolean {
   const { chosen } = state;
@@ -62,10 +54,6 @@ export function isAttached(state: LinkState): boolean {
  * Cancels the pending retry (reconnect or session retry), if any.
  *
  * @param state - Link state.
- * @example
- * ```ts
- * clearRetry(state);
- * ```
  */
 export function clearRetry(state: LinkState): void {
   if (state.retryTimer === undefined) return;

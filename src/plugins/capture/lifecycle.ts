@@ -13,10 +13,6 @@ import type { CaptureCtx, CaptureState } from "./types";
  *
  * @param ctx - Plugin context of capture.
  * @throws {Error} When an id is already in the registry (createApp fails loudly).
- * @example
- * ```ts
- * createAgentPlugin("capture", { onInit: initCapture });
- * ```
  */
 export function initCapture(ctx: CaptureCtx): void {
   registerCaptureCommands(ctx.require(registryPlugin), {
@@ -32,10 +28,6 @@ export function initCapture(ctx: CaptureCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createAgentPlugin("capture", { onStop: stopCapture });
- * ```
  */
 export function stopCapture(ctx: { readonly state: CaptureState }): void {
   stopSeries(ctx.state);

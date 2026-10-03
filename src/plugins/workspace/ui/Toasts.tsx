@@ -19,10 +19,6 @@ export type ToastsProps = { readonly ctx: WorkspaceCtx };
  *
  * @param props - The workspace domain context.
  * @returns The region.
- * @example
- * ```tsx
- * <Toasts ctx={ctx} />
- * ```
  */
 export function Toasts(props: ToastsProps): VNode {
   const { ctx } = props;

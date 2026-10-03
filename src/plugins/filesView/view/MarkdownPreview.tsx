@@ -13,11 +13,6 @@ import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
 
 /**
  * Props of `MarkdownPreview`.
- *
- * @example
- * ```tsx
- * <MarkdownPreview ctx={ctx} api={api} tab={tab} />
- * ```
  */
 export type MarkdownPreviewProps = {
   readonly ctx: FilesViewCtx;
@@ -30,10 +25,6 @@ export type MarkdownPreviewProps = {
  *
  * @param props - Context, api and the tab.
  * @returns The preview.
- * @example
- * ```tsx
- * <MarkdownPreview ctx={ctx} api={api} tab={tab} />
- * ```
  */
 export function MarkdownPreview(props: MarkdownPreviewProps): VNode {
   const { ctx, tab } = props;
@@ -44,10 +35,6 @@ export function MarkdownPreview(props: MarkdownPreviewProps): VNode {
    * Opens a project path in Files (a failure is warned).
    *
    * @param path - The path.
-   * @example
-   * ```ts
-   * open(".moku/captures/a.png");
-   * ```
    */
   const open = (path: string): void => {
     openOrLog(ctx, path, {});

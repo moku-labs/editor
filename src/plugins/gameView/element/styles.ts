@@ -47,10 +47,6 @@ type BlockResult =
  * @param state - gameView state.
  * @param ref - The element the work started for.
  * @returns Whether the selection is unchanged.
- * @example
- * ```ts
- * isSelected(ctx.state, { kind: "ui", path: "boardScreen/hudRow/coinPill" }); // true right after select
- * ```
  */
 function isSelected(state: GameViewState, ref: ElementRef): boolean {
   return state.selected !== undefined && refId(state.selected) === refId(ref);
@@ -63,10 +59,6 @@ function isSelected(state: GameViewState, ref: ElementRef): boolean {
  * @param ctx - Domain context of gameView.
  * @param source - Where the key was found.
  * @returns The file and block, or the refusal.
- * @example
- * ```ts
- * await loadBlock(ctx, source); // { path: "src/hud/styles.ts", loaded, block: { line: 3, endLine: 8, … } }
- * ```
  */
 async function loadBlock(ctx: GameViewCtx, source: StyleSource): Promise<BlockResult> {
   const files = ctx.require(linkPlugin).files;
@@ -87,10 +79,6 @@ async function loadBlock(ctx: GameViewCtx, source: StyleSource): Promise<BlockRe
  * @param ref - The element.
  * @param key - Its ui key.
  * @param result - The block result.
- * @example
- * ```ts
- * applyBlock(ctx, ref, "coinPill", result);
- * ```
  */
 function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: BlockResult): void {
   const { state } = ctx;
@@ -118,10 +106,6 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
  * @param ctx - Domain context of gameView.
  * @param ref - The selected element.
  * @returns Resolves when the card, "missing" or the refusal is shown.
- * @example
- * ```ts
- * await openStyleCard(ctx, { kind: "ui", path: "boardScreen/hudRow/coinPill" }); // ctx.state.styles.path === "src/hud/styles.ts"
- * ```
  */
 export async function openStyleCard(ctx: GameViewCtx, ref: ElementRef): Promise<void> {
   const { state } = ctx;
@@ -169,10 +153,6 @@ function blockIn(text: string, ref: StyleBlockRef): StyleBlock | undefined {
  *
  * @param ctx - Domain context of gameView.
  * @returns Resolves when written, refused or failed.
- * @example
- * ```ts
- * await saveStyle(ctx); // toast "✓ Saved · src/hud/styles.ts", game reloads with restore
- * ```
  */
 export async function saveStyle(ctx: GameViewCtx): Promise<void> {
   const { state } = ctx;
@@ -211,10 +191,6 @@ export async function saveStyle(ctx: GameViewCtx): Promise<void> {
  * @param path - The field path ("height", "padding.left").
  * @param direction - 1 up, -1 down.
  * @param big - Shift held (bigStep).
- * @example
- * ```ts
- * stepStyle(ctx, "height", 1, false); // pending { path: "height", raw: "76", next: 77 }
- * ```
  */
 export function stepStyle(ctx: GameViewCtx, path: string, direction: 1 | -1, big: boolean): void {
   const { state } = ctx;

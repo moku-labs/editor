@@ -14,10 +14,6 @@ import { FilesView } from "./view/FilesView";
  *
  * @param ctx - Domain context of filesView.
  * @returns The PanelSpec to register.
- * @example
- * ```ts
- * ctx.require(panelsPlugin).register(createFilesPanel(ctx));
- * ```
  */
 export function createFilesPanel(ctx: FilesViewCtx): PanelSpec {
   const api = createFilesViewApi(ctx);
@@ -32,10 +28,6 @@ export function createFilesPanel(ctx: FilesViewCtx): PanelSpec {
      * @param _values - No source values (sources is empty).
      * @param tools - Panel tools; only the status is used.
      * @returns The Files view.
-     * @example
-     * ```tsx
-     * panel.view({}, tools); // <FilesView ctx={ctx} api={api} status={tools.status} />
-     * ```
      */
     view: (_values, tools) => <FilesView ctx={ctx} api={api} status={tools.status} />
   });

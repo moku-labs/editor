@@ -348,7 +348,7 @@ describe("session notifications", () => {
           game: MANIFEST.game,
           page: MANIFEST.page,
           embedded: false,
-          connectedAt: expect.any(Number)
+          connectedAt: harness.ctx.state.sessions.get(session)?.connectedAt
         }
       ]
     });

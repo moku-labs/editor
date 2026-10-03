@@ -19,10 +19,6 @@ import { hasNetwork } from "./socket";
  *
  * @param deps - The domain deps.
  * @returns `origin + pathname`, or config.hello when it does not resolve.
- * @example
- * ```ts
- * helloLabel(deps); // "http://127.0.0.1:3000/__editor/hello"
- * ```
  */
 function helloLabel(deps: BridgeDeps): string {
   const url = resolveHelloUrl(deps.config.hello, deps.page.href);
@@ -34,10 +30,6 @@ function helloLabel(deps: BridgeDeps): string {
  *
  * @param deps - The domain deps.
  * @param beat - The beat.
- * @example
- * ```ts
- * sendBeat(deps, deps.channel.heartbeat());
- * ```
  */
 export function sendBeat(deps: BridgeDeps, beat: Heartbeat): void {
   sendNow(deps, notification("game", "heartbeat", beat));
@@ -51,10 +43,6 @@ export function sendBeat(deps: BridgeDeps, beat: Heartbeat): void {
  *
  * @param deps - The domain deps.
  * @param beat - The beat of this tick.
- * @example
- * ```ts
- * channel.onHeartbeat(beat => onBeat(deps, beat));
- * ```
  */
 export function onBeat(deps: BridgeDeps, beat: Heartbeat): void {
   if (deps.state.phase !== "open") return;
@@ -68,10 +56,6 @@ export function onBeat(deps: BridgeDeps, beat: Heartbeat): void {
  * agent that sends anything else first), then a heartbeat, publishes live or paused.
  *
  * @param deps - The domain deps.
- * @example
- * ```ts
- * socket.addEventListener("open", () => onOpen(deps));
- * ```
  */
 export function onOpen(deps: BridgeDeps): void {
   const { state } = deps;
@@ -93,10 +77,6 @@ export function onOpen(deps: BridgeDeps): void {
  * @param deps - The domain deps.
  * @param reason - The status reason.
  * @param retryInMs - The scheduled delay.
- * @example
- * ```ts
- * logLoss(deps, "hello 404", 1000);
- * ```
  */
 function logLoss(deps: BridgeDeps, reason: string, retryInMs: number): void {
   const { state, log } = deps;
@@ -116,10 +96,6 @@ function logLoss(deps: BridgeDeps, reason: string, retryInMs: number): void {
  * @param deps - The domain deps.
  * @param reason - The status reason, e.g. "hello 404".
  * @param retry - Whether to reconnect.
- * @example
- * ```ts
- * fail(deps, "no WebSocket in this runtime", false);
- * ```
  */
 export function fail(deps: BridgeDeps, reason: string, retry: boolean): void {
   const { state } = deps;
@@ -152,10 +128,6 @@ export function fail(deps: BridgeDeps, reason: string, retry: boolean): void {
  * @param deps - The domain deps.
  * @param code - The close code.
  * @param reason - The close reason, possibly empty.
- * @example
- * ```ts
- * onClose(deps, 1001, "editor stopping"); // lost "socket closed (1001): editor stopping"
- * ```
  */
 export function onClose(deps: BridgeDeps, code: number, reason: string): void {
   const base = `socket closed (${String(code)})`;
@@ -167,10 +139,6 @@ export function onClose(deps: BridgeDeps, code: number, reason: string): void {
  *
  * @param deps - The domain deps.
  * @param socket - The new socket.
- * @example
- * ```ts
- * listen(deps, socket);
- * ```
  */
 function listen(deps: BridgeDeps, socket: SocketLike): void {
   const label = helloLabel(deps);
@@ -194,10 +162,6 @@ function listen(deps: BridgeDeps, socket: SocketLike): void {
  * @param deps - The domain deps.
  * @param helloUrl - The hello URL.
  * @param body - The hello body.
- * @example
- * ```ts
- * openLink(deps, helloUrl, { ws: "/__editor/ws", token });
- * ```
  */
 function openLink(deps: BridgeDeps, helloUrl: URL, body: HelloBody): void {
   let url: URL;
@@ -223,10 +187,6 @@ function openLink(deps: BridgeDeps, helloUrl: URL, body: HelloBody): void {
  *
  * @param deps - The domain deps.
  * @returns Whether the phase is "stopped".
- * @example
- * ```ts
- * if (isStopped(deps)) return;
- * ```
  */
 function isStopped(deps: BridgeDeps): boolean {
   return deps.state.phase === "stopped";
@@ -239,10 +199,6 @@ function isStopped(deps: BridgeDeps): boolean {
  *
  * @param deps - The domain deps.
  * @returns A promise that settles when the socket is opening or the attempt failed.
- * @example
- * ```ts
- * await connect(deps);
- * ```
  */
 export async function connect(deps: BridgeDeps): Promise<void> {
   const { state, config, page } = deps;
@@ -277,10 +233,6 @@ export async function connect(deps: BridgeDeps): Promise<void> {
  * Starts `connect` without awaiting it; a crash is logged, never thrown.
  *
  * @param deps - The domain deps.
- * @example
- * ```ts
- * connectInBackground(deps); // onStart and every retry
- * ```
  */
 export function connectInBackground(deps: BridgeDeps): void {
   connect(deps).catch((error: unknown) => {

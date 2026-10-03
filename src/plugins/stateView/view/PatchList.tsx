@@ -66,10 +66,6 @@ function Change(props: { readonly patch: StatePatch }): VNode {
  *
  * @param props - The api and the last commit.
  * @returns The card.
- * @example
- * ```tsx
- * <PatchList api={api} commit={api.lastCommit()} />
- * ```
  */
 export function PatchList(props: PatchListProps): VNode {
   const { api, commit } = props;

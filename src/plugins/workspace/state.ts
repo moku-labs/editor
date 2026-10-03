@@ -45,10 +45,6 @@ export function defaultPreviews(): Record<PreviewWorkspace, PreviewPrefs> {
  * @param ctx - Minimal context.
  * @param ctx.config - Resolved plugin config.
  * @returns The state.
- * @example
- * ```ts
- * createWorkspaceState({ config }).active; // "flow"
- * ```
  */
 export function createWorkspaceState(ctx: {
   readonly config: Readonly<WorkspaceConfig>;
@@ -93,10 +89,6 @@ export function createWorkspaceState(ctx: {
  * @param state - Workspace state.
  * @param cleanup - Removes a listener, a timer or an observer.
  * @returns Untrack.
- * @example
- * ```ts
- * const untrack = trackCleanup(state, () => clearTimeout(timer));
- * ```
  */
 export function trackCleanup(state: WorkspaceState, cleanup: () => void): () => void {
   state.dom.cleanup.push(cleanup);

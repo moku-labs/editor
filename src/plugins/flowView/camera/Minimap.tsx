@@ -106,10 +106,6 @@ function Items(props: {
  *
  * @param props - Context and actions.
  * @returns The minimap, or an empty fragment before the first layout.
- * @example
- * ```tsx
- * <Minimap ctx={ctx} actions={actions} />
- * ```
  */
 export function Minimap(props: MinimapProps): VNode {
   const { ctx, actions } = props;

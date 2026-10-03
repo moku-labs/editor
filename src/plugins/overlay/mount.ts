@@ -44,10 +44,6 @@ function isolate(event: Event): void {
  * called before start or `config.open` is set.
  *
  * @param ctx - Plugin context of the overlay.
- * @example
- * ```ts
- * createAgentPlugin("overlay", { onStart: startOverlay });
- * ```
  */
 export function startOverlay(ctx: OverlayPluginCtx): void {
   const octx = overlayCtxOf(ctx);
@@ -62,10 +58,6 @@ export function startOverlay(ctx: OverlayPluginCtx): void {
  * @param octx - Domain context.
  * @param doc - The document.
  * @returns The parent element.
- * @example
- * ```ts
- * parentOf(octx, document); // document.body
- * ```
  */
 function parentOf(octx: OverlayCtx, doc: Document): Element {
   const { mount } = octx.config;
@@ -117,10 +109,6 @@ function documentOf(doc: Document | undefined): Document | undefined {
  * @param octx - Domain context.
  * @param hasBridge - Whether the bridge is composed (link dot).
  * @param doc - The document; globalThis.document by default.
- * @example
- * ```ts
- * mountOverlay(octx, true);
- * ```
  */
 export function mountOverlay(octx: OverlayCtx, hasBridge: boolean, doc?: Document): void {
   const { state } = octx;
@@ -152,10 +140,6 @@ export function mountOverlay(octx: OverlayCtx, hasBridge: boolean, doc?: Documen
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createAgentPlugin("overlay", { onStop: unmountOverlay });
- * ```
  */
 export function unmountOverlay(ctx: { readonly state: OverlayState }): void {
   const { state } = ctx;

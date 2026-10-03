@@ -24,10 +24,6 @@ export type RenderTreeCardProps = {
  *
  * @param props - ctx, the visible rows and the workspace api.
  * @returns The card.
- * @example
- * ```tsx
- * <RenderTreeCard ctx={ctx} rows={snapshot.tree} workspace={tools.workspace} />
- * ```
  */
 export function RenderTreeCard(props: RenderTreeCardProps): JSX.Element {
   const { ctx, rows, workspace } = props;
@@ -40,10 +36,6 @@ export function RenderTreeCard(props: RenderTreeCardProps): JSX.Element {
    * ↑↓←→ Home End move through the rows; Enter toggles the detail. Keys on a button are its own.
    *
    * @param event - The key event on the tree.
-   * @example
-   * ```ts
-   * onKeyDown(new KeyboardEvent("keydown", { key: "ArrowDown" })); // the next row is selected
-   * ```
    */
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.target instanceof HTMLElement && event.target.closest("button") !== null) return;

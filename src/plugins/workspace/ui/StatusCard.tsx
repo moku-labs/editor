@@ -22,10 +22,6 @@ export type StatusCardProps = { readonly ctx: WorkspaceCtx };
  *
  * @param state - Workspace state.
  * @returns "empty", "connecting" or undefined for none.
- * @example
- * ```ts
- * cardKind(ctx.state); // "connecting" before the first session
- * ```
  */
 export function cardKind(state: WorkspaceState): "empty" | "connecting" | undefined {
   const { link } = state;
@@ -41,10 +37,6 @@ export function cardKind(state: WorkspaceState): "empty" | "connecting" | undefi
  *
  * @param ctx - Domain context of workspace.
  * @param url - The game URL.
- * @example
- * ```ts
- * copyUrl(ctx, url);
- * ```
  */
 function copyUrl(ctx: WorkspaceCtx, url: string): void {
   const clipboard = globalThis.navigator?.clipboard;
@@ -62,10 +54,6 @@ function copyUrl(ctx: WorkspaceCtx, url: string): void {
  *
  * @param props - The workspace domain context.
  * @returns The card (hidden while a game is connected).
- * @example
- * ```tsx
- * <StatusCard ctx={ctx} />
- * ```
  */
 export function StatusCard(props: StatusCardProps): VNode {
   const { ctx } = props;

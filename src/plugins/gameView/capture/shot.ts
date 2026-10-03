@@ -95,10 +95,6 @@ export function shotOf(value: Json): ShotValue | undefined {
  *
  * @param ctx - Domain context of gameView.
  * @returns Path, flow and node.
- * @example
- * ```ts
- * (await currentPosition(ctx)).flow; // "board"
- * ```
  */
 export async function currentPosition(ctx: GameViewCtx): Promise<PositionInfo> {
   try {
@@ -114,10 +110,6 @@ export async function currentPosition(ctx: GameViewCtx): Promise<PositionInfo> {
  * @param ctx - Domain context of gameView.
  * @param dir - The folder.
  * @returns The taken paths.
- * @example
- * ```ts
- * await listTaken(ctx, ".moku/captures"); // Set { ".moku/captures/2026-09-24-1012-board.png" }
- * ```
  */
 export async function listTaken(ctx: GameViewCtx, dir: string): Promise<ReadonlySet<string>> {
   try {
@@ -132,10 +124,6 @@ export async function listTaken(ctx: GameViewCtx, dir: string): Promise<Readonly
  *
  * @param ctx - Domain context of gameView.
  * @returns True when a card was shown.
- * @example
- * ```ts
- * workspace.keys.escape("captureCard", () => hideCard(ctx));
- * ```
  */
 export function hideCard(ctx: Pick<GameViewCtx, "state">): boolean {
   const { state } = ctx;
@@ -154,10 +142,6 @@ export function hideCard(ctx: Pick<GameViewCtx, "state">): boolean {
  *
  * @param ctx - Domain context of gameView.
  * @param delayMs - The delay.
- * @example
- * ```ts
- * scheduleCardHide(ctx, 10_000);
- * ```
  */
 function scheduleCardHide(ctx: GameViewCtx, delayMs: number): void {
   const { state } = ctx;
@@ -173,10 +157,6 @@ function scheduleCardHide(ctx: GameViewCtx, delayMs: number): void {
  *
  * @param ctx - Domain context of gameView.
  * @param card - The saved capture.
- * @example
- * ```ts
- * showCard(ctx, { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image });
- * ```
  */
 export function showCard(ctx: GameViewCtx, card: CaptureFile): void {
   ctx.state.card = card;
@@ -190,10 +170,6 @@ export function showCard(ctx: GameViewCtx, card: CaptureFile): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns The saved capture, undefined without a game or on a failure (toasted).
- * @example
- * ```ts
- * (await takeScreenshot(ctx))?.path; // ".moku/captures/2026-09-24-1012-board.png"
- * ```
  */
 export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | undefined> {
   const link = ctx.require(linkPlugin);

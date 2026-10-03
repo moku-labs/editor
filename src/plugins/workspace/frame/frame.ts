@@ -43,10 +43,6 @@ type DockTarget = {
  *
  * @param ctx - Domain context of workspace.
  * @returns The URL.
- * @example
- * ```ts
- * iframe.src = gameUrl(ctx);
- * ```
  */
 export function gameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
   const path = ctx.require(linkPlugin).boot()?.gameUrl ?? "/";
@@ -63,10 +59,6 @@ export function gameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
  *
  * @param state - Workspace state.
  * @returns The element.
- * @example
- * ```ts
- * ensureOverlay(ctx.state).append(pickerBox);
- * ```
  */
 export function ensureOverlay(state: WorkspaceState): HTMLElement {
   if (state.frame.overlay !== undefined) return state.frame.overlay;
@@ -82,10 +74,6 @@ export function ensureOverlay(state: WorkspaceState): HTMLElement {
  * `document.body` (not in the shell root, so a later mount into another element cannot move it).
  *
  * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * createFrameLayer(ctx); // first mount only; later calls do nothing
- * ```
  */
 export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): void {
   const { state } = ctx;
@@ -114,10 +102,6 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
  * Removes the frame layer and forgets the frame (onStop).
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * removeFrameLayer(ctx.state);
- * ```
  */
 export function removeFrameLayer(state: WorkspaceState): void {
   state.frame.layer?.remove();
@@ -133,10 +117,6 @@ export function removeFrameLayer(state: WorkspaceState): void {
  *
  * @param state - Workspace state.
  * @returns Size in game CSS px.
- * @example
- * ```ts
- * deviceSize(ctx.state).w; // 393
- * ```
  */
 function deviceSize(state: WorkspaceState): DeviceSize {
   return resolveDevice(presetOf(state.device.preset), state.device.orientation);
@@ -148,10 +128,6 @@ function deviceSize(state: WorkspaceState): DeviceSize {
  *
  * @param state - Workspace state.
  * @returns The target, undefined when hidden.
- * @example
- * ```ts
- * dockTarget(ctx.state)?.docked; // "preview"
- * ```
  */
 function dockTarget(state: WorkspaceState): DockTarget | undefined {
   const { active, frame } = state;
@@ -179,42 +155,17 @@ function dockTarget(state: WorkspaceState): DockTarget | undefined {
 }
 
 /**
- * Positions the frame over its target: one rect read per element, one transform and one clip
- * written. Before the first mount it does nothing.
+ * The frame box over a dock target: the device scaled to fit the target rect, centred in it.
  *
- * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * globalThis.addEventListener("resize", () => syncFrame(ctx));
- * ```
+ * @param target - The dock target.
+ * @param size - The device size in game CSS px.
+ * @returns The box in tools-page px.
  */
-export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
-  const { state } = ctx;
-  const iframe = state.frame.iframe;
-  const element = iframe?.parentElement;
-  if (iframe === undefined || element === null || element === undefined) return;
-
-  const size = deviceSize(state);
-  element.style.width = `${size.w}px`;
-  element.style.height = `${size.h}px`;
-
-  const target = dockTarget(state);
-  if (target === undefined) {
-    state.frame.box = { ...HIDDEN_BOX };
-    element.style.visibility = "hidden";
-    element.dataset.docked = "hidden";
-    iframe.tabIndex = -1;
-    return;
-  }
-
-  const scale = fitScale(
-    { w: target.rect.width, h: target.rect.height },
-    size,
-    target.fit,
-    target.cap
-  );
+function frameBoxOf(target: DockTarget, size: DeviceSize): FrameBox {
+  const slot = { w: target.rect.width, h: target.rect.height };
+  const scale = fitScale(slot, size, target.fit, target.cap);
   const { left, top } = centreBox(target.rect, size, scale);
-  const box: FrameBox = {
+  return {
     left,
     top,
     width: size.w * scale,
@@ -222,10 +173,50 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
     scale,
     docked: target.docked
   };
-  const clip = clipInsets(box, target.clip.getBoundingClientRect());
+}
 
+/**
+ * Hides the frame: no dock target is shown, so the iframe leaves the tab order.
+ *
+ * @param state - Workspace state.
+ * @param element - The frame element (the iframe's parent).
+ * @param iframe - The game iframe.
+ */
+function hideFrame(state: WorkspaceState, element: HTMLElement, iframe: HTMLIFrameElement): void {
+  state.frame.box = { ...HIDDEN_BOX };
+  element.style.visibility = "hidden";
+  element.dataset.docked = "hidden";
+  iframe.tabIndex = -1;
+}
+
+/**
+ * Positions the frame over its target: one rect read per element, one transform and one clip
+ * written. Before the first mount it does nothing.
+ *
+ * @param ctx - Domain context of workspace.
+ */
+export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
+  const { state } = ctx;
+  const iframe = state.frame.iframe;
+  const element = iframe?.parentElement;
+  if (iframe === undefined || element === null || element === undefined) return;
+
+  // The frame element keeps the device size; only its transform scales it.
+  const size = deviceSize(state);
+  element.style.width = `${size.w}px`;
+  element.style.height = `${size.h}px`;
+
+  const target = dockTarget(state);
+  if (target === undefined) {
+    hideFrame(state, element, iframe);
+    return;
+  }
+
+  // Place and clip it over the target; only the Game stage frame takes keyboard focus.
+  const box = frameBoxOf(target, size);
+  const clip = clipInsets(box, target.clip.getBoundingClientRect());
   state.frame.box = box;
-  element.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+  element.style.transform = `translate(${box.left}px, ${box.top}px) scale(${box.scale})`;
   element.style.clipPath = `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px)`;
   element.style.visibility = "visible";
   element.dataset.docked = target.docked;
@@ -238,10 +229,6 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
  * @param elements - The elements (undefined entries are skipped).
  * @param onResize - Called after a size change.
  * @returns The observer, undefined without `ResizeObserver`.
- * @example
- * ```ts
- * const observer = observeResize([slot, clip], () => syncFrame(ctx));
- * ```
  */
 function observeResize(
   elements: readonly (Element | undefined)[],
@@ -266,10 +253,6 @@ function observeResize(
  * @param opts.fit - fit (capped at 1) or actual (1).
  * @param opts.clip - Clip element; default the Game workspace host.
  * @returns Releases the dock (once).
- * @example
- * ```ts
- * const release = dockFrame(ctx, stageEl, { fit: "fit" });
- * ```
  */
 export function dockFrame(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -304,10 +287,6 @@ export function dockFrame(
  * @param ctx - Domain context of workspace.
  * @param element - The element whose transitions move the frame target.
  * @returns Removes the listeners and stops the loop.
- * @example
- * ```ts
- * useLayoutEffect(() => followTransitions(ctx, previewRef.current!), []);
- * ```
  */
 export function followTransitions(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -318,11 +297,6 @@ export function followTransitions(
 
   /**
    * One loop step: sync, then schedule the next step while the transition runs.
-   *
-   * @example
-   * ```ts
-   * requestAnimationFrame(tick);
-   * ```
    */
   const tick = (): void => {
     syncFrame(ctx);
@@ -331,11 +305,6 @@ export function followTransitions(
 
   /**
    * Starts the loop once per transition.
-   *
-   * @example
-   * ```ts
-   * element.addEventListener("transitionrun", start);
-   * ```
    */
   const start = (): void => {
     if (running) return;
@@ -345,11 +314,6 @@ export function followTransitions(
 
   /**
    * Lets the loop end after its next step.
-   *
-   * @example
-   * ```ts
-   * element.addEventListener("transitionend", stop);
-   * ```
    */
   const stop = (): void => {
     running = false;
@@ -368,82 +332,30 @@ export function followTransitions(
 }
 
 /**
- * The GameFrame api object (`workspace.gameFrame()`).
+ * The GameFrame api object (`workspace.gameFrame()`). The contract of each member is on
+ * `GameFrame` in `types.ts`.
  *
  * @param ctx - Domain context of workspace.
  * @returns The frame api.
- * @example
- * ```ts
- * await createGameFrame(ctx).reload({ restore: true });
- * ```
  */
 export function createGameFrame(ctx: WorkspaceCtx): GameFrame {
   return {
     /**
-     * Absolute URL of the game page.
+     * Reads the URL on every access, so a refreshed boot is seen.
      *
-     * @returns `link.boot()?.gameUrl` resolved, "/" without a boot.
-     * @example
-     * ```ts
-     * workspace.gameFrame().url; // "http://127.0.0.1:3000/"
-     * ```
+     * @returns The absolute URL of the game page.
      */
     get url() {
       return gameUrl(ctx);
     },
 
-    /**
-     * The D-07 reload: bookmark → reload in place → restore on the new session → toast.
-     *
-     * @param opts - `restore: true` bookmarks first and restores after.
-     * @returns The result; concurrent calls share one run.
-     * @example
-     * ```ts
-     * await workspace.gameFrame().reload({ restore: true });
-     * ```
-     */
-    reload(opts) {
-      return reloadFrame(ctx, opts ?? {});
-    },
+    reload: opts => reloadFrame(ctx, opts ?? {}),
 
-    /**
-     * Docks the frame over a stage slot; geometry only.
-     *
-     * @param slot - The stage slot.
-     * @param opts - fit and optional clip element.
-     * @returns The release function.
-     * @example
-     * ```ts
-     * const release = workspace.gameFrame().dock(stageEl, { fit: "fit" });
-     * ```
-     */
-    dock(slot, opts) {
-      return dockFrame(ctx, slot, opts);
-    },
+    dock: (slot, opts) => dockFrame(ctx, slot, opts),
 
-    /**
-     * The element above the iframe in device space (game CSS px, scaled with the frame).
-     *
-     * @returns The overlay element; pointer-events none by default.
-     * @example
-     * ```ts
-     * workspace.gameFrame().overlay().append(highlightBox);
-     * ```
-     */
-    overlay() {
-      return ensureOverlay(ctx.state);
-    },
+    overlay: () => ensureOverlay(ctx.state),
 
-    /**
-     * The current frame box in tools-page px.
-     *
-     * @returns A copy, undefined before the first mount.
-     * @example
-     * ```ts
-     * workspace.gameFrame().box()?.scale; // 0.5
-     * ```
-     */
-    box() {
+    box: () => {
       const { box } = ctx.state.frame;
       return box === undefined ? undefined : { ...box };
     }

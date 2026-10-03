@@ -12,10 +12,6 @@ import type { LastCommit, StateRoot, StateViewApi, StateViewCtx, TrackerNote } f
  *
  * @param ctx - Domain context of stateView.
  * @returns The commit, or undefined.
- * @example
- * ```ts
- * readLastCommit(ctx)?.seq; // 1 after the first commit of the session
- * ```
  */
 function readLastCommit(ctx: StateViewCtx): LastCommit | undefined {
   return ctx.state.last;
@@ -26,10 +22,6 @@ function readLastCommit(ctx: StateViewCtx): LastCommit | undefined {
  *
  * @param ctx - Domain context of stateView.
  * @returns The note.
- * @example
- * ```ts
- * readNote(ctx); // "none" before any game connected
- * ```
  */
 function readNote(ctx: StateViewCtx): TrackerNote {
   return ctx.state.note;
@@ -41,10 +33,6 @@ function readNote(ctx: StateViewCtx): TrackerNote {
  * @param ctx - Domain context of stateView.
  * @param fn - The listener.
  * @returns The idempotent remover.
- * @example
- * ```ts
- * const off = subscribe(ctx, () => redraw()); // off() removes it
- * ```
  */
 function subscribe(ctx: StateViewCtx, fn: () => void): () => void {
   ctx.state.listeners.add(fn);
@@ -58,10 +46,6 @@ function subscribe(ctx: StateViewCtx, fn: () => void): () => void {
  *
  * @param ctx - Domain context of stateView.
  * @returns true, false or undefined.
- * @example
- * ```ts
- * readTainted(ctx); // undefined until game.tainted delivered
- * ```
  */
 function readTainted(ctx: StateViewCtx): boolean | undefined {
   return ctx.state.tainted;
@@ -72,10 +56,6 @@ function readTainted(ctx: StateViewCtx): boolean | undefined {
  *
  * @param ctx - Domain context of stateView.
  * @returns The graph, or undefined.
- * @example
- * ```ts
- * readGraph(ctx); // undefined until the manifest of a session arrived
- * ```
  */
 function readGraph(ctx: StateViewCtx): Json | undefined {
   return ctx.state.graph;
@@ -88,10 +68,6 @@ function readGraph(ctx: StateViewCtx): Json | undefined {
  * @param pointer - The row pointer.
  * @param depth - The row depth.
  * @returns Whether it is open.
- * @example
- * ```ts
- * isExpanded(ctx, "/player/merge", 1); // true with expandDepth 2
- * ```
  */
 function isExpanded(ctx: StateViewCtx, pointer: string, depth: number): boolean {
   return ctx.state.expanded.get(pointer) ?? depth < ctx.config.expandDepth;
@@ -103,10 +79,6 @@ function isExpanded(ctx: StateViewCtx, pointer: string, depth: number): boolean 
  * @param ctx - Domain context of stateView.
  * @param pointer - The row pointer.
  * @param open - The open state.
- * @example
- * ```ts
- * setExpanded(ctx, "/player/merge/board", false);
- * ```
  */
 function setExpanded(ctx: StateViewCtx, pointer: string, open: boolean): void {
   ctx.state.expanded.set(pointer, open);
@@ -119,10 +91,6 @@ function setExpanded(ctx: StateViewCtx, pointer: string, open: boolean): void {
  * @param ctx - Domain context of stateView.
  * @param root - "player" or "session".
  * @param open - The open state.
- * @example
- * ```ts
- * expandAll(ctx, "player", true);
- * ```
  */
 function expandAll(ctx: StateViewCtx, root: StateRoot, open: boolean): void {
   const { baseline, expanded } = ctx.state;
@@ -137,10 +105,6 @@ function expandAll(ctx: StateViewCtx, root: StateRoot, open: boolean): void {
  *
  * @param ctx - Domain context of stateView.
  * @returns The StateViewApi (`app.stateView`).
- * @example
- * ```ts
- * createToolsPlugin("stateView", { api: createStateViewApi });
- * ```
  */
 export function createStateViewApi(ctx: StateViewCtx): StateViewApi {
   return {

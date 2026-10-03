@@ -60,7 +60,11 @@ describe("focus.select", () => {
     expect(actions.focus.selected()).toBe("main/settings>settingsPopup/open");
     expect(ctx.state.layout.expanded.has("main/settings")).toBe(true);
     await flush(10);
-    expect(ctx.state.layout.result?.byKey["main/settings>settingsPopup/open"]).toBeDefined();
+    expect(ctx.state.layout.result?.byKey["main/settings>settingsPopup/open"]).toMatchObject({
+      kind: "node",
+      flow: "settingsPopup",
+      parent: "main/settings"
+    });
   });
 });
 

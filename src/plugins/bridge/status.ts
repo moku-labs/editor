@@ -25,10 +25,6 @@ export function statusOfBeat(beat: Heartbeat): LinkStatus {
  *
  * @param deps - The state and the channel.
  * @returns A fresh LinkStatus.
- * @example
- * ```ts
- * currentStatus(deps); // { kind: "live", frame: 1840 }
- * ```
  */
 export function currentStatus(deps: Pick<BridgeDeps, "state" | "channel">): LinkStatus {
   const { state } = deps;
@@ -56,10 +52,6 @@ export function currentStatus(deps: Pick<BridgeDeps, "state" | "channel">): Link
  * @param deps - The state and the emit of `bridge:status`.
  * @param next - The new status.
  * @param announce - Emit even when the kind is the same (the session changed, or the start).
- * @example
- * ```ts
- * setStatus(deps, { kind: "lost", reason: "hello 404", lastFrame: 0, retryInMs: 1000 });
- * ```
  */
 export function setStatus(
   deps: Pick<BridgeDeps, "state" | "emit">,

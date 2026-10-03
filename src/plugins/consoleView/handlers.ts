@@ -15,10 +15,6 @@ import type { ConsoleCtx, ConsoleHooks } from "./types";
  *
  * @param ctx - Domain context of consoleView.
  * @returns The hooks.
- * @example
- * ```ts
- * Object.keys(createHandlers(ctx)); // ["link:status", "workspace:ran"]
- * ```
  */
 export function createHandlers(ctx: ConsoleCtx): ConsoleHooks {
   return {
@@ -33,10 +29,6 @@ export function createHandlers(ctx: ConsoleCtx): ConsoleHooks {
  *
  * @param ctx - Domain context of consoleView.
  * @returns The hook.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "live", frame: 58 } }); // ctx.state.everConnected === true
- * ```
  */
 export function onLinkStatus(ctx: ConsoleCtx): (payload: ToolsEvents["link:status"]) => void {
   return ({ status }) => {
@@ -52,10 +44,6 @@ export function onLinkStatus(ctx: ConsoleCtx): (payload: ToolsEvents["link:statu
  *
  * @param ctx - Domain context of consoleView.
  * @returns The hook.
- * @example
- * ```ts
- * onCommandRan(ctx)(stepError); // last line: "-32602 game.step: frames must be a number"
- * ```
  */
 export function onCommandRan(ctx: ConsoleCtx): (payload: ToolsEvents["workspace:ran"]) => void {
   return ran => {

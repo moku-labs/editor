@@ -118,10 +118,6 @@ export function importCandidates(text: string, ident: string, from: string): rea
  *
  * @param ctx - Domain context of gameView.
  * @returns The file paths in search order.
- * @example
- * ```ts
- * await listSourceFiles(ctx); // ["root.tsx", "src/hud/Hud.tsx", …]
- * ```
  */
 async function listSourceFiles(ctx: GameViewCtx): Promise<string[]> {
   const { maxFiles, skip } = ctx.config.sourceSearch;
@@ -155,10 +151,6 @@ async function listSourceFiles(ctx: GameViewCtx): Promise<string[]> {
  * @param key - The ui key.
  * @returns The key file, line, const ref and the files that may hold the block; undefined when
  * no file has the key with a style.
- * @example
- * ```ts
- * (await findStyleSource(ctx, "coinPill"))?.ref; // { kind: "const", name: "coinPill" }
- * ```
  */
 export async function findStyleSource(
   ctx: GameViewCtx,

@@ -82,10 +82,6 @@ export function labelLayout(
  *
  * @param props - Context, actions and the rows.
  * @returns The strip.
- * @example
- * ```tsx
- * <HistoryStrip ctx={ctx} actions={actions} rows={historyView(ctx)} />
- * ```
  */
 export function HistoryStrip(props: HistoryStripProps): VNode {
   const { ctx, actions, rows } = props;
@@ -170,10 +166,6 @@ export function HistoryStrip(props: HistoryStripProps): VNode {
  *
  * @param props - Context, actions and the rows.
  * @returns The label layer.
- * @example
- * ```tsx
- * <HistoryLabels ctx={ctx} actions={actions} rows={historyView(ctx)} />
- * ```
  */
 export function HistoryLabels(props: HistoryStripProps): VNode {
   const { ctx, rows } = props;

@@ -9,11 +9,6 @@ import { FrameLink } from "./LogTable";
 
 /**
  * Props of `DetailDrawer`.
- *
- * @example
- * ```tsx
- * const props: DetailDrawerProps = { api, line: api.selected() };
- * ```
  */
 export type DetailDrawerProps = { readonly api: ConsoleApi; readonly line: LogLine };
 
@@ -24,10 +19,6 @@ export type DetailDrawerProps = { readonly api: ConsoleApi; readonly line: LogLi
  * @param props.api - The console api.
  * @param props.line - The line.
  * @returns The property list and the data block.
- * @example
- * ```tsx
- * <Fields api={api} line={line} />
- * ```
  */
 function Fields(props: { readonly api: ConsoleApi; readonly line: LogLine }): VNode {
   const { api, line } = props;
@@ -72,10 +63,6 @@ function Fields(props: { readonly api: ConsoleApi; readonly line: LogLine }): VN
  *
  * @param api - The console api.
  * @param event - The keydown event.
- * @example
- * ```ts
- * onDrawerKey(api, new KeyboardEvent("keydown", { key: "Escape" })); // api.selected() → undefined
- * ```
  */
 function onDrawerKey(api: ConsoleApi, event: JSX.TargetedKeyboardEvent<HTMLElement>): void {
   if (event.key !== "Escape") return;
@@ -89,10 +76,6 @@ function onDrawerKey(api: ConsoleApi, event: JSX.TargetedKeyboardEvent<HTMLEleme
  *
  * @param props - The api and the selected line.
  * @returns The drawer element.
- * @example
- * ```tsx
- * <DetailDrawer api={api} line={selected} />
- * ```
  */
 export function DetailDrawer(props: DetailDrawerProps): VNode {
   const { api, line } = props;

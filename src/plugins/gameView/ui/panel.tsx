@@ -35,10 +35,6 @@ export type GameWorkspaceProps = {
  *
  * @param ctx - Domain context of gameView.
  * @returns The frozen PanelSpec.
- * @example
- * ```ts
- * ctx.require(panelsPlugin).register(createGamePanel(ctx));
- * ```
  */
 export function createGamePanel(ctx: GameViewCtx): PanelSpec {
   return definePanel({
@@ -53,10 +49,6 @@ export function createGamePanel(ctx: GameViewCtx): PanelSpec {
      * @param values - The panel values (position).
      * @param tools - The panel tools.
      * @returns The workspace root.
-     * @example
-     * ```ts
-     * createGamePanel(ctx).view({ position }, tools);
-     * ```
      */
     view: (values, tools) => h(GameWorkspace, { ctx, position: values.position, tools })
   });
@@ -67,10 +59,6 @@ export function createGamePanel(ctx: GameViewCtx): PanelSpec {
  *
  * @param props - Plugin context, the position value and the panel tools.
  * @returns The workspace.
- * @example
- * ```tsx
- * <GameWorkspace ctx={ctx} position={values.position} tools={tools} />
- * ```
  */
 export function GameWorkspace(props: GameWorkspaceProps): VNode {
   const { ctx, position, tools } = props;

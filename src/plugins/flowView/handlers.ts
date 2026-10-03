@@ -15,10 +15,6 @@ import type { FlowCtx, FlowHooks } from "./types";
  *
  * @param ctx - Domain context of flowView.
  * @returns Resolves when the three loads settled.
- * @example
- * ```ts
- * await loadSession(ctx);
- * ```
  */
 async function loadSession(ctx: FlowCtx): Promise<void> {
   const actions = actionsOf(ctx);
@@ -43,10 +39,6 @@ async function loadSession(ctx: FlowCtx): Promise<void> {
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "silent", since: 1_790_000_000_000, lastFrame: 1840 } });
- * ```
  */
 export function onLinkStatus(ctx: FlowCtx): (payload: ToolsEvents["link:status"]) => void {
   return ({ status, session }) => {
@@ -93,10 +85,6 @@ export function onLinkStatus(ctx: FlowCtx): (payload: ToolsEvents["link:status"]
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
- * @example
- * ```ts
- * onWorkspaceChanged(ctx)({ ws: "flow" });
- * ```
  */
 export function onWorkspaceChanged(
   ctx: FlowCtx
@@ -120,10 +108,6 @@ export function onWorkspaceChanged(
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
- * @example
- * ```ts
- * onSelectNode(ctx)({ id: "board/merge" });
- * ```
  */
 export function onSelectNode(
   ctx: FlowCtx
@@ -139,10 +123,6 @@ export function onSelectNode(
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
- * @example
- * ```ts
- * onFocusFrame(ctx)({ frame: 1778 });
- * ```
  */
 export function onFocusFrame(
   ctx: FlowCtx
@@ -159,10 +139,6 @@ export function onFocusFrame(
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
- * @example
- * ```ts
- * onNewNote(ctx)({ captures: [".moku/captures/2026-09-24-1012-board.png"] });
- * ```
  */
 export function onNewNote(ctx: FlowCtx): (payload: ToolsEvents["workspace:new-note"]) => void {
   return ({ captures, from }) => {
@@ -179,10 +155,6 @@ export function onNewNote(ctx: FlowCtx): (payload: ToolsEvents["workspace:new-no
  *
  * @param ctx - Domain context of flowView.
  * @returns The five hooks.
- * @example
- * ```ts
- * createHandlers(ctx)["workspace:select-node"]({ id: "board/merge" });
- * ```
  */
 export function createHandlers(ctx: FlowCtx): FlowHooks {
   return {

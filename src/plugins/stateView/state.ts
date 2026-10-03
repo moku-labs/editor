@@ -8,10 +8,6 @@ import type { StateViewState } from "./types";
  * subscription yet.
  *
  * @returns A fresh state for one app.
- * @example
- * ```ts
- * createStateViewState().note; // "none"
- * ```
  */
 export function createStateViewState(): StateViewState {
   return {

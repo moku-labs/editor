@@ -14,10 +14,6 @@ import { WORKSPACE_IDS, WORKSPACE_LABELS } from "./workspaces";
  * @param state - Workspace state.
  * @param ws - The workspace.
  * @returns The host.
- * @example
- * ```ts
- * panels.mountInto("flow", hostOf(ctx.state, "flow"));
- * ```
  */
 export function hostOf(state: WorkspaceState, ws: WorkspaceId): HTMLElement {
   const existing = state.dom.hosts.get(ws);
@@ -37,10 +33,6 @@ export function hostOf(state: WorkspaceState, ws: WorkspaceId): HTMLElement {
  *
  * @param state - Workspace state.
  * @param container - The shell's host container.
- * @example
- * ```ts
- * useLayoutEffect(() => attachHosts(ctx.state, containerRef.current!));
- * ```
  */
 export function attachHosts(state: WorkspaceState, container: HTMLElement): void {
   for (const ws of WORKSPACE_IDS) {
@@ -54,10 +46,6 @@ export function attachHosts(state: WorkspaceState, container: HTMLElement): void
  * Removes every host from the page and forgets them (onStop).
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * removeHosts(ctx.state);
- * ```
  */
 export function removeHosts(state: WorkspaceState): void {
   for (const host of state.dom.hosts.values()) host.remove();

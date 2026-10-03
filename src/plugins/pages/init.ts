@@ -56,10 +56,6 @@ function schemeOf(url: string): string {
  *
  * @param config - The resolved config.
  * @throws {Error} `[moku-editor] pages.<field> …` for a bad title, editorUrl or gameUrl.
- * @example
- * ```ts
- * validatePagesConfig(ctx.config);
- * ```
  */
 export function validatePagesConfig(config: Readonly<PagesConfig>): void {
   const { title, editorUrl, gameUrl } = config;
@@ -99,10 +95,6 @@ export function validatePagesConfig(config: Readonly<PagesConfig>): void {
  * @param ctx - Domain context of pages.
  * @param candidates - Page folders tried when `pageDir` is not set (default: pageDirCandidates()).
  * @throws {Error} `[moku-editor] pages.<field> …` for a bad title, editorUrl or gameUrl.
- * @example
- * ```ts
- * createServerPlugin("pages", { onInit: initPages });
- * ```
  */
 export function initPages(
   ctx: PagesCtx,

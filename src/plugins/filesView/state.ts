@@ -8,10 +8,6 @@ import type { FilesViewState } from "./types";
  * no graph, no tab.
  *
  * @returns A fresh state.
- * @example
- * ```ts
- * createFilesViewState().tabs; // []
- * ```
  */
 export function createFilesViewState(): FilesViewState {
   return {

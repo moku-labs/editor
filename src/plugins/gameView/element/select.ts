@@ -25,10 +25,6 @@ export type ClientPoint = { readonly x: number; readonly y: number };
  *
  * @param ctx - Domain context of gameView.
  * @param on - The wanted state; omitted toggles.
- * @example
- * ```ts
- * setPicker(ctx, true); // Game shown, picker layer over the game
- * ```
  */
 export function setPicker(ctx: GameViewCtx, on?: boolean): void {
   const { state } = ctx;
@@ -47,10 +43,6 @@ export function setPicker(ctx: GameViewCtx, on?: boolean): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns The ref, undefined when nothing is selected.
- * @example
- * ```ts
- * selectedElement(ctx); // { kind: "entity", id: 1048628 }
- * ```
  */
 export function selectedElement(ctx: Pick<GameViewCtx, "state">): ElementRef | undefined {
   return ctx.state.selected;
@@ -61,10 +53,6 @@ export function selectedElement(ctx: Pick<GameViewCtx, "state">): ElementRef | u
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element, undefined to clear.
- * @example
- * ```ts
- * selectElement(ctx, { kind: "ui", path: "boardScreen/hudRow/coinPill" });
- * ```
  */
 export function selectElement(ctx: GameViewCtx, ref: ElementRef | undefined): void {
   const { state } = ctx;
@@ -80,10 +68,6 @@ export function selectElement(ctx: GameViewCtx, ref: ElementRef | undefined): vo
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element.
- * @example
- * ```ts
- * inspectElement(ctx, { kind: "ui", path: "boardScreen/boardSlot" });
- * ```
  */
 export function inspectElement(ctx: GameViewCtx, ref: ElementRef): void {
   selectElement(ctx, ref);
@@ -98,10 +82,6 @@ export function inspectElement(ctx: GameViewCtx, ref: ElementRef): void {
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element; omitted to clear.
- * @example
- * ```ts
- * highlightElement(ctx, { kind: "ui", path: "boardScreen/hudRow/coinPill" });
- * ```
  */
 export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
   const { state } = ctx;
@@ -136,10 +116,6 @@ export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px.
  * @returns The node, or undefined.
- * @example
- * ```ts
- * nodeAt(ctx, { x: 370, y: 545 })?.id; // "entity:1048628"
- * ```
  */
 function nodeAt(ctx: GameViewCtx, client: ClientPoint): SceneNode | undefined {
   const { scene } = ctx.state;
@@ -156,10 +132,6 @@ function nodeAt(ctx: GameViewCtx, client: ClientPoint): SceneNode | undefined {
  *
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px; omitted when it left the layer.
- * @example
- * ```ts
- * hoverAt(ctx, { x: event.clientX, y: event.clientY });
- * ```
  */
 export function hoverAt(ctx: GameViewCtx, client?: ClientPoint): void {
   const hover = client === undefined ? undefined : nodeAt(ctx, client)?.id;
@@ -174,10 +146,6 @@ export function hoverAt(ctx: GameViewCtx, client?: ClientPoint): void {
  *
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px.
- * @example
- * ```ts
- * pickAt(ctx, { x: event.clientX, y: event.clientY });
- * ```
  */
 export function pickAt(ctx: GameViewCtx, client: ClientPoint): void {
   const node = nodeAt(ctx, client);
@@ -193,10 +161,6 @@ export function pickAt(ctx: GameViewCtx, client: ClientPoint): void {
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element.
- * @example
- * ```ts
- * revealElement(ctx, { kind: "ui", path: "boardScreen/hudRow/coinPill" });
- * ```
  */
 export function revealElement(ctx: GameViewCtx, ref: ElementRef): void {
   ctx.emit("workspace:reveal", { ref });
@@ -208,10 +172,6 @@ export function revealElement(ctx: GameViewCtx, ref: ElementRef): void {
  * @param ctx - Domain context of gameView.
  * @param path - The file.
  * @param line - The 1-based line.
- * @example
- * ```ts
- * openInFiles(ctx, "src/hud/styles.ts", 3);
- * ```
  */
 export function openInFiles(ctx: GameViewCtx, path: string, line: number): void {
   ctx.emit("workspace:open-file", { path, line });

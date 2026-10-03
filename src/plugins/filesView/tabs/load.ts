@@ -64,10 +64,6 @@ export function readFailure(error: unknown): ReadFailure {
  * @param tab - The tab.
  * @param error - What link rejected with.
  * @returns The failure shown.
- * @example
- * ```ts
- * showReadFailure(ctx, tab, error).status; // "missing"
- * ```
  */
 export function showReadFailure(ctx: FilesViewCtx, tab: OpenTab, error: unknown): ReadFailure {
   const failure = readFailure(error);
@@ -83,10 +79,6 @@ export function showReadFailure(ctx: FilesViewCtx, tab: OpenTab, error: unknown)
  * @param tab - The tab.
  * @param text - The file text.
  * @param version - Its version.
- * @example
- * ```ts
- * storeText(tab, "export const merge = 1;\n", "3f2a…");
- * ```
  */
 export function storeText(tab: OpenTab, text: string, version: string): void {
   tab.saved = text;
@@ -104,10 +96,6 @@ export function storeText(tab: OpenTab, text: string, version: string): void {
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns When the tab is ready or shows its error.
- * @example
- * ```ts
- * await loadTab(ctx, newTab("nodes/merge.ts"));
- * ```
  */
 export async function loadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
   const { files } = ctx.require(linkPlugin);
@@ -140,10 +128,6 @@ export async function loadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns When the check is done.
- * @example
- * ```ts
- * await revalidate(ctx, tab); // tab.status === "conflict" when someone else saved it
- * ```
  */
 export async function revalidate(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
   if (tab.kind === "image" || tab.status !== "ready") return;

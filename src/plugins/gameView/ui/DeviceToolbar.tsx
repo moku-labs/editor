@@ -71,10 +71,6 @@ function Segmented<T extends string>(props: SegmentedProps<T>): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The device controls.
- * @example
- * ```tsx
- * <DeviceControls ctx={ctx} />
- * ```
  */
 function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
   const workspace = props.ctx.require(workspacePlugin);
@@ -119,10 +115,6 @@ function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The view controls.
- * @example
- * ```tsx
- * <ViewControls ctx={ctx} />
- * ```
  */
 function ViewControls(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -182,10 +174,6 @@ function dimmed(
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The button.
- * @example
- * ```tsx
- * <CameraButton ctx={ctx} />
- * ```
  */
 function CameraButton(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -209,10 +197,6 @@ function CameraButton(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The button.
- * @example
- * ```tsx
- * <SeriesButton ctx={ctx} />
- * ```
  */
 function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -251,10 +235,6 @@ function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The switch.
- * @example
- * ```tsx
- * <OverlaySwitch ctx={ctx} />
- * ```
  */
 function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -281,10 +261,6 @@ function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
  *
  * @param props - The gameView domain context.
  * @returns The toolbar.
- * @example
- * ```tsx
- * <DeviceToolbar ctx={ctx} />
- * ```
  */
 export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   const { ctx } = props;

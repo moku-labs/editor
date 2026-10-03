@@ -377,7 +377,7 @@ describe("bridge integration", () => {
     expect(app.bridge.status()).toMatchObject({ kind: "live" });
     expect(statuses.map(payload => payload.status.kind)).toEqual(["connecting", "live", "live"]);
     expect(statuses.at(-1)).toEqual({
-      status: { kind: "live", frame: expect.any(Number) },
+      status: { kind: "live", frame: game.app.time.snapshot().frame },
       session: "s-test"
     });
   });
@@ -416,7 +416,7 @@ describe("bridge integration", () => {
     expect(ran).toMatchObject({
       result: {
         value: expect.anything(),
-        state: { path: expect.any(String), frame: before + 1, tainted: false }
+        state: { path: app.registry.envelope().path, frame: before + 1, tainted: false }
       }
     });
   });
@@ -555,7 +555,7 @@ describe("bridge types", () => {
       pluginConfigs: { registry: { game: game.app } }
     });
 
-    expect(app.bridge).toBeDefined();
+    expect(app.bridge.status()).toEqual({ kind: "connecting" });
     expect(hooked).toBe(false);
   });
 
