@@ -1,1 +1,138 @@
-/* gameView · picker. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · overlay root inside gameFrame().overlay() (F11, F12): picker layer, hover / selected / tree boxes, the hover label (counter-scaled so its text stays 11 px), safe-area bands, dynamic island, home bar, shutter flash. Device space: game CSS px, scaled with the frame. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-game="overlay"]) {
+  :scope {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  [data-part="picker"] {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+    pointer-events: auto;
+  }
+
+  [data-box] {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid var(--pick-hover);
+    border-radius: 2px;
+  }
+
+  [data-box="hover"] {
+    background: color-mix(in srgb, var(--pick-hover) 12%, transparent);
+  }
+
+  [data-box="selected"] {
+    border-color: var(--accent);
+  }
+
+  [data-box="tree"] {
+    border-color: var(--pick-tree);
+    background: color-mix(in srgb, var(--pick-tree) 10%, transparent);
+  }
+
+  [data-part="label"] {
+    position: absolute;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: var(--radius-4);
+    background: var(--pick-hover);
+    color: var(--surface-panel);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11);
+    line-height: 18px;
+    white-space: nowrap;
+    transform-origin: 0 0;
+  }
+
+  [data-part="guides"] {
+    position: absolute;
+    inset: 0;
+  }
+
+  [data-part="band"] {
+    position: absolute;
+    background: repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--status-warn) 22%, transparent) 0 6px,
+      transparent 6px 12px
+    );
+  }
+
+  [data-part="band"][data-side="top"] {
+    inset: 0 0 auto;
+    height: var(--band);
+  }
+
+  [data-part="band"][data-side="bottom"] {
+    inset: auto 0 0;
+    height: var(--band);
+  }
+
+  [data-part="band"][data-side="left"] {
+    inset: 0 auto 0 0;
+    width: var(--band);
+  }
+
+  [data-part="band"][data-side="right"] {
+    inset: 0 0 0 auto;
+    width: var(--band);
+  }
+
+  [data-part="island"] {
+    position: absolute;
+    top: 11px;
+    left: 50%;
+    width: 126px;
+    height: 37px;
+    border-radius: 999px;
+    background: var(--text-ink);
+    transform: translateX(-50%);
+  }
+
+  [data-orientation="landscape"] [data-part="island"] {
+    top: 50%;
+    left: 11px;
+    width: 37px;
+    height: 126px;
+    transform: translateY(-50%);
+  }
+
+  [data-part="home"] {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    width: 134px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--text-ink);
+    transform: translateX(-50%);
+  }
+
+  [data-part="flash"] {
+    position: absolute;
+    inset: 0;
+    background: var(--surface-panel);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes game-shutter {
+    from {
+      opacity: 0.85;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @scope ([data-game="overlay"]) {
+    [data-part="flash"] {
+      animation: game-shutter 0.5s ease-out forwards;
+    }
+  }
+}

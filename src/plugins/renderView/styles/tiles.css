@@ -1,1 +1,125 @@
-/* renderView · tiles. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · tiles. The Render workspace frame (title, columns) and the six metric tiles (6 columns, 3 at ≤ 1380 px). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="workspace"]) to (
+  [data-render="tiles"],
+  [data-render="tree"],
+  [data-render="textures"],
+  [data-render="bundles"],
+  [data-render="pools"],
+  [data-render="releases"]
+) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    block-size: 100%;
+    padding: 16px 20px 24px;
+    overflow: auto;
+    background: var(--surface-ground);
+    color: var(--text-ink);
+  }
+
+  h1 {
+    font-size: var(--font-size-15);
+    font-weight: 600;
+  }
+
+  [data-error] {
+    color: var(--status-warn);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-columns] {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  [data-column] {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-inline-size: 0;
+  }
+}
+
+@scope ([data-render="tiles"]) {
+  :scope {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  [data-tile] {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+  }
+
+  h2 {
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 500;
+  }
+
+  [data-value] {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  [data-value] strong {
+    font-size: var(--font-size-20);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-unit],
+  [data-sub] {
+    color: var(--text-2);
+    font-size: var(--font-size-11);
+  }
+
+  [data-warn] {
+    color: var(--status-warn);
+    font-size: var(--font-size-11);
+  }
+
+  [data-tile][data-absent] [data-value] strong {
+    color: var(--text-muted);
+    font-size: var(--font-size-13);
+    font-weight: 500;
+  }
+
+  [data-bar] {
+    display: block;
+    block-size: 6px;
+    border-radius: var(--radius-4);
+    background: var(--surface-panel-2);
+    overflow: hidden;
+  }
+
+  [data-bar] > [data-phase="1"] {
+    display: block;
+    block-size: 100%;
+    background: var(--phase-3);
+  }
+
+  [data-spark] {
+    display: block;
+    inline-size: 100%;
+  }
+}
+
+@media (max-width: 1380px) {
+  @scope ([data-render="tiles"]) {
+    :scope {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+}

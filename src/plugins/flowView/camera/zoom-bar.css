@@ -1,1 +1,39 @@
-/* flowView · zoom-bar. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · zoom bar (B6), bottom-left 12 px: −, readout, +, Fit all, Fit selection; lifts by the strip height. No @layer wrapper (R7). */
+
+@scope ([data-flow="zoom-bar"]) {
+  :scope {
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel);
+  }
+
+  :scope[data-lift] {
+    bottom: calc(12px + var(--flow-strip-h));
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope {
+      transition: bottom var(--duration-zoom) var(--ease-out);
+    }
+  }
+
+  button {
+    min-width: 28px;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--radius-6);
+    background: none;
+    color: var(--text-ink);
+    font-size: var(--font-size-12);
+    cursor: pointer;
+  }
+
+  [data-action="readout"] {
+    font-family: var(--font-mono);
+  }
+}

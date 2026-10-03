@@ -1,1 +1,60 @@
-/* flowView · edges. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · edges (G): orthogonal paths with rounded corners; trail, rejected, related, selected, note and return edges; mono label chips. Trail opacity comes from the rank (style prop). No @layer wrapper (R7). */
+
+@scope ([data-flow="edges"]) {
+  :scope {
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  path {
+    fill: none;
+    stroke: var(--edge);
+    stroke-width: 1.35px;
+  }
+
+  path[data-related] {
+    stroke-width: 1.8px;
+  }
+
+  path[data-trail],
+  path[data-selected] {
+    stroke: var(--accent);
+    stroke-width: 3.2px;
+  }
+
+  path[data-rejected] {
+    stroke: var(--status-error);
+    stroke-dasharray: 5 4;
+  }
+
+  path[data-kind="note"] {
+    stroke: var(--note-line);
+    stroke-dasharray: 4 4;
+  }
+
+  path[data-kind="return"] {
+    stroke: var(--accent);
+    stroke-dasharray: 6 4;
+  }
+
+  path[data-dimmed] {
+    opacity: 0.16;
+  }
+}
+
+@scope ([data-flow="edge-label"]) {
+  :scope {
+    padding: 0 5px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-4);
+    background: var(--surface-panel);
+    color: var(--text-2);
+    font: max(var(--flow-label-min), var(--font-size-11)) / 1.5 var(--font-mono);
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+  }
+
+  :scope[data-dimmed] {
+    opacity: 0.16;
+  }
+}

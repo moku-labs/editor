@@ -1,1 +1,37 @@
-/* flowView · breadcrumb. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · breadcrumb (B8), top-left: segments that navigate up, the last one bold, then the stack link. No @layer wrapper (R7). */
+
+@scope ([data-flow="breadcrumb"]) {
+  :scope {
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel);
+    font: var(--font-size-12) / 1.4 var(--font-mono);
+  }
+
+  button {
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  [data-current] {
+    color: var(--text-ink);
+    font-weight: 600;
+  }
+
+  [data-part="separator"] {
+    color: var(--text-muted);
+  }
+
+  [data-part="stack"] {
+    color: var(--accent);
+  }
+}

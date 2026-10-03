@@ -1,1 +1,117 @@
-/* filesView · Tree. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · Tree. The project tree: header with the file count and Refresh, 24 px rows with twisty, a 14 px indent per level (--level), kind glyph and name; the active file has the soft accent fill; the muted captures note; loading and failure lines. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="tree"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--line-1);
+    background: var(--surface-panel-2);
+  }
+
+  [data-tree-head] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 30px;
+    padding: 0 6px 0 12px;
+    border-bottom: 1px solid var(--line-1);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+  }
+
+  [data-tree-state] {
+    margin: 12px;
+    color: var(--text-muted);
+    font-size: var(--font-size-12-5);
+  }
+
+  [data-tree-state] button {
+    color: var(--text-ink);
+    text-decoration: underline;
+  }
+
+  [role="tree"] {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 0;
+    overflow: auto;
+  }
+
+  [role="treeitem"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding-inline: calc(8px + (var(--level) - 1) * 14px) 8px;
+    color: var(--text-2);
+    font-size: var(--font-size-12-5);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  [role="treeitem"]:hover {
+    background: var(--surface-panel);
+  }
+
+  [role="treeitem"][aria-selected="true"] {
+    background: var(--accent-soft);
+    color: var(--text-ink);
+  }
+
+  [role="treeitem"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  [data-tree-note] {
+    color: var(--text-muted);
+    font-style: italic;
+    cursor: default;
+  }
+
+  [data-twisty] {
+    width: 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-10);
+  }
+
+  [data-glyph] {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-4);
+    background: var(--line-2);
+  }
+
+  [data-glyph="folder"] {
+    background: var(--text-muted);
+  }
+
+  [data-glyph="ts"] {
+    background: var(--teal);
+  }
+
+  [data-glyph="css"],
+  [data-glyph="image"] {
+    background: var(--status-live);
+  }
+
+  [data-glyph="json"] {
+    background: var(--status-warn);
+  }
+
+  [data-glyph="md"] {
+    background: var(--text-2);
+  }
+
+  [data-name] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

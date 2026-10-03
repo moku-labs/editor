@@ -1,29 +1,39 @@
 /**
- * @file gameView plugin — ui/PickerLayer.tsx (skeleton stubs, implemented in its wave).
+ * @file gameView plugin — the picker layer (F11): a transparent layer in gameView's overlay root
+ * that takes pointer events only while picking (the iframe gets none then). Hover shows the box
+ * of the element under the pointer; a click selects it. The render tree (renderView) is the
+ * keyboard path to an element.
  */
-
 import type { VNode } from "preact";
+import { hoverAt, pickAt } from "../element/select";
 import type { GameViewCtx } from "../types";
 
 /**
  * Props of `PickerLayer`.
- *
- * @example
- * ```ts
- * const props = {} as never as PickerLayerProps;
- * ```
  */
 export type PickerLayerProps = { readonly ctx: GameViewCtx };
 
 /**
- * Skeleton stub for `PickerLayer`; implemented in its wave.
+ * The picker layer.
  *
- * @param _props - The props.
+ * @param props - The gameView domain context.
+ * @returns The layer.
  * @example
- * ```ts
- * PickerLayer();
+ * ```tsx
+ * {picking && <PickerLayer ctx={ctx} />}
  * ```
  */
-export function PickerLayer(_props: PickerLayerProps): VNode {
-  throw new Error("not implemented");
+export function PickerLayer(props: PickerLayerProps): VNode {
+  const { ctx } = props;
+  return (
+    <div
+      data-part="picker"
+      data-picking=""
+      role="application"
+      aria-label="Game element picker"
+      onPointerMove={event => hoverAt(ctx, { x: event.clientX, y: event.clientY })}
+      onPointerLeave={() => hoverAt(ctx)}
+      onPointerUp={event => pickAt(ctx, { x: event.clientX, y: event.clientY })}
+    />
+  );
 }

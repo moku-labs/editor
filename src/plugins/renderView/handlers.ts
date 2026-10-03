@@ -1,60 +1,145 @@
 /**
- * @file renderView plugin — hooks of the global tools events: workspace:changed, link:status,
- * workspace:reveal.
+ * @file renderView plugin — hooks of the global tools events: workspace:changed starts and stops
+ * the scene watches, link:status keeps or clears the session data, workspace:reveal reveals.
  */
 import type { ToolsEvents } from "../../config";
-import type { RenderViewCtx, RenderViewHooks } from "./types";
+import { highlightRef, revealRef, setTexturePalette } from "./actions";
+import { removeOverlay } from "./overlay";
+import { notify } from "./state";
+import type { RenderViewCtx, RenderViewHooks, RenderViewState } from "./types";
+import { refreshRenderView, startScene, stopScene } from "./watch";
 
 /**
- * renderView's hooks factory (`hooks: createHandlers`).
+ * Forgets what belongs to one game session: FPS samples, loaded bundles, the release log, texture
+ * use, the first frame, the catalogue and the calibration (link re-sends the watches, R4).
  *
- * @param _ctx - Domain context of renderView.
+ * @param state - renderView state.
  * @example
  * ```ts
- * createToolsPlugin("renderView", { hooks: createHandlers });
+ * clearSession(ctx.state); // ctx.state.releases → []
  * ```
  */
-export function createHandlers(_ctx: RenderViewCtx): RenderViewHooks {
-  throw new Error("not implemented");
+function clearSession(state: RenderViewState): void {
+  state.fps = [];
+  state.loaded = new Map();
+  state.releases = [];
+  state.seen = new Map();
+  state.firstFrame = undefined;
+  state.catalogue = undefined;
+  state.calibration = undefined;
+  state.calibrationAsked = false;
 }
 
 /**
- * Render shown: scene watches on, refresh once per session. Hidden: watches off, box cleared.
+ * Forgets every value (no game left): the session data, the last values, the scene and the box.
  *
- * @param _ctx - Domain context of renderView.
+ * @param state - renderView state.
  * @example
  * ```ts
- * onWorkspaceChanged(ctx)({ ws: "render" });
+ * clearAll(ctx.state); // ctx.state.render → undefined
+ * ```
+ */
+function clearAll(state: RenderViewState): void {
+  clearSession(state);
+  state.session = undefined;
+  state.lastFrame = undefined;
+  state.render = undefined;
+  state.assets = undefined;
+  state.scene = undefined;
+  state.error = undefined;
+  state.box = undefined;
+  state.pendingReveal = undefined;
+  removeOverlay(state);
+}
+
+/**
+ * Render shown: scene watches on, refresh once per session (catalogue, calibration). Hidden:
+ * scene watches off, box cleared.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns The hook.
+ * @example
+ * ```ts
+ * onWorkspaceChanged(ctx)({ ws: "render" }); // watches game.ui, game.entities, game.projections
  * ```
  */
 export function onWorkspaceChanged(
-  _ctx: RenderViewCtx
+  ctx: RenderViewCtx
 ): (payload: ToolsEvents["workspace:changed"]) => void {
-  throw new Error("not implemented");
+  return ({ ws }) => {
+    const { state } = ctx;
+    if (ws === "render") {
+      state.active = true;
+      startScene(ctx);
+      if (state.catalogue === undefined) void refreshRenderView(ctx);
+    } else {
+      state.active = false;
+      stopScene(ctx);
+      highlightRef(ctx);
+    }
+    notify(state);
+  };
 }
 
 /**
- * Keeps data while stale; clears the session data after a session change; clears all on empty.
+ * Keeps the data while silent or lost (the host marks it stale); clears the session data after a
+ * session change and refreshes while Render is shown; clears everything on empty.
  *
- * @param _ctx - Domain context of renderView.
+ * @param ctx - Domain context of renderView.
+ * @returns The hook.
  * @example
  * ```ts
  * onLinkStatus(ctx)({ status: { kind: "live", frame: 12 }, session: "s-7f3a" });
  * ```
  */
-export function onLinkStatus(_ctx: RenderViewCtx): (payload: ToolsEvents["link:status"]) => void {
-  throw new Error("not implemented");
+export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:status"]) => void {
+  return ({ status, session }) => {
+    const { state } = ctx;
+    if (status.kind === "empty") {
+      clearAll(state);
+      setTexturePalette(ctx);
+      notify(state);
+      return;
+    }
+    if (status.kind !== "live" && status.kind !== "paused") return;
+    if (session === undefined || session === state.session) return;
+
+    state.session = session;
+    clearSession(state);
+    setTexturePalette(ctx);
+    notify(state);
+    if (state.active) void refreshRenderView(ctx);
+  };
 }
 
 /**
- * reveal(ref).
+ * Reveals the element in the render tree (gameView's "Show in render tree").
  *
- * @param _ctx - Domain context of renderView.
+ * @param ctx - Domain context of renderView.
+ * @returns The hook.
  * @example
  * ```ts
- * onReveal(ctx)({ ref: { kind: "ui", path: "column#0/hudRow/coins" } });
+ * onReveal(ctx)({ ref: { kind: "entity", id: 3_145_728 } });
  * ```
  */
-export function onReveal(_ctx: RenderViewCtx): (payload: ToolsEvents["workspace:reveal"]) => void {
-  throw new Error("not implemented");
+export function onReveal(ctx: RenderViewCtx): (payload: ToolsEvents["workspace:reveal"]) => void {
+  return ({ ref }) => revealRef(ctx, ref);
+}
+
+/**
+ * renderView's hooks factory (`hooks: createHandlers`).
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns The three hooks.
+ * @example
+ * ```ts
+ * createToolsPlugin("renderView", { hooks: createHandlers });
+ * ```
+ */
+export function createHandlers(ctx: RenderViewCtx): RenderViewHooks {
+  return {
+    "workspace:changed": onWorkspaceChanged(ctx),
+    "link:status": onLinkStatus(ctx),
+    "workspace:reveal": onReveal(ctx)
+  };
 }

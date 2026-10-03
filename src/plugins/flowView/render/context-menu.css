@@ -1,1 +1,39 @@
-/* flowView · context-menu. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · context menus (D4): a top-layer popover (M7) with menu items; disabled items are dimmed and do nothing. No @layer wrapper (R7). */
+
+@scope ([data-flow="context-menu"]) {
+  :scope {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 200px;
+    padding: 4px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+  }
+
+  button {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: var(--radius-6);
+    background: none;
+    color: var(--text-ink);
+    font-size: var(--font-size-12-5);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  button:focus-visible,
+  button:hover {
+    background: var(--accent-soft);
+    outline: none;
+  }
+
+  [aria-disabled="true"] {
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+}

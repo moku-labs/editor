@@ -1,31 +1,52 @@
 /**
- * @file filesView plugin — store.ts (skeleton stubs, implemented in its wave).
+ * @file filesView plugin — the view change fan-out: every domain change calls `notify`, the
+ * view and `api.subscribe` listeners re-read the state.
  */
 import type { FilesViewState } from "./types";
 
 /**
- * Skeleton stub for `notify`; implemented in its wave.
+ * Calls every listener once (over a copy, so a listener may unsubscribe while it runs).
  *
- * @param _state - The state.
+ * @param state - filesView state.
  * @example
  * ```ts
- * notify();
+ * tab.buffer = text;
+ * notify(ctx.state);
  * ```
  */
-export function notify(_state: FilesViewState): void {
-  throw new Error("not implemented");
+export function notify(state: FilesViewState): void {
+  for (const listener of state.listeners) listener();
 }
 
 /**
- * Skeleton stub for `subscribe`; implemented in its wave.
+ * Adds a change listener.
  *
- * @param _state - The state.
- * @param _fn - The fn.
+ * @param state - filesView state.
+ * @param fn - Called after each change.
+ * @returns An idempotent unsubscribe.
  * @example
  * ```ts
- * subscribe();
+ * const off = subscribe(ctx.state, redraw);
  * ```
  */
-export function subscribe(_state: FilesViewState, _fn: () => void): () => void {
-  throw new Error("not implemented");
+export function subscribe(state: FilesViewState, fn: () => void): () => void {
+  /**
+   *
+   * @example
+   */
+  /**
+   * A listener of its own, so the same function subscribed twice unsubscribes once each.
+   *
+   * @example
+   * ```ts
+   * listener(); // calls fn
+   * ```
+   */
+  const listener = (): void => {
+    fn();
+  };
+  state.listeners.add(listener);
+  return () => {
+    state.listeners.delete(listener);
+  };
 }

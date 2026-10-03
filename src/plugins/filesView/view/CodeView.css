@@ -1,1 +1,49 @@
-/* filesView · CodeView. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · CodeView. The code viewer: 34 px gutter (mono 11.5/1.62, muted, right-aligned, not selectable), lines in mono 12.5 in the Files body, the current line with the soft accent fill and a 2 px inset, the large-file note, window spacers. Code colours come from the workspace [data-token] atoms. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="code-view"]) {
+  :scope {
+    flex: 1;
+    min-height: 0;
+    padding: 8px 0;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12-5);
+    line-height: var(--line-height-code);
+  }
+
+  :scope:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  [data-code-note] {
+    margin: 0 12px 6px;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-12);
+  }
+
+  [data-line] {
+    display: flex;
+    min-width: max-content;
+    white-space: pre;
+  }
+
+  [data-line][data-line-current] {
+    background: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  [data-gutter] {
+    flex: none;
+    width: 34px;
+    padding-right: 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11-5);
+    text-align: right;
+    user-select: none;
+  }
+
+  [data-text] {
+    padding-right: 16px;
+  }
+}

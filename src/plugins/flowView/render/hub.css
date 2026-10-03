@@ -1,1 +1,75 @@
-/* flowView · hub. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · hub (G): 200 px wide, head with name, You are here, kind and waiting count; one 22 px port row per outcome with a right-aligned label and a dot. No @layer wrapper (R7). */
+
+@scope ([data-flow="hub"]) {
+  :scope {
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-9);
+    background: var(--surface-panel);
+    cursor: grab;
+  }
+
+  :scope[data-current] {
+    border: 1.5px solid var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+
+  :scope[data-selected] {
+    border-color: var(--accent);
+  }
+
+  :scope[data-dimmed] {
+    opacity: 0.16;
+  }
+
+  [data-part="head"] {
+    display: grid;
+    gap: 2px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  [data-part="name"] {
+    font-weight: 600;
+  }
+
+  [data-part="kind"],
+  [data-part="waiting"] {
+    color: var(--text-2);
+    font: max(var(--flow-label-min), var(--font-size-11)) / 1.3 var(--font-mono);
+  }
+
+  [data-tag="current"] {
+    justify-self: start;
+    padding: 0 6px;
+    border-radius: var(--radius-4);
+    background: var(--accent);
+    color: var(--surface-panel);
+    font-size: var(--font-size-11);
+  }
+
+  [data-part="port"] {
+    position: absolute;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    height: 22px;
+    padding-right: 6px;
+    font: max(var(--flow-label-min), var(--font-size-11)) / 1 var(--font-mono);
+    color: var(--text-2);
+  }
+
+  [data-part="dot"] {
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid var(--edge);
+    border-radius: 50%;
+    background: var(--surface-panel);
+  }
+
+  [data-waiting] [data-part="dot"] {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+}

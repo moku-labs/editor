@@ -1,18 +1,44 @@
 /**
- * @file gameView plugin — ui/useGameView.ts (skeleton stubs, implemented in its wave).
+ * @file gameView plugin — the Preact hooks of the views: `useGameView` re-renders a component on
+ * every `notify(state)`; `useTicker` re-renders it every few ms while a clock shows (recording
+ * time, "no heartbeat for N s").
  */
+import { useEffect, useState } from "preact/hooks";
+import { subscribe } from "../state";
 import type { GameViewState } from "../types";
 
 /**
- * Skeleton stub for `useGameView`; implemented in its wave.
+ * Subscribes the component to gameView state and returns the selected value of this render.
  *
- * @param _state - The state.
- * @param _select - The select.
+ * @param state - gameView state.
+ * @param select - Reads what the component shows.
+ * @returns The selected value.
  * @example
- * ```ts
- * useGameView();
+ * ```tsx
+ * const on = useGameView(ctx.state, () => ctx.state.picker.on);
  * ```
  */
-export function useGameView<T>(_state: GameViewState, _select: () => T): T {
-  throw new Error("not implemented");
+export function useGameView<T>(state: GameViewState, select: () => T): T {
+  const [, setVersion] = useState(0);
+  useEffect(() => subscribe(state, () => setVersion(version => version + 1)), [state]);
+  return select();
+}
+
+/**
+ * Re-renders the component every `everyMs` while `active` (a timeout chain, no interval).
+ *
+ * @param active - Whether the clock runs.
+ * @param everyMs - The tick.
+ * @example
+ * ```tsx
+ * useTicker(recording !== undefined, 100);
+ * ```
+ */
+export function useTicker(active: boolean, everyMs: number): void {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => setTick(count => count + 1), everyMs);
+    return () => clearTimeout(timer);
+  }, [active, everyMs, tick]);
 }

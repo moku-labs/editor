@@ -1,18 +1,49 @@
 /**
- * @file gameView plugin — api factory: composes the scene, capture, series, notes and element
- * sub-modules.
+ * @file gameView plugin — api factory: binds the scene, element, capture, series, sheet and notes
+ * functions to the plugin context. The contract and the examples live on `GameViewApi` in
+ * types.ts.
  */
+
+import { recordSeries, stopRecording } from "./capture/series";
+import { openSheet } from "./capture/sheet";
+import { takeScreenshot } from "./capture/shot";
+import {
+  highlightElement,
+  inspectElement,
+  selectElement,
+  selectedElement,
+  setPicker
+} from "./element/select";
+import { attachCapture, listNotes } from "./notes/attach";
+import { readManifest } from "./scene/manifest";
+import { locateElement, readScene } from "./scene/read";
 import type { GameViewApi, GameViewCtx } from "./types";
 
 /**
  * Creates the gameView api.
  *
- * @param _ctx - Domain context of gameView.
+ * @param ctx - Domain context of gameView.
+ * @returns The GameViewApi (`app.gameView`).
  * @example
  * ```ts
- * createGameViewApi(ctx).pick(true);
+ * createToolsPlugin("gameView", { api: createGameViewApi });
  * ```
  */
-export function createGameViewApi(_ctx: GameViewCtx): GameViewApi {
-  throw new Error("not implemented");
+export function createGameViewApi(ctx: GameViewCtx): GameViewApi {
+  return {
+    pick: setPicker.bind(undefined, ctx),
+    selected: selectedElement.bind(undefined, ctx),
+    select: selectElement.bind(undefined, ctx),
+    inspect: inspectElement.bind(undefined, ctx),
+    scene: readScene.bind(undefined, ctx),
+    locate: locateElement.bind(undefined, ctx),
+    highlight: highlightElement.bind(undefined, ctx),
+    manifest: readManifest.bind(undefined, ctx),
+    capture: takeScreenshot.bind(undefined, ctx),
+    series: recordSeries.bind(undefined, ctx),
+    stopSeries: stopRecording.bind(undefined, ctx),
+    openSheet: openSheet.bind(undefined, ctx),
+    attach: attachCapture.bind(undefined, ctx),
+    notes: listNotes.bind(undefined, ctx)
+  };
 }

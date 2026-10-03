@@ -1,29 +1,426 @@
 /**
- * @file gameView plugin — ui/ElementTab.tsx (skeleton stubs, implemented in its wave).
+ * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
+ * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
+ * children, the resolved style, the layout style card with its steppers, "Show in render tree"
+ * (workspace:reveal) and "Pick another".
  */
-
 import type { VNode } from "preact";
-import type { GameViewCtx } from "../types";
+import { useEffect } from "preact/hooks";
+import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
+import { ancestorsOf, refId } from "../../panels/shared/scene";
+import type { StyleField } from "../../panels/shared/style-edit";
+import { fieldRule, formatNumber } from "../../panels/shared/style-edit";
+import type { Json } from "../../registry/protocol";
+import { workspacePlugin } from "../../workspace";
+import { resolveDevice } from "../../workspace/devices";
+import {
+  highlightElement,
+  openInFiles,
+  revealElement,
+  selectElement,
+  setPicker
+} from "../element/select";
+import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
+import { readManifest } from "../scene/manifest";
+import type { GameViewCtx, StyleCard } from "../types";
+import { useGameView } from "./useGameView";
 
 /**
  * Props of `ElementTab`.
- *
- * @example
- * ```ts
- * const props = {} as never as ElementTabProps;
- * ```
  */
 export type ElementTabProps = { readonly ctx: GameViewCtx };
 
 /**
- * Skeleton stub for `ElementTab`; implemented in its wave.
+ * One style value as text: strings and numbers as they are, objects as compact JSON.
  *
- * @param _props - The props.
+ * @param value - A style value.
+ * @returns The text.
  * @example
  * ```ts
- * ElementTab();
+ * styleValue({ top: 40 }); // '{"top":40}'
  * ```
  */
-export function ElementTab(_props: ElementTabProps): VNode {
-  throw new Error("not implemented");
+function styleValue(value: Json): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/**
+ * A chip that selects an element and draws the pink box while hovered.
+ *
+ * @param props - The context, the node and its label.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.node - The node.
+ * @returns The chip button.
+ * @example
+ * ```tsx
+ * <NodeChip ctx={ctx} node={parent} />
+ * ```
+ */
+function NodeChip(props: { readonly ctx: GameViewCtx; readonly node: SceneNode }): VNode {
+  const { ctx, node } = props;
+  return (
+    <button
+      type="button"
+      data-chip=""
+      onClick={() => selectElement(ctx, node.ref)}
+      onPointerEnter={() => highlightElement(ctx, node.ref)}
+      onPointerLeave={() => highlightElement(ctx)}
+      onFocus={() => highlightElement(ctx, node.ref)}
+      onBlur={() => highlightElement(ctx)}
+    >
+      {node.name}
+    </button>
+  );
+}
+
+/**
+ * One field of the style card: a stepper when the shared module has a rule, else read-only.
+ *
+ * @param props - The context, the card and the field.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.card - The style card.
+ * @param props.field - The field.
+ * @returns The field row.
+ * @example
+ * ```tsx
+ * <FieldRow ctx={ctx} card={card} field={field} />
+ * ```
+ */
+function FieldRow(props: {
+  readonly ctx: GameViewCtx;
+  readonly card: StyleCard;
+  readonly field: StyleField;
+}): VNode {
+  const { ctx, card, field } = props;
+  const editable = field.kind === "number" && fieldRule(card.ref, field.path) !== undefined;
+  const pending = card.pending?.path === field.path ? card.pending.next : undefined;
+  const value = pending === undefined ? field.raw : formatNumber(pending);
+  return (
+    <div data-field={field.path}>
+      <dt>{field.path}</dt>
+      <dd>
+        {editable && (
+          <button
+            type="button"
+            aria-label={`Decrease ${field.path}`}
+            onClick={event => stepStyle(ctx, field.path, -1, event.shiftKey)}
+          >
+            −
+          </button>
+        )}
+        <output>{value}</output>
+        {editable && (
+          <button
+            type="button"
+            aria-label={`Increase ${field.path}`}
+            onClick={event => stepStyle(ctx, field.path, 1, event.shiftKey)}
+          >
+            +
+          </button>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * The layout style card: where, Open in Files, the block lines with a gutter, the fields, a
+ * refusal line.
+ *
+ * @param props - The context and the card.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.card - The style card.
+ * @returns The card body.
+ * @example
+ * ```tsx
+ * <StyleCardView ctx={ctx} card={ctx.state.styles!} />
+ * ```
+ */
+function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleCard }): VNode {
+  const { ctx, card } = props;
+  const { block } = card;
+  const lines = card.current.text.split("\n").slice(block.line - 1, block.endLine);
+  return (
+    <>
+      <header>
+        <code data-part="where">
+          {card.path}:{block.line}
+        </code>
+        <button type="button" onClick={() => openInFiles(ctx, card.path, block.line)}>
+          Open in Files
+        </button>
+      </header>
+      <ol data-part="lines" aria-label="Style block">
+        {lines.map((text, index) => (
+          <li key={block.line + index} data-part="line">
+            <span data-part="gutter">{block.line + index}</span>
+            <code>{text}</code>
+          </li>
+        ))}
+      </ol>
+      <dl data-part="fields">
+        {block.fields.map(field => (
+          <FieldRow key={field.path} ctx={ctx} card={card} field={field} />
+        ))}
+      </dl>
+      {card.error !== undefined && (
+        <p data-part="error" role="alert">
+          {styleErrorText(card.error)}
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The style card section of a keyed ui node: searching, missing, refused, or the card.
+ *
+ * @param props - The context and the ui key.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.nodeKey - The ui key.
+ * @returns The section.
+ * @example
+ * ```tsx
+ * <StyleSection ctx={ctx} nodeKey="coinPill" />
+ * ```
+ */
+function StyleSection(props: { readonly ctx: GameViewCtx; readonly nodeKey: string }): VNode {
+  const { ctx, nodeKey } = props;
+  const { styles, lookup } = ctx.state;
+  return (
+    <section data-part="style-card" aria-label="Layout style">
+      {styles !== undefined && <StyleCardView ctx={ctx} card={styles} />}
+      {styles === undefined && lookup?.status === "failed" && (
+        <p data-part="error" role="alert">
+          {styleErrorText(lookup.error)}{" "}
+          <button
+            type="button"
+            onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}
+          >
+            Open in Files
+          </button>
+        </p>
+      )}
+      {styles === undefined && lookup?.status === "missing" && (
+        <p>Source not found for key {nodeKey}</p>
+      )}
+      {styles === undefined && (lookup === undefined || lookup.status === "searching") && (
+        <p>Searching the sources for {nodeKey}…</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The texture box: the key, and from the manifest `w×h · GPU MB · bundle`.
+ *
+ * @param props - The context and the texture key.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.texture - The texture key.
+ * @returns The box.
+ * @example
+ * ```tsx
+ * <TextureBox ctx={ctx} texture="board.item-wood-3" />
+ * ```
+ */
+function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string }): VNode {
+  const { ctx, texture } = props;
+  const info = ctx.state.manifest?.textures.get(texture);
+  return (
+    <section data-part="texture" aria-label="Texture">
+      <h4>Texture</h4>
+      <code data-tag="">{texture}</code>
+      {info !== undefined && (
+        <span>
+          {info.width}×{info.height} · {info.gpuMb.toFixed(2)} MB · {info.bundle}
+        </span>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The filled tab for one node.
+ *
+ * @param props - The context, the scene and the node.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.scene - The scene.
+ * @param props.node - The selected node.
+ * @returns The tab body.
+ * @example
+ * ```tsx
+ * <NodeDetails ctx={ctx} scene={scene} node={node} />
+ * ```
+ */
+function NodeDetails(props: {
+  readonly ctx: GameViewCtx;
+  readonly scene: SceneSnapshot;
+  readonly node: SceneNode;
+}): VNode {
+  const { ctx, scene, node } = props;
+  const choice = ctx.require(workspacePlugin).device();
+  const size = resolveDevice(choice.preset, choice.orientation);
+  const ancestors = ancestorsOf(scene, node.id).flatMap(id => scene.nodes.get(id) ?? []);
+  const children = node.children.flatMap(id => scene.nodes.get(id) ?? []);
+  const style = node.style === undefined ? [] : Object.entries(node.style);
+
+  return (
+    <div data-part="element">
+      <nav data-part="crumbs" aria-label="Render tree path">
+        {ancestors.map(ancestor => (
+          <NodeChip key={ancestor.id} ctx={ctx} node={ancestor} />
+        ))}
+      </nav>
+      <header>
+        <h3 data-part="name">{node.name}</h3>
+        <span data-tag="" data-part="type">
+          {node.type}
+        </span>
+      </header>
+      <section aria-label="Bounds">
+        <h4>Bounds</h4>
+        {node.rect === undefined ? (
+          <p>Not placed on screen.</p>
+        ) : (
+          <dl data-part="bounds">
+            <dt>x</dt>
+            <dd>{Math.round(node.rect.x)}</dd>
+            <dt>y</dt>
+            <dd>{Math.round(node.rect.y)}</dd>
+            <dt>w</dt>
+            <dd>{Math.round(node.rect.w)}</dd>
+            <dt>h</dt>
+            <dd>{Math.round(node.rect.h)}</dd>
+          </dl>
+        )}
+        <p data-part="device">
+          {choice.preset.name} {choice.orientation} · {size.w}×{size.h}
+        </p>
+      </section>
+      {node.texture !== undefined && <TextureBox ctx={ctx} texture={node.texture} />}
+      {node.entity !== undefined && (
+        <section data-part="entity" aria-label="Entity">
+          <h4>Entity</h4>
+          <dl>
+            <dt>id</dt>
+            <dd>{node.entity.id}</dd>
+            <dt>owner</dt>
+            <dd>{node.entity.owner}</dd>
+          </dl>
+          <div>
+            {node.entity.components.map(component => (
+              <span key={component} data-chip="">
+                {component}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+      {children.length > 0 && (
+        <section data-part="children" aria-label="Children">
+          <h4>Children</h4>
+          {children.map(child => (
+            <NodeChip key={child.id} ctx={ctx} node={child} />
+          ))}
+        </section>
+      )}
+      <section data-part="style" aria-label="Styles">
+        <h4>Styles</h4>
+        {style.length === 0 ? (
+          <p>No style of its own.</p>
+        ) : (
+          <dl data-props="">
+            {style.map(([key, value]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{styleValue(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </section>
+      {node.ref.kind === "ui" && node.key !== undefined && (
+        <StyleSection ctx={ctx} nodeKey={node.key} />
+      )}
+      <footer>
+        <button type="button" data-variant="ghost" onClick={() => revealElement(ctx, node.ref)}>
+          Show in render tree
+        </button>
+        <button type="button" data-variant="ghost" onClick={() => setPicker(ctx, true)}>
+          Pick another
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * Loads what the tab shows for the selected element: its style card and the texture catalogue.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param selected - The selected element.
+ * @param texture - Its texture key.
+ * @example
+ * ```ts
+ * useEffect(() => loadDetails(ctx, selected, node?.texture), [id]);
+ * ```
+ */
+function loadDetails(
+  ctx: GameViewCtx,
+  selected: ElementRef | undefined,
+  texture: string | undefined
+): void {
+  if (selected !== undefined) {
+    openStyleCard(ctx, selected).catch((error: unknown) => {
+      ctx.log.warn("gameView: style card failed", { error });
+    });
+  }
+  if (texture !== undefined && ctx.state.manifest === undefined) {
+    readManifest(ctx).catch((error: unknown) => {
+      ctx.log.warn("gameView: manifest failed", { error });
+    });
+  }
+}
+
+/**
+ * The Element tab.
+ *
+ * @param props - The gameView domain context.
+ * @returns The tab.
+ * @example
+ * ```tsx
+ * <ElementTab ctx={ctx} />
+ * ```
+ */
+export function ElementTab(props: ElementTabProps): VNode {
+  const { ctx } = props;
+  const { state } = ctx;
+  useGameView(state, () => state.selected);
+  const { selected, scene } = state;
+  const id = selected === undefined ? undefined : refId(selected);
+  const node = id === undefined ? undefined : scene?.nodes.get(id);
+  const placed = node !== undefined;
+  useEffect(() => loadDetails(ctx, selected, node?.texture), [id, placed]);
+
+  if (selected === undefined) {
+    return (
+      <div data-part="element" data-empty="">
+        <button type="button" data-variant="primary" onClick={() => setPicker(ctx, true)}>
+          Select element <kbd>⇧⌘C</kbd>
+        </button>
+        <p>
+          Pick an element in the game to see its place in the render tree, its bounds, texture and
+          styles.
+        </p>
+      </div>
+    );
+  }
+  if (scene === undefined || node === undefined) {
+    return (
+      <div data-part="element">
+        <p>Waiting for the scene of the selected element…</p>
+      </div>
+    );
+  }
+  return <NodeDetails ctx={ctx} scene={scene} node={node} />;
 }

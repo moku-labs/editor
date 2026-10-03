@@ -1,1 +1,73 @@
-/* flowView · canvas. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · canvas (A1): the workspace grid, the dot-grid clip box, the world layer, ports and column heads, the stale treatment (M6, M13). No @layer wrapper: the page CSS entry imports this sheet into layer(components) (R7). */
+
+@scope ([data-flow="workspace"]) {
+  :scope {
+    --flow-node-w: 172px;
+    --flow-row: 46px;
+    --flow-label-min: 11px;
+    --flow-strip-h: 224px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    height: 100%;
+    min-height: 0;
+    background: var(--surface-ground);
+    color: var(--text-ink);
+    font: var(--font-size-13) / var(--line-height-ui) var(--font-sans);
+    font-feature-settings: "ss01";
+  }
+
+  [data-flow="canvas"] {
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    background-color: var(--surface-canvas);
+    background-image: radial-gradient(circle, var(--canvas-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+    touch-action: none;
+    cursor: default;
+    outline: none;
+  }
+
+  [data-flow="world"] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+
+  [data-flow="world"] > * {
+    position: absolute;
+    box-sizing: border-box;
+  }
+
+  [data-stale] {
+    filter: saturate(0.2);
+    opacity: 0.55;
+  }
+
+  [data-flow="column-head"] {
+    color: var(--text-muted);
+    font-size: max(var(--flow-label-min), var(--font-size-11));
+    white-space: nowrap;
+  }
+
+  [data-flow="port"] {
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--edge);
+    border-radius: 50%;
+    background: var(--surface-panel);
+    font: var(--font-size-11) / 1 var(--font-mono);
+    color: var(--text-2);
+  }
+
+  [data-flow="port"][data-kind="exit"] {
+    white-space: nowrap;
+    text-indent: 18px;
+  }
+
+  [data-chrome] {
+    position: absolute;
+    z-index: 2;
+  }
+}

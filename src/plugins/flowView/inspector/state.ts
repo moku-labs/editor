@@ -6,11 +6,18 @@ import type { InspectorState } from "./types";
 /**
  * Creates the inspector slice: Info tab, nothing loaded.
  *
+ * @returns The inspector state.
  * @example
  * ```ts
  * createInspectorState().tab; // "info"
  * ```
  */
 export function createInspectorState(): InspectorState {
-  throw new Error("not implemented");
+  return {
+    tab: "info",
+    code: undefined,
+    codeNote: undefined,
+    styles: undefined,
+    sources: undefined
+  };
 }

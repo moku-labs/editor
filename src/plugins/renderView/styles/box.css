@@ -1,1 +1,17 @@
-/* renderView · box. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · box. The pink hover box in renderView's root inside the game frame's overlay (device space); it never takes pointer events. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="box"]) {
+  :scope {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  [data-box] {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid var(--pick-tree);
+    border-radius: var(--radius-4);
+    background: color-mix(in srgb, var(--pick-tree) 10%, transparent);
+    pointer-events: none;
+  }
+}

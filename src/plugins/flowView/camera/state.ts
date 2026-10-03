@@ -4,13 +4,21 @@
 import type { CameraState } from "./types";
 
 /**
- * Creates the camera slice: identity camera, no tween, follow off.
+ * Creates the camera slice: identity camera, no tween, follow off, no viewport yet.
  *
+ * @returns The camera state.
  * @example
  * ```ts
  * createCameraState().follow; // false
  * ```
  */
 export function createCameraState(): CameraState {
-  throw new Error("not implemented");
+  return {
+    cam: { x: 0, y: 0, z: 1 },
+    anim: undefined,
+    follow: false,
+    viewport: { w: 0, h: 0 },
+    insets: { top: 0, right: 0, bottom: 0, left: 0 },
+    initialised: false
+  };
 }

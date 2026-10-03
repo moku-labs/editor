@@ -1,1 +1,91 @@
-/* flowView · inspector. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · Inspector (C1): 320 px (296 px at ≤ 1380), Code and Styles widen it to min(440px, 34vw) over 200 ms; head, tags and tabs. No @layer wrapper (R7). */
+
+@scope ([data-flow="inspector"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    width: var(--inspector-w);
+    min-width: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--line-1);
+    background: var(--surface-panel);
+  }
+
+  :scope[data-wide] {
+    width: min(440px, 34vw);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope {
+      transition: width var(--duration-zoom) var(--ease-out);
+    }
+  }
+
+  [data-part="head"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  [data-part="id"] {
+    font: var(--font-size-12-5) / 1.4 var(--font-mono);
+  }
+
+  [data-action="clear"] {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+
+  [data-part="tags"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+  }
+
+  [data-tag] {
+    padding: 0 5px;
+    border-radius: var(--radius-4);
+    background: var(--surface-panel-2);
+    color: var(--text-2);
+    font-size: var(--font-size-11);
+  }
+
+  [data-tag="current"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  [role="tablist"] {
+    display: flex;
+    gap: 2px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  [role="tab"] {
+    height: 30px;
+    padding: 0 8px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+
+  [role="tab"][aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--text-ink);
+  }
+
+  [data-part="placeholder"] {
+    padding: 16px;
+    color: var(--text-muted);
+  }
+}

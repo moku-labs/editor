@@ -1,18 +1,66 @@
 /**
- * @file consoleView plugin — state factory.
+ * @file consoleView plugin — state factory and the view store (notify, subscribe).
  */
 import type { Config, ConsoleState } from "./types";
 
 /**
- * Creates the initial console state: no lines, nextKey 1, preserve from config, level "all".
+ * Creates the initial console state: no lines, nextKey 1, Preserve log from config, level "all",
+ * an empty query, nothing consumed, every flag false and every optional undefined.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @param ctx - Minimal context (spec/08 §2).
+ * @param ctx.config - Resolved plugin config.
+ * @returns The fresh state.
  * @example
  * ```ts
- * createConsoleState({ config }).level; // "all"
+ * createConsoleState({ config: { maxLines: 5000, preserveLog: true, freshMs: 1200, summaryChars: 160 } }).preserve; // true
  * ```
  */
-export function createConsoleState(_ctx: { readonly config: Readonly<Config> }): ConsoleState {
-  throw new Error("not implemented");
+export function createConsoleState(ctx: { readonly config: Readonly<Config> }): ConsoleState {
+  return {
+    lines: [],
+    nextKey: 1,
+    instance: undefined,
+    consumed: 0,
+    preserve: ctx.config.preserveLog,
+    level: "all",
+    query: "",
+    selected: undefined,
+    everConnected: false,
+    listeners: new Set(),
+    stopLog: undefined,
+    removePalette: [],
+    searchEl: undefined
+  };
+}
+
+/**
+ * Calls every view listener.
+ *
+ * @param state - consoleView state.
+ * @example
+ * ```ts
+ * ctx.state.level = "warn";
+ * notify(ctx.state); // the mounted Console re-renders
+ * ```
+ */
+export function notify(state: ConsoleState): void {
+  for (const listener of state.listeners) listener();
+}
+
+/**
+ * Adds a view listener; returns an idempotent remover.
+ *
+ * @param state - consoleView state.
+ * @param fn - The listener.
+ * @returns The remover.
+ * @example
+ * ```ts
+ * const off = subscribe(ctx.state, redraw); // off() twice is harmless
+ * ```
+ */
+export function subscribe(state: ConsoleState, fn: () => void): () => void {
+  state.listeners.add(fn);
+  return () => {
+    state.listeners.delete(fn);
+  };
 }

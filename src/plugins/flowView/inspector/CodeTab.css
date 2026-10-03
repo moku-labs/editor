@@ -1,1 +1,86 @@
-/* flowView · CodeTab. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · Code tab (C3): file bar, viewer (mono 11.5/1.62, 34 px gutter, highlighted line), editor, result line. Token colours come from the workspace [data-token] primitive. No @layer wrapper (R7). */
+
+@scope ([data-flow="code-tab"]) {
+  :scope {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    min-width: 0;
+  }
+
+  [data-part="file-bar"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  [data-part="path"] {
+    font: var(--font-size-12) / 1.4 var(--font-mono);
+  }
+
+  [data-part="viewer"] {
+    max-height: 60vh;
+    overflow: auto;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-6);
+    font: var(--font-size-11-5) / var(--line-height-code) var(--font-mono);
+  }
+
+  [data-line] {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  [data-line][data-highlight] {
+    background: var(--accent-soft);
+  }
+
+  [data-part="gutter"] {
+    padding-right: 6px;
+    color: var(--text-muted);
+    text-align: end;
+    user-select: none;
+  }
+
+  [data-part="code"] {
+    white-space: pre;
+  }
+
+  textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 40vh;
+    padding: 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-6);
+    background: var(--surface-ground);
+    color: inherit;
+    font: var(--font-size-11-5) / var(--line-height-code) var(--font-mono);
+  }
+
+  [data-part="hint"],
+  [data-part="placeholder"] {
+    color: var(--text-muted);
+  }
+
+  [data-part="result"] {
+    color: var(--status-warn);
+  }
+
+  [data-part="result"][data-ok] {
+    color: var(--status-live);
+  }
+
+  button,
+  a {
+    padding: 3px 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-size: var(--font-size-12);
+    text-decoration: none;
+    cursor: pointer;
+  }
+}

@@ -1,12 +1,12 @@
 /**
  * @file flowView focus module — types: focus state, context menu, node kinds, stack entries,
- * neighbour edges, the focus api.
+ * neighbour edges, the public focus api and the internal focus actions.
  */
 import type { RunResult } from "../../registry/protocol";
-import type { ItemKey, NodeId } from "../types";
+import type { Item, ItemKey, NodeId, Rect } from "../types";
 
 /**
- * An open context menu.
+ * An open context menu (D4), in canvas px.
  */
 export type MenuState = {
   readonly target: "node" | "outcome" | "canvas";
@@ -74,19 +74,136 @@ export type IncomingEdge = {
 };
 
 /**
- * The focus namespace of the api.
+ * Where the current node is on the canvas: its own item, or the collapsed parent it is inside.
+ */
+export type CurrentSpot = { readonly item: Item; readonly inside: NodeId | undefined };
+
+/**
+ * The focus namespace of the api (`app.flowView.focus`).
  */
 export type FocusApi = {
-  /** Select = focus; undefined leaves focus; false for an unknown key. */
+  /**
+   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item and
+   * the neighbours strip opens. A bare NodeId resolves to its first visible instance; inside a
+   * collapsed sub-flow the parents expand first. `undefined` leaves focus.
+   *
+   * @param key - An ItemKey, a NodeId, or undefined.
+   * @returns False for an unknown key, else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge"); // true, strip opens
+   * app.flowView.focus.select("board/nope"); // false, nothing selected
+   * ```
+   */
   select(key: ItemKey | NodeId | undefined): boolean;
+
+  /**
+   * The selected item key.
+   *
+   * @returns The key, or undefined when nothing is selected.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("main/home");
+   * app.flowView.focus.selected(); // "main/home"
+   * ```
+   */
   selected(): ItemKey | undefined;
-  /** Node id of the current position. */
+
+  /**
+   * Node id of the current position, from game.position.
+   *
+   * @returns The id, or undefined before the first position.
+   * @example
+   * ```ts
+   * // The game waits on the board.
+   * app.flowView.focus.current(); // "board/awaitIntent"
+   * ```
+   */
   current(): NodeId | undefined;
+
+  /**
+   * Walks the graph through the neighbours strip: "next" (→) focuses the highlighted *Goes to*
+   * row's target (default: the row on the trail), "prev" (←) the highlighted *Comes from* source.
+   *
+   * @param direction - "prev" = ←, "next" = →.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge");
+   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Goes to" row
+   * ```
+   */
   walk(direction: "prev" | "next"): void;
-  /** Focus the edge taken at a frame; false when no frame data. */
+
+  /**
+   * Focuses the edge taken at a frame (the `workspace:focus-frame` hook calls it) and toasts
+   * "Frame N · path · outcome", or "No edge at frame N · last edge before it …".
+   *
+   * @param frame - A game frame.
+   * @returns False when the history carries no frames (until F-H1), else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.focusFrame(1778); // true: selects edge board/merge:rejected
+   * ```
+   */
   focusFrame(frame: number): boolean;
-  /** game.step { frames: 1 } through panels.run (R9); no-op unless paused (M5). */
+
+  /**
+   * Runs game.step { frames: 1 } through panels.run (R9). Does nothing unless the game is paused
+   * (M5); a failed run is logged and toasted, and resolves undefined.
+   *
+   * @returns The run result, or undefined when not paused or failed.
+   * @example
+   * ```ts
+   * await app.flowView.focus.step(); // { value, state: { path, frame, tainted } } or undefined
+   * ```
+   */
   step(): Promise<RunResult | undefined>;
-  /** Toggle the history strip. */
+
+  /**
+   * Toggles or sets the history strip (H).
+   *
+   * @param open - The new value; omitted = toggle.
+   * @returns Whether the strip is open.
+   * @example
+   * ```ts
+   * app.flowView.focus.history(true); // true: 288 px strip with 20 rows
+   * ```
+   */
   history(open?: boolean): boolean;
+};
+
+/**
+ * The focus actions: the api plus what the components and the other modules call.
+ */
+export type FocusActions = FocusApi & {
+  /** Selects an edge "<id>:<outcome>" and focuses its source node. */
+  selectEdge(edge: string, source: NodeId): void;
+  /** Keys of the selected item and its neighbours (dimming); undefined without a selection. */
+  related(): ReadonlySet<ItemKey> | undefined;
+  /** World rect of the selection and its neighbours, else of the current node. */
+  relatedRect(): Rect | undefined;
+  /** Where the current node is on the canvas. */
+  locateCurrent(): CurrentSpot | undefined;
+  /** The runtime stack of the current position, outermost first. */
+  stack(): readonly StackEntry[];
+  /** Whether the link says the game is paused (Step is enabled only then, M5). */
+  isPaused(): boolean;
+  /** Moves the strip highlight to a row. */
+  highlight(side: "from" | "to", index: number): void;
+  /** Moves the strip highlight up (-1) or down (1) in the column last used. */
+  moveHighlight(delta: 1 | -1): void;
+  /** Opens a context menu. */
+  openMenu(menu: MenuState): void;
+  /** Closes the context menu; false when none was open (Esc layer contextMenu). */
+  closeMenu(): boolean;
+  /** Leaves focus and closes the strip; false when nothing was selected (Esc layer selection). */
+  leave(): boolean;
+  /** Hovers a history dot. */
+  hoverHistory(index?: number): void;
+  /** Selects the edge of a history entry and focuses its source node. */
+  selectHistory(index: number): void;
+  /** Runs game.pause through panels.run; a failure is logged and toasted. */
+  pause(): Promise<void>;
+  /** Runs game.resume through panels.run; a failure is logged and toasted. */
+  resume(): Promise<void>;
 };

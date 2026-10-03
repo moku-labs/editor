@@ -1,1 +1,26 @@
-/* flowView · you-are-here. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · You are here (F7): a floating accent tag with a 1.6 s pulse; no pulse with reduced motion. No @layer wrapper (R7). */
+
+@scope ([data-flow="you-are-here"]) {
+  :scope {
+    padding: 2px 8px;
+    border: 0;
+    border-radius: var(--radius-6);
+    background: var(--accent);
+    color: var(--surface-panel);
+    font: var(--font-size-11-5) / 1.6 var(--font-mono);
+    box-shadow: var(--shadow-float);
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope {
+      animation: flow-pulse 1.6s ease-in-out infinite;
+    }
+  }
+
+  @keyframes flow-pulse {
+    50% {
+      box-shadow: 0 0 0 6px var(--accent-soft);
+    }
+  }
+}

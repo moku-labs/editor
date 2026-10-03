@@ -1,1 +1,60 @@
-/* filesView · FilesView. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · FilesView. A5 grid: the 272 px tree beside the editor column (tabs 30 px → file bar → Used by → body that scrolls); the F5 empty text and the body states (loading, missing, error). Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="files-view"]) {
+  :scope {
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-13);
+    line-height: var(--line-height-ui);
+  }
+
+  [data-files-editor] {
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  [data-empty] {
+    grid-row: 1 / -1;
+    place-self: center;
+    max-width: 44ch;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  [data-files-body] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  [data-body-state] {
+    margin: 24px;
+    color: var(--text-muted);
+    font-size: var(--font-size-12-5);
+  }
+
+  [data-body-state="error"] {
+    color: var(--status-error);
+  }
+
+  [data-body-state] a {
+    color: var(--text-ink);
+    text-decoration: underline;
+  }
+
+  [data-body-state] button {
+    margin-top: 8px;
+  }
+
+  :is(button, a, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

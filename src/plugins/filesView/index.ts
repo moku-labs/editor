@@ -28,9 +28,10 @@ const defaultConfig: Config = {
  *
  * @example
  * ```ts
- * const app = createApp({});
+ * const app = createApp();
  * await app.start();
  * await app.filesView.open("nodes/merge.ts", { line: 12 });
+ * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
  * ```
  */
 export const filesViewPlugin = createToolsPlugin("filesView", {
