@@ -7,7 +7,6 @@
 import type { ElementRef, SceneNode } from "../../panels/shared/scene";
 import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
-import { resolveDevice } from "../../workspace/devices";
 import { messageOf } from "../report";
 import { readScene } from "../scene/read";
 import { notify } from "../state";
@@ -149,12 +148,7 @@ function nodeAt(ctx: GameViewCtx, client: ClientPoint): SceneNode | undefined {
   if (scene === undefined || !scene.calibrated || box === undefined || box.scale <= 0) {
     return undefined;
   }
-  const device = workspace.device();
-  return elementAt(
-    scene,
-    pageFromClient(client, box),
-    resolveDevice(device.preset, device.orientation)
-  );
+  return elementAt(scene, pageFromClient(client, box));
 }
 
 /**

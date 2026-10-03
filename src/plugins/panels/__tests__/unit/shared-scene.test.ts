@@ -49,9 +49,6 @@ function capture(name: string): Capture {
 const BOARD = capture("scene-board.txt");
 const SETTINGS = capture("scene-settings.txt");
 
-/** The device of the inert renderer: one reference unit is one page px. */
-const DEVICE = { w: 1080, h: 1440 };
-
 function arrayOf(value: Json): Json[] {
   if (!Array.isArray(value)) throw new Error("expected an array");
   return value;
@@ -684,10 +681,10 @@ describe("elementAt", () => {
   it("picks the last painted node that contains the point: the deepest wins", () => {
     const scene = sceneOf();
 
-    expect(elementAt(scene, { x: 250, y: 100 }, DEVICE)?.id).toBe(
+    expect(elementAt(scene, { x: 250, y: 100 })?.id).toBe(
       "ui:boardScreen/hudRow/coinPill/coinPillIcon"
     );
-    expect(elementAt(scene, { x: 540, y: 990 }, DEVICE)?.ref).toEqual({
+    expect(elementAt(scene, { x: 540, y: 990 })?.ref).toEqual({
       kind: "entity",
       id: 1_048_628
     });
@@ -698,13 +695,10 @@ describe("elementAt", () => {
       ui("button", "button", rect(10, 10, 20, 20))
     ]);
     const scene = sceneOf({ ui: tree, entities: [], projections: {} });
-    const device = { w: 100, h: 100 };
 
-    expect(elementAt(scene, { x: 15, y: 15 }, device)?.id).toBe("ui:root/button");
-    expect(elementAt(scene, { x: 50, y: 50 }, device)?.id).toBe("ui:root");
-    expect(elementAt(sceneOf(), { x: 10, y: 10 }, DEVICE)?.id).toBe(
-      "ui:boardScreen/boardBackground"
-    );
+    expect(elementAt(scene, { x: 15, y: 15 })?.id).toBe("ui:root/button");
+    expect(elementAt(scene, { x: 50, y: 50 })?.id).toBe("ui:root");
+    expect(elementAt(sceneOf(), { x: 10, y: 10 })?.id).toBe("ui:boardScreen/boardBackground");
   });
 
   it("blocks everything painted before a full-device backdrop: the backdrop wins there", () => {
@@ -713,10 +707,9 @@ describe("elementAt", () => {
       ui("veil", "stack", rect(0, 0, 99, 99), [ui("ok", "button", rect(40, 40, 20, 20))])
     ]);
     const scene = sceneOf({ ui: tree, entities: [], projections: {} });
-    const device = { w: 100, h: 100 };
 
-    expect(elementAt(scene, { x: 15, y: 15 }, device)?.id).toBe("ui:root/veil");
-    expect(elementAt(scene, { x: 45, y: 45 }, device)?.id).toBe("ui:root/veil/ok");
+    expect(elementAt(scene, { x: 15, y: 15 })?.id).toBe("ui:root/veil");
+    expect(elementAt(scene, { x: 45, y: 45 })?.id).toBe("ui:root/veil/ok");
   });
 
   it("gives the settings backdrop, not the board's settings icon under it", () => {
@@ -726,10 +719,8 @@ describe("elementAt", () => {
       projections: SETTINGS.projections
     });
 
-    expect(elementAt(scene, { x: 980, y: 112 }, DEVICE)?.id).toBe(
-      "ui:settingsScreen/settingsBackdrop"
-    );
-    expect(elementAt(sceneOf(), { x: 980, y: 112 }, DEVICE)?.id).toBe(
+    expect(elementAt(scene, { x: 980, y: 112 })?.id).toBe("ui:settingsScreen/settingsBackdrop");
+    expect(elementAt(sceneOf(), { x: 980, y: 112 })?.id).toBe(
       "ui:boardScreen/hudRow/settings/settingsIcon"
     );
   });
@@ -740,15 +731,15 @@ describe("elementAt", () => {
       entities: SETTINGS.entities,
       projections: SETTINGS.projections
     });
-    const hit = elementAt(scene, { x: 540, y: 700 }, DEVICE);
+    const hit = elementAt(scene, { x: 540, y: 700 });
 
     expect(hit?.ref.kind).toBe("ui");
     expect(hit?.id.startsWith("ui:settingsScreen/settingsBoard")).toBe(true);
   });
 
   it("finds nothing outside every rect", () => {
-    expect(elementAt(sceneOf(), { x: 2000, y: 3000 }, DEVICE)).toBeUndefined();
-    expect(elementAt(fitScene(), { x: 0, y: 0 }, { w: 2000, h: 2000 })?.id).toBe("ui:root");
+    expect(elementAt(sceneOf(), { x: 2000, y: 3000 })).toBeUndefined();
+    expect(elementAt(fitScene(), { x: 0, y: 0 })?.id).toBe("ui:root");
   });
 });
 

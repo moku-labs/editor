@@ -47,9 +47,6 @@ type Capture = {
 
 const GAME_DIR = path.resolve("../game/tests/integration/merge-game");
 
-/** The device of the inert renderer: one reference unit is one page px. */
-const DEVICE = { w: 1080, h: 1440 };
-
 const IDENTITY = { scale: 1, x: 0, y: 0 };
 
 const agentCore = createAgentCore(agentCoreConfig, { plugins: [registryPlugin] });
@@ -415,7 +412,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
     expect(i1).toMatchObject({ name: "i1", type: "Sprite", texture: "board.item-wood-3" });
     expect(i1.rect).toEqual({ x: 428.5, y: 880.5, w: 223, h: 223 });
     expect(entityNode(scene, board, "board.items", "i2").texture).toBe("board.item-wood-1");
-    expect(elementAt(scene, center(i1.rect), DEVICE)?.id).toBe(i1.id);
+    expect(elementAt(scene, center(i1.rect))?.id).toBe(i1.id);
   });
 
   it("breaks the boardScreen / boardBackground Box tie with the projection key", () => {
@@ -447,7 +444,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
   });
 
   it("hits the settings button at the centre of its game.rect", () => {
-    const hit = elementAt(sceneOf(board), center(board.rects.settings), DEVICE);
+    const hit = elementAt(sceneOf(board), center(board.rects.settings));
 
     expect(hit?.id.startsWith("ui:boardScreen/hudRow/settings")).toBe(true);
   });
@@ -475,13 +472,13 @@ describe("scene on the live settings popup (board/settings/open)", () => {
   });
 
   it("hits the popup over the board", () => {
-    const hit = elementAt(sceneOf(settings), { x: 540, y: 700 }, DEVICE);
+    const hit = elementAt(sceneOf(settings), { x: 540, y: 700 });
 
     expect(hit?.id.startsWith("ui:settingsScreen/settingsBoard")).toBe(true);
   });
 
   it("blocks the board under the backdrop: the settings icon's spot gives the backdrop", () => {
-    const hit = elementAt(sceneOf(settings), { x: 980, y: 112 }, DEVICE);
+    const hit = elementAt(sceneOf(settings), { x: 980, y: 112 });
 
     expect(hit?.id).toBe("ui:settingsScreen/settingsBackdrop");
     expect(hit?.id.startsWith("ui:boardScreen")).toBe(false);

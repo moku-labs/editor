@@ -34,20 +34,16 @@ function contains(rect: PageRect, point: Point): boolean {
  * @param point - A point in page px (reference units when the scene is not calibrated).
  * @param point.x - Page x.
  * @param point.y - Page y.
- * @param _device - Device W×H. Unused: the full-device rule needs no size, see above.
- * @param _device.w - Device width.
- * @param _device.h - Device height.
  * @returns The node, or undefined when no placed node contains the point.
  * @example
  * ```ts
- * elementAt(scene, { x: 540, y: 990 }, { w: 1080, h: 1440 })?.ref; // { kind: "entity", id: 1048628 }
- * elementAt(settingsScene, { x: 980, y: 112 }, { w: 1080, h: 1440 })?.id; // "ui:settingsScreen/settingsBackdrop"
+ * elementAt(scene, { x: 540, y: 990 })?.ref; // { kind: "entity", id: 1048628 }
+ * elementAt(settingsScene, { x: 980, y: 112 })?.id; // "ui:settingsScreen/settingsBackdrop"
  * ```
  */
 export function elementAt(
   scene: SceneSnapshot,
-  point: { readonly x: number; readonly y: number },
-  _device: { readonly w: number; readonly h: number }
+  point: { readonly x: number; readonly y: number }
 ): SceneNode | undefined {
   for (const id of scene.paintOrder.toReversed()) {
     const node = scene.nodes.get(id);
