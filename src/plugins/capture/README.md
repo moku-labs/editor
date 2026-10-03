@@ -1,45 +1,85 @@
 # capture
 
-> Standard plugin (agent core, opt-in) — Adds editor commands to the registry so the tools page (and later MCP) can take pictures of the running game: `editor.capture` (one screenshot), `editor.series` (a timed series of screenshots, best effort, one call — never split into chunks, R1) and `editor.seriesStop` (ends a running series early, R2).
+> Standard plugin (agent core, opt-in). Adds three editor commands to the registry so the tools page can take pictures of the running game: `editor.capture` (one screenshot), `editor.series` (a timed series in one call, never split into chunks, R1) and `editor.seriesStop` (ends a running series early, R2).
 
-Capture is not in the agent's default plugins. A game's dev entry adds it next to the bridge:
+Capture is not in the agent's default plugins (registry, channel, overlay). A game's dev entry adds it next to the bridge.
 
-```ts
-import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
-
-const editor = createApp({
-  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
-  pluginConfigs: { registry: { game: app, modules: [] } }
-});
-```
-
-Every shot runs the engine's door command `game.capture`: a PNG data URL of the whole canvas, taken at the end of the next drawn frame (at once while the clock is paused). The door answers no picture while the renderer is inert, headless or in a production build.
+Every shot runs the engine's door command `game.capture`. The door answers a PNG data URL of the whole canvas, taken at the end of the next drawn frame, or at once while the clock is paused. It answers no picture while the renderer is inert, headless or in a production build.
 
 **No auto-capture.** The plugin has no hooks, no `onStart` and no timer outside a running series. A picture exists only because a caller ran one of its commands. The plugin writes no files: the tools page saves what it receives.
 
+## Configuration
+
+Set through `pluginConfigs.capture`. Defaults from `index.ts`.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `maxDurationMs` | `number` | `20000` | Longest series accepted, in ms. More is refused with -32602, field `durationMs`. |
+| `minIntervalMs` | `number` | `16` | Shortest interval accepted, in ms. Less is refused with -32602, field `intervalMs`. |
+
+Constants in `types.ts`:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `WARN_SHOTS` | `200` | A plan above this many shots logs `capture:series-large` and still runs. |
+| `CAPTURE_ID` | `"game.capture"` | The door command every shot runs. |
+
 ## API
 
-No app api. The surface is the registry catalogue, reached in process through `channel.run` and remotely through the bridge → hub → `link.run`.
+No app api. The surface is the registry catalogue. In process it is reached through `channel.run`. Remotely it is reached through the bridge, the hub and `link.run`.
 
-| Command | Input | Effect | Value |
-|---|---|---|---|
-| `editor.capture` | `{}` | `read` | `{ image, frame, device }` |
-| `editor.series` | `{ durationMs: "number", intervalMs: "number" }` | `read` | `{ shots: { image, frame, atMs }[], device }` |
-| `editor.seriesStop` | `{}` | `read` | `{ stopped: boolean }` |
+| Command | Title | Input | Effect | Value |
+|---|---|---|---|---|
+| `editor.capture` | `"Screenshot"` | `{}` | `read` | `Shot = { image, frame, device }` |
+| `editor.series` | `"Record a series"` | `{ durationMs: "number", intervalMs: "number" }` | `read` | `SeriesValue = { shots: SeriesShot[], device }` |
+| `editor.seriesStop` | `"Stop the series"` | `{}` | `read` | `{ stopped: boolean }` |
 
-- `frame` is the frame of the envelope `game.capture` returned: the real frame of the shot, best effort (a GPU read-back that crossed a frame boundary shows the frame before).
-- `device` is the game page viewport in CSS pixels: `{ w, h, orientation }`. Headless it is `{ w: 0, h: 0, orientation: "portrait" }`.
-- `editor.series` plans `max(1, floor(durationMs / intervalMs))` shots, shot k due at `k × intervalMs`. Shots run one after the other. A late shot is taken late, never dropped for lateness. Shots that would start after `durationMs` are dropped. A shot that fails is skipped. Each shot carries its real `atMs` and frame.
-- `editor.seriesStop` ends the running series at once; the pending `editor.series` call resolves with the shots so far. Its `state` is `registry.envelope()`.
-- Only one series runs at a time.
+Value types (exported as the `Capture` namespace from `@moku-labs/editor/agent`):
+
+```ts
+type Device = { readonly w: number; readonly h: number; readonly orientation: "portrait" | "landscape" };
+type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
+type SeriesShot = { readonly image: string; readonly frame: number; readonly atMs: number };
+type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly device: Device };
+```
+
+### `editor.capture`
+
+- Checks the empty input. Unknown fields are refused with -32602.
+- Runs `game.capture` once. `frame` is the frame of the envelope `game.capture` returned. It is the real frame of the shot, best effort: a GPU read-back that crossed a frame boundary shows the frame before.
+- `state` is the state `game.capture` ran with.
+- `device` is the game page viewport in CSS pixels. Landscape only when wider than high. Headless it is `{ w: 0, h: 0, orientation: "portrait" }`.
 
 ```ts
 const shot = await link.run("editor.capture");
 shot.value; // { image: "data:image/png;base64,iVBOR…", frame: 1841, device: { w: 393, h: 852, orientation: "portrait" } }
+```
 
+### `editor.series`
+
+- Plans `max(1, floor(durationMs / intervalMs))` shots. Shot k is due at `k × intervalMs`.
+- Shots run one after the other, never overlapping.
+- A late shot is taken late, never dropped for lateness.
+- Shots that would start at or after `durationMs` are dropped.
+- A shot that fails is skipped. Skipped shots are logged once per series as `capture:shots-skipped`.
+- Each shot carries its real `atMs` (rounded ms since the series start) and its real frame.
+- `state` is the state of the last good shot.
+- Only one series runs at a time.
+
+```ts
 const series = await link.run("editor.series", { durationMs: 2000, intervalMs: 100 });
 series.value.shots.length; // 20 (fewer when shots ran late)
+series.value.shots[0]; // { image: "data:image/png;base64,…", frame: 1777, atMs: 0 }
+```
 
+### `editor.seriesStop`
+
+- Checks the empty input.
+- Sets the stop flag, clears the wait timer and wakes the pending wait. The pending `editor.series` call resolves with the shots so far.
+- Value `{ stopped: true }` when a series ran, `{ stopped: false }` when idle.
+- It runs no door, so its `state` is `registry.envelope()`.
+
+```ts
 await link.run("editor.seriesStop"); // { value: { stopped: false }, state: { path, frame, tainted } }
 ```
 
@@ -47,26 +87,77 @@ await link.run("editor.seriesStop"); // { value: { stopped: false }, state: { pa
 
 Every message starts with `[moku-editor] `.
 
-| Code | When |
-|---|---|
-| -32602 | Unknown input field; `durationMs` not positive or above `maxDurationMs`; `intervalMs` below `minIntervalMs` (`data.field` names the field). |
-| -32601 | `game.capture` is not in the registry. |
-| -32000 | The door gave no picture; a series took no picture; a series is already recording; the door itself failed. |
-
-## Configuration
-
-| Option | Default | Meaning |
+| Code | `data.reason` | When |
 |---|---|---|
-| `maxDurationMs` | `20000` | Longest series accepted, in ms. |
-| `minIntervalMs` | `16` | Shortest interval accepted, in ms. |
-
-A plan above 200 shots logs `capture:series-large` and still runs. Skipped shots are logged once per series as `capture:shots-skipped`.
+| -32602 | `invalid_input` | Unknown input field. `durationMs` not a positive finite number or above `maxDurationMs`. `intervalMs` not finite or below `minIntervalMs`. `data.field` names the field. |
+| -32601 | `unknown_id` | `game.capture` is not in the registry. |
+| -32000 | `command_failed` | `game.capture` gave no picture. A series took no picture. A series is already recording. |
+| -32000 | (from the dispatcher) | The door itself threw. Its error passes through capture unchanged. |
 
 ## Events
 
 None. The plugin declares no events, emits none and hooks none.
 
+## Dependencies
+
+| Kind | Name | Use |
+|---|---|---|
+| depends | `registryPlugin` | `ctx.require(registryPlugin)` in `onInit`. |
+| registry member | `add(entry)` | Adds the three commands in `onInit`. A duplicate id throws, so `createApp` fails loudly. |
+| registry member | `command("game.capture")` | The door entry, looked up at run time, so module order does not matter. |
+| registry member | `envelope()` | The `state` of `editor.seriesStop`. |
+| global events | none | |
+
+Package: no runtime dependency beyond the framework. `@moku-labs/game` is not imported: `game.capture` is a string id.
+
 ## Lifecycle
 
-- `onInit` adds the three commands to the registry (`depends: [registryPlugin]`).
-- `onStop` ends a running series: the pending call resolves with the shots so far, and no timer outlives the app.
+| Phase | What |
+|---|---|
+| `createState` | `createCaptureState()`: `{ series: undefined }`. |
+| `onInit` | `initCapture`: adds `editor.capture`, `editor.series`, `editor.seriesStop`. Runs in init because the registry builds its manifest from entries added before start. |
+| `onStart` | Not used. |
+| `onStop` | `stopCapture`: ends a running series. The pending call resolves with the shots so far. No timer outlives the app. |
+
+## Usage
+
+Game dev entry:
+
+```ts
+import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
+
+const editor = createApp({
+  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  pluginConfigs: {
+    registry: { game: app, modules: [] },
+    capture: { maxDurationMs: 10_000 }
+  }
+});
+await editor.start();
+```
+
+In process, without the bridge:
+
+```ts
+const ran = await editor.channel.run("editor.capture");
+ran.state.frame === ran.value.frame; // true
+```
+
+## Integration
+
+| Plugin | Core | How it meets capture |
+|---|---|---|
+| `registry` | agent | Holds the three commands and the `game.capture` door. Lists them in the manifest with effect `read`. |
+| `channel` | agent | `channel.run("editor.capture")` runs a command in process. |
+| `bridge` | agent | Forwards `run` calls from the hub. Deadline of `run` of `editor.series`: `callTimeoutMs + min(durationMs, 60000)` (`deadlineFor`). |
+| `hub` | server | Same long-call rule for forwarded `editor.series` calls (`deadlineFor`). |
+| `link` | tools | `link.run` calls the commands. Same long-call rule (`timeoutFor`). |
+| `gameView` | tools | Runs the three ids (`GAME_COMMANDS`). Saves PNGs under `capturesDir` (default `.moku/captures`) with `link.files.writeBinary`. A series becomes a `series-<stamp>/` folder with numbered PNGs and `index.json`. `stopSeries()` runs `editor.seriesStop`. |
+
+## Limits and follow-ups
+
+- Timing is best effort. `game.capture` resolves at the end of the next drawn frame plus the GPU read-back. A 16 ms interval gives about one shot per drawn frame.
+- Two shots can carry the same frame while the game is paused.
+- A 20 s series at 16 ms plans 1250 PNG data URLs in one response. The `WARN_SHOTS` warning flags it. Streaming shots is a follow-up. Chunking is not allowed (R1).
+- `game.capture` needs `__MOKU_GAME_DEV__`. Otherwise the door refuses and the error comes back as -32000.
+- The frame tag can be one frame early after a GPU read-back. It is the engine's envelope frame, never a planned one.
