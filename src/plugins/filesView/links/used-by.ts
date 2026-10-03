@@ -21,9 +21,9 @@ import type { FilesViewCtx, FilesViewState, UsedBy } from "../types";
 type JsonObject = { readonly [key: string]: Json };
 
 /**
- * What the rule needs of a graph node.
+ * What the rule needs of a graph node: its own `file` (dev-only, F-H2), its sub-flow and slot.
  */
-type NodeInfo = { readonly subFlow?: string; readonly slot?: string };
+type NodeInfo = { readonly file?: string; readonly subFlow?: string; readonly slot?: string };
 
 /**
  * A mutable Used-by entry while the map is built.
@@ -79,7 +79,7 @@ function flowOrder(graph: JsonObject, flows: JsonObject): string[] {
 }
 
 /**
- * The `subFlow` / `slot` of a node JSON value.
+ * The `file` / `subFlow` / `slot` of a node JSON value; a value that is no string is left out.
  *
  * @param value - The node JSON.
  * @returns The node info; `{}` for a plain node.
@@ -89,8 +89,9 @@ function flowOrder(graph: JsonObject, flows: JsonObject): string[] {
  * ```
  */
 function nodeInfoOf(value: JsonObject): NodeInfo {
-  const { subFlow, slot } = value;
+  const { file, subFlow, slot } = value;
   return {
+    ...(typeof file === "string" ? { file } : {}),
     ...(typeof subFlow === "string" ? { subFlow } : {}),
     ...(typeof slot === "string" ? { slot } : {})
   };
@@ -116,8 +117,33 @@ function entryOf(map: Map<string, Entry>, path: string): Entry {
 }
 
 /**
+ * The file of a graph node, the same rule as flowView's Inspector: the node's own `file` (F-H2)
+ * wins, else the protocol `nodeFile`.
+ *
+ * @param ref - Flow and node name.
+ * @param node - The node info; undefined when the graph lacks the node.
+ * @param overrides - The parsed override map.
+ * @param exists - The file index (`index.files.has`).
+ * @returns The path, or undefined.
+ * @example
+ * ```ts
+ * nodeFileOf({ flow: "board", node: "merge" }, { file: "features/x.ts" }, {}, exists); // "features/x.ts"
+ * ```
+ */
+export function nodeFileOf(
+  ref: NodeRef,
+  node: NodeInfo | undefined,
+  overrides: SourceOverrides,
+  exists: (path: string) => boolean
+): string | undefined {
+  if (node?.file !== undefined) return node.file;
+  return nodeFile(ref, node, overrides, exists);
+}
+
+/**
  * The reverse map path → Used by: every flow whose `flowFile` is the path and every node whose
- * `nodeFile` is the path (main flow first, then key order; nodes in key order).
+ * `nodeFileOf` is the path (own `file`, else `nodeFile`). Main flow first, then key order; nodes
+ * in key order.
  *
  * @param graph - The cached game.graph; undefined or a non-graph value gives an empty map.
  * @param exists - The file index (`index.files.has`).
@@ -146,7 +172,7 @@ export function buildUsedBy(
     for (const [node, body] of Object.entries(nodes)) {
       if (!isObject(body)) continue;
       const ref: NodeRef = { flow, node };
-      const path = nodeFile(ref, nodeInfoOf(body), overrides, exists);
+      const path = nodeFileOf(ref, nodeInfoOf(body), overrides, exists);
       if (path !== undefined) entryOf(map, path).nodes.push(ref);
     }
   }
@@ -154,7 +180,7 @@ export function buildUsedBy(
 }
 
 /**
- * The `subFlow` / `slot` of a graph node, for the rule.
+ * The `file` / `subFlow` / `slot` of a graph node, for the rule.
  *
  * @param graph - The cached game.graph.
  * @param ref - Flow and node name.

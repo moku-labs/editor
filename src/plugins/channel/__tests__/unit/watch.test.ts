@@ -208,6 +208,28 @@ describe("openWatch — stop", () => {
     stop();
     expect(sync.stopped).toBe(1);
   });
+
+  it("adds stop before the door opens, so a stop in the first door delivery leaves no watch", () => {
+    const deps = createDeps();
+    const sync = fakeSource("game.sync", 1);
+    const seenAtOpen: number[] = [];
+    sync.watch = (_raw, fn) => {
+      seenAtOpen.push(deps.state.watches.size);
+      fn(2);
+      return noop;
+    };
+    deps.registry.sources.set("game.sync", sync);
+    const values: Json[] = [];
+
+    openWatch(deps, "game.sync", undefined, value => {
+      values.push(value);
+      if (value === 2) closeAll(deps.state.watches);
+    });
+
+    expect(values).toEqual([1, 2]);
+    expect(seenAtOpen).toEqual([1]);
+    expect(deps.state.watches.size).toBe(0);
+  });
 });
 
 /**

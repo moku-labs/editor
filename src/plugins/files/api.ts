@@ -93,7 +93,28 @@ async function recheckParent(ctx: FilesCtx, real: string, path: string): Promise
 }
 
 /**
- * Writes the bytes atomically, announces the write and builds the result.
+ * Fires an emit that is not awaited. A throw, or a rejected promise the emit returns, goes to
+ * `onFailure`, so a failing hook never breaks the caller.
+ *
+ * @param fire - Calls ctx.emit.
+ * @param onFailure - Logs the failure.
+ * @example
+ * ```ts
+ * emitLogged(() => ctx.emit("files:written", payload), error => ctx.log.error("files:emit-failed", { error }));
+ * ```
+ */
+function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
+  try {
+    const emitted = fire();
+    if (emitted instanceof Promise) emitted.catch(onFailure);
+  } catch (error) {
+    onFailure(error);
+  }
+}
+
+/**
+ * Writes the bytes atomically, announces the write and builds the result. The emit is not
+ * awaited; a throw or a rejected promise of the emit is logged as `files:emit-failed`.
  *
  * @param ctx - Domain context of files.
  * @param path - The requested path.
@@ -114,11 +135,10 @@ async function commit(
   await atomicWrite(real, bytes, () => recheckParent(ctx, real, path));
 
   const payload = { path, bytes: bytes.length, kind: classifyWrite(path) };
-  try {
-    ctx.emit("files:written", payload);
-  } catch (error) {
-    ctx.log.error("files:emit-failed", { path, error: String(error) });
-  }
+  emitLogged(
+    () => ctx.emit("files:written", payload),
+    error => ctx.log.error("files:emit-failed", { path, error: String(error) })
+  );
 
   return { path, bytes: bytes.length, version: sha1(bytes) };
 }

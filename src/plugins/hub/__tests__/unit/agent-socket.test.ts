@@ -69,6 +69,32 @@ describe("agent hello", () => {
     expect(harness.ctx.log.error).toHaveBeenCalledWith("hub:emit-failed", expect.any(Object));
   });
 
+  it("logs an emit that rejects asynchronously", async () => {
+    const harness = createHarness();
+    harness.ctx.emit.mockImplementation(() => Promise.reject(new Error("hook rejected")));
+
+    harness.hello();
+
+    await vi.waitFor(() => {
+      expect(harness.ctx.log.error).toHaveBeenCalledWith(
+        "hub:emit-failed",
+        expect.objectContaining({ error: "Error: hook rejected" })
+      );
+    });
+  });
+
+  it("closes 1008 on a hello sent on a channel other than game", () => {
+    const harness = createHarness();
+    const agent = harness.connect("agent");
+
+    harness.send(agent, notification("editor", "hello", { manifest: toWireValue(MANIFEST) }));
+
+    expect(agent.closes).toEqual([{ code: 1008, reason: "hello first" }]);
+    expect(harness.ctx.state.sessions.size).toBe(0);
+    expect(harness.ctx.emit).not.toHaveBeenCalled();
+    expect(agent.messages()).toEqual([]);
+  });
+
   it("closes 1008 when the first message is not hello (H28)", () => {
     const harness = createHarness();
     const agent = harness.connect("agent");

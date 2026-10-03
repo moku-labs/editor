@@ -51,8 +51,9 @@ function manifestOf(params: Json | undefined): Manifest | undefined {
 }
 
 /**
- * The first message: a valid `hello` opens the session and tells the agent its id on channel
- * `editor` (R6), then announces it; anything else closes 1008.
+ * The first message: a valid `hello` notification on channel `game` opens the session and tells
+ * the agent its id on channel `editor` (R6), then announces it; anything else, a `hello` on another
+ * channel included, closes 1008 `hello first`.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
@@ -63,7 +64,12 @@ function manifestOf(params: Json | undefined): Manifest | undefined {
  * ```
  */
 function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
-  if (isResponse(message) || isRequest(message) || message.method !== "hello") {
+  if (
+    isResponse(message) ||
+    isRequest(message) ||
+    message.channel !== "game" ||
+    message.method !== "hello"
+  ) {
     conn.socket.close(POLICY_VIOLATION, "hello first");
     return;
   }

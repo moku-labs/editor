@@ -53,7 +53,7 @@ The panel view and `app.filesView` share one state: `createFilesPanel` builds a 
 | `resolveConflict` | `(path, choice: "reload" \| "overwrite") => Promise<SaveResult>` | `reload` drops the buffer and returns `unchanged`. `overwrite` writes the buffer over the fresh version. |
 | `refresh` | `() => Promise<void>` | Rebuilds the index (single flight), then Used by and the palette items. |
 | `files` | `() => readonly FileEntry[]` | Indexed entries in tree order. Empty before the first index. |
-| `fileOf` | `(ref: NodeRef) => string \| undefined` | The source file of a graph node by the protocol rule (R1), against the index. |
+| `fileOf` | `(ref: NodeRef) => string \| undefined` | The source file of a graph node: its own graph `file` (F-H2) first, else the protocol rule (R1) against the index. Same rule as flowView. |
 | `flowFileOf` | `(flow: string) => string \| undefined` | The source file of a flow by the same rule. |
 | `usedBy` | `(path) => UsedBy` | `{ flows, nodes }` whose file is `path`. Empty without a graph. |
 | `editorUrl` | `(path, line?) => string \| undefined` | The "Open in editor" link from the boot data (D-08). `undefined` without boot data. |
@@ -159,6 +159,6 @@ Markdown renders as VNodes, never `innerHTML`. Links only for http(s) and relati
 
 | Limit | Follow-up |
 |---|---|
-| The graph has no file per node. The file comes from the naming rule and `.moku/editor/files.json` overrides. filesView does not read a graph node `file` yet; flowView's Inspector does. | F-H2: a dev-only `file` on graph nodes. |
+| Most graph nodes carry no file. A node `file` wins when the game sends it; else the file comes from the naming rule and `.moku/editor/files.json` overrides. flowView's Inspector uses the same order. | F-H2: a dev-only `file` on graph nodes. |
 | Files over 2 MB do not open here. | None. Open in editor. |
 | The walk stops at `maxFiles` and `WALK_MAX_DEPTH`. | None. |

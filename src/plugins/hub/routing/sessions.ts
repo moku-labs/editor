@@ -319,8 +319,28 @@ export function broadcastSessions(ctx: HubCtx): void {
 }
 
 /**
- * Announces a session change: emits `hub:session` (a failed emit is logged), tells every tools
- * connection `session {…}`, then `sessions {list}`.
+ * Fires an emit that is not awaited. A throw, or a rejected promise the emit returns, goes to
+ * `onFailure`, so a failing hook never breaks the caller.
+ *
+ * @param fire - Calls ctx.emit.
+ * @param onFailure - Logs the failure.
+ * @example
+ * ```ts
+ * emitLogged(() => ctx.emit("hub:session", payload), error => ctx.log.error("hub:emit-failed", { error }));
+ * ```
+ */
+function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
+  try {
+    const emitted = fire();
+    if (emitted instanceof Promise) emitted.catch(onFailure);
+  } catch (error) {
+    onFailure(error);
+  }
+}
+
+/**
+ * Announces a session change: emits `hub:session` (not awaited; a throw or a rejected promise of
+ * the emit is logged), tells every tools connection `session {…}`, then `sessions {list}`.
  *
  * @param ctx - Domain context of the hub.
  * @param payload - The change.
@@ -330,11 +350,10 @@ export function broadcastSessions(ctx: HubCtx): void {
  * ```
  */
 export function announce(ctx: HubCtx, payload: HubSession): void {
-  try {
-    ctx.emit("hub:session", payload);
-  } catch (error) {
-    ctx.log.error("hub:emit-failed", { id: payload.id, error: String(error) });
-  }
+  emitLogged(
+    () => ctx.emit("hub:session", payload),
+    error => ctx.log.error("hub:emit-failed", { id: payload.id, error: String(error) })
+  );
 
   const note = notification("editor", "session", sessionParams(payload));
   for (const conn of toolsConns(ctx.state)) sendJson(conn, note);

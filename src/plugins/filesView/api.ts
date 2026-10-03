@@ -2,9 +2,9 @@
  * @file filesView plugin — api factory: composes the tree, tabs, links and store modules. The
  * contract of every member lives on `FilesViewApi` in types.ts.
  */
-import { flowFile, nodeFile } from "../registry/protocol";
+import { flowFile } from "../registry/protocol";
 import { editorUrlFor } from "./links/editor-link";
-import { existsIn, graphNodeOf } from "./links/used-by";
+import { existsIn, graphNodeOf, nodeFileOf } from "./links/used-by";
 import { subscribe } from "./store";
 import { setBuffer, setEditing, setMode } from "./tabs/edit";
 import { tabInfo } from "./tabs/model";
@@ -58,7 +58,7 @@ export function createFilesViewApi(ctx: FilesViewCtx): FilesViewApi {
     /** @inheritDoc */
     files: () => (state.index === undefined ? [] : filesInTreeOrder(state.index)),
     /** @inheritDoc */
-    fileOf: ref => nodeFile(ref, graphNodeOf(state.graph, ref), state.overrides, existsIn(state)),
+    fileOf: ref => nodeFileOf(ref, graphNodeOf(state.graph, ref), state.overrides, existsIn(state)),
     /** @inheritDoc */
     flowFileOf: flow => flowFile(flow, state.overrides, existsIn(state)),
     /** @inheritDoc */

@@ -209,6 +209,35 @@ describe("buildUsedBy on merge-game", () => {
   });
 });
 
+/**
+ * A one-node graph whose board/merge carries `file` (a dev-only field of the game).
+ *
+ * @param file - The node's `file` value.
+ * @returns The graph.
+ */
+const withFile = (file: Json): Json => ({
+  main: "board",
+  flows: { board: { start: "merge", edges: {}, nodes: { merge: { node: "merge", file } } } }
+});
+
+describe("a graph node's own file (F-H2)", () => {
+  it("wins over the rule and the overrides in buildUsedBy", () => {
+    const map = buildUsedBy(withFile("features/x.ts"), exists, { "board/merge": "nodes/merge.ts" });
+    expect(labels(map)["features/x.ts"]).toEqual(["board/merge"]);
+    expect(map.has("nodes/merge.ts")).toBe(false);
+  });
+
+  it("is read by graphNodeOf; a file that is no string is ignored", () => {
+    expect(graphNodeOf(withFile("features/x.ts"), { flow: "board", node: "merge" })).toEqual({
+      file: "features/x.ts"
+    });
+    expect(graphNodeOf(withFile(3), { flow: "board", node: "merge" })).toEqual({});
+    expect(labels(buildUsedBy(withFile(null), exists, {}))["nodes/merge.ts"]).toEqual([
+      "board/merge"
+    ]);
+  });
+});
+
 describe("graphNodeOf and flowStartOf", () => {
   it("read a node's sub-flow or slot and a flow's start", () => {
     expect(graphNodeOf(MERGE_GRAPH, { flow: "main", node: "board" })).toEqual({ subFlow: "board" });

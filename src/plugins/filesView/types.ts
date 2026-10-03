@@ -384,7 +384,8 @@ export type FilesViewApi = {
   files(): readonly FileEntry[];
 
   /**
-   * The source file of a graph node by the protocol rule (R1), against the file index.
+   * The source file of a graph node: its own `file` from the graph (F-H2) when it has one, else
+   * the protocol rule (R1) against the file index. flowView resolves a node the same way.
    *
    * @param ref - Flow and node name.
    * @returns The path, or undefined (sub-flow and slot nodes have no own file).

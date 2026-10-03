@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFilesViewApi } from "../../api";
+import { rebuildUsedBy } from "../../links/used-by";
 import { createFilesViewState } from "../../state";
 import { notify, subscribe } from "../../store";
 import { createCtx } from "../helpers";
@@ -153,6 +154,21 @@ describe("createFilesViewApi", () => {
     });
     expect(api.usedBy("flows/board.ts")).toEqual({ flows: ["board"], nodes: [] });
     expect(api.usedBy("README.md")).toEqual({ flows: [], nodes: [] });
+  });
+
+  it("fileOf and usedBy prefer a graph node's own file (F-H2), like flowView", async () => {
+    const { ctx, api } = await ready();
+    ctx.state.graph = {
+      main: "board",
+      flows: { board: { start: "merge", edges: {}, nodes: { merge: { file: "features/x.ts" } } } }
+    };
+    rebuildUsedBy(ctx);
+    expect(api.fileOf({ flow: "board", node: "merge" })).toBe("features/x.ts");
+    expect(api.usedBy("features/x.ts")).toEqual({
+      flows: [],
+      nodes: [{ flow: "board", node: "merge" }]
+    });
+    expect(api.usedBy("nodes/merge.ts").nodes).toEqual([]);
   });
 
   it("usedBy and fileOf work without a graph or an index", () => {
