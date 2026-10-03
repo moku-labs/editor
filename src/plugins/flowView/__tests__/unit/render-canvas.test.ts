@@ -92,7 +92,7 @@ describe("Canvas (A1)", () => {
     pointer(home, "pointerdown", 10, 10);
     pointer(home, "pointermove", 10 + 60 * z, 10 + 30 * z);
     await settle();
-    expect(card(host, "main/home").style.left).toBe(`${(item?.x ?? 0) + 60}px`);
+    expect(card(host, "main/home").parentElement?.style.left).toBe(`${(item?.x ?? 0) + 60}px`);
     pointer(home, "pointerup", 10 + 60 * z, 10 + 30 * z);
     expect(drop).toHaveBeenCalledWith("main/home", (item?.x ?? 0) + 60, (item?.y ?? 0) + 30);
 

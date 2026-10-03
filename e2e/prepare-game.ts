@@ -10,8 +10,12 @@
  * game and the editor). Only `@moku-labs/game/testing`, which the fixture's game.ts imports for
  * its fake clock, maps to the checkout's source: the built testing bundle carries the
  * playwright-core loader, which a browser bundle cannot hold.
+ *
+ * The fixture page of game v0.1.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
+ * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
+ * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
  */
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GAME_DIR, MERGE_GAME_DIR } from "../tests/fixtures/game-dir";
@@ -27,6 +31,16 @@ await cp(MERGE_GAME_DIR, OUT, {
 });
 for (const file of ["editor.html", "editor.ts"]) {
   await cp(path.join(REPO, "e2e", "game", file), path.join(OUT, "web", file));
+}
+/** Packages the fixture page imports that only the game checkout installs. */
+const CHECKOUT_PACKAGES = ["@moku-labs/system", "@moku-labs/native"];
+await mkdir(path.join(OUT, "node_modules", "@moku-labs"), { recursive: true });
+for (const name of CHECKOUT_PACKAGES) {
+  await symlink(
+    path.join(GAME_DIR, "node_modules", name),
+    path.join(OUT, "node_modules", name),
+    "dir"
+  );
 }
 const tsconfig = {
   extends: "../../tsconfig.json",

@@ -66,6 +66,6 @@
   }
 
   [data-tag="waiting"] {
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 }

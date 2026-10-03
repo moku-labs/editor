@@ -33,7 +33,7 @@
   [data-chip][aria-checked="true"] {
     border-color: var(--accent);
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   table {

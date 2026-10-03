@@ -38,7 +38,7 @@
 
   button[aria-current="page"] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   button[aria-current="page"]::before {

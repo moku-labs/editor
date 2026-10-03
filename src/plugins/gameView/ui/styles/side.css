@@ -172,7 +172,7 @@
 
   [data-part="devices"] button[aria-pressed="true"] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [data-part="devices"] [data-part="safe"] {

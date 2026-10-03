@@ -36,10 +36,11 @@ names, themed with `light-dark()`:
 
 - Surfaces and text: `--surface-ground`, `--surface-panel`, `--surface-panel-2`,
   `--surface-canvas`, `--line-1`, `--line-2`, `--text-ink`, `--text-2`, `--text-muted`.
-- Meaning: `--accent`, `--accent-2`, `--accent-soft` (9 % / 13 %), `--accent-soft-strong`
-  (20 % / 28 %), `--status-live`, `--status-warn`, `--status-error`, `--teal`, `--edge`,
-  `--canvas-dot`, `--note-fill`, `--note-line`, `--note-ink`, `--pick-hover`, `--pick-tree`,
-  `--phase-1` … `--phase-5`.
+- Meaning: `--accent`, `--accent-2`, `--accent-ink` (accent as text), `--on-accent` (text on
+  a solid accent), `--accent-soft` (9 % / 13 %), `--accent-soft-strong` (20 % / 28 %),
+  `--status-live`, `--status-warn`, `--status-error`, `--teal`, `--edge`, `--canvas-dot`,
+  `--note-fill`, `--note-line`, `--note-ink`, `--pick-hover`, `--pick-tree`, `--phase-1` …
+  `--phase-5`.
 - Code colours: `--code-<kind>` for every highlighter `TokenKind`.
 - Motion: `--duration-camera` 420, `--duration-zoom` 200, `--duration-follow` 500,
   `--duration-strip` 240, `--duration-walk` 220, `--duration-resize` 210, `--duration-toast` 180.

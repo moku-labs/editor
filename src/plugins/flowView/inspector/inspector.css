@@ -59,7 +59,7 @@
 
   [data-tag="current"] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [role="tablist"] {

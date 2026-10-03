@@ -12,7 +12,7 @@
   --color-light-line-2: #e1e1e6;
   --color-light-ink: #1c1c21;
   --color-light-text-2: #5f5f69;
-  --color-light-muted: #9a9aa4;
+  --color-light-muted: #6d6d79;
   --color-light-indigo: #5b5bd6;
   --color-light-indigo-2: #4a4ac2;
   --color-light-green: #17905a;
@@ -34,12 +34,14 @@
   --color-dark-line-2: #34343c;
   --color-dark-ink: #ececf0;
   --color-dark-text-2: #a3a3ae;
-  --color-dark-muted: #6d6d78;
+  --color-dark-muted: #8e8e99;
   --color-dark-indigo: #6e6ee6;
   --color-dark-indigo-2: #8484ee;
+  --color-dark-indigo-ink: #8888ea;
+  --color-dark-on-indigo: #111115;
   --color-dark-green: #3cc482;
   --color-dark-amber: #e3a541;
-  --color-dark-red: #f06a5f;
+  --color-dark-red: #f27f76;
   --color-dark-teal: #4db3c6;
   --color-dark-edge: #4c4c57;
   --color-dark-dot: #2a2a32;
@@ -124,6 +126,10 @@
   /* ─── Semantics: meaning (the accent means selected, current or on the trail) ─── */
   --accent: light-dark(var(--color-light-indigo), var(--color-dark-indigo));
   --accent-2: light-dark(var(--color-light-indigo-2), var(--color-dark-indigo-2));
+  /* Accent as text: lighter in dark so it reads ≥ 4.5:1 on panels and on the accent tint. */
+  --accent-ink: light-dark(var(--color-light-indigo), var(--color-dark-indigo-ink));
+  /* Text on a solid accent fill (primary button, current tag), ≥ 4.5:1 in both themes. */
+  --on-accent: light-dark(var(--color-light-panel), var(--color-dark-on-indigo));
   --accent-soft: light-dark(
     color-mix(in srgb, var(--color-light-indigo) 9%, transparent),
     color-mix(in srgb, var(--color-dark-indigo) 13%, transparent)

@@ -79,7 +79,7 @@
   [data-action="save"] {
     border-color: var(--accent);
     background: var(--accent);
-    color: var(--surface-panel);
+    color: var(--on-accent);
   }
 
   [data-action="save"]:disabled {

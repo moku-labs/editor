@@ -20,6 +20,8 @@ export const token = {
   textMuted: "--text-muted",
   accent: "--accent",
   accent2: "--accent-2",
+  accentInk: "--accent-ink",
+  onAccent: "--on-accent",
   accentSoft: "--accent-soft",
   accentSoftStrong: "--accent-soft-strong",
   statusLive: "--status-live",

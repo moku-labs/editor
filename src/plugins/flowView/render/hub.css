@@ -43,7 +43,7 @@
     padding: 0 6px;
     border-radius: var(--radius-4);
     background: var(--accent);
-    color: var(--surface-panel);
+    color: var(--on-accent);
     font-size: var(--font-size-11);
   }
 

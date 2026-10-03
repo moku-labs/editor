@@ -1,7 +1,38 @@
-/* flowView · node card (G, F9): 172×44, glyph + name + tags on row 1, kind line on row 2; selected, current, dimmed, pinned and trail states by data attributes. No @layer wrapper (R7). */
+/* flowView · node card (G, F9): 172×44, glyph + name + tags on row 1, kind line on row 2; selected, current, dimmed, pinned and trail states by data attributes. The positioned node box holds the card and the expand button over its row 1 (siblings, so no nested interactive control). No @layer wrapper (R7). */
+
+@scope ([data-flow="node"]) {
+  :scope {
+    font-size: max(var(--flow-label-min), var(--font-size-12-5));
+  }
+
+  :scope:hover > [data-flow="node-card"] {
+    background: var(--surface-panel-2);
+  }
+
+  /* On row 1 of the card: its border (1 px) plus its padding (4 px, 10 px) in from the corner. */
+  [data-part="expand"] {
+    position: absolute;
+    top: 5px;
+    right: 11px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--teal);
+    font: inherit;
+    line-height: var(--line-height-ui);
+    cursor: pointer;
+  }
+
+  [data-flow="node-card"][data-dimmed] ~ [data-part="expand"] {
+    opacity: 0.16;
+  }
+}
 
 @scope ([data-flow="node-card"]) {
   :scope {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
     display: grid;
     align-content: center;
     gap: 2px;
@@ -12,10 +43,6 @@
     font-size: max(var(--flow-label-min), var(--font-size-12-5));
     cursor: grab;
     user-select: none;
-  }
-
-  :scope:hover {
-    background: var(--surface-panel-2);
   }
 
   :scope:focus-visible {
@@ -46,6 +73,11 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
+  }
+
+  /* Room for the expand button the node box draws over the end of row 1. */
+  :scope[data-expandable] [data-part="row"] {
+    padding-right: 12px;
   }
 
   [data-part="name"] {
@@ -93,7 +125,7 @@
     padding: 0 5px;
     border-radius: var(--radius-4);
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
     font-size: var(--font-size-11);
   }
 
@@ -105,13 +137,5 @@
     height: 0;
     border-top: 10px solid var(--accent);
     border-left: 10px solid transparent;
-  }
-
-  [data-part="expand"] {
-    margin-left: auto;
-    border: 0;
-    background: none;
-    color: var(--teal);
-    cursor: pointer;
   }
 }

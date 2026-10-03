@@ -15,7 +15,7 @@ button[data-variant] {
 
 button[data-variant="primary"] {
   background: var(--accent);
-  color: var(--surface-panel);
+  color: var(--on-accent);
 }
 
 button[data-variant="primary"]:hover {
@@ -86,7 +86,7 @@ button[data-size="sm"] {
 
 [data-tag="acc"] {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 [data-tag="mut"] {

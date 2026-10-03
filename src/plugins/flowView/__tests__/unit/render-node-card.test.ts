@@ -47,14 +47,23 @@ describe("NodeCard (G)", () => {
     expect(card?.hasAttribute("data-current")).toBe(false);
     expect(card?.getAttribute("role")).toBe("button");
     expect(card?.getAttribute("aria-pressed")).toBe("true");
-    expect(card?.style.left).toBe("10px");
-    expect(card?.style.width).toBe("172px");
+    const box = card?.parentElement;
+    expect(box?.dataset.flow).toBe("node");
+    expect(box?.style.left).toBe("10px");
+    expect(box?.style.width).toBe("172px");
+    expect(card?.hasAttribute("data-expandable")).toBe(true);
     expect(card?.textContent).toContain("settings");
     expect(card?.textContent).toContain("sub-flow · settingsPopup");
     expect(card?.textContent).toContain("on stack");
     expect(card?.querySelector<HTMLElement>('[data-part="glyph"]')?.dataset.glyph).toBe("sub-flow");
     expect(card?.querySelector('[data-part="pin"]')).not.toBeNull();
-    await settle(() => card?.querySelector<HTMLElement>('[data-part="expand"]')?.click());
+    // The expand button is a sibling of the focusable card, not a descendant (axe nested-interactive).
+    expect(card?.querySelector('[data-part="expand"], button')).toBeNull();
+    const toggle = box?.querySelector<HTMLElement>(':scope > [data-part="expand"]');
+    expect(toggle?.getAttribute("aria-label")).toBe("Expand main/settings");
+    expect(toggle?.dataset.hit).toBe("card");
+    expect(toggle?.dataset.key).toBe("main/settings");
+    await settle(() => toggle?.click());
     expect(expand).toHaveBeenCalledWith("main/settings");
     unmount();
   });
@@ -67,7 +76,8 @@ describe("NodeCard (G)", () => {
     const card = host.querySelector<HTMLElement>('[data-flow="node-card"]');
     expect(card?.getAttribute("aria-current")).toBe("location");
     expect(card?.hasAttribute("data-dimmed")).toBe(true);
-    expect(card?.querySelector('[data-part="expand"]')).toBeNull();
+    expect(card?.parentElement?.querySelector('[data-part="expand"]')).toBeNull();
+    expect(card?.hasAttribute("data-expandable")).toBe(false);
     unmount();
   });
 });

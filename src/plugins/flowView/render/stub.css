@@ -19,7 +19,7 @@
   :scope[data-trail] {
     border-style: solid;
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   :scope[data-rejected] {

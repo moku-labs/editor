@@ -35,7 +35,7 @@
   [aria-pressed="true"] {
     border-color: var(--accent);
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [aria-disabled="true"] {
@@ -65,6 +65,6 @@
   }
 
   [data-part="overlay"][aria-checked="true"] [data-part="state"] {
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 }
