@@ -1,0 +1,3658 @@
+# @moku-labs/editor — full reference
+
+> Editor, devtools and MCP layer for @moku-labs/game, built on @moku-labs/core. Three Moku cores in one package: `editor-agent` (game page), `editor-server` (Bun), `editor-tools` (tools page). One registry of sources and commands feeds the in-game overlay, the tools page and headless tests. The editor reaches the game only through `@moku-labs/game/inspect` and `@moku-labs/game/control` plus the game's `.dev` modules.
+
+This file is the complete machine-readable reference. Every `Config`, `Api` and event payload type below is copied verbatim from `src/config.ts`, `src/plugins/registry/protocol/` and `src/plugins/<name>/types.ts`. The short overview is `llms.txt`; the human overview is `README.md`; detail per plugin is `src/plugins/<name>/README.md`.
+
+Contents:
+
+1. Package and entry points
+2. The three cores (`src/config.ts` verbatim)
+3. Wire protocol types (verbatim)
+4. Error codes
+5. Event catalog
+6. Configuration reference (type, default, description)
+7. Plugins: Config, Api and constants verbatim (17 plugins)
+8. Dependency graph and init order
+9. Multi-plugin usage examples
+10. Writing a custom plugin for each core
+11. Wire methods
+
+---
+
+## 1. Package and entry points
+
+- Name: `@moku-labs/editor`, MIT, ESM only (`"type": "module"`).
+- Peer dependency: `@moku-labs/game >= 0.0.2`. The Render workspace's `game.effects` needs game 0.0.3.
+- Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
+- Engines: node >= 24, bun >= 1.3.14. The server core and the bin need Bun (`Bun.serve`, HTML imports).
+- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`).
+
+| Import | File | Exports |
+|---|---|---|
+| `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
+| `@moku-labs/editor/agent` | `src/agent.ts` | `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`, namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
+| `@moku-labs/editor/server` | `src/server.ts` | `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`, namespaces `Files`, `Hub`, `Pages`. |
+| `@moku-labs/editor/tools` | `src/tools.ts` | `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`, namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
+
+Default plugins per core (from the entries):
+
+```ts
+// src/agent.ts — dependency order: channel and overlay require registry, overlay requires channel.
+createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin, overlayPlugin] });
+// opt-in: bridgePlugin, capturePlugin (passed in createApp({ plugins }))
+
+// src/server.ts — dependency order (D-03): files ← hub ← pages.
+createServerCore(serverCoreConfig, { plugins: [filesPlugin, hubPlugin, pagesPlugin] });
+
+// src/tools.ts — workspace requires link; panels requires link and workspace; every view
+// requires link and panels (all but stateView also workspace). No view depends on another view.
+createToolsCore(toolsCoreConfig, {
+  plugins: [
+    linkPlugin, workspacePlugin, panelsPlugin,
+    flowViewPlugin, gameViewPlugin, renderViewPlugin, stateViewPlugin, filesViewPlugin, consoleViewPlugin
+  ]
+});
+```
+
+---
+
+## 2. The three cores (`src/config.ts`, verbatim)
+
+~~~ts
+/**
+ * @file Framework configuration — three cores in one file (D-01): `editor-agent` for the game
+ * page, `editor-server` for the Bun server and `editor-tools` for the tools page. Each core has
+ * its own Config and global Events, and registers the core plugins `log` and `env`.
+ */
+import { envPlugin, logPlugin } from "@moku-labs/common/browser";
+import { createCoreConfig } from "@moku-labs/core";
+import type { FilesWritten } from "./plugins/files/types";
+import type { HubSession } from "./plugins/hub/types";
+import type { ElementRef } from "./plugins/panels/shared/scene/types";
+import type { LinkStatus } from "./plugins/registry/protocol";
+import type { RanEvent, WorkspaceId } from "./plugins/workspace/types";
+
+/**
+ * Global config of the agent core (the game page). Empty: every option belongs to a plugin.
+ *
+ * @example
+ * ```ts
+ * const config: AgentConfig = {};
+ * ```
+ */
+export type AgentConfig = Record<never, never>;
+
+/**
+ * Global config of the server core (Bun). Empty: every option belongs to a plugin.
+ */
+export type ServerConfig = Record<never, never>;
+
+/**
+ * Global config of the tools core (the tools page). Empty: every option belongs to a plugin.
+ */
+export type ToolsConfig = Record<never, never>;
+
+/**
+ * Global events of the agent core. `bridge:status` lives here, not on the bridge, so the overlay
+ * hooks it without depending on the opt-in bridge (R2).
+ *
+ * @example
+ * ```ts
+ * ctx.emit("bridge:status", { status: { kind: "live", frame: 12 }, session: "s-7f3a" });
+ * ```
+ */
+export type AgentEvents = {
+  /** The bridge link changed kind or session. */
+  "bridge:status": { status: LinkStatus; session?: string };
+};
+
+/**
+ * Global events of the server core (contracts §4).
+ *
+ * @example
+ * ```ts
+ * ctx.emit("files:written", { path: "nodes/merge.ts", bytes: 812, kind: "code" });
+ * ```
+ */
+export type ServerEvents = {
+  /** A game session opened (`open: true`) or closed (`open: false`, with a reason). */
+  "hub:session": HubSession;
+  /** A file was written inside the project root (text or capture). */
+  "files:written": FilesWritten;
+};
+
+/**
+ * Global events of the tools core (R4, R9): notices and one-way intents between the tools
+ * plugins. Request/response stays in the plugin apis. No view depends on another view.
+ *
+ * @example
+ * ```ts
+ * ctx.emit("workspace:open-file", { path: "nodes/merge.ts", line: 12 });
+ * ```
+ */
+export type ToolsEvents = {
+  /** The link status or the chosen session changed. */
+  "link:status": { status: LinkStatus; session?: string };
+  /** The shown workspace changed. */
+  "workspace:changed": { ws: WorkspaceId };
+  /** A command run from the tools page settled (top bar, palette, key or a panel's tools.run). */
+  "workspace:ran": RanEvent;
+  /** Open a file in the Files workspace (filesView hooks it). */
+  "workspace:open-file": { path: string; line?: number };
+  /** Focus a node in the Flow workspace (flowView hooks it). */
+  "workspace:select-node": { id: string };
+  /** Focus the edge taken at a frame (flowView hooks it). */
+  "workspace:focus-frame": { frame: number };
+  /** Open the note editor, optionally with captures and a source node (flowView hooks it). */
+  "workspace:new-note": {
+    captures?: readonly string[];
+    from?: { node: string; outcome?: string };
+  };
+  /** Select an element in the render tree (renderView hooks it). */
+  "workspace:reveal": { ref: ElementRef };
+  /** Inspect an element in the Game workspace (gameView hooks it, R9). */
+  "workspace:inspect": { ref: ElementRef };
+  /** Open a series contact sheet by its index.json path (gameView hooks it). */
+  "workspace:open-sheet": { index: string };
+};
+
+/**
+ * Public API type of a plugin instance, read from its phantom carrier. Mirrors the kernel's
+ * non-exported `ExtractPluginApi`.
+ *
+ * @example
+ * ```ts
+ * type Link = ApiOf<typeof linkPlugin>; // the LinkApi type of src/plugins/link/types.ts
+ * ```
+ */
+export type ApiOf<Plugin> = Plugin extends { readonly _phantom: { readonly api: infer PluginApi } }
+  ? PluginApi
+  : never;
+
+/**
+ * Structural type of `ctx.require`, for domain contexts that resolve their own dependencies. The
+ * bound repeats the kernel's plugin shape, so the kernel's generic `require` is assignable to it.
+ *
+ * @example
+ * ```ts
+ * type WorkspaceCtx = { readonly require: Require };
+ * ```
+ */
+export type Require = <
+  Plugin extends {
+    readonly name: string;
+    readonly spec: unknown;
+    readonly _phantom: {
+      readonly config: unknown;
+      readonly state: unknown;
+      readonly api: unknown;
+      readonly events: Record<string, unknown>;
+    };
+  }
+>(
+  plugin: Plugin
+) => ApiOf<Plugin>;
+
+/**
+ * The core plugins every core registers: `ctx.log` and `ctx.env` on every plugin context.
+ */
+export type CorePlugins = [typeof logPlugin, typeof envPlugin];
+
+const agentConfig: AgentConfig = {};
+const serverConfig: ServerConfig = {};
+const toolsConfig: ToolsConfig = {};
+
+/**
+ * Core config of the agent core (the game page).
+ */
+export const agentCoreConfig = createCoreConfig<AgentConfig, AgentEvents, CorePlugins>(
+  "editor-agent",
+  { config: agentConfig, plugins: [logPlugin, envPlugin] }
+);
+
+/**
+ * Core config of the server core (Bun).
+ */
+export const serverCoreConfig = createCoreConfig<ServerConfig, ServerEvents, CorePlugins>(
+  "editor-server",
+  { config: serverConfig, plugins: [logPlugin, envPlugin] }
+);
+
+/**
+ * Core config of the tools core (the tools page).
+ */
+export const toolsCoreConfig = createCoreConfig<ToolsConfig, ToolsEvents, CorePlugins>(
+  "editor-tools",
+  { config: toolsConfig, plugins: [logPlugin, envPlugin] }
+);
+
+/**
+ * Creates an agent plugin bound to the agent core's Config and Events. Types infer from the spec.
+ *
+ * @example
+ * ```ts
+ * export const registryPlugin = createAgentPlugin("registry", { config, createState, api });
+ * ```
+ */
+export const createAgentPlugin = agentCoreConfig.createPlugin;
+
+/**
+ * Creates a server plugin bound to the server core's Config and Events. Types infer from the spec.
+ *
+ * @example
+ * ```ts
+ * export const filesPlugin = createServerPlugin("files", { config, createState, api });
+ * ```
+ */
+export const createServerPlugin = serverCoreConfig.createPlugin;
+
+/**
+ * Creates a tools plugin bound to the tools core's Config and Events. Types infer from the spec.
+ *
+ * @example
+ * ```ts
+ * export const linkPlugin = createToolsPlugin("link", { config, createState, api });
+ * ```
+ */
+export const createToolsPlugin = toolsCoreConfig.createPlugin;
+
+/**
+ * Creates the agent framework from its core config. Used by `src/agent.ts` only.
+ */
+export const createAgentCore = agentCoreConfig.createCore;
+
+/**
+ * Creates the server framework from its core config. Used by `src/server.ts` only.
+ */
+export const createServerCore = serverCoreConfig.createCore;
+
+/**
+ * Creates the tools framework from its core config. Used by `src/tools.ts` only.
+ */
+export const createToolsCore = toolsCoreConfig.createCore;
+~~~
+
+Each core registers `logPlugin` and `envPlugin` from `@moku-labs/common/browser`: `ctx.log` (leveled events, sinks) and `ctx.env` exist on every plugin context. Plugins log through `ctx.log`, never `console.*`.
+
+---
+
+## 3. Wire protocol types (`src/plugins/registry/protocol/`, verbatim)
+
+The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`).
+
+~~~ts
+/**
+ * A JSON value, the way it travels on the wire.
+ *
+ * @example
+ * ```ts
+ * const value: Json = { path: "board/awaitIntent", frame: 1840, tainted: false };
+ * ```
+ */
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+
+/**
+ * The kind of one input field of a source or a command.
+ */
+export type InputKind = "string" | "number" | "boolean" | "json";
+
+/**
+ * The input of a source or a command: field name to kind; a kind ending in `?` is optional.
+ * Structurally identical to the game's InputSchema.
+ *
+ * @example
+ * ```ts
+ * const step: InputSchema = { frames: "number", deltaMs: "number?" };
+ * ```
+ */
+export type InputSchema = Readonly<Record<string, InputKind | `${InputKind}?`>>;
+
+/**
+ * How often a source value changes: every frame, on each commit, on each graph edge.
+ */
+export type Changes = "frame" | "commit" | "edge";
+
+/**
+ * What a command does to the game.
+ */
+export type Effect = "read" | "route" | "cosmetic" | "cheat" | "raw";
+
+/**
+ * A source the way the manifest describes it (no functions).
+ */
+export type SourceDescriptor = {
+  readonly id: string;
+  readonly title: string;
+  readonly input: InputSchema;
+  readonly changes: Changes;
+};
+
+/**
+ * A command the way the manifest describes it (no functions).
+ */
+export type CommandDescriptor = {
+  readonly id: string;
+  readonly title: string;
+  readonly input: InputSchema;
+  readonly effect: Effect;
+};
+
+/**
+ * What a game page offers the editor: sent by the bridge in `hello`.
+ *
+ * @example
+ * ```ts
+ * const manifest: Manifest = { game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, sources: [], commands: [] };
+ * ```
+ */
+export type Manifest = {
+  /** Display name, e.g. "merge-game 0.0.0". */
+  readonly game: string;
+  /** location.href of the game page. */
+  readonly page: string;
+  /** True when the page runs inside the tools page frame. */
+  readonly embedded: boolean;
+  readonly sources: readonly SourceDescriptor[];
+  readonly commands: readonly CommandDescriptor[];
+  /** Reserved for code-loaded game panels; unused this change. */
+  readonly panels?: readonly { readonly id: string; readonly module: string }[];
+};
+
+/**
+ * Where the game stands after a command.
+ */
+export type RunState = { readonly path: string; readonly frame: number; readonly tainted: boolean };
+
+/**
+ * The answer of a command: its value and the run state.
+ */
+export type RunResult = { readonly value: Json; readonly state: RunState };
+
+/**
+ * One heartbeat of a game page.
+ */
+export type Heartbeat = { readonly frame: number; readonly paused: boolean; readonly at: number };
+
+/**
+ * The link state shown everywhere (design-context §6 B1, F3).
+ *
+ * @example
+ * ```ts
+ * const status: LinkStatus = { kind: "live", frame: 1840 };
+ * ```
+ */
+export type LinkStatus =
+  | { kind: "connecting" }
+  | { kind: "live"; frame: number }
+  | { kind: "paused"; frame: number }
+  | { kind: "silent"; since: number; lastFrame: number }
+  | { kind: "lost"; reason: string; lastFrame: number; retryInMs: number }
+  | { kind: "empty" };
+
+/**
+ * The channel every panel reads through: in process (agent channel) or remote (tools link).
+ *
+ * @example
+ * ```ts
+ * const stop = channel.watch("game.position", undefined, position => show(position));
+ * ```
+ */
+export type EditorChannel = {
+  read(id: string, input?: Json): Promise<Json>;
+  /** Delivers the current value first, then every change. */
+  watch(id: string, input: Json | undefined, onValue: (value: Json) => void): () => void;
+  run(id: string, input?: Json): Promise<RunResult>;
+  status(): LinkStatus;
+};
+
+/**
+ * The logical channel of a wire message.
+ */
+export type Channel = "game" | "files" | "editor";
+
+/**
+ * Why a call failed (R1 adds `link_closed`).
+ */
+export type ErrorReason =
+  | "game_reloaded"
+  | "no_session"
+  | "choose_session"
+  | "timeout"
+  | "invalid_input"
+  | "unknown_id"
+  | "command_failed"
+  | "not_json"
+  | "forbidden_path"
+  | "version_conflict"
+  | "unauthorized"
+  | "link_closed";
+
+/**
+ * A JSON-RPC error object with the editor's data fields.
+ */
+export type WireError = {
+  code: number;
+  message: string;
+  data?: { retryable?: boolean; reason?: ErrorReason; id?: string; field?: string };
+};
+
+/**
+ * A request: carries an id and gets exactly one response.
+ */
+export type Request = {
+  jsonrpc: "2.0";
+  id: number;
+  channel: Channel;
+  method: string;
+  params?: Json;
+  session?: string;
+};
+
+/**
+ * The response to a request: a result or an error.
+ */
+export type Response =
+  | { jsonrpc: "2.0"; id: number; result: Json }
+  | { jsonrpc: "2.0"; id: number; error: WireError };
+
+/**
+ * A notification: no id, no response.
+ */
+export type Notification = {
+  jsonrpc: "2.0";
+  channel: Channel;
+  method: string;
+  params?: Json;
+  session?: string;
+};
+
+/**
+ * One game session the way the tools page sees it (R1: exactly these five fields).
+ */
+export type SessionInfo = {
+  readonly id: string;
+  readonly game: string;
+  readonly page: string;
+  readonly embedded: boolean;
+  /** Epoch ms. */
+  readonly connectedAt: number;
+};
+
+/**
+ * One child of a folder in the files channel.
+ */
+export type FileEntry = {
+  readonly path: string;
+  readonly kind: "file" | "dir";
+  readonly size: number;
+  readonly version?: string;
+};
+
+/**
+ * A text file and its version (sha1 of the bytes).
+ */
+export type FileText = { readonly text: string; readonly version: string };
+
+/**
+ * An image read back in a data URL, with its version.
+ */
+export type FileBinary = { readonly dataUrl: string; readonly version: string };
+
+/**
+ * The result of a write.
+ */
+export type WriteResult = {
+  readonly path: string;
+  readonly bytes: number;
+  readonly version: string;
+};
+
+/**
+ * Body of `GET {path}/hello`. The socket URL is `{path}/ws?token=<t>&kind=agent|tools` (R1); `ws`
+ * carries it without the query.
+ */
+export type HelloBody = { readonly ws: string; readonly token: string };
+
+/**
+ * The JSON of `#moku-editor-boot` in the tools page (R1, R3).
+ */
+export type ToolsBoot = {
+  readonly v: 1;
+  /** Socket URL without the query. */
+  readonly ws: string;
+  readonly token: string;
+  /** The hub path, e.g. "/__editor". */
+  readonly path: string;
+  readonly title: string;
+  /** "Open in editor" template, unexpanded. */
+  readonly editorUrl: string;
+  /** Absolute real project root. */
+  readonly root: string;
+  /** Same-origin URL of the game page. */
+  readonly gameUrl: string;
+};
+
+/**
+ * A device preset of the tools page (R1).
+ */
+export type DeviceSpec = {
+  readonly id: string;
+  readonly name: string;
+  readonly w: number;
+  readonly h: number;
+  readonly safeTop: number;
+  readonly safeBottom: number;
+  readonly kind: "phone" | "tablet" | "desktop";
+};
+
+/**
+ * The prefix of every error message the editor throws or returns (R1, R7).
+ */
+export const ERROR_PREFIX = "[moku-editor] ";
+
+/**
+ * JSON-RPC error codes of the editor (contracts §2, R6).
+ */
+export const errorCode = {
+  invalidRequest: -32_600,
+  unknownMethod: -32_601,
+  invalidInput: -32_602,
+  commandFailed: -32_000,
+  gameReloaded: -32_001,
+  timeout: -32_002,
+  noSession: -32_003,
+  forbiddenPath: -32_004,
+  versionConflict: -32_005,
+  notJson: -32_006,
+  unauthorized: -32_007
+} as const;
+/**
+ * Any wire message.
+ */
+export type Message = Request | Response | Notification;
+
+/**
+ * A subscription id on the wire: a safe integer ≥ 0 on both hops (R6).
+ */
+export type SubId = number; // eslint-disable-line sonarjs/redundant-type-aliases -- R6 names the wire subscription id
+
+/**
+ * Params of the game-channel `read` request.
+ */
+export type ReadParams = { id: string; input?: Json };
+
+/**
+ * Params of the game-channel `read` request.
+ */
+export type ReadParams = { id: string; input?: Json };
+
+/**
+ * Params of the game-channel `watch` request.
+ */
+export type WatchParams = { sub: SubId; id: string; input?: Json };
+
+/**
+ * Params of the game-channel `unwatch` request.
+ */
+export type UnwatchParams = { sub: SubId };
+
+/**
+ * Params of the game-channel `run` request.
+ */
+export type RunParams = { id: string; input?: Json };
+
+/**
+ * Params of the agent's first notification.
+ */
+export type HelloParams = { manifest: Manifest };
+
+/**
+ * Params of a `value` notification.
+ */
+export type ValueParams = { sub: SubId; value: Json };
+
+/**
+ * Params of the editor-channel `session` notification (= the hub's HubSession; also sent to the
+ * agent right after its hello, R6).
+ */
+export type SessionParams = {
+  id: string;
+  game: string;
+  open: boolean;
+  reason?: "bye" | "game_reloaded";
+};
+
+/**
+ * Params of the editor-channel `sessions` notification.
+ */
+export type SessionsParams = { list: SessionInfo[] };
+
+/**
+ * Params of the files-channel `list` request.
+ */
+export type ListParams = { dir: string };
+
+/**
+ * Params of the files-channel `read` and `readBinary` requests.
+ */
+export type PathParams = { path: string };
+
+/**
+ * Params of the files-channel `write` request.
+ */
+export type WriteParams = { path: string; text: string; version?: string };
+
+/**
+ * Params of the files-channel `writeBinary` request (`data` is a data URL, R1).
+ */
+export type WriteBinaryParams = { path: string; data: string };
+
+/**
+ * A graph node by flow and node name.
+ */
+export type NodeRef = { readonly flow: string; readonly node: string };
+
+/**
+ * Parsed `.moku/editor/files.json`: keys `<flow>`, `<flow>/<node>`, `<flow>/*`; value a relative
+ * path, or null for "no file".
+ */
+export type SourceOverrides = Readonly<Record<string, string | null>>;
+
+/**
+ * Where the override map lives, relative to the project root.
+ */
+export const SOURCE_OVERRIDES_PATH = ".moku/editor/files.json";
+
+/**
+ * The roots the convention tries, in order.
+ */
+export const SOURCE_ROOTS: readonly string[] = ["", "src/"];
+
+/**
+ * A ui element by its path of segments, or a world entity by id.
+ *
+ * @example
+ * ```ts
+ * const ref: ElementRef = { kind: "ui", path: "column#0/hudRow/coins" };
+ * ```
+ */
+export type ElementRef =
+  | { readonly kind: "ui"; readonly path: string }
+  | { readonly kind: "entity"; readonly id: number };
+
+/**
+ * A rect in CSS px of the game page (the iframe viewport = device W×H).
+ */
+export type PageRect = {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+};
+~~~
+
+---
+
+## 4. Error codes
+
+All errors are JSON-RPC error objects (`WireError`). Messages start with `[moku-editor] ` (`ERROR_PREFIX`). No stack crosses the wire. `bareMessage(message)` strips the prefix for UI text.
+
+| Code | `errorCode` key | `data.reason` | Retryable | Raised by | When |
+|---|---|---|---|---|---|
+| -32600 | `invalidRequest` | — | no | hub | duplicate `sub` on one connection; more than 256 pending calls per tools connection |
+| -32601 | `unknownMethod` | `unknown_id` (with `data.id`) or none | no | channel, bridge, hub, files, capture | unknown source or command id; unknown channel or method; missing file or folder (`files`) |
+| -32602 | `invalidInput` | `invalid_input` (`data.field`) | no | registry, capture, hub, files | input fails `checkInput`; bad `sub`; text over 2 MiB or binary over 16 MiB on write; bad data URL |
+| -32000 | `commandFailed` | `command_failed` | no | registry, capture, hub, files | a door threw; `game.capture` gave no picture; a series is already recording; IO error; file too large on read |
+| -32001 | `gameReloaded` | `game_reloaded` | yes | hub | the agent closed while a call was pending |
+| -32002 | `timeout` | `timeout` | yes | bridge, hub, link | the call passed its deadline (the command is not cancelled) |
+| -32002 | `timeout` | `link_closed` | yes | link | socket not open, socket closed, or `app.stop()` |
+| -32003 | `noSession` | `no_session` | no | hub, link | no game connected, or the named session is not open |
+| -32003 | `noSession` | `choose_session` | no | hub, link | several sessions and not exactly one embedded; `link.choose` with an id that is not open |
+| -32004 | `forbiddenPath` | `forbidden_path` | no | files | a path fails a sandbox rule |
+| -32005 | `versionConflict` | `version_conflict` | no | files | stale `version`, or a `version` for a missing file |
+| -32006 | `notJson` | `not_json` | no | registry (`toWireValue`) | a value is not JSON (function, symbol, bigint, cycle, depth over 64) |
+| -32007 | `unauthorized` | `unauthorized` | no | hub | a request from an agent connection |
+
+Deadlines: bridge `callTimeoutMs` (5000), hub `callTimeoutMs` (5000), link `CALL_TIMEOUT_MS` (10000). A `run` of `editor.series` gets `min(input.durationMs, 60000)` on top in all three.
+
+Config errors (not wire errors) are thrown at `createApp` from `onInit`, in the shape:
+
+```
+[moku-editor] <plugin>.<field> <problem>.
+  <fix line, e.g. Pass pluginConfigs.channel.heartbeatMs, for example 1000.>
+```
+
+Examples: `[moku-editor] registry.game is missing.`, `[moku-editor] registry.game is not a game app.`, `[moku-editor] Duplicate registry id "<id>".`, `[moku-editor] files.root "<root>" is not a directory.`, `[moku-editor] files.allow is empty.`, `[moku-editor] Panel "<id>" is already registered.`, `[moku-editor] Key "<combo>" is already bound in <scope>.`
+
+Websocket close codes: 1000 normal (bridge `bye`, link stop), 1001 `editor stopping` (hub stop), 1003 binary frame, 1008 `hello first` / `bad manifest` / `hello twice` / ten malformed messages, 1009 frame over 32 MiB (Bun).
+
+Upgrade refusals of `hub.fetch` (in check order): 404 `missing`, 503 `unavailable`, 426 `upgrade`, 403 `forbidden`, 401 `unauthorized`, 400 `invalid`.
+
+---
+
+## 5. Event catalog
+
+Global events only; no plugin declares its own `events` field. Payload types are in section 2 (`AgentEvents`, `ServerEvents`, `ToolsEvents`) and sections 3 and 7.
+
+| Core | Event | Payload type | Emitted by | When | Hooked by |
+|---|---|---|---|---|---|
+| agent | `bridge:status` | `{ status: LinkStatus; session?: string }` | bridge | at start (`connecting`), on every change of status kind, on every session change; never from `onStop` | overlay (link dot) |
+| server | `hub:session` | `HubSession` | hub | a valid `hello` (`open: true`); an agent close (`open: false`, `reason` `"bye"` or `"game_reloaded"`) | none in the package; for consumer plugins |
+| server | `files:written` | `FilesWritten` | files | after each successful `write` or `writeBinary`, after the rename; `kind` from `classifyWrite(path)` | none in the package; for a later MCP layer |
+| tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | status changed kind or any field, or the session changed | workspace, panels, flowView, gameView, renderView, stateView, filesView, consoleView |
+| tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | `show()` changed the workspace | panels, flowView, gameView, renderView, filesView |
+| tools | `workspace:ran` | `RanEvent` | workspace (origins `topbar`, `key`, `palette`), panels (origin `panel`, or the api `run` origin) | a command run from the tools page settled | stateView (taint), consoleView (error lines) |
+| tools | `workspace:open-file` | `{ path: string; line?: number }` | flowView, gameView | "Open in Files" | filesView |
+| tools | `workspace:select-node` | `{ id: string }` | filesView | a Used-by chip | flowView |
+| tools | `workspace:focus-frame` | `{ frame: number }` | consoleView | a frame link, `focusFrame()` | flowView |
+| tools | `workspace:new-note` | `{ captures?: readonly string[]; from?: { node: string; outcome?: string } }` | gameView | "New note…" on a capture card or contact sheet | flowView |
+| tools | `workspace:reveal` | `{ ref: ElementRef }` | gameView | "Show in render tree" | renderView |
+| tools | `workspace:inspect` | `{ ref: ElementRef }` | renderView | "Inspect in Game" | gameView |
+| tools | `workspace:open-sheet` | `{ index: string }` | filesView | "Open contact sheet" on a series `index.json` | gameView |
+
+`files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; starts with `.moku/notes/` → `note`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, or ends with `.styles.ts`/`.styles.tsx` → `style`; other `.ts`/`.tsx` → `code`; else `other`.
+
+`LinkStatus` semantics: `connecting` (socket open or session attached, no heartbeat yet); `live`/`paused` (the chosen session beats; `paused` from the heartbeat flag); `silent` (no heartbeat for 6 s, or 65 s after a `paused: true` beat); `lost` (socket closed, chosen session closed, or no boot tag `no_boot`); `empty` (connected, no game session, also 10 s after a lost session). The bridge reports only `connecting`, `live`, `paused`, `lost`.
+
+Not events: heartbeats are a callback api (`channel.onHeartbeat`); `ctx.log` lines such as `hub:refused`, `bridge:lost`, `registry:watch-failed`, `link:watch-failed`, `panels:view-failed` are log events, listed in each plugin README.
+
+---
+
+## 6. Configuration reference
+
+All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: { … } } })`, shallow-merged over the defaults (arrays replace). Global configs are empty. Bad values throw at `createApp`.
+
+### Agent
+
+| Plugin | Field | Type | Default | Description |
+|---|---|---|---|---|
+| registry | `game` | `GameLike \| undefined` | `undefined` | Required. The app the game made with `createApp`. `onInit` throws without it. |
+| registry | `modules` | `readonly DevModule[]` | `[]` | The game's `.dev` modules: extra sources and commands, added after the doors. |
+| registry | `name` | `string \| undefined` | `undefined` | `Manifest.game`. Falls back to trimmed `document.title`, then `"game"`. |
+| channel | `heartbeatMs` | `number` | `1000` | Ms between two beats. Whole number ≥ 100. |
+| overlay | `open` | `boolean` | `false` | Open at start. A QA build sets `true`. |
+| overlay | `corner` | `Corner` | `"top-right"` | `"top-right" \| "top-left" \| "bottom-right" \| "bottom-left"`. |
+| overlay | `mount` | `string \| undefined` | `undefined` | CSS selector of the element the host is appended to; `undefined` = `document.body`. |
+| bridge | `hello` | `string` | `"/__editor/hello"` | Hello route: same-origin path or absolute URL. Non-empty. |
+| bridge | `retryMs` | `number` | `1000` | First reconnect delay; doubles per failure up to `MAX_RETRY_MS` (30000), ±20 % jitter. Whole number ≥ 100. |
+| bridge | `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run`. Whole number ≥ 100. |
+| capture | `maxDurationMs` | `number` | `20000` | Longest series accepted. More → -32602 field `durationMs`. |
+| capture | `minIntervalMs` | `number` | `16` | Shortest interval accepted. Less → -32602 field `intervalMs`. |
+
+### Server
+
+| Plugin | Field | Type | Default | Description |
+|---|---|---|---|---|
+| files | `root` | `string` | `"."` | Project root, absolute or relative to the working folder. Resolved once with `realpathSync`; must be an existing folder. |
+| files | `allow` | `readonly string[]` | `["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"]` | Globs a file must match to be read or written. Case-sensitive. Not empty. |
+| files | `deny` | `readonly string[]` | `["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]` | Globs never listed, read or written. Case-insensitive. |
+| hub | `path` | `string` | `"/__editor"` | URL prefix of every editor route. Starts with `/`; letters, digits, `_`, `-`, `/`; no trailing or double slash. |
+| hub | `allow` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and call same-origin routes. No path, no trailing slash. |
+| hub | `callTimeoutMs` | `number` | `5000` | Deadline of a forwarded call before -32002. Integer ≥ 100. |
+| hub | `silentAfterMs` | `number` | `6000` | No heartbeat this long → silent. 65 s after a `paused: true` beat. Integer ≥ 100. |
+| pages | `title` | `string` | `"moku editor"` | Tools page `<title>` and `ToolsBoot.title`. 1–120 characters. |
+| pages | `editorUrl` | `string` | `"vscode://file/{path}:{line}"` | "Open in editor" template. Must contain `{path}`; scheme cannot be `javascript`, `data`, `vbscript`. |
+| pages | `pageDir` | `string \| undefined` | `undefined` | Built page folder. `undefined` tries `dist/tools` next to the bundled module, then the repo `dist/tools`. |
+| pages | `gameUrl` | `string` | `"/"` | Same-origin URL of the game page. Starts with `/`, not `//`, no `\`. |
+
+### Tools
+
+| Plugin | Field | Type | Default | Description |
+|---|---|---|---|---|
+| link | `retryMs` | `number` | `1000` | Base of the reconnect backoff `min(retryMs × 2^n, 8000)`. |
+| link | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the boot JSON tag `pages` injects. |
+| workspace | `defaultWorkspace` | `WorkspaceId` | `"flow"` | Shown at start when the URL hash names none. |
+| workspace | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
+| workspace | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
+| workspace | `toastMs` | `number` | `2600` | How long one toast stays; hover or focus pauses it. |
+| panels | — | `Record<string, never>` | `{}` | No options. |
+| flowView | `historyLast` | `number` | `20` | Entries of `game.history` the panel watches. |
+| flowView | `trailLength` | `number` | `6` | Edges drawn as the trail. |
+| flowView | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
+| flowView | `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
+| flowView | `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
+| flowView | `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
+| flowView | `notesDir` | `string` | `".moku/notes"` | Note files. |
+| flowView | `stylesFile` | `string` | `"features/ui/styles.ts"` | Text styles the Styles tab edits. |
+| flowView | `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
+| flowView | `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
+| flowView | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
+| flowView | `minZoom` | `number` | `0.08` | Lowest zoom. |
+| flowView | `maxZoom` | `number` | `3` | Highest zoom. |
+| flowView | `defaultMinZoom` | `number` | `0.8` | Floor of the default camera. |
+| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots and series. |
+| gameView | `notesDir` | `string` | `".moku/notes"` | Notes. |
+| gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
+| gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
+| gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
+| gameView | `seriesIntervalsMs` | `readonly number[]` | `[16, 50, 100, 250, 500, 1000]` | Interval chips. |
+| gameView | `seriesWarnShots` | `number` | `200` | Popover warns above this many planned shots. |
+| gameView | `sourceSearch` | `{ maxFiles: number; skip: readonly string[] }` | `{ maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }` | Search for the style block of a picked element. |
+| renderView | `fpsSamples` | `number` | `60` | FPS samples kept for the sparkline. |
+| renderView | `releaseLogMax` | `number` | `50` | Release log entries kept. |
+| renderView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
+| stateView | `expandDepth` | `number` | `2` | Tree levels open by default. |
+| stateView | `maxPatches` | `number` | `200` | Most patches kept per commit. |
+| stateView | `pageSize` | `number` | `100` | Children shown per array or object before "Show N more". |
+| filesView | `maxFiles` | `number` | `5000` | Most files the tree walk indexes. |
+| filesView | `maxHighlightChars` | `number` | `512000` | Longer files show without colour. |
+| filesView | `reloadExtensions` | `readonly string[]` | `[".ts", ".tsx", ".css", ".json"]` | A save of these outside `.moku/` runs the D-07 reload. |
+| filesView | `revalidateMs` | `number` | `2000` | A clean tab is re-read on activation when older than this. |
+| consoleView | `maxLines` | `number` | `5000` | Most lines kept; oldest go first. |
+| consoleView | `preserveLog` | `boolean` | `false` | Initial state of Preserve log. |
+| consoleView | `freshMs` | `number` | `1200` | Highlight time of a fresh error row. |
+| consoleView | `summaryChars` | `number` | `160` | Characters of non-string `data` shown inline. |
+
+### Bin
+
+`moku-editor <game-html> [--port 3000] [--root .] [--help]`
+
+| Flag | Short | Default | Rule |
+|---|---|---|---|
+| `--port` | `-p` | `3000` | Digits, 0–65535. `0` picks a free port. |
+| `--root` | `-r` | `.` | Project root the editor reads and writes. |
+| `--help` | `-h` | | Prints usage, exit 0. |
+
+Exit codes: 0 help or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
+
+---
+
+## 7. Plugins
+
+Each section: core, tier, depends, lifecycle, then the Config, Api and constants verbatim from `types.ts`.
+
+### 7.1 registry — agent, Complex
+
+- depends: none (first agent plugin). Lifecycle: `onInit` (`buildCatalogue`).
+- Imports from the game: `read`, `watch`, `sources` from `@moku-labs/game/inspect`; `run`, `commands` from `@moku-labs/game/control`.
+- Manifest order: door entries, then modules in config order, then editor commands in `add` order. Sources and commands share one id namespace.
+- Events: none. Logs: `registry:source-failed`, `registry:command-failed`, `registry:watch-failed` (warn, `{ id, message }`).
+
+~~~ts
+/**
+ * Registry ids: camelCase words joined by dots, the pattern the game's defineCommand uses.
+ */
+export const ID_PATTERN = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
+
+/**
+ * What the doors need of an app: the headless app plus the committed model (the game's WatchApp).
+ */
+export type GameLike = HeadlessApp & {
+  readonly model: { readonly store: { snapshot(): Model.Snapshot } };
+};
+
+/**
+ * A game's `.dev` module: extra sources and commands, merged after the door catalogue.
+ *
+ * @example
+ * ```ts
+ * const mergeDev: DevModule = { commands: [addCoins, refillEnergy] };
+ * ```
+ */
+export type DevModule = {
+  readonly sources?: readonly DoorSource[];
+  readonly commands?: readonly DoorCommand[];
+};
+
+/**
+ * Registry configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } } });
+ * ```
+ */
+export type RegistryConfig = {
+  /** The running game app. Required: onInit throws when it is undefined. */
+  game: GameLike | undefined;
+  /** The game's dev modules: extra sources and commands, merged after the door catalogue. */
+  modules: readonly DevModule[];
+  /** Display name for Manifest.game; falls back to document.title, then "game" (R6). */
+  name: string | undefined;
+};
+
+/**
+ * A closure-erased source: raw Json in, wire-safe Json out.
+ */
+export type SourceEntry = {
+  readonly descriptor: SourceDescriptor;
+  read(raw: Json): Json;
+  watch(raw: Json, fn: (value: Json) => void): () => void;
+};
+
+/**
+ * A closure-erased command: raw Json in, RunResult out.
+ */
+export type CommandEntry = {
+  readonly descriptor: CommandDescriptor;
+  run(raw: Json): Promise<RunResult>;
+};
+
+/**
+ * The game clock, in the shape the channel heartbeat needs (R6).
+ */
+export type Clock = { readonly frame: number; readonly paused: boolean };
+
+/**
+ * The registry api (`app.registry`, `ctx.require(registryPlugin)`).
+ *
+ * @example
+ * ```ts
+ * await registry.command("game.step")?.run({ frames: 1 });
+ * ```
+ */
+export type RegistryApi = {
+  /** The frozen manifest: descriptors only, no functions. */
+  manifest(): Manifest;
+  /** A source entry, or undefined for an unknown id. */
+  source(id: string): SourceEntry | undefined;
+  /** A command entry (door, module or editor), or undefined. */
+  command(id: string): CommandEntry | undefined;
+  /** Adds an editor-owned command (call it in onInit). */
+  add(entry: CommandEntry): void;
+  /** Where the game stands now, for editor commands that run no door (R2, R6). */
+  envelope(): RunState;
+  /** The frame and the pause flag of the game clock (R6). */
+  clock(): Clock;
+};
+~~~
+
+### 7.2 channel — agent, Standard
+
+- depends: `[registryPlugin]`. Lifecycle: `onInit` (`checkConfig`), `onStart` (`startHeartbeat`, unref'd interval), `onStop` (`stopChannel`).
+- `watch` delivers the current value before it returns; `run` dispatches in a microtask; the heartbeat runs on `setInterval`, so a paused game still beats.
+- Events: none. Log: `channel:heartbeat-listener-failed` (warn, `{ message }`).
+
+~~~ts
+/**
+ * Channel configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { channel: { heartbeatMs: 500 } } });
+ * ```
+ */
+export type ChannelConfig = {
+  /** Milliseconds between two heartbeats. Finite integer ≥ 100. */
+  heartbeatMs: number;
+};
+
+/**
+ * A heartbeat listener (the bridge pushes beats, samples frame sources, flushes its backlog).
+ */
+export type HeartbeatListener = (beat: Heartbeat) => void;
+
+/**
+ * The channel api: the in-process EditorChannel plus the heartbeat.
+ *
+ * @example
+ * ```ts
+ * const stop = editor.channel.watch("game.position", undefined, position => show(position));
+ * ```
+ */
+export type ChannelApi = EditorChannel & {
+  /** A fresh frozen beat now. */
+  heartbeat(): Heartbeat;
+  /** Adds a listener called on every interval tick; returns an idempotent remover. */
+  onHeartbeat(fn: HeartbeatListener): () => void;
+};
+~~~
+
+### 7.3 overlay — agent, Standard
+
+- depends: `[registryPlugin, channelPlugin]`; presence check `ctx.has("bridge")` for the link dot. Lifecycle: `onInit` (adds `editor.overlay`), `onStart` (host, shadow root, styles), `onStop` (unmount).
+- Registry command: `editor.overlay`, title `Overlay in game`, input `{ on: "boolean" }`, effect `cosmetic`, value `{ on: boolean }`.
+- Events: hooks `bridge:status`. Logs: `overlay:render-unavailable`, `overlay:cheat-failed`, `overlay:mount-missing`, `overlay:no-dom`.
+
+~~~ts
+/**
+ * Repaint cadence while open.
+ */
+export const PAINT_MS = 250;
+
+/**
+ * How long a cheat button shows ✓.
+ */
+export const OK_MS = 1200;
+
+/**
+ * How long a cheat button shows !.
+ */
+export const ERROR_MS = 3000;
+
+/**
+ * z-index of the host.
+ */
+export const Z_INDEX = 2_147_483_000;
+
+/**
+ * The attribute that marks the host element.
+ */
+export const HOST_ATTRIBUTE = "data-moku-editor-overlay";
+
+/**
+ * The corner of the game page the card sits in.
+ */
+export type Corner = "top-right" | "top-left" | "bottom-right" | "bottom-left";
+
+/**
+ * Overlay configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { registry: { game }, overlay: { open: true, corner: "bottom-left" } } });
+ * ```
+ */
+export type Config = {
+  /** Open at start. False by default; a QA build sets true. */
+  open: boolean;
+  /** Corner of the game page. Default "top-right". */
+  corner: Corner;
+  /** CSS selector of the element the host is appended to; undefined = document.body. */
+  mount: string | undefined;
+};
+
+/**
+ * The overlay api (`app.overlay`).
+ *
+ * @example
+ * ```ts
+ * editor.overlay.open();
+ * editor.overlay.isOpen(); // true
+ * ```
+ */
+export type OverlayApi = {
+  open(): void;
+  close(): void;
+  isOpen(): boolean;
+};
+~~~
+
+### 7.4 bridge — agent, Complex, opt-in
+
+- depends: `[registryPlugin, channelPlugin]`. Lifecycle: `onInit` (`checkConfig`), `onStart` (`startBridge`, connects without awaiting), `onStop` (`stopBridge`: `bye`, close 1000).
+- Backoff with defaults and `random() = 0.5`: 1000, 2000, 4000, 8000, 16000, 30000, 30000.
+- Lost reasons: `no WebSocket in this runtime` (no retry), `no page URL for <hello>` (no retry), `hello unreachable`, `hello <status>`, `hello answered without ws and token`, `hello answered a bad ws URL`, `socket failed`, `socket closed (<code>)[: <reason>]`, `stopped` (no retry).
+- Events: emits `bridge:status`. Logs: `bridge:connected` (info), `bridge:lost` (warn then debug), `bridge:disabled` (error), `bridge:connect-crashed`, `bridge:request-crashed` (error), others at debug.
+
+~~~ts
+/**
+ * Cap of the reconnect backoff.
+ */
+export const MAX_RETRY_MS = 30_000;
+
+/**
+ * Backoff jitter: ±20 %.
+ */
+export const JITTER = 0.2;
+
+/**
+ * Buffered bytes above which the socket counts as congested (1 MiB).
+ */
+export const HIGH_WATER = 1_048_576;
+
+/**
+ * Buffered bytes below which the backlog is flushed (256 KiB).
+ */
+export const LOW_WATER = 262_144;
+
+/**
+ * Cap of the durationMs extension of a long call (R1: the same rule in bridge, hub and link).
+ */
+export const DEADLINE_EXTRA_CAP_MS = 60_000;
+
+/**
+ * The one long call.
+ */
+export const SERIES_ID = "editor.series";
+
+/**
+ * Bridge configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ plugins: [bridgePlugin], pluginConfigs: { bridge: { retryMs: 500 } } });
+ * ```
+ */
+export type BridgeConfig = {
+  /** Hello route of the editor server: same-origin path or absolute URL. */
+  hello: string;
+  /** First reconnect delay in ms; doubles per failure up to MAX_RETRY_MS. Integer ≥ 100. */
+  retryMs: number;
+  /** Deadline of one hub request in ms; run of editor.series gets + input.durationMs (R1). */
+  callTimeoutMs: number;
+};
+
+/**
+ * The bridge api (`app.bridge`).
+ *
+ * @example
+ * ```ts
+ * editor.bridge.status(); // { kind: "live", frame: 1840 }
+ * ```
+ */
+export type BridgeApi = {
+  status(): LinkStatus;
+  session(): string | undefined;
+};
+~~~
+
+### 7.5 capture — agent, Standard, opt-in
+
+- depends: `[registryPlugin]`. Lifecycle: `createState`, `onInit` (adds three commands), `onStop` (ends a running series). No app api.
+- Commands: `editor.capture` (`{}`, effect `read`, value `Shot`), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`).
+- Every shot runs the door command `game.capture` (needs `__MOKU_GAME_DEV__`). A series plans `max(1, floor(durationMs / intervalMs))` shots, never overlapping, one series at a time.
+- Events: none. Logs: `capture:series-large`, `capture:shots-skipped` (warn).
+
+~~~ts
+/**
+ * A plan above this many shots logs `capture:series-large` and still runs.
+ */
+export const WARN_SHOTS = 200;
+
+/**
+ * The door command every shot runs.
+ */
+export const CAPTURE_ID = "game.capture";
+
+/**
+ * Capture configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ plugins: [capturePlugin], pluginConfigs: { capture: { maxDurationMs: 10_000 } } });
+ * ```
+ */
+export type Config = {
+  /** Longest series accepted, in ms. Default 20000. */
+  maxDurationMs: number;
+  /** Shortest interval accepted, in ms. Default 16. */
+  minIntervalMs: number;
+};
+
+/**
+ * The game page viewport of a shot (not the tools-side DeviceSpec).
+ */
+export type Device = {
+  readonly w: number;
+  readonly h: number;
+  readonly orientation: "portrait" | "landscape";
+};
+
+/**
+ * Value of `editor.capture`.
+ */
+export type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
+
+/**
+ * One shot of a series, tagged with its real frame and real time.
+ */
+export type SeriesShot = { readonly image: string; readonly frame: number; readonly atMs: number };
+
+/**
+ * Value of `editor.series` (R2).
+ */
+export type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly device: Device };
+~~~
+
+### 7.6 files — server, Standard
+
+- depends: none (first server plugin). Lifecycle: `onInit` only (`validateFilesConfig`).
+- Node built-ins only; no `Bun.*`. Limits (`io.ts`): `MAX_TEXT_BYTES` 2 MiB, `MAX_BINARY_BYTES` 16 MiB, `MAX_PATH_LENGTH` 1024. Image extensions: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`.
+- Sandbox order: lexical → deny → allow (files only; image and `.moku/captures/` rules for binaries) → real path under the real root → kind.
+- Helper `decodeDataUrl(text, path)` exported from `src/plugins/files/index.ts` for `hub`.
+- Events: emits `files:written`. Log: `files:emit-failed`.
+
+~~~ts
+/**
+ * Resolved config of the files plugin. Shallow-merged; arrays replace the default entirely.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { files: { root: `${import.meta.dir}/..` } } });
+ * ```
+ */
+export type FilesConfig = {
+  /** Project root. Absolute, or relative to process.cwd() at init. Default ".". */
+  root: string;
+  /** Globs (relative to root, posix) a file must match to be read or written. */
+  allow: readonly string[];
+  /** Globs that are never listed, read or written. Matched case-insensitively. */
+  deny: readonly string[];
+};
+
+/**
+ * What a write was about, classified from its path.
+ */
+export type WrittenKind = "code" | "style" | "note" | "layout" | "capture" | "other";
+
+/**
+ * Payload of the global server event `files:written`.
+ */
+export type FilesWritten = {
+  readonly path: string;
+  readonly bytes: number;
+  readonly kind: WrittenKind;
+};
+
+/**
+ * The files api (`app.files`, `ctx.require(filesPlugin)`). Every rejection is an
+ * `Error & WireError` built with the protocol's wireError.
+ *
+ * @example
+ * ```ts
+ * const { text, version } = await app.files.read("features/ui/styles.ts");
+ * ```
+ */
+export type FilesApi = {
+  /** Direct children of a folder: folders first, then allowed files. */
+  list(dir: string): Promise<FileEntry[]>;
+  /** A UTF-8 text file and its sha1 version. */
+  read(path: string): Promise<FileText>;
+  /** Atomic text write with optional optimistic concurrency. */
+  write(path: string, text: string, version?: string): Promise<WriteResult>;
+  /** Atomic image write under `.moku/captures/`. */
+  writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
+  /** An image as a data URL with its version (R3). */
+  readBinary(path: string): Promise<FileBinary>;
+  /** Full synchronous check; the absolute real path. */
+  resolve(path: string): string;
+  /** The real project root (R3). */
+  root(): string;
+};
+~~~
+
+### 7.7 hub — server, Complex
+
+- depends: `[filesPlugin]`. Lifecycle: `onInit` (validate config, allowed origins), `onStart` (new token, silent check every `min(1000, silentAfterMs / 2)` ms), `onStop` (close every socket with 1001 `editor stopping`).
+- `serve` throws: before start, on a second call, with a `websocket` option, with `unix` or `tls`, with a hostname other than `127.0.0.1`/`localhost`, with a game route under the editor path.
+- Guard modes: `upgrade` (Origin required), `same-origin` (Origin and Sec-Fetch-Site checked when present), `navigate`.
+- Session choice for a game request without `session`: one open session wins; with several, the only embedded one wins; else -32003.
+- Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
+
+~~~ts
+/**
+ * Hub configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
+ * ```
+ */
+export type HubConfig = {
+  /** URL prefix of every editor route. Starts with "/", no trailing slash. */
+  path: string;
+  /** Extra exact origins allowed to upgrade and to call same-origin routes. */
+  allow: readonly string[];
+  /** Deadline of a forwarded call before it fails with -32002 (retryable). */
+  callTimeoutMs: number;
+  /** A session with no heartbeat for this long is marked silent (65 s after a paused beat, R6). */
+  silentAfterMs: number;
+};
+
+/**
+ * Payload of the global server event `hub:session`, and params of the `session` notification.
+ */
+export type HubSession = {
+  readonly id: string;
+  readonly game: string;
+  readonly open: boolean;
+  readonly reason?: "bye" | "game_reloaded";
+};
+
+/**
+ * Which request check guard applies (R3).
+ */
+export type GuardMode = "upgrade" | "same-origin" | "navigate";
+
+/**
+ * What the game passes to serve(). Unknown keys pass through to Bun untouched.
+ */
+export type ServeOptions = {
+  readonly port?: number;
+  readonly hostname?: string;
+  readonly development?: boolean | { readonly hmr?: boolean; readonly console?: boolean };
+  readonly routes?: Readonly<Record<string, unknown>>;
+  readonly fetch?: (req: Request, server: HubServer) => Response | Promise<Response>;
+  /** Refused at runtime too: the editor owns the one websocket handler. */
+  readonly websocket?: undefined;
+  readonly [key: string]: unknown;
+};
+
+/**
+ * Editor routes registered through addRoutes (pages) and merged by serve.
+ */
+export type EditorRoutes = Readonly<Record<string, Response | RouteHandler>>;
+
+/**
+ * The hub api (`app.hub`, `ctx.require(hubPlugin)`).
+ *
+ * @example
+ * ```ts
+ * Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+ * ```
+ */
+export type HubApi = {
+  /** Wraps Bun.serve options: 127.0.0.1 forced, editor routes and the websocket handler added. */
+  serve(options: ServeOptions): BunServeOptions;
+  /** The token of this start. Throws before start and after stop. */
+  token(): string;
+  /** Fresh SessionInfo list ordered by connectedAt. */
+  sessions(): SessionInfo[];
+  /** The `{path}/ws` upgrade handler. */
+  fetch(req: Request, server: HubServer): Response | undefined;
+  /** The one websocket handler. */
+  readonly websocket: HubWebSocketHandler;
+  /** Registers editor routes (pages, in onInit), merged by serve (R3). */
+  addRoutes(routes: EditorRoutes): void;
+  /** The shared Host / Origin / Sec-Fetch-Site check (R3). */
+  guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined;
+  /** config.path (R3). */
+  path(): string;
+};
+~~~
+
+### 7.8 pages — server, Standard
+
+- depends: `[filesPlugin, hubPlugin]`. Lifecycle: `onInit` only (`initPages`: check config, find the built page, `hub.addRoutes`).
+- Routes (`P = hub.path()`): `P` → 308 to `P/`; `P/` → tools page with the boot tag (503 when not built or before start); `P/hello` → `HelloBody` JSON (same-origin); `P/assets/*` → hashed assets, immutable cache.
+- Boot tag: `<script type="application/json" id="moku-editor-boot">` with `ToolsBoot` `{ v: 1, ws, token, path, title, editorUrl, gameUrl, root }`.
+- `PAGE_CSP` (exported from `routes.ts`): `default-src 'self'; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
+- Events: none. Log: `pages:not-built` (warn at init, error at first request).
+
+~~~ts
+/**
+ * Pages configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { pages: { editorUrl: "cursor://file/{path}:{line}" } } });
+ * ```
+ */
+export type PagesConfig = {
+  /** Tools page <title> and boot title. */
+  title: string;
+  /** "Open in editor" link template (D-08): {path} absolute file path, {line} 1-based line. */
+  editorUrl: string;
+  /** Folder with the built tools page; undefined = dist/tools next to the module. */
+  pageDir: string | undefined;
+  /** Same-origin URL of the game page the tools page embeds (R3). */
+  gameUrl: string;
+};
+
+/**
+ * The pages api (`app.pages`).
+ *
+ * @example
+ * ```ts
+ * Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+ * ```
+ */
+export type PagesApi = {
+  /** The routes this plugin registered with the hub in onInit (the same frozen object). */
+  routes(): EditorRoutes;
+};
+
+/**
+ * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--help]`.
+ */
+export type BinArgs =
+  | { readonly kind: "run"; readonly html: string; readonly port: number; readonly root: string }
+  | { readonly kind: "help" }
+  | { readonly kind: "error"; readonly message: string };
+~~~
+
+### 7.9 link — tools, Complex
+
+- depends: none (first tools plugin). Lifecycle: `onStart` (silence check, read boot tag, open socket without waiting), `onStop` (reject pending with `link_closed`, close 1000).
+- Session choice: sticky choice, then newest embedded, then newest. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
+- Events: emits `link:status`. Logs: `link:source-missing`, `link:watch-failed`.
+
+~~~ts
+/**
+ * No heartbeat of the chosen session for this long → silent (R6).
+ */
+export const SILENT_AFTER_MS = 6000;
+
+/**
+ * Used instead of SILENT_AFTER_MS when the last heartbeat said paused (R6).
+ */
+export const SILENT_AFTER_PAUSED_MS = 65_000;
+
+/**
+ * Interval of the silence check.
+ */
+export const SILENCE_CHECK_MS = 1000;
+
+/**
+ * Cap of the reconnect backoff.
+ */
+export const MAX_RETRY_MS = 8000;
+
+/**
+ * After the chosen session closed, lost turns into empty when no session appeared for this long.
+ */
+export const EMPTY_AFTER_LOST_MS = 10_000;
+
+/**
+ * Local guard on every request; link's callTimeoutMs in the R1 long-call rule.
+ */
+export const CALL_TIMEOUT_MS = 10_000;
+
+/**
+ * Cap of the durationMs extension of a long call (R1).
+ */
+export const LONG_CALL_CAP_MS = 60_000;
+
+/**
+ * Link configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { link: { retryMs: 500 } } });
+ * ```
+ */
+export type Config = {
+  /** Base delay of the reconnect backoff, in ms. Default 1000. */
+  retryMs: number;
+  /** CSS selector of the JSON script tag pages injects. Default "#moku-editor-boot". */
+  boot: string;
+};
+
+/**
+ * The files channel as the tools views use it (R1, R4).
+ *
+ * @example
+ * ```ts
+ * await app.link.files.write(".moku/notes/2026-09-24-first-top-item.md", text);
+ * ```
+ */
+export type FilesClient = {
+  list(dir: string): Promise<readonly FileEntry[]>;
+  read(path: string): Promise<FileText>;
+  write(path: string, text: string, version?: string): Promise<WriteResult>;
+  writeBinary(path: string, dataUrl: string): Promise<WriteResult>;
+  readBinary(path: string): Promise<FileBinary>;
+};
+
+/**
+ * The link api: the remote EditorChannel plus sessions, manifest, boot and the files client.
+ *
+ * @example
+ * ```ts
+ * const ran = await app.link.run("game.step", { frames: 1 }); // ran.state.frame === 1841
+ * ```
+ */
+export type LinkApi = EditorChannel & {
+  manifest(): Manifest | undefined;
+  onManifest(fn: (manifest: Manifest | undefined) => void): () => void;
+  sessions(): readonly SessionInfo[];
+  session(): string | undefined;
+  choose(session: string): Promise<Manifest>;
+  retry(): void;
+  boot(): ToolsBoot | undefined;
+  files: FilesClient;
+};
+~~~
+
+### 7.10 workspace — tools, Complex
+
+- depends: `[linkPlugin]`. Lifecycle: `onInit` (config, prefs, theme, hash, keys, Esc layers, palette), `onStart` (window listeners, `link.onManifest`), `mount(el)` (renders the shell, creates the frame layer once), `onStop`.
+- Keys: ⌘1–⌘6 and 1–6 switch workspaces; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; Esc unwinds layers in `EscLayer` order.
+- Devices: iPhone SE, iPhone 15 (default, portrait), iPhone 15 Pro Max, Pixel 8, iPad mini, Desktop.
+- D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`.
+- Events: emits `workspace:changed`, `workspace:ran`; hooks `link:status`.
+
+~~~ts
+/**
+ * The six workspaces.
+ */
+export type WorkspaceId = "flow" | "game" | "render" | "state" | "files" | "console";
+
+/**
+ * Workspace configuration (`defaultWorkspace`, `storageKey` from contracts §5; the rest private).
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { workspace: { defaultWorkspace: "game" } } });
+ * ```
+ */
+export type WorkspaceConfig = {
+  /** Workspace shown at start when the URL hash names none. */
+  defaultWorkspace: WorkspaceId;
+  /** localStorage key of the preferences record. */
+  storageKey: string;
+  /** How long reload() waits for the new session before giving up. */
+  reloadTimeoutMs: number;
+  /** How long one toast stays (hover or focus pauses it). */
+  toastMs: number;
+};
+
+/**
+ * The colour theme.
+ */
+export type Theme = "light" | "dark";
+
+/**
+ * A workspace that has a pinned game preview (every one but Game).
+ */
+export type PreviewWorkspace = Exclude<WorkspaceId, "game">;
+
+/**
+ * Preview preferences plus the float size in px.
+ */
+export type PreviewState = PreviewPrefs & { width: number; height: number };
+
+/**
+ * What device() returns (R4).
+ */
+export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation };
+
+/**
+ * A rail badge.
+ */
+export type Badge = { count: number; tone: "warn" | "error"; label: string };
+
+/**
+ * Result of the D-07 reload.
+ */
+export type ReloadResult = {
+  restored: boolean;
+  reason?:
+    | "not_mounted"
+    | "not_embedded"
+    | "no_session"
+    | "bookmark_failed"
+    | "restore_failed"
+    | "timeout";
+};
+
+/**
+ * Where a command run started.
+ */
+export type RunOrigin = "topbar" | "palette" | "key" | "panel";
+
+/**
+ * Payload of the global tools event `workspace:ran` (R4).
+ *
+ * @example
+ * ```ts
+ * const ran: RanEvent = { id: "game.step", input: { frames: 1 }, origin: "topbar", at: Date.now(), ok: true, result };
+ * ```
+ */
+export type RanEvent = {
+  readonly id: string;
+  readonly input: Json | undefined;
+  readonly origin: RunOrigin;
+  /** Date.now() when the call settled. */
+  readonly at: number;
+} & (
+  | { readonly ok: true; readonly result: RunResult }
+  | { readonly ok: false; readonly error: WireError }
+);
+
+/**
+ * The one game frame of the tools page (R4, D-14): it never moves in the DOM.
+ */
+export type GameFrame = {
+  /** Absolute URL of the game page (link.boot()?.gameUrl, else "/"). */
+  readonly url: string;
+  /** D-07 reload; concurrent calls share one run. */
+  reload(opts?: { restore?: boolean }): Promise<ReloadResult>;
+  /** Docks the frame over a stage slot (geometry only); returns the release function. */
+  dock(slot: HTMLElement, opts: { fit: FrameFit; clip?: HTMLElement }): () => void;
+  /** Element above the iframe in device space (game CSS px). */
+  overlay(): HTMLElement;
+  /** Current frame box, undefined before the first mount. */
+  box(): FrameBox | undefined;
+};
+
+/**
+ * One palette item.
+ */
+export type PaletteItem = {
+  id: string;
+  group: PaletteGroup;
+  label: string;
+  mono?: boolean;
+  hint?: string;
+  keywords?: string;
+  shortcut?: string;
+  run(): void;
+  /** ⇧↵, e.g. "Open in Files". */
+  alt?: { label: string; run(): void };
+  /** Reason shown dimmed; the item does not run. */
+  disabled?: () => string | false;
+};
+
+/**
+ * A key binding (design §4).
+ */
+export type KeyBinding = {
+  /** "mod+k" or ["shift+mod+c", "i"]. */
+  keys: string | readonly string[];
+  /** Shown in tooltips and the palette. */
+  label: string;
+  run(event: KeyboardEvent): void;
+  /** Active only there; omitted = global. */
+  workspace?: WorkspaceId;
+  when?: () => boolean;
+  inInputs?: boolean;
+};
+
+/**
+ * Esc layers in unwinding rank order (design §4).
+ */
+export type EscLayer =
+  | "palette"
+  | "contactSheet"
+  | "contextMenu"
+  | "noteEditor"
+  | "registry"
+  | "seriesPopover"
+  | "captureCard"
+  | "picker"
+  | "fileEdit"
+  | "codeEdit"
+  | "stepPopover"
+  | "selection";
+
+/**
+ * The workspace api (`app.workspace`, `tools.workspace` of every panel).
+ *
+ * @example
+ * ```ts
+ * app.workspace.show("game");
+ * app.workspace.toast("✓ Note saved", ".moku/notes/2026-09-24-first-top-item.md");
+ * ```
+ */
+export type WorkspaceApi = {
+  active(): WorkspaceId;
+  show(ws: WorkspaceId): void;
+  theme(): Theme;
+  setTheme(theme?: Theme): void;
+  preview(ws: PreviewWorkspace): PreviewState;
+  setPreview(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>): void;
+  device(): DeviceChoice;
+  setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation }): void;
+  devices(): readonly DeviceSpec[];
+  gameFrame(): GameFrame;
+  palette: {
+    add(item: PaletteItem | readonly PaletteItem[]): () => void;
+    open(query?: string): void;
+  };
+  toast(message: string, file?: string): void;
+  mount(element: HTMLElement): void;
+  host(ws: WorkspaceId): HTMLElement;
+  badge(ws: WorkspaceId, badge: Badge | undefined): void;
+  previewZone(
+    ws: PreviewWorkspace,
+    element: HTMLElement,
+    insets?: Insets | (() => Insets)
+  ): () => void;
+  keys: {
+    bind(binding: KeyBinding): () => void;
+    escape(layer: EscLayer, close: () => boolean): () => void;
+  };
+  overlayInGame(): boolean;
+  setOverlayInGame(on: boolean): Promise<void>;
+  onPrefs(fn: (prefs: Prefs) => void): () => void;
+};
+~~~
+
+### 7.11 panels — tools, Standard
+
+- depends: `[linkPlugin, workspacePlugin]`. Lifecycle: `onStart` (mount the active workspace, one palette item per panel, `link.onManifest` → recheck), `onStop` (unmount, unwatch).
+- Mount states (`data-panel-state`): `missing`, `no-game`, `waiting`, `ready`, `error`. Stale marking (`data-stale`): `silent`, `lost`, `resync`.
+- `definePanel` (root export) validates id `/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)*$/`, workspace, source refs, command ids, `view`, `compact`.
+- `shared/` modules (not exported from the root): `style-edit.ts`, `notes.ts`, `highlight.ts`, `tokens.ts`, `scene/`, `editor-url.ts`.
+- Events: emits `workspace:ran`; hooks `link:status`, `workspace:changed`.
+
+~~~ts
+/**
+ * A panel source: an id, or an id with its input.
+ */
+export type SourceRef = string | readonly [id: string, input: Json];
+
+/**
+ * The values a panel view gets, typed from its source ids.
+ */
+export type PanelValues<S> = { readonly [K in keyof S]: SourceValue<RefId<S[K]>> };
+
+/**
+ * What a panel view gets next to its values. Each `run` call emits `workspace:ran` (origin panel).
+ */
+export type PanelTools<C> = {
+  run: { readonly [K in keyof C]: (...input: CommandArgs<C[K]>) => Promise<RunResult> };
+  /** Snapshot at this render; the view re-renders on change. */
+  status: LinkStatus;
+  /** link's remote channel, for ad hoc reads. */
+  channel: EditorChannel;
+  /** link.files (R4). */
+  files: FilesClient;
+  workspace: WorkspaceApi;
+};
+
+/**
+ * The input of definePanel.
+ *
+ * @example
+ * ```ts
+ * const input: PanelInput<{ position: "game.position" }, {}> = { id: "state", title: "State", workspace: "state", sources: { position: "game.position" }, view };
+ * ```
+ */
+export type PanelInput<
+  S extends Readonly<Record<string, SourceRef>>,
+  C extends Readonly<Record<string, string>>
+> = {
+  /** /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)*$/, e.g. "flow.inspector". */
+  readonly id: string;
+  readonly title: string;
+  readonly workspace: WorkspaceId;
+  readonly sources: S;
+  readonly commands?: C;
+  readonly view: (values: PanelValues<S>, tools: PanelTools<C>) => PanelElement;
+  readonly compact?: (values: PanelValues<S>, tools: CompactTools<C>) => PanelElement;
+};
+
+/**
+ * The registered, closure-erased panel.
+ */
+export type PanelSpec = {
+  readonly id: string;
+  readonly title: string;
+  readonly workspace: WorkspaceId;
+  readonly sources: Readonly<Record<string, SourceRef>>;
+  readonly commands: Readonly<Record<string, string>>;
+  readonly view: (
+    values: Readonly<Record<string, Json>>,
+    tools: PanelTools<Readonly<Record<string, string>>>
+  ) => PanelElement;
+  readonly compact:
+    | ((
+        values: Readonly<Record<string, Json>>,
+        tools: CompactTools<Readonly<Record<string, string>>>
+      ) => PanelElement)
+    | undefined;
+};
+
+/**
+ * Panels configuration: empty (contracts §5).
+ */
+export type PanelsConfig = Record<string, never>;
+
+/**
+ * Where a run made outside the top bar started.
+ */
+export type PanelRunOrigin = "panel" | "key" | "palette";
+
+/**
+ * The panels api (`app.panels`, `ctx.require(panelsPlugin)`).
+ *
+ * @example
+ * ```ts
+ * panels.register(flowPanel);
+ * await panels.run("game.step", { frames: 1 });
+ * ```
+ */
+export type PanelsApi = {
+  /** Registers a panel built with definePanel; throws on a duplicate id. */
+  register(panel: PanelSpec): void;
+  /** Runs a command outside any render: link.run, then workspace:ran with the origin (R9). */
+  run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>;
+  /** Every registered panel, in registration order. */
+  list(): readonly PanelSpec[];
+  /** Mounts every panel of a workspace into an element; returns the unmount function. */
+  mountInto(ws: WorkspaceId, element: HTMLElement): () => void;
+};
+~~~
+
+### 7.12 flowView — tools, VeryComplex
+
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (registers the Flow panel with sources `game.graph`, `game.position`, `game.history { last: historyLast }` and commands `step`, `pause`, `resume`; palette; keys; Esc layers), `onStop` (waits for a pending layout save ≤ 1000 ms, disposes ELK).
+- Runs commands only through `panels.run`; never `link.run`.
+- Events: emits `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:new-note`.
+
+~~~ts
+/**
+ * flowView configuration (flat, spec/11 §2.6).
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { flowView: { stylesFile: "src/ui/styles.ts" } } });
+ * ```
+ */
+export type FlowViewConfig = {
+  /** Entries of game.history the panel watches. Default 20. */
+  historyLast: number;
+  /** Edges drawn as the trail, newest strongest. Default 6. */
+  trailLength: number;
+  /** Outcome names drawn as rejections. Default ["rejected"]. */
+  rejectedOutcomes: readonly string[];
+  /** Hub rule: a hub has at least this many outcomes (design §7.1). Default 6. */
+  hubMinOutcomes: number;
+  /** Hub rule: a hub has at least this many distinct returning nodes (design §7.1). Default 4. */
+  hubMinReturns: number;
+  /** Saved positions. Default ".moku/editor/layout.json". */
+  layoutFile: string;
+  /** Note files. Default ".moku/notes". */
+  notesDir: string;
+  /** The text-styles file the Styles tab reads and edits. Default "features/ui/styles.ts". */
+  stylesFile: string;
+  /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
+  layoutWorker: boolean;
+  /** Debounce before layout.json is written after a drop. Default 400. */
+  layoutSaveDelayMs: number;
+  /** Debounce before a style stepper burst is written. Default 600. */
+  styleSaveDelayMs: number;
+  /** Lowest zoom (design §4: 8 %). Default 0.08. */
+  minZoom: number;
+  /** Highest zoom (design §4: 300 %). Default 3. */
+  maxZoom: number;
+  /** Floor of the default camera (M11). Default 0.8. */
+  defaultMinZoom: number;
+};
+
+/**
+ * The flowView api (`app.flowView`), namespaced (spec/15 §2.5).
+ *
+ * @example
+ * ```ts
+ * app.flowView.focus.select("board/merge"); // true, the neighbours strip opens
+ * app.flowView.camera.fitAll(); // the whole main frame in view
+ * ```
+ */
+export type FlowViewApi = {
+  camera: CameraApi;
+  focus: FocusApi;
+  flows: FlowsApi;
+  layout: LayoutApi;
+  notes: NotesApi;
+};
+
+/**
+ * The camera namespace of the api (`app.flowView.camera`).
+ */
+export type CameraApi = {
+  /**
+   * The current camera: screen = world · z + (x, y). A copy.
+   *
+   * @returns The camera.
+   * @example
+   * ```ts
+   * // The zoom readout of the zoom bar.
+   * Math.round(app.flowView.camera.get().z * 100); // 100
+   * ```
+   */
+  get(): Camera;
+
+  /**
+   * Fits every item of the root frame (F / ⇧1), leaving room for the preview and the minimap.
+   *
+   * @example
+   * ```ts
+   * // After a long walk through the board, show the whole main frame again.
+   * app.flowView.camera.fitAll(); // whole main frame in view
+   * ```
+   */
+  fitAll(): void;
+
+  /**
+   * Fits the selection and its neighbours (⇧2); the current node when nothing is selected.
+   *
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge");
+   * app.flowView.camera.fitSelection(); // merge, awaitIntent and the stubs of merge in view
+   * ```
+   */
+  fitSelection(): void;
+
+  /**
+   * Zooms by a factor around the viewport centre (+ / −: 1.25 / 0.8), animated over 200 ms.
+   *
+   * @param factor - The zoom factor; the result is clamped to 8 %–300 %.
+   * @example
+   * ```ts
+   * app.flowView.camera.zoomBy(1.25); // 100 % → 125 %
+   * ```
+   */
+  zoomBy(factor: number): void;
+
+  /**
+   * Sets an absolute zoom around the viewport centre (key 0 → 1), animated over 200 ms.
+   *
+   * @param z - The zoom; clamped to 8 %–300 %.
+   * @example
+   * ```ts
+   * app.flowView.camera.zoomTo(1); // 100 %
+   * ```
+   */
+  zoomTo(z: number): void;
+
+  /**
+   * Toggles or sets Follow the game (B5). Only this call and the toolbar toggle change it (M9).
+   *
+   * @param on - The new value; omitted = toggle.
+   * @returns The new value.
+   * @example
+   * ```ts
+   * app.flowView.camera.follow(true); // true: the camera tracks game.position
+   * ```
+   */
+  follow(on?: boolean): boolean;
+};
+
+/**
+ * The focus namespace of the api (`app.flowView.focus`).
+ */
+export type FocusApi = {
+  /**
+   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item and
+   * the neighbours strip opens. A bare NodeId resolves to its first visible instance; inside a
+   * collapsed sub-flow the parents expand first. `undefined` leaves focus.
+   *
+   * @param key - An ItemKey, a NodeId, or undefined.
+   * @returns False for an unknown key, else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge"); // true, strip opens
+   * app.flowView.focus.select("board/nope"); // false, nothing selected
+   * ```
+   */
+  select(key: ItemKey | NodeId | undefined): boolean;
+
+  /**
+   * The selected item key.
+   *
+   * @returns The key, or undefined when nothing is selected.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("main/home");
+   * app.flowView.focus.selected(); // "main/home"
+   * ```
+   */
+  selected(): ItemKey | undefined;
+
+  /**
+   * Node id of the current position, from game.position.
+   *
+   * @returns The id, or undefined before the first position.
+   * @example
+   * ```ts
+   * // The game waits on the board.
+   * app.flowView.focus.current(); // "board/awaitIntent"
+   * ```
+   */
+  current(): NodeId | undefined;
+
+  /**
+   * Walks the graph through the neighbours strip: "next" (→) focuses the highlighted *Goes to*
+   * row's target (default: the row on the trail), "prev" (←) the highlighted *Comes from* source.
+   *
+   * @param direction - "prev" = ←, "next" = →.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge");
+   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Goes to" row
+   * ```
+   */
+  walk(direction: "prev" | "next"): void;
+
+  /**
+   * Focuses the edge taken at a frame and marks its history row (the `workspace:focus-frame` hook
+   * calls it), then toasts "Frame N · path · outcome", or "No edge at frame N · last edge before
+   * it …".
+   *
+   * @param frame - A game frame.
+   * @returns False when the history carries no frames (until F-H1), else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.focusFrame(1778); // true: selects edge board/merge:rejected and its row
+   * ```
+   */
+  focusFrame(frame: number): boolean;
+
+  /**
+   * Runs game.step { frames: 1 } through panels.run (R9). Does nothing unless the game is paused
+   * (M5); a failed run is logged and toasted, and resolves undefined.
+   *
+   * @returns The run result, or undefined when not paused or failed.
+   * @example
+   * ```ts
+   * await app.flowView.focus.step(); // { value, state: { path, frame, tainted } } or undefined
+   * ```
+   */
+  step(): Promise<RunResult | undefined>;
+
+  /**
+   * Toggles or sets the history strip (H).
+   *
+   * @param open - The new value; omitted = toggle.
+   * @returns Whether the strip is open.
+   * @example
+   * ```ts
+   * app.flowView.focus.history(true); // true: 288 px strip with 20 rows
+   * ```
+   */
+  history(open?: boolean): boolean;
+};
+
+/**
+ * The flows namespace of the api (`app.flowView.flows`).
+ */
+export type FlowsApi = {
+  /**
+   * Expands a sub-flow or slot item in place (design §7.5).
+   *
+   * @param key - The item key of a sub-flow or slot node.
+   * @example
+   * ```ts
+   * app.flowView.flows.expand("main/settings"); // the settingsPopup frame opens inside main
+   * ```
+   */
+  expand(key: ItemKey): void;
+
+  /**
+   * Collapses an expanded sub-flow or slot item back to a card.
+   *
+   * @param key - The item key of the expanded node.
+   * @example
+   * ```ts
+   * app.flowView.flows.collapse("main/board"); // the board hub folds into one card
+   * ```
+   */
+  collapse(key: ItemKey): void;
+
+  /**
+   * Enters a sub-flow node as its own canvas (double-click, "Enter <flow>").
+   *
+   * @param key - The item key of a sub-flow node.
+   * @example
+   * ```ts
+   * app.flowView.flows.enter("main/board"); // breadcrumb main › board
+   * ```
+   */
+  enter(key: ItemKey): void;
+
+  /**
+   * Leaves entered flows up to a depth (0 = main). Breadcrumb segments call it (M1).
+   *
+   * @param depth - How many entered flows stay.
+   * @example
+   * ```ts
+   * app.flowView.flows.up(0); // back to main
+   * ```
+   */
+  up(depth: number): void;
+};
+
+/**
+ * The layout namespace of the api (`app.flowView.layout`).
+ */
+export type LayoutApi = {
+  /**
+   * Pinned items (node and note positions) in the visible flows: Reset layout is disabled at 0 (M8).
+   *
+   * @returns The count.
+   * @example
+   * ```ts
+   * // merge and toast were dragged on the board.
+   * app.flowView.layout.pinnedCount(); // 2
+   * ```
+   */
+  pinnedCount(): number;
+
+  /**
+   * Clears the pins of the visible flows, writes layout.json and toasts the file (M12).
+   *
+   * @returns Resolves when the file is written.
+   * @throws {Error} When nothing is pinned or layout.json is not valid.
+   * @example
+   * ```ts
+   * await app.flowView.layout.reset(); // toast "Layout reset · 3 pinned nodes · .moku/editor/layout.json"
+   * ```
+   */
+  reset(): Promise<void>;
+};
+
+/**
+ * One note file under notesDir.
+ */
+export type NoteFile = {
+  readonly path: string;
+  readonly version: string;
+  /** undefined when the front matter is not readable (the file is never rewritten). */
+  readonly note: Note | undefined;
+  readonly error: NoteParseError | undefined;
+};
+
+/**
+ * The note editor (D5) draft.
+ */
+export type NoteDraft = {
+  title: string;
+  body: string;
+  from: { node: string; outcome?: string } | undefined;
+  captures: readonly string[];
+  /** Free note position in world units (viewport centre). */
+  anchor: { x: number; y: number } | undefined;
+};
+
+/**
+ * The input of notes.create.
+ *
+ * @example
+ * ```ts
+ * const input: NoteInput = { title: "First wood 4", from: { node: "board/merge", outcome: "done" } };
+ * ```
+ */
+export type NoteInput = {
+  readonly title: string;
+  readonly body?: string;
+  readonly from?: { readonly node: string; readonly outcome?: string };
+  readonly to?: string;
+  readonly captures?: readonly string[];
+};
+
+/**
+ * The notes namespace of the api (`app.flowView.notes`).
+ */
+export type NotesApi = {
+  /**
+   * The parsed note files, newest first (at most 200).
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * app.flowView.notes.list()[0]?.path; // ".moku/notes/2026-09-24-first-top-item.md"
+   * ```
+   */
+  list(): readonly NoteFile[];
+
+  /**
+   * Opens the note editor (D5). The `workspace:new-note` hook calls it with `{ captures, from }`.
+   *
+   * @param draft - Prefilled fields; omitted = a free note.
+   * @example
+   * ```ts
+   * app.flowView.notes.edit({ from: { node: "board/merge", outcome: "done" } }); // "On board/merge · done"
+   * ```
+   */
+  edit(draft?: Partial<NoteDraft>): void;
+
+  /**
+   * Writes a new note file `<notesDir>/<date>-<slug>.md` with the contract front matter and
+   * toasts "✓ Note saved · <path>" (M12).
+   *
+   * @param input - Title and optional body, origin, target and captures.
+   * @returns The written note file.
+   * @example
+   * ```ts
+   * await app.flowView.notes.create({ title: "First wood 4", body: "…", from: { node: "board/merge", outcome: "done" } });
+   * // { path: ".moku/notes/2026-09-24-first-wood-4.md", note: { status: "idea", to: "board/awaitIntent", … } }
+   * ```
+   */
+  create(input: NoteInput): Promise<NoteFile>;
+
+  /**
+   * Appends capture paths to a note's front matter (version checked, one retry) and toasts
+   * "✓ Attached to <title>".
+   *
+   * @param path - The note file.
+   * @param captures - Capture paths (PNGs or series index.json).
+   * @returns The rewritten note file.
+   * @throws {Error} When the note's front matter is not readable (it is never rewritten).
+   * @example
+   * ```ts
+   * await app.flowView.notes.attach(".moku/notes/2026-09-24-first-top-item.md", [".moku/captures/2026-09-24-1012-board.png"]);
+   * ```
+   */
+  attach(path: string, captures: readonly string[]): Promise<NoteFile>;
+};
+~~~
+
+### 7.13 gameView — tools, Complex
+
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active), `onStop`.
+- Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown. Runs `editor.*` commands through `panels.run`. Never captures on its own.
+- Events: emits `workspace:reveal`, `workspace:new-note`, `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
+
+~~~ts
+/**
+ * gameView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { gameView: { manifestPaths: ["public/manifest.json"] } } });
+ * ```
+ */
+export type GameViewConfig = {
+  /** Folder of screenshots and series, relative to the files root. */
+  capturesDir: string;
+  /** Folder of notes, relative to the files root. */
+  notesDir: string;
+  /** Where the game's asset manifest may live, tried in order. */
+  manifestPaths: readonly string[];
+  /** The capture card hides after this unless hovered or focused. */
+  captureCardMs: number;
+  /** Duration chips of the series popover (the longest equals capture's maxDurationMs). */
+  seriesDurationsMs: readonly number[];
+  /** Interval chips of the series popover (the shortest equals capture's minIntervalMs). */
+  seriesIntervalsMs: readonly number[];
+  /** Above this many planned shots the popover warns. */
+  seriesWarnShots: number;
+  /** Source search for the style block of a picked element. */
+  sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
+};
+
+/**
+ * A saved screenshot.
+ *
+ * @example
+ * ```ts
+ * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" };
+ * ```
+ */
+export type CaptureFile = {
+  readonly path: string;
+  readonly frame: number;
+  /** "iPhone 15 portrait". */
+  readonly device: string;
+  readonly image: string;
+};
+
+/**
+ * A written series.
+ *
+ * @example
+ * ```ts
+ * const result: SeriesResult = { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 };
+ * ```
+ */
+export type SeriesResult = {
+  readonly folder: string;
+  readonly indexPath: string;
+  readonly shots: number;
+};
+
+/**
+ * The gameView api (`app.gameView`, `ctx.require(gameViewPlugin)`).
+ *
+ * @example
+ * ```ts
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", … }
+ * ```
+ */
+export type GameViewApi = {
+  /**
+   * Turns the element picker on or off; without an argument it toggles. On shows the Game
+   * workspace, the Element tab and the hint pill; off clears the hover box.
+   *
+   * @param on - true for on, false for off, omitted to toggle.
+   * @example
+   * ```ts
+   * // The developer wants to pick an element in the running game.
+   * app.gameView.pick(true); // app.workspace.active() === "game", picker on
+   * ```
+   */
+  pick(on?: boolean): void;
+
+  /**
+   * The picked element.
+   *
+   * @returns The element ref, undefined when nothing is selected.
+   * @example
+   * ```ts
+   * // After a click on the coin pill in the game.
+   * app.gameView.selected(); // { kind: "ui", path: "boardScreen/hudRow/coinPill" }
+   * ```
+   */
+  selected(): ElementRef | undefined;
+
+  /**
+   * Selects an element without the picker, or clears the selection. Clears the style card.
+   *
+   * @param ref - The element, undefined to clear.
+   * @example
+   * ```ts
+   * // A test selects the first board item by its entity id.
+   * app.gameView.select({ kind: "entity", id: 1_048_628 });
+   * app.gameView.selected(); // { kind: "entity", id: 1048628 }
+   * ```
+   */
+  select(ref: ElementRef | undefined): void;
+
+  /**
+   * Selects an element, opens the Element tab and shows the Game workspace. The
+   * `workspace:inspect` hook calls it (renderView's "Inspect in Game", R9).
+   *
+   * @param ref - The element.
+   * @example
+   * ```ts
+   * // The palette jumps from a render-tree row to the Game workspace.
+   * app.gameView.inspect({ kind: "ui", path: "boardScreen/boardSlot" }); // Game shown, Element tab filled
+   * ```
+   */
+  inspect(ref: ElementRef): void;
+
+  /**
+   * The scene built with the shared `buildScene` from the watched `game.ui`, `game.entities`
+   * and `game.projections` (watched while Game is shown, R6). While Game is hidden it reads the
+   * three once. Rejects with the link's WireError when no game is connected.
+   *
+   * @returns The scene snapshot.
+   * @throws {Error} The link's WireError, or `[moku-editor] game.ui has the wrong shape …`.
+   * @example
+   * ```ts
+   * // merge-game on the inert renderer: one reference unit is one page px.
+   * const scene = await app.gameView.scene();
+   * scene.nodes.get("ui:boardScreen/boardSlot")?.rect; // { x: 55, y: 801, w: 970, h: 970 }
+   * ```
+   */
+  scene(): Promise<SceneSnapshot>;
+
+  /**
+   * The page rect of one element, from `scene()`.
+   *
+   * @param ref - The element.
+   * @returns Its rect in page CSS px, undefined when it is unknown or could not be placed.
+   * @example
+   * ```ts
+   * // The first board item of merge-game at board/awaitIntent.
+   * await app.gameView.locate({ kind: "entity", id: 1_048_628 }); // { x: 428.5, y: 880.5, w: 223, h: 223 }
+   * ```
+   */
+  locate(ref: ElementRef): Promise<PageRect | undefined>;
+
+  /**
+   * Draws the pink box (`--pick-tree`) around an element over the game frame, wherever the frame
+   * is docked (stage or pinned preview); undefined clears it. A newer call drops an older one
+   * still waiting for the scene.
+   *
+   * @param ref - The element, undefined to clear.
+   * @example
+   * ```ts
+   * // renderView hovers a row of its tree.
+   * app.gameView.highlight({ kind: "ui", path: "boardScreen/hudRow/coinPill" }); // pink ring over the game
+   * app.gameView.highlight(undefined); // ring gone
+   * ```
+   */
+  highlight(ref: ElementRef | undefined): void;
+
+  /**
+   * The game's texture catalogue: the first readable `manifestPaths` entry parsed with the shared
+   * `parseTextureManifest`. Cached for the session.
+   *
+   * @returns The catalogue, undefined when no manifest was found.
+   * @example
+   * ```ts
+   * // The Element tab shows the GPU size of a picked sprite's texture.
+   * (await app.gameView.manifest())?.textures.get("board.cell")?.gpuMb; // 4
+   * ```
+   */
+  manifest(): Promise<TextureCatalogue | undefined>;
+
+  /**
+   * One screenshot: runs `editor.capture` through panels (R9), writes the PNG under
+   * `capturesDir`, toasts, shows the capture card and the shutter flash. Never captures on its
+   * own: only a user action or this call does.
+   *
+   * @returns The saved capture, undefined when no game is connected, the game lacks
+   * `editor.capture`, or the capture failed (a toast says which).
+   * @example
+   * ```ts
+   * // The developer saw a glitch on the board and keeps a picture of it.
+   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" }
+   * ```
+   */
+  capture(): Promise<CaptureFile | undefined>;
+
+  /**
+   * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
+   * new `series-<stamp>/` folder, then opens the contact sheet. Shows Game first. Refuses while
+   * another series runs.
+   *
+   * @param options - Length and spacing in ms, and an optional label (default: the flow path).
+   * @param options.durationMs - Length of the series.
+   * @param options.intervalMs - Time between two shots.
+   * @param options.label - Label of the sheet and the index.
+   * @returns The folder, its index.json and the number of shots written; undefined when refused
+   * or failed.
+   * @example
+   * ```ts
+   * // Watch the merge animation frame by frame.
+   * await app.gameView.series({ durationMs: 2000, intervalMs: 100 }); // { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
+   * ```
+   */
+  series(options: {
+    durationMs: number;
+    intervalMs: number;
+    label?: string;
+  }): Promise<SeriesResult | undefined>;
+
+  /**
+   * Stops the running series early: runs `editor.seriesStop` through panels (R2, R9). The
+   * pending series then resolves with the shots taken so far; its index gets `stoppedEarly`.
+   *
+   * @example
+   * ```ts
+   * // The interesting moment is over long before the 20 s series ends.
+   * const recording = app.gameView.series({ durationMs: 20_000, intervalMs: 100 });
+   * app.gameView.stopSeries(); // the pending series resolves with the shots taken so far
+   * ```
+   */
+  stopSeries(): void;
+
+  /**
+   * Opens a saved series' contact sheet: reads its index.json and every PNG. Shows Game. The
+   * `workspace:open-sheet` hook calls it (filesView "Open contact sheet").
+   *
+   * @param indexPath - Path of the series' index.json.
+   * @returns Resolves when the sheet is open (or a toast said why not).
+   * @example
+   * ```ts
+   * // filesView's "Open contact sheet" on a series folder.
+   * await app.gameView.openSheet(".moku/captures/series-2026-09-24-1015/index.json");
+   * ```
+   */
+  openSheet(indexPath: string): Promise<void>;
+
+  /**
+   * Adds a capture (a PNG or a series index.json) to a note's front matter `captures[]` through
+   * the shared codec; writes with the version and toasts "✓ Attached to <title>". A path already
+   * listed is not added twice; a note whose front matter is not readable is never rewritten.
+   *
+   * @param capture - Path of the PNG or the series index.json.
+   * @param notePath - Path of the note.
+   * @returns Resolves when written (or a toast said why not).
+   * @example
+   * ```ts
+   * // Keep the screenshot with the bug note it belongs to.
+   * await app.gameView.attach(".moku/captures/2026-09-24-1012-board.png", ".moku/notes/2026-09-24-first-top-item.md");
+   * ```
+   */
+  attach(capture: string, notePath: string): Promise<void>;
+
+  /**
+   * The notes under `notesDir` for the note select, newest first (by file name).
+   *
+   * @returns Path and front-matter title of every note.
+   * @example
+   * ```ts
+   * // The note select of the capture card.
+   * await app.gameView.notes(); // [{ path: ".moku/notes/2026-09-24-first-top-item.md", title: "First top item" }]
+   * ```
+   */
+  notes(): Promise<readonly { path: string; title: string }[]>;
+};
+~~~
+
+### 7.14 renderView — tools, Standard
+
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Render panel), `onStart` (session watches `game.render`, `game.assets`, `game.effects` by manifest), `onStop`.
+- Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `workspace:reveal`.
+
+~~~ts
+/**
+ * renderView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { renderView: { fpsSamples: 120 } } });
+ * ```
+ */
+export type RenderViewConfig = {
+  /** FPS samples kept for the sparkline (one per changed game.render value). */
+  fpsSamples: number;
+  /** Release log entries kept, newest first. */
+  releaseLogMax: number;
+  /** Where the game's asset manifest may live, tried in order through link.files.read. */
+  manifestPaths: readonly string[];
+};
+
+/**
+ * Sort key of the textures table.
+ */
+export type TextureSortKey = "key" | "bundle" | "size" | "gpuMb" | "fileMb" | "use";
+
+/**
+ * The derived view data (copies, never the live maps).
+ */
+export type RenderSnapshot = {
+  frame: number | undefined;
+  tiles: MetricTiles;
+  tree: readonly TreeRow[];
+  /** The rows of the table: loaded bundles, the bundle filter applied, sorted. */
+  textures: readonly TextureRow[];
+  bundles: readonly BundleRow[];
+  pools: { views: number; pooled: number } | undefined;
+  releases: readonly ReleaseEntry[];
+};
+
+/**
+ * The renderView api (`app.renderView`, `ctx.require(renderViewPlugin)`).
+ *
+ * @example
+ * ```ts
+ * app.workspace.show("render");
+ * app.renderView.snapshot().tiles.heap; // { kind: "absent" }
+ * ```
+ */
+export type RenderViewApi = {
+  /**
+   * Re-reads the asset manifest and the game.rect calibration (the Textures card's Refresh and a
+   * device change). Live values come from the watches: this is not a poll. Does nothing while the
+   * link is not live or paused.
+   *
+   * @returns Resolves when both reads settled (never rejects).
+   * @example
+   * ```ts
+   * // The game's manifest.json changed on disk: read it again.
+   * await app.renderView.refresh();
+   * app.renderView.snapshot().textures.length; // 3: the textures of the loaded bundles
+   * ```
+   */
+  refresh(): Promise<void>;
+
+  /**
+   * The derived view data: tiles, visible tree rows, texture rows (filter and sort applied),
+   * bundles, pools and the release log. Copies, never the live maps (spec/11 §2.4).
+   *
+   * @returns The snapshot.
+   * @example
+   * ```ts
+   * // An MCP tool reports the render numbers of the connected game.
+   * const { tiles } = app.renderView.snapshot();
+   * tiles.drawCalls; // { kind: "absent" } in a production build
+   * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+   * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
+   * ```
+   */
+  snapshot(): RenderSnapshot;
+
+  /**
+   * Shows Render, opens every ancestor row of the element, selects it and scrolls it into view.
+   * Before the first scene (Render was hidden) the ref waits and applies on the first scene.
+   * The `workspace:reveal` hook calls it.
+   *
+   * @param ref - The element.
+   * @example
+   * ```ts
+   * // gameView's Element tab "Show in render tree" emits workspace:reveal; the hook does:
+   * app.renderView.reveal({ kind: "entity", id: 3_145_728 });
+   * app.renderView.snapshot().tree.find(row => row.id === "entity:3145728")?.depth; // 2
+   * ```
+   */
+  reveal(ref: ElementRef): void;
+
+  /**
+   * Draws the pink box (`--pick-tree`) around the element in renderView's root inside
+   * `workspace.gameFrame().overlay()` (device space), from the calibrated scene rect. `undefined`
+   * clears it; a ref without a rect draws nothing.
+   *
+   * @param ref - The element, or undefined to clear.
+   * @example
+   * ```ts
+   * // A tree row is hovered: ring the board slot over the game preview, then clear on leave.
+   * app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
+   * app.renderView.highlight(undefined);
+   * ```
+   */
+  highlight(ref: ElementRef | undefined): void;
+
+  /**
+   * Sorts the textures table. The same key flips the direction; a new key sorts numbers
+   * descending and text ascending.
+   *
+   * @param key - The column.
+   * @example
+   * ```ts
+   * // The Texture column header was clicked.
+   * app.renderView.sortTextures("key");
+   * app.renderView.snapshot().textures.map(row => row.key); // ["board.board-tray", "board.cell", ...]
+   * ```
+   */
+  sortTextures(key: TextureSortKey): void;
+
+  /**
+   * Filters the textures table by bundle: `"all"` or a bundle name (the bundle chips).
+   *
+   * @param bundle - "all" or a bundle name.
+   * @example
+   * ```ts
+   * // The "ui" chip was picked.
+   * app.renderView.filterBundle("ui");
+   * app.renderView.snapshot().textures.every(row => row.bundle === "ui"); // true
+   * ```
+   */
+  filterBundle(bundle: string): void;
+};
+~~~
+
+### 7.15 stateView — tools, Standard
+
+- depends: `[linkPlugin, panelsPlugin]` (no workspace). Lifecycle: `onInit` (panel `state` with sources `game.model`, `game.position`, `game.history { last: 1 }`), `onStart` (watches `game.model` and `game.tainted`, `link.onManifest`), `onStop`.
+- Commits are derived by diffing `game.model` snapshots; the first value of a session is the baseline; the frame is the heartbeat frame (`~fN`).
+- Events: hooks `link:status`, `workspace:ran`. Logs: `stateView:unexpected-model`, `stateView:unexpected-tainted`, `stateView:graph-unavailable`.
+
+~~~ts
+/**
+ * stateView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { stateView: { expandDepth: 3 } } });
+ * ```
+ */
+export type Config = {
+  /** Tree levels open by default under player and session (0 = only the root row). Default 2. */
+  expandDepth: number;
+  /** Most patches kept per commit; the rest is counted as "+N more". Default 200. */
+  maxPatches: number;
+  /** Children shown per array or object before a "Show N more" row. Default 100. */
+  pageSize: number;
+};
+
+/**
+ * A root of the model that stateView shows as a tree and diffs: rng is never a tree.
+ *
+ * @example
+ * ```ts
+ * const root: StateRoot = "player";
+ * ```
+ */
+export type StateRoot = "player" | "session";
+
+/**
+ * One derived patch: JSON Patch shape plus the old value.
+ *
+ * @example
+ * ```ts
+ * const patch: StatePatch = {
+ *   op: "replace", root: "player", path: ["merge", "energy", "value"],
+ *   pointer: "/player/merge/energy/value", value: 7, was: 8
+ * };
+ * ```
+ */
+export type StatePatch = {
+  readonly op: "add" | "remove" | "replace";
+  readonly root: StateRoot;
+  /** Inside the root, e.g. ["merge", "energy", "value"]. */
+  readonly path: readonly (string | number)[];
+  /** JSON Pointer incl. root, e.g. "/player/merge/energy/value". */
+  readonly pointer: string;
+  /** The new value (add, replace). */
+  readonly value?: Json;
+  /** The old value (remove, replace). */
+  readonly was?: Json;
+};
+
+/**
+ * The last derived commit of the session.
+ *
+ * @example
+ * ```ts
+ * app.stateView.lastCommit(); // { seq: 1, frame: 1503, patches: [4 patches], truncated: 0, rngChanged: false, … }
+ * ```
+ */
+export type LastCommit = {
+  /** 1, 2, 3 … commits seen in this session. */
+  readonly seq: number;
+  /** Heartbeat frame when the value arrived (approximate, shown ~fN). */
+  readonly frame: number | undefined;
+  /** Date.now() on arrival. */
+  readonly at: number;
+  /** At most maxPatches, in document order. */
+  readonly patches: readonly StatePatch[];
+  /** Patches not kept. */
+  readonly truncated: number;
+  /** Pointers of every kept patch. */
+  readonly changed: ReadonlySet<string>;
+  /** Every proper prefix pointer of `changed` ("/player", "/player/merge"). */
+  readonly ancestors: ReadonlySet<string>;
+  /** The rng branch differs (one meta line, never patches). */
+  readonly rngChanged: boolean;
+};
+
+/**
+ * Why there is no commit: never connected, connected without a commit yet, reset by a reload.
+ *
+ * @example
+ * ```ts
+ * const note: TrackerNote = "waiting";
+ * ```
+ */
+export type TrackerNote = "none" | "waiting" | "reloaded";
+
+/**
+ * The stateView api (`app.stateView`): the commit tracker and the tree expansion of the State
+ * workspace. The view and the tests read it; no other plugin needs it yet.
+ *
+ * @example
+ * ```ts
+ * app.stateView.lastCommit()?.patches.length; // 4
+ * ```
+ */
+export type StateViewApi = {
+  /**
+   * The last commit of the current session, derived by diffing two `game.model` snapshots (R4).
+   * The first value after a connect or a reset is a baseline, never a commit; a value equal to
+   * the baseline is no commit either.
+   *
+   * @returns The commit, undefined before the first one of the session.
+   * @example
+   * ```ts
+   * // The player tapped the sawmill; the heartbeat said frame 1503 when the value arrived.
+   * app.stateView.lastCommit()?.patches.length; // 4
+   * app.stateView.lastCommit()?.frame; // 1503
+   * ```
+   */
+  lastCommit(): LastCommit | undefined;
+
+  /**
+   * Why there is no commit: `"none"` (never connected), `"waiting"` (connected, no commit yet),
+   * `"reloaded"` (the game page reloaded and reset the tracker).
+   *
+   * @returns The note.
+   * @example
+   * ```ts
+   * // A game connected and sent its first snapshot; nobody tapped yet.
+   * app.stateView.note(); // "waiting"
+   * ```
+   */
+  note(): TrackerNote;
+
+  /**
+   * Calls `fn` after every tracker change: a commit, a reset, a taint, the graph, an expansion.
+   *
+   * @param fn - The listener.
+   * @returns The unsubscribe; calling it twice is a no-op.
+   * @example
+   * ```ts
+   * // A test counts the tracker changes of one tap.
+   * let changes = 0;
+   * const off = app.stateView.onCommit(() => changes++);
+   * off(); // later changes are not counted
+   * ```
+   */
+  onCommit(fn: () => void): () => void;
+
+  /**
+   * The last known taint of the session, from the `game.tainted` watch (R6) or, at once, from the
+   * run envelope of a command run on the tools page.
+   *
+   * @returns true or false, undefined while unknown.
+   * @example
+   * ```ts
+   * // A fresh session where no cheat ran.
+   * app.stateView.tainted(); // false
+   * ```
+   */
+  tainted(): boolean | undefined;
+
+  /**
+   * The cached `game.graph` of the current session, read once per manifest; the Runner derives
+   * the stack from it.
+   *
+   * @returns The graph, undefined before it arrived or when the read failed.
+   * @example
+   * ```ts
+   * // After the merge-game session attached.
+   * app.stateView.graph(); // { main: "main", flows: { main: …, board: … }, slots: … }
+   * ```
+   */
+  graph(): Json | undefined;
+
+  /**
+   * Open state of a tree row: the stored override, else `depth < config.expandDepth`.
+   *
+   * @param pointer - JSON pointer of the row, e.g. "/player/merge".
+   * @param depth - Depth of the row; the root row is 0.
+   * @returns Whether the row is open.
+   * @example
+   * ```ts
+   * // Default expandDepth 2: the root and its children are open.
+   * app.stateView.expanded("/player/merge", 1); // true
+   * app.stateView.expanded("/player/merge/board", 2); // false
+   * ```
+   */
+  expanded(pointer: string, depth: number): boolean;
+
+  /**
+   * Stores the open state of one tree row and notifies the listeners.
+   *
+   * @param pointer - JSON pointer of the row.
+   * @param open - true to open, false to close.
+   * @example
+   * ```ts
+   * // The developer folds the board away.
+   * app.stateView.setExpanded("/player/merge/board", false);
+   * app.stateView.expanded("/player/merge/board", 2); // false
+   * ```
+   */
+  setExpanded(pointer: string, open: boolean): void;
+
+  /**
+   * Opens or closes every object and array row under a root of the current baseline (Expand all
+   * / Collapse all) and notifies the listeners.
+   *
+   * @param root - "player" or "session".
+   * @param open - true for Expand all, false for Collapse all.
+   * @example
+   * ```ts
+   * // Expand all on the Player card.
+   * app.stateView.expandAll("player", true);
+   * app.stateView.expanded("/player/merge/generators/sawmill", 3); // true
+   * ```
+   */
+  expandAll(root: StateRoot, open: boolean): void;
+};
+~~~
+
+### 7.16 filesView — tools, Complex
+
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Files panel, `mod+s`, `fileEdit` Esc layer), `onStart` (`game.graph` per manifest, index build, `beforeunload` guard), `onStop`.
+- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `workspace:changed`, `workspace:open-file`.
+
+~~~ts
+/**
+ * Parallel folder listings of the tree walk.
+ */
+export const WALK_CONCURRENCY = 4;
+
+/**
+ * Folders deeper than this are not listed.
+ */
+export const WALK_MAX_DEPTH = 12;
+
+/**
+ * An index older than this is rebuilt when Files is shown.
+ */
+export const INDEX_STALE_MS = 10_000;
+
+/**
+ * Above this many lines the viewer renders a window.
+ */
+export const WINDOW_LINES = 2000;
+
+/**
+ * Above this many lines the editor has no colour.
+ */
+export const EDIT_COLOUR_LINES = 5000;
+
+/**
+ * The files server's text read limit (files spec).
+ */
+export const SERVER_READ_LIMIT_BYTES = 2 * 1024 * 1024;
+
+/**
+ * filesView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { filesView: { maxFiles: 10_000 } } });
+ * ```
+ */
+export type Config = {
+  /** Most files indexed by the tree walk; the header then reads "Project · 5000+ files". */
+  maxFiles: number;
+  /** Files longer than this (characters) show without colour. */
+  maxHighlightChars: number;
+  /** Extensions whose save outside .moku/ runs the D-07 reload. */
+  reloadExtensions: readonly string[];
+  /** A clean tab is re-read on activation when its last check is older than this, in ms. */
+  revalidateMs: number;
+};
+
+/**
+ * A tab as the api lists it.
+ *
+ * @example
+ * ```ts
+ * const info: TabInfo = { path: "nodes/merge.ts", kind: "code", modified: true, editing: true, status: "ready" };
+ * ```
+ */
+export type TabInfo = {
+  readonly path: string;
+  readonly kind: FileKind;
+  readonly modified: boolean;
+  readonly editing: boolean;
+  readonly status: OpenTab["status"];
+};
+
+/**
+ * The result of a save.
+ *
+ * @example
+ * ```ts
+ * const result: SaveResult = { kind: "saved", path: "nodes/merge.ts", bytes: 812, version: "3f2a…", reload: true };
+ * ```
+ */
+export type SaveResult =
+  | { kind: "saved"; path: string; bytes: number; version: string; reload: boolean }
+  | { kind: "unchanged" }
+  | { kind: "conflict" }
+  | { kind: "failed"; code: number | undefined; message: string };
+
+/**
+ * Flows and nodes whose file is a path.
+ *
+ * @example
+ * ```ts
+ * const usedBy: UsedBy = { flows: ["board"], nodes: [{ flow: "board", node: "merge" }] };
+ * ```
+ */
+export type UsedBy = { readonly flows: readonly string[]; readonly nodes: readonly NodeRef[] };
+
+/**
+ * The filesView api (`app.filesView`): the view, the palette items, the open-file hook and
+ * tests use it. Every path is relative to the project root.
+ *
+ * @example
+ * ```ts
+ * await app.filesView.open("nodes/merge.ts", { line: 12 });
+ * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+ * ```
+ */
+export type FilesViewApi = {
+  /**
+   * Shows Files, activates the tab of `path` or appends one, reveals the path in the tree and
+   * loads it (images through readBinary). `line` marks and scrolls to that line; `edit` opens
+   * it in edit mode (not for images). Resolves when the file is loaded or its error is shown.
+   *
+   * @param path - Relative file path.
+   * @param options - Where and how to open.
+   * @param options.line - 1-based line to mark and reveal.
+   * @param options.edit - Open in edit mode.
+   * @returns When the tab is loaded.
+   * @example
+   * ```ts
+   * // flowView's Inspector asked for a node's file at its line.
+   * await app.filesView.open("nodes/merge.ts", { line: 12 });
+   * app.filesView.active(); // "nodes/merge.ts"
+   * ```
+   */
+  open(path: string, options?: { line?: number; edit?: boolean }): Promise<void>;
+
+  /**
+   * Removes a tab. A modified tab without `discard: true` stays open: the call returns false
+   * and opens the discard popover. The next tab to the right (else to the left) becomes active.
+   *
+   * @param path - The tab's path.
+   * @param options - How to close.
+   * @param options.discard - Drop unsaved changes.
+   * @returns Whether the tab was closed.
+   * @example
+   * ```ts
+   * app.filesView.close("nodes/merge.ts"); // false: the buffer is modified, the popover opens
+   * app.filesView.close("nodes/merge.ts", { discard: true }); // true
+   * ```
+   */
+  close(path: string, options?: { discard?: boolean }): boolean;
+
+  /**
+   * Makes an open tab active and re-reads it when its last check is older than `revalidateMs`.
+   *
+   * @param path - The tab's path.
+   * @example
+   * ```ts
+   * app.filesView.activate("flows/board.ts");
+   * app.filesView.active(); // "flows/board.ts"
+   * ```
+   */
+  activate(path: string): void;
+
+  /**
+   * The open tabs in tab order.
+   *
+   * @returns One TabInfo per tab.
+   * @example
+   * ```ts
+   * app.filesView.setBuffer("nodes/merge.ts", "export const merge = 2;\n");
+   * app.filesView.tabs()[0]?.modified; // true
+   * ```
+   */
+  tabs(): readonly TabInfo[];
+
+  /**
+   * The active tab's path.
+   *
+   * @returns The path, or undefined with no tab open.
+   * @example
+   * ```ts
+   * await app.filesView.open("flows/board.ts");
+   * app.filesView.active(); // "flows/board.ts"
+   * ```
+   */
+  active(): string | undefined;
+
+  /**
+   * Enters or leaves edit mode (default: the active tab). Leaving keeps the buffer, so the tab
+   * stays modified. Markdown and series switch to `source` first. Images: no-op.
+   *
+   * @param on - Edit mode on or off.
+   * @param path - The tab's path; the active tab when omitted.
+   * @example
+   * ```ts
+   * app.filesView.edit(true);
+   * app.filesView.tabs()[0]?.editing; // true
+   * ```
+   */
+  edit(on: boolean, path?: string): void;
+
+  /**
+   * Replaces the edit buffer of a tab and notifies the view.
+   *
+   * @param path - The tab's path.
+   * @param text - The new buffer.
+   * @example
+   * ```ts
+   * app.filesView.setBuffer("nodes/merge.ts", "export const merge = 2;\n");
+   * app.filesView.tabs()[0]?.modified; // true
+   * ```
+   */
+  setBuffer(path: string, text: string): void;
+
+  /**
+   * Preview or source for markdown and series tabs; ignored for other kinds.
+   *
+   * @param path - The tab's path.
+   * @param mode - "preview" or "source".
+   * @example
+   * ```ts
+   * app.filesView.setMode(".moku/notes/2026-09-24-first-top-item.md", "source");
+   * ```
+   */
+  setMode(path: string, mode: "preview" | "source"): void;
+
+  /**
+   * Saves a tab (default: the active tab) with its version. An unchanged buffer writes nothing;
+   * a stale version shows the conflict bar; a game source saved outside `.moku/` while the link
+   * is live or paused reloads the game frame and restores the state (D-07). Never rejects.
+   *
+   * @param path - The tab's path; the active tab when omitted.
+   * @returns What happened.
+   * @example
+   * ```ts
+   * app.filesView.setBuffer("nodes/merge.ts", "export const merge = 2;\n");
+   * (await app.filesView.save()).kind; // "saved"
+   * (await app.filesView.save()).kind; // "unchanged"
+   * ```
+   */
+  save(path?: string): Promise<SaveResult>;
+
+  /**
+   * Resolves a conflict: "reload" re-reads the file and drops the buffer; "overwrite" re-reads
+   * only the version and writes the buffer over it. Never rejects.
+   *
+   * @param path - The tab's path.
+   * @param choice - "reload" or "overwrite".
+   * @returns `{ kind: "unchanged" }` after a reload, else the save result.
+   * @example
+   * ```ts
+   * (await app.filesView.save()).kind; // "conflict": the file changed on disk
+   * (await app.filesView.resolveConflict("nodes/merge.ts", "overwrite")).kind; // "saved"
+   * ```
+   */
+  resolveConflict(path: string, choice: "reload" | "overwrite"): Promise<SaveResult>;
+
+  /**
+   * Rebuilds the file index (single flight), then the Used-by map and the palette items.
+   *
+   * @returns When the index is rebuilt.
+   * @example
+   * ```ts
+   * await app.filesView.refresh();
+   * app.filesView.files().length; // 24
+   * ```
+   */
+  refresh(): Promise<void>;
+
+  /**
+   * The indexed file entries in tree order (folders first at every level).
+   *
+   * @returns The entries; empty before the first index.
+   * @example
+   * ```ts
+   * app.filesView.files().map(entry => entry.path).slice(0, 2); // ["flows/board.ts", "flows/main.ts"]
+   * ```
+   */
+  files(): readonly FileEntry[];
+
+  /**
+   * The source file of a graph node: its own `file` from the graph (F-H2) when it has one, else
+   * the protocol rule (R1) against the file index. flowView resolves a node the same way.
+   *
+   * @param ref - Flow and node name.
+   * @returns The path, or undefined (sub-flow and slot nodes have no own file).
+   * @example
+   * ```ts
+   * app.filesView.fileOf({ flow: "board", node: "awaitIntent" }); // "nodes/await-intent.ts"
+   * ```
+   */
+  fileOf(ref: NodeRef): string | undefined;
+
+  /**
+   * The source file of a flow by the protocol rule (R1), against the file index.
+   *
+   * @param flow - The flow name.
+   * @returns The path, or undefined.
+   * @example
+   * ```ts
+   * app.filesView.flowFileOf("board"); // "flows/board.ts"
+   * ```
+   */
+  flowFileOf(flow: string): string | undefined;
+
+  /**
+   * Flows and nodes of the current game whose file is `path`; empty without a graph.
+   *
+   * @param path - Relative file path.
+   * @returns The flows and nodes.
+   * @example
+   * ```ts
+   * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+   * ```
+   */
+  usedBy(path: string): UsedBy;
+
+  /**
+   * The "Open in editor" link (D-08) from the boot data's `editorUrl` and `root`.
+   *
+   * @param path - Relative file path.
+   * @param line - 1-based line; 1 when omitted.
+   * @returns The link, or undefined without boot data.
+   * @example
+   * ```ts
+   * app.filesView.editorUrl("nodes/merge.ts", 12); // "vscode://file/Users/moku/game/nodes/merge.ts:12"
+   * ```
+   */
+  editorUrl(path: string, line?: number): string | undefined;
+
+  /**
+   * Listens to every change the view shows (tabs, index, Used by, status).
+   *
+   * @param fn - Called after each change.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * const off = app.filesView.subscribe(() => redraw(app.filesView.tabs()));
+   * off();
+   * ```
+   */
+  subscribe(fn: () => void): () => void;
+};
+~~~
+
+### 7.17 consoleView — tools, Standard
+
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (panel `console`), `onStart` (one `link.watch("game.log")`, palette items, `/` key), `onStop`.
+- Events: emits `workspace:focus-frame`; hooks `link:status`, `workspace:ran`. Logs: `consoleView:read-failed` (debug), `consoleView:unexpected-log` (warn).
+
+~~~ts
+/**
+ * consoleView configuration.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { consoleView: { preserveLog: true } } });
+ * ```
+ */
+export type Config = {
+  /** Most lines kept (entries + meta rows); the oldest are dropped first. */
+  maxLines: number;
+  /** Initial state of the Preserve log toggle. */
+  preserveLog: boolean;
+  /** How long a fresh error row keeps its highlight, in ms. */
+  freshMs: number;
+  /** Characters of `data` shown inline in the Message cell. */
+  summaryChars: number;
+};
+
+/**
+ * A log level of the game trace.
+ */
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+/**
+ * The level filter ("all" includes debug).
+ */
+export type LevelFilter = "all" | "info" | "warn" | "error";
+
+/**
+ * Any console line.
+ */
+export type LogLine = EntryLine | MetaLine;
+
+/**
+ * Entry counts per level plus all.
+ */
+export type LevelCounts = { all: number; debug: number; info: number; warn: number; error: number };
+
+/**
+ * The consoleView api (`app.consoleView`): the game log held for the whole session, its filter,
+ * Preserve log, the detail-drawer selection and frame links. The view, the palette items and
+ * tests use it.
+ *
+ * @example
+ * ```ts
+ * app.consoleView.setFilter({ level: "warn" });
+ * app.consoleView.visible().length; // 2 on the design log
+ * ```
+ */
+export type ConsoleApi = {
+  /**
+   * Every held line (entries and meta rows), oldest first, at most `maxLines`. A copy.
+   *
+   * @returns The lines.
+   * @example
+   * ```ts
+   * // The game logged the 8 lines of the design log since the session started.
+   * app.consoleView.lines().length; // 8
+   * ```
+   */
+  lines(): readonly LogLine[];
+
+  /**
+   * The lines the table shows: entries of the filter level (`all` includes debug) whose
+   * `source + " " + message` contains the query, case-insensitive. Meta rows always show.
+   *
+   * @returns The visible lines.
+   * @example
+   * ```ts
+   * // Only the warnings that mention a texture.
+   * app.consoleView.setFilter({ level: "warn", query: "texture" });
+   * app.consoleView.visible().length; // 2
+   * ```
+   */
+  visible(): readonly LogLine[];
+
+  /**
+   * Entry counts per level plus `all` (meta rows are not counted). The toolbar shows them.
+   *
+   * @returns The counts.
+   * @example
+   * ```ts
+   * // The design log: 6 info lines and 2 warnings.
+   * app.consoleView.counts(); // { all: 8, debug: 0, info: 6, warn: 2, error: 0 }
+   * ```
+   */
+  counts(): LevelCounts;
+
+  /**
+   * The current level filter and search query.
+   *
+   * @returns A copy of the filter.
+   * @example
+   * ```ts
+   * // Nothing is filtered when the Console opens.
+   * app.consoleView.filter(); // { level: "all", query: "" }
+   * ```
+   */
+  filter(): { level: LevelFilter; query: string };
+
+  /**
+   * Merges a partial filter into the current one and notifies the view.
+   *
+   * @param next - The level, the query, or both.
+   * @example
+   * ```ts
+   * // The "warn 2" segment was clicked, then "gear" typed in the search.
+   * app.consoleView.setFilter({ level: "warn" });
+   * app.consoleView.setFilter({ query: "gear" });
+   * app.consoleView.filter(); // { level: "warn", query: "gear" }
+   * ```
+   */
+  setFilter(next: Partial<{ level: LevelFilter; query: string }>): void;
+
+  /**
+   * Empties the Console to one meta row "Console cleared" and closes the drawer. The entries
+   * already consumed never come back; the rail badge is cleared.
+   *
+   * @example
+   * ```ts
+   * // The Clear button, or "Clear console" in the palette.
+   * app.consoleView.clear();
+   * app.consoleView.lines().map(line => line.kind); // ["meta"]
+   * ```
+   */
+  clear(): void;
+
+  /**
+   * Whether Preserve log is on: when on, a game page reload keeps the lines and adds the meta
+   * row "Game page reloaded · log preserved".
+   *
+   * @returns True when the log survives a reload.
+   * @example
+   * ```ts
+   * // Off by default, like Chrome DevTools.
+   * app.consoleView.preserve(); // false
+   * ```
+   */
+  preserve(): boolean;
+
+  /**
+   * Turns Preserve log on or off and notifies the view.
+   *
+   * @param on - The new value.
+   * @example
+   * ```ts
+   * // Keep the log across the game page reload of the next code change.
+   * app.consoleView.setPreserve(true);
+   * app.consoleView.preserve(); // true
+   * ```
+   */
+  setPreserve(on: boolean): void;
+
+  /**
+   * Selects the line shown in the detail drawer; no key closes the drawer.
+   *
+   * @param key - The line key; omitted to close the drawer.
+   * @example
+   * ```ts
+   * // A row was clicked: the drawer shows the missing-texture warning.
+   * app.consoleView.select(5);
+   * app.consoleView.selected()?.kind; // "entry"
+   * app.consoleView.select(); // the drawer closes
+   * ```
+   */
+  select(key?: number): void;
+
+  /**
+   * The line in the detail drawer, if it is still held.
+   *
+   * @returns The line, or undefined.
+   * @example
+   * ```ts
+   * // The drawer is open on the fifth line of the design log.
+   * app.consoleView.select(5);
+   * app.consoleView.selected(); // { kind: "entry", key: 5, level: "warn", source: "assets", … }
+   * ```
+   */
+  selected(): LogLine | undefined;
+
+  /**
+   * Reads `game.log` once and ingests it like a watched value. A manual action, not a poll:
+   * ingest is idempotent, and a failed read is logged at debug level.
+   *
+   * @example
+   * ```ts
+   * // The watch is live, so this only re-checks: no line is added twice.
+   * app.consoleView.refresh();
+   * app.consoleView.lines().length; // still 8
+   * ```
+   */
+  refresh(): void;
+
+  /**
+   * Emits the global `workspace:focus-frame { frame }` (R4). flowView hooks it and focuses the
+   * edge taken at that frame; consoleView calls no flowView api.
+   *
+   * @param frame - The frame of the clicked frame link.
+   * @example
+   * ```ts
+   * // The frame cell "1778" of the rejected merge was clicked.
+   * app.consoleView.focusFrame(1778); // flowView shows Flow at frame 1778
+   * ```
+   */
+  focusFrame(frame: number): void;
+
+  /**
+   * Adds a change listener (the view re-renders on it).
+   *
+   * @param fn - Called after every change of the lines, filter, Preserve log or selection.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // An MCP tool streams the error count while it runs.
+   * const off = app.consoleView.subscribe(() => report(app.consoleView.counts().error));
+   * off();
+   * ```
+   */
+  subscribe(fn: () => void): () => void;
+};
+~~~
+
+---
+
+## 8. Dependency graph and init order
+
+Init order is the order of the `plugins` array in each entry (kernel: `onInit` in order, `onStart` in order, `onStop` in reverse). Opt-in plugins passed to `createApp({ plugins })` come after the defaults.
+
+```
+editor-agent
+  1 registry      depends: —
+  2 channel       depends: registry
+  3 overlay       depends: registry, channel        hooks bridge:status
+  + bridge        depends: registry, channel        emits bridge:status        (opt-in)
+  + capture       depends: registry                                            (opt-in)
+
+editor-server
+  1 files         depends: —                        emits files:written
+  2 hub           depends: files                    emits hub:session
+  3 pages         depends: files, hub
+
+editor-tools
+  1 link          depends: —                        emits link:status
+  2 workspace     depends: link                     emits workspace:changed, workspace:ran
+  3 panels        depends: link, workspace          emits workspace:ran
+  4 flowView      depends: link, workspace, panels
+  5 gameView      depends: link, workspace, panels
+  6 renderView    depends: link, workspace, panels
+  7 stateView     depends: link, panels
+  8 filesView     depends: link, workspace, panels
+  9 consoleView   depends: link, workspace, panels
+```
+
+Cross-runtime links (no plugin dependency, only the wire):
+
+```
+bridge (agent) ──ws kind=agent──▶ hub (server) ◀──ws kind=tools── link (tools)
+bridge ──GET {path}/hello──▶ pages        link ◀──boot JSON in P/── pages
+hub ──files channel──▶ files
+```
+
+Every plugin imports the runtime-free protocol from `src/plugins/registry/protocol` by relative path (D-02, D-17). The protocol never imports plugin types.
+
+---
+
+## 9. Multi-plugin usage examples
+
+### 9.1 Game dev entry: agent with bridge and capture
+
+```ts
+import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
+
+const editor = createApp({
+  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  pluginConfigs: {
+    registry: { game: app, modules: [mergeDev] },
+    bridge: { retryMs: 500 },
+    capture: { maxDurationMs: 10_000 }
+  }
+});
+await editor.start(); // never waits for the editor server
+editor.bridge.status(); // { kind: "connecting" }, then { kind: "live", frame: 12 }
+```
+
+### 9.2 In process, without a server (tests, headless)
+
+```ts
+const editor = createApp({
+  pluginConfigs: { registry: { game: app, modules: [mergeDev] }, channel: { heartbeatMs: 500 } }
+});
+await editor.start();
+const stop = editor.channel.watch("game.position", undefined, position => show(position)); // first value now
+await editor.channel.run("game.step", { frames: 1 }); // { value, state: { path, frame, tainted } }
+stop();
+```
+
+### 9.3 Server wrapping the game's Bun.serve
+
+```ts
+import { createApp } from "@moku-labs/editor/server";
+import index from "./index.html";
+
+const editor = createApp({
+  pluginConfigs: {
+    files: { root: `${import.meta.dir}/..` },
+    hub: { allow: ["http://192.168.1.4:3000"] },
+    pages: { editorUrl: "cursor://file/{path}:{line}" }
+  }
+});
+await editor.start();
+Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+// game: http://127.0.0.1:3000/   tools page: http://127.0.0.1:3000/__editor/
+```
+
+### 9.4 Tools app driven from code (tests, MCP tools)
+
+```ts
+import { createApp } from "@moku-labs/editor/tools";
+
+const tools = createApp({ pluginConfigs: { workspace: { defaultWorkspace: "game" } } });
+await tools.start(); // resolves with status "connecting", or lost "no_boot"
+tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
+
+tools.link.status(); // { kind: "live", frame: 1840 }
+await tools.link.run("game.step", { frames: 1 });
+tools.flowView.focus.select("board/merge"); // true, the strip opens
+const shot = await tools.gameView.capture(); // { path: ".moku/captures/…png", frame, device, image }
+await tools.flowView.notes.create({ title: "First wood 4", body: "…", from: { node: "board/merge", outcome: "done" } });
+await tools.filesView.open("nodes/merge.ts", { line: 12 });
+tools.consoleView.setFilter({ level: "error" });
+const off = tools.stateView.onCommit(() => report(tools.stateView.lastCommit()?.patches.length));
+off();
+```
+
+### 9.5 Cross-view intent without a dependency
+
+```ts
+// from any tools plugin
+ctx.emit("workspace:open-file", { path: "nodes/merge.ts", line: 12 });      // filesView opens it
+ctx.emit("workspace:select-node", { id: "board/merge" });                 // flowView focuses it
+ctx.emit("workspace:focus-frame", { frame: 1778 });                       // flowView focuses the edge
+ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } }); // renderView selects the row
+ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot" } }); // gameView
+ctx.emit("workspace:open-sheet", { index: ".moku/captures/series-2026-09-24-1015/index.json" });
+```
+
+### 9.6 End to end, as the root integration tests assemble it
+
+`tests/integration/helpers/stack.ts` `startStack()`: stub `__MOKU_GAME_DEV__ = true` → `createProject("tiny")` → `startServer(root)` (server `createApp` + a probe plugin, `Bun.serve(app.hub.serve(...))`) → `installPage(origin, hub.path())` → `startAgent(server, createTinyGame())` (agent `createApp({ plugins: [bridgePlugin, capturePlugin, ...] })`) → `bootTools(server)` (tools `createApp`, `start`, `workspace.mount`) → wait until `link.status().kind === "live"` and `link.manifest() !== undefined`. `shutdown(...)` stops tools, then agents, then games, then servers, each bounded to 2 s.
+
+---
+
+## 10. Writing a custom plugin for each core
+
+Each entry exports `createPlugin`, bound to that core's Config and global Events (internally `createAgentPlugin`, `createServerPlugin`, `createToolsPlugin` from `src/config.ts`). A plugin spec takes `depends`, `config`, `createState`, `api`, `hooks`, `onInit`, `onStart`, `onStop`. Use `ctx.require(plugin)` for another plugin's api, `ctx.emit` for global events, `ctx.log` for logs. Pass the plugin in `createApp({ plugins: [...] })`.
+
+### 10.1 Agent: a game's own editor command
+
+Commands are added to the registry in `onInit`, so they are in the manifest the bridge sends in `hello`. Editor commands check their own input and build `state` with `envelope()`. Effect cannot be `cheat` or `raw` (module commands can).
+
+```ts
+import { checkInput } from "@moku-labs/editor";
+import { createApp, createPlugin, registryPlugin } from "@moku-labs/editor/agent";
+
+export const pingPlugin = createPlugin("ping", {
+  depends: [registryPlugin],
+  onInit: ctx => {
+    const registry = ctx.require(registryPlugin);
+    registry.add({
+      descriptor: { id: "editor.ping", title: "Ping", input: { text: "string" }, effect: "read" },
+      run: async raw => ({ value: checkInput({ text: "string" }, raw).text, state: registry.envelope() })
+    });
+  }
+});
+
+const editor = createApp({ plugins: [pingPlugin], pluginConfigs: { registry: { game: app } } });
+```
+
+Hooking the agent's global event needs no dependency on the bridge:
+
+```ts
+hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, session) })
+```
+
+Game-side sources and commands that are not editor-owned belong in a `.dev` module passed as `registry.modules` (`DevModule = { sources?, commands? }`), not in a plugin.
+
+### 10.2 Server: react to sessions and writes
+
+```ts
+import { createApp, createPlugin, filesPlugin, hubPlugin } from "@moku-labs/editor/server";
+
+export const auditPlugin = createPlugin("audit", {
+  depends: [hubPlugin, filesPlugin],
+  hooks: ctx => ({
+    "hub:session": session => ctx.log.info("audit:session", { id: session.id, open: session.open }),
+    "files:written": written => ctx.log.info("audit:written", { path: written.path, kind: written.kind })
+  })
+});
+
+const editor = createApp({ plugins: [auditPlugin], pluginConfigs: { files: { root: "." } } });
+```
+
+Extra HTTP routes go through `hub.addRoutes` in `onInit` (keys must be under `hub.path()`; refused after `serve`). Guard every handler with `hub.guard(req, server, mode)`.
+
+### 10.3 Tools: a new view
+
+A view is a tools plugin that registers `definePanel` specs with `panels` in `onInit`, runs commands through `panels.run` (never `link.run`, so `workspace:ran` is emitted), and talks to other views only through global tools events.
+
+```ts
+import { definePanel } from "@moku-labs/editor";
+import { createApp, createPlugin, linkPlugin, panelsPlugin, workspacePlugin } from "@moku-labs/editor/tools";
+
+const tracePanel = definePanel({
+  id: "trace",
+  title: "Trace",
+  workspace: "console",
+  sources: { position: "game.position", history: ["game.history", { last: 5 }] },
+  commands: { step: "game.step" },
+  view: ({ position, history }, { run, status }) => h(TraceView, { position, history, step: () => run.step({ frames: 1 }), status })
+});
+
+export const tracePlugin = createPlugin("trace", {
+  depends: [linkPlugin, workspacePlugin, panelsPlugin],
+  onInit: ctx => ctx.require(panelsPlugin).register(tracePanel),
+  hooks: ctx => ({
+    "workspace:ran": ran => { if (!ran.ok) ctx.log.warn("trace:run-failed", { id: ran.id }); }
+  })
+});
+
+const tools = createApp({ plugins: [tracePlugin] });
+```
+
+Rules a view follows (R4, R6, R9, D-13): no polling (watch sources; the bridge throttles frame sources), no dependency on another view, `workspace:ran` only through `panels.run`, styles in `@scope` sheets with data attributes and workspace tokens.
+
+---
+
+## 11. Wire methods
+
+Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and optional `session`. Binary frames are refused.
+
+| From → To | Channel | Kind | Method | Params | Result |
+|---|---|---|---|---|---|
+| agent → hub | game | notification | `hello` | `{ manifest: Manifest }` (must be first) | — |
+| agent → hub | game | notification | `heartbeat` | `Heartbeat` | — |
+| agent → hub | game | notification | `value` | `{ sub, value }` | — |
+| agent → hub | game | notification | `bye` | — | — |
+| hub → agent | game | request | `manifest` | `{}` | `Manifest` |
+| hub → agent | game | request | `read` | `{ id, input? }` | `Json` |
+| hub → agent | game | request | `watch` | `{ sub, id, input? }` | `null`, then `value` notifications |
+| hub → agent | game | request | `unwatch` | `{ sub }` | `null` |
+| hub → agent | game | request | `run` | `{ id, input? }` | `RunResult` |
+| hub → agent | editor | notification | `session` | `{ id, game, open }` | — |
+| tools → hub | game | request | `manifest`, `read`, `run`, `watch`, `unwatch` | as above, plus optional `session` | as above |
+| tools → hub | files | request | `list` | `{ dir }` | `FileEntry[]` |
+| tools → hub | files | request | `read` | `{ path }` | `FileText` |
+| tools → hub | files | request | `write` | `{ path, text, version? }` | `WriteResult` |
+| tools → hub | files | request | `writeBinary` | `{ path, data }` (data URL) | `WriteResult` |
+| tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
+| hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` | — |
+| hub → tools | editor | notification | `session` | `HubSession` | — |
+| hub → tools | game | notification | `heartbeat`, `value` | forwarded, with `session` | — |
+
+Fan-out: one agent-side watch per `(session, source, input)` (object keys sorted). Backpressure: congested tools connections coalesce values to the latest per `sub` and drop heartbeats; the bridge backlogs values above 1 MiB buffered and flushes below 256 KiB.

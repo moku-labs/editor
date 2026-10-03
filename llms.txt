@@ -1,0 +1,311 @@
+# @moku-labs/editor
+
+> Editor, devtools and MCP layer for @moku-labs/game, built on @moku-labs/core. Three Moku cores in one package: `editor-agent` on the game page, `editor-server` in Bun, `editor-tools` on the tools page. One registry of sources and commands feeds the in-game overlay, the tools page and headless tests. The editor reaches the game only through `@moku-labs/game/inspect` and `@moku-labs/game/control` (plus the game's `.dev` modules). ESM only. Bun for the server; browser for the agent and the tools page.
+
+- Package: `@moku-labs/editor` (MIT)
+- Peer dependency: `@moku-labs/game >= 0.0.2` (`game.effects` needs 0.0.3)
+- Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
+- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--help]` (Bun only)
+- Full reference: llms-full.txt (every Config, Api and event type verbatim)
+
+## Entry points
+
+| Import | What |
+|---|---|
+| `@moku-labs/editor` | Runtime-free: wire protocol types and pure helpers, `definePanel` and panel types. Imports no plugin and no core. |
+| `@moku-labs/editor/agent` | Agent core for the game page. `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`; namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
+| `@moku-labs/editor/server` | Server core for Bun. `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`; namespaces `Files`, `Hub`, `Pages`. |
+| `@moku-labs/editor/tools` | Tools core for the tools page. `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`; namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
+
+## Core concepts
+
+- Three cores (decision D-01): `src/config.ts` has three `createCoreConfig` calls, each with its own Config and global Events. Each runtime gets its own bundle: Bun code never reaches the browser, Preact never reaches the server.
+- Every core registers the core plugins `logPlugin` and `envPlugin` from `@moku-labs/common`: `ctx.log` and `ctx.env` on every plugin.
+- Global configs `AgentConfig`, `ServerConfig`, `ToolsConfig` are empty. Every option belongs to a plugin and is set through `pluginConfigs` (shallow merge; arrays replace).
+- Registry: the doors and `.dev` modules become closure-erased entries. Raw `Json` in, `checkInput` against the descriptor's `InputSchema`, door call, `toWireValue` out.
+- Manifest: descriptors only (`sources`, `commands`), plus `game`, `page`, `embedded`. Sent by the bridge in `hello`.
+- EditorChannel: `read`, `watch`, `run`, `status`. In process it is the agent `channel`; remote it is the tools `link`. Every panel reads through it.
+- Source `changes`: `frame` (re-read by the bridge once per heartbeat), `commit`, `edge` (followed by watch). Values are sent only when their JSON text changed.
+- Command `effect`: `read`, `route`, `cosmetic`, `cheat`, `raw`. Editor-owned commands (`editor.*`) cannot be `cheat` or `raw`.
+- Sessions: one per connected game page, id `s-` + 4 hex. Tools pick one: sticky choice, then newest embedded, then newest.
+- LinkStatus: `connecting`, `live { frame }`, `paused { frame }`, `silent { since, lastFrame }`, `lost { reason, lastFrame, retryInMs }`, `empty`.
+- Panels are data (D-04): `definePanel` returns a frozen spec; the `panels` host owns subscriptions, first-value waiting, stale marking, teardown.
+- Views never depend on each other (D-13): cross-view intents are global tools events (`workspace:open-file`, `workspace:select-node`, …).
+- One game iframe (D-14): `workspace` owns it and never moves it in the DOM; views dock it and draw in its overlay.
+- Live edits (D-07): save → `game.bookmark` → reload the frame → `game.restore` on reconnect. The session reads tainted.
+- Files sandbox (D-09): `files` works under one root, allowlist + denylist, realpath check, atomic writes, optional sha1 `version`.
+- Security: the server binds 127.0.0.1 only; Host, Origin and a per-start 43-char token gate every upgrade. The token is never logged or printed.
+- Tools page ships prebuilt (D-06): `bun run build:tools` bundles `src/plugins/pages/page/` into `dist/tools/`; `pages` serves it.
+
+## Quick start
+
+Game page (dev entry):
+
+```ts
+import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
+
+const editor = createApp({
+  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
+});
+await editor.start(); // never waits for the editor server
+```
+
+Server (Bun):
+
+```ts
+import { createApp } from "@moku-labs/editor/server";
+import index from "./index.html";
+
+const editor = createApp({ pluginConfigs: { files: { root: `${import.meta.dir}/..` } } });
+await editor.start();
+Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+// tools page: http://127.0.0.1:3000/__editor/
+```
+
+Or the bin: `bunx moku-editor web/index.html --port 3000 --root .`
+
+Tools page (what the prebuilt page does):
+
+```ts
+import { createApp } from "@moku-labs/editor/tools";
+
+const tools = createApp({});
+await tools.start();
+tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
+```
+
+## Quick API reference
+
+### Framework (each entry)
+
+```ts
+createApp(options?: { plugins?: Plugin[]; pluginConfigs?: { [plugin]: Partial<Config> } }): App
+createPlugin(name: string, spec: { depends?, config?, createState?, api?, hooks?, onInit?, onStart?, onStop? }): Plugin
+app.start(): Promise<void>
+app.stop(): Promise<void>
+app.<pluginName>        // the plugin api, e.g. app.hub, app.link, app.flowView
+ctx.require(plugin)     // the api from inside another plugin
+```
+
+### Root (`@moku-labs/editor`)
+
+```ts
+definePanel(input: PanelInput<S, C>): PanelSpec
+checkInput(schema: InputSchema, raw: Json): InputOf<schema>     // throws -32602
+toWireValue(value: unknown): Json                               // $map, $set, $error tags; throws -32006
+encode(message: Message): string
+decode(text: string): Message
+request(id, channel, method, params?, session?) / notification(...) / success(id, result) / failure(id, error)
+isRequest / isResponse / isNotification / isFailure / isJson
+wireError(code: number, message: string, data?: WireErrorData): Error & WireError
+isWireError(value): value is WireError
+toWireError(error: unknown): WireError
+fromWireError(error: WireError): ProtocolError
+isRetryable(error: unknown): boolean
+bareMessage(message: string): string                            // strips "[moku-editor] "
+errorCode, ERROR_PREFIX, ProtocolError
+nodeFile, flowFile, kebab, parseOverrides, SOURCE_ROOTS, SOURCE_OVERRIDES_PATH   // node → file rule
+```
+
+### Agent APIs
+
+```ts
+registry.manifest(): Manifest
+registry.source(id: string): SourceEntry | undefined
+registry.command(id: string): CommandEntry | undefined
+registry.add(entry: CommandEntry): void          // in onInit; editor commands only
+registry.envelope(): RunState                    // { path, frame, tainted }
+registry.clock(): Clock                          // { frame, paused }
+
+channel.read(id: string, input?: Json): Promise<Json>
+channel.watch(id: string, input: Json | undefined, onValue: (value: Json) => void): () => void
+channel.run(id: string, input?: Json): Promise<RunResult>
+channel.status(): LinkStatus
+channel.heartbeat(): Heartbeat                   // { frame, paused, at }
+channel.onHeartbeat(fn: HeartbeatListener): () => void
+
+overlay.open(): void
+overlay.close(): void
+overlay.isOpen(): boolean
+
+bridge.status(): LinkStatus
+bridge.session(): string | undefined
+```
+
+### Server APIs
+
+```ts
+files.list(dir: string): Promise<FileEntry[]>
+files.read(path: string): Promise<FileText>                         // { text, version }
+files.write(path: string, text: string, version?: string): Promise<WriteResult>
+files.writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>   // .moku/captures/ only
+files.readBinary(path: string): Promise<FileBinary>                 // { dataUrl, version }
+files.resolve(path: string): string
+files.root(): string
+
+hub.serve(options: ServeOptions): BunServeOptions
+hub.token(): string
+hub.sessions(): SessionInfo[]
+hub.fetch(req: Request, server: HubServer): Response | undefined
+hub.websocket: HubWebSocketHandler
+hub.addRoutes(routes: EditorRoutes): void
+hub.guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined
+hub.path(): string
+
+pages.routes(): EditorRoutes
+```
+
+### Tools APIs
+
+```ts
+link.read / link.watch / link.run / link.status        // remote EditorChannel
+link.manifest(): Manifest | undefined
+link.onManifest(fn: (manifest: Manifest | undefined) => void): () => void
+link.sessions(): readonly SessionInfo[]
+link.session(): string | undefined
+link.choose(session: string): Promise<Manifest>
+link.retry(): void
+link.boot(): ToolsBoot | undefined
+link.files: { list, read, write, writeBinary(path, dataUrl), readBinary }
+
+workspace.active() / show(ws) / theme() / setTheme(theme?) / preview(ws) / setPreview(ws, patch)
+workspace.device() / setDevice(patch) / devices() / gameFrame() / palette.add(item) / palette.open(query?)
+workspace.toast(message, file?) / mount(element) / host(ws) / badge(ws, badge?) / previewZone(ws, el, insets?)
+workspace.keys.bind(binding) / keys.escape(layer, close) / overlayInGame() / setOverlayInGame(on) / onPrefs(fn)
+
+panels.register(panel: PanelSpec): void
+panels.run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>
+panels.list(): readonly PanelSpec[]
+panels.mountInto(ws: WorkspaceId, element: HTMLElement): () => void
+
+flowView.camera.{ get, fitAll, fitSelection, zoomBy, zoomTo, follow }
+flowView.focus.{ select, selected, current, walk, focusFrame, step, history }
+flowView.flows.{ expand, collapse, enter, up }
+flowView.layout.{ pinnedCount, reset }
+flowView.notes.{ list, edit, create, attach }
+
+gameView.pick(on?) / selected() / select(ref?) / inspect(ref) / scene() / locate(ref) / highlight(ref?)
+gameView.manifest() / capture() / series({ durationMs, intervalMs, label? }) / stopSeries() / openSheet(indexPath) / attach(capture, notePath) / notes()
+
+renderView.refresh() / snapshot() / reveal(ref) / highlight(ref?) / sortTextures(key) / filterBundle(bundle)
+
+stateView.lastCommit() / note() / onCommit(fn) / tainted() / graph() / expanded(pointer, depth) / setExpanded(pointer, open) / expandAll(root, open)
+
+filesView.open(path, { line?, edit? }?) / close(path, { discard? }?) / activate(path) / tabs() / active() / edit(on, path?)
+filesView.setBuffer(path, text) / setMode(path, mode) / save(path?) / resolveConflict(path, choice) / refresh() / files()
+filesView.fileOf(ref) / flowFileOf(flow) / usedBy(path) / editorUrl(path, line?) / subscribe(fn)
+
+consoleView.lines() / visible() / counts() / filter() / setFilter(next) / clear() / preserve() / setPreserve(on)
+consoleView.select(key?) / selected() / refresh() / focusFrame(frame) / subscribe(fn)
+```
+
+## Global events
+
+Declared in `src/config.ts`; no plugin declares its own events.
+
+```ts
+type AgentEvents = {
+  "bridge:status": { status: LinkStatus; session?: string };
+};
+type ServerEvents = {
+  "hub:session": HubSession;       // { id, game, open, reason?: "bye" | "game_reloaded" }
+  "files:written": FilesWritten;   // { path, bytes, kind: "code" | "style" | "note" | "layout" | "capture" | "other" }
+};
+type ToolsEvents = {
+  "link:status": { status: LinkStatus; session?: string };
+  "workspace:changed": { ws: WorkspaceId };
+  "workspace:ran": RanEvent;
+  "workspace:open-file": { path: string; line?: number };
+  "workspace:select-node": { id: string };
+  "workspace:focus-frame": { frame: number };
+  "workspace:new-note": { captures?: readonly string[]; from?: { node: string; outcome?: string } };
+  "workspace:reveal": { ref: ElementRef };
+  "workspace:inspect": { ref: ElementRef };
+  "workspace:open-sheet": { index: string };
+};
+```
+
+## Plugins (17)
+
+One line each: core · tier · purpose · key methods · events (E = emits, H = hooks).
+
+### Agent core (`editor-agent`)
+
+- registry · agent · Complex · wraps game doors, `.dev` modules and `editor.*` commands into entries; builds the Manifest; owns `./protocol` · `manifest`, `source`, `command`, `add`, `envelope`, `clock` · no events
+- channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
+- overlay · agent · Standard · Preact card over the game: render chips and one-click cheats; off by default; adds command `editor.overlay` · `open`, `close`, `isOpen` · H `bridge:status`
+- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, backoff 1 s → 30 s · `status`, `session` · E `bridge:status`
+- capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own · no app api · no events
+
+### Server core (`editor-server`)
+
+- files · server · Standard · project-root sandbox: list, read, atomic write with sha1 version, image captures under `.moku/captures/` · `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` · E `files:written`
+- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, backpressure; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `path` · E `hub:session`
+- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*` and `/hello`; home of the `moku-editor` bin · `routes` · no events
+
+### Tools core (`editor-tools`)
+
+- link · tools · Complex · the tools page's only connection: boot JSON, socket, session choice, remote EditorChannel, files client, link status · `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `session`, `choose`, `retry`, `boot`, `files` · E `link:status`
+- workspace · tools · Complex · the shell: top bar, rail, palette, toasts, keys, Esc unwinding, prefs, one game iframe, D-07 reload, overlay-in-game switch · `show`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `badge`, `setOverlayInGame` · E `workspace:changed`, `workspace:ran`; H `link:status`
+- panels · tools · Standard · panel host for `definePanel` specs; holds `shared/` view modules · `register`, `run`, `list`, `mountInto` · E `workspace:ran`; H `link:status`, `workspace:changed`
+- flowView · tools · VeryComplex · Flow workspace: flow-graph canvas with ELK, focus and neighbours strip, trail, notes, code and style inspector · `camera`, `focus`, `flows`, `layout`, `notes` · E `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:new-note`
+- gameView · tools · Complex · Game workspace: device stage, picker, style card, screenshots, series, contact sheet · `pick`, `inspect`, `scene`, `locate`, `highlight`, `capture`, `series`, `stopSeries`, `openSheet`, `attach` · E `workspace:reveal`, `workspace:new-note`, `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`
+- renderView · tools · Standard · Render workspace: tiles, render tree, textures, bundles, pools, release log · `refresh`, `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle` · E `workspace:inspect`; H `workspace:changed`, `link:status`, `workspace:reveal`
+- stateView · tools · Standard · State workspace: player/session trees, last commit derived by diffing `game.model`, runner card · `lastCommit`, `note`, `onCommit`, `tainted`, `graph`, `expanded`, `setExpanded`, `expandAll` · H `link:status`, `workspace:ran`
+- filesView · tools · Complex · Files workspace: tree, tabs, viewer, editor, previews, conflict bar, Used by · `open`, `close`, `save`, `resolveConflict`, `refresh`, `fileOf`, `flowFileOf`, `usedBy`, `editorUrl`, `subscribe` · E `workspace:select-node`, `workspace:open-sheet`; H `link:status`, `workspace:changed`, `workspace:open-file`
+- consoleView · tools · Standard · Console workspace: `game.log` table, level filter, search, Preserve log, command errors, rail badge · `lines`, `visible`, `counts`, `setFilter`, `clear`, `setPreserve`, `refresh`, `focusFrame`, `subscribe` · E `workspace:focus-frame`; H `link:status`, `workspace:ran`
+
+## Dependency graph and init order
+
+```
+agent:  registry → channel → overlay            (bridge, capture opt-in)
+        bridge  depends [registry, channel]
+        capture depends [registry]
+server: files → hub → pages                     (pages depends [files, hub])
+tools:  link → workspace → panels → flowView, gameView, renderView, stateView, filesView, consoleView
+        every view depends [link, panels]; all but stateView also [workspace]
+```
+
+## Wire
+
+- Socket URL: `{path}/ws?token=<t>&kind=agent|tools` (default path `/__editor`). Hello: `GET {path}/hello` → `{ ws, token }`.
+- Agent → hub: `hello { manifest }` (first, else close 1008), `heartbeat`, `value { sub, value }`, `bye`.
+- Hub → agent: requests `manifest`, `read`, `watch`, `unwatch`, `run` (channel `game`); notification `session` (channel `editor`).
+- Tools → hub: `game` channel `manifest`, `read`, `run`, `watch`, `unwatch`; `files` channel `list`, `read`, `write`, `writeBinary`, `readBinary`.
+- Hub → tools: `sessions { list }`, `session`, forwarded `heartbeat` and `value`.
+- Error codes: -32600 invalid request, -32601 unknown method/id, -32602 invalid input, -32000 command failed, -32001 game reloaded (retryable), -32002 timeout / link closed (retryable), -32003 no session / choose session, -32004 forbidden path, -32005 version conflict, -32006 not JSON, -32007 unauthorized. Every message starts with `[moku-editor] `.
+
+## File structure
+
+```
+src/
+  config.ts          three createCoreConfig calls, AgentEvents/ServerEvents/ToolsEvents, createAgentPlugin/createServerPlugin/createToolsPlugin
+  index.ts           package root: protocol types and helpers, definePanel
+  agent.ts           @moku-labs/editor/agent
+  server.ts          @moku-labs/editor/server
+  tools.ts           @moku-labs/editor/tools
+  plugins/
+    index.ts         barrel of all 17 instances and type namespaces (imported by no entry)
+    registry/        + protocol/ (types, errors, check, wire-value, messages, source-files)
+    channel/ overlay/ bridge/ capture/
+    files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor)
+    link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules)
+    flowView/ gameView/ renderView/ stateView/ filesView/ consoleView/
+    <name>/__tests__/unit, __tests__/integration
+tests/
+  unit/              framework-level unit tests
+  integration/       root stack tests (helpers/stack.ts: startStack, shutdown); tiny game in CI, merge-game locally
+scripts/build-tools.ts   bundles the tools page into dist/tools
+```
+
+## Scripts
+
+`bun run build` (tsdown + build:tools) · `bun run build:tools` · `bun run typecheck` · `bun run test` · `bun run test:unit` · `bun run test:integration` · `bun run test:coverage` · `bun run lint` · `bun run lint:fix` · `bun run format` · `bun run validate`
+
+## Docs
+
+- README.md: overview, quick start, plugins, configuration, events
+- llms-full.txt: verbatim Config/Api/Event types, config reference, examples, error codes, custom plugins
+- src/plugins/<name>/README.md: per-plugin detail
+- Moku Core specification: https://github.com/moku-labs/core/tree/main/specification
