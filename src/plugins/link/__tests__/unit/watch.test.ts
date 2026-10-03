@@ -1,0 +1,170 @@
+/* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toWireValue } from "../../../registry/protocol";
+import { attach } from "../../sessions/choose";
+import { addWatch, deliver, detachAll } from "../../subscriptions/watch";
+import {
+  connected,
+  createCtx,
+  FakeWebSocket,
+  flush,
+  latestSocket,
+  manifestOf,
+  sendSessions,
+  sessionOf,
+  type TestCtx
+} from "../helpers";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Watches: kept while disconnected, numeric never-reused wire subs (R4, R6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let ctx: TestCtx;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal("WebSocket", FakeWebSocket);
+  FakeWebSocket.instances.length = 0;
+  ctx = createCtx();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("addWatch", () => {
+  it("a watch before attach is sent on attach with a numeric sub", async () => {
+    const seen: unknown[] = [];
+    addWatch(ctx, "game.history", { last: 20 }, value => seen.push(value));
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    expect(ctx.state.subs.size).toBe(2);
+
+    const socket = await connected(ctx);
+    const watches = socket.requests("watch");
+    expect(watches.map(watch => watch.params)).toEqual([
+      { sub: 1, id: "game.history", input: { last: 20 } },
+      { sub: 2, id: "game.position" }
+    ]);
+    expect(watches.every(watch => watch.session === "s-1")).toBe(true);
+
+    socket.notify("game", "value", { sub: 1, value: [1, 2] }, "s-1");
+    expect(seen).toEqual([[1, 2]]);
+  });
+
+  it("an attached watch is sent at once", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", null, vi.fn());
+    expect(socket.last("watch").params).toEqual({ sub: 1, id: "game.position", input: null });
+  });
+
+  it("a re-attach uses new subs; values of the old sub are dropped", async () => {
+    const seen: unknown[] = [];
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, value => seen.push(value));
+    socket.notify("editor", "session", { id: "s-1", game: "g", open: false });
+    sendSessions(socket, [sessionOf("s-2")]);
+    socket.answer(socket.last("manifest"), toWireValue(manifestOf()));
+    await flush();
+
+    expect(socket.last("watch")).toMatchObject({ params: { sub: 2 }, session: "s-2" });
+    socket.notify("game", "value", { sub: 1, value: "old" }, "s-2");
+    socket.notify("game", "value", { sub: 2, value: "new" }, "s-2");
+    expect(seen).toEqual(["new"]);
+    expect(ctx.state.nextSub).toBe(3);
+  });
+
+  it("a voluntary switch unwatches the old subs on the old session", async () => {
+    const socket = await connected(ctx, [sessionOf("s-1"), sessionOf("s-2", { connectedAt: 1 })]);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    const switching = attach(ctx, "s-2");
+    socket.answer(socket.last("manifest"), toWireValue(manifestOf()));
+    await switching;
+
+    expect(socket.last("unwatch")).toMatchObject({ params: { sub: 1 }, session: "s-1" });
+    expect(socket.last("watch")).toMatchObject({ params: { sub: 2 }, session: "s-2" });
+  });
+
+  it("unsubscribe sends unwatch once and forgets the record", async () => {
+    const socket = await connected(ctx);
+    const stop = addWatch(ctx, "game.position", undefined, vi.fn());
+    stop();
+    stop();
+    expect(socket.requests("unwatch")).toHaveLength(1);
+    expect(socket.last("unwatch").params).toEqual({ sub: 1 });
+    expect(ctx.state.subs.size).toBe(0);
+    expect(ctx.state.wire.size).toBe(0);
+  });
+
+  it("unsubscribe while disconnected sends nothing", () => {
+    const stop = addWatch(ctx, "game.position", undefined, vi.fn());
+    stop();
+    expect(ctx.state.subs.size).toBe(0);
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("a source missing from the manifest is skipped with a warning and kept", async () => {
+    addWatch(ctx, "game.nope", undefined, vi.fn());
+    const socket = await connected(ctx);
+    expect(socket.requests("watch")).toHaveLength(0);
+    expect(ctx.log.warn).toHaveBeenCalledWith("link:source-missing", { id: "game.nope" });
+    expect(ctx.state.subs.size).toBe(1);
+  });
+
+  it("a watch error logs link:watch-failed, keeps the record and retries on the next attach", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    socket.reject(socket.last("watch"), {
+      code: -32_601,
+      message: "[moku-editor] unknown id",
+      data: { reason: "unknown_id", retryable: false }
+    });
+    await flush();
+
+    expect(ctx.log.error).toHaveBeenCalledWith("link:watch-failed", {
+      id: "game.position",
+      code: -32_601,
+      reason: "unknown_id"
+    });
+    expect(ctx.state.subs.size).toBe(1);
+    expect(ctx.state.wire.size).toBe(0);
+
+    const again = attach(ctx, "s-1");
+    await again;
+    expect(socket.last("watch").params).toMatchObject({ sub: 2, id: "game.position" });
+  });
+
+  it("an unwatch failure is logged at debug", async () => {
+    const socket = await connected(ctx);
+    const stop = addWatch(ctx, "game.position", undefined, vi.fn());
+    stop();
+    socket.reject(socket.last("unwatch"), { code: -32_600, message: "[moku-editor] x" });
+    await flush();
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:unwatch-failed", { sub: 1, code: -32_600 });
+  });
+});
+
+describe("deliver and detachAll", () => {
+  it("a throwing onValue is logged and does not break delivery", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, () => {
+      throw new Error("panel broke");
+    });
+    deliver(ctx, 1, "x");
+    expect(ctx.log.error).toHaveBeenCalledWith(
+      "link:on-value-failed",
+      { id: "game.position" },
+      expect.any(Error)
+    );
+    expect(socket.requests("watch")).toHaveLength(1);
+  });
+
+  it("detachAll clears the wire and every wireSub but keeps the records", async () => {
+    await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    detachAll(ctx);
+    expect(ctx.state.wire.size).toBe(0);
+    expect([...ctx.state.subs.values()].map(sub => sub.wireSub)).toEqual([undefined]);
+    expect(latestSocket().requests("unwatch")).toHaveLength(0);
+  });
+});

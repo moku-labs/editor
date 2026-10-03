@@ -1,0 +1,60 @@
+/* workspace · base. Element defaults of the tools page: a fixed window with no page scroll, Geist 13/1.42 with ss01, Geist Mono for ids and code, the 2 px accent focus ring. No @layer wrapper: index.css imports this sheet into layer(base) (R7). */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--surface-ground);
+  color: var(--text-ink);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-13);
+  line-height: var(--line-height-ui);
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-editor-root] {
+  height: 100%;
+}
+
+code,
+kbd,
+pre,
+[data-mono] {
+  font-family: var(--font-mono);
+}
+
+[data-muted] {
+  color: var(--text-muted);
+}
+
+[data-sr-only] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.45;
+}
+
+mark {
+  background: var(--accent-soft-strong);
+  color: inherit;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--accent-soft-strong);
+}

@@ -1,0 +1,19 @@
+/* workspace · animations. Keyframes shared by the shell and the views. No @layer wrapper: index.css imports this sheet into layer(animations) (R7). */
+@keyframes spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

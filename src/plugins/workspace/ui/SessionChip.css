@@ -1,0 +1,41 @@
+/* workspace · SessionChip. The short session id in mono; the menu of sessions lives in the top layer (popover). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="session-chip"]) {
+  :scope[data-chip],
+  :scope > [data-chip] {
+    font-family: var(--font-mono);
+  }
+
+  :scope[data-empty] {
+    color: var(--text-muted);
+  }
+}
+
+@scope ([data-ui="session-menu"]) {
+  :scope {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 280px;
+    padding: 4px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+  }
+
+  [role="menuitemradio"] {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 2px 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-6);
+    text-align: start;
+    font-size: var(--font-size-12);
+  }
+
+  [role="menuitemradio"]:hover,
+  [role="menuitemradio"][aria-checked="true"] {
+    background: var(--accent-soft);
+  }
+}
