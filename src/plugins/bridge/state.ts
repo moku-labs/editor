@@ -8,11 +8,26 @@ import type { BridgeConfig, BridgeState } from "./types";
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
+ * @returns A fresh state with its own maps and remover list.
  * @example
  * ```ts
  * const state = createBridgeState({ config });
+ * state.phase; // "idle"
  * ```
  */
 export function createBridgeState(_ctx: { readonly config: Readonly<BridgeConfig> }): BridgeState {
-  throw new Error("not implemented");
+  return {
+    phase: "idle",
+    status: { kind: "connecting" },
+    session: undefined,
+    socket: undefined,
+    attempt: 0,
+    retryTimer: undefined,
+    failureLogged: false,
+    lastFrame: 0,
+    subs: new Map(),
+    pending: new Map(),
+    inflight: new Map(),
+    off: []
+  };
 }

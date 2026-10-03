@@ -1,35 +1,219 @@
 /**
- * @file hub plugin — sockets/agent.ts (skeleton stubs, implemented in its wave).
+ * @file hub plugin — messages of an agent (game page) connection: `hello` first (else close
+ * 1008), heartbeats, values, bye, responses to forwarded calls; any request is answered -32007
+ * `unauthorized` (R6). On close the session ends: pending calls fail -32001 and tools are told.
  */
-
-import type { Message } from "../../registry/protocol";
-import type { AgentConn, HubCtx } from "../types";
+import type { Json, Manifest, Message, Notification } from "../../registry/protocol";
+import {
+  errorCode,
+  failure,
+  isRequest,
+  isResponse,
+  notification,
+  toWireError,
+  wireError
+} from "../../registry/protocol";
+import { settle } from "../routing/calls";
+import {
+  announce,
+  closeSession,
+  isManifest,
+  openSession,
+  readHeartbeat,
+  recordHeartbeat,
+  sessionParams
+} from "../routing/sessions";
+import { onAgentValue } from "../routing/subscriptions";
+import type { AgentConn, HubCtx, Session } from "../types";
+import { sendDroppable, sendJson, strike, toolsConns } from "./send";
 
 /**
- * Skeleton stub for `onAgentMessage`; implemented in its wave.
+ * Policy-violation close code.
+ */
+const POLICY_VIOLATION = 1008;
+
+/**
+ * The `manifest` member of hello params when it is a valid manifest.
  *
- * @param _ctx - The ctx.
- * @param _conn - The conn.
- * @param _message - The message.
+ * @param params - The hello params.
+ * @returns The manifest, or undefined.
  * @example
  * ```ts
- * onAgentMessage();
+ * manifestOf({ manifest }); // manifest
  * ```
  */
-export function onAgentMessage(_ctx: HubCtx, _conn: AgentConn, _message: Message): void {
-  throw new Error("not implemented");
+function manifestOf(params: Json | undefined): Manifest | undefined {
+  const manifest =
+    typeof params === "object" && params !== null && !Array.isArray(params)
+      ? params.manifest
+      : undefined;
+  return isManifest(manifest) ? manifest : undefined;
 }
 
 /**
- * Skeleton stub for `onAgentClose`; implemented in its wave.
+ * The first message: a valid `hello` opens the session and tells the agent its id on channel
+ * `editor` (R6), then announces it; anything else closes 1008.
  *
- * @param _ctx - The ctx.
- * @param _conn - The conn.
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param message - The decoded message.
  * @example
  * ```ts
- * onAgentClose();
+ * if (conn.session === undefined) onHello(ctx, conn, message);
  * ```
  */
-export function onAgentClose(_ctx: HubCtx, _conn: AgentConn): void {
-  throw new Error("not implemented");
+function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
+  if (isResponse(message) || isRequest(message) || message.method !== "hello") {
+    conn.socket.close(POLICY_VIOLATION, "hello first");
+    return;
+  }
+
+  const manifest = manifestOf(message.params);
+  if (manifest === undefined) {
+    conn.socket.close(POLICY_VIOLATION, "bad manifest");
+    return;
+  }
+
+  const session = openSession(ctx, conn, manifest);
+  const payload = { id: session.id, game: manifest.game, open: true };
+  sendJson(conn, notification("editor", "session", sessionParams(payload)));
+  ctx.log.info("hub:session-open", { id: session.id, game: manifest.game });
+  announce(ctx, payload);
+}
+
+/**
+ * A heartbeat: stored (a silent session comes back) and forwarded to every tools connection
+ * with the session (dropped while a connection is congested). A malformed one is a strike.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param session - Its session.
+ * @param note - The heartbeat notification.
+ * @example
+ * ```ts
+ * onHeartbeat(ctx, conn, session, note);
+ * ```
+ */
+function onHeartbeat(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
+  const beat = readHeartbeat(note.params);
+  if (beat === undefined) {
+    strike(conn);
+    return;
+  }
+
+  recordHeartbeat(ctx, session, beat, Date.now());
+  const forwarded = notification("game", "heartbeat", { ...beat }, session.id);
+  for (const tools of toolsConns(ctx.state)) sendDroppable(tools, forwarded);
+}
+
+/**
+ * A value `{sub, value}` of an agent watch; fanned out to the subscribers. A malformed one is a
+ * strike.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param session - Its session.
+ * @param note - The value notification.
+ * @example
+ * ```ts
+ * onValue(ctx, conn, session, note);
+ * ```
+ */
+function onValue(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
+  const { params } = note;
+  const fields =
+    typeof params === "object" && params !== null && !Array.isArray(params) ? params : {};
+  const { sub, value } = fields;
+  if (typeof sub !== "number" || value === undefined) {
+    strike(conn);
+    return;
+  }
+
+  onAgentValue(ctx, session, sub, value);
+}
+
+/**
+ * A notification after hello: heartbeat, value, bye; a second hello closes 1008.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param session - Its session.
+ * @param note - The notification.
+ * @example
+ * ```ts
+ * onNotification(ctx, conn, session, note);
+ * ```
+ */
+function onNotification(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
+  switch (note.channel === "game" ? note.method : "") {
+    case "hello": {
+      conn.socket.close(POLICY_VIOLATION, "hello twice");
+      return;
+    }
+    case "heartbeat": {
+      onHeartbeat(ctx, conn, session, note);
+      return;
+    }
+    case "value": {
+      onValue(ctx, conn, session, note);
+      return;
+    }
+    case "bye": {
+      conn.bye = true;
+      return;
+    }
+    default: {
+      ctx.log.debug("hub:unknown-notification", { channel: note.channel, method: note.method });
+    }
+  }
+}
+
+/**
+ * One decoded message of an agent connection.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param message - The decoded message.
+ * @example
+ * ```ts
+ * onAgentMessage(ctx, conn, decode(text));
+ * ```
+ */
+export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): void {
+  if (conn.session === undefined) {
+    onHello(ctx, conn, message);
+    return;
+  }
+
+  const session = ctx.state.sessions.get(conn.session);
+  if (session === undefined) return;
+
+  if (isResponse(message)) {
+    settle(ctx, message, session.id);
+  } else if (isRequest(message)) {
+    const refused = wireError(errorCode.unauthorized, "agents cannot send requests", {
+      reason: "unauthorized",
+      retryable: false
+    });
+    sendJson(conn, failure(message.id, toWireError(refused)));
+  } else {
+    onNotification(ctx, conn, session, message);
+  }
+}
+
+/**
+ * The agent connection closed: its session ends with reason `bye` after a bye notification,
+ * else `game_reloaded`.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @example
+ * ```ts
+ * onAgentClose(ctx, conn);
+ * ```
+ */
+export function onAgentClose(ctx: HubCtx, conn: AgentConn): void {
+  if (conn.session === undefined) return;
+
+  closeSession(ctx, conn.session, conn.bye ? "bye" : "game_reloaded");
 }

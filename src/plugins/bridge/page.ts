@@ -1,17 +1,40 @@
 /**
- * @file bridge plugin — page.ts (skeleton stubs, implemented in its wave).
+ * @file bridge plugin — page behaviour: a `visibilitychange` (either way) sends one heartbeat in a
+ * microtask, after the game's lifecycle listener has flipped the pause state.
  */
+import { sendBeat } from "./connection/loop";
 import type { BridgeDeps } from "./types";
 
 /**
- * Skeleton stub for `watchVisibility`; implemented in its wave.
+ * Listens to `visibilitychange` on the page document; while open, each event sends one heartbeat
+ * in a microtask after it.
  *
- * @param _deps - The deps.
+ * @param deps - The domain deps.
+ * @returns The remover (a no-op outside a browser).
  * @example
  * ```ts
- * watchVisibility();
+ * state.off.push(watchVisibility(deps));
  * ```
  */
-export function watchVisibility(_deps: BridgeDeps): () => void {
-  throw new Error("not implemented");
+export function watchVisibility(deps: BridgeDeps): () => void {
+  const doc = deps.page.document;
+  if (doc === undefined) return () => {};
+
+  /**
+   * Queues one heartbeat after the event.
+   *
+   * @example
+   * ```ts
+   * doc.addEventListener("visibilitychange", onVisibility);
+   * ```
+   */
+  const onVisibility = (): void => {
+    queueMicrotask(() => {
+      if (deps.state.phase === "open") sendBeat(deps, deps.channel.heartbeat());
+    });
+  };
+  doc.addEventListener("visibilitychange", onVisibility);
+  return () => {
+    doc.removeEventListener("visibilitychange", onVisibility);
+  };
 }

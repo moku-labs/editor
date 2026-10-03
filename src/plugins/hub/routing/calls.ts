@@ -1,75 +1,288 @@
 /**
- * @file hub plugin — routing/calls.ts (skeleton stubs, implemented in its wave).
+ * @file hub plugin — forwarded calls: hub ids, deadlines (R1: `editor.series` waits its duration
+ * on top, capped at 60 s), settling the agent's answers to their reply target, timeouts (-32002)
+ * and failing every call of a closing session (-32001), both retryable.
  */
-import type { Json, Response as RpcResponse } from "../../registry/protocol";
-import type { HubCtx, Reply, Session } from "../types";
+import type { Json, Response as RpcResponse, WireError } from "../../registry/protocol";
+import {
+  errorCode,
+  failure,
+  isFailure,
+  request,
+  success,
+  toWireError,
+  wireError
+} from "../../registry/protocol";
+import { sendJson, toolsConn } from "../sockets/send";
+import type { HubCtx, HubState, Reply, Session } from "../types";
+import { settleWatch } from "./shared";
 
 /**
- * Skeleton stub for `forward`; implemented in its wave.
+ * The run id whose deadline grows with its `durationMs` (R1).
+ */
+const SERIES_ID = "editor.series";
+
+/**
+ * The cap of the `durationMs` extension (R1).
+ */
+const LONG_CALL_CAP_MS = 60_000;
+
+/**
+ * The reply target of a call whose answer nobody waits for.
+ */
+const DISCARD: Reply = { kind: "discard" };
+
+/**
+ * The error of a call whose game went away (retryable).
  *
- * @param _ctx - The ctx.
- * @param _session - The session.
- * @param _method - The method.
- * @param _params - The params.
- * @param _reply - The reply.
+ * @returns The plain wire error.
  * @example
  * ```ts
- * forward();
+ * deliver(ctx, call.reply, failure(call.id, gameReloaded()));
  * ```
  */
-export function forward(
-  _ctx: HubCtx,
-  _session: Session,
-  _method: string,
-  _params: Json | undefined,
-  _reply: Reply
-): void {
-  throw new Error("not implemented");
+function gameReloaded(): WireError {
+  return toWireError(
+    wireError(errorCode.gameReloaded, "game reloaded", { reason: "game_reloaded", retryable: true })
+  );
 }
 
 /**
- * Skeleton stub for `settle`; implemented in its wave.
+ * The error of a call past its deadline (retryable).
  *
- * @param _ctx - The ctx.
- * @param _response - The response.
+ * @returns The plain wire error.
  * @example
  * ```ts
- * settle();
+ * deliver(ctx, call.reply, failure(call.id, timedOut()));
  * ```
  */
-export function settle(_ctx: HubCtx, _response: RpcResponse): void {
-  throw new Error("not implemented");
+function timedOut(): WireError {
+  return toWireError(
+    wireError(errorCode.timeout, "call timed out", { reason: "timeout", retryable: true })
+  );
 }
 
 /**
- * Skeleton stub for `failSession`; implemented in its wave.
+ * Reads a member of a JSON object, or undefined.
  *
- * @param _ctx - The ctx.
- * @param _id - The id.
+ * @param value - A Json value.
+ * @param key - The member.
+ * @returns The member when `value` is an object.
  * @example
  * ```ts
- * failSession();
+ * memberOf({ input: { durationMs: 5 } }, "input"); // { durationMs: 5 }
  * ```
  */
-export function failSession(_ctx: HubCtx, _id: string): void {
-  throw new Error("not implemented");
+function memberOf(value: Json | undefined, key: string): Json | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value[key]
+    : undefined;
 }
 
 /**
- * Skeleton stub for `deadlineFor`; implemented in its wave.
+ * The deadline of a forwarded call: callTimeoutMs, plus `input.durationMs` (finite, ≥ 0, capped
+ * at 60 s) for a `run` of `editor.series` only (R1, the same rule on every hop).
  *
- * @param _method - The method.
- * @param _params - The params.
- * @param _callTimeoutMs - The callTimeoutMs.
+ * @param method - The request method.
+ * @param params - The request params.
+ * @param callTimeoutMs - config.callTimeoutMs.
+ * @returns The deadline in ms.
  * @example
  * ```ts
- * deadlineFor();
+ * deadlineFor("run", { id: "editor.series", input: { durationMs: 20_000, intervalMs: 100 } }, 5000); // 25000
  * ```
  */
 export function deadlineFor(
-  _method: string,
-  _params: Json | undefined,
-  _callTimeoutMs: number
+  method: string,
+  params: Json | undefined,
+  callTimeoutMs: number
 ): number {
-  throw new Error("not implemented");
+  if (method !== "run" || memberOf(params, "id") !== SERIES_ID) return callTimeoutMs;
+
+  const duration = memberOf(memberOf(params, "input"), "durationMs");
+  if (typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) {
+    return callTimeoutMs;
+  }
+  return callTimeoutMs + Math.min(duration, LONG_CALL_CAP_MS);
+}
+
+/**
+ * Sends an answer to its reply target: a tools response with the tools id, every waiting watch
+ * subscriber, or nobody.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param reply - The reply target.
+ * @param response - The answer (agent response or hub-built failure).
+ * @example
+ * ```ts
+ * deliver(ctx, call.reply, response);
+ * ```
+ */
+function deliver(ctx: HubCtx, reply: Reply, response: RpcResponse): void {
+  if (reply.kind === "watch") {
+    settleWatch(ctx, reply.key, response);
+    return;
+  }
+  if (reply.kind === "discard") return;
+
+  const tools = toolsConn(ctx.state, reply.conn);
+  if (tools === undefined) return;
+
+  tools.pending = Math.max(0, tools.pending - 1);
+  sendJson(
+    tools,
+    isFailure(response)
+      ? failure(reply.toolsId, response.error)
+      : success(reply.toolsId, response.result)
+  );
+}
+
+/**
+ * Fails a pending call past its deadline with -32002.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param id - The hub id.
+ * @example
+ * ```ts
+ * setTimeout(() => expire(ctx, id), deadline);
+ * ```
+ */
+function expire(ctx: HubCtx, id: number): void {
+  const call = ctx.state.pending.get(id);
+  if (call === undefined) return;
+
+  ctx.state.pending.delete(id);
+  deliver(ctx, call.reply, failure(id, timedOut()));
+}
+
+/**
+ * Forwards a game-channel request to the session's agent under a new hub id, with a deadline.
+ * A tools reply counts against that connection's pending calls.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param session - The target session.
+ * @param method - The game method.
+ * @param params - The params, omitted when undefined.
+ * @param reply - Where the answer goes.
+ * @example
+ * ```ts
+ * forward(ctx, session, "read", { id: "game.position" }, { kind: "tools", conn: 3, toolsId: 7 });
+ * ```
+ */
+export function forward(
+  ctx: HubCtx,
+  session: Session,
+  method: string,
+  params: Json | undefined,
+  reply: Reply
+): void {
+  const { state, config } = ctx;
+  const id = state.nextCallId;
+  state.nextCallId += 1;
+
+  if (reply.kind === "tools") {
+    const tools = toolsConn(state, reply.conn);
+    if (tools !== undefined) tools.pending += 1;
+  }
+
+  const agent = state.conns.get(session.conn);
+  if (agent?.kind !== "agent") {
+    deliver(ctx, reply, failure(id, gameReloaded()));
+    return;
+  }
+
+  const deadline = deadlineFor(method, params, config.callTimeoutMs);
+  const timer = setTimeout(() => expire(ctx, id), deadline);
+  state.pending.set(id, { id, session: session.id, timer, reply });
+  sendJson(agent, request(id, "game", method, params));
+}
+
+/**
+ * Settles the agent's response to a pending call; an unknown id (late after a timeout, or a call
+ * of another session) is ignored and logged at debug level.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param response - The agent's response.
+ * @param from - The session of the answering agent; a call of another session is unknown.
+ * @example
+ * ```ts
+ * settle(ctx, message, session.id);
+ * ```
+ */
+export function settle(ctx: HubCtx, response: RpcResponse, from?: string): void {
+  const call = ctx.state.pending.get(response.id);
+  if (call === undefined || (from !== undefined && call.session !== from)) {
+    ctx.log.debug("hub:late-response", { id: response.id });
+    return;
+  }
+
+  clearTimeout(call.timer);
+  ctx.state.pending.delete(response.id);
+  deliver(ctx, call.reply, response);
+}
+
+/**
+ * Fails every pending call of a session with -32001 `game_reloaded` (retryable); calls of other
+ * sessions keep waiting.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param id - The session id.
+ * @example
+ * ```ts
+ * failSession(ctx, session.id);
+ * ```
+ */
+export function failSession(ctx: HubCtx, id: string): void {
+  for (const call of ctx.state.pending.values()) {
+    if (call.session !== id) continue;
+    clearTimeout(call.timer);
+    ctx.state.pending.delete(call.id);
+    deliver(ctx, call.reply, failure(call.id, gameReloaded()));
+  }
+}
+
+/**
+ * Turns the replies of a closed tools connection into `discard`.
+ *
+ * @param state - Hub state.
+ * @param conn - The tools connection number.
+ * @example
+ * ```ts
+ * discardReplies(ctx.state, conn.conn);
+ * ```
+ */
+export function discardReplies(state: HubState, conn: number): void {
+  for (const call of state.pending.values()) {
+    if (call.reply.kind === "tools" && call.reply.conn === conn) call.reply = DISCARD;
+  }
+}
+
+/**
+ * Turns the agent watch call of a removed shared watch into `discard`, so its late answer cannot
+ * settle a newer watch of the same key.
+ *
+ * @param state - Hub state.
+ * @param key - The subKey.
+ * @example
+ * ```ts
+ * discardWatchCalls(ctx.state, shared.key);
+ * ```
+ */
+export function discardWatchCalls(state: HubState, key: string): void {
+  for (const call of state.pending.values()) {
+    if (call.reply.kind === "watch" && call.reply.key === key) call.reply = DISCARD;
+  }
+}
+
+/**
+ * The reply target of a call whose answer nobody waits for.
+ *
+ * @returns `{ kind: "discard" }`.
+ * @example
+ * ```ts
+ * forward(ctx, session, "unwatch", { sub }, discard());
+ * ```
+ */
+export function discard(): Reply {
+  return DISCARD;
 }

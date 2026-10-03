@@ -1,93 +1,269 @@
 /**
- * @file bridge plugin — dispatch/subscriptions.ts (skeleton stubs, implemented in its wave).
+ * @file bridge plugin — subscriptions of the hub: followed through `channel.watch` for edge and
+ * commit sources, re-read once per heartbeat for frame sources (R6, D-15), re-read after each
+ * run, and sent only when the value changed.
  */
-
-import type { Json, Request as RpcRequest, SubId, WatchParams } from "../../registry/protocol";
-import type { BridgeDeps } from "../types";
+import type { Json, Request as RpcRequest, SubId } from "../../registry/protocol";
+import { errorCode, failure, success, toWireError, wireError } from "../../registry/protocol";
+import type { BridgeDeps, Subscription } from "../types";
+import type { CheckedParams } from "./params";
+import { congested, messageOf, sendNow, sendValue } from "./send";
 
 /**
- * Skeleton stub for `subscribe`; implemented in its wave.
+ * The JSON null the watch response carries.
+ */
+// eslint-disable-next-line unicorn/no-null -- null is the result of watch on the wire
+const ACK: Json = null;
+
+/**
+ * Answers a request with the wire error of a thrown value.
  *
- * @param _deps - The deps.
- * @param _request - The request.
- * @param _params - The params.
+ * @param deps - The domain deps.
+ * @param request - The request.
+ * @param error - What was thrown.
  * @example
  * ```ts
- * subscribe();
+ * answerError(deps, request, error);
  * ```
  */
-export function subscribe(
-  _deps: BridgeDeps,
-  _request: RpcRequest,
-  _params: WatchParams
+function answerError(deps: BridgeDeps, request: RpcRequest, error: unknown): void {
+  sendNow(deps, failure(request.id, toWireError(error)));
+}
+
+/**
+ * True while `record` is still the subscription of its sub id.
+ *
+ * @param deps - The domain deps.
+ * @param record - A subscription.
+ * @returns Whether it was neither replaced nor removed.
+ * @example
+ * ```ts
+ * if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
+ * ```
+ */
+function isCurrent(deps: Pick<BridgeDeps, "state">, record: Subscription): boolean {
+  return deps.state.subs.get(record.sub) === record;
+}
+
+/**
+ * Reads the source of a subscription again and pushes the value; a read error is logged at
+ * debug and the subscription stays.
+ *
+ * @param deps - The domain deps.
+ * @param record - The subscription.
+ * @param event - The debug event of a failed read.
+ * @example
+ * ```ts
+ * reread(deps, record, "bridge:sample-failed");
+ * ```
+ */
+function reread(deps: BridgeDeps, record: Subscription, event: string): void {
+  deps.channel.read(record.id, record.input).then(
+    value => {
+      if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
+    },
+    (error: unknown) => {
+      deps.log.debug(event, { sub: record.sub, id: record.id, message: messageOf(error) });
+    }
+  );
+}
+
+/**
+ * A frame source: one read now, answered with null and pushed; later re-read per heartbeat.
+ *
+ * @param deps - The domain deps.
+ * @param request - The watch request.
+ * @param record - The new subscription (stop undefined).
+ * @example
+ * ```ts
+ * await followFrames(deps, request, record);
+ * ```
+ */
+async function followFrames(
+  deps: BridgeDeps,
+  request: RpcRequest,
+  record: Subscription
 ): Promise<void> {
-  throw new Error("not implemented");
+  deps.state.subs.set(record.sub, record);
+  let value: Json;
+  try {
+    value = await deps.channel.read(record.id, record.input);
+  } catch (error) {
+    if (isCurrent(deps, record)) deps.state.subs.delete(record.sub);
+    answerError(deps, request, error);
+    return;
+  }
+  sendNow(deps, success(request.id, ACK));
+  if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
 }
 
 /**
- * Skeleton stub for `unsubscribe`; implemented in its wave.
+ * An edge or commit source: `channel.watch`, whose immediate value waits until the response
+ * (null) is on the socket.
  *
- * @param _deps - The deps.
- * @param _sub - The sub.
+ * @param deps - The domain deps.
+ * @param request - The watch request.
+ * @param record - The new subscription.
  * @example
  * ```ts
- * unsubscribe();
+ * followDoor(deps, request, record);
  * ```
  */
-export function unsubscribe(_deps: BridgeDeps, _sub: SubId): void {
-  throw new Error("not implemented");
+function followDoor(deps: BridgeDeps, request: RpcRequest, record: Subscription): void {
+  const buffer: Json[] = [];
+  let acked = false;
+
+  /**
+   * Holds values until the response is sent, then pushes them while the subscription lives.
+   *
+   * @param value - A value of the channel watch.
+   * @example
+   * ```ts
+   * deliver({ path: "home" });
+   * ```
+   */
+  const deliver = (value: Json): void => {
+    if (!acked) buffer.push(value);
+    else if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
+  };
+
+  try {
+    record.stop = deps.channel.watch(record.id, record.input, deliver);
+  } catch (error) {
+    answerError(deps, request, error);
+    return;
+  }
+  deps.state.subs.set(record.sub, record);
+  sendNow(deps, success(request.id, ACK));
+  acked = true;
+  for (const value of buffer) pushValue(deps, record.sub, value);
 }
 
 /**
- * Skeleton stub for `dropAll`; implemented in its wave.
+ * Serves a `watch` request: replaces a subscription with the same sub, answers -32601 for an
+ * unknown source, then follows the source (edge, commit) or samples it (frame). The response
+ * precedes the first value.
  *
- * @param _deps - The deps.
+ * @param deps - The domain deps.
+ * @param request - The watch request (answered exactly once).
+ * @param params - Its checked params.
  * @example
  * ```ts
- * dropAll();
+ * await subscribe(deps, request, { sub: 1, id: "game.position" });
  * ```
  */
-export function dropAll(_deps: BridgeDeps): void {
-  throw new Error("not implemented");
+export async function subscribe(
+  deps: BridgeDeps,
+  request: RpcRequest,
+  params: CheckedParams<"watch">
+): Promise<void> {
+  const { sub, id, input } = params;
+  if (deps.state.subs.has(sub)) unsubscribe(deps, sub);
+
+  const entry = deps.registry.source(id);
+  if (entry === undefined) {
+    answerError(
+      deps,
+      request,
+      wireError(errorCode.unknownMethod, `${id}: unknown source`, {
+        reason: "unknown_id",
+        retryable: false,
+        id
+      })
+    );
+    return;
+  }
+
+  const { changes } = entry.descriptor;
+  const record: Subscription = { sub, id, input, changes, stop: undefined, lastSent: undefined };
+  if (changes === "frame") {
+    await followFrames(deps, request, record);
+    return;
+  }
+  followDoor(deps, request, record);
 }
 
 /**
- * Skeleton stub for `sampleFrames`; implemented in its wave.
+ * Ends a subscription: stops its channel watch, forgets it and its backlog value. An unknown sub
+ * is fine.
  *
- * @param _deps - The deps.
+ * @param deps - The state.
+ * @param sub - The subscription id.
  * @example
  * ```ts
- * sampleFrames();
+ * unsubscribe(deps, 1);
  * ```
  */
-export function sampleFrames(_deps: BridgeDeps): void {
-  throw new Error("not implemented");
+export function unsubscribe(deps: Pick<BridgeDeps, "state">, sub: SubId): void {
+  const { state } = deps;
+  state.subs.get(sub)?.stop?.();
+  state.subs.delete(sub);
+  state.pending.delete(sub);
 }
 
 /**
- * Skeleton stub for `refreshAll`; implemented in its wave.
+ * Ends every subscription (socket closed, stop).
  *
- * @param _deps - The deps.
+ * @param deps - The state.
  * @example
  * ```ts
- * refreshAll();
+ * dropAll({ state });
  * ```
  */
-export function refreshAll(_deps: BridgeDeps): void {
-  throw new Error("not implemented");
+export function dropAll(deps: Pick<BridgeDeps, "state">): void {
+  const { state } = deps;
+  for (const record of state.subs.values()) record.stop?.();
+  state.subs.clear();
+  state.pending.clear();
 }
 
 /**
- * Skeleton stub for `pushValue`; implemented in its wave.
+ * Heartbeat tick: re-reads every frame subscription and sends what changed. Skipped while the
+ * socket is congested.
  *
- * @param _deps - The deps.
- * @param _sub - The sub.
- * @param _value - The value.
+ * @param deps - The domain deps.
  * @example
  * ```ts
- * pushValue();
+ * channel.onHeartbeat(() => sampleFrames(deps));
  * ```
  */
-export function pushValue(_deps: BridgeDeps, _sub: SubId, _value: Json): void {
-  throw new Error("not implemented");
+export function sampleFrames(deps: BridgeDeps): void {
+  const { socket, subs } = deps.state;
+  if (socket !== undefined && congested(socket)) return;
+  for (const record of subs.values()) {
+    if (record.changes === "frame") reread(deps, record, "bridge:sample-failed");
+  }
+}
+
+/**
+ * After a run settles: re-reads every subscription and sends what changed (a paused game or a
+ * hidden tab runs no frames, so door watches would miss what the command changed, R6).
+ *
+ * @param deps - The domain deps.
+ * @example
+ * ```ts
+ * await channel.run(id, input).finally(() => refreshAll(deps));
+ * ```
+ */
+export function refreshAll(deps: BridgeDeps): void {
+  for (const record of deps.state.subs.values()) reread(deps, record, "bridge:refresh-failed");
+}
+
+/**
+ * Sends a value of a subscription unless it equals the last one sent (JSON text).
+ *
+ * @param deps - The state and the log.
+ * @param sub - The subscription id.
+ * @param value - The value.
+ * @example
+ * ```ts
+ * pushValue(deps, 1, { path: "board/awaitIntent" });
+ * ```
+ */
+export function pushValue(deps: Pick<BridgeDeps, "state" | "log">, sub: SubId, value: Json): void {
+  const record = deps.state.subs.get(sub);
+  if (record === undefined) return;
+  const text = JSON.stringify(value);
+  if (text === record.lastSent) return;
+  sendValue(deps, sub, value, text);
 }

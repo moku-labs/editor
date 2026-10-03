@@ -1,1 +1,182 @@
-/* workspace · tokens. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · tokens. Two layers (design-context §2): primitives are the raw values, semantics are purpose names themed with light-dark(). Views use the semantic names only; their TypeScript mirror is panels/shared/tokens.ts (R4). No @layer wrapper: index.css imports this sheet into layer(tokens) (R7). */
+
+:root {
+  color-scheme: light dark;
+
+  /* ─── Primitives: colour, light set ─── */
+  --color-light-ground: #fafafa;
+  --color-light-panel: #ffffff;
+  --color-light-panel-2: #f7f7f8;
+  --color-light-canvas: #f3f3f5;
+  --color-light-line: #ececec;
+  --color-light-line-2: #e1e1e6;
+  --color-light-ink: #1c1c21;
+  --color-light-text-2: #5f5f69;
+  --color-light-muted: #9a9aa4;
+  --color-light-indigo: #5b5bd6;
+  --color-light-indigo-2: #4a4ac2;
+  --color-light-green: #17905a;
+  --color-light-amber: #b4741a;
+  --color-light-red: #d1453b;
+  --color-light-teal: #2b8a9e;
+  --color-light-edge: #b5b5c0;
+  --color-light-dot: #d3d3da;
+  --color-light-note-fill: #fff4c4;
+  --color-light-note-line: #ead27a;
+  --color-light-note-ink: #584810;
+
+  /* ─── Primitives: colour, dark set ─── */
+  --color-dark-ground: #16161a;
+  --color-dark-panel: #1c1c21;
+  --color-dark-panel-2: #202026;
+  --color-dark-canvas: #131316;
+  --color-dark-line: #28282f;
+  --color-dark-line-2: #34343c;
+  --color-dark-ink: #ececf0;
+  --color-dark-text-2: #a3a3ae;
+  --color-dark-muted: #6d6d78;
+  --color-dark-indigo: #6e6ee6;
+  --color-dark-indigo-2: #8484ee;
+  --color-dark-green: #3cc482;
+  --color-dark-amber: #e3a541;
+  --color-dark-red: #f06a5f;
+  --color-dark-teal: #4db3c6;
+  --color-dark-edge: #4c4c57;
+  --color-dark-dot: #2a2a32;
+  --color-dark-note-fill: #39321c;
+  --color-dark-note-line: #6c5c24;
+  --color-dark-note-ink: #f1dd98;
+
+  /* ─── Primitives: fixed colours (both themes) ─── */
+  --color-phase-1: #a5a5f0;
+  --color-phase-2: #7c7ce4;
+  --color-phase-3: #5b5bd6;
+  --color-phase-4: #3b3ba8;
+  --color-phase-5: #c9c9d6;
+  --color-pick-blue: #3d7bf0;
+  --color-pick-pink: #e2477e;
+
+  /* ─── Primitives: type ─── */
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-size-9-5: 9.5px;
+  --font-size-10: 10px;
+  --font-size-10-5: 10.5px;
+  --font-size-11: 11px;
+  --font-size-11-5: 11.5px;
+  --font-size-12: 12px;
+  --font-size-12-5: 12.5px;
+  --font-size-13: 13px;
+  --font-size-14: 14px;
+  --font-size-15: 15px;
+  --font-size-16: 16px;
+  --font-size-18: 18px;
+  --font-size-20: 20px;
+  --line-height-ui: 1.42;
+  --line-height-code: 1.62;
+
+  /* ─── Primitives: radii (by hierarchy, design §2) ─── */
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-34: 34px;
+
+  /* ─── Primitives: motion ─── */
+  --duration-camera: 420ms;
+  --duration-zoom: 200ms;
+  --duration-follow: 500ms;
+  --duration-strip: 240ms;
+  --duration-walk: 220ms;
+  --duration-resize: 210ms;
+  --duration-toast: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ─── Primitives: layout ─── */
+  --topbar-h: 44px;
+  --rail-w: 52px;
+  --inspector-w: 320px;
+  --toast-band: 64px;
+  --preview-margin: 12px;
+}
+
+@media (max-width: 1380px) {
+  :root {
+    --inspector-w: 296px;
+  }
+}
+
+:root {
+  /* ─── Semantics: surfaces, lines, text ─── */
+  --surface-ground: light-dark(var(--color-light-ground), var(--color-dark-ground));
+  --surface-panel: light-dark(var(--color-light-panel), var(--color-dark-panel));
+  --surface-panel-2: light-dark(var(--color-light-panel-2), var(--color-dark-panel-2));
+  --surface-canvas: light-dark(var(--color-light-canvas), var(--color-dark-canvas));
+  --line-1: light-dark(var(--color-light-line), var(--color-dark-line));
+  --line-2: light-dark(var(--color-light-line-2), var(--color-dark-line-2));
+  --text-ink: light-dark(var(--color-light-ink), var(--color-dark-ink));
+  --text-2: light-dark(var(--color-light-text-2), var(--color-dark-text-2));
+  --text-muted: light-dark(var(--color-light-muted), var(--color-dark-muted));
+
+  /* ─── Semantics: meaning (the accent means selected, current or on the trail) ─── */
+  --accent: light-dark(var(--color-light-indigo), var(--color-dark-indigo));
+  --accent-2: light-dark(var(--color-light-indigo-2), var(--color-dark-indigo-2));
+  --accent-soft: light-dark(
+    color-mix(in srgb, var(--color-light-indigo) 9%, transparent),
+    color-mix(in srgb, var(--color-dark-indigo) 13%, transparent)
+  );
+  --accent-soft-strong: light-dark(
+    color-mix(in srgb, var(--color-light-indigo) 20%, transparent),
+    color-mix(in srgb, var(--color-dark-indigo) 28%, transparent)
+  );
+  --status-live: light-dark(var(--color-light-green), var(--color-dark-green));
+  --status-warn: light-dark(var(--color-light-amber), var(--color-dark-amber));
+  --status-error: light-dark(var(--color-light-red), var(--color-dark-red));
+  --teal: light-dark(var(--color-light-teal), var(--color-dark-teal));
+  --edge: light-dark(var(--color-light-edge), var(--color-dark-edge));
+  --canvas-dot: light-dark(var(--color-light-dot), var(--color-dark-dot));
+  --note-fill: light-dark(var(--color-light-note-fill), var(--color-dark-note-fill));
+  --note-line: light-dark(var(--color-light-note-line), var(--color-dark-note-line));
+  --note-ink: light-dark(var(--color-light-note-ink), var(--color-dark-note-ink));
+  --pick-hover: var(--color-pick-blue);
+  --pick-tree: var(--color-pick-pink);
+  --phase-1: var(--color-phase-1);
+  --phase-2: var(--color-phase-2);
+  --phase-3: var(--color-phase-3);
+  --phase-4: var(--color-phase-4);
+  --phase-5: var(--color-phase-5);
+
+  /* ─── Semantics: floats (shadows only on floating things) ─── */
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.12);
+  --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.08), 0 12px 32px rgb(0 0 0 / 0.16);
+  --focus-ring: 0 0 0 2px var(--accent);
+
+  /* ─── Semantics: code colours of the shared highlighter (panels/shared/highlight.ts) ─── */
+  --code-plain: inherit;
+  --code-keyword: var(--text-ink);
+  --code-string: var(--status-live);
+  --code-number: var(--status-warn);
+  --code-literal: var(--status-warn);
+  --code-comment: var(--text-muted);
+  --code-type: var(--teal);
+  --code-tag: var(--teal);
+  --code-function: var(--text-ink);
+  --code-property: var(--text-2);
+  --code-attr: var(--text-2);
+  --code-punct: var(--text-muted);
+  --code-operator: var(--text-muted);
+  --code-meta: var(--text-ink);
+  --code-heading: var(--text-ink);
+}
+
+/* The theme toggle forces one scheme; without it the OS decides (first load). */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

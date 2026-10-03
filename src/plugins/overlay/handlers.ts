@@ -2,32 +2,41 @@
  * @file overlay plugin — hooks: the global agent event bridge:status feeds the link dot.
  */
 import type { AgentEvents } from "../../config";
+import { overlayCtxOf } from "./context";
+import { paint } from "./paint";
 import type { OverlayCtx, OverlayHooks, OverlayPluginCtx } from "./types";
 
 /**
- * The overlay's hooks factory (`hooks: createHandlers`).
+ * The overlay's hooks factory (`hooks: createHandlers`). `bridge:status` is a global agent event,
+ * so no dependency on the opt-in bridge is needed; in a QA build it never fires.
  *
- * @param _ctx - Plugin context of the overlay.
+ * @param ctx - Plugin context of the overlay.
+ * @returns The hook map.
  * @example
  * ```ts
  * createAgentPlugin("overlay", { hooks: createHandlers });
  * ```
  */
-export function createHandlers(_ctx: OverlayPluginCtx): OverlayHooks {
-  throw new Error("not implemented");
+export function createHandlers(ctx: OverlayPluginCtx): OverlayHooks {
+  return { "bridge:status": handleBridgeStatus(overlayCtxOf(ctx)) };
 }
 
 /**
  * Stores status and session; repaints when open.
  *
- * @param _octx - Domain context.
+ * @param octx - Domain context.
+ * @returns The bridge:status handler.
  * @example
  * ```ts
  * handleBridgeStatus(octx)({ status: { kind: "live", frame: 12 } });
  * ```
  */
 export function handleBridgeStatus(
-  _octx: OverlayCtx
+  octx: OverlayCtx
 ): (payload: AgentEvents["bridge:status"]) => void {
-  throw new Error("not implemented");
+  return payload => {
+    octx.state.link = payload.status;
+    octx.state.session = payload.session;
+    if (octx.state.open) paint(octx);
+  };
 }

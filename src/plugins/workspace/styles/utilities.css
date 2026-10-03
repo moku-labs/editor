@@ -1,0 +1,14 @@
+/* workspace · utilities. Highest-priority overrides. Reduced motion: no transitions, no animations; spinners become static dots, the preview jumps, toasts appear without motion. The layer order makes !important unnecessary. No @layer wrapper: index.css imports this sheet into layer(utilities) (R7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none;
+    animation: none;
+    scroll-behavior: auto;
+  }
+
+  [data-spinner] {
+    border-color: var(--accent);
+  }
+}

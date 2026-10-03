@@ -1,48 +1,137 @@
 /**
- * @file hub plugin — sockets/send.ts (skeleton stubs, implemented in its wave).
+ * @file hub plugin — sending to sockets with backpressure: `send` returning -1 marks a tools conn
+ * congested; while congested, values coalesce to the latest per sub, heartbeats are dropped, and
+ * responses and session notifications are still sent. `drain` flushes the backlog in order.
  */
 import type { Json, Message, SubId } from "../../registry/protocol";
-import type { Conn, ToolsConn } from "../types";
+import { encode, notification } from "../../registry/protocol";
+import type { Conn, HubState, ToolsConn } from "../types";
 
 /**
- * Skeleton stub for `sendJson`; implemented in its wave.
+ * What `socket.send` returns under backpressure.
+ */
+const BACKPRESSURE = -1;
+
+/**
+ * Strikes before a connection is closed for invalid messages (undecodable or malformed).
+ */
+const MAX_INVALID = 10;
+
+/**
+ * The JSON null (an empty result, no input, no heartbeat yet).
+ */
+// eslint-disable-next-line unicorn/no-null -- null is the JSON value the wire carries
+export const JSON_NULL = null;
+
+/**
+ * Sends a message; a tools conn under backpressure becomes congested. A 0 (socket closing) is
+ * ignored.
  *
- * @param _conn - The conn.
- * @param _message - The message.
+ * @param conn - The connection.
+ * @param message - The wire message.
  * @example
  * ```ts
- * sendJson();
+ * sendJson(conn, success(id, JSON_NULL));
  * ```
  */
-export function sendJson(_conn: Conn, _message: Message): void {
-  throw new Error("not implemented");
+export function sendJson(conn: Conn, message: Message): void {
+  const sent = conn.socket.send(encode(message));
+  if (sent === BACKPRESSURE && conn.kind === "tools") conn.congested = true;
 }
 
 /**
- * Skeleton stub for `sendValue`; implemented in its wave.
+ * Sends a message that may be lost (a heartbeat): dropped while the conn is congested.
  *
- * @param _conn - The conn.
- * @param _sub - The sub.
- * @param _session - The session.
- * @param _value - The value.
+ * @param conn - The tools connection.
+ * @param message - The wire message.
  * @example
  * ```ts
- * sendValue();
+ * sendDroppable(conn, notification("game", "heartbeat", beat, session));
  * ```
  */
-export function sendValue(_conn: ToolsConn, _sub: SubId, _session: string, _value: Json): void {
-  throw new Error("not implemented");
+export function sendDroppable(conn: ToolsConn, message: Message): void {
+  if (!conn.congested) sendJson(conn, message);
 }
 
 /**
- * Skeleton stub for `flushBacklog`; implemented in its wave.
+ * Sends a `value` notification of a tools sub; while congested only the latest value per sub is
+ * kept in the backlog.
  *
- * @param _conn - The conn.
+ * @param conn - The tools connection.
+ * @param sub - The tools sub id.
+ * @param session - The session the value comes from.
+ * @param value - The value.
  * @example
  * ```ts
- * flushBacklog();
+ * sendValue(conn, 4, "s-7f3a", { frame: 12 });
  * ```
  */
-export function flushBacklog(_conn: ToolsConn): void {
-  throw new Error("not implemented");
+export function sendValue(conn: ToolsConn, sub: SubId, session: string, value: Json): void {
+  if (conn.congested) {
+    conn.backlog.set(sub, { session, value });
+    return;
+  }
+  sendJson(conn, notification("game", "value", { sub, value }, session));
+}
+
+/**
+ * The `drain` step: clears congestion and sends the backlog in insertion order; a value that hits
+ * backpressure again keeps the rest in the backlog.
+ *
+ * @param conn - The tools connection.
+ * @example
+ * ```ts
+ * drain(ws) { flushBacklog(conn); }
+ * ```
+ */
+export function flushBacklog(conn: ToolsConn): void {
+  conn.congested = false;
+  const entries = [...conn.backlog];
+  conn.backlog.clear();
+
+  for (const [sub, { session, value }] of entries) sendValue(conn, sub, session, value);
+}
+
+/**
+ * Every open tools connection.
+ *
+ * @param state - Hub state.
+ * @returns The tools conns, in connection order.
+ * @example
+ * ```ts
+ * for (const conn of toolsConns(state)) sendJson(conn, note);
+ * ```
+ */
+export function toolsConns(state: HubState): ToolsConn[] {
+  return [...state.conns.values()].filter(conn => conn.kind === "tools");
+}
+
+/**
+ * The open tools connection with a number, or undefined.
+ *
+ * @param state - Hub state.
+ * @param conn - Connection number.
+ * @returns The tools conn.
+ * @example
+ * ```ts
+ * const target = toolsConn(state, reply.conn);
+ * ```
+ */
+export function toolsConn(state: HubState, conn: number): ToolsConn | undefined {
+  const found = state.conns.get(conn);
+  return found?.kind === "tools" ? found : undefined;
+}
+
+/**
+ * Counts one invalid message of a connection; the tenth closes it with 1008.
+ *
+ * @param conn - The connection.
+ * @example
+ * ```ts
+ * if (message === undefined) strike(conn);
+ * ```
+ */
+export function strike(conn: Conn): void {
+  conn.invalid += 1;
+  if (conn.invalid >= MAX_INVALID) conn.socket.close(1008, "too many invalid messages");
 }

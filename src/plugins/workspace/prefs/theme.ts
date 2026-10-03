@@ -1,49 +1,89 @@
 /**
- * @file workspace plugin — prefs/theme.ts (skeleton stubs, implemented in its wave).
+ * @file workspace plugin — the theme: effective theme (the chosen one, else the OS one),
+ * `<html data-theme>` that forces it in the token sheet, and the OS `prefers-color-scheme` listener.
  */
 import type { Theme } from "../types";
 
 /**
- * Skeleton stub for `effectiveTheme`; implemented in its wave.
+ * The media query of the OS dark mode.
+ */
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/**
+ * The effective theme: the chosen one, else the OS one.
  *
- * @param _theme - The theme.
- * @param _theme.chosen - The chosen.
- * @param _theme.os - The os.
+ * @param theme - The theme state.
+ * @param theme.chosen - The theme picked with the toggle, undefined until then.
+ * @param theme.os - The OS theme.
+ * @returns The theme to show.
  * @example
  * ```ts
- * effectiveTheme();
+ * effectiveTheme({ chosen: undefined, os: "dark" }); // "dark"
  * ```
  */
-export function effectiveTheme(_theme: {
+export function effectiveTheme(theme: {
   readonly chosen: Theme | undefined;
   readonly os: Theme;
 }): Theme {
-  throw new Error("not implemented");
+  return theme.chosen ?? theme.os;
 }
 
 /**
- * Skeleton stub for `applyTheme`; implemented in its wave.
+ * Forces a theme on the root element (`[data-theme]` in tokens.css sets `color-scheme`).
  *
- * @param _theme - The theme.
- * @param _root - The root.
+ * @param theme - The theme to show.
+ * @param root - The `<html>` element.
  * @example
  * ```ts
- * applyTheme();
+ * applyTheme("dark", document.documentElement);
  * ```
  */
-export function applyTheme(_theme: Theme, _root: HTMLElement): void {
-  throw new Error("not implemented");
+export function applyTheme(theme: Theme, root: HTMLElement): void {
+  root.dataset.theme = theme;
 }
 
 /**
- * Skeleton stub for `watchOsTheme`; implemented in its wave.
+ * The OS theme now; light where `matchMedia` is missing.
  *
- * @param _onChange - The onChange.
+ * @returns "dark" when the OS prefers dark.
  * @example
  * ```ts
- * watchOsTheme();
+ * state.theme.os = readOsTheme();
  * ```
  */
-export function watchOsTheme(_onChange: (theme: Theme) => void): () => void {
-  throw new Error("not implemented");
+export function readOsTheme(): Theme {
+  return globalThis.matchMedia?.(DARK_QUERY).matches ? "dark" : "light";
+}
+
+/**
+ * Listens to OS theme changes.
+ *
+ * @param onChange - Called with the new OS theme.
+ * @returns Removes the listener (a no-op without `matchMedia`).
+ * @example
+ * ```ts
+ * state.dom.cleanup.push(watchOsTheme(theme => osThemeChanged(ctx, theme)));
+ * ```
+ */
+export function watchOsTheme(onChange: (theme: Theme) => void): () => void {
+  const query = globalThis.matchMedia?.(DARK_QUERY);
+  if (query === undefined) return () => {};
+
+  /**
+   * Passes the new OS theme on.
+   *
+   * @param event - The media change.
+   * @param event.matches - True for dark.
+   * @example
+   * ```ts
+   * query.addEventListener("change", listener);
+   * ```
+   */
+  const listener = (event: { readonly matches: boolean }): void => {
+    onChange(event.matches ? "dark" : "light");
+  };
+  query.addEventListener("change", listener);
+  return () => {
+    query.removeEventListener("change", listener);
+  };
 }

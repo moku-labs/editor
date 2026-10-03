@@ -1,86 +1,204 @@
 /**
- * @file workspace plugin — frame/dock.ts (skeleton stubs, implemented in its wave).
+ * @file workspace plugin — pure frame geometry: the fit scale, the centred box, the clip insets in
+ * local px, the nearest corner of a drop and the preview float rect. No DOM access here.
  */
-import type { FrameBox, FrameFit, PreviewCorner, RectBox } from "../types";
+import type { FrameBox, FrameFit, Insets, PreviewCorner, PreviewSize, RectBox } from "../types";
 
 /**
- * Skeleton stub for `fitScale`; implemented in its wave.
+ * Outer box of the preview float per size (design §5): S 150×280, M 280×540, L 340×660.
  *
- * @param _slot - The slot.
- * @param _slot.w - The w.
- * @param _slot.h - The h.
- * @param _device - The device.
- * @param _device.w - The w.
- * @param _device.h - The h.
- * @param _fit - The fit.
- * @param _cap - The cap.
  * @example
  * ```ts
- * fitScale();
+ * PREVIEW_SIZES.M.w; // 280
+ * ```
+ */
+export const PREVIEW_SIZES: Readonly<
+  Record<PreviewSize, { readonly w: number; readonly h: number }>
+> = {
+  S: { w: 150, h: 280 },
+  M: { w: 280, h: 540 },
+  L: { w: 340, h: 660 }
+};
+
+/**
+ * Margin between the preview float and its zone edge, in px.
+ *
+ * @example
+ * ```ts
+ * floatRect(zone, insets, corner, size); // keeps PREVIEW_MARGIN from the corner
+ * ```
+ */
+export const PREVIEW_MARGIN = 12;
+
+/**
+ * Insets with every side present.
+ */
+export type FullInsets = { top: number; right: number; bottom: number; left: number };
+
+/**
+ * The scale of the device in a slot: `fit` = the smaller ratio (capped at 1 for the stage),
+ * `actual` = 1. An empty slot or device gives 0.
+ *
+ * @param slot - Slot size in tools-page px.
+ * @param slot.w - Slot width.
+ * @param slot.h - Slot height.
+ * @param device - Device size in game CSS px.
+ * @param device.w - Device width.
+ * @param device.h - Device height.
+ * @param fit - fit or actual.
+ * @param cap - Cap the fit scale at 1 (the stage does, the preview does not).
+ * @returns The scale.
+ * @example
+ * ```ts
+ * fitScale({ w: 393, h: 426 }, { w: 393, h: 852 }, "fit", true); // 0.5
  * ```
  */
 export function fitScale(
-  _slot: { readonly w: number; readonly h: number },
-  _device: { readonly w: number; readonly h: number },
-  _fit: FrameFit,
-  _cap: boolean
+  slot: { readonly w: number; readonly h: number },
+  device: { readonly w: number; readonly h: number },
+  fit: FrameFit,
+  cap: boolean
 ): number {
-  throw new Error("not implemented");
+  if (fit === "actual") return 1;
+  if (slot.w <= 0 || slot.h <= 0 || device.w <= 0 || device.h <= 0) return 0;
+
+  const scale = Math.min(slot.w / device.w, slot.h / device.h);
+  return cap ? Math.min(scale, 1) : scale;
 }
 
 /**
- * Skeleton stub for `centreBox`; implemented in its wave.
+ * The top-left corner of the scaled device centred in the slot.
  *
- * @param _slot - The slot.
- * @param _size - The size.
- * @param _size.w - The w.
- * @param _size.h - The h.
- * @param _scale - The scale.
+ * @param slot - Slot rect in tools-page px.
+ * @param size - Device size in game CSS px.
+ * @param size.w - Device width.
+ * @param size.h - Device height.
+ * @param scale - The scale.
+ * @returns Left and top in tools-page px.
  * @example
  * ```ts
- * centreBox();
+ * centreBox({ left: 0, top: 0, width: 400, height: 900 }, { w: 393, h: 852 }, 1); // { left: 3.5, top: 24 }
  * ```
  */
 export function centreBox(
-  _slot: RectBox,
-  _size: { readonly w: number; readonly h: number },
-  _scale: number
+  slot: RectBox,
+  size: { readonly w: number; readonly h: number },
+  scale: number
 ): { left: number; top: number } {
-  throw new Error("not implemented");
+  return {
+    left: slot.left + (slot.width - size.w * scale) / 2,
+    top: slot.top + (slot.height - size.h * scale) / 2
+  };
 }
 
 /**
- * Skeleton stub for `clipInsets`; implemented in its wave.
+ * An overflow in page px as a clip side in local px (never negative).
  *
- * @param _box - The box.
- * @param _clip - The clip.
+ * @param pagePx - The overflow in tools-page px (negative = none).
+ * @param scale - The frame scale (> 0).
+ * @returns The side in local px.
  * @example
  * ```ts
- * clipInsets();
+ * toLocal(20, 0.5); // 40
  * ```
  */
-export function clipInsets(
-  _box: FrameBox,
-  _clip: RectBox
-): { top: number; right: number; bottom: number; left: number } {
-  throw new Error("not implemented");
+function toLocal(pagePx: number, scale: number): number {
+  return Math.max(0, pagePx) / scale;
 }
 
 /**
- * Skeleton stub for `nearestCorner`; implemented in its wave.
+ * The `clip-path: inset()` sides that keep the frame inside the clip rect, in the frame's local
+ * px (page px divided by the scale). A zero scale clips nothing.
  *
- * @param _point - The point.
- * @param _point.x - The x.
- * @param _point.y - The y.
- * @param _zone - The zone.
+ * @param box - The frame box in tools-page px.
+ * @param clip - The clip rect in tools-page px.
+ * @returns Insets in local px, never negative.
  * @example
  * ```ts
- * nearestCorner();
+ * clipInsets(box, host.getBoundingClientRect());
+ * ```
+ */
+export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
+  if (box.scale <= 0) return { top: 0, right: 0, bottom: 0, left: 0 };
+
+  return {
+    top: toLocal(clip.top - box.top, box.scale),
+    right: toLocal(box.left + box.width - (clip.left + clip.width), box.scale),
+    bottom: toLocal(box.top + box.height - (clip.top + clip.height), box.scale),
+    left: toLocal(clip.left - box.left, box.scale)
+  };
+}
+
+/**
+ * The zone corner nearest to a point (the quadrant it falls in).
+ *
+ * @param point - A point in tools-page px (the centre of the dropped float).
+ * @param point.x - Horizontal position.
+ * @param point.y - Vertical position.
+ * @param zone - The zone rect.
+ * @returns The corner.
+ * @example
+ * ```ts
+ * nearestCorner({ x: 10, y: 10 }, zoneRect); // "top-left"
  * ```
  */
 export function nearestCorner(
-  _point: { readonly x: number; readonly y: number },
-  _zone: RectBox
+  point: { readonly x: number; readonly y: number },
+  zone: RectBox
 ): PreviewCorner {
-  throw new Error("not implemented");
+  const top = point.y < zone.top + zone.height / 2;
+  const left = point.x < zone.left + zone.width / 2;
+  if (top) return left ? "top-left" : "top-right";
+  return left ? "bottom-left" : "bottom-right";
+}
+
+/**
+ * Every side of insets given as an object or a function; missing sides are 0.
+ *
+ * @param insets - Zone insets, a function that reads them, or undefined.
+ * @returns The four sides.
+ * @example
+ * ```ts
+ * resolveInsets(() => ({ bottom: stripOpen ? 208 : 56 }));
+ * ```
+ */
+export function resolveInsets(insets: Insets | (() => Insets) | undefined): FullInsets {
+  const value = typeof insets === "function" ? insets() : insets;
+  return {
+    top: value?.top ?? 0,
+    right: value?.right ?? 0,
+    bottom: value?.bottom ?? 0,
+    left: value?.left ?? 0
+  };
+}
+
+/**
+ * The preview float rect: in the chosen corner of the zone, PREVIEW_MARGIN plus the zone insets
+ * away from its edges.
+ *
+ * @param zone - The zone rect in tools-page px.
+ * @param insets - The zone insets.
+ * @param corner - The corner.
+ * @param size - The float size.
+ * @param size.w - Float width.
+ * @param size.h - Float height.
+ * @returns The float rect.
+ * @example
+ * ```ts
+ * floatRect(zoneRect, resolveInsets(zone.insets), "bottom-right", PREVIEW_SIZES.S);
+ * ```
+ */
+export function floatRect(
+  zone: RectBox,
+  insets: FullInsets,
+  corner: PreviewCorner,
+  size: { readonly w: number; readonly h: number }
+): RectBox {
+  const left = corner.endsWith("left")
+    ? zone.left + PREVIEW_MARGIN + insets.left
+    : zone.left + zone.width - PREVIEW_MARGIN - insets.right - size.w;
+  const top = corner.startsWith("top")
+    ? zone.top + PREVIEW_MARGIN + insets.top
+    : zone.top + zone.height - PREVIEW_MARGIN - insets.bottom - size.h;
+  return { left, top, width: size.w, height: size.h };
 }

@@ -84,6 +84,11 @@ export type EditorRoutes = Readonly<Record<string, Response | RouteHandler>>;
 export type GuardMode = "upgrade" | "same-origin" | "navigate";
 
 /**
+ * The guard check that refused a request (named in the `hub:refused` log line).
+ */
+export type GuardCheck = "port" | "host" | "origin" | "fetch-site";
+
+/**
  * What the game passes to serve(). Unknown keys pass through to Bun untouched.
  */
 export type ServeOptions = {
@@ -101,6 +106,18 @@ export type ServeOptions = {
  * What Bun.serve accepts. The only place the hub names a Bun type.
  */
 export type BunServeOptions = Bun.Serve.Options<HubSocketData, string>;
+
+/**
+ * The options serve() builds before its one cast to BunServeOptions: the game's options with
+ * the hostname forced, the routes merged, a fetch and the hub websocket handler.
+ */
+export type MergedServeOptions = {
+  readonly [key: string]: unknown;
+  readonly hostname: "127.0.0.1";
+  readonly routes: Readonly<Record<string, unknown>>;
+  readonly fetch: (req: Request, server: HubServer) => Response | Promise<Response>;
+  readonly websocket: HubWebSocketHandler;
+};
 
 /**
  * The one websocket handler of the server.

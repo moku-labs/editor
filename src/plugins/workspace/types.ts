@@ -388,6 +388,8 @@ export type FrameState = {
   stage: StageDock | undefined;
   reload: PendingReload | undefined;
   zones: Map<PreviewWorkspace, PreviewZone>;
+  /** The preview body the frame docks over outside Game; set by the Preview component. */
+  previewBody: HTMLElement | undefined;
 };
 
 /**
@@ -427,6 +429,10 @@ export type WorkspaceState = {
   };
   listeners: Set<(prefs: Prefs) => void>;
   ui: UiStore;
+  /** The 1 s ticker while the link is silent or lost (handlers). */
+  ticker: ReturnType<typeof setInterval> | undefined;
+  /** Set by onStop; late callbacks (reload, toasts, manifest) return early. */
+  stopped: boolean;
 };
 
 /**

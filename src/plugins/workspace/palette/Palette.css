@@ -1,1 +1,108 @@
-/* workspace · Palette. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Palette. E1: a modal dialog in the top layer, search on top, grouped results, key hints and counts in the footer. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="palette"]) {
+  :scope {
+    width: min(640px, 92vw);
+    max-height: 70vh;
+    margin: 12vh auto auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-12);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+  }
+
+  :scope[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  :scope::backdrop {
+    background: rgb(0 0 0 / 0.24);
+  }
+
+  [data-search] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line-1);
+    color: var(--text-muted);
+  }
+
+  input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: none;
+    color: var(--text-ink);
+    font-size: var(--font-size-14);
+  }
+
+  [role="listbox"] {
+    flex: 1;
+    overflow: auto;
+    padding: 6px;
+  }
+
+  h3 {
+    padding: 8px 8px 4px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 600;
+  }
+
+  [role="option"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 0 8px;
+    border-radius: var(--radius-7);
+    cursor: pointer;
+    font-size: var(--font-size-13);
+  }
+
+  [role="option"][data-active] {
+    background: var(--accent-soft);
+  }
+
+  [role="option"][aria-disabled="true"] {
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  [data-label] {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [role="option"][data-mono] [data-label] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+  }
+
+  [data-hint],
+  [data-reason] {
+    color: var(--text-muted);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-empty] {
+    padding: 24px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--line-1);
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+  }
+}

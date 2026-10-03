@@ -1,1 +1,60 @@
-/* workspace · Rail. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Rail. B2: icon over label, soft accent fill and a 2 px accent bar on the active workspace, badges at the corner, Commands at the bottom. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="rail"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-right: 1px solid var(--line-1);
+    background: var(--surface-panel);
+  }
+
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 44px;
+    margin: 0 auto;
+    padding: 6px 0;
+    border-radius: var(--radius-8);
+    color: var(--text-muted);
+  }
+
+  button:hover {
+    color: var(--text-ink);
+  }
+
+  [data-label] {
+    font-size: var(--font-size-9-5);
+  }
+
+  button[aria-current="page"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  button[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: -4px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  [data-badge] {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+  }
+}

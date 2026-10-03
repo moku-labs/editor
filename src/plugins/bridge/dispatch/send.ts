@@ -1,61 +1,140 @@
 /**
- * @file bridge plugin — dispatch/send.ts (skeleton stubs, implemented in its wave).
+ * @file bridge plugin — sending: messages at once when the socket is open, values coalesced per
+ * subscription (latest wins) while the socket is congested, and the backlog flushed in insertion
+ * order once it drains.
  */
 import type { Json, Message, SubId } from "../../registry/protocol";
-import type { BridgeDeps, SocketLike } from "../types";
+import { encode, notification } from "../../registry/protocol";
+import type { BridgeDeps, BridgeState, SocketLike } from "../types";
+import { HIGH_WATER, LOW_WATER } from "../types";
 
 /**
- * Skeleton stub for `sendNow`; implemented in its wave.
+ * `readyState` of an open websocket.
+ */
+export const SOCKET_OPEN = 1;
+
+/**
+ * The message of a thrown value.
  *
- * @param _deps - The deps.
- * @param _message - The message.
+ * @param error - Anything thrown.
+ * @returns Its message, or its text.
  * @example
  * ```ts
- * sendNow();
+ * messageOf(new Error("boom")); // "boom"
  * ```
  */
-export function sendNow(_deps: BridgeDeps, _message: Message): void {
-  throw new Error("not implemented");
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * Skeleton stub for `sendValue`; implemented in its wave.
+ * The bytes a socket still has to send; a missing `bufferedAmount` counts as 0.
  *
- * @param _deps - The deps.
- * @param _sub - The sub.
- * @param _value - The value.
- * @param _text - The text.
+ * @param socket - The socket.
+ * @returns The buffered byte count.
  * @example
  * ```ts
- * sendValue();
+ * bufferedOf(socket); // 0
  * ```
  */
-export function sendValue(_deps: BridgeDeps, _sub: SubId, _value: Json, _text: string): void {
-  throw new Error("not implemented");
+function bufferedOf(socket: SocketLike): number {
+  return socket.bufferedAmount ?? 0;
 }
 
 /**
- * Skeleton stub for `flushPending`; implemented in its wave.
+ * True when more than HIGH_WATER bytes wait in the socket.
  *
- * @param _deps - The deps.
+ * @param socket - The socket.
+ * @returns Whether new values should wait in the backlog.
  * @example
  * ```ts
- * flushPending();
+ * if (congested(socket)) state.pending.set(sub, value);
  * ```
  */
-export function flushPending(_deps: BridgeDeps): void {
-  throw new Error("not implemented");
+export function congested(socket: SocketLike): boolean {
+  return bufferedOf(socket) > HIGH_WATER;
 }
 
 /**
- * Skeleton stub for `congested`; implemented in its wave.
+ * Sends one message at once when the socket is open; drops it otherwise. Responses, heartbeats,
+ * hello and bye always go this way, congested or not.
  *
- * @param _socket - The socket.
+ * @param deps - The state and the log.
+ * @param message - The message.
  * @example
  * ```ts
- * congested();
+ * sendNow(deps, success(request.id, null));
  * ```
  */
-export function congested(_socket: SocketLike): boolean {
-  throw new Error("not implemented");
+export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Message): void {
+  const { socket } = deps.state;
+  if (socket === undefined || socket.readyState !== SOCKET_OPEN) return;
+  try {
+    socket.send(encode(message));
+  } catch (error) {
+    deps.log.debug("bridge:send-failed", { message: messageOf(error) });
+  }
+}
+
+/**
+ * Sends a `value` notification, or keeps it in the backlog while congested (latest wins); records
+ * its text as the last value of the subscription either way.
+ *
+ * @param deps - The state and the log.
+ * @param sub - The subscription id.
+ * @param value - The value.
+ * @param text - `JSON.stringify(value)`, for the dedupe.
+ * @example
+ * ```ts
+ * sendValue(deps, 1, { path: "home" }, '{"path":"home"}');
+ * ```
+ */
+export function sendValue(
+  deps: Pick<BridgeDeps, "state" | "log">,
+  sub: SubId,
+  value: Json,
+  text: string
+): void {
+  const { state } = deps;
+  if (state.socket !== undefined && congested(state.socket)) {
+    state.pending.set(sub, value);
+  } else {
+    sendNow(deps, notification("game", "value", { sub, value }));
+  }
+  const record = state.subs.get(sub);
+  if (record !== undefined) record.lastSent = text;
+}
+
+/**
+ * Sends the backlog in insertion order once fewer than LOW_WATER bytes wait, until the socket is
+ * congested again.
+ *
+ * @param deps - The state and the log.
+ * @example
+ * ```ts
+ * channel.onHeartbeat(() => flushPending(deps));
+ * ```
+ */
+export function flushPending(deps: Pick<BridgeDeps, "state" | "log">): void {
+  const { socket, pending } = deps.state;
+  if (socket === undefined || bufferedOf(socket) >= LOW_WATER) return;
+  for (const [sub, value] of pending) {
+    if (congested(socket)) return;
+    pending.delete(sub);
+    sendNow(deps, notification("game", "value", { sub, value }));
+  }
+}
+
+/**
+ * Clears every request deadline: late results of those requests are dropped.
+ *
+ * @param state - The bridge state.
+ * @example
+ * ```ts
+ * dropInflight(deps.state); // on close and on stop
+ * ```
+ */
+export function dropInflight(state: BridgeState): void {
+  for (const timer of state.inflight.values()) clearTimeout(timer);
+  state.inflight.clear();
 }

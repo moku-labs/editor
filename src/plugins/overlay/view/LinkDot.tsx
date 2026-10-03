@@ -1,27 +1,37 @@
 /**
- * @file overlay plugin — view/LinkDot.tsx (skeleton stubs, implemented in its wave).
+ * @file overlay plugin — the link dot: the bridge link kind as a coloured dot with a label.
  */
 import type { VNode } from "preact";
+import type { LinkStatus } from "../../registry/protocol";
 
 /**
- * Props of `LinkDot`.
+ * Props of `LinkDot`: the link kind (colour key) and its label.
  *
  * @example
  * ```ts
- * const props = {} as never as LinkDotProps;
+ * const props: LinkDotProps = { kind: "live", label: "Editor live · frame 12" };
  * ```
  */
-export type LinkDotProps = { readonly ctx: unknown };
+export type LinkDotProps = { readonly kind: LinkStatus["kind"]; readonly label: string };
 
 /**
- * Skeleton stub for `LinkDot`; implemented in its wave.
+ * The link dot: colour from `data-kind`, never the only signal (label as name and title).
  *
- * @param _props - The props.
+ * @param props - The kind and the label.
+ * @returns The dot.
  * @example
- * ```ts
- * LinkDot();
+ * ```tsx
+ * <LinkDot kind="live" label="Editor live · frame 12" />
  * ```
  */
-export function LinkDot(_props: LinkDotProps): VNode {
-  throw new Error("not implemented");
+export function LinkDot(props: LinkDotProps): VNode {
+  return (
+    <span
+      data-dot=""
+      data-kind={props.kind}
+      role="img"
+      aria-label={props.label}
+      title={props.label}
+    />
+  );
 }

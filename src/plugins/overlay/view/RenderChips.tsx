@@ -1,27 +1,37 @@
 /**
- * @file overlay plugin — view/RenderChips.tsx (skeleton stubs, implemented in its wave).
+ * @file overlay plugin — the render chips: fps, frame time and texture memory.
  */
 import type { VNode } from "preact";
+import type { RenderChip } from "../types";
 
 /**
  * Props of `RenderChips`.
  *
  * @example
  * ```ts
- * const props = {} as never as RenderChipsProps;
+ * const props: RenderChipsProps = { chips: renderChips(state.render, false) };
  * ```
  */
-export type RenderChipsProps = { readonly ctx: unknown };
+export type RenderChipsProps = { readonly chips: readonly RenderChip[] };
 
 /**
- * Skeleton stub for `RenderChips`; implemented in its wave.
+ * The chip row. Not announced: the numbers change four times a second.
  *
- * @param _props - The props.
+ * @param props - The chips.
+ * @returns The chip row.
  * @example
- * ```ts
- * RenderChips();
+ * ```tsx
+ * <RenderChips chips={renderChips({ fps: 60, frameMs: 4.1, textureMb: 31.1 }, false)} />
  * ```
  */
-export function RenderChips(_props: RenderChipsProps): VNode {
-  throw new Error("not implemented");
+export function RenderChips(props: RenderChipsProps): VNode {
+  return (
+    <p data-chips="" aria-live="off">
+      {props.chips.map(chip => (
+        <span key={chip.key} data-chip={chip.key} title={chip.title}>
+          {chip.text}
+        </span>
+      ))}
+    </p>
+  );
 }

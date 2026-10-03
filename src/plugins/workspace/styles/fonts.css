@@ -1,1 +1,16 @@
-/* workspace · fonts. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · fonts. Vendored Geist and Geist Mono variable woff2 (Vercel, `geist` 1.7.2, SIL OFL 1.1, see fonts/OFL.txt). No CDN. Unlayered on purpose: font loading does not depend on the cascade (moku-web). Bun.build copies the files into dist/tools/assets/ with hashed names (R3). */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/Geist-Variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/GeistMono-Variable.woff2") format("woff2");
+}

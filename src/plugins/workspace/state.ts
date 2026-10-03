@@ -1,20 +1,107 @@
 /**
- * @file workspace plugin — state factory (MinimalContext: no DOM, no storage).
+ * @file workspace plugin — state factory (MinimalContext: no DOM, no storage) and the cleanup
+ * registry every listener, timer and observer goes through, so onStop can remove all of them.
  */
-import type { WorkspaceConfig, WorkspaceState } from "./types";
+import { DEFAULT_DEVICE } from "./devices";
+import type { PreviewPrefs, PreviewWorkspace, WorkspaceConfig, WorkspaceState } from "./types";
+import { createUiStore } from "./ui/store";
 
 /**
- * Creates the initial workspace state: defaults, empty maps, the UiStore.
+ * Preview preferences of a workspace nobody changed: shown, size S, bottom-right corner.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @returns A fresh record.
+ * @example
+ * ```ts
+ * defaultPreview(); // { visible: true, size: "S", corner: "bottom-right" }
+ * ```
+ */
+export function defaultPreview(): PreviewPrefs {
+  return { visible: true, size: "S", corner: "bottom-right" };
+}
+
+/**
+ * Default preview preferences of every preview workspace.
+ *
+ * @returns A fresh record per workspace.
+ * @example
+ * ```ts
+ * defaultPreviews().flow.size; // "S"
+ * ```
+ */
+export function defaultPreviews(): Record<PreviewWorkspace, PreviewPrefs> {
+  return {
+    flow: defaultPreview(),
+    render: defaultPreview(),
+    state: defaultPreview(),
+    files: defaultPreview(),
+    console: defaultPreview()
+  };
+}
+
+/**
+ * Creates the initial workspace state: defaults, empty maps, the UiStore. Preferences are loaded
+ * in onInit, listeners added in onStart, the shell and the frame layer created by mount.
+ *
+ * @param ctx - Minimal context.
+ * @param ctx.config - Resolved plugin config.
+ * @returns The state.
  * @example
  * ```ts
  * createWorkspaceState({ config }).active; // "flow"
  * ```
  */
-export function createWorkspaceState(_ctx: {
+export function createWorkspaceState(ctx: {
   readonly config: Readonly<WorkspaceConfig>;
 }): WorkspaceState {
-  throw new Error("not implemented");
+  return {
+    active: ctx.config.defaultWorkspace,
+    theme: { chosen: undefined, os: "light" },
+    previews: defaultPreviews(),
+    device: { preset: DEFAULT_DEVICE, orientation: "portrait" },
+    overlayInGame: false,
+    link: { kind: "connecting" },
+    everLive: false,
+    badges: {},
+    toasts: [],
+    nextToastId: 1,
+    palette: { open: false, query: "", index: 0, items: new Map() },
+    keys: { bindings: [], escape: [] },
+    popover: undefined,
+    step: undefined,
+    frame: {
+      iframe: undefined,
+      layer: undefined,
+      box: undefined,
+      overlay: undefined,
+      stage: undefined,
+      reload: undefined,
+      zones: new Map(),
+      previewBody: undefined
+    },
+    dom: { root: undefined, hosts: new Map(), cleanup: [] },
+    listeners: new Set(),
+    ui: createUiStore(),
+    ticker: undefined,
+    stopped: false
+  };
+}
+
+/**
+ * Registers a cleanup for onStop; the returned untrack removes it again without running it (for
+ * a resource released earlier, like a finished reload wait).
+ *
+ * @param state - Workspace state.
+ * @param cleanup - Removes a listener, a timer or an observer.
+ * @returns Untrack.
+ * @example
+ * ```ts
+ * const untrack = trackCleanup(state, () => clearTimeout(timer));
+ * ```
+ */
+export function trackCleanup(state: WorkspaceState, cleanup: () => void): () => void {
+  state.dom.cleanup.push(cleanup);
+  return () => {
+    const index = state.dom.cleanup.indexOf(cleanup);
+    if (index !== -1) state.dom.cleanup.splice(index, 1);
+  };
 }

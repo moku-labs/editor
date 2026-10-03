@@ -2,31 +2,41 @@
  * @file capture plugin — onInit (add the three commands to the registry) and onStop (end a
  * running series: the pending call resolves with the shots so far).
  */
+import { registryPlugin } from "../registry";
+import { registerCaptureCommands } from "./commands";
+import { browserClock, stopSeries } from "./series";
 import type { CaptureCtx, CaptureState } from "./types";
 
 /**
- * onInit: `registerCaptureCommands(ctx.require(registryPlugin), { config, state, log, clock: browserClock })`.
+ * onInit: adds editor.capture, editor.series and editor.seriesStop to the registry. Runs in init
+ * because the registry builds its manifest from the entries added before start.
  *
- * @param _ctx - Plugin context of capture.
+ * @param ctx - Plugin context of capture.
+ * @throws {Error} When an id is already in the registry (createApp fails loudly).
  * @example
  * ```ts
  * createAgentPlugin("capture", { onInit: initCapture });
  * ```
  */
-export function initCapture(_ctx: CaptureCtx): void {
-  throw new Error("not implemented");
+export function initCapture(ctx: CaptureCtx): void {
+  registerCaptureCommands(ctx.require(registryPlugin), {
+    config: ctx.config,
+    state: ctx.state,
+    log: ctx.log,
+    clock: browserClock
+  });
 }
 
 /**
- * onStop: stopRequested = true, clears the wait timer, wakes the loop.
+ * onStop: ends a running series (stop flag, timer cleared, wait woken); no timer outlives the app.
  *
- * @param _ctx - Teardown context.
- * @param _ctx.state - Own state.
+ * @param ctx - Teardown context.
+ * @param ctx.state - Own state.
  * @example
  * ```ts
  * createAgentPlugin("capture", { onStop: stopCapture });
  * ```
  */
-export function stopCapture(_ctx: { readonly state: CaptureState }): void {
-  throw new Error("not implemented");
+export function stopCapture(ctx: { readonly state: CaptureState }): void {
+  stopSeries(ctx.state);
 }
