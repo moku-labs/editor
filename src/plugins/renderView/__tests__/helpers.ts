@@ -98,6 +98,9 @@ export const RENDER: Json = {
   pooled: 24
 };
 
+/** A game.effects value (game 0.0.3): the board at rest, one steam stream, 24 card glows. */
+export const EFFECTS: Json = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+
 /** A game.assets value with two loaded bundles. */
 export const ASSETS: Json = {
   textureMb: 6,
@@ -334,4 +337,9 @@ export async function deliverBoard(ctx: TestCtx, frames: FrameQueue): Promise<vo
   frames.flush();
 }
 
-export { createLog, type LinkMock, type LogMock } from "../../panels/__tests__/helpers";
+export {
+  createLog,
+  type LinkMock,
+  type LogMock,
+  manifestOf
+} from "../../panels/__tests__/helpers";

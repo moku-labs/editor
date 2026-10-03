@@ -1,9 +1,10 @@
 /**
- * @file renderView plugin — the pure guards that narrow game.render and game.assets from Json.
+ * @file renderView plugin — the pure guards that narrow game.render, game.assets and game.effects
+ * from Json.
  */
 import { isJsonObject, numberOf, stringOf } from "../panels/shared/scene/wire";
 import type { Json } from "../registry/protocol";
-import type { AssetsUsage, RenderStats } from "./types";
+import type { AssetsUsage, EffectsStats, RenderStats } from "./types";
 
 /**
  * The fields of RenderStats that are always numbers.
@@ -11,7 +12,12 @@ import type { AssetsUsage, RenderStats } from "./types";
 const STAT_FIELDS = ["fps", "frameMs", "textures", "textureMb", "views", "pooled"] as const;
 
 /**
- * Narrows a game.render value: six numbers, plus drawCalls when it is a number.
+ * The fields of EffectsStats, all non-negative numbers.
+ */
+const EFFECT_FIELDS = ["particles", "emitters", "filters", "renderPasses"] as const;
+
+/**
+ * Narrows a game.render value: six numbers, plus renderPasses and drawCalls when they are numbers.
  *
  * @param value - The watched value.
  * @returns The stats, or undefined for another shape.
@@ -33,9 +39,36 @@ export function asRenderStats(value: Json): RenderStats | undefined {
 
   const [fps = 0, frameMs = 0, textures = 0, textureMb = 0, views = 0, pooled = 0] = numbers;
   const stats: RenderStats = { fps, frameMs, textures, textureMb, views, pooled };
+  const renderPasses = numberOf(value.renderPasses);
+  if (renderPasses !== undefined) stats.renderPasses = renderPasses;
   const drawCalls = numberOf(value.drawCalls);
   if (drawCalls !== undefined) stats.drawCalls = drawCalls;
   return stats;
+}
+
+/**
+ * Narrows a game.effects value (game 0.0.3): four finite non-negative numbers.
+ *
+ * @param value - The watched value.
+ * @returns The effects, or undefined for another shape.
+ * @example
+ * ```ts
+ * asEffectsStats({ particles: 18, emitters: 1, filters: 24, renderPasses: 49 })?.particles; // 18
+ * asEffectsStats({ particles: -1, emitters: 1, filters: 24, renderPasses: 49 }); // undefined
+ * ```
+ */
+export function asEffectsStats(value: Json): EffectsStats | undefined {
+  if (!isJsonObject(value)) return undefined;
+
+  const numbers: number[] = [];
+  for (const field of EFFECT_FIELDS) {
+    const number = numberOf(value[field]);
+    if (number === undefined || number < 0) return undefined;
+    numbers.push(number);
+  }
+
+  const [particles = 0, emitters = 0, filters = 0, renderPasses = 0] = numbers;
+  return { particles, emitters, filters, renderPasses };
 }
 
 /**

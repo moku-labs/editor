@@ -16,9 +16,11 @@ import {
   boardCapture,
   createCtx,
   deliverBoard,
+  EFFECTS,
   type FrameQueue,
   flush,
   MANIFEST_TEXT,
+  manifestOf,
   RENDER,
   serveManifest,
   stubFrames,
@@ -136,6 +138,138 @@ describe("tracker", () => {
       [1841, "board"],
       [1841, "ui"]
     ]);
+  });
+});
+
+/**
+ * Attaches a manifest and lets the deferred effects start run.
+ *
+ * @param manifest - The manifest, undefined for a lost session.
+ */
+async function attach(manifest: Parameters<TestCtx["link"]["attach"]>[0]): Promise<void> {
+  ctx.link.attach(manifest);
+  await flush();
+}
+
+describe("effects watch", () => {
+  const WITH_EFFECTS = manifestOf(["game.render", "game.assets", "game.effects"]);
+  const WITHOUT_EFFECTS = manifestOf(["game.render", "game.assets"]);
+
+  it("starts when the manifest lists game.effects, not when it does not", async () => {
+    startRenderView(ctx);
+    expect(ctx.link.active("game.effects")).toEqual([]);
+
+    await attach(WITHOUT_EFFECTS);
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effectsWatch).toBeUndefined();
+
+    ctx.link.attach(WITH_EFFECTS);
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    await attach(WITH_EFFECTS);
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
+    expect(ctx.state.effectsWatch).toBeTypeOf("function");
+  });
+
+  it("starts when the manifest is there before onStart", async () => {
+    ctx.link.manifestValue = WITH_EFFECTS;
+    startRenderView(ctx);
+    await flush();
+
+    expect(ctx.link.active().map(record => record.id)).toEqual([
+      "game.render",
+      "game.assets",
+      "game.effects"
+    ]);
+  });
+
+  it("does not start when stopped or when a newer manifest lacks it before the start", async () => {
+    startRenderView(ctx);
+    ctx.link.attach(WITH_EFFECTS);
+    ctx.link.attach(WITHOUT_EFFECTS);
+    await flush();
+    expect(ctx.link.active("game.effects")).toEqual([]);
+
+    ctx.link.attach(WITH_EFFECTS);
+    stopRenderView(ctx);
+    await flush();
+    expect(ctx.link.active()).toEqual([]);
+  });
+
+  it("keeps one notify per good value and the value in state", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+
+    ctx.link.send("game.effects", EFFECTS);
+
+    expect(ctx.state.effects).toEqual({
+      particles: 18,
+      emitters: 1,
+      filters: 24,
+      renderPasses: 49
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops and clears effects at once on a manifest without game.effects", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    ctx.link.send("game.effects", EFFECTS);
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+
+    ctx.link.attach(WITHOUT_EFFECTS);
+
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effectsWatch).toBeUndefined();
+    expect(ctx.state.effects).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the watch and the value when the session is lost (undefined manifest)", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    ctx.link.send("game.effects", EFFECTS);
+
+    await attach(undefined);
+
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
+    expect(ctx.state.effects?.particles).toBe(18);
+  });
+
+  it("warns once for a bad value and keeps the last good value", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    ctx.link.send("game.effects", EFFECTS);
+
+    ctx.link.send("game.effects", { particles: -1, emitters: 1, filters: 24, renderPasses: 49 });
+
+    expect(ctx.state.effects?.particles).toBe(18);
+    expect(ctx.state.error).toBe("game.effects: unexpected shape");
+    expect(ctx.log.warn).toHaveBeenCalledTimes(1);
+    expect(ctx.log.warn).toHaveBeenCalledWith("renderView: unexpected source shape", {
+      id: "game.effects"
+    });
+
+    ctx.link.send("game.effects", EFFECTS);
+    expect(ctx.state.error).toBeUndefined();
+  });
+
+  it("stop removes the effects watch and the manifest listener", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    expect(ctx.link.listeners.size).toBe(1);
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
+
+    stopRenderView(ctx);
+
+    expect(ctx.link.active()).toEqual([]);
+    expect(ctx.link.listeners.size).toBe(0);
+    expect(ctx.state.effectsWatch).toBeUndefined();
+
+    await attach(WITH_EFFECTS);
+    expect(ctx.link.active()).toEqual([]);
   });
 });
 

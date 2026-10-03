@@ -389,19 +389,45 @@ export function firstNodeWithTexture(
 }
 
 /**
- * The draw calls tile: the counter when game.render reports one, else absent (WebGPU).
+ * The draw calls tile: the counter when game.render reports one, else absent (a production
+ * build). The render passes ride along when game.render reports them (game 0.0.3); the key is
+ * omitted otherwise.
  *
  * @param render - The last game.render value, if any.
  * @returns The tile data, undefined before game.render.
  * @example
  * ```ts
  * drawCallsOf({ fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 }); // { kind: "absent" }
+ * drawCallsOf({ ...stats, renderPasses: 1, drawCalls: 14 }); // { kind: "value", value: 14, renderPasses: 1 }
  * ```
  */
 function drawCallsOf(render: RenderStats | undefined): MetricTiles["drawCalls"] {
   if (render === undefined) return undefined;
-  if (render.drawCalls === undefined) return { kind: "absent" };
-  return { kind: "value", value: render.drawCalls };
+  const passes = render.renderPasses === undefined ? {} : { renderPasses: render.renderPasses };
+  if (render.drawCalls === undefined) return { kind: "absent", ...passes };
+  return { kind: "value", value: render.drawCalls, ...passes };
+}
+
+/**
+ * The scene tile: entities of the scene, display objects and pooled of game.render, and a copy
+ * of the effects when game.effects delivered (the key is omitted otherwise).
+ *
+ * @param state - renderView state (`render`, `scene`, `effects`).
+ * @returns The tile data, undefined before game.render or the scene.
+ * @example
+ * ```ts
+ * sceneOf(ctx.state); // { entities: 104, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }
+ * ```
+ */
+function sceneOf(state: RenderViewState): MetricTiles["scene"] {
+  const { render, scene, effects } = state;
+  if (render === undefined || scene === undefined) return undefined;
+  return {
+    entities: scene.entityCount,
+    views: render.views,
+    pooled: render.pooled,
+    ...(effects === undefined ? {} : { effects: { ...effects } })
+  };
 }
 
 /**
@@ -416,7 +442,7 @@ function drawCallsOf(render: RenderStats | undefined): MetricTiles["drawCalls"] 
  * ```
  */
 export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): MetricTiles {
-  const { render, assets, scene } = state;
+  const { render, assets } = state;
   const unused = rows.filter(row => row.use.kind !== "in-use");
   const samples = [...state.fps];
 
@@ -438,10 +464,7 @@ export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): Me
             unused: unused.length,
             unusedMb: round2(unused.reduce((total, row) => total + row.gpuMb, 0))
           },
-    scene:
-      render === undefined || scene === undefined
-        ? undefined
-        : { entities: scene.entityCount, views: render.views, pooled: render.pooled },
+    scene: sceneOf(state),
     heap: { kind: "absent" }
   };
 }

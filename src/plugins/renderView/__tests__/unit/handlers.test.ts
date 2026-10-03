@@ -112,6 +112,22 @@ describe("link:status", () => {
     expect(ctx.state.catalogue?.path).toBe("manifest.json");
   });
 
+  it("clears effects after a session change and on empty, keeps them on the same session", () => {
+    const effects = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    ctx.state.effects = effects;
+
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
+    expect(ctx.state.effects).toEqual(effects);
+
+    hooks["link:status"]({ status: { kind: "live", frame: 3 }, session: "s-2" });
+    expect(ctx.state.effects).toBeUndefined();
+
+    ctx.state.effects = effects;
+    hooks["link:status"]({ status: { kind: "empty" } });
+    expect(ctx.state.effects).toBeUndefined();
+  });
+
   it("does not clear on the same session and does not refresh while hidden", async () => {
     hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
     await fill();

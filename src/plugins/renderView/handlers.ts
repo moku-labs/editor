@@ -11,7 +11,8 @@ import { refreshRenderView, startScene, stopScene } from "./watch";
 
 /**
  * Forgets what belongs to one game session: FPS samples, loaded bundles, the release log, texture
- * use, the first frame, the catalogue and the calibration (link re-sends the watches, R4).
+ * use, the first frame, the effects, the catalogue and the calibration (link re-sends the
+ * watches, R4).
  *
  * @param state - renderView state.
  * @example
@@ -25,6 +26,7 @@ function clearSession(state: RenderViewState): void {
   state.releases = [];
   state.seen = new Map();
   state.firstFrame = undefined;
+  state.effects = undefined;
   state.catalogue = undefined;
   state.calibration = undefined;
   state.calibrationAsked = false;

@@ -59,6 +59,7 @@ async function liveStack(): Promise<Stack> {
 const SCREENLESS = new Set([
   "game.render",
   "game.assets",
+  "game.effects",
   "game.ui",
   "game.entities",
   "game.projections"

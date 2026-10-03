@@ -1,6 +1,6 @@
 /**
  * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
- * for the session; the scene watches game.ui, game.entities and game.projections only while
+ * for the session, and game.effects while the manifest lists it; the scene watches game.ui, game.entities and game.projections only while
  * Render is shown and build one scene per animation frame; the calibration reads game.rect once
  * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
  */
@@ -13,10 +13,10 @@ import {
   parseTextureManifest
 } from "../panels/shared/scene";
 import { rectOf } from "../panels/shared/scene/wire";
-import type { Json, LinkStatus } from "../registry/protocol";
+import type { Json, LinkStatus, Manifest } from "../registry/protocol";
 import { applyPendingReveal, setTexturePalette } from "./actions";
 import { releasesOf, updateTextureUse } from "./derive";
-import { asAssetsUsage, asRenderStats } from "./guards";
+import { asAssetsUsage, asEffectsStats, asRenderStats } from "./guards";
 import { drawBox } from "./overlay";
 import { notify } from "./state";
 import type { RenderViewCtx, RenderViewState } from "./types";
@@ -34,6 +34,11 @@ const SCENE_SOURCES: readonly SceneSource[] = [
   ["entities", "game.entities"],
   ["projections", "game.projections"]
 ];
+
+/**
+ * The effects source of game 0.0.3; an older game's manifest does not list it.
+ */
+const EFFECTS_ID = "game.effects";
 
 /**
  * The states with a scene build queued for the next animation frame.
@@ -172,12 +177,111 @@ function onAssets(ctx: RenderViewCtx, value: Json): void {
 }
 
 /**
- * Starts the session watches of game.render and game.assets (once).
+ * One game.effects value: the last good value is kept, a bad shape warns and is dropped.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param value - The value.
+ * @example
+ * ```ts
+ * onEffects(ctx, { particles: 18, emitters: 1, filters: 24, renderPasses: 49 });
+ * ```
+ */
+function onEffects(ctx: RenderViewCtx, value: Json): void {
+  const effects = asEffectsStats(value);
+  if (effects === undefined) {
+    shapeError(ctx, EFFECTS_ID);
+    return;
+  }
+
+  clearError(ctx.state, EFFECTS_ID);
+  ctx.state.effects = effects;
+  notify(ctx.state);
+}
+
+/**
+ * Stops the game.effects watch and forgets its value. Teardown-safe: it needs the state only.
+ *
+ * @param state - renderView state.
+ * @example
+ * ```ts
+ * stopEffects(ctx.state); // ctx.state.effectsWatch === undefined, ctx.state.effects === undefined
+ * ```
+ */
+export function stopEffects(state: RenderViewState): void {
+  const stop = state.effectsWatch;
+  state.effectsWatch = undefined;
+  state.effects = undefined;
+  stop?.();
+}
+
+/**
+ * True when a manifest lists game.effects (game 0.0.3).
+ *
+ * @param manifest - A manifest, if any.
+ * @returns Whether the source is listed.
+ * @example
+ * ```ts
+ * listsEffects(link.manifest()); // true on game 0.0.3
+ * ```
+ */
+function listsEffects(manifest: Manifest | undefined): boolean {
+  return manifest?.sources.some(source => source.id === EFFECTS_ID) ?? false;
+}
+
+/**
+ * Starts the game.effects watch once, while renderView runs and the current manifest lists it.
  *
  * @param ctx - Domain context of renderView.
  * @example
  * ```ts
- * startTracker(ctx); // ctx.state.tracker holds the two unwatch functions
+ * queueMicrotask(() => startEffects(ctx));
+ * ```
+ */
+function startEffects(ctx: RenderViewCtx): void {
+  const { state } = ctx;
+  // Stopped meanwhile, already watching, or a newer manifest without the source.
+  if (state.tracker.length === 0 || state.effectsWatch !== undefined) return;
+
+  const link = ctx.require(linkPlugin);
+  if (!listsEffects(link.manifest())) return;
+  state.effectsWatch = link.watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
+}
+
+/**
+ * Follows the manifest: one game.effects watch while it lists the source (game 0.0.3); a
+ * manifest without it (an older game) stops the watch and clears the value; an undefined
+ * manifest (session lost) keeps the watch, which link re-sends on attach.
+ *
+ * The start waits one microtask (no timer): link tells the manifest listeners before it
+ * re-sends the watches of an attach, so a watch added inside the listener would go out twice.
+ * The stop is at once, so link does not re-send a source the new manifest lacks.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param manifest - The manifest of the session, undefined while none is attached.
+ * @example
+ * ```ts
+ * link.onManifest(manifest => syncEffects(ctx, manifest)); // watches game.effects on game 0.0.3
+ * ```
+ */
+export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined): void {
+  if (manifest === undefined) return;
+
+  if (listsEffects(manifest)) {
+    queueMicrotask(() => startEffects(ctx));
+    return;
+  }
+  stopEffects(ctx.state);
+  notify(ctx.state);
+}
+
+/**
+ * Starts the session watches of game.render and game.assets and the manifest listener that
+ * starts game.effects when the manifest lists it (once).
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * startTracker(ctx); // ctx.state.tracker holds the two unwatch functions and the manifest remover
  * ```
  */
 export function startTracker(ctx: RenderViewCtx): void {
@@ -186,7 +290,8 @@ export function startTracker(ctx: RenderViewCtx): void {
   const link = ctx.require(linkPlugin);
   ctx.state.tracker.push(
     link.watch("game.render", undefined, value => onRender(ctx, value)),
-    link.watch("game.assets", undefined, value => onAssets(ctx, value))
+    link.watch("game.assets", undefined, value => onAssets(ctx, value)),
+    link.onManifest(manifest => syncEffects(ctx, manifest))
   );
 }
 

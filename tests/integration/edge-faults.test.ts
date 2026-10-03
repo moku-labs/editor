@@ -42,6 +42,7 @@ import {
 const SCREENLESS_IDS: ReadonlySet<string> = new Set([
   "game.render",
   "game.assets",
+  "game.effects",
   "game.ui",
   "game.entities",
   "game.projections"

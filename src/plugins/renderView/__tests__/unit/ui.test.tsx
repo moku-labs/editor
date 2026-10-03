@@ -14,8 +14,10 @@ import {
   ASSETS,
   createCtx,
   deliverBoard,
+  EFFECTS,
   type FrameQueue,
   flush,
+  manifestOf,
   RENDER,
   serveManifest,
   stubFrames,
@@ -119,7 +121,7 @@ describe("RenderWorkspace", () => {
     expect(q("[data-tile='fps']")?.textContent).toContain("last 1 samples · low 60");
     expect(q("[data-tile='fps'] svg polyline")).not.toBeNull();
     expect(q("[data-tile='draws']")?.getAttribute("aria-label")).toBe(
-      "Draw calls: not available on WebGPU"
+      "Draw calls: not counted in a production build"
     );
     expect(q("[data-tile='draws']")?.dataset.absent).toBe("");
     expect(q("[data-render='tree'] header")?.textContent).toContain(
@@ -128,6 +130,30 @@ describe("RenderWorkspace", () => {
     expect(q("[data-render='bundles']")?.textContent).toContain("Budget 192 MB · used 6 MB");
     expect(q("[data-render='pools']")?.textContent).toContain("All pools · 24 pooled · 180 in use");
     expect(q("[data-render='releases']")?.textContent).toContain("No bundle released");
+  });
+
+  it("shows the effects line and the render passes on game 0.0.3, the old texts before", async () => {
+    show();
+    await fill();
+
+    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
+      "Particles and filters are not reported (follow-up F-R1)"
+    );
+    expect(q("[data-tile='draws']")?.textContent).toContain("Not counted in a production build");
+
+    ctx.link.attach(manifestOf(["game.render", "game.assets", "game.effects"]));
+    await flush();
+    act(() => {
+      ctx.link.send("game.effects", EFFECTS);
+      ctx.link.send("game.render", { ...(RENDER as object), renderPasses: 1, drawCalls: 14 });
+    });
+
+    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
+      "18 particles · 1 emitters · 24 filters"
+    );
+    expect(q("[data-tile='draws'] [data-value]")?.textContent).toBe("14per frame");
+    expect(q("[data-tile='draws'] [data-sub]")?.textContent).toBe("1 render passes");
+    expect(q("[data-tile='draws']")?.hasAttribute("data-absent")).toBe(false);
   });
 
   it("marks stale data and lists the release log", async () => {

@@ -25,6 +25,8 @@ export function createRenderViewState(_ctx: {
     firstFrame: undefined,
     render: undefined,
     assets: undefined,
+    effects: undefined,
+    effectsWatch: undefined,
     sources: {},
     scene: undefined,
     calibration: undefined,

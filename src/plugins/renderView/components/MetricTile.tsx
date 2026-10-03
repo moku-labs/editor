@@ -1,6 +1,6 @@
 /**
  * @file renderView plugin — one metric tile: label, big value with its unit, an optional chart,
- * the sub-line and the warn line. Absent values are named and muted.
+ * the sub-line, an optional second sub-line and the warn line. Absent values are named and muted.
  */
 import type { ComponentChildren, JSX } from "preact";
 import type { TileView } from "../format";
@@ -35,6 +35,11 @@ export function MetricTile(props: MetricTileProps): JSX.Element {
       </p>
       {children}
       <p data-sub>{view.sub}</p>
+      {view.note === undefined ? undefined : (
+        <p data-sub data-note>
+          {view.note}
+        </p>
+      )}
       {view.warn === undefined ? undefined : <p data-warn>{view.warn}</p>}
     </section>
   );

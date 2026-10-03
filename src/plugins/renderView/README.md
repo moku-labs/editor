@@ -16,6 +16,7 @@ button (R9).
 | Watch | When | Why |
 |---|---|---|
 | `game.render`, `game.assets` | the whole session (onStart) | FPS samples and the release log need every change since the editor connected |
+| `game.effects` | the whole session, only while the manifest lists it (game 0.0.3) | particles, emitters and filters for the Scene tile |
 | `game.ui`, `game.entities`, `game.projections` | only while Render is shown | entities can be large |
 
 The bridge re-reads each watched frame source once per heartbeat and sends changes only. No timer
@@ -23,6 +24,13 @@ reads a frame source. A burst of scene values builds one scene per animation fra
 `panels/shared/scene` module (R8). `game.rect` of the first keyed ui element calibrates the scene
 once per session and again after a device change. The asset manifest is read through
 `link.files.read` from the first `manifestPaths` entry that holds a version-1 manifest.
+
+`game.effects` follows `link.onManifest`: a manifest that lists it starts one watch, a manifest
+without it (a game older than 0.0.3) stops the watch and clears the value, and a lost session
+keeps it. The start waits one microtask, because link tells the manifest listeners before it
+re-sends the watches of an attach. A 0.0.3 game without the effects plugin still lists the source:
+its read fails and link logs one `link:watch-failed { id: "game.effects" }`, like `game.render`
+on a screenless game. A value of the wrong shape warns once and the last good value stays.
 
 ## API
 
@@ -37,7 +45,8 @@ once per session and again after a device change. The asset manifest is read thr
 
 ```ts
 app.workspace.show("render");
-app.renderView.snapshot().tiles.drawCalls; // { kind: "absent" } on WebGPU
+app.renderView.snapshot().tiles.drawCalls; // { kind: "absent" } in a production build
+app.renderView.snapshot().tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
 app.renderView.reveal({ kind: "entity", id: 3_145_728 });
 app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
 ```
@@ -54,13 +63,15 @@ app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
 
 - **Emits:** `workspace:inspect { ref }` (global tools event, R9) from "Inspect in Game".
 - **Hooks:** `workspace:changed` (scene watches on and off, refresh once per session),
-  `link:status` (keep data while silent or lost, clear the session data after a session change,
-  clear all on empty), `workspace:reveal` (`reveal(ref)`).
+  `link:status` (keep data while silent or lost, clear the session data and the effects after a
+  session change, clear all on empty), `workspace:reveal` (`reveal(ref)`).
 
 ## Derivations
 
 | Output | Rule |
 |---|---|
+| Draw calls tile | The `game.render` counter, a dev-build counter on any backend; without it "Not counted in a production build". Sub-line "R render passes" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
+| Scene tile | Entities, "V display objects · P pooled", and a third line "P particles · E emitters · F filters" from `game.effects`; on an older game "Particles and filters are not reported (follow-up F-R1)". |
 | Texture rows | Catalogue textures whose bundle is in `game.assets`; GPU MB = w × h × 4 / 2^20. |
 | Texture use | Per scene: referenced keys are in use; a key seen before and not referenced now is "unused since fF"; a key never seen is "not seen since f<firstFrame>". Precision is one delivered value, only while Render is shown. |
 | Release log | A bundle in the previous `game.assets` value and not in this one, at the frame of the last `game.render`. |
@@ -68,15 +79,17 @@ app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
 
 ## Not reported by the game (follow-ups in @moku-labs/game)
 
-- **F-R1:** render phase split, JS heap, per-pool counts, particles and filters. The frame time
-  tile shows one bar; the heap tile reads "Not reported".
+- **F-R1:** render phase split, JS heap and per-pool counts. The frame time tile shows one bar;
+  the heap tile reads "Not reported". Particles, emitters, filters and render passes come from
+  `game.effects` since game 0.0.3.
 - **F-R2:** `game.textures` (size and last use per texture). Rows come from the committed asset
   manifest; without one the card says so.
 - **F-R3:** `assets:bundle-unloaded` with frame and reason. The release log is a diff, its frame is
   approximate ("≈fN").
 - **F-G1:** a display-tree source. Tree types are ui tags and entity display kinds, not Pixi
   classes.
-- Draw calls are absent under WebGPU: the tile reads "Not available on WebGPU".
+- Draw calls are counted in a dev build only: in a production build the tile reads "Not counted
+  in a production build".
 
 ## Files
 
@@ -86,10 +99,10 @@ app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
 | `types.ts` | Config, state, rows, tiles, snapshot, api, ctx, hooks. |
 | `state.ts` | State factory, `notify`, `subscribe`. |
 | `api.ts` | The api over `actions.ts`, `derive.ts`, `watch.ts`. |
-| `watch.ts` | Tracker and scene watches, scene builds, calibration, catalogue, refresh. |
+| `watch.ts` | Tracker, effects and scene watches, scene builds, calibration, catalogue, refresh. |
 | `derive.ts` | Pure derivations. |
 | `format.ts` | Pure tile texts, sparkline points, tags. |
-| `guards.ts` | `asRenderStats`, `asAssetsUsage`. |
+| `guards.ts` | `asRenderStats`, `asAssetsUsage`, `asEffectsStats`. |
 | `actions.ts` | Reveal, select, open, sort, filter, highlight, inspect, palette items. |
 | `overlay.ts` | The box root in the game frame's overlay. |
 | `handlers.ts` | The three hooks. |

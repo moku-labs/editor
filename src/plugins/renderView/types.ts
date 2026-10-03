@@ -1,5 +1,6 @@
 /**
- * @file renderView plugin — type definitions: config, state, the game.render / game.assets shapes,
+ * @file renderView plugin — type definitions: config, state, the game.render / game.assets /
+ * game.effects shapes,
  * derived rows and tiles, the snapshot, the api, the domain context and the hooks. Scene types
  * come from panels/shared/scene (R8), never from gameView (R4).
  */
@@ -36,7 +37,7 @@ export type RenderViewConfig = {
  *
  * @example
  * ```ts
- * const stats: RenderStats = { fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 };
+ * const stats: RenderStats = { fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24, renderPasses: 1, drawCalls: 14 };
  * ```
  */
 export type RenderStats = {
@@ -46,8 +47,29 @@ export type RenderStats = {
   textureMb: number;
   views: number;
   pooled: number;
-  /** Absent under WebGPU: the game counts no draw calls there. */
+  /** Render passes of the frame (game 0.0.3); absent on an older game. */
+  renderPasses?: number;
+  /** A dev-build counter on any backend: absent in a production build. */
   drawCalls?: number;
+};
+
+/**
+ * game.effects as renderView reads it (mirrors the game's EffectsStats, game 0.0.3).
+ *
+ * @example
+ * ```ts
+ * const effects: EffectsStats = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+ * ```
+ */
+export type EffectsStats = {
+  /** Live particles over every instance and orphan. */
+  particles: number;
+  /** Running emitter instances plus the orphans still flying. */
+  emitters: number;
+  /** Filter instances over every view. */
+  filters: number;
+  /** Render passes of the frame. */
+  renderPasses: number;
 };
 
 /**
@@ -98,6 +120,10 @@ export type RenderViewState = {
   firstFrame: number | undefined;
   render: RenderStats | undefined;
   assets: AssetsUsage | undefined;
+  /** Last good game.effects value; undefined = not reported or not yet delivered. */
+  effects: EffectsStats | undefined;
+  /** Unwatch of game.effects; set only while the manifest lists the source. */
+  effectsWatch: (() => void) | undefined;
   /** Last scene values (while Render is shown). */
   sources: { ui?: Json; entities?: Json; projections?: Json };
   scene: SceneSnapshot | undefined;
@@ -128,7 +154,7 @@ export type RenderViewState = {
   error: string | undefined;
   /** Removes the Textures palette items of the current catalogue. */
   palette: (() => void) | undefined;
-  /** Unwatch of game.render and game.assets, and the device listener. */
+  /** Unwatch of game.render and game.assets, the manifest listener and the device listener. */
   tracker: (() => void)[];
   /** Unwatch of the scene sources; empty while Render is hidden. */
   watching: (() => void)[];
@@ -210,7 +236,10 @@ export type TreeRow = {
 export type MetricTiles = {
   fps: { now: number; samples: readonly number[]; low: number } | undefined;
   frameMs: number | undefined;
-  drawCalls: { kind: "value"; value: number } | { kind: "absent" } | undefined;
+  /** The counter, or absent in a production build; renderPasses only when game.render reports it. */
+  drawCalls:
+    | (({ kind: "value"; value: number } | { kind: "absent" }) & { renderPasses?: number })
+    | undefined;
   textures:
     | {
         gpuMb: number;
@@ -221,7 +250,8 @@ export type MetricTiles = {
         unusedMb: number;
       }
     | undefined;
-  scene: { entities: number; views: number; pooled: number } | undefined;
+  /** effects only when game.effects delivered (game 0.0.3). */
+  scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
   /** Not reported by the game (follow-up F-R1). */
   heap: { kind: "absent" };
 };
@@ -274,7 +304,8 @@ export type RenderViewApi = {
    * ```ts
    * // An MCP tool reports the render numbers of the connected game.
    * const { tiles } = app.renderView.snapshot();
-   * tiles.drawCalls; // { kind: "absent" } on WebGPU
+   * tiles.drawCalls; // { kind: "absent" } in a production build
+   * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
    * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
    * ```
    */

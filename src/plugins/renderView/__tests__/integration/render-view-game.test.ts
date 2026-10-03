@@ -148,11 +148,22 @@ describe("renderView on the merge game", () => {
     app.workspace.show("render");
     await until(() => app.renderView.snapshot().tree.length > 0, "scene");
     await until(() => app.renderView.snapshot().textures.length > 0, "texture rows");
+    await until(() => app.renderView.snapshot().tiles.scene?.effects !== undefined, "game.effects");
 
     const snapshot = app.renderView.snapshot();
     const loaded = new Set(snapshot.bundles.map(row => row.name));
     expect(snapshot.tiles.fps?.now).toBe(0);
-    expect(snapshot.tiles.drawCalls).toEqual({ kind: "value", value: 0 });
+    // game 0.0.3 in a dev build: a draw counter with the render passes, and the live effects.
+    expect(snapshot.tiles.drawCalls).toMatchObject({ kind: "value", value: 0 });
+    expect(snapshot.tiles.drawCalls?.renderPasses).toBeTypeOf("number");
+    const effects = snapshot.tiles.scene?.effects;
+    expect(effects).toBeDefined();
+    expect(Object.keys(effects ?? {}).toSorted()).toEqual([
+      "emitters",
+      "filters",
+      "particles",
+      "renderPasses"
+    ]);
     expect(snapshot.textures.every(row => loaded.has(row.bundle))).toBe(true);
     expect(snapshot.textures.find(row => row.key === "board.cell")).toMatchObject({
       bundle: "board",
@@ -165,7 +176,7 @@ describe("renderView on the merge game", () => {
 
     app.workspace.show("flow");
     await until(() => hub.unwatched.length === 3, "three unwatch");
-    expect(watched()).toEqual(["game.assets", "game.render"]);
+    expect(watched()).toEqual(["game.assets", "game.effects", "game.render"]);
 
     await app.stop();
     expect(watched()).toEqual([]);
