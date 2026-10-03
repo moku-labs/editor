@@ -15,9 +15,11 @@ const hasFixture = existsSync(fixture);
  */
 function fixtureTests(): string[] {
   const root = new URL(".", import.meta.url).pathname;
-  const files = readdirSync(`${root}src`, { recursive: true, encoding: "utf8" })
-    .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
-    .map(file => `src/${file}`);
+  const files = ["src", "tests"].flatMap(dir =>
+    readdirSync(`${root}${dir}`, { recursive: true, encoding: "utf8" })
+      .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
+      .map(file => `${dir}/${file}`)
+  );
   return files.filter(file =>
     /loadMergeGame|startGame\(/.test(readFileSync(`${root}${file}`, "utf8"))
   );
