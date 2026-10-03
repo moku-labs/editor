@@ -9,6 +9,9 @@ export default [
   {
     ignores: [
       "dist/**",
+      "dist-e2e/**",
+      "test-results/**",
+      "playwright-report/**",
       "coverage/**",
       "bun.lock",
       ".claude/**",
@@ -116,7 +119,7 @@ export default [
         "error",
         {
           require: {
-            ArrowFunctionExpression: true,
+            ArrowFunctionExpression: false,
             ClassDeclaration: true,
             FunctionDeclaration: true,
             FunctionExpression: true,
@@ -130,9 +133,60 @@ export default [
       "jsdoc/require-param-description": "error",
       "jsdoc/require-returns": "error",
       "jsdoc/require-returns-description": "error",
-      "jsdoc/require-example": "error",
+      // An example is required only where a consumer reads it: see block 6a. A required example on
+      // a private function becomes a copy of its signature.
+      "jsdoc/require-example": "off",
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "unicorn/require-module-specifiers": "off"
+    }
+  },
+
+  // 6a. The public contract carries the docs and a scenario example. A consumer reads the members
+  // of the `…Api` types, never the implementation, so every member needs JSDoc and an example.
+  {
+    files: ["src/**/types.ts"],
+    rules: {
+      "jsdoc/require-jsdoc": [
+        "error",
+        {
+          require: { FunctionDeclaration: true, ClassDeclaration: true, MethodDefinition: true },
+          contexts: [
+            "TSInterfaceDeclaration",
+            "TSTypeAliasDeclaration",
+            "TSTypeAliasDeclaration[id.name=/Api$/] > TSTypeLiteral > :matches(TSMethodSignature, TSPropertySignature)",
+            "TSInterfaceDeclaration[id.name=/Api$/] > TSInterfaceBody > :matches(TSMethodSignature, TSPropertySignature)"
+          ]
+        }
+      ],
+      "jsdoc/require-example": [
+        "error",
+        {
+          contexts: [
+            "TSTypeAliasDeclaration[id.name=/Api$/] > TSTypeLiteral > :matches(TSMethodSignature, TSPropertySignature)",
+            "TSInterfaceDeclaration[id.name=/Api$/] > TSInterfaceBody > :matches(TSMethodSignature, TSPropertySignature)"
+          ]
+        }
+      ]
+    }
+  },
+
+  // 6c. No signature echo: an example whose whole body is one call with bare identifiers
+  // (`shut(gate);`, `const api = createClockApi(ctx);`) tells the reader nothing. `contexts: ["any"]`
+  // makes the rule read type members too; its default reads functions only.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "jsdoc/match-description": [
+        "error",
+        {
+          mainDescription: false,
+          contexts: ["any"],
+          tags: {
+            example:
+              "^(?!\\s*```(?:ts|typescript)\\n\\s*(?:(?:const|let) \\w+(?:: [\\w.<>\\[\\]]+)? = )?(?:await )?[\\w.]+\\((?:[\\w.]+(?:, [\\w.]+)*)?\\);?\\s*```\\s*$)[\\s\\S]+$"
+          }
+        }
+      ]
     }
   },
 
@@ -148,13 +202,14 @@ export default [
 
   // 7. Test files: relaxed rules
   {
-    files: ["tests/**/*.{ts,tsx}", "src/plugins/**/__tests__/**/*.{ts,tsx}"],
+    files: ["tests/**/*.{ts,tsx}", "e2e/**/*.ts", "src/plugins/**/__tests__/**/*.{ts,tsx}"],
     rules: {
       "jsdoc/require-jsdoc": "off",
       "jsdoc/require-description": "off",
       "jsdoc/require-param": "off",
       "jsdoc/require-returns": "off",
       "jsdoc/require-example": "off",
+      "jsdoc/match-description": "off",
       "unicorn/no-useless-undefined": "off",
       "sonarjs/no-duplicate-string": "off",
       "unicorn/prevent-abbreviations": "off"

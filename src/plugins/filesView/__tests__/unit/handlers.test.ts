@@ -32,10 +32,22 @@ describe("onLinkStatus", () => {
     ctx.state.listeners.add(listener);
     onLinkStatus(ctx)({ status: { kind: "live", frame: 1 } });
     expect(listener).toHaveBeenCalled();
-    expect(ctx.state.indexing).toBeDefined();
+    expect(ctx.state.indexing).toBeInstanceOf(Promise);
     await settle();
     await ctx.state.indexing;
     expect(ctx.state.index?.files.size).toBeGreaterThan(0);
+  });
+
+  it("waits for an open socket: no build while connecting or lost", async () => {
+    const ctx = createCtx();
+    onLinkStatus(ctx)({ status: { kind: "connecting" } });
+    onLinkStatus(ctx)({
+      status: { kind: "lost", reason: "closed", lastFrame: 0, retryInMs: 1000 }
+    });
+    expect(ctx.state.indexing).toBeUndefined();
+    onLinkStatus(ctx)({ status: { kind: "empty" } });
+    await ctx.state.indexing;
+    expect(ctx.files.listed.filter(dir => dir === "")).toHaveLength(1);
   });
 
   it("does not build again while an index exists or a build runs", async () => {

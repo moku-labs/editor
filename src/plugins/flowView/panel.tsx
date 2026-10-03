@@ -44,10 +44,6 @@ export type FlowWorkspaceProps = {
  *
  * @param ctx - Domain context of flowView.
  * @returns The PanelSpec.
- * @example
- * ```ts
- * ctx.require(panelsPlugin).register(createFlowPanel(ctx));
- * ```
  */
 export function createFlowPanel(ctx: FlowCtx): PanelSpec {
   return definePanel({
@@ -66,10 +62,6 @@ export function createFlowPanel(ctx: FlowCtx): PanelSpec {
      * @param values - graph, position, history.
      * @param tools - run, status, channel, files, workspace.
      * @returns The workspace element.
-     * @example
-     * ```ts
-     * panel.view(values, tools);
-     * ```
      */
     view: (values, tools) => <FlowWorkspace ctx={ctx} values={values} tools={tools} />
   });
@@ -83,10 +75,6 @@ export function createFlowPanel(ctx: FlowCtx): PanelSpec {
  *
  * @param props - Plugin context, panel values and panel tools.
  * @returns The workspace.
- * @example
- * ```tsx
- * <FlowWorkspace ctx={ctx} values={values} tools={tools} />
- * ```
  */
 export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
   const { ctx, values, tools } = props;

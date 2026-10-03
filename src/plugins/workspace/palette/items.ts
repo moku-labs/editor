@@ -64,10 +64,6 @@ type Hit = { readonly item: PaletteItem; readonly match: PaletteMatch };
  * @param ctx - Domain context of workspace.
  * @param items - The items.
  * @returns Removes these items (an item replaced later under the same id stays).
- * @example
- * ```ts
- * const remove = addPaletteItems(ctx, { id: "cmd:capture", group: "Commands", label: "Take a screenshot", run });
- * ```
  */
 export function addPaletteItems(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -106,10 +102,6 @@ function ofGroup(items: readonly PaletteItem[], group: PaletteGroup): PaletteIte
  * @param items - Every item.
  * @param query - What the user typed (not empty).
  * @returns The hits.
- * @example
- * ```ts
- * hitsOf(all, "mer");
- * ```
  */
 function hitsOf(items: readonly PaletteItem[], query: string): Hit[] {
   const hits: Hit[] = [];
@@ -134,7 +126,7 @@ function hitsOf(items: readonly PaletteItem[], query: string): Hit[] {
  * @returns Non-empty groups in fixed order.
  * @example
  * ```ts
- * groupedItems(ctx.state.palette.items, "merge")[0]?.group; // "Nodes"
+ * groupedItems(items, "merge")[0]?.group; // "Nodes" when a node matches best
  * ```
  */
 export function groupedItems(
@@ -172,7 +164,7 @@ export function groupedItems(
  * @returns The items.
  * @example
  * ```ts
- * flatItems(groupedItems(items, query))[state.palette.index];
+ * flatItems([{ group: "Nodes", total: 1, items: [shown] }]); // [shown]
  * ```
  */
 export function flatItems(views: readonly PaletteGroupView[]): readonly ShownItem[] {
@@ -184,10 +176,6 @@ export function flatItems(views: readonly PaletteGroupView[]): readonly ShownIte
  *
  * @param ctx - Domain context of workspace.
  * @param query - The initial query.
- * @example
- * ```ts
- * openPalette(ctx, "board/");
- * ```
  */
 export function openPalette(ctx: Pick<WorkspaceCtx, "state">, query = ""): void {
   const { palette } = ctx.state;
@@ -201,10 +189,6 @@ export function openPalette(ctx: Pick<WorkspaceCtx, "state">, query = ""): void 
  * Closes the palette.
  *
  * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * closePalette(ctx);
- * ```
  */
 export function closePalette(ctx: Pick<WorkspaceCtx, "state">): void {
   ctx.state.palette.open = false;
@@ -215,10 +199,6 @@ export function closePalette(ctx: Pick<WorkspaceCtx, "state">): void {
  * Opens a closed palette, closes an open one (⌘K).
  *
  * @param ctx - Domain context of workspace.
- * @example
- * ```ts
- * togglePalette(ctx);
- * ```
  */
 export function togglePalette(ctx: Pick<WorkspaceCtx, "state">): void {
   if (ctx.state.palette.open) closePalette(ctx);
@@ -232,10 +212,6 @@ export function togglePalette(ctx: Pick<WorkspaceCtx, "state">): void {
  * @param item - The item.
  * @param alt - Run the alt action.
  * @returns True when something ran.
- * @example
- * ```ts
- * runPaletteItem(ctx, item, event.shiftKey);
- * ```
  */
 export function runPaletteItem(
   ctx: Pick<WorkspaceCtx, "state">,
@@ -284,10 +260,6 @@ function command(
      * The label of the current state.
      *
      * @returns The label.
-     * @example
-     * ```ts
-     * item.label; // "Pause the game"
-     * ```
      */
     get label() {
       return label();
@@ -301,10 +273,6 @@ function command(
  *
  * @param state - Workspace state.
  * @returns "No game connected" or false.
- * @example
- * ```ts
- * needsGame(ctx.state); // false while live
- * ```
  */
 function needsGame(state: WorkspaceState): string | false {
   const { kind } = state.link;
@@ -316,10 +284,6 @@ function needsGame(state: WorkspaceState): string | false {
  *
  * @param ctx - Domain context of workspace.
  * @returns Three items.
- * @example
- * ```ts
- * gameCommands(ctx);
- * ```
  */
 function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -358,10 +322,6 @@ function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
  *
  * @param ctx - Domain context of workspace.
  * @returns Eight items.
- * @example
- * ```ts
- * shellCommands(ctx);
- * ```
  */
 function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -407,10 +367,6 @@ function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
  *
  * @param ctx - Domain context of workspace.
  * @returns The items, in display order.
- * @example
- * ```ts
- * addPaletteItems(ctx, builtInCommands(ctx));
- * ```
  */
 export function builtInCommands(ctx: WorkspaceCtx): readonly PaletteItem[] {
   return [

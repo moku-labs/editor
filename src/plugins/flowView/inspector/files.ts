@@ -76,10 +76,6 @@ function folderOf(path: string): string {
  * @param files - link.files.
  * @param log - ctx.log.
  * @returns The lookup.
- * @example
- * ```ts
- * const lookup = await loadSourceLookup(link.files, ctx.log);
- * ```
  */
 export async function loadSourceLookup(
   files: Pick<FilesClient, "list" | "read">,

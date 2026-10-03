@@ -27,6 +27,11 @@ const IDLE_TIMEOUT_S = 60;
 const UNSUPPORTED_DATA = 1003;
 
 /**
+ * Close code of a server that is going away (here: a socket that opens after stop).
+ */
+const GOING_AWAY = 1001;
+
+/**
  * Decodes a text frame, or undefined when it is not a valid message.
  *
  * @param text - The frame text.
@@ -50,15 +55,11 @@ function tryDecode(text: string): Message | undefined {
  *
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
- * @example
- * ```ts
- * open(ws) { openConn(ctx, ws); }
- * ```
  */
 function openConn(ctx: HubCtx, ws: HubSocket): void {
   const { state } = ctx;
   if (state.token === undefined) {
-    ws.close(1001, "editor stopping");
+    ws.close(GOING_AWAY, "editor stopping");
     return;
   }
 
@@ -89,10 +90,6 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
  * @param frame - The frame.
- * @example
- * ```ts
- * message(ws, frame) { onFrame(ctx, ws, frame); }
- * ```
  */
 function onFrame(ctx: HubCtx, ws: HubSocket, frame: string | Uint8Array): void {
   const conn = ctx.state.conns.get(ws.data.conn);
@@ -114,10 +111,6 @@ function onFrame(ctx: HubCtx, ws: HubSocket, frame: string | Uint8Array): void {
  *
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
- * @example
- * ```ts
- * close(ws) { closeConn(ctx, ws); }
- * ```
  */
 function closeConn(ctx: HubCtx, ws: HubSocket): void {
   const conn = ctx.state.conns.get(ws.data.conn);
@@ -134,67 +127,22 @@ function closeConn(ctx: HubCtx, ws: HubSocket): void {
  *
  * @param ctx - Domain context of the hub.
  * @returns The handler.
- * @example
- * ```ts
- * Bun.serve({ fetch, websocket: createSocketHandler(ctx) });
- * ```
  */
 export function createSocketHandler(ctx: HubCtx): HubWebSocketHandler {
   return {
-    /**
-     * Registers the connection.
-     *
-     * @param ws - The socket.
-     * @example
-     * ```ts
-     * handler.open(ws);
-     * ```
-     */
-    open(ws) {
+    open: ws => {
       openConn(ctx, ws);
     },
-
-    /**
-     * Handles one frame.
-     *
-     * @param ws - The socket.
-     * @param frame - Text or binary.
-     * @example
-     * ```ts
-     * handler.message(ws, '{"jsonrpc":"2.0","channel":"game","method":"bye"}');
-     * ```
-     */
-    message(ws, frame) {
+    message: (ws, frame) => {
       onFrame(ctx, ws, frame);
     },
-
-    /**
-     * Forgets the connection.
-     *
-     * @param ws - The socket.
-     * @example
-     * ```ts
-     * handler.close(ws, 1000, "bye");
-     * ```
-     */
-    close(ws) {
+    close: ws => {
       closeConn(ctx, ws);
     },
-
-    /**
-     * Flushes the tools backlog once the socket can take more.
-     *
-     * @param ws - The socket.
-     * @example
-     * ```ts
-     * handler.drain(ws);
-     * ```
-     */
-    drain(ws) {
+    drain: ws => {
       const conn = toolsConn(ctx.state, ws.data.conn);
       if (conn !== undefined) flushBacklog(conn);
     },
-
     maxPayloadLength: MAX_PAYLOAD_BYTES,
     idleTimeout: IDLE_TIMEOUT_S,
     perMessageDeflate: false

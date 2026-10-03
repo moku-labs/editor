@@ -33,10 +33,6 @@ function deviceKey(choice: DeviceChoice): string {
  *
  * @param ctx - Domain context of gameView.
  * @returns Removes the listener.
- * @example
- * ```ts
- * ctx.state.disposers.push(watchDevice(ctx));
- * ```
  */
 function watchDevice(ctx: GameViewCtx): () => void {
   const workspace = ctx.require(workspacePlugin);
@@ -55,10 +51,6 @@ function watchDevice(ctx: GameViewCtx): () => void {
  * listens to device changes. Every remover goes into `state.disposers`. Sync, no I/O.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * createToolsPlugin("gameView", { onInit: initGameView });
- * ```
  */
 export function initGameView(ctx: GameViewCtx): void {
   const { disposers } = ctx.state;
@@ -77,10 +69,6 @@ export function initGameView(ctx: GameViewCtx): void {
  * when Game is already the active workspace.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * createToolsPlugin("gameView", { onStart: startGameView });
- * ```
  */
 export function startGameView(ctx: GameViewCtx): void {
   if (ctx.require(workspacePlugin).active() === "game") startSceneWatches(ctx);
@@ -92,10 +80,6 @@ export function startGameView(ctx: GameViewCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("gameView", { onStop: stopGameView });
- * ```
  */
 export function stopGameView(ctx: { readonly state: GameViewState }): void {
   const { state } = ctx;

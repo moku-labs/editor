@@ -149,6 +149,18 @@ describe("build:tools", () => {
     }
   });
 
+  // Regression (e2e): Bun.build kept `with { type: "text" }` on the dynamic import of the ELK
+  // worker chunk; browsers refuse it, so the layout worker never started on the tools page.
+  it("imports the ELK worker chunk with no import attribute", async () => {
+    const files = await filesUnder(outDir);
+    const scripts = files.filter(file => file.endsWith(".js"));
+    const texts = await Promise.all(scripts.map(file => readFile(join(outDir, file), "utf8")));
+    const imports = texts.flatMap(text => [...text.matchAll(/import\(["']\.\/elk-worker[^)]*\)/g)]);
+    expect(imports.length).toBeGreaterThan(0);
+    for (const [call] of imports) expect(call).not.toContain("with");
+    for (const text of texts) expect(text).not.toMatch(/\{\s*with\s*:\s*\{\s*type\s*:/);
+  });
+
   it("reaches every view and workspace sheet from page/index.css", async () => {
     const reached = await reachable(PAGE_CSS);
     const missing: string[] = [];

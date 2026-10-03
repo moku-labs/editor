@@ -92,10 +92,6 @@ function windowOf(lines: readonly (readonly Token[])[], first: number, last: num
  * @param line - The line.
  * @param current - The marked line.
  * @returns The line element.
- * @example
- * ```tsx
- * renderLine({ number: 1, tokens }, 1);
- * ```
  */
 export function renderLine(line: Line, current: number | undefined): VNode {
   return (
@@ -117,10 +113,6 @@ export function renderLine(line: Line, current: number | undefined): VNode {
  *
  * @param props - Path, text, language, the marked line and the colour limit.
  * @returns The scrolling code region.
- * @example
- * ```tsx
- * <CodeView path={tab.path} text={text} lang={langOf(tab.path)} line={tab.line} maxHighlightChars={512_000} />
- * ```
  */
 export function CodeView(props: CodeViewProps): VNode {
   const { path, text, lang, line, maxHighlightChars } = props;

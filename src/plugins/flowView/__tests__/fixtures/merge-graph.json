@@ -19,12 +19,30 @@
           "over": false,
           "checkpoint": false,
           "barrier": false,
-          "outcomes": ["progress", "loaded"],
+          "outcomes": ["progress", "loaded", "failed", "retry"],
           "scene": "splash"
         },
         "setLoading": {
           "flow": "main",
           "node": "setLoading",
+          "rest": false,
+          "over": false,
+          "checkpoint": false,
+          "barrier": false,
+          "outcomes": ["done"]
+        },
+        "loadFailed": {
+          "flow": "main",
+          "node": "loadFailed",
+          "rest": false,
+          "over": false,
+          "checkpoint": false,
+          "barrier": false,
+          "outcomes": ["done"]
+        },
+        "retryLoading": {
+          "flow": "main",
+          "node": "retryLoading",
           "rest": false,
           "over": false,
           "checkpoint": false,
@@ -38,7 +56,7 @@
           "over": false,
           "checkpoint": true,
           "barrier": false,
-          "outcomes": ["play", "gift", "openSettings"],
+          "outcomes": ["play", "gift", "openSettings", "back"],
           "scene": "home"
         },
         "dailyGift": {
@@ -49,6 +67,15 @@
           "checkpoint": false,
           "barrier": false,
           "outcomes": ["claim", "close"]
+        },
+        "leaveGame": {
+          "flow": "main",
+          "node": "leaveGame",
+          "rest": false,
+          "over": false,
+          "checkpoint": false,
+          "barrier": false,
+          "outcomes": ["leave", "stay"]
         },
         "settings": {
           "flow": "main",
@@ -88,19 +115,32 @@
         },
         "splash": {
           "progress": "setLoading",
-          "loaded": "home"
+          "loaded": "home",
+          "failed": "loadFailed",
+          "retry": "retryLoading"
         },
         "setLoading": {
+          "done": "splash"
+        },
+        "loadFailed": {
+          "done": "splash"
+        },
+        "retryLoading": {
           "done": "splash"
         },
         "home": {
           "play": "board",
           "gift": "dailyGift",
-          "openSettings": "settings"
+          "openSettings": "settings",
+          "back": "leaveGame"
         },
         "dailyGift": {
           "claim": "home",
           "close": "home"
+        },
+        "leaveGame": {
+          "leave": "home",
+          "stay": "home"
         },
         "settings": {
           "closed": "home"
@@ -132,7 +172,7 @@
           "over": false,
           "checkpoint": false,
           "barrier": false,
-          "outcomes": ["volume", "setLocale", "reset", "close"]
+          "outcomes": ["volume", "setLocale", "rename", "reset", "close"]
         },
         "setVolume": {
           "flow": "settingsPopup",
@@ -152,6 +192,15 @@
           "barrier": false,
           "outcomes": ["done"]
         },
+        "rename": {
+          "flow": "settingsPopup",
+          "node": "rename",
+          "rest": false,
+          "over": false,
+          "checkpoint": false,
+          "barrier": false,
+          "outcomes": ["saved", "kept"]
+        },
         "confirm": {
           "flow": "settingsPopup",
           "node": "confirm",
@@ -170,6 +219,7 @@
         "open": {
           "volume": "setVolume",
           "setLocale": "setLocale",
+          "rename": "rename",
           "reset": "confirm",
           "close": "exit:closed"
         },
@@ -178,6 +228,10 @@
         },
         "setLocale": {
           "done": "open"
+        },
+        "rename": {
+          "saved": "open",
+          "kept": "open"
         },
         "confirm": {
           "cancel": "open",

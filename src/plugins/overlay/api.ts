@@ -18,46 +18,17 @@ const RENDER_SOURCE = "game.render";
  *
  * @param ctx - Plugin context of the overlay.
  * @returns `{ open, close, isOpen }`.
- * @example
- * ```ts
- * createOverlayApi(ctx).open();
- * ```
  */
 export function createOverlayApi(ctx: OverlayPluginCtx): OverlayApi {
   const octx = overlayCtxOf(ctx);
 
   return {
-    /**
-     * Shows the card; before start it only sets the flag and onStart honours it. Idempotent.
-     *
-     * @example
-     * ```ts
-     * editor.overlay.open(); // the card appears in the top-right corner of the game page
-     * ```
-     */
     open: () => {
       openOverlay(octx);
     },
-    /**
-     * Hides the card, stops the render watch and the repaint interval. Idempotent.
-     *
-     * @example
-     * ```ts
-     * editor.overlay.close();
-     * ```
-     */
     close: () => {
       closeOverlay(octx);
     },
-    /**
-     * Whether the overlay is switched on.
-     *
-     * @returns The flag.
-     * @example
-     * ```ts
-     * editor.overlay.isOpen(); // false: the overlay is off by default
-     * ```
-     */
     isOpen: () => octx.state.open
   };
 }
@@ -67,10 +38,6 @@ export function createOverlayApi(ctx: OverlayPluginCtx): OverlayApi {
  * missing source or a throwing read marks render unavailable and warns once.
  *
  * @param octx - Domain context.
- * @example
- * ```ts
- * watchRender(octx); // octx.state.render = { fps: 60, frameMs: 4.1, textureMb: 31.1 }
- * ```
  */
 function watchRender(octx: OverlayCtx): void {
   const { state } = octx;
@@ -92,10 +59,6 @@ function watchRender(octx: OverlayCtx): void {
  * paints now. Before mount it only sets the flag. Idempotent.
  *
  * @param octx - Domain context.
- * @example
- * ```ts
- * openOverlay(octx);
- * ```
  */
 export function openOverlay(octx: OverlayCtx): void {
   const { state } = octx;
@@ -115,10 +78,6 @@ export function openOverlay(octx: OverlayCtx): void {
  * Closes: hides the host, unwatches game.render, clears the interval. Idempotent.
  *
  * @param octx - Domain context.
- * @example
- * ```ts
- * closeOverlay(octx);
- * ```
  */
 export function closeOverlay(octx: OverlayCtx): void {
   const { state } = octx;

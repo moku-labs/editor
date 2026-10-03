@@ -111,7 +111,7 @@ describe("Preview", () => {
     if (body === null) throw new Error("no body");
     pointer(body, "pointerdown", 900, 700);
     pointer(body, "pointermove", 600, 400);
-    expect(float().dataset.dragging).toBeDefined();
+    expect(float().dataset.dragging).toBe("");
     expect(float().style.transform).toBe("translate(-300px, -300px)");
     pointer(body, "pointermove", 100, 100);
     pointer(body, "pointerup", 100, 100);

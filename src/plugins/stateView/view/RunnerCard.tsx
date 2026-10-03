@@ -112,10 +112,6 @@ function Taint(props: { readonly tainted: boolean | undefined }): VNode {
  *
  * @param props - The api, position, history and link status.
  * @returns The card.
- * @example
- * ```tsx
- * <RunnerCard api={api} position={values.position} history={values.history} status={tools.status} />
- * ```
  */
 export function RunnerCard(props: RunnerCardProps): VNode {
   const { api, position, history, status } = props;

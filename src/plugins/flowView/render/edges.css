@@ -1,7 +1,9 @@
 /* flowView · edges (G): orthogonal paths with rounded corners; trail, rejected, related, selected, note and return edges; mono label chips. Trail opacity comes from the rank (style prop). No @layer wrapper (R7). */
 
 @scope ([data-flow="edges"]) {
+  /* The reset caps svg at max-width 100 %; the world layer has no width, so the cap would scale the viewBox to nothing. */
   :scope {
+    max-width: none;
     overflow: visible;
     pointer-events: none;
   }

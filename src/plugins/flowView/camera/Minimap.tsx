@@ -106,10 +106,6 @@ function Items(props: {
  *
  * @param props - Context and actions.
  * @returns The minimap, or an empty fragment before the first layout.
- * @example
- * ```tsx
- * <Minimap ctx={ctx} actions={actions} />
- * ```
  */
 export function Minimap(props: MinimapProps): VNode {
   const { ctx, actions } = props;
@@ -127,10 +123,6 @@ export function Minimap(props: MinimapProps): VNode {
    *
    * @param event - The pointer event.
    * @returns World coordinates.
-   * @example
-   * ```ts
-   * worldAt(event); // { x: 640, y: 420 }
-   * ```
    */
   const worldAt = (event: PointerEvent): { x: number; y: number } => {
     const target = event.currentTarget instanceof Element ? event.currentTarget : undefined;

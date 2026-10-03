@@ -34,10 +34,6 @@ const EFFECT_TONE: Readonly<Record<Effect, string>> = {
  *
  * @param props - The workspace domain context.
  * @returns The popover.
- * @example
- * ```tsx
- * <RegistryPopover ctx={ctx} />
- * ```
  */
 export function RegistryPopover(props: RegistryPopoverProps): VNode {
   const { ctx } = props;

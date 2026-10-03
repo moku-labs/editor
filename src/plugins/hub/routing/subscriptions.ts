@@ -40,7 +40,7 @@ function canonical(value: Json): string {
  * @returns The key.
  * @example
  * ```ts
- * subKey("s-7f3a", "game.history", { last: 20 });
+ * subKey("s-7f3a", "game.history", { last: 20 }); // 's-7f3a\u0000game.history\u0000{"last":20}'
  * ```
  */
 export function subKey(session: string, sourceId: string, input: Json | null): string {
@@ -53,10 +53,6 @@ export function subKey(session: string, sourceId: string, input: Json | null): s
  * @param shared - The shared watch.
  * @param conn - Tools connection number.
  * @param sub - Tools sub id.
- * @example
- * ```ts
- * addSubscriber(shared, conn.conn, params.sub);
- * ```
  */
 function addSubscriber(shared: SharedSub, conn: number, sub: SubId): void {
   const subs = shared.subscribers.get(conn);
@@ -71,10 +67,6 @@ function addSubscriber(shared: SharedSub, conn: number, sub: SubId): void {
  * @param toolsId - The watch request id.
  * @param sub - The tools sub id.
  * @param shared - The shared watch.
- * @example
- * ```ts
- * join(conn, request.id, params.sub, shared);
- * ```
  */
 function join(conn: ToolsConn, toolsId: number, sub: SubId, shared: SharedSub): void {
   addSubscriber(shared, conn.conn, sub);
@@ -96,10 +88,6 @@ function join(conn: ToolsConn, toolsId: number, sub: SubId, shared: SharedSub): 
  * @param toolsId - The watch request id.
  * @param session - The chosen session.
  * @param params - The checked watch params.
- * @example
- * ```ts
- * watch(ctx, conn, request.id, session, { sub: 4, id: "game.history", input: { last: 20 } });
- * ```
  */
 export function watch(
   ctx: HubCtx,
@@ -145,10 +133,6 @@ export function watch(
  *
  * @param ctx - Domain context of the hub.
  * @param shared - The shared watch.
- * @example
- * ```ts
- * if (shared.subscribers.size === 0) removeShared(ctx, shared);
- * ```
  */
 function removeShared(ctx: HubCtx, shared: SharedSub): void {
   ctx.state.shared.delete(shared.key);
@@ -168,10 +152,6 @@ function removeShared(ctx: HubCtx, shared: SharedSub): void {
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param sub - The tools sub id.
- * @example
- * ```ts
- * unwatch(ctx, conn, 4);
- * ```
  */
 export function unwatch(ctx: HubCtx, conn: ToolsConn, sub: SubId): void {
   const key = conn.subs.get(sub);
@@ -196,10 +176,6 @@ export function unwatch(ctx: HubCtx, conn: ToolsConn, sub: SubId): void {
  * @param session - The agent's session.
  * @param agentSub - The agent-side sub.
  * @param value - The value.
- * @example
- * ```ts
- * onAgentValue(ctx, session, params.sub, params.value);
- * ```
  */
 export function onAgentValue(ctx: HubCtx, session: Session, agentSub: SubId, value: Json): void {
   const shared = findShared(ctx.state, session.id, agentSub);
@@ -218,10 +194,6 @@ export function onAgentValue(ctx: HubCtx, session: Session, agentSub: SubId, val
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
- * @example
- * ```ts
- * dropToolsConn(ctx, conn);
- * ```
  */
 export function dropToolsConn(ctx: HubCtx, conn: ToolsConn): void {
   for (const sub of conn.subs.keys()) unwatch(ctx, conn, sub);
@@ -235,10 +207,6 @@ export function dropToolsConn(ctx: HubCtx, conn: ToolsConn): void {
  *
  * @param ctx - Domain context of the hub.
  * @param session - The session.
- * @example
- * ```ts
- * dropSession(ctx, session);
- * ```
  */
 export function dropSession(ctx: HubCtx, session: Session): void {
   for (const shared of ctx.state.shared.values()) {

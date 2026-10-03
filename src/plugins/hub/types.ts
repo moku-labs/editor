@@ -120,17 +120,53 @@ export type MergedServeOptions = {
 };
 
 /**
- * The one websocket handler of the server.
+ * The one websocket handler of the server (Bun allows one), exposed as `app.hub.websocket`.
+ * `hub.serve()` mounts it; a game with its own `Bun.serve` passes it on.
+ *
+ * @example
+ * ```ts
+ * Bun.serve({
+ *   port: 3000,
+ *   fetch: (req, server) => app.hub.fetch(req, server) ?? new Response("upgraded"),
+ *   websocket: app.hub.websocket
+ * });
+ * ```
  */
 export type HubWebSocketHandler = {
+  /**
+   * Registers the connection of the upgrade's kind; a tools page gets `sessions {list}` at
+   * once. A socket that opens after stop is closed with 1001.
+   *
+   * @param ws - The socket.
+   */
   open(ws: HubSocket): void;
+  /**
+   * Handles one frame: a binary frame closes the socket with 1003, an undecodable text counts a
+   * strike, a message goes to the agent or the tools side of the connection.
+   *
+   * @param ws - The socket.
+   * @param message - Text or binary frame.
+   */
   message(ws: HubSocket, message: string | Uint8Array): void;
+  /**
+   * Forgets the connection, then ends the agent's session or the tools subscriptions.
+   *
+   * @param ws - The socket.
+   * @param code - The close code.
+   * @param reason - The close reason.
+   */
   close(ws: HubSocket, code: number, reason: string): void;
+  /**
+   * Flushes the tools backlog once the socket can take more.
+   *
+   * @param ws - The socket.
+   */
   drain(ws: HubSocket): void;
   /** 32 MiB: captures travel as data URLs. */
   readonly maxPayloadLength: number;
   /** 60 s; Bun sends pings. */
   readonly idleTimeout: number;
+  /** Off: frames are not compressed. */
   readonly perMessageDeflate: false;
 };
 
@@ -237,25 +273,133 @@ export type HubState = {
  *
  * @example
  * ```ts
- * Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+ * Bun.serve(app.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
  * ```
  */
 export type HubApi = {
-  /** Wraps Bun.serve options: 127.0.0.1 forced, editor routes and the websocket handler added. */
+  /**
+   * Wraps the game's `Bun.serve` options: `127.0.0.1` forced, then the game's routes, the routes
+   * from `addRoutes` and `{path}/ws` merged, and the websocket handler added. Without a game
+   * `fetch` the fallback answers 404. Unknown option keys pass through to Bun.
+   *
+   * @param options - The game's serve options.
+   * @returns Options ready for `Bun.serve`.
+   * @throws {Error} `[moku-editor] …` before start, on a second call, with a `websocket`, `unix` or
+   * `tls` option, with a hostname other than `127.0.0.1` / `localhost`, and with a game route
+   * under the editor path.
+   * @example
+   * ```ts
+   * // The game's dev server: one Bun.serve for the game and the editor, after await app.start().
+   * Bun.serve(app.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+   * ```
+   */
   serve(options: ServeOptions): BunServeOptions;
-  /** The token of this start. Throws before start and after stop. */
+
+  /**
+   * The token of this start: 32 random bytes, base64url, 43 characters. A new one on every
+   * start. Never logged.
+   *
+   * @returns The token.
+   * @throws {Error} `[moku-editor] hub.token() needs a started app.` before start and after stop.
+   * @example
+   * ```ts
+   * // pages puts the token into the tools boot JSON on every page request.
+   * const hub = ctx.require(hubPlugin);
+   * const token = hub.token(); // 43 characters, e.g. "Hk3…"
+   * ```
+   */
   token(): string;
-  /** Fresh SessionInfo list ordered by connectedAt. */
+
+  /**
+   * A fresh list of the open game sessions ordered by `connectedAt`. Heartbeat and the silent
+   * flag stay private; mutating the result does not change the next call.
+   *
+   * @returns The open sessions.
+   * @example
+   * ```ts
+   * // After the game page connected its bridge.
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+   * ```
+   */
   sessions(): SessionInfo[];
-  /** The `{path}/ws` upgrade handler. */
+
+  /**
+   * The `{path}/ws` upgrade handler; `serve` already mounts it. Checks the path (404), the start
+   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401) and the kind
+   * (400), then upgrades.
+   *
+   * @param req - The request.
+   * @param server - The Bun server.
+   * @returns `undefined` after an upgrade, else the plain-text refusal.
+   * @example
+   * ```ts
+   * // A game with its own Bun.serve mounts the upgrade itself.
+   * Bun.serve({
+   *   fetch: (req, server) => app.hub.fetch(req, server) ?? new Response("upgraded"),
+   *   websocket: app.hub.websocket
+   * });
+   * ```
+   */
   fetch(req: Request, server: HubServer): Response | undefined;
-  /** The one websocket handler. */
+
+  /**
+   * The one websocket handler of the server: 32 MiB frames, 60 s idle, no deflate.
+   *
+   * @example
+   * ```ts
+   * // A game's own Bun.serve passes the editor's handler on.
+   * Bun.serve({
+   *   fetch: (req, server) => app.hub.fetch(req, server) ?? new Response("upgraded"),
+   *   websocket: app.hub.websocket
+   * });
+   * ```
+   */
   readonly websocket: HubWebSocketHandler;
-  /** Registers editor routes (pages, in onInit), merged by serve (R3). */
+
+  /**
+   * Registers editor routes, merged by `serve` (R3). Call it in `onInit`. Keys are checked first,
+   * so a refused batch registers nothing.
+   *
+   * @param routes - Routes keyed by `path` or under `path + "/"`.
+   * @throws {Error} `[moku-editor] …` after `serve`, on a key registered before, on `{path}/ws`,
+   * and on a key outside the editor path.
+   * @example
+   * ```ts
+   * // pages registers its routes in onInit, before hub.serve() freezes them.
+   * const hub = ctx.require(hubPlugin);
+   * hub.addRoutes({ [`${hub.path()}/hello`]: helloRoute });
+   * ```
+   */
   addRoutes(routes: EditorRoutes): void;
-  /** The shared Host / Origin / Sec-Fetch-Site check (R3). */
+
+  /**
+   * The shared Host / Origin / Sec-Fetch-Site check (R3). `upgrade` requires an allowed Origin;
+   * `same-origin` and `navigate` check it when present; `same-origin` also wants Sec-Fetch-Site
+   * `same-origin` or `none` when present. The origin `null` never matches.
+   *
+   * @param req - The request.
+   * @param server - The Bun server (its port).
+   * @param mode - Which rules apply.
+   * @returns A 403 response, or `undefined` when allowed.
+   * @example
+   * ```ts
+   * // A pages route refuses a cross-site request before it answers.
+   * const refused = ctx.require(hubPlugin).guard(req, server, "same-origin");
+   * if (refused) return refused; // 403 "forbidden"
+   * ```
+   */
   guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined;
-  /** config.path (R3). */
+
+  /**
+   * The editor path, `config.path` (R3).
+   *
+   * @returns The URL prefix of every editor route.
+   * @example
+   * ```ts
+   * // pages keys its routes under the hub path.
+   * ctx.require(hubPlugin).path(); // "/__editor"
+   * ```
+   */
   path(): string;
 };
 

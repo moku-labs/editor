@@ -9,10 +9,6 @@ import type { HubConfig, HubState } from "./types";
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
  * @returns The fresh state.
- * @example
- * ```ts
- * createHubState({ config }).served; // false
- * ```
  */
 export function createHubState(_ctx: { readonly config: Readonly<HubConfig> }): HubState {
   return {

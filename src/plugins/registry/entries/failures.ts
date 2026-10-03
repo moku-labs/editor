@@ -49,10 +49,6 @@ export function firstLine(message: string): string {
  * @param id - The source or command id.
  * @param error - Anything thrown.
  * @returns The ProtocolError, e.g. `[moku-editor] game.step: frames must be a number`.
- * @example
- * ```ts
- * throw withId("game.step", error);
- * ```
  */
 export function withId(id: string, error: unknown): ProtocolError {
   const wire = toWireError(error);
@@ -69,10 +65,6 @@ export function withId(id: string, error: unknown): ProtocolError {
  * @param id - The source or command id.
  * @param message - What the door said.
  * @returns The ProtocolError.
- * @example
- * ```ts
- * throw doorFailed("game.log", error.message);
- * ```
  */
 export function doorFailed(id: string, message: string): ProtocolError {
   return withId(
@@ -89,10 +81,6 @@ export function doorFailed(id: string, message: string): ProtocolError {
  * @param raw - The raw input.
  * @returns The checked input.
  * @throws {Error} -32602 `[moku-editor] <id>: <field> …`.
- * @example
- * ```ts
- * const input = checkedInput("game.step", door.input, raw);
- * ```
  */
 export function checkedInput<S extends InputSchema>(id: string, schema: S, raw: Json): InputOf<S> {
   try {
@@ -109,10 +97,6 @@ export function checkedInput<S extends InputSchema>(id: string, schema: S, raw: 
  * @param value - What the door answered.
  * @returns The wire value.
  * @throws {Error} -32006 `[moku-editor] <id>: <what> is not JSON at <path>`.
- * @example
- * ```ts
- * return wireValueOf("game.graph", graph);
- * ```
  */
 export function wireValueOf(id: string, value: unknown): Json {
   try {

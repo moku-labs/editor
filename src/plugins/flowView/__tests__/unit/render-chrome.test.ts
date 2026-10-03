@@ -30,7 +30,7 @@ describe("Breadcrumb (B8, M1)", () => {
     const stack = host.querySelector<HTMLElement>('[data-part="stack"]');
     expect(stack?.textContent).toContain("main/board › board/awaitIntent");
     await settle(() => stack?.click());
-    expect(ctx.state.focus.selected).toBeDefined();
+    expect(ctx.state.focus.selected).toBe("main/board>board/awaitIntent");
     unmount();
   });
 });
@@ -49,7 +49,7 @@ describe("CanvasToolbar (B5, M8, M9)", () => {
     expect(ctx.state.camera.follow).toBe(true);
     expect(button("follow")?.getAttribute("aria-pressed")).toBe("true");
     await settle(() => button("note")?.click());
-    expect(ctx.state.notes.editor?.anchor).toBeDefined();
+    expect(ctx.state.notes.editor?.anchor).toEqual({ x: 1110, y: 258 });
     ctx.state.layout.pins.nodes["main/home"] = { x: 0, y: 0 };
     await settle(() => actions.focus.history(false));
     expect(button("reset")?.getAttribute("aria-disabled")).toBe("false");
@@ -91,10 +91,10 @@ describe("ZoomBar (B6) and Minimap (B7)", () => {
     if (map === null) throw new Error("no minimap");
     pointer(map, "pointerdown", 0, 0);
     pointer(map, "pointerup", 0, 0);
-    expect(centre).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), true);
+    expect(centre).toHaveBeenCalledWith(0, -213.92, true);
     pointer(map, "pointerdown", 0, 0);
     pointer(map, "pointermove", 10, 10);
-    expect(centre).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), false);
+    expect(centre).toHaveBeenLastCalledWith(133.7, -80.22, false);
     pointer(map, "pointerup", 10, 10);
     unmount();
   });

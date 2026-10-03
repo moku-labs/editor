@@ -60,7 +60,11 @@ describe("focus.select", () => {
     expect(actions.focus.selected()).toBe("main/settings>settingsPopup/open");
     expect(ctx.state.layout.expanded.has("main/settings")).toBe(true);
     await flush(10);
-    expect(ctx.state.layout.result?.byKey["main/settings>settingsPopup/open"]).toBeDefined();
+    expect(ctx.state.layout.result?.byKey["main/settings>settingsPopup/open"]).toMatchObject({
+      kind: "node",
+      flow: "settingsPopup",
+      parent: "main/settings"
+    });
   });
 });
 
@@ -170,6 +174,18 @@ describe("focus.focusFrame", () => {
     );
     expect(actions.focus.focusFrame(10)).toBe(true);
     expect(fakes.workspace.toast).toHaveBeenCalledWith("No edge at frame 10");
+  });
+
+  it("marks the history entry of an exact frame as the selected row", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    ctx.state.data.history = [
+      entry(1, "home", "play", { frame: 1700 }),
+      entry(2, "board/merge", "rejected", { frame: 1778 })
+    ];
+    expect(actionsOf(ctx).focus.focusFrame(1778)).toBe(true);
+    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.historySelected).toBe(2);
   });
 
   it("selectHistory selects an entry's edge", async () => {

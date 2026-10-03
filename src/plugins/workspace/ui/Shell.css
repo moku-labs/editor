@@ -1,5 +1,5 @@
-/* workspace · Shell. The page grid: top bar 44 px over rail 52 px and the content; the hosts fill the content (panels owns what is inside them). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
-@scope ([data-ui="shell"]) to ([data-workspace-host]) {
+/* workspace · Shell. The page grid: top bar 44 px over rail 52 px and the content; the hosts fill the content (panels owns what is inside them). The scope ends below each host, not at it: a scope limit excludes the elements it matches, so `to ([data-workspace-host])` would drop the host rules and leave every workspace at its content height. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="shell"]) to ([data-workspace-host] > *) {
   :scope {
     display: grid;
     grid-template-columns: var(--rail-w) minmax(0, 1fr);

@@ -6,10 +6,10 @@
  */
 import type { VNode } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { FlowActions, FlowCtx, HistoryEntryJson } from "../types";
+import type { FlowActions, FlowCtx } from "../types";
 import { useFlowStore } from "../useFlowStore";
 import { incoming, nodeKinds, outgoing, parentsOf, resolveStack } from "./graph";
-import { entryKey, frameLabel } from "./trail";
+import { frameLabel, lastFires } from "./trail";
 
 /**
  * Props of `NeighboursStrip`.
@@ -17,39 +17,10 @@ import { entryKey, frameLabel } from "./trail";
 export type NeighboursStripProps = { readonly ctx: FlowCtx; readonly actions: FlowActions };
 
 /**
- * The last history entry of every edge key.
- *
- * @param history - Entries, oldest first.
- * @param ctx - Domain context of flowView (for the graph).
- * @returns Edge key → entry.
- * @example
- * ```ts
- * lastFires(history, ctx).get("board/merge:done");
- * ```
- */
-function lastFires(
-  history: readonly HistoryEntryJson[],
-  ctx: FlowCtx
-): Map<string, HistoryEntryJson> {
-  const fires = new Map<string, HistoryEntryJson>();
-  const { graph } = ctx.state.data;
-  if (graph === undefined) return fires;
-  for (const entry of history) {
-    const key = entryKey(entry, graph);
-    if (key !== undefined) fires.set(key, entry);
-  }
-  return fires;
-}
-
-/**
  * The neighbours strip.
  *
  * @param props - Context and actions.
  * @returns The strip, or an empty fragment while it is closed.
- * @example
- * ```tsx
- * <NeighboursStrip ctx={ctx} actions={actions} />
- * ```
  */
 export function NeighboursStrip(props: NeighboursStripProps): VNode {
   const { ctx, actions } = props;
@@ -87,7 +58,7 @@ export function NeighboursStrip(props: NeighboursStripProps): VNode {
     ) ?? [];
   const goes = outgoing(graph, id, frames.length === 1 ? frames[0]?.id : undefined);
   const comes = incoming(graph, id);
-  const fires = lastFires(data.history, ctx);
+  const fires = lastFires(data.history, graph);
   /**
    * The frame label of the last fire of an edge.
    *

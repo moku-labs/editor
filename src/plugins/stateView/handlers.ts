@@ -11,10 +11,6 @@ import type { StateViewCtx, StateViewHooks } from "./types";
  *
  * @param ctx - Domain context of stateView.
  * @returns The two hooks.
- * @example
- * ```ts
- * createToolsPlugin("stateView", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: StateViewCtx): StateViewHooks {
   return { "link:status": onLinkStatus(ctx), "workspace:ran": onCommandRan(ctx) };
@@ -26,10 +22,6 @@ export function createHandlers(ctx: StateViewCtx): StateViewHooks {
  *
  * @param ctx - Domain context of stateView.
  * @returns The handler.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "lost", reason: "game_reloaded", lastFrame: 1840, retryInMs: 1000 } });
- * ```
  */
 export function onLinkStatus(ctx: StateViewCtx): (payload: ToolsEvents["link:status"]) => void {
   return ({ status }) => {
@@ -43,10 +35,6 @@ export function onLinkStatus(ctx: StateViewCtx): (payload: ToolsEvents["link:sta
  *
  * @param ctx - Domain context of stateView.
  * @returns The handler.
- * @example
- * ```ts
- * onCommandRan(ctx)({ id: "game.step", input: { frames: 1 }, origin: "topbar", at: 1, ok: true, result });
- * ```
  */
 export function onCommandRan(ctx: StateViewCtx): (payload: ToolsEvents["workspace:ran"]) => void {
   return payload => {

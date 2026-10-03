@@ -41,10 +41,6 @@ const EFFECTS: ReadonlySet<string> = new Set(["read", "route", "cosmetic", "chea
  * @param kind - "source" or "command", for the messages.
  * @param descriptor - The descriptor (or the door, which carries one).
  * @throws {Error} `[moku-editor] …` naming the id and what is wrong.
- * @example
- * ```ts
- * checkDescriptor("command", entry.descriptor);
- * ```
  */
 export function checkDescriptor(
   kind: "source" | "command",

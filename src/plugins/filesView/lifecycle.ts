@@ -12,7 +12,7 @@ import { createFilesPanel } from "./panel";
 import { closeTopmost } from "./tabs/edit";
 import { activeTab, isModified } from "./tabs/model";
 import { saveTab } from "./tabs/save";
-import { buildIndex } from "./tree/walk";
+import { buildIndex, canList } from "./tree/walk";
 import type { FilesViewCtx, FilesViewState } from "./types";
 
 /**
@@ -21,10 +21,6 @@ import type { FilesViewCtx, FilesViewState } from "./types";
  *
  * @param ctx - Domain context of filesView.
  * @returns The binding.
- * @example
- * ```ts
- * workspace.keys.bind(saveBinding(ctx));
- * ```
  */
 export function saveBinding(ctx: FilesViewCtx): KeyBinding {
   return {
@@ -36,19 +32,10 @@ export function saveBinding(ctx: FilesViewCtx): KeyBinding {
      * Active only while the active tab is in edit mode.
      *
      * @returns Whether ⌘S applies.
-     * @example
-     * ```ts
-     * binding.when?.(); // true while editing
-     * ```
      */
     when: () => activeTab(ctx.state)?.editing === true,
     /**
      * Saves the active tab (saveTab never rejects).
-     *
-     * @example
-     * ```ts
-     * binding.run(event);
-     * ```
      */
     run: () => {
       const path = ctx.state.active;
@@ -62,10 +49,6 @@ export function saveBinding(ctx: FilesViewCtx): KeyBinding {
  *
  * @param state - filesView state.
  * @returns The listener.
- * @example
- * ```ts
- * window.addEventListener("beforeunload", guardUnload(ctx.state));
- * ```
  */
 export function guardUnload(state: FilesViewState): (event: Event) => void {
   return event => {
@@ -81,10 +64,6 @@ export function guardUnload(state: FilesViewState): (event: Event) => void {
  * Files is shown, so Esc in another workspace reaches that workspace's layers). No I/O.
  *
  * @param ctx - Domain context of filesView.
- * @example
- * ```ts
- * createToolsPlugin("filesView", { onInit: initFilesView });
- * ```
  */
 export function initFilesView(ctx: FilesViewCtx): void {
   ctx.require(panelsPlugin).register(createFilesPanel(ctx));
@@ -96,25 +75,23 @@ export function initFilesView(ctx: FilesViewCtx): void {
 }
 
 /**
- * onStart: loads `game.graph` on every manifest, starts the index build without awaiting it
- * and adds the beforeunload guard. Every remover goes to `state.removers`.
+ * onStart: loads `game.graph` on every manifest, starts the index build without awaiting it when
+ * the link can list (otherwise the first `link:status` with an open socket starts it) and adds
+ * the beforeunload guard. Every remover goes to `state.removers`.
  *
  * @param ctx - Domain context of filesView.
- * @example
- * ```ts
- * createToolsPlugin("filesView", { onStart: startFilesView });
- * ```
  */
 export function startFilesView(ctx: FilesViewCtx): void {
   const { state } = ctx;
+  const link = ctx.require(linkPlugin);
   state.removers.push(
-    ctx.require(linkPlugin).onManifest(() => {
+    link.onManifest(() => {
       loadGraph(ctx).catch((error: unknown) => {
         ctx.log.warn("filesView:graph-failed", { message: messageOf(error) });
       });
     })
   );
-  void buildIndex(ctx);
+  if (canList(link.status())) void buildIndex(ctx);
 
   if (typeof globalThis.addEventListener === "function") {
     const guard = guardUnload(state);
@@ -129,10 +106,6 @@ export function startFilesView(ctx: FilesViewCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("filesView", { onStop: stopFilesView });
- * ```
  */
 export function stopFilesView(ctx: { readonly state: FilesViewState }): void {
   const { state } = ctx;

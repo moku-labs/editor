@@ -73,20 +73,19 @@ export function pageRectOf(value: Json): PageRect | undefined {
   return { x, y, w, h };
 }
 
+/** One frame at 60 fps: the timeout that stands in for requestAnimationFrame where it does not exist. */
+const FALLBACK_FRAME_MS = 16;
+
 /**
  * Runs a callback on the next animation frame (a 16 ms timeout where rAF does not exist).
  *
  * @param callback - What to run.
- * @example
- * ```ts
- * nextFrame(() => rebuildScene(ctx, 1841));
- * ```
  */
 function nextFrame(callback: () => void): void {
   if (typeof globalThis.requestAnimationFrame === "function") {
     globalThis.requestAnimationFrame(() => callback());
   } else {
-    setTimeout(callback, 16);
+    setTimeout(callback, FALLBACK_FRAME_MS);
   }
 }
 
@@ -96,10 +95,6 @@ function nextFrame(callback: () => void): void {
  *
  * @param ctx - Domain context of gameView.
  * @param frame - The frame of the values.
- * @example
- * ```ts
- * rebuildScene(ctx, 1841); // ctx.state.scene.frame === 1841
- * ```
  */
 export function rebuildScene(ctx: GameViewCtx, frame: number): void {
   const { state } = ctx;
@@ -122,10 +117,6 @@ export function rebuildScene(ctx: GameViewCtx, frame: number): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns Resolves when the calibration is known (never rejects).
- * @example
- * ```ts
- * await calibrate(ctx); // ctx.state.calibration → { scale: 1, x: 0, y: 0 } on the inert renderer
- * ```
  */
 export async function calibrate(ctx: GameViewCtx): Promise<void> {
   const { state } = ctx;
@@ -156,10 +147,6 @@ export async function calibrate(ctx: GameViewCtx): Promise<void> {
  * Forgets the calibration of the old device and calibrates again while watching (device change).
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * workspace.onPrefs(() => recalibrate(ctx));
- * ```
  */
 export function recalibrate(ctx: GameViewCtx): void {
   ctx.state.calibrationRead = false;
@@ -171,10 +158,6 @@ export function recalibrate(ctx: GameViewCtx): void {
  *
  * @param ctx - Domain context of gameView.
  * @param session - The watch session.
- * @example
- * ```ts
- * onSceneValue(ctx, { frame: 1841, scheduled: false, stopped: false });
- * ```
  */
 function onSceneValue(ctx: GameViewCtx, session: WatchSession): void {
   if (!ctx.state.calibrationRead && ctx.state.sources.ui !== undefined) void calibrate(ctx);
@@ -192,10 +175,6 @@ function onSceneValue(ctx: GameViewCtx, session: WatchSession): void {
  * unwatch functions go into `state.watching`.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * startSceneWatches(ctx); // link watches game.ui, game.entities, game.projections
- * ```
  */
 export function startSceneWatches(ctx: GameViewCtx): void {
   const { state } = ctx;
@@ -221,10 +200,6 @@ export function startSceneWatches(ctx: GameViewCtx): void {
  * Stops the scene watches (idempotent); a pending rebuild is dropped.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * stopSceneWatches(ctx); // link unwatches the three sources
- * ```
  */
 export function stopSceneWatches(ctx: Pick<GameViewCtx, "state">): void {
   for (const unwatch of ctx.state.watching.splice(0)) unwatch();

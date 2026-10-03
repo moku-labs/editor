@@ -32,10 +32,6 @@ function shapeError(error: SceneError): Error {
  * @param ctx - Domain context of gameView.
  * @returns The scene snapshot.
  * @throws {Error} The link's WireError, or a shape error.
- * @example
- * ```ts
- * (await readScene(ctx)).nodes.get("ui:boardScreen/boardSlot")?.rect; // { x: 55, y: 801, w: 970, h: 970 }
- * ```
  */
 export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
   const { state } = ctx;
@@ -69,10 +65,6 @@ export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
  * @param ctx - Domain context of gameView.
  * @param ref - The element.
  * @returns The rect, undefined when unknown or unplaced.
- * @example
- * ```ts
- * await locateElement(ctx, { kind: "entity", id: 1_048_628 }); // { x: 428.5, y: 880.5, w: 223, h: 223 }
- * ```
  */
 export async function locateElement(
   ctx: GameViewCtx,

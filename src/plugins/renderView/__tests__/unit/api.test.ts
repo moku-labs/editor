@@ -200,7 +200,7 @@ describe("highlight", () => {
 
     startScene(ctx);
     await deliverBoard(ctx, frames);
-    api.highlight({ kind: "entity", id: 1_048_639 });
+    api.highlight({ kind: "entity", id: 1_048_640 });
     expect(box()).toBeNull();
     api.highlight({ kind: "ui", path: "nope" });
     expect(box()).toBeNull();

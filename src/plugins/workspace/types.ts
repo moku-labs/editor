@@ -187,17 +187,82 @@ export type Insets = { top?: number; right?: number; bottom?: number; left?: num
 
 /**
  * The one game frame of the tools page (R4, D-14): it never moves in the DOM.
+ *
+ * @example
+ * ```ts
+ * // Reload the game page and put it back where it was.
+ * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+ * ```
  */
 export type GameFrame = {
-  /** Absolute URL of the game page (link.boot()?.gameUrl, else "/"). */
+  /**
+   * Absolute URL of the game page: `link.boot()?.gameUrl` resolved against the page, "/" without
+   * a boot.
+   *
+   * @example
+   * ```ts
+   * // On the tools page http://127.0.0.1:3000/__editor with the boot gameUrl "/".
+   * app.workspace.gameFrame().url; // "http://127.0.0.1:3000/"
+   * ```
+   */
   readonly url: string;
-  /** D-07 reload; concurrent calls share one run. */
+
+  /**
+   * The D-07 reload: bookmark, reload in place, restore on the new session, toast. Concurrent
+   * calls share one run.
+   *
+   * @param opts - `restore: true` bookmarks first and restores after.
+   * @param opts.restore - Whether to bookmark and restore the game state.
+   * @returns The result; `{ restored: false, reason: "not_mounted" }` before the first mount.
+   * @example
+   * ```ts
+   * // The game code changed; reload it and keep the board.
+   * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+   * ```
+   */
   reload(opts?: { restore?: boolean }): Promise<ReloadResult>;
-  /** Docks the frame over a stage slot (geometry only); returns the release function. */
+
+  /**
+   * Docks the frame over a stage slot (geometry only).
+   *
+   * @param slot - The stage slot.
+   * @param opts - `fit` and an optional clip element.
+   * @param opts.fit - How the device fits the slot.
+   * @param opts.clip - The element that clips the frame.
+   * @returns The release function.
+   * @example
+   * ```ts
+   * // The Game workspace shows the game in its stage.
+   * const release = app.workspace.gameFrame().dock(stage, { fit: "fit" });
+   * app.workspace.gameFrame().box()?.docked; // "stage"
+   * release(); // box()?.docked is "hidden"
+   * ```
+   */
   dock(slot: HTMLElement, opts: { fit: FrameFit; clip?: HTMLElement }): () => void;
-  /** Element above the iframe in device space (game CSS px). */
+
+  /**
+   * The element above the iframe in device space (game CSS px, scaled with the frame). Its
+   * pointer-events are none by default.
+   *
+   * @returns The overlay element.
+   * @example
+   * ```ts
+   * // renderView draws its highlight boxes in game CSS px, wherever the frame is docked.
+   * ctx.require(workspacePlugin).gameFrame().overlay().append(document.createElement("div"));
+   * ```
+   */
   overlay(): HTMLElement;
-  /** Current frame box, undefined before the first mount. */
+
+  /**
+   * The current frame box in tools-page px.
+   *
+   * @returns A copy, undefined before the first mount.
+   * @example
+   * ```ts
+   * // The frame floats in a preview at half size.
+   * app.workspace.gameFrame().box()?.scale; // 0.5
+   * ```
+   */
   box(): FrameBox | undefined;
 };
 
@@ -291,40 +356,325 @@ export type EscLayer =
  *
  * @example
  * ```ts
+ * // Save a note, then show the game.
+ * app.workspace.toast("✓ Note saved", ".moku/notes/a.md");
  * app.workspace.show("game");
- * app.workspace.toast("✓ Note saved", ".moku/notes/2026-09-24-first-top-item.md");
  * ```
  */
 export type WorkspaceApi = {
+  /**
+   * The shown workspace.
+   *
+   * @returns Its id.
+   * @example
+   * ```ts
+   * app.workspace.active(); // "flow" with the default config
+   * ```
+   */
   active(): WorkspaceId;
+
+  /**
+   * Shows a workspace. Emits `workspace:changed` only when it changes, and writes `#<ws>` into the
+   * URL.
+   *
+   * @param ws - The workspace.
+   * @throws {Error} `[moku-editor] Unknown workspace "<ws>".` for another id.
+   * @example
+   * ```ts
+   * app.workspace.show("game"); // emits workspace:changed { ws: "game" }; location.hash is "#game"
+   * ```
+   */
   show(ws: WorkspaceId): void;
+
+  /**
+   * The effective theme: the chosen one, else the OS one.
+   *
+   * @returns light or dark.
+   * @example
+   * ```ts
+   * app.workspace.theme(); // "light" on a light OS with no choice made
+   * ```
+   */
   theme(): Theme;
+
+  /**
+   * Sets the theme, or toggles it when omitted; persists the choice and sets `data-theme`.
+   *
+   * @param theme - The theme, omitted to toggle.
+   * @example
+   * ```ts
+   * app.workspace.setTheme(); // light → dark
+   * app.workspace.theme(); // "dark"
+   * ```
+   */
   setTheme(theme?: Theme): void;
+
+  /**
+   * The preview state of a non-Game workspace.
+   *
+   * @param ws - The workspace.
+   * @returns The prefs plus the float size in px.
+   * @example
+   * ```ts
+   * app.workspace.preview("flow");
+   * // { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 }
+   * ```
+   */
   preview(ws: PreviewWorkspace): PreviewState;
+
+  /**
+   * Patches the preview prefs and persists them. A visibility change shows a toast.
+   *
+   * @param ws - The workspace.
+   * @param patch - visible, size and/or corner.
+   * @example
+   * ```ts
+   * app.workspace.setPreview("render", { visible: false });
+   * // toast: "Game preview hidden in Render · remembered for this workspace"
+   * ```
+   */
   setPreview(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>): void;
+
+  /**
+   * The current device: the preset (DeviceSpec) and the orientation.
+   *
+   * @returns The device choice.
+   * @example
+   * ```ts
+   * app.workspace.device().preset.w; // 393: the default iPhone 15
+   * ```
+   */
   device(): DeviceChoice;
+
+  /**
+   * Changes the preset and/or the orientation; the frame resizes; the choice persists and
+   * `onPrefs` listeners run.
+   *
+   * @param patch - The preset and/or the orientation.
+   * @param patch.preset - A preset id.
+   * @param patch.orientation - portrait or landscape.
+   * @throws {Error} `[moku-editor] Unknown device "<id>".` for an unknown preset.
+   * @example
+   * ```ts
+   * app.workspace.setDevice({ preset: "ipad-mini", orientation: "landscape" });
+   * app.workspace.device().preset.name; // "iPad mini"
+   * ```
+   */
   setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation }): void;
+
+  /**
+   * The six presets in display order.
+   *
+   * @returns The DeviceSpec list.
+   * @example
+   * ```ts
+   * app.workspace.devices().map(device => device.id);
+   * // ["iphone-se", "iphone-15", "iphone-15-pro-max", "pixel-8", "ipad-mini", "desktop"]
+   * ```
+   */
   devices(): readonly DeviceSpec[];
+
+  /**
+   * The single game frame.
+   *
+   * @returns The GameFrame api: one object for the app's life.
+   * @example
+   * ```ts
+   * app.workspace.gameFrame() === app.workspace.gameFrame(); // true
+   * ```
+   */
   gameFrame(): GameFrame;
+
+  /**
+   * The command palette.
+   *
+   * @example
+   * ```ts
+   * // A view adds its own command and opens the palette on it.
+   * app.workspace.palette.add({ id: "cmd:capture", group: "Commands", label: "Capture", run: () => {} });
+   * app.workspace.palette.open("capture");
+   * ```
+   */
   palette: {
+    /**
+     * Adds palette items; an existing id is replaced.
+     *
+     * @param item - One item or many.
+     * @returns Removes them.
+     * @example
+     * ```ts
+     * // flowView lists every node of the flow graph.
+     * const remove = app.workspace.palette.add({ id: "node:a", group: "Nodes", label: "a", run: () => {} });
+     * remove(); // the item leaves the palette
+     * ```
+     */
     add(item: PaletteItem | readonly PaletteItem[]): () => void;
+
+    /**
+     * Opens the palette.
+     *
+     * @param query - The initial query.
+     * @example
+     * ```ts
+     * app.workspace.palette.open("merge"); // the palette shows the matches of "merge"
+     * ```
+     */
     open(query?: string): void;
   };
+
+  /**
+   * Shows a toast; `file` renders in mono after a middle dot.
+   *
+   * @param message - One line.
+   * @param file - A file to name.
+   * @example
+   * ```ts
+   * app.workspace.toast("✓ Note saved", ".moku/notes/a.md");
+   * ```
+   */
   toast(message: string, file?: string): void;
+
+  /**
+   * Mounts the shell. The first call also creates the frame layer and the iframe.
+   *
+   * @param element - The mount element.
+   * @example
+   * ```ts
+   * // The tools page entry mounts the shell after start.
+   * await app.start();
+   * app.workspace.mount(document.body);
+   * ```
+   */
   mount(element: HTMLElement): void;
+
+  /**
+   * The host element of a workspace: created on the first call, also before mount, and kept
+   * after it.
+   *
+   * @param ws - The workspace.
+   * @returns The host.
+   * @example
+   * ```ts
+   * // panels mounts the Flow panels into the Flow host.
+   * const unmount = app.panels.mountInto("flow", app.workspace.host("flow"));
+   * ```
+   */
   host(ws: WorkspaceId): HTMLElement;
+
+  /**
+   * Sets or clears the rail badge of a workspace.
+   *
+   * @param ws - The workspace.
+   * @param badge - The badge, undefined to clear.
+   * @example
+   * ```ts
+   * // The console counts 2 warnings and 1 error.
+   * app.workspace.badge("console", { count: 3, tone: "error", label: "2 warn · 1 error" });
+   * app.workspace.badge("console", undefined); // clears it
+   * ```
+   */
   badge(ws: WorkspaceId, badge: Badge | undefined): void;
+
+  /**
+   * Where the preview floats in a workspace. The remover drops the zone unless a newer zone
+   * replaced it.
+   *
+   * @param ws - The workspace.
+   * @param element - The zone element.
+   * @param insets - Insets in px, or a function that reads them.
+   * @returns Removes the zone.
+   * @example
+   * ```ts
+   * // The flow panel keeps the preview inside its canvas, clear of the 56 px bars.
+   * const remove = app.workspace.previewZone("flow", canvas, { top: 56, bottom: 56 });
+   * ```
+   */
   previewZone(
     ws: PreviewWorkspace,
     element: HTMLElement,
     insets?: Insets | (() => Insets)
   ): () => void;
+
+  /**
+   * The keyboard: bindings and Esc layers.
+   *
+   * @example
+   * ```ts
+   * // flowView binds "n" in Flow and closes its note editor on Esc.
+   * app.workspace.keys.bind({ keys: "n", label: "New note", workspace: "flow", run: () => {} });
+   * app.workspace.keys.escape("noteEditor", () => true);
+   * ```
+   */
   keys: {
+    /**
+     * Adds a key binding. Two bindings of one scope may share a combo only when one of them has a
+     * `when` condition.
+     *
+     * @param binding - The binding.
+     * @returns Removes it.
+     * @throws {Error} `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash.
+     * @example
+     * ```ts
+     * // flowView: "n" opens a new note while Flow is shown.
+     * const off = app.workspace.keys.bind({ keys: "n", label: "New note", workspace: "flow", run: () => {} });
+     * off();
+     * ```
+     */
     bind(binding: KeyBinding): () => void;
+
+    /**
+     * Adds an Esc closer on a layer. Esc unwinds the open layers in rank order.
+     *
+     * @param layer - The layer.
+     * @param close - Returns true when it closed something.
+     * @returns Removes it.
+     * @example
+     * ```ts
+     * // The note editor closes on Esc before the registry popover does.
+     * const off = app.workspace.keys.escape("noteEditor", () => true);
+     * off();
+     * ```
+     */
     escape(layer: EscLayer, close: () => boolean): () => void;
   };
+
+  /**
+   * The overlay-in-game flag. Always false at load; never persisted.
+   *
+   * @returns Whether it is on.
+   * @example
+   * ```ts
+   * app.workspace.overlayInGame(); // false
+   * ```
+   */
   overlayInGame(): boolean;
+
+  /**
+   * Sets the overlay-in-game flag: runs `editor.overlay` with origin `panel`.
+   *
+   * @param on - The new flag.
+   * @returns Resolves when the run settled.
+   * @example
+   * ```ts
+   * await app.workspace.setOverlayInGame(true); // emits workspace:ran { id: "editor.overlay", … }
+   * app.workspace.overlayInGame(); // true
+   * ```
+   */
   setOverlayInGame(on: boolean): Promise<void>;
+
+  /**
+   * Listens to preference changes (theme, preview, device). A throwing listener is logged and
+   * does not stop the others.
+   *
+   * @param fn - The listener.
+   * @returns Removes it.
+   * @example
+   * ```ts
+   * const off = app.workspace.onPrefs(prefs => console.log(prefs.theme));
+   * app.workspace.setTheme("dark"); // logs "dark"
+   * off();
+   * ```
+   */
   onPrefs(fn: (prefs: Prefs) => void): () => void;
 };
 
@@ -396,8 +746,18 @@ export type FrameState = {
  * The tiny store the Preact components re-render from.
  */
 export type UiStore = {
+  /** Raised by one on every `bump()`; starts at 0. */
   version: number;
+  /**
+   * Adds a subscriber.
+   *
+   * @param fn - Called after every bump.
+   * @returns Unsubscribe: later bumps no longer call `fn`.
+   */
   subscribe(fn: () => void): () => void;
+  /**
+   * Raises the version and calls every subscriber.
+   */
   bump(): void;
 };
 

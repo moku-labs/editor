@@ -16,10 +16,6 @@ import type { FlowViewConfig, FlowViewState } from "./types";
  * @param _ctx - Minimal context (the config is not needed: every slice starts empty).
  * @param _ctx.config - Resolved plugin config.
  * @returns The state.
- * @example
- * ```ts
- * createFlowViewState({ config }).data.stale; // false
- * ```
  */
 export function createFlowViewState(_ctx: {
   readonly config: Readonly<FlowViewConfig>;
@@ -59,11 +55,6 @@ export function createFlowViewState(_ctx: {
  * Tells the components that data changed: bumps the revision, calls every data subscriber.
  *
  * @param state - The flowView state.
- * @example
- * ```ts
- * ctx.state.focus.selected = "main/home";
- * notify(ctx.state);
- * ```
  */
 export function notify(state: FlowViewState): void {
   state.view.revision += 1;
@@ -74,10 +65,6 @@ export function notify(state: FlowViewState): void {
  * Tells the camera subscribers that the camera moved.
  *
  * @param state - The flowView state.
- * @example
- * ```ts
- * notifyCamera(ctx.state);
- * ```
  */
 export function notifyCamera(state: FlowViewState): void {
   for (const listener of state.view.cameraListeners) listener();
@@ -90,10 +77,6 @@ export function notifyCamera(state: FlowViewState): void {
  * @param listener - Called on every notify.
  * @param channel - "data" (default) or "camera".
  * @returns The unsubscribe function.
- * @example
- * ```ts
- * const stop = subscribe(ctx.state, () => rerender(), "camera");
- * ```
  */
 export function subscribe(
   state: FlowViewState,

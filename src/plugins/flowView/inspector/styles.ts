@@ -81,7 +81,7 @@ function textBlocks(blocks: readonly StyleBlock[]): StyleBlock[] {
  * @returns The keys.
  * @example
  * ```ts
- * keysOf(blocks); // ["ui.title", "ui.button", …]
+ * keysOf([{ ref: { kind: "text", key: "ui.title" }, line: 3, endLine: 6, fields: [] }]); // ["ui.title"]
  * ```
  */
 export function keysOf(blocks: readonly StyleBlock[]): string[] {
@@ -89,16 +89,13 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
 }
 
 /**
- * Loads the styles file into the Styles tab and replaces the palette group Styles.
+ * Loads the styles file into the Styles tab and replaces the palette group Styles. A load that
+ * lands after the user chose a card or pressed a stepper keeps that card and the pending step.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
- * @param key - The card to select; default the first key.
+ * @param key - The card to select; default the card already chosen, else the first key.
  * @returns Resolves when loaded.
- * @example
- * ```ts
- * await openStyles(ctx, env, "ui.number");
- * ```
  */
 export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
   const { inspector } = ctx.state;
@@ -120,12 +117,15 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
   }
   const blocks = textBlocks(loaded.file.blocks);
   const keys = keysOf(blocks);
+  const chosen = [key, inspector.styles?.key].find(
+    candidate => candidate !== undefined && keys.includes(candidate)
+  );
   inspector.styles = {
     text: loaded.text,
     version: loaded.version,
     blocks,
-    key: key !== undefined && keys.includes(key) ? key : keys[0],
-    pending: undefined,
+    key: chosen ?? keys[0],
+    pending: inspector.styles?.pending,
     result: undefined,
     error: undefined
   };
@@ -139,10 +139,6 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns Resolves when the result line is set.
- * @example
- * ```ts
- * await writeStyle(ctx, env);
- * ```
  */
 export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
   const styles = ctx.state.inspector.styles;
@@ -205,10 +201,6 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
  * @param path - The field path ("size", "shadow.dy").
  * @param direction - 1 up, -1 down.
  * @param big - Shift held.
- * @example
- * ```ts
- * stepStyle(ctx, env, "size", 1, false);
- * ```
  */
 export function stepStyle(
   ctx: FlowCtx,
@@ -268,10 +260,6 @@ export function usedByOf(ui: Json, key: string): string[] {
    * Collects the matching nodes of one value and its children.
    *
    * @param value - A part of game.ui.
-   * @example
-   * ```ts
-   * visit(ui);
-   * ```
    */
   function visit(value: Json): void {
     if (Array.isArray(value)) {

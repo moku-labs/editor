@@ -22,11 +22,6 @@ export const PREVIEW_SIZES: Readonly<
 
 /**
  * Margin between the preview float and its zone edge, in px.
- *
- * @example
- * ```ts
- * floatRect(zone, insets, corner, size); // keeps PREVIEW_MARGIN from the corner
- * ```
  */
 export const PREVIEW_MARGIN = 12;
 
@@ -34,6 +29,22 @@ export const PREVIEW_MARGIN = 12;
  * Insets with every side present.
  */
 export type FullInsets = { top: number; right: number; bottom: number; left: number };
+
+/**
+ * True for a size with no area: a zero or negative width or height.
+ *
+ * @param size - The size.
+ * @param size.w - Width.
+ * @param size.h - Height.
+ * @returns Whether the size is empty.
+ * @example
+ * ```ts
+ * isEmpty({ w: 393, h: 0 }); // true
+ * ```
+ */
+function isEmpty(size: { readonly w: number; readonly h: number }): boolean {
+  return size.w <= 0 || size.h <= 0;
+}
 
 /**
  * The scale of the device in a slot: `fit` = the smaller ratio (capped at 1 for the stage),
@@ -60,7 +71,7 @@ export function fitScale(
   cap: boolean
 ): number {
   if (fit === "actual") return 1;
-  if (slot.w <= 0 || slot.h <= 0 || device.w <= 0 || device.h <= 0) return 0;
+  if (isEmpty(slot) || isEmpty(device)) return 0;
 
   const scale = Math.min(slot.w / device.w, slot.h / device.h);
   return cap ? Math.min(scale, 1) : scale;
@@ -115,7 +126,10 @@ function toLocal(pagePx: number, scale: number): number {
  * @returns Insets in local px, never negative.
  * @example
  * ```ts
- * clipInsets(box, host.getBoundingClientRect());
+ * clipInsets(
+ *   { left: 0, top: 0, width: 400, height: 800, scale: 0.5, docked: "stage" },
+ *   { left: 0, top: 20, width: 400, height: 760 }
+ * ); // { top: 40, right: 0, bottom: 40, left: 0 }
  * ```
  */
 export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
@@ -139,7 +153,7 @@ export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
  * @returns The corner.
  * @example
  * ```ts
- * nearestCorner({ x: 10, y: 10 }, zoneRect); // "top-left"
+ * nearestCorner({ x: 10, y: 10 }, { left: 0, top: 0, width: 800, height: 600 }); // "top-left"
  * ```
  */
 export function nearestCorner(
@@ -159,7 +173,7 @@ export function nearestCorner(
  * @returns The four sides.
  * @example
  * ```ts
- * resolveInsets(() => ({ bottom: stripOpen ? 208 : 56 }));
+ * resolveInsets({ bottom: 56 }); // { top: 0, right: 0, bottom: 56, left: 0 }
  * ```
  */
 export function resolveInsets(insets: Insets | (() => Insets) | undefined): FullInsets {
@@ -185,7 +199,9 @@ export function resolveInsets(insets: Insets | (() => Insets) | undefined): Full
  * @returns The float rect.
  * @example
  * ```ts
- * floatRect(zoneRect, resolveInsets(zone.insets), "bottom-right", PREVIEW_SIZES.S);
+ * const zone = { left: 0, top: 0, width: 800, height: 600 };
+ * const noInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+ * floatRect(zone, noInsets, "bottom-right", PREVIEW_SIZES.S); // { left: 638, top: 308, width: 150, height: 280 }
  * ```
  */
 export function floatRect(

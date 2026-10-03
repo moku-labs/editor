@@ -14,10 +14,6 @@ import type { RenderViewCtx, RenderViewState } from "./types";
  *
  * @param state - renderView state (`box`, `scene`).
  * @returns The rect, or undefined when nothing can be drawn.
- * @example
- * ```ts
- * boxRect(ctx.state); // { x: 55, y: 801, w: 970, h: 970 } for the merge-game board slot
- * ```
  */
 function boxRect(state: RenderViewState): PageRect | undefined {
   const { box, scene } = state;
@@ -30,11 +26,6 @@ function boxRect(state: RenderViewState): PageRect | undefined {
  * clears it.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * ctx.state.box = { kind: "ui", path: "boardScreen/boardSlot" };
- * drawBox(ctx);
- * ```
  */
 export function drawBox(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -54,10 +45,6 @@ export function drawBox(ctx: RenderViewCtx): void {
  * Unmounts and removes renderView's overlay root (onStop).
  *
  * @param state - renderView state.
- * @example
- * ```ts
- * removeOverlay(ctx.state); // ctx.state.overlayRoot === undefined
- * ```
  */
 export function removeOverlay(state: RenderViewState): void {
   const root = state.overlayRoot;

@@ -88,7 +88,7 @@ describe("highlightElement", () => {
     ctx.state.scene = boardScene();
     highlightElement(ctx, COIN);
     expect(ctx.state.treeHover).toEqual(COIN);
-    expect(ctx.state.overlayRoot).toBeDefined();
+    expect(ctx.state.overlayRoot?.dataset.game).toBe("overlay");
     highlightElement(ctx, undefined);
     expect(ctx.state.treeHover).toBeUndefined();
   });
@@ -111,7 +111,9 @@ describe("highlightElement", () => {
     highlightElement(ctx, COIN);
     await flush();
     expect(ctx.state.treeHover).toBeUndefined();
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: highlight failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: highlight failed", {
+      message: "no value for game.ui"
+    });
   });
 });
 

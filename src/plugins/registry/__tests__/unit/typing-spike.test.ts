@@ -91,8 +91,8 @@ describe("typing spike (S1)", () => {
       commands: Object.values(commands)
     };
 
-    expect(module.sources).toHaveLength(14);
-    expect(module.commands).toHaveLength(13);
+    expect(module.sources).toHaveLength(15);
+    expect(module.commands).toHaveLength(14);
   });
 
   it("fits a defineCommand with App = GameLike and an optional json field into DoorCommand", () => {
@@ -117,7 +117,7 @@ describe("typing spike (S1)", () => {
     const { app } = createGame();
     const input: InputOf<InputSchema> = {};
 
-    expect(readErased(app, sources.position, input)).toMatchObject({ path: expect.any(String) });
+    expect(readErased(app, sources.position, input)).toEqual(read(app, sources.position));
     const stop = watchErased(app, sources.position, input, () => undefined);
     stop();
     await expect(runErased(app, commands.step, { frames: 1 })).rejects.toThrow(/dev builds only/);

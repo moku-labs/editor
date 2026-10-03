@@ -1,8 +1,8 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" and JSON null */
 import { readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { read, sources } from "@moku-labs/game/inspect";
 import { describe, expect, it } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import {
   flowFile,
@@ -230,11 +230,10 @@ describe("parseOverrides", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("merge-game fixture", () => {
-  const root = fileURLToPath(
-    new URL("../../../../../../game/tests/integration/merge-game/", import.meta.url)
-  );
   const files = new Set(
-    readdirSync(root, { recursive: true, encoding: "utf8" }).map(path => path.replaceAll("\\", "/"))
+    readdirSync(MERGE_GAME_DIR, { recursive: true, encoding: "utf8" }).map(path =>
+      path.replaceAll("\\", "/")
+    )
   );
   const exists = (path: string): boolean => files.has(path);
 
@@ -243,7 +242,7 @@ describe("merge-game fixture", () => {
     const graph = read(createGame().app, sources.graph);
     const node = graph.flows.board?.nodes.awaitIntent;
 
-    expect(node).toBeDefined();
+    expect(node).toMatchObject({ flow: "board", node: "awaitIntent", rest: true, scene: "board" });
     expect(nodeFile({ flow: "board", node: "awaitIntent" }, node, {}, exists)).toBe(
       "nodes/await-intent.ts"
     );
@@ -267,7 +266,7 @@ describe("merge-game fixture", () => {
 
     const names = Object.keys(settings?.nodes ?? {});
 
-    expect(names.length).toBeGreaterThan(0);
+    expect(names).toEqual(["enter", "open", "setVolume", "setLocale", "rename", "confirm"]);
     // The override is step 1: it applies to every node of the flow, before the sub-flow rule.
     for (const name of names) {
       const node = settings?.nodes[name];

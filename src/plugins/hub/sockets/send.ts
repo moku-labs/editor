@@ -29,10 +29,6 @@ export const JSON_NULL = null;
  *
  * @param conn - The connection.
  * @param message - The wire message.
- * @example
- * ```ts
- * sendJson(conn, success(id, JSON_NULL));
- * ```
  */
 export function sendJson(conn: Conn, message: Message): void {
   const sent = conn.socket.send(encode(message));
@@ -44,10 +40,6 @@ export function sendJson(conn: Conn, message: Message): void {
  *
  * @param conn - The tools connection.
  * @param message - The wire message.
- * @example
- * ```ts
- * sendDroppable(conn, notification("game", "heartbeat", beat, session));
- * ```
  */
 export function sendDroppable(conn: ToolsConn, message: Message): void {
   if (!conn.congested) sendJson(conn, message);
@@ -61,10 +53,6 @@ export function sendDroppable(conn: ToolsConn, message: Message): void {
  * @param sub - The tools sub id.
  * @param session - The session the value comes from.
  * @param value - The value.
- * @example
- * ```ts
- * sendValue(conn, 4, "s-7f3a", { frame: 12 });
- * ```
  */
 export function sendValue(conn: ToolsConn, sub: SubId, session: string, value: Json): void {
   if (conn.congested) {
@@ -79,10 +67,6 @@ export function sendValue(conn: ToolsConn, sub: SubId, session: string, value: J
  * backpressure again keeps the rest in the backlog.
  *
  * @param conn - The tools connection.
- * @example
- * ```ts
- * drain(ws) { flushBacklog(conn); }
- * ```
  */
 export function flushBacklog(conn: ToolsConn): void {
   conn.congested = false;
@@ -97,10 +81,6 @@ export function flushBacklog(conn: ToolsConn): void {
  *
  * @param state - Hub state.
  * @returns The tools conns, in connection order.
- * @example
- * ```ts
- * for (const conn of toolsConns(state)) sendJson(conn, note);
- * ```
  */
 export function toolsConns(state: HubState): ToolsConn[] {
   return [...state.conns.values()].filter(conn => conn.kind === "tools");
@@ -112,10 +92,6 @@ export function toolsConns(state: HubState): ToolsConn[] {
  * @param state - Hub state.
  * @param conn - Connection number.
  * @returns The tools conn.
- * @example
- * ```ts
- * const target = toolsConn(state, reply.conn);
- * ```
  */
 export function toolsConn(state: HubState, conn: number): ToolsConn | undefined {
   const found = state.conns.get(conn);
@@ -126,10 +102,6 @@ export function toolsConn(state: HubState, conn: number): ToolsConn | undefined 
  * Counts one invalid message of a connection; the tenth closes it with 1008.
  *
  * @param conn - The connection.
- * @example
- * ```ts
- * if (message === undefined) strike(conn);
- * ```
  */
 export function strike(conn: Conn): void {
   conn.invalid += 1;

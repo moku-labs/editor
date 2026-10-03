@@ -98,7 +98,14 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
     await settle(() => {
       items[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
-    expect(ctx.state.notes.editor).toBeDefined();
+    const { cam } = ctx.state.camera;
+    expect(ctx.state.notes.editor).toEqual({
+      title: "",
+      body: "",
+      from: undefined,
+      captures: [],
+      anchor: { x: (10 - cam.x) / cam.z, y: (10 - cam.y) / cam.z }
+    });
     expect(ctx.state.focus.menu).toBeUndefined();
     unmount();
   });

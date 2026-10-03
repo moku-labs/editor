@@ -24,10 +24,6 @@ export function pageHref(): string | undefined {
  * @param selector - CSS selector of the JSON script tag (config.boot).
  * @param doc - The document, undefined outside a page.
  * @returns The boot data; undefined for a missing tag, bad JSON, another `v` or a missing field.
- * @example
- * ```ts
- * const boot = readBoot("#moku-editor-boot", globalThis.document);
- * ```
  */
 export function readBoot(selector: string, doc: Document | undefined): ToolsBoot | undefined {
   try {
@@ -47,10 +43,6 @@ export function readBoot(selector: string, doc: Document | undefined): ToolsBoot
  *
  * @param boot - The current boot data.
  * @returns The refreshed boot, or undefined when the fetch fails or answers a bad body.
- * @example
- * ```ts
- * const fresh = await refreshBoot(state.boot);
- * ```
  */
 export async function refreshBoot(boot: ToolsBoot): Promise<ToolsBoot | undefined> {
   try {

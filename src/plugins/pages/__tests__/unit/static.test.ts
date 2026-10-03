@@ -101,8 +101,9 @@ describe("createStaticFetch", () => {
   it("checks with the navigate mode", async () => {
     const spy = vi.fn(() => undefined);
     const fetcher = createStaticFetch(root, spy);
-    await fetcher(request("/manifest.json"), SERVER);
-    expect(spy).toHaveBeenCalledWith(expect.any(Request), SERVER, "navigate");
+    const manifest = request("/manifest.json");
+    await fetcher(manifest, SERVER);
+    expect(spy).toHaveBeenCalledWith(manifest, SERVER, "navigate");
   });
 
   it("answers 404 for every path when the root does not exist", async () => {

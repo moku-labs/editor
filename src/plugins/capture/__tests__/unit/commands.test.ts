@@ -190,7 +190,7 @@ describe("editor.series", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
     const ran = await first;
-    expect(ran.value).toMatchObject({ shots: expect.any(Array) });
+    expect(ran.value).toMatchObject({ shots: Array.from({ length: 10 }, () => ({ image: PNG })) });
     expect(deps.state.series).toBeUndefined();
   });
 });

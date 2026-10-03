@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StyleEditCode } from "../../../panels/shared/style-edit";
 import { actionsOf } from "../../actions";
 import { styleErrorText } from "../../inspector/styles";
-import { createTestCtx, flush } from "../ctx";
+import { createTestCtx, flush, holdReads } from "../ctx";
 
 const STYLES = "features/ui/styles.ts";
 const fixture = readFileSync(new URL("../fixtures/ui-styles.txt", import.meta.url), "utf8");
@@ -33,6 +33,32 @@ describe("openStyles", () => {
     expect(ctx.state.inspector.styles?.key).toBe("ui.number");
     actionsOf(ctx).inspector.selectStyle("ui.plank");
     expect(ctx.state.inspector.styles?.key).toBe("ui.plank");
+  });
+
+  it("a late load keeps the chosen card and the pending step, so the step is written", async () => {
+    const { ctx, fakes } = createTestCtx({ files: { [STYLES]: fixture } });
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles();
+    const release = holdReads(fakes.files, STYLES);
+    const late = inspector.openStyles();
+    inspector.selectStyle("ui.number");
+    inspector.stepStyle("size", 1, false);
+    release();
+    await late;
+    expect(ctx.state.inspector.styles?.key).toBe("ui.number");
+    expect(ctx.state.inspector.styles?.pending?.next).toBe(61);
+    await settle(600);
+    expect(fakes.files.writes).toHaveLength(1);
+    expect((fakes.files.writes[0]?.text ?? "").split("\n")[73]).toBe("    size: 61,");
+  });
+
+  it("an asked key still wins over the chosen card", async () => {
+    const { ctx } = createTestCtx({ files: { [STYLES]: fixture } });
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles();
+    inspector.selectStyle("ui.plank");
+    await inspector.openStyles("ui.number");
+    expect(ctx.state.inspector.styles?.key).toBe("ui.number");
   });
 
   it("a missing file shows the no-file reason", async () => {

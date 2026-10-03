@@ -77,7 +77,7 @@ describe("composeLayout", () => {
     expect(inside(board, root)).toBe(true);
     expect(get(result, "main/settings").kind).toBe("node");
     expect(result.frames.map(frame => frame.key)).toEqual(["#main", "main/board"]);
-    expect(result.origins["main/board|board"]).toBeDefined();
+    expect(result.origins["main/board|board"]).toEqual({ x: 1010, y: 138 });
     expect(result.lanes).toHaveLength(8);
     expect(result.items.filter(entry => entry.kind === "stub").length).toBeGreaterThan(14);
   });

@@ -19,10 +19,6 @@ export type StaleBarProps = { readonly ctx: WorkspaceCtx };
  *
  * @param props - The workspace domain context.
  * @returns The bar (hidden while the data is fresh).
- * @example
- * ```tsx
- * <StaleBar ctx={ctx} />
- * ```
  */
 export function StaleBar(props: StaleBarProps): VNode {
   const { ctx } = props;

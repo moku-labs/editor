@@ -32,10 +32,6 @@ const FOCUS_STEPS: Readonly<Record<string, number>> = { ArrowDown: 1, ArrowUp: -
  * Moves the focus to the previous or next rail button (↑/↓, wrapping).
  *
  * @param event - The keydown on the rail.
- * @example
- * ```tsx
- * <nav onKeyDown={moveFocus} />
- * ```
  */
 function moveFocus(event: KeyboardEvent): void {
   const step = FOCUS_STEPS[event.key];
@@ -55,10 +51,6 @@ function moveFocus(event: KeyboardEvent): void {
  *
  * @param props - The workspace domain context.
  * @returns The navigation.
- * @example
- * ```tsx
- * <Rail ctx={ctx} />
- * ```
  */
 export function Rail(props: RailProps): VNode {
   const { ctx } = props;

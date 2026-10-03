@@ -27,10 +27,6 @@ export type HubProps = {
  *
  * @param props - Context, actions, the hub item and its view.
  * @returns The hub.
- * @example
- * ```tsx
- * <Hub ctx={ctx} actions={actions} item={hub} view={world.hubs.get(hub.key)} />
- * ```
  */
 export function Hub(props: HubProps): VNode {
   const { item, view } = props;

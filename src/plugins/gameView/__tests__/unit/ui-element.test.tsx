@@ -186,7 +186,7 @@ describe("ElementTab", () => {
       ctx.state.manifest = undefined;
       notify(ctx.state);
     });
-    await select({ kind: "entity", id: 1_048_639 });
+    await select({ kind: "entity", id: 1_048_640 });
     expect(view.root.textContent).toContain("Not placed on screen.");
 
     ctx.link.files.put("manifest.json", "{}");

@@ -17,10 +17,6 @@ import type { RenderViewCtx, RenderViewState, TextureSortKey, TreeRow } from "./
  *
  * @param state - renderView state (`scene`, `tree`).
  * @param id - The node id.
- * @example
- * ```ts
- * selectWithAncestors(ctx.state, "entity:3145728"); // opens ui:boardScreen and its boardSlot
- * ```
  */
 function selectWithAncestors(state: RenderViewState, id: string): void {
   if (state.scene !== undefined) {
@@ -35,10 +31,6 @@ function selectWithAncestors(state: RenderViewState, id: string): void {
  *
  * @param ctx - Domain context of renderView.
  * @param ref - The element.
- * @example
- * ```ts
- * revealRef(ctx, { kind: "entity", id: 3_145_728 }); // ctx.state.tree.selected === "entity:3145728"
- * ```
  */
 export function revealRef(ctx: RenderViewCtx, ref: ElementRef): void {
   const { state } = ctx;
@@ -58,10 +50,6 @@ export function revealRef(ctx: RenderViewCtx, ref: ElementRef): void {
  * Applies a waiting reveal to the scene just built (selected even when it is not in it).
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * applyPendingReveal(ctx); // after buildScene: the waiting row is selected
- * ```
  */
 export function applyPendingReveal(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -77,10 +65,6 @@ export function applyPendingReveal(ctx: RenderViewCtx): void {
  *
  * @param ctx - Domain context of renderView.
  * @param id - The node id.
- * @example
- * ```ts
- * selectNode(ctx, "ui:boardScreen/boardSlot");
- * ```
  */
 export function selectNode(ctx: RenderViewCtx, id: string): void {
   ctx.state.tree.selected = id;
@@ -93,10 +77,6 @@ export function selectNode(ctx: RenderViewCtx, id: string): void {
  * @param ctx - Domain context of renderView.
  * @param id - The node id.
  * @param open - Open (true), close (false), or flip (undefined).
- * @example
- * ```ts
- * setOpen(ctx, "ui:boardScreen", false); // the row's subtree hides
- * ```
  */
 export function setOpen(ctx: RenderViewCtx, id: string, open?: boolean): void {
   const { tree } = ctx.state;
@@ -111,10 +91,6 @@ export function setOpen(ctx: RenderViewCtx, id: string, open?: boolean): void {
  * Opens every scene node with children (C9 "Expand all").
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * expandAll(ctx); // every row of the scene is visible
- * ```
  */
 export function expandAll(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -128,10 +104,6 @@ export function expandAll(ctx: RenderViewCtx): void {
  * Closes every row (C9 "Collapse").
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * collapseAll(ctx); // only the roots are visible
- * ```
  */
 export function collapseAll(ctx: RenderViewCtx): void {
   ctx.state.tree.open.clear();
@@ -143,10 +115,6 @@ export function collapseAll(ctx: RenderViewCtx): void {
  *
  * @param ctx - Domain context of renderView.
  * @param key - The column.
- * @example
- * ```ts
- * sortBy(ctx, "key"); // ctx.state.table → { sort: "key", dir: 1, ... }
- * ```
  */
 export function sortBy(ctx: RenderViewCtx, key: TextureSortKey): void {
   const { table } = ctx.state;
@@ -162,10 +130,6 @@ export function sortBy(ctx: RenderViewCtx, key: TextureSortKey): void {
  *
  * @param ctx - Domain context of renderView.
  * @param bundle - "all" or a bundle name.
- * @example
- * ```ts
- * filterTo(ctx, "ui");
- * ```
  */
 export function filterTo(ctx: RenderViewCtx, bundle: string): void {
   ctx.state.table.bundle = bundle;
@@ -177,10 +141,6 @@ export function filterTo(ctx: RenderViewCtx, bundle: string): void {
  *
  * @param ctx - Domain context of renderView.
  * @param ref - The element, or undefined.
- * @example
- * ```ts
- * highlightRef(ctx, { kind: "ui", path: "boardScreen/boardSlot" });
- * ```
  */
 export function highlightRef(ctx: RenderViewCtx, ref?: ElementRef): void {
   ctx.state.box = ref;
@@ -192,10 +152,6 @@ export function highlightRef(ctx: RenderViewCtx, ref?: ElementRef): void {
  *
  * @param ctx - Domain context of renderView.
  * @param key - The texture key, or undefined on leave.
- * @example
- * ```ts
- * hoverTexture(ctx, "board.cell"); // rings entity:3145728
- * ```
  */
 export function hoverTexture(ctx: RenderViewCtx, key?: string): void {
   const { state } = ctx;
@@ -208,10 +164,6 @@ export function hoverTexture(ctx: RenderViewCtx, key?: string): void {
  *
  * @param ctx - Domain context of renderView.
  * @param ref - The element.
- * @example
- * ```ts
- * inspectInGame(ctx, { kind: "entity", id: 3_145_728 });
- * ```
  */
 export function inspectInGame(ctx: RenderViewCtx, ref: ElementRef): void {
   ctx.emit("workspace:inspect", { ref });
@@ -222,10 +174,6 @@ export function inspectInGame(ctx: RenderViewCtx, ref: ElementRef): void {
  * the table to its bundle and reveals the first scene node drawing it.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * setTexturePalette(ctx); // ⌘K "board.cell" → Render, bundle board, the cell selected
- * ```
  */
 export function setTexturePalette(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -242,11 +190,6 @@ export function setTexturePalette(ctx: RenderViewCtx): void {
     hint: `${texture.bundle} · ${texture.width}×${texture.height}`,
     /**
      * Shows Render, filters the table to the texture's bundle and reveals the first node drawing it.
-     *
-     * @example
-     * ```ts
-     * workspace.palette.open("board.cell"); // ↵ runs it: Render, bundle "board", the cell selected
-     * ```
      */
     run: () => {
       workspace.show("render");
@@ -264,10 +207,6 @@ export function setTexturePalette(ctx: RenderViewCtx): void {
  * @param ctx - Domain context of renderView.
  * @param target - The row to select, if any.
  * @returns True.
- * @example
- * ```ts
- * selectRow(ctx, rows[0]); // ctx.state.tree.selected === "ui:boardScreen"
- * ```
  */
 function selectRow(ctx: RenderViewCtx, target: TreeRow | undefined): true {
   if (target !== undefined) selectNode(ctx, target.id);
@@ -282,10 +221,6 @@ function selectRow(ctx: RenderViewCtx, target: TreeRow | undefined): true {
  * @param rows - The visible rows.
  * @param key - `KeyboardEvent.key`.
  * @returns Whether the key was handled.
- * @example
- * ```ts
- * moveInTree(ctx, snapshot.tree, "ArrowDown"); // the next row is selected
- * ```
  */
 export function moveInTree(ctx: RenderViewCtx, rows: readonly TreeRow[], key: string): boolean {
   const { tree, scene } = ctx.state;

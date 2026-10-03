@@ -6,56 +6,172 @@ It wraps every source and command of `@moku-labs/game/inspect` and `@moku-labs/g
 the game's `.dev` modules and the editor's own commands (`editor.*`) into closure-erased
 entries: raw `Json` in, checked input to the door, wire-safe `Json` out. It builds the
 `Manifest` the bridge sends in `hello`. It also owns the runtime-free protocol module
-`./protocol`, which hub, files, pages, link, workspace, panels and the views import.
-
-## API
-
-| Method | Returns | Notes |
-|---|---|---|
-| `manifest()` | `Manifest` | Frozen. Descriptors only, cached until the next `add`. `game`, `page`, `embedded` are read at call time. |
-| `source(id)` | `SourceEntry \| undefined` | `read(raw)` and `watch(raw, fn)`. A watch never throws into the frame loop. |
-| `command(id)` | `CommandEntry \| undefined` | `run(raw)` is async and never throws synchronously. |
-| `add(entry)` | `void` | Adds an editor command. Call it in `onInit`. Refuses a bad or used id, an unknown kind, and `cheat` or `raw`. |
-| `envelope()` | `RunState` | `{ path, frame, tainted }` for editor commands that run no door. |
-| `clock()` | `Clock` | `{ frame, paused }` from the game clock. Read by the channel heartbeat. |
-
-Errors of the entries:
-
-| Case | Code | Message |
-|---|---|---|
-| Bad input | -32602 `invalid_input` | `[moku-editor] game.step: frames must be a number` |
-| The door threw | -32000 `command_failed` | `[moku-editor] <id>: <first line of the door message>` |
-| The value is not JSON | -32006 `not_json` | `[moku-editor] <id>: function is not JSON at $.a[0]` |
-
-Logs: `registry:source-failed`, `registry:command-failed`, `registry:watch-failed` (once per streak).
+`./protocol`, which the server, tools and agent plugins import.
 
 ## Configuration
 
-| Option | Default | Meaning |
-|---|---|---|
-| `game` | `undefined` | Required. The app the game made with `createApp`. `createApp` throws without it. |
-| `modules` | `[]` | The game's `.dev` modules: extra sources and commands, added after the doors. |
-| `name` | `undefined` | `Manifest.game`. Falls back to `document.title`, then `"game"`. |
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `game` | `GameLike \| undefined` | `undefined` | Required. The app the game made with `createApp`. `onInit` throws without it, so `createApp` throws. |
+| `modules` | `readonly DevModule[]` | `[]` | The game's `.dev` modules: extra sources and commands, added after the doors. |
+| `name` | `string \| undefined` | `undefined` | `Manifest.game`. Falls back to the trimmed `document.title`, then `"game"`. |
 
 ```ts
 createApp({ pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } } });
 ```
 
+`onInit` checks the config:
+
+| Case | Error |
+|---|---|
+| `game` is `undefined` | `[moku-editor] registry.game is missing.` |
+| `game.time.snapshot`, `onFrame`, `isPaused` or `game.flow.state` is not a function | `[moku-editor] registry.game is not a game app.` |
+| Two entries share an id (sources and commands are one namespace) | `[moku-editor] Duplicate registry id "<id>".` |
+| Bad id, input kind, `changes` or `effect` | `[moku-editor] Registry id "<id>" is not a dotted name.` and the kind, changes, effect messages |
+
 Order in the manifest: door entries, then modules in config order, then editor commands in `add` order.
+Module commands may have any effect, `cheat` and `raw` included.
+
+## API
+
+`app.registry` or `ctx.require(registryPlugin)` gives `RegistryApi`.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `manifest()` | `Manifest` | Frozen. Descriptors only, cached until the next `add`. `game`, `page`, `embedded` are read at call time. `panels` is omitted. |
+| `source(id)` | `SourceEntry \| undefined` | `undefined` for an unknown id. The caller maps it to -32601 `unknown_id`. |
+| `command(id)` | `CommandEntry \| undefined` | Door, module or editor command. |
+| `add(entry)` | `void` | Adds an editor command. Call it in `onInit`. |
+| `envelope()` | `RunState` | `{ path, frame, tainted }` for editor commands that run no door. |
+| `clock()` | `Clock` | `{ frame, paused }` from the game clock. Read by the channel heartbeat. |
+
+```ts
+registry.manifest().commands.length; // 14 door commands + module + editor commands
+registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
+await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
+registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }
+registry.clock(); // { frame: 1840, paused: false }
+```
+
+### Entries
+
+| Member | Signature | Behaviour |
+|---|---|---|
+| `SourceEntry.descriptor` | `SourceDescriptor` | Fresh frozen `{ id, title, input, changes }`. Never the door object. |
+| `SourceEntry.read` | `(raw: Json) => Json` | `checkInput`, the door read, `toWireValue`. `null` means no input. |
+| `SourceEntry.watch` | `(raw: Json, fn: (value: Json) => void) => () => void` | Checks the input now. Delivers on the next frame, not at once. Returns the door's unsubscribe (idempotent). |
+| `CommandEntry.descriptor` | `CommandDescriptor` | Fresh frozen `{ id, title, input, effect }`. |
+| `CommandEntry.run` | `(raw: Json) => Promise<RunResult>` | Async. Never throws synchronously. Door and module commands go through the game's `run` (dev guard, cheat journal). |
+
+A watch never throws into the game's frame loop. A door read error, a `toWireValue` error or a
+listener error is caught and logged once per streak. The next good delivery ends the streak.
+
+### `add` rules
+
+| Rule | Error |
+|---|---|
+| Id matches `ID_PATTERN` and has at most 128 characters | `[moku-editor] Registry id "<id>" is not a dotted name.` |
+| Id is not used by any source or command | `[moku-editor] Duplicate registry id "<id>".` |
+| `effect` is not `cheat` or `raw` | `[moku-editor] Editor command "<id>" cannot have effect "<effect>".` |
+| Every input kind is one of the 8 kinds | `[moku-editor] Command "<id>" has an unknown input kind "<kind>" for "<field>".` |
+
+The stored entry is a guarded copy. Its `run` turns any error that is not a `ProtocolError` into
+-32000 `command_failed` with the id. The editor command checks its own input and builds its
+`state` with `envelope()`. An `add` after start reaches the tools page only on the next bridge `hello`.
+
+```ts
+registry.add({
+  descriptor: { id: "editor.overlay", title: "Overlay in game", input: { on: "boolean" }, effect: "cosmetic" },
+  run: async raw => ({ value: checkInput({ on: "boolean" }, raw).on, state: registry.envelope() })
+});
+```
+
+### Errors of the entries
+
+| Case | Code | Message |
+|---|---|---|
+| Bad input | -32602 `invalid_input` | `[moku-editor] game.step: frames must be a number` |
+| A source door threw | -32000 `command_failed` | `[moku-editor] <id>: <door message>` |
+| A command door threw | -32000 `command_failed` | `[moku-editor] <id>: <first line of the door message>` |
+| The value is not JSON | -32006 `not_json` | `[moku-editor] test.leaky: function is not JSON at $.fn` |
+
+Logs (`ctx.log.warn`, payload `{ id, message }`):
+
+| Event | When |
+|---|---|
+| `registry:source-failed` | A source door threw in `read`. |
+| `registry:command-failed` | A command door rejected in `run`. |
+| `registry:watch-failed` | A watch failed inside a frame. Once per streak. |
 
 ## Events
 
 None. The registry emits and hooks no events.
 
+## Dependencies
+
+| Kind | Value |
+|---|---|
+| `depends` | None. First plugin of the agent core. |
+| Core plugins | `ctx.log` |
+| Global events | None |
+| Game imports | `read`, `watch`, `sources` from `@moku-labs/game/inspect`; `run`, `commands` from `@moku-labs/game/control` |
+
+## Usage
+
+From a game's dev entry:
+
+```ts
+import { createApp } from "@moku-labs/editor/agent";
+
+const editor = createApp({
+  pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
+});
+editor.registry.manifest().sources.length; // 15 door sources + the module's sources
+```
+
+From another agent plugin:
+
+```ts
+export const pingPlugin = createPlugin("ping", { depends: [registryPlugin], onInit: addPing });
+// in addPing: ctx.require(registryPlugin).add({ descriptor, run });
+```
+
+A `.dev` module needs no cast:
+
+```ts
+const mergeDev: DevModule = { commands: [addCoins, refillEnergy] };
+```
+
+## Integration
+
+| Plugin | Uses |
+|---|---|
+| `channel` | `source`, `command`, `clock` (heartbeat and `status()`). Maps an unknown id to -32601. |
+| `bridge` | `manifest` (sent in `hello`), `source` (watch over the wire). Depends on `registryPlugin` and `channelPlugin`. |
+| `capture` | `add` for `editor.capture`, `editor.series`, `editor.seriesStop`; `command`; `envelope`. |
+| `overlay` | `add` for `editor.overlay`; `manifest` (cheat list); `envelope`. |
+
+`src/agent.ts` lists `registryPlugin` first: channel and overlay require it.
+
 ## Protocol (`./protocol`)
 
-Runtime-free, re-exported from `"."`. It imports nothing outside itself.
+Runtime-free, re-exported from `"."`. It imports nothing outside itself. Imported by `hub`,
+`files`, `pages` (server), `link`, `workspace`, `panels` and the views (tools), and the agent plugins.
 
 | Module | Holds |
 |---|---|
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
-| `errors.ts` | `errorCode`, `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
+| `errors.ts` | `ERROR_PREFIX`, `errorCode`, `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
-| `messages.ts` | `encode`, `decode`, the builders and the guards. |
-| `source-files.ts` | The node to file rule: overrides, then no file for sub-flow and slot nodes, then `nodes/<kebab>.ts(x)` and `flows/<flow>.ts`. |
+| `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
+| `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
+
+## Limits and game follow-ups
+
+| Item | Status |
+|---|---|
+| Screen-only doors (`game.render`, `game.ui`, `game.capture`) on a headless app | Listed in the manifest. Calling them throws in the door: -32000 `command_failed`. |
+| A `frame` source watched in process | One read per frame. The bridge throttles over the wire. |
+| `add` after start | The tools page sees it on the next `hello` only. |
+| F-T1 `runWith` in `@moku-labs/game/control` | Not needed. The typing spike passes without casts. |

@@ -24,6 +24,25 @@ import { useRenderView } from "./useRenderView";
 const FRAME_BUDGET_MS = 1000 / 60;
 
 /**
+ * A full frame-time bar.
+ */
+const FULL_BAR_PERCENT = 100;
+
+/**
+ * The frame-time bar fill: the share of the frame budget used, capped at a full bar.
+ *
+ * @param frameMs - The frame time.
+ * @returns The fill in percent, 0 to 100.
+ * @example
+ * ```ts
+ * frameBarPercent(8); // 48
+ * ```
+ */
+function frameBarPercent(frameMs: number): number {
+  return Math.min(FULL_BAR_PERCENT, Math.round((frameMs / FRAME_BUDGET_MS) * FULL_BAR_PERCENT));
+}
+
+/**
  * Props of `RenderWorkspace`.
  */
 export type RenderWorkspaceProps = {
@@ -37,10 +56,6 @@ export type RenderWorkspaceProps = {
  *
  * @param props - ctx, the link status of this render and the workspace api.
  * @returns The workspace.
- * @example
- * ```tsx
- * <RenderWorkspace ctx={ctx} status={tools.status} workspace={tools.workspace} />
- * ```
  */
 export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
   const { ctx, status, workspace } = props;
@@ -67,7 +82,7 @@ export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
                 <span
                   data-phase="1"
                   style={{
-                    inlineSize: `${Math.min(100, Math.round((frameMs / FRAME_BUDGET_MS) * 100))}%`
+                    inlineSize: `${frameBarPercent(frameMs)}%`
                   }}
                 />
               </span>

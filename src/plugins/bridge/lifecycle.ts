@@ -7,11 +7,12 @@ import { registryPlugin } from "../registry";
 import { encode, notification } from "../registry/protocol";
 import { connectInBackground, onBeat } from "./connection/loop";
 import { defaultNet } from "./connection/socket";
-import { dropInflight, SOCKET_OPEN } from "./dispatch/send";
+import { dropInflight, NORMAL_CLOSE, SOCKET_OPEN } from "./dispatch/send";
 import { dropAll } from "./dispatch/subscriptions";
 import { watchVisibility } from "./page";
 import { setStatus } from "./status";
 import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState } from "./types";
+import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
 
 /**
  * The smallest retryMs and callTimeoutMs.
@@ -59,18 +60,14 @@ function checkWhole(field: string, value: number, example: number): void {
  * @param ctx - Plugin context.
  * @param ctx.config - Resolved plugin config.
  * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`
- * @example
- * ```ts
- * createAgentPlugin("bridge", { onInit: checkConfig });
- * ```
  */
 export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): void {
   const { hello, retryMs, callTimeoutMs } = ctx.config;
-  if (typeof hello !== "string" || hello === "") {
-    throw configError("hello", "a non-empty string", '"/__editor/hello"');
-  }
-  checkWhole("retryMs", retryMs, 1000);
-  checkWhole("callTimeoutMs", callTimeoutMs, 5000);
+  const isHelloSet = typeof hello === "string" && hello !== "";
+  if (!isHelloSet) throw configError("hello", "a non-empty string", '"/__editor/hello"');
+
+  checkWhole("retryMs", retryMs, DEFAULT_RETRY_MS);
+  checkWhole("callTimeoutMs", callTimeoutMs, DEFAULT_CALL_TIMEOUT_MS);
 }
 
 /**
@@ -79,10 +76,6 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
  *
  * @param ctx - Plugin context of the bridge.
  * @returns The deps every bridge module takes.
- * @example
- * ```ts
- * const deps = depsOf(ctx);
- * ```
  */
 export function depsOf(ctx: BridgeCtx): BridgeDeps {
   return {
@@ -93,10 +86,6 @@ export function depsOf(ctx: BridgeCtx): BridgeDeps {
      * Emits the global agent event (fire and forget).
      *
      * @param payload - The status and the session.
-     * @example
-     * ```ts
-     * deps.emit({ status: { kind: "live", frame: 12 } });
-     * ```
      */
     emit: payload => {
       ctx.emit("bridge:status", payload);
@@ -113,10 +102,6 @@ export function depsOf(ctx: BridgeCtx): BridgeDeps {
  * without awaiting: `app.start()` never waits for, or fails on, the editor server.
  *
  * @param ctx - Plugin context of the bridge.
- * @example
- * ```ts
- * createAgentPlugin("bridge", { onStart: startBridge });
- * ```
  */
 export function startBridge(ctx: BridgeCtx): void {
   const deps = depsOf(ctx);
@@ -131,18 +116,16 @@ export function startBridge(ctx: BridgeCtx): void {
 }
 
 /**
- * onStop: phase stopped, timers cleared, listeners removed, subs stopped, bye + close 1000.
+ * onStop: phase stopped, timers cleared, listeners removed, subs stopped, bye + normal close.
  * Teardown context only: no emit, no log.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createAgentPlugin("bridge", { onStop: stopBridge });
- * ```
  */
 export function stopBridge(ctx: { readonly state: BridgeState }): void {
   const { state } = ctx;
+
+  // Nothing may act again: no retry, no deadline, no listener, no subscription.
   state.phase = "stopped";
   if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
   state.retryTimer = undefined;
@@ -150,6 +133,7 @@ export function stopBridge(ctx: { readonly state: BridgeState }): void {
   for (const off of state.off.splice(0)) off();
   dropAll({ state });
 
+  // Forget the socket; say bye on it when it is open, then close it.
   const { socket } = state;
   state.socket = undefined;
   state.session = undefined;
@@ -159,5 +143,5 @@ export function stopBridge(ctx: { readonly state: BridgeState }): void {
     return;
   }
   socket.send(encode(notification("game", "bye")));
-  socket.close(1000, "bye");
+  socket.close(NORMAL_CLOSE, "bye");
 }

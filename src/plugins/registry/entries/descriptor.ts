@@ -11,7 +11,9 @@ import type { CommandDescriptor, SourceDescriptor } from "../protocol";
  * @returns The descriptor, without functions.
  * @example
  * ```ts
- * describeSource(sources.history); // { id: "game.history", title: "History", input: { last: "number?" }, changes: "edge" }
+ * const read = () => [];
+ * describeSource({ id: "game.history", title: "History", input: { last: "number?" }, changes: "edge", read });
+ * // { id: "game.history", title: "History", input: { last: "number?" }, changes: "edge" }, frozen, no read
  * ```
  */
 export function describeSource(source: SourceDescriptor): SourceDescriptor {
@@ -30,7 +32,9 @@ export function describeSource(source: SourceDescriptor): SourceDescriptor {
  * @returns The descriptor, without functions.
  * @example
  * ```ts
- * describeCommand(commands.step); // { id: "game.step", title: "Step frames", input: { … }, effect: "cosmetic" }
+ * const run = () => undefined;
+ * describeCommand({ id: "game.step", title: "Step frames", input: { frames: "number" }, effect: "cosmetic", run });
+ * // { id: "game.step", title: "Step frames", input: { frames: "number" }, effect: "cosmetic" }, frozen, no run
  * ```
  */
 export function describeCommand(command: CommandDescriptor): CommandDescriptor {

@@ -45,10 +45,6 @@ function rectStyle(rect: PageRect): Record<string, string> {
  * @param props.scale - The frame scale.
  * @param props.device - The device size.
  * @returns The box and the label.
- * @example
- * ```tsx
- * <HoverBox node={node} rect={node.rect} scale={0.5} device={size} />
- * ```
  */
 function HoverBox(props: {
   readonly node: SceneNode;
@@ -121,10 +117,6 @@ function SafeGuides(props: {
  *
  * @param props - The gameView domain context.
  * @returns The overlay content.
- * @example
- * ```tsx
- * render(<OverlayRoot ctx={ctx} />, root);
- * ```
  */
 export function OverlayRoot(props: OverlayRootProps): VNode {
   const { ctx } = props;
@@ -136,12 +128,12 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
   const device = resolveDevice(choice.preset, choice.orientation);
   const scale = workspace.gameFrame().box()?.scale ?? 1;
   const nodes = state.scene?.nodes;
-  const hover =
-    state.picker.on && state.picker.hover !== undefined
-      ? nodes?.get(state.picker.hover)
-      : undefined;
-  const selected =
-    active && state.selected !== undefined ? nodes?.get(refId(state.selected)) : undefined;
+  const { hover: pickerHover } = state.picker;
+  const isPickerHover = state.picker.on && pickerHover !== undefined;
+  const hover = isPickerHover ? nodes?.get(pickerHover) : undefined;
+  const { selected: selectedRef } = state;
+  const isSelectedActive = active && selectedRef !== undefined;
+  const selected = isSelectedActive ? nodes?.get(refId(selectedRef)) : undefined;
   const tree = state.treeHover === undefined ? undefined : nodes?.get(refId(state.treeHover));
   const guides = active && state.safeArea && choice.preset.kind !== "desktop";
 
@@ -173,10 +165,6 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
  *
  * @param ctx - Domain context of gameView.
  * @returns The root element, undefined without a DOM.
- * @example
- * ```ts
- * ensureOverlayRoot(ctx)?.dataset.game; // "overlay"
- * ```
  */
 export function ensureOverlayRoot(ctx: GameViewCtx): HTMLElement | undefined {
   const { state } = ctx;

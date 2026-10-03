@@ -36,10 +36,6 @@ function paletteItem(
  *
  * @param ctx - Domain context of flowView.
  * @returns World coordinates.
- * @example
- * ```ts
- * viewportCentre(ctx); // { x: 640, y: 420 }
- * ```
  */
 export function viewportCentre(ctx: FlowCtx): { x: number; y: number } {
   const { cam, viewport } = ctx.state.camera;
@@ -53,10 +49,6 @@ export function viewportCentre(ctx: FlowCtx): { x: number; y: number } {
  * @param actions - The flowView actions.
  * @param id - The node id.
  * @returns Resolves when the event is emitted or the toast shown.
- * @example
- * ```ts
- * await openNodeFile(ctx, actions, "board/merge");
- * ```
  */
 export async function openNodeFile(ctx: FlowCtx, actions: FlowActions, id: string): Promise<void> {
   const file = await actions.inspector.fileOf(id);
@@ -71,10 +63,6 @@ export async function openNodeFile(ctx: FlowCtx, actions: FlowActions, id: strin
  * @param actions - The flowView actions.
  * @param id - The node id.
  * @returns The action.
- * @example
- * ```ts
- * item.alt = { label: "Open in Files", run: opener(ctx, actions, "board/merge") };
- * ```
  */
 function opener(ctx: FlowCtx, actions: FlowActions, id: string): () => void {
   return () => {
@@ -88,19 +76,10 @@ function opener(ctx: FlowCtx, actions: FlowActions, id: string): () => void {
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
  * @returns The items.
- * @example
- * ```ts
- * workspace.palette.add(commandItems(ctx, actions));
- * ```
  */
 export function commandItems(ctx: FlowCtx, actions: FlowActions): PaletteItem[] {
   /**
    * Shows the Flow workspace.
-   *
-   * @example
-   * ```ts
-   * show();
-   * ```
    */
   const show = (): void => {
     ctx.require(workspacePlugin).show("flow");
@@ -109,10 +88,6 @@ export function commandItems(ctx: FlowCtx, actions: FlowActions): PaletteItem[] 
    * The reason Reset layout is disabled (M8).
    *
    * @returns The reason, or false when something is pinned.
-   * @example
-   * ```ts
-   * resetDisabled(); // "Nothing is pinned in the visible flows"
-   * ```
    */
   const resetDisabled = (): string | false =>
     actions.layout.pinnedCount() === 0 ? "Nothing is pinned in the visible flows" : false;
@@ -164,10 +139,6 @@ export function commandItems(ctx: FlowCtx, actions: FlowActions): PaletteItem[] 
  *
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
- * @example
- * ```ts
- * setNodeItems(ctx, actions); // after a graph change
- * ```
  */
 export function setNodeItems(ctx: FlowCtx, actions: FlowActions): void {
   const { palette } = ctx.state.view;
@@ -205,10 +176,6 @@ export function setNodeItems(ctx: FlowCtx, actions: FlowActions): void {
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
  * @param keys - The text-style keys.
- * @example
- * ```ts
- * setStyleItems(ctx, actions, ["ui.title", "ui.number"]);
- * ```
  */
 export function setStyleItems(ctx: FlowCtx, actions: FlowActions, keys: readonly string[]): void {
   const { palette } = ctx.state.view;

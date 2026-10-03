@@ -56,7 +56,6 @@ describe("sourceEntry.read", () => {
     const entry = sourceEntry(game.app, sources.position, log);
 
     expect(entry.read(null)).toEqual(read(game.app, sources.position));
-    expect(entry.read(null)).toMatchObject({ path: expect.any(String) });
   });
 
   it("passes the checked input to the door", () => {

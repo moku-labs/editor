@@ -6,8 +6,9 @@
  */
 import type { VNode } from "preact";
 import { useLayoutEffect } from "preact/hooks";
+import { splitId } from "../focus/graph";
 import type { MenuState } from "../focus/types";
-import type { FlowActions, FlowCtx } from "../types";
+import type { FlowActions, FlowCtx, NodeId } from "../types";
 import { useElement, useFlowStore } from "../useFlowStore";
 
 /**
@@ -51,22 +52,31 @@ function menuItem(label: string, run: () => void, disabled = false): MenuItem {
 }
 
 /**
+ * The node id a menu key names: the laid-out item's id, else the key's last `>` segment.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param key - The menu's item key.
+ * @returns The node id "<flow>/<node>".
+ */
+function menuNodeId(ctx: FlowCtx, key: string): NodeId {
+  return ctx.state.layout.result?.byKey[key]?.id ?? key.slice(key.lastIndexOf(">") + 1);
+}
+
+/**
  * The items of a node menu.
  *
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
  * @param key - The node's item key.
  * @returns The items.
- * @example
- * ```ts
- * nodeItems(ctx, actions, "main/settings").map(item => item.label);
- * ```
  */
 function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] {
-  const item = ctx.state.layout.result?.byKey[key];
-  const id = item?.id ?? key.slice(key.lastIndexOf(">") + 1);
-  const slash = id.indexOf("/");
-  const node = ctx.state.data.graph?.flows[id.slice(0, slash)]?.nodes[id.slice(slash + 1)];
+  // Resolve the graph node behind the menu key.
+  const id = menuNodeId(ctx, key);
+  const { flow, node: name } = splitId(id);
+  const node = ctx.state.data.graph?.flows[flow]?.nodes[name];
+
+  // Every node: focus it, or focus it and open the Code or Styles tab.
   const items = [
     menuItem("Focus", () => actions.focus.select(key)),
     menuItem("Open code", () => {
@@ -78,6 +88,8 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
       actions.inspector.setTab("styles");
     })
   ];
+
+  // A container (sub-flow or slot): expand or collapse it in place, and enter a sub-flow.
   if (node?.subFlow !== undefined || node?.slot !== undefined) {
     const expanded = ctx.state.layout.expanded.has(key);
     items.push(
@@ -89,11 +101,15 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
   const subFlow = node?.subFlow;
   if (subFlow !== undefined)
     items.push(menuItem(`Enter ${subFlow}`, () => actions.flows.enter(key)));
+
+  // One "Add note" per outcome of the node.
   for (const outcome of node?.outcomes ?? []) {
     items.push(
       menuItem(`Add note on ${outcome}`, () => actions.notes.edit({ from: { node: id, outcome } }))
     );
   }
+
+  // The node the game is on: step one frame (paused only), pause or resume.
   if (actions.focus.current() === id) {
     const isPaused = actions.focus.isPaused();
     items.push(
@@ -123,21 +139,15 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
  * @param actions - The flowView actions.
  * @param menu - The open menu.
  * @returns The items in order.
- * @example
- * ```ts
- * menuItems(ctx, actions, { target: "canvas", key: undefined, outcome: undefined, x: 0, y: 0 }).map(item => item.label);
- * // ["Add note here", "Fit all", "Reset layout"]
- * ```
  */
 export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): MenuItem[] {
-  if (menu.target === "node" && menu.key !== undefined) return nodeItems(ctx, actions, menu.key);
-  if (menu.target === "outcome" && menu.key !== undefined && menu.outcome !== undefined) {
-    const { key, outcome } = menu;
-    const item = ctx.state.layout.result?.byKey[key];
-    const id = item?.id ?? key.slice(key.lastIndexOf(">") + 1);
-    const slash = id.indexOf("/");
-    const flow = id.slice(0, slash);
-    const raw = ctx.state.data.graph?.flows[flow]?.edges[id.slice(slash + 1)]?.[outcome] ?? "";
+  const { key, outcome } = menu;
+  if (menu.target === "node" && key !== undefined) return nodeItems(ctx, actions, key);
+  const isOutcomeMenu = menu.target === "outcome" && key !== undefined && outcome !== undefined;
+  if (isOutcomeMenu) {
+    const id = menuNodeId(ctx, key);
+    const { flow, node: name } = splitId(id);
+    const raw = ctx.state.data.graph?.flows[flow]?.edges[name]?.[outcome] ?? "";
     const target = raw.startsWith("map:") ? raw.slice("map:".length) : raw;
     const items = [
       menuItem("Add note on this outcome", () =>
@@ -175,10 +185,6 @@ export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): 
  *
  * @param props - Context and actions.
  * @returns The menu, or an empty fragment when none is open.
- * @example
- * ```tsx
- * <ContextMenu ctx={ctx} actions={actions} />
- * ```
  */
 export function ContextMenu(props: ContextMenuProps): VNode {
   const { ctx, actions } = props;
@@ -205,20 +211,16 @@ export function ContextMenu(props: ContextMenuProps): VNode {
     ?.getBoundingClientRect();
   const width = canvas?.width ?? ctx.state.camera.viewport.w;
   const height = canvas?.height ?? ctx.state.camera.viewport.h;
-  const x = menu.x + MENU_W > width && menu.x > MENU_W ? menu.x - MENU_W : menu.x;
-  const y =
-    menu.y + items.length * ITEM_H > height && menu.y > items.length * ITEM_H
-      ? menu.y - items.length * ITEM_H
-      : menu.y;
+  const menuHeight = items.length * ITEM_H;
+  const flipsLeft = menu.x + MENU_W > width && menu.x > MENU_W;
+  const flipsUp = menu.y + menuHeight > height && menu.y > menuHeight;
+  const x = flipsLeft ? menu.x - MENU_W : menu.x;
+  const y = flipsUp ? menu.y - menuHeight : menu.y;
 
   /**
    * Runs an enabled item and closes the menu.
    *
    * @param item - The item.
-   * @example
-   * ```ts
-   * run(items[0]);
-   * ```
    */
   const run = (item: MenuItem): void => {
     if (item.disabled) return;

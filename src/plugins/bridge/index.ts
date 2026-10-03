@@ -12,11 +12,12 @@ import { createBridgeApi } from "./api";
 import { checkConfig, startBridge, stopBridge } from "./lifecycle";
 import { createBridgeState } from "./state";
 import type { BridgeConfig } from "./types";
+import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
 
 const defaultConfig: BridgeConfig = {
   hello: "/__editor/hello",
-  retryMs: 1000,
-  callTimeoutMs: 5000
+  retryMs: DEFAULT_RETRY_MS,
+  callTimeoutMs: DEFAULT_CALL_TIMEOUT_MS
 };
 
 /**

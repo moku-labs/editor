@@ -25,11 +25,6 @@ import { useFiles } from "./useFiles";
 
 /**
  * Props of `FilesView`.
- *
- * @example
- * ```tsx
- * <FilesView ctx={ctx} api={api} status={tools.status} />
- * ```
  */
 export type FilesViewProps = {
   readonly ctx: FilesViewCtx;
@@ -47,10 +42,6 @@ type BodyProps = { readonly ctx: FilesViewCtx; readonly api: FilesViewApi; reado
  *
  * @param tab - The tab.
  * @returns The text.
- * @example
- * ```ts
- * textOf(tab); // "export const merge = 1;\n"
- * ```
  */
 function textOf(tab: OpenTab): string {
   return tab.buffer ?? tab.saved ?? "";
@@ -61,10 +52,6 @@ function textOf(tab: OpenTab): string {
  *
  * @param props - Context, api and the tab.
  * @returns The body content.
- * @example
- * ```tsx
- * <Content ctx={ctx} api={api} tab={tab} />
- * ```
  */
 function Content(props: BodyProps): VNode {
   const { ctx, api, tab } = props;
@@ -115,10 +102,6 @@ function Content(props: BodyProps): VNode {
  *
  * @param props - Context, api and the tab.
  * @returns The body.
- * @example
- * ```tsx
- * <Body ctx={ctx} api={api} tab={tab} />
- * ```
  */
 function Body(props: BodyProps): VNode {
   const { ctx, api, tab } = props;
@@ -163,10 +146,6 @@ function Body(props: BodyProps): VNode {
  *
  * @param props - Context, api and the link status of this render.
  * @returns The grid: tree | editor column.
- * @example
- * ```tsx
- * <FilesView ctx={ctx} api={api} status={tools.status} />
- * ```
  */
 export function FilesView(props: FilesViewProps): VNode {
   const { ctx, api, status } = props;

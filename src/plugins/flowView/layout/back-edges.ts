@@ -80,7 +80,7 @@ function predecessors(flow: FlowJson): Map<string, string[]> {
  * @returns Whether the loop is short.
  * @example
  * ```ts
- * isShortLoop(main, "setLoading", "splash", predecessors(main)); // true
+ * isShortLoop(main, "setLoading", "splash", predecessors(main)); // false
  * ```
  */
 function isShortLoop(
@@ -125,10 +125,6 @@ export function classifyEdges(flow: FlowJson): ReadonlyMap<string, EdgeClass> {
    * Visits one node depth first and classifies its outcomes.
    *
    * @param node - The node name.
-   * @example
-   * ```ts
-   * visit("boot");
-   * ```
    */
   function visit(node: string): void {
     visited.add(node);

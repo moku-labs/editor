@@ -71,10 +71,6 @@ export function targetOf(flow: string, target: string): NodeId | undefined {
  * @param graph - The graph.
  * @param node - The node.
  * @returns Flow names.
- * @example
- * ```ts
- * opened(graph, graph.flows.main.nodes.afterOrder); // ["rewardPopup"]
- * ```
  */
 function opened(graph: GraphJson, node: GraphNodeJson): string[] {
   if (node.subFlow !== undefined) return [node.subFlow];
@@ -163,10 +159,6 @@ function backEdges(flow: FlowJson): ReadonlySet<string> {
    * Visits one node.
    *
    * @param name - The node name.
-   * @example
-   * ```ts
-   * visit("awaitIntent");
-   * ```
    */
   function visit(name: string): void {
     visited.add(name);

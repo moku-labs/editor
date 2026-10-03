@@ -14,6 +14,8 @@ export type TileView = {
   readonly value: string;
   readonly unit: string;
   readonly sub: string;
+  /** A second sub-line (the Scene tile's effects line), if any. */
+  readonly note: string | undefined;
   /** The warn line (unused textures), if any. */
   readonly warn: string | undefined;
   /** The game does not report this value. */
@@ -25,6 +27,16 @@ export type TileView = {
  * The value of a tile while its source has not delivered.
  */
 const WAITING = "—";
+
+/**
+ * The Draw calls value when game.render reports no draw counter.
+ */
+const NOT_COUNTED = "Not counted in a production build";
+
+/**
+ * The Scene tile's effects line on a game without game.effects (older than 0.0.3).
+ */
+const NO_EFFECTS = "Particles and filters are not reported (follow-up F-R1)";
 
 /**
  * Formats a number with fixed decimals.
@@ -56,6 +68,22 @@ function short(value: number): string {
 }
 
 /**
+ * A count and its noun, singular for exactly one.
+ *
+ * @param count - The count.
+ * @param one - The noun for one.
+ * @param many - The noun for any other count.
+ * @returns The text.
+ * @example
+ * ```ts
+ * counted(1, "render pass", "render passes"); // "1 render pass"
+ * ```
+ */
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/**
  * A tile waiting for its source.
  *
  * @param id - The tile.
@@ -74,6 +102,7 @@ function waiting(id: TileView["id"], label: string, sub: string): TileView {
     value: WAITING,
     unit: "",
     sub,
+    note: undefined,
     warn: undefined,
     absent: false,
     aria: undefined
@@ -101,28 +130,70 @@ function shown(
   unit: string,
   sub: string
 ): TileView {
-  return { id, label, value, unit, sub, warn: undefined, absent: false, aria: undefined };
+  return {
+    id,
+    label,
+    value,
+    unit,
+    sub,
+    note: undefined,
+    warn: undefined,
+    absent: false,
+    aria: undefined
+  };
 }
 
 /**
- * The draw calls tile: the counter, or "Not available on WebGPU".
+ * The draw calls tile: the counter, or "Not counted in a production build". The sub-line names
+ * the render passes when game.render reports them (game 0.0.3).
  *
  * @param draws - The tile data.
  * @returns The view.
  * @example
  * ```ts
- * drawsView({ kind: "absent" }).value; // "Not available on WebGPU"
+ * drawsView({ kind: "absent" }).value; // "Not counted in a production build"
+ * drawsView({ kind: "value", value: 14, renderPasses: 1 }).sub; // "1 render pass"
  * ```
  */
 function drawsView(draws: MetricTiles["drawCalls"]): TileView {
   const label = "Draw calls";
   if (draws === undefined) return waiting("draws", label, "Waiting for game.render");
-  if (draws.kind === "value")
-    return shown("draws", label, String(draws.value), "per frame", "game.render");
+  const passes =
+    draws.renderPasses === undefined
+      ? undefined
+      : counted(draws.renderPasses, "render pass", "render passes");
+  if (draws.kind === "value") {
+    return shown("draws", label, String(draws.value), "per frame", passes ?? "game.render");
+  }
   return {
-    ...shown("draws", label, "Not available on WebGPU", "", "game.render reports no draw counter"),
+    ...shown("draws", label, NOT_COUNTED, "", passes ?? "game.render reports no draw counter"),
     absent: true,
-    aria: "Draw calls: not available on WebGPU"
+    aria: "Draw calls: not counted in a production build"
+  };
+}
+
+/**
+ * The scene tile: entities, display objects and pooled, and the effects line (game 0.0.3) or
+ * what the game does not report.
+ *
+ * @param scene - The tile data.
+ * @returns The view.
+ * @example
+ * ```ts
+ * sceneView({ entities: 101, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }).note;
+ * // "18 particles · 1 emitters · 24 filters"
+ * ```
+ */
+function sceneView(scene: MetricTiles["scene"]): TileView {
+  if (scene === undefined) return waiting("scene", "Scene", "Waiting for the scene");
+  const { entities, views, pooled, effects } = scene;
+  const sub = `${views} display objects · ${pooled} pooled`;
+  return {
+    ...shown("scene", "Scene", String(entities), "entities", sub),
+    note:
+      effects === undefined
+        ? NO_EFFECTS
+        : `${effects.particles} particles · ${effects.emitters} emitters · ${effects.filters} filters`
   };
 }
 
@@ -160,7 +231,7 @@ function texturesView(textures: MetricTiles["textures"]): TileView {
  * ```
  */
 export function tileViews(tiles: MetricTiles): readonly TileView[] {
-  const { fps, frameMs, scene } = tiles;
+  const { fps, frameMs } = tiles;
   return [
     fps === undefined
       ? waiting("fps", "FPS", "Waiting for game.render")
@@ -169,7 +240,7 @@ export function tileViews(tiles: MetricTiles): readonly TileView[] {
           "FPS",
           String(Math.round(fps.now)),
           "fps",
-          `last ${fps.samples.length} samples · low ${Math.round(fps.low)}`
+          `last ${counted(fps.samples.length, "sample", "samples")} · low ${Math.round(fps.low)}`
         ),
     frameMs === undefined
       ? waiting("frame", "Frame time", "Waiting for game.render")
@@ -182,15 +253,7 @@ export function tileViews(tiles: MetricTiles): readonly TileView[] {
         ),
     drawsView(tiles.drawCalls),
     texturesView(tiles.textures),
-    scene === undefined
-      ? waiting("scene", "Scene", "Waiting for the scene")
-      : shown(
-          "scene",
-          "Scene",
-          String(scene.entities),
-          "entities",
-          `${scene.views} display objects · ${scene.pooled} pooled`
-        ),
+    sceneView(tiles.scene),
     {
       ...shown("heap", "JS heap", "Not reported", "", "Needs heap numbers in game.render"),
       absent: true,

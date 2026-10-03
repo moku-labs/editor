@@ -15,10 +15,6 @@ import type { GameViewCtx } from "./types";
  * Toggles the picker from a key.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * togglePicker(ctx); // picker on, Game shown
- * ```
  */
 function togglePicker(ctx: GameViewCtx): void {
   setPicker(ctx);
@@ -29,10 +25,6 @@ function togglePicker(ctx: GameViewCtx): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns Whether a sheet is open.
- * @example
- * ```ts
- * sheetOpen(ctx); // false
- * ```
  */
 function sheetOpen(ctx: GameViewCtx): boolean {
   return ctx.state.series.sheet !== undefined;
@@ -42,10 +34,6 @@ function sheetOpen(ctx: GameViewCtx): boolean {
  * B: flips the bug mark of the shot in the large view (nothing on the grid).
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * markShownShot(ctx); // shot 4 marked as bug
- * ```
  */
 function markShownShot(ctx: GameViewCtx): void {
   const big = ctx.state.series.sheet?.big;
@@ -57,10 +45,6 @@ function markShownShot(ctx: GameViewCtx): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns True when the picker was on.
- * @example
- * ```ts
- * closePicker(ctx); // false when the picker is off
- * ```
  */
 function closePicker(ctx: GameViewCtx): boolean {
   if (!ctx.state.picker.on) return false;
@@ -73,10 +57,6 @@ function closePicker(ctx: GameViewCtx): boolean {
  *
  * @param ctx - Domain context of gameView.
  * @returns The four bindings.
- * @example
- * ```ts
- * for (const binding of keyBindings(ctx)) ctx.state.disposers.push(workspace.keys.bind(binding));
- * ```
  */
 export function keyBindings(ctx: GameViewCtx): readonly KeyBinding[] {
   const whenSheet = sheetOpen.bind(undefined, ctx);
@@ -111,10 +91,6 @@ export function keyBindings(ctx: GameViewCtx): readonly KeyBinding[] {
  *
  * @param ctx - Domain context of gameView.
  * @returns The four layers and their closers.
- * @example
- * ```ts
- * for (const { layer, close } of escapeClosers(ctx)) workspace.keys.escape(layer, close);
- * ```
  */
 export function escapeClosers(
   ctx: GameViewCtx

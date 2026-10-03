@@ -83,7 +83,11 @@ describe("context menu items run", () => {
       y: 60
     });
     canvas.find(entry => entry.label === "Add note here")?.run();
-    expect(ctx.state.notes.editor?.anchor).toBeDefined();
+    const { cam } = ctx.state.camera;
+    expect(ctx.state.notes.editor?.anchor).toEqual({
+      x: (50 - cam.x) / cam.z,
+      y: (60 - cam.y) / cam.z
+    });
     const fit = vi.spyOn(actions.camera, "fitAll");
     canvas.find(entry => entry.label === "Fit all")?.run();
     expect(fit).toHaveBeenCalled();
@@ -114,7 +118,13 @@ describe("context menu items run", () => {
     );
     expect(document.activeElement).toBe(items[2]);
     await settle(() => items[2]?.click());
-    expect(ctx.state.focus.menu).toBeDefined();
+    expect(ctx.state.focus.menu).toEqual({
+      target: "canvas",
+      key: undefined,
+      outcome: undefined,
+      x: 5000,
+      y: 5000
+    });
     await settle(() => items[1]?.click());
     expect(ctx.state.focus.menu).toBeUndefined();
     unmount();

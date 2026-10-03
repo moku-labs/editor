@@ -3,36 +3,40 @@
  * every `notify(state)`; `useTicker` re-renders it every few ms while a clock shows (recording
  * time, "no heartbeat for N s").
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import { subscribe } from "../state";
 import type { GameViewState } from "../types";
 
 /**
- * Subscribes the component to gameView state and returns the selected value of this render.
+ * Subscribes the component to gameView state and returns the selected value of this render. It
+ * subscribes in a layout effect, which runs when the render commits: a `notify` right after the
+ * first render (before the next paint) still re-renders the component.
  *
  * @param state - gameView state.
  * @param select - Reads what the component shows.
  * @returns The selected value.
- * @example
- * ```tsx
- * const on = useGameView(ctx.state, () => ctx.state.picker.on);
- * ```
  */
 export function useGameView<T>(state: GameViewState, select: () => T): T {
   const [, setVersion] = useState(0);
-  useEffect(() => subscribe(state, () => setVersion(version => version + 1)), [state]);
+  useLayoutEffect(() => subscribe(state, () => setVersion(version => version + 1)), [state]);
   return select();
 }
+
+/**
+ * The clock tick while a recording time shows.
+ */
+export const RECORD_TICK_MS = 100;
+
+/**
+ * The clock tick while the stage shows "no heartbeat for N s".
+ */
+export const SILENT_TICK_MS = 1000;
 
 /**
  * Re-renders the component every `everyMs` while `active` (a timeout chain, no interval).
  *
  * @param active - Whether the clock runs.
  * @param everyMs - The tick.
- * @example
- * ```tsx
- * useTicker(recording !== undefined, 100);
- * ```
  */
 export function useTicker(active: boolean, everyMs: number): void {
   const [tick, setTick] = useState(0);

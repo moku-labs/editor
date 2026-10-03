@@ -8,7 +8,7 @@ import { notify } from "./store";
 import { revalidate } from "./tabs/load";
 import { activeTab } from "./tabs/model";
 import { openOrLog } from "./tabs/open";
-import { buildIndex } from "./tree/walk";
+import { buildIndex, canList } from "./tree/walk";
 import type { FilesViewCtx, FilesViewHooks } from "./types";
 import { INDEX_STALE_MS } from "./types";
 
@@ -17,10 +17,6 @@ import { INDEX_STALE_MS } from "./types";
  *
  * @param ctx - Domain context of filesView.
  * @returns The three hooks.
- * @example
- * ```ts
- * createToolsPlugin("filesView", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: FilesViewCtx): FilesViewHooks {
   return {
@@ -31,20 +27,18 @@ export function createHandlers(ctx: FilesViewCtx): FilesViewHooks {
 }
 
 /**
- * Builds the index when there is none and no build runs (the first status after a failed
- * build); notifies, since Used by and the D-07 reload depend on the status.
+ * Builds the index when there is none, no build runs and the link can list (the first status
+ * with an open socket after a failed or deferred build); notifies, since Used by and the D-07
+ * reload depend on the status.
  *
  * @param ctx - Domain context of filesView.
  * @returns The `link:status` hook.
- * @example
- * ```ts
- * onLinkStatus(ctx)({ status: { kind: "live", frame: 12 } });
- * ```
  */
 export function onLinkStatus(ctx: FilesViewCtx): (payload: ToolsEvents["link:status"]) => void {
-  return () => {
+  return ({ status }) => {
     const { state } = ctx;
-    if (state.index === undefined && state.indexing === undefined) void buildIndex(ctx);
+    const missing = state.index === undefined && state.indexing === undefined;
+    if (missing && canList(status)) void buildIndex(ctx);
     notify(state);
   };
 }
@@ -55,10 +49,6 @@ export function onLinkStatus(ctx: FilesViewCtx): (payload: ToolsEvents["link:sta
  *
  * @param ctx - Domain context of filesView.
  * @returns The `workspace:changed` hook.
- * @example
- * ```ts
- * onWorkspaceChanged(ctx)({ ws: "files" });
- * ```
  */
 export function onWorkspaceChanged(
   ctx: FilesViewCtx
@@ -80,10 +70,6 @@ export function onWorkspaceChanged(
  *
  * @param ctx - Domain context of filesView.
  * @returns The `workspace:open-file` hook.
- * @example
- * ```ts
- * handleOpenFile(ctx)({ path: "flows/board.ts", line: 3 });
- * ```
  */
 export function handleOpenFile(
   ctx: FilesViewCtx

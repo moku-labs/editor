@@ -40,12 +40,16 @@ describe("tileViews", () => {
     expect(views.map(view => [view.value, view.unit, view.sub, view.warn])).toEqual([
       ["60", "fps", "last 3 samples · low 58", undefined],
       ["3.4", "ms", "Phase split not reported by game.render", undefined],
-      ["Not available on WebGPU", "", "game.render reports no draw counter", undefined],
+      ["Not counted in a production build", "", "game.render reports no draw counter", undefined],
       ["41.25", "MB GPU", "12 textures · 2 bundles · of 192 MB budget", "3 unused · 5.73 MB"],
       ["101", "entities", "180 display objects · 24 pooled", undefined],
       ["Not reported", "", "Needs heap numbers in game.render", undefined]
     ]);
-    expect(views[2]).toMatchObject({ absent: true, aria: "Draw calls: not available on WebGPU" });
+    expect(views[2]).toMatchObject({
+      absent: true,
+      aria: "Draw calls: not counted in a production build"
+    });
+    expect(views[4]?.note).toBe("Particles and filters are not reported (follow-up F-R1)");
   });
 
   it("shows a draw counter and no warn line without unused textures", () => {
@@ -60,6 +64,77 @@ describe("tileViews", () => {
 
     expect(views[2]).toMatchObject({ value: "42", unit: "per frame", absent: false });
     expect(views[3]?.warn).toBeUndefined();
+  });
+});
+
+/** The tiles without fps, frame time and texture data. */
+const EMPTY = {
+  fps: undefined,
+  frameMs: undefined,
+  textures: undefined,
+  heap: { kind: "absent" }
+} as const;
+
+/**
+ * The Draw calls tile view of some tile data.
+ *
+ * @param drawCalls - The tile data.
+ * @returns The view.
+ */
+function draws(drawCalls: Parameters<typeof tileViews>[0]["drawCalls"]) {
+  return tileViews({ ...EMPTY, drawCalls, scene: undefined })[2];
+}
+
+describe("tileViews on game 0.0.3", () => {
+  it("shows the effects line on the Scene tile", () => {
+    const views = tileViews({
+      ...EMPTY,
+      drawCalls: undefined,
+      scene: {
+        entities: 101,
+        views: 180,
+        pooled: 24,
+        effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
+      }
+    });
+
+    expect(views[4]).toMatchObject({
+      sub: "180 display objects · 24 pooled",
+      note: "18 particles · 1 emitters · 24 filters"
+    });
+    expect(views[0]?.note).toBeUndefined();
+  });
+
+  it("names one FPS sample in the singular", () => {
+    const [fps] = tileViews({
+      fps: { now: 60, samples: [60], low: 60 },
+      frameMs: undefined,
+      drawCalls: undefined,
+      textures: undefined,
+      scene: undefined,
+      heap: { kind: "absent" }
+    });
+    expect(fps?.sub).toBe("last 1 sample · low 60");
+  });
+
+  it("names the Draw calls texts with and without render passes", () => {
+    expect(draws({ kind: "value", value: 14, renderPasses: 1 })).toMatchObject({
+      value: "14",
+      unit: "per frame",
+      sub: "1 render pass",
+      absent: false
+    });
+    expect(draws({ kind: "value", value: 14 })).toMatchObject({ value: "14", sub: "game.render" });
+    expect(draws({ kind: "absent", renderPasses: 3 })).toMatchObject({
+      value: "Not counted in a production build",
+      sub: "3 render passes",
+      absent: true,
+      aria: "Draw calls: not counted in a production build"
+    });
+    expect(draws({ kind: "absent" })).toMatchObject({
+      value: "Not counted in a production build",
+      sub: "game.render reports no draw counter"
+    });
   });
 });
 

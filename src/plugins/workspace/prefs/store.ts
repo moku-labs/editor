@@ -214,10 +214,6 @@ function messageOf(error: unknown): string {
  * @param key - The localStorage key (config.storageKey).
  * @param log - Where the one warn goes.
  * @returns The preferences.
- * @example
- * ```ts
- * const prefs = loadPrefs(ctx.config.storageKey, ctx.log);
- * ```
  */
 export function loadPrefs(key: string, log: Log.LogApi): StoredPrefs {
   const storage: Storage | undefined = globalThis.localStorage;
@@ -258,7 +254,7 @@ export function loadPrefs(key: string, log: Log.LogApi): StoredPrefs {
  * @param log - Where a failed write is reported.
  * @example
  * ```ts
- * savePrefs(ctx.config.storageKey, { theme: "dark", previews, device }, ctx.log);
+ * savePrefs("moku-editor", defaultStoredPrefs(), log); // localStorage["moku-editor"] holds the record
  * ```
  */
 export function savePrefs(key: string, prefs: StoredPrefs, log: Log.LogApi): void {

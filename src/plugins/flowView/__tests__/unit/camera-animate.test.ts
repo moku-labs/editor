@@ -61,7 +61,7 @@ describe("animateTo", () => {
     const { ctx } = createTestCtx();
     ctx.state.camera.viewport = { w: 1000, h: 800 };
     animateTo(ctx, { x: 100, y: 50, z: 2 }, DURATION.zoom);
-    expect(ctx.state.camera.anim).toBeDefined();
+    expect(ctx.state.camera.anim).toBe(1);
     tick(1000);
     expect(ctx.state.camera.cam).toEqual({ x: 0, y: 0, z: 1 });
     tick(1100);

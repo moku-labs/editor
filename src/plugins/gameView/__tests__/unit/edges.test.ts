@@ -155,7 +155,10 @@ describe("failure paths", () => {
     );
     await openStyleCard(ctx, ref);
     expect(ctx.state.lookup).toEqual({ key: "coinPill", status: "missing" });
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: style search failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: style search failed", {
+      key: "coinPill",
+      message: "[moku-editor] disk"
+    });
   });
 
   it("select saves a pending style edit before it clears the card", async () => {

@@ -115,10 +115,6 @@ export function seriesIndexOf(value: unknown): SeriesIndex | undefined {
  * @param ctx - Domain context of gameView.
  * @param path - The PNG path.
  * @returns The data URL, or undefined.
- * @example
- * ```ts
- * await readImage(ctx, ".moku/captures/series-a/001.png"); // "data:image/png;base64,…"
- * ```
  */
 async function readImage(ctx: GameViewCtx, path: string): Promise<string | undefined> {
   try {
@@ -135,10 +131,6 @@ async function readImage(ctx: GameViewCtx, path: string): Promise<string | undef
  * @param ctx - Domain context of gameView.
  * @param indexPath - The series' index.json.
  * @returns Resolves when the sheet is open or the failure was toasted.
- * @example
- * ```ts
- * await openSheet(ctx, ".moku/captures/series-2026-09-24-1015/index.json");
- * ```
  */
 export async function openSheet(ctx: GameViewCtx, indexPath: string): Promise<void> {
   ctx.require(workspacePlugin).show("game");
@@ -167,10 +159,6 @@ export async function openSheet(ctx: GameViewCtx, indexPath: string): Promise<vo
  *
  * @param ctx - Domain context of gameView.
  * @param shot - The shot index.
- * @example
- * ```ts
- * showShot(ctx, 3); // "Shot 4 of 20"
- * ```
  */
 export function showShot(ctx: Pick<GameViewCtx, "state">, shot: number): void {
   const { sheet } = ctx.state.series;
@@ -184,10 +172,6 @@ export function showShot(ctx: Pick<GameViewCtx, "state">, shot: number): void {
  *
  * @param ctx - Domain context of gameView.
  * @param direction - 1 next, -1 back.
- * @example
- * ```ts
- * stepSheet(ctx, 1); // the large view moves to the next shot
- * ```
  */
 export function stepSheet(ctx: Pick<GameViewCtx, "state">, direction: 1 | -1): void {
   const { sheet } = ctx.state.series;
@@ -208,10 +192,6 @@ export function stepSheet(ctx: Pick<GameViewCtx, "state">, direction: 1 | -1): v
  * @param ctx - Domain context of gameView.
  * @param sheet - The sheet.
  * @returns Resolves when saved or the failure was toasted.
- * @example
- * ```ts
- * await saveSheet(ctx, ctx.state.series.sheet!); // toast "✓ Saved · …/index.json"
- * ```
  */
 async function saveSheet(ctx: GameViewCtx, sheet: Sheet): Promise<void> {
   clearTimeout(ctx.state.timers.sheetSave);
@@ -232,10 +212,6 @@ async function saveSheet(ctx: GameViewCtx, sheet: Sheet): Promise<void> {
  *
  * @param ctx - Domain context of gameView.
  * @param shot - The shot index.
- * @example
- * ```ts
- * toggleBug(ctx, 2); // shot 3 marked; one write after the burst
- * ```
  */
 export function toggleBug(ctx: GameViewCtx, shot: number): void {
   const { state } = ctx;
@@ -256,10 +232,6 @@ export function toggleBug(ctx: GameViewCtx, shot: number): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns True when something closed.
- * @example
- * ```ts
- * workspace.keys.escape("contactSheet", () => closeSheetLayer(ctx));
- * ```
  */
 export function closeSheetLayer(ctx: GameViewCtx): boolean {
   const { state } = ctx;

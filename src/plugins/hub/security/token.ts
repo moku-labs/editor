@@ -10,7 +10,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
  * @returns A fresh token.
  * @example
  * ```ts
- * state.token = newToken();
+ * newToken().length; // 43
  * ```
  */
 export function newToken(): string {
@@ -43,7 +43,7 @@ export function sameToken(given: string, expected: string): boolean {
  * @throws {Error} Before start and after stop.
  * @example
  * ```ts
- * currentToken(state.token); // "Hk3…" (43 characters)
+ * currentToken(undefined); // throws "[moku-editor] hub.token() needs a started app. …"
  * ```
  */
 export function currentToken(token: string | undefined): string {

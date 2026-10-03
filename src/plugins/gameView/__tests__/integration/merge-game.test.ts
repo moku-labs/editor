@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gameFileUrl } from "../../../../../tests/fixtures/game-dir";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { refId, type SceneNode } from "../../../panels/shared/scene";
@@ -14,15 +15,12 @@ import { createCtx, type TestCtx } from "../helpers";
 // walks createScreenGame (inert renderer) onto board/awaitIntent; the agent
 // core (registry + channel) serves its sources in process; gameView reads and
 // watches them through a link whose read and watch are the agent channel's.
-// Runs only where ../game exists (vitest.config.ts skips files that call
-// loadMergeGame… when the fixture is absent, as on CI).
+// Runs only where the pinned game checkout exists (tests/fixtures/game-dir.ts;
+// vitest.config.ts skips files that call loadMergeGame… when it is absent, as on CI).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The game repository's helper module (timber-helpers.ts), loaded at run time like the fixture. */
-const HELPERS = new URL(
-  "../../../../../../game/tests/integration/timber-helpers.ts",
-  import.meta.url
-).href;
+const HELPERS = gameFileUrl("tests/integration/timber-helpers.ts");
 
 /** What the test uses of the helper module. */
 type BoardHelpers = {
@@ -38,6 +36,22 @@ type BoardHelpers = {
 async function loadMergeGameBoard(): Promise<BoardHelpers> {
   const helpers: BoardHelpers = await import(/* @vite-ignore */ HELPERS);
   return helpers;
+}
+
+/**
+ * Polls until a check holds: the scene builds on the next animation frame, whose timing the test
+ * does not own.
+ *
+ * @param check - The condition to wait for.
+ * @param label - What is awaited, for the timeout message.
+ * @returns Resolves once the check holds.
+ */
+async function until(check: () => boolean, label: string): Promise<void> {
+  const deadline = performance.now() + 3000;
+  while (!check()) {
+    if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
 }
 
 const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
@@ -104,7 +118,7 @@ describe("gameView on merge-game", () => {
       "game.projections"
     ]);
     expect(Object.keys(ctx.state.sources).toSorted()).toEqual(["entities", "projections", "ui"]);
-    await new Promise(resolve => setTimeout(resolve, 40));
+    await until(() => ctx.state.scene !== undefined, "the scene");
     expect(ctx.state.scene?.nodes.has("ui:boardScreen/hudRow/coinPill")).toBe(true);
     expect(ctx.state.scene?.calibrated).toBe(true);
   });

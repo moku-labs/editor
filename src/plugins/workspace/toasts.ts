@@ -10,7 +10,7 @@ import type { WorkspaceConfig, WorkspaceState } from "./types";
  *
  * @example
  * ```ts
- * state.toasts.length <= MAX_TOASTS;
+ * MAX_TOASTS; // 3: a fourth toast drops the oldest
  * ```
  */
 export const MAX_TOASTS = 3;
@@ -29,10 +29,6 @@ export type ToastCtx = {
  * @param ctx - Config and state.
  * @param id - The toast id.
  * @returns The timer.
- * @example
- * ```ts
- * toast.timer = startTimer(ctx, toast.id);
- * ```
  */
 function startTimer(ctx: ToastCtx, id: number): ReturnType<typeof setTimeout> {
   return setTimeout(() => {
@@ -46,10 +42,6 @@ function startTimer(ctx: ToastCtx, id: number): ReturnType<typeof setTimeout> {
  * @param ctx - Config and state.
  * @param message - One line.
  * @param file - A file path to name, optional.
- * @example
- * ```ts
- * showToast(ctx, "✓ Note saved", ".moku/notes/2026-09-24-first-top-item.md");
- * ```
  */
 export function showToast(ctx: ToastCtx, message: string, file?: string): void {
   const { state } = ctx;
@@ -71,10 +63,6 @@ export function showToast(ctx: ToastCtx, message: string, file?: string): void {
  *
  * @param state - Workspace state.
  * @param id - The toast id.
- * @example
- * ```ts
- * dismissToast(ctx.state, toast.id);
- * ```
  */
 export function dismissToast(state: WorkspaceState, id: number): void {
   const index = state.toasts.findIndex(toast => toast.id === id);
@@ -90,10 +78,6 @@ export function dismissToast(state: WorkspaceState, id: number): void {
  *
  * @param ctx - Config and state.
  * @param id - The toast id.
- * @example
- * ```ts
- * <div onPointerEnter={() => pauseToast(ctx, toast.id)} />
- * ```
  */
 export function pauseToast(ctx: ToastCtx, id: number): void {
   const toast = ctx.state.toasts.find(entry => entry.id === id);
@@ -108,10 +92,6 @@ export function pauseToast(ctx: ToastCtx, id: number): void {
  *
  * @param ctx - Config and state.
  * @param id - The toast id.
- * @example
- * ```ts
- * <div onPointerLeave={() => resumeToast(ctx, toast.id)} />
- * ```
  */
 export function resumeToast(ctx: ToastCtx, id: number): void {
   const toast = ctx.state.toasts.find(entry => entry.id === id);
@@ -125,10 +105,6 @@ export function resumeToast(ctx: ToastCtx, id: number): void {
  * Removes every toast and its timer (onStop).
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * clearToasts(ctx.state);
- * ```
  */
 export function clearToasts(state: WorkspaceState): void {
   for (const toast of state.toasts) clearTimeout(toast.timer);

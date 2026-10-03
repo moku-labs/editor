@@ -94,10 +94,6 @@ function Field(props: {
  *
  * @param props - Context, actions and the scene of the shown node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <StylesTab ctx={ctx} actions={actions} scene="board" />
- * ```
  */
 export function StylesTab(props: StylesTabProps): VNode {
   const { ctx, actions, scene } = props;
@@ -110,10 +106,6 @@ export function StylesTab(props: StylesTabProps): VNode {
     const parsed = parseStyleFile(styles?.text ?? "");
     return isStyleEditError(parsed) ? new Map<string, string>() : parsed.colours;
   }, [styles?.text]);
-
-  useEffect(() => {
-    if (ctx.state.inspector.styles === undefined) actions.inspector.openStyles().catch(() => {});
-  }, [actions, ctx]);
 
   useEffect(() => {
     setUsedBy(undefined);

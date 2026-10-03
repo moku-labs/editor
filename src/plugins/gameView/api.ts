@@ -24,10 +24,6 @@ import type { GameViewApi, GameViewCtx } from "./types";
  *
  * @param ctx - Domain context of gameView.
  * @returns The GameViewApi (`app.gameView`).
- * @example
- * ```ts
- * createToolsPlugin("gameView", { api: createGameViewApi });
- * ```
  */
 export function createGameViewApi(ctx: GameViewCtx): GameViewApi {
   return {

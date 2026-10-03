@@ -156,6 +156,20 @@ describe("files api: write", () => {
     );
   });
 
+  it("logs an emit that rejects asynchronously and still resolves", async () => {
+    const rejecting = vi.fn(() => Promise.reject(new Error("hook rejected")));
+    const ctx: FilesCtx = { ...fx.ctx, emit: rejecting };
+    const { createFilesApi } = await import("../../api");
+    const result = await createFilesApi(ctx).write("a.ts", "x");
+    expect(result.bytes).toBe(1);
+    await vi.waitFor(() => {
+      expect(fx.ctx.log.error).toHaveBeenCalledWith(
+        "files:emit-failed",
+        expect.objectContaining({ path: "a.ts", error: "Error: hook rejected" })
+      );
+    });
+  });
+
   it("maps an IO failure to -32000 without the absolute root", async () => {
     await fx.put("locked/a.ts", "old");
     await chmod(join(fx.root, "locked"), 0o555);

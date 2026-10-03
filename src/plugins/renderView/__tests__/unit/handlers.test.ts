@@ -89,7 +89,7 @@ describe("link:status", () => {
     });
 
     expect(ctx.state.fps).toEqual([60]);
-    expect(ctx.state.scene).toBeDefined();
+    expect(ctx.state.scene?.nodes.size).toBe(104);
   });
 
   it("clears the session data after a session change, then refreshes while active", async () => {
@@ -110,6 +110,22 @@ describe("link:status", () => {
     await flush();
     expect(ctx.link.api.files.read).toHaveBeenCalledTimes(1);
     expect(ctx.state.catalogue?.path).toBe("manifest.json");
+  });
+
+  it("clears effects after a session change and on empty, keeps them on the same session", () => {
+    const effects = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    ctx.state.effects = effects;
+
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
+    expect(ctx.state.effects).toEqual(effects);
+
+    hooks["link:status"]({ status: { kind: "live", frame: 3 }, session: "s-2" });
+    expect(ctx.state.effects).toBeUndefined();
+
+    ctx.state.effects = effects;
+    hooks["link:status"]({ status: { kind: "empty" } });
+    expect(ctx.state.effects).toBeUndefined();
   });
 
   it("does not clear on the same session and does not refresh while hidden", async () => {
@@ -142,7 +158,7 @@ describe("link:status", () => {
   it("ignores connecting", async () => {
     await fill();
     hooks["link:status"]({ status: { kind: "connecting" } });
-    expect(ctx.state.render).toBeDefined();
+    expect(ctx.state.render).toEqual(RENDER);
   });
 });
 

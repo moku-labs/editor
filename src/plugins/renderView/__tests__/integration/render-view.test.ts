@@ -10,7 +10,7 @@ import type { Manifest, SessionInfo, ToolsBoot } from "../../../registry/protoco
 import { workspacePlugin } from "../../../workspace";
 import { renderViewPlugin } from "../..";
 import type { RenderSnapshot, TextureSortKey } from "../../types";
-import { ASSETS, boardCapture, MANIFEST_TEXT, RENDER } from "../helpers";
+import { ASSETS, boardCapture, EFFECTS, MANIFEST_TEXT, RENDER } from "../helpers";
 import {
   type AgentHub,
   createAgentHub,
@@ -51,6 +51,7 @@ const SESSION: SessionInfo = {
 const SOURCES = [
   "game.render",
   "game.assets",
+  "game.effects",
   "game.ui",
   "game.entities",
   "game.projections",
@@ -114,6 +115,7 @@ beforeEach(() => {
     {
       "game.render": RENDER,
       "game.assets": ASSETS,
+      "game.effects": EFFECTS,
       "game.ui": capture.ui,
       "game.entities": capture.entities,
       "game.projections": capture.projections
@@ -158,8 +160,8 @@ describe("renderView integration", () => {
     hub.heartbeat(SESSION.id, 1841, false);
 
     // The tracker watches for the session; the scene only while Render is shown.
-    await until(() => watched().length === 2, "tracker watches");
-    expect(watched()).toEqual(["game.assets", "game.render"]);
+    await until(() => watched().length === 3, "tracker watches");
+    expect(watched()).toEqual(["game.assets", "game.effects", "game.render"]);
     await until(() => app.renderView.snapshot().tiles.fps !== undefined, "game.render value");
 
     act(() => app.workspace.show("render"));
@@ -167,6 +169,7 @@ describe("renderView integration", () => {
     await until(() => app.renderView.snapshot().textures.length === 3, "texture rows");
     expect(watched()).toEqual([
       "game.assets",
+      "game.effects",
       "game.entities",
       "game.projections",
       "game.render",
@@ -176,7 +179,22 @@ describe("renderView integration", () => {
     const snapshot = app.renderView.snapshot();
     expect(snapshot.frame).toBe(1841);
     expect(snapshot.tiles.drawCalls).toEqual({ kind: "absent" });
-    expect(snapshot.tiles.scene).toEqual({ entities: 101, views: 180, pooled: 24 });
+    expect(snapshot.tiles.scene).toEqual({
+      entities: 104,
+      views: 180,
+      pooled: 24,
+      effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
+    });
+    expect(root.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
+      "18 particles · 1 emitters · 24 filters"
+    );
+
+    // One pushed game.effects value reaches the Scene tile.
+    agent.set("game.effects", { particles: 30, emitters: 2, filters: 24, renderPasses: 51 });
+    await until(
+      () => app.renderView.snapshot().tiles.scene?.effects?.particles === 30,
+      "pushed effects"
+    );
     expect(snapshot.textures.map(row => [row.key, row.use.kind])).toEqual([
       ["ui.hud-pill", "in-use"],
       ["board.board-tray", "in-use"],
@@ -226,7 +244,7 @@ describe("renderView integration", () => {
     act(() => app.workspace.show("flow"));
     await until(() => hub.unwatched.length === 3, "three unwatch");
     expect(hub.unwatched.toSorted()).toEqual(["game.entities", "game.projections", "game.ui"]);
-    expect(watched()).toEqual(["game.assets", "game.render"]);
+    expect(watched()).toEqual(["game.assets", "game.effects", "game.render"]);
 
     // A bundle that leaves game.assets enters the release log.
     agent.set("game.assets", {
@@ -238,6 +256,31 @@ describe("renderView integration", () => {
     expect(app.renderView.snapshot().releases).toEqual([
       { frame: 1841, bundle: "ui", tier: "core", mb: 2 }
     ]);
+
+    await app.stop();
+    expect(watched()).toEqual([]);
+  });
+
+  it("a game older than 0.0.3 (no game.effects in the manifest) gets no effects watch", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    const older: Manifest = {
+      ...MANIFEST,
+      sources: MANIFEST.sources.filter(source => source.id !== "game.effects")
+    };
+    hub.open(SESSION, older);
+    hub.heartbeat(SESSION.id, 1841, false);
+
+    await until(() => app.renderView.snapshot().tiles.fps !== undefined, "game.render value");
+    act(() => app.workspace.show("render"));
+    await until(() => app.renderView.snapshot().tiles.scene !== undefined, "scene tile");
+
+    expect(agent.watch.mock.calls.map(call => call[0])).not.toContain("game.effects");
+    expect(app.renderView.snapshot().tiles.scene).not.toHaveProperty("effects");
+    expect(root.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
+      "Particles and filters are not reported (follow-up F-R1)"
+    );
 
     await app.stop();
     expect(watched()).toEqual([]);

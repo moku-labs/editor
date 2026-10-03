@@ -70,10 +70,6 @@ function Title(props: {
  *
  * @param props - The api, the config, the panel values and the link status.
  * @returns The workspace.
- * @example
- * ```tsx
- * <StateView api={api} config={config} model={model} position={position} history={history} status={tools.status} />
- * ```
  */
 export function StateView(props: StateViewProps): VNode {
   const { api, config, model, position, history, status } = props;

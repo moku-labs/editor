@@ -281,4 +281,36 @@ describe("flowView integration", () => {
     await app.stop();
     expect(root.querySelector('[data-flow="world"]')).toBeNull();
   });
+
+  it("default hub thresholds: settingsPopup/open (5 outcomes) is a card, not a hub", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    hub.open(SESSION, MANIFEST);
+    await until(
+      () => hub.watches("game.graph").length > 0 && hub.watches("game.history").length > 0,
+      "watches"
+    );
+    const graph: Json = structuredClone(cloneGraph());
+    hub.value(SESSION.id, "game.graph", graph);
+    hub.value(SESSION.id, "game.position", {
+      path: "board/awaitIntent",
+      flow: "board",
+      node: "awaitIntent",
+      waiting: ["tap", "leave"]
+    });
+    hub.value(SESSION.id, "game.history", []);
+    hub.heartbeat(SESSION.id, 1840, false);
+    await until(() => root.querySelector('[data-flow="hub"]') !== null, "the board hub");
+
+    act(() => app.flowView.flows.enter("main/settings"));
+    await until(
+      () => root.querySelector('[data-key$="settingsPopup/open"]') !== null,
+      "the settingsPopup flow"
+    );
+    expect(find('[data-key$="settingsPopup/open"]').dataset.flow).toBe("node-card");
+    expect(root.querySelector('[data-flow="hub"]')).toBeNull();
+
+    await app.stop();
+  });
 });

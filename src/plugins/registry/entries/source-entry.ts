@@ -26,10 +26,6 @@ const FAILED: unique symbol = Symbol("registry.failed");
  * @param input - The checked input.
  * @param fn - The listener.
  * @returns The door's unsubscribe.
- * @example
- * ```ts
- * const stop = guardedWatch(game, sources.position, log, {}, value => panel.show(value));
- * ```
  */
 function guardedWatch(
   game: GameLike,
@@ -44,10 +40,6 @@ function guardedWatch(
    * Logs the first error of a streak; the next delivery ends the streak.
    *
    * @param error - What was thrown inside the frame.
-   * @example
-   * ```ts
-   * fail(new Error("door broke")); // warn "registry:watch-failed" once
-   * ```
    */
   const fail = (error: unknown): void => {
     if (failing) return;
@@ -63,10 +55,6 @@ function guardedWatch(
      * @param app - The game app.
      * @param given - The checked input.
      * @returns What the door read, or FAILED.
-     * @example
-     * ```ts
-     * guarded.read(game, {}); // the value, or FAILED when the door threw
-     * ```
      */
     read: (app, given) => {
       try {
@@ -82,10 +70,6 @@ function guardedWatch(
    * Converts a read value and hands it to the listener; any throw is logged, never rethrown.
    *
    * @param value - What the guarded read returned.
-   * @example
-   * ```ts
-   * deliver(new Set([1])); // fn({ $set: [1] })
-   * ```
    */
   const deliver = (value: unknown): void => {
     if (value === FAILED) return;
@@ -107,10 +91,6 @@ function guardedWatch(
  * @param door - The door source.
  * @param log - The registry log.
  * @returns The frozen entry.
- * @example
- * ```ts
- * sourceEntry(game, sources.history, ctx.log).read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
- * ```
  */
 export function sourceEntry(game: GameLike, door: DoorSource, log: Log.LogApi): SourceEntry {
   const descriptor = describeSource(door);
@@ -121,10 +101,6 @@ export function sourceEntry(game: GameLike, door: DoorSource, log: Log.LogApi): 
    *
    * @param input - The checked input.
    * @returns What the door read.
-   * @example
-   * ```ts
-   * readDoor({ last: 1 }); // [{ path: "home", outcome: "play", … }]
-   * ```
    */
   const readDoor = (input: InputOf<InputSchema>): unknown => {
     try {
@@ -143,10 +119,6 @@ export function sourceEntry(game: GameLike, door: DoorSource, log: Log.LogApi): 
      *
      * @param raw - Raw input (`null` = none).
      * @returns The wire value.
-     * @example
-     * ```ts
-     * entry.read({ last: 1 });
-     * ```
      */
     read: (raw: Json): Json => wireValueOf(id, readDoor(checkedInput(id, door.input, raw))),
     /**
@@ -155,10 +127,6 @@ export function sourceEntry(game: GameLike, door: DoorSource, log: Log.LogApi): 
      * @param raw - Raw input (`null` = none).
      * @param fn - Called with each wire value.
      * @returns The door's unsubscribe (idempotent).
-     * @example
-     * ```ts
-     * const stop = entry.watch(null, value => panel.show(value));
-     * ```
      */
     watch: (raw: Json, fn: (value: Json) => void): (() => void) =>
       guardedWatch(game, door, log, checkedInput(id, door.input, raw), fn)

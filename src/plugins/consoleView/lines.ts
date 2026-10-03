@@ -116,6 +116,34 @@ export function messageOf(entry: TraceEntry, summaryChars: number): string {
 }
 
 /**
+ * Whether a value is a plain object (not null, not an array).
+ *
+ * @param value - Any value.
+ * @returns True for `{ … }`.
+ * @example
+ * ```ts
+ * isPlainObject([1]); // false
+ * ```
+ */
+function isPlainObject(value: unknown): value is { readonly [key: string]: unknown } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether a value is one of the four log levels.
+ *
+ * @param value - Any value.
+ * @returns True for "debug", "info", "warn" or "error".
+ * @example
+ * ```ts
+ * isLevel("trace"); // false
+ * ```
+ */
+function isLevel(value: unknown): value is LogLevel {
+  return typeof value === "string" && LEVELS.has(value);
+}
+
+/**
  * Whether a wire value is one game.log entry.
  *
  * @param value - Any value.
@@ -126,16 +154,11 @@ export function messageOf(entry: TraceEntry, summaryChars: number): string {
  * ```
  */
 export function isTraceEntry(value: unknown): value is TraceEntry {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  if (!isPlainObject(value)) return false;
 
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.level === "string" &&
-    LEVELS.has(record.level) &&
-    typeof record.event === "string" &&
-    typeof record.ts === "number" &&
-    (record.plugin === undefined || typeof record.plugin === "string")
-  );
+  const { level, event, ts, plugin } = value;
+  const pluginOk = plugin === undefined || typeof plugin === "string";
+  return isLevel(level) && typeof event === "string" && typeof ts === "number" && pluginOk;
 }
 
 /**

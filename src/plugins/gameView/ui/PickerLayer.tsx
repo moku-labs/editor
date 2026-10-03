@@ -18,10 +18,6 @@ export type PickerLayerProps = { readonly ctx: GameViewCtx };
  *
  * @param props - The gameView domain context.
  * @returns The layer.
- * @example
- * ```tsx
- * {picking && <PickerLayer ctx={ctx} />}
- * ```
  */
 export function PickerLayer(props: PickerLayerProps): VNode {
   const { ctx } = props;

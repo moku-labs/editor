@@ -22,7 +22,7 @@ const defaultConfig: PanelsConfig = {};
  *
  * @example
  * ```ts
- * app.panels.list().length; // 13
+ * app.panels.list().length; // 6: one panel per workspace
  * ```
  */
 export const panelsPlugin = createToolsPlugin("panels", {

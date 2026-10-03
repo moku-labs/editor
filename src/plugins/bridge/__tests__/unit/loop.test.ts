@@ -69,9 +69,11 @@ describe("connect — happy path", () => {
     expect(deps.net.fetches.map(fetched => fetched.url)).toEqual([
       "http://127.0.0.1:3000/__editor/hello"
     ]);
-    expect(deps.net.fetches[0]?.init).toEqual({ cache: "no-store", credentials: "same-origin" });
+    expect(deps.net.fetches[0]?.init).toMatchObject({
+      cache: "no-store",
+      credentials: "same-origin"
+    });
     expect(deps.net.sockets[0]?.url).toBe("ws://127.0.0.1:3000/__editor/ws?token=t1&kind=agent");
-    expect(deps.net.sockets[0]?.origin).toBeUndefined();
     expect(deps.state.phase).toBe("connecting");
 
     socketAt(deps).open();
@@ -99,6 +101,16 @@ describe("connect — happy path", () => {
 
     expect(deps.net.fetches[0]?.init.headers).toEqual({ origin: "http://127.0.0.1:4000" });
     expect(deps.net.sockets[0]?.origin).toBe("http://127.0.0.1:4000");
+  });
+
+  it("sends the hello origin in a Bun process even when the page has a document", async () => {
+    const deps = createDeps();
+
+    await connect(deps);
+
+    expect(deps.page.document).toBeDefined();
+    expect(deps.net.fetches[0]?.init.headers).toEqual({ origin: "http://127.0.0.1:3000" });
+    expect(deps.net.sockets[0]?.origin).toBe("http://127.0.0.1:3000");
   });
 
   it("never logs the token", async () => {
@@ -298,7 +310,7 @@ describe("connect — failures", () => {
     expect(deps.log.error).toHaveBeenCalledWith(
       "bridge:connect-crashed",
       undefined,
-      expect.any(Error)
+      new Error("hook broke")
     );
   });
 });

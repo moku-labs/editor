@@ -106,7 +106,8 @@ export function deviceById(id: string): DeviceSpec | undefined {
  * @returns The DeviceSpec.
  * @example
  * ```ts
- * presetOf(ctx.state.device.preset).name; // "iPhone 15"
+ * presetOf("pixel-8").name; // "Pixel 8"
+ * presetOf("nokia").name; // "iPhone 15"
  * ```
  */
 export function presetOf(id: string): DeviceSpec {

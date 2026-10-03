@@ -1,10 +1,10 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { describe, expect, it } from "vitest";
-import { asAssetsUsage, asRenderStats } from "../../guards";
+import { asAssetsUsage, asEffectsStats, asRenderStats } from "../../guards";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// guards.ts: game.render and game.assets narrowed from Json; the game's own
-// examples pass, anything else is undefined.
+// guards.ts: game.render, game.assets and game.effects narrowed from Json; the
+// game's own examples pass, anything else is undefined.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("asRenderStats", () => {
@@ -20,6 +20,22 @@ describe("asRenderStats", () => {
 
     expect(asRenderStats(example)).toEqual(example);
     expect(asRenderStats({ ...example, drawCalls: 7 })).toEqual({ ...example, drawCalls: 7 });
+  });
+
+  it("accepts the game 0.0.3 example with renderPasses and drawCalls", () => {
+    const example = {
+      fps: 60,
+      frameMs: 3.4,
+      textures: 12,
+      textureMb: 41.25,
+      views: 180,
+      pooled: 24,
+      renderPasses: 1,
+      drawCalls: 14
+    };
+
+    expect(asRenderStats(example)).toEqual(example);
+    expect(asRenderStats({ ...example, renderPasses: "1" })).not.toHaveProperty("renderPasses");
   });
 
   it("drops a drawCalls that is not a number and extra fields", () => {
@@ -85,5 +101,35 @@ describe("asAssetsUsage", () => {
     ).toBeUndefined();
     expect(asAssetsUsage({ textureMb: 3.5, budgetMb: 192, bundles: [7] })).toBeUndefined();
     expect(asAssetsUsage({ textureMb: 3.5, budgetMb: "192", bundles: [] })).toBeUndefined();
+  });
+});
+
+describe("asEffectsStats", () => {
+  it("accepts the game's example", () => {
+    const example = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+
+    expect(asEffectsStats(example)).toEqual(example);
+    expect(asEffectsStats({ ...example, extra: 1 })).toEqual(example);
+    expect(asEffectsStats({ particles: 0, emitters: 0, filters: 0, renderPasses: 0 })).toEqual({
+      particles: 0,
+      emitters: 0,
+      filters: 0,
+      renderPasses: 0
+    });
+  });
+
+  it("rejects a missing field, a negative, NaN, a string and other shapes", () => {
+    expect(asEffectsStats({ particles: 18, emitters: 1, filters: 24 })).toBeUndefined();
+    expect(
+      asEffectsStats({ particles: -1, emitters: 1, filters: 24, renderPasses: 49 })
+    ).toBeUndefined();
+    expect(
+      asEffectsStats({ particles: 18, emitters: Number.NaN, filters: 24, renderPasses: 49 })
+    ).toBeUndefined();
+    expect(
+      asEffectsStats({ particles: 18, emitters: 1, filters: "24", renderPasses: 49 })
+    ).toBeUndefined();
+    expect(asEffectsStats(null)).toBeUndefined();
+    expect(asEffectsStats([18, 1, 24, 49])).toBeUndefined();
   });
 });

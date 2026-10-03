@@ -56,10 +56,6 @@ type MoreRowProps = RowProps<Extract<TreeRow, { kind: "more" }>> & {
  * @param props - The patch of the row.
  * @param props.patch - The patch.
  * @returns The chip, or nothing for a remove.
- * @example
- * ```tsx
- * <ChangeChip patch={patch} /> // <span data-tag="err" data-part="was">was 8</span>
- * ```
  */
 function ChangeChip(props: { readonly patch: StatePatch }): VNode | undefined {
   const { op, was } = props.patch;
@@ -85,10 +81,6 @@ function ChangeChip(props: { readonly patch: StatePatch }): VNode | undefined {
  * @param props - The row.
  * @param props.row - The value row.
  * @returns The value part.
- * @example
- * ```tsx
- * <RowValue row={row} /> // ":" then <span data-part="value" data-kind="number">7</span>
- * ```
  */
 function RowValue(props: { readonly row: Extract<TreeRow, { kind: "node" }> }): VNode | undefined {
   const { row } = props;
@@ -111,10 +103,6 @@ function RowValue(props: { readonly row: Extract<TreeRow, { kind: "node" }> }): 
  *
  * @param props - The row, its focus state and handlers, its patch and change mark.
  * @returns The row.
- * @example
- * ```tsx
- * <NodeRow row={row} active patch={undefined} hasChange={false} onKey={onKey} onClick={onClick} bind={bind} />
- * ```
  */
 function NodeRow(props: NodeRowProps): VNode {
   const { row, active, patch, hasChange, onKey, onClick, bind } = props;
@@ -150,10 +138,6 @@ function NodeRow(props: NodeRowProps): VNode {
  *
  * @param props - The row, its focus state and handlers, the page size.
  * @returns The row.
- * @example
- * ```tsx
- * <MoreRow row={row} active={false} pageSize={100} onKey={onKey} onMore={onMore} bind={bind} />
- * ```
  */
 function MoreRow(props: MoreRowProps): VNode {
   const { row, active, pageSize, onKey, onMore, bind } = props;
@@ -213,10 +197,6 @@ function shownOf(shown: ReadonlyMap<string, number>, pageSize: number, pointer: 
  *
  * @param control - The tree of this render.
  * @param pointer - The row pointer.
- * @example
- * ```ts
- * focusRow(control, "/player/merge");
- * ```
  */
 function focusRow(control: TreeControl, pointer: string): void {
   control.setFocus(pointer);
@@ -229,10 +209,6 @@ function focusRow(control: TreeControl, pointer: string): void {
  * @param control - The tree of this render.
  * @param event - The keydown event.
  * @param index - Index of the row.
- * @example
- * ```ts
- * onTreeKey(control, event, 0); // ArrowDown focuses the second row
- * ```
  */
 function onTreeKey(control: TreeControl, event: KeyboardEvent, index: number): void {
   const action = treeKey(control.rows, index, event.key);
@@ -247,10 +223,6 @@ function onTreeKey(control: TreeControl, event: KeyboardEvent, index: number): v
  *
  * @param control - The tree of this render.
  * @param row - The clicked row.
- * @example
- * ```ts
- * clickRow(control, row); // a container opens or closes
- * ```
  */
 function clickRow(control: TreeControl, row: Extract<TreeRow, { kind: "node" }>): void {
   if (row.size !== undefined) control.api.setExpanded(row.pointer, !row.open);
@@ -263,10 +235,6 @@ function clickRow(control: TreeControl, row: Extract<TreeRow, { kind: "node" }>)
  * @param elements - Elements by row pointer.
  * @param pointer - The row pointer.
  * @param element - The element, null on unmount.
- * @example
- * ```ts
- * bindElement(elements, "/player", element);
- * ```
  */
 function bindElement(
   elements: Map<string, HTMLElement>,
@@ -282,10 +250,6 @@ function bindElement(
  *
  * @param props - The api, page size, root value, root name and last commit.
  * @returns The tree.
- * @example
- * ```tsx
- * <JsonTree api={api} pageSize={100} value={model.player} root="player" commit={api.lastCommit()} />
- * ```
  */
 export function JsonTree(props: JsonTreeProps): VNode {
   const { api, pageSize, value, root, commit } = props;

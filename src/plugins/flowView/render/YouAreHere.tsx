@@ -82,10 +82,6 @@ export function youAreHereTag(
  *
  * @param props - Context and actions.
  * @returns The tag, or an empty fragment when it does not show.
- * @example
- * ```tsx
- * <YouAreHere ctx={ctx} actions={actions} />
- * ```
  */
 export function YouAreHere(props: YouAreHereProps): VNode {
   const { ctx, actions } = props;

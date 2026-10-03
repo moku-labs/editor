@@ -39,6 +39,15 @@ describe("active / show", () => {
     expect(location.hash).toBe("#game");
   });
 
+  it("show un-hides the new host before the re-render, so the preview measures a shown host", () => {
+    const flow = api.host("flow");
+    const render = api.host("render");
+    expect(render.hidden).toBe(true);
+    api.show("render");
+    expect(render.hidden).toBe(false);
+    expect(flow.hidden).toBe(true);
+  });
+
   it("showing the shown workspace emits nothing", () => {
     api.show("flow");
     expect(ctx.emit).not.toHaveBeenCalled();
@@ -141,7 +150,7 @@ describe("device / setDevice / devices", () => {
     expect(ctx.log.error).toHaveBeenCalledWith(
       "workspace:prefs-listener-failed",
       {},
-      expect.any(Error)
+      new Error("bad listener")
     );
   });
 });
@@ -231,7 +240,7 @@ describe("gameFrame / previewZone", () => {
     expect(api.gameFrame()).toBe(frame);
     expect(frame.url).toBe(new URL("/game/", location.href).href);
     expect(frame.box()).toBeUndefined();
-    expect(frame.overlay().dataset.frameOverlay).toBeDefined();
+    expect(frame.overlay().dataset.frameOverlay).toBe("");
     await expect(frame.reload()).resolves.toEqual({ restored: false, reason: "not_mounted" });
   });
 

@@ -18,10 +18,6 @@ const NORMAL_CLOSE = 1000;
  * not await the socket, so `app.start()` resolves with status `connecting` (or lost `no_boot`).
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * createToolsPlugin("link", { onStart: startLink });
- * ```
  */
 export function startLink(ctx: LinkCtx): void {
   startSilenceWatch(ctx);
@@ -35,10 +31,6 @@ export function startLink(ctx: LinkCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("link", { onStop: stopLink });
- * ```
  */
 export function stopLink(ctx: { readonly state: LinkState }): void {
   const { state } = ctx;

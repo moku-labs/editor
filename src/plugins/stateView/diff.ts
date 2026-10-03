@@ -97,10 +97,6 @@ type Change = { readonly value?: Json | undefined; readonly was?: Json | undefin
  * @param op - The operation.
  * @param path - The path inside the root.
  * @param change - The new and the old value.
- * @example
- * ```ts
- * emit(collector, "replace", ["merge", "nextItemId"], { value: 4, was: 3 });
- * ```
  */
 function emit(collector: Collector, op: StatePatch["op"], path: Path, change: Change): void {
   if (collector.patches.length >= collector.max) {
@@ -150,10 +146,6 @@ function singleDrop(longer: readonly Json[], shorter: readonly Json[]): number |
  * @param previous - The old object.
  * @param next - The new object.
  * @param path - Path of both objects.
- * @example
- * ```ts
- * walkObject(collector, { a: 1 }, { a: 2, b: 3 }, []);
- * ```
  */
 function walkObject(
   collector: Collector,
@@ -179,10 +171,6 @@ function walkObject(
  * @param previous - The old array.
  * @param next - The new array.
  * @param path - Path of both arrays.
- * @example
- * ```ts
- * walkArray(collector, [1], [0, 1], ["items"]);
- * ```
  */
 function walkArray(
   collector: Collector,
@@ -219,10 +207,6 @@ function walkArray(
  * @param previous - The old value.
  * @param next - The new value.
  * @param path - Path of both values.
- * @example
- * ```ts
- * walk(collector, { a: 1 }, { a: 2 }, []);
- * ```
  */
 function walk(collector: Collector, previous: Json, next: Json, path: Path): void {
   if (deepEqual(previous, next)) return;

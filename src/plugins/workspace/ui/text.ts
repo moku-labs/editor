@@ -20,6 +20,11 @@ const REASONS: Readonly<Record<string, string>> = {
 const BADGE_WORDS: Readonly<Record<string, string>> = { warn: "warning", error: "error" };
 
 /**
+ * Milliseconds in one second.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
  * A lost reason in words.
  *
  * @param reason - The reason of a lost link status.
@@ -55,11 +60,11 @@ export function capitalize(text: string): string {
  * @returns Seconds.
  * @example
  * ```ts
- * secondsSince(status.since, Date.now()); // 6
+ * secondsSince(1_000, 7_000); // 6
  * ```
  */
 export function secondsSince(since: number, now: number): number {
-  return Math.max(0, Math.round((now - since) / 1000));
+  return Math.max(0, Math.round((now - since) / MS_PER_SECOND));
 }
 
 /**
@@ -73,7 +78,7 @@ export function secondsSince(since: number, now: number): number {
  * ```
  */
 export function secondsOf(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 1000));
+  return Math.max(1, Math.ceil(ms / MS_PER_SECOND));
 }
 
 /**
@@ -81,10 +86,6 @@ export function secondsOf(ms: number): number {
  *
  * @param epoch - Epoch ms.
  * @returns HH:MM:SS.
- * @example
- * ```ts
- * clockTime(session.connectedAt);
- * ```
  */
 export function clockTime(epoch: number): string {
   const date = new Date(epoch);

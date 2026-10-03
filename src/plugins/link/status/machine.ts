@@ -109,10 +109,6 @@ function sameStatus(left: LinkStatus, right: LinkStatus): boolean {
  * Emits the global `link:status` with the current status and the chosen session.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * emitStatus(ctx); // after a session switch that kept the status kind
- * ```
  */
 export function emitStatus(ctx: LinkCtx): void {
   const { status, chosen } = ctx.state;
@@ -125,10 +121,6 @@ export function emitStatus(ctx: LinkCtx): void {
  * @param ctx - Domain context of link.
  * @param next - The new status.
  * @returns Whether it changed (and was emitted).
- * @example
- * ```ts
- * setStatus(ctx, { kind: "live", frame: 1840 });
- * ```
  */
 export function setStatus(ctx: LinkCtx, next: LinkStatus): boolean {
   if (sameStatus(ctx.state.status, next)) return false;
@@ -144,10 +136,6 @@ export function setStatus(ctx: LinkCtx, next: LinkStatus): boolean {
  * @param ctx - Domain context of link.
  * @param input - What happened.
  * @returns Whether the status changed.
- * @example
- * ```ts
- * applyStatus(ctx, { type: "socket-open" });
- * ```
  */
 export function applyStatus(ctx: LinkCtx, input: StatusInput): boolean {
   return setStatus(ctx, nextStatus(ctx.state.status, input));

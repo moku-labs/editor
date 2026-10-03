@@ -31,10 +31,6 @@ function realFolder(root: string): string | undefined {
  *
  * @param ctx - Domain context of files.
  * @throws {Error} `[moku-editor] files.root "<root>" is not a directory.` or an empty allow list.
- * @example
- * ```ts
- * createServerPlugin("files", { onInit: validateFilesConfig });
- * ```
  */
 export function validateFilesConfig(ctx: FilesCtx): void {
   const { root, allow, deny } = ctx.config;

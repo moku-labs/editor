@@ -18,10 +18,6 @@ import { checkedInput, doorFailed, firstLine, messageOf, wireValueOf } from "./f
  * @param door - The door command.
  * @param log - The registry log.
  * @returns The frozen entry.
- * @example
- * ```ts
- * await commandEntry(game, commands.step, ctx.log).run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
- * ```
  */
 export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi): CommandEntry {
   const descriptor = describeCommand(door);
@@ -34,10 +30,6 @@ export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi)
      *
      * @param raw - Raw input (`null` = none).
      * @returns The wire value and the run state of the game.
-     * @example
-     * ```ts
-     * await entry.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { path, frame, tainted } }
-     * ```
      */
     run: async (raw: Json): Promise<RunResult> => {
       const input = checkedInput(id, door.input, raw);
@@ -59,10 +51,6 @@ export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi)
  *
  * @param entry - The editor command.
  * @returns The guarded copy, with a fresh frozen descriptor.
- * @example
- * ```ts
- * state.commands.set(entry.descriptor.id, guardEntry(entry));
- * ```
  */
 export function guardEntry(entry: CommandEntry): CommandEntry {
   const descriptor = describeCommand(entry.descriptor);
@@ -75,10 +63,6 @@ export function guardEntry(entry: CommandEntry): CommandEntry {
      *
      * @param raw - Raw input; the editor command checks it itself.
      * @returns What the editor command answered.
-     * @example
-     * ```ts
-     * await guarded.run({ on: true }); // { value: true, state: registry.envelope() }
-     * ```
      */
     run: async (raw: Json): Promise<RunResult> => {
       try {

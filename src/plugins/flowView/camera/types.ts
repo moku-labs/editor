@@ -69,7 +69,8 @@ export type CameraApi = {
   get(): Camera;
 
   /**
-   * Fits every item of the root frame (F / ⇧1), leaving room for the preview and the minimap.
+   * Fits every item of the root frame (F / ⇧1), leaving room for the preview and the minimap;
+   * animated over 420 ms. Does nothing before the first layout.
    *
    * @example
    * ```ts
@@ -81,6 +82,7 @@ export type CameraApi = {
 
   /**
    * Fits the selection and its neighbours (⇧2); the current node when nothing is selected.
+   * Animated over 420 ms.
    *
    * @example
    * ```ts
@@ -114,6 +116,7 @@ export type CameraApi = {
 
   /**
    * Toggles or sets Follow the game (B5). Only this call and the toolbar toggle change it (M9).
+   * Turning it on moves the camera to the current node over 500 ms.
    *
    * @param on - The new value; omitted = toggle.
    * @returns The new value.
@@ -133,13 +136,16 @@ export type CameraActions = CameraApi & {
   panBy(dx: number, dy: number): void;
   /** Zooms by a factor around a screen point at once (Ctrl/⌘ + wheel, pinch). */
   zoomAround(px: number, py: number, factor: number): void;
-  /** Moves the viewport centre onto a world point, animated (minimap click) or live (drag). */
+  /**
+   * Moves the viewport centre onto a world point: animated over 420 ms (minimap click), or live
+   * (minimap drag).
+   */
   centreOn(x: number, y: number, animate: boolean): void;
   /** Focus move onto an item (focusCamera, 420 ms). */
   focusItem(item: Item): void;
   /** Follow move onto an item (followCamera, 500 ms). */
   followItem(item: Item): void;
-  /** Applies the default camera once per root (M11). */
+  /** Applies the default camera once per root (M11), without a tween. */
   applyDefault(): void;
   /** Records the canvas size; applies the default camera when it was not yet applied. */
   setView(view: ViewSize): void;

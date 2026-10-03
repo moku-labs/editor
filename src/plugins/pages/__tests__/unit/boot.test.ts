@@ -40,7 +40,16 @@ describe("escapeHtml", () => {
 describe("injectBoot", () => {
   it("places the boot tag right before </head> and replaces the title", () => {
     const html = injectBoot(TEMPLATE, BOOT, "my game");
-    expect(html).toBeDefined();
+    expect(html).toBe(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>my game</title>
+    <link rel="stylesheet" crossorigin href="./assets/index-abc.css">
+  <script type="application/json" id="moku-editor-boot">${safeJson(BOOT)}</script></head>
+  <body><div data-editor-root></div></body>
+</html>
+`);
     const page = html ?? "";
     expect(page).toContain("<title>my game</title>");
     expect(page).toContain(

@@ -4,18 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { bootJsonOf, rawGet } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The moku-editor bin as a real process: a tiny game folder and the merge-game
-// fixture page, served next to the editor on a random port.
+// fixture page, served next to the editor on a random port. The merge-game case
+// runs only where the pinned game checkout exists (tests/fixtures/game-dir.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = fileURLToPath(new URL("../../../../../", import.meta.url));
 const BIN = join(REPO, "src", "plugins", "pages", "bin.ts");
-const MERGE_GAME = fileURLToPath(
-  new URL("../game/tests/integration/merge-game/", `file://${REPO}`)
-);
+const HAS_MERGE_GAME = existsSync(MERGE_GAME_DIR);
 
 /** A spawned bin and the stdout read so far. */
 type Running = {
@@ -137,16 +137,15 @@ describe("moku-editor bin", () => {
     expect(bin.output()).toContain("stopped");
   }, 60_000);
 
-  // CI checks out only this repository: without the sibling game the fixture case is skipped.
-  it.skipIf(!existsSync(MERGE_GAME))(
+  it.skipIf(!HAS_MERGE_GAME)(
     "serves the merge-game fixture page and its manifest",
     async () => {
       const bin = await spawnBin([
-        join(MERGE_GAME, "web", "index.html"),
+        join(MERGE_GAME_DIR, "web", "index.html"),
         "--port",
         "0",
         "--root",
-        MERGE_GAME
+        MERGE_GAME_DIR
       ]);
       try {
         const origin = `http://127.0.0.1:${bin.port}`;

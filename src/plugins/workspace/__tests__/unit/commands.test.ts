@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
 import { runCommand } from "../../commands";
 import { createCtx, resultOf } from "../helpers";
@@ -7,7 +7,18 @@ import { createCtx, resultOf } from "../helpers";
 // runCommand: link.run, one workspace:ran with the origin, the D1 result
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** The fixed clock of these tests: `at` is Date.now() when the call settled. */
+const NOW = 1_700_000_000_000;
+
 describe("runCommand", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("resolves like link.run and emits one workspace:ran ok with the origin", async () => {
     const ctx = createCtx();
     const result = resultOf({ stepped: 1 });
@@ -20,7 +31,7 @@ describe("runCommand", () => {
       id: "game.pause",
       input: undefined,
       origin: "topbar",
-      at: expect.any(Number),
+      at: NOW,
       ok: true,
       result
     });
@@ -41,7 +52,7 @@ describe("runCommand", () => {
       id: "game.step",
       input: { frames: "x" },
       origin: "key",
-      at: expect.any(Number),
+      at: NOW,
       ok: false,
       error: {
         code: -32_602,

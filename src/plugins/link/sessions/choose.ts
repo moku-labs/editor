@@ -22,7 +22,11 @@ import { notifyManifest } from "./manifest";
  * @returns The newest, or undefined for none.
  * @example
  * ```ts
- * newest(sessions)?.id;
+ * newest([
+ *   { id: "a", game: "g", page: "/", embedded: false, connectedAt: 100 },
+ *   { id: "b", game: "g", page: "/", embedded: false, connectedAt: 200 },
+ *   { id: "c", game: "g", page: "/", embedded: true, connectedAt: 200 }
+ * ])?.id; // "b": the first of the two newest
  * ```
  */
 function newest(list: readonly SessionInfo[]): SessionInfo | undefined {
@@ -41,10 +45,6 @@ function newest(list: readonly SessionInfo[]): SessionInfo | undefined {
  * @param current - The chosen session.
  * @param sticky - Whether `current` was chosen through `choose()`.
  * @returns The session id, or undefined for an empty list.
- * @example
- * ```ts
- * pickSession(sessions, state.chosen, state.sticky);
- * ```
  */
 export function pickSession(
   list: readonly SessionInfo[],
@@ -66,10 +66,6 @@ export function pickSession(
  *
  * @param ctx - Domain context of link.
  * @returns The delay in ms.
- * @example
- * ```ts
- * setTimeout(() => retrySession(ctx), sessionDelay(ctx));
- * ```
  */
 function sessionDelay(ctx: LinkCtx): number {
   const { state, config } = ctx;
@@ -86,10 +82,6 @@ function sessionDelay(ctx: LinkCtx): number {
  *
  * @param ctx - Domain context of link.
  * @param reason - The lost reason, undefined to leave the status alone.
- * @example
- * ```ts
- * scheduleSessionRetry(ctx, "game_reloaded");
- * ```
  */
 export function scheduleSessionRetry(ctx: LinkCtx, reason?: string): void {
   const { state } = ctx;
@@ -105,10 +97,6 @@ export function scheduleSessionRetry(ctx: LinkCtx, reason?: string): void {
  *
  * @param ctx - Domain context of link.
  * @param sessionId - The session.
- * @example
- * ```ts
- * attachLater(ctx, pick);
- * ```
  */
 function attachLater(ctx: LinkCtx, sessionId: string): void {
   attach(ctx, sessionId).catch(() => {
@@ -121,10 +109,6 @@ function attachLater(ctx: LinkCtx, sessionId: string): void {
  * EMPTY_AFTER_LOST_MS, or schedules the next retry with a longer delay.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * retrySession(ctx); // "Retry now" while only the session was lost
- * ```
  */
 export function retrySession(ctx: LinkCtx): void {
   const { state } = ctx;
@@ -137,7 +121,8 @@ export function retrySession(ctx: LinkCtx): void {
     attachLater(ctx, pick);
     return;
   }
-  if (state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS) {
+  const hasExpired = state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS;
+  if (hasExpired) {
     applyStatus(ctx, { type: "lost-expired" });
     return;
   }
@@ -151,10 +136,6 @@ export function retrySession(ctx: LinkCtx): void {
  *
  * @param ctx - Domain context of link.
  * @param reason - The hub's close reason.
- * @example
- * ```ts
- * closeChosen(ctx, "game_reloaded");
- * ```
  */
 export function closeChosen(ctx: LinkCtx, reason: string): void {
   const { state } = ctx;
@@ -179,10 +160,6 @@ export function closeChosen(ctx: LinkCtx, reason: string): void {
  * @param sessionId - The session.
  * @param generation - The attach it belongs to.
  * @returns The manifest.
- * @example
- * ```ts
- * const manifest = await fetchManifest(ctx, "s-1", state.generation);
- * ```
  */
 async function fetchManifest(
   ctx: LinkCtx,
@@ -214,15 +191,12 @@ async function fetchManifest(
  * @param ctx - Domain context of link.
  * @param sessionId - The session to attach.
  * @returns Its manifest.
- * @example
- * ```ts
- * const manifest = await attach(ctx, "s-7f3a");
- * ```
  */
 export async function attach(ctx: LinkCtx, sessionId: string): Promise<Manifest> {
   const { state } = ctx;
   const previous = state.chosen;
 
+  // Leave the old session: its subs, the retry timer and the lost clock.
   if (previous !== undefined && isAttached(state)) unwatchAll(ctx, previous);
   detachAll(ctx);
   clearRetry(state);
@@ -232,11 +206,13 @@ export async function attach(ctx: LinkCtx, sessionId: string): Promise<Manifest>
   state.lostAt = undefined;
   if (!applyStatus(ctx, { type: "attached" })) emitStatus(ctx);
 
+  // Fetch the manifest unless cached; drop the answer when a newer attach started meanwhile.
   const generation = state.generation;
   const manifest =
     state.manifests.get(sessionId) ?? (await fetchManifest(ctx, sessionId, generation));
   if (generation !== state.generation) return manifest;
 
+  // Keep the manifest, tell the listeners and resubscribe every watch.
   state.manifests.set(sessionId, manifest);
   state.attempt = 0;
   notifyManifest(ctx, manifest);
@@ -251,10 +227,6 @@ export async function attach(ctx: LinkCtx, sessionId: string): Promise<Manifest>
  *
  * @param ctx - Domain context of link.
  * @param list - The sessions from the hub.
- * @example
- * ```ts
- * applySessions(ctx, readSessions(params) ?? []);
- * ```
  */
 export function applySessions(ctx: LinkCtx, list: readonly SessionInfo[]): void {
   const { state } = ctx;
@@ -263,16 +235,20 @@ export function applySessions(ctx: LinkCtx, list: readonly SessionInfo[]): void 
   const attached = isAttached(state);
   const ids = new Set(list.map(({ id }) => id));
 
+  // Store the list, forget closed sessions and lose a chosen one that is gone.
   state.sessions = list;
   for (const id of state.manifests.keys()) if (!ids.has(id)) state.manifests.delete(id);
-  if (state.chosen !== undefined && !ids.has(state.chosen)) closeChosen(ctx, "game_reloaded");
+  const lostChosen = state.chosen !== undefined && !ids.has(state.chosen);
+  if (lostChosen) closeChosen(ctx, "game_reloaded");
 
+  // Attach the pick when it is new or nothing is attached on this socket yet.
   const pick = pickSession(list, state.chosen, state.sticky);
   if (pick === undefined) {
     applyStatus(ctx, { type: "sessions", attached: state.chosen !== undefined, count: 0 });
     return;
   }
-  if (pick !== state.chosen || !attached) attachLater(ctx, pick);
+  const needsAttach = pick !== state.chosen || !attached;
+  if (needsAttach) attachLater(ctx, pick);
 }
 
 /**
@@ -281,10 +257,6 @@ export function applySessions(ctx: LinkCtx, list: readonly SessionInfo[]): void 
  * @param ctx - Domain context of link.
  * @param sessionId - The session.
  * @returns Its manifest; rejects -32003 `choose_session` for an id that is not open.
- * @example
- * ```ts
- * await chooseSession(ctx, "s-7f3a");
- * ```
  */
 export async function chooseSession(ctx: LinkCtx, sessionId: string): Promise<Manifest> {
   const { state } = ctx;

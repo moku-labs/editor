@@ -96,7 +96,7 @@ const HOST = `
   }`;
 
 /**
- * The card, scoped to `[data-overlay]`. No backdrop blur: it costs too much over a WebGPU canvas.
+ * The card, scoped to `[data-overlay]`. No backdrop blur: it costs too much over a GPU canvas (WebGPU or WebGL).
  */
 const CARD = `
   @scope ([data-overlay]) {

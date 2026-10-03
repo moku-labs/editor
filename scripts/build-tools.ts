@@ -22,6 +22,15 @@ const ui = createBrandConsole();
 const FONT_URL = /url\((["']?)\.\/fonts\/([\w.-]+)\.woff2\1\)/g;
 
 /**
+ * A dynamic import of a local chunk that still carries the `with { type: "text" }` attribute.
+ * Bun.build turns the text import of the ELK worker script (flowView worker-source.ts) into a
+ * JS chunk that exports the text, but keeps the attribute, which browsers refuse ("text" is not
+ * a valid module type), so the layout worker never started in a real browser.
+ */
+const TEXT_IMPORT =
+  /(import\((["'])\.\/[\w.-]+\.js\2)(\s*,\s*\{\s*with\s*:\s*\{\s*type\s*:\s*["']text["']\s*\}\s*\})\)/g;
+
+/**
  * Eight hex characters of a sha256.
  *
  * @param bytes - The content.
@@ -73,6 +82,35 @@ async function externalizeFonts(outDir: string, cssPath: string): Promise<string
 }
 
 /**
+ * Drops the text import attribute from the dynamic imports of the emitted chunks (TEXT_IMPORT).
+ * The attribute is blanked with spaces of the same length, so the linked source maps stay true.
+ *
+ * @param outDir - The output folder.
+ * @returns How many imports were fixed.
+ * @example
+ * ```ts
+ * await dropTextAttributes("dist/tools"); // 1
+ * ```
+ */
+async function dropTextAttributes(outDir: string): Promise<number> {
+  let fixed = 0;
+  for (const file of await filesUnder(outDir)) {
+    if (!file.endsWith(".js")) continue;
+    const path = join(outDir, file);
+    const code = await readFile(path, "utf8");
+    const rewritten = code.replaceAll(
+      TEXT_IMPORT,
+      (_match, head: string, _quote, attribute: string) => {
+        fixed += 1;
+        return `${head}${" ".repeat(attribute.length)})`;
+      }
+    );
+    if (rewritten !== code) await writeFile(path, rewritten);
+  }
+  return fixed;
+}
+
+/**
  * Every file under a folder, relative to it.
  *
  * @param dir - The folder.
@@ -105,6 +143,8 @@ async function checkLayout(outDir: string): Promise<boolean> {
     ? await readFile(join(outDir, "index.html"), "utf8")
     : "";
   const urls = [...html.matchAll(/\s(?:src|href)="([^"]*)"/g)].map(match => match[1] ?? "");
+  const scripts = files.filter(file => file.endsWith(".js"));
+  const texts = await Promise.all(scripts.map(file => readFile(join(outDir, file), "utf8")));
   const sheets = [...html.matchAll(/<link[^>]*rel="stylesheet"/g)];
   const checks: [boolean, string][] = [
     [files.includes("index.html"), "index.html at the root"],
@@ -121,6 +161,10 @@ async function checkLayout(outDir: string): Promise<boolean> {
     [
       files.some(file => file.startsWith("assets/") && file.endsWith(".woff2")),
       "Geist woff2 fonts in assets/"
+    ],
+    [
+      texts.every(text => !/\{\s*with\s*:\s*\{\s*type\s*:/.test(text)),
+      "no import attribute left in a script"
     ]
   ];
   for (const [ok, label] of checks) ui.check(ok, label);
@@ -166,6 +210,7 @@ async function buildTools(): Promise<number> {
   for (const output of result.outputs) {
     if (output.path.endsWith(".css")) await externalizeFonts(outDir, output.path);
   }
+  await dropTextAttributes(outDir);
   if (!(await checkLayout(outDir))) {
     ui.error("build:tools layout checks failed");
     return 1;

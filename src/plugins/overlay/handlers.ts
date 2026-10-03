@@ -12,10 +12,6 @@ import type { OverlayCtx, OverlayHooks, OverlayPluginCtx } from "./types";
  *
  * @param ctx - Plugin context of the overlay.
  * @returns The hook map.
- * @example
- * ```ts
- * createAgentPlugin("overlay", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: OverlayPluginCtx): OverlayHooks {
   return { "bridge:status": handleBridgeStatus(overlayCtxOf(ctx)) };
@@ -26,10 +22,6 @@ export function createHandlers(ctx: OverlayPluginCtx): OverlayHooks {
  *
  * @param octx - Domain context.
  * @returns The bridge:status handler.
- * @example
- * ```ts
- * handleBridgeStatus(octx)({ status: { kind: "live", frame: 12 } });
- * ```
  */
 export function handleBridgeStatus(
   octx: OverlayCtx

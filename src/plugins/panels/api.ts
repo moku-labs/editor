@@ -17,10 +17,6 @@ import type { MountedWorkspace, PanelRunOrigin, PanelSpec, PanelsApi, PanelsCtx 
  *
  * @param ctx - Domain context of panels.
  * @returns The deps.
- * @example
- * ```ts
- * mountPanel(spec, host, depsOf(ctx));
- * ```
  */
 export function depsOf(ctx: PanelsCtx): MountDeps {
   return {
@@ -37,10 +33,6 @@ export function depsOf(ctx: PanelsCtx): MountDeps {
  * Unmounts every panel of a mounted workspace (every unwatch runs).
  *
  * @param record - The mounted workspace.
- * @example
- * ```ts
- * unmountRecord(ctx.state.mounted.get("flow")!);
- * ```
  */
 export function unmountRecord(record: MountedWorkspace): void {
   for (const panel of record.panels.values()) panel.unmount();
@@ -54,10 +46,6 @@ export function unmountRecord(record: MountedWorkspace): void {
  * @param ws - The workspace.
  * @param record - The mount it belongs to.
  * @returns Unmount.
- * @example
- * ```ts
- * const unmount = unmountOf(ctx, "flow", record);
- * ```
  */
 function unmountOf(ctx: PanelsCtx, ws: WorkspaceId, record: MountedWorkspace): () => void {
   return () => {
@@ -75,10 +63,6 @@ function unmountOf(ctx: PanelsCtx, ws: WorkspaceId, record: MountedWorkspace): (
  * @param ws - The workspace.
  * @param element - Its host.
  * @returns The unmount function.
- * @example
- * ```ts
- * mountWorkspace(ctx, "flow", workspace.host("flow"));
- * ```
  */
 export function mountWorkspace(ctx: PanelsCtx, ws: WorkspaceId, element: HTMLElement): () => void {
   const { mounted } = ctx.state;
@@ -105,10 +89,6 @@ export function mountWorkspace(ctx: PanelsCtx, ws: WorkspaceId, element: HTMLEle
  * @param ctx - Domain context of panels.
  * @param spec - The panel.
  * @returns The item.
- * @example
- * ```ts
- * workspace.palette.add(paletteItemOf(ctx, flowPanel));
- * ```
  */
 export function paletteItemOf(ctx: PanelsCtx, spec: PanelSpec): PaletteItem {
   return {
@@ -116,15 +96,8 @@ export function paletteItemOf(ctx: PanelsCtx, spec: PanelSpec): PaletteItem {
     group: "Panels",
     label: spec.title,
     hint: WORKSPACE_LABELS[spec.workspace],
-    /**
-     * Shows the panel's workspace (which mounts it on first show) and focuses its section.
-     *
-     * @example
-     * ```ts
-     * item.run();
-     * ```
-     */
-    run() {
+    // Shows the panel's workspace (which mounts it on first show) and focuses its section.
+    run: () => {
       ctx.require(workspacePlugin).show(spec.workspace);
       ctx.state.mounted.get(spec.workspace)?.panels.get(spec.id)?.section.focus();
     }
@@ -138,10 +111,6 @@ export function paletteItemOf(ctx: PanelsCtx, spec: PanelSpec): PaletteItem {
  * @param ctx - Domain context of panels.
  * @param panel - A PanelSpec from definePanel.
  * @throws {Error} `[moku-editor] Panel "<id>" is already registered.`
- * @example
- * ```ts
- * registerPanel(ctx, flowPanel);
- * ```
  */
 function registerPanel(ctx: PanelsCtx, panel: PanelSpec): void {
   const { state } = ctx;
@@ -162,79 +131,22 @@ function registerPanel(ctx: PanelsCtx, panel: PanelSpec): void {
 }
 
 /**
- * Creates the panels api.
+ * Creates the panels api. The contract of each member is on `PanelsApi` in `types.ts`.
  *
  * @param ctx - Domain context of panels.
  * @returns The PanelsApi (`app.panels`, `ctx.require(panelsPlugin)`).
- * @example
- * ```ts
- * const unmount = createPanelsApi(ctx).mountInto("flow", workspace.host("flow"));
- * ```
  */
 export function createPanelsApi(ctx: PanelsCtx): PanelsApi {
   return {
-    /**
-     * Registers a panel built with definePanel. Throws on a duplicate id. After start, a panel
-     * of an already mounted workspace is mounted at once and gets a palette item.
-     *
-     * @param panel - The PanelSpec.
-     * @example
-     * ```ts
-     * panels.register(flowPanel);
-     * ```
-     */
-    register(panel) {
+    register: panel => {
       registerPanel(ctx, panel);
     },
 
-    /**
-     * Runs a registry command outside any render (R9): link.run, then the global
-     * `workspace:ran` with the origin (default "panel").
-     *
-     * @param id - Command id.
-     * @param input - Command input.
-     * @param origin - Where the run started.
-     * @returns The RunResult; rejects like link.run.
-     * @example
-     * ```ts
-     * await panels.run("game.step", { frames: 1 });
-     * ```
-     */
-    run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult> {
-      return runFromPanel(
-        { link: ctx.require(linkPlugin), emit: ctx.emit },
-        id,
-        input,
-        origin ?? "panel"
-      );
-    },
+    run: (id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult> =>
+      runFromPanel({ link: ctx.require(linkPlugin), emit: ctx.emit }, id, input, origin ?? "panel"),
 
-    /**
-     * Every registered panel, in registration order.
-     *
-     * @returns A copy of the list.
-     * @example
-     * ```ts
-     * panels.list().filter(p => p.workspace === "flow").map(p => p.id); // ["flow"]
-     * ```
-     */
-    list() {
-      return [...ctx.state.panels];
-    },
+    list: () => [...ctx.state.panels],
 
-    /**
-     * Mounts every panel of a workspace into an element, one `<section data-panel>` each.
-     *
-     * @param ws - The workspace.
-     * @param element - The element (`workspace.host(ws)`).
-     * @returns The unmount function.
-     * @example
-     * ```ts
-     * const unmount = panels.mountInto("flow", workspace.host("flow"));
-     * ```
-     */
-    mountInto(ws, element) {
-      return mountWorkspace(ctx, ws, element);
-    }
+    mountInto: (ws, element) => mountWorkspace(ctx, ws, element)
   };
 }

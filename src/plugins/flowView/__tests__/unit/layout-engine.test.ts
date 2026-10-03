@@ -87,7 +87,7 @@ describe("engine choice", () => {
     const { ctx } = createTestCtx({ config: { layoutWorker: true } });
     await prepare(ctx);
     expect(created).toBe(1);
-    expect(ctx.state.layout.result?.byKey["main/home"]).toBeDefined();
+    expect(ctx.state.layout.result?.byKey["main/home"]?.kind).toBe("node");
     expect(ctx.log.warn).not.toHaveBeenCalled();
   });
 
@@ -103,7 +103,7 @@ describe("engine choice", () => {
     );
     const { ctx } = createTestCtx({ config: { layoutWorker: true } });
     await prepare(ctx);
-    expect(ctx.state.layout.result?.byKey["main/home"]).toBeDefined();
+    expect(ctx.state.layout.result?.byKey["main/home"]?.kind).toBe("node");
     expect(ctx.log.warn).toHaveBeenCalledTimes(1);
     actionsOf(ctx).layout.pinnedCount();
   });

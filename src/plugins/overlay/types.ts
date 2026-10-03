@@ -129,17 +129,42 @@ export type OverlayView = {
 };
 
 /**
- * The overlay api (`app.overlay`).
- *
- * @example
- * ```ts
- * editor.overlay.open();
- * editor.overlay.isOpen(); // true
- * ```
+ * The overlay api (`app.overlay`): switches the in-game card on and off. The `editor.overlay`
+ * command does the same from the tools page.
  */
 export type OverlayApi = {
+  /**
+   * Shows the card: render numbers and the game's one-click cheats. Before start it only sets
+   * the flag, and onStart honours it. Idempotent.
+   *
+   * @example
+   * ```ts
+   * // A QA shortcut switches the card on.
+   * app.overlay.open(); // the card appears in the top-right corner of the game page
+   * app.overlay.isOpen(); // true
+   * ```
+   */
   open(): void;
+  /**
+   * Hides the card and stops the render watch and the repaint interval. Idempotent.
+   *
+   * @example
+   * ```ts
+   * // Hide the card before a screenshot.
+   * app.overlay.close();
+   * app.overlay.isOpen(); // false
+   * ```
+   */
   close(): void;
+  /**
+   * Whether the overlay is switched on.
+   *
+   * @returns The flag; false by default, true with `pluginConfigs.overlay.open`.
+   * @example
+   * ```ts
+   * app.overlay.isOpen(); // false: the overlay is off by default
+   * ```
+   */
   isOpen(): boolean;
 };
 

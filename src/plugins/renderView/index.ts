@@ -27,7 +27,7 @@ const defaultConfig: RenderViewConfig = {
  * @example
  * ```ts
  * app.workspace.show("render");
- * app.renderView.snapshot().tiles.drawCalls; // { kind: "absent" }
+ * app.renderView.snapshot().tiles.drawCalls; // { kind: "absent" } in a production build
  * ```
  */
 export const renderViewPlugin = createToolsPlugin("renderView", {

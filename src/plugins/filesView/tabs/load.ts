@@ -3,6 +3,7 @@
  * `readBinary` (R1, R7); the error texts by wire reason; revalidation of an open tab.
  */
 import { linkPlugin } from "../../link";
+import { errorCode } from "../../registry/protocol";
 import { codeOf, messageOf, reasonOf } from "../errors";
 import { notify } from "../store";
 import type { FilesViewCtx, OpenTab } from "../types";
@@ -48,10 +49,10 @@ export function readFailure(error: unknown): ReadFailure {
   const text = messageOf(error);
 
   if (reason === "forbidden_path") return { status: "error", message: SANDBOX_MESSAGE, code };
-  if (code === -32_000 && text.includes("too large")) {
+  if (code === errorCode.commandFailed && text.includes("too large")) {
     return { status: "error", message: TOO_LARGE_MESSAGE, code };
   }
-  if (reason === "unknown_id" || code === -32_601) {
+  if (reason === "unknown_id" || code === errorCode.unknownMethod) {
     return { status: "missing", message: MISSING_MESSAGE, code };
   }
   return { status: "error", message: text, code };
@@ -64,10 +65,6 @@ export function readFailure(error: unknown): ReadFailure {
  * @param tab - The tab.
  * @param error - What link rejected with.
  * @returns The failure shown.
- * @example
- * ```ts
- * showReadFailure(ctx, tab, error).status; // "missing"
- * ```
  */
 export function showReadFailure(ctx: FilesViewCtx, tab: OpenTab, error: unknown): ReadFailure {
   const failure = readFailure(error);
@@ -83,10 +80,6 @@ export function showReadFailure(ctx: FilesViewCtx, tab: OpenTab, error: unknown)
  * @param tab - The tab.
  * @param text - The file text.
  * @param version - Its version.
- * @example
- * ```ts
- * storeText(tab, "export const merge = 1;\n", "3f2a…");
- * ```
  */
 export function storeText(tab: OpenTab, text: string, version: string): void {
   tab.saved = text;
@@ -104,10 +97,6 @@ export function storeText(tab: OpenTab, text: string, version: string): void {
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns When the tab is ready or shows its error.
- * @example
- * ```ts
- * await loadTab(ctx, newTab("nodes/merge.ts"));
- * ```
  */
 export async function loadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
   const { files } = ctx.require(linkPlugin);
@@ -140,10 +129,6 @@ export async function loadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns When the check is done.
- * @example
- * ```ts
- * await revalidate(ctx, tab); // tab.status === "conflict" when someone else saved it
- * ```
  */
 export async function revalidate(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
   if (tab.kind === "image" || tab.status !== "ready") return;

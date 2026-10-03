@@ -3,9 +3,18 @@
  * the lazy ELK engine, pins load/drop/save/reset with version checks) and the flows namespace
  * (expand, collapse, enter, up).
  */
+import type { FilesClient } from "../../link/types";
 import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
 import { notify } from "../state";
-import type { FlowCtx, FlowEnvironment, GraphJson, ItemKey, LayoutResult, NodeId } from "../types";
+import type {
+  FlowCtx,
+  FlowEnvironment,
+  GraphJson,
+  ItemKey,
+  LayoutResult,
+  NodeId,
+  NoteAnchor
+} from "../types";
 import { childFlows, composeLayout, instanceKey, originKey } from "./compose";
 import { createInlineEngine, createLazyEngine, createWorkerEngine } from "./engine";
 import {
@@ -79,10 +88,6 @@ function messageOf(error: unknown): string {
  *
  * @param ctx - Domain context of flowView.
  * @returns The engine.
- * @example
- * ```ts
- * const engine = await realEngine(ctx);
- * ```
  */
 async function realEngine(ctx: FlowCtx): Promise<LayoutEngine> {
   if (!ctx.config.layoutWorker) return createInlineEngine();
@@ -158,10 +163,6 @@ function chainTo(graph: GraphJson, root: string, flow: string): NodeId[] | undef
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
  * @returns The layout actions.
- * @example
- * ```ts
- * await createLayoutApi(ctx, env).reset();
- * ```
  */
 export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActions {
   const { layout } = ctx.state;
@@ -169,16 +170,74 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
-   * The root flow.
+   * The root flow: the last entered flow, else the graph's main flow.
    *
    * @returns The flow name.
-   * @example
-   * ```ts
-   * rootFlow(); // "main"
-   * ```
    */
   function rootFlow(): string {
     return layout.enter.at(-1)?.flow ?? ctx.state.data.graph?.main ?? "main";
+  }
+
+  /**
+   * The cache key of a layout: every input the composition reads.
+   *
+   * @param root - The root flow.
+   * @param notes - The note anchors.
+   * @returns The key.
+   */
+  function cacheKey(root: string, notes: readonly NoteAnchor[]): string {
+    return JSON.stringify([
+      ctx.state.data.graphHash,
+      root,
+      [...layout.expanded].toSorted(),
+      serializePins(layout.pins),
+      notes,
+      ctx.config.hubMinOutcomes,
+      ctx.config.hubMinReturns
+    ]);
+  }
+
+  /**
+   * Composes a layout with the lazy ELK engine (created on the first call); a failure is logged.
+   *
+   * @param graph - The graph.
+   * @param root - The root flow.
+   * @param notes - The note anchors.
+   * @returns The result, or undefined when the layout failed.
+   */
+  async function compose(
+    graph: GraphJson,
+    root: string,
+    notes: readonly NoteAnchor[]
+  ): Promise<LayoutResult | undefined> {
+    layout.engine ??= createLazyEngine(() => realEngine(ctx));
+    try {
+      return await composeLayout({
+        graph,
+        root,
+        expanded: new Set(layout.expanded),
+        pins: layout.pins,
+        notes,
+        config: ctx.config,
+        engine: layout.engine
+      });
+    } catch (error) {
+      ctx.log.warn("flowView: layout failed", { message: messageOf(error) });
+      return undefined;
+    }
+  }
+
+  /**
+   * Keeps a result as the newest cache entry, dropping the oldest beyond CACHE_SIZE.
+   *
+   * @param key - The cache key.
+   * @param result - The result.
+   */
+  function remember(key: string, result: LayoutResult): void {
+    layout.cache.delete(key);
+    layout.cache.set(key, result);
+    while (layout.cache.size > CACHE_SIZE)
+      layout.cache.delete(layout.cache.keys().next().value ?? "");
   }
 
   /**
@@ -186,10 +245,6 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
    *
    * @param previous - The result before.
    * @param result - The new result.
-   * @example
-   * ```ts
-   * settle(previous, result);
-   * ```
    */
   function settle(previous: LayoutResult | undefined, result: LayoutResult): void {
     const camera = env.actions().camera;
@@ -200,31 +255,26 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   }
 
   /**
-   * Writes the pins with the version; on a conflict re-reads, re-applies the dirty ids and writes
-   * once more; a second conflict reloads the file.
+   * Records a successful write: the new version, nothing dirty, the toast naming the file (M12).
    *
-   * @param message - The toast of a successful write.
-   * @example
-   * ```ts
-   * await writePins("Layout saved");
-   * ```
+   * @param version - The version the write returned.
+   * @param message - The toast.
    */
-  async function writePins(message: string): Promise<void> {
-    const files = env.files();
-    try {
-      const written = await files.write(path, serializePins(layout.pins), layout.pinsVersion);
-      layout.pinsVersion = written.version;
-      layout.dirty.clear();
-      env.toast(message, path);
-      return;
-    } catch (error) {
-      if (!isConflict(error)) {
-        ctx.log.warn("flowView: layout.json was not written", { path, message: messageOf(error) });
-        env.toast(`Layout not saved · ${bareMessage(messageOf(error))}`, path);
-        return;
-      }
-    }
+  function markSaved(version: string, message: string): void {
+    layout.pinsVersion = version;
+    layout.dirty.clear();
+    env.toast(message, path);
+  }
 
+  /**
+   * The second write after a version conflict: re-reads layout.json, re-applies the dirty ids and
+   * writes once more. An invalid file turns read-only; a second conflict reloads the file.
+   *
+   * @param files - link.files.
+   * @param message - The toast of a successful write.
+   * @returns Resolves when written, or when the file was reloaded.
+   */
+  async function writeAfterConflict(files: FilesClient, message: string): Promise<void> {
     const fresh = await files.read(path);
     const freshPins = parsePins(fresh.text);
     if (freshPins === undefined) {
@@ -236,9 +286,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
     try {
       const written = await files.write(path, serializePins(merged), fresh.version);
       layout.pins = merged;
-      layout.pinsVersion = written.version;
-      layout.dirty.clear();
-      env.toast(message, path);
+      markSaved(written.version, message);
       await actions.relayout();
     } catch (error) {
       if (!isConflict(error)) throw error;
@@ -248,14 +296,33 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   }
 
   /**
+   * Writes the pins with the version they were read at; a conflict goes to the second write, any
+   * other failure is logged and toasted.
+   *
+   * @param message - The toast of a successful write.
+   * @returns Resolves when the save settled.
+   */
+  async function writePins(message: string): Promise<void> {
+    const files = env.files();
+    try {
+      const written = await files.write(path, serializePins(layout.pins), layout.pinsVersion);
+      markSaved(written.version, message);
+      return;
+    } catch (error) {
+      if (!isConflict(error)) {
+        ctx.log.warn("flowView: layout.json was not written", { path, message: messageOf(error) });
+        env.toast(`Layout not saved · ${bareMessage(messageOf(error))}`, path);
+        return;
+      }
+    }
+    await writeAfterConflict(files, message);
+  }
+
+  /**
    * Runs one save and remembers it in `layout.saving` (onStop waits for it).
    *
    * @param message - The toast of a successful write.
    * @returns The save.
-   * @example
-   * ```ts
-   * await save("Layout saved");
-   * ```
    */
   function save(message: string): Promise<void> {
     const running = writePins(message)
@@ -270,12 +337,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   }
 
   /**
-   * Debounces the save after a drop (layoutSaveDelayMs).
-   *
-   * @example
-   * ```ts
-   * scheduleSave();
-   * ```
+   * Debounces the save after a drop (layoutSaveDelayMs); a read-only layout.json is never written.
    */
   function scheduleSave(): void {
     if (layout.pinsReadOnly) return;
@@ -293,42 +355,16 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   }
 
   /**
-   * Lays out again and logs instead of rejecting.
-   *
-   * @example
-   * ```ts
-   * refresh();
-   * ```
+   * Lays out again without waiting; relayout logs its own failures.
    */
   function refresh(): void {
     actions.relayout().catch(() => {});
   }
 
   const actions: LayoutActions = {
-    /**
-     * Pinned items of the visible flows.
-     *
-     * @returns The count.
-     * @example
-     * ```ts
-     * actions.layout.pinnedCount(); // 2
-     * ```
-     */
-    pinnedCount() {
-      return countPins(layout.pins, actions.visibleFlows());
-    },
+    pinnedCount: () => countPins(layout.pins, actions.visibleFlows()),
 
-    /**
-     * Clears the pins of the visible flows and writes layout.json.
-     *
-     * @returns Resolves when written.
-     * @throws {Error} When nothing is pinned or the file is read-only.
-     * @example
-     * ```ts
-     * await actions.layout.reset();
-     * ```
-     */
-    async reset() {
+    reset: async () => {
       const flows = actions.visibleFlows();
       const count = countPins(layout.pins, flows);
       if (layout.pinsReadOnly) {
@@ -352,72 +388,30 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       await actions.relayout();
     },
 
-    /**
-     * Lays out the graph again.
-     *
-     * @returns Resolves when the result is stored (or dropped as stale).
-     * @example
-     * ```ts
-     * await actions.layout.relayout();
-     * ```
-     */
-    async relayout() {
-      const { graph, graphHash } = ctx.state.data;
+    relayout: async () => {
+      const { graph } = ctx.state.data;
       if (graph === undefined) return;
       const root = rootFlow();
       const notes = env.actions().notes.anchors();
-      const key = JSON.stringify([
-        graphHash,
-        root,
-        [...layout.expanded].toSorted(),
-        serializePins(layout.pins),
-        notes,
-        ctx.config.hubMinOutcomes,
-        ctx.config.hubMinReturns
-      ]);
+      const key = cacheKey(root, notes);
       layout.seq += 1;
       const seq = layout.seq;
+
+      // A cache miss composes; a failed layout or a newer relayout started meanwhile drops it.
       let result = layout.cache.get(key);
       if (result === undefined) {
-        layout.engine ??= createLazyEngine(() => realEngine(ctx));
-        try {
-          result = await composeLayout({
-            graph,
-            root,
-            expanded: new Set(layout.expanded),
-            pins: layout.pins,
-            notes,
-            config: ctx.config,
-            engine: layout.engine
-          });
-        } catch (error) {
-          ctx.log.warn("flowView: layout failed", { message: messageOf(error) });
-          return;
-        }
-        if (seq !== layout.seq) return;
-        layout.cache.set(key, result);
-        while (layout.cache.size > CACHE_SIZE)
-          layout.cache.delete(layout.cache.keys().next().value ?? "");
-      } else {
-        layout.cache.delete(key);
-        layout.cache.set(key, result);
+        result = await compose(graph, root, notes);
+        if (result === undefined || seq !== layout.seq) return;
       }
+      remember(key, result);
+
       const previous = layout.result;
       layout.result = result;
       notify(ctx.state);
       settle(previous, result);
     },
 
-    /**
-     * Reads layout.json.
-     *
-     * @returns Resolves after the relayout.
-     * @example
-     * ```ts
-     * await actions.layout.loadPins();
-     * ```
-     */
-    async loadPins() {
+    loadPins: async () => {
       try {
         const file = await env.files().read(path);
         const pins = parsePins(file.text);
@@ -438,18 +432,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       await actions.relayout();
     },
 
-    /**
-     * Pins a dropped node.
-     *
-     * @param key - The item key.
-     * @param x - World x of the item's top-left corner.
-     * @param y - World y.
-     * @example
-     * ```ts
-     * actions.layout.drop("main/home", 640, 312);
-     * ```
-     */
-    drop(key: ItemKey, x: number, y: number) {
+    drop: (key, x, y) => {
       const result = layout.result;
       const item = result?.byKey[key];
       if (result === undefined || item === undefined || item.kind !== "node") return;
@@ -460,19 +443,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       scheduleSave();
     },
 
-    /**
-     * Pins a note inside a flow frame.
-     *
-     * @param note - The note path.
-     * @param flow - The flow it is pinned in.
-     * @param x - World x.
-     * @param y - World y.
-     * @example
-     * ```ts
-     * actions.layout.dropNote(".moku/notes/a.md", "main", 300, 900);
-     * ```
-     */
-    dropNote(note: string, flow: string, x: number, y: number) {
+    dropNote: (note, flow, x, y) => {
       const result = layout.result;
       const frame = result?.frames.find(
         entry => result.origins[originKey(entry.key, flow)] !== undefined
@@ -485,16 +456,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       scheduleSave();
     },
 
-    /**
-     * The flows on screen.
-     *
-     * @returns Flow names.
-     * @example
-     * ```ts
-     * actions.layout.visibleFlows(); // Set { "main", "board" }
-     * ```
-     */
-    visibleFlows() {
+    visibleFlows: () => {
       const flows = new Set<string>([rootFlow()]);
       for (const item of layout.result?.items ?? []) {
         if (item.kind !== "note" && item.kind !== "frame") flows.add(item.flow);
@@ -502,17 +464,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       return flows;
     },
 
-    /**
-     * Expands the parents of a node id.
-     *
-     * @param id - A node id.
-     * @returns The instance key it gets, or undefined.
-     * @example
-     * ```ts
-     * actions.layout.reveal("settingsPopup/open"); // "main/settings>settingsPopup/open"
-     * ```
-     */
-    reveal(id: NodeId) {
+    reveal: id => {
       const { graph } = ctx.state.data;
       const flow = flowOfId(id);
       const node = graph?.flows[flow]?.nodes[id.slice(flow.length + 1)];
@@ -533,28 +485,9 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       return instanceKey(prefix, id);
     },
 
-    /**
-     * The root flow.
-     *
-     * @returns The flow name.
-     * @example
-     * ```ts
-     * actions.layout.root(); // "main"
-     * ```
-     */
-    root() {
-      return rootFlow();
-    },
+    root: () => rootFlow(),
 
-    /**
-     * Expands every sub-flow node on the current stack below the root.
-     *
-     * @example
-     * ```ts
-     * actions.layout.expandStack();
-     * ```
-     */
-    expandStack() {
+    expandStack: () => {
       const stack = env.actions().focus.stack();
       const start = stack.findIndex(entry => entry.flow === rootFlow());
       if (start === -1) return;
@@ -574,10 +507,6 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
  * @returns The flows api.
- * @example
- * ```ts
- * createFlowsApi(ctx, env).enter("main/board");
- * ```
  */
 export function createFlowsApi(ctx: FlowCtx, env: FlowEnvironment): FlowsApi {
   const { layout } = ctx.state;
@@ -587,10 +516,6 @@ export function createFlowsApi(ctx: FlowCtx, env: FlowEnvironment): FlowsApi {
    *
    * @param key - The item key.
    * @returns The node, or undefined.
-   * @example
-   * ```ts
-   * nodeAt("main/board>board/settings")?.subFlow; // "settingsPopup"
-   * ```
    */
   function nodeAt(key: ItemKey): GraphJson["flows"][string]["nodes"][string] | undefined {
     const id = key.slice(key.lastIndexOf(">") + 1);
@@ -599,88 +524,49 @@ export function createFlowsApi(ctx: FlowCtx, env: FlowEnvironment): FlowsApi {
   }
 
   /**
-   * A new root: the stack defaults, the default camera again, a relayout.
-   *
-   * @example
-   * ```ts
-   * reroot();
-   * ```
+   * Lays out again without waiting; relayout logs its own failures.
    */
-  function reroot(): void {
-    layout.expanded.clear();
-    ctx.state.camera.initialised = false;
-    env.actions().layout.expandStack();
+  function relayout(): void {
     env
       .actions()
       .layout.relayout()
       .catch(() => {});
   }
 
+  /**
+   * A new root: the stack defaults, the default camera again, a relayout.
+   */
+  function reroot(): void {
+    layout.expanded.clear();
+    ctx.state.camera.initialised = false;
+    env.actions().layout.expandStack();
+    relayout();
+  }
+
   return {
-    /**
-     * Expands a sub-flow or slot item.
-     *
-     * @param key - The item key.
-     * @example
-     * ```ts
-     * actions.flows.expand("main/settings");
-     * ```
-     */
-    expand(key) {
+    expand: key => {
       const node = nodeAt(key);
       if (node?.subFlow === undefined && node?.slot === undefined) return;
       layout.expanded.add(key);
-      env
-        .actions()
-        .layout.relayout()
-        .catch(() => {});
+      relayout();
     },
 
-    /**
-     * Collapses an item and everything expanded inside it.
-     *
-     * @param key - The item key.
-     * @example
-     * ```ts
-     * actions.flows.collapse("main/board");
-     * ```
-     */
-    collapse(key) {
+    collapse: key => {
+      // The item and everything expanded inside it.
       for (const expanded of layout.expanded) {
         if (expanded === key || expanded.startsWith(`${key}>`)) layout.expanded.delete(expanded);
       }
-      env
-        .actions()
-        .layout.relayout()
-        .catch(() => {});
+      relayout();
     },
 
-    /**
-     * Enters a sub-flow as the canvas root.
-     *
-     * @param key - The item key of a sub-flow node.
-     * @example
-     * ```ts
-     * actions.flows.enter("main/board");
-     * ```
-     */
-    enter(key) {
+    enter: key => {
       const node = nodeAt(key);
       if (node?.subFlow === undefined) return;
       layout.enter.push({ flow: node.subFlow, via: key.slice(key.lastIndexOf(">") + 1) });
       reroot();
     },
 
-    /**
-     * Leaves entered flows up to a depth.
-     *
-     * @param depth - How many entered flows stay (0 = main).
-     * @example
-     * ```ts
-     * actions.flows.up(0);
-     * ```
-     */
-    up(depth) {
+    up: depth => {
       if (depth < 0 || depth >= layout.enter.length) return;
       layout.enter.length = depth;
       reroot();

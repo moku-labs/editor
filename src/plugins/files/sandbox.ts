@@ -97,7 +97,8 @@ export function checkLexical(path: string, operation: FileOperation): void {
  * @returns Whether the path is denied.
  * @example
  * ```ts
- * isDenied("packages/a/Node_Modules/b.ts", ctx.state.denyGlobs); // true
+ * const deny = [compileGlob("**\/node_modules/**", { caseInsensitive: true })];
+ * isDenied("packages/a/Node_Modules/b.ts", deny); // true
  * ```
  */
 export function isDenied(relative: string, deny: readonly RegExp[]): boolean {
@@ -121,7 +122,7 @@ export function isDenied(relative: string, deny: readonly RegExp[]): boolean {
  * @returns Whether the file may be read or written.
  * @example
  * ```ts
- * isAllowed("src/a.ts", ctx.state.allowGlobs); // true with the default allow list
+ * isAllowed("src/a.ts", [compileGlob("src/**", { caseInsensitive: false })]); // true
  * ```
  */
 export function isAllowed(relative: string, allow: readonly RegExp[]): boolean {
@@ -168,10 +169,6 @@ export function relativeTo(rootReal: string, real: string): string {
  * @param operation - The operation.
  * @param requested - The requested path, for the error message.
  * @throws {Error} -32004 when any rule fails.
- * @example
- * ```ts
- * checkRules(ctx, "src/a.js", "read", "src/a.js"); // throws, not allowed
- * ```
  */
 function checkRules(
   ctx: FilesCtx,
@@ -198,10 +195,6 @@ function checkRules(
  * @param operation - The operation.
  * @returns The relative path (`""` for the root form of list).
  * @throws {Error} -32004 on a rule, -32000 before init.
- * @example
- * ```ts
- * precheck(ctx, ".", "list"); // ""
- * ```
  */
 function precheck(ctx: FilesCtx, path: string, operation: FileOperation): string {
   checkLexical(path, operation);
@@ -284,10 +277,6 @@ function located(candidate: Candidate, real: string): Located {
  * @param operation - The operation.
  * @param requested - The requested path, for the error message.
  * @throws {Error} -32004 on an escape or a failed rule.
- * @example
- * ```ts
- * checkReal(ctx, { real: "/etc/hosts", exists: true, ancestor: "/etc/hosts" }, "src/l.ts", "read", "src/l.ts");
- * ```
  */
 function checkReal(
   ctx: FilesCtx,
@@ -406,10 +395,6 @@ function locateSync(rootReal: string, relative: string, requested: string): Loca
  * @param operation - The operation.
  * @returns The real path of the target (or the would-be real path of a new file).
  * @throws {Error} -32004 on any rule, -32601 when a read target or a list folder is missing.
- * @example
- * ```ts
- * const real = await resolveReal(ctx, "src/a.ts", "read");
- * ```
  */
 export async function resolveReal(
   ctx: FilesCtx,
@@ -437,10 +422,6 @@ export async function resolveReal(
  * @param operation - The operation.
  * @returns The real path of the target (or the would-be real path of a new file).
  * @throws {Error} -32004 on any rule, -32601 when a read target or a list folder is missing.
- * @example
- * ```ts
- * resolveRealSync(ctx, "src/main.ts", "write"); // "/Users/alex/game/src/main.ts"
- * ```
  */
 export function resolveRealSync(ctx: FilesCtx, path: string, operation: FileOperation): string {
   const relative = precheck(ctx, path, operation);
@@ -464,10 +445,6 @@ export function resolveRealSync(ctx: FilesCtx, path: string, operation: FileOper
  * @param child - Relative path of the child.
  * @param absolute - Absolute path of the child under the real folder.
  * @returns The entry, or undefined to skip the child.
- * @example
- * ```ts
- * await describeChild(ctx, "src/a.ts", "/game/src/a.ts"); // { path: "src/a.ts", kind: "file", size: 812 }
- * ```
  */
 export async function describeChild(
   ctx: FilesCtx,

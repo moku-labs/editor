@@ -168,7 +168,7 @@ function isPanel(value: unknown): boolean {
  * @returns Whether it is a Manifest.
  * @example
  * ```ts
- * if (!isManifest(params.manifest)) conn.socket.close(1008, "bad manifest");
+ * isManifest({ game: "merge-game" }); // false: page, sources and commands are missing
  * ```
  */
 export function isManifest(value: unknown): value is Manifest {
@@ -230,10 +230,6 @@ function randomHex(): string {
  * @param taken - The open sessions.
  * @param nextHex - The hex source (random by default).
  * @returns The id.
- * @example
- * ```ts
- * sessionIdFrom(state.sessions); // "s-7f3a"
- * ```
  */
 export function sessionIdFrom(
   taken: ReadonlyMap<string, unknown>,
@@ -252,10 +248,6 @@ export function sessionIdFrom(
  * @param conn - The agent connection.
  * @param manifest - Its manifest.
  * @returns The new session.
- * @example
- * ```ts
- * const session = openSession(ctx, conn, manifest);
- * ```
  */
 export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): Session {
   const now = Date.now();
@@ -295,10 +287,6 @@ export function sessionParams(payload: HubSession): Json {
  *
  * @param state - Hub state.
  * @returns The notification.
- * @example
- * ```ts
- * sendJson(conn, sessionsNotification(state));
- * ```
  */
 export function sessionsNotification(state: HubState): Notification {
   return notification("editor", "sessions", { list: toWireValue(sessionList(state)) });
@@ -308,10 +296,6 @@ export function sessionsNotification(state: HubState): Notification {
  * Sends `sessions {list}` to every tools connection.
  *
  * @param ctx - Domain context of the hub.
- * @example
- * ```ts
- * broadcastSessions(ctx);
- * ```
  */
 export function broadcastSessions(ctx: HubCtx): void {
   const note = sessionsNotification(ctx.state);
@@ -319,22 +303,37 @@ export function broadcastSessions(ctx: HubCtx): void {
 }
 
 /**
- * Announces a session change: emits `hub:session` (a failed emit is logged), tells every tools
- * connection `session {…}`, then `sessions {list}`.
+ * Fires an emit that is not awaited. A throw, or a rejected promise the emit returns, goes to
+ * `onFailure`, so a failing hook never breaks the caller.
+ *
+ * @param fire - Calls ctx.emit.
+ * @param onFailure - Logs the failure.
+ * @example
+ * ```ts
+ * emitLogged(() => Promise.reject(new Error("x")), console.error); // returns; logs "Error: x" later
+ * ```
+ */
+function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
+  try {
+    const emitted = fire();
+    if (emitted instanceof Promise) emitted.catch(onFailure);
+  } catch (error) {
+    onFailure(error);
+  }
+}
+
+/**
+ * Announces a session change: emits `hub:session` (not awaited; a throw or a rejected promise of
+ * the emit is logged), tells every tools connection `session {…}`, then `sessions {list}`.
  *
  * @param ctx - Domain context of the hub.
  * @param payload - The change.
- * @example
- * ```ts
- * announce(ctx, { id: session.id, game, open: true });
- * ```
  */
 export function announce(ctx: HubCtx, payload: HubSession): void {
-  try {
-    ctx.emit("hub:session", payload);
-  } catch (error) {
-    ctx.log.error("hub:emit-failed", { id: payload.id, error: String(error) });
-  }
+  emitLogged(
+    () => ctx.emit("hub:session", payload),
+    error => ctx.log.error("hub:emit-failed", { id: payload.id, error: String(error) })
+  );
 
   const note = notification("editor", "session", sessionParams(payload));
   for (const conn of toolsConns(ctx.state)) sendJson(conn, note);
@@ -348,10 +347,6 @@ export function announce(ctx: HubCtx, payload: HubSession): void {
  * @param ctx - Domain context of the hub.
  * @param id - Session id.
  * @param reason - "bye" after a bye notification, else "game_reloaded".
- * @example
- * ```ts
- * closeSession(ctx, conn.session, conn.bye ? "bye" : "game_reloaded");
- * ```
  */
 export function closeSession(ctx: HubCtx, id: string, reason: "bye" | "game_reloaded"): void {
   const session = ctx.state.sessions.get(id);
@@ -388,10 +383,6 @@ function noSession(message: string, reason: "no_session" | "choose_session", id?
  * @param requested - The request's `session`, if any.
  * @returns The session.
  * @throws {Error} -32003 `no_session` (unknown id or no game) or `choose_session` (ambiguous).
- * @example
- * ```ts
- * const session = chooseSession(ctx, request.session);
- * ```
  */
 export function chooseSession(ctx: HubCtx, requested: string | undefined): Session {
   const { sessions } = ctx.state;
@@ -420,10 +411,6 @@ export function chooseSession(ctx: HubCtx, requested: string | undefined): Sessi
  *
  * @param session - The session.
  * @returns A fresh SessionInfo.
- * @example
- * ```ts
- * toSessionInfo(session); // { id, game, page, embedded, connectedAt }
- * ```
  */
 export function toSessionInfo(session: Session): SessionInfo {
   const { game, page, embedded } = session.manifest;
@@ -435,10 +422,6 @@ export function toSessionInfo(session: Session): SessionInfo {
  *
  * @param state - Hub state.
  * @returns A fresh list.
- * @example
- * ```ts
- * editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", … }]
- * ```
  */
 export function sessionList(state: HubState): SessionInfo[] {
   return [...state.sessions.values()]
@@ -453,10 +436,6 @@ export function sessionList(state: HubState): SessionInfo[] {
  * @param session - The session.
  * @param heartbeat - The heartbeat.
  * @param now - Epoch ms of arrival.
- * @example
- * ```ts
- * recordHeartbeat(ctx, session, beat, Date.now());
- * ```
  */
 export function recordHeartbeat(
   ctx: HubCtx,
@@ -478,10 +457,6 @@ export function recordHeartbeat(
  *
  * @param ctx - Domain context of the hub.
  * @param now - Epoch ms.
- * @example
- * ```ts
- * setInterval(() => tickSilent(ctx, Date.now()), 1000);
- * ```
  */
 export function tickSilent(ctx: HubCtx, now: number): void {
   for (const session of ctx.state.sessions.values()) {

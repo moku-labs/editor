@@ -26,7 +26,7 @@ const TEXT_HEADERS: Readonly<Record<string, string>> = {
  * @returns Whether the method reads.
  * @example
  * ```ts
- * if (!isRead(req)) return methodNotAllowed(req);
+ * isRead(new Request("http://127.0.0.1:3000/", { method: "HEAD" })); // true
  * ```
  */
 export function isRead(req: Request): boolean {
@@ -43,7 +43,8 @@ export function isRead(req: Request): boolean {
  * @returns The response.
  * @example
  * ```ts
- * return respond(req, html, 200, { "content-type": "text/html; charset=utf-8" });
+ * const head = new Request("http://127.0.0.1:3000/", { method: "HEAD" });
+ * await respond(head, "<html></html>", 200, {}).text(); // ""
  * ```
  */
 export function respond(
@@ -65,7 +66,7 @@ export function respond(
  * @returns The response.
  * @example
  * ```ts
- * return textResponse(req, 404, "not found");
+ * textResponse(new Request("http://127.0.0.1:3000/x"), 404, "not found").headers.get("cache-control"); // "no-store"
  * ```
  */
 export function textResponse(
@@ -84,7 +85,7 @@ export function textResponse(
  * @returns The response.
  * @example
  * ```ts
- * if (!isRead(req)) return methodNotAllowed(req);
+ * methodNotAllowed(new Request("http://127.0.0.1:3000/", { method: "POST" })).headers.get("allow"); // "GET, HEAD"
  * ```
  */
 export function methodNotAllowed(req: Request): Response {
@@ -98,7 +99,7 @@ export function methodNotAllowed(req: Request): Response {
  * @returns The response.
  * @example
  * ```ts
- * return notFound(req);
+ * notFound(new Request("http://127.0.0.1:3000/x")).status; // 404
  * ```
  */
 export function notFound(req: Request): Response {
@@ -112,7 +113,7 @@ export function notFound(req: Request): Response {
  * @returns The response.
  * @example
  * ```ts
- * if (name === undefined) return badRequest(req);
+ * badRequest(new Request("http://127.0.0.1:3000/assets/%E0")).status; // 400
  * ```
  */
 export function badRequest(req: Request): Response {
@@ -144,7 +145,7 @@ export function decodePath(text: string): string | undefined {
  * @returns The file content, or undefined.
  * @example
  * ```ts
- * const body = await readRegularFile(join(pageDir, "assets", name));
+ * await readRegularFile("/game/missing.png"); // undefined
  * ```
  */
 export async function readRegularFile(path: string): Promise<Uint8Array<ArrayBuffer> | undefined> {

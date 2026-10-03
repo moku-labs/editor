@@ -5,7 +5,7 @@
  * frame and restores).
  */
 import { linkPlugin } from "../../link";
-import { SOURCE_OVERRIDES_PATH } from "../../registry/protocol";
+import { errorCode, SOURCE_OVERRIDES_PATH } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { codeOf, messageOf, reasonOf } from "../errors";
 import { loadOverrides, rebuildUsedBy } from "../links/used-by";
@@ -51,10 +51,6 @@ export function shouldReload(path: string, config: Readonly<Config>): boolean {
  *
  * @param ctx - Domain context of filesView.
  * @returns Whether the link is live or paused.
- * @example
- * ```ts
- * if (shouldReload(path, ctx.config) && isLinked(ctx)) reload();
- * ```
  */
 function isLinked(ctx: FilesViewCtx): boolean {
   const { kind } = ctx.require(linkPlugin).status();
@@ -69,10 +65,6 @@ function isLinked(ctx: FilesViewCtx): boolean {
  * @param path - The written path.
  * @param bytes - Bytes written.
  * @returns Whether the reload ran.
- * @example
- * ```ts
- * await afterWrite(ctx, "nodes/merge.ts", 812); // true while live
- * ```
  */
 async function afterWrite(ctx: FilesViewCtx, path: string, bytes: number): Promise<boolean> {
   const { state } = ctx;
@@ -106,10 +98,6 @@ async function afterWrite(ctx: FilesViewCtx, path: string, bytes: number): Promi
  * @param text - The buffer to write.
  * @param version - The version it replaces; undefined re-creates a missing file.
  * @returns The save result.
- * @example
- * ```ts
- * await write(ctx, tab, tab.buffer, tab.version); // { kind: "saved", … }
- * ```
  */
 async function write(
   ctx: FilesViewCtx,
@@ -132,7 +120,7 @@ async function write(
     return { kind: "saved", path: tab.path, bytes: result.bytes, version: result.version, reload };
   } catch (error) {
     const code = codeOf(error);
-    if (reasonOf(error) === "version_conflict" || code === -32_005) {
+    if (reasonOf(error) === "version_conflict" || code === errorCode.versionConflict) {
       tab.status = "conflict";
       notify(ctx.state);
       return { kind: "conflict" };
@@ -151,10 +139,6 @@ async function write(
  *
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
- * @example
- * ```ts
- * noteNoChanges(ctx, tab); // tab.message === "✓ No changes" for 2 s
- * ```
  */
 function noteNoChanges(ctx: FilesViewCtx, tab: OpenTab): void {
   tab.message = NO_CHANGES_MESSAGE;
@@ -173,10 +157,6 @@ function noteNoChanges(ctx: FilesViewCtx, tab: OpenTab): void {
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
  * @returns The save result.
- * @example
- * ```ts
- * (await saveTab(ctx, "nodes/merge.ts")).kind; // "saved"
- * ```
  */
 export async function saveTab(ctx: FilesViewCtx, path: string): Promise<SaveResult> {
   const tab = findTab(ctx.state, path);
@@ -197,10 +177,6 @@ export async function saveTab(ctx: FilesViewCtx, path: string): Promise<SaveResu
  * @param tab - The tab.
  * @param error - What link rejected with.
  * @returns The failed result.
- * @example
- * ```ts
- * return failedRead(ctx, tab, error); // { kind: "failed", code: -32004, message: "This file is outside…" }
- * ```
  */
 function failedRead(ctx: FilesViewCtx, tab: OpenTab, error: unknown): SaveResult {
   const failure = readFailure(error);
@@ -216,10 +192,6 @@ function failedRead(ctx: FilesViewCtx, tab: OpenTab, error: unknown): SaveResult
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns `{ kind: "unchanged" }`, or the failed read.
- * @example
- * ```ts
- * await reloadTab(ctx, tab); // tab.buffer === the text on disk
- * ```
  */
 async function reloadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<SaveResult> {
   try {
@@ -239,10 +211,6 @@ async function reloadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<SaveResult> {
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
  * @returns The save result.
- * @example
- * ```ts
- * (await overwriteTab(ctx, tab)).kind; // "saved"
- * ```
  */
 async function overwriteTab(ctx: FilesViewCtx, tab: OpenTab): Promise<SaveResult> {
   let version: string | undefined;
@@ -263,10 +231,6 @@ async function overwriteTab(ctx: FilesViewCtx, tab: OpenTab): Promise<SaveResult
  * @param path - The tab's path.
  * @param choice - "reload" or "overwrite".
  * @returns `{ kind: "unchanged" }` after a reload, else the save result.
- * @example
- * ```ts
- * (await resolveConflict(ctx, "nodes/merge.ts", "overwrite")).kind; // "saved"
- * ```
  */
 export function resolveConflict(
   ctx: FilesViewCtx,

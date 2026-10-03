@@ -23,6 +23,11 @@ import type { NoteDraft, NoteFile, NoteInput, NotesActions } from "./types";
 const MAX_NOTES = 200;
 
 /**
+ * How often `attach` reads and writes again after a version conflict before it throws.
+ */
+const ATTACH_RETRIES = 1;
+
+/**
  * The file name of a path.
  *
  * @param path - A path.
@@ -74,6 +79,23 @@ function targetOfOutcome(
 }
 
 /**
+ * Orders note paths newest first: a note's file name starts with its date, so a later name is
+ * newer.
+ *
+ * @param a - A note path.
+ * @param b - A note path.
+ * @returns 1 when `a` sorts after `b`, else -1.
+ * @example
+ * ```ts
+ * const paths = [".moku/notes/2026-09-01-a.md", ".moku/notes/2026-09-24-b.md"];
+ * paths.toSorted(newestFirst)[0]; // ".moku/notes/2026-09-24-b.md"
+ * ```
+ */
+function newestFirst(a: string, b: string): number {
+  return baseName(a) < baseName(b) ? 1 : -1;
+}
+
+/**
  * True for a version-conflict rejection.
  *
  * @param error - A rejection.
@@ -115,24 +137,16 @@ function newNoteOf(input: NoteInput, to: string | undefined): NewNote {
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
  * @returns The notes actions.
- * @example
- * ```ts
- * await createNotesApi(ctx, env).create({ title: "First wood 4" });
- * ```
  */
 export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions {
   const { notes } = ctx.state;
   const dir = ctx.config.notesDir;
 
   /**
-   * Reads one note file.
+   * Reads one note file; a front matter the codec cannot read is kept as `error`, never thrown.
    *
    * @param path - The note path.
    * @returns The note file.
-   * @example
-   * ```ts
-   * await readNote(".moku/notes/a.md");
-   * ```
    */
   async function readNote(path: string): Promise<NoteFile> {
     const file = await env.files().read(path);
@@ -146,10 +160,6 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
    * The note file names in notesDir; a missing folder is empty.
    *
    * @returns The names.
-   * @example
-   * ```ts
-   * await takenNames(); // Set { "2026-09-24-first-top-item.md" }
-   * ```
    */
   async function takenNames(): Promise<Set<string>> {
     try {
@@ -160,30 +170,47 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
     }
   }
 
-  const actions: NotesActions = {
-    /**
-     * The note files, newest first.
-     *
-     * @returns A copy.
-     * @example
-     * ```ts
-     * actions.notes.list();
-     * ```
-     */
-    list() {
-      return [...notes.files];
-    },
+  /**
+   * The note file paths in notesDir, newest name first, at most MAX_NOTES; a missing folder has
+   * none.
+   *
+   * @returns The paths.
+   */
+  async function notePaths(): Promise<string[]> {
+    try {
+      const entries = await env.files().list(dir);
+      return entries
+        .filter(entry => entry.kind === "file" && entry.path.endsWith(".md"))
+        .map(entry => entry.path)
+        .toSorted(newestFirst)
+        .slice(0, MAX_NOTES);
+    } catch {
+      return [];
+    }
+  }
 
-    /**
-     * Opens the note editor.
-     *
-     * @param draft - Prefilled fields.
-     * @example
-     * ```ts
-     * actions.notes.edit({ captures: [".moku/captures/a.png"] });
-     * ```
-     */
-    edit(draft) {
+  /**
+   * Reads note files in parallel; a file that cannot be read is logged and left out.
+   *
+   * @param paths - The note paths.
+   * @returns The note files, in the order of the paths.
+   */
+  async function readAll(paths: readonly string[]): Promise<NoteFile[]> {
+    const read = await Promise.allSettled(paths.map(path => readNote(path)));
+    return read.flatMap((outcome, index) => {
+      if (outcome.status === "fulfilled") return [outcome.value];
+      ctx.log.warn("flowView: a note could not be read", {
+        path: paths[index],
+        message: String(outcome.reason)
+      });
+      return [];
+    });
+  }
+
+  const actions: NotesActions = {
+    list: () => [...notes.files],
+
+    edit: draft => {
       const base: NoteDraft = {
         title: "",
         body: "",
@@ -196,17 +223,7 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
       notify(ctx.state);
     },
 
-    /**
-     * Writes a new note file.
-     *
-     * @param input - The note.
-     * @returns The note file.
-     * @example
-     * ```ts
-     * await actions.notes.create({ title: "First wood 4" });
-     * ```
-     */
-    async create(input) {
+    create: async input => {
       const name = noteFileName(new Date(), input.title, await takenNames());
       const path = `${dir}/${name}`;
       const note = newNote(
@@ -218,19 +235,8 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
       return { path, version: written.version, note, error: undefined };
     },
 
-    /**
-     * Appends captures to a note.
-     *
-     * @param path - The note path.
-     * @param captures - Capture paths.
-     * @returns The rewritten note file.
-     * @throws {Error} When the front matter is not readable.
-     * @example
-     * ```ts
-     * await actions.notes.attach(".moku/notes/a.md", ["a.png"]);
-     * ```
-     */
-    async attach(path, captures) {
+    attach: async (path, captures) => {
+      // Read, add the captures, write with the read version; a conflict reads again, bounded.
       for (let attempt = 0; ; attempt += 1) {
         const file = await readNote(path);
         if (file.note === undefined) {
@@ -245,41 +251,14 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
           await actions.load();
           return { path, version: written.version, note: next, error: undefined };
         } catch (error) {
-          if (attempt > 0 || !isConflict(error)) throw error;
+          const retry = attempt < ATTACH_RETRIES && isConflict(error);
+          if (!retry) throw error;
         }
       }
     },
 
-    /**
-     * Lists and reads the note files.
-     *
-     * @returns Resolves when loaded.
-     * @example
-     * ```ts
-     * await actions.notes.load();
-     * ```
-     */
-    async load() {
-      let paths: string[] = [];
-      try {
-        const entries = await env.files().list(dir);
-        paths = entries
-          .filter(entry => entry.kind === "file" && entry.path.endsWith(".md"))
-          .map(entry => entry.path)
-          .toSorted((a, b) => (baseName(a) < baseName(b) ? 1 : -1))
-          .slice(0, MAX_NOTES);
-      } catch {
-        paths = [];
-      }
-      const read = await Promise.allSettled(paths.map(path => readNote(path)));
-      notes.files = read.flatMap((outcome, index) => {
-        if (outcome.status === "fulfilled") return [outcome.value];
-        ctx.log.warn("flowView: a note could not be read", {
-          path: paths[index],
-          message: String(outcome.reason)
-        });
-        return [];
-      });
+    load: async () => {
+      notes.files = await readAll(await notePaths());
       notes.loaded = true;
       notify(ctx.state);
       env
@@ -288,16 +267,7 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
         .catch(() => {});
     },
 
-    /**
-     * Where each readable note sits.
-     *
-     * @returns The anchors.
-     * @example
-     * ```ts
-     * actions.notes.anchors();
-     * ```
-     */
-    anchors() {
+    anchors: () => {
       const anchors: NoteAnchor[] = [];
       for (const file of notes.files) {
         const note = file.note;
@@ -312,31 +282,13 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
       return anchors;
     },
 
-    /**
-     * Patches the draft.
-     *
-     * @param patch - Fields to change.
-     * @example
-     * ```ts
-     * actions.notes.update({ title: "First wood 4" });
-     * ```
-     */
-    update(patch) {
+    update: patch => {
       if (notes.editor === undefined) return;
       notes.editor = { ...notes.editor, ...patch };
       notify(ctx.state);
     },
 
-    /**
-     * Saves the draft.
-     *
-     * @returns The note file, or undefined without a draft or a title.
-     * @example
-     * ```ts
-     * await actions.notes.save();
-     * ```
-     */
-    async save() {
+    save: async () => {
       const draft = notes.editor;
       if (draft === undefined || draft.title.trim() === "") return;
       const file = await actions.create({
@@ -355,32 +307,14 @@ export function createNotesApi(ctx: FlowCtx, env: FlowEnvironment): NotesActions
       return file;
     },
 
-    /**
-     * Closes the editor.
-     *
-     * @returns False when it was not open.
-     * @example
-     * ```ts
-     * actions.notes.close();
-     * ```
-     */
-    close() {
+    close: () => {
       if (notes.editor === undefined) return false;
       notes.editor = undefined;
       notify(ctx.state);
       return true;
     },
 
-    /**
-     * The path the draft will get.
-     *
-     * @returns The path.
-     * @example
-     * ```ts
-     * actions.notes.draftPath(); // ".moku/notes/2026-09-24-first-wood-4.md"
-     * ```
-     */
-    draftPath() {
+    draftPath: () => {
       const taken = new Set(notes.files.map(file => baseName(file.path)));
       return `${dir}/${noteFileName(new Date(), notes.editor?.title ?? "", taken)}`;
     }

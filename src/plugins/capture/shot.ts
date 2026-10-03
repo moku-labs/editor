@@ -21,10 +21,6 @@ const IMAGE_PREFIX = "data:image/";
  * @returns The data URL and the run state of the shot.
  * @throws {Error} -32601 `unknown_id` when game.capture is not in the registry; -32000
  *   `command_failed` when the door answers no picture. Errors of the door pass unchanged.
- * @example
- * ```ts
- * const { image, state } = await takeShot(registry); // image: "data:image/png;base64,…"
- * ```
  */
 export async function takeShot(
   registry: CaptureRegistry

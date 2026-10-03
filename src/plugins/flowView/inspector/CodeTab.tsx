@@ -68,10 +68,6 @@ function Viewer(props: {
  *
  * @param props - Context, actions and the shown node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <CodeTab ctx={ctx} actions={actions} id="board/merge" />
- * ```
  */
 export function CodeTab(props: CodeTabProps): VNode {
   const { ctx, actions, id } = props;

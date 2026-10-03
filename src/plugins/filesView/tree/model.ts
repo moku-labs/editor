@@ -25,10 +25,6 @@ export function childrenOf(index: FileIndex, dir: string): readonly string[] {
  *
  * @param index - The file index.
  * @returns The file count.
- * @example
- * ```ts
- * countFiles(index); // 24
- * ```
  */
 export function countFiles(index: FileIndex): number {
   return index.files.size;

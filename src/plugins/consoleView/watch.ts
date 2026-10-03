@@ -12,20 +12,17 @@ import { notify } from "./state";
 import type { ConsoleCtx } from "./types";
 
 /**
- * Ingests one game.log value: warns on a value of the wrong shape, pushes the badge when the
+ * Ingests one game.log value with the frame of `link.status()` and the session of
+ * `link.session()` (the one source of the session): warns on a value of the wrong shape, pushes the badge when the
  * lines changed, marks the console connected and notifies the view.
  *
  * @param ctx - Domain context of consoleView.
  * @param value - The game.log value.
- * @example
- * ```ts
- * accept(ctx, designLog); // 8 lines, badge "2 warn"
- * ```
  */
 function accept(ctx: ConsoleCtx, value: Json): void {
   const { state, config } = ctx;
-  const frame = statusFrame(ctx.require(linkPlugin).status());
-  const result = ingestTrace(state, value, frame, config);
+  const link = ctx.require(linkPlugin);
+  const result = ingestTrace(state, value, statusFrame(link.status()), config, link.session());
   if (result.invalid === true) {
     ctx.log.warn("consoleView:unexpected-log", { type: typeof value });
     return;
@@ -57,10 +54,6 @@ function codeOf(error: unknown): number | undefined {
  *
  * @param ctx - Domain context of consoleView.
  * @returns The unsubscribe.
- * @example
- * ```ts
- * ctx.state.stopLog = startLogWatch(ctx); // one game.log watch for the session
- * ```
  */
 export function startLogWatch(ctx: ConsoleCtx): () => void {
   return ctx.require(linkPlugin).watch("game.log", undefined, value => accept(ctx, value));
@@ -72,10 +65,6 @@ export function startLogWatch(ctx: ConsoleCtx): () => void {
  *
  * @param ctx - Domain context of consoleView.
  * @returns Resolves when the read settled; never rejects.
- * @example
- * ```ts
- * await readOnce(ctx); // ingest is idempotent: no line is added twice
- * ```
  */
 export async function readOnce(ctx: ConsoleCtx): Promise<void> {
   try {

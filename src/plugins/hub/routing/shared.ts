@@ -14,10 +14,6 @@ import type { HubCtx, HubState, SharedSub } from "../types";
  *
  * @param ctx - Domain context of the hub.
  * @param shared - The shared watch.
- * @example
- * ```ts
- * detach(ctx, shared);
- * ```
  */
 export function detach(ctx: HubCtx, shared: SharedSub): void {
   for (const [conn, subs] of shared.subscribers) {
@@ -37,10 +33,6 @@ export function detach(ctx: HubCtx, shared: SharedSub): void {
  * @param ctx - Domain context of the hub.
  * @param shared - The shared watch.
  * @param response - The answer (its id is replaced by each tools id).
- * @example
- * ```ts
- * answerWaiting(ctx, shared, success(0, JSON_NULL));
- * ```
  */
 export function answerWaiting(ctx: HubCtx, shared: SharedSub, response: RpcResponse): void {
   for (const { conn, toolsId } of shared.waiting.splice(0)) {
@@ -61,10 +53,6 @@ export function answerWaiting(ctx: HubCtx, shared: SharedSub, response: RpcRespo
  * @param ctx - Domain context of the hub.
  * @param key - The subKey of the watch.
  * @param response - The agent's response.
- * @example
- * ```ts
- * settleWatch(ctx, reply.key, response);
- * ```
  */
 export function settleWatch(ctx: HubCtx, key: string, response: RpcResponse): void {
   const shared = ctx.state.shared.get(key);
@@ -86,10 +74,6 @@ export function settleWatch(ctx: HubCtx, key: string, response: RpcResponse): vo
  * @param session - Session id.
  * @param agentSub - The agent-side sub.
  * @returns The shared watch.
- * @example
- * ```ts
- * const shared = findShared(state, session.id, params.sub);
- * ```
  */
 export function findShared(
   state: HubState,

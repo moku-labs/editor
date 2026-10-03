@@ -68,7 +68,8 @@ describe("outgoing", () => {
     expect(outgoing(mergeGraph, "main/home").map(row => row.to)).toEqual([
       "main/board",
       "main/dailyGift",
-      "main/settings"
+      "main/settings",
+      "main/leaveGame"
     ]);
   });
 });

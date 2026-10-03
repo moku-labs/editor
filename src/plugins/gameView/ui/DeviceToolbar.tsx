@@ -5,7 +5,7 @@
  * overlay switch are dimmed with a tooltip when the game lacks their command.
  */
 import type { VNode } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
 import { workspacePlugin } from "../../workspace";
 import { isDevicePresetId, resolveDevice } from "../../workspace/devices";
@@ -18,7 +18,7 @@ import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
 import { elapsedText } from "./text";
-import { useGameView, useTicker } from "./useGameView";
+import { RECORD_TICK_MS, useGameView, useTicker } from "./useGameView";
 
 /**
  * Props of `DeviceToolbar`.
@@ -71,10 +71,6 @@ function Segmented<T extends string>(props: SegmentedProps<T>): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The device controls.
- * @example
- * ```tsx
- * <DeviceControls ctx={ctx} />
- * ```
  */
 function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
   const workspace = props.ctx.require(workspacePlugin);
@@ -119,10 +115,6 @@ function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The view controls.
- * @example
- * ```tsx
- * <ViewControls ctx={ctx} />
- * ```
  */
 function ViewControls(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -182,10 +174,6 @@ function dimmed(
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The button.
- * @example
- * ```tsx
- * <CameraButton ctx={ctx} />
- * ```
  */
 function CameraButton(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -209,10 +197,6 @@ function CameraButton(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The button.
- * @example
- * ```tsx
- * <SeriesButton ctx={ctx} />
- * ```
  */
 function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -251,10 +235,6 @@ function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The switch.
- * @example
- * ```tsx
- * <OverlaySwitch ctx={ctx} />
- * ```
  */
 function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
   const { ctx } = props;
@@ -281,10 +261,6 @@ function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
  *
  * @param props - The gameView domain context.
  * @returns The toolbar.
- * @example
- * ```tsx
- * <DeviceToolbar ctx={ctx} />
- * ```
  */
 export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   const { ctx } = props;
@@ -292,8 +268,9 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   const picking = useGameView(state, () => state.picker.on);
   const link = ctx.require(linkPlugin);
   const [, setManifests] = useState(0);
-  useEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
-  useTicker(state.series.recording !== undefined, 100);
+  // A layout effect: a manifest change right after the first render is not lost.
+  useLayoutEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
+  useTicker(state.series.recording !== undefined, RECORD_TICK_MS);
 
   return (
     <div data-game="toolbar" role="toolbar" aria-label="Game device">

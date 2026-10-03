@@ -1,11 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
+import { MERGE_GAME_DIR } from "./tests/fixtures/game-dir";
 
 /**
- * The merge-game fixture lives in the sibling game repository (../game). CI checks out only this
- * repository, so the tests that load the fixture are left out there, with a warning.
+ * The merge-game fixture lives in a pinned game checkout. tests/fixtures/game-dir.ts holds the one
+ * rule for where it is (`MOKU_GAME_DIR`, or the default worktree) and how to set it up. CI has no
+ * checkout, so the tests that load the fixture are left out there, with a warning.
  */
-const fixture = new URL("../game/tests/integration/merge-game/game.ts", import.meta.url).pathname;
+const fixture = path.join(MERGE_GAME_DIR, "game.ts");
 const hasFixture = existsSync(fixture);
 
 /**
@@ -15,9 +18,11 @@ const hasFixture = existsSync(fixture);
  */
 function fixtureTests(): string[] {
   const root = new URL(".", import.meta.url).pathname;
-  const files = readdirSync(`${root}src`, { recursive: true, encoding: "utf8" })
-    .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
-    .map(file => `src/${file}`);
+  const files = ["src", "tests"].flatMap(dir =>
+    readdirSync(`${root}${dir}`, { recursive: true, encoding: "utf8" })
+      .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
+      .map(file => `${dir}/${file}`)
+  );
   return files.filter(file =>
     /loadMergeGame|startGame\(/.test(readFileSync(`${root}${file}`, "utf8"))
   );
@@ -38,8 +43,8 @@ const game = (subpath: string): string =>
   new URL(`node_modules/@moku-labs/game/dist/${subpath}.mjs`, import.meta.url).pathname;
 
 export default defineConfig({
-  // The merge-game fixture (../game/tests/integration/merge-game, loaded by tests/fixtures) imports
-  // the engine by its package name from outside this repository. The aliases send the fixture and
+  // The merge-game fixture (in the game checkout of tests/fixtures/game-dir.ts) imports the
+  // engine by its package name from outside this repository. The aliases send the fixture and
   // the editor to the same built files, so both share one copy of the engine modules.
   resolve: {
     alias: [

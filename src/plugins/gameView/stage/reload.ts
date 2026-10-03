@@ -13,10 +13,6 @@ import type { GameViewCtx } from "../types";
  * @param ctx - Domain context of gameView.
  * @param restore - true after a style save (bookmark → reload → restore), false for Reload.
  * @returns Resolves when the reload settled (never rejects).
- * @example
- * ```ts
- * await reloadGame(ctx, true); // "Game reloaded · state restored" toast comes from workspace
- * ```
  */
 export async function reloadGame(ctx: GameViewCtx, restore: boolean): Promise<void> {
   const { state } = ctx;

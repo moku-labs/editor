@@ -49,6 +49,30 @@ export function trailRanks(
 }
 
 /**
+ * The last history entry of every edge key (when each edge last fired).
+ *
+ * @param history - Entries, oldest first.
+ * @param graph - The graph.
+ * @returns Edge key → its last entry.
+ * @example
+ * ```ts
+ * const fires = lastFires([{ index: 3, path: "board/merge", outcome: "done", … }], graph);
+ * fires.get("board/merge:done")?.index; // 3
+ * ```
+ */
+export function lastFires(
+  history: readonly HistoryEntryJson[],
+  graph: GraphJson
+): ReadonlyMap<string, HistoryEntryJson> {
+  const fires = new Map<string, HistoryEntryJson>();
+  for (const entry of history) {
+    const key = entryKey(entry, graph);
+    if (key !== undefined) fires.set(key, entry);
+  }
+  return fires;
+}
+
+/**
  * The last rejected entry of every edge whose outcome is a rejection.
  *
  * @param history - Entries, oldest first.

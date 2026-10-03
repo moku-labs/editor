@@ -38,7 +38,7 @@ const DISCARD: Reply = { kind: "discard" };
  * @returns The plain wire error.
  * @example
  * ```ts
- * deliver(ctx, call.reply, failure(call.id, gameReloaded()));
+ * gameReloaded().data; // { reason: "game_reloaded", retryable: true }
  * ```
  */
 function gameReloaded(): WireError {
@@ -53,7 +53,7 @@ function gameReloaded(): WireError {
  * @returns The plain wire error.
  * @example
  * ```ts
- * deliver(ctx, call.reply, failure(call.id, timedOut()));
+ * timedOut().data; // { reason: "timeout", retryable: true }
  * ```
  */
 function timedOut(): WireError {
@@ -113,10 +113,6 @@ export function deadlineFor(
  * @param ctx - Domain context of the hub.
  * @param reply - The reply target.
  * @param response - The answer (agent response or hub-built failure).
- * @example
- * ```ts
- * deliver(ctx, call.reply, response);
- * ```
  */
 function deliver(ctx: HubCtx, reply: Reply, response: RpcResponse): void {
   if (reply.kind === "watch") {
@@ -142,10 +138,6 @@ function deliver(ctx: HubCtx, reply: Reply, response: RpcResponse): void {
  *
  * @param ctx - Domain context of the hub.
  * @param id - The hub id.
- * @example
- * ```ts
- * setTimeout(() => expire(ctx, id), deadline);
- * ```
  */
 function expire(ctx: HubCtx, id: number): void {
   const call = ctx.state.pending.get(id);
@@ -164,10 +156,6 @@ function expire(ctx: HubCtx, id: number): void {
  * @param method - The game method.
  * @param params - The params, omitted when undefined.
  * @param reply - Where the answer goes.
- * @example
- * ```ts
- * forward(ctx, session, "read", { id: "game.position" }, { kind: "tools", conn: 3, toolsId: 7 });
- * ```
  */
 export function forward(
   ctx: HubCtx,
@@ -204,10 +192,6 @@ export function forward(
  * @param ctx - Domain context of the hub.
  * @param response - The agent's response.
  * @param from - The session of the answering agent; a call of another session is unknown.
- * @example
- * ```ts
- * settle(ctx, message, session.id);
- * ```
  */
 export function settle(ctx: HubCtx, response: RpcResponse, from?: string): void {
   const call = ctx.state.pending.get(response.id);
@@ -227,10 +211,6 @@ export function settle(ctx: HubCtx, response: RpcResponse, from?: string): void 
  *
  * @param ctx - Domain context of the hub.
  * @param id - The session id.
- * @example
- * ```ts
- * failSession(ctx, session.id);
- * ```
  */
 export function failSession(ctx: HubCtx, id: string): void {
   for (const call of ctx.state.pending.values()) {
@@ -246,10 +226,6 @@ export function failSession(ctx: HubCtx, id: string): void {
  *
  * @param state - Hub state.
  * @param conn - The tools connection number.
- * @example
- * ```ts
- * discardReplies(ctx.state, conn.conn);
- * ```
  */
 export function discardReplies(state: HubState, conn: number): void {
   for (const call of state.pending.values()) {
@@ -263,10 +239,6 @@ export function discardReplies(state: HubState, conn: number): void {
  *
  * @param state - Hub state.
  * @param key - The subKey.
- * @example
- * ```ts
- * discardWatchCalls(ctx.state, shared.key);
- * ```
  */
 export function discardWatchCalls(state: HubState, key: string): void {
   for (const call of state.pending.values()) {
@@ -280,7 +252,7 @@ export function discardWatchCalls(state: HubState, key: string): void {
  * @returns `{ kind: "discard" }`.
  * @example
  * ```ts
- * forward(ctx, session, "unwatch", { sub }, discard());
+ * discard(); // { kind: "discard" }
  * ```
  */
 export function discard(): Reply {

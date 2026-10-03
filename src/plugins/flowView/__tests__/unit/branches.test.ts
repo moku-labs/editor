@@ -181,7 +181,7 @@ describe("focus and layout edge cases", () => {
     jumpCamera();
     const { ctx } = createTestCtx({ config: { layoutWorker: true } });
     await prepare(ctx);
-    expect(ctx.state.layout.result).toBeDefined();
+    expect(ctx.state.layout.result?.root).toBe("main");
     expect(ctx.log.warn).toHaveBeenCalledTimes(1);
   });
 
@@ -227,7 +227,13 @@ describe("focus and layout edge cases", () => {
     });
     const home = result.byKey["main/home"];
     expect(result.byKey["note:a.md"]?.x).toBe((home?.x ?? 0) + (home?.w ?? 0) + 54);
-    expect(result.byKey["note:b.md"]).toBeDefined();
+    expect(result.byKey["note:b.md"]).toMatchObject({
+      kind: "note",
+      flow: "board",
+      parent: "main/board",
+      x: 1264,
+      y: 265
+    });
     const origin = result.origins["main/board|board"] ?? { x: 0, y: 0 };
     expect(result.byKey["note:c.md"]).toMatchObject({
       x: origin.x + 24,
@@ -283,8 +289,7 @@ describe("more edge paths", () => {
       throw new Error("no worker");
     });
     await expect(lazy.layout({ id: "root" })).rejects.toThrow("no worker");
-    lazy.dispose();
+    expect(() => lazy.dispose()).not.toThrow();
     await flush(2);
-    expect(lazy).toBeDefined();
   });
 });

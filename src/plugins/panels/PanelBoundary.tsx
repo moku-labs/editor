@@ -81,10 +81,6 @@ export function Placeholder(props: PlaceholderProps): PanelElement {
  *
  * @param props - Panel, values and tools.
  * @returns What the view returns.
- * @example
- * ```tsx
- * <PanelView panel={spec} values={values} tools={tools} />
- * ```
  */
 function PanelView(props: PanelViewProps): PanelElement {
   return props.panel.view(props.values, props.tools);
@@ -98,10 +94,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Starts without an error.
    *
    * @param props - Boundary props.
-   * @example
-   * ```tsx
-   * <PanelBoundary panel={spec} values={values} tools={tools} onError={onError} />
-   * ```
    */
   constructor(props: PanelBoundaryProps) {
     super(props);
@@ -126,10 +118,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Reports the view error to the mount (log and section state).
    *
    * @param error - What the view threw.
-   * @example
-   * ```ts
-   * boundary.componentDidCatch(new Error("boom"));
-   * ```
    */
   override componentDidCatch(error: unknown): void {
     this.props.onError(asError(error));
@@ -139,10 +127,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Renders the view, or the error placeholder.
    *
    * @returns The view or the placeholder.
-   * @example
-   * ```tsx
-   * render(<PanelBoundary panel={spec} values={values} tools={tools} onError={onError} />, section);
-   * ```
    */
   override render(): ComponentChildren {
     const { error } = this.state;

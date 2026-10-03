@@ -161,6 +161,53 @@ describe("ingestTrace", () => {
   });
 });
 
+describe("ingestTrace across link sessions", () => {
+  it("a new session after a game that logged nothing is a reload (preserve off: clears + meta)", () => {
+    const state = fresh();
+    ingestTrace(state, traceValue(), 1840, CONFIG, "s-1");
+    ingestTrace(state, [], 3, CONFIG, "s-2");
+    expect(state.instance).toBeUndefined();
+
+    const result = ingestTrace(state, [], 4, CONFIG, "s-3");
+    expect(result).toEqual({ changed: true });
+    expect(state.session).toBe("s-3");
+    expect(state.lines).toEqual([expect.objectContaining({ kind: "meta", text: RELOADED })]);
+  });
+
+  it("a new session after a game that logged nothing adds the preserved row when Preserve log is on", () => {
+    const state = fresh();
+    state.preserve = true;
+    ingestTrace(state, traceValue(TRACE.slice(0, 2)), 1, CONFIG, "s-1");
+    ingestTrace(state, [], 2, CONFIG, "s-2");
+    ingestTrace(state, traceValue(NEXT_GAME), 3, CONFIG, "s-3");
+
+    expect(state.lines.map(line => line.kind)).toEqual([
+      "entry",
+      "entry",
+      "meta",
+      "meta",
+      "entry",
+      "entry"
+    ]);
+    expect(state.lines[3]).toMatchObject({ kind: "meta", text: PRESERVED });
+  });
+
+  it("the same session with an empty trace changes nothing", () => {
+    const state = fresh();
+    ingestTrace(state, [], 1, CONFIG, "s-1");
+    expect(ingestTrace(state, [], 2, CONFIG, "s-1")).toEqual({ changed: false });
+    expect(state.lines).toEqual([]);
+  });
+
+  it("the first session and a value without a session are not a reload", () => {
+    const state = fresh();
+    expect(ingestTrace(state, [], 1, CONFIG, "s-1")).toEqual({ changed: false });
+    expect(ingestTrace(state, [], 2, CONFIG)).toEqual({ changed: false });
+    expect(state.session).toBe("s-1");
+    expect(state.lines).toEqual([]);
+  });
+});
+
 describe("pushLine", () => {
   it("appends and trims to maxLines", () => {
     const state = fresh();

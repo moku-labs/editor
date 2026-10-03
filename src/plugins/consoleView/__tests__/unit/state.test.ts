@@ -9,6 +9,7 @@ describe("createConsoleState", () => {
       lines: [],
       nextKey: 1,
       instance: undefined,
+      session: undefined,
       consumed: 0,
       preserve: false,
       level: "all",

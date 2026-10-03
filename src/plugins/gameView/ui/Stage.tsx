@@ -13,7 +13,7 @@ import { fitScale, slotSize } from "../stage/geometry";
 import type { GameViewCtx, GameViewState } from "../types";
 import { ensureOverlayRoot } from "./OverlayRoot";
 import { elapsedText, linkBadge, type StageBadge } from "./text";
-import { useGameView, useTicker } from "./useGameView";
+import { RECORD_TICK_MS, SILENT_TICK_MS, useGameView, useTicker } from "./useGameView";
 
 /**
  * Props of `Stage`.
@@ -30,10 +30,6 @@ type Size = { readonly w: number; readonly h: number };
  *
  * @param element - The element.
  * @param onSize - Receives its size.
- * @example
- * ```ts
- * measureInto(viewport, size => setSize(size)); // { w: 1200, h: 800 }
- * ```
  */
 function measureInto(element: HTMLElement, onSize: (size: Size) => void): void {
   const rect = element.getBoundingClientRect();
@@ -46,10 +42,6 @@ function measureInto(element: HTMLElement, onSize: (size: Size) => void): void {
  * @param element - The stage viewport.
  * @param onSize - Receives the size.
  * @returns Stops observing.
- * @example
- * ```ts
- * useLayoutEffect(() => observeSize(viewport.current, setSize), []);
- * ```
  */
 function observeSize(element: HTMLElement | null, onSize: (size: Size) => void): () => void {
   if (element === null) return () => {};
@@ -69,10 +61,6 @@ function observeSize(element: HTMLElement | null, onSize: (size: Size) => void):
  * @param clip - The stage viewport.
  * @param zoom - The stage zoom.
  * @returns Releases the dock (and drops it from the disposers).
- * @example
- * ```ts
- * useLayoutEffect(() => dockSlot(ctx, slot.current, viewport.current, "fit"), ["fit"]);
- * ```
  */
 function dockSlot(
   ctx: GameViewCtx,
@@ -99,10 +87,6 @@ function dockSlot(
  * @param status - The link status.
  * @param state - gameView state.
  * @returns The badges in display order.
- * @example
- * ```ts
- * stageBadges({ kind: "paused", frame: 1841 }, state).map(badge => badge.text); // ["Paused · frame 1841"]
- * ```
  */
 function stageBadges(status: LinkStatus, state: GameViewState): readonly StageBadge[] {
   const badges: StageBadge[] = [];
@@ -124,10 +108,6 @@ function stageBadges(status: LinkStatus, state: GameViewState): readonly StageBa
  *
  * @param state - gameView state.
  * @returns The hint, undefined while not picking.
- * @example
- * ```ts
- * pickerHint(state); // "Hover the game, click to select · Esc"
- * ```
  */
 function pickerHint(state: GameViewState): string | undefined {
   if (!state.picker.on) return undefined;
@@ -142,10 +122,6 @@ function pickerHint(state: GameViewState): string | undefined {
  *
  * @param props - The gameView domain context and the link status.
  * @returns The stage.
- * @example
- * ```tsx
- * <Stage ctx={ctx} status={tools.status} />
- * ```
  */
 export function Stage(props: StageProps): VNode {
   const { ctx, status } = props;
@@ -157,7 +133,10 @@ export function Stage(props: StageProps): VNode {
   useLayoutEffect(() => observeSize(viewport.current, setMeasured), []);
   useLayoutEffect(() => dockSlot(ctx, slot.current, viewport.current, zoom), [zoom]);
   const silent = status.kind === "silent" || status.kind === "lost";
-  useTicker(silent || state.series.recording !== undefined, silent ? 1000 : 100);
+  useTicker(
+    silent || state.series.recording !== undefined,
+    silent ? SILENT_TICK_MS : RECORD_TICK_MS
+  );
 
   const choice = ctx.require(workspacePlugin).device();
   const size = resolveDevice(choice.preset, choice.orientation);

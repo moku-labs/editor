@@ -22,10 +22,6 @@ const SAVE_WAIT_MS = 1000;
  * and keeps every remover; captures link.files for the stop flush.
  *
  * @param ctx - Domain context of flowView.
- * @example
- * ```ts
- * createToolsPlugin("flowView", { onInit: initFlowView });
- * ```
  */
 export function initFlowView(ctx: FlowCtx): void {
   const actions = actionsOf(ctx);
@@ -48,10 +44,6 @@ export function initFlowView(ctx: FlowCtx): void {
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
  * @returns Resolves when torn down.
- * @example
- * ```ts
- * createToolsPlugin("flowView", { onStop: stopFlowView });
- * ```
  */
 export async function stopFlowView(ctx: { readonly state: FlowViewState }): Promise<void> {
   const { layout, view, camera } = ctx.state;

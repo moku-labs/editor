@@ -56,10 +56,6 @@ export function hasCommand(manifest: Manifest | undefined, id: string): boolean 
  * @param link - The link api.
  * @param id - A command id.
  * @returns Whether the command can run now.
- * @example
- * ```ts
- * if (!gameReady(ctx.require(linkPlugin), "editor.capture")) workspace.toast(NO_GAME_TEXT);
- * ```
  */
 export function gameReady(link: Pick<LinkApi, "status" | "manifest">, id: string): boolean {
   const { kind } = link.status();

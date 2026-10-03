@@ -109,13 +109,19 @@ export type NotesApi = {
  * The notes actions: the api plus what the components and the other modules call.
  */
 export type NotesActions = NotesApi & {
-  /** Lists and reads the note files (newest name first, at most 200). */
+  /**
+   * Lists and reads the note files (newest name first, at most 200; an unreadable file is logged
+   * and left out), then lays out again.
+   */
   load(): Promise<void>;
   /** Where each readable note sits on the canvas. */
   anchors(): readonly NoteAnchor[];
   /** Patches the open draft. */
   update(patch: Partial<NoteDraft>): void;
-  /** Saves the open draft as a new note; resolves undefined when nothing is open. */
+  /**
+   * Saves the open draft as a new note (a free note is pinned at its anchor in the root flow);
+   * resolves undefined when nothing is open or the title is blank.
+   */
   save(): Promise<NoteFile | undefined>;
   /** Closes the editor; false when it was not open (Esc layer noteEditor). */
   close(): boolean;

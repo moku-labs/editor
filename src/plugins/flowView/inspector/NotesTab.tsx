@@ -26,10 +26,6 @@ export type NotesTabProps = {
  * @param props.ctx - Domain context of flowView.
  * @param props.captures - Capture paths.
  * @returns The images.
- * @example
- * ```tsx
- * <Captures ctx={ctx} captures={note.captures} />
- * ```
  */
 function Captures(props: { readonly ctx: FlowCtx; readonly captures: readonly string[] }): VNode {
   const { ctx, captures } = props;
@@ -62,10 +58,6 @@ function Captures(props: { readonly ctx: FlowCtx; readonly captures: readonly st
  *
  * @param note - The note.
  * @returns The line.
- * @example
- * ```ts
- * noteMeta(note); // "board/merge · done → board/awaitIntent · idea · 2026-09-24"
- * ```
  */
 export function noteMeta(note: Note): string {
   const from = note.from;
@@ -81,10 +73,6 @@ export function noteMeta(note: Note): string {
  *
  * @param props - Context, actions and the shown node.
  * @returns The tab body.
- * @example
- * ```tsx
- * <NotesTab ctx={ctx} actions={actions} id="board/merge" />
- * ```
  */
 export function NotesTab(props: NotesTabProps): VNode {
   const { ctx, actions, id } = props;

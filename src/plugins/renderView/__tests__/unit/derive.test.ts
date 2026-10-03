@@ -74,7 +74,7 @@ describe("tiles", () => {
       unused: 3,
       unusedMb: 5.73
     });
-    expect(tiles.scene).toEqual({ entities: 101, views: 180, pooled: 24 });
+    expect(tiles.scene).toEqual({ entities: 104, views: 180, pooled: 24 });
   });
 
   it("show draw calls when game.render reports them", () => {
@@ -82,6 +82,37 @@ describe("tiles", () => {
     state.render = asRenderStats({ ...(RENDER as object), drawCalls: 42 });
 
     expect(tilesOf(state, []).drawCalls).toEqual({ kind: "value", value: 42 });
+  });
+
+  it("carry scene.effects and drawCalls.renderPasses when reported (game 0.0.3)", () => {
+    const state = stateWithData();
+    state.scene = boardScene();
+    state.render = asRenderStats({ ...(RENDER as object), renderPasses: 1, drawCalls: 14 });
+    state.effects = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+    const tiles = tilesOf(state, []);
+
+    expect(tiles.drawCalls).toStrictEqual({ kind: "value", value: 14, renderPasses: 1 });
+    expect(tiles.scene).toStrictEqual({
+      entities: 104,
+      views: 180,
+      pooled: 24,
+      effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
+    });
+    expect(tiles.scene?.effects).not.toBe(state.effects);
+
+    state.render = asRenderStats({ ...(RENDER as object), renderPasses: 2 });
+    expect(tilesOf(state, []).drawCalls).toStrictEqual({ kind: "absent", renderPasses: 2 });
+  });
+
+  it("omit the effects and renderPasses keys on an older game", () => {
+    const state = stateWithData();
+    state.scene = boardScene();
+    const tiles = tilesOf(state, []);
+
+    expect(tiles.drawCalls).toStrictEqual({ kind: "absent" });
+    expect(tiles.drawCalls).not.toHaveProperty("renderPasses");
+    expect(tiles.scene).toStrictEqual({ entities: 104, views: 180, pooled: 24 });
+    expect(tiles.scene).not.toHaveProperty("effects");
   });
 
   it("keep fps low at now while no sample was kept", () => {
@@ -259,7 +290,7 @@ describe("tree rows", () => {
 
     expect(treeRowsOf(scene, new Set()).map(row => row.id)).toEqual([
       "ui:boardScreen",
-      "entity:1048639"
+      "entity:1048640"
     ]);
 
     const rows = treeRowsOf(scene, new Set(["ui:boardScreen", "ui:boardScreen/boardSlot"]));
@@ -286,7 +317,7 @@ describe("tree rows", () => {
 
   it("are empty without a scene; the head counts cover every node", () => {
     expect(treeRowsOf(undefined, new Set())).toEqual([]);
-    expect(treeCounts(boardScene())).toEqual({ nodes: 101, textures: 24, entities: 32 });
+    expect(treeCounts(boardScene())).toEqual({ nodes: 104, textures: 24, entities: 33 });
     expect(treeCounts(undefined)).toEqual({ nodes: 0, textures: 0, entities: 0 });
   });
 

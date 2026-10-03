@@ -36,30 +36,18 @@ function flowKey(
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
  * @returns The bindings.
- * @example
- * ```ts
- * for (const binding of flowKeys(ctx, actions)) removers.push(workspace.keys.bind(binding));
- * ```
  */
 export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
   /**
    * True while the neighbours strip is open (the arrow keys walk it).
    *
    * @returns Whether the strip is open.
-   * @example
-   * ```ts
-   * stripOpen(); // true after a node was selected
-   * ```
    */
   const stripOpen = (): boolean => ctx.state.focus.strip;
   /**
    * True while the Code tab edits or the note editor is open (⌘S saves).
    *
    * @returns Whether something can be saved.
-   * @example
-   * ```ts
-   * editing(); // true in Code edit mode
-   * ```
    */
   const editing = (): boolean =>
     ctx.state.inspector.code?.draft !== undefined || ctx.state.notes.editor !== undefined;
@@ -111,10 +99,6 @@ export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
  *
  * @param actions - The flowView actions.
  * @returns Layer and close pairs.
- * @example
- * ```ts
- * for (const [layer, close] of escapeLayers(actions)) removers.push(workspace.keys.escape(layer, close));
- * ```
  */
 export function escapeLayers(actions: FlowActions): [EscLayer, () => boolean][] {
   return [

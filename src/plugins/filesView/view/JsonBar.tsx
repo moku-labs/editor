@@ -7,11 +7,6 @@ import { useMemo } from "preact/hooks";
 
 /**
  * Props of `JsonBar`.
- *
- * @example
- * ```tsx
- * <JsonBar text={text} />
- * ```
  */
 export type JsonBarProps = { readonly text: string };
 
@@ -39,10 +34,6 @@ export function jsonProblem(text: string): string | undefined {
  *
  * @param props - The file text.
  * @returns The bar, or nothing for valid JSON.
- * @example
- * ```tsx
- * <JsonBar text={text} />
- * ```
  */
 export function JsonBar(props: JsonBarProps): VNode | undefined {
   const problem = useMemo(() => jsonProblem(props.text), [props.text]);

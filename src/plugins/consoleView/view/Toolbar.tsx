@@ -8,11 +8,6 @@ import type { ConsoleApi, ConsoleCtx, LevelCounts, LevelFilter } from "../types"
 
 /**
  * Props of `Toolbar`.
- *
- * @example
- * ```tsx
- * const props: ToolbarProps = { ctx, api, counts, level: "all", query: "", preserve: false };
- * ```
  */
 export type ToolbarProps = {
   readonly ctx: ConsoleCtx;
@@ -51,10 +46,6 @@ function toneOf(filter: LevelFilter, count: number): "warn" | "error" | undefine
  *
  * @param api - The console api.
  * @param event - The keydown event.
- * @example
- * ```ts
- * onSearchKey(api, new KeyboardEvent("keydown", { key: "Escape" })); // api.filter().query → ""
- * ```
  */
 function onSearchKey(api: ConsoleApi, event: JSX.TargetedKeyboardEvent<HTMLInputElement>): void {
   if (event.key !== "Escape") return;
@@ -74,10 +65,6 @@ function onSearchKey(api: ConsoleApi, event: JSX.TargetedKeyboardEvent<HTMLInput
  *
  * @param props - The ctx, the api and what this render shows.
  * @returns The toolbar element.
- * @example
- * ```tsx
- * <Toolbar ctx={ctx} api={api} counts={api.counts()} level="all" query="" preserve={false} />
- * ```
  */
 export function Toolbar(props: ToolbarProps): VNode {
   const { ctx, api, counts, level, query, preserve } = props;

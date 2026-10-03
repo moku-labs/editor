@@ -365,11 +365,11 @@ describe("bridge integration", () => {
       "manifest"
     );
     const sources = listOf(field(manifest, "sources"));
-    expect(sources).toHaveLength(15);
+    expect(sources).toHaveLength(16);
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
-      14
+      15
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(15);
+    expect(listOf(field(manifest, "commands"))).toHaveLength(16);
     expect(field(manifest, "game")).toBe("merge-game 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
@@ -377,7 +377,7 @@ describe("bridge integration", () => {
     expect(app.bridge.status()).toMatchObject({ kind: "live" });
     expect(statuses.map(payload => payload.status.kind)).toEqual(["connecting", "live", "live"]);
     expect(statuses.at(-1)).toEqual({
-      status: { kind: "live", frame: expect.any(Number) },
+      status: { kind: "live", frame: game.app.time.snapshot().frame },
       session: "s-test"
     });
   });
@@ -413,10 +413,14 @@ describe("bridge integration", () => {
 
     const ran = await call(connection, "run", { id: "game.step", input: { frames: 1 } });
 
-    expect(ran).toMatchObject({
+    // The headless game has not ticked yet: one 1000/60 ms step is the whole elapsed time.
+    expect(before).toBe(0);
+    expect(ran).toEqual({
+      jsonrpc: "2.0",
+      id: nextId,
       result: {
-        value: expect.anything(),
-        state: { path: expect.any(String), frame: before + 1, tainted: false }
+        value: { delta: 1000 / 60, elapsed: 1000 / 60, scale: 1, frame: 1, idle: false },
+        state: { path: app.registry.envelope().path, frame: 1, tainted: false }
       }
     });
   });
@@ -555,7 +559,7 @@ describe("bridge types", () => {
       pluginConfigs: { registry: { game: game.app } }
     });
 
-    expect(app.bridge).toBeDefined();
+    expect(app.bridge.status()).toEqual({ kind: "connecting" });
     expect(hooked).toBe(false);
   });
 

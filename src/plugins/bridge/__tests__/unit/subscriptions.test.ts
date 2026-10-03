@@ -1,7 +1,16 @@
 /* eslint-disable unicorn/no-null -- null is the JSON value the wire carries */
 import { describe, expect, it } from "vitest";
-import type { WatchParams } from "../../../registry/protocol";
-import { failure, notification, request, success, wireError } from "../../../registry/protocol";
+import { createDeps as createChannelDeps } from "../../../channel/__tests__/helpers";
+import { buildChannelApi } from "../../../channel/api";
+import type { Json, WatchParams } from "../../../registry/protocol";
+import {
+  failure,
+  isNotification,
+  notification,
+  request,
+  success,
+  wireError
+} from "../../../registry/protocol";
 import {
   dropAll,
   pushValue,
@@ -11,7 +20,7 @@ import {
   unsubscribe
 } from "../../dispatch/subscriptions";
 import { HIGH_WATER } from "../../types";
-import type { TestDeps } from "../helpers";
+import type { FakeSocket, TestDeps } from "../helpers";
 import { deferred, flush, openDeps } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,6 +271,123 @@ describe("refreshAll", () => {
     await flush();
 
     expect(socket.sent).toEqual([]);
+  });
+});
+
+describe("refreshAll — edge and commit subs follow the channel again", () => {
+  it("re-opens the channel watch of a sub whose value changed and sends its first value", async () => {
+    const { deps, socket } = openDeps();
+    await watch(deps, { sub: 1, id: "game.position" });
+    const before = deps.channel.watchers.get("game.position");
+    socket.clear();
+    deps.channel.values.set("game.position", { path: "visit/enter" });
+
+    refreshAll(deps);
+    await flush();
+
+    expect(deps.channel.stops).toBe(1);
+    expect(deps.channel.watchers.get("game.position")).not.toBe(before);
+    expect(socket.messages()).toEqual([
+      notification("game", "value", { sub: 1, value: { path: "visit/enter" } })
+    ]);
+  });
+
+  it("re-opens nothing when the value did not change", async () => {
+    const { deps, socket } = openDeps();
+    await watch(deps, { sub: 1, id: "game.position" });
+    socket.clear();
+
+    refreshAll(deps);
+    await flush();
+
+    expect(deps.channel.stops).toBe(0);
+    expect(socket.sent).toEqual([]);
+  });
+
+  it("keeps the old watch and sends the value read when the re-open throws", async () => {
+    const { deps, socket } = openDeps();
+    await watch(deps, { sub: 1, id: "game.position" });
+    socket.clear();
+    deps.channel.values.set("game.position", { path: "board" });
+    deps.channel.watch = () => {
+      throw new Error("door gone");
+    };
+
+    refreshAll(deps);
+    await flush();
+
+    expect(deps.channel.stops).toBe(0);
+    expect(socket.messages()).toEqual([
+      notification("game", "value", { sub: 1, value: { path: "board" } })
+    ]);
+    expect(deps.log.debug).toHaveBeenCalledWith("bridge:refresh-failed", {
+      sub: 1,
+      id: "game.position",
+      message: "door gone"
+    });
+  });
+});
+
+/**
+ * The values of `value` notifications on a socket, in order.
+ *
+ * @param socket - The fake socket.
+ * @returns The values.
+ */
+function valuesOn(socket: FakeSocket): (Json | undefined)[] {
+  return socket
+    .messages()
+    .filter(message => isNotification(message) && message.method === "value")
+    .map(message => {
+      const params = "params" in message ? message.params : undefined;
+      return typeof params === "object" && params !== null && "value" in params
+        ? params.value
+        : undefined;
+    });
+}
+
+describe("refreshAll over the real channel (W2: a watch settles on the state a run left)", () => {
+  it("sends the door's next frame when a run refresh sent a mid-walk value", async () => {
+    const { deps: base, socket } = openDeps();
+    const channelDeps = createChannelDeps();
+    const position = channelDeps.registry.sources.get("game.position");
+    if (position === undefined) throw new Error("no game.position in the fake registry");
+    const deps = { ...base, channel: buildChannelApi(channelDeps) };
+    await subscribe(deps, request(1, "game", "watch", { sub: 1, id: "game.position" }), {
+      sub: 1,
+      id: "game.position"
+    });
+
+    // game.answer resolved mid-walk: the post-run refresh reads visit/enter
+    position.value = { path: "visit/enter" };
+    refreshAll(deps);
+    await flush();
+    // the next frame settles the walk at home
+    position.value = { path: "home" };
+    position.frame({ path: "home" });
+
+    expect(valuesOn(socket)).toEqual([{ path: "home" }, { path: "visit/enter" }, { path: "home" }]);
+  });
+
+  it("still drops the first frame that repeats the value sent last", async () => {
+    const { deps: base, socket } = openDeps();
+    const channelDeps = createChannelDeps();
+    const position = channelDeps.registry.sources.get("game.position");
+    if (position === undefined) throw new Error("no game.position in the fake registry");
+    const deps = { ...base, channel: buildChannelApi(channelDeps) };
+    await subscribe(deps, request(1, "game", "watch", { sub: 1, id: "game.position" }), {
+      sub: 1,
+      id: "game.position"
+    });
+
+    position.value = { path: "board" };
+    refreshAll(deps);
+    await flush();
+    position.frame({ path: "board" });
+
+    expect(valuesOn(socket)).toEqual([{ path: "home" }, { path: "board" }]);
+    expect(position.opened).toBe(2);
+    expect(position.stopped).toBe(1);
   });
 });
 

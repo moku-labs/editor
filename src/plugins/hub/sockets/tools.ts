@@ -89,10 +89,6 @@ function invalidRequest(message: string): Error {
  * @param sub - The checked number.
  * @returns The sub.
  * @throws {Error} -32602 naming the field `sub`.
- * @example
- * ```ts
- * const sub = checkSub(params.sub);
- * ```
  */
 function checkSub(sub: number): SubId {
   if (Number.isSafeInteger(sub) && sub >= 0) return sub;
@@ -140,10 +136,6 @@ function checkTarget(session: Session, method: string, id: string, input: Json |
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param req - The request.
- * @example
- * ```ts
- * call(ctx, conn, req);
- * ```
  */
 function call(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   const { id, input } = checkInput(CALL, req.params ?? {});
@@ -164,10 +156,6 @@ function call(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param req - The request.
- * @example
- * ```ts
- * watchRequest(ctx, conn, req);
- * ```
  */
 function watchRequest(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   const params = checkInput(WATCH, req.params ?? {});
@@ -190,10 +178,6 @@ function watchRequest(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * @param conn - The tools connection.
  * @param req - The request.
  * @throws {Error} A wire error for the response.
- * @example
- * ```ts
- * routeGame(ctx, conn, req);
- * ```
  */
 function routeGame(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   switch (req.method) {
@@ -230,10 +214,6 @@ function routeGame(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param req - The request.
- * @example
- * ```ts
- * routeFiles(ctx, conn, req);
- * ```
  */
 function routeFiles(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   conn.pending += 1;
@@ -255,10 +235,6 @@ function routeFiles(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * @param conn - The tools connection.
  * @param req - The request.
  * @throws {Error} A wire error for the response.
- * @example
- * ```ts
- * route(ctx, conn, req);
- * ```
  */
 function route(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   if (conn.pending >= MAX_PENDING) throw invalidRequest("too many pending calls");
@@ -275,10 +251,6 @@ function route(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param message - The decoded message.
- * @example
- * ```ts
- * onToolsMessage(ctx, conn, decode(text));
- * ```
  */
 export function onToolsMessage(ctx: HubCtx, conn: ToolsConn, message: Message): void {
   if (!isRequest(message)) {
@@ -298,10 +270,6 @@ export function onToolsMessage(ctx: HubCtx, conn: ToolsConn, message: Message): 
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
- * @example
- * ```ts
- * onToolsClose(ctx, conn);
- * ```
  */
 export function onToolsClose(ctx: HubCtx, conn: ToolsConn): void {
   discardReplies(ctx.state, conn.conn);

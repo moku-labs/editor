@@ -26,10 +26,6 @@ import type { GameViewCtx } from "./types";
  * @param id - The command id.
  * @param reason - The tooltip text.
  * @returns The reason, or false.
- * @example
- * ```ts
- * missingCommand(ctx, "editor.capture", NO_CAPTURE_TEXT); // false while the game has it
- * ```
  */
 export function missingCommand(ctx: GameViewCtx, id: string, reason: string): string | false {
   const manifest = ctx.require(linkPlugin).manifest();
@@ -41,10 +37,6 @@ export function missingCommand(ctx: GameViewCtx, id: string, reason: string): st
  *
  * @param ctx - Domain context of gameView.
  * @returns Resolves when saved or toasted.
- * @example
- * ```ts
- * captureNow(ctx); // writes .moku/captures/<stamp>-<node>.png
- * ```
  */
 async function captureNow(ctx: GameViewCtx): Promise<void> {
   await takeScreenshot(ctx);
@@ -54,10 +46,6 @@ async function captureNow(ctx: GameViewCtx): Promise<void> {
  * Shows Game and opens the series popover.
  *
  * @param ctx - Domain context of gameView.
- * @example
- * ```ts
- * openSeries(ctx);
- * ```
  */
 export function openSeries(ctx: GameViewCtx): void {
   ctx.require(workspacePlugin).show("game");
@@ -69,10 +57,6 @@ export function openSeries(ctx: GameViewCtx): void {
  *
  * @param ctx - Domain context of gameView.
  * @returns Resolves when workspace settled the run.
- * @example
- * ```ts
- * await toggleOverlay(ctx); // workspace.setOverlayInGame(true)
- * ```
  */
 export async function toggleOverlay(ctx: GameViewCtx): Promise<void> {
   const workspace = ctx.require(workspacePlugin);
@@ -84,10 +68,6 @@ export async function toggleOverlay(ctx: GameViewCtx): Promise<void> {
  *
  * @param ctx - Domain context of gameView.
  * @param id - The preset id.
- * @example
- * ```ts
- * chooseDevice(ctx, "pixel-8"); // setDevice({ preset: "pixel-8", orientation: "portrait" })
- * ```
  */
 export function chooseDevice(ctx: GameViewCtx, id: string): void {
   if (!isDevicePresetId(id)) return;
@@ -100,10 +80,6 @@ export function chooseDevice(ctx: GameViewCtx, id: string): void {
  * @param ctx - Domain context of gameView.
  * @param device - The preset.
  * @returns The item.
- * @example
- * ```ts
- * deviceItem(ctx, DEVICES[3]!).label; // "Device: Pixel 8"
- * ```
  */
 function deviceItem(ctx: GameViewCtx, device: DeviceSpec): PaletteItem {
   return {
@@ -121,10 +97,6 @@ function deviceItem(ctx: GameViewCtx, device: DeviceSpec): PaletteItem {
  *
  * @param ctx - Domain context of gameView.
  * @returns The ten items.
- * @example
- * ```ts
- * ctx.state.disposers.push(workspace.palette.add(paletteItems(ctx)));
- * ```
  */
 export function paletteItems(ctx: GameViewCtx): readonly PaletteItem[] {
   return [

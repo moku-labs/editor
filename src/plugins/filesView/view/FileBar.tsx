@@ -14,11 +14,6 @@ import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
 
 /**
  * Props of `FileBar`.
- *
- * @example
- * ```tsx
- * <FileBar ctx={ctx} api={api} tab={tab} />
- * ```
  */
 export type FileBarProps = {
   readonly ctx: FilesViewCtx;
@@ -52,10 +47,6 @@ function foldersOf(path: string): Segment[] {
  * @param ctx - Domain context of filesView.
  * @param folder - The folder path.
  * @param from - The crumb button (to find the tree of this panel).
- * @example
- * ```ts
- * revealFolder(ctx, "nodes", event.currentTarget);
- * ```
  */
 function revealFolder(ctx: FilesViewCtx, folder: string, from: HTMLElement): void {
   revealPath(ctx.state.expanded, folder);
@@ -87,10 +78,6 @@ function statusText(tab: OpenTab): string | undefined {
  *
  * @param props - Context, api and the tab.
  * @returns The bar.
- * @example
- * ```tsx
- * <FileBar ctx={ctx} api={api} tab={tab} />
- * ```
  */
 export function FileBar(props: FileBarProps): VNode {
   const { ctx, api, tab } = props;

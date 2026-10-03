@@ -147,6 +147,34 @@ export function resolvePath(base: string, target: string): string {
 }
 
 /**
+ * True when a line opens (or closes) a fenced code block.
+ *
+ * @param line - A line.
+ * @returns Whether it is a fence.
+ * @example
+ * ```ts
+ * opensFence("  ```ts"); // true
+ * ```
+ */
+function opensFence(line: string): boolean {
+  return line.trimStart().startsWith("```");
+}
+
+/**
+ * True when a line is a thematic break; spaces between the marks do not count.
+ *
+ * @param line - A line.
+ * @returns Whether it is a rule.
+ * @example
+ * ```ts
+ * isRule("- - -"); // true
+ * ```
+ */
+function isRule(line: string): boolean {
+  return RULE.test(line.replaceAll(" ", ""));
+}
+
+/**
  * True when a line starts a block other than a paragraph.
  *
  * @param line - A line.
@@ -160,8 +188,8 @@ function startsBlock(line: string): boolean {
   return (
     line.trim() === "" ||
     HEADING.test(line) ||
-    line.trimStart().startsWith("```") ||
-    RULE.test(line.replaceAll(" ", "")) ||
+    opensFence(line) ||
+    isRule(line) ||
     LIST_LINE.test(line) ||
     QUOTE_LINE.test(line)
   );
@@ -258,6 +286,74 @@ function readJoined(
 }
 
 /**
+ * One block read from the lines (undefined for a blank line) and the index after it.
+ */
+type ReadBlock = { readonly block: Block | undefined; readonly end: number };
+
+/**
+ * Reads a paragraph: lines up to the next line that starts another block.
+ *
+ * @param lines - Every line.
+ * @param start - First line of the paragraph.
+ * @param ids - Key counter.
+ * @returns The paragraph block and the index after it.
+ * @example
+ * ```ts
+ * readParagraph(["a", "b", "# T"], 0, { next: 0 }); // { block: { id: 0, kind: "paragraph", text: "a b" }, end: 2 }
+ * ```
+ */
+function readParagraph(lines: readonly string[], start: number, ids: Ids): ReadBlock {
+  const paragraph = readJoined(lines, start, (next, at) =>
+    at > start && startsBlock(next) ? undefined : next
+  );
+  return {
+    block: { id: nextId(ids), kind: "paragraph", text: paragraph.text },
+    end: paragraph.end
+  };
+}
+
+/**
+ * Reads the block that starts at `index`, by its first line.
+ *
+ * @param lines - Every line.
+ * @param index - First line of the block.
+ * @param ids - Key counter.
+ * @returns The block and the index after it.
+ * @example
+ * ```ts
+ * readBlock(["## Notes"], 0, { next: 0 }); // { block: { id: 0, kind: "heading", level: 2, text: "Notes" }, end: 1 }
+ * ```
+ */
+function readBlock(lines: readonly string[], index: number, ids: Ids): ReadBlock {
+  const line = lines[index] ?? "";
+  if (line.trim() === "") return { block: undefined, end: index + 1 };
+
+  const heading = HEADING.exec(line);
+  if (heading) {
+    const level = heading[1]?.length ?? 1;
+    const text = (heading[2] ?? "").trim();
+    return { block: { id: nextId(ids), kind: "heading", level, text }, end: index + 1 };
+  }
+  if (opensFence(line)) {
+    const fence = readFence(lines, index);
+    return {
+      block: { id: nextId(ids), kind: "code", lang: fence.lang, lines: fence.code },
+      end: fence.end
+    };
+  }
+  if (isRule(line)) return { block: { id: nextId(ids), kind: "rule" }, end: index + 1 };
+  if (LIST_LINE.test(line)) {
+    const { list, end } = readList(lines, index, ids);
+    return { block: { id: nextId(ids), kind: "list", list }, end };
+  }
+  if (QUOTE_LINE.test(line)) {
+    const quote = readJoined(lines, index, next => QUOTE_LINE.exec(next)?.[1]);
+    return { block: { id: nextId(ids), kind: "quote", text: quote.text }, end: quote.end };
+  }
+  return readParagraph(lines, index, ids);
+}
+
+/**
  * Splits Markdown into blocks.
  *
  * @param text - The Markdown.
@@ -272,41 +368,107 @@ function parseBlocks(text: string, ids: Ids): Block[] {
   const lines = text.split(/\r?\n/);
   const blocks: Block[] = [];
   let index = 0;
-
   while (index < lines.length) {
-    const line = lines[index] ?? "";
-    const heading = HEADING.exec(line);
-    if (line.trim() === "") {
-      index += 1;
-    } else if (heading) {
-      const level = heading[1]?.length ?? 1;
-      blocks.push({ id: nextId(ids), kind: "heading", level, text: (heading[2] ?? "").trim() });
-      index += 1;
-    } else if (line.trimStart().startsWith("```")) {
-      const fence = readFence(lines, index);
-      blocks.push({ id: nextId(ids), kind: "code", lang: fence.lang, lines: fence.code });
-      index = fence.end;
-    } else if (RULE.test(line.replaceAll(" ", ""))) {
-      blocks.push({ id: nextId(ids), kind: "rule" });
-      index += 1;
-    } else if (LIST_LINE.test(line)) {
-      const { list, end } = readList(lines, index, ids);
-      blocks.push({ id: nextId(ids), kind: "list", list });
-      index = end;
-    } else if (QUOTE_LINE.test(line)) {
-      const quote = readJoined(lines, index, next => QUOTE_LINE.exec(next)?.[1]);
-      blocks.push({ id: nextId(ids), kind: "quote", text: quote.text });
-      index = quote.end;
-    } else {
-      const start = index;
-      const paragraph = readJoined(lines, start, (next, at) =>
-        at > start && startsBlock(next) ? undefined : next
-      );
-      blocks.push({ id: nextId(ids), kind: "paragraph", text: paragraph.text });
-      index = paragraph.end;
-    }
+    const { block, end } = readBlock(lines, index, ids);
+    if (block !== undefined) blocks.push(block);
+    index = end;
   }
   return blocks;
+}
+
+/**
+ * A piece read from the paragraph text and the position after it.
+ */
+type ReadMark = { piece: Inline; end: number };
+
+/**
+ * Reads inline code from its opening backtick.
+ *
+ * @param text - The paragraph text.
+ * @param start - Position of `` ` ``.
+ * @param ids - Key counter.
+ * @returns The code piece, or undefined when nothing closes it.
+ * @example
+ * ```ts
+ * codeAt("`a` b", 0, { next: 0 })?.end; // 3
+ * ```
+ */
+function codeAt(text: string, start: number, ids: Ids): ReadMark | undefined {
+  const close = text.indexOf("`", start + 1);
+  if (close <= start + 1) return undefined;
+  return {
+    piece: { id: nextId(ids), kind: "code", text: text.slice(start + 1, close) },
+    end: close + 1
+  };
+}
+
+/**
+ * Reads `**strong**` from its opening `**`.
+ *
+ * @param text - The paragraph text.
+ * @param start - Position of the first `*`.
+ * @param ids - Key counter.
+ * @returns The strong piece, or undefined when it is no `**` or nothing closes it.
+ * @example
+ * ```ts
+ * strongAt("**a** b", 0, { next: 0 })?.end; // 5
+ * ```
+ */
+function strongAt(text: string, start: number, ids: Ids): ReadMark | undefined {
+  if (text[start] !== "*" || text[start + 1] !== "*") return undefined;
+  const close = text.indexOf("**", start + 2);
+  if (close <= start + 2) return undefined;
+  const children = parseInline(text.slice(start + 2, close), ids);
+  return { piece: { id: nextId(ids), kind: "strong", children }, end: close + 2 };
+}
+
+/**
+ * Reads `*em*` or `_em_`; an `_` inside a word is no mark.
+ *
+ * @param text - The paragraph text.
+ * @param start - Position of `*` or `_`.
+ * @param ids - Key counter.
+ * @returns The em piece, or undefined when nothing closes it.
+ * @example
+ * ```ts
+ * emAt("snake_case_name", 5, { next: 0 }); // undefined
+ * ```
+ */
+function emAt(text: string, start: number, ids: Ids): ReadMark | undefined {
+  const char = text[start] ?? "";
+  const close = text.indexOf(char, start + 1);
+  const inner = text.slice(start + 1, close);
+  const wordStart = char === "*" || !/\w/.test(text[start - 1] ?? "");
+  if (close <= start + 1 || inner.startsWith(" ") || !wordStart) return undefined;
+  return {
+    piece: { id: nextId(ids), kind: "em", children: parseInline(inner, ids) },
+    end: close + 1
+  };
+}
+
+/**
+ * Reads `[text](target)` from its opening bracket.
+ *
+ * @param text - The paragraph text.
+ * @param start - Position of `[`.
+ * @param ids - Key counter.
+ * @returns The link piece, or undefined when it does not close.
+ * @example
+ * ```ts
+ * linkAt("[a](b.md)", 0, { next: 0 })?.piece; // { id: 0, kind: "link", text: "a", target: "b.md" }
+ * ```
+ */
+function linkAt(text: string, start: number, ids: Ids): ReadMark | undefined {
+  const label = text.indexOf("](", start + 1);
+  const close = label === -1 ? -1 : text.indexOf(")", label + 2);
+  if (close === -1) return undefined;
+  const piece: Inline = {
+    id: nextId(ids),
+    kind: "link",
+    text: text.slice(start + 1, label),
+    target: text.slice(label + 2, close)
+  };
+  return { piece, end: close + 1 };
 }
 
 /**
@@ -321,45 +483,11 @@ function parseBlocks(text: string, ids: Ids): Block[] {
  * markAt("**a** b", 0, { next: 0 })?.end; // 5
  * ```
  */
-function markAt(text: string, start: number, ids: Ids): { piece: Inline; end: number } | undefined {
+function markAt(text: string, start: number, ids: Ids): ReadMark | undefined {
   const char = text[start];
-  if (char === "`") {
-    const close = text.indexOf("`", start + 1);
-    if (close <= start + 1) return undefined;
-    return {
-      piece: { id: nextId(ids), kind: "code", text: text.slice(start + 1, close) },
-      end: close + 1
-    };
-  }
-  if (char === "*" && text[start + 1] === "*") {
-    const close = text.indexOf("**", start + 2);
-    if (close > start + 2) {
-      const children = parseInline(text.slice(start + 2, close), ids);
-      return { piece: { id: nextId(ids), kind: "strong", children }, end: close + 2 };
-    }
-  }
-  if (char === "*" || char === "_") {
-    const close = text.indexOf(char, start + 1);
-    const inner = text.slice(start + 1, close);
-    const wordStart = char === "*" || !/\w/.test(text[start - 1] ?? "");
-    if (close <= start + 1 || inner.startsWith(" ") || !wordStart) return undefined;
-    return {
-      piece: { id: nextId(ids), kind: "em", children: parseInline(inner, ids) },
-      end: close + 1
-    };
-  }
-  if (char === "[") {
-    const label = text.indexOf("](", start + 1);
-    const close = label === -1 ? -1 : text.indexOf(")", label + 2);
-    if (close === -1) return undefined;
-    const piece: Inline = {
-      id: nextId(ids),
-      kind: "link",
-      text: text.slice(start + 1, label),
-      target: text.slice(label + 2, close)
-    };
-    return { piece, end: close + 1 };
-  }
+  if (char === "`") return codeAt(text, start, ids);
+  if (char === "[") return linkAt(text, start, ids);
+  if (char === "*" || char === "_") return strongAt(text, start, ids) ?? emAt(text, start, ids);
   return undefined;
 }
 
@@ -402,10 +530,6 @@ function parseInline(text: string, ids: Ids): Inline[] {
  * @param piece - The link piece.
  * @param open - Opens a resolved project path.
  * @returns The element or text.
- * @example
- * ```ts
- * renderLink({ id: 0, kind: "link", text: "a", target: "https://a.b" }, open);
- * ```
  */
 function renderLink(
   piece: Extract<Inline, { kind: "link" }>,
@@ -435,10 +559,6 @@ function renderLink(
  * @param pieces - The pieces.
  * @param open - Opens a resolved project path.
  * @returns The children.
- * @example
- * ```ts
- * <p>{renderInline(parseInline(text, ids), open)}</p>
- * ```
  */
 function renderInline(
   pieces: readonly Inline[],
@@ -459,10 +579,6 @@ function renderInline(
  * @param inline - Renders the text of an item.
  * @param key - The element key.
  * @returns The `<ul>` or `<ol>`.
- * @example
- * ```ts
- * renderList(list, text => text, 3);
- * ```
  */
 function renderList(list: List, inline: (text: string) => ComponentChildren, key: number): VNode {
   const Tag = list.ordered ? "ol" : "ul";
@@ -485,10 +601,6 @@ function renderList(list: List, inline: (text: string) => ComponentChildren, key
  * @param lines - The code lines.
  * @param key - The element key.
  * @returns The `<pre><code>` element.
- * @example
- * ```ts
- * renderFence("ts", ["const a = 1;"], 2);
- * ```
  */
 function renderFence(lang: string, lines: readonly string[], key: number): VNode {
   const name = lang.toLowerCase();
@@ -513,10 +625,6 @@ function renderFence(lang: string, lines: readonly string[], key: number): VNode
  * @param onOpenPath - Opens a project path in Files.
  * @param base - Folder of the Markdown file, for relative links (`""` = the root).
  * @returns The `<div data-md>` element.
- * @example
- * ```ts
- * renderMarkdown(note.body, path => openOrLog(ctx, path, {}), ".moku/notes");
- * ```
  */
 export function renderMarkdown(text: string, onOpenPath: (path: string) => void, base = ""): VNode {
   const ids: Ids = { next: 0 };
@@ -524,10 +632,6 @@ export function renderMarkdown(text: string, onOpenPath: (path: string) => void,
    * Opens a link target resolved against the file's folder.
    *
    * @param target - The link target.
-   * @example
-   * ```ts
-   * open("../captures/a.png"); // onOpenPath(".moku/captures/a.png")
-   * ```
    */
   const open = (target: string): void => {
     onOpenPath(resolvePath(base, target));
@@ -537,10 +641,6 @@ export function renderMarkdown(text: string, onOpenPath: (path: string) => void,
    *
    * @param source - The text.
    * @returns The children.
-   * @example
-   * ```ts
-   * inline("**now**"); // [<strong>now</strong>]
-   * ```
    */
   const inline = (source: string): ComponentChildren =>
     renderInline(parseInline(source, ids), open);

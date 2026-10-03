@@ -21,9 +21,9 @@ import type { FilesViewCtx, FilesViewState, UsedBy } from "../types";
 type JsonObject = { readonly [key: string]: Json };
 
 /**
- * What the rule needs of a graph node.
+ * What the rule needs of a graph node: its own `file` (dev-only, F-H2), its sub-flow and slot.
  */
-type NodeInfo = { readonly subFlow?: string; readonly slot?: string };
+type NodeInfo = { readonly file?: string; readonly subFlow?: string; readonly slot?: string };
 
 /**
  * A mutable Used-by entry while the map is built.
@@ -79,7 +79,7 @@ function flowOrder(graph: JsonObject, flows: JsonObject): string[] {
 }
 
 /**
- * The `subFlow` / `slot` of a node JSON value.
+ * The `file` / `subFlow` / `slot` of a node JSON value; a value that is no string is left out.
  *
  * @param value - The node JSON.
  * @returns The node info; `{}` for a plain node.
@@ -89,8 +89,9 @@ function flowOrder(graph: JsonObject, flows: JsonObject): string[] {
  * ```
  */
 function nodeInfoOf(value: JsonObject): NodeInfo {
-  const { subFlow, slot } = value;
+  const { file, subFlow, slot } = value;
   return {
+    ...(typeof file === "string" ? { file } : {}),
     ...(typeof subFlow === "string" ? { subFlow } : {}),
     ...(typeof slot === "string" ? { slot } : {})
   };
@@ -102,10 +103,6 @@ function nodeInfoOf(value: JsonObject): NodeInfo {
  * @param map - The map being built.
  * @param path - The file path.
  * @returns The entry.
- * @example
- * ```ts
- * entryOf(map, "nodes/merge.ts").nodes.push({ flow: "board", node: "merge" });
- * ```
  */
 function entryOf(map: Map<string, Entry>, path: string): Entry {
   const existing = map.get(path);
@@ -116,8 +113,71 @@ function entryOf(map: Map<string, Entry>, path: string): Entry {
 }
 
 /**
+ * The file of a graph node, the same rule as flowView's Inspector: the node's own `file` (F-H2)
+ * wins, else the protocol `nodeFile`.
+ *
+ * @param ref - Flow and node name.
+ * @param node - The node info; undefined when the graph lacks the node.
+ * @param overrides - The parsed override map.
+ * @param exists - The file index (`index.files.has`).
+ * @returns The path, or undefined.
+ * @example
+ * ```ts
+ * nodeFileOf({ flow: "board", node: "merge" }, { file: "features/x.ts" }, {}, exists); // "features/x.ts"
+ * ```
+ */
+export function nodeFileOf(
+  ref: NodeRef,
+  node: NodeInfo | undefined,
+  overrides: SourceOverrides,
+  exists: (path: string) => boolean
+): string | undefined {
+  if (node?.file !== undefined) return node.file;
+  return nodeFile(ref, node, overrides, exists);
+}
+
+/**
+ * The nodes of a flow value of the graph.
+ *
+ * @param value - One entry of the graph's `flows`.
+ * @returns Its `nodes`, empty when the value has none.
+ * @example
+ * ```ts
+ * nodesOfFlow({ start: "merge", nodes: { merge: {} } }); // { merge: {} }
+ * ```
+ */
+function nodesOfFlow(value: Json | undefined): JsonObject {
+  return isObject(value) && isObject(value.nodes) ? value.nodes : {};
+}
+
+/**
+ * Adds every node of one flow to the entry of its file.
+ *
+ * @param map - The reverse map being built.
+ * @param flow - The flow name.
+ * @param nodes - The flow's nodes.
+ * @param overrides - The parsed override map.
+ * @param exists - The file index (`index.files.has`).
+ */
+function addFlowNodes(
+  map: Map<string, Entry>,
+  flow: string,
+  nodes: JsonObject,
+  overrides: SourceOverrides,
+  exists: (path: string) => boolean
+): void {
+  for (const [node, body] of Object.entries(nodes)) {
+    if (!isObject(body)) continue;
+    const ref: NodeRef = { flow, node };
+    const path = nodeFileOf(ref, nodeInfoOf(body), overrides, exists);
+    if (path !== undefined) entryOf(map, path).nodes.push(ref);
+  }
+}
+
+/**
  * The reverse map path → Used by: every flow whose `flowFile` is the path and every node whose
- * `nodeFile` is the path (main flow first, then key order; nodes in key order).
+ * `nodeFileOf` is the path (own `file`, else `nodeFile`). Main flow first, then key order; nodes
+ * in key order.
  *
  * @param graph - The cached game.graph; undefined or a non-graph value gives an empty map.
  * @param exists - The file index (`index.files.has`).
@@ -138,23 +198,16 @@ export function buildUsedBy(
   if (flows === undefined || !isObject(graph)) return map;
 
   for (const flow of flowOrder(graph, flows)) {
+    // The flow's own file, then the file of each of its nodes.
     const file = flowFile(flow, overrides, exists);
     if (file !== undefined) entryOf(map, file).flows.push(flow);
-
-    const value = flows[flow];
-    const nodes = isObject(value) && isObject(value.nodes) ? value.nodes : {};
-    for (const [node, body] of Object.entries(nodes)) {
-      if (!isObject(body)) continue;
-      const ref: NodeRef = { flow, node };
-      const path = nodeFile(ref, nodeInfoOf(body), overrides, exists);
-      if (path !== undefined) entryOf(map, path).nodes.push(ref);
-    }
+    addFlowNodes(map, flow, nodesOfFlow(flows[flow]), overrides, exists);
   }
   return map;
 }
 
 /**
- * The `subFlow` / `slot` of a graph node, for the rule.
+ * The `file` / `subFlow` / `slot` of a graph node, for the rule.
  *
  * @param graph - The cached game.graph.
  * @param ref - Flow and node name.
@@ -193,10 +246,6 @@ export function flowStartOf(graph: Json | undefined, flow: string): string | und
  *
  * @param state - filesView state.
  * @returns `path => index.files.has(path)`.
- * @example
- * ```ts
- * existsIn(ctx.state)("nodes/merge.ts"); // true once indexed
- * ```
  */
 export function existsIn(state: FilesViewState): (path: string) => boolean {
   const files = state.index?.files;
@@ -208,11 +257,6 @@ export function existsIn(state: FilesViewState): (path: string) => boolean {
  * graph.
  *
  * @param ctx - Domain context of filesView.
- * @example
- * ```ts
- * ctx.state.overrides = await loadOverrides(ctx);
- * rebuildUsedBy(ctx);
- * ```
  */
 export function rebuildUsedBy(ctx: FilesViewCtx): void {
   const { state } = ctx;
@@ -228,10 +272,6 @@ export function rebuildUsedBy(ctx: FilesViewCtx): void {
  *
  * @param ctx - Domain context of filesView.
  * @returns The override map.
- * @example
- * ```ts
- * ctx.state.overrides = await loadOverrides(ctx);
- * ```
  */
 export async function loadOverrides(ctx: FilesViewCtx): Promise<SourceOverrides> {
   let text: string;
@@ -253,10 +293,6 @@ export async function loadOverrides(ctx: FilesViewCtx): Promise<SourceOverrides>
  *
  * @param ctx - Domain context of filesView.
  * @returns When the graph is stored.
- * @example
- * ```ts
- * link.onManifest(() => { loadGraph(ctx).catch(() => undefined); });
- * ```
  */
 export async function loadGraph(ctx: FilesViewCtx): Promise<void> {
   const link = ctx.require(linkPlugin);

@@ -16,10 +16,6 @@ export type ZoomBarProps = { readonly ctx: FlowCtx; readonly actions: FlowAction
  *
  * @param props - Context and actions.
  * @returns The bar.
- * @example
- * ```tsx
- * <ZoomBar ctx={ctx} actions={actions} />
- * ```
  */
 export function ZoomBar(props: ZoomBarProps): VNode {
   const { ctx, actions } = props;

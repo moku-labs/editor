@@ -108,14 +108,14 @@ describe("takeScreenshot", () => {
 
 describe("the capture card", () => {
   it("hides after captureCardMs unless hovered or focused, re-checking every 2 s", async () => {
-    await takeScreenshot(ctx);
+    const shot = await takeScreenshot(ctx);
     ctx.state.cardHeld = true;
 
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(ctx.state.card).toBeDefined();
+    expect(ctx.state.card).toEqual(shot);
     ctx.state.cardHeld = false;
     await vi.advanceTimersByTimeAsync(1999);
-    expect(ctx.state.card).toBeDefined();
+    expect(ctx.state.card).toEqual(shot);
     await vi.advanceTimersByTimeAsync(1);
     expect(ctx.state.card).toBeUndefined();
   });

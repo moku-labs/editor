@@ -94,6 +94,25 @@ export function memoryFiles(initial: Record<string, string> = {}): MemoryFiles {
   return files;
 }
 
+/**
+ * Holds every later read of one path until the returned release is called (a slow dev server).
+ *
+ * @param files - The in-memory files channel.
+ * @param path - The path whose reads wait.
+ * @returns Lets the held reads answer.
+ */
+export function holdReads(files: MemoryFiles, path: string): () => void {
+  const gate = Promise.withResolvers<void>();
+  const read = vi.mocked(files.read);
+  const original = read.getMockImplementation();
+  if (original === undefined) throw new Error("the files channel has no read");
+  read.mockImplementation(async (asked: string) => {
+    if (asked === path) await gate.promise;
+    return original(asked);
+  });
+  return () => gate.resolve();
+}
+
 /** The fakes behind ctx.require. */
 export type Fakes = {
   readonly files: MemoryFiles;

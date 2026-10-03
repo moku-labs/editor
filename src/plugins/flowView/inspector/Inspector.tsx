@@ -45,10 +45,6 @@ const LABELS: Readonly<Record<InspectorTab, string>> = {
  *
  * @param props - Context, actions, the shown node and its info.
  * @returns The Inspector.
- * @example
- * ```tsx
- * <Inspector ctx={ctx} actions={actions} shown="board/merge" info={info} />
- * ```
  */
 export function Inspector(props: InspectorProps): VNode {
   const { ctx, actions, shown, info } = props;

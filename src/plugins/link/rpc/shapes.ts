@@ -282,10 +282,6 @@ function readPanel(value: Json): { id: string; module: string } | undefined {
  *
  * @param value - The `manifest` result.
  * @returns The manifest, or undefined.
- * @example
- * ```ts
- * const manifest = readManifest(result);
- * ```
  */
 export function readManifest(value: Json): Manifest | undefined {
   const object = objectOf(value);
@@ -335,10 +331,6 @@ function readSession(value: Json): SessionInfo | undefined {
  *
  * @param params - The notification params.
  * @returns The sessions, or undefined when there is no list.
- * @example
- * ```ts
- * const list = readSessions(notification.params);
- * ```
  */
 export function readSessions(params: Json | undefined): SessionInfo[] | undefined {
   const list = objectOf(params)?.list;
@@ -532,10 +524,6 @@ export function readHelloBody(value: Json): HelloBody | undefined {
  * @param method - The method that answered, for the message.
  * @returns The typed result.
  * @throws {Error} A wire error -32600 when the shape is wrong.
- * @example
- * ```ts
- * const text = expectShape(result, readFileText, "read");
- * ```
  */
 export function expectShape<T>(
   value: Json,

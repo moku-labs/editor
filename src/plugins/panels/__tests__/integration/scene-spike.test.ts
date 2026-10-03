@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { registryPlugin } from "../../../registry";
@@ -44,8 +45,6 @@ type Capture = {
   readonly projections: Json;
   readonly rects: Readonly<Record<string, PageRect>>;
 };
-
-const GAME_DIR = path.resolve("../game/tests/integration/merge-game");
 
 const IDENTITY = { scale: 1, x: 0, y: 0 };
 
@@ -130,7 +129,9 @@ function captureLive(keys: readonly string[]): Capture {
 }
 
 async function importGame<T>(file: string): Promise<T> {
-  const module: T = await import(/* @vite-ignore */ pathToFileURL(path.join(GAME_DIR, file)).href);
+  const module: T = await import(
+    /* @vite-ignore */ pathToFileURL(path.join(MERGE_GAME_DIR, file)).href
+  );
   return module;
 }
 
@@ -158,7 +159,9 @@ async function timberPlayer(): Promise<JsonObject> {
 
 beforeAll(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const manifest: Json = JSON.parse(readFileSync(path.join(GAME_DIR, "manifest.json"), "utf8"));
+  const manifest: Json = JSON.parse(
+    readFileSync(path.join(MERGE_GAME_DIR, "manifest.json"), "utf8")
+  );
   const fixture = await loadMergeGame();
   const create = fixture.createScreenGame as unknown as (options: {
     player: JsonObject;
@@ -376,7 +379,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
 
     expect(board.path).toBe("board/awaitIntent");
     expect(scene.calibrated).toBe(false);
-    expect(scene.entityCount).toBe(101);
+    expect(scene.entityCount).toBe(104);
     expect(keyedNode(scene, "boardSlot").id).toBe("ui:boardScreen/boardSlot");
     expect(keyedNode(scene, "settings").id).toBe("ui:boardScreen/hudRow/settings");
     expect(nodeOf(scene, "ui:boardScreen/hudRow/coinPill")).toMatchObject({
@@ -405,10 +408,20 @@ describe("scene on the live board (board/awaitIntent)", () => {
     );
 
     expect(hosted).toHaveLength(11);
-    for (const node of hosted) {
-      expect(node.parent).toBe("ui:boardScreen/boardSlot");
-      expect(node.rect).toBeDefined();
-    }
+    for (const node of hosted) expect(node.parent).toBe("ui:boardScreen/boardSlot");
+    expect(Object.fromEntries(hosted.map(node => [node.name, node.rect]))).toEqual({
+      i1: { x: 428.5, y: 880.5, w: 223, h: 223 },
+      i2: { x: 722.5, y: 1174.5, w: 223, h: 223 },
+      c0_0: { x: 110, y: 856, w: 272, h: 272 },
+      c1_0: { x: 404, y: 856, w: 272, h: 272 },
+      c2_0: { x: 698, y: 856, w: 272, h: 272 },
+      c0_1: { x: 110, y: 1150, w: 272, h: 272 },
+      c1_1: { x: 404, y: 1150, w: 272, h: 272 },
+      c2_1: { x: 698, y: 1150, w: 272, h: 272 },
+      c0_2: { x: 110, y: 1444, w: 272, h: 272 },
+      c1_2: { x: 404, y: 1444, w: 272, h: 272 },
+      c2_2: { x: 698, y: 1444, w: 272, h: 272 }
+    });
     expect(i1).toMatchObject({ name: "i1", type: "Sprite", texture: "board.item-wood-3" });
     expect(i1.rect).toEqual({ x: 428.5, y: 880.5, w: 223, h: 223 });
     expect(entityNode(scene, board, "board.items", "i2").texture).toBe("board.item-wood-1");

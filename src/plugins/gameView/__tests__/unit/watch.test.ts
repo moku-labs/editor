@@ -59,10 +59,11 @@ describe("startSceneWatches", () => {
     expect(frames).toHaveLength(1);
     expect(ctx.state.sources.ui).toBe(BOARD.ui);
 
+    rendered.mockClear();
     flushFrames();
     expect(ctx.state.scene?.frame).toBe(1841);
     expect(ctx.state.scene?.nodes.has("ui:boardScreen/boardSlot")).toBe(true);
-    expect(rendered).toHaveBeenCalled();
+    expect(rendered).toHaveBeenCalledTimes(1);
   });
 
   it("takes the frame of the link status when the last value arrived", async () => {
@@ -124,7 +125,10 @@ describe("startSceneWatches", () => {
     sendBoard();
     await flush();
     expect(ctx.state.calibration).toBeUndefined();
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: calibration failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: calibration failed", {
+      key: "boardScreen",
+      message: "no value for game.rect"
+    });
   });
 
   it("keeps the last scene and warns when a value has the wrong shape", async () => {
@@ -179,7 +183,9 @@ describe("stopSceneWatches", () => {
     sendBoard();
     await vi.advanceTimersByTimeAsync(20);
     vi.useRealTimers();
-    expect(ctx.state.scene?.nodes.size).toBeGreaterThan(0);
+    expect(ctx.state.scene?.frame).toBe(1841);
+    expect(ctx.state.scene?.nodes.has("ui:boardScreen/boardSlot")).toBe(true);
+    expect(ctx.state.scene?.nodes.size).toBe(104);
   });
 });
 

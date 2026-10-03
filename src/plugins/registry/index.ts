@@ -19,7 +19,7 @@ const defaultConfig: RegistryConfig = { game: undefined, modules: [], name: unde
  * @example
  * ```ts
  * const editor = createApp({ pluginConfigs: { registry: { game, modules: [mergeDev] } } });
- * editor.registry.manifest().sources.length; // 14 + the module's sources
+ * editor.registry.manifest().sources.length; // 15 + the module's sources
  * ```
  */
 export const registryPlugin = createAgentPlugin("registry", {

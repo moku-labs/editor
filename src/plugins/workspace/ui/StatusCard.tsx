@@ -1,7 +1,8 @@
 /**
  * @file workspace plugin — F4, the card centred over the content: "No game connected" with the
- * game URL and Copy, or "Connecting · Waiting for the game at <url>" with a spinner while the
- * game was never live in this page. While a card shows, the hosts are inert and faded.
+ * game URL and Copy (also for a page without a boot tag), or "Connecting · Waiting for the game
+ * at <url>" with a spinner while the game was never live in this page. While a card shows, the
+ * hosts are inert and faded.
  */
 import type { VNode } from "preact";
 import { gameUrl } from "../frame/frame";
@@ -16,18 +17,17 @@ import { useWorkspace } from "./store";
 export type StatusCardProps = { readonly ctx: WorkspaceCtx };
 
 /**
- * Which card shows now.
+ * Which card shows now. A page without a boot tag (lost `no_boot`) can never connect, so it gets
+ * the empty card, not the connecting one.
  *
  * @param state - Workspace state.
  * @returns "empty", "connecting" or undefined for none.
- * @example
- * ```ts
- * cardKind(ctx.state); // "connecting" before the first session
- * ```
  */
 export function cardKind(state: WorkspaceState): "empty" | "connecting" | undefined {
-  const { kind } = state.link;
+  const { link } = state;
+  const { kind } = link;
   if (kind === "empty") return "empty";
+  if (kind === "lost" && link.reason === "no_boot") return "empty";
   if (kind === "live" || kind === "paused" || state.everLive) return undefined;
   return "connecting";
 }
@@ -37,10 +37,6 @@ export function cardKind(state: WorkspaceState): "empty" | "connecting" | undefi
  *
  * @param ctx - Domain context of workspace.
  * @param url - The game URL.
- * @example
- * ```ts
- * copyUrl(ctx, url);
- * ```
  */
 function copyUrl(ctx: WorkspaceCtx, url: string): void {
   const clipboard = globalThis.navigator?.clipboard;
@@ -58,10 +54,6 @@ function copyUrl(ctx: WorkspaceCtx, url: string): void {
  *
  * @param props - The workspace domain context.
  * @returns The card (hidden while a game is connected).
- * @example
- * ```tsx
- * <StatusCard ctx={ctx} />
- * ```
  */
 export function StatusCard(props: StatusCardProps): VNode {
   const { ctx } = props;

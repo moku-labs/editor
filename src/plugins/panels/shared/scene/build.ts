@@ -211,10 +211,6 @@ function placeRect(rect: PageRect, calibration: Calibration | undefined): PageRe
  * @param lists - Key → items.
  * @param key - The key.
  * @param item - The item.
- * @example
- * ```ts
- * appendTo(children, "ui:boardScreen", "ui:boardScreen/hudRow");
- * ```
  */
 function appendTo<Item>(lists: Map<string, Item[]>, key: string, item: Item): void {
   const list = lists.get(key);
@@ -293,10 +289,6 @@ function displayOf(entity: EntityWire): { display: Display; value: JsonObject } 
  *
  * @param entity - The entity.
  * @returns The box, or undefined without a display component with a size (a Text-only entity).
- * @example
- * ```ts
- * sizeBoxOf(item); // { x: -111.5, y: -111.5, w: 223, h: 223 } for a 223 px Sprite at anchor 0.5
- * ```
  */
 function sizeBoxOf(entity: EntityWire): PageRect | undefined {
   const found = displayOf(entity);
@@ -318,10 +310,6 @@ function sizeBoxOf(entity: EntityWire): PageRect | undefined {
  *
  * @param entity - The entity.
  * @returns `{ x, y, scale }` (scale 1 when absent), or undefined without x and y.
- * @example
- * ```ts
- * transformOf(item); // { x: 485, y: 191, scale: 1 }
- * ```
  */
 function transformOf(entity: EntityWire): Frame | undefined {
   const transform = componentOf(entity, "Transform");
@@ -338,10 +326,6 @@ function transformOf(entity: EntityWire): Frame | undefined {
  *
  * @param entity - The entity.
  * @returns The parent id, or undefined without a Parent.
- * @example
- * ```ts
- * parentOf(item); // 1048700 (the boardSlot ui entity)
- * ```
  */
 function parentOf(entity: EntityWire): number | undefined {
   return numberOf(componentOf(entity, "Parent")?.entity);
@@ -352,10 +336,6 @@ function parentOf(entity: EntityWire): number | undefined {
  *
  * @param entity - The entity.
  * @returns True for owner name "ui" (not a projection).
- * @example
- * ```ts
- * isUiOwned(boardSlotEntity); // true
- * ```
  */
 function isUiOwned(entity: EntityWire): boolean {
   return entity.owner.kind !== PROJECTION && entity.owner.name === "ui";
@@ -456,10 +436,6 @@ function hostOf(
  * @param chain - Its Parent chain.
  * @param host - Its host, undefined when none was found.
  * @returns The rect, or undefined when it cannot be placed.
- * @example
- * ```ts
- * entityRect(item, chain, boardSlot); // { x: 428.5, y: 880.5, w: 223, h: 223 }
- * ```
  */
 function entityRect(
   entity: EntityWire,
@@ -486,10 +462,6 @@ function entityRect(
  * @param host - Its host.
  * @param byId - Every entity by id.
  * @returns The parent node id, or undefined for a root.
- * @example
- * ```ts
- * nodeParentOf(item, chain, boardSlot, byId); // "ui:boardScreen/boardSlot"
- * ```
  */
 function nodeParentOf(
   entity: EntityWire,
@@ -513,10 +485,6 @@ function nodeParentOf(
  * @param entity - The entity.
  * @param addresses - The projection keys by entity id.
  * @returns The name.
- * @example
- * ```ts
- * nameOf(item, addresses); // "i1"
- * ```
  */
 function nameOf(entity: EntityWire, addresses: ReadonlyMap<number, Address>): string {
   const address = addresses.get(entity.id);
@@ -530,10 +498,6 @@ function nameOf(entity: EntityWire, addresses: ReadonlyMap<number, Address>): st
  *
  * @param entity - Any entity, ui-owned included.
  * @returns The keys, NineSlice first.
- * @example
- * ```ts
- * texturesOf(cell); // ["board.cell"]
- * ```
  */
 function texturesOf(entity: EntityWire): string[] {
   const keys = [
@@ -552,10 +516,6 @@ function texturesOf(entity: EntityWire): string[] {
  * @param entity - A projection entity.
  * @param world - Every entity by id and the projection keys.
  * @returns Where it sits in the tree, with its Order.
- * @example
- * ```ts
- * addEntityNode(builder, item, world); // { id: "entity:1048628", parent: "ui:boardScreen/boardSlot", order: 11 }
- * ```
  */
 function addEntityNode(builder: Builder, entity: EntityWire, world: World): Placed {
   // Where the entity hangs and where it is drawn.
@@ -592,10 +552,6 @@ function addEntityNode(builder: Builder, entity: EntityWire, world: World): Plac
  * @param builder - The scene under construction.
  * @param placed - The projection entities in entity order.
  * @returns The ids of the entities without a parent, in entity order.
- * @example
- * ```ts
- * linkEntities(builder, placed); // ["entity:1048639"]: the hud projection root
- * ```
  */
 function linkEntities(builder: Builder, placed: readonly Placed[]): string[] {
   for (const { id, parent } of placed.toSorted((first, second) => first.order - second.order)) {
@@ -611,10 +567,6 @@ function linkEntities(builder: Builder, placed: readonly Placed[]): string[] {
  * @param id - The node id.
  * @param children - Parent id → child ids.
  * @param order - The paint order, filled in.
- * @example
- * ```ts
- * appendPainted("ui:boardScreen", children, order);
- * ```
  */
 function appendPainted(
   id: string,

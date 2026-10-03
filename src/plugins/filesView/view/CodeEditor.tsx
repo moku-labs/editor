@@ -6,6 +6,7 @@
  */
 import type { ComponentChildren, VNode } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
+import type { Token } from "../../panels/shared/highlight";
 import { langOf, renderTokens } from "../../panels/shared/highlight";
 import type { FilesViewApi, OpenTab } from "../types";
 import { EDIT_COLOUR_LINES } from "../types";
@@ -23,28 +24,42 @@ const INDENT = "  ";
 
 /**
  * Props of `CodeEditor`.
- *
- * @example
- * ```tsx
- * <CodeEditor api={api} tab={tab} />
- * ```
  */
 export type CodeEditorProps = { readonly api: FilesViewApi; readonly tab: OpenTab };
+
+/**
+ * Whether any modifier key is held with the key.
+ *
+ * @param event - The key event.
+ * @returns True with Shift, Alt, Ctrl or Meta.
+ */
+function hasModifier(event: KeyboardEvent): boolean {
+  return event.shiftKey || event.altKey || event.ctrlKey || event.metaKey;
+}
+
+/**
+ * The highlighted layer: the token lines joined by newlines.
+ *
+ * @param layer - The token lines.
+ * @returns The children of the layer.
+ */
+function renderLayer(layer: readonly Token[][]): ComponentChildren[] {
+  const rendered: ComponentChildren[] = [];
+  for (const [index, tokens] of layer.entries()) {
+    if (index > 0) rendered.push("\n");
+    rendered.push(renderTokens(tokens));
+  }
+  return rendered;
+}
 
 /**
  * Inserts two spaces at the selection on Tab (no modifier); the buffer follows.
  *
  * @param event - The key event of the textarea.
  * @param write - Writes the new buffer.
- * @example
- * ```ts
- * onTab(event, text => api.setBuffer(path, text));
- * ```
  */
 function onTab(event: KeyboardEvent, write: (text: string) => void): void {
-  if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
-    return;
-  }
+  if (event.key !== "Tab" || hasModifier(event)) return;
   const area = event.currentTarget;
   if (!(area instanceof HTMLTextAreaElement)) return;
   event.preventDefault();
@@ -60,10 +75,6 @@ function onTab(event: KeyboardEvent, write: (text: string) => void): void {
  *
  * @param props - The api and the tab.
  * @returns The editor.
- * @example
- * ```tsx
- * <CodeEditor api={api} tab={tab} />
- * ```
  */
 export function CodeEditor(props: CodeEditorProps): VNode {
   const { api, tab } = props;
@@ -75,21 +86,20 @@ export function CodeEditor(props: CodeEditorProps): VNode {
     return () => clearTimeout(timer);
   }, [buffer]);
 
+  // Colour the last settled text, unless the file is too long to colour while typing.
   const lines = buffer.split(/\r?\n/);
   const colour = lines.length <= EDIT_COLOUR_LINES;
   const layer = useMemo(
     () => tokenLines(shown, langOf(tab.path), colour),
     [shown, tab.path, colour]
   );
+  const rendered = renderLayer(layer);
+
+  // Size the textarea to the longest line and number every line in the gutter.
   let longest = 0;
   for (const line of lines) longest = Math.max(longest, line.length);
   const numbers: number[] = [];
   for (let number = 1; number <= lines.length; number += 1) numbers.push(number);
-  const rendered: ComponentChildren[] = [];
-  for (const [index, tokens] of layer.entries()) {
-    if (index > 0) rendered.push("\n");
-    rendered.push(renderTokens(tokens));
-  }
 
   return (
     <div data-part="code-editor">

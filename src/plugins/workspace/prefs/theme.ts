@@ -33,10 +33,6 @@ export function effectiveTheme(theme: {
  *
  * @param theme - The theme to show.
  * @param root - The `<html>` element.
- * @example
- * ```ts
- * applyTheme("dark", document.documentElement);
- * ```
  */
 export function applyTheme(theme: Theme, root: HTMLElement): void {
   root.dataset.theme = theme;
@@ -48,7 +44,7 @@ export function applyTheme(theme: Theme, root: HTMLElement): void {
  * @returns "dark" when the OS prefers dark.
  * @example
  * ```ts
- * state.theme.os = readOsTheme();
+ * readOsTheme(); // "dark" when the OS prefers dark
  * ```
  */
 export function readOsTheme(): Theme {
@@ -62,7 +58,7 @@ export function readOsTheme(): Theme {
  * @returns Removes the listener (a no-op without `matchMedia`).
  * @example
  * ```ts
- * state.dom.cleanup.push(watchOsTheme(theme => osThemeChanged(ctx, theme)));
+ * const stop = watchOsTheme(theme => console.log(theme)); // logs "dark" when the OS turns dark
  * ```
  */
 export function watchOsTheme(onChange: (theme: Theme) => void): () => void {
@@ -74,10 +70,6 @@ export function watchOsTheme(onChange: (theme: Theme) => void): () => void {
    *
    * @param event - The media change.
    * @param event.matches - True for dark.
-   * @example
-   * ```ts
-   * query.addEventListener("change", listener);
-   * ```
    */
   const listener = (event: { readonly matches: boolean }): void => {
     onChange(event.matches ? "dark" : "light");

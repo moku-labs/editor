@@ -9,10 +9,6 @@ import type { LayoutState } from "./types";
  * engine.
  *
  * @returns The layout state.
- * @example
- * ```ts
- * createLayoutState().seq; // 0
- * ```
  */
 export function createLayoutState(): LayoutState {
   return {

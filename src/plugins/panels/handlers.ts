@@ -12,10 +12,6 @@ import type { PanelsCtx, PanelsHooks } from "./types";
  *
  * @param ctx - Domain context of panels.
  * @returns The two hooks.
- * @example
- * ```ts
- * createToolsPlugin("panels", { hooks: createHandlers });
- * ```
  */
 export function createHandlers(ctx: PanelsCtx): PanelsHooks {
   return {
@@ -29,10 +25,6 @@ export function createHandlers(ctx: PanelsCtx): PanelsHooks {
  *
  * @param ctx - Domain context of panels.
  * @returns The `link:status` hook.
- * @example
- * ```ts
- * handleLinkStatus(ctx)({ status: { kind: "lost", reason: "socket_closed", lastFrame: 1840, retryInMs: 1000 } });
- * ```
  */
 export function handleLinkStatus(ctx: PanelsCtx): (payload: ToolsEvents["link:status"]) => void {
   return ({ status }) => {
@@ -48,10 +40,6 @@ export function handleLinkStatus(ctx: PanelsCtx): (payload: ToolsEvents["link:st
  *
  * @param ctx - Domain context of panels.
  * @returns The `workspace:changed` hook.
- * @example
- * ```ts
- * handleWorkspaceChanged(ctx)({ ws: "state" });
- * ```
  */
 export function handleWorkspaceChanged(
   ctx: PanelsCtx

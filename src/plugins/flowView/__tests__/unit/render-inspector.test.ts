@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHandlers } from "../../handlers";
+import { holdReads } from "../ctx";
 import { fixtureText } from "../helpers";
 import { mountWorkspace, prepared, settle } from "../render";
 
 const fixture = fixtureText("ui-styles.txt");
+
+/** The text styles file (flowView config `stylesFile`). */
+const STYLES = "features/ui/styles.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -143,6 +147,25 @@ describe("Styles tab (C4, M10)", () => {
     );
     expect(ctx.state.inspector.styles?.pending?.next).toBe(61);
     expect(inspector.textContent).toContain("Writing…");
+    unmount();
+  });
+
+  it("opening the tab reads the styles file once, even when the read is slow", async () => {
+    const { ctx, fakes } = await prepared();
+    fakes.files.store.set(STYLES, { text: fixture, version: "v1" });
+    const release = holdReads(fakes.files, STYLES);
+    const { host, unmount } = await mountWorkspace(ctx);
+    const tab = [...inspectorOf(host).querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      candidate => candidate.textContent === "Styles"
+    );
+    await settle(() => tab?.click());
+    await settle();
+    release();
+    await settle();
+    const reads = vi.mocked(fakes.files.read).mock.calls.filter(([path]) => path === STYLES);
+    expect(reads).toHaveLength(1);
+    expect(ctx.state.inspector.tab).toBe("styles");
+    expect(inspectorOf(host).querySelector('[data-flow="styles-tab"] select')).not.toBeNull();
     unmount();
   });
 

@@ -14,6 +14,11 @@ import { HIGH_WATER, LOW_WATER } from "../types";
 export const SOCKET_OPEN = 1;
 
 /**
+ * Websocket close code of a normal closure (RFC 6455 §7.4.1): the page said bye.
+ */
+export const NORMAL_CLOSE = 1000;
+
+/**
  * The message of a thrown value.
  *
  * @param error - Anything thrown.
@@ -32,10 +37,6 @@ export function messageOf(error: unknown): string {
  *
  * @param socket - The socket.
  * @returns The buffered byte count.
- * @example
- * ```ts
- * bufferedOf(socket); // 0
- * ```
  */
 function bufferedOf(socket: SocketLike): number {
   return socket.bufferedAmount ?? 0;
@@ -48,7 +49,8 @@ function bufferedOf(socket: SocketLike): number {
  * @returns Whether new values should wait in the backlog.
  * @example
  * ```ts
- * if (congested(socket)) state.pending.set(sub, value);
+ * congested({ bufferedAmount: 2_000_000, … }); // true: above HIGH_WATER (1_048_576)
+ * congested({ bufferedAmount: 1000, … }); // false
  * ```
  */
 export function congested(socket: SocketLike): boolean {
@@ -61,10 +63,6 @@ export function congested(socket: SocketLike): boolean {
  *
  * @param deps - The state and the log.
  * @param message - The message.
- * @example
- * ```ts
- * sendNow(deps, success(request.id, null));
- * ```
  */
 export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Message): void {
   const { socket } = deps.state;
@@ -84,10 +82,6 @@ export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Messag
  * @param sub - The subscription id.
  * @param value - The value.
  * @param text - `JSON.stringify(value)`, for the dedupe.
- * @example
- * ```ts
- * sendValue(deps, 1, { path: "home" }, '{"path":"home"}');
- * ```
  */
 export function sendValue(
   deps: Pick<BridgeDeps, "state" | "log">,
@@ -110,10 +104,6 @@ export function sendValue(
  * congested again.
  *
  * @param deps - The state and the log.
- * @example
- * ```ts
- * channel.onHeartbeat(() => flushPending(deps));
- * ```
  */
 export function flushPending(deps: Pick<BridgeDeps, "state" | "log">): void {
   const { socket, pending } = deps.state;
@@ -129,10 +119,6 @@ export function flushPending(deps: Pick<BridgeDeps, "state" | "log">): void {
  * Clears every request deadline: late results of those requests are dropped.
  *
  * @param state - The bridge state.
- * @example
- * ```ts
- * dropInflight(deps.state); // on close and on stop
- * ```
  */
 export function dropInflight(state: BridgeState): void {
   for (const timer of state.inflight.values()) clearTimeout(timer);

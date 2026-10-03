@@ -15,10 +15,6 @@ import type { StateViewCtx, StateViewState } from "./types";
  * Calls every listener; a listener may unsubscribe while called.
  *
  * @param state - stateView state.
- * @example
- * ```ts
- * notify(createStateViewState()); // no listener, nothing happens
- * ```
  */
 export function notify(state: StateViewState): void {
   for (const listener of state.listeners) listener();
@@ -30,10 +26,6 @@ export function notify(state: StateViewState): void {
  *
  * @param ctx - Domain context of stateView.
  * @param reason - The note to show until the next commit.
- * @example
- * ```ts
- * resetTracker(ctx, "reloaded"); // ctx.state.note === "reloaded", lastCommit() undefined
- * ```
  */
 export function resetTracker(ctx: StateViewCtx, reason: "waiting" | "reloaded"): void {
   const { state } = ctx;
@@ -52,10 +44,6 @@ export function resetTracker(ctx: StateViewCtx, reason: "waiting" | "reloaded"):
  *
  * @param ctx - Domain context of stateView.
  * @param value - The watched value.
- * @example
- * ```ts
- * acceptModel(ctx, { player, session, rng }); // second value: ctx.state.last.seq === 1
- * ```
  */
 export function acceptModel(ctx: StateViewCtx, value: Json): void {
   if (!isModelSnapshot(value)) {
@@ -103,10 +91,6 @@ export function acceptModel(ctx: StateViewCtx, value: Json): void {
  *
  * @param ctx - Domain context of stateView.
  * @param value - The watched value.
- * @example
- * ```ts
- * acceptTainted(ctx, true); // ctx.state.tainted === true
- * ```
  */
 export function acceptTainted(ctx: StateViewCtx, value: Json): void {
   if (typeof value !== "boolean") {
@@ -124,10 +108,6 @@ export function acceptTainted(ctx: StateViewCtx, value: Json): void {
  *
  * @param ctx - Domain context of stateView.
  * @returns Resolves when the read settled.
- * @example
- * ```ts
- * await loadGraph(ctx); // ctx.state.graph is the merge-game graph
- * ```
  */
 export async function loadGraph(ctx: StateViewCtx): Promise<void> {
   const { state } = ctx;
@@ -152,10 +132,6 @@ export async function loadGraph(ctx: StateViewCtx): Promise<void> {
  *
  * @param ctx - Domain context of stateView.
  * @param manifest - The manifest of the chosen session, undefined when it is lost.
- * @example
- * ```ts
- * acceptManifest(ctx, manifest); // new session: ctx.state.note === "waiting"
- * ```
  */
 export function acceptManifest(ctx: StateViewCtx, manifest: Manifest | undefined): void {
   if (manifest === undefined) return;

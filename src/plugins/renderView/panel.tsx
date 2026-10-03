@@ -4,7 +4,7 @@
  * watches alive while the panel stays mounted and hidden).
  */
 import { definePanel } from "../panels/define";
-import type { PanelElement, PanelSpec, PanelTools } from "../panels/types";
+import type { PanelElement, PanelSpec, PanelTools, PanelValues } from "../panels/types";
 import { RenderWorkspace } from "./components/RenderWorkspace";
 import type { RenderViewCtx } from "./types";
 
@@ -13,15 +13,11 @@ import type { RenderViewCtx } from "./types";
  *
  * @param ctx - Domain context of renderView.
  * @returns The panel view.
- * @example
- * ```ts
- * definePanel({ id: "render", title: "Render", workspace: "render", sources: {}, view: viewOf(ctx) });
- * ```
  */
 function viewOf(
   ctx: RenderViewCtx
 ): (
-  values: unknown,
+  values: PanelValues<Readonly<Record<never, never>>>,
   tools: Pick<PanelTools<Readonly<Record<never, string>>>, "status" | "workspace">
 ) => PanelElement {
   return (_values, tools) => (
@@ -34,10 +30,6 @@ function viewOf(
  *
  * @param ctx - Domain context of renderView.
  * @returns The frozen panel spec.
- * @example
- * ```ts
- * ctx.require(panelsPlugin).register(createRenderPanel(ctx)); // app.panels.list() has "render"
- * ```
  */
 export function createRenderPanel(ctx: RenderViewCtx): PanelSpec {
   return definePanel({

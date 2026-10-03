@@ -1,6 +1,6 @@
 /**
  * @file consoleView plugin — ingest of a game.log value (pure over state): reload detection by
- * the first-entry fingerprint and the consumed count, the F6 meta rows, incremental append and
+ * the first-entry fingerprint and the consumed count (by the link session after an empty trace), the F6 meta rows, incremental append and
  * the maxLines trim.
  */
 import type { Json } from "../registry/protocol";
@@ -24,10 +24,6 @@ const RELOAD_PRESERVED: MetaText = "Game page reloaded · log preserved";
  * @param state - consoleView state.
  * @param line - The new line.
  * @param maxLines - Most lines kept.
- * @example
- * ```ts
- * pushLine(ctx.state, line, 5000); // ctx.state.lines.at(-1) === line
- * ```
  */
 export function pushLine(state: ConsoleState, line: LogLine, maxLines: number): void {
   state.lines.push(line);
@@ -40,10 +36,6 @@ export function pushLine(state: ConsoleState, line: LogLine, maxLines: number): 
  * @param state - consoleView state.
  * @param text - The meta text.
  * @param maxLines - Most lines kept.
- * @example
- * ```ts
- * pushMeta(ctx.state, "Console cleared", 5000); // a meta row with the next key
- * ```
  */
 export function pushMeta(state: ConsoleState, text: MetaText, maxLines: number): void {
   pushLine(state, { kind: "meta", key: state.nextKey, text, addedAt: Date.now() }, maxLines);
@@ -51,24 +43,25 @@ export function pushMeta(state: ConsoleState, text: MetaText, maxLines: number):
 }
 
 /**
- * Whether a trace belongs to another game instance than the one ingested so far.
+ * Whether a trace belongs to another game instance than the one ingested so far. A game that
+ * logged nothing leaves no fingerprint, so then a new link session marks the reload.
  *
  * @param state - consoleView state.
  * @param length - The trace length.
  * @param first - The first trace entry, if valid.
+ * @param session - The link session the value came from, if known.
  * @returns True on a game page reload.
- * @example
- * ```ts
- * isNewInstance(state, 2, undefined); // true once a game was ingested: the trace lost its first entry
- * ```
  */
 function isNewInstance(
   state: ConsoleState,
   length: number,
-  first: TraceEntry | undefined
+  first: TraceEntry | undefined,
+  session: string | undefined
 ): boolean {
   const { instance } = state;
-  if (instance === undefined) return false;
+  if (instance === undefined) {
+    return session !== undefined && state.session !== undefined && session !== state.session;
+  }
   return (
     length < state.consumed ||
     first === undefined ||
@@ -86,17 +79,15 @@ function isNewInstance(
  * @param value - The game.log value (the whole trace).
  * @param frame - The link frame at which the value arrived, if known.
  * @param config - Resolved plugin config.
+ * @param session - The link session the value came from (`link.session()`), if known.
  * @returns Whether the lines changed; `invalid` when the value is not an array.
- * @example
- * ```ts
- * ingestTrace(ctx.state, designLog, 1840, ctx.config); // { changed: true }, 8 lines
- * ```
  */
 export function ingestTrace(
   state: ConsoleState,
   value: Json,
   frame: number | undefined,
-  config: Readonly<Config>
+  config: Readonly<Config>,
+  session?: string
 ): IngestResult {
   if (!Array.isArray(value)) return { changed: false, invalid: true };
 
@@ -104,7 +95,7 @@ export function ingestTrace(
   const first = isTraceEntry(head) ? head : undefined;
   let changed = false;
 
-  if (isNewInstance(state, value.length, first)) {
+  if (isNewInstance(state, value.length, first, session)) {
     if (!state.preserve) state.lines = [];
     pushMeta(state, state.preserve ? RELOAD_PRESERVED : RELOAD_CLEARED, config.maxLines);
     state.consumed = 0;
@@ -112,6 +103,7 @@ export function ingestTrace(
     changed = true;
   }
   state.instance = first === undefined ? undefined : { ts: first.ts, event: first.event };
+  if (session !== undefined) state.session = session;
 
   const fresh: unknown[] = value.slice(state.consumed);
   state.consumed = value.length;

@@ -161,7 +161,7 @@ describe("onManifest", () => {
     expect(ctx.log.error).toHaveBeenCalledWith(
       "link:manifest-listener-failed",
       {},
-      expect.any(Error)
+      new Error("palette broke")
     );
   });
 });

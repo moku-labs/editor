@@ -1,64 +1,287 @@
 # hub
 
-> Complex plugin (server core) — The editor's websocket switchboard inside a Bun server.
+> Complex plugin, server core. The editor's websocket switchboard inside a Bun server.
 
 Checks Host, Origin and a per-start token before any upgrade. Runs the one websocket handler
 Bun allows per server, with two connection kinds: `agent` (a game page) and `tools` (a tools
 page). Keeps the game sessions. Routes game-channel requests from tools to the chosen session
-and files-channel requests to `files`.
+and files-channel requests to `files`. Wraps the game's `Bun.serve` options with `serve`.
+
+## Configuration
+
+Set through `pluginConfigs.hub`. Checked in `onInit`; a bad value makes `createApp` throw a
+`[moku-editor] hub.<field> …` error.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `path` | `string` | `"/__editor"` | URL prefix of every editor route. Starts with `/`. Letters, digits, `_`, `-`, `/`. No trailing or double slash. |
+| `allow` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and to call same-origin routes, for example `"http://192.168.1.4:3000"`. No path, no trailing slash. |
+| `callTimeoutMs` | `number` | `5000` | Deadline of a forwarded call before it fails with -32002. Integer ≥ 100. |
+| `silentAfterMs` | `number` | `6000` | A session with no heartbeat for this long is marked silent. Integer ≥ 100. After a `paused: true` heartbeat the limit is 65 s (`PAUSED_SILENT_AFTER_MS`). |
+
+## API
+
+`app.hub` or `ctx.require(hubPlugin)`. Type `HubApi`.
+
+| Member | Signature | What it does |
+|---|---|---|
+| `serve` | `(options: ServeOptions) => BunServeOptions` | Wraps the game's `Bun.serve` options. Forces `127.0.0.1`. Adds the editor routes, `{path}/ws` and the websocket handler. |
+| `token` | `() => string` | The token of this start: 32 random bytes, base64url, 43 characters. Never logged. |
+| `sessions` | `() => SessionInfo[]` | A fresh list ordered by `connectedAt`. |
+| `fetch` | `(req: Request, server: HubServer) => Response \| undefined` | The `{path}/ws` upgrade handler. `undefined` after an upgrade, else a refusal. |
+| `websocket` | `HubWebSocketHandler` | The one websocket handler. 32 MiB frames, 60 s idle, no deflate. |
+| `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
+| `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
+| `path` | `() => string` | `config.path`. |
+
+### `serve(options)`
+
+```ts
+Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+```
+
+Merged routes: the game's `routes`, then the routes from `addRoutes`, then `{path}/ws`. The
+socket is a route, so a game wildcard like `"/*"` cannot shadow it. Without a game `fetch`, the
+fallback answers 404. Unknown option keys pass through to Bun.
+
+`serve` throws, with the `[moku-editor]` prefix:
+
+| Case | Example |
+|---|---|
+| App not started | `serve` before `await editor.start()` |
+| Second call | one server per app |
+| A `websocket` option | the editor owns the one handler |
+| `unix` or `tls` | Host and Origin checks need `http://127.0.0.1:<port>` |
+| Hostname other than `127.0.0.1` / `localhost` | `"0.0.0.0"`, `"::"`, `""`, `"192.168.1.4"` |
+| A game route under the editor path | `"/__editor"`, `"/__editor/x"` |
+
+### `token()`
+
+```ts
+const token = editor.hub.token();
+```
+
+Throws before start and after stop. A new token on every start.
+
+### `sessions()`
+
+```ts
+editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+```
+
+`SessionInfo` has exactly `id`, `game`, `page`, `embedded`, `connectedAt`. Heartbeat and the
+silent flag stay private hub state. Mutating the result does not change the next call.
+
+### `fetch(req, server)`
+
+```ts
+fetch: (req, server) => editor.hub.fetch(req, server) ?? new Response("upgraded")
+```
+
+`serve` already mounts it as `{path}/ws`. Upgrade URL: `{path}/ws?token=<t>&kind=agent|tools`.
+Checks run in this order. Each refusal is `text/plain`, `cache-control: no-store`, a one-word
+body, and one `hub:refused` warn log with `status`, `check`, `host`, `origin` (never the URL,
+never the token).
+
+| # | Check | Status | Body |
+|---|---|---|---|
+| 1 | pathname is exactly `{path}/ws` | 404 | `missing` |
+| 2 | app started (token set) | 503 | `unavailable` |
+| 3 | `GET` and `Upgrade: websocket` | 426 | `upgrade` |
+| 4 | `guard(…, "upgrade")`: port, Host, then Origin (required) | 403 | `forbidden` |
+| 5 | query `token` equals the token (timing-safe) | 401 | `unauthorized` |
+| 6 | query `kind` is `agent` or `tools` | 400 | `invalid` |
+| 7 | `server.upgrade` returns true | 400 | `invalid` |
+
+### `websocket`
+
+`open` registers the connection. A tools connection gets `sessions {list}` at once. A socket
+that opens after stop is closed with 1001. `message` closes on a binary frame (1003) and decodes
+text. `close` ends the agent's session or the tools subscriptions. `drain` flushes the tools
+backlog.
+
+### `addRoutes(routes)`
+
+```ts
+editor.hub.addRoutes({ "/__editor/hello": helloRoute });
+```
+
+Call it in `onInit`. Keys are checked first, so a refused batch registers nothing. Throws after
+`serve`, on a key registered before, on `{path}/ws`, and on a key that is neither `path` nor
+under `path + "/"`.
+
+### `guard(req, server, mode)`
+
+```ts
+const refused = editor.hub.guard(req, server, "same-origin");
+if (refused) return refused;
+```
+
+| Mode | Host | Origin | Sec-Fetch-Site |
+|---|---|---|---|
+| `upgrade` | allowed | required, allowed | ignored |
+| `same-origin` | allowed | allowed when present | `same-origin` or `none` when present |
+| `navigate` | allowed | allowed when present | ignored |
+
+Allowed hosts: `127.0.0.1:<port>` and `localhost:<port>`, plus the bare names on port 80.
+Compared lowercased and exact. Allowed origins: `http://` plus each allowed host, plus
+`config.allow`. The origin `null` never matches. A server without a port is refused.
+
+### `path()`
+
+```ts
+editor.hub.path(); // "/__editor"
+```
+
+### Wire rules
+
+Hub notifications use channel `editor`. Forwarded agent traffic keeps channel `game` and
+carries `session`.
+
+Agent connection:
+
+| Incoming | Result |
+|---|---|
+| Anything before `hello` | close 1008 `hello first` |
+| `hello {manifest}`, manifest valid | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true}`. Tools get `session` and `sessions {list}`. `hub:session` is emitted. |
+| `hello` with a bad manifest | close 1008 `bad manifest` |
+| `hello` a second time | close 1008 `hello twice` |
+| `heartbeat` | stored, a silent session comes back, forwarded to every tools connection |
+| `value {sub, value}` | fanned out to the tools subscribers |
+| `bye` | the close reason becomes `bye` |
+| Response to a forwarded call | settled to its target. An unknown id is a `hub:late-response` debug log. |
+| Any request | error -32007 `unauthorized`, nothing dispatched |
+| Malformed heartbeat or value, undecodable text | one strike. Ten strikes close with 1008. |
+
+Tools connection:
+
+| Channel | Method | Params | Result |
+|---|---|---|---|
+| `game` | `manifest` | `{}` | `Manifest` of the chosen session |
+| `game` | `read` | `{ id, input? }` | forwarded, `Json` |
+| `game` | `run` | `{ id, input? }` | forwarded, `RunResult` |
+| `game` | `watch` | `{ sub, id, input? }` | `null`, then `value {sub, value}` notifications |
+| `game` | `unwatch` | `{ sub }` | `null` (an unknown sub is fine) |
+| `files` | `list` | `{ dir }` | `FileEntry[]` |
+| `files` | `read` | `{ path }` | `FileText` |
+| `files` | `write` | `{ path, text, version? }` | `WriteResult` |
+| `files` | `writeBinary` | `{ path, data }` (a data URL) | `WriteResult` |
+| `files` | `readBinary` | `{ path }` | `FileBinary` |
+| other | any | | -32601 |
+
+Notifications and responses from tools are ignored. Before a game call is forwarded, the hub
+checks the session choice, the id in the manifest and the input.
+
+Errors the hub builds (message prefix `[moku-editor]`):
+
+| Code | Reason | Retryable | When |
+|---|---|---|---|
+| -32001 | `game_reloaded` | yes | the agent closed while the call was pending |
+| -32002 | `timeout` | yes | the call passed its deadline |
+| -32003 | `no_session` | no | the named session is not open (`data.id`), or no game is connected |
+| -32003 | `choose_session` | no | several sessions and not exactly one `embedded` |
+| -32601 | `unknown_id` | no | the source or command id is not in the manifest (`data.id`) |
+| -32601 | | no | unknown channel or method |
+| -32602 | `invalid_input` | no | bad params or input; `sub` not a safe integer ≥ 0 |
+| -32600 | | no | duplicate `sub` on one connection; more than 256 pending calls |
+| -32007 | `unauthorized` | no | a request from an agent |
+
+Files errors keep their own code and data. Any other throw becomes -32000 with the message
+only, never a stack.
+
+Session choice when a game request has no `session`: one open session wins; with several, the
+only `embedded` one wins; otherwise -32003.
+
+Deadline of a forwarded call: `callTimeoutMs`. A `run` of `editor.series` waits its
+`input.durationMs` on top, up to 60 s more. The same rule runs in bridge and link.
+
+Fan-out: one agent-side watch per `(session, source, input)`. The key sorts object keys, so
+`{a, b}` and `{b, a}` share a watch. A late subscriber gets `null` and then the last value. The
+last unwatch sends one `unwatch` to the agent.
+
+Backpressure: when `send` returns -1 a tools connection is congested. Values coalesce to the
+latest per `sub`, heartbeats are dropped, responses and session notifications are still sent.
+`drain` flushes the backlog in order.
+
+## Events
+
+| Event | Direction | Payload | When |
+|---|---|---|---|
+| `hub:session` | emitted (global, `ServerEvents`) | `HubSession` `{ id, game, open, reason? }`, `reason` is `"bye"` or `"game_reloaded"` | a valid `hello` (`open: true`) and an agent close (`open: false`) |
+
+Hooks nothing. Not emitted from `onStop`. A throwing emit is logged as `hub:emit-failed`.
+
+Log events (`ctx.log`):
+
+| Event | Level | Fields |
+|---|---|---|
+| `hub:started` | info | `path` |
+| `hub:refused` | warn | `status`, `check`, `host`, `origin` |
+| `hub:session-open` | info | `id`, `game` |
+| `hub:session-silent` | info | `id`, `paused` |
+| `hub:session-alive` | info | `id` |
+| `hub:emit-failed` | error | `id`, `error` |
+| `hub:open`, `hub:close` | debug | `kind`, `conn` |
+| `hub:late-response` | debug | `id` |
+| `hub:unknown-notification` | debug | `channel`, `method` |
+| `hub:tools-ignored` | debug | `method` |
+
+## Dependencies
+
+| Kind | Name | Use |
+|---|---|---|
+| depends | `filesPlugin` | `list`, `read`, `write`, `writeBinary`, `readBinary` for the files channel |
+| import | `decodeDataUrl` from `../files` | decodes `writeBinary` data; a mime that does not match the path is -32602, a non-image path is -32004 |
+| global event | `hub:session` | emitted |
+| protocol | `../registry/protocol` | `SessionInfo`, `wireError`, `toWireError`, `checkInput`, `decode`, `encode` |
+
+## Usage
 
 ```ts
 import { createApp } from "@moku-labs/editor/server";
+import index from "./index.html";
 
 const editor = createApp({ pluginConfigs: { files: { root: `${import.meta.dir}/..` } } });
 await editor.start();
 Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
 ```
 
-## API
+React to sessions from another server plugin:
 
-| Method | What it does |
-|---|---|
-| `serve(options)` | Wraps the game's `Bun.serve` options. Forces `127.0.0.1`. Adds the editor routes and the websocket handler. Throws before start, on a second call, on `0.0.0.0` / `::` / a LAN IP, on `unix` / `tls`, on a `websocket`, and on a game route under the editor path. |
-| `token()` | The token of this start (43 characters). Throws before start and after stop. Never logged. |
-| `sessions()` | A fresh `SessionInfo[]` ordered by `connectedAt`. |
-| `fetch(req, server)` | The `{path}/ws` upgrade handler. `undefined` after an upgrade, else a refusal. |
-| `websocket` | The one websocket handler (32 MiB frames, 60 s idle, no deflate). |
-| `addRoutes(routes)` | Registers editor routes under the path (pages, in `onInit`). `serve` merges them. |
-| `guard(req, server, mode)` | The shared Host / Origin / Sec-Fetch-Site check: `upgrade`, `same-origin` or `navigate`. |
-| `path()` | `config.path`. |
+```ts
+import { createPlugin, hubPlugin } from "@moku-labs/editor/server";
 
-Upgrade checks, in order: path (404), started (503), `GET` + `Upgrade: websocket` (426),
-Host then Origin (403; Origin is required), token (401), `kind=agent|tools` (400).
+export const auditPlugin = createPlugin("audit", {
+  depends: [hubPlugin],
+  hooks: ctx => ({
+    "hub:session": session => ctx.log.info("audit:session", { id: session.id, open: session.open })
+  })
+});
+```
 
-Wire rules:
+## Integration
 
-- An agent must send `hello {manifest}` first, or it is closed with 1008.
-- After `hello` the agent gets `session {id, game, open: true}` on channel `editor`.
-- Any request from an agent gets -32007 `unauthorized`.
-- Tools requests are checked before forwarding: session choice (-32003), id in the manifest (-32601), input (-32602).
-- A tools connection can have at most 256 calls pending (-32600).
-- Forwarded calls time out with -32002. A `run` of `editor.series` waits its `durationMs` on top, up to 60 s more.
-- When an agent closes, its pending calls fail with -32001. Both errors are retryable.
-- Watches fan out: one agent watch per `(session, source, input)`.
-- Binary frames close the socket with 1003. Ten undecodable frames close it with 1008.
-
-## Configuration
-
-| Option | Default | Rule |
+| Plugin | Core | How it meets the hub |
 |---|---|---|
-| `path` | `"/__editor"` | Starts with `/`, letters, digits, `_`, `-`, `/`. No trailing or double slash. |
-| `allow` | `[]` | Extra exact http(s) origins, for example `"http://192.168.1.4:3000"`. |
-| `callTimeoutMs` | `5000` | Integer ≥ 100. |
-| `silentAfterMs` | `6000` | Integer ≥ 100. A session with a `paused: true` heartbeat counts as silent after 65 s. |
+| `files` | server | Answers the files channel. Its errors pass through unchanged. |
+| `pages` | server | Depends on hub. In `onInit` it calls `addRoutes` for `{path}`, `{path}/`, `{path}/hello`, `{path}/assets/*`. Every route runs `guard` first (`navigate`, `same-origin` for hello). The boot JSON uses `path()` and `token()`. The bin passes `guard` to `createStaticFetch`. |
+| `bridge` | agent | Gets `{ ws, token }` from `{path}/hello`, opens `{path}/ws?token=…&kind=agent`, sends an Origin header outside a browser, sends `hello`, reads its id from the `session` notification on channel `editor`. |
+| `link` | tools | Opens `{boot.ws}?token=…&kind=tools`. Computes silence itself from forwarded heartbeats (`SILENT_AFTER_MS`, `SILENT_AFTER_PAUSED_MS`). Its own call timeout is `CALL_TIMEOUT_MS` (10 s), longer than the hub default of 5 s. |
 
-## Events
+Lifecycle:
 
-- Emits the global server event `hub:session` (`{ id, game, open, reason? }`). It fires on a valid `hello` and on agent close.
-- Hooks nothing.
+| Phase | What happens |
+|---|---|
+| `onInit` | validates the config, builds the allowed origins |
+| `onStart` | new token, silent check every `min(1000, silentAfterMs / 2)` ms (unref'd) |
+| `onStop` | clears timers, forgets connections, sessions, calls and watches, closes every socket with 1001 `editor stopping`. Later upgrades get 503. The Bun server belongs to the game. |
 
-## Lifecycle
+## Limits
 
-- `onInit` validates the config and builds the allowed origins.
-- `onStart` creates a new token and starts the silent check.
-- `onStop` closes every socket with 1001 and forgets every session. Later upgrades get 503. The Bun server belongs to the game.
+- One `serve` per app. Loopback only. No `unix`, no `tls`.
+- 32 MiB per frame. Bigger frames are closed by Bun (1009).
+- 256 pending calls per tools connection, files calls included.
+- Binary frames are not accepted.
+- The silent flag is private. A flip broadcasts nothing; tools compute silence themselves.
+- No throttle of its own on frame sources. The bridge sends one value per heartbeat on change.
+- `serve` holds the one `as unknown as BunServeOptions` cast of the Bun seam (oven-sh/bun#17871, #18314).

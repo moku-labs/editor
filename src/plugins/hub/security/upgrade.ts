@@ -49,10 +49,6 @@ function kindOf(value: string | null): ConnKind | undefined {
  * @param req - The request.
  * @param check - The failed check.
  * @returns The refusal response.
- * @example
- * ```ts
- * return refused(ctx, req, "token"); // 401
- * ```
  */
 function refused(ctx: HubCtx, req: Request, check: UpgradeCheck): Response {
   const [status, word] = REFUSALS[check];
@@ -74,10 +70,6 @@ function refused(ctx: HubCtx, req: Request, check: UpgradeCheck): Response {
  * @param server - The Bun server.
  * @param url - The parsed request URL.
  * @returns The failing check, or undefined.
- * @example
- * ```ts
- * precheck(ctx, req, server, new URL(req.url)); // "started" before start
- * ```
  */
 function precheck(
   ctx: HubCtx,
@@ -103,10 +95,6 @@ function precheck(
  * @param req - The request.
  * @param server - The Bun server.
  * @returns undefined when upgraded, else the refusal.
- * @example
- * ```ts
- * routes[`${path}/ws`] = (req, server) => handleUpgrade(ctx, req, server);
- * ```
  */
 export function handleUpgrade(ctx: HubCtx, req: Request, server: HubServer): Response | undefined {
   // A request without Host (HTTP/1.0) carries a relative URL; the base only parses it, the guard

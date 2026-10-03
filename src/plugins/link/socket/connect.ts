@@ -68,7 +68,8 @@ export function bootOrigin(ws: string, base: string): string {
  * @returns The origin, or undefined in a browser.
  * @example
  * ```ts
- * socketOrigin(boot.ws); // "http://127.0.0.1:3000" under Bun
+ * socketOrigin("ws://127.0.0.1:3000/__editor/ws", { Bun: {} }); // "http://127.0.0.1:3000"
+ * socketOrigin("ws://127.0.0.1:3000/__editor/ws", {}); // undefined (a browser)
  * ```
  */
 export function socketOrigin(
@@ -83,10 +84,6 @@ export function socketOrigin(
  *
  * @param ctx - Domain context of link.
  * @param refresh - Whether the next attempt fetches hello first.
- * @example
- * ```ts
- * connectFailed(ctx, true);
- * ```
  */
 function connectFailed(ctx: LinkCtx, refresh: boolean): void {
   const { state, config } = ctx;
@@ -101,10 +98,6 @@ function connectFailed(ctx: LinkCtx, refresh: boolean): void {
  * once link stopped or once this socket is no longer the current one. The token is never logged.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * openSocket(ctx);
- * ```
  */
 export function openSocket(ctx: LinkCtx): void {
   const { state, log } = ctx;
@@ -129,10 +122,6 @@ export function openSocket(ctx: LinkCtx): void {
    * True while this socket is the current one and link has not stopped.
    *
    * @returns Whether an event of this socket still counts.
-   * @example
-   * ```ts
-   * if (current()) onSocketOpen(ctx);
-   * ```
    */
   const current = (): boolean => !state.stopped && state.socket === socket;
   socket.addEventListener("open", () => {
@@ -155,10 +144,6 @@ export function openSocket(ctx: LinkCtx): void {
  * The socket opened: the hub's first `sessions` notification drives the attach.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * socket.addEventListener("open", () => onSocketOpen(ctx));
- * ```
  */
 export function onSocketOpen(ctx: LinkCtx): void {
   const { state } = ctx;
@@ -177,10 +162,6 @@ export function onSocketOpen(ctx: LinkCtx): void {
  * @param event - The close event.
  * @param event.code - Close code.
  * @param event.reason - Close reason.
- * @example
- * ```ts
- * socket.addEventListener("close", event => onSocketClose(ctx, event));
- * ```
  */
 export function onSocketClose(
   ctx: LinkCtx,
@@ -205,10 +186,6 @@ export function onSocketClose(
  *
  * @param ctx - Domain context of link.
  * @param refresh - Fetch hello for a fresh token before opening.
- * @example
- * ```ts
- * scheduleReconnect(ctx, true);
- * ```
  */
 export function scheduleReconnect(ctx: LinkCtx, refresh: boolean): void {
   const { state, config } = ctx;
@@ -229,10 +206,6 @@ export function scheduleReconnect(ctx: LinkCtx, refresh: boolean): void {
  *
  * @param ctx - Domain context of link.
  * @param refresh - Fetch hello first.
- * @example
- * ```ts
- * reconnect(ctx, false);
- * ```
  */
 export function reconnect(ctx: LinkCtx, refresh: boolean): void {
   const { state } = ctx;
@@ -258,11 +231,6 @@ export function reconnect(ctx: LinkCtx, refresh: boolean): void {
 
 /**
  * Ignores a rejection that was already handled where it happened.
- *
- * @example
- * ```ts
- * promise.then(onDone, ignoreFailure);
- * ```
  */
 export function ignoreFailure(): void {
   // The failure was logged (or cannot happen: refreshBoot never rejects).
@@ -273,10 +241,6 @@ export function ignoreFailure(): void {
  * `link:no-boot` and status lost `no_boot` (no timer; `retry()` reads the tag again).
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * connect(ctx); // onStart
- * ```
  */
 export function connect(ctx: LinkCtx): void {
   const { state, config } = ctx;
@@ -296,10 +260,6 @@ export function connect(ctx: LinkCtx): void {
  * otherwise.
  *
  * @param ctx - Domain context of link.
- * @example
- * ```ts
- * app.link.retry();
- * ```
  */
 export function retryNow(ctx: LinkCtx): void {
   const { state } = ctx;

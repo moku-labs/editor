@@ -10,10 +10,6 @@ import type { FlowCtx, FlowViewApi } from "./types";
  *
  * @param ctx - Domain context of flowView.
  * @returns The FlowViewApi (`app.flowView`).
- * @example
- * ```ts
- * createToolsPlugin("flowView", { api: createFlowViewApi });
- * ```
  */
 export function createFlowViewApi(ctx: FlowCtx): FlowViewApi {
   const { camera, focus, flows, layout, notes } = actionsOf(ctx);

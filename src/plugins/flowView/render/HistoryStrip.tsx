@@ -82,10 +82,6 @@ export function labelLayout(
  *
  * @param props - Context, actions and the rows.
  * @returns The strip.
- * @example
- * ```tsx
- * <HistoryStrip ctx={ctx} actions={actions} rows={historyView(ctx)} />
- * ```
  */
 export function HistoryStrip(props: HistoryStripProps): VNode {
   const { ctx, actions, rows } = props;
@@ -170,10 +166,6 @@ export function HistoryStrip(props: HistoryStripProps): VNode {
  *
  * @param props - Context, actions and the rows.
  * @returns The label layer.
- * @example
- * ```tsx
- * <HistoryLabels ctx={ctx} actions={actions} rows={historyView(ctx)} />
- * ```
  */
 export function HistoryLabels(props: HistoryStripProps): VNode {
   const { ctx, rows } = props;
@@ -185,10 +177,8 @@ export function HistoryLabels(props: HistoryStripProps): VNode {
   const width = useFlowStore(ctx, state => state.camera.viewport.w, "camera");
   const shown = rows.slice(0, MAX_DOTS);
   const wanted = new Set([shown[0]?.index, hover, selected].filter(index => index !== undefined));
-  const visible =
-    open || (hover === undefined && selected === undefined)
-      ? []
-      : shown.filter(row => wanted.has(row.index));
+  const hasNoLabelFocus = hover === undefined && selected === undefined;
+  const visible = open || hasNoLabelFocus ? [] : shown.filter(row => wanted.has(row.index));
   const dots = visible.map(row => ({
     index: row.index,
     y: DOT_TOP + shown.indexOf(row) * DOT_PITCH + DOT_PITCH / 2

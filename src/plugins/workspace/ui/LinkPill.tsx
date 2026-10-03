@@ -70,10 +70,6 @@ export function pillText(status: LinkStatus, now: number): { text: string; note:
  *
  * @param props - The workspace domain context.
  * @returns The pill.
- * @example
- * ```tsx
- * <LinkPill ctx={ctx} />
- * ```
  */
 export function LinkPill(props: LinkPillProps): VNode {
   const { ctx } = props;

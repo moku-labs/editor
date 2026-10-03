@@ -10,16 +10,13 @@ import type { Config, ConsoleState } from "./types";
  * @param ctx - Minimal context (spec/08 §2).
  * @param ctx.config - Resolved plugin config.
  * @returns The fresh state.
- * @example
- * ```ts
- * createConsoleState({ config: { maxLines: 5000, preserveLog: true, freshMs: 1200, summaryChars: 160 } }).preserve; // true
- * ```
  */
 export function createConsoleState(ctx: { readonly config: Readonly<Config> }): ConsoleState {
   return {
     lines: [],
     nextKey: 1,
     instance: undefined,
+    session: undefined,
     consumed: 0,
     preserve: ctx.config.preserveLog,
     level: "all",
@@ -37,11 +34,6 @@ export function createConsoleState(ctx: { readonly config: Readonly<Config> }): 
  * Calls every view listener.
  *
  * @param state - consoleView state.
- * @example
- * ```ts
- * ctx.state.level = "warn";
- * notify(ctx.state); // the mounted Console re-renders
- * ```
  */
 export function notify(state: ConsoleState): void {
   for (const listener of state.listeners) listener();
@@ -53,10 +45,6 @@ export function notify(state: ConsoleState): void {
  * @param state - consoleView state.
  * @param fn - The listener.
  * @returns The remover.
- * @example
- * ```ts
- * const off = subscribe(ctx.state, redraw); // off() twice is harmless
- * ```
  */
 export function subscribe(state: ConsoleState, fn: () => void): () => void {
   state.listeners.add(fn);

@@ -40,10 +40,6 @@ function listsOverlay(manifest: Manifest | undefined): boolean {
  *
  * @param ctx - Domain context of workspace.
  * @returns Whether `editor.overlay` can run.
- * @example
- * ```ts
- * <button role="switch" disabled={!overlayAvailable(ctx)} />
- * ```
  */
 export function overlayAvailable(ctx: Pick<WorkspaceCtx, "state" | "require">): boolean {
   const { kind } = ctx.state.link;
@@ -59,10 +55,6 @@ export function overlayAvailable(ctx: Pick<WorkspaceCtx, "state" | "require">): 
  * @param on - The new flag.
  * @param origin - What flipped it (topbar, key, palette, panel).
  * @returns Resolves when the run settled (never rejects).
- * @example
- * ```ts
- * await setOverlayInGame(ctx, true, "topbar");
- * ```
  */
 export async function setOverlayInGame(
   ctx: WorkspaceCtx,
@@ -94,10 +86,6 @@ export async function setOverlayInGame(
  *
  * @param ctx - Domain context of workspace.
  * @param manifest - The new manifest, undefined when the session was lost.
- * @example
- * ```ts
- * link.onManifest(manifest => reapplyOverlay(ctx, manifest));
- * ```
  */
 export function reapplyOverlay(ctx: WorkspaceCtx, manifest: Manifest | undefined): void {
   if (!ctx.state.overlayInGame || !listsOverlay(manifest)) return;

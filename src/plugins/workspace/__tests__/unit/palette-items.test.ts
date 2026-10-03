@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatCombo, isApplePlatform } from "../../keys/keymap";
 import {
   addPaletteItems,
   builtInCommands,
@@ -255,7 +256,9 @@ describe("builtInCommands", () => {
     find(items, "cmd:go:files").run();
     expect(ctx.state.active).toBe("files");
     expect(find(items, "cmd:go:files").label).toBe("Go to Files");
-    expect(find(items, "cmd:go:files").shortcut).toBeDefined();
+    expect(find(items, "cmd:go:files").shortcut).toBe(
+      formatCombo("mod+5", isApplePlatform(globalThis.navigator))
+    );
 
     find(items, "cmd:theme").run();
     expect(ctx.state.theme.chosen).toBe("dark");

@@ -14,10 +14,6 @@ import { startLogWatch } from "./watch";
  * Focuses the search field the Toolbar registered (the "/" binding).
  *
  * @param state - consoleView state.
- * @example
- * ```ts
- * focusSearch(ctx.state); // document.activeElement === ctx.state.searchEl
- * ```
  */
 function focusSearch(state: ConsoleState): void {
   state.searchEl?.focus();
@@ -27,10 +23,6 @@ function focusSearch(state: ConsoleState): void {
  * Toggles Preserve log (the palette item).
  *
  * @param ctx - Domain context of consoleView.
- * @example
- * ```ts
- * togglePreserve(ctx); // ctx.state.preserve: false → true
- * ```
  */
 function togglePreserve(ctx: ConsoleCtx): void {
   setPreserve(ctx, !ctx.state.preserve);
@@ -40,10 +32,6 @@ function togglePreserve(ctx: ConsoleCtx): void {
  * onInit: registers the Console panel, so the host knows every workspace before it mounts (D-04).
  *
  * @param ctx - Domain context of consoleView.
- * @example
- * ```ts
- * createToolsPlugin("consoleView", { onInit: registerConsolePanel }); // app.panels.list() has "console"
- * ```
  */
 export function registerConsolePanel(ctx: ConsoleCtx): void {
   ctx.require(panelsPlugin).register(createConsolePanel(ctx));
@@ -54,10 +42,6 @@ export function registerConsolePanel(ctx: ConsoleCtx): void {
  * "Preserve log: on / off", binds "/" to the search field in Console, and clears a stale badge.
  *
  * @param ctx - Domain context of consoleView.
- * @example
- * ```ts
- * createToolsPlugin("consoleView", { onStart: startConsole }); // link watches game.log
- * ```
  */
 export function startConsole(ctx: ConsoleCtx): void {
   const { state } = ctx;
@@ -95,10 +79,6 @@ export function startConsole(ctx: ConsoleCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("consoleView", { onStop: stopConsole }); // no game.log watch after app.stop()
- * ```
  */
 export function stopConsole(ctx: { readonly state: ConsoleState }): void {
   const { state } = ctx;

@@ -93,10 +93,26 @@ describe("startFilesView", () => {
   it("starts the index build without awaiting it", async () => {
     const ctx = createCtx();
     startFilesView(ctx);
-    expect(ctx.state.indexing).toBeDefined();
+    expect(ctx.state.indexing).toBeInstanceOf(Promise);
     expect(ctx.state.index).toBeUndefined();
     await ctx.state.indexing;
     expect(ctx.state.index?.files.size).toBeGreaterThan(0);
+  });
+
+  // Regression (e2e): in the browser onStart runs before the socket opens; a walk then failed
+  // at once with -32002 and warned filesView:list-failed on every boot.
+  it("defers the index build while the link connects or is lost", () => {
+    for (const statusValue of [
+      { kind: "connecting" } as const,
+      { kind: "lost", reason: "closed", lastFrame: 0, retryInMs: 1000 } as const
+    ]) {
+      const ctx = createCtx();
+      ctx.link.statusValue = statusValue;
+      startFilesView(ctx);
+      expect(ctx.state.indexing).toBeUndefined();
+      expect(ctx.files.listed).toEqual([]);
+      stopFilesView({ state: ctx.state });
+    }
   });
 
   it("asks before leaving only while a tab is modified", async () => {

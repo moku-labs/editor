@@ -17,10 +17,6 @@ const GAP = 6;
  *
  * @param element - A popover element.
  * @returns Whether it is open (false where `:popover-open` is unknown).
- * @example
- * ```ts
- * isPopoverOpen(element);
- * ```
  */
 function isPopoverOpen(element: HTMLElement): boolean {
   try {
@@ -38,10 +34,6 @@ function isPopoverOpen(element: HTMLElement): boolean {
  * @param open - Whether it should show.
  * @param state - Workspace state (the shell root holds the anchor).
  * @param anchor - The anchor name, undefined to keep the CSS position.
- * @example
- * ```ts
- * usePopover(popover, state.popover === "registry", state, "registry");
- * ```
  */
 export function usePopover(
   holder: ElementHolder<HTMLElement>,

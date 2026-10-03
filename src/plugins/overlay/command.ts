@@ -16,10 +16,6 @@ const OVERLAY_INPUT: { readonly on: "boolean" } = { on: "boolean" };
  * onInit: `registerOverlayCommand(overlayCtxOf(ctx))`.
  *
  * @param ctx - Plugin context of the overlay.
- * @example
- * ```ts
- * createAgentPlugin("overlay", { onInit: initOverlay });
- * ```
  */
 export function initOverlay(ctx: OverlayPluginCtx): void {
   registerOverlayCommand(overlayCtxOf(ctx));
@@ -30,11 +26,6 @@ export function initOverlay(ctx: OverlayPluginCtx): void {
  * after the call; its state is the registry's envelope (it runs no door). A duplicate id throws.
  *
  * @param octx - Domain context.
- * @example
- * ```ts
- * registerOverlayCommand(octx);
- * await link.run("editor.overlay", { on: true }); // { value: { on: true }, state: { path, frame, tainted } }
- * ```
  */
 export function registerOverlayCommand(octx: OverlayCtx): void {
   octx.registry.add({
@@ -49,10 +40,6 @@ export function registerOverlayCommand(octx: OverlayCtx): void {
      *
      * @param raw - `{ on: boolean }`; anything else is refused with -32602.
      * @returns `{ value: { on }, state: registry.envelope() }`.
-     * @example
-     * ```ts
-     * await entry.run({ on: true }); // { value: { on: true }, state: { path: "board/awaitIntent", frame: 1840, tainted: false } }
-     * ```
      */
     run: async (raw): Promise<RunResult> => {
       const { on } = checkInput(OVERLAY_INPUT, raw);

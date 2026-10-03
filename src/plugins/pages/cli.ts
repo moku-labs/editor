@@ -22,6 +22,12 @@ const USAGE = [
 ];
 
 /**
+ * How long stop waits for Bun's server stop before it gives up (it does not resolve while a
+ * close is in flight).
+ */
+const STOP_GRACE_MS = 500;
+
+/**
  * A module loaded from the game HTML file (a Bun HTML import: its default export is the bundle).
  */
 export type PageModule = { readonly default?: unknown };
@@ -66,7 +72,7 @@ function messageOf(error: unknown): string {
  * @returns Whether the port is in use.
  * @example
  * ```ts
- * if (isPortInUse(error)) ui.error("port 3000 is in use · try --port 3001");
+ * isPortInUse(Object.assign(new Error("listen failed"), { code: "EADDRINUSE" })); // true
  * ```
  */
 function isPortInUse(error: unknown): boolean {
@@ -79,10 +85,6 @@ function isPortInUse(error: unknown): boolean {
  * Prints the usage lines.
  *
  * @param ui - The branded console.
- * @example
- * ```ts
- * printUsage(ui);
- * ```
  */
 function printUsage(ui: BrandConsole): void {
   for (const line of USAGE) ui.info(line);
@@ -94,10 +96,6 @@ function printUsage(ui: BrandConsole): void {
  *
  * @param app - The editor app.
  * @param ui - The branded console.
- * @example
- * ```ts
- * forwardLog(editor, ui);
- * ```
  */
 function forwardLog(app: EditorApp, ui: BrandConsole): void {
   const sink = {
@@ -108,10 +106,6 @@ function forwardLog(app: EditorApp, ui: BrandConsole): void {
      * @param entry.level - Its level.
      * @param entry.event - Its event name.
      * @param entry.data - Its payload.
-     * @example
-     * ```ts
-     * sink.write({ level: "warn", event: "pages:not-built", ts: 0 });
-     * ```
      */
     write(entry: { level: string; event: string; data?: unknown }): void {
       const line =
@@ -130,10 +124,6 @@ function forwardLog(app: EditorApp, ui: BrandConsole): void {
  * @param rootPath - The absolute project root.
  * @param ui - The branded console.
  * @returns The started app, or undefined after printing the error.
- * @example
- * ```ts
- * const editor = await startEditor("/game", ui);
- * ```
  */
 async function startEditor(rootPath: string, ui: BrandConsole): Promise<EditorApp | undefined> {
   try {
@@ -155,10 +145,6 @@ async function startEditor(rootPath: string, ui: BrandConsole): Promise<EditorAp
  * @param htmlPath - The absolute HTML path.
  * @param deps - The bin deps.
  * @returns The bundle, or undefined after printing the error.
- * @example
- * ```ts
- * const bundle = await importGame("/game/index.html", deps);
- * ```
  */
 async function importGame(htmlPath: string, deps: CliDeps): Promise<object | undefined> {
   if (!existsSync(htmlPath)) {
@@ -182,10 +168,6 @@ async function importGame(htmlPath: string, deps: CliDeps): Promise<object | und
  * @param port - The real port.
  * @param path - hub.path().
  * @param rootPath - The project root.
- * @example
- * ```ts
- * printServing(ui, 3000, "/__editor", "/game");
- * ```
  */
 function printServing(ui: BrandConsole, port: number, path: string, rootPath: string): void {
   ui.lockup({ wordmark: "moku editor", label: "serve" });
@@ -205,10 +187,6 @@ function printServing(ui: BrandConsole, port: number, path: string, rootPath: st
  * @param server - The Bun server.
  * @param server.stop - Bun's stop.
  * @returns The stop function.
- * @example
- * ```ts
- * return { code: 0, stop: stopper(editor, server) };
- * ```
  */
 function stopper(
   editor: EditorApp,
@@ -216,7 +194,7 @@ function stopper(
 ): () => Promise<void> {
   return async function stop(): Promise<void> {
     await editor.stop();
-    await Promise.race([server.stop(true), Bun.sleep(500)]);
+    await Promise.race([server.stop(true), Bun.sleep(STOP_GRACE_MS)]);
   };
 }
 
@@ -227,10 +205,6 @@ function stopper(
  * @param deps - The bin deps.
  * @returns The exit code (0 help or serving, 1 runtime error, 2 bad arguments) and, while
  * serving, the stop function.
- * @example
- * ```ts
- * const { code, stop } = await startBin(["web/index.html", "--port", "0"], deps);
- * ```
  */
 export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
   const { ui } = deps;
@@ -264,11 +238,9 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
       })
     );
   } catch (error) {
-    ui.error(
-      isPortInUse(error)
-        ? `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`
-        : `[moku-editor] ${messageOf(error)}`
-    );
+    const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
+    const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
+    ui.error(message);
     await editor.stop();
     return { code: 1 };
   }
@@ -283,10 +255,6 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
  * @param stop - The stop function of the running bin.
  * @param deps - The bin deps.
  * @returns The signal handler.
- * @example
- * ```ts
- * process.once("SIGINT", stopOnce(stop, deps));
- * ```
  */
 export function stopOnce(stop: () => Promise<void>, deps: CliDeps): () => Promise<void> {
   let stopping = false;
@@ -322,10 +290,6 @@ function importPage(url: string): Promise<PageModule> {
  * Exits this process.
  *
  * @param code - Exit code.
- * @example
- * ```ts
- * exit(0);
- * ```
  */
 function exit(code: number): void {
   // eslint-disable-next-line unicorn/no-process-exit -- the bin's own exit after SIGINT/SIGTERM

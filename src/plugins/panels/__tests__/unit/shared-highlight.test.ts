@@ -65,6 +65,7 @@ function random(seed: number): () => number {
 }
 
 /** Characters the fuzz lines are made of: every syntax trigger of every scanner. */
+// biome-ignore lint/suspicious/noTemplateCurlyInString: tokenizer input is source text with a literal ${
 const FUZZ_ALPHABET = "abcXYZ019_$ \t'\"`${}()[]<>/\\*-+=!?.:;,#@&|~^%";
 
 /** A TS/TSX sample touching every script rule. */
@@ -72,7 +73,9 @@ const SCRIPT_SAMPLE = [
   'import { h } from "preact";',
   "/* a block",
   "   comment */ const x = 1;",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: tokenizer input is source text with a literal ${
   "const t = `a ${b + `inner ${c}`} d",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: tokenizer input is source text with a literal ${
   "  still template ${ { k: 1 }.k } end`;",
   String.raw`const re = /[/]+\/x/gi; const half = total / 2;`,
   "export function Panel(props: Props): VNode {",
@@ -200,8 +203,10 @@ describe("script", () => {
     expect(textsOf(tokens, "string")).toEqual([String.raw`'it\'s'`, String.raw`"x\"y"`, '"open']);
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: tokenizer input is source text with a literal ${
   it("a template with nested ${} across lines", () => {
     const lines = tokenizeLines(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: tokenizer input is source text with a literal ${
       "const t = `a ${b + `in ${c}`} d\n  more ${ { k: 1 }.k } end`;\nconst after = 1;",
       "script"
     );

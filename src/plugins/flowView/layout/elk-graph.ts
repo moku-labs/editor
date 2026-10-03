@@ -286,7 +286,12 @@ function targetKey(flowName: string, target: string, edgeId: string): string {
  * @returns The points (empty without sections).
  * @example
  * ```ts
- * pointsOf(edge); // [{ x: 172, y: 22 }, { x: 322, y: 22 }]
+ * pointsOf({
+ *   id: "e:home:play",
+ *   sources: ["home"],
+ *   targets: ["board"],
+ *   sections: [{ id: "s0", startPoint: { x: 172, y: 22 }, endPoint: { x: 322, y: 22 } }]
+ * }); // [{ x: 172, y: 22 }, { x: 322, y: 22 }]
  * ```
  */
 function pointsOf(edge: ElkExtendedEdge): { x: number; y: number }[] {

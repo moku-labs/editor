@@ -166,10 +166,6 @@ function testAt(line: string, position: number, pattern: RegExp): boolean {
  * @param state - The scanner state carried across lines.
  * @param pick - Picks the steps for the current state (they may depend on a mode).
  * @returns The tokens of the line.
- * @example
- * ```ts
- * scan(line, state, scriptSteps); // the tokens of the line
- * ```
  */
 function scan<S>(line: string, state: S, pick: (state: S) => readonly Step<S>[]): Token[] {
   const cursor = cursorOf(line);
@@ -229,10 +225,6 @@ type CommentState = { comment: boolean };
  * @param state - The state; set while the comment stays open.
  * @param from - Where to look for the closing marker.
  * @returns Always true.
- * @example
- * ```ts
- * emitComment(cursor, state, cursor.pos + 2); // "/* open" leaves state.comment true
- * ```
  */
 function emitComment(cursor: Cursor, state: CommentState, from: number): boolean {
   const end = cursor.line.indexOf("*/", from);
@@ -247,10 +239,6 @@ function emitComment(cursor: Cursor, state: CommentState, from: number): boolean
  * @param cursor - The cursor.
  * @param state - The state; set when the comment stays open.
  * @returns True when a block comment opens here.
- * @example
- * ```ts
- * blockCommentStep(cursorOf("/* a *\/ b"), state); // emits the comment up to its end
- * ```
  */
 function blockCommentStep(cursor: Cursor, state: CommentState): boolean {
   return cursor.line.startsWith("/*", cursor.pos) && emitComment(cursor, state, cursor.pos + 2);
@@ -262,10 +250,6 @@ function blockCommentStep(cursor: Cursor, state: CommentState): boolean {
  * @param cursor - The cursor.
  * @param state - The state.
  * @returns True while inside a comment carried from an earlier line.
- * @example
- * ```ts
- * openCommentStep(cursorOf(" b *\/ c"), { comment: true }); // emits the rest of the comment
- * ```
  */
 function openCommentStep(cursor: Cursor, state: CommentState): boolean {
   return state.comment && emitComment(cursor, state, cursor.pos);
@@ -534,10 +518,6 @@ function opensTag(cursor: Cursor, text: string): boolean {
  * @param cursor - The cursor.
  * @param state - The script state.
  * @returns True on a tag.
- * @example
- * ```ts
- * tagOpenStep(cursorOf("<Row />"), state); // emits tag "<Row", enters tag mode
- * ```
  */
 function tagOpenStep(cursor: Cursor, state: ScriptState): boolean {
   if (cursor.line.charAt(cursor.pos) !== "<") return false;
@@ -555,10 +535,6 @@ function tagOpenStep(cursor: Cursor, state: ScriptState): boolean {
  * @param cursor - The cursor.
  * @param state - The script state.
  * @returns True on a backtick.
- * @example
- * ```ts
- * templateOpenStep(cursorOf("`a ${b}`"), state); // emits string "`", enters template mode
- * ```
  */
 function templateOpenStep(cursor: Cursor, state: ScriptState): boolean {
   if (cursor.line.charAt(cursor.pos) !== "`") return false;
@@ -573,10 +549,6 @@ function templateOpenStep(cursor: Cursor, state: ScriptState): boolean {
  * @param cursor - The cursor.
  * @param state - The script state.
  * @returns True on a brace.
- * @example
- * ```ts
- * braceStep(cursorOf("}"), state); // leaves a ${…} whose depth reaches 0
- * ```
  */
 function braceStep(cursor: Cursor, state: ScriptState): boolean {
   const char = cursor.line.charAt(cursor.pos);
@@ -637,10 +609,6 @@ function symbolStep(cursor: Cursor): boolean {
  * @param cursor - The cursor, inside template text.
  * @param state - The script state.
  * @returns Always true.
- * @example
- * ```ts
- * templateTextStep(cursorOf("a ${b}`"), state); // emits string "a ", punct "${"
- * ```
  */
 function templateTextStep(cursor: Cursor, state: ScriptState): boolean {
   const { line, pos } = cursor;
@@ -667,10 +635,6 @@ function templateTextStep(cursor: Cursor, state: ScriptState): boolean {
  * @param cursor - The cursor, inside a tag.
  * @param state - The script state.
  * @returns True when something was consumed.
- * @example
- * ```ts
- * tagStep(cursorOf('key="a">'), state); // emits attr "key"
- * ```
  */
 function tagStep(cursor: Cursor, state: ScriptState): boolean {
   const { line, pos } = cursor;
@@ -717,10 +681,6 @@ const TAG_STEPS: readonly Step<ScriptState>[] = [blankStep, tagStep];
  *
  * @param state - The script state.
  * @returns The steps.
- * @example
- * ```ts
- * scriptSteps({ comment: false, stack: [{ mode: "template" }] }); // TEMPLATE_STEPS
- * ```
  */
 function scriptSteps(state: ScriptState): readonly Step<ScriptState>[] {
   const mode = state.stack.at(-1)?.mode ?? "code";
@@ -811,10 +771,6 @@ function nestedRuleAhead(line: string, from: number): boolean {
  * @param cursor - The cursor.
  * @param state - The CSS state.
  * @returns True on `{`, `}` or `;`.
- * @example
- * ```ts
- * cssStructureStep(cursorOf("{"), state); // depth + 1, mode "start"
- * ```
  */
 function cssStructureStep(cursor: Cursor, state: CssState): boolean {
   const char = cursor.line.charAt(cursor.pos);
@@ -832,10 +788,6 @@ function cssStructureStep(cursor: Cursor, state: CssState): boolean {
  * @param cursor - The cursor, on the first character of the statement.
  * @param state - The CSS state.
  * @returns The mode of the statement.
- * @example
- * ```ts
- * statementMode(cursorOf("@media x {"), state); // "prelude"
- * ```
  */
 function statementMode(cursor: Cursor, state: CssState): CssMode {
   if (cursor.line.charAt(cursor.pos) === "@") return "prelude";
@@ -848,10 +800,6 @@ function statementMode(cursor: Cursor, state: CssState): CssMode {
  * @param cursor - The cursor.
  * @param state - The CSS state.
  * @returns True when something was consumed.
- * @example
- * ```ts
- * selectorStep(cursorOf(".row > a {"), { comment: false, depth: 0, mode: "selector" }); // tag ".row"
- * ```
  */
 function selectorStep(cursor: Cursor, state: CssState): boolean {
   if (state.mode !== "selector") return false;
@@ -867,10 +815,6 @@ function selectorStep(cursor: Cursor, state: CssState): boolean {
  * @param cursor - The cursor.
  * @param state - The CSS state.
  * @returns True when something was consumed.
- * @example
- * ```ts
- * propertyStep(cursorOf("color: red"), { comment: false, depth: 1, mode: "property" }); // property "color"
- * ```
  */
 function propertyStep(cursor: Cursor, state: CssState): boolean {
   if (state.mode !== "property") return false;
@@ -909,10 +853,6 @@ function cssWordStep(cursor: Cursor): boolean {
  * @param cursor - The cursor.
  * @param state - The CSS state.
  * @returns True when something was consumed.
- * @example
- * ```ts
- * valueStep(cursorOf("1.5rem"), { comment: false, depth: 1, mode: "value" }); // number "1.5rem"
- * ```
  */
 function valueStep(cursor: Cursor, state: CssState): boolean {
   if (state.mode !== "value" && state.mode !== "prelude") return false;
@@ -932,10 +872,6 @@ function valueStep(cursor: Cursor, state: CssState): boolean {
  * @param cursor - The cursor.
  * @param state - The CSS state.
  * @returns True when something was consumed.
- * @example
- * ```ts
- * statementStep(cursorOf("color: red;"), { comment: false, depth: 1, mode: "start" }); // property "color"
- * ```
  */
 function statementStep(cursor: Cursor, state: CssState): boolean {
   if (state.mode === "start") state.mode = statementMode(cursor, state);
@@ -1144,7 +1080,9 @@ function markdownBody(line: string): Token[] {
   if (HEADING.test(line)) return whole(line, "heading");
 
   const cursor = cursorOf(line);
-  while (markerStep(cursor, QUOTE_MARK));
+  // Quote markers nest ("> > text"): read them one by one, then at most one list marker.
+  let hasQuoteMark = markerStep(cursor, QUOTE_MARK);
+  while (hasQuoteMark) hasQuoteMark = markerStep(cursor, QUOTE_MARK);
   markerStep(cursor, LIST_MARK);
   for (const token of scan(line.slice(cursor.pos), undefined, () => INLINE_STEPS)) {
     push(cursor.tokens, token.kind, token.text);
@@ -1190,10 +1128,6 @@ function closesFence(line: string, open: string): boolean {
  * @param line - The line.
  * @param state - The Markdown state.
  * @returns The tokens.
- * @example
- * ```ts
- * markdownLine("---", { first: true, front: false, fence: undefined }); // meta
- * ```
  */
 function markdownLine(line: string, state: MarkdownState): Token[] {
   const first = state.first;

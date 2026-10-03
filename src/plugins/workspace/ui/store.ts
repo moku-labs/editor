@@ -9,44 +9,18 @@ import type { UiStore } from "../types";
  * Creates the UI store.
  *
  * @returns A store at version 0 with no subscribers.
- * @example
- * ```ts
- * const ui = createUiStore();
- * ui.subscribe(() => redraw());
- * ui.bump();
- * ```
  */
 export function createUiStore(): UiStore {
   const subscribers = new Set<() => void>();
   const store: UiStore = {
     version: 0,
-
-    /**
-     * Adds a subscriber.
-     *
-     * @param fn - Called after every bump.
-     * @returns Unsubscribe.
-     * @example
-     * ```ts
-     * const off = store.subscribe(() => redraw());
-     * ```
-     */
-    subscribe(fn) {
+    subscribe: fn => {
       subscribers.add(fn);
       return () => {
         subscribers.delete(fn);
       };
     },
-    /**
-     * Raises the version and calls every subscriber.
-     *
-     * @example
-     * ```ts
-     * ctx.state.active = "game";
-     * ctx.state.ui.bump();
-     * ```
-     */
-    bump() {
+    bump: () => {
       store.version += 1;
       for (const fn of subscribers) fn();
     }
@@ -60,10 +34,6 @@ export function createUiStore(): UiStore {
  * @param store - The UI store of the workspace state.
  * @param select - Reads the value from the state at render time.
  * @returns The selected value.
- * @example
- * ```tsx
- * const active = useWorkspace(ctx.state.ui, () => ctx.state.active);
- * ```
  */
 export function useWorkspace<T>(store: UiStore, select: () => T): T {
   const [, setVersion] = useState(store.version);
@@ -71,11 +41,6 @@ export function useWorkspace<T>(store: UiStore, select: () => T): T {
   useLayoutEffect(() => {
     /**
      * Copies the store version into the component state (a changed number re-renders).
-     *
-     * @example
-     * ```ts
-     * store.subscribe(sync);
-     * ```
      */
     const sync = (): void => {
       setVersion(store.version);
@@ -113,10 +78,6 @@ export function useElement<T>(): ElementHolder<T> {
        * Stores the element Preact attached (undefined after unmount).
        *
        * @param element - The element, or null on unmount.
-       * @example
-       * ```tsx
-       * <div ref={holder.ref} />
-       * ```
        */
       ref: element => {
         created.current = element ?? undefined;

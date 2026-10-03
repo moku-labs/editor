@@ -13,10 +13,6 @@ import type { PanelsCtx, PanelsState } from "./types";
  * subscribes onManifest → recheck on every mounted panel, sets started. Removers go to cleanup.
  *
  * @param ctx - Domain context of panels.
- * @example
- * ```ts
- * createToolsPlugin("panels", { onStart: startPanels });
- * ```
  */
 export function startPanels(ctx: PanelsCtx): void {
   const { state } = ctx;
@@ -45,10 +41,6 @@ export function startPanels(ctx: PanelsCtx): void {
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
- * @example
- * ```ts
- * createToolsPlugin("panels", { onStop: stopPanels });
- * ```
  */
 export function stopPanels(ctx: { readonly state: PanelsState }): void {
   const { state } = ctx;

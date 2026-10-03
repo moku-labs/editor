@@ -1,6 +1,6 @@
 /**
  * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
- * for the session; the scene watches game.ui, game.entities and game.projections only while
+ * for the session, and game.effects while the manifest lists it; the scene watches game.ui, game.entities and game.projections only while
  * Render is shown and build one scene per animation frame; the calibration reads game.rect once
  * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
  */
@@ -13,10 +13,10 @@ import {
   parseTextureManifest
 } from "../panels/shared/scene";
 import { rectOf } from "../panels/shared/scene/wire";
-import type { Json, LinkStatus } from "../registry/protocol";
+import type { Json, LinkStatus, Manifest } from "../registry/protocol";
 import { applyPendingReveal, setTexturePalette } from "./actions";
 import { releasesOf, updateTextureUse } from "./derive";
-import { asAssetsUsage, asRenderStats } from "./guards";
+import { asAssetsUsage, asEffectsStats, asRenderStats } from "./guards";
 import { drawBox } from "./overlay";
 import { notify } from "./state";
 import type { RenderViewCtx, RenderViewState } from "./types";
@@ -34,6 +34,11 @@ const SCENE_SOURCES: readonly SceneSource[] = [
   ["entities", "game.entities"],
   ["projections", "game.projections"]
 ];
+
+/**
+ * The effects source of game 0.0.3; an older game's manifest does not list it.
+ */
+const EFFECTS_ID = "game.effects";
 
 /**
  * The states with a scene build queued for the next animation frame.
@@ -77,10 +82,6 @@ function messageOf(error: unknown): string {
  * @param ctx - Domain context of renderView.
  * @param id - The source id.
  * @param detail - Where it was wrong, if known.
- * @example
- * ```ts
- * shapeError(ctx, "game.render"); // ctx.state.error === "game.render: unexpected shape"
- * ```
  */
 function shapeError(ctx: RenderViewCtx, id: string, detail = ""): void {
   ctx.state.error = `${id}: unexpected shape${detail}`;
@@ -93,10 +94,6 @@ function shapeError(ctx: RenderViewCtx, id: string, detail = ""): void {
  *
  * @param state - renderView state.
  * @param id - The source id.
- * @example
- * ```ts
- * clearError(ctx.state, "game.render");
- * ```
  */
 function clearError(state: RenderViewState, id: string): void {
   if (state.error?.startsWith(`${id}:`)) state.error = undefined;
@@ -107,10 +104,6 @@ function clearError(state: RenderViewState, id: string): void {
  *
  * @param ctx - Domain context of renderView.
  * @returns The frame.
- * @example
- * ```ts
- * currentFrame(ctx); // 1841 while live at frame 1841
- * ```
  */
 function currentFrame(ctx: RenderViewCtx): number {
   return frameOf(ctx.require(linkPlugin).status(), ctx.state.lastFrame ?? 0);
@@ -121,10 +114,6 @@ function currentFrame(ctx: RenderViewCtx): number {
  *
  * @param ctx - Domain context of renderView.
  * @param value - The value.
- * @example
- * ```ts
- * onRender(ctx, { fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 });
- * ```
  */
 function onRender(ctx: RenderViewCtx, value: Json): void {
   const { state, config } = ctx;
@@ -148,10 +137,6 @@ function onRender(ctx: RenderViewCtx, value: Json): void {
  *
  * @param ctx - Domain context of renderView.
  * @param value - The value.
- * @example
- * ```ts
- * onAssets(ctx, { textureMb: 3.5, budgetMb: 192, bundles: [] });
- * ```
  */
 function onAssets(ctx: RenderViewCtx, value: Json): void {
   const { state, config } = ctx;
@@ -172,13 +157,78 @@ function onAssets(ctx: RenderViewCtx, value: Json): void {
 }
 
 /**
- * Starts the session watches of game.render and game.assets (once).
+ * One game.effects value: the last good value is kept, a bad shape warns and is dropped.
  *
  * @param ctx - Domain context of renderView.
+ * @param value - The value.
+ */
+function onEffects(ctx: RenderViewCtx, value: Json): void {
+  const effects = asEffectsStats(value);
+  if (effects === undefined) {
+    shapeError(ctx, EFFECTS_ID);
+    return;
+  }
+
+  clearError(ctx.state, EFFECTS_ID);
+  ctx.state.effects = effects;
+  notify(ctx.state);
+}
+
+/**
+ * Stops the game.effects watch and forgets its value. Teardown-safe: it needs the state only.
+ *
+ * @param state - renderView state.
+ */
+export function stopEffects(state: RenderViewState): void {
+  const stop = state.effectsWatch;
+  state.effectsWatch = undefined;
+  state.effects = undefined;
+  stop?.();
+}
+
+/**
+ * True when a manifest lists game.effects (game 0.0.3).
+ *
+ * @param manifest - A manifest, if any.
+ * @returns Whether the source is listed.
  * @example
  * ```ts
- * startTracker(ctx); // ctx.state.tracker holds the two unwatch functions
+ * listsEffects(link.manifest()); // true on game 0.0.3
  * ```
+ */
+function listsEffects(manifest: Manifest | undefined): boolean {
+  return manifest?.sources.some(source => source.id === EFFECTS_ID) ?? false;
+}
+
+/**
+ * Follows the manifest: one game.effects watch while it lists the source (game 0.0.3); a
+ * manifest without it (an older game) stops the watch and clears the value; an undefined
+ * manifest (session lost) keeps the watch, which link re-sends on attach. Both happen at once:
+ * link sends a watch added inside the listener once per attach, and does not re-send a source
+ * the new manifest lacks.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param manifest - The manifest of the session, undefined while none is attached.
+ */
+export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined): void {
+  if (manifest === undefined) return;
+
+  const { state } = ctx;
+  if (listsEffects(manifest)) {
+    state.effectsWatch ??= ctx
+      .require(linkPlugin)
+      .watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
+    return;
+  }
+  stopEffects(state);
+  notify(state);
+}
+
+/**
+ * Starts the session watches of game.render and game.assets and the manifest listener that
+ * starts game.effects when the manifest lists it (once).
+ *
+ * @param ctx - Domain context of renderView.
  */
 export function startTracker(ctx: RenderViewCtx): void {
   if (ctx.state.tracker.length > 0) return;
@@ -186,7 +236,8 @@ export function startTracker(ctx: RenderViewCtx): void {
   const link = ctx.require(linkPlugin);
   ctx.state.tracker.push(
     link.watch("game.render", undefined, value => onRender(ctx, value)),
-    link.watch("game.assets", undefined, value => onAssets(ctx, value))
+    link.watch("game.assets", undefined, value => onAssets(ctx, value)),
+    link.onManifest(manifest => syncEffects(ctx, manifest))
   );
 }
 
@@ -195,10 +246,6 @@ export function startTracker(ctx: RenderViewCtx): void {
  * of a session, a waiting reveal, the box follows its element. A shape error keeps the last scene.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * buildNow(ctx); // ctx.state.scene.nodes.size === 101 on the merge-game board
- * ```
  */
 function buildNow(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -229,25 +276,20 @@ function buildNow(ctx: RenderViewCtx): void {
  * Runs a queued build: dropped once the scene watches stopped.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * requestAnimationFrame(() => runBuild(ctx));
- * ```
  */
 function runBuild(ctx: RenderViewCtx): void {
   queued.delete(ctx.state);
   if (ctx.state.watching.length > 0) buildNow(ctx);
 }
 
+/** One frame at 60 fps: the timeout that stands in for requestAnimationFrame where it does not exist. */
+const FALLBACK_FRAME_MS = 16;
+
 /**
  * Queues one scene build on the next animation frame; a burst of values builds once. A build
  * queued before the scene watches stopped is dropped.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * scheduleBuild(ctx);
- * ```
  */
 function scheduleBuild(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -257,7 +299,7 @@ function scheduleBuild(ctx: RenderViewCtx): void {
   if (typeof globalThis.requestAnimationFrame === "function") {
     globalThis.requestAnimationFrame(() => runBuild(ctx));
   } else {
-    setTimeout(() => runBuild(ctx), 16);
+    setTimeout(() => runBuild(ctx), FALLBACK_FRAME_MS);
   }
 }
 
@@ -266,10 +308,6 @@ function scheduleBuild(ctx: RenderViewCtx): void {
  * calibration once, and a build is queued.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * startScene(ctx); // watches game.ui, game.entities, game.projections
- * ```
  */
 export function startScene(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -292,10 +330,6 @@ export function startScene(ctx: RenderViewCtx): void {
  * Stops the scene watches and forgets their values (Render hidden).
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * stopScene(ctx); // ctx.state.watching.length === 0
- * ```
  */
 export function stopScene(ctx: RenderViewCtx): void {
   const { state } = ctx;
@@ -312,10 +346,6 @@ export function stopScene(ctx: RenderViewCtx): void {
  *
  * @param ctx - Domain context of renderView.
  * @returns Resolves when the calibration is known.
- * @example
- * ```ts
- * await calibrate(ctx); // ctx.state.calibration → { scale: 1, x: 0, y: 0 } on the inert renderer
- * ```
  */
 export async function calibrate(ctx: RenderViewCtx): Promise<void> {
   const { state } = ctx;
@@ -345,10 +375,6 @@ export async function calibrate(ctx: RenderViewCtx): Promise<void> {
  * Forgets the calibration of the old device; calibrates again while the scene is watched.
  *
  * @param ctx - Domain context of renderView.
- * @example
- * ```ts
- * workspace.onPrefs(() => recalibrate(ctx));
- * ```
  */
 export function recalibrate(ctx: RenderViewCtx): void {
   ctx.state.calibrationAsked = false;
@@ -361,10 +387,6 @@ export function recalibrate(ctx: RenderViewCtx): void {
  * @param ctx - Domain context of renderView.
  * @param path - A candidate path.
  * @returns The catalogue, or undefined.
- * @example
- * ```ts
- * await readCandidate(ctx, "public/manifest.json"); // { path: "public/manifest.json", textures, bundles }
- * ```
  */
 async function readCandidate(
   ctx: RenderViewCtx,
@@ -384,10 +406,6 @@ async function readCandidate(
  *
  * @param ctx - Domain context of renderView.
  * @returns The catalogue, or null when no path holds one.
- * @example
- * ```ts
- * (await readCatalogue(ctx))?.textures.get("board.cell")?.width; // 224
- * ```
  */
 export async function readCatalogue(ctx: RenderViewCtx): Promise<TextureCatalogue | null> {
   for (const path of ctx.config.manifestPaths) {
@@ -404,10 +422,6 @@ export async function readCatalogue(ctx: RenderViewCtx): Promise<TextureCatalogu
  *
  * @param ctx - Domain context of renderView.
  * @returns Resolves when both reads settled.
- * @example
- * ```ts
- * await refreshRenderView(ctx); // ctx.state.catalogue?.path === "manifest.json"
- * ```
  */
 export async function refreshRenderView(ctx: RenderViewCtx): Promise<void> {
   const { kind } = ctx.require(linkPlugin).status();

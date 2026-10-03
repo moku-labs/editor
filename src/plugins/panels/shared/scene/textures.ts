@@ -22,6 +22,11 @@ const BYTES_PER_TEXEL = 4;
 const BYTES_PER_MB = 1_048_576;
 
 /**
+ * Rounds MB to 2 decimals: multiply, round, divide.
+ */
+const MB_ROUNDING = 100;
+
+/**
  * One bundle of the catalogue: tier, file count and file MB.
  */
 type BundleInfo = { readonly tier: string; readonly files: number; readonly fileMb: number };
@@ -57,7 +62,9 @@ function parseJson(text: string): Json | undefined {
  * ```
  */
 function gpuMbOf(width: number, height: number): number {
-  return Math.round(((width * height * BYTES_PER_TEXEL) / BYTES_PER_MB) * 100) / 100;
+  return (
+    Math.round(((width * height * BYTES_PER_TEXEL) / BYTES_PER_MB) * MB_ROUNDING) / MB_ROUNDING
+  );
 }
 
 /**

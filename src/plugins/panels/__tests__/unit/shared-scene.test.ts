@@ -263,8 +263,8 @@ describe("buildScene: ui nodes", () => {
 
     expect(scene.frame).toBe(1841);
     expect(scene.calibrated).toBe(false);
-    expect(scene.entityCount).toBe(101);
-    expect([...scene.nodes.values()].filter(node => node.ref.kind === "ui")).toHaveLength(69);
+    expect(scene.entityCount).toBe(104);
+    expect([...scene.nodes.values()].filter(node => node.ref.kind === "ui")).toHaveLength(71);
     expect(pill.ref).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     expect(pill.name).toBe("coinPill");
     expect(pill.type).toBe("row");
@@ -278,7 +278,7 @@ describe("buildScene: ui nodes", () => {
     );
     expect(pill.children).toEqual([
       "ui:boardScreen/hudRow/coinPill/coinPillIcon",
-      "entity:1048640"
+      "entity:1048641"
     ]);
   });
 
@@ -318,7 +318,7 @@ describe("buildScene: ui nodes", () => {
       projections: SETTINGS.projections
     });
 
-    expect(scene.roots).toEqual(["ui:settingsScreen", "ui:boardScreen", "entity:1048639"]);
+    expect(scene.roots).toEqual(["ui:settingsScreen", "ui:boardScreen", "entity:1048640"]);
     expect([...scene.nodes.keys()].some(id => id.startsWith("ui:screen#"))).toBe(false);
     expect(nodeOf(scene, "ui:settingsScreen").parent).toBeUndefined();
     expect(scene.paintOrder.indexOf("ui:boardScreen")).toBe(0);
@@ -359,7 +359,7 @@ describe("buildScene: projection entities", () => {
     const scene = sceneOf();
     const item = nodeOf(scene, "entity:1048628");
     const cell = nodeOf(scene, "entity:3145728");
-    const glow = nodeOf(scene, "entity:2097156");
+    const glow = nodeOf(scene, "entity:1048618");
 
     expect(item.ref).toEqual({ kind: "entity", id: 1_048_628 });
     expect(item.name).toBe("i1");
@@ -400,8 +400,8 @@ describe("buildScene: projection entities", () => {
     const scene = sceneOf();
     const entities = [...scene.nodes.values()].filter(node => node.ref.kind === "entity");
 
-    expect(entities).toHaveLength(32);
-    expect(scene.nodes.has("entity:1048700")).toBe(false);
+    expect(entities).toHaveLength(33);
+    expect(scene.nodes.has("entity:1048703")).toBe(false);
     expect(fitScene().nodes.has("entity:40")).toBe(false);
   });
 
@@ -411,7 +411,7 @@ describe("buildScene: projection entities", () => {
     expect(nodeOf(scene, "entity:1048628").parent).toBe("ui:boardScreen/boardSlot");
     expect(nodeOf(scene, "entity:1048628").rect).toEqual(rect(428.5, 880.5, 223, 223));
     expect(nodeOf(scene, "entity:3145728").rect).toEqual(rect(404, 856, 272, 272));
-    expect(nodeOf(scene, "entity:2097156").rect).toEqual(rect(110, 856, 272, 272));
+    expect(nodeOf(scene, "entity:1048618").rect).toEqual(rect(110, 856, 272, 272));
     expect(nodeOf(scene, "entity:1048627").rect).toEqual(rect(96, 842, 300, 300));
   });
 
@@ -460,8 +460,8 @@ describe("buildScene: projection entities", () => {
 
   it("leaves the projection roots and Text-only entities unplaced (merge-game hud)", () => {
     const scene = sceneOf();
-    const hud = nodeOf(scene, "entity:1048639");
-    const coins = nodeOf(scene, "entity:1048640");
+    const hud = nodeOf(scene, "entity:1048640");
+    const coins = nodeOf(scene, "entity:1048641");
     const count = nodeOf(scene, "entity:1048636");
 
     expect(hud).toEqual(
@@ -469,7 +469,7 @@ describe("buildScene: projection entities", () => {
     );
     expect(hud.rect).toBeUndefined();
     expect(hud.entity?.components).toEqual(["Layer", "Tree"]);
-    expect(scene.roots).toEqual(["ui:boardScreen", "entity:1048639"]);
+    expect(scene.roots).toEqual(["ui:boardScreen", "entity:1048640"]);
     expect(coins).toEqual(
       expect.objectContaining({
         name: "coins",
@@ -487,12 +487,12 @@ describe("buildScene: projection entities", () => {
       ...arrayOf(BOARD.entities),
       projected(900, "test.fx", {
         Transform: transform(0, 0),
-        Parent: { entity: 1_048_642 },
+        Parent: { entity: 1_048_643 },
         Shape: { w: 10, h: 10 }
       }),
       projected(901, "test.fx", {
         Transform: transform(0, 0),
-        Parent: { entity: 1_048_641 },
+        Parent: { entity: 1_048_642 },
         Shape: { w: 10, h: 10 }
       })
     ];
@@ -511,7 +511,7 @@ describe("buildScene: projection entities", () => {
       ...arrayOf(BOARD.entities),
       projected(900, "test.fx", {
         Transform: transform(0, 0),
-        Parent: { entity: 1_048_642 },
+        Parent: { entity: 1_048_643 },
         Shape: { w: 10, h: 10 }
       })
     ];
@@ -530,8 +530,8 @@ describe("buildScene: paint order and textures", () => {
     expect(at("ui:boardScreen")).toBe(0);
     expect(at("ui:boardScreen/hudRow")).toBeLessThan(at("ui:boardScreen/hudRow/home"));
     expect(at("ui:boardScreen/boardSlot")).toBeLessThan(at("entity:3145728"));
-    expect(at("entity:3145728")).toBeLessThan(at("entity:2097156"));
-    expect(at("entity:2097156")).toBeLessThan(at("entity:1048630"));
+    expect(at("entity:3145728")).toBeLessThan(at("entity:1048618"));
+    expect(at("entity:1048618")).toBeLessThan(at("entity:1048630"));
     expect(at("entity:1048630")).toBeLessThan(at("entity:1048627"));
     expect(at("entity:1048627")).toBeLessThan(at("entity:1048628"));
     expect(at("entity:1048628")).toBeLessThan(at("entity:1048638"));
@@ -554,7 +554,7 @@ describe("buildScene: paint order and textures", () => {
       "board.item-wood-2",
       "board.item-wood-3",
       "board.item-wood-4",
-      "board.selection-ring-2",
+      "board.selection-ring-0",
       "orders.card-order",
       "orders.rope",
       "ui.badge-level",
@@ -903,6 +903,7 @@ describe("the build spike on merge-game (rules 2–4)", () => {
         "board.items",
         "board.generators",
         "board.badges",
+        "board.steam",
         "hud",
         "hud.coins"
       ])
@@ -914,7 +915,7 @@ describe("the build spike on merge-game (rules 2–4)", () => {
     const board = [...scene.nodes.values()].filter(node => node.entity?.owner.startsWith("board."));
     const cells = board.filter(node => node.entity?.owner === "board.cells");
 
-    expect(board).toHaveLength(30);
+    expect(board).toHaveLength(31);
     expect(new Set(board.map(node => node.parent))).toEqual(new Set(["ui:boardScreen/boardSlot"]));
     expect(new Set(cells.map(node => node.rect?.x))).toEqual(new Set([110, 404, 698]));
     expect(new Set(cells.map(node => node.rect?.y))).toEqual(new Set([856, 1150, 1444]));

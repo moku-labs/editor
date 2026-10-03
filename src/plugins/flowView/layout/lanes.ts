@@ -47,6 +47,16 @@ type LaneWork = {
 export const UNREACHED_GAP = 48;
 
 /**
+ * Space under the last lane inside the hub.
+ */
+const HUB_FOOT = 8;
+
+/**
+ * How far the column heads sit above the first lane.
+ */
+const HEAD_LIFT = 20;
+
+/**
  * The size of a node: its expanded box, else a card.
  *
  * @param work - The lane work.
@@ -353,10 +363,6 @@ function connectPrefix(work: LaneWork, prefix: readonly string[]): void {
  * @param work - The lane work.
  * @param right - Content width.
  * @param entryY - Content y of the entry.
- * @example
- * ```ts
- * placePorts(work, 1080, 36);
- * ```
  */
 function placePorts(work: LaneWork, right: number, entryY: number): void {
   const ports = new Map<string, Item>();
@@ -429,6 +435,7 @@ export function layoutLanes(
     exitEdges: []
   };
 
+  // The prefix row from the start to the hub, then the hub with one port per outcome.
   const prefix = prefixPath(flow, hub);
   let x = 0;
   for (const node of prefix) x += place(work, node, x, 0).w + COL_GAP;
@@ -439,6 +446,7 @@ export function layoutLanes(
   const ports: Record<string, number> = {};
   hubItem.ports = ports;
 
+  // One lane per outcome, in declared order: its rows decide its height.
   const columnOne = x + HUB_W + HUB_GAP;
   const lanes: { index: number; outcome: string; y: number; h: number }[] = [];
   let laneTop = HUB_HEAD;
@@ -451,8 +459,9 @@ export function layoutLanes(
     lanes.push({ index, outcome, y: laneTop, h: height });
     laneTop += height;
   }
-  hubItem.h = laneTop + 8;
+  hubItem.h = laneTop + HUB_FOOT;
 
+  // Once every node is placed: the prefix edges, the bounds, the exit and entry ports.
   connectPrefix(work, prefix);
 
   const right = Math.max(...work.items.map(entry => entry.x + entry.w));
@@ -466,8 +475,8 @@ export function layoutLanes(
     edges: work.edges,
     lanes: lanes.map(lane => ({ ...lane, x: bandX, w: right - bandX, trail: false })),
     heads: [
-      { label: "Action node", x: columnOne, y: HUB_HEAD - 20 },
-      { label: "Its outcomes → next", x: columnOne + NODE_W + COL_GAP, y: HUB_HEAD - 20 }
+      { label: "Action node", x: columnOne, y: HUB_HEAD - HEAD_LIFT },
+      { label: "Its outcomes → next", x: columnOne + NODE_W + COL_GAP, y: HUB_HEAD - HEAD_LIFT }
     ],
     bounds: { x: 0, y: 0, w: right, h: bottom },
     unreached: Object.keys(flow.nodes).filter(node => !work.placed.has(node))

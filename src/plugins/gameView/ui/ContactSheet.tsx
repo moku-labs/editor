@@ -23,10 +23,6 @@ export type ContactSheetProps = { readonly ctx: GameViewCtx; readonly node: stri
  *
  * @param index - The series index.
  * @returns The title.
- * @example
- * ```ts
- * sheetTitle(index); // "Series · merge refused shake · 20 shots · 2 s at 100 ms · from frame 1777"
- * ```
  */
 function sheetTitle(index: SeriesIndex): string {
   const head = `Series · ${index.label} · ${index.shots.length} shots`;
@@ -42,10 +38,6 @@ function sheetTitle(index: SeriesIndex): string {
  * @param props.image - The data URL, undefined when missing.
  * @param props.alt - The alt text.
  * @returns The image or placeholder.
- * @example
- * ```tsx
- * <ShotImage image={sheet.images[0]} alt="Shot 1" />
- * ```
  */
 function ShotImage(props: { readonly image: string | undefined; readonly alt: string }): VNode {
   return props.image === undefined ? (
@@ -63,10 +55,6 @@ function ShotImage(props: { readonly image: string | undefined; readonly alt: st
  * @param props.sheet - The sheet.
  * @param props.big - The shot index.
  * @returns The large view, undefined for a shot that does not exist.
- * @example
- * ```tsx
- * <BigView ctx={ctx} sheet={sheet} big={2} />
- * ```
  */
 function BigView(props: {
   readonly ctx: GameViewCtx;
@@ -128,10 +116,6 @@ function BigView(props: {
  * @param props.ctx - Domain context of gameView.
  * @param props.sheet - The sheet.
  * @returns The grid.
- * @example
- * ```tsx
- * <Grid ctx={ctx} sheet={sheet} />
- * ```
  */
 function Grid(props: { readonly ctx: GameViewCtx; readonly sheet: Sheet }): VNode {
   const { ctx, sheet } = props;
@@ -170,10 +154,6 @@ function Grid(props: { readonly ctx: GameViewCtx; readonly sheet: Sheet }): VNod
  *
  * @param dialog - The dialog element.
  * @returns Returns the focus.
- * @example
- * ```ts
- * useLayoutEffect(() => openModal(dialogRef.current), [open]);
- * ```
  */
 function openModal(dialog: HTMLDialogElement | null): () => void {
   const opener = document.activeElement;
@@ -194,10 +174,6 @@ function openModal(dialog: HTMLDialogElement | null): () => void {
  *
  * @param props - The context and the node of the watched position.
  * @returns The dialog, undefined without a sheet.
- * @example
- * ```tsx
- * <ContactSheet ctx={ctx} node="board/merge" />
- * ```
  */
 export function ContactSheet(props: ContactSheetProps): VNode | undefined {
   const { ctx, node } = props;

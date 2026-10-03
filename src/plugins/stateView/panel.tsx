@@ -14,10 +14,6 @@ import { StateView } from "./view/StateView";
  *
  * @param ctx - Domain context of stateView.
  * @returns The frozen PanelSpec.
- * @example
- * ```ts
- * ctx.require(panelsPlugin).register(createStatePanel(ctx));
- * ```
  */
 export function createStatePanel(ctx: StateViewCtx): PanelSpec {
   const api = createStateViewApi(ctx);
@@ -36,10 +32,6 @@ export function createStatePanel(ctx: StateViewCtx): PanelSpec {
      * @param values - model, position and history.
      * @param tools - The panel tools (only the status is read).
      * @returns The State workspace.
-     * @example
-     * ```ts
-     * createStatePanel(ctx).view({ model, position, history }, tools);
-     * ```
      */
     view: (values, tools) => (
       <StateView

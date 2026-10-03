@@ -5,6 +5,21 @@
 import type { LinkStatus } from "../../registry/protocol";
 
 /**
+ * Milliseconds in a second.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
+ * Milliseconds in a tenth of a second.
+ */
+const MS_PER_TENTH = 100;
+
+/**
+ * Tenths in a second.
+ */
+const TENTHS_PER_SECOND = 10;
+
+/**
  * One stage badge.
  */
 export type StageBadge = {
@@ -25,7 +40,7 @@ export type StageBadge = {
  * ```
  */
 export function secondsText(ms: number): string {
-  return String(Math.round(ms / 100) / 10);
+  return String(Math.round(ms / MS_PER_TENTH) / TENTHS_PER_SECOND);
 }
 
 /**
@@ -39,7 +54,7 @@ export function secondsText(ms: number): string {
  * ```
  */
 export function elapsedText(ms: number): string {
-  return (Math.max(0, ms) / 1000).toFixed(1);
+  return (Math.max(0, ms) / MS_PER_SECOND).toFixed(1);
 }
 
 /**
@@ -59,12 +74,12 @@ export function linkBadge(status: LinkStatus, now: number): StageBadge | undefin
       return { key: "link", text: `Paused · frame ${status.frame}`, tone: "warn", spinner: false };
     }
     case "silent": {
-      const seconds = Math.max(0, Math.round((now - status.since) / 1000));
+      const seconds = Math.max(0, Math.round((now - status.since) / MS_PER_SECOND));
       const text = `No heartbeat for ${seconds} s · showing frame ${status.lastFrame}`;
       return { key: "link", text, tone: "warn", spinner: false };
     }
     case "lost": {
-      const retry = Math.ceil(status.retryInMs / 1000);
+      const retry = Math.ceil(status.retryInMs / MS_PER_SECOND);
       const text = `Game page reloaded, reconnecting · retry in ${retry} s · last frame ${status.lastFrame}`;
       return { key: "link", text, tone: "error", spinner: true };
     }

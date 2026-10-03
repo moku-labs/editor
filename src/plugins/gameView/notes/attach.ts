@@ -38,10 +38,6 @@ function bareName(path: string): string {
  * @param ctx - Domain context of gameView.
  * @param path - The note path.
  * @returns The title.
- * @example
- * ```ts
- * await noteTitle(ctx, ".moku/notes/2026-09-24-first-top-item.md"); // "First top item"
- * ```
  */
 async function noteTitle(ctx: GameViewCtx, path: string): Promise<string> {
   try {
@@ -58,10 +54,6 @@ async function noteTitle(ctx: GameViewCtx, path: string): Promise<string> {
  *
  * @param ctx - Domain context of gameView.
  * @returns Path and title of every `.md` note; empty without the folder.
- * @example
- * ```ts
- * await listNotes(ctx); // [{ path: ".moku/notes/2026-09-24-first-top-item.md", title: "First top item" }]
- * ```
  */
 export async function listNotes(
   ctx: GameViewCtx
@@ -85,10 +77,6 @@ export async function listNotes(
  * @param ctx - Domain context of gameView.
  * @param notePath - The note.
  * @returns The text and version, or undefined.
- * @example
- * ```ts
- * await readNote(ctx, ".moku/notes/2026-09-24-first-top-item.md"); // { text, version }
- * ```
  */
 async function readNote(ctx: GameViewCtx, notePath: string): Promise<FileText | undefined> {
   try {
@@ -107,10 +95,6 @@ async function readNote(ctx: GameViewCtx, notePath: string): Promise<FileText | 
  * @param notePath - The note.
  * @param last - True on the second round (a conflict is then reported).
  * @returns "done" or "retry".
- * @example
- * ```ts
- * await attachOnce(ctx, ".moku/captures/2026-09-24-1012-board.png", ".moku/notes/a.md", false); // "done"
- * ```
  */
 async function attachOnce(
   ctx: GameViewCtx,
@@ -149,10 +133,6 @@ async function attachOnce(
  * @param capture - The PNG or series index.json path.
  * @param notePath - The note path.
  * @returns Resolves when written or the reason was toasted.
- * @example
- * ```ts
- * await attachCapture(ctx, ".moku/captures/2026-09-24-1012-board.png", ".moku/notes/2026-09-24-first-top-item.md");
- * ```
  */
 export async function attachCapture(
   ctx: GameViewCtx,
@@ -170,10 +150,6 @@ export async function attachCapture(
  * @param ctx - Domain context of gameView.
  * @param capture - The capture path.
  * @param node - "<flow>/<node>" of the watched game.position, undefined without one.
- * @example
- * ```ts
- * requestNewNote(ctx, ".moku/captures/2026-09-24-1012-board.png", "board/awaitIntent");
- * ```
  */
 export function requestNewNote(ctx: GameViewCtx, capture: string, node: string | undefined): void {
   ctx.emit(

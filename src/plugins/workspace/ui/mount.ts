@@ -15,10 +15,6 @@ import { Shell } from "./Shell";
  *
  * @param ctx - Domain context of workspace.
  * @param element - The mount element (`[data-editor-root]`).
- * @example
- * ```ts
- * mountShell(ctx, document.querySelector<HTMLElement>("[data-editor-root]")!);
- * ```
  */
 export function mountShell(ctx: WorkspaceCtx, element: HTMLElement): void {
   const { state } = ctx;
@@ -37,10 +33,6 @@ export function mountShell(ctx: WorkspaceCtx, element: HTMLElement): void {
  * Unrenders the shell (onStop).
  *
  * @param state - Workspace state.
- * @example
- * ```ts
- * unmountShell(ctx.state);
- * ```
  */
 export function unmountShell(state: WorkspaceState): void {
   const { root } = state.dom;

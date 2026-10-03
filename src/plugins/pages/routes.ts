@@ -88,10 +88,6 @@ type Answer = (req: Request) => Response | Promise<Response>;
  * @param mode - Guard mode of the route.
  * @param answer - The GET/HEAD answer.
  * @returns The route handler.
- * @example
- * ```ts
- * routes[`${path}/hello`] = guarded(deps, "same-origin", hello);
- * ```
  */
 function guarded(deps: RouteDeps, mode: GuardMode, answer: Answer): RouteHandler {
   return function route(req: Request, server: HubServer): Response | Promise<Response> {
@@ -109,7 +105,8 @@ function guarded(deps: RouteDeps, mode: GuardMode, answer: Answer): RouteHandler
  * @returns The answer.
  * @example
  * ```ts
- * routes[path] = guarded(deps, "navigate", redirectTo(path));
+ * const answer = redirectTo("/__editor");
+ * answer(new Request("http://127.0.0.1:3000/__editor?x=1")); // 308, location "/__editor/?x=1"
  * ```
  */
 function redirectTo(path: string): Answer {
@@ -124,10 +121,6 @@ function redirectTo(path: string): Answer {
  *
  * @param deps - Route deps (state).
  * @returns The template, or undefined when the page is not built.
- * @example
- * ```ts
- * const template = await loadTemplate(deps);
- * ```
  */
 async function loadTemplate(deps: RouteDeps): Promise<string | undefined> {
   const { state } = deps;
@@ -147,10 +140,6 @@ async function loadTemplate(deps: RouteDeps): Promise<string | undefined> {
  * @param req - The request.
  * @param deps - Route deps.
  * @returns The boot, or undefined.
- * @example
- * ```ts
- * const boot = bootOrUndefined(req, deps);
- * ```
  */
 function bootOrUndefined(req: Request, deps: RouteDeps): ToolsBoot | undefined {
   try {
@@ -166,10 +155,6 @@ function bootOrUndefined(req: Request, deps: RouteDeps): ToolsBoot | undefined {
  *
  * @param deps - Route deps.
  * @returns The answer.
- * @example
- * ```ts
- * routes[`${path}/`] = guarded(deps, "navigate", pageAnswer(deps));
- * ```
  */
 function pageAnswer(deps: RouteDeps): Answer {
   let reported = false;
@@ -198,10 +183,6 @@ function pageAnswer(deps: RouteDeps): Answer {
  *
  * @param deps - Route deps.
  * @returns The answer.
- * @example
- * ```ts
- * routes[`${path}/hello`] = guarded(deps, "same-origin", helloAnswer(deps));
- * ```
  */
 function helloAnswer(deps: RouteDeps): Answer {
   return function hello(req: Request): Response {
@@ -235,10 +216,6 @@ function isAssetName(name: string): boolean {
  * @param deps - Route deps.
  * @param path - hub.path().
  * @returns The answer.
- * @example
- * ```ts
- * routes[`${path}/assets/*`] = guarded(deps, "navigate", assetAnswer(deps, path));
- * ```
  */
 function assetAnswer(deps: RouteDeps, path: string): Answer {
   const prefix = `${path}/assets/`;
@@ -268,10 +245,6 @@ function assetAnswer(deps: RouteDeps, path: string): Answer {
  *
  * @param deps - Hub, files, config, state and log.
  * @returns The four routes, in the order `P`, `P/`, `P/hello`, `P/assets/*`.
- * @example
- * ```ts
- * hub.addRoutes(createRoutes({ hub, files, config, state, log }));
- * ```
  */
 export function createRoutes(deps: RouteDeps): EditorRoutes {
   const path = deps.hub.path();

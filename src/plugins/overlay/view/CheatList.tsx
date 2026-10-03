@@ -50,11 +50,6 @@ function CheatButton(props: {
 
   /**
    * Passes the click on with the cheat id.
-   *
-   * @example
-   * ```ts
-   * click(); // onCheat("merge.addCoins")
-   * ```
    */
   const click = (): void => {
     onCheat(cheat.id);
