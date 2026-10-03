@@ -38,8 +38,24 @@ export function attachHosts(state: WorkspaceState, container: HTMLElement): void
   for (const ws of WORKSPACE_IDS) {
     const host = hostOf(state, ws);
     if (host.parentElement !== container) container.append(host);
-    host.hidden = ws !== state.active;
   }
+  showActiveHost(state);
+}
+
+/**
+ * Shows only the host of the active workspace. Runs when the workspace changes, before the
+ * re-render: the preview measures the active host in its layout effect, which runs before the
+ * shell's, and a host still hidden measures 0 × 0 (the float jumped off-screen to the top left).
+ *
+ * @param state - Workspace state.
+ * @example
+ * ```ts
+ * state.active = "render";
+ * showActiveHost(state); // the Render host shows, the other five are hidden
+ * ```
+ */
+export function showActiveHost(state: WorkspaceState): void {
+  for (const [ws, host] of state.dom.hosts) host.hidden = ws !== state.active;
 }
 
 /**

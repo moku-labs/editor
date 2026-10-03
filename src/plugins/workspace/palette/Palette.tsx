@@ -176,8 +176,9 @@ export function Palette(props: PaletteProps): VNode {
         event.preventDefault();
         closePalette(ctx);
       }}
-      onClose={() => {
-        if (state.palette.open) closePalette(ctx);
+      onClose={event => {
+        // The close event is queued: after Esc and an instant ⌘K it lands on the reopened dialog.
+        if (state.palette.open && !event.currentTarget.open) closePalette(ctx);
       }}
     >
       {open && (

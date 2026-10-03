@@ -5,6 +5,7 @@
 import { ERROR_PREFIX } from "../registry/protocol";
 import { runCommand } from "./commands";
 import { syncFrame } from "./frame/frame";
+import { showActiveHost } from "./hosts";
 import { patchPreview } from "./prefs/apply";
 import type { Badge, RunOrigin, WorkspaceCtx, WorkspaceId, WorkspaceState } from "./types";
 import { isPreviewWorkspace, isWorkspaceId } from "./workspaces";
@@ -46,6 +47,7 @@ export function showWorkspace(ctx: WorkspaceCtx, ws: WorkspaceId): void {
   if (state.active === ws) return;
 
   state.active = ws;
+  showActiveHost(state);
   writeHash(ws);
   ctx.emit("workspace:changed", { ws });
   state.ui.bump();

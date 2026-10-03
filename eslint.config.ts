@@ -9,6 +9,9 @@ export default [
   {
     ignores: [
       "dist/**",
+      "dist-e2e/**",
+      "test-results/**",
+      "playwright-report/**",
       "coverage/**",
       "bun.lock",
       ".claude/**",
@@ -199,7 +202,7 @@ export default [
 
   // 7. Test files: relaxed rules
   {
-    files: ["tests/**/*.{ts,tsx}", "src/plugins/**/__tests__/**/*.{ts,tsx}"],
+    files: ["tests/**/*.{ts,tsx}", "e2e/**/*.ts", "src/plugins/**/__tests__/**/*.{ts,tsx}"],
     rules: {
       "jsdoc/require-jsdoc": "off",
       "jsdoc/require-description": "off",
