@@ -22,7 +22,11 @@ import { notifyManifest } from "./manifest";
  * @returns The newest, or undefined for none.
  * @example
  * ```ts
- * newest(sessions)?.id;
+ * newest([
+ *   { id: "a", game: "g", page: "/", embedded: false, connectedAt: 100 },
+ *   { id: "b", game: "g", page: "/", embedded: false, connectedAt: 200 },
+ *   { id: "c", game: "g", page: "/", embedded: true, connectedAt: 200 }
+ * ])?.id; // "b": the first of the two newest
  * ```
  */
 function newest(list: readonly SessionInfo[]): SessionInfo | undefined {

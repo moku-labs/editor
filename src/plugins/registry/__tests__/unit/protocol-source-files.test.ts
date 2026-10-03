@@ -266,7 +266,7 @@ describe("merge-game fixture", () => {
 
     const names = Object.keys(settings?.nodes ?? {});
 
-    expect(names.length).toBeGreaterThan(0);
+    expect(names).toEqual(["enter", "open", "setVolume", "setLocale", "rename", "confirm"]);
     // The override is step 1: it applies to every node of the flow, before the sub-flow rule.
     for (const name of names) {
       const node = settings?.nodes[name];

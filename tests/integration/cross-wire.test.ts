@@ -384,9 +384,14 @@ describe("cross-wire: agent → hub → link", () => {
     started.push(secondGame);
     const second = await startAgent(server, secondGame);
     started.push(second);
-    await until(() => link.sessions().length === 2, "two sessions");
-    const secondId = link.sessions().find(session => session.id !== firstId)?.id;
-    expect(secondId).toBeDefined();
+    await until(
+      () => link.sessions().length === 2 && second.app.bridge.session() !== undefined,
+      "two sessions, the second agent knows its id"
+    );
+    const secondId = second.app.bridge.session();
+    expect(secondId).toBeTypeOf("string");
+    expect(secondId).not.toBe(firstId);
+    expect(link.sessions().find(session => session.id !== firstId)?.id).toBe(secondId);
 
     // The newest session wins.
     await until(

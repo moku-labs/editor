@@ -168,7 +168,12 @@ function opensOutcomeMenu(hit: string | undefined): boolean {
  * @returns Items by key and edges to draw.
  * @example
  * ```ts
- * dragged(world, { key: "main/home", dx: 60, dy: 30 });
+ * const world = {
+ *   result: { byKey: { "main/home": { key: "main/home", x: 100, y: 40, w: 160, h: 60, … } }, edges: [], … },
+ *   …
+ * };
+ * dragged(world, { key: "main/home", dx: 60, dy: 30 }).byKey["main/home"]; // { key: "main/home", x: 160, y: 70, w: 160, h: 60, … }
+ * dragged(world, undefined).byKey === world.result.byKey; // true: no drag, same items
  * ```
  */
 function dragged(

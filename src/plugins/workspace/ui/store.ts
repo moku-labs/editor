@@ -20,27 +20,13 @@ export function createUiStore(): UiStore {
   const subscribers = new Set<() => void>();
   const store: UiStore = {
     version: 0,
-
-    /**
-     * Adds a subscriber.
-     *
-     * @param fn - Called after every bump.
-     * @returns Unsubscribe.
-     * @example
-     * ```ts
-     * const off = store.subscribe(() => redraw());
-     * ```
-     */
-    subscribe(fn) {
+    subscribe: fn => {
       subscribers.add(fn);
       return () => {
         subscribers.delete(fn);
       };
     },
-    /**
-     * Raises the version and calls every subscriber.
-     */
-    bump() {
+    bump: () => {
       store.version += 1;
       for (const fn of subscribers) fn();
     }

@@ -55,7 +55,15 @@ describe("loadPrefs / savePrefs", () => {
     localStorage.setItem(KEY, "{nope");
     expect(loadPrefs(KEY, log)).toEqual(defaultStoredPrefs());
     expect(log.warn).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", expect.anything());
+    // The parse message is the runtime's own text: take it from the same JSON.parse.
+    let thrown = "";
+    try {
+      JSON.parse("{nope");
+    } catch (error) {
+      thrown = (error as SyntaxError).message;
+    }
+    expect(thrown).not.toBe("");
+    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", { op: "parse", message: thrown });
   });
 
   it("another version → defaults and one warn", () => {

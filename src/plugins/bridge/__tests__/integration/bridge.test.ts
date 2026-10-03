@@ -413,10 +413,14 @@ describe("bridge integration", () => {
 
     const ran = await call(connection, "run", { id: "game.step", input: { frames: 1 } });
 
-    expect(ran).toMatchObject({
+    // The headless game has not ticked yet: one 1000/60 ms step is the whole elapsed time.
+    expect(before).toBe(0);
+    expect(ran).toEqual({
+      jsonrpc: "2.0",
+      id: nextId,
       result: {
-        value: expect.anything(),
-        state: { path: app.registry.envelope().path, frame: before + 1, tainted: false }
+        value: { delta: 1000 / 60, elapsed: 1000 / 60, scale: 1, frame: 1, idle: false },
+        state: { path: app.registry.envelope().path, frame: 1, tainted: false }
       }
     });
   });

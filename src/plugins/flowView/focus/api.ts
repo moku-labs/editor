@@ -71,7 +71,10 @@ function soleParent(ctx: FlowCtx, id: NodeId): NodeId | undefined {
  * @returns The rect, or undefined for none.
  * @example
  * ```ts
- * union([a, b]); // { x, y, w, h } around both
+ * union([
+ *   { key: "a", x: 0, y: 0, w: 100, h: 50, … },
+ *   { key: "b", x: 200, y: 80, w: 100, h: 50, … }
+ * ]); // { x: 0, y: 0, w: 300, h: 130 }
  * ```
  */
 function union(items: readonly Item[]): Rect | undefined {

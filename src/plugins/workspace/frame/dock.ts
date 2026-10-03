@@ -110,7 +110,10 @@ function toLocal(pagePx: number, scale: number): number {
  * @returns Insets in local px, never negative.
  * @example
  * ```ts
- * clipInsets(box, host.getBoundingClientRect());
+ * clipInsets(
+ *   { left: 0, top: 0, width: 400, height: 800, scale: 0.5, docked: "stage" },
+ *   { left: 0, top: 20, width: 400, height: 760 }
+ * ); // { top: 40, right: 0, bottom: 40, left: 0 }
  * ```
  */
 export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
@@ -134,7 +137,7 @@ export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
  * @returns The corner.
  * @example
  * ```ts
- * nearestCorner({ x: 10, y: 10 }, zoneRect); // "top-left"
+ * nearestCorner({ x: 10, y: 10 }, { left: 0, top: 0, width: 800, height: 600 }); // "top-left"
  * ```
  */
 export function nearestCorner(

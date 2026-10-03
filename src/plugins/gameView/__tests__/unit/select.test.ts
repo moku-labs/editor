@@ -111,7 +111,9 @@ describe("highlightElement", () => {
     highlightElement(ctx, COIN);
     await flush();
     expect(ctx.state.treeHover).toBeUndefined();
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: highlight failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: highlight failed", {
+      message: "no value for game.ui"
+    });
   });
 });
 

@@ -144,7 +144,7 @@ function Row(props: {
   if (line.kind === "meta") {
     return (
       <tr data-key={line.key} aria-rowindex={index + 2} aria-selected={selected} data-meta="">
-        <td colSpan={4}>{line.text}</td>
+        <td colSpan={COLUMNS.length}>{line.text}</td>
       </tr>
     );
   }
@@ -272,14 +272,17 @@ function onGridKey(
   const isEnterOnGrid = event.key === "Enter" && event.target === event.currentTarget;
   const closesDrawer = event.key === "Escape" && selected !== undefined;
   if (step !== undefined) {
+    // Arrow key: move the selection one row and keep it in view.
     event.preventDefault();
     const index = nextIndex(selectedIndex, step, lines.length);
     api.select(lines[index]?.key);
     if (scroller !== null) revealRow(scroller, index);
   } else if (isEnterOnGrid) {
+    // Enter on the grid itself: select the first line when nothing is selected yet.
     event.preventDefault();
     if (selectedIndex === -1) api.select(lines[0]?.key);
   } else if (closesDrawer) {
+    // Esc with a selection: clear it, which closes the detail drawer.
     event.preventDefault();
     event.stopPropagation();
     api.select();
@@ -350,7 +353,7 @@ export function LogTable(props: LogTableProps): VNode {
           </thead>
           <tbody>
             <tr data-spacer>
-              <td colSpan={4} style={{ height: `${first * ROW}px` }} />
+              <td colSpan={COLUMNS.length} style={{ height: `${first * ROW}px` }} />
             </tr>
             {lines.slice(first, end).map((line, offset) => (
               <Row
@@ -364,7 +367,7 @@ export function LogTable(props: LogTableProps): VNode {
               />
             ))}
             <tr data-spacer>
-              <td colSpan={4} style={{ height: `${(lines.length - end) * ROW}px` }} />
+              <td colSpan={COLUMNS.length} style={{ height: `${(lines.length - end) * ROW}px` }} />
             </tr>
           </tbody>
         </table>

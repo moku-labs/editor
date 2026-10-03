@@ -124,7 +124,10 @@ describe("startSceneWatches", () => {
     sendBoard();
     await flush();
     expect(ctx.state.calibration).toBeUndefined();
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: calibration failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: calibration failed", {
+      key: "boardScreen",
+      message: "no value for game.rect"
+    });
   });
 
   it("keeps the last scene and warns when a value has the wrong shape", async () => {

@@ -208,7 +208,12 @@ describe("stopRecording and setPopover", () => {
     stopRecording(ctx);
     await flush();
     expect(ctx.panels.run).toHaveBeenCalledWith("editor.seriesStop");
-    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: series stop failed", expect.anything());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: series stop failed", {
+      error: expect.objectContaining({
+        code: errorCode.noSession,
+        message: "[moku-editor] No game session."
+      })
+    });
   });
 
   it("opens and closes the popover; closing tells whether it was open", () => {
