@@ -4,7 +4,6 @@
  * `bridge:status`, and `reloadAgent`, which plays "the game page reloaded".
  */
 import type { AnyPluginInstance } from "@moku-labs/core";
-import { vi } from "vitest";
 import type { Registry } from "../../../src/agent";
 import { bridgePlugin, capturePlugin, createApp, createPlugin } from "../../../src/agent";
 import type { AgentEvents } from "../../../src/config";
@@ -53,34 +52,6 @@ function createAgentProbe(statuses: AgentEvents["bridge:status"][]) {
 }
 
 /**
- * Two plugins around the bridge that hide the page `document` while the bridge starts.
- *
- * Why: the bridge sends the Origin header (hello fetch and socket) only when
- * `globalThis.document` is undefined; Bun's client adds none, so with the happy-dom page
- * installed the hub refuses the agent upgrade (403, check "origin"). The link tells a Bun
- * process by the `Bun` global instead. Reported as a finding; drop this shade once the bridge
- * uses the same test. The overlay starts before it (default plugin) and keeps the page.
- *
- * @returns The plugin placed before the bridge and the one placed after it.
- */
-function createDocumentShade() {
-  let page: Document | undefined;
-  return {
-    hide: createPlugin("documentShadeHide", {
-      onStart: () => {
-        page = globalThis.document;
-        vi.stubGlobal("document", undefined);
-      }
-    }),
-    show: createPlugin("documentShadeShow", {
-      onStart: () => {
-        vi.stubGlobal("document", page);
-      }
-    })
-  };
-}
-
-/**
  * Creates the agent app with bridge and capture (not started).
  *
  * @param extras - The probe and the extra plugins.
@@ -88,11 +59,7 @@ function createDocumentShade() {
  * @returns The app.
  */
 function createFullApp(extras: readonly AnyPluginInstance[], pluginConfigs: AgentConfigs) {
-  const shade = createDocumentShade();
-  return createApp({
-    plugins: [shade.hide, bridgePlugin, shade.show, capturePlugin, ...extras],
-    pluginConfigs
-  });
+  return createApp({ plugins: [bridgePlugin, capturePlugin, ...extras], pluginConfigs });
 }
 
 /**
