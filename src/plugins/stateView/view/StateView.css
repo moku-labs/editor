@@ -1,1 +1,77 @@
-/* stateView · StateView. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* stateView · State workspace (A4): title line, three-column grid (Player 1.3fr · Last commit + Session 1fr · Runner 0.9fr), each column scrolls on its own; under 240 px per column the grid scrolls horizontally inside the workspace. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="state"] [data-part="state-view"]) {
+  :scope {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+    padding: 12px;
+    color: var(--text-ink);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-13);
+    line-height: 1.42;
+  }
+
+  [data-part="title"] {
+    margin: 0;
+    color: var(--text-2);
+    font-size: var(--font-size-13);
+    font-weight: 500;
+  }
+
+  [data-part="title"] abbr {
+    font-family: var(--font-mono);
+    text-decoration: underline dotted var(--text-muted);
+    cursor: help;
+  }
+
+  [data-part="columns"] {
+    display: grid;
+    grid-template-columns:
+      minmax(240px, 1.3fr)
+      minmax(240px, 1fr)
+      minmax(240px, 0.9fr);
+    gap: 12px;
+    min-height: 0;
+    overflow-x: auto;
+  }
+
+  [data-part="commit-column"] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+    min-height: 0;
+  }
+
+  [data-card] {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  [data-part="head"] {
+    position: sticky;
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line-1);
+    background: var(--surface-panel);
+  }
+
+  [data-part="head"] h3 {
+    flex: 1;
+    margin: 0;
+    font-size: var(--font-size-12-5);
+    font-weight: 600;
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

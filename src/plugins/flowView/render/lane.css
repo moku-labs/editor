@@ -1,1 +1,16 @@
-/* flowView · lane. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · lane row (G): one band per hub outcome, alternating tint, an accent inset on the trail. A band is empty canvas for clicks (M2). No @layer wrapper (R7). */
+
+@scope ([data-flow="lane"]) {
+  :scope {
+    background: transparent;
+    border-top: 1px solid var(--line-1);
+  }
+
+  :scope[data-odd] {
+    background: var(--surface-panel-2);
+  }
+
+  :scope[data-trail] {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+}

@@ -1,18 +1,31 @@
 /**
  * @file filesView plugin — state factory.
  */
-import type { Config, FilesViewState } from "./types";
+import type { FilesViewState } from "./types";
 
 /**
- * Creates the initial filesView state: empty collections, overrides {}, nothing indexed.
+ * Creates the initial filesView state: empty collections, overrides `{}`, nothing indexed,
+ * no graph, no tab.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @returns A fresh state.
  * @example
  * ```ts
- * createFilesViewState({ config }).tabs; // []
+ * createFilesViewState().tabs; // []
  * ```
  */
-export function createFilesViewState(_ctx: { readonly config: Readonly<Config> }): FilesViewState {
-  throw new Error("not implemented");
+export function createFilesViewState(): FilesViewState {
+  return {
+    index: undefined,
+    indexing: undefined,
+    expanded: new Set(),
+    tabs: [],
+    active: undefined,
+    graph: undefined,
+    overrides: {},
+    usedBy: undefined,
+    confirmClose: undefined,
+    listeners: new Set(),
+    removers: [],
+    paletteRemover: undefined
+  };
 }

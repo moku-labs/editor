@@ -1,45 +1,161 @@
 /**
- * @file filesView plugin — tree/model.ts (skeleton stubs, implemented in its wave).
+ * @file filesView plugin — the pure tree model: children, file count, reveal, folder toggle,
+ * the visible rows of the project tree and the files in tree order.
  */
-import type { FileIndex } from "../types";
+import type { FileEntry } from "../../registry/protocol";
+import type { FileIndex, TreeRow } from "../types";
 
 /**
- * Skeleton stub for `childrenOf`; implemented in its wave.
+ * The children of a folder, folders first.
  *
- * @param _index - The index.
- * @param _dir - The dir.
+ * @param index - The file index.
+ * @param dir - Folder path, `""` for the root.
+ * @returns Child paths; `[]` for an unknown folder.
  * @example
  * ```ts
- * childrenOf();
+ * childrenOf(index, "flows"); // ["flows/board.ts", "flows/main.ts"]
  * ```
  */
-export function childrenOf(_index: FileIndex, _dir: string): readonly string[] {
-  throw new Error("not implemented");
+export function childrenOf(index: FileIndex, dir: string): readonly string[] {
+  return index.children.get(dir) ?? [];
 }
 
 /**
- * Skeleton stub for `countFiles`; implemented in its wave.
+ * The number of indexed files (folders not counted).
  *
- * @param _index - The index.
+ * @param index - The file index.
+ * @returns The file count.
  * @example
  * ```ts
- * countFiles();
+ * countFiles(index); // 24
  * ```
  */
-export function countFiles(_index: FileIndex): number {
-  throw new Error("not implemented");
+export function countFiles(index: FileIndex): number {
+  return index.files.size;
 }
 
 /**
- * Skeleton stub for `revealPath`; implemented in its wave.
+ * The folder of a path.
  *
- * @param _expanded - The expanded.
- * @param _path - The path.
+ * @param path - A relative path.
+ * @returns The parent folder, `""` at the root.
  * @example
  * ```ts
- * revealPath();
+ * parentOf("nodes/merge.ts"); // "nodes"
  * ```
  */
-export function revealPath(_expanded: Set<string>, _path: string): void {
-  throw new Error("not implemented");
+export function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+/**
+ * The last segment of a path.
+ *
+ * @param path - A relative path.
+ * @returns The base name.
+ * @example
+ * ```ts
+ * nameOf("nodes/merge.ts"); // "merge.ts"
+ * ```
+ */
+export function nameOf(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/**
+ * Opens every ancestor folder of a path, so its row is visible.
+ *
+ * @param expanded - The open folders (changed in place).
+ * @param path - A file or folder path.
+ * @example
+ * ```ts
+ * revealPath(expanded, "nodes/deep/x.ts"); // expanded has "nodes" and "nodes/deep"
+ * ```
+ */
+export function revealPath(expanded: Set<string>, path: string): void {
+  const segments = path.split("/");
+  for (let end = 1; end < segments.length; end += 1) {
+    expanded.add(segments.slice(0, end).join("/"));
+  }
+}
+
+/**
+ * Opens a closed folder or closes an open one.
+ *
+ * @param expanded - The open folders (changed in place).
+ * @param path - The folder path.
+ * @returns Whether the folder is open now.
+ * @example
+ * ```ts
+ * toggleFolder(new Set(), "flows"); // true
+ * ```
+ */
+export function toggleFolder(expanded: Set<string>, path: string): boolean {
+  if (expanded.delete(path)) return false;
+  expanded.add(path);
+  return true;
+}
+
+/**
+ * The rows the tree shows: the root's children, and the children of every open folder below
+ * its row.
+ *
+ * @param index - The file index.
+ * @param expanded - The open folders.
+ * @returns The rows in display order.
+ * @example
+ * ```ts
+ * visibleRows(index, new Set(["flows"])).map(row => row.path); // ["flows", "flows/board.ts", …]
+ * ```
+ */
+export function visibleRows(index: FileIndex, expanded: ReadonlySet<string>): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const pending: { path: string; level: number }[] = childrenOf(index, "")
+    .map(path => ({ path, level: 1 }))
+    .toReversed();
+
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (next === undefined) break;
+    const isDir = !index.files.has(next.path);
+    const open = isDir && expanded.has(next.path);
+    rows.push({
+      path: next.path,
+      name: nameOf(next.path),
+      kind: isDir ? "dir" : "file",
+      level: next.level,
+      expanded: open
+    });
+    if (open) {
+      for (const child of childrenOf(index, next.path).toReversed()) {
+        pending.push({ path: child, level: next.level + 1 });
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Every indexed file in tree order: depth first, folders first at every level.
+ *
+ * @param index - The file index.
+ * @returns The file entries.
+ * @example
+ * ```ts
+ * filesInTreeOrder(index).map(entry => entry.path); // ["flows/board.ts", "flows/main.ts", …]
+ * ```
+ */
+export function filesInTreeOrder(index: FileIndex): FileEntry[] {
+  const entries: FileEntry[] = [];
+  const pending = [...childrenOf(index, "")].toReversed();
+
+  while (pending.length > 0) {
+    const path = pending.pop();
+    if (path === undefined) break;
+    const entry = index.files.get(path);
+    if (entry === undefined) pending.push(...[...childrenOf(index, path)].toReversed());
+    else entries.push(entry);
+  }
+  return entries;
 }

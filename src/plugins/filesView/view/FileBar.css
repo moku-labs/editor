@@ -1,1 +1,85 @@
-/* filesView · FileBar. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · FileBar. The crumb (folder segments are buttons), the actions (Preview · Source on [data-segmented], Open in editor, Edit here / Cancel / Save ⌘S), the status line and the warn conflict bar. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="file-bar"]) {
+  :scope {
+    border-bottom: 1px solid var(--line-1);
+    font-size: var(--font-size-12-5);
+  }
+
+  [data-bar-row] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 36px;
+    padding: 4px 12px;
+  }
+
+  [data-crumb] {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  [data-crumb-folder]:hover {
+    color: var(--text-ink);
+    text-decoration: underline;
+  }
+
+  [data-crumb-file] {
+    color: var(--text-ink);
+  }
+
+  [data-actions] {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+  }
+
+  [data-open-editor] {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-6);
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  [data-open-editor]:hover {
+    background: var(--surface-panel-2);
+  }
+
+  button[data-variant="primary"]:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  [data-save-status] {
+    margin: 0;
+    padding: 0 12px 6px;
+    color: var(--text-muted);
+  }
+
+  [data-conflict] {
+    padding: 6px 12px;
+    border-top: 1px solid var(--line-1);
+    background: color-mix(in srgb, var(--status-warn) 14%, transparent);
+    color: var(--text-ink);
+  }
+
+  [data-link] {
+    color: var(--text-ink);
+    font-weight: 500;
+    text-decoration: underline;
+  }
+
+  :is(button, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

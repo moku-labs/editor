@@ -1,18 +1,42 @@
 /**
- * @file filesView plugin — the Files panel: no game sources (files come from the files channel).
+ * @file filesView plugin — the Files panel: no game sources (files come from the files channel,
+ * not from game sources); the view renders the whole Files workspace.
  */
+import { definePanel } from "../panels/define";
 import type { PanelSpec } from "../panels/types";
+import { createFilesViewApi } from "./api";
 import type { FilesViewCtx } from "./types";
+import { FilesView } from "./view/FilesView";
 
 /**
- * The Files panel: `definePanel({ id: "files", title: "Files", workspace: "files", sources: {}, view })`.
+ * The Files panel: `definePanel({ id: "files", title: "Files", workspace: "files", sources: {},
+ * view })`. Its view works on the same state as `app.filesView`.
  *
- * @param _ctx - Domain context of filesView.
+ * @param ctx - Domain context of filesView.
+ * @returns The PanelSpec to register.
  * @example
  * ```ts
  * ctx.require(panelsPlugin).register(createFilesPanel(ctx));
  * ```
  */
-export function createFilesPanel(_ctx: FilesViewCtx): PanelSpec {
-  throw new Error("not implemented");
+export function createFilesPanel(ctx: FilesViewCtx): PanelSpec {
+  const api = createFilesViewApi(ctx);
+  return definePanel({
+    id: "files",
+    title: "Files",
+    workspace: "files",
+    sources: {},
+    /**
+     * Renders the Files workspace with the link status of this render.
+     *
+     * @param _values - No source values (sources is empty).
+     * @param tools - Panel tools; only the status is used.
+     * @returns The Files view.
+     * @example
+     * ```tsx
+     * panel.view({}, tools); // <FilesView ctx={ctx} api={api} status={tools.status} />
+     * ```
+     */
+    view: (_values, tools) => <FilesView ctx={ctx} api={api} status={tools.status} />
+  });
 }

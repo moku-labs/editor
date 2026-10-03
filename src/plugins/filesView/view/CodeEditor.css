@@ -1,1 +1,77 @@
-/* filesView · CodeEditor. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · CodeEditor. A textarea stacked exactly over the highlighted layer (same font, size, line height, padding, white-space: pre), text transparent with an ink caret, both in one scroll container; the gutter stays visible; the hint line below. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="code-editor"]) {
+  :scope {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  [data-code-note],
+  [data-editor-hint] {
+    margin: 6px 12px;
+    color: var(--text-muted);
+    font-size: var(--font-size-12);
+  }
+
+  [data-editor-scroll] {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    padding: 8px 0;
+    overflow: auto;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    margin: 0 8px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12-5);
+    line-height: var(--line-height-code);
+  }
+
+  [data-editor-gutter] {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: 34px;
+    padding-right: 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11-5);
+    text-align: right;
+    user-select: none;
+  }
+
+  [data-editor-stack] {
+    display: grid;
+    min-width: max-content;
+  }
+
+  [data-editor-layer],
+  textarea {
+    grid-area: 1 / 1;
+    margin: 0;
+    padding: 0 16px 0 0;
+    border: 0;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  textarea {
+    min-width: 100%;
+    overflow: hidden;
+    resize: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text-ink);
+  }
+
+  textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  textarea::selection {
+    background: var(--accent-soft);
+  }
+}

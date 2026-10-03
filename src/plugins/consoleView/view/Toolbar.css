@@ -1,1 +1,62 @@
-/* consoleView · Toolbar. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* consoleView · Toolbar. One 40 px row: the level segmented control with counts, the search field, Clear and the Preserve log switch. Atoms ([data-segmented], [data-switch], ghost buttons) come from workspace primitives. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="console"] [data-part="toolbar"]) {
+  :scope {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    block-size: 40px;
+    padding: 0 12px;
+    border-block-end: 1px solid var(--line-1);
+    background: var(--surface-panel);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-13);
+  }
+
+  [data-segmented] > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: var(--font-size-12);
+  }
+
+  [data-count] {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  [data-count][data-tone="warn"] {
+    color: var(--status-warn);
+  }
+
+  [data-count][data-tone="error"] {
+    color: var(--status-error);
+  }
+
+  [data-search] {
+    flex: 0 1 260px;
+    min-inline-size: 120px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel-2);
+    color: var(--text-ink);
+    font: inherit;
+  }
+
+  [data-search]::placeholder {
+    color: var(--text-muted);
+  }
+
+  button[data-variant="ghost"] {
+    margin-inline-start: auto;
+  }
+
+  :is(button, input):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

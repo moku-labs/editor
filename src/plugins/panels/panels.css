@@ -1,1 +1,43 @@
-/* panels · panels. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* panels · panels. The panel sections the host appends into the workspace hosts, their placeholder line (generic F5: waiting, no game, missing source, view error) and the stale half of F3 (the [data-stale] fade atom of workspace primitives.css applies to the section). Layout of several panels in one workspace belongs to the owning view's sheet through [data-panel="…"]. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel]) {
+  :scope {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  :scope:is(
+    [data-panel-state="waiting"],
+    [data-panel-state="no-game"],
+    [data-panel-state="missing"],
+    [data-panel-state="error"]
+  ) {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+
+  :scope:focus {
+    outline: none;
+  }
+
+  [data-placeholder] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 52ch;
+    color: var(--text-muted);
+    font-size: var(--font-size-12-5);
+    line-height: var(--line-height-ui);
+    text-align: center;
+  }
+
+  [data-placeholder="error"] {
+    color: var(--status-error);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-stale] {
+      transition: none;
+    }
+  }
+}

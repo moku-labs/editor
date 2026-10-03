@@ -1,32 +1,41 @@
 /**
- * @file renderView plugin — components/MetricTile.tsx (skeleton stubs, implemented in its wave).
+ * @file renderView plugin — one metric tile: label, big value with its unit, an optional chart,
+ * the sub-line and the warn line. Absent values are named and muted.
  */
-
-import type { VNode } from "preact";
-import type { MetricTiles } from "../types";
+import type { ComponentChildren, JSX } from "preact";
+import type { TileView } from "../format";
 
 /**
  * Props of `MetricTile`.
- *
- * @example
- * ```ts
- * const props = {} as never as MetricTileProps;
- * ```
  */
 export type MetricTileProps = {
-  readonly label: string;
-  readonly tile: MetricTiles[keyof MetricTiles];
+  readonly view: TileView;
+  /** A chart under the value (sparkline, frame bar). */
+  readonly children?: ComponentChildren;
 };
 
 /**
- * Skeleton stub for `MetricTile`; implemented in its wave.
+ * One metric tile.
  *
- * @param _props - The props.
+ * @param props - The tile texts and an optional chart.
+ * @returns The tile.
  * @example
- * ```ts
- * MetricTile();
+ * ```tsx
+ * <MetricTile view={tileViews(snapshot.tiles)[2]} />
  * ```
  */
-export function MetricTile(_props: MetricTileProps): VNode {
-  throw new Error("not implemented");
+export function MetricTile(props: MetricTileProps): JSX.Element {
+  const { view, children } = props;
+  return (
+    <section data-tile={view.id} data-absent={view.absent ? "" : undefined} aria-label={view.aria}>
+      <h2>{view.label}</h2>
+      <p data-value>
+        <strong>{view.value}</strong>
+        {view.unit === "" ? undefined : <span data-unit>{view.unit}</span>}
+      </p>
+      {children}
+      <p data-sub>{view.sub}</p>
+      {view.warn === undefined ? undefined : <p data-warn>{view.warn}</p>}
+    </section>
+  );
 }

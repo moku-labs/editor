@@ -1,71 +1,422 @@
 /**
- * @file renderView plugin — watch.ts (skeleton stubs, implemented in its wave).
+ * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
+ * for the session; the scene watches game.ui, game.entities and game.projections only while
+ * Render is shown and build one scene per animation frame; the calibration reads game.rect once
+ * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
  */
-
+import { linkPlugin } from "../link";
 import type { TextureCatalogue } from "../panels/shared/scene";
-import type { RenderViewCtx } from "./types";
+import {
+  buildScene,
+  calibrationFrom,
+  calibrationTarget,
+  parseTextureManifest
+} from "../panels/shared/scene";
+import { rectOf } from "../panels/shared/scene/wire";
+import type { Json, LinkStatus } from "../registry/protocol";
+import { applyPendingReveal, setTexturePalette } from "./actions";
+import { releasesOf, updateTextureUse } from "./derive";
+import { asAssetsUsage, asRenderStats } from "./guards";
+import { drawBox } from "./overlay";
+import { notify } from "./state";
+import type { RenderViewCtx, RenderViewState } from "./types";
 
 /**
- * Skeleton stub for `startTracker`; implemented in its wave.
+ * A scene source and the `state.sources` key it fills.
+ */
+type SceneSource = readonly [key: keyof RenderViewState["sources"], id: string];
+
+/**
+ * The three scene sources, in watch order.
+ */
+const SCENE_SOURCES: readonly SceneSource[] = [
+  ["ui", "game.ui"],
+  ["entities", "game.entities"],
+  ["projections", "game.projections"]
+];
+
+/**
+ * The states with a scene build queued for the next animation frame.
+ */
+const queued = new WeakSet<RenderViewState>();
+
+/**
+ * The frame a link status reports, or a fallback.
  *
- * @param _ctx - The ctx.
+ * @param status - The link status.
+ * @param fallback - Used while connecting or empty.
+ * @returns The frame.
  * @example
  * ```ts
- * startTracker();
+ * frameOf({ kind: "silent", since: 1, lastFrame: 1840 }, 0); // 1840
  * ```
  */
-export function startTracker(_ctx: RenderViewCtx): void {
-  throw new Error("not implemented");
+export function frameOf(status: LinkStatus, fallback: number): number {
+  if (status.kind === "live" || status.kind === "paused") return status.frame;
+  if (status.kind === "silent" || status.kind === "lost") return status.lastFrame;
+  return fallback;
 }
 
 /**
- * Skeleton stub for `startScene`; implemented in its wave.
+ * The text of a thrown value.
  *
- * @param _ctx - The ctx.
+ * @param error - Anything thrown.
+ * @returns Its message.
  * @example
  * ```ts
- * startScene();
+ * messageOf(new Error("[moku-editor] timeout")); // "[moku-editor] timeout"
  * ```
  */
-export function startScene(_ctx: RenderViewCtx): void {
-  throw new Error("not implemented");
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * Skeleton stub for `stopScene`; implemented in its wave.
+ * Records a value of the wrong shape: sets `error`, warns once per value.
  *
- * @param _ctx - The ctx.
+ * @param ctx - Domain context of renderView.
+ * @param id - The source id.
+ * @param detail - Where it was wrong, if known.
  * @example
  * ```ts
- * stopScene();
+ * shapeError(ctx, "game.render"); // ctx.state.error === "game.render: unexpected shape"
  * ```
  */
-export function stopScene(_ctx: RenderViewCtx): void {
-  throw new Error("not implemented");
+function shapeError(ctx: RenderViewCtx, id: string, detail = ""): void {
+  ctx.state.error = `${id}: unexpected shape${detail}`;
+  ctx.log.warn("renderView: unexpected source shape", { id });
+  notify(ctx.state);
 }
 
 /**
- * Skeleton stub for `calibrate`; implemented in its wave.
+ * Clears the shape error of a source after a good value.
  *
- * @param _ctx - The ctx.
+ * @param state - renderView state.
+ * @param id - The source id.
  * @example
  * ```ts
- * calibrate();
+ * clearError(ctx.state, "game.render");
  * ```
  */
-export function calibrate(_ctx: RenderViewCtx): Promise<void> {
-  throw new Error("not implemented");
+function clearError(state: RenderViewState, id: string): void {
+  if (state.error?.startsWith(`${id}:`)) state.error = undefined;
 }
 
 /**
- * Skeleton stub for `readCatalogue`; implemented in its wave.
+ * The frame of the current link status, the last game.render frame as the fallback.
  *
- * @param _ctx - The ctx.
+ * @param ctx - Domain context of renderView.
+ * @returns The frame.
  * @example
  * ```ts
- * readCatalogue();
+ * currentFrame(ctx); // 1841 while live at frame 1841
  * ```
  */
-export function readCatalogue(_ctx: RenderViewCtx): Promise<TextureCatalogue | null> {
-  throw new Error("not implemented");
+function currentFrame(ctx: RenderViewCtx): number {
+  return frameOf(ctx.require(linkPlugin).status(), ctx.state.lastFrame ?? 0);
+}
+
+/**
+ * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples).
+ *
+ * @param ctx - Domain context of renderView.
+ * @param value - The value.
+ * @example
+ * ```ts
+ * onRender(ctx, { fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 });
+ * ```
+ */
+function onRender(ctx: RenderViewCtx, value: Json): void {
+  const { state, config } = ctx;
+  const stats = asRenderStats(value);
+  if (stats === undefined) {
+    shapeError(ctx, "game.render");
+    return;
+  }
+
+  const frame = currentFrame(ctx);
+  clearError(state, "game.render");
+  state.render = stats;
+  state.lastFrame = frame;
+  state.firstFrame ??= frame;
+  state.fps = [...state.fps, stats.fps].slice(-config.fpsSamples);
+  notify(state);
+}
+
+/**
+ * One game.assets value: the bundles gone since the previous value enter the release log.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param value - The value.
+ * @example
+ * ```ts
+ * onAssets(ctx, { textureMb: 3.5, budgetMb: 192, bundles: [] });
+ * ```
+ */
+function onAssets(ctx: RenderViewCtx, value: Json): void {
+  const { state, config } = ctx;
+  const usage = asAssetsUsage(value);
+  if (usage === undefined) {
+    shapeError(ctx, "game.assets");
+    return;
+  }
+
+  const gone = releasesOf(state.loaded, usage, state.lastFrame ?? currentFrame(ctx));
+  clearError(state, "game.assets");
+  state.releases = [...gone, ...state.releases].slice(0, config.releaseLogMax);
+  state.loaded = new Map(
+    usage.bundles.map(bundle => [bundle.name, { tier: bundle.tier, mb: bundle.mb }])
+  );
+  state.assets = usage;
+  notify(state);
+}
+
+/**
+ * Starts the session watches of game.render and game.assets (once).
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * startTracker(ctx); // ctx.state.tracker holds the two unwatch functions
+ * ```
+ */
+export function startTracker(ctx: RenderViewCtx): void {
+  if (ctx.state.tracker.length > 0) return;
+
+  const link = ctx.require(linkPlugin);
+  ctx.state.tracker.push(
+    link.watch("game.render", undefined, value => onRender(ctx, value)),
+    link.watch("game.assets", undefined, value => onAssets(ctx, value))
+  );
+}
+
+/**
+ * Builds the scene from the stored sources now: texture use, the roots open on the first scene
+ * of a session, a waiting reveal, the box follows its element. A shape error keeps the last scene.
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * buildNow(ctx); // ctx.state.scene.nodes.size === 101 on the merge-game board
+ * ```
+ */
+function buildNow(ctx: RenderViewCtx): void {
+  const { state } = ctx;
+  const { ui, entities, projections } = state.sources;
+  if (ui === undefined || entities === undefined || projections === undefined) return;
+
+  const built = buildScene({
+    ui,
+    entities,
+    projections,
+    frame: currentFrame(ctx),
+    calibration: state.calibration
+  });
+  if ("error" in built) {
+    shapeError(ctx, built.source, ` at ${built.path}`);
+    return;
+  }
+
+  if (state.scene === undefined) for (const root of built.roots) state.tree.open.add(root);
+  state.scene = built;
+  updateTextureUse(state, built);
+  applyPendingReveal(ctx);
+  drawBox(ctx);
+  notify(state);
+}
+
+/**
+ * Runs a queued build: dropped once the scene watches stopped.
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * requestAnimationFrame(() => runBuild(ctx));
+ * ```
+ */
+function runBuild(ctx: RenderViewCtx): void {
+  queued.delete(ctx.state);
+  if (ctx.state.watching.length > 0) buildNow(ctx);
+}
+
+/**
+ * Queues one scene build on the next animation frame; a burst of values builds once. A build
+ * queued before the scene watches stopped is dropped.
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * scheduleBuild(ctx);
+ * ```
+ */
+function scheduleBuild(ctx: RenderViewCtx): void {
+  const { state } = ctx;
+  if (queued.has(state)) return;
+
+  queued.add(state);
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    globalThis.requestAnimationFrame(() => runBuild(ctx));
+  } else {
+    setTimeout(() => runBuild(ctx), 16);
+  }
+}
+
+/**
+ * Starts the scene watches while Render is shown (once): every value is stored, game.ui asks the
+ * calibration once, and a build is queued.
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * startScene(ctx); // watches game.ui, game.entities, game.projections
+ * ```
+ */
+export function startScene(ctx: RenderViewCtx): void {
+  const { state } = ctx;
+  if (state.watching.length > 0) return;
+
+  const link = ctx.require(linkPlugin);
+  for (const [key, id] of SCENE_SOURCES) {
+    const stop = link.watch(id, undefined, value => {
+      // A late value after stopScene is dropped.
+      if (state.watching.length === 0) return;
+      state.sources[key] = value;
+      if (key === "ui" && !state.calibrationAsked) void calibrate(ctx);
+      scheduleBuild(ctx);
+    });
+    state.watching.push(stop);
+  }
+}
+
+/**
+ * Stops the scene watches and forgets their values (Render hidden).
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * stopScene(ctx); // ctx.state.watching.length === 0
+ * ```
+ */
+export function stopScene(ctx: RenderViewCtx): void {
+  const { state } = ctx;
+  const stops = state.watching;
+  state.watching = [];
+  state.sources = {};
+  for (const stop of stops) stop();
+}
+
+/**
+ * Calibrates from the stored game.ui: the first keyed element's drawn rect and its game.rect
+ * (one read). Marks the calibration asked first, so a burst reads once; queues a rebuild while
+ * the scene is watched. Never rejects.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns Resolves when the calibration is known.
+ * @example
+ * ```ts
+ * await calibrate(ctx); // ctx.state.calibration → { scale: 1, x: 0, y: 0 } on the inert renderer
+ * ```
+ */
+export async function calibrate(ctx: RenderViewCtx): Promise<void> {
+  const { state } = ctx;
+  const { ui } = state.sources;
+  if (ui === undefined) return;
+
+  state.calibrationAsked = true;
+  const target = calibrationTarget(ui);
+  if (target === undefined) {
+    state.calibration = undefined;
+    notify(state);
+    return;
+  }
+
+  try {
+    const page = rectOf(await ctx.require(linkPlugin).read("game.rect", { key: target.key }));
+    state.calibration = page === undefined ? undefined : calibrationFrom(page, target.drawn);
+  } catch (error) {
+    state.calibration = undefined;
+    ctx.log.warn("renderView: calibration failed", { key: target.key, message: messageOf(error) });
+  }
+  if (state.watching.length > 0) scheduleBuild(ctx);
+  notify(state);
+}
+
+/**
+ * Forgets the calibration of the old device; calibrates again while the scene is watched.
+ *
+ * @param ctx - Domain context of renderView.
+ * @example
+ * ```ts
+ * workspace.onPrefs(() => recalibrate(ctx));
+ * ```
+ */
+export function recalibrate(ctx: RenderViewCtx): void {
+  ctx.state.calibrationAsked = false;
+  if (ctx.state.watching.length > 0) void calibrate(ctx);
+}
+
+/**
+ * Reads one manifest candidate; a missing or unreadable file is undefined.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param path - A candidate path.
+ * @returns The catalogue, or undefined.
+ * @example
+ * ```ts
+ * await readCandidate(ctx, "public/manifest.json"); // { path: "public/manifest.json", textures, bundles }
+ * ```
+ */
+async function readCandidate(
+  ctx: RenderViewCtx,
+  path: string
+): Promise<TextureCatalogue | undefined> {
+  try {
+    const file = await ctx.require(linkPlugin).files.read(path);
+    return parseTextureManifest(file.text, path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The game's texture catalogue: the first `manifestPaths` entry that holds a version-1 asset
+ * manifest, read through link.files.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns The catalogue, or null when no path holds one.
+ * @example
+ * ```ts
+ * (await readCatalogue(ctx))?.textures.get("board.cell")?.width; // 224
+ * ```
+ */
+export async function readCatalogue(ctx: RenderViewCtx): Promise<TextureCatalogue | null> {
+  for (const path of ctx.config.manifestPaths) {
+    const catalogue = await readCandidate(ctx, path);
+    if (catalogue !== undefined) return catalogue;
+  }
+  // eslint-disable-next-line unicorn/no-null -- null is the spec's "looked, not found" marker
+  return null;
+}
+
+/**
+ * Re-reads the catalogue and the calibration (the Refresh action, once per session when Render
+ * is shown, a session change). Skipped while the link is not live or paused. Never rejects.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns Resolves when both reads settled.
+ * @example
+ * ```ts
+ * await refreshRenderView(ctx); // ctx.state.catalogue?.path === "manifest.json"
+ * ```
+ */
+export async function refreshRenderView(ctx: RenderViewCtx): Promise<void> {
+  const { kind } = ctx.require(linkPlugin).status();
+  if (kind !== "live" && kind !== "paused") return;
+
+  const { state } = ctx;
+  state.catalogue = await readCatalogue(ctx);
+  setTexturePalette(ctx);
+  notify(state);
+  state.calibrationAsked = false;
+  await calibrate(ctx);
 }

@@ -1,1 +1,36 @@
-/* stateView · RunnerCard. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* stateView · "Runner" card: property rows (label 82 px / value) on the [data-props] primitive, mono values for path, flow · node, stack and last edge, then "Gate waits for N" with one mono tag per intent. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="state"] [data-part="runner-card"]) {
+  [data-props] {
+    grid-template-columns: 82px minmax(0, 1fr);
+    margin: 0;
+    padding: 10px 12px;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--text-ink);
+  }
+
+  [data-part="mono"] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="gate-title"] {
+    margin: 0;
+    padding: 8px 12px 4px;
+    border-top: 1px solid var(--line-1);
+    color: var(--text-muted);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="gate"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0 12px 12px;
+    list-style: none;
+  }
+}

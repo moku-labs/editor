@@ -1,1 +1,143 @@
-/* filesView · Previews. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · Previews. Markdown notes (front matter on the [data-props] atom, the safe body), the invalid JSON bar, the series card on [data-card] with "Open contact sheet", and the image on a checkerboard (fit / 100 %) with its caption. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="files"] [data-part="preview"]) {
+  :scope[data-preview="markdown"] {
+    max-width: 72ch;
+    padding: 16px 20px 32px;
+    line-height: var(--line-height-ui);
+  }
+
+  [data-front-matter="note"] {
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  [data-front-matter="raw"] {
+    margin: 0 0 16px;
+    padding: 8px 12px;
+    border-radius: var(--radius-6);
+    background: var(--surface-panel-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+    white-space: pre-wrap;
+  }
+
+  dd {
+    margin: 0;
+  }
+
+  dd button + button {
+    margin-left: 8px;
+  }
+
+  [data-link] {
+    color: var(--text-ink);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+    text-decoration: underline;
+  }
+
+  [data-md] :is(h1, h2, h3, h4, h5, h6) {
+    margin: 1.2em 0 0.4em;
+    font-weight: 600;
+  }
+
+  [data-md] :is(p, ul, ol, blockquote, pre) {
+    margin: 0 0 0.8em;
+  }
+
+  [data-md] blockquote {
+    padding-left: 12px;
+    border-left: 2px solid var(--line-2);
+    color: var(--text-2);
+  }
+
+  [data-md] hr {
+    border: 0;
+    border-top: 1px solid var(--line-1);
+  }
+
+  [data-md] code,
+  [data-md-code] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+  }
+
+  [data-md-code] {
+    padding: 8px 12px;
+    overflow-x: auto;
+    border-radius: var(--radius-6);
+    background: var(--surface-panel-2);
+    line-height: var(--line-height-code);
+  }
+
+  [data-md] a {
+    color: var(--text-ink);
+  }
+
+  :scope[data-preview="json-bar"] {
+    margin: 0;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line-1);
+    background: color-mix(in srgb, var(--status-warn) 14%, transparent);
+    font-size: var(--font-size-12-5);
+  }
+
+  :scope[data-preview="series"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 12px;
+  }
+
+  :scope[data-preview="series"] p {
+    margin: 0;
+  }
+
+  :scope[data-preview="image"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0;
+  }
+
+  [data-image-toggle] {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+    background-color: var(--surface-panel-2);
+    background-image:
+      linear-gradient(45deg, var(--line-1) 25%, transparent 25%, transparent 75%, var(--line-1) 75%),
+      linear-gradient(45deg, var(--line-1) 25%, transparent 25%, transparent 75%, var(--line-1) 75%);
+    background-position:
+      0 0,
+      8px 8px;
+    background-size: 16px 16px;
+    cursor: zoom-in;
+  }
+
+  :scope[data-fit="fit"] img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  :scope[data-fit="actual"] [data-image-toggle] {
+    cursor: zoom-out;
+  }
+
+  figcaption {
+    padding: 6px 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  :is(button, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+}

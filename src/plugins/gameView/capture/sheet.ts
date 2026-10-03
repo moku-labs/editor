@@ -1,46 +1,277 @@
 /**
- * @file gameView plugin — capture/sheet.ts (skeleton stubs, implemented in its wave).
+ * @file gameView plugin — the contact sheet (E2): open a saved series (index.json, then every PNG
+ * with readBinary, R1), step the large view, mark bugs and save index.json once per burst with
+ * its version, close layer by layer for Esc.
  */
-import type { GameViewCtx } from "../types";
+import { linkPlugin } from "../../link";
+import { workspacePlugin } from "../../workspace";
+import { reportFailure } from "../report";
+import { notify } from "../state";
+import type { GameViewCtx, SeriesIndex, SeriesShot, Sheet } from "../types";
+import { folderOf } from "./naming";
+import { formatIndex } from "./series";
 
 /**
- * Skeleton stub for `openSheet`; implemented in its wave.
+ * Debounce of the index.json save after the last bug toggle.
+ */
+const SHEET_SAVE_MS = 400;
+
+/**
+ * A record read from JSON.
+ */
+type JsonRecord = { readonly [key: string]: unknown };
+
+/**
+ * True for a plain object of a parsed JSON file.
  *
- * @param _ctx - The ctx.
- * @param _indexPath - The indexPath.
+ * @param value - A parsed value.
+ * @returns Whether it is a record.
  * @example
  * ```ts
- * openSheet();
+ * isRecord({ a: 1 }); // true
  * ```
  */
-export function openSheet(_ctx: GameViewCtx, _indexPath: string): Promise<void> {
-  throw new Error("not implemented");
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * Skeleton stub for `stepSheet`; implemented in its wave.
+ * Reads one shot of an index.json; `bug` defaults to false.
  *
- * @param _ctx - The ctx.
- * @param _direction - The direction.
+ * @param value - A parsed shot.
+ * @returns The shot, or undefined.
  * @example
  * ```ts
- * stepSheet();
+ * shotEntryOf({ file: "001.png", frame: 1, atMs: 0 })?.bug; // false
  * ```
  */
-export function stepSheet(_ctx: GameViewCtx, _direction: 1 | -1): void {
-  throw new Error("not implemented");
+function shotEntryOf(value: unknown): SeriesShot | undefined {
+  if (!isRecord(value)) return undefined;
+  const { file, frame, atMs, bug } = value;
+  if (typeof file !== "string" || typeof frame !== "number" || typeof atMs !== "number") {
+    return undefined;
+  }
+  return { file, frame, atMs, bug: bug === true };
 }
 
 /**
- * Skeleton stub for `toggleBug`; implemented in its wave.
+ * Reads the optional device of an index.json.
  *
- * @param _ctx - The ctx.
- * @param _shot - The shot.
+ * @param value - The parsed `device` field.
+ * @returns The device, or undefined.
  * @example
  * ```ts
- * toggleBug();
+ * indexDeviceOf({ name: "iPhone 15", w: 393, h: 852, orientation: "portrait" })?.name; // "iPhone 15"
  * ```
  */
-export function toggleBug(_ctx: GameViewCtx, _shot: number): void {
-  throw new Error("not implemented");
+function indexDeviceOf(value: unknown): SeriesIndex["device"] {
+  if (!isRecord(value)) return undefined;
+  const { name, w, h, orientation } = value;
+  if (typeof name !== "string" || typeof w !== "number" || typeof h !== "number") return undefined;
+  if (orientation !== "portrait" && orientation !== "landscape") return undefined;
+  return { name, w, h, orientation };
+}
+
+/**
+ * Reads a parsed index.json (the shape filesView reads too).
+ *
+ * @param value - The parsed file (untrusted).
+ * @returns The index, or undefined for another shape.
+ * @example
+ * ```ts
+ * seriesIndexOf({ label: "a", durationMs: 1, intervalMs: 1, fromFrame: 0, shots: [] })?.label; // "a"
+ * ```
+ */
+export function seriesIndexOf(value: unknown): SeriesIndex | undefined {
+  if (!isRecord(value) || !Array.isArray(value.shots)) return undefined;
+  const { label, durationMs, intervalMs, fromFrame } = value;
+  if (
+    typeof label !== "string" ||
+    typeof durationMs !== "number" ||
+    typeof intervalMs !== "number" ||
+    typeof fromFrame !== "number"
+  ) {
+    return undefined;
+  }
+  const shots = value.shots.map(shot => shotEntryOf(shot));
+  if (shots.includes(undefined)) return undefined;
+
+  const index: SeriesIndex = {
+    label,
+    durationMs,
+    intervalMs,
+    fromFrame,
+    shots: shots.filter(shot => shot !== undefined)
+  };
+  const device = indexDeviceOf(value.device);
+  if (device !== undefined) index.device = device;
+  if (value.stoppedEarly === true) index.stoppedEarly = true;
+  return index;
+}
+
+/**
+ * Reads one PNG of a series; a missing file is undefined (a placeholder tile).
+ *
+ * @param ctx - Domain context of gameView.
+ * @param path - The PNG path.
+ * @returns The data URL, or undefined.
+ * @example
+ * ```ts
+ * await readImage(ctx, ".moku/captures/series-a/001.png"); // "data:image/png;base64,…"
+ * ```
+ */
+async function readImage(ctx: GameViewCtx, path: string): Promise<string | undefined> {
+  try {
+    const image = await ctx.require(linkPlugin).files.readBinary(path);
+    return image.dataUrl;
+  } catch {
+    return;
+  }
+}
+
+/**
+ * Opens a saved series' contact sheet; shows Game.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param indexPath - The series' index.json.
+ * @returns Resolves when the sheet is open or the failure was toasted.
+ * @example
+ * ```ts
+ * await openSheet(ctx, ".moku/captures/series-2026-09-24-1015/index.json");
+ * ```
+ */
+export async function openSheet(ctx: GameViewCtx, indexPath: string): Promise<void> {
+  ctx.require(workspacePlugin).show("game");
+  try {
+    const file = await ctx.require(linkPlugin).files.read(indexPath);
+    const parsed: unknown = JSON.parse(file.text);
+    const index = seriesIndexOf(parsed);
+    if (index === undefined) {
+      throw new Error(
+        `[moku-editor] ${indexPath} is not a series index.\n  Open a series folder's index.json.`
+      );
+    }
+    const folder = folderOf(indexPath);
+    const images = await Promise.all(
+      index.shots.map(shot => readImage(ctx, `${folder}${shot.file}`))
+    );
+    ctx.state.series.sheet = { indexPath, index, images, version: file.version, big: undefined };
+    notify(ctx.state);
+  } catch (error) {
+    reportFailure(ctx, "Contact sheet not readable", "gameView: sheet failed", error);
+  }
+}
+
+/**
+ * Opens the large view on one shot.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param shot - The shot index.
+ * @example
+ * ```ts
+ * showShot(ctx, 3); // "Shot 4 of 20"
+ * ```
+ */
+export function showShot(ctx: Pick<GameViewCtx, "state">, shot: number): void {
+  const { sheet } = ctx.state.series;
+  if (sheet === undefined || sheet.index.shots[shot] === undefined) return;
+  sheet.big = shot;
+  notify(ctx.state);
+}
+
+/**
+ * Steps the large view (← →), clamped at the ends; the first step opens it.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param direction - 1 next, -1 back.
+ * @example
+ * ```ts
+ * stepSheet(ctx, 1); // the large view moves to the next shot
+ * ```
+ */
+export function stepSheet(ctx: Pick<GameViewCtx, "state">, direction: 1 | -1): void {
+  const { sheet } = ctx.state.series;
+  const count = sheet?.index.shots.length ?? 0;
+  if (sheet === undefined || count === 0) return;
+
+  if (sheet.big === undefined) {
+    sheet.big = direction === 1 ? 0 : count - 1;
+  } else {
+    sheet.big = Math.min(count - 1, Math.max(0, sheet.big + direction));
+  }
+  notify(ctx.state);
+}
+
+/**
+ * Saves index.json of a sheet with its version (the debounced end of a bug burst).
+ *
+ * @param ctx - Domain context of gameView.
+ * @param sheet - The sheet.
+ * @returns Resolves when saved or the failure was toasted.
+ * @example
+ * ```ts
+ * await saveSheet(ctx, ctx.state.series.sheet!); // toast "✓ Saved · …/index.json"
+ * ```
+ */
+async function saveSheet(ctx: GameViewCtx, sheet: Sheet): Promise<void> {
+  clearTimeout(ctx.state.timers.sheetSave);
+  delete ctx.state.timers.sheetSave;
+  try {
+    const written = await ctx
+      .require(linkPlugin)
+      .files.write(sheet.indexPath, formatIndex(sheet.index), sheet.version);
+    sheet.version = written.version;
+    ctx.require(workspacePlugin).toast("✓ Saved", sheet.indexPath);
+  } catch (error) {
+    reportFailure(ctx, "Save failed", "gameView: sheet save failed", error);
+  }
+}
+
+/**
+ * Flips the bug mark of a shot; index.json is saved 400 ms after the last toggle.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param shot - The shot index.
+ * @example
+ * ```ts
+ * toggleBug(ctx, 2); // shot 3 marked; one write after the burst
+ * ```
+ */
+export function toggleBug(ctx: GameViewCtx, shot: number): void {
+  const { state } = ctx;
+  const { sheet } = state.series;
+  const entry = sheet?.index.shots[shot];
+  if (sheet === undefined || entry === undefined) return;
+
+  entry.bug = !entry.bug;
+  notify(state);
+  clearTimeout(state.timers.sheetSave);
+  state.timers.sheetSave = setTimeout(() => {
+    void saveSheet(ctx, sheet);
+  }, SHEET_SAVE_MS);
+}
+
+/**
+ * Esc on the contact sheet: closes the large view first, then the sheet (saving pending marks).
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns True when something closed.
+ * @example
+ * ```ts
+ * workspace.keys.escape("contactSheet", () => closeSheetLayer(ctx));
+ * ```
+ */
+export function closeSheetLayer(ctx: GameViewCtx): boolean {
+  const { state } = ctx;
+  const { sheet } = state.series;
+  if (sheet === undefined) return false;
+
+  if (sheet.big === undefined) {
+    if (state.timers.sheetSave !== undefined) void saveSheet(ctx, sheet);
+    state.series.sheet = undefined;
+  } else {
+    sheet.big = undefined;
+  }
+  notify(state);
+  return true;
 }

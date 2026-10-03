@@ -1,18 +1,23 @@
 /**
- * @file consoleView plugin — view/useConsole.ts (skeleton stubs, implemented in its wave).
+ * @file consoleView plugin — the Preact hook of the Console: re-renders a component on every
+ * change the api reports and returns what it selects.
  */
+import { useEffect, useState } from "preact/hooks";
 import type { ConsoleApi } from "../types";
 
 /**
- * Skeleton stub for `useConsole`; implemented in its wave.
+ * Subscribes the component to the console api and returns the selected value of this render.
  *
- * @param _api - The api.
- * @param _select - The select.
+ * @param api - The console api.
+ * @param select - Reads what the component shows.
+ * @returns The selected value.
  * @example
- * ```ts
- * useConsole();
+ * ```tsx
+ * const counts = useConsole(api, () => api.counts()); // { all: 8, debug: 0, info: 6, warn: 2, error: 0 }
  * ```
  */
-export function useConsole<T>(_api: ConsoleApi, _select: () => T): T {
-  throw new Error("not implemented");
+export function useConsole<T>(api: ConsoleApi, select: () => T): T {
+  const [, setVersion] = useState(0);
+  useEffect(() => api.subscribe(() => setVersion(version => version + 1)), [api]);
+  return select();
 }

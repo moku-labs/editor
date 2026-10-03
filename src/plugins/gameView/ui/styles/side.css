@@ -1,1 +1,203 @@
-/* gameView · side. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · side panel (C7, C8): 280 px, Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers, the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-game="side"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--line-1);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-size: var(--font-size-12-5);
+  }
+
+  [role="tablist"] {
+    display: flex;
+    gap: 16px;
+    height: 30px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line-1);
+  }
+
+  [role="tab"] {
+    border-bottom: 2px solid transparent;
+    color: var(--text-2);
+  }
+
+  [role="tab"][aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--text-ink);
+  }
+
+  [role="tabpanel"] {
+    flex: 1;
+    min-height: 0;
+    padding: 12px 14px;
+    overflow: auto;
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  section {
+    margin-top: 14px;
+  }
+
+  h3 {
+    font-size: var(--font-size-14);
+    font-weight: 600;
+  }
+
+  h4 {
+    margin-bottom: 6px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  [data-empty] {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+    color: var(--text-2);
+  }
+
+  [data-part="crumbs"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  [data-part="element"] > header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  [data-part="bounds"] {
+    display: grid;
+    grid-template-columns: repeat(4, auto 1fr);
+    gap: 4px 6px;
+    font-family: var(--font-mono);
+  }
+
+  [data-part="bounds"] dt,
+  [data-part="device"] {
+    color: var(--text-muted);
+  }
+
+  [data-part="entity"] > div,
+  [data-part="children"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  [data-part="style-card"] {
+    padding: 10px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel-2);
+  }
+
+  [data-part="style-card"] header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  [data-part="where"],
+  [data-part="lines"] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-part="lines"] {
+    margin: 8px 0;
+    line-height: var(--line-height-code);
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  [data-part="gutter"] {
+    display: inline-block;
+    min-width: 3ch;
+    margin-right: 10px;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
+  [data-field] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 26px;
+  }
+
+  [data-field] dd {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+  }
+
+  [data-field] button {
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-4);
+  }
+
+  [data-part="error"] {
+    color: var(--status-error);
+  }
+
+  [data-part="devices"] {
+    display: grid;
+    gap: 4px;
+  }
+
+  [data-part="devices"] button {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-6);
+    text-align: left;
+  }
+
+  [data-part="devices"] button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  [data-part="devices"] [data-part="safe"] {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+  }
+
+  [data-part="overlay-box"] header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  [data-part="render"],
+  [data-part="cheats"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  [data-part="cheats"] li {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+  }
+}

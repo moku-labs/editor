@@ -1,1 +1,117 @@
-/* flowView · node-card. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · node card (G, F9): 172×44, glyph + name + tags on row 1, kind line on row 2; selected, current, dimmed, pinned and trail states by data attributes. No @layer wrapper (R7). */
+
+@scope ([data-flow="node-card"]) {
+  :scope {
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    padding: 4px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-7);
+    background: var(--surface-panel);
+    font-size: max(var(--flow-label-min), var(--font-size-12-5));
+    cursor: grab;
+    user-select: none;
+  }
+
+  :scope:hover {
+    background: var(--surface-panel-2);
+  }
+
+  :scope:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  :scope[data-selected] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  :scope[data-current] {
+    border: 1.5px solid var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+
+  :scope[data-dimmed] {
+    opacity: 0.16;
+  }
+
+  :scope[data-trail] {
+    border-color: var(--accent-2);
+  }
+
+  [data-part="row"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  [data-part="name"] {
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-part="kind"] {
+    overflow: hidden;
+    color: var(--text-2);
+    font: max(var(--flow-label-min), var(--font-size-11)) / 1.3 var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-part="glyph"] {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--text-muted);
+  }
+
+  [data-glyph="rest"] {
+    background: linear-gradient(90deg, var(--accent) 35%, transparent 35% 65%, var(--accent) 65%);
+  }
+
+  [data-glyph="sub-flow"] {
+    background: var(--teal);
+  }
+
+  [data-glyph="slot"] {
+    border: 1.5px dashed var(--status-warn);
+    background: transparent;
+  }
+
+  [data-glyph="start"] {
+    border-radius: 50%;
+    background: var(--text-ink);
+  }
+
+  [data-tag="on-stack"] {
+    padding: 0 5px;
+    border-radius: var(--radius-4);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: var(--font-size-11);
+  }
+
+  [data-part="pin"] {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 0;
+    height: 0;
+    border-top: 10px solid var(--accent);
+    border-left: 10px solid transparent;
+  }
+
+  [data-part="expand"] {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    color: var(--teal);
+    cursor: pointer;
+  }
+}

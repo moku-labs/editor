@@ -1,1 +1,33 @@
-/* consoleView · ConsoleView. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* consoleView · ConsoleView. The Console workspace frame: toolbar on top, the table area, the empty state and the bottom drawer. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="console"] [data-part="console"]) to (
+  [data-part="toolbar"],
+  [data-part="logtable"],
+  [data-part="drawer"]
+) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-13);
+    line-height: 1.42;
+  }
+
+  [data-body] {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-block-size: 0;
+  }
+
+  [data-empty] {
+    margin: auto;
+    padding: 24px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+}

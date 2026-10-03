@@ -1,1 +1,136 @@
-/* gameView · sheet. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · contact sheet (E2): a modal dialog in the top layer (R4), radius 12, the tiles grid (≥ 98 px), the large view with its filmstrip (30 px), the footer with the note select. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-game="sheet"]) {
+  :scope {
+    width: min(960px, calc(100vw - 64px));
+    max-height: calc(100vh - 64px);
+    padding: 16px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-12);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+    color: var(--text-ink);
+    font-size: var(--font-size-12-5);
+  }
+
+  :scope::backdrop {
+    background: color-mix(in srgb, var(--text-ink) 30%, transparent);
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  h2 {
+    flex: 1;
+    font-size: var(--font-size-13);
+    font-weight: 600;
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  [data-part="grid"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(98px, 1fr));
+    gap: 8px;
+  }
+
+  [data-part="tile"] {
+    position: relative;
+  }
+
+  [data-part="open"] {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+  }
+
+  [data-part="open"] img,
+  [data-part="missing"] {
+    width: 100%;
+    aspect-ratio: 9 / 19.5;
+    border-radius: var(--radius-6);
+    background: var(--surface-canvas);
+    object-fit: cover;
+  }
+
+  [data-part="missing"] {
+    display: grid;
+    place-items: center;
+    color: var(--text-muted);
+  }
+
+  [data-part="caption"] {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-10-5);
+  }
+
+  [data-part="bug"] {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-4);
+    background: var(--surface-panel);
+    opacity: 0;
+  }
+
+  [data-part="tile"]:is(:hover, :focus-within) [data-part="bug"],
+  [data-part="bug"][aria-pressed="true"] {
+    opacity: 1;
+  }
+
+  [data-part="tile"][data-bug] [data-part="open"] img {
+    outline: 2px solid var(--status-error);
+  }
+
+  [data-part="bug"][aria-pressed="true"] {
+    background: var(--status-error);
+    color: var(--surface-panel);
+  }
+
+  [data-part="view"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  [data-part="view"] img {
+    max-height: 56vh;
+    border-radius: var(--radius-8);
+  }
+
+  [data-part="strip"] {
+    display: flex;
+    gap: 4px;
+    margin: 10px 0;
+    overflow-x: auto;
+  }
+
+  [data-part="strip"] img,
+  [data-part="strip"] [data-part="missing"] {
+    width: auto;
+    height: 30px;
+  }
+
+  [data-part="strip"] [aria-current="true"] {
+    outline: 2px solid var(--accent);
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    color: var(--text-muted);
+  }
+}

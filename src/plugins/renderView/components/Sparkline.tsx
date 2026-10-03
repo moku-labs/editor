@@ -1,27 +1,51 @@
 /**
- * @file renderView plugin — components/Sparkline.tsx (skeleton stubs, implemented in its wave).
+ * @file renderView plugin — the FPS sparkline: an inline SVG polyline, 1.5 px, accent colour.
  */
-import type { VNode } from "preact";
+import type { JSX } from "preact";
+import { cssVar } from "../../panels/shared/tokens";
+import { sparkPoints } from "../format";
+
+/**
+ * Width of the sparkline box.
+ */
+const WIDTH = 120;
+
+/**
+ * Height of the sparkline box.
+ */
+const HEIGHT = 28;
 
 /**
  * Props of `Sparkline`.
- *
- * @example
- * ```ts
- * const props = {} as never as SparklineProps;
- * ```
  */
 export type SparklineProps = { readonly samples: readonly number[] };
 
 /**
- * Skeleton stub for `Sparkline`; implemented in its wave.
+ * The FPS sparkline of the last samples.
  *
- * @param _props - The props.
+ * @param props - The samples.
+ * @returns The SVG.
  * @example
- * ```ts
- * Sparkline();
+ * ```tsx
+ * <Sparkline samples={[58, 60, 59]} />
  * ```
  */
-export function Sparkline(_props: SparklineProps): VNode {
-  throw new Error("not implemented");
+export function Sparkline(props: SparklineProps): JSX.Element {
+  return (
+    <svg
+      data-spark=""
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      width={WIDTH}
+      height={HEIGHT}
+      aria-hidden="true"
+    >
+      <polyline
+        points={sparkPoints(props.samples, WIDTH, HEIGHT)}
+        fill="none"
+        stroke={cssVar("accent")}
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+    </svg>
+  );
 }

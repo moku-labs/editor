@@ -1,1 +1,93 @@
-/* renderView · textures. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · textures. Bundle chips, the sortable table (sticky header, 27 px rows, sort arrows) and the use tags. State through data-sort, data-dir, data-use, data-hover. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="textures"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  h2 {
+    font-size: var(--font-size-13);
+    font-weight: 600;
+  }
+
+  [data-note],
+  [data-empty] {
+    color: var(--text-muted);
+    font-size: var(--font-size-11-5);
+  }
+
+  [role="radiogroup"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  [data-chip][aria-checked="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  table {
+    display: block;
+    max-block-size: 360px;
+    overflow: auto;
+    border-collapse: collapse;
+    font-size: var(--font-size-12);
+  }
+
+  th {
+    position: sticky;
+    inset-block-start: 0;
+    background: var(--surface-panel);
+    border-block-end: 1px solid var(--line-1);
+    text-align: start;
+  }
+
+  th button {
+    block-size: 27px;
+    padding-inline: 8px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 500;
+  }
+
+  th[data-dir] button {
+    color: var(--text-ink);
+  }
+
+  td {
+    block-size: 27px;
+    padding-inline: 8px;
+    border-block-end: 1px solid var(--line-1);
+    white-space: nowrap;
+  }
+
+  td[data-mono] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+    font-variant-numeric: tabular-nums;
+  }
+
+  tbody tr:hover,
+  tbody tr[data-hover] {
+    background: var(--surface-panel-2);
+  }
+
+  tr[data-use="not-seen"] td {
+    color: var(--text-muted);
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}

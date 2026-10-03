@@ -1,47 +1,89 @@
 /**
  * @file gameView plugin — state factory and the UI store (notify, subscribe).
  */
-import type { GameViewConfig, GameViewState } from "./types";
+import type { GameViewState } from "./types";
+
+/**
+ * Default length of a new series in the popover (D3).
+ */
+const DEFAULT_SERIES_MS = 2000;
+
+/**
+ * Default interval of a new series in the popover (D3).
+ */
+const DEFAULT_INTERVAL_MS = 100;
 
 /**
  * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read.
  *
- * @param _ctx - Minimal context.
- * @param _ctx.config - Resolved plugin config.
+ * @returns A fresh state for one app.
  * @example
  * ```ts
- * createGameViewState({ config }).tab; // "element"
+ * createGameViewState().series.durationMs; // 2000
  * ```
  */
-export function createGameViewState(_ctx: {
-  readonly config: Readonly<GameViewConfig>;
-}): GameViewState {
-  throw new Error("not implemented");
+export function createGameViewState(): GameViewState {
+  return {
+    tab: "element",
+    zoom: "fit",
+    safeArea: true,
+    picker: { on: false, hover: undefined },
+    selected: undefined,
+    treeHover: undefined,
+    sources: {},
+    watching: [],
+    scene: undefined,
+    calibration: undefined,
+    manifest: undefined,
+    card: undefined,
+    series: {
+      popover: false,
+      durationMs: DEFAULT_SERIES_MS,
+      intervalMs: DEFAULT_INTERVAL_MS,
+      recording: undefined,
+      sheet: undefined
+    },
+    styles: undefined,
+    overlayRoot: undefined,
+    listeners: new Set(),
+    timers: {},
+    disposers: [],
+    link: { status: undefined, session: undefined },
+    calibrationRead: false,
+    lookup: undefined,
+    cardHeld: false,
+    reloading: false,
+    highlightSeq: 0
+  };
 }
 
 /**
- * Calls every UI listener.
+ * Calls every UI listener (a listener may unsubscribe while called).
  *
- * @param _state - gameView state.
+ * @param state - gameView state.
  * @example
  * ```ts
- * notify(ctx.state);
+ * notify(createGameViewState()); // no listener, nothing happens
  * ```
  */
-export function notify(_state: GameViewState): void {
-  throw new Error("not implemented");
+export function notify(state: GameViewState): void {
+  for (const listener of state.listeners) listener();
 }
 
 /**
  * Adds a UI listener; returns an idempotent remover.
  *
- * @param _state - gameView state.
- * @param _fn - The listener.
+ * @param state - gameView state.
+ * @param fn - The listener.
+ * @returns Removes the listener.
  * @example
  * ```ts
- * const off = subscribe(ctx.state, rerender);
+ * const off = subscribe(createGameViewState(), () => {}); // off() removes it
  * ```
  */
-export function subscribe(_state: GameViewState, _fn: () => void): () => void {
-  throw new Error("not implemented");
+export function subscribe(state: GameViewState, fn: () => void): () => void {
+  state.listeners.add(fn);
+  return () => {
+    state.listeners.delete(fn);
+  };
 }

@@ -1,1 +1,83 @@
-/* stateView · JsonTree. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* stateView · JsonTree: rows 24 px, mono 12 px, twisty 10 px, indent 14 px per level; values by data-kind; data-changed rows get the soft accent fill and a 2 px accent inset, data-has-change keys turn accent. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-panel="state"] [data-part="json-tree"]) {
+  :scope {
+    --json-number: var(--status-warn);
+    --json-string: var(--status-live);
+    --json-boolean: var(--teal);
+    --json-null: var(--text-muted);
+
+    padding: 6px 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+  }
+
+  [role="treeitem"] {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding-inline: calc(var(--depth, 0) * 14px + 8px) 12px;
+    white-space: nowrap;
+    cursor: default;
+    transition: background var(--duration-zoom) var(--ease-out);
+  }
+
+  [role="treeitem"]:hover {
+    background: var(--surface-panel-2);
+  }
+
+  [role="treeitem"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  [data-part="key"] {
+    color: var(--text-ink);
+  }
+
+  [role="treeitem"][data-changed] {
+    background: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  [role="treeitem"][data-has-change] [data-part="key"] {
+    color: var(--accent);
+  }
+
+  [data-part="twisty"] {
+    flex: none;
+    width: 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-10);
+  }
+
+  [data-part="colon"],
+  [data-part="summary"] {
+    color: var(--text-muted);
+  }
+
+  [data-part="value"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-kind="number"] {
+    color: var(--json-number);
+  }
+
+  [data-kind="string"] {
+    color: var(--json-string);
+  }
+
+  [data-kind="boolean"] {
+    color: var(--json-boolean);
+  }
+
+  [data-kind="null"] {
+    color: var(--json-null);
+  }
+
+  [data-part="show-more"] {
+    color: var(--text-2);
+  }
+}

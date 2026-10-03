@@ -1,1 +1,124 @@
-/* renderView · tree. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · tree. The render tree card (C9): head counts, hint, rows with twisty, type badge and markers, the inline detail. State through data-selected, data-open. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="tree"]) {
+  :scope {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  h2 {
+    font-size: var(--font-size-13);
+    font-weight: 600;
+  }
+
+  [data-count] {
+    flex: 1;
+    color: var(--text-2);
+    font-size: var(--font-size-11-5);
+  }
+
+  header button,
+  [data-hint] button {
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    color: var(--text-2);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-hint],
+  [data-empty] {
+    color: var(--text-muted);
+    font-size: var(--font-size-11-5);
+  }
+
+  [role="tree"] {
+    max-block-size: 420px;
+    overflow: auto;
+  }
+
+  [role="treeitem"] {
+    display: block;
+    border-radius: var(--radius-6);
+    cursor: default;
+  }
+
+  [data-line] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    block-size: 26px;
+    padding-inline: calc(var(--depth, 0) * 14px + 4px) 6px;
+    font-size: var(--font-size-12);
+  }
+
+  [role="treeitem"]:hover > [data-line] {
+    background: var(--surface-panel-2);
+  }
+
+  [role="treeitem"][data-selected] > [data-line] {
+    background: var(--accent-soft);
+    color: var(--text-ink);
+  }
+
+  [data-twisty] {
+    inline-size: 14px;
+    color: var(--text-muted);
+    font-size: var(--font-size-10);
+  }
+
+  [data-twisty][hidden] {
+    display: inline-block;
+    visibility: hidden;
+  }
+
+  [data-name] {
+    font-weight: 500;
+  }
+
+  [data-marker] {
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-10-5);
+  }
+
+  [data-marker="entity"] {
+    color: var(--teal);
+  }
+
+  [data-detail] {
+    margin: 2px 8px 8px calc(var(--depth, 0) * 14px + 24px);
+    padding: 10px 12px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel-2);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-detail] [data-mono] {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+
+  [data-action="inspect"] {
+    height: 24px;
+    padding: 0 10px;
+    border-radius: var(--radius-6);
+    background: var(--accent);
+    color: var(--surface-panel);
+    font-size: var(--font-size-11-5);
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}

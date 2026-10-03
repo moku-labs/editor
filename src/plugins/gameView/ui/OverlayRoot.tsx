@@ -1,29 +1,197 @@
 /**
- * @file gameView plugin — ui/OverlayRoot.tsx (skeleton stubs, implemented in its wave).
+ * @file gameView plugin — gameView's root inside `workspace.gameFrame().overlay()` (device space,
+ * game CSS px, scaled with the frame, above the iframe, R4): the picker layer, the hover, selected
+ * and tree boxes with the hover label, the safe-area bands, the dynamic island, the home bar and
+ * the shutter flash. Foreign DOM with its own Preact root, created once, removed on stop.
  */
-
 import type { VNode } from "preact";
+import { render } from "preact";
+import type { PageRect, SceneNode } from "../../panels/shared/scene";
+import { refId } from "../../panels/shared/scene";
+import { workspacePlugin } from "../../workspace";
+import { resolveDevice } from "../../workspace/devices";
+import type { DeviceSize } from "../../workspace/types";
+import { hasHomeBar, hasIsland, safeBands } from "../stage/geometry";
+import { counterScale, labelPlacement, labelSize, labelText } from "../stage/label";
 import type { GameViewCtx } from "../types";
+import { PickerLayer } from "./PickerLayer";
+import { useGameView } from "./useGameView";
 
 /**
  * Props of `OverlayRoot`.
- *
- * @example
- * ```ts
- * const props = {} as never as OverlayRootProps;
- * ```
  */
 export type OverlayRootProps = { readonly ctx: GameViewCtx };
 
 /**
- * Skeleton stub for `OverlayRoot`; implemented in its wave.
+ * Inline position of a rect in device px.
  *
- * @param _props - The props.
+ * @param rect - The rect.
+ * @returns The style object.
  * @example
  * ```ts
- * OverlayRoot();
+ * rectStyle({ x: 1, y: 2, w: 3, h: 4 }); // { left: "1px", top: "2px", width: "3px", height: "4px" }
  * ```
  */
-export function OverlayRoot(_props: OverlayRootProps): VNode {
-  throw new Error("not implemented");
+function rectStyle(rect: PageRect): Record<string, string> {
+  return { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` };
+}
+
+/**
+ * The hover box with its counter-scaled label.
+ *
+ * @param props - The node, its rect, the frame scale and the device size.
+ * @param props.node - The hovered node.
+ * @param props.rect - Its rect.
+ * @param props.scale - The frame scale.
+ * @param props.device - The device size.
+ * @returns The box and the label.
+ * @example
+ * ```tsx
+ * <HoverBox node={node} rect={node.rect} scale={0.5} device={size} />
+ * ```
+ */
+function HoverBox(props: {
+  readonly node: SceneNode;
+  readonly rect: PageRect;
+  readonly scale: number;
+  readonly device: DeviceSize;
+}): VNode {
+  const { node, rect, scale, device } = props;
+  const text = labelText(node);
+  const place = labelPlacement(rect, labelSize(text, scale), device);
+  return (
+    <>
+      <div data-box="hover" style={rectStyle(rect)} />
+      <span
+        data-part="label"
+        data-flipped={place.flipped ? "" : undefined}
+        style={{
+          left: `${place.x}px`,
+          top: `${place.y}px`,
+          transform: `scale(${counterScale(scale)})`
+        }}
+      >
+        {text}
+      </span>
+    </>
+  );
+}
+
+/**
+ * The safe-area bands, the dynamic island and the home bar (guides only, F-G2).
+ *
+ * @param props - The device size and the preset.
+ * @param props.device - The resolved device.
+ * @param props.kind - The preset kind.
+ * @param props.safeTop - The preset's safeTop.
+ * @param props.safeBottom - The preset's safeBottom.
+ * @param props.orientation - The orientation.
+ * @returns The guides.
+ * @example
+ * ```tsx
+ * <SafeGuides device={size} kind="phone" safeTop={59} safeBottom={34} orientation="portrait" />
+ * ```
+ */
+function SafeGuides(props: {
+  readonly device: DeviceSize;
+  readonly kind: "phone" | "tablet" | "desktop";
+  readonly safeTop: number;
+  readonly safeBottom: number;
+  readonly orientation: "portrait" | "landscape";
+}): VNode {
+  const { device, kind, safeTop, safeBottom, orientation } = props;
+  return (
+    <div data-part="guides" data-orientation={orientation} aria-hidden="true">
+      {safeBands(device).map(band => (
+        <div
+          key={band.side}
+          data-part="band"
+          data-side={band.side}
+          style={{ "--band": `${band.size}px` }}
+        />
+      ))}
+      {hasIsland(kind, safeTop) && <div data-part="island" />}
+      {hasHomeBar(kind, safeBottom) && <div data-part="home" />}
+    </div>
+  );
+}
+
+/**
+ * The content of gameView's overlay root.
+ *
+ * @param props - The gameView domain context.
+ * @returns The overlay content.
+ * @example
+ * ```tsx
+ * render(<OverlayRoot ctx={ctx} />, root);
+ * ```
+ */
+export function OverlayRoot(props: OverlayRootProps): VNode {
+  const { ctx } = props;
+  const { state } = ctx;
+  useGameView(state, () => state.scene);
+  const workspace = ctx.require(workspacePlugin);
+  const active = workspace.active() === "game";
+  const choice = workspace.device();
+  const device = resolveDevice(choice.preset, choice.orientation);
+  const scale = workspace.gameFrame().box()?.scale ?? 1;
+  const nodes = state.scene?.nodes;
+  const hover =
+    state.picker.on && state.picker.hover !== undefined
+      ? nodes?.get(state.picker.hover)
+      : undefined;
+  const selected =
+    active && state.selected !== undefined ? nodes?.get(refId(state.selected)) : undefined;
+  const tree = state.treeHover === undefined ? undefined : nodes?.get(refId(state.treeHover));
+  const guides = active && state.safeArea && choice.preset.kind !== "desktop";
+
+  return (
+    <>
+      {guides && (
+        <SafeGuides
+          device={device}
+          kind={choice.preset.kind}
+          safeTop={choice.preset.safeTop}
+          safeBottom={choice.preset.safeBottom}
+          orientation={choice.orientation}
+        />
+      )}
+      {selected?.rect && <div data-box="selected" style={rectStyle(selected.rect)} />}
+      {tree?.rect && <div data-box="tree" style={rectStyle(tree.rect)} />}
+      {hover?.rect && <HoverBox node={hover} rect={hover.rect} scale={scale} device={device} />}
+      {active && state.picker.on && <PickerLayer ctx={ctx} />}
+      {active && state.card !== undefined && (
+        <div key={state.card.path} data-part="flash" aria-hidden="true" />
+      )}
+    </>
+  );
+}
+
+/**
+ * gameView's overlay root inside `gameFrame().overlay()`, created on first use with its own
+ * Preact root; the remover (render nothing, remove the element) goes into the disposers.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The root element, undefined without a DOM.
+ * @example
+ * ```ts
+ * ensureOverlayRoot(ctx)?.dataset.game; // "overlay"
+ * ```
+ */
+export function ensureOverlayRoot(ctx: GameViewCtx): HTMLElement | undefined {
+  const { state } = ctx;
+  if (state.overlayRoot !== undefined) return state.overlayRoot;
+  if (globalThis.document === undefined) return undefined;
+
+  const root = document.createElement("div");
+  root.dataset.game = "overlay";
+  ctx.require(workspacePlugin).gameFrame().overlay().append(root);
+  state.overlayRoot = root;
+  render(<OverlayRoot ctx={ctx} />, root);
+  state.disposers.push(() => {
+    render(undefined, root);
+    root.remove();
+    if (state.overlayRoot === root) state.overlayRoot = undefined;
+  });
+  return root;
 }

@@ -2,31 +2,60 @@
  * @file panels plugin — onStart (mount the active workspace, palette items, manifest recheck) and
  * onStop (unmount every panel, run cleanup).
  */
+import { linkPlugin } from "../link";
+import { workspacePlugin } from "../workspace";
+import { mountWorkspace, paletteItemOf, unmountRecord } from "./api";
 import type { PanelsCtx, PanelsState } from "./types";
 
 /**
- * onStart: mounts the active workspace, adds one palette item per panel, subscribes onManifest.
+ * onStart: takes the link status, mounts the active workspace into its host (attached by the
+ * shell once the tools page entry calls `workspace.mount`, R3), adds one palette item per panel,
+ * subscribes onManifest → recheck on every mounted panel, sets started. Removers go to cleanup.
  *
- * @param _ctx - Domain context of panels.
+ * @param ctx - Domain context of panels.
  * @example
  * ```ts
  * createToolsPlugin("panels", { onStart: startPanels });
  * ```
  */
-export function startPanels(_ctx: PanelsCtx): void {
-  throw new Error("not implemented");
+export function startPanels(ctx: PanelsCtx): void {
+  const { state } = ctx;
+  const link = ctx.require(linkPlugin);
+  const workspace = ctx.require(workspacePlugin);
+
+  state.status = link.status();
+  const active = workspace.active();
+  mountWorkspace(ctx, active, workspace.host(active));
+
+  if (state.panels.length > 0) {
+    state.cleanup.push(workspace.palette.add(state.panels.map(spec => paletteItemOf(ctx, spec))));
+  }
+  state.cleanup.push(
+    link.onManifest(manifest => {
+      for (const record of state.mounted.values()) {
+        for (const panel of record.panels.values()) panel.recheck(manifest);
+      }
+    })
+  );
+  state.started = true;
 }
 
 /**
  * onStop: unmounts every mounted panel (every unwatch runs), runs cleanup, clears mounted.
  *
- * @param _ctx - Teardown context.
- * @param _ctx.state - Own state.
+ * @param ctx - Teardown context.
+ * @param ctx.state - Own state.
  * @example
  * ```ts
  * createToolsPlugin("panels", { onStop: stopPanels });
  * ```
  */
-export function stopPanels(_ctx: { readonly state: PanelsState }): void {
-  throw new Error("not implemented");
+export function stopPanels(ctx: { readonly state: PanelsState }): void {
+  const { state } = ctx;
+
+  for (const record of state.mounted.values()) unmountRecord(record);
+  state.mounted.clear();
+  for (const remove of state.cleanup) remove();
+  state.cleanup = [];
+  state.started = false;
 }

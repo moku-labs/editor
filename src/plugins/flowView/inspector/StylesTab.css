@@ -1,1 +1,102 @@
-/* flowView · StylesTab. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · Styles tab (C4): header, key select, the card (fields shrink, never clip: min-width 0 on every field, M10), applied bar, excerpt, Used by chips. No @layer wrapper (R7). */
+
+@scope ([data-flow="styles-tab"]) {
+  :scope {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    min-width: 0;
+  }
+
+  [data-part="header"],
+  [data-part="applied"] {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="card"] {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+  }
+
+  [data-field] {
+    display: grid;
+    grid-template-columns: minmax(0, 86px) minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  [data-field] > *,
+  [data-part="stepper"] > *,
+  [data-part="value"] {
+    min-width: 0;
+  }
+
+  [data-part="label"] {
+    overflow: hidden;
+    color: var(--text-muted);
+    text-overflow: ellipsis;
+  }
+
+  [data-part="stepper"],
+  [data-part="value"] {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    overflow: hidden;
+    font: var(--font-size-12) / 1.4 var(--font-mono);
+  }
+
+  [data-part="swatch"] {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-4);
+  }
+
+  [data-part="applied"][data-ok] {
+    color: var(--status-live);
+  }
+
+  [data-part="excerpt"] {
+    overflow: auto;
+    font: var(--font-size-11-5) / var(--line-height-code) var(--font-mono);
+  }
+
+  [data-line] {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    white-space: pre;
+  }
+
+  [data-line][data-highlight] {
+    background: var(--accent-soft);
+  }
+
+  [data-part="gutter"] {
+    color: var(--text-muted);
+  }
+
+  [data-part="chip"] {
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 12px;
+    font-size: var(--font-size-11-5);
+  }
+
+  select,
+  button {
+    min-width: 0;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    cursor: pointer;
+  }
+}

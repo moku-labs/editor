@@ -1,29 +1,44 @@
 /**
- * @file renderView plugin — components/ReleaseLogCard.tsx (skeleton stubs, implemented in its wave).
+ * @file renderView plugin — the release log card: the bundles that left game.assets since the
+ * editor connected, newest first, at the frame of the last game.render (reason not reported, F-R3).
  */
-
-import type { VNode } from "preact";
-import type { RenderViewCtx } from "../types";
+import type { JSX } from "preact";
+import type { ReleaseEntry } from "../types";
 
 /**
  * Props of `ReleaseLogCard`.
- *
- * @example
- * ```ts
- * const props = {} as never as ReleaseLogCardProps;
- * ```
  */
-export type ReleaseLogCardProps = { readonly ctx: RenderViewCtx };
+export type ReleaseLogCardProps = { readonly releases: readonly ReleaseEntry[] };
 
 /**
- * Skeleton stub for `ReleaseLogCard`; implemented in its wave.
+ * The release log card.
  *
- * @param _props - The props.
+ * @param props - The entries, newest first.
+ * @returns The card.
  * @example
- * ```ts
- * ReleaseLogCard();
+ * ```tsx
+ * <ReleaseLogCard releases={[{ frame: 1900, bundle: "ui", tier: "core", mb: 2 }]} />
  * ```
  */
-export function ReleaseLogCard(_props: ReleaseLogCardProps): VNode {
-  throw new Error("not implemented");
+export function ReleaseLogCard(props: ReleaseLogCardProps): JSX.Element {
+  const { releases } = props;
+  return (
+    <section data-render="releases" data-card>
+      <header>
+        <h2>Release log</h2>
+        <span data-sub>Since the editor connected · reason not reported (follow-up F-R3)</span>
+      </header>
+      {releases.length === 0 ? (
+        <p data-empty>No bundle released since the editor connected.</p>
+      ) : (
+        <ol>
+          {releases.map(entry => (
+            <li key={`${entry.frame}:${entry.bundle}`}>
+              ≈f{entry.frame} · {entry.bundle} · {entry.mb} MB freed
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
 }

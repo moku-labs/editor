@@ -1,1 +1,71 @@
-/* flowView · InfoTab. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · Info tab (C2): property rows, slot box, sub-flow buttons, outcomes and comes-from lists. No @layer wrapper (R7). */
+
+@scope ([data-flow="info-tab"]) {
+  :scope {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  [data-part="properties"] {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 4px 8px;
+    margin: 0;
+  }
+
+  dt {
+    color: var(--text-muted);
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  h3 {
+    margin: 8px 0 0;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  ul {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  li button,
+  dd button {
+    border: 0;
+    background: none;
+    color: var(--text-ink);
+    font: var(--font-size-12) / 1.5 var(--font-mono);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  [data-part="slot"] {
+    padding: 8px;
+    border: 1px dashed var(--status-warn);
+    border-radius: var(--radius-6);
+    font: var(--font-size-12) / 1.5 var(--font-mono);
+  }
+
+  [data-tag="rejected"] {
+    color: var(--status-error);
+  }
+
+  [data-tag="waiting"] {
+    color: var(--accent);
+  }
+}

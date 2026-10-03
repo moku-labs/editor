@@ -1,29 +1,47 @@
 /**
- * @file renderView plugin — components/PoolsCard.tsx (skeleton stubs, implemented in its wave).
+ * @file renderView plugin — the pools card: one "All pools" row (in use against pooled) and the
+ * line naming the per-pool counts game.render does not report (follow-up F-R1).
  */
-
-import type { VNode } from "preact";
-import type { RenderViewCtx } from "../types";
+import type { JSX } from "preact";
+import type { RenderSnapshot } from "../types";
 
 /**
  * Props of `PoolsCard`.
- *
- * @example
- * ```ts
- * const props = {} as never as PoolsCardProps;
- * ```
  */
-export type PoolsCardProps = { readonly ctx: RenderViewCtx };
+export type PoolsCardProps = { readonly pools: RenderSnapshot["pools"] };
 
 /**
- * Skeleton stub for `PoolsCard`; implemented in its wave.
+ * The pools card.
  *
- * @param _props - The props.
+ * @param props - views and pooled of game.render.
+ * @returns The card.
  * @example
- * ```ts
- * PoolsCard();
+ * ```tsx
+ * <PoolsCard pools={{ views: 180, pooled: 24 }} />
  * ```
  */
-export function PoolsCard(_props: PoolsCardProps): VNode {
-  throw new Error("not implemented");
+export function PoolsCard(props: PoolsCardProps): JSX.Element {
+  const { pools } = props;
+  const total = pools === undefined ? 0 : pools.views + pools.pooled;
+  const share = pools === undefined || total === 0 ? 0 : pools.views / total;
+  return (
+    <section data-render="pools" data-card>
+      <header>
+        <h2>Pools</h2>
+      </header>
+      {pools === undefined ? (
+        <p data-empty>Waiting for game.render.</p>
+      ) : (
+        <p data-line>
+          <span>
+            All pools · {pools.pooled} pooled · {pools.views} in use
+          </span>
+          <span data-bar>
+            <span style={{ inlineSize: `${Math.round(share * 100)}%` }} />
+          </span>
+        </p>
+      )}
+      <p data-sub>Per-pool counts need game.render pools (follow-up F-R1)</p>
+    </section>
+  );
 }

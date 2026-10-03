@@ -124,27 +124,185 @@ export type ConsoleState = {
 };
 
 /**
- * The consoleView api (`app.consoleView`).
+ * The consoleView api (`app.consoleView`): the game log held for the whole session, its filter,
+ * Preserve log, the detail-drawer selection and frame links. The view, the palette items and
+ * tests use it.
  *
  * @example
  * ```ts
  * app.consoleView.setFilter({ level: "warn" });
+ * app.consoleView.visible().length; // 2 on the design log
  * ```
  */
 export type ConsoleApi = {
+  /**
+   * Every held line (entries and meta rows), oldest first, at most `maxLines`. A copy.
+   *
+   * @returns The lines.
+   * @example
+   * ```ts
+   * // The game logged the 8 lines of the design log since the session started.
+   * app.consoleView.lines().length; // 8
+   * ```
+   */
   lines(): readonly LogLine[];
+
+  /**
+   * The lines the table shows: entries of the filter level (`all` includes debug) whose
+   * `source + " " + message` contains the query, case-insensitive. Meta rows always show.
+   *
+   * @returns The visible lines.
+   * @example
+   * ```ts
+   * // Only the warnings that mention a texture.
+   * app.consoleView.setFilter({ level: "warn", query: "texture" });
+   * app.consoleView.visible().length; // 2
+   * ```
+   */
   visible(): readonly LogLine[];
+
+  /**
+   * Entry counts per level plus `all` (meta rows are not counted). The toolbar shows them.
+   *
+   * @returns The counts.
+   * @example
+   * ```ts
+   * // The design log: 6 info lines and 2 warnings.
+   * app.consoleView.counts(); // { all: 8, debug: 0, info: 6, warn: 2, error: 0 }
+   * ```
+   */
   counts(): LevelCounts;
+
+  /**
+   * The current level filter and search query.
+   *
+   * @returns A copy of the filter.
+   * @example
+   * ```ts
+   * // Nothing is filtered when the Console opens.
+   * app.consoleView.filter(); // { level: "all", query: "" }
+   * ```
+   */
   filter(): { level: LevelFilter; query: string };
+
+  /**
+   * Merges a partial filter into the current one and notifies the view.
+   *
+   * @param next - The level, the query, or both.
+   * @example
+   * ```ts
+   * // The "warn 2" segment was clicked, then "gear" typed in the search.
+   * app.consoleView.setFilter({ level: "warn" });
+   * app.consoleView.setFilter({ query: "gear" });
+   * app.consoleView.filter(); // { level: "warn", query: "gear" }
+   * ```
+   */
   setFilter(next: Partial<{ level: LevelFilter; query: string }>): void;
+
+  /**
+   * Empties the Console to one meta row "Console cleared" and closes the drawer. The entries
+   * already consumed never come back; the rail badge is cleared.
+   *
+   * @example
+   * ```ts
+   * // The Clear button, or "Clear console" in the palette.
+   * app.consoleView.clear();
+   * app.consoleView.lines().map(line => line.kind); // ["meta"]
+   * ```
+   */
   clear(): void;
+
+  /**
+   * Whether Preserve log is on: when on, a game page reload keeps the lines and adds the meta
+   * row "Game page reloaded · log preserved".
+   *
+   * @returns True when the log survives a reload.
+   * @example
+   * ```ts
+   * // Off by default, like Chrome DevTools.
+   * app.consoleView.preserve(); // false
+   * ```
+   */
   preserve(): boolean;
+
+  /**
+   * Turns Preserve log on or off and notifies the view.
+   *
+   * @param on - The new value.
+   * @example
+   * ```ts
+   * // Keep the log across the game page reload of the next code change.
+   * app.consoleView.setPreserve(true);
+   * app.consoleView.preserve(); // true
+   * ```
+   */
   setPreserve(on: boolean): void;
-  select(key: number | undefined): void;
+
+  /**
+   * Selects the line shown in the detail drawer; no key closes the drawer.
+   *
+   * @param key - The line key; omitted to close the drawer.
+   * @example
+   * ```ts
+   * // A row was clicked: the drawer shows the missing-texture warning.
+   * app.consoleView.select(5);
+   * app.consoleView.selected()?.kind; // "entry"
+   * app.consoleView.select(); // the drawer closes
+   * ```
+   */
+  select(key?: number): void;
+
+  /**
+   * The line in the detail drawer, if it is still held.
+   *
+   * @returns The line, or undefined.
+   * @example
+   * ```ts
+   * // The drawer is open on the fifth line of the design log.
+   * app.consoleView.select(5);
+   * app.consoleView.selected(); // { kind: "entry", key: 5, level: "warn", source: "assets", … }
+   * ```
+   */
   selected(): LogLine | undefined;
+
+  /**
+   * Reads `game.log` once and ingests it like a watched value. A manual action, not a poll:
+   * ingest is idempotent, and a failed read is logged at debug level.
+   *
+   * @example
+   * ```ts
+   * // The watch is live, so this only re-checks: no line is added twice.
+   * app.consoleView.refresh();
+   * app.consoleView.lines().length; // still 8
+   * ```
+   */
   refresh(): void;
-  /** Emits the global workspace:focus-frame (R4). */
+
+  /**
+   * Emits the global `workspace:focus-frame { frame }` (R4). flowView hooks it and focuses the
+   * edge taken at that frame; consoleView calls no flowView api.
+   *
+   * @param frame - The frame of the clicked frame link.
+   * @example
+   * ```ts
+   * // The frame cell "1778" of the rejected merge was clicked.
+   * app.consoleView.focusFrame(1778); // flowView shows Flow at frame 1778
+   * ```
+   */
   focusFrame(frame: number): void;
+
+  /**
+   * Adds a change listener (the view re-renders on it).
+   *
+   * @param fn - Called after every change of the lines, filter, Preserve log or selection.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // An MCP tool streams the error count while it runs.
+   * const off = app.consoleView.subscribe(() => report(app.consoleView.counts().error));
+   * off();
+   * ```
+   */
   subscribe(fn: () => void): () => void;
 };
 

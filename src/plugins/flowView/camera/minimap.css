@@ -1,1 +1,55 @@
-/* flowView · minimap. @scope ([data-…]) rules land in its wave. No @layer wrapper here: the sheet joins layer(components) where it is imported (R3, R7). */
+/* flowView · minimap (B7), 200×128 bottom-right 12 px: item rects (accent current, note yellow notes, frames outlined) and the viewport rect; lifts with the strip. No @layer wrapper (R7). */
+
+@scope ([data-flow="minimap"]) {
+  :scope {
+    right: 12px;
+    bottom: 12px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel);
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  :scope[data-lift] {
+    bottom: calc(12px + var(--flow-strip-h));
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope {
+      transition: bottom var(--duration-zoom) var(--ease-out);
+    }
+  }
+
+  svg {
+    display: block;
+  }
+
+  [data-part="name"] {
+    fill: var(--text-2);
+    font: var(--font-size-10) var(--font-mono);
+  }
+
+  [data-minimap-item] {
+    fill: var(--line-2);
+  }
+
+  [data-minimap-item][data-kind="frame"] {
+    fill: none;
+    stroke: var(--line-2);
+  }
+
+  [data-minimap-item][data-kind="note"] {
+    fill: var(--note-line);
+  }
+
+  [data-minimap-item][data-current] {
+    fill: var(--accent);
+  }
+
+  [data-part="viewport"] {
+    fill: var(--accent-soft);
+    stroke: var(--accent);
+    stroke-width: 1px;
+  }
+}
