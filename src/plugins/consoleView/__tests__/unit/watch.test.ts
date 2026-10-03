@@ -50,6 +50,21 @@ describe("startLogWatch", () => {
     expect(ctx.state.lines.map(line => line.kind)).toEqual(["meta", "entry"]);
   });
 
+  it("resets the lines on a session change after a game that logged nothing", () => {
+    const session = vi.spyOn(ctx.link.api, "session").mockReturnValue("s-1");
+    startLogWatch(ctx);
+    ctx.link.send("game.log", traceValue());
+    session.mockReturnValue("s-2");
+    ctx.link.send("game.log", []);
+    session.mockReturnValue("s-3");
+    ctx.link.send("game.log", []);
+
+    expect(ctx.state.session).toBe("s-3");
+    expect(ctx.state.lines).toEqual([
+      expect.objectContaining({ kind: "meta", text: expect.stringMatching(/^Log cleared/) })
+    ]);
+  });
+
   it("warns once per value of the wrong shape and keeps the lines", () => {
     startLogWatch(ctx);
     ctx.link.send("game.log", traceValue());

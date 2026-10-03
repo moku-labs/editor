@@ -152,7 +152,7 @@ describe("renderView on the merge game", () => {
     const snapshot = app.renderView.snapshot();
     const loaded = new Set(snapshot.bundles.map(row => row.name));
     expect(snapshot.tiles.fps?.now).toBe(0);
-    expect(snapshot.tiles.drawCalls).toEqual({ kind: "absent" });
+    expect(snapshot.tiles.drawCalls).toEqual({ kind: "value", value: 0 });
     expect(snapshot.textures.every(row => loaded.has(row.bundle))).toBe(true);
     expect(snapshot.textures.find(row => row.key === "board.cell")).toMatchObject({
       bundle: "board",

@@ -123,7 +123,7 @@ describe("RenderWorkspace", () => {
     );
     expect(q("[data-tile='draws']")?.dataset.absent).toBe("");
     expect(q("[data-render='tree'] header")?.textContent).toContain(
-      "101 nodes · 24 with textures · 32 entities"
+      "104 nodes · 24 with textures · 33 entities"
     );
     expect(q("[data-render='bundles']")?.textContent).toContain("Budget 192 MB · used 6 MB");
     expect(q("[data-render='pools']")?.textContent).toContain("All pools · 24 pooled · 180 in use");
@@ -157,7 +157,7 @@ describe("render tree card", () => {
     act(() => q<HTMLButtonElement>("[data-action='collapse-all']")?.click());
     expect(all("[role='treeitem']").map(row => row.dataset.id)).toEqual([
       "ui:boardScreen",
-      "entity:1048639"
+      "entity:1048640"
     ]);
 
     act(() => rowOf("ui:boardScreen")?.querySelector<HTMLElement>("[data-twisty]")?.click());

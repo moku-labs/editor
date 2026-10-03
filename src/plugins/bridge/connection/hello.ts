@@ -1,7 +1,7 @@
 /**
- * @file bridge plugin — the hello route: resolve its URL, fetch `HelloBody { ws, token }` (R1)
- * and build the socket URL `{path}/ws?token=…&kind=agent`. Failures carry the status reason in
- * their message, after the `[moku-editor] ` prefix.
+ * @file bridge plugin — the hello route: resolve its URL, the Origin a Bun process sends, fetch
+ * `HelloBody { ws, token }` (R1) and build the socket URL `{path}/ws?token=…&kind=agent`. Failures
+ * carry the status reason in their message, after the `[moku-editor] ` prefix.
  */
 import type { HelloBody } from "../../registry/protocol";
 import type { BridgeNet } from "../types";
@@ -78,6 +78,28 @@ export function resolveHelloUrl(hello: string, href: string | undefined): URL | 
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The Origin the agent sends itself: the hello origin in a Bun process, undefined in a browser,
+ * which sets Origin itself (R6: the hub always requires one). The runtime is told by the `Bun`
+ * global, not by `document`: a Bun test page has a happy-dom `document` (like link's
+ * `socketOrigin`).
+ *
+ * @param helloUrl - The hello URL.
+ * @param scope - Where to look for the `Bun` global.
+ * @param scope.Bun - The Bun namespace, present only in a Bun process.
+ * @returns The hello origin under Bun, or undefined in a browser.
+ * @example
+ * ```ts
+ * helloOrigin(new URL("http://127.0.0.1:3000/__editor/hello")); // "http://127.0.0.1:3000" under Bun
+ * ```
+ */
+export function helloOrigin(
+  helloUrl: URL,
+  scope: { readonly Bun?: object } = globalThis
+): string | undefined {
+  return scope.Bun === undefined ? undefined : helloUrl.origin;
 }
 
 /**

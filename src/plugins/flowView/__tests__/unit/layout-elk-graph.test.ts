@@ -49,6 +49,9 @@ describe("toElkGraph", () => {
         "s:board:left",
         "s:dailyGift:claim",
         "s:dailyGift:close",
+        "s:loadFailed:done",
+        "s:retryLoading:done",
+        "s:setLoading:done",
         "s:settings:closed"
       ].toSorted()
     );
@@ -60,7 +63,7 @@ describe("toElkGraph", () => {
     expect(toStub?.sources).toEqual(["p:board:left"]);
     expect(toStub?.targets).toEqual(["s:board:left"]);
     const loop = input.edges?.find(edge => edge.id === "e:setLoading:done");
-    expect(loop?.targets).toEqual(["in:splash"]);
+    expect(loop?.targets).toEqual(["s:setLoading:done"]);
   });
 
   it("sizes an expanded node from the sizes map", () => {
@@ -77,7 +80,7 @@ describe("fromElkGraph", () => {
     const output = await engine.layout(toElkGraph("main", main, classes));
     const box = fromElkGraph("main", main, classes, output);
     const byKey = new Map(box.items.map(entry => [entry.key, entry]));
-    expect(box.items.filter(entry => entry.kind === "node")).toHaveLength(8);
+    expect(box.items.filter(entry => entry.kind === "node")).toHaveLength(10);
     const stub = byKey.get("stub:main/dailyGift:claim");
     const source = byKey.get("main/dailyGift");
     expect(stub?.kind).toBe("stub");

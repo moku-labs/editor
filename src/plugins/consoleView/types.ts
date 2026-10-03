@@ -110,6 +110,8 @@ export type ConsoleState = {
   nextKey: number;
   /** Fingerprint of the current game: its first trace entry. */
   instance: { ts: number; event: string } | undefined;
+  /** The link session the last value came from; a new one is a new game when `instance` is undefined. */
+  session: string | undefined;
   /** Trace entries of the current game already ingested. */
   consumed: number;
   preserve: boolean;

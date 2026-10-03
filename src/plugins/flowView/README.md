@@ -32,7 +32,7 @@ reload/restore flow.
 | `focus.select(key)` | Select = focus. A bare `NodeId` expands its collapsed parents. `false` for an unknown key. |
 | `focus.selected()` / `focus.current()` | The selected item key, and the node of `game.position`. |
 | `focus.walk("prev" \| "next")` | Walk through the strip (← →). |
-| `focus.focusFrame(n)` | Focus the edge taken at a frame. `false` when the history has no frames (until F-H1). |
+| `focus.focusFrame(n)` | Focus the edge taken at a frame and mark its history row. `false` when the history has no frames (until F-H1). |
 | `focus.step()` | `game.step { frames: 1 }` through `panels.run`, only while paused (M5). |
 | `focus.history(open?)` | Toggle the history strip (H). |
 | `flows.expand/collapse(key)` | Open or fold a sub-flow or slot item in place. |

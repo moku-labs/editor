@@ -5,7 +5,7 @@
  * overlay switch are dimmed with a tooltip when the game lacks their command.
  */
 import type { VNode } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
 import { workspacePlugin } from "../../workspace";
 import { isDevicePresetId, resolveDevice } from "../../workspace/devices";
@@ -292,7 +292,8 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   const picking = useGameView(state, () => state.picker.on);
   const link = ctx.require(linkPlugin);
   const [, setManifests] = useState(0);
-  useEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
+  // A layout effect: a manifest change right after the first render is not lost.
+  useLayoutEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
   useTicker(state.series.recording !== undefined, 100);
 
   return (

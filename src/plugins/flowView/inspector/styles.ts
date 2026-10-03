@@ -89,11 +89,12 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
 }
 
 /**
- * Loads the styles file into the Styles tab and replaces the palette group Styles.
+ * Loads the styles file into the Styles tab and replaces the palette group Styles. A load that
+ * lands after the user chose a card or pressed a stepper keeps that card and the pending step.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
- * @param key - The card to select; default the first key.
+ * @param key - The card to select; default the card already chosen, else the first key.
  * @returns Resolves when loaded.
  * @example
  * ```ts
@@ -120,12 +121,15 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
   }
   const blocks = textBlocks(loaded.file.blocks);
   const keys = keysOf(blocks);
+  const chosen = [key, inspector.styles?.key].find(
+    candidate => candidate !== undefined && keys.includes(candidate)
+  );
   inspector.styles = {
     text: loaded.text,
     version: loaded.version,
     blocks,
-    key: key !== undefined && keys.includes(key) ? key : keys[0],
-    pending: undefined,
+    key: chosen ?? keys[0],
+    pending: inspector.styles?.pending,
     result: undefined,
     error: undefined
   };

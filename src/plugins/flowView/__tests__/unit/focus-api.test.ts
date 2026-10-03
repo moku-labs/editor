@@ -172,6 +172,18 @@ describe("focus.focusFrame", () => {
     expect(fakes.workspace.toast).toHaveBeenCalledWith("No edge at frame 10");
   });
 
+  it("marks the history entry of an exact frame as the selected row", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    ctx.state.data.history = [
+      entry(1, "home", "play", { frame: 1700 }),
+      entry(2, "board/merge", "rejected", { frame: 1778 })
+    ];
+    expect(actionsOf(ctx).focus.focusFrame(1778)).toBe(true);
+    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.historySelected).toBe(2);
+  });
+
   it("selectHistory selects an entry's edge", async () => {
     const { ctx } = createTestCtx();
     await prepare(ctx);

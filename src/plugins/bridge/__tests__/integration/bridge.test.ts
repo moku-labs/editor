@@ -365,11 +365,11 @@ describe("bridge integration", () => {
       "manifest"
     );
     const sources = listOf(field(manifest, "sources"));
-    expect(sources).toHaveLength(15);
+    expect(sources).toHaveLength(16);
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
-      14
+      15
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(15);
+    expect(listOf(field(manifest, "commands"))).toHaveLength(16);
     expect(field(manifest, "game")).toBe("merge-game 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 

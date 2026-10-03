@@ -31,7 +31,7 @@ afterEach(() => {
 describe("moveInTree", () => {
   it("End selects the last row; an unknown key is not handled", () => {
     expect(moveInTree(ctx, rows(), "End")).toBe(true);
-    expect(ctx.state.tree.selected).toBe("entity:1048639");
+    expect(ctx.state.tree.selected).toBe("entity:1048640");
     expect(moveInTree(ctx, rows(), "x")).toBe(false);
   });
 
@@ -61,9 +61,9 @@ describe("moveInTree", () => {
   });
 
   it("↓ on the last row stays; ↓ without a selection picks the first row", () => {
-    ctx.state.tree.selected = "entity:1048639";
+    ctx.state.tree.selected = "entity:1048640";
     moveInTree(ctx, rows(), "ArrowDown");
-    expect(ctx.state.tree.selected).toBe("entity:1048639");
+    expect(ctx.state.tree.selected).toBe("entity:1048640");
 
     ctx.state.tree.selected = undefined;
     moveInTree(ctx, rows(), "ArrowDown");

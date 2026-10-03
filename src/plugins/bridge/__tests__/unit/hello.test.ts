@@ -1,6 +1,6 @@
 /* eslint-disable sonarjs/no-clear-text-protocols, unicorn/no-null -- local test URLs and JSON null bodies */
 import { describe, expect, it } from "vitest";
-import { fetchHello, resolveHelloUrl, socketUrl } from "../../connection/hello";
+import { fetchHello, helloOrigin, resolveHelloUrl, socketUrl } from "../../connection/hello";
 import { fakeNet, helloOk, helloStatus } from "../helpers";
 
 const PAGE = "http://127.0.0.1:3000/game.html";
@@ -24,6 +24,19 @@ describe("resolveHelloUrl", () => {
     expect(resolveHelloUrl("http://127.0.0.1:4000/__editor/hello", PAGE)?.origin).toBe(
       "http://127.0.0.1:4000"
     );
+  });
+});
+
+describe("helloOrigin", () => {
+  const url = new URL("http://127.0.0.1:3000/__editor/hello");
+
+  it("is undefined in a browser (no Bun global): the browser sets Origin itself", () => {
+    expect(helloOrigin(url, {})).toBeUndefined();
+  });
+
+  it("is the hello origin in a Bun process, page document or not", () => {
+    expect(helloOrigin(url, { Bun: {} })).toBe("http://127.0.0.1:3000");
+    expect(helloOrigin(url)).toBe("http://127.0.0.1:3000");
   });
 });
 

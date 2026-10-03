@@ -261,9 +261,7 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
         );
         return true;
       }
-      const key = entryKey(before.entry, graph);
-      const source = resolveStack(graph, before.entry.path).at(-1)?.id;
-      if (key !== undefined && source !== undefined) actions.selectEdge(key, source);
+      actions.selectHistory(before.entry.index);
       env.toast(`Frame ${frame} · ${before.entry.path} · ${before.entry.outcome}`);
       return true;
     },

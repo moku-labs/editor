@@ -49,13 +49,13 @@ afterEach(async () => {
 });
 
 describe("registry integration", () => {
-  it("lists the merge game's 14 sources and 13 commands without modules", async () => {
+  it("lists the merge game's 15 sources and 14 commands without modules", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     await app.start();
 
     const manifest = app.registry.manifest();
-    expect(manifest.sources).toHaveLength(14);
-    expect(manifest.commands).toHaveLength(13);
+    expect(manifest.sources).toHaveLength(15);
+    expect(manifest.commands).toHaveLength(14);
     expect(manifest.game).toBe("game");
 
     await app.stop();
@@ -71,8 +71,8 @@ describe("registry integration", () => {
 
     const manifest = app.registry.manifest();
     expect(manifest.game).toBe("merge-game 0.0.0");
-    expect(manifest.sources).toHaveLength(15);
-    expect(manifest.commands).toHaveLength(14);
+    expect(manifest.sources).toHaveLength(16);
+    expect(manifest.commands).toHaveLength(15);
     expect(manifest.sources.at(-1)?.id).toBe("merge.coins");
     expect(manifest.commands.at(-1)?.id).toBe("merge.addCoins");
 
@@ -186,6 +186,6 @@ describe("registry types", () => {
     });
 
     expectTypeOf(app.probe.registry).returns.toEqualTypeOf<RegistryApi>();
-    expect(app.probe.registry().manifest().sources).toHaveLength(14);
+    expect(app.probe.registry().manifest().sources).toHaveLength(15);
   });
 });

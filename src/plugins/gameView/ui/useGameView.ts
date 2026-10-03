@@ -3,12 +3,14 @@
  * every `notify(state)`; `useTicker` re-renders it every few ms while a clock shows (recording
  * time, "no heartbeat for N s").
  */
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import { subscribe } from "../state";
 import type { GameViewState } from "../types";
 
 /**
- * Subscribes the component to gameView state and returns the selected value of this render.
+ * Subscribes the component to gameView state and returns the selected value of this render. It
+ * subscribes in a layout effect, which runs when the render commits: a `notify` right after the
+ * first render (before the next paint) still re-renders the component.
  *
  * @param state - gameView state.
  * @param select - Reads what the component shows.
@@ -20,7 +22,7 @@ import type { GameViewState } from "../types";
  */
 export function useGameView<T>(state: GameViewState, select: () => T): T {
   const [, setVersion] = useState(0);
-  useEffect(() => subscribe(state, () => setVersion(version => version + 1)), [state]);
+  useLayoutEffect(() => subscribe(state, () => setVersion(version => version + 1)), [state]);
   return select();
 }
 

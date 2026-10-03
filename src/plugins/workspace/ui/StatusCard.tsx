@@ -1,7 +1,8 @@
 /**
  * @file workspace plugin — F4, the card centred over the content: "No game connected" with the
- * game URL and Copy, or "Connecting · Waiting for the game at <url>" with a spinner while the
- * game was never live in this page. While a card shows, the hosts are inert and faded.
+ * game URL and Copy (also for a page without a boot tag), or "Connecting · Waiting for the game
+ * at <url>" with a spinner while the game was never live in this page. While a card shows, the
+ * hosts are inert and faded.
  */
 import type { VNode } from "preact";
 import { gameUrl } from "../frame/frame";
@@ -16,7 +17,8 @@ import { useWorkspace } from "./store";
 export type StatusCardProps = { readonly ctx: WorkspaceCtx };
 
 /**
- * Which card shows now.
+ * Which card shows now. A page without a boot tag (lost `no_boot`) can never connect, so it gets
+ * the empty card, not the connecting one.
  *
  * @param state - Workspace state.
  * @returns "empty", "connecting" or undefined for none.
@@ -26,8 +28,10 @@ export type StatusCardProps = { readonly ctx: WorkspaceCtx };
  * ```
  */
 export function cardKind(state: WorkspaceState): "empty" | "connecting" | undefined {
-  const { kind } = state.link;
+  const { link } = state;
+  const { kind } = link;
   if (kind === "empty") return "empty";
+  if (kind === "lost" && link.reason === "no_boot") return "empty";
   if (kind === "live" || kind === "paused" || state.everLive) return undefined;
   return "connecting";
 }

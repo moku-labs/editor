@@ -74,7 +74,7 @@ describe("tiles", () => {
       unused: 3,
       unusedMb: 5.73
     });
-    expect(tiles.scene).toEqual({ entities: 101, views: 180, pooled: 24 });
+    expect(tiles.scene).toEqual({ entities: 104, views: 180, pooled: 24 });
   });
 
   it("show draw calls when game.render reports them", () => {
@@ -259,7 +259,7 @@ describe("tree rows", () => {
 
     expect(treeRowsOf(scene, new Set()).map(row => row.id)).toEqual([
       "ui:boardScreen",
-      "entity:1048639"
+      "entity:1048640"
     ]);
 
     const rows = treeRowsOf(scene, new Set(["ui:boardScreen", "ui:boardScreen/boardSlot"]));
@@ -286,7 +286,7 @@ describe("tree rows", () => {
 
   it("are empty without a scene; the head counts cover every node", () => {
     expect(treeRowsOf(undefined, new Set())).toEqual([]);
-    expect(treeCounts(boardScene())).toEqual({ nodes: 101, textures: 24, entities: 32 });
+    expect(treeCounts(boardScene())).toEqual({ nodes: 104, textures: 24, entities: 33 });
     expect(treeCounts(undefined)).toEqual({ nodes: 0, textures: 0, entities: 0 });
   });
 

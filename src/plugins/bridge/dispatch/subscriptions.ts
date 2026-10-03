@@ -1,7 +1,8 @@
 /**
  * @file bridge plugin — subscriptions of the hub: followed through `channel.watch` for edge and
  * commit sources, re-read once per heartbeat for frame sources (R6, D-15), re-read after each
- * run, and sent only when the value changed.
+ * run, and sent only when the value changed. A run that changed an edge or commit value opens its
+ * channel watch again, so the door's next frame is compared with the value sent last.
  */
 import type { Json, Request as RpcRequest, SubId } from "../../registry/protocol";
 import { errorCode, failure, success, toWireError, wireError } from "../../registry/protocol";
@@ -46,8 +47,43 @@ function isCurrent(deps: Pick<BridgeDeps, "state">, record: Subscription): boole
 }
 
 /**
- * Reads the source of a subscription again and pushes the value; a read error is logged at
- * debug and the subscription stays.
+ * Follows an edge or commit subscription again after a run changed its value: a new channel
+ * watch replaces the old one, and its first value is the one sent. The channel drops the door's
+ * first frame when it repeats that value, so the comparison is always with the value sent last,
+ * never with the value of subscribe time. An unchanged value changes nothing. A failed re-open
+ * keeps the old watch, logs at debug and sends the value read.
+ *
+ * @param deps - The domain deps.
+ * @param record - The edge or commit subscription.
+ * @param value - The value the post-run read returned.
+ * @example
+ * ```ts
+ * refollow(deps, record, { path: "visit/enter" }); // sends it; the next frame's "home" follows
+ * ```
+ */
+function refollow(deps: BridgeDeps, record: Subscription, value: Json): void {
+  if (JSON.stringify(value) === record.lastSent) return;
+  const previous = record.stop;
+  try {
+    record.stop = deps.channel.watch(record.id, record.input, next => {
+      if (isCurrent(deps, record)) pushValue(deps, record.sub, next);
+    });
+  } catch (error) {
+    deps.log.debug("bridge:refresh-failed", {
+      sub: record.sub,
+      id: record.id,
+      message: messageOf(error)
+    });
+    pushValue(deps, record.sub, value);
+    return;
+  }
+  previous?.();
+}
+
+/**
+ * Reads the source of a subscription again: a frame value is pushed, an edge or commit value
+ * follows the channel again when it changed (`refollow`). A read error is logged at debug and the
+ * subscription stays.
  *
  * @param deps - The domain deps.
  * @param record - The subscription.
@@ -60,7 +96,9 @@ function isCurrent(deps: Pick<BridgeDeps, "state">, record: Subscription): boole
 function reread(deps: BridgeDeps, record: Subscription, event: string): void {
   deps.channel.read(record.id, record.input).then(
     value => {
-      if (isCurrent(deps, record)) pushValue(deps, record.sub, value);
+      if (!isCurrent(deps, record)) return;
+      if (record.changes === "frame") pushValue(deps, record.sub, value);
+      else refollow(deps, record, value);
     },
     (error: unknown) => {
       deps.log.debug(event, { sub: record.sub, id: record.id, message: messageOf(error) });
@@ -237,7 +275,8 @@ export function sampleFrames(deps: BridgeDeps): void {
 
 /**
  * After a run settles: re-reads every subscription and sends what changed (a paused game or a
- * hidden tab runs no frames, so door watches would miss what the command changed, R6).
+ * hidden tab runs no frames, so door watches would miss what the command changed, R6). An edge or
+ * commit value that changed opens its channel watch again (`refollow`).
  *
  * @param deps - The domain deps.
  * @example

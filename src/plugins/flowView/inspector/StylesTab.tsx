@@ -112,10 +112,6 @@ export function StylesTab(props: StylesTabProps): VNode {
   }, [styles?.text]);
 
   useEffect(() => {
-    if (ctx.state.inspector.styles === undefined) actions.inspector.openStyles().catch(() => {});
-  }, [actions, ctx]);
-
-  useEffect(() => {
     setUsedBy(undefined);
     if (key === undefined) return;
     let live = true;

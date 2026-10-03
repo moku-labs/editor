@@ -21,7 +21,7 @@ So the badge and Preserve log work while another workspace is open.
 A numeric `data.frame` gives an exact frame (`1778`).
 Otherwise the frame is "at or before" the frame at which the value arrived (`≤1840`, with a tooltip).
 
-A game page reload is detected by the first entry (`ts`, `event`) and by a trace shorter than the consumed count:
+A game page reload is detected by the first entry (`ts`, `event`) and by a trace shorter than the consumed count. After a game that logged nothing, a new link session (`link.session()`) marks the reload:
 
 | Preserve log | What happens |
 |---|---|

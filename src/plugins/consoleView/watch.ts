@@ -12,7 +12,8 @@ import { notify } from "./state";
 import type { ConsoleCtx } from "./types";
 
 /**
- * Ingests one game.log value: warns on a value of the wrong shape, pushes the badge when the
+ * Ingests one game.log value with the frame of `link.status()` and the session of
+ * `link.session()` (the one source of the session): warns on a value of the wrong shape, pushes the badge when the
  * lines changed, marks the console connected and notifies the view.
  *
  * @param ctx - Domain context of consoleView.
@@ -24,8 +25,8 @@ import type { ConsoleCtx } from "./types";
  */
 function accept(ctx: ConsoleCtx, value: Json): void {
   const { state, config } = ctx;
-  const frame = statusFrame(ctx.require(linkPlugin).status());
-  const result = ingestTrace(state, value, frame, config);
+  const link = ctx.require(linkPlugin);
+  const result = ingestTrace(state, value, statusFrame(link.status()), config, link.session());
   if (result.invalid === true) {
     ctx.log.warn("consoleView:unexpected-log", { type: typeof value });
     return;

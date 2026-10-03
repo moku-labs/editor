@@ -131,6 +131,15 @@ describe("Shell", () => {
     expect(root.querySelector("[data-shell-hosts]")?.hasAttribute("inert")).toBe(false);
   });
 
+  it("F4: no boot tag (lost no_boot) shows the empty card, not the connecting one", () => {
+    ctx.state.link = { kind: "lost", reason: "no_boot", lastFrame: 0, retryInMs: 0 };
+    bump();
+    const card = root.querySelector<HTMLElement>("[data-ui='status-card']");
+    expect(card?.hidden).toBe(false);
+    expect(card?.dataset.kind).toBe("empty");
+    expect(root.querySelector("[data-shell-hosts]")?.hasAttribute("inert")).toBe(true);
+  });
+
   it("F4: empty card with the URL; Copy writes it and toasts", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });

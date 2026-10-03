@@ -29,12 +29,17 @@ describe("detectHub (design §7.1)", () => {
     expect(detectHub(flowOf("board"), config)).toBe("awaitIntent");
   });
 
-  it("finds no hub in main, settingsPopup and rewardPopup", () => {
+  it("finds no hub in main and rewardPopup", () => {
     // Fixed: the spec says 3 returns; splash, dailyGift, settings and board all lead to home.
     expect(returnsOf(flowOf("main"), "home")).toBe(4);
     expect(detectHub(flowOf("main"), config)).toBeUndefined();
-    expect(detectHub(flowOf("settingsPopup"), config)).toBeUndefined();
     expect(detectHub(flowOf("rewardPopup"), config)).toBeUndefined();
+  });
+
+  it("makes settingsPopup/open (5 outcomes, 5 returns) the settingsPopup hub", () => {
+    expect(flowOf("settingsPopup").nodes.open?.outcomes).toHaveLength(5);
+    expect(returnsOf(flowOf("settingsPopup"), "open")).toBe(5);
+    expect(detectHub(flowOf("settingsPopup"), config)).toBe("open");
   });
 
   it("breaks a tie by declared order and respects the thresholds", () => {

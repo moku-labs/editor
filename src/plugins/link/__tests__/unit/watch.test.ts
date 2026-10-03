@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toWireValue } from "../../../registry/protocol";
+import { stopLink } from "../../lifecycle";
 import { attach } from "../../sessions/choose";
 import { addWatch, deliver, detachAll } from "../../subscriptions/watch";
 import {
@@ -132,6 +133,17 @@ describe("addWatch", () => {
     const again = attach(ctx, "s-1");
     await again;
     expect(socket.last("watch").params).toMatchObject({ sub: 2, id: "game.position" });
+  });
+
+  it("a watch in flight at stop logs no error: the link closed it itself", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    expect(socket.requests("watch")).toHaveLength(1);
+    stopLink(ctx);
+    await flush();
+
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    expect(ctx.state.wire.size).toBe(0);
   });
 
   it("an unwatch failure is logged at debug", async () => {

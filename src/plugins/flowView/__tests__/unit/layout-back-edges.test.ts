@@ -3,9 +3,11 @@ import { classifyEdges, exitOf, targetNode } from "../../layout/back-edges";
 import { flowOf } from "../helpers";
 
 describe("classifyEdges (design §7.6)", () => {
-  it("main: setLoading → splash stays drawn; the returns to home and board are back edges", () => {
+  it("main: the returns to splash (4 outcomes), home and board are back edges", () => {
     const classes = classifyEdges(flowOf("main"));
-    expect(classes.get("setLoading:done")).toBe("short-loop");
+    expect(classes.get("setLoading:done")).toBe("back");
+    expect(classes.get("loadFailed:done")).toBe("back");
+    expect(classes.get("retryLoading:done")).toBe("back");
     expect(classes.get("dailyGift:claim")).toBe("back");
     expect(classes.get("dailyGift:close")).toBe("back");
     expect(classes.get("settings:closed")).toBe("back");
@@ -16,10 +18,12 @@ describe("classifyEdges (design §7.6)", () => {
     expect(classes.get("board:orderComplete")).toBe("forward");
   });
 
-  it("settingsPopup: setVolume, setLocale and confirm → open are back edges (open has 4 outcomes)", () => {
+  it("settingsPopup: setVolume, setLocale, rename and confirm → open are back edges (open has 5 outcomes)", () => {
     const classes = classifyEdges(flowOf("settingsPopup"));
     expect(classes.get("setVolume:done")).toBe("back");
     expect(classes.get("setLocale:done")).toBe("back");
+    expect(classes.get("rename:saved")).toBe("back");
+    expect(classes.get("rename:kept")).toBe("back");
     expect(classes.get("confirm:cancel")).toBe("back");
     expect(classes.get("enter:done")).toBe("forward");
     expect(classes.has("open:close")).toBe(false);

@@ -16,14 +16,16 @@ What it does:
 
 1. **Hello.** On start it fetches the hello route (same origin, no cache) for `{ ws, token }`. It
    fetches it again on every attempt, because a hub restart rotates the token.
-2. **Socket.** It opens `{ws}?token=…&kind=agent`. Outside a browser it sends the hello origin as
-   the `Origin` header (on the fetch and through Bun's `WebSocket` `headers` option).
+2. **Socket.** It opens `{ws}?token=…&kind=agent`. In a Bun process (told by the `Bun` global, not
+   by `document`) it sends the hello origin as the `Origin` header (on the fetch and through Bun's
+   `WebSocket` `headers` option).
 3. **Hello first.** The first message is `hello { manifest }`, then a `heartbeat`.
 4. **Requests.** It serves the hub's `manifest`, `read`, `watch`, `unwatch` and `run` through the
    in-process `channel`. Every request gets exactly one response.
 5. **Values.** A `watch` of an `edge` or `commit` source follows `channel.watch`. A `frame` source is
    re-read once per heartbeat. After every `run`, every watched source is re-read. A value is sent
-   only when its JSON changed.
+   only when its JSON changed. An `edge` or `commit` value that a run changed opens its
+   `channel.watch` again, so the next frame is compared with the value sent last.
 6. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff.
 7. **Bye.** On stop it sends `bye` and closes with 1000.
 

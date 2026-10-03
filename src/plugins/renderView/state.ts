@@ -69,7 +69,7 @@ export function notify(state: RenderViewState): void {
  * @returns The remover.
  * @example
  * ```ts
- * useEffect(() => subscribe(ctx.state, () => setVersion(version => version + 1)), []);
+ * useLayoutEffect(() => subscribe(ctx.state, () => setVersion(version => version + 1)), []);
  * ```
  */
 export function subscribe(state: RenderViewState, fn: () => void): () => void {

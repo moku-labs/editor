@@ -20,6 +20,7 @@ export function createConsoleState(ctx: { readonly config: Readonly<Config> }): 
     lines: [],
     nextKey: 1,
     instance: undefined,
+    session: undefined,
     consumed: 0,
     preserve: ctx.config.preserveLog,
     level: "all",

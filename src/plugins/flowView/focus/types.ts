@@ -135,14 +135,15 @@ export type FocusApi = {
   walk(direction: "prev" | "next"): void;
 
   /**
-   * Focuses the edge taken at a frame (the `workspace:focus-frame` hook calls it) and toasts
-   * "Frame N · path · outcome", or "No edge at frame N · last edge before it …".
+   * Focuses the edge taken at a frame and marks its history row (the `workspace:focus-frame` hook
+   * calls it), then toasts "Frame N · path · outcome", or "No edge at frame N · last edge before
+   * it …".
    *
    * @param frame - A game frame.
    * @returns False when the history carries no frames (until F-H1), else true.
    * @example
    * ```ts
-   * app.flowView.focus.focusFrame(1778); // true: selects edge board/merge:rejected
+   * app.flowView.focus.focusFrame(1778); // true: selects edge board/merge:rejected and its row
    * ```
    */
   focusFrame(frame: number): boolean;

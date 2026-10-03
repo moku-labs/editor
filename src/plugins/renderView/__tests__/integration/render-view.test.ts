@@ -176,7 +176,7 @@ describe("renderView integration", () => {
     const snapshot = app.renderView.snapshot();
     expect(snapshot.frame).toBe(1841);
     expect(snapshot.tiles.drawCalls).toEqual({ kind: "absent" });
-    expect(snapshot.tiles.scene).toEqual({ entities: 101, views: 180, pooled: 24 });
+    expect(snapshot.tiles.scene).toEqual({ entities: 104, views: 180, pooled: 24 });
     expect(snapshot.textures.map(row => [row.key, row.use.kind])).toEqual([
       ["ui.hud-pill", "in-use"],
       ["board.board-tray", "in-use"],

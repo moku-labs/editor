@@ -376,7 +376,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
 
     expect(board.path).toBe("board/awaitIntent");
     expect(scene.calibrated).toBe(false);
-    expect(scene.entityCount).toBe(101);
+    expect(scene.entityCount).toBe(104);
     expect(keyedNode(scene, "boardSlot").id).toBe("ui:boardScreen/boardSlot");
     expect(keyedNode(scene, "settings").id).toBe("ui:boardScreen/hudRow/settings");
     expect(nodeOf(scene, "ui:boardScreen/hudRow/coinPill")).toMatchObject({

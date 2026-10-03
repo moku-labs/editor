@@ -11,7 +11,7 @@ import { dropAll, sampleFrames } from "../dispatch/subscriptions";
 import { setStatus, statusOfBeat } from "../status";
 import type { BridgeDeps, SocketLike } from "../types";
 import { nextDelay } from "./backoff";
-import { fetchHello, resolveHelloUrl, socketUrl } from "./hello";
+import { fetchHello, helloOrigin, resolveHelloUrl, socketUrl } from "./hello";
 import { hasNetwork } from "./socket";
 
 /**
@@ -209,8 +209,7 @@ function openLink(deps: BridgeDeps, helloUrl: URL, body: HelloBody): void {
   }
   let socket: SocketLike;
   try {
-    const origin = deps.page.document === undefined ? helloUrl.origin : undefined;
-    socket = deps.net.openSocket(url.href, origin);
+    socket = deps.net.openSocket(url.href, helloOrigin(helloUrl));
   } catch {
     fail(deps, "socket failed", true);
     return;
@@ -235,7 +234,7 @@ function isStopped(deps: BridgeDeps): boolean {
 
 /**
  * The connect sequence: connecting, network check, hello URL, hello fetch (every attempt: a hub
- * restart rotates the token), then the socket. Outside a browser the hello origin goes along as
+ * restart rotates the token), then the socket. In a Bun process the hello origin goes along as
  * the Origin header and Bun's socket option (R6). A stop during the fetch opens nothing.
  *
  * @param deps - The domain deps.
@@ -264,8 +263,8 @@ export async function connect(deps: BridgeDeps): Promise<void> {
 
   let body: HelloBody;
   try {
-    const headers = page.document === undefined ? { origin: helloUrl.origin } : undefined;
-    body = await fetchHello(deps.net, helloUrl, headers);
+    const origin = helloOrigin(helloUrl);
+    body = await fetchHello(deps.net, helloUrl, origin === undefined ? undefined : { origin });
   } catch (error) {
     fail(deps, bareMessage(messageOf(error)), true);
     return;

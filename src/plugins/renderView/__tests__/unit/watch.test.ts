@@ -170,10 +170,10 @@ describe("scene watches", () => {
     expect(ctx.state.calibration).toEqual({ scale: 1, x: 0, y: 0 });
 
     frames.flush();
-    expect(ctx.state.scene?.nodes.size).toBe(101);
+    expect(ctx.state.scene?.nodes.size).toBe(104);
     expect(ctx.state.scene?.calibrated).toBe(true);
     expect(ctx.state.scene?.frame).toBe(1841);
-    expect(ctx.state.tree.open).toEqual(new Set(["ui:boardScreen", "entity:1048639"]));
+    expect(ctx.state.tree.open).toEqual(new Set(["ui:boardScreen", "entity:1048640"]));
     expect(ctx.state.seen.get("board.cell")).toEqual({ lastSeen: 1841, unusedSince: undefined });
   });
 
@@ -196,7 +196,7 @@ describe("scene watches", () => {
     ctx.link.send("game.entities", "broken");
     frames.flush();
 
-    expect(ctx.state.scene?.nodes.size).toBe(101);
+    expect(ctx.state.scene?.nodes.size).toBe(104);
     expect(ctx.state.error).toMatch(/^game\.entities: unexpected shape/);
     expect(ctx.log.warn).toHaveBeenCalledWith("renderView: unexpected source shape", {
       id: "game.entities"

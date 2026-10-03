@@ -41,7 +41,8 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 
 /**
  * Sends `watch { sub, id, input? }` with a new wire sub. An error answer is logged as
- * `link:watch-failed`; the record stays and is sent again on the next attach.
+ * `link:watch-failed`; the record stays and is sent again on the next attach. A watch the link
+ * itself closed on stop (`link_closed`) is not logged.
  *
  * @param ctx - Domain context of link.
  * @param sub - The record.
@@ -63,7 +64,7 @@ function sendWatch(ctx: LinkCtx, sub: Subscription): void {
       ? { sub: wireSub, id: sub.id }
       : { sub: wireSub, id: sub.id, input: sub.input };
   request(ctx, "game", "watch", params, state.chosen).catch((error: unknown) => {
-    ctx.log.error("link:watch-failed", { id: sub.id, ...describeError(error) });
+    if (!state.stopped) ctx.log.error("link:watch-failed", { id: sub.id, ...describeError(error) });
     if (state.wire.get(wireSub) !== sub) return;
     state.wire.delete(wireSub);
     sub.wireSub = undefined;
