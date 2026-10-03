@@ -162,10 +162,6 @@ function opensOutcomeMenu(hit: string | undefined): boolean {
  * @param world - The world view.
  * @param drag - The drag.
  * @returns Items by key and edges to draw.
- * @example
- * ```ts
- * dragged(world, undefined).byKey === world.result.byKey; // true: no drag, same items
- * ```
  */
 function dragged(
   world: WorldView,
