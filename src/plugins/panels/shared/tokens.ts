@@ -84,42 +84,55 @@ export const duration = {
 } as const;
 
 /**
+ * A CSS time: a number with a `ms` or `s` unit.
+ */
+const CSS_TIME = /^(-?(?:\d+(?:\.\d+)?|\.\d+))(ms|s)$/;
+
+/**
  * `var(--name)` for a token.
  *
- * @param _name - The token key.
+ * @param name - The token key.
+ * @returns The CSS `var()` reference.
  * @example
  * ```ts
  * cssVar("accent"); // "var(--accent)"
  * ```
  */
-export function cssVar(_name: TokenName): string {
-  throw new Error("not implemented");
+export function cssVar(name: TokenName): string {
+  return `var(${token[name]})`;
 }
 
 /**
  * The computed value of a token on an element; "" when unset.
  *
- * @param _element - The element to read from.
- * @param _name - The token key.
+ * @param element - The element to read from.
+ * @param name - The token key.
+ * @returns The trimmed computed value.
  * @example
  * ```ts
  * context2d.fillStyle = readToken(minimapElement, "accent");
  * ```
  */
-export function readToken(_element: Element, _name: TokenName): string {
-  throw new Error("not implemented");
+export function readToken(element: Element, name: TokenName): string {
+  return getComputedStyle(element).getPropertyValue(token[name]).trim();
 }
 
 /**
  * A duration token in ms: "420ms" → 420, "0.2s" → 200, unset or invalid → 0.
  *
- * @param _element - The element to read from.
- * @param _name - The duration key.
+ * @param element - The element to read from.
+ * @param name - The duration key.
+ * @returns Milliseconds.
  * @example
  * ```ts
  * readDuration(canvasElement, "camera"); // 420
  * ```
  */
-export function readDuration(_element: Element, _name: keyof typeof duration): number {
-  throw new Error("not implemented");
+export function readDuration(element: Element, name: keyof typeof duration): number {
+  const value = getComputedStyle(element).getPropertyValue(duration[name]).trim();
+  const match = CSS_TIME.exec(value);
+  if (match === null) return 0;
+
+  const amount = Number(match[1]);
+  return match[2] === "s" ? Math.round(amount * 1000) : amount;
 }

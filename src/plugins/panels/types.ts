@@ -4,12 +4,18 @@
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
-import type { VNode } from "preact";
+import type { JSX } from "preact";
 import type { Require, ToolsEvents } from "../../config";
 import type { FilesClient } from "../link/types";
 import type { EditorChannel, Json, LinkStatus, Manifest, RunResult } from "../registry/protocol";
 import type { WorkspaceApi, WorkspaceId } from "../workspace/types";
 import type { CommandArgs, SourceValue } from "./catalogue";
+
+/**
+ * What a view returns: any Preact element, from JSX or from `h()` with props. Preact's `VNode<P>`
+ * is invariant in `P`, so a bare `VNode` would refuse `h(FlowCanvas, props)`.
+ */
+export type PanelElement = JSX.Element;
 
 /**
  * A panel source: an id, or an id with its input.
@@ -67,8 +73,8 @@ export type PanelInput<
   readonly workspace: WorkspaceId;
   readonly sources: S;
   readonly commands?: C;
-  readonly view: (values: PanelValues<S>, tools: PanelTools<C>) => VNode;
-  readonly compact?: (values: PanelValues<S>, tools: CompactTools<C>) => VNode;
+  readonly view: (values: PanelValues<S>, tools: PanelTools<C>) => PanelElement;
+  readonly compact?: (values: PanelValues<S>, tools: CompactTools<C>) => PanelElement;
 };
 
 /**
@@ -83,12 +89,12 @@ export type PanelSpec = {
   readonly view: (
     values: Readonly<Record<string, Json>>,
     tools: PanelTools<Readonly<Record<string, string>>>
-  ) => VNode;
+  ) => PanelElement;
   readonly compact:
     | ((
         values: Readonly<Record<string, Json>>,
         tools: CompactTools<Readonly<Record<string, string>>>
-      ) => VNode)
+      ) => PanelElement)
     | undefined;
 };
 

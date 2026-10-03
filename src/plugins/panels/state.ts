@@ -8,11 +8,19 @@ import type { PanelsConfig, PanelsState } from "./types";
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config (empty).
+ * @returns A fresh state.
  * @example
  * ```ts
  * createPanelsState({ config: {} }).panels; // []
  * ```
  */
 export function createPanelsState(_ctx: { readonly config: Readonly<PanelsConfig> }): PanelsState {
-  throw new Error("not implemented");
+  return {
+    panels: [],
+    ids: new Set(),
+    mounted: new Map(),
+    status: { kind: "connecting" },
+    started: false,
+    cleanup: []
+  };
 }
