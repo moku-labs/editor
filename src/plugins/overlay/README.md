@@ -148,5 +148,5 @@ await ctx.require(channelPlugin).run("editor.overlay", { on: true });
 - Only render chips and one-click cheats. A cheat with required input must be run from the editor.
 - The headless app has no renderer, so the chip reads `render —`.
 - After a game reload the overlay resets to `config.open`. The tools side re-runs `editor.overlay` after reconnect.
-- No backdrop blur: it costs too much over a WebGPU canvas.
+- No backdrop blur: it costs too much over a GPU canvas (WebGPU or WebGL).
 - Game follow-ups: none named in the spec.

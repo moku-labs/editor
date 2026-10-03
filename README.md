@@ -49,8 +49,9 @@ Three pieces: the **agent** on the game page, the **server** in Bun, the **tools
 ```ts
 import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
 
+const devPlugins = __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [];
 const editor = createApp({
-  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  plugins: devPlugins,
   pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
 });
 await editor.start(); // never waits for the editor server
@@ -397,8 +398,14 @@ bun run validate           # publint + attw (esm-only profile)
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI.
 
-> [!NOTE]
-> The **merge-game** tests load the fixture from the sibling repository `../game`. CI checks out only this repository, so `vitest.config.ts` skips those test files there with a warning. Run them locally with `../game` next to this checkout.
+**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
+
+```sh
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.0.3
+bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
+```
+
+When `package.json` bumps `@moku-labs/game`, move it and install again: `git -C ../game-fixture checkout vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
 
 ## Requirements
 

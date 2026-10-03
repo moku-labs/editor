@@ -71,8 +71,8 @@ A commit made while another workspace is shown is still the last commit when the
 |---|---|---|---|
 | Declares | none | | |
 | Emits | none | | |
-| Hooks | `link:status` | `{ status }` | `lost` resets the tracker with the note `reloaded`. Other kinds do nothing. |
-| Hooks | `workspace:ran` | the run result | A settled run stores `result.state.tainted` at once and notifies. A failed run does nothing. |
+| Hooks | `link:status` | `{ status, session? }` | `lost` resets the tracker with the note `reloaded`. Other kinds do nothing. |
+| Hooks | `workspace:ran` | `RanEvent` | A settled run stores `result.state.tainted` at once and notifies. A failed run does nothing. |
 
 Log events: `stateView:unexpected-model` (warn), `stateView:unexpected-tainted` (warn), `stateView:graph-unavailable` (debug).
 

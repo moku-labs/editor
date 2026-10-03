@@ -29,7 +29,7 @@ So the badge and Preserve log work while another workspace is open.
 | `visible` | `() => readonly LogLine[]` | Entries of the filter level (`all` includes debug) whose `source + " " + message` contains the query, case-insensitive. Meta rows always show. |
 | `counts` | `() => LevelCounts` | `{ all, debug, info, warn, error }` over entry lines. Meta rows are not counted. |
 | `filter` | `() => { level: LevelFilter; query: string }` | The current filter, a copy. |
-| `setFilter` | `(next: Partial<{ level; query }>) => void` | Merges the filter. Notifies. |
+| `setFilter` | `(next: Partial<{ level: LevelFilter; query: string }>) => void` | Merges the filter. Notifies. |
 | `clear` | `() => void` | Leaves one meta row "Console cleared" and closes the drawer. Consumed entries never come back. Clears the badge. |
 | `preserve` | `() => boolean` | Whether Preserve log is on. |
 | `setPreserve` | `(on: boolean) => void` | Sets Preserve log. Notifies. |
@@ -86,8 +86,8 @@ No badge when both are zero. It counts what the Console holds, not what is unsee
 |---|---|---|---|
 | Declares | none | | |
 | Emits | `workspace:focus-frame` (global) | `{ frame: number }` | A frame link is clicked, or `focusFrame()`. |
-| Hooks | `link:status` | `{ status }` | Re-renders the view. Marks "ever connected" on `live` or `paused`. Reads nothing. |
-| Hooks | `workspace:ran` | the run result | A failed run appends the D1 line and pushes the badge. A successful run does nothing. |
+| Hooks | `link:status` | `{ status, session? }` | Re-renders the view. Marks "ever connected" on `live` or `paused`. Reads nothing. |
+| Hooks | `workspace:ran` | `RanEvent` | A failed run appends the D1 line and pushes the badge. A successful run does nothing. |
 
 Log events: `consoleView:read-failed` (debug, from `refresh()`), `consoleView:unexpected-log` (warn, a value that is not a trace).
 

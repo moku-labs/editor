@@ -77,7 +77,7 @@ gameView declares no events. It uses the global tools events (R4).
 | Emits | `workspace:reveal` | `{ ref }` | Element tab "Show in render tree". renderView hooks it. |
 | Emits | `workspace:new-note` | `{ captures, from? }` | "New note…" in the capture card or the contact sheet. flowView hooks it. |
 | Emits | `workspace:open-file` | `{ path, line }` | "Open in Files" on the style card. filesView hooks it. |
-| Hooks | `link:status` | `{ status, session }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. |
+| Hooks | `link:status` | `{ status, session? }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. |
 | Hooks | `workspace:changed` | `{ ws }` | Entering Game starts the scene watches. Leaving stops them and turns the picker off. |
 | Hooks | `workspace:open-sheet` | `{ index }` | Opens that contact sheet. |
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
@@ -166,7 +166,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 - `__tests__/unit/`: one file per module and per component. The components run under happy-dom.
 - `__tests__/integration/game-view.test.ts`: the real link, workspace, panels and gameView over an in-process hub.
-- `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where `../game` exists.
+- `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where the pinned game checkout exists (`tests/fixtures/game-dir.ts`).
 
 ## Limits and game follow-ups
 

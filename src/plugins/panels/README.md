@@ -31,7 +31,7 @@ Nothing in panels polls. The folder also holds `shared/`, the plain view modules
 ```ts
 panels.register(flowPanel);
 await panels.run("game.step", { frames: 1 });
-app.panels.list().length; // 13
+app.panels.list().length; // 6: one panel per workspace
 const unmount = panels.mountInto("flow", workspace.host("flow"));
 ```
 

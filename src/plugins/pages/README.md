@@ -155,7 +155,7 @@ What `main` (`cli.ts`) does:
 5. Prints the Game, Tools and Root lines. The token is never printed.
 6. On `SIGINT` or `SIGTERM`, once: `editor.stop()`, then `server.stop(true)` bounded to 500 ms, prints `stopped`, exits 0.
 
-`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root.
+`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400.
 
 | Exit code | When |
 |---|---|

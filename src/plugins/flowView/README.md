@@ -65,7 +65,7 @@ override file `.moku/editor/files.json`. filesView uses the same rule.
 | `flows.up` | `(depth: number) => void` | Breadcrumb back up (M1). |
 | `layout.pinnedCount` | `() => number` | Pins of the visible flows. Reset layout is disabled at 0 (M8). |
 | `layout.reset` | `() => Promise<void>` | Clear those pins, write `layoutFile` and toast. Rejects when nothing is pinned. |
-| `notes.list` | `() => readonly NoteFile[]` | Parsed note files, newest first. |
+| `notes.list` | `() => readonly NoteFile[]` | Parsed note files, newest first, at most 200. |
 | `notes.edit` | `(draft?: Partial<NoteDraft>) => void` | Open the note editor (D5). |
 | `notes.create` | `(input: NoteInput) => Promise<NoteFile>` | Write `<notesDir>/<date>-<slug>.md` with the contract front matter. Toasts "✓ Note saved · <path>" (M12). |
 | `notes.attach` | `(path: string, captures: readonly string[]) => Promise<NoteFile>` | Append capture paths (version checked, one retry). Toasts "✓ Attached to <title>". |
@@ -96,7 +96,7 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 | Kind | Name | Payload | When |
 |---|---|---|---|
 | Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code, Styles and Notes tabs, and ⇧↵ of a Nodes palette item. filesView hooks it. |
-| Hooks | `link:status` | `{ status, session }` | `silent`/`lost`: stale marking (M13). The first `live`/`paused` of a session loads `layoutFile`, the notes and the style keys. `empty`: clears the selection, the strip, the menus and the editor (M4). |
+| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13). The first `live`/`paused` of a session loads `layoutFile`, the notes and the style keys. `empty`: clears the selection, the strip, the menus and the editor (M4). |
 | Hooks | `workspace:changed` | `{ ws }` | `flow`: the default camera. Leaving Flow closes the menu and cancels the camera move. |
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. |

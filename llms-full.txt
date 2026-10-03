@@ -851,7 +851,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | Flag | Short | Default | Rule |
 |---|---|---|---|
 | `--port` | `-p` | `3000` | Digits, 0–65535. `0` picks a free port. |
-| `--root` | `-r` | `.` | Project root the editor reads and writes. |
+| `--root` | `-r` | `.` | Project root the editor reads and writes. Not empty. |
 | `--help` | `-h` | | Prints usage, exit 0. |
 
 Exit codes: 0 help or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
@@ -2492,7 +2492,7 @@ export type GameViewApi = {
 ### 7.14 renderView — tools, Standard
 
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Render panel), `onStart` (session watches `game.render`, `game.assets`, `game.effects` by manifest), `onStop`.
-- Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `workspace:reveal`.
+- Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `workspace:reveal`. Logs: `renderView: unexpected source shape` (warn), `renderView: calibration failed` (warn).
 
 ~~~ts
 /**
@@ -2854,7 +2854,7 @@ export type StateViewApi = {
 ### 7.16 filesView — tools, Complex
 
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Files panel, `mod+s`, `fileEdit` Esc layer), `onStart` (`game.graph` per manifest, index build, `beforeunload` guard), `onStop`.
-- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `workspace:changed`, `workspace:open-file`.
+- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `workspace:changed`, `workspace:open-file`. Logs: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:overrides-invalid` (warn); `filesView:save-failed` (error); `filesView:overrides-missing` (debug).
 
 ~~~ts
 /**
@@ -3465,8 +3465,9 @@ Every plugin imports the runtime-free protocol from `src/plugins/registry/protoc
 ```ts
 import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
 
+const devPlugins = __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [];
 const editor = createApp({
-  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  plugins: devPlugins,
   pluginConfigs: {
     registry: { game: app, modules: [mergeDev] },
     bridge: { retryMs: 500 },

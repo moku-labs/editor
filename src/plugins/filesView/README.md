@@ -92,7 +92,7 @@ filesView declares no events. It uses the global tools events of `src/config.ts`
 |---|---|---|---|
 | Emits | `workspace:select-node` | `{ id }` | A Used-by chip is clicked. A node chip sends `"board/merge"`. A flow chip sends `"<flow>/<start>"`, or the flow name when it has no start. |
 | Emits | `workspace:open-sheet` | `{ index }` | "Open contact sheet" on a series `index.json`. |
-| Hooks | `link:status` | `{ status }` | Builds the index when there is none and no build runs. Notifies. |
+| Hooks | `link:status` | `{ status, session? }` | Builds the index when there is none and no build runs. Notifies. |
 | Hooks | `workspace:changed` | `{ ws }` | `ws === "files"`: rebuilds an index older than `INDEX_STALE_MS`, re-reads the active tab. |
 | Hooks | `workspace:open-file` | `{ path, line? }` | Opens the file for another view. A failure logs `filesView:open-failed`. |
 

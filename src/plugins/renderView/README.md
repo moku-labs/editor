@@ -67,7 +67,7 @@ renderView declares no events. It uses the global tools events (R4, R9).
 |---|---|---|---|
 | Emits | `workspace:inspect` | `{ ref }` | The C9 "Inspect in Game" button. gameView hooks it. |
 | Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches on, refresh once per session. Other: scene watches off, box cleared. |
-| Hooks | `link:status` | `{ status, session }` | Silent or lost: data kept. A new session while live or paused: session data and effects cleared. `empty`: everything cleared. |
+| Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept. A new session while live or paused: session data and effects cleared. `empty`: everything cleared. |
 | Hooks | `workspace:reveal` | `{ ref }` | gameView's "Show in render tree": `reveal(ref)`. |
 
 Log events: `renderView: unexpected source shape` (warn, once per wrong value), `renderView: calibration failed` (warn).

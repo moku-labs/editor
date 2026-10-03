@@ -126,8 +126,9 @@ Game dev entry:
 ```ts
 import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
 
+const devPlugins = __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [];
 const editor = createApp({
-  plugins: __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [],
+  plugins: devPlugins,
   pluginConfigs: {
     registry: { game: app, modules: [] },
     capture: { maxDurationMs: 10_000 }

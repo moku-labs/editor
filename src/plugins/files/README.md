@@ -185,11 +185,13 @@ const entries = await editor.files.list("src");
 From another server plugin, with `ctx.require` and a hook on `files:written`:
 
 ```ts
+import { createPlugin, filesPlugin, type Files } from "@moku-labs/editor/server";
+
 const seen: Files.FilesWritten[] = [];
 
-const auditPlugin = createServerPlugin("audit", {
+const auditPlugin = createPlugin("audit", {
   depends: [filesPlugin],
-  hooks: () => ({ "files:written": payload => seen.push(payload) })
+  hooks: () => ({ "files:written": payload => { seen.push(payload); } })
 });
 ```
 
