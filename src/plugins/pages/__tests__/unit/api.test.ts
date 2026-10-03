@@ -6,20 +6,42 @@ import { parseBinArgs } from "../../args";
 import type { BinArgs } from "../../types";
 import { createHarness, createLog } from "../helpers";
 
+/**
+ * Builds the pages api over a harness state that holds the given routes.
+ *
+ * @param routes - The routes put in state.
+ * @returns The api under test.
+ */
+function apiWithRoutes(routes: EditorRoutes) {
+  const { state, deps } = createHarness(undefined);
+  state.routes = routes;
+  return createPagesApi({
+    config: deps.config,
+    state,
+    log: createLog(),
+    require: () => {
+      throw new Error("unused");
+    }
+  });
+}
+
 describe("createPagesApi", () => {
-  it("routes() returns the object registered in state", () => {
-    const { state, deps } = createHarness(undefined);
-    const routes: EditorRoutes = Object.freeze({ "/__editor/x": new Response("x") });
-    state.routes = routes;
-    const api = createPagesApi({
-      config: deps.config,
-      state,
-      log: createLog(),
-      require: () => {
-        throw new Error("unused");
-      }
-    });
-    expect(api.routes()).toBe(routes);
+  it("routes() returns a copy of the routes registered in state", () => {
+    const page = new Response("x");
+    const routes: EditorRoutes = Object.freeze({ "/__editor/x": page });
+    const api = apiWithRoutes(routes);
+    const copy = api.routes();
+    expect(copy).toEqual({ "/__editor/x": page });
+    expect(copy).not.toBe(routes);
+  });
+
+  it("routes() is not changed by a mutation of an earlier result", () => {
+    const page = new Response("x");
+    const api = apiWithRoutes({ "/__editor/x": page });
+    const first = api.routes();
+    expect(Reflect.set(first, "/__editor/added", new Response("y"))).toBe(true);
+    expect(Reflect.deleteProperty(first, "/__editor/x")).toBe(true);
+    expect(api.routes()).toEqual({ "/__editor/x": page });
   });
 });
 

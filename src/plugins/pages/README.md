@@ -23,7 +23,7 @@ A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` wit
 
 | Member | Signature | Notes |
 |---|---|---|
-| `routes` | `routes(): EditorRoutes` | The frozen object registered with the hub in `onInit`. |
+| `routes` | `routes(): EditorRoutes` | A copy of the routes registered with the hub in `onInit`. |
 
 ```ts
 Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]

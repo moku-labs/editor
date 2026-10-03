@@ -11,6 +11,6 @@ import type { PagesApi, PagesCtx } from "./types";
  */
 export function createPagesApi(ctx: PagesCtx): PagesApi {
   return {
-    routes: () => ctx.state.routes
+    routes: () => ({ ...ctx.state.routes })
   };
 }

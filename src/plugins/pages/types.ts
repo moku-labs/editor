@@ -48,8 +48,8 @@ export type PagesState = {
  */
 export type PagesApi = {
   /**
-   * The routes this plugin registered with the hub in onInit: the same frozen object, keyed by
-   * URL path under the hub path.
+   * A copy of the routes this plugin registered with the hub in onInit, keyed by URL path under
+   * the hub path.
    *
    * @returns The four routes `P`, `P/`, `P/hello` and `P/assets/*`.
    * @example
