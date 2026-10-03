@@ -1,8 +1,8 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" and JSON null */
 import { readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { read, sources } from "@moku-labs/game/inspect";
 import { describe, expect, it } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import {
   flowFile,
@@ -230,11 +230,10 @@ describe("parseOverrides", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("merge-game fixture", () => {
-  const root = fileURLToPath(
-    new URL("../../../../../../game/tests/integration/merge-game/", import.meta.url)
-  );
   const files = new Set(
-    readdirSync(root, { recursive: true, encoding: "utf8" }).map(path => path.replaceAll("\\", "/"))
+    readdirSync(MERGE_GAME_DIR, { recursive: true, encoding: "utf8" }).map(path =>
+      path.replaceAll("\\", "/")
+    )
   );
   const exists = (path: string): boolean => files.has(path);
 

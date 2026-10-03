@@ -28,8 +28,8 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // User journeys on the real merge game (plan §3, journey-merge.test.ts, M1–M5).
-// Local only: helpers/merge.ts calls loadMergeGame, which needs the sibling
-// repository ../game, so vitest.config.ts skips this file on CI (its text names
+// Local only: helpers/merge.ts calls loadMergeGame, which needs the pinned game
+// checkout (tests/fixtures/game-dir.ts), so vitest.config.ts skips this file on CI (its text names
 // loadMergeGame). The tiny CI game has no screen; this file is where the scene
 // content, the texture table and the D-07 reload and restore after a style edit
 // are checked for real: open the editor and walk onto the board (M1), pick an

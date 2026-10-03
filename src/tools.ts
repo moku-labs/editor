@@ -19,11 +19,18 @@
  * | gameView | capturesDir, notesDir, manifestPaths … | see src/plugins/gameView/README.md |
  * | renderView | fpsSamples | 60 |
  * | renderView | releaseLogMax | 50 |
+ * | renderView | manifestPaths | ["manifest.json", "public/manifest.json", "web/manifest.json"] |
  * | stateView | expandDepth | 2 |
  * | stateView | maxPatches | 200 |
+ * | stateView | pageSize | 100 |
  * | filesView | maxFiles | 5000 |
+ * | filesView | maxHighlightChars | 512000 |
+ * | filesView | reloadExtensions | [".ts", ".tsx", ".css", ".json"] |
+ * | filesView | revalidateMs | 2000 |
  * | consoleView | maxLines | 5000 |
  * | consoleView | preserveLog | false |
+ * | consoleView | freshMs | 1200 |
+ * | consoleView | summaryChars | 160 |
  *
  * @file The tools page entry: the tools core and its plugins.
  * @example

@@ -1,7 +1,7 @@
 /**
  * @file Merge-game helpers of the root integration wave (plan §2.7), local only. They call
- * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the sibling
- * repository `../game`. CI test files never import this module: vitest.config.ts skips only the
+ * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the pinned
+ * game checkout of tests/fixtures/game-dir.ts. CI test files never import this module: vitest.config.ts skips only the
  * test files whose text names `loadMergeGame`, so a local-only test imports it and says
  * `loadMergeGame` itself.
  */
@@ -9,20 +9,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createHeadless } from "@moku-labs/game/testing";
 import type { Registry } from "../../../src/agent";
+import { gameFileUrl, MERGE_GAME_DIR } from "../../fixtures/game-dir";
 import { loadMergeGame } from "../../fixtures/merge-game";
 import { withoutPage } from "./page";
 import type { StartedGame } from "./tiny-game";
 import { settle } from "./wait";
 
-/** The merge-game fixture folder of the sibling game repository. */
-const MERGE_GAME_DIR = new URL("../../../../game/tests/integration/merge-game", import.meta.url)
-  .pathname;
-
 /** The game repository's helper module (`startOnBoard`, `tap`, `until`), loaded at run time. */
-const TIMBER_HELPERS = new URL(
-  "../../../../game/tests/integration/timber-helpers.ts",
-  import.meta.url
-).href;
+const TIMBER_HELPERS = gameFileUrl("tests/integration/timber-helpers.ts");
 
 /** Milliseconds per frame of `frames(n)`. */
 const FRAME_MS = 16;

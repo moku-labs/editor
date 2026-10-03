@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { gameFileUrl } from "../../../../../tests/fixtures/game-dir";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { refId, type SceneNode } from "../../../panels/shared/scene";
@@ -14,15 +15,12 @@ import { createCtx, type TestCtx } from "../helpers";
 // walks createScreenGame (inert renderer) onto board/awaitIntent; the agent
 // core (registry + channel) serves its sources in process; gameView reads and
 // watches them through a link whose read and watch are the agent channel's.
-// Runs only where ../game exists (vitest.config.ts skips files that call
-// loadMergeGame… when the fixture is absent, as on CI).
+// Runs only where the pinned game checkout exists (tests/fixtures/game-dir.ts;
+// vitest.config.ts skips files that call loadMergeGame… when it is absent, as on CI).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The game repository's helper module (timber-helpers.ts), loaded at run time like the fixture. */
-const HELPERS = new URL(
-  "../../../../../../game/tests/integration/timber-helpers.ts",
-  import.meta.url
-).href;
+const HELPERS = gameFileUrl("tests/integration/timber-helpers.ts");
 
 /** What the test uses of the helper module. */
 type BoardHelpers = {

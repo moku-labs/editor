@@ -13,8 +13,8 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local only: the merge-game helper (merge.ts, which calls loadMergeGame) needs
-// the sibling repository ../game. vitest.config.ts skips this file on CI because
-// its text names loadMergeGame.
+// the pinned game checkout (tests/fixtures/game-dir.ts). vitest.config.ts skips
+// this file on CI because its text names loadMergeGame.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const running: (Stoppable | undefined)[] = [];

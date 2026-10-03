@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import {
   agentCoreConfig,
@@ -33,8 +34,6 @@ type ScreenApp = GameLike & {
   readonly time: { step(ms: number): void };
 };
 
-const GAME_DIR = path.resolve("../game/tests/integration/merge-game");
-
 const BOOT: ToolsBoot = {
   v: 1,
   ws: "ws://127.0.0.1:3000/__editor/ws",
@@ -57,7 +56,7 @@ const SESSION: SessionInfo = {
 /** The game's asset io over the files of the fixture: bundles load for real, textures are stand-ins. */
 const DISK_IO = {
   fetch: async (url: string) =>
-    new Response(readFileSync(path.join(GAME_DIR, url.replace(/^\//u, "")))),
+    new Response(readFileSync(path.join(MERGE_GAME_DIR, url.replace(/^\//u, "")))),
   decode: async () => ({ width: 1, height: 1 }),
   createTexture: () => ({ label: "stand-in" }),
   destroyTexture: () => undefined
@@ -94,7 +93,7 @@ function watched(): string[] {
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const manifestText = readFileSync(path.join(GAME_DIR, "manifest.json"), "utf8");
+  const manifestText = readFileSync(path.join(MERGE_GAME_DIR, "manifest.json"), "utf8");
   const fixture = await loadMergeGame();
   const create = fixture.createScreenGame as unknown as (options: {
     manifest: Json;

@@ -5,16 +5,13 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MERGE_GAME_DIR } from "../../fixtures/game-dir";
 
 /** The merge-game styles text (flowView `stylesFile` default), copied into the tiny project. */
 export const STYLES_FIXTURE = new URL(
   "../../../src/plugins/flowView/__tests__/fixtures/ui-styles.txt",
   import.meta.url
 ).pathname;
-
-/** The merge-game fixture folder of the sibling game repository (local only). */
-const MERGE_GAME_DIR = new URL("../../../../game/tests/integration/merge-game", import.meta.url)
-  .pathname;
 
 /** The path of the note every tiny project starts with. */
 export const FIRST_NOTE = ".moku/notes/2026-10-01-first-note.md";
@@ -154,8 +151,8 @@ async function fillTinyProject(root: string): Promise<void> {
 
 /**
  * Creates a project root in a fresh temp folder (its real path). `"tiny"` writes the tiny
- * project; `"merge"` copies the merge-game fixture of `../game` (local only; writes never touch
- * the sibling repository).
+ * project; `"merge"` copies the merge-game fixture of the pinned game checkout (local only; writes
+ * never touch the checkout).
  *
  * @param kind - Which project.
  * @returns The absolute real path of the root.

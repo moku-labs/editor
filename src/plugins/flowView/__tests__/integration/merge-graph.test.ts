@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 
 // The fixture merge-graph.json is flow.describe() of the merge-game fixture (generated once, kept
-// in the repository so CI runs the layout tests without ../game). This file keeps it honest.
+// in the repository so CI runs the layout tests without the game). This file keeps it honest.
 
 describe("merge-graph fixture", () => {
   it("equals flow.describe() of the merge-game fixture", async () => {

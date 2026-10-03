@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
 import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { registryPlugin } from "../../../registry";
@@ -44,8 +45,6 @@ type Capture = {
   readonly projections: Json;
   readonly rects: Readonly<Record<string, PageRect>>;
 };
-
-const GAME_DIR = path.resolve("../game/tests/integration/merge-game");
 
 const IDENTITY = { scale: 1, x: 0, y: 0 };
 
@@ -130,7 +129,9 @@ function captureLive(keys: readonly string[]): Capture {
 }
 
 async function importGame<T>(file: string): Promise<T> {
-  const module: T = await import(/* @vite-ignore */ pathToFileURL(path.join(GAME_DIR, file)).href);
+  const module: T = await import(
+    /* @vite-ignore */ pathToFileURL(path.join(MERGE_GAME_DIR, file)).href
+  );
   return module;
 }
 
@@ -158,7 +159,9 @@ async function timberPlayer(): Promise<JsonObject> {
 
 beforeAll(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const manifest: Json = JSON.parse(readFileSync(path.join(GAME_DIR, "manifest.json"), "utf8"));
+  const manifest: Json = JSON.parse(
+    readFileSync(path.join(MERGE_GAME_DIR, "manifest.json"), "utf8")
+  );
   const fixture = await loadMergeGame();
   const create = fixture.createScreenGame as unknown as (options: {
     player: JsonObject;
