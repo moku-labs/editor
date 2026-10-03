@@ -759,27 +759,33 @@ export function parseStyleFile(text: string): StyleFile | StyleEditError {
   let line = 1;
 
   while (line <= scan.lineStarts.length) {
+    // A colour constant may sit on any line, inside a block or not.
     const colour = colourOf(scan, line);
     if (colour) colours.set(colour[0], colour[1]);
 
+    // A line that opens no style block: go to the next line.
     const start = blockStart(scan, line);
-    const close = start === undefined ? -1 : (scan.partners[start.open] ?? -1);
-
     if (start === undefined) {
       line += 1;
-    } else if (close === -1) {
-      return { error: "parse", line };
-    } else {
-      const fields: StyleField[] = [];
-      readMembers(scan, start.open + 1, close, "", fields);
-      const endLine = lineOf(scan, close);
-      blocks.push({ ref: start.ref, line, endLine, fields });
-      line = endLine + 1;
+      continue;
     }
+
+    // A style block whose brace never closes fails the parse at its first line.
+    const close = scan.partners[start.open] ?? -1;
+    if (close === -1) return { error: "parse", line };
+
+    // Read the whole block, then go on after its closing brace.
+    const fields: StyleField[] = [];
+    readMembers(scan, start.open + 1, close, "", fields);
+    const endLine = lineOf(scan, close);
+    blocks.push({ ref: start.ref, line, endLine, fields });
+    line = endLine + 1;
   }
 
+  // Any other unbalanced brace fails the parse at its line.
   if (scan.unbalanced !== -1) return { error: "parse", line: lineOf(scan, scan.unbalanced) };
 
+  // Keep the line ending of the file for the text written back.
   const lineBreak = text.indexOf("\n");
   const eol = lineBreak > 0 && text[lineBreak - 1] === "\r" ? "\r\n" : "\n";
 

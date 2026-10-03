@@ -61,10 +61,11 @@ describe("link:status", () => {
     const hook = onLinkStatus(ctx);
     hook({ status: { kind: "live", frame: 1 }, session: "s-1" });
     seed();
+    const { scene } = ctx.state;
     hook({ status: { kind: "silent", since: 1, lastFrame: 1 }, session: "s-1" });
     hook({ status: { kind: "lost", reason: "game_reloaded", lastFrame: 1, retryInMs: 1000 } });
-    expect(ctx.state.scene).toBeDefined();
-    expect(ctx.state.calibration).toBeDefined();
+    expect(ctx.state.scene).toBe(scene);
+    expect(ctx.state.calibration).toEqual({ scale: 1, x: 0, y: 0 });
   });
 
   it("live after lost drops the scene, the calibration and the manifest", () => {
@@ -86,8 +87,9 @@ describe("link:status", () => {
     const hook = onLinkStatus(ctx);
     hook({ status: { kind: "live", frame: 1 }, session: "s-1" });
     seed();
+    const { scene } = ctx.state;
     hook({ status: { kind: "paused", frame: 2 }, session: "s-1" });
-    expect(ctx.state.scene).toBeDefined();
+    expect(ctx.state.scene).toBe(scene);
     hook({ status: { kind: "live", frame: 3 }, session: "s-2" });
     expect(ctx.state.scene).toBeUndefined();
     expect(ctx.state.link).toEqual({ status: "live", session: "s-2" });

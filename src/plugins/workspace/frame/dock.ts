@@ -22,11 +22,6 @@ export const PREVIEW_SIZES: Readonly<
 
 /**
  * Margin between the preview float and its zone edge, in px.
- *
- * @example
- * ```ts
- * floatRect(zone, insets, corner, size); // keeps PREVIEW_MARGIN from the corner
- * ```
  */
 export const PREVIEW_MARGIN = 12;
 

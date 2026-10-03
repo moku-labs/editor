@@ -58,10 +58,6 @@ function Captures(props: { readonly ctx: FlowCtx; readonly captures: readonly st
  *
  * @param note - The note.
  * @returns The line.
- * @example
- * ```ts
- * noteMeta(note); // "board/merge · done → board/awaitIntent · idea · 2026-09-24"
- * ```
  */
 export function noteMeta(note: Note): string {
   const from = note.from;

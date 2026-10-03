@@ -97,9 +97,10 @@ function cheatView(state: OverlayState, id: string, title: string, now: number):
 function announceOf(state: OverlayState, now: number): string {
   let newest: [string, CheatResult] | undefined;
   for (const entry of state.results) {
-    if (isShowing(entry[1], now) && (newest === undefined || entry[1].at >= newest[1].at)) {
-      newest = entry;
-    }
+    const [, result] = entry;
+    const isNewerShowing =
+      isShowing(result, now) && (newest === undefined || result.at >= newest[1].at);
+    if (isNewerShowing) newest = entry;
   }
   if (newest === undefined) return "";
 

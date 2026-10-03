@@ -37,10 +37,6 @@ export function messageOf(error: unknown): string {
  *
  * @param socket - The socket.
  * @returns The buffered byte count.
- * @example
- * ```ts
- * bufferedOf(socket); // 0
- * ```
  */
 function bufferedOf(socket: SocketLike): number {
   return socket.bufferedAmount ?? 0;

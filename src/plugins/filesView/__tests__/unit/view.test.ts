@@ -142,9 +142,9 @@ describe("tree", () => {
   });
 
   it("has tree roles, a header with the file count and a refresh button", () => {
-    expect(get('[role="tree"]')).toBeTruthy();
+    expect(get('[role="tree"]').getAttribute("aria-label")).toBe("Project files");
     expect(get('[data-part="tree"]').textContent).toContain("Project · 10 files");
-    expect(get('button[aria-label="Refresh the file list"]')).toBeTruthy();
+    expect(get('button[aria-label="Refresh the file list"]').textContent).toBe("↻");
     expect(rows().map(item => item.dataset.path)).toEqual([
       ".moku",
       "features",
@@ -349,7 +349,7 @@ describe("file bar", () => {
       link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Opened in your editor", "nodes/merge.ts");
-    expect(button("Edit here")).toBeTruthy();
+    expect(button("Edit here").dataset.variant).toBe("ghost");
   });
 
   it("reveals and focuses a folder from the crumb", async () => {

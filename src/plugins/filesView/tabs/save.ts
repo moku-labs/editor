@@ -5,7 +5,7 @@
  * frame and restores).
  */
 import { linkPlugin } from "../../link";
-import { SOURCE_OVERRIDES_PATH } from "../../registry/protocol";
+import { errorCode, SOURCE_OVERRIDES_PATH } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { codeOf, messageOf, reasonOf } from "../errors";
 import { loadOverrides, rebuildUsedBy } from "../links/used-by";
@@ -120,7 +120,7 @@ async function write(
     return { kind: "saved", path: tab.path, bytes: result.bytes, version: result.version, reload };
   } catch (error) {
     const code = codeOf(error);
-    if (reasonOf(error) === "version_conflict" || code === -32_005) {
+    if (reasonOf(error) === "version_conflict" || code === errorCode.versionConflict) {
       tab.status = "conflict";
       notify(ctx.state);
       return { kind: "conflict" };

@@ -123,10 +123,6 @@ export function Minimap(props: MinimapProps): VNode {
    *
    * @param event - The pointer event.
    * @returns World coordinates.
-   * @example
-   * ```ts
-   * worldAt(event); // { x: 640, y: 420 }
-   * ```
    */
   const worldAt = (event: PointerEvent): { x: number; y: number } => {
     const target = event.currentTarget instanceof Element ? event.currentTarget : undefined;

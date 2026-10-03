@@ -12,10 +12,6 @@ import { isShapePath, readUi, uiVisits } from "./wire";
  *
  * @param ui - The game.ui value.
  * @returns The key and the drawn rect in reference units, or undefined.
- * @example
- * ```ts
- * const target = calibrationTarget(ui); // { key: "boardScreen", drawn: { x: 0, y: 0, w: 1080, h: 1440 } }
- * ```
  */
 export function calibrationTarget(
   ui: Json

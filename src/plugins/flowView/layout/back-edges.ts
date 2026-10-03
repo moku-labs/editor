@@ -125,10 +125,6 @@ export function classifyEdges(flow: FlowJson): ReadonlyMap<string, EdgeClass> {
    * Visits one node depth first and classifies its outcomes.
    *
    * @param node - The node name.
-   * @example
-   * ```ts
-   * visit("boot");
-   * ```
    */
   function visit(node: string): void {
     visited.add(node);

@@ -196,7 +196,7 @@ describe("deliver and detachAll", () => {
     expect(ctx.log.error).toHaveBeenCalledWith(
       "link:on-value-failed",
       { id: "game.position" },
-      expect.any(Error)
+      new Error("panel broke")
     );
     expect(socket.requests("watch")).toHaveLength(1);
   });

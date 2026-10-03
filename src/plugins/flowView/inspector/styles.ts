@@ -81,7 +81,7 @@ function textBlocks(blocks: readonly StyleBlock[]): StyleBlock[] {
  * @returns The keys.
  * @example
  * ```ts
- * keysOf(blocks); // ["ui.title", "ui.button", …]
+ * keysOf([{ ref: { kind: "text", key: "ui.title" }, line: 3, endLine: 6, fields: [] }]); // ["ui.title"]
  * ```
  */
 export function keysOf(blocks: readonly StyleBlock[]): string[] {

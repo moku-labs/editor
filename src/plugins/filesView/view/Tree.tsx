@@ -11,13 +11,24 @@ import { notify } from "../store";
 import { extensionOf, IMAGE_EXTENSIONS } from "../tabs/kind";
 import { openOrLog } from "../tabs/open";
 import { countFiles, parentOf, toggleFolder, visibleRows } from "../tree/model";
-import type { FilesViewApi, FilesViewCtx, TreeRow } from "../types";
+import type { FileIndex, FilesViewApi, FilesViewCtx, TreeRow } from "../types";
 import { useElement } from "./useFiles";
 
 /**
  * The folder whose empty state names the Game camera.
  */
 const CAPTURES_DIR = ".moku/captures";
+
+/**
+ * Whether a row is the open captures folder with nothing in it (it shows the camera note).
+ *
+ * @param row - The tree row.
+ * @param index - The file index.
+ * @returns True for an expanded, empty captures folder.
+ */
+function showsEmptyCaptures(row: TreeRow, index: FileIndex): boolean {
+  return row.path === CAPTURES_DIR && row.expanded && index.children.get(row.path)?.length === 0;
+}
 
 /**
  * Glyph names by extension (the CSS draws them).
@@ -306,21 +317,19 @@ export function Tree(props: TreeProps): VNode {
                 <span data-glyph={glyphOf(row)} aria-hidden="true" />
                 <span data-name>{row.name}</span>
               </div>
-              {row.path === CAPTURES_DIR &&
-                row.expanded &&
-                index.children.get(row.path)?.length === 0 && (
-                  <div
-                    role="treeitem"
-                    aria-level={row.level + 1}
-                    aria-disabled="true"
-                    aria-selected={false}
-                    tabIndex={-1}
-                    data-tree-note
-                    style={{ "--level": row.level + 1 }}
-                  >
-                    No captures yet · camera in Game
-                  </div>
-                )}
+              {showsEmptyCaptures(row, index) && (
+                <div
+                  role="treeitem"
+                  aria-level={row.level + 1}
+                  aria-disabled="true"
+                  aria-selected={false}
+                  tabIndex={-1}
+                  data-tree-note
+                  style={{ "--level": row.level + 1 }}
+                >
+                  No captures yet · camera in Game
+                </div>
+              )}
             </Fragment>
           ))}
         </div>

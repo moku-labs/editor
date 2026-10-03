@@ -42,20 +42,12 @@ export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
    * True while the neighbours strip is open (the arrow keys walk it).
    *
    * @returns Whether the strip is open.
-   * @example
-   * ```ts
-   * stripOpen(); // true after a node was selected
-   * ```
    */
   const stripOpen = (): boolean => ctx.state.focus.strip;
   /**
    * True while the Code tab edits or the note editor is open (⌘S saves).
    *
    * @returns Whether something can be saved.
-   * @example
-   * ```ts
-   * editing(); // true in Code edit mode
-   * ```
    */
   const editing = (): boolean =>
     ctx.state.inspector.code?.draft !== undefined || ctx.state.notes.editor !== undefined;

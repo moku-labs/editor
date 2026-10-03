@@ -3,6 +3,7 @@
  * `readBinary` (R1, R7); the error texts by wire reason; revalidation of an open tab.
  */
 import { linkPlugin } from "../../link";
+import { errorCode } from "../../registry/protocol";
 import { codeOf, messageOf, reasonOf } from "../errors";
 import { notify } from "../store";
 import type { FilesViewCtx, OpenTab } from "../types";
@@ -48,10 +49,10 @@ export function readFailure(error: unknown): ReadFailure {
   const text = messageOf(error);
 
   if (reason === "forbidden_path") return { status: "error", message: SANDBOX_MESSAGE, code };
-  if (code === -32_000 && text.includes("too large")) {
+  if (code === errorCode.commandFailed && text.includes("too large")) {
     return { status: "error", message: TOO_LARGE_MESSAGE, code };
   }
-  if (reason === "unknown_id" || code === -32_601) {
+  if (reason === "unknown_id" || code === errorCode.unknownMethod) {
     return { status: "missing", message: MISSING_MESSAGE, code };
   }
   return { status: "error", message: text, code };

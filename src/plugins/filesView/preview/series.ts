@@ -146,7 +146,8 @@ export function parseSeriesIndex(text: string): SeriesIndex | undefined {
  * @returns The summary.
  * @example
  * ```ts
- * seriesSummary(index, path); // "Series · merge burst · 2 shots · 3 s at 250 ms · from frame 1841"
+ * seriesSummary({ durationMs: 3000, intervalMs: 250, fromFrame: 1841, shots: [] }, ".moku/captures/burst/index.json");
+ * // "Series · burst · 0 shots · 3 s at 250 ms · from frame 1841"
  * ```
  */
 export function seriesSummary(index: SeriesIndex, path: string): string {

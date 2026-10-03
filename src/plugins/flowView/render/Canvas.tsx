@@ -70,6 +70,16 @@ const HITS: Readonly<Record<string, HitTarget>> = {
 };
 
 /**
+ * `PointerEvent.button` of the primary (left) button.
+ */
+const PRIMARY_BUTTON = 0;
+
+/**
+ * `PointerEvent.button` of the middle button: a press with it always pans.
+ */
+const MIDDLE_BUTTON = 1;
+
+/**
  * The hit element under an event target.
  *
  * @param target - The event target.
@@ -91,13 +101,21 @@ function hitOf(target: EventTarget | null): HTMLElement | undefined {
  *
  * @param target - The event target.
  * @returns Whether the canvas ignores the event.
- * @example
- * ```ts
- * inChrome(event.target); // true on a zoom bar button
- * ```
  */
 function inChrome(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("[data-chrome]") !== null;
+}
+
+/**
+ * True for a press the canvas leaves alone: a button other than the primary or the middle one,
+ * or a press inside the canvas chrome.
+ *
+ * @param event - The pointerdown.
+ * @returns Whether the canvas ignores the press.
+ */
+function isIgnoredPress(event: PointerEvent): boolean {
+  const isPrimaryOrMiddle = event.button === PRIMARY_BUTTON || event.button === MIDDLE_BUTTON;
+  return !isPrimaryOrMiddle || inChrome(event.target);
 }
 
 /**
@@ -166,23 +184,63 @@ function dragged(
 }
 
 /**
- * The world layer.
- *
- * @param props - Context, actions, the world view, the drag and the hovered stub.
- * @param props.ctx - Domain context of flowView.
- * @param props.actions - The flowView actions.
- * @param props.world - The world view.
- * @param props.drag - The dragged item.
- * @param props.hover - The hovered stub key.
- * @returns The world element.
+ * Props of the world layer.
  */
-function World(props: {
+type WorldProps = {
   readonly ctx: FlowCtx;
   readonly actions: FlowActions;
   readonly world: WorldView;
   readonly drag: Drag | undefined;
   readonly hover: string | undefined;
-}): VNode {
+};
+
+/**
+ * The element of one world item, looked up by key in the card, hub, stub and note views. A port
+ * draws as a dot (entry) or a labelled tag (exit).
+ *
+ * @param props - The world layer props.
+ * @param item - The item, already moved when it is the dragged one.
+ * @returns The element, or false for an item the world does not draw.
+ */
+function renderItem(props: WorldProps, item: Item): VNode | false {
+  const { ctx, actions, world } = props;
+  const card = world.cards.get(item.key);
+  if (card !== undefined) {
+    return <NodeCard key={item.key} ctx={ctx} actions={actions} item={item} view={card} />;
+  }
+  const hub = world.hubs.get(item.key);
+  if (hub !== undefined) {
+    return <Hub key={item.key} ctx={ctx} actions={actions} item={item} view={hub} />;
+  }
+  const stub = world.stubs.get(item.key);
+  if (stub !== undefined) return <Stub key={item.key} item={item} view={stub} />;
+  const note = world.notes.get(item.key);
+  if (note !== undefined) {
+    const isSelected = ctx.state.focus.selected === item.key;
+    return <NoteNode key={item.key} item={item} view={note} selected={isSelected} />;
+  }
+  if (item.kind !== "port") return false;
+  const isEntry = item.key.endsWith("entry");
+  return (
+    <span
+      key={item.key}
+      data-flow="port"
+      data-kind={isEntry ? "entry" : "exit"}
+      title={item.label}
+      style={{ left: `${item.x}px`, top: `${item.y}px` }}
+    >
+      {isEntry ? "" : item.label}
+    </span>
+  );
+}
+
+/**
+ * The world layer.
+ *
+ * @param props - Context, actions, the world view, the drag and the hovered stub.
+ * @returns The world element.
+ */
+function World(props: WorldProps): VNode {
   const { ctx, actions, world, drag, hover } = props;
   const { result } = world;
   const { byKey, edges } = dragged(world, drag);
@@ -209,36 +267,7 @@ function World(props: {
         </span>
       ))}
       <Edges edges={edges} bounds={result.bounds} views={world.edges} showReturns={showReturns} />
-      {result.items.map(original => {
-        const item = byKey[original.key] ?? original;
-        const card = world.cards.get(item.key);
-        if (card !== undefined) {
-          return <NodeCard key={item.key} ctx={ctx} actions={actions} item={item} view={card} />;
-        }
-        const hub = world.hubs.get(item.key);
-        if (hub !== undefined)
-          return <Hub key={item.key} ctx={ctx} actions={actions} item={item} view={hub} />;
-        const stub = world.stubs.get(item.key);
-        if (stub !== undefined) return <Stub key={item.key} item={item} view={stub} />;
-        const note = world.notes.get(item.key);
-        if (note !== undefined) {
-          return (
-            <NoteNode key={item.key} item={item} view={note} selected={selected === item.key} />
-          );
-        }
-        if (item.kind !== "port") return false;
-        return (
-          <span
-            key={item.key}
-            data-flow="port"
-            data-kind={item.key.endsWith("entry") ? "entry" : "exit"}
-            title={item.label}
-            style={{ left: `${item.x}px`, top: `${item.y}px` }}
-          >
-            {item.key.endsWith("entry") ? "" : item.label}
-          </span>
-        );
-      })}
+      {result.items.map(original => renderItem(props, byKey[original.key] ?? original))}
     </div>
   );
 }
@@ -257,6 +286,7 @@ export function Canvas(props: CanvasProps): VNode {
   const [drag, setDrag] = useState<Drag>();
   const [hover, setHover] = useState<string>();
 
+  // Keep the camera's viewport size in step with the canvas box.
   useEffect(() => {
     const element = canvas.current;
     if (element === undefined) return;
@@ -275,6 +305,7 @@ export function Canvas(props: CanvasProps): VNode {
     return () => observer.disconnect();
   }, [actions, canvas]);
 
+  // Wheel and pinch pan or zoom; a non-passive listener so the page does not scroll.
   useEffect(() => {
     const element = canvas.current;
     if (element === undefined) return;
@@ -282,10 +313,6 @@ export function Canvas(props: CanvasProps): VNode {
      * Pans or zooms on a wheel or pinch inside the canvas only.
      *
      * @param event - The wheel event.
-     * @example
-     * ```ts
-     * element.addEventListener("wheel", onWheel, { passive: false });
-     * ```
      */
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
@@ -299,15 +326,12 @@ export function Canvas(props: CanvasProps): VNode {
     return () => element.removeEventListener("wheel", onWheel);
   }, [actions, canvas, ctx]);
 
+  // Track the Space key: while it is held, a drag pans.
   useEffect(() => {
     /**
      * Space held outside a text field: drags pan.
      *
      * @param event - The keydown.
-     * @example
-     * ```ts
-     * globalThis.addEventListener("keydown", down);
-     * ```
      */
     const down = (event: KeyboardEvent): void => {
       if (event.code === "Space" && !isTextField(event.target)) space.current = true;
@@ -316,10 +340,6 @@ export function Canvas(props: CanvasProps): VNode {
      * Space released.
      *
      * @param event - The keyup.
-     * @example
-     * ```ts
-     * globalThis.addEventListener("keyup", up);
-     * ```
      */
     const up = (event: KeyboardEvent): void => {
       if (event.code === "Space") space.current = false;
@@ -332,16 +352,13 @@ export function Canvas(props: CanvasProps): VNode {
     };
   }, []);
 
+  // While a drag is live, Esc cancels it ahead of the workspace Esc layers.
   useEffect(() => {
     if (drag === undefined) return;
     /**
      * Esc during a drag puts the item back before the Esc layers see the key.
      *
      * @param event - The keydown.
-     * @example
-     * ```ts
-     * globalThis.addEventListener("keydown", onEscape, { capture: true });
-     * ```
      */
     const onEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape" || gesture.current === undefined) return;
@@ -354,13 +371,15 @@ export function Canvas(props: CanvasProps): VNode {
     return () => globalThis.removeEventListener("keydown", onEscape, { capture: true });
   }, [drag]);
 
+  // Write the camera transform once the first world is on screen.
   useLayoutEffect(() => {
     if (world !== undefined) actions.camera.apply();
   }, [actions, world === undefined]);
 
+  // A press starts a gesture: a drag on a card or note, otherwise a pan.
   const onPointerDown = useCallback(
     (event: PointerEvent) => {
-      if ((event.button !== 0 && event.button !== 1) || inChrome(event.target)) return;
+      if (isIgnoredPress(event)) return;
       const element = hitOf(event.target);
       const name = element?.dataset.hit;
       const hit: HitTarget = name === undefined ? "canvas" : (HITS[name] ?? "canvas");
@@ -390,6 +409,7 @@ export function Canvas(props: CanvasProps): VNode {
     [canvas, world]
   );
 
+  // A move pans the camera, or moves the dragged item once past the drag threshold.
   const onPointerMove = useCallback(
     (event: PointerEvent) => {
       const current = gesture.current;
@@ -415,16 +435,20 @@ export function Canvas(props: CanvasProps): VNode {
     [actions, ctx]
   );
 
+  // A release drops a moved item, or else selects or clears like a click.
   const onPointerUp = useCallback(() => {
     const current = gesture.current;
     gesture.current = undefined;
     setDrag(undefined);
     if (current === undefined || current.cancelled) return;
     const item = current.key === undefined ? undefined : world?.result.byKey[current.key];
-    if (current.mode === "drag" && current.moved >= DRAG_THRESHOLD && item !== undefined) {
-      if (item.kind === "note")
-        actions.layout.dropNote(item.id, item.flow, item.x + current.dx, item.y + current.dy);
-      else actions.layout.drop(item.key, item.x + current.dx, item.y + current.dy);
+    const isDropOfMovedItem =
+      current.mode === "drag" && current.moved >= DRAG_THRESHOLD && item !== undefined;
+    if (isDropOfMovedItem) {
+      const x = item.x + current.dx;
+      const y = item.y + current.dy;
+      if (item.kind === "note") actions.layout.dropNote(item.id, item.flow, x, y);
+      else actions.layout.drop(item.key, x, y);
       return;
     }
     const intent = releaseIntent(current.moved, current.hit, current.key);
@@ -432,6 +456,7 @@ export function Canvas(props: CanvasProps): VNode {
     if (intent?.kind === "clear") actions.focus.leave();
   }, [actions, world]);
 
+  // A double-click on a card or a frame head enters it.
   const onDoubleClick = useCallback(
     (event: MouseEvent) => {
       if (inChrome(event.target)) return;
@@ -442,6 +467,7 @@ export function Canvas(props: CanvasProps): VNode {
     [actions]
   );
 
+  // A right click opens the node, outcome or canvas menu at the pointer.
   const onContextMenu = useCallback(
     (event: MouseEvent) => {
       if (inChrome(event.target)) return;
@@ -471,6 +497,7 @@ export function Canvas(props: CanvasProps): VNode {
     [actions, canvas, world]
   );
 
+  // Hovering a stub draws its return edge.
   const onPointerOver = useCallback(
     (event: PointerEvent) => {
       const element = hitOf(event.target);

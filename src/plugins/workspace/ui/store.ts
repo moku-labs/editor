@@ -39,12 +39,6 @@ export function createUiStore(): UiStore {
     },
     /**
      * Raises the version and calls every subscriber.
-     *
-     * @example
-     * ```ts
-     * ctx.state.active = "game";
-     * ctx.state.ui.bump();
-     * ```
      */
     bump() {
       store.version += 1;

@@ -128,12 +128,12 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
   const device = resolveDevice(choice.preset, choice.orientation);
   const scale = workspace.gameFrame().box()?.scale ?? 1;
   const nodes = state.scene?.nodes;
-  const hover =
-    state.picker.on && state.picker.hover !== undefined
-      ? nodes?.get(state.picker.hover)
-      : undefined;
-  const selected =
-    active && state.selected !== undefined ? nodes?.get(refId(state.selected)) : undefined;
+  const { hover: pickerHover } = state.picker;
+  const isPickerHover = state.picker.on && pickerHover !== undefined;
+  const hover = isPickerHover ? nodes?.get(pickerHover) : undefined;
+  const { selected: selectedRef } = state;
+  const isSelectedActive = active && selectedRef !== undefined;
+  const selected = isSelectedActive ? nodes?.get(refId(selectedRef)) : undefined;
   const tree = state.treeHover === undefined ? undefined : nodes?.get(refId(state.treeHover));
   const guides = active && state.safeArea && choice.preset.kind !== "desktop";
 

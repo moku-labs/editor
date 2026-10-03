@@ -260,10 +260,6 @@ function command(
      * The label of the current state.
      *
      * @returns The label.
-     * @example
-     * ```ts
-     * item.label; // "Pause the game"
-     * ```
      */
     get label() {
       return label();

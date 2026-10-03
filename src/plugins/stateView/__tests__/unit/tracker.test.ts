@@ -13,7 +13,6 @@ import {
   MODEL_AFTER,
   MODEL_BEFORE,
   playerBefore,
-  RNG,
   SESSION_STATE
 } from "../fixtures";
 import { createCtx, flush, type TestCtx } from "../helpers";
@@ -226,6 +225,5 @@ describe("notify", () => {
     ctx.state.listeners.add(() => seen.push("second"));
     notify(ctx.state);
     expect(seen).toEqual(["first", "second"]);
-    expect(RNG).toBeDefined();
   });
 });

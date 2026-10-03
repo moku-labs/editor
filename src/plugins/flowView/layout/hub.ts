@@ -32,10 +32,6 @@ export function returnsOf(flow: FlowJson, node: string): number {
  * @param flow - The flow.
  * @param config - hubMinOutcomes and hubMinReturns.
  * @returns The hub node name, or undefined.
- * @example
- * ```ts
- * detectHub(board, config); // "awaitIntent"
- * ```
  */
 export function detectHub(
   flow: FlowJson,

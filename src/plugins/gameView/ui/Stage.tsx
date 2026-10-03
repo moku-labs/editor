@@ -13,7 +13,7 @@ import { fitScale, slotSize } from "../stage/geometry";
 import type { GameViewCtx, GameViewState } from "../types";
 import { ensureOverlayRoot } from "./OverlayRoot";
 import { elapsedText, linkBadge, type StageBadge } from "./text";
-import { useGameView, useTicker } from "./useGameView";
+import { RECORD_TICK_MS, SILENT_TICK_MS, useGameView, useTicker } from "./useGameView";
 
 /**
  * Props of `Stage`.
@@ -133,7 +133,10 @@ export function Stage(props: StageProps): VNode {
   useLayoutEffect(() => observeSize(viewport.current, setMeasured), []);
   useLayoutEffect(() => dockSlot(ctx, slot.current, viewport.current, zoom), [zoom]);
   const silent = status.kind === "silent" || status.kind === "lost";
-  useTicker(silent || state.series.recording !== undefined, silent ? 1000 : 100);
+  useTicker(
+    silent || state.series.recording !== undefined,
+    silent ? SILENT_TICK_MS : RECORD_TICK_MS
+  );
 
   const choice = ctx.require(workspacePlugin).device();
   const size = resolveDevice(choice.preset, choice.orientation);

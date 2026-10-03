@@ -106,10 +106,6 @@ export function originKey(frame: ItemKey, flow: string): string {
  * @param graph - The graph.
  * @param node - The node.
  * @returns Flow names that exist in the graph.
- * @example
- * ```ts
- * childFlows(graph, graph.flows.main.nodes.afterOrder); // ["rewardPopup"]
- * ```
  */
 export function childFlows(graph: GraphJson, node: GraphNodeJson): string[] {
   const flows =
@@ -128,7 +124,7 @@ export function childFlows(graph: GraphJson, node: GraphNodeJson): string[] {
  * @returns The rect (an empty card when nothing is there).
  * @example
  * ```ts
- * contentBounds(box.items); // { x: 0, y: 0, w: 1080, h: 934 }
+ * contentBounds([]); // { x: 0, y: 0, w: 172, h: 44 }
  * ```
  */
 function contentBounds(items: readonly Item[]): Rect {

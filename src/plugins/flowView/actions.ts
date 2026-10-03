@@ -28,143 +28,25 @@ const built = new WeakMap<FlowViewState, FlowActions>();
  */
 export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServices {
   return {
-    /**
-     * link.files.
-     *
-     * @returns The files client.
-     * @example
-     * ```ts
-     * await services.files().read("nodes/merge.ts");
-     * ```
-     */
     files: () => ctx.require(linkPlugin).files,
-
-    /**
-     * workspace.toast.
-     *
-     * @param message - The message.
-     * @param file - The file it names.
-     * @example
-     * ```ts
-     * services.toast("Saved", "nodes/merge.ts");
-     * ```
-     */
     toast: (message, file) => {
       const workspace = ctx.require(workspacePlugin);
       if (file === undefined) workspace.toast(message);
       else workspace.toast(message, file);
     },
-
-    /**
-     * panels.run (R9).
-     *
-     * @param id - Command id.
-     * @param input - Command input.
-     * @returns The run result.
-     * @example
-     * ```ts
-     * await services.run("game.step", { frames: 1 });
-     * ```
-     */
     run: (id, input) => ctx.require(panelsPlugin).run(id, input),
-
-    /**
-     * link.status.
-     *
-     * @returns The link status.
-     * @example
-     * ```ts
-     * services.status().kind; // "paused"
-     * ```
-     */
     status: () => ctx.require(linkPlugin).status(),
-
-    /**
-     * link.read.
-     *
-     * @param id - Source id.
-     * @returns The value.
-     * @example
-     * ```ts
-     * await services.read("game.ui");
-     * ```
-     */
     read: id => ctx.require(linkPlugin).read(id),
-
-    /**
-     * link.boot.
-     *
-     * @returns The tools boot, or undefined.
-     * @example
-     * ```ts
-     * services.boot()?.root;
-     * ```
-     */
     boot: () => ctx.require(linkPlugin).boot(),
-
-    /**
-     * workspace.show("flow").
-     */
     show: () => {
       ctx.require(workspacePlugin).show("flow");
     },
-
-    /**
-     * Whether Flow is the shown workspace.
-     *
-     * @returns True while workspace.active() is "flow".
-     * @example
-     * ```ts
-     * services.active(); // true
-     * ```
-     */
     active: () => ctx.require(workspacePlugin).active() === "flow",
-
-    /**
-     * workspace.gameFrame().reload({ restore: true }).
-     *
-     * @returns The reload result.
-     * @example
-     * ```ts
-     * (await services.reload()).restored; // true
-     * ```
-     */
     reload: () => ctx.require(workspacePlugin).gameFrame().reload({ restore: true }),
-
-    /**
-     * workspace.preview("flow").
-     *
-     * @returns The preview state.
-     * @example
-     * ```ts
-     * services.preview().visible;
-     * ```
-     */
     preview: () => ctx.require(workspacePlugin).preview("flow"),
-
-    /**
-     * Emits workspace:open-file (R4).
-     *
-     * @param path - The file.
-     * @param line - The line.
-     * @example
-     * ```ts
-     * services.openFile("nodes/merge.ts", 3);
-     * ```
-     */
     openFile: (path, line) => {
       ctx.emit("workspace:open-file", line === undefined ? { path } : { path, line });
     },
-
-    /**
-     * Replaces the palette group Styles.
-     *
-     * @param keys - The text-style keys.
-     * @example
-     * ```ts
-     * services.setStyleItems(["ui.number"]);
-     * ```
-     */
     setStyleItems: keys => {
       setStyleItems(ctx, actions(), keys);
     }
@@ -187,10 +69,6 @@ export function actionsOf(ctx: FlowCtx): FlowActions {
    *
    * @returns The actions.
    * @throws {Error} When called while the actions are being built.
-   * @example
-   * ```ts
-   * env.actions().camera.fitAll();
-   * ```
    */
   const late = (): FlowActions => {
     if (holder.actions === undefined) {

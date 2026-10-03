@@ -36,6 +36,19 @@ const OVERSCAN = 20;
 const BOTTOM_SLACK = 4;
 
 /**
+ * Rows the sticky header covers at the top of the scroller.
+ */
+const HEADER_ROWS = 1;
+
+/**
+ * The selection step of each arrow key.
+ */
+const STEP_BY_KEY: ReadonlyMap<string, 1 | -1> = new Map([
+  ["ArrowDown", 1],
+  ["ArrowUp", -1]
+]);
+
+/**
  * Viewport height used before layout gives one.
  */
 const FALLBACK_HEIGHT = 600;
@@ -204,10 +217,11 @@ function nextIndex(current: number, step: 1 | -1, count: number): number {
  */
 function revealRow(element: HTMLElement, index: number): void {
   const top = index * ROW;
+  const bottom = top + (1 + HEADER_ROWS) * ROW;
   const height = element.clientHeight;
   if (top < element.scrollTop) element.scrollTop = top;
-  else if (height > 0 && top + 2 * ROW > element.scrollTop + height) {
-    element.scrollTop = top + 2 * ROW - height;
+  else if (height > 0 && bottom > element.scrollTop + height) {
+    element.scrollTop = bottom - height;
   }
 }
 
@@ -254,15 +268,18 @@ function onGridKey(
 ): void {
   const { api, lines, selected, scroller } = grid;
   const selectedIndex = lines.findIndex(line => line.key === selected);
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+  const step = STEP_BY_KEY.get(event.key);
+  const isEnterOnGrid = event.key === "Enter" && event.target === event.currentTarget;
+  const closesDrawer = event.key === "Escape" && selected !== undefined;
+  if (step !== undefined) {
     event.preventDefault();
-    const index = nextIndex(selectedIndex, event.key === "ArrowDown" ? 1 : -1, lines.length);
+    const index = nextIndex(selectedIndex, step, lines.length);
     api.select(lines[index]?.key);
     if (scroller !== null) revealRow(scroller, index);
-  } else if (event.key === "Enter" && event.target === event.currentTarget) {
+  } else if (isEnterOnGrid) {
     event.preventDefault();
     if (selectedIndex === -1) api.select(lines[0]?.key);
-  } else if (event.key === "Escape" && selected !== undefined) {
+  } else if (closesDrawer) {
     event.preventDefault();
     event.stopPropagation();
     api.select();

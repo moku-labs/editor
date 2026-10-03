@@ -88,7 +88,7 @@ describe("highlightElement", () => {
     ctx.state.scene = boardScene();
     highlightElement(ctx, COIN);
     expect(ctx.state.treeHover).toEqual(COIN);
-    expect(ctx.state.overlayRoot).toBeDefined();
+    expect(ctx.state.overlayRoot?.dataset.game).toBe("overlay");
     highlightElement(ctx, undefined);
     expect(ctx.state.treeHover).toBeUndefined();
   });

@@ -141,7 +141,7 @@ describe("device / setDevice / devices", () => {
     expect(ctx.log.error).toHaveBeenCalledWith(
       "workspace:prefs-listener-failed",
       {},
-      expect.any(Error)
+      new Error("bad listener")
     );
   });
 });

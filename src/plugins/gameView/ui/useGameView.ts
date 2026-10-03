@@ -23,6 +23,16 @@ export function useGameView<T>(state: GameViewState, select: () => T): T {
 }
 
 /**
+ * The clock tick while a recording time shows.
+ */
+export const RECORD_TICK_MS = 100;
+
+/**
+ * The clock tick while the stage shows "no heartbeat for N s".
+ */
+export const SILENT_TICK_MS = 1000;
+
+/**
  * Re-renders the component every `everyMs` while `active` (a timeout chain, no interval).
  *
  * @param active - Whether the clock runs.

@@ -88,10 +88,6 @@ export function commandItems(ctx: FlowCtx, actions: FlowActions): PaletteItem[] 
    * The reason Reset layout is disabled (M8).
    *
    * @returns The reason, or false when something is pinned.
-   * @example
-   * ```ts
-   * resetDisabled(); // "Nothing is pinned in the visible flows"
-   * ```
    */
   const resetDisabled = (): string | false =>
     actions.layout.pinnedCount() === 0 ? "Nothing is pinned in the visible flows" : false;

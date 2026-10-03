@@ -23,10 +23,6 @@ export type ContactSheetProps = { readonly ctx: GameViewCtx; readonly node: stri
  *
  * @param index - The series index.
  * @returns The title.
- * @example
- * ```ts
- * sheetTitle(index); // "Series · merge refused shake · 20 shots · 2 s at 100 ms · from frame 1777"
- * ```
  */
 function sheetTitle(index: SeriesIndex): string {
   const head = `Series · ${index.label} · ${index.shots.length} shots`;

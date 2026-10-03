@@ -32,7 +32,7 @@ describe("onLinkStatus", () => {
     ctx.state.listeners.add(listener);
     onLinkStatus(ctx)({ status: { kind: "live", frame: 1 } });
     expect(listener).toHaveBeenCalled();
-    expect(ctx.state.indexing).toBeDefined();
+    expect(ctx.state.indexing).toBeInstanceOf(Promise);
     await settle();
     await ctx.state.indexing;
     expect(ctx.state.index?.files.size).toBeGreaterThan(0);

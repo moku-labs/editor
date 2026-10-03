@@ -408,10 +408,20 @@ describe("scene on the live board (board/awaitIntent)", () => {
     );
 
     expect(hosted).toHaveLength(11);
-    for (const node of hosted) {
-      expect(node.parent).toBe("ui:boardScreen/boardSlot");
-      expect(node.rect).toBeDefined();
-    }
+    for (const node of hosted) expect(node.parent).toBe("ui:boardScreen/boardSlot");
+    expect(Object.fromEntries(hosted.map(node => [node.name, node.rect]))).toEqual({
+      i1: { x: 428.5, y: 880.5, w: 223, h: 223 },
+      i2: { x: 722.5, y: 1174.5, w: 223, h: 223 },
+      c0_0: { x: 110, y: 856, w: 272, h: 272 },
+      c1_0: { x: 404, y: 856, w: 272, h: 272 },
+      c2_0: { x: 698, y: 856, w: 272, h: 272 },
+      c0_1: { x: 110, y: 1150, w: 272, h: 272 },
+      c1_1: { x: 404, y: 1150, w: 272, h: 272 },
+      c2_1: { x: 698, y: 1150, w: 272, h: 272 },
+      c0_2: { x: 110, y: 1444, w: 272, h: 272 },
+      c1_2: { x: 404, y: 1444, w: 272, h: 272 },
+      c2_2: { x: 698, y: 1444, w: 272, h: 272 }
+    });
     expect(i1).toMatchObject({ name: "i1", type: "Sprite", texture: "board.item-wood-3" });
     expect(i1.rect).toEqual({ x: 428.5, y: 880.5, w: 223, h: 223 });
     expect(entityNode(scene, board, "board.items", "i2").texture).toBe("board.item-wood-1");

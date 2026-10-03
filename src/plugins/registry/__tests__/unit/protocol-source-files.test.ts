@@ -242,7 +242,7 @@ describe("merge-game fixture", () => {
     const graph = read(createGame().app, sources.graph);
     const node = graph.flows.board?.nodes.awaitIntent;
 
-    expect(node).toBeDefined();
+    expect(node).toMatchObject({ flow: "board", node: "awaitIntent", rest: true, scene: "board" });
     expect(nodeFile({ flow: "board", node: "awaitIntent" }, node, {}, exists)).toBe(
       "nodes/await-intent.ts"
     );

@@ -177,10 +177,8 @@ export function HistoryLabels(props: HistoryStripProps): VNode {
   const width = useFlowStore(ctx, state => state.camera.viewport.w, "camera");
   const shown = rows.slice(0, MAX_DOTS);
   const wanted = new Set([shown[0]?.index, hover, selected].filter(index => index !== undefined));
-  const visible =
-    open || (hover === undefined && selected === undefined)
-      ? []
-      : shown.filter(row => wanted.has(row.index));
+  const hasNoLabelFocus = hover === undefined && selected === undefined;
+  const visible = open || hasNoLabelFocus ? [] : shown.filter(row => wanted.has(row.index));
   const dots = visible.map(row => ({
     index: row.index,
     y: DOT_TOP + shown.indexOf(row) * DOT_PITCH + DOT_PITCH / 2

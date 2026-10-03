@@ -667,10 +667,9 @@ describe("writeNumber", () => {
 
     expect(done).toMatchObject({ ok: true, line: 74, version: "v3" });
     expect(fake.files.write).toHaveBeenCalledTimes(2);
-    expect(fake.files.write).toHaveBeenLastCalledWith(UI_PATH, expect.any(String), "v2");
-    const written = fake.texts.get(UI_PATH) ?? "";
-    expect(written).toContain("size: 101,");
-    expect(lines(written)[73]).toBe("    size: 64,");
+    const expected = lines(UI.replace("size: 100,", "size: 101,"));
+    expected[73] = "    size: 64,";
+    expect(fake.files.write).toHaveBeenLastCalledWith(UI_PATH, expected.join("\n"), "v2");
   });
 
   it("returns changed-on-disk and writes nothing when the literal changed on disk", async () => {

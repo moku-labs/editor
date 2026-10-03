@@ -348,11 +348,8 @@ describe("cross-wire: agent → hub → link", () => {
       });
       if (index > 0) expect(shot.frame).toBeGreaterThanOrEqual(shots[index - 1]?.frame ?? 0);
     }
-    expect(device).toEqual({
-      w: expect.any(Number),
-      h: expect.any(Number),
-      orientation: expect.stringMatching(/^(portrait|landscape)$/)
-    });
+    // The game page viewport (happy-dom's 1024 × 768), not the workspace device preset.
+    expect(device).toEqual({ w: 1024, h: 768, orientation: "landscape" });
 
     // 2. a hang times out at the 300 ms deadline
     const hungAt = performance.now();

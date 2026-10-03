@@ -321,7 +321,7 @@ export function treeRowsOf(scene: SceneSnapshot | undefined, open: ReadonlySet<s
  * @returns Nodes, nodes with a texture, entity nodes.
  * @example
  * ```ts
- * treeCounts(scene); // { nodes: 101, textures: 24, entities: 32 } on the merge-game board
+ * treeCounts(undefined); // { nodes: 0, textures: 0, entities: 0 }
  * ```
  */
 export function treeCounts(scene: SceneSnapshot | undefined): {

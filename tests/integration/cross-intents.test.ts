@@ -385,9 +385,7 @@ describe("cross-intents: file and sheet intents", () => {
     );
     await click(elementIn(flow, '[data-flow="code-tab"] [data-action="open-files"]'));
     await until(() => tools.eventsOf("workspace:open-file").length === 1, "open-file");
-    expect(tools.eventsOf("workspace:open-file")).toEqual([
-      { path: "nodes/home.ts", line: expect.any(Number) }
-    ]);
+    expect(tools.eventsOf("workspace:open-file")).toEqual([{ path: "nodes/home.ts", line: 2 }]);
     await until(() => workspace.active() === "files", "Files shown");
     await until(() => filesView.active() === "nodes/home.ts", "home.ts the active tab");
 
@@ -486,7 +484,10 @@ describe("cross-intents: workspace:ran", () => {
 
     // 4, run before 3: flowView steps only while paused, and 3 resumes.
     const stepped = await flowView.focus.step();
-    expect(stepped).toBeDefined();
+    expect(stepped).toEqual({
+      value: { delta: 1000 / 60, elapsed: 49.333_333_333_333_34, scale: 1, frame: 3, idle: false },
+      state: { path: "home", frame: 3, tainted: false }
+    });
     expect(ran()).toHaveLength(3);
 
     // 3. the palette item
@@ -536,9 +537,13 @@ describe("cross-intents: workspace:ran", () => {
       ["tiny.fail", "palette"],
       ["tiny.bump", "key"]
     ]);
-    for (const event of events.slice(0, 5)) {
-      expect(event).toMatchObject({ ok: true, result: { state: expect.any(Object) } });
-    }
+    expect(events.slice(0, 5)).toMatchObject([
+      { ok: true, result: { value: true, state: { path: "home", frame: 1, tainted: false } } },
+      { ok: true, result: { state: { path: "home", frame: 2, tainted: false } } },
+      { ok: true, result: { state: { path: "home", frame: 3, tainted: false } } },
+      { ok: true, result: { value: false, state: { path: "home", frame: 3, tainted: false } } },
+      { ok: true, result: { value: true, state: { path: "home", frame: 3, tainted: false } } }
+    ]);
     expect(events[5]).toMatchObject({ ok: false, error: { code: -32_000 } });
     expect(events[6]).toMatchObject({ ok: true });
 

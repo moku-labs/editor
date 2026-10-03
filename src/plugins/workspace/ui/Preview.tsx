@@ -261,9 +261,8 @@ export function Preview(props: PreviewProps): VNode {
   useLayoutEffect(() => {
     const element = section.current;
     state.frame.previewBody = shown ? body.current : undefined;
-    if (element !== undefined && ws !== undefined && prefs !== undefined && shown) {
-      placeFloat(ctx, element, ws, prefs);
-    }
+    const isPlaceable = shown && element !== undefined && ws !== undefined && prefs !== undefined;
+    if (isPlaceable) placeFloat(ctx, element, ws, prefs);
     syncFrame(ctx);
   });
   useLayoutEffect(() => {
@@ -278,6 +277,67 @@ export function Preview(props: PreviewProps): VNode {
   if (ws === undefined || prefs === undefined || !shown) {
     return <section data-ui="preview" hidden ref={section.ref} />;
   }
+
+  /**
+   * Starts a press with the primary button anywhere but on a header button.
+   *
+   * @param event - The pointer down.
+   */
+  const onPress = (event: PointerEvent): void => {
+    const target = event.target instanceof Element ? event.target : undefined;
+    const isOnButton = target !== undefined && target.closest("button") !== null;
+    const isPrimaryPress = event.button === 0 && !isOnButton;
+    if (!isPrimaryPress) return;
+
+    const onBody = target !== undefined && target.closest("[data-preview-body]") !== null;
+    press.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      onBody,
+      moved: false
+    };
+    section.current?.setPointerCapture?.(event.pointerId);
+  };
+
+  /**
+   * Moves the float with the pointer once the press travelled past the drag threshold.
+   *
+   * @param event - The pointer move.
+   */
+  const onDrag = (event: PointerEvent): void => {
+    const current = press.current;
+    const element = section.current;
+    if (current === undefined || element === undefined) return;
+
+    const x = event.clientX - current.x;
+    const y = event.clientY - current.y;
+    if (!current.moved && Math.hypot(x, y) < DRAG_THRESHOLD) return;
+
+    current.moved = true;
+    element.dataset.dragging = "";
+    element.style.transform = `translate(${x}px, ${y}px)`;
+    syncFrame(ctx);
+  };
+
+  /**
+   * Ends the press: a drag snaps to a corner, a click on the body cycles the size.
+   *
+   * @param event - The pointer up.
+   */
+  const onRelease = (event: PointerEvent): void => {
+    const current = press.current;
+    const element = section.current;
+    press.current = undefined;
+    if (current === undefined || element === undefined) return;
+
+    if (current.moved) {
+      dropFloat(ctx, element, ws, { x: event.clientX - current.x, y: event.clientY - current.y });
+    } else if (current.onBody) {
+      patchPreview(ctx, ws, { size: NEXT_SIZE[prefs.size] });
+    }
+  };
+
   return (
     <section
       data-ui="preview"
@@ -285,50 +345,9 @@ export function Preview(props: PreviewProps): VNode {
       data-corner={prefs.corner}
       aria-label="Game preview"
       ref={section.ref}
-      onPointerDown={event => {
-        if (
-          event.button !== 0 ||
-          (event.target instanceof Element && event.target.closest("button"))
-        ) {
-          return;
-        }
-        const onBody =
-          event.target instanceof Element && event.target.closest("[data-preview-body]") !== null;
-        press.current = {
-          id: event.pointerId,
-          x: event.clientX,
-          y: event.clientY,
-          onBody,
-          moved: false
-        };
-        section.current?.setPointerCapture?.(event.pointerId);
-      }}
-      onPointerMove={event => {
-        const current = press.current;
-        const element = section.current;
-        if (current === undefined || element === undefined) return;
-        const x = event.clientX - current.x;
-        const y = event.clientY - current.y;
-        if (!current.moved && Math.hypot(x, y) < DRAG_THRESHOLD) return;
-        current.moved = true;
-        element.dataset.dragging = "";
-        element.style.transform = `translate(${x}px, ${y}px)`;
-        syncFrame(ctx);
-      }}
-      onPointerUp={event => {
-        const current = press.current;
-        const element = section.current;
-        press.current = undefined;
-        if (current === undefined || element === undefined) return;
-        if (current.moved) {
-          dropFloat(ctx, element, ws, {
-            x: event.clientX - current.x,
-            y: event.clientY - current.y
-          });
-        } else if (current.onBody) {
-          patchPreview(ctx, ws, { size: NEXT_SIZE[prefs.size] });
-        }
-      }}
+      onPointerDown={onPress}
+      onPointerMove={onDrag}
+      onPointerUp={onRelease}
     >
       <PreviewHead ctx={ctx} ws={ws} prefs={prefs} />
       <div data-preview-body ref={body.ref} title="Click to change the size, drag to move" />

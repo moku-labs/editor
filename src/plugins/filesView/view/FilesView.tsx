@@ -42,10 +42,6 @@ type BodyProps = { readonly ctx: FilesViewCtx; readonly api: FilesViewApi; reado
  *
  * @param tab - The tab.
  * @returns The text.
- * @example
- * ```ts
- * textOf(tab); // "export const merge = 1;\n"
- * ```
  */
 function textOf(tab: OpenTab): string {
   return tab.buffer ?? tab.saved ?? "";

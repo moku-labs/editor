@@ -18,7 +18,7 @@ import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
 import { elapsedText } from "./text";
-import { useGameView, useTicker } from "./useGameView";
+import { RECORD_TICK_MS, useGameView, useTicker } from "./useGameView";
 
 /**
  * Props of `DeviceToolbar`.
@@ -270,7 +270,7 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   const [, setManifests] = useState(0);
   // A layout effect: a manifest change right after the first render is not lost.
   useLayoutEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
-  useTicker(state.series.recording !== undefined, 100);
+  useTicker(state.series.recording !== undefined, RECORD_TICK_MS);
 
   return (
     <div data-game="toolbar" role="toolbar" aria-label="Game device">

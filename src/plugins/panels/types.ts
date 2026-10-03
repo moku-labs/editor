@@ -43,7 +43,7 @@ export type PanelTools<C> = {
   run: { readonly [K in keyof C]: (...input: CommandArgs<C[K]>) => Promise<RunResult> };
   /** Snapshot at this render; the view re-renders on change. */
   status: LinkStatus;
-  /** link's remote channel, for ad hoc reads. */
+  /** link's remote channel, for ad hoc reads; its `run` is reported as `workspace:ran` (origin panel). */
   channel: EditorChannel;
   /** link.files (R4). */
   files: FilesClient;

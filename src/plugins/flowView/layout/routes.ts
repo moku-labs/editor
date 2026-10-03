@@ -137,10 +137,6 @@ export function anchorOut(item: Item, outcome: string): { x: number; y: number }
  *
  * @param item - The target item.
  * @returns The point.
- * @example
- * ```ts
- * anchorIn(card); // { x: card.x, y: card.y + 22 }
- * ```
  */
 export function anchorIn(item: Item): { x: number; y: number } {
   if (item.kind === "port") return { x: item.x + item.w / 2, y: item.y + item.h / 2 };

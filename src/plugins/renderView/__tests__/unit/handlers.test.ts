@@ -89,7 +89,7 @@ describe("link:status", () => {
     });
 
     expect(ctx.state.fps).toEqual([60]);
-    expect(ctx.state.scene).toBeDefined();
+    expect(ctx.state.scene?.nodes.size).toBe(104);
   });
 
   it("clears the session data after a session change, then refreshes while active", async () => {
@@ -158,7 +158,7 @@ describe("link:status", () => {
   it("ignores connecting", async () => {
     await fill();
     hooks["link:status"]({ status: { kind: "connecting" } });
-    expect(ctx.state.render).toBeDefined();
+    expect(ctx.state.render).toEqual(RENDER);
   });
 });
 

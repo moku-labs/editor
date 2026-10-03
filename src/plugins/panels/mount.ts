@@ -143,10 +143,6 @@ export async function runFromPanel(
  *
  * @param spec - The panel.
  * @returns One entry per source, in declaration order.
- * @example
- * ```ts
- * entriesOf(spec); // [{ key: "history", id: "game.history", input: { last: 20 } }]
- * ```
  */
 function entriesOf(spec: PanelSpec): Entry[] {
   return Object.entries(spec.sources).map(([key, ref]) =>
@@ -184,61 +180,10 @@ function runMapOf(spec: PanelSpec, deps: RunDeps): ErasedTools["run"] {
 function channelOf(deps: RunDeps): EditorChannel {
   const { link } = deps;
   return {
-    /**
-     * Reads a source of the chosen game.
-     *
-     * @param id - Source id.
-     * @param input - Source input.
-     * @returns The value.
-     * @example
-     * ```ts
-     * await tools.channel.read("game.rect", { key: "coins" });
-     * ```
-     */
-    read(id, input) {
-      return link.read(id, input);
-    },
-    /**
-     * Watches a source; the view owns this watch and stops it itself.
-     *
-     * @param id - Source id.
-     * @param input - Source input.
-     * @param onValue - Called with every value.
-     * @returns Unsubscribe.
-     * @example
-     * ```ts
-     * const stop = tools.channel.watch("game.log", undefined, entries => show(entries));
-     * ```
-     */
-    watch(id, input, onValue) {
-      return link.watch(id, input, onValue);
-    },
-    /**
-     * Runs a command and reports it as `workspace:ran` (origin panel).
-     *
-     * @param id - Command id.
-     * @param input - Command input.
-     * @returns The RunResult.
-     * @example
-     * ```ts
-     * await tools.channel.run("game.pause");
-     * ```
-     */
-    run(id, input) {
-      return runFromPanel(deps, id, input, "panel");
-    },
-    /**
-     * The current link status.
-     *
-     * @returns The status.
-     * @example
-     * ```ts
-     * tools.channel.status().kind; // "live"
-     * ```
-     */
-    status() {
-      return link.status();
-    }
+    read: (id, input) => link.read(id, input),
+    watch: (id, input, onValue) => link.watch(id, input, onValue),
+    run: (id, input) => runFromPanel(deps, id, input, "panel"),
+    status: () => link.status()
   };
 }
 

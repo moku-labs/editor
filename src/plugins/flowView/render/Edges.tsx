@@ -66,7 +66,14 @@ export function laneId(lane: Pick<LaneBand, "x" | "y">): string {
  * @returns The point, or undefined for an edge without two points.
  * @example
  * ```ts
- * labelPoint(edge); // { x: 236, y: 100 }
+ * labelPoint({
+ *   key: "home:play",
+ *   from: "main/home",
+ *   to: "main/board",
+ *   outcome: "play",
+ *   kind: "edge",
+ *   points: [{ x: 172, y: 100 }, { x: 300, y: 100 }]
+ * }); // { x: 236, y: 100 }
  * ```
  */
 function labelPoint(edge: EdgePath): { x: number; y: number } | undefined {

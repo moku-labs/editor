@@ -31,10 +31,6 @@ function isSocketConstructor(value: unknown): value is SocketConstructor {
  *
  * @param scope - The global scope.
  * @returns The constructor, or undefined in a runtime without WebSocket.
- * @example
- * ```ts
- * socketConstructorOf(globalThis); // WebSocket
- * ```
  */
 function socketConstructorOf(scope: typeof globalThis): SocketConstructor | undefined {
   const candidate: unknown = Reflect.get(scope, "WebSocket");
@@ -46,10 +42,6 @@ function socketConstructorOf(scope: typeof globalThis): SocketConstructor | unde
  *
  * @param scope - The global scope.
  * @returns Whether the bridge can connect in this runtime.
- * @example
- * ```ts
- * hasNetwork(globalThis); // true in a browser and in Bun
- * ```
  */
 export function hasNetwork(scope: typeof globalThis): boolean {
   return (

@@ -102,7 +102,9 @@ describe("OverlayRoot", () => {
 
     fire(layer, new PointerEvent("pointermove", { clientX: 540, clientY: 990, bubbles: true }));
     expect(ctx.state.picker.hover).toBe("entity:1048628");
-    expect(find(root, "[data-box='hover']")).toBeDefined();
+    expect(find(root, "[data-box='hover']").getAttribute("style")).toBe(
+      "left: 428.5px; top: 880.5px; width: 223px; height: 223px;"
+    );
     fire(layer, new PointerEvent("pointerleave", { bubbles: false }));
     expect(ctx.state.picker.hover).toBeUndefined();
     fire(layer, new PointerEvent("pointerup", { clientX: 540, clientY: 990, bubbles: true }));

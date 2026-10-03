@@ -7,7 +7,7 @@ import type { VNode } from "preact";
 import { stopRecording } from "../capture/series";
 import type { GameViewCtx, Recording } from "../types";
 import { elapsedText, secondsText } from "./text";
-import { useTicker } from "./useGameView";
+import { RECORD_TICK_MS, useTicker } from "./useGameView";
 
 /**
  * Props of `RecordingView`.
@@ -23,7 +23,7 @@ export type RecordingViewProps = { readonly ctx: GameViewCtx; readonly recording
 export function RecordingView(props: RecordingViewProps): VNode {
   const { ctx, recording } = props;
   const recordingNow = recording.phase === "recording";
-  useTicker(recordingNow, 100);
+  useTicker(recordingNow, RECORD_TICK_MS);
   const elapsed = Math.min(recording.durationMs, performance.now() - recording.startedAt);
   const percent =
     recording.durationMs > 0 ? Math.round((elapsed / recording.durationMs) * 100) : 100;

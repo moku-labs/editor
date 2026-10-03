@@ -118,10 +118,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Reports the view error to the mount (log and section state).
    *
    * @param error - What the view threw.
-   * @example
-   * ```ts
-   * boundary.componentDidCatch(new Error("boom"));
-   * ```
    */
   override componentDidCatch(error: unknown): void {
     this.props.onError(asError(error));
@@ -131,10 +127,6 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
    * Renders the view, or the error placeholder.
    *
    * @returns The view or the placeholder.
-   * @example
-   * ```tsx
-   * render(<PanelBoundary panel={spec} values={values} tools={tools} onError={onError} />, section);
-   * ```
    */
   override render(): ComponentChildren {
     const { error } = this.state;

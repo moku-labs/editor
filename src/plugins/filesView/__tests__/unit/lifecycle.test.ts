@@ -93,7 +93,7 @@ describe("startFilesView", () => {
   it("starts the index build without awaiting it", async () => {
     const ctx = createCtx();
     startFilesView(ctx);
-    expect(ctx.state.indexing).toBeDefined();
+    expect(ctx.state.indexing).toBeInstanceOf(Promise);
     expect(ctx.state.index).toBeUndefined();
     await ctx.state.indexing;
     expect(ctx.state.index?.files.size).toBeGreaterThan(0);

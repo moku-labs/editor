@@ -214,7 +214,8 @@ function readSlots(value: unknown): GraphJson["slots"] | string {
  * @returns `{ graph }`, or `{ field }` naming the first malformed field.
  * @example
  * ```ts
- * parseGraph(values.graph); // { graph: { main: "main", flows: { … }, slots: { … } } }
+ * parseGraph(42); // { field: "graph" }
+ * parseGraph({ main: "main" }); // { field: "flows" }
  * ```
  */
 export function parseGraph(

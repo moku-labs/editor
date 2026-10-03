@@ -292,7 +292,7 @@ describe("cross-plugin panels", () => {
       "the tracker baseline, taint and graph"
     );
     expect(stateView.lastCommit()).toBeUndefined();
-    expect(stateView.note()).toBeDefined();
+    expect(stateView.note()).toBe("waiting");
     expect(stateView.graph()).toEqual(await link.read("game.graph"));
 
     const seqs = new Set<number>();
@@ -323,7 +323,7 @@ describe("cross-plugin panels", () => {
     expect(stateView.expanded("/player", 99)).toBe(true);
     stateView.expandAll("player", false);
     expect(stateView.expanded("/player", 0)).toBe(false);
-    expect(stateView.note()).toBeDefined();
+    expect(stateView.note()).toBe("waiting");
   });
 
   it("P3 consoleView sees a game warn without a poll; the rail badge follows", async () => {

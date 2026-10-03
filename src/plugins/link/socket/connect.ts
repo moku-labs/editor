@@ -68,7 +68,8 @@ export function bootOrigin(ws: string, base: string): string {
  * @returns The origin, or undefined in a browser.
  * @example
  * ```ts
- * socketOrigin(boot.ws); // "http://127.0.0.1:3000" under Bun
+ * socketOrigin("ws://127.0.0.1:3000/__editor/ws", { Bun: {} }); // "http://127.0.0.1:3000"
+ * socketOrigin("ws://127.0.0.1:3000/__editor/ws", {}); // undefined (a browser)
  * ```
  */
 export function socketOrigin(
