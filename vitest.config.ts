@@ -1,7 +1,35 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 
 /**
- * The built entry of `@moku-labs/game` (the file:../game dev dependency) for one subpath.
+ * The merge-game fixture lives in the sibling game repository (../game). CI checks out only this
+ * repository, so the tests that load the fixture are left out there, with a warning.
+ */
+const fixture = new URL("../game/tests/integration/merge-game/game.ts", import.meta.url).pathname;
+const hasFixture = existsSync(fixture);
+
+/**
+ * Test files that load the merge-game fixture (through loadMergeGame or the registry startGame helper).
+ *
+ * @returns Paths relative to the repository root.
+ */
+function fixtureTests(): string[] {
+  const root = new URL(".", import.meta.url).pathname;
+  const files = readdirSync(`${root}src`, { recursive: true, encoding: "utf8" })
+    .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
+    .map(file => `src/${file}`);
+  return files.filter(file =>
+    /loadMergeGame|startGame\(/.test(readFileSync(`${root}${file}`, "utf8"))
+  );
+}
+
+const skipped = hasFixture ? [] : fixtureTests();
+if (!hasFixture) {
+  console.warn(`merge-game fixture not found at ${fixture}: skipping ${skipped.length} test files`);
+}
+
+/**
+ * The built entry of the `@moku-labs/game` dev dependency for one subpath.
  *
  * @param subpath - "index", "testing", "inspect", "control", "jsx-runtime" or "jsx-dev-runtime".
  * @returns The absolute path of dist/<subpath>.mjs inside node_modules.
@@ -33,7 +61,8 @@ export default defineConfig({
           include: [
             "tests/unit/**/*.test.{ts,tsx}",
             "src/plugins/**/__tests__/unit/**/*.test.{ts,tsx}"
-          ]
+          ],
+          exclude: ["**/node_modules/**", ...skipped]
         }
       },
       {
@@ -43,7 +72,8 @@ export default defineConfig({
           include: [
             "tests/integration/**/*.test.{ts,tsx}",
             "src/plugins/**/__tests__/integration/**/*.test.{ts,tsx}"
-          ]
+          ],
+          exclude: ["**/node_modules/**", ...skipped]
         }
       }
     ],
