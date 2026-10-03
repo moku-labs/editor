@@ -137,28 +137,33 @@ describe("moku-editor bin", () => {
     expect(bin.output()).toContain("stopped");
   }, 60_000);
 
-  it("serves the merge-game fixture page and its manifest", async () => {
-    const bin = await spawnBin([
-      join(MERGE_GAME, "web", "index.html"),
-      "--port",
-      "0",
-      "--root",
-      MERGE_GAME
-    ]);
-    try {
-      const origin = `http://127.0.0.1:${bin.port}`;
-      const page = await fetch(`${origin}/`);
-      expect(page.status).toBe(200);
-      expect(await page.text()).toContain('id="game"');
-      await expect(fetch(`${origin}/manifest.json`)).resolves.toHaveProperty("status", 200);
-      await expect(fetch(`${origin}/__editor/`)).resolves.toHaveProperty("status", 200);
-      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
-      expect(hello.status).toBe(200);
-    } finally {
-      bin.child.kill("SIGINT");
-    }
-    expect(await bin.child.exited).toBe(0);
-  }, 60_000);
+  // CI checks out only this repository: without the sibling game the fixture case is skipped.
+  it.skipIf(!existsSync(MERGE_GAME))(
+    "serves the merge-game fixture page and its manifest",
+    async () => {
+      const bin = await spawnBin([
+        join(MERGE_GAME, "web", "index.html"),
+        "--port",
+        "0",
+        "--root",
+        MERGE_GAME
+      ]);
+      try {
+        const origin = `http://127.0.0.1:${bin.port}`;
+        const page = await fetch(`${origin}/`);
+        expect(page.status).toBe(200);
+        expect(await page.text()).toContain('id="game"');
+        await expect(fetch(`${origin}/manifest.json`)).resolves.toHaveProperty("status", 200);
+        await expect(fetch(`${origin}/__editor/`)).resolves.toHaveProperty("status", 200);
+        const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+        expect(hello.status).toBe(200);
+      } finally {
+        bin.child.kill("SIGINT");
+      }
+      expect(await bin.child.exited).toBe(0);
+    },
+    60_000
+  );
 
   it("prints usage on --help (0) and refuses bad arguments with 2 (P14)", async () => {
     const help = await runBin(["--help"]);
