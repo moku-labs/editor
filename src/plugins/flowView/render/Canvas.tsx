@@ -84,10 +84,6 @@ const MIDDLE_BUTTON = 1;
  *
  * @param target - The event target.
  * @returns The closest element with `data-hit`, or undefined.
- * @example
- * ```ts
- * hitOf(event.target)?.dataset.hit; // "card"
- * ```
  */
 function hitOf(target: EventTarget | null): HTMLElement | undefined {
   return target instanceof Element
@@ -168,11 +164,6 @@ function opensOutcomeMenu(hit: string | undefined): boolean {
  * @returns Items by key and edges to draw.
  * @example
  * ```ts
- * const world = {
- *   result: { byKey: { "main/home": { key: "main/home", x: 100, y: 40, w: 160, h: 60, … } }, edges: [], … },
- *   …
- * };
- * dragged(world, { key: "main/home", dx: 60, dy: 30 }).byKey["main/home"]; // { key: "main/home", x: 160, y: 70, w: 160, h: 60, … }
  * dragged(world, undefined).byKey === world.result.byKey; // true: no drag, same items
  * ```
  */
@@ -209,6 +200,8 @@ type WorldProps = {
  */
 function renderItem(props: WorldProps, item: Item): VNode | false {
   const { ctx, actions, world } = props;
+
+  // A node card or a hub: the views that take the actions.
   const card = world.cards.get(item.key);
   if (card !== undefined) {
     return <NodeCard key={item.key} ctx={ctx} actions={actions} item={item} view={card} />;
@@ -217,6 +210,8 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
   if (hub !== undefined) {
     return <Hub key={item.key} ctx={ctx} actions={actions} item={item} view={hub} />;
   }
+
+  // A stub or a note: read-only views; a note shows its selection.
   const stub = world.stubs.get(item.key);
   if (stub !== undefined) return <Stub key={item.key} item={item} view={stub} />;
   const note = world.notes.get(item.key);
@@ -224,6 +219,8 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
     const isSelected = ctx.state.focus.selected === item.key;
     return <NoteNode key={item.key} item={item} view={note} selected={isSelected} />;
   }
+
+  // A port: an entry dot or a labelled exit tag; anything else is not drawn.
   if (item.kind !== "port") return false;
   const isEntry = item.key.endsWith("entry");
   return (
@@ -300,8 +297,8 @@ export function Canvas(props: CanvasProps): VNode {
      */
     const measure = (): void => {
       const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0)
-        actions.camera.setView({ w: rect.width, h: rect.height });
+      const hasSize = rect.width > 0 && rect.height > 0;
+      if (hasSize) actions.camera.setView({ w: rect.width, h: rect.height });
     };
     measure();
     if (typeof ResizeObserver !== "function") return;
@@ -391,7 +388,7 @@ export function Canvas(props: CanvasProps): VNode {
       const key = element?.dataset.key;
       const item = key === undefined ? undefined : world?.result.byKey[key];
       const movable = item?.kind === "node" || item?.kind === "note";
-      const pan = event.button === 1 || space.current || !movable;
+      const pan = event.button === MIDDLE_BUTTON || space.current || !movable;
       gesture.current = {
         mode: pan ? "pan" : "drag",
         hit,
@@ -477,16 +474,22 @@ export function Canvas(props: CanvasProps): VNode {
     (event: MouseEvent) => {
       if (inChrome(event.target)) return;
       event.preventDefault();
+
+      // Where the menu opens, in canvas px, and what was hit.
       const element = hitOf(event.target);
       const rect = canvas.current?.getBoundingClientRect();
       const x = event.clientX - (rect?.left ?? 0);
       const y = event.clientY - (rect?.top ?? 0);
       const hit = element?.dataset.hit;
       const key = element?.dataset.key;
+
+      // A card, the hub head or a note opens the node menu.
       if (opensNodeMenu(hit) && key !== undefined) {
         actions.focus.openMenu({ target: "node", key, outcome: undefined, x, y });
         return;
       }
+
+      // A stub or outcome row opens the outcome menu; a stub reads its outcome off the edge into it.
       const into =
         hit === "stub"
           ? world?.result.edges.find(edge => edge.kind === "edge" && edge.to === key)
@@ -497,6 +500,8 @@ export function Canvas(props: CanvasProps): VNode {
         actions.focus.openMenu({ target: "outcome", key: source, outcome, x, y });
         return;
       }
+
+      // Anything else opens the canvas menu.
       actions.focus.openMenu({ target: "canvas", key: undefined, outcome: undefined, x, y });
     },
     [actions, canvas, world]

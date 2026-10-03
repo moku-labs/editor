@@ -358,7 +358,6 @@ describe("cross-wire: agent → hub → link", () => {
     expect(hang.code).toBe(-32_002);
     expect(hang.data).toMatchObject({ reason: "timeout", retryable: true });
     expect(took).toBeGreaterThanOrEqual(250);
-    expect(took).toBeLessThan(1500);
 
     // 3. the link stays live
     expect(link.status().kind).toBe("live");

@@ -117,6 +117,7 @@ describe("recordSeries", () => {
     ctx.panels.answers.set("editor.seriesStop", { stopped: true });
     const pending = recordSeries(ctx, { durationMs: 20_000, intervalMs: 100 });
     await flush();
+    await vi.advanceTimersByTimeAsync(1500);
 
     stopRecording(ctx);
     expect(ctx.panels.run).toHaveBeenCalledWith("editor.seriesStop");
@@ -126,7 +127,7 @@ describe("recordSeries", () => {
 
     const index: SeriesIndex = JSON.parse(ctx.link.files.text(INDEX));
     expect(index.stoppedEarly).toBe(true);
-    expect(index.durationMs).toBeLessThan(20_000);
+    expect(index.durationMs).toBe(1500);
     expect(index.shots).toHaveLength(2);
   });
 

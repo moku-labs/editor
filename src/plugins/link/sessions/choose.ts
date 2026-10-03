@@ -121,7 +121,8 @@ export function retrySession(ctx: LinkCtx): void {
     attachLater(ctx, pick);
     return;
   }
-  if (state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS) {
+  const hasExpired = state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS;
+  if (hasExpired) {
     applyStatus(ctx, { type: "lost-expired" });
     return;
   }
@@ -195,6 +196,7 @@ export async function attach(ctx: LinkCtx, sessionId: string): Promise<Manifest>
   const { state } = ctx;
   const previous = state.chosen;
 
+  // Leave the old session: its subs, the retry timer and the lost clock.
   if (previous !== undefined && isAttached(state)) unwatchAll(ctx, previous);
   detachAll(ctx);
   clearRetry(state);
@@ -204,11 +206,13 @@ export async function attach(ctx: LinkCtx, sessionId: string): Promise<Manifest>
   state.lostAt = undefined;
   if (!applyStatus(ctx, { type: "attached" })) emitStatus(ctx);
 
+  // Fetch the manifest unless cached; drop the answer when a newer attach started meanwhile.
   const generation = state.generation;
   const manifest =
     state.manifests.get(sessionId) ?? (await fetchManifest(ctx, sessionId, generation));
   if (generation !== state.generation) return manifest;
 
+  // Keep the manifest, tell the listeners and resubscribe every watch.
   state.manifests.set(sessionId, manifest);
   state.attempt = 0;
   notifyManifest(ctx, manifest);
@@ -231,16 +235,20 @@ export function applySessions(ctx: LinkCtx, list: readonly SessionInfo[]): void 
   const attached = isAttached(state);
   const ids = new Set(list.map(({ id }) => id));
 
+  // Store the list, forget closed sessions and lose a chosen one that is gone.
   state.sessions = list;
   for (const id of state.manifests.keys()) if (!ids.has(id)) state.manifests.delete(id);
-  if (state.chosen !== undefined && !ids.has(state.chosen)) closeChosen(ctx, "game_reloaded");
+  const lostChosen = state.chosen !== undefined && !ids.has(state.chosen);
+  if (lostChosen) closeChosen(ctx, "game_reloaded");
 
+  // Attach the pick when it is new or nothing is attached on this socket yet.
   const pick = pickSession(list, state.chosen, state.sticky);
   if (pick === undefined) {
     applyStatus(ctx, { type: "sessions", attached: state.chosen !== undefined, count: 0 });
     return;
   }
-  if (pick !== state.chosen || !attached) attachLater(ctx, pick);
+  const needsAttach = pick !== state.chosen || !attached;
+  if (needsAttach) attachLater(ctx, pick);
 }
 
 /**

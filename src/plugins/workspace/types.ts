@@ -753,24 +753,10 @@ export type UiStore = {
    *
    * @param fn - Called after every bump.
    * @returns Unsubscribe: later bumps no longer call `fn`.
-   * @example
-   * ```ts
-   * const off = ctx.state.ui.subscribe(() => redraw());
-   * ctx.state.ui.bump(); // redraw runs once
-   * off();
-   * ctx.state.ui.bump(); // redraw does not run
-   * ```
    */
   subscribe(fn: () => void): () => void;
   /**
    * Raises the version and calls every subscriber.
-   *
-   * @example
-   * ```ts
-   * const ui = createUiStore();
-   * ui.bump();
-   * ui.version; // 1
-   * ```
    */
   bump(): void;
 };

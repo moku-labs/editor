@@ -9,12 +9,6 @@ import type { UiStore } from "../types";
  * Creates the UI store.
  *
  * @returns A store at version 0 with no subscribers.
- * @example
- * ```ts
- * const ui = createUiStore();
- * ui.subscribe(() => redraw());
- * ui.bump();
- * ```
  */
 export function createUiStore(): UiStore {
   const subscribers = new Set<() => void>();
@@ -40,10 +34,6 @@ export function createUiStore(): UiStore {
  * @param store - The UI store of the workspace state.
  * @param select - Reads the value from the state at render time.
  * @returns The selected value.
- * @example
- * ```tsx
- * const active = useWorkspace(ctx.state.ui, () => ctx.state.active);
- * ```
  */
 export function useWorkspace<T>(store: UiStore, select: () => T): T {
   const [, setVersion] = useState(store.version);

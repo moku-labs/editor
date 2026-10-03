@@ -152,7 +152,8 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
   function take(key: ItemKey, item?: Item): void {
     focus.selected = key;
     focus.edge = undefined;
-    focus.strip = item === undefined || item.kind !== "note";
+    const opensStrip = item === undefined || item.kind !== "note";
+    focus.strip = opensStrip;
     focus.highlight = { side: "to", index: -1 };
     focus.menu = undefined;
     notify(ctx.state);
@@ -172,16 +173,21 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
 
   const actions: FocusActions = {
     select: key => {
+      // No key clears the selection.
       if (key === undefined) {
         clear();
         notify(ctx.state);
         return true;
       }
+
+      // A key on screen, or the first instance of a node id, is taken directly.
       const item = ctx.state.layout.result?.byKey[key] ?? firstInstance(ctx, key);
       if (item !== undefined) {
         take(item.key, item);
         return true;
       }
+
+      // A known node off screen is revealed by a relayout, then taken.
       const { graph } = ctx.state.data;
       if (graph === undefined || nodeOf(graph, key) === undefined) return false;
       const revealed = env.actions().layout.reveal(key);
@@ -254,6 +260,8 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       const selected = focus.selected;
       const result = ctx.state.layout.result;
       if (selected === undefined || result === undefined) return;
+
+      // The selection plus every item one forward edge away; return edges do not count.
       const keys = new Set<ItemKey>([selected]);
       for (const edge of result.edges) {
         if (edge.kind === "return") continue;
@@ -329,7 +337,8 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
     },
 
     leave: () => {
-      if (focus.selected === undefined && !focus.strip) return false;
+      const hasFocus = focus.selected !== undefined || focus.strip;
+      if (!hasFocus) return false;
       clear();
       notify(ctx.state);
       return true;

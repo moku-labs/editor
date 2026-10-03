@@ -314,6 +314,7 @@ export function LogTable(props: LogTableProps): VNode {
     else if (added > 0) setUnseen(count => count + added);
   }, [nextKey]);
 
+  // Draw only the rows in view plus an overscan band; before the first measure, assume a height.
   const measured = scroller.current?.clientHeight ?? 0;
   const height = measured > 0 ? measured : FALLBACK_HEIGHT;
   const first = Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN);
