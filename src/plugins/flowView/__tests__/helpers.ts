@@ -31,7 +31,7 @@ export function testConfig(overrides: Partial<FlowViewConfig> = {}): FlowViewCon
     historyLast: 20,
     trailLength: 6,
     rejectedOutcomes: ["rejected"],
-    hubMinOutcomes: 5,
+    hubMinOutcomes: 6,
     hubMinReturns: 4,
     layoutFile: ".moku/editor/layout.json",
     notesDir: ".moku/notes",

@@ -15,7 +15,7 @@ import type { RegistryApi, RegistryCtx } from "./types";
  * @example
  * ```ts
  * const registry = createRegistryApi(ctx);
- * registry.manifest().commands.length; // 13 door commands + module + editor commands
+ * registry.manifest().commands.length; // 14 door commands + module + editor commands
  * ```
  */
 export function createRegistryApi(ctx: RegistryCtx): RegistryApi {
@@ -27,7 +27,7 @@ export function createRegistryApi(ctx: RegistryCtx): RegistryApi {
      * @returns The manifest the bridge sends in `hello`.
      * @example
      * ```ts
-     * registry.manifest().commands.length; // 13 door commands + module + editor commands
+     * registry.manifest().commands.length; // 14 door commands + module + editor commands
      * ```
      */
     manifest: () => currentManifest(ctx.state, ctx.config),

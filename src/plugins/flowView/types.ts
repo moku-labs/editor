@@ -33,7 +33,7 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /** Hub rule: a hub has at least this many outcomes (design §7.1). Default 5. */
+  /** Hub rule: a hub has at least this many outcomes (design §7.1). Default 6. */
   hubMinOutcomes: number;
   /** Hub rule: a hub has at least this many distinct returning nodes (design §7.1). Default 4. */
   hubMinReturns: number;

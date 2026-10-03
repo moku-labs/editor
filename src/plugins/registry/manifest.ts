@@ -93,7 +93,7 @@ export function gameName(config: Readonly<RegistryConfig>): string {
  * @returns The frozen manifest.
  * @example
  * ```ts
- * currentManifest(ctx.state, ctx.config).commands.length; // 13 door commands + module + editor commands
+ * currentManifest(ctx.state, ctx.config).commands.length; // 14 door commands + module + editor commands
  * ```
  */
 export function currentManifest(state: RegistryState, config: Readonly<RegistryConfig>): Manifest {

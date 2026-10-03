@@ -58,7 +58,7 @@ await tools.flowView.notes.create({ title: "First wood 4", from: { node: "board/
 | `historyLast` | `20` | Entries of `game.history` the panel watches. |
 | `trailLength` | `6` | Edges drawn as the trail, newest strongest. |
 | `rejectedOutcomes` | `["rejected"]` | Outcomes drawn as rejections. |
-| `hubMinOutcomes` / `hubMinReturns` | `5` / `4` | Hub rule thresholds (design §7.1). |
+| `hubMinOutcomes` / `hubMinReturns` | `6` / `4` | Hub rule thresholds (design §7.1). |
 | `layoutFile` | `".moku/editor/layout.json"` | Saved positions. |
 | `notesDir` | `".moku/notes"` | Note files. |
 | `stylesFile` | `"features/ui/styles.ts"` | The text styles the Styles tab edits. |

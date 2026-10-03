@@ -80,7 +80,7 @@ function predecessors(flow: FlowJson): Map<string, string[]> {
  * @returns Whether the loop is short.
  * @example
  * ```ts
- * isShortLoop(main, "setLoading", "splash", predecessors(main)); // true
+ * isShortLoop(main, "setLoading", "splash", predecessors(main)); // false
  * ```
  */
 function isShortLoop(
