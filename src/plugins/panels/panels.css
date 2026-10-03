@@ -1,6 +1,8 @@
 /* panels · panels. The panel sections the host appends into the workspace hosts, their placeholder line (generic F5: waiting, no game, missing source, view error) and the stale half of F3 (the [data-stale] fade atom of workspace primitives.css applies to the section). Layout of several panels in one workspace belongs to the owning view's sheet through [data-panel="…"]. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel]) {
+  /* A panel fills its workspace host (the host is a definite box: Shell.css); its view scrolls inside. */
   :scope {
+    height: 100%;
     min-width: 0;
     min-height: 0;
   }

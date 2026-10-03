@@ -29,9 +29,9 @@
   [data-preview-head] {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     height: 28px;
-    padding: 0 4px 0 8px;
+    padding: 0 3px 0 7px;
     cursor: grab;
     font-size: var(--font-size-11-5);
     font-weight: 600;
@@ -39,6 +39,23 @@
 
   [data-title] {
     flex: none;
+  }
+
+  /* The S float is 150 px wide: the size control and the two icon buttons keep their size, so the icons never shrink under the reset's svg max-width. */
+  [data-segmented],
+  [data-preview-head] > button {
+    flex: none;
+  }
+
+  [data-segmented] > button {
+    min-width: 18px;
+    padding: 0 4px;
+  }
+
+  [data-preview-head] > button[data-variant] {
+    justify-content: center;
+    width: 20px;
+    padding: 0;
   }
 
   [data-device] {

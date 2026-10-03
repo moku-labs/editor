@@ -12,7 +12,7 @@ import { createFilesPanel } from "./panel";
 import { closeTopmost } from "./tabs/edit";
 import { activeTab, isModified } from "./tabs/model";
 import { saveTab } from "./tabs/save";
-import { buildIndex } from "./tree/walk";
+import { buildIndex, canList } from "./tree/walk";
 import type { FilesViewCtx, FilesViewState } from "./types";
 
 /**
@@ -75,21 +75,23 @@ export function initFilesView(ctx: FilesViewCtx): void {
 }
 
 /**
- * onStart: loads `game.graph` on every manifest, starts the index build without awaiting it
- * and adds the beforeunload guard. Every remover goes to `state.removers`.
+ * onStart: loads `game.graph` on every manifest, starts the index build without awaiting it when
+ * the link can list (otherwise the first `link:status` with an open socket starts it) and adds
+ * the beforeunload guard. Every remover goes to `state.removers`.
  *
  * @param ctx - Domain context of filesView.
  */
 export function startFilesView(ctx: FilesViewCtx): void {
   const { state } = ctx;
+  const link = ctx.require(linkPlugin);
   state.removers.push(
-    ctx.require(linkPlugin).onManifest(() => {
+    link.onManifest(() => {
       loadGraph(ctx).catch((error: unknown) => {
         ctx.log.warn("filesView:graph-failed", { message: messageOf(error) });
       });
     })
   );
-  void buildIndex(ctx);
+  if (canList(link.status())) void buildIndex(ctx);
 
   if (typeof globalThis.addEventListener === "function") {
     const guard = guardUnload(state);

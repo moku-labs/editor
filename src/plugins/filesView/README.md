@@ -92,7 +92,7 @@ filesView declares no events. It uses the global tools events of `src/config.ts`
 |---|---|---|---|
 | Emits | `workspace:select-node` | `{ id }` | A Used-by chip is clicked. A node chip sends `"board/merge"`. A flow chip sends `"<flow>/<start>"`, or the flow name when it has no start. |
 | Emits | `workspace:open-sheet` | `{ index }` | "Open contact sheet" on a series `index.json`. |
-| Hooks | `link:status` | `{ status, session? }` | Builds the index when there is none and no build runs. Notifies. |
+| Hooks | `link:status` | `{ status, session? }` | Builds the index when there is none, no build runs and the socket is open (not `connecting`, not `lost`). Notifies. |
 | Hooks | `workspace:changed` | `{ ws }` | `ws === "files"`: rebuilds an index older than `INDEX_STALE_MS`, re-reads the active tab. |
 | Hooks | `workspace:open-file` | `{ path, line? }` | Opens the file for another view. A failure logs `filesView:open-failed`. |
 
@@ -122,7 +122,7 @@ filesView depends on no view (R4, D-13).
 | Phase | What |
 |---|---|
 | `onInit` | Registers the Files panel. Binds ⌘S (`mod+s`, Files only, while editing) and the `fileEdit` Esc layer. No I/O. |
-| `onStart` | Loads `game.graph` on every manifest. Starts the index build without awaiting it. Adds the `beforeunload` guard, active only while a tab is modified. |
+| `onStart` | Loads `game.graph` on every manifest. Starts the index build without awaiting it when the socket is open; otherwise the first `link:status` with an open socket starts it. Adds the `beforeunload` guard, active only while a tab is modified. |
 | `onStop` | Runs every remover and the palette remover. Clears the listeners. |
 
 ## Usage

@@ -5,13 +5,30 @@
  */
 import { linkPlugin } from "../../link";
 import type { FilesClient } from "../../link/types";
-import type { FileEntry } from "../../registry/protocol";
+import type { FileEntry, LinkStatus } from "../../registry/protocol";
 import { codeOf, messageOf } from "../errors";
 import { loadOverrides, rebuildUsedBy } from "../links/used-by";
 import { notify } from "../store";
 import type { FileIndex, FilesViewCtx } from "../types";
 import { WALK_CONCURRENCY, WALK_MAX_DEPTH } from "../types";
 import { replacePaletteItems } from "./palette";
+
+/**
+ * True when the link has an open socket, so `link.files.list` can answer: not while it still
+ * connects and not while it is lost. A walk started then fails at once with -32002, so the index
+ * waits for the first `link:status` with an open socket instead.
+ *
+ * @param status - The link status.
+ * @returns Whether a walk can list now.
+ * @example
+ * ```ts
+ * canList({ kind: "connecting" }); // false
+ * canList({ kind: "empty" }); // true: no game, but the files of the root list
+ * ```
+ */
+export function canList(status: LinkStatus): boolean {
+  return status.kind !== "connecting" && status.kind !== "lost";
+}
 
 /**
  * One folder listing: the entries, or undefined when the list failed.
