@@ -199,6 +199,8 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       choose: vi.fn(() => Promise.resolve(manifestOf())),
       retry: vi.fn(),
       boot: () => undefined,
+      frameUrl: url => url,
+      isOtherTab: () => false,
       files: store
     },
     send(id, value) {

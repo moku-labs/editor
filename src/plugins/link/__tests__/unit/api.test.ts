@@ -130,6 +130,24 @@ describe("state readers", () => {
   });
 });
 
+describe("frameUrl and isOtherTab", () => {
+  it("frameUrl tags a game URL with the frame id of this tools page", () => {
+    const link = createLinkApi(ctx);
+    const url = link.frameUrl("http://127.0.0.1:3000/");
+    expect(url).toBe(`http://127.0.0.1:3000/?__editorFrame=${ctx.state.frame}`);
+    expect(link.frameUrl("http://127.0.0.1:3000/")).toBe(url);
+    expect(createLinkApi(createCtx()).frameUrl("http://127.0.0.1:3000/")).not.toBe(url);
+  });
+
+  it("isOtherTab is true only for a page tagged by another tools page", () => {
+    const link = createLinkApi(ctx);
+    const theirs = createLinkApi(createCtx()).frameUrl("http://127.0.0.1:3000/");
+    expect(link.isOtherTab(theirs)).toBe(true);
+    expect(link.isOtherTab(link.frameUrl("http://127.0.0.1:3000/"))).toBe(false);
+    expect(link.isOtherTab("http://127.0.0.1:3000/")).toBe(false);
+  });
+});
+
 describe("onManifest", () => {
   it("calls at once when a manifest exists, then on every change, until unsubscribed", async () => {
     const socket = await connected(ctx);

@@ -190,6 +190,8 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       choose: vi.fn(() => Promise.resolve(MANIFEST)),
       retry: vi.fn(),
       boot: () => link.bootValue,
+      frameUrl: url => url,
+      isOtherTab: () => false,
       files: files.client
     },
     attach(manifest) {

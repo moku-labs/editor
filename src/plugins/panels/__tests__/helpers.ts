@@ -132,6 +132,8 @@ export function createLinkMock(): LinkMock {
       choose: vi.fn(() => Promise.resolve(manifestOf([]))),
       retry: vi.fn(),
       boot: () => undefined,
+      frameUrl: url => url,
+      isOtherTab: () => false,
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),

@@ -54,6 +54,17 @@ export function gameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
 }
 
 /**
+ * The `src` of the game frame: the game URL tagged with the frame id of this tools page
+ * (`link.frameUrl`), so link and the reload know the frame's session from another tab's.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns The tagged URL.
+ */
+export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
+  return ctx.require(linkPlugin).frameUrl(gameUrl(ctx));
+}
+
+/**
  * The overlay element above the iframe (device space), created once; attached into the frame box
  * by the first mount.
  *
@@ -89,7 +100,7 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   iframe.title = "Game";
   iframe.setAttribute("allow", "autoplay; fullscreen");
   iframe.tabIndex = -1;
-  iframe.src = gameUrl(ctx);
+  iframe.src = taggedGameUrl(ctx);
 
   box.append(iframe, ensureOverlay(state));
   layer.append(box);

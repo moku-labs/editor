@@ -81,15 +81,21 @@ moves in the DOM. Docking writes a transform and a `clip-path`.
 
 Every float that can cover the frame uses the browser top layer (`<dialog>` or `popover`).
 
+The frame loads `link.frameUrl(url)`: the game URL with this tools page's frame id in the
+`__editorFrame` query parameter. `gameFrame().url` stays the untagged game URL.
+
 Before `mount` there is no iframe: `box()` is `undefined` and `reload()` resolves
 `{ restored: false, reason: "not_mounted" }`.
 
 ### reload (D-07)
 
-`reload({ restore: true })`: `game.bookmark` → `iframe.src` reassigned on the same element → first
-manifest of an embedded session → `game.restore { bookmark }` → toast "Game reloaded · state
-restored from the last checkpoint". Concurrent calls share one run and schedule one more after it.
-Bookmark and restore are not user runs: no `workspace:ran`.
+`reload({ restore: true })`: `game.bookmark`, and whether the link is `paused` → `iframe.src`
+reassigned on the same element → first manifest of this tab's own embedded frame (a manifest
+whose page carries another tools page's frame id is skipped) → `game.restore { bookmark }` →
+`game.pause` when the game was paused and the new manifest lists it → toast "Game reloaded · state
+restored from the last checkpoint". A failed `game.pause` is the warn `workspace:pause-failed`; the
+result stays `{ restored: true }`. Concurrent calls share one run and schedule one more after it.
+Bookmark, restore and pause are not user runs: no `workspace:ran`.
 
 | `reason` | When |
 |---|---|

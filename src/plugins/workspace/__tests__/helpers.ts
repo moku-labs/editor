@@ -107,6 +107,22 @@ export function resultOf(value: Json = null, frame = 1841): RunResult {
   return { value, state: { path: "board/awaitIntent", frame, tainted: false } };
 }
 
+/** The frame id of the link mock: `frameUrl` tags with it, `isOtherTab` compares against it. */
+export const FRAME = "f-test";
+
+/**
+ * A page URL tagged with a frame id, as link's `frameUrl` builds it.
+ *
+ * @param url - The page URL.
+ * @param frame - The frame id; default the mock's own.
+ * @returns The tagged URL.
+ */
+export function tagged(url: string, frame = FRAME): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set("__editorFrame", frame);
+  return parsed.href;
+}
+
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
   [K in keyof Omit<LinkApi, "files">]: Mock<LinkApi[K]>;
@@ -156,6 +172,11 @@ export function createLinkMock(): LinkMock {
     choose: vi.fn<LinkApi["choose"]>(() => Promise.resolve(manifestOf())),
     retry: vi.fn<LinkApi["retry"]>(),
     boot: vi.fn<LinkApi["boot"]>(() => link.bootValue),
+    frameUrl: vi.fn<LinkApi["frameUrl"]>(url => tagged(url)),
+    isOtherTab: vi.fn<LinkApi["isOtherTab"]>(page => {
+      const frame = new URL(page).searchParams.get("__editorFrame");
+      return frame !== null && frame !== FRAME;
+    }),
     files: {
       list: vi.fn(() => Promise.resolve([])),
       read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),

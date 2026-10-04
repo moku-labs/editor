@@ -6,10 +6,11 @@ import {
   createGameFrame,
   followTransitions,
   removeFrameLayer,
-  syncFrame
+  syncFrame,
+  taggedGameUrl
 } from "../../frame/frame";
 import type { GameFrame } from "../../types";
-import { createCtx, rectOf, stubRect, type TestCtx } from "../helpers";
+import { createCtx, rectOf, stubRect, type TestCtx, tagged } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The single game frame: one layer in document.body, docking by geometry only
@@ -52,7 +53,8 @@ describe("createFrameLayer", () => {
     const iframe = document.querySelector<HTMLIFrameElement>("iframe[data-game-frame]");
     expect(iframe?.title).toBe("Game");
     expect(iframe?.getAttribute("allow")).toBe("autoplay; fullscreen");
-    expect(iframe?.getAttribute("src")).toBe(frame.url);
+    expect(iframe?.getAttribute("src")).toBe(taggedGameUrl(ctx));
+    expect(iframe?.getAttribute("src")).toBe(tagged(frame.url));
     expect(iframe?.parentElement).toBe(boxElement());
     expect(overlay.parentElement).toBe(boxElement());
     expect(frame.overlay()).toBe(overlay);

@@ -263,6 +263,39 @@ export type LinkApi = EditorChannel & {
   boot(): ToolsBoot | undefined;
 
   /**
+   * Tags a game page URL with the frame id of this tools page (the `__editorFrame` query
+   * parameter; one random id per tools page). workspace loads its game frame from the tagged URL,
+   * so the session of that frame is this page's own: the session choice prefers it and never
+   * picks the game frame of another tools tab on its own.
+   *
+   * @param url - The game page URL, absolute or relative to the tools page.
+   * @returns The absolute tagged URL; the URL unchanged when it does not parse.
+   * @example
+   * ```ts
+   * // workspace loads its game frame from the boot's game URL.
+   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/");
+   * // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
+   * ```
+   */
+  frameUrl(url: string): string;
+
+  /**
+   * True when a page URL (`Manifest.page`, `SessionInfo.page`) is the game frame of another tools
+   * tab: it carries a frame id that is not this page's. A page without a frame id is not.
+   *
+   * @param page - A page URL.
+   * @returns Whether the page belongs to another tools tab.
+   * @example
+   * ```ts
+   * // workspace's D-07 reload skips the manifest of a second tools tab's game.
+   * const link = ctx.require(linkPlugin);
+   * link.isOtherTab("http://127.0.0.1:3000/?__editorFrame=aaaaaaaaaaaa"); // true
+   * link.isOtherTab(link.frameUrl("http://127.0.0.1:3000/")); // false: this page's own frame
+   * ```
+   */
+  isOtherTab(page: string): boolean;
+
+  /**
    * The files channel client.
    *
    * @example
@@ -339,6 +372,8 @@ export type LinkState = {
   silenceTimer: ReturnType<typeof setInterval> | undefined;
   /** Set by onStop; every callback returns early when true. */
   stopped: boolean;
+  /** The frame id of this tools page, made once: its game frame URL carries it (`frameUrl`). */
+  readonly frame: string;
 };
 
 /**

@@ -1,7 +1,8 @@
 /**
  * @file Exploratory QA regressions across workspaces: a save asked while a write is in flight
- * (Files and the Flow Code tab), the watch bookkeeping under rapid workspace switching and a
- * game reload, Esc unwinding the palette over a workspace overlay, and two tools tabs on one hub.
+ * (Files and the Flow Code tab), a game source saved while paused, the watch bookkeeping under
+ * rapid workspace switching and a game reload, Esc unwinding the palette over a workspace overlay,
+ * and two tools tabs on one hub.
  */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -224,6 +225,41 @@ test.describe("qa · a save during a save", () => {
   });
 });
 
+test.describe("qa · a save while paused", () => {
+  test("Files: a game source saved while paused reloads the game and keeps it paused", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of RELOAD_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    const rel = "nodes/merge.ts";
+    const original = (await readGameFile(rel)) ?? "";
+    expect(original.length).toBeGreaterThan(0);
+    const pill = page.locator("[data-ui=link-pill]");
+    const pause = page.locator("[data-ui=top-bar] [data-action=pause]");
+    const pageChip = chip(page);
+    await pause.click();
+    await expect(pill).toHaveAttribute("data-kind", "paused");
+    const old = (await pageChip.textContent()) ?? "";
+    try {
+      await tools.show("files");
+      const host = files(page);
+      await host.locator('[role=treeitem][data-path="nodes"]').click();
+      await host.locator(`[role=treeitem][data-path="${rel}"]`).click();
+      await host.locator("[data-part=file-bar]").getByRole("button", { name: "Edit here" }).click();
+      await host.getByRole("textbox", { name: `Edit ${rel}` }).fill(`${original}// qa paused\n`);
+      await page.keyboard.press("ControlOrMeta+s");
+
+      await expect.poll(() => readGameFile(rel)).toBe(`${original}// qa paused\n`);
+      await expect(pageChip).not.toHaveText(old, { timeout: 30_000 });
+      await expect(pill).toHaveAttribute("data-kind", "paused", { timeout: 30_000 });
+      await expect(pause).toHaveText("Resume");
+    } finally {
+      await writeFile(path.join(GAME_ROOT, rel), original);
+    }
+  });
+});
+
 test.describe("qa · watches across workspaces", () => {
   test("rapid switching and a game reload leave one watch per source, no duplicate values", async ({
     page,
@@ -332,10 +368,9 @@ test.describe("qa · Esc unwinds one layer", () => {
 });
 
 test.describe("qa · two tools tabs", () => {
-  // P2 proposal (not fixed): every tools page embeds its own game, and the link picks "the newest
-  // embedded session", so a second tools tab takes the first tab's panels over to its game while
-  // the first tab's preview still shows its own. Pinned with test.fail: it turns red once fixed.
-  test.fail("a second tools tab leaves the first tab on its own game", async ({ tools }) => {
+  // Every tools page embeds its own game. Its frame URL carries the page's frame id, and the link
+  // prefers the session whose page carries it, so a second tab never takes the first one over.
+  test("a second tools tab leaves the first tab on its own game", async ({ tools }) => {
     const page = tools.page;
     const own = await chip(page).textContent();
     const second = await page.context().newPage();

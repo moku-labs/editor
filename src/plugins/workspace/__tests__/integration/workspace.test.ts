@@ -144,7 +144,12 @@ describe("workspace integration", () => {
     expect(root.querySelector("[data-ui='shell']")).not.toBeNull();
     const frames = document.querySelectorAll<HTMLIFrameElement>("iframe[data-game-frame]");
     expect(frames).toHaveLength(1);
-    expect(frames[0]?.getAttribute("src")).toBe("http://127.0.0.1:3000/game.html");
+    expect(frames[0]?.getAttribute("src")).toBe(
+      app.link.frameUrl("http://127.0.0.1:3000/game.html")
+    );
+    expect(frames[0]?.getAttribute("src")).toMatch(
+      /^http:\/\/127\.0\.0\.1:3000\/game\.html\?__editorFrame=[\da-f]{12}$/
+    );
     expect(app.workspace.gameFrame().url).toBe("http://127.0.0.1:3000/game.html");
 
     const other = document.createElement("div");
@@ -244,6 +249,56 @@ describe("workspace integration", () => {
       "toast"
     );
     expect(ran.map(event => event.id)).toEqual(["editor.overlay"]);
+    await app.stop();
+  });
+
+  it("reload({ restore: true }) while paused: the restored game is paused again", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    hub.answers.set("game.bookmark", () => ({ value: { checkpoint: "home" } }));
+    hub.open(sessionOf("s-1"), manifestOf());
+    await until(() => app.link.manifest() !== undefined, "attach");
+    hub.heartbeat("s-1", 1840, true);
+    await until(() => app.link.status().kind === "paused", "paused");
+
+    const pending = app.workspace.gameFrame().reload({ restore: true });
+    await until(() => hub.runs("game.bookmark").length === 1, "bookmark");
+    hub.close("s-1", "game_reloaded");
+    hub.open(sessionOf("s-2"), manifestOf());
+    await expect(pending).resolves.toEqual({ restored: true });
+
+    expect(hub.runs("game.pause").map(request => request.session)).toEqual(["s-2"]);
+    expect(ran).toEqual([]);
+    await app.stop();
+  });
+
+  it("a second tools tab's game takes neither the session nor the reload of this tab", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    const page = app.link.frameUrl("http://127.0.0.1:3000/game.html");
+    const otherPage = "http://127.0.0.1:3000/game.html?__editorFrame=000000000000";
+    hub.open({ ...sessionOf("s-1"), page }, { ...manifestOf(), page });
+    await until(() => app.link.manifest() !== undefined, "attach");
+    hub.heartbeat("s-1", 1840, false);
+    await until(() => app.link.status().kind === "live", "live");
+
+    hub.open(
+      { ...sessionOf("s-other"), page: otherPage, connectedAt: 5000 },
+      { ...manifestOf(), page: otherPage }
+    );
+    await until(() => app.link.sessions().length === 2, "second session");
+    expect(app.link.session()).toBe("s-1");
+
+    const pending = app.workspace.gameFrame().reload();
+    hub.close("s-1", "game_reloaded");
+    await until(() => app.link.status().kind === "lost", "lost");
+    expect(app.link.session()).toBeUndefined();
+
+    hub.open({ ...sessionOf("s-2"), page, connectedAt: 9000 }, { ...manifestOf(), page });
+    await expect(pending).resolves.toEqual({ restored: false });
+    expect(app.link.session()).toBe("s-2");
     await app.stop();
   });
 

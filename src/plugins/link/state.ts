@@ -1,10 +1,12 @@
 /**
  * @file link plugin — state factory and the state queries shared by the sub-modules.
  */
+import { createFrameId } from "./sessions/frame";
 import type { Config, LinkState } from "./types";
 
 /**
- * Creates the initial link state: status connecting, nothing attached, ids from 1.
+ * Creates the initial link state: status connecting, nothing attached, ids from 1, a new random
+ * frame id.
  *
  * @param _ctx - Minimal context (unused: the state does not depend on the config).
  * @param _ctx.config - Resolved plugin config.
@@ -33,7 +35,8 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
     lostAt: undefined,
     retryTimer: undefined,
     silenceTimer: undefined,
-    stopped: false
+    stopped: false,
+    frame: createFrameId()
   };
 }
 

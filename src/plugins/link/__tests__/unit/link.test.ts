@@ -51,6 +51,13 @@ describe("createLinkState", () => {
     const config = { retryMs: 1000, boot: "#b" };
     expect(createLinkState({ config }).pending).not.toBe(createLinkState({ config }).pending);
   });
+
+  it("makes one random frame id per state", () => {
+    const config = { retryMs: 1000, boot: "#b" };
+    const state = createLinkState({ config });
+    expect(state.frame).toMatch(/^[\da-f]{12}$/);
+    expect(createLinkState({ config }).frame).not.toBe(state.frame);
+  });
 });
 
 describe("isAttached", () => {

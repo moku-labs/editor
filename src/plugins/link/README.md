@@ -4,7 +4,8 @@
 
 `link` reads the boot JSON (`ToolsBoot`) that the server put into the tools page. It opens one
 websocket to the hub and keeps the list of game sessions. It chooses one session: the sticky
-choice first, then the newest embedded one, then the newest. It caches that session's manifest
+choice first, then this page's own game frame, then the newest embedded one, then the newest.
+The game frame of another tools tab is attached only through `choose()`. It caches that session's manifest
 and exposes the remote `EditorChannel` that every panel reads through. It also carries the files
 client and derives the link status. It renders nothing.
 
@@ -44,6 +45,8 @@ Fixed constants in `types.ts` (not config):
 | `choose` | `(session) => Promise<Manifest>` | Makes a session the sticky choice and attaches it. Rejects -32003 `choose_session` for an id that is not open. |
 | `retry` | `() => void` | "Retry now": reconnects, re-picks a session or re-reads the boot tag. No-op unless the status is `lost`. |
 | `boot` | `() => ToolsBoot \| undefined` | The boot data. `undefined` without a valid tag. Never log its token. |
+| `frameUrl` | `(url) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. |
+| `isOtherTab` | `(page) => boolean` | True when a page URL carries another tools page's frame id. A page without one is not another tab's. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`. No session needed. |
 
 ```ts
@@ -54,6 +57,7 @@ app.link.status(); // { kind: "live", frame: 1840 }
 app.link.onManifest(m => palette.index(m?.commands ?? []));
 await app.link.choose("s-7f3a");
 app.link.boot()?.gameUrl; // "/"
+app.link.frameUrl("http://127.0.0.1:3000/"); // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
 await app.link.files.write(".moku/notes/2026-09-24-first-top-item.md", text);
 app.link.retry();
 stop();
@@ -126,7 +130,8 @@ const off = link.onManifest(manifest => recheck(manifest));
 
 ## Integration notes
 
-- `workspace` requires `link` for `status`, `manifest`, `onManifest`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`. The frame URL is `boot()?.gameUrl`, else `"/"`.
+- `workspace` requires `link` for `status`, `manifest`, `onManifest`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `frameUrl`, `isOtherTab`. The frame URL is `frameUrl(boot()?.gameUrl ?? "/")`.
+- Two tools tabs on one hub: each embeds its own game. A session whose page carries this page's frame id wins. An embedded session with another page's frame id is never picked on its own, so a second tab does not take the first one over. An embedded page without a frame id is picked as before.
 - `panels` watches every panel source through `link.watch` and re-checks sources on `onManifest`.
 - Views use `link.files` (through `tools.files`) for notes, captures and style edits.
 - A switch of session sends `unwatch` for the old subs first. Wire subs are numbers that never repeat, so late values of an old sub are dropped.

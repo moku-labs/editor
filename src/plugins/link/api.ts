@@ -1,11 +1,12 @@
 /**
- * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry
- * and the files client, composed from the sub-modules.
+ * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
+ * the frame id helpers and the files client, composed from the sub-modules.
  */
 import { createFilesClient } from "./files/client";
 import { gameRequest } from "./rpc/calls";
 import { expectShape, readRunResult } from "./rpc/shapes";
 import { chooseSession } from "./sessions/choose";
+import { isOtherFrame, tagFrame } from "./sessions/frame";
 import { addManifestListener, currentManifest } from "./sessions/manifest";
 import { retryNow } from "./socket/connect";
 import { addWatch } from "./subscriptions/watch";
@@ -47,6 +48,10 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
     },
 
     boot: () => state.boot,
+
+    frameUrl: url => tagFrame(url, state.frame),
+
+    isOtherTab: page => isOtherFrame(page, state.frame),
 
     files: createFilesClient(ctx)
   };

@@ -7,6 +7,7 @@ import {
   pickSession,
   retrySession
 } from "../../sessions/choose";
+import { tagFrame } from "../../sessions/frame";
 import { addManifestListener, currentManifest } from "../../sessions/manifest";
 import {
   beat,
@@ -54,6 +55,47 @@ describe("pickSession", () => {
   it("falls through when the sticky session is gone, and is undefined for none", () => {
     expect(pickSession([plain], "s-gone", true)).toBe("s-plain");
     expect(pickSession([], "s-gone", true)).toBeUndefined();
+  });
+});
+
+describe("pickSession with the frame id of this tools page", () => {
+  const FRAME = "f-mine";
+  const own = sessionOf("s-own", {
+    embedded: true,
+    page: tagFrame("http://127.0.0.1:3000/", FRAME),
+    connectedAt: 1000
+  });
+  const otherTab = sessionOf("s-other", {
+    embedded: true,
+    page: tagFrame("http://127.0.0.1:3000/", "f-other"),
+    connectedAt: 9000
+  });
+  const untagged = sessionOf("s-untagged", { embedded: true, connectedAt: 5000 });
+  const plain = sessionOf("s-plain", { connectedAt: 7000 });
+
+  it("prefers its own frame over a newer embedded session of any kind", () => {
+    expect(pickSession([otherTab, untagged, own, plain], undefined, false, FRAME)).toBe("s-own");
+    expect(pickSession([otherTab, own], "s-other", false, FRAME)).toBe("s-own");
+  });
+
+  it("never picks another tab's frame on its own", () => {
+    expect(pickSession([otherTab], undefined, false, FRAME)).toBeUndefined();
+    expect(pickSession([otherTab, plain], undefined, false, FRAME)).toBe("s-plain");
+    expect(pickSession([otherTab, untagged, plain], undefined, false, FRAME)).toBe("s-untagged");
+  });
+
+  it("keeps another tab's frame when it was chosen (sticky)", () => {
+    expect(pickSession([otherTab, own], "s-other", true, FRAME)).toBe("s-other");
+  });
+
+  it("keeps the current session among the rest without an embedded one", () => {
+    const newer = sessionOf("s-newer", { connectedAt: 9500 });
+    expect(pickSession([otherTab, plain, newer], "s-plain", false, FRAME)).toBe("s-plain");
+  });
+
+  it("a page tagged with another id but not embedded is a plain page", () => {
+    const copied = sessionOf("s-copied", { page: otherTab.page, connectedAt: 9900 });
+    expect(pickSession([plain, copied], undefined, false, FRAME)).toBe("s-copied");
   });
 });
 
@@ -123,6 +165,45 @@ describe("sessions flow", () => {
     expect(ctx.state.chosen).toBe("s-2");
     expect(socket.last("unwatch")).toMatchObject({ params: { sub: 4 }, session: "s-1" });
     expect(socket.last("manifest").session).toBe("s-2");
+  });
+
+  it("a second tools tab's game appearing does not take the attached own frame over", async () => {
+    const own = sessionOf("s-own", {
+      embedded: true,
+      page: tagFrame("http://127.0.0.1:3000/", ctx.state.frame)
+    });
+    const otherTab = sessionOf("s-other", {
+      embedded: true,
+      page: tagFrame("http://127.0.0.1:3000/", "f-other"),
+      connectedAt: 9000
+    });
+    const socket = await connected(ctx, [own]);
+    sendSessions(socket, [own, otherTab]);
+    await flush();
+
+    expect(ctx.state.chosen).toBe("s-own");
+    expect(socket.requests("manifest")).toHaveLength(1);
+    expect(socket.requests("unwatch")).toHaveLength(0);
+  });
+
+  it("while its own frame reloads it waits for it instead of attaching another tab's", async () => {
+    const page = tagFrame("http://127.0.0.1:3000/", ctx.state.frame);
+    const otherTab = sessionOf("s-other", {
+      embedded: true,
+      page: tagFrame("http://127.0.0.1:3000/", "f-other"),
+      connectedAt: 9000
+    });
+    const socket = await connected(ctx, [sessionOf("s-own", { embedded: true, page })]);
+    sendSessions(socket, [otherTab]);
+    await flush();
+    expect(ctx.state.chosen).toBeUndefined();
+    expect(ctx.state.status.kind).toBe("lost");
+    expect(socket.requests("manifest")).toHaveLength(1);
+
+    const reloaded = sessionOf("s-own-2", { embedded: true, page, connectedAt: 9500 });
+    sendSessions(socket, [otherTab, reloaded]);
+    expect(ctx.state.chosen).toBe("s-own-2");
+    expect(socket.last("manifest").session).toBe("s-own-2");
   });
 
   it("the chosen id missing from a new list → lost game_reloaded", async () => {
