@@ -7,7 +7,7 @@ import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
 import { fileOfNode, lineOf, loadSourceLookup, noFileText, SOURCE_LOADS } from "./files";
-import type { SourceLookup } from "./types";
+import type { CodeState, SourceLookup } from "./types";
 
 /**
  * The result line of a conflicting save.
@@ -77,17 +77,51 @@ export async function openCode(
 }
 
 /**
+ * The save in flight per Code tab. A ⌘S during it waits for it, then saves the newer draft, so
+ * it neither writes with the old version (a false conflict) nor is lost.
+ */
+const savesInFlight = new WeakMap<CodeState, Promise<void>>();
+
+/**
  * Saves the draft: "✓ No changes" without a write for an identical text; else write with the
- * version, toast, reload the game with restore (D-07) and show the result line.
+ * version, toast, reload the game with restore (D-07) and show the result line. A save asked
+ * while one is in flight runs after it.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @param force - "Save anyway": re-read the version first.
  * @returns Resolves when the result line is set.
  */
-export async function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolean): Promise<void> {
+export function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolean): Promise<void> {
   const code = ctx.state.inspector.code;
-  if (code?.draft === undefined) return;
+  if (code === undefined) return Promise.resolve();
+  const running = savesInFlight.get(code);
+  if (running !== undefined) return running.then(() => saveCode(ctx, env, force));
+
+  const run = writeCode(ctx, env, code, force).finally(() => {
+    if (savesInFlight.get(code) === run) savesInFlight.delete(code);
+  });
+  savesInFlight.set(code, run);
+  return run;
+}
+
+/**
+ * One save of the Code tab draft (see `saveCode`). Text typed while the write is in flight stays
+ * the draft: the editor keeps it open with the newer text.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param env - Services and actions.
+ * @param code - The Code tab state.
+ * @param force - "Save anyway": re-read the version first.
+ * @returns Resolves when the result line is set.
+ */
+async function writeCode(
+  ctx: FlowCtx,
+  env: FlowEnvironment,
+  code: CodeState,
+  force: boolean
+): Promise<void> {
+  if (code.draft === undefined) return;
   const draft = code.draft;
   if (!force && draft === code.text) {
     code.draft = undefined;
@@ -101,10 +135,11 @@ export async function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolea
     const fresh = force ? await files.read(code.path) : undefined;
     const version = fresh?.version ?? code.version;
     const written = await files.write(code.path, draft, version);
+    const typedSince = code.draft !== draft;
     Object.assign(code, {
       text: draft,
       version: written.version,
-      draft: undefined,
+      draft: typedSince ? code.draft : undefined,
       conflict: false,
       discard: false
     });
