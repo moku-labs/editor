@@ -30,7 +30,7 @@ function isStyle(path: string): boolean {
 }
 
 /**
- * Classifies a written path: capture, note, layout, style, code, other (first match wins).
+ * Classifies a written path: capture, layout, style, code, other (first match wins).
  *
  * @param path - Relative posix path.
  * @returns The kind of the write.
@@ -42,7 +42,6 @@ function isStyle(path: string): boolean {
  */
 export function classifyWrite(path: string): WrittenKind {
   if (path.startsWith(".moku/captures/")) return "capture";
-  if (path.startsWith(".moku/notes/")) return "note";
   if (path === ".moku/editor/layout.json") return "layout";
   if (isStyle(path)) return "style";
   if (path.endsWith(".ts") || path.endsWith(".tsx")) return "code";

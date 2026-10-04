@@ -7,6 +7,7 @@ import type {
   Manifest,
   RunResult,
   SessionInfo,
+  Tap,
   ToolsBoot,
   WriteResult
 } from "../../../registry/protocol";
@@ -38,6 +39,16 @@ describe("link types", () => {
     expectTypeOf(app.link.files.write).returns.toEqualTypeOf<Promise<WriteResult>>();
     expectTypeOf(app.link.files.readBinary).returns.toEqualTypeOf<Promise<FileBinary>>();
     expect(typeof app.link.files.readBinary).toBe("function");
+  });
+
+  it("app.link carries onTap and heap", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.onTap).parameter(0).toEqualTypeOf<(tap: Tap) => void>();
+    expectTypeOf(app.link.onTap).returns.toEqualTypeOf<() => void>();
+    expectTypeOf(app.link.heap).returns.toEqualTypeOf<
+      { usedMb: number; limitMb: number } | undefined
+    >();
+    expect(app.link.heap()).toBeUndefined();
   });
 
   it("rejects a watch without its arguments and a link:status without frame", () => {

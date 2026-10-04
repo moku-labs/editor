@@ -40,7 +40,7 @@ function openSheet(): void {
 beforeEach(() => {
   vi.useFakeTimers();
   ctx = createCtx();
-  view = mount(<ContactSheet ctx={ctx} node="board/merge" />);
+  view = mount(<ContactSheet ctx={ctx} />);
 });
 
 afterEach(() => {
@@ -118,11 +118,6 @@ describe("ContactSheet", () => {
     click(find(view.root, "button[aria-label='Close']"));
     expect(ctx.state.series.sheet).toBeUndefined();
     expect(document.activeElement).toBe(opener);
-  });
-
-  it("offers the note select for the index.json", () => {
-    openSheet();
-    expect(find(view.root, "[data-part='attach'] select").getAttribute("aria-label")).toBe("Note");
   });
 
   it("keeps Esc for the workspace keymap: the dialog's own cancel is prevented", () => {

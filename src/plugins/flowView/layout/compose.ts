@@ -1,8 +1,8 @@
 /**
  * @file flowView layout module — the composition: recursive frames bottom-up (expanded sub-flow
  * and slot items become fixed-size boxes with entry and exit ports), hub-lane or ELK layout per
- * flow, the pins overlay, world coordinates with instance keys, edges across frames, notes beside
- * their anchors. Deterministic: same input, same result.
+ * flow, the pins overlay, world coordinates with instance keys (items and edges), edges across
+ * frames. Deterministic: same input, same result.
  */
 import type {
   EdgePath,
@@ -12,16 +12,15 @@ import type {
   Item,
   ItemKey,
   LayoutResult,
-  NoteAnchor,
   Rect
 } from "../types";
 import { classifyEdges } from "./back-edges";
 import { fromElkGraph, toElkGraph } from "./elk-graph";
 import { detectHub } from "./hub";
 import { layoutLanes, UNREACHED_GAP } from "./lanes";
-import { anchorIn, anchorOut, orthogonalRoute } from "./routes";
+import { anchorIn, anchorOut, orthogonalRoute, rerouted } from "./routes";
 import type { ComposeInput, FlowBox, PinsFile } from "./types";
-import { FRAME_HEAD, FRAME_PAD, NODE_H, NODE_W, NOTE_H, NOTE_W, PORT, SNAP } from "./types";
+import { FRAME_HEAD, FRAME_PAD, NODE_H, NODE_W, PORT } from "./types";
 
 /**
  * One laid-out flow and the flows laid out inside its expanded nodes.
@@ -54,21 +53,6 @@ const MAX_DEPTH = 8;
  * Gap between the contribution flows stacked in a slot frame.
  */
 const SLOT_GAP = 24;
-
-/**
- * How far a note sits right of and below its anchor.
- */
-const NOTE_OFFSET = { x: 54, y: 3 } as const;
-
-/**
- * Space between free notes under the root content.
- */
-const NOTE_GAP = 48;
-
-/**
- * Collision steps of a note before it stays where it is.
- */
-const NOTE_STEPS = 50;
 
 /**
  * The instance key of an item: the local key in the root frame, "<prefix>>" + local inside a frame.
@@ -118,7 +102,7 @@ export function childFlows(graph: GraphJson, node: GraphNodeJson): string[] {
 }
 
 /**
- * The bounds of the content items (ports and notes left out).
+ * The bounds of the content items (ports left out).
  *
  * @param items - Items.
  * @returns The rect (an empty card when nothing is there).
@@ -128,13 +112,35 @@ export function childFlows(graph: GraphJson, node: GraphNodeJson): string[] {
  * ```
  */
 function contentBounds(items: readonly Item[]): Rect {
-  const content = items.filter(entry => entry.kind !== "port" && entry.kind !== "note");
+  const content = items.filter(entry => entry.kind !== "port");
   if (content.length === 0) return { x: 0, y: 0, w: NODE_W, h: NODE_H };
   const left = Math.min(0, ...content.map(entry => entry.x));
   const top = Math.min(0, ...content.map(entry => entry.y));
   const right = Math.max(...content.map(entry => entry.x + entry.w));
   const bottom = Math.max(...content.map(entry => entry.y + entry.h));
   return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
+ * An edge moved by a delta: its points and its label centre.
+ *
+ * @param edge - The edge.
+ * @param dx - Delta x.
+ * @param dy - Delta y.
+ * @returns The moved edge.
+ * @example
+ * ```ts
+ * movedEdge({ ...edge, points: [{ x: 0, y: 0 }], labelAt: { x: 5, y: 0 } }, 10, 20).labelAt; // { x: 15, y: 20 }
+ * ```
+ */
+function movedEdge(edge: EdgePath, dx: number, dy: number): EdgePath {
+  const moved: EdgePath = {
+    ...edge,
+    points: edge.points.map(point => ({ x: point.x + dx, y: point.y + dy }))
+  };
+  if (edge.labelAt !== undefined)
+    moved.labelAt = { x: edge.labelAt.x + dx, y: edge.labelAt.y + dy };
+  return moved;
 }
 
 /**
@@ -152,10 +158,7 @@ function shift(
 ): { readonly items: Item[]; readonly edges: EdgePath[] } {
   return {
     items: box.items.map(entry => ({ ...entry, x: entry.x + dx, y: entry.y + dy })),
-    edges: box.edges.map(edge => ({
-      ...edge,
-      points: edge.points.map(point => ({ x: point.x + dx, y: point.y + dy }))
-    }))
+    edges: box.edges.map(edge => movedEdge(edge, dx, dy))
   };
 }
 
@@ -197,7 +200,7 @@ function reroute(
     const from = byKey.get(edge.from);
     const to = edge.to === undefined ? undefined : byKey.get(edge.to);
     if (from === undefined || to === undefined) return edge;
-    return { ...edge, points: orthogonalRoute(anchorOut(from, edge.outcome), anchorIn(to)) };
+    return rerouted(edge, orthogonalRoute(anchorOut(from, edge.outcome), anchorIn(to)));
   });
 }
 
@@ -278,7 +281,11 @@ async function withUnreached(
 ): Promise<FlowBox> {
   if (lanes.unreached.length === 0) return lanes;
   const classes = classifyEdges(flow);
-  const graph = toElkGraph(flowName, flow, classes, sizes, new Set(lanes.unreached));
+  const graph = toElkGraph(flowName, flow, classes, {
+    sizes,
+    only: new Set(lanes.unreached),
+    ...(input.density === undefined ? {} : { density: input.density })
+  });
   const block = fromElkGraph(flowName, flow, classes, await input.engine.layout(graph));
   const known = new Set(lanes.items.map(entry => entry.key));
   const moved = shift(block, -block.bounds.x, lanes.bounds.h + UNREACHED_GAP - block.bounds.y);
@@ -384,7 +391,8 @@ async function layoutNodes(
     return withUnreached(input, flowName, flow, layoutLanes(flowName, flow, hub, sizes), sizes);
   }
   const classes = classifyEdges(flow);
-  const output = await input.engine.layout(toElkGraph(flowName, flow, classes, sizes));
+  const options = input.density === undefined ? { sizes } : { sizes, density: input.density };
+  const output = await input.engine.layout(toElkGraph(flowName, flow, classes, options));
   return fromElkGraph(flowName, flow, classes, output);
 }
 
@@ -446,7 +454,8 @@ function flattenFrame(frame: Item, children: readonly Placed[], flat: Flat): voi
 }
 
 /**
- * Adds the edges, lane bands and column heads of a flow box at a content origin.
+ * Adds the edges, lane bands and column heads of a flow box at a content origin; edge keys get the
+ * instance prefix like their ends, so an edge key is unique per instance.
  *
  * @param box - The flow box.
  * @param origin - World point of its content origin.
@@ -464,10 +473,10 @@ function flattenPaths(
   for (const edge of box.edges) {
     const to = edge.to === undefined ? undefined : instanceKey(prefix, edge.to);
     flat.edges.push({
-      ...edge,
+      ...movedEdge(edge, origin.x, origin.y),
+      key: instanceKey(prefix, edge.key),
       from: instanceKey(prefix, edge.from),
-      to,
-      points: edge.points.map(point => ({ x: origin.x + point.x, y: origin.y + point.y }))
+      to
     });
   }
   for (const lane of box.lanes) {
@@ -533,219 +542,8 @@ function routeFrames(flat: Flat): void {
     const entry = to.kind === "frame" ? byKey.get(`${to.key}>entry`) : undefined;
     const start = exit === undefined ? anchorOut(from, edge.outcome) : anchorIn(exit);
     const end = anchorIn(entry ?? to);
-    flat.edges[index] = { ...edge, points: orthogonalRoute(start, end) };
+    flat.edges[index] = rerouted(edge, orthogonalRoute(start, end));
   }
-}
-
-/**
- * True when two rects overlap.
- *
- * @param a - A rect.
- * @param b - A rect.
- * @returns Whether they overlap.
- * @example
- * ```ts
- * overlaps({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 }); // true
- * ```
- */
-function overlaps(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-/**
- * Where an outcome note hangs: the right end of the outcome's stub, the hub port, or past the
- * edge label; for a node note the node's top-right corner.
- *
- * @param source - The source item.
- * @param outcome - The outcome, if any.
- * @param flat - The flat result.
- * @returns The anchor point.
- * @example
- * ```ts
- * anchorPoint(merge, "done", flat); // the right end of stub "↩ awaitIntent"
- * ```
- */
-function anchorPoint(
-  source: Item,
-  outcome: string | undefined,
-  flat: Flat
-): { x: number; y: number } {
-  if (outcome === undefined) return { x: source.x + source.w, y: source.y };
-  const edge = flat.edges.find(
-    entry => entry.kind === "edge" && entry.from === source.key && entry.outcome === outcome
-  );
-  const target = flat.items.find(entry => entry.key === edge?.to);
-  if (target?.kind === "stub") return { x: target.x + target.w, y: target.y + target.h / 2 };
-  if (source.kind === "hub") return anchorOut(source, outcome);
-  const [first, second] = edge?.points ?? [];
-  if (first !== undefined && second !== undefined) {
-    return { x: (first.x + second.x) / 2 + 30, y: first.y };
-  }
-  return anchorOut(source, outcome);
-}
-
-/**
- * Where one note goes and what it hangs on.
- */
-type NoteSpot = {
-  readonly position: { readonly x: number; readonly y: number } | undefined;
-  readonly source: Item | undefined;
-  readonly point: { readonly x: number; readonly y: number } | undefined;
-  readonly frame: Item | undefined;
-  readonly flow: string | undefined;
-  readonly pinned: boolean;
-};
-
-/**
- * The spot of one note: its pin (relative to the pinned flow's content origin), else beside its
- * anchor; a free note without a pin gets no position here (it goes under the root content).
- *
- * @param input - The compose input.
- * @param flat - The flat result.
- * @param anchor - The note anchor.
- * @returns The spot.
- * @example
- * ```ts
- * noteSpot(input, flat, { path: "a.md", flow: "board", from: { node: "board/merge", outcome: "done" }, title: "A" });
- * ```
- */
-function noteSpot(input: ComposeInput, flat: Flat, anchor: NoteAnchor): NoteSpot {
-  const pin = input.pins.notes[anchor.path];
-  const frame =
-    pin === undefined ? undefined : flat.frames.find(entry => originOf(flat, entry, pin.flow));
-  const origin =
-    pin === undefined || frame === undefined ? undefined : originOf(flat, frame, pin.flow);
-  const from = anchor.from;
-  const source =
-    from === undefined
-      ? undefined
-      : flat.items.find(entry => entry.id === from.node && entry.kind !== "stub");
-  const point = source === undefined ? undefined : anchorPoint(source, from?.outcome, flat);
-  if (pin !== undefined && origin !== undefined) {
-    return {
-      position: { x: origin.x + pin.x, y: origin.y + pin.y },
-      source,
-      point,
-      frame,
-      flow: pin.flow,
-      pinned: true
-    };
-  }
-  const position =
-    point === undefined ? undefined : { x: point.x + NOTE_OFFSET.x, y: point.y + NOTE_OFFSET.y };
-  return { position, source, point, frame: undefined, flow: source?.flow, pinned: false };
-}
-
-/**
- * Moves an unpinned note down by the grid snap until it overlaps no blocker, at most NOTE_STEPS
- * times (then it stays where it is). A pinned note never moves.
- *
- * @param note - The note item (moved in place).
- * @param blockers - The rects it must not cover.
- */
-function nudgeDown(note: Item, blockers: readonly Rect[]): void {
-  if (note.pinned) return;
-  const collides = (): boolean => blockers.some(rect => overlaps(note, rect));
-  for (let step = 0; step < NOTE_STEPS && collides(); step += 1) note.y += SNAP;
-}
-
-/**
- * The item of one note at its position.
- *
- * @param anchor - The note anchor.
- * @param spot - Where the note goes and what it hangs on.
- * @param position - Its world position.
- * @param position.x - World x.
- * @param position.y - World y.
- * @param input - The compose input (for the root flow).
- * @param root - The root frame.
- * @returns The note item.
- */
-function noteItem(
-  anchor: NoteAnchor,
-  spot: NoteSpot,
-  position: { readonly x: number; readonly y: number },
-  input: ComposeInput,
-  root: Item
-): Item {
-  return {
-    key: `note:${anchor.path}`,
-    id: anchor.path,
-    kind: "note",
-    x: position.x,
-    y: position.y,
-    w: NOTE_W,
-    h: NOTE_H,
-    flow: spot.flow ?? input.root,
-    parent: spot.source?.parent ?? spot.frame?.key ?? root.key,
-    pinned: spot.pinned,
-    label: anchor.title
-  };
-}
-
-/**
- * Places the notes: a pinned note at its pin, an outcome note beside its anchor, a free note under
- * the root content; collisions shift a note down by 12 (at most 50 steps). Anchored notes get a
- * dashed note edge.
- *
- * @param input - The compose input.
- * @param flat - The flat result.
- * @param root - The root frame.
- */
-function placeNotes(input: ComposeInput, flat: Flat, root: Item): void {
-  const blockers: Rect[] = flat.items.filter(
-    entry => entry.kind !== "frame" && entry.kind !== "port"
-  );
-  const rootOrigin = flat.origins[originKey(root.key, input.root)] ?? {
-    x: FRAME_PAD,
-    y: FRAME_HEAD
-  };
-  let freeY = root.y + root.h - FRAME_PAD + NOTE_GAP;
-
-  for (const anchor of input.notes) {
-    const spot = noteSpot(input, flat, anchor);
-
-    // A free note without a pin stacks under the root content.
-    let position = spot.position;
-    if (position === undefined && anchor.from === undefined) {
-      position = { x: rootOrigin.x, y: freeY };
-      freeY += NOTE_H + NOTE_GAP;
-    }
-    if (position === undefined) continue;
-
-    const note = noteItem(anchor, spot, position, input, root);
-    nudgeDown(note, blockers);
-    blockers.push(note);
-    flat.items.push(note);
-
-    // An anchored note hangs on its source by a dashed note edge.
-    if (spot.source !== undefined && spot.point !== undefined) {
-      flat.edges.push({
-        key: `note:${anchor.path}`,
-        from: spot.source.key,
-        to: note.key,
-        outcome: anchor.from?.outcome ?? "",
-        kind: "note",
-        points: orthogonalRoute(spot.point, { x: note.x, y: note.y + NOTE_H / 2 })
-      });
-    }
-  }
-}
-
-/**
- * The content origin of a flow inside a frame, if that frame shows it.
- *
- * @param flat - The flat result.
- * @param frame - A frame item.
- * @param flow - A flow name.
- * @returns The origin, or undefined.
- * @example
- * ```ts
- * originOf(flat, boardFrame, "board"); // { x: 520, y: 340 }
- * ```
- */
-function originOf(flat: Flat, frame: Item, flow: string): { x: number; y: number } | undefined {
-  return flat.origins[originKey(frame.key, flow)];
 }
 
 /**
@@ -763,13 +561,13 @@ function grow(frame: Item, items: readonly Item[]): void {
 }
 
 /**
- * Lays out the graph from a root flow: frames, hub lanes or ELK, pins, notes.
+ * Lays out the graph from a root flow: frames, hub lanes or ELK, pins.
  *
- * @param input - Graph, root, expanded set, pins, note anchors, config and the ELK engine.
+ * @param input - Graph, root, expanded set, pins, config, the ELK engine and the density.
  * @returns The layout result in world coordinates.
  * @example
  * ```ts
- * const result = await composeLayout({ graph, root: "main", expanded: new Set(["main/board"]), pins, notes: [], config, engine });
+ * const result = await composeLayout({ graph, root: "main", expanded: new Set(["main/board"]), pins, config, engine });
  * result.byKey["main/board>board/awaitIntent"]?.kind; // "hub"
  * ```
  */
@@ -798,7 +596,6 @@ export async function composeLayout(input: ComposeInput): Promise<LayoutResult> 
   };
   flatten(placed, { x: FRAME_PAD - bounds.x, y: FRAME_HEAD - bounds.y }, "", root.key, flat);
   routeFrames(flat);
-  placeNotes(input, flat, root);
   grow(root, flat.items);
 
   return {

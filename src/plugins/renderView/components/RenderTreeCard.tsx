@@ -1,5 +1,6 @@
 /**
- * @file renderView plugin — the render tree card (C9): head counts, Expand all, Collapse, the hover
+ * @file renderView plugin — the render tree card (C9): head counts, Expand all and Collapse (one
+ * group the header wraps onto its own line in a narrow column), the hover
  * hint (with "Show game" while the preview is hidden) and the keyboard-driven tree.
  */
 import type { JSX } from "preact";
@@ -57,12 +58,14 @@ export function RenderTreeCard(props: RenderTreeCardProps): JSX.Element {
         <span data-count>
           {counts.nodes} nodes · {counts.textures} with textures · {counts.entities} entities
         </span>
-        <button type="button" data-action="expand-all" onClick={() => expandAll(ctx)}>
-          Expand all
-        </button>
-        <button type="button" data-action="collapse-all" onClick={() => collapseAll(ctx)}>
-          Collapse
-        </button>
+        <div data-actions>
+          <button type="button" data-action="expand-all" onClick={() => expandAll(ctx)}>
+            Expand all
+          </button>
+          <button type="button" data-action="collapse-all" onClick={() => collapseAll(ctx)}>
+            Collapse
+          </button>
+        </div>
       </header>
       <p data-hint>
         Hover a row to find it in the game preview.

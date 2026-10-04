@@ -1,7 +1,7 @@
 /**
- * @file flowView render module — the node card (G, 172×44): glyph, name, "on stack", pinned mark
- * (F9) and the expand toggle of sub-flows on row 1, the kind line on row 2; every state is a data
- * attribute. The positioned `data-flow="node"` box holds the focusable card and, next to it, the
+ * @file flowView render module — the node card (G, 172×44, taller for many outcomes): glyph,
+ * name, "on stack", pinned mark (F9) and the expand toggle of sub-flows on row 1, the kind line on
+ * row 2; every state is a data attribute (a dimmed card stays opaque, only its content fades). The positioned `data-flow="node"` box holds the focusable card and, next to it, the
  * expand button drawn over row 1: a button inside a `role="button"` card would be a nested
  * interactive control. Memoised: a card re-renders only when its item or its view changes.
  */
@@ -48,6 +48,7 @@ function Card(props: NodeCardProps): VNode {
         data-selected={view.selected ? "" : undefined}
         data-current={view.current ? "" : undefined}
         data-dimmed={view.dimmed ? "" : undefined}
+        data-pulse={view.pulse ? "" : undefined}
         data-pinned={item.pinned ? "" : undefined}
         data-trail={view.trail ? "" : undefined}
         data-expandable={view.expandable ? "" : undefined}

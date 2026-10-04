@@ -28,7 +28,6 @@ import { createTestHub, paramsOf, type TestHub } from "./test-hub";
 
 const BOARD = sceneCapture("scene-board.txt");
 const SCENE_IDS = ["game.ui", "game.entities", "game.projections"];
-const NOTE = ".moku/notes/2026-09-24-first-top-item.md";
 const ITEM: ElementRef = { kind: "entity", id: 1_048_628 };
 
 const BOOT: ToolsBoot = {
@@ -235,9 +234,7 @@ function sceneUnwatches(): string[] {
 }
 
 beforeEach(() => {
-  files = createFilesStore({
-    [NOTE]: "---\ntitle: First top item\nstatus: idea\ncaptures: []\n---\nThe top item jumps.\n"
-  });
+  files = createFilesStore();
   hub = createTestHub(scriptedGame(), files);
   vi.stubGlobal("WebSocket", hub.Socket);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -410,11 +407,29 @@ describe("gameView integration", () => {
     await app.stop();
   });
 
-  it("attach() adds the capture to the note's front matter", async () => {
+  it("Reference mode: proxies in the frame overlay in any workspace; off removes them", async () => {
     const { app } = await startInGame();
-    await app.gameView.attach(".moku/captures/2026-09-24-1012-board.png", NOTE);
-    expect(files.text(NOTE)).toContain("  - .moku/captures/2026-09-24-1012-board.png");
-    expect(await app.gameView.notes()).toEqual([{ path: NOTE, title: "First top item" }]);
+    act(() => app.workspace.setReference(true));
+    await until(
+      () => document.querySelector("[data-moku-proxy][data-moku-key='boardSlot']") !== null,
+      "proxies"
+    );
+    const slot = document.querySelector<HTMLElement>("[data-moku-key='boardSlot']");
+    expect(slot?.dataset.mokuBounds).toBe("55 801 970 970");
+    expect(slot?.closest("[data-frame-overlay]")).not.toBeNull();
+    await until(
+      () => slot?.dataset.mokuNode === "board/awaitIntent",
+      "the flow node of the proxies"
+    );
+
+    act(() => app.workspace.show("flow"));
+    await until(() => app.workspace.active() === "flow", "flow");
+    expect(sceneUnwatches()).toEqual([]);
+    expect(document.querySelector("[data-moku-key='boardSlot']")).not.toBeNull();
+
+    act(() => app.workspace.setReference(false));
+    await until(() => sceneUnwatches().length === 3, "three unwatch");
+    expect(document.querySelector("[data-moku-proxies]")).toBeNull();
     await app.stop();
   });
 

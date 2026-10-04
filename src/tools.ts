@@ -11,12 +11,12 @@
  * |---|---|---|
  * | link | retryMs | 1000 |
  * | link | boot | "#moku-editor-boot" |
- * | workspace | defaultWorkspace | "flow" |
+ * | workspace | defaultWorkspace | "game" |
  * | workspace | storageKey | "moku-editor" |
  * | workspace | reloadTimeoutMs | 15000 |
  * | workspace | toastMs | 2600 |
  * | flowView | historyLast, trailLength, stylesFile, layoutWorker … | see src/plugins/flowView/README.md |
- * | gameView | capturesDir, notesDir, manifestPaths … | see src/plugins/gameView/README.md |
+ * | gameView | capturesDir, manifestPaths, sourceSearch … | see src/plugins/gameView/README.md |
  * | renderView | fpsSamples | 60 |
  * | renderView | releaseLogMax | 50 |
  * | renderView | manifestPaths | ["manifest.json", "public/manifest.json", "web/manifest.json"] |

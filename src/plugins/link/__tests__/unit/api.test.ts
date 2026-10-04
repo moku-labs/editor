@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Tap } from "../../../registry/protocol";
 import { isRetryable, toWireValue } from "../../../registry/protocol";
 import { createLinkApi } from "../../api";
 import { connect } from "../../socket/connect";
 import {
   BOOT,
+  beat,
   connected,
   createCtx,
   FakeWebSocket,
@@ -181,6 +183,90 @@ describe("onManifest", () => {
       {},
       new Error("palette broke")
     );
+  });
+});
+
+describe("onTap", () => {
+  it("passes every tap of the chosen session until unsubscribed", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const taps: Tap[] = [];
+    const stop = link.onTap(tap => taps.push(tap));
+
+    socket.notify("game", "tap", { x: 206, y: 640, at: 15_234.5 }, "s-1");
+    stop();
+    stop();
+    socket.notify("game", "tap", { x: 1, y: 2, at: 3 }, "s-1");
+
+    expect(taps).toEqual([{ x: 206, y: 640, at: 15_234.5 }]);
+  });
+
+  it("the same listener added twice is called twice; a throwing listener is logged", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const seen = vi.fn();
+    link.onTap(() => {
+      throw new Error("ripple broke");
+    });
+    link.onTap(seen);
+    link.onTap(seen);
+
+    socket.notify("game", "tap", { x: 1, y: 2, at: 3 }, "s-1");
+
+    expect(seen).toHaveBeenCalledTimes(2);
+    expect(seen).toHaveBeenCalledWith({ x: 1, y: 2, at: 3 });
+    expect(ctx.log.error).toHaveBeenCalledWith(
+      "link:tap-listener-failed",
+      {},
+      new Error("ripple broke")
+    );
+  });
+});
+
+describe("heap", () => {
+  const heap = { usedMb: 12.8, limitMb: 4095.8 };
+
+  it("is undefined until a heartbeat reports it, then a copy of the last one", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    expect(link.heap()).toBeUndefined();
+
+    beat(socket, "s-1", 1);
+    expect(link.heap()).toBeUndefined();
+
+    socket.notify("game", "heartbeat", { frame: 2, paused: false, at: 2, heap }, "s-1");
+    expect(link.heap()).toEqual(heap);
+    expect(link.heap()).not.toBe(ctx.state.heartbeat?.heap);
+  });
+
+  it("is undefined again after the chosen session changes", async () => {
+    const socket = await connected(ctx, [sessionOf("s-1"), sessionOf("s-2")]);
+    const link = createLinkApi(ctx);
+    socket.notify("game", "heartbeat", { frame: 2, paused: false, at: 2, heap }, "s-1");
+    socket.notify(
+      "game",
+      "heartbeat",
+      { frame: 9, paused: false, at: 9, heap: { usedMb: 1, limitMb: 2 } },
+      "s-2"
+    );
+    expect(link.heap()).toEqual(heap);
+
+    const chosen = link.choose("s-2");
+    socket.answer(socket.last("manifest"), toWireValue(manifestOf()));
+    await chosen;
+
+    expect(link.session()).toBe("s-2");
+    expect(link.heap()).toBeUndefined();
+  });
+
+  it("is undefined again after the chosen session closes", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    socket.notify("game", "heartbeat", { frame: 2, paused: false, at: 2, heap }, "s-1");
+
+    socket.notify("editor", "session", { id: "s-1", game: "g", open: false });
+
+    expect(link.heap()).toBeUndefined();
   });
 });
 

@@ -12,7 +12,7 @@ import { ImagePreview } from "../../view/ImagePreview";
 import { JsonBar } from "../../view/JsonBar";
 import { MarkdownPreview } from "../../view/MarkdownPreview";
 import { SeriesCard } from "../../view/SeriesCard";
-import { createCtx, settle, type TestCtx } from "../helpers";
+import { createCtx, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The file body: code lines with the shared highlighter, the current line,
@@ -203,41 +203,29 @@ describe("CodeEditor", () => {
 });
 
 describe("previews", () => {
-  it("renders a note's front matter and body; capture links open the capture", async () => {
+  it("renders the front matter as one plain pre block, then the body", async () => {
     const tab = await opened(".moku/notes/2026-09-24-first.md");
     act(() => {
       render(h(MarkdownPreview, { ctx, api, tab }), root);
     });
-    expect(root.querySelector("dl dt")?.textContent).toBe("title");
+    const front = root.querySelector<HTMLElement>("pre[data-front-matter]");
+    expect(front?.textContent).toBe(
+      "title: First top item\nstatus: todo\ncaptures:\n  - .moku/captures/a.png"
+    );
+    expect(front?.dataset.frontMatter).toBe("");
+    expect(root.querySelector("dl")).toBeNull();
+    expect(root.querySelector("[data-md]")?.textContent).not.toContain("title:");
     expect(root.querySelector("h1")?.textContent).toBe("Heading");
     expect(root.querySelector("em")?.textContent).toBe("text");
-    act(() => {
-      root.querySelector<HTMLButtonElement>("dd button")?.click();
-    });
-    await act(async () => {
-      await settle();
-    });
-    expect(api.active()).toBe(".moku/captures/a.png");
   });
 
-  it("logs a capture link that fails to open", async () => {
-    const tab = await opened(".moku/notes/2026-09-24-first.md");
+  it("renders no front matter block for a file without one", async () => {
+    const tab = await opened("README.md");
     act(() => {
       render(h(MarkdownPreview, { ctx, api, tab }), root);
     });
-    ctx.workspace.show.mockImplementationOnce(() => {
-      throw new Error("nope");
-    });
-    act(() => {
-      root.querySelector<HTMLButtonElement>("dd button")?.click();
-    });
-    await act(async () => {
-      await settle();
-    });
-    expect(ctx.log.warn).toHaveBeenCalledWith("filesView:open-failed", {
-      path: ".moku/captures/a.png",
-      message: "nope"
-    });
+    expect(root.querySelector("[data-front-matter]")).toBeNull();
+    expect(root.querySelector("h1")?.textContent).toBe("Game");
   });
 
   it("shows the invalid JSON bar only for text that does not parse", () => {

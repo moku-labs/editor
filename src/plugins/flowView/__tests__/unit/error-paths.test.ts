@@ -44,14 +44,7 @@ describe("style write failures", () => {
     fakes.files.failing.set(STYLES, new Error("boom"));
     await inspector.readStyleKeys();
     expect(ctx.log.debug).toHaveBeenCalled();
-    expect(await inspector.usedBy("ui.number")).toEqual([]);
-    fakes.link.read.mockResolvedValueOnce([
-      { key: "coins", local: { textStyle: "ui.number" } },
-      { name: "x", local: { textStyle: "ui.title" } }
-    ]);
-    expect(await inspector.usedBy("ui.number")).toEqual(["coins"]);
-    fakes.link.read.mockRejectedValueOnce(new Error("no session"));
-    expect(await inspector.usedBy("ui.number")).toEqual([]);
+    expect(fakes.palette).toEqual([]);
   });
 });
 
@@ -83,8 +76,7 @@ describe("layout failures", () => {
 
     layout.drop("main/board", 0, 0);
     layout.drop("nope", 0, 0);
-    layout.dropNote("a.md", "nowhere", 0, 0);
-    expect(ctx.state.layout.pins.notes["a.md"]).toBeUndefined();
+    expect(ctx.state.layout.pins.nodes.nope).toBeUndefined();
   });
 
   it("a read error other than a missing file propagates from loadPins; collapse of a missing key is harmless", async () => {
@@ -97,20 +89,5 @@ describe("layout failures", () => {
     actionsOf(ctx).flows.enter("main/home");
     actionsOf(ctx).flows.up(5);
     expect(actionsOf(ctx).layout.root()).toBe("main");
-  });
-});
-
-describe("notes failures", () => {
-  it("a note that cannot be read is skipped with a warning; attach rethrows a second conflict", async () => {
-    const path = ".moku/notes/2026-09-24-a.md";
-    const { ctx, fakes } = createTestCtx({ files: { [path]: "---\ntitle: A\n---\n" } });
-    fakes.files.failing.set(path, new Error("boom"));
-    await actionsOf(ctx).notes.load();
-    expect(ctx.log.warn).toHaveBeenCalled();
-    fakes.files.failing.clear();
-    fakes.files.conflicts = 2;
-    await expect(actionsOf(ctx).notes.attach(path, ["a.png"])).rejects.toThrow("version conflict");
-    actionsOf(ctx).notes.update({ title: "x" });
-    expect(ctx.state.notes.editor).toBeUndefined();
   });
 });

@@ -134,6 +134,8 @@ export type RenderViewState = {
   catalogue: TextureCatalogue | null | undefined;
   /** Last `fpsSamples` fps values. */
   fps: number[];
+  /** The page heap `link.heap()` reported at the last game.render change; undefined = not reported. */
+  heap: { usedMb: number; limitMb: number } | undefined;
   /** Bundles of the previous game.assets value. */
   loaded: Map<string, { tier: string; mb: number }>;
   /** Newest first, at most releaseLogMax. */
@@ -252,8 +254,8 @@ export type MetricTiles = {
     | undefined;
   /** effects only when game.effects delivered (game 0.0.3). */
   scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
-  /** Not reported by the game (follow-up F-R1). */
-  heap: { kind: "absent" };
+  /** The page heap from its heartbeat (Chromium `performance.memory`); absent elsewhere. */
+  heap: { kind: "value"; usedMb: number; limitMb: number } | { kind: "absent" };
 };
 
 /**
@@ -276,7 +278,7 @@ export type RenderSnapshot = {
  * @example
  * ```ts
  * app.workspace.show("render");
- * app.renderView.snapshot().tiles.heap; // { kind: "absent" }
+ * app.renderView.snapshot().tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium
  * ```
  */
 export type RenderViewApi = {
@@ -307,6 +309,7 @@ export type RenderViewApi = {
    * tiles.drawCalls; // { kind: "absent" } in a production build
    * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
    * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
+   * tiles.heap; // { kind: "absent" } outside Chromium: the page reports no heap
    * ```
    */
   snapshot(): RenderSnapshot;

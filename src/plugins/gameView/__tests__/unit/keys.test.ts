@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
+import { sidePanelState } from "../../../panels/shared/side-panel";
 import type { KeyBinding } from "../../../workspace/types";
 import { escapeClosers, keyBindings } from "../../keys";
 import { createCtx, PNG, type TestCtx } from "../helpers";
@@ -44,6 +45,16 @@ beforeEach(() => {
 });
 
 describe("keyBindings", () => {
+  it("binds the backslash in Game to collapse or expand the Element panel", () => {
+    localStorage.clear();
+    const side = bindingOf(keyBindings(ctx), "\\");
+    expect(side.workspace).toBe("game");
+    side.run(new KeyboardEvent("keydown", { key: "\\" }));
+    expect(sidePanelState("game.side").collapsed).toBe(true);
+    side.run(new KeyboardEvent("keydown", { key: "\\" }));
+    expect(sidePanelState("game.side").collapsed).toBe(false);
+  });
+
   it("binds ⇧⌘C and I globally to toggle the picker, which shows Game", () => {
     const pick = bindingOf(keyBindings(ctx), "i");
     expect(pick.keys).toEqual(["mod+shift+c", "i"]);

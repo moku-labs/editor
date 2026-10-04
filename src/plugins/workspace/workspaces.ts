@@ -1,20 +1,20 @@
 /**
- * @file workspace plugin — the six workspaces: ids in rail order, the five with a pinned preview,
+ * @file workspace plugin — the six workspaces: ids in rail order (Game first), the five with a pinned preview,
  * their labels and the guards that check unknown input (URL hash, stored prefs, api calls).
  */
 import type { PreviewWorkspace, WorkspaceId } from "./types";
 
 /**
- * The six workspaces in rail order (⌘1–⌘6).
+ * The six workspaces in rail order (⌘1–⌘6): Game first, then Flow.
  *
  * @example
  * ```ts
- * WORKSPACE_IDS.indexOf("game"); // 1
+ * WORKSPACE_IDS.indexOf("game"); // 0
  * ```
  */
 export const WORKSPACE_IDS: readonly WorkspaceId[] = [
-  "flow",
   "game",
+  "flow",
   "render",
   "state",
   "files",

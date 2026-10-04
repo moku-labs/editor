@@ -91,6 +91,9 @@ export function manifestOf(sources: readonly string[]): Manifest {
   };
 }
 
+/** The stop function of a subscription that never fires. */
+function stopNothing(): void {}
+
 /**
  * A scripted link.
  *
@@ -134,6 +137,8 @@ export function createLinkMock(): LinkMock {
       boot: () => undefined,
       frameUrl: url => url,
       isOtherTab: () => false,
+      onTap: () => stopNothing,
+      heap: () => undefined,
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),

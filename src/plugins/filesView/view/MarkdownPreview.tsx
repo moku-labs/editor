@@ -1,12 +1,10 @@
 /**
- * @file filesView plugin — the Markdown preview: the note front matter through the shared codec
- * (rows, capture links), then the body through the safe renderer; relative links and captures
- * open in Files.
+ * @file filesView plugin — the Markdown preview: a front matter as one plain block of its raw
+ * lines, then the body through the safe renderer; relative links open in Files.
  */
 import type { VNode } from "preact";
 import { useMemo } from "preact/hooks";
-import { FrontMatterRows, noteParts } from "../preview/front-matter";
-import { renderMarkdown } from "../preview/markdown";
+import { frontMatterParts, renderMarkdown } from "../preview/markdown";
 import { openOrLog } from "../tabs/open";
 import { parentOf } from "../tree/model";
 import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
@@ -29,7 +27,7 @@ export type MarkdownPreviewProps = {
 export function MarkdownPreview(props: MarkdownPreviewProps): VNode {
   const { ctx, tab } = props;
   const text = tab.buffer ?? tab.saved ?? "";
-  const body = useMemo(() => noteParts(text).body, [text]);
+  const parts = useMemo(() => frontMatterParts(text), [text]);
 
   /**
    * Opens a project path in Files (a failure is warned).
@@ -42,8 +40,8 @@ export function MarkdownPreview(props: MarkdownPreviewProps): VNode {
 
   return (
     <div data-part="preview" data-preview="markdown">
-      <FrontMatterRows text={text} onOpenPath={open} />
-      {renderMarkdown(body, open, parentOf(tab.path))}
+      {parts.kind === "raw" && <pre data-front-matter="">{parts.lines.join("\n")}</pre>}
+      {renderMarkdown(parts.body, open, parentOf(tab.path))}
     </div>
   );
 }

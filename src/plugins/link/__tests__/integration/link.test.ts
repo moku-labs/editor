@@ -6,6 +6,7 @@ import type {
   LinkStatus,
   Manifest,
   SessionInfo,
+  Tap,
   ToolsBoot
 } from "../../../registry/protocol";
 import { linkPlugin } from "../..";
@@ -211,6 +212,30 @@ describe("link integration", () => {
       [{ sub: 1, id: "game.position" }, "s-1"],
       [{ sub: 2, id: "game.position" }, "s-2"]
     ]);
+    await app.stop();
+  });
+
+  it("passes taps of the attached game to onTap and keeps its heap until the session closes", async () => {
+    hub.sessions = [sessionOf("s-1")];
+    hub.manifests.set("s-1", manifest);
+    const app = createApp();
+    await app.start();
+    await until(() => app.link.manifest() !== undefined, "attach");
+    const taps: Tap[] = [];
+    app.link.onTap(tap => taps.push(tap));
+    const heap = { usedMb: 12.8, limitMb: 4095.8 };
+
+    hub.notify("game", "heartbeat", { frame: 3, paused: false, at: 3, heap }, "s-1");
+    hub.notify("game", "tap", { x: 206, y: 640, at: 15_234.5 }, "s-1");
+    hub.notify("game", "tap", { x: 1, y: 1, at: 1 }, "s-other");
+    await until(() => taps.length > 0, "the tap");
+
+    expect(taps).toEqual([{ x: 206, y: 640, at: 15_234.5 }]);
+    expect(app.link.heap()).toEqual(heap);
+
+    hub.close("s-1", "game_reloaded");
+    await until(() => app.link.status().kind === "lost", "lost");
+    expect(app.link.heap()).toBeUndefined();
     await app.stop();
   });
 

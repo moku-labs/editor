@@ -92,7 +92,7 @@ function press(key: string, init: KeyboardEventInit = {}): void {
 
 describe("Shell", () => {
   it("renders the top bar, the rail, the hosts and one frame layer outside the root", () => {
-    expect(root.querySelector<HTMLElement>("[data-ui='shell']")?.dataset.workspace).toBe("flow");
+    expect(root.querySelector<HTMLElement>("[data-ui='shell']")?.dataset.workspace).toBe("game");
     expect(root.querySelector("[data-ui='top-bar']")).not.toBeNull();
     expect(root.querySelectorAll("[data-workspace-host]")).toHaveLength(6);
     expect(document.querySelectorAll("[data-frame-layer]")).toHaveLength(1);
@@ -187,7 +187,9 @@ describe("Rail", () => {
     expect(buttons[0]?.getAttribute("aria-current")).toBe("page");
     expect(buttons[0]?.tabIndex).toBe(0);
     expect(buttons[1]?.tabIndex).toBe(-1);
-    expect(buttons[0]?.title).toMatch(/^Flow (⌘|Ctrl\+)1$/);
+    expect(buttons[0]?.dataset.workspace).toBe("game");
+    expect(buttons[0]?.title).toMatch(/^Game (⌘|Ctrl\+)1$/);
+    expect(buttons[1]?.title).toMatch(/^Flow (⌘|Ctrl\+)2$/);
 
     act(() => api.badge("console", { count: 3, tone: "error", label: "2 warn · 1 error" }));
     const consoleButton = root.querySelector<HTMLButtonElement>("[data-workspace='console']");
@@ -240,7 +242,7 @@ describe("Palette", () => {
       "Jump to a node, file, style, texture, panel or run a command"
     );
     const heads = [...root.querySelectorAll("[role='listbox'] h3")].map(head => head.textContent);
-    expect(heads).toEqual(["Commands 15", "Nodes 25"]);
+    expect(heads).toEqual(["Commands 20", "Nodes 25"]);
     expect(root.querySelectorAll("[role='option']")).toHaveLength(6);
     expect(root.querySelector("[data-ui='palette'] footer")?.textContent).toContain(
       "25 nodes · 0 textures · 4 game commands"

@@ -25,6 +25,10 @@ describe("createWorkspaceState", () => {
     expect(state.previews.console).toEqual({ visible: true, size: "S", corner: "bottom-right" });
     expect(state.device).toEqual({ preset: "iphone-15", orientation: "portrait" });
     expect(state.overlayInGame).toBe(false);
+    expect(state.reference).toBe(false);
+    expect(state.showTaps).toBe(true);
+    expect(state.taps).toEqual([]);
+    expect(state.density).toEqual({ chosen: "auto", applied: "comfortable" });
     expect(state.link).toEqual({ kind: "connecting" });
     expect(state.everLive).toBe(false);
     expect(state.toasts).toEqual([]);
@@ -105,8 +109,8 @@ describe("useWorkspace", () => {
 });
 
 describe("workspaces", () => {
-  it("lists the six workspaces, the five preview workspaces and their labels", () => {
-    expect(WORKSPACE_IDS).toEqual(["flow", "game", "render", "state", "files", "console"]);
+  it("lists the six workspaces with Game first, the five preview workspaces and their labels", () => {
+    expect(WORKSPACE_IDS).toEqual(["game", "flow", "render", "state", "files", "console"]);
     expect(PREVIEW_WORKSPACES).toEqual(["flow", "render", "state", "files", "console"]);
     expect(WORKSPACE_LABELS.console).toBe("Console");
     expect(isWorkspaceId("game")).toBe(true);

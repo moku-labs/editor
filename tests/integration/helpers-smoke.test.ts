@@ -37,13 +37,21 @@ describe("root integration helper", () => {
     ]);
     expect(tools.eventsOf("link:status").at(-1)?.status.kind).toBe("live");
     // The tiny game has no screen and no effects plugin: game.render, game.assets and
-    // game.effects, which renderView watches for the session, fail to read, and the link logs
-    // each once at error level. Nothing else errs.
+    // game.effects, which renderView watches for the session, and game.ui, game.entities and
+    // game.projections, which gameView watches while Game (the default workspace) is shown, fail
+    // to read. The link logs each once at error level. Nothing else errs.
     const errors = logErrors(server.app, agent.app, tools.app, game.app);
-    expect(errors).toHaveLength(3);
+    expect(errors).toHaveLength(6);
     expect(errors).toEqual(
       expect.arrayContaining(
-        ["game.render", "game.assets", "game.effects"].map(id =>
+        [
+          "game.render",
+          "game.assets",
+          "game.effects",
+          "game.ui",
+          "game.entities",
+          "game.projections"
+        ].map(id =>
           expect.objectContaining({
             event: "link:watch-failed",
             data: expect.objectContaining({ id })

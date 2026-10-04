@@ -1,5 +1,6 @@
 /**
- * @file filesView plugin — onInit (register the Files panel, ⌘S, the fileEdit Esc layer; no I/O),
+ * @file filesView plugin — onInit (register the Files panel, ⌘S, `\` for the tree, the "Show Files
+ * tree" palette item, the fileEdit Esc layer; no I/O),
  * onStart (manifest listener, index build not awaited, beforeunload guard) and onStop (removers).
  */
 import { linkPlugin } from "../link";
@@ -12,6 +13,7 @@ import { createFilesPanel } from "./panel";
 import { closeTopmost } from "./tabs/edit";
 import { activeTab, isModified } from "./tabs/model";
 import { saveTab } from "./tabs/save";
+import { showTreeItem, treeToggleBinding } from "./tree/side";
 import { buildIndex, canList } from "./tree/walk";
 import type { FilesViewCtx, FilesViewState } from "./types";
 
@@ -60,8 +62,9 @@ export function guardUnload(state: FilesViewState): (event: Event) => void {
 }
 
 /**
- * onInit: registers the Files panel, binds ⌘S and the `fileEdit` Esc layer (it acts only while
- * Files is shown, so Esc in another workspace reaches that workspace's layers). No I/O.
+ * onInit: registers the Files panel, binds ⌘S, `\` (collapse or expand the tree) and the
+ * `fileEdit` Esc layer (it acts only while Files is shown, so Esc in another workspace reaches
+ * that workspace's layers), and adds the "Show Files tree" palette item. No I/O.
  *
  * @param ctx - Domain context of filesView.
  */
@@ -70,7 +73,9 @@ export function initFilesView(ctx: FilesViewCtx): void {
   const workspace = ctx.require(workspacePlugin);
   ctx.state.removers.push(
     workspace.keys.bind(saveBinding(ctx)),
-    workspace.keys.escape("fileEdit", () => workspace.active() === "files" && closeTopmost(ctx))
+    workspace.keys.bind(treeToggleBinding()),
+    workspace.keys.escape("fileEdit", () => workspace.active() === "files" && closeTopmost(ctx)),
+    workspace.palette.add(showTreeItem(ctx))
   );
 }
 

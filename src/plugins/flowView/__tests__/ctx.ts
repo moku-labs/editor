@@ -9,6 +9,7 @@ import type { FileEntry, Json, LinkStatus, RunResult, ToolsBoot } from "../../re
 import { wireError } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type {
+  Density,
   EscLayer,
   KeyBinding,
   PaletteItem,
@@ -113,6 +114,14 @@ export function holdReads(files: MemoryFiles, path: string): () => void {
   return () => gate.resolve();
 }
 
+/** One watch of the fake link. */
+export type FakeWatch = {
+  readonly id: string;
+  readonly input: Json | undefined;
+  readonly onValue: (value: Json) => void;
+  active: boolean;
+};
+
 /** The fakes behind ctx.require. */
 export type Fakes = {
   readonly files: MemoryFiles;
@@ -121,15 +130,21 @@ export type Fakes = {
   readonly link: {
     status: () => LinkStatus;
     read: ReturnType<typeof vi.fn>;
+    watch: (id: string, input: Json | undefined, onValue: (value: Json) => void) => () => void;
     boot: () => ToolsBoot | undefined;
     files: MemoryFiles;
   };
+  /** Every watch the fake link took, stopped ones included. */
+  readonly watches: FakeWatch[];
+  /** Delivers a value to every active watch of a source id. */
+  send(id: string, value: Json): void;
   readonly palette: PaletteItem[][];
   readonly removed: number[];
   readonly bindings: KeyBinding[];
   readonly escapes: Map<EscLayer, () => boolean>;
   readonly panels: PanelSpec[];
   preview: PreviewState;
+  density: Density;
   readonly workspace: {
     show: ReturnType<typeof vi.fn>;
     toast: ReturnType<typeof vi.fn>;
@@ -145,6 +160,7 @@ export type Fakes = {
     };
     previewZone: ReturnType<typeof vi.fn>;
     active: () => string;
+    density: () => Density;
   };
   readonly reload: ReturnType<typeof vi.fn>;
   readonly run: ReturnType<typeof vi.fn>;
@@ -190,8 +206,19 @@ export function createTestCtx(
     link: {
       status: () => fakes.status,
       read: vi.fn(async (): Promise<Json> => null),
+      watch: (id, input, onValue) => {
+        const watch: FakeWatch = { id, input, onValue, active: true };
+        fakes.watches.push(watch);
+        return () => {
+          watch.active = false;
+        };
+      },
       boot: () => fakes.boot,
       files
+    },
+    watches: [],
+    send: (id, value) => {
+      for (const watch of fakes.watches) if (watch.active && watch.id === id) watch.onValue(value);
     },
     palette: [],
     removed: [],
@@ -199,6 +226,7 @@ export function createTestCtx(
     escapes: new Map(),
     panels: [],
     preview: { visible: false, size: "S", corner: "bottom-right", width: 150, height: 280 },
+    density: "comfortable",
     workspace: {
       show: vi.fn(),
       toast: vi.fn(),
@@ -224,7 +252,8 @@ export function createTestCtx(
         }
       },
       previewZone: vi.fn(() => noop),
-      active: () => "flow"
+      active: () => "flow",
+      density: () => fakes.density
     },
     reload,
     run,

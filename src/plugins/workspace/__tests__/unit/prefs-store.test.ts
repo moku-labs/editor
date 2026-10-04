@@ -25,6 +25,8 @@ describe("defaultStoredPrefs", () => {
     expect(Object.keys(prefs.previews)).toEqual(["flow", "render", "state", "files", "console"]);
     expect(prefs.previews.flow).toEqual({ visible: true, size: "S", corner: "bottom-right" });
     expect(prefs.device).toEqual({ preset: "iphone-15", orientation: "portrait" });
+    expect(prefs.density).toBe("auto");
+    expect(prefs.showTaps).toBe(true);
   });
 });
 
@@ -34,7 +36,9 @@ describe("loadPrefs / savePrefs", () => {
     const prefs: StoredPrefs = {
       ...defaultStoredPrefs(),
       theme: "dark",
-      device: { preset: "pixel-8", orientation: "landscape" }
+      device: { preset: "pixel-8", orientation: "landscape" },
+      density: "compact",
+      showTaps: false
     };
     prefs.previews.render = { visible: false, size: "L", corner: "top-left" };
 
@@ -42,6 +46,38 @@ describe("loadPrefs / savePrefs", () => {
     expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toMatchObject({ v: 1, theme: "dark" });
     expect(loadPrefs(KEY, log)).toEqual(prefs);
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a record from before density and taps loads them as defaults, silently", () => {
+    const log = createLog();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "iphone-15", orientation: "portrait" }
+      })
+    );
+    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("an unknown density or showTaps takes the default with one warn naming them", () => {
+    const log = createLog();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "iphone-15", orientation: "portrait" },
+        density: "cosy",
+        showTaps: "yes"
+      })
+    );
+    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true });
+    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", {
+      invalid: ["density", "showTaps"]
+    });
   });
 
   it("without a record answers the defaults silently", () => {

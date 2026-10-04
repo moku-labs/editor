@@ -40,6 +40,63 @@ describe("beatOf", () => {
   });
 });
 
+/**
+ * Puts a Chromium-style `performance.memory` on the global performance.
+ *
+ * @param memory - The value the property holds.
+ */
+function installMemory(memory: unknown): void {
+  Object.defineProperty(performance, "memory", { configurable: true, value: memory });
+}
+
+describe("beatOf heap", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(performance, "memory");
+  });
+
+  it("adds a frozen heap in MB, rounded to 0.1, when performance.memory is present", () => {
+    installMemory({
+      usedJSHeapSize: 13_421_773,
+      totalJSHeapSize: 20_000_000,
+      jsHeapSizeLimit: 4_294_705_152
+    });
+    const { registry } = createDeps();
+
+    const beat = beatOf(registry, 1_790_000_000_000);
+
+    expect(beat).toEqual({
+      frame: 1840,
+      paused: false,
+      at: 1_790_000_000_000,
+      heap: { usedMb: 12.8, limitMb: 4095.8 }
+    });
+    expect(Object.keys(beat)).toEqual(["frame", "paused", "at", "heap"]);
+    expect(Object.isFrozen(beat.heap)).toBe(true);
+  });
+
+  it("leaves heap out when the runtime has no performance.memory", () => {
+    const { registry } = createDeps();
+
+    const beat = beatOf(registry, 5);
+
+    expect("memory" in performance).toBe(false);
+    expect("heap" in beat).toBe(false);
+  });
+
+  it.each([
+    ["a string", "64 MB"],
+    ["null", null], // eslint-disable-line unicorn/no-null -- a JSON null where an object is expected
+    ["a text size", { usedJSHeapSize: "1", jsHeapSizeLimit: 2 }],
+    ["no limit", { usedJSHeapSize: 1 }],
+    ["an infinite size", { usedJSHeapSize: Number.POSITIVE_INFINITY, jsHeapSizeLimit: 2 }]
+  ])("leaves heap out for a performance.memory with %s", (_label, memory) => {
+    installMemory(memory);
+    const { registry } = createDeps();
+
+    expect("heap" in beatOf(registry, 5)).toBe(false);
+  });
+});
+
 describe("beginHeartbeat", () => {
   beforeEach(() => {
     vi.useFakeTimers();

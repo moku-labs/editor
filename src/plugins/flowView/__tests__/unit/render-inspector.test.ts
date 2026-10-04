@@ -31,7 +31,7 @@ describe("Inspector head and Info (C1, C2)", () => {
     expect(inspector.textContent).toContain("showing current · click a node");
     const tabs = inspector.querySelector('[role="tablist"]');
     expect([...(tabs?.querySelectorAll('[role="tab"]') ?? [])].map(tab => tab.textContent)).toEqual(
-      ["Info", "Code", "Styles", "Notes (0)"]
+      ["Info", "Code", "Styles"]
     );
     expect(inspector.textContent).toContain("Outcomes");
     expect(inspector.textContent).toContain("tap → tapGenerator");
@@ -62,15 +62,42 @@ describe("Inspector head and Info (C1, C2)", () => {
     unmount();
   });
 
-  it("←/→ move between tabs; Code and Styles widen the Inspector", async () => {
+  it("←/→ move between tabs; Code and Styles widen the Inspector panel until the person resizes it", async () => {
+    localStorage.removeItem("moku-editor:panel:flow.inspector");
+    const { updateSidePanel } = await import("../../../panels/shared/side-panel/store");
+    updateSidePanel("flow.inspector", { width: undefined, closed: false, collapsed: false });
     const { ctx } = await prepared();
     const { host, unmount } = await mountWorkspace(ctx);
+    const panel = () => host.querySelector<HTMLElement>('[data-side-panel="flow.inspector"]');
+    expect(panel()?.style.getPropertyValue("--side-panel-w")).toBe("320px");
     const info = inspectorOf(host).querySelector<HTMLElement>('[role="tab"]');
     await settle(() =>
       info?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
     );
     expect(ctx.state.inspector.tab).toBe("code");
     expect(inspectorOf(host).dataset.wide).toBe("");
+    expect(panel()?.style.getPropertyValue("--side-panel-w")).toBe("400px");
+    await settle(() => updateSidePanel("flow.inspector", { width: 280 }));
+    expect(panel()?.style.getPropertyValue("--side-panel-w")).toBe("280px");
+    updateSidePanel("flow.inspector", { width: undefined });
+    unmount();
+  });
+
+  it("sits in the flow.inspector side panel at the end of the workspace; closed, the toolbar reopens it", async () => {
+    const { updateSidePanel } = await import("../../../panels/shared/side-panel/store");
+    const { ctx } = await prepared();
+    const { host, unmount } = await mountWorkspace(ctx);
+    const panel = host.querySelector<HTMLElement>('[data-side-panel="flow.inspector"]');
+    expect(panel?.dataset.side).toBe("end");
+    expect(panel?.getAttribute("aria-label")).toBe("Inspector");
+    expect(panel?.querySelector('[data-flow="inspector"]')).not.toBeNull();
+    expect(panel?.querySelector('[role="separator"]')?.getAttribute("aria-valuemin")).toBe("220");
+    expect(panel?.querySelector('[role="separator"]')?.getAttribute("aria-valuemax")).toBe("560");
+    await settle(() => updateSidePanel("flow.inspector", { closed: true }));
+    expect(host.querySelector('[data-flow="inspector"]')).toBeNull();
+    const reopen = host.querySelector<HTMLElement>('[data-action="reopen-flow.inspector"]');
+    await settle(() => reopen?.click());
+    expect(host.querySelector('[data-flow="inspector"]')).not.toBeNull();
     unmount();
   });
 });
@@ -141,7 +168,7 @@ describe("Styles tab (C4, M10)", () => {
     const byPath = new Map([...fields].map(field => [field.dataset.field, field]));
     expect(byPath.get("size")?.querySelector('[data-action="step-up"]')).not.toBeNull();
     expect(byPath.get("font")?.querySelector('[data-action="step-up"]')).toBeNull();
-    expect(inspector.textContent).toContain("Used by appears when the game reports style keys");
+    expect(inspector.textContent).not.toContain("Used by");
     await settle(() =>
       byPath.get("size")?.querySelector<HTMLElement>('[data-action="step-up"]')?.click()
     );
@@ -169,6 +196,22 @@ describe("Styles tab (C4, M10)", () => {
     unmount();
   });
 
+  it("chooses no card until the person picks one: the select shows its empty option (finding 9)", async () => {
+    const { ctx, actions, fakes } = await prepared();
+    fakes.files.store.set(STYLES, { text: fixture, version: "v1" });
+    const { host, unmount } = await mountWorkspace(ctx);
+    await settle(() => actions.inspector.setTab("styles"));
+    await settle();
+    const select = inspectorOf(host).querySelector<HTMLSelectElement>(
+      '[data-flow="styles-tab"] select'
+    );
+    expect(select?.value).toBe("");
+    expect(select?.options[0]?.textContent).toBe("Pick a text style");
+    expect(inspectorOf(host).querySelector('[data-part="card"]')).toBeNull();
+    expect(inspectorOf(host).textContent).toContain("Pick a text style");
+    unmount();
+  });
+
   it("shows the no-file reason", async () => {
     const { ctx, actions } = await prepared();
     const { host, unmount } = await mountWorkspace(ctx);
@@ -179,30 +222,6 @@ describe("Styles tab (C4, M10)", () => {
     expect(inspectorOf(host).textContent).toContain(
       "No text styles at features/ui/styles.ts · set flowView.stylesFile"
     );
-    unmount();
-  });
-});
-
-describe("Notes tab (C5)", () => {
-  it("lists the notes of the node and opens the editor for a new one", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    fakes.files.store.set(".moku/notes/2026-09-24-a.md", {
-      text: "---\ntitle: A note\nfrom:\n  node: board/awaitIntent\n  outcome: tap\nstatus: idea\ncaptures: []\n---\nBody text\n",
-      version: "v1"
-    });
-    fakes.files.store.set(".moku/notes/2026-09-25-bad.md", {
-      text: "---\ntitle: a\ntitle: b\n---\n",
-      version: "v1"
-    });
-    await actions.notes.load();
-    const { host, unmount } = await mountWorkspace(ctx);
-    await settle(() => actions.inspector.setTab("notes"));
-    const inspector = inspectorOf(host);
-    expect(inspector.textContent).toContain("Notes are files an agent can find and build.");
-    expect(inspector.textContent).toContain("A note");
-    expect(inspector.textContent).toContain("board/awaitIntent · tap");
-    await settle(() => inspector.querySelector<HTMLElement>('[data-action="new-note"]')?.click());
-    expect(ctx.state.notes.editor?.from).toEqual({ node: "board/awaitIntent" });
     unmount();
   });
 });

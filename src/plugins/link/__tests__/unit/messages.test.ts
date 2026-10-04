@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { onSocketMessage } from "../../socket/messages";
+import { addTapListener } from "../../subscriptions/taps";
 import { addWatch } from "../../subscriptions/watch";
 import { beat, connected, createCtx, FakeWebSocket, type TestCtx } from "../helpers";
 
@@ -48,6 +49,39 @@ describe("onSocketMessage", () => {
     socket.notify("game", "heartbeat", { frame: "x", paused: false }, "s-1");
     socket.notify("game", "heartbeat", { frame: 3 });
     expect(ctx.state.status).toEqual({ kind: "connecting" });
+  });
+
+  it("a heartbeat with a heap stores it; one without a heap or with a malformed one clears it", () => {
+    vi.setSystemTime(42_000);
+    const heap = { usedMb: 12.8, limitMb: 4095.8 };
+
+    socket.notify("game", "heartbeat", { frame: 1, paused: false, at: 1, heap }, "s-1");
+    expect(ctx.state.heartbeat).toEqual({ frame: 1, paused: false, receivedAt: 42_000, heap });
+
+    socket.notify(
+      "game",
+      "heartbeat",
+      { frame: 2, paused: false, at: 2, heap: { usedMb: 1 } },
+      "s-1"
+    );
+    expect(ctx.state.heartbeat).toEqual({ frame: 2, paused: false, receivedAt: 42_000 });
+
+    socket.notify("game", "heartbeat", { frame: 3, paused: false, at: 3, heap }, "s-1");
+    beat(socket, "s-1", 4);
+    expect(ctx.state.heartbeat?.heap).toBeUndefined();
+  });
+
+  it("a tap of the chosen session reaches the tap listeners; other sessions and bad taps do not", () => {
+    const taps: unknown[] = [];
+    addTapListener(ctx, tap => taps.push(tap));
+
+    socket.notify("game", "tap", { x: 206, y: 640, at: 15_234.5 }, "s-1");
+    socket.notify("game", "tap", { x: 1, y: 2, at: 3 }, "s-other");
+    socket.notify("game", "tap", { x: "1", y: 2, at: 3 }, "s-1");
+    socket.notify("game", "tap", { x: 1, y: 2 }, "s-1");
+    socket.notify("game", "tap", undefined, "s-1");
+
+    expect(taps).toEqual([{ x: 206, y: 640, at: 15_234.5 }]);
   });
 
   it("delivers a value of the chosen session to its sub; others are dropped", () => {

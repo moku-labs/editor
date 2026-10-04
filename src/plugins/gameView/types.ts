@@ -37,8 +37,6 @@ export type {
 export type GameViewConfig = {
   /** Folder of screenshots and series, relative to the files root. */
   capturesDir: string;
-  /** Folder of notes, relative to the files root. */
-  notesDir: string;
   /** Where the game's asset manifest may live, tried in order. */
   manifestPaths: readonly string[];
   /** The capture card hides after this unless hovered or focused. */
@@ -50,13 +48,14 @@ export type GameViewConfig = {
   /** Above this many planned shots the popover warns. */
   seriesWarnShots: number;
   /**
-   * Source search for the style block of a picked element. Config merges shallowly, so an
-   * override replaces this object as a whole: pass both fields.
+   * Source search for the style block of a picked element: from the folder of the game page
+   * entry first, then the root. Config merges shallowly, so an override replaces this object as a
+   * whole: pass both fields.
    *
    * @example
    * ```ts
    * createApp({
-   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 800, skip: ["node_modules", "dist", ".git", ".moku"] } } }
+   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 3000, skip: ["node_modules", "dist", ".git", ".moku"] } } }
    * });
    * ```
    */
@@ -146,9 +145,39 @@ export type StyleCard = {
 };
 
 /**
+ * Where a source search found a ui key: `ident` with `style={ident}` (the editable card), `call`
+ * with `style={call(...)}` (a read-only card), `defined` with no style on the element. `line` is
+ * the 1-based line of the key.
+ *
+ * @example
+ * ```ts
+ * const source: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 301 };
+ * ```
+ */
+export type StyleSource =
+  | {
+      readonly kind: "ident";
+      readonly path: string;
+      readonly line: number;
+      readonly ref: Extract<StyleBlockRef, { readonly kind: "const" }>;
+      /** Files that may hold the block, in order: the key file, then the import candidates. */
+      readonly files: readonly string[];
+    }
+  | {
+      readonly kind: "call";
+      readonly path: string;
+      readonly line: number;
+      /** The call as written: `boardOf(props.width, props.height)`. */
+      readonly call: string;
+      /** 1-based line of the `style={…}` attribute. */
+      readonly callLine: number;
+    }
+  | { readonly kind: "defined"; readonly path: string; readonly line: number };
+
+/**
  * Where the style search of the selected element stands while no StyleCard is shown: searching,
- * nothing found, or found but the shared style edit refused the file (no-file, parse, no-key,
- * ambiguous).
+ * nothing found, found but the shared style edit refused the file (no-file, parse, no-key,
+ * ambiguous), a style computed by a call (read-only), or the element found without a style.
  */
 export type StyleLookup =
   | { readonly key: string; readonly status: "searching" }
@@ -158,7 +187,60 @@ export type StyleLookup =
       readonly status: "failed";
       readonly path: string;
       readonly error: StyleEditError;
+    }
+  | {
+      readonly key: string;
+      readonly status: "call";
+      readonly path: string;
+      readonly line: number;
+      readonly call: string;
+    }
+  | {
+      readonly key: string;
+      readonly status: "defined";
+      readonly path: string;
+      readonly line: number;
     };
+
+/**
+ * The keyed ui node the calibration reads `game.rect` for: its key, its drawn rect and the ui
+ * root rect, in reference units.
+ */
+export type CalibrationTarget = {
+  readonly key: string;
+  readonly drawn: PageRect;
+  readonly root: PageRect;
+};
+
+/**
+ * Where the calibration stands between two reads (finding 3).
+ */
+export type CalibrationRun = {
+  /** Bumped by every game.ui value; a read that saw another revision is stale. */
+  revision: number;
+  /** The target of the calibration in use; undefined before the first read. */
+  used: CalibrationTarget | undefined;
+  /** A game.rect read is in flight. */
+  reading: boolean;
+  /** The calibration in flight (its read, a retry and the rebuild); `scene()` waits for it. */
+  pending: Promise<void> | undefined;
+  /** A device change waits for the next game.ui value before it reads. */
+  waiting: boolean;
+};
+
+/**
+ * Reference mode as gameView sees it (D-27): proxies of the scene nodes in the frame overlay.
+ */
+export type ReferenceState = {
+  /** workspace:reference said on. */
+  on: boolean;
+  /** The node id of the proxy under the pointer: the overlay draws the picker hover box. */
+  hover: string | undefined;
+  /** "<flow>/<node>" of the watched game.position while on. */
+  node: string | undefined;
+  /** Unwatches game.position; undefined while off. */
+  unwatch: (() => void) | undefined;
+};
 
 /**
  * A saved screenshot.
@@ -244,6 +326,12 @@ export type GameViewState = {
   reloading: boolean;
   /** Bumped by every highlight call; an older pending call is dropped. */
   highlightSeq: number;
+  /** The calibration's target, revision and pending reads. */
+  calibrationRun: CalibrationRun;
+  /** The last source search result per ui key (proxies and Copy reference read it). */
+  found: Map<string, StyleSource>;
+  /** Reference mode: the proxy layer in the frame overlay. */
+  reference: ReferenceState;
 };
 
 /**
@@ -308,8 +396,9 @@ export type GameViewApi = {
 
   /**
    * The scene built with the shared `buildScene` from the watched `game.ui`, `game.entities`
-   * and `game.projections` (watched while Game is shown, R6). While Game is hidden it reads the
-   * three once. Rejects with the link's WireError when no game is connected.
+   * and `game.projections` (watched while Game is shown, R6); a calibration in flight is waited
+   * for, so the rects are the calibrated ones. While Game is hidden it reads the three once.
+   * Rejects with the link's WireError when no game is connected.
    *
    * @returns The scene snapshot.
    * @throws {Error} The link's WireError, or `[moku-editor] game.ui has the wrong shape …`.
@@ -428,34 +517,6 @@ export type GameViewApi = {
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
-
-  /**
-   * Adds a capture (a PNG or a series index.json) to a note's front matter `captures[]` through
-   * the shared codec; writes with the version and toasts "✓ Attached to <title>". A path already
-   * listed is not added twice; a note whose front matter is not readable is never rewritten.
-   *
-   * @param capture - Path of the PNG or the series index.json.
-   * @param notePath - Path of the note.
-   * @returns Resolves when written (or a toast said why not).
-   * @example
-   * ```ts
-   * // Keep the screenshot with the bug note it belongs to.
-   * await app.gameView.attach(".moku/captures/2026-09-24-1012-board.png", ".moku/notes/2026-09-24-first-top-item.md");
-   * ```
-   */
-  attach(capture: string, notePath: string): Promise<void>;
-
-  /**
-   * The notes under `notesDir` for the note select, newest first (by file name).
-   *
-   * @returns Path and front-matter title of every note.
-   * @example
-   * ```ts
-   * // The note select of the capture card.
-   * await app.gameView.notes(); // [{ path: ".moku/notes/2026-09-24-first-top-item.md", title: "First top item" }]
-   * ```
-   */
-  notes(): Promise<readonly { path: string; title: string }[]>;
 };
 
 /**
@@ -464,9 +525,7 @@ export type GameViewApi = {
 export type GameViewCtx = {
   readonly config: Readonly<GameViewConfig>;
   state: GameViewState;
-  readonly emit: EmitFn<
-    Pick<ToolsEvents, "workspace:reveal" | "workspace:new-note" | "workspace:open-file">
-  >;
+  readonly emit: EmitFn<Pick<ToolsEvents, "workspace:reveal" | "workspace:open-file">>;
   readonly log: Log.LogApi;
   readonly require: Require;
 };
@@ -479,4 +538,5 @@ export type GameViewHooks = {
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "workspace:open-sheet": (payload: ToolsEvents["workspace:open-sheet"]) => void;
   readonly "workspace:inspect": (payload: ToolsEvents["workspace:inspect"]) => void;
+  readonly "workspace:reference": (payload: ToolsEvents["workspace:reference"]) => void;
 };

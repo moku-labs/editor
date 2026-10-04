@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   DeviceSpec,
   EditorChannel,
+  Heartbeat,
   InputOf,
   Json,
   LinkStatus,
@@ -10,6 +11,7 @@ import type {
   RunResult,
   SessionInfo,
   SubId,
+  Tap,
   ToolsBoot,
   WireError
 } from "../../protocol";
@@ -132,5 +134,32 @@ describe("protocol types", () => {
 
     expectTypeOf<RunResult>().toExtend<Json>();
     expect(json).toEqual(result);
+  });
+
+  it("Heartbeat carries an optional heap in MB and still travels as Json", () => {
+    expectTypeOf<Heartbeat["heap"]>().toEqualTypeOf<
+      { readonly usedMb: number; readonly limitMb: number } | undefined
+    >();
+
+    const beat: Heartbeat = {
+      frame: 1840,
+      paused: false,
+      at: 1_790_000_000_000,
+      heap: { usedMb: 12.8, limitMb: 4095.8 }
+    };
+    const json: Json = beat;
+    expect(json).toEqual(beat);
+  });
+
+  it("Tap is the page point and the page clock, and travels as Json", () => {
+    expectTypeOf<Tap>().toEqualTypeOf<{
+      readonly x: number;
+      readonly y: number;
+      readonly at: number;
+    }>();
+
+    const tap: Tap = { x: 206, y: 640, at: 15_234.5 };
+    const json: Json = tap;
+    expect(json).toEqual({ x: 206, y: 640, at: 15_234.5 });
   });
 });

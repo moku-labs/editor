@@ -86,7 +86,6 @@ describe("hub-lane layout with a prefix", () => {
       root: "p",
       expanded: new Set(),
       pins: emptyPins(),
-      notes: [],
       config: testConfig(),
       engine: createInlineEngine()
     });
@@ -118,7 +117,6 @@ describe("slot frames and back edges", () => {
       root: "m",
       expanded: new Set(["m/s"]),
       pins: emptyPins(),
-      notes: [],
       config: testConfig(),
       engine: createInlineEngine()
     });

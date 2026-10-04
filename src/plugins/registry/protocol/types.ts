@@ -133,9 +133,33 @@ export type RunState = { readonly path: string; readonly frame: number; readonly
 export type RunResult = { readonly value: Json; readonly state: RunState };
 
 /**
- * One heartbeat of a game page.
+ * One heartbeat of a game page. `heap` is the JS heap of the page in MB, rounded to 0.1, and
+ * only present where the browser reports it (Chromium's `performance.memory`).
+ *
+ * @example
+ * ```ts
+ * const beat: Heartbeat = { frame: 1840, paused: false, at: 1790000000000, heap: { usedMb: 12.8, limitMb: 4095.8 } };
+ * ```
  */
-export type Heartbeat = { readonly frame: number; readonly paused: boolean; readonly at: number };
+export type Heartbeat = {
+  readonly frame: number;
+  readonly paused: boolean;
+  /** Epoch ms of the beat. */
+  readonly at: number;
+  readonly heap?: { readonly usedMb: number; readonly limitMb: number };
+};
+
+/**
+ * Params of the game-channel `tap` notification: one pointerdown on the game page. `x` and `y`
+ * are page CSS px of the game document (`clientX`, `clientY`); `at` is the page's
+ * `performance.now()`.
+ *
+ * @example
+ * ```ts
+ * const tap: Tap = { x: 206, y: 640, at: 15234.5 };
+ * ```
+ */
+export type Tap = { readonly x: number; readonly y: number; readonly at: number };
 
 /**
  * The link state shown everywhere (design-context §6 B1, F3).

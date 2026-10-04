@@ -178,7 +178,11 @@ function createApp() {
       }
     })
   });
-  const app = framework.createApp({ plugins: [views] });
+  // Flow opens first, so its panel mounts at start (the editor's default is Game).
+  const app = framework.createApp({
+    plugins: [views],
+    pluginConfigs: { workspace: { defaultWorkspace: "flow" } }
+  });
   app.log.clearSinks();
   return app;
 }

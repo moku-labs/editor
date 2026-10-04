@@ -1,6 +1,7 @@
 /**
  * @file flowView inspector module — the Styles tab controller over the shared style edit
- * (panels/shared/style-edit, R4, R8): load the text-style cards, stepper bursts debounced into one
+ * (panels/shared/style-edit, R4, R8): load the text-style cards of the styles file (configured or
+ * found), no card chosen until the person picks one, stepper bursts debounced into one
  * version-checked write of one numeric literal, then the D-07 reload. flowView owns only the
  * texts of the shared error codes.
  */
@@ -13,28 +14,32 @@ import {
   stepValue,
   writeNumber
 } from "../../panels/shared/style-edit";
-import type { Json } from "../../registry/protocol";
 import { bareMessage } from "../../registry/protocol";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment } from "../types";
+import { stylesFileOf } from "./styles-file";
+import type { StylesState } from "./types";
 
 /**
  * flowView's text for a refused style edit (one row per shared code).
  *
  * @param error - The shared error.
- * @param file - The styles file.
+ * @param file - The styles file; undefined when none was found.
  * @returns The text shown on the card.
  * @example
  * ```ts
  * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts"); // "lineHeight has no edit rule · edit it in Files"
+ * styleErrorText({ error: "no-file" }, undefined); // "No file calls defineTextStyles( · set flowView.stylesFile"
  * ```
  */
-export function styleErrorText(error: StyleEditError, file: string): string {
+export function styleErrorText(error: StyleEditError, file: string | undefined): string {
   const path = error.path ?? "the field";
   const key = error.key ?? "the style";
   switch (error.error) {
     case "no-file": {
-      return `No text styles at ${file} · set flowView.stylesFile`;
+      return file === undefined
+        ? "No file calls defineTextStyles( · set flowView.stylesFile"
+        : `No text styles at ${file} · set flowView.stylesFile`;
     }
     case "parse": {
       return `Can't read ${file} safely · Open in Files`;
@@ -89,28 +94,45 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
 }
 
 /**
- * Loads the styles file into the Styles tab and replaces the palette group Styles. A load that
- * lands after the user chose a card or pressed a stepper keeps that card and the pending step.
+ * The Styles tab with no cards: no styles file, or one that cannot be read.
+ *
+ * @param file - The styles file, if one was found.
+ * @param error - Why there are no cards.
+ * @returns The slice.
+ * @example
+ * ```ts
+ * emptyStyles(undefined, { error: "no-file" }).blocks; // []
+ * ```
+ */
+function emptyStyles(file: string | undefined, error: StyleEditError): StylesState {
+  return {
+    file,
+    text: "",
+    version: "",
+    blocks: [],
+    key: undefined,
+    pending: undefined,
+    result: undefined,
+    error
+  };
+}
+
+/**
+ * Loads the styles file into the Styles tab and replaces the palette group Styles. No card is
+ * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
+ * a stepper keeps that card and the pending step.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
- * @param key - The card to select; default the card already chosen, else the first key.
+ * @param key - The card to select; default the card already chosen, else none.
  * @returns Resolves when loaded.
  */
 export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
   const { inspector } = ctx.state;
-  const file = ctx.config.stylesFile;
-  const loaded = await loadStyleFile(env.files(), file);
-  if (isStyleEditError(loaded)) {
-    inspector.styles = {
-      text: "",
-      version: "",
-      blocks: [],
-      key: undefined,
-      pending: undefined,
-      result: undefined,
-      error: loaded
-    };
+  const file = await stylesFileOf(ctx, env);
+  const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+  if (loaded === undefined || isStyleEditError(loaded)) {
+    inspector.styles = emptyStyles(file, loaded ?? { error: "no-file" });
     env.setStyleItems([]);
     notify(ctx.state);
     return;
@@ -121,10 +143,11 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
     candidate => candidate !== undefined && keys.includes(candidate)
   );
   inspector.styles = {
+    file,
     text: loaded.text,
     version: loaded.version,
     blocks,
-    key: chosen ?? keys[0],
+    key: chosen,
     pending: inspector.styles?.pending,
     result: undefined,
     error: undefined
@@ -143,9 +166,9 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
 export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
   const styles = ctx.state.inspector.styles;
   const pending = styles?.pending;
-  if (styles === undefined || pending === undefined) return;
+  const file = styles?.file;
+  if (styles === undefined || pending === undefined || file === undefined) return;
   styles.pending = undefined;
-  const file = ctx.config.stylesFile;
   const target = {
     ref: { kind: "text" as const, key: pending.key },
     path: pending.path,
@@ -218,7 +241,7 @@ export function stepStyle(
   const rule = fieldRule({ kind: "text", key }, path);
   if (rule === undefined) {
     styles.error = { error: "read-only", path };
-    styles.result = { ok: false, text: styleErrorText(styles.error, ctx.config.stylesFile) };
+    styles.result = { ok: false, text: styleErrorText(styles.error, styles.file) };
     notify(ctx.state);
     return;
   }
@@ -241,44 +264,4 @@ export function stepStyle(
   styles.error = undefined;
   styles.result = { ok: true, text: "Writing…" };
   notify(ctx.state);
-}
-
-/**
- * The UI node names whose text style is a key, from one read of game.ui (empty until F-G1).
- *
- * @param ui - The game.ui value.
- * @param key - The text-style key.
- * @returns Node names.
- * @example
- * ```ts
- * usedByOf({ key: "coins", local: { textStyle: "ui.number" } }, "ui.number"); // ["coins"]
- * ```
- */
-export function usedByOf(ui: Json, key: string): string[] {
-  const names: string[] = [];
-  /**
-   * Collects the matching nodes of one value and its children.
-   *
-   * @param value - A part of game.ui.
-   */
-  function visit(value: Json): void {
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-    if (typeof value !== "object" || value === null) return;
-    const local = value.local;
-    if (
-      typeof local === "object" &&
-      local !== null &&
-      !Array.isArray(local) &&
-      local.textStyle === key
-    ) {
-      const name = value.key ?? value.name ?? value.id;
-      if (typeof name === "string" && !names.includes(name)) names.push(name);
-    }
-    for (const child of Object.values(value)) visit(child);
-  }
-  visit(ui);
-  return names;
 }

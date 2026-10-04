@@ -11,6 +11,7 @@ import { notify } from "../store";
 import { extensionOf, IMAGE_EXTENSIONS } from "../tabs/kind";
 import { openOrLog } from "../tabs/open";
 import { countFiles, parentOf, toggleFolder, visibleRows } from "../tree/model";
+import { shutTreeDrawer } from "../tree/side";
 import type { FileIndex, FilesViewApi, FilesViewCtx, TreeRow } from "../types";
 import { useElement } from "./useFiles";
 
@@ -232,7 +233,7 @@ export function Tree(props: TreeProps): VNode {
   };
 
   /**
-   * Opens a file or toggles a folder.
+   * Opens a file (and shuts the tree's drawer when it floats) or toggles a folder.
    *
    * @param row - The row.
    */
@@ -240,6 +241,7 @@ export function Tree(props: TreeProps): VNode {
     focusRow(row.path);
     if (row.kind === "file") {
       openOrLog(ctx, row.path, {});
+      shutTreeDrawer();
       return;
     }
     toggleFolder(state.expanded, row.path);

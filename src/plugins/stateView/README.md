@@ -8,6 +8,9 @@ It shows the committed state of the connected game in three columns:
 - **Last commit**: the patch list, with the **Session** tree below it.
 - **Runner**: path, flow · node, stack, link, tainted, last edge, and what the gate waits for.
 
+Below 760 px of container (the Claude pane at 1/2 or 1/3 of the screen) the columns stack in one column that scrolls: Player, Last commit, Session, Runner.
+Each card then collapses from the ▾ toggle in its head. There is never a horizontal scroll. stateView has no side panel.
+
 The title reads "State · player and session at frame N · last commit ~fM".
 
 ## Configuration
@@ -118,12 +121,14 @@ off();
 
 | Part | What |
 |---|---|
-| `view/StateView.tsx` | Title and three-column grid. |
+| `view/StateView.tsx` | Title and three-column grid; one column below 760 px of container. |
+| `view/Card.tsx` | One card: the section, its head and the collapse toggle (`data-action="toggle-card"`, `aria-expanded`). The card gets `data-collapsed`. The toggle shows, and the collapse applies, only while the columns stack. |
 | `view/JsonTree.tsx` | ARIA tree with roving tabindex. ↑/↓ move, → opens or moves to the first child, ← closes or moves to the parent, Home/End jump. A changed row has `data-changed` and a "was 8" chip or an "added" tag. Its ancestors have `data-has-change`. |
 | `view/PatchList.tsx` | Op tags (`add`, `replace`, `remove`), pointer, old → new value cut at 120 chars with the full value in `title`. "+N more patches", "rng advanced", or why there is no commit. |
 | `view/RunnerCard.tsx` | path, flow · node, stack, link, tainted, last edge, "Gate waits for N". |
 
 Each component has one sheet, `@scope ([data-panel="state"] [data-part="…"])`.
+`StateView.css` makes the view an inline-size container and holds the `@container (width < 760px)` rules.
 No sheet wraps itself in `@layer`: the page CSS entry imports them in `layer(components)` (R3, R7).
 Styles use `data-*` attributes and the workspace tokens only. No class selectors.
 

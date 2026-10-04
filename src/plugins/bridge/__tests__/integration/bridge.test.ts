@@ -508,6 +508,26 @@ describe("bridge integration", () => {
     expect(["connecting", "lost"]).toContain(app.bridge.status().kind);
   });
 
+  it("sends a tap for a pointerdown on the page window while linked; stop removes the listener", async () => {
+    const page = new EventTarget();
+    const remove = vi.spyOn(page, "removeEventListener");
+    vi.stubGlobal("window", page);
+    const { stop, connection } = await linked();
+
+    page.dispatchEvent(Object.assign(new Event("pointerdown"), { clientX: 206, clientY: 640 }));
+    const [tap] = await waitFor(() => {
+      const taps = notes(connection, "tap");
+      return taps.length > 0 ? taps : undefined;
+    });
+
+    expect(tap?.params).toEqual({ x: 206, y: 640, at: expect.any(Number) });
+    await stop();
+    expect(remove).toHaveBeenCalledWith("pointerdown", expect.any(Function), {
+      capture: true,
+      passive: true
+    });
+  });
+
   it("says bye and closes 1000 on stop, and never reconnects", async () => {
     const { app, stop, connection } = await linked();
 

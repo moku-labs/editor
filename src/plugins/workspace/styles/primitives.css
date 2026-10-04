@@ -31,6 +31,16 @@ button[data-variant="ghost"]:hover:not([aria-disabled="true"]) {
   color: var(--text-ink);
 }
 
+button[data-variant="outline"] {
+  border: 1px solid var(--line-2);
+  background: var(--surface-panel);
+  color: var(--text-ink);
+}
+
+button[data-variant="outline"]:hover:not([aria-disabled="true"]) {
+  background: var(--surface-panel-2);
+}
+
 button[data-variant="danger"] {
   background: var(--status-error);
   color: var(--surface-panel);
@@ -220,8 +230,20 @@ kbd {
   font-size: var(--font-size-12-5);
 }
 
-[data-props] > dt {
+/* A pair may sit in a <div> (valid in a <dl>): the div drops out of the grid so its dt and dd take the two columns. A long value wraps inside its column. */
+[data-props] > div {
+  display: contents;
+}
+
+[data-props] > dt,
+[data-props] > div > dt {
   color: var(--text-muted);
+}
+
+[data-props] > dd,
+[data-props] > div > dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ─── Spinner, stale fade (F3) ─── */

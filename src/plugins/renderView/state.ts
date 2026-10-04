@@ -29,6 +29,7 @@ export function createRenderViewState(_ctx: {
     calibrationAsked: false,
     catalogue: undefined,
     fps: [],
+    heap: undefined,
     loaded: new Map(),
     releases: [],
     seen: new Map(),

@@ -83,9 +83,9 @@ export function wheelOp(
 }
 
 /**
- * What a pointer release means: under 3 px it is a click — a card, a note or the hub head selects
- * its item; empty canvas, a frame background or a lane band clears the selection (M2). A longer
- * move was a pan or a drag and means nothing more.
+ * What a pointer release means: under 3 px it is a click — a card or the hub head selects its
+ * item; empty canvas, a frame background or a lane band clears the selection (M2). A longer move
+ * was a pan or a drag and means nothing more.
  *
  * @param moved - Distance between down and up in px.
  * @param target - What the pointer went down on.
@@ -103,7 +103,7 @@ export function releaseIntent(
 ): CameraIntent | undefined {
   if (moved >= DRAG_THRESHOLD) return undefined;
 
-  const selects = target === "card" || target === "note" || target === "hub-head";
+  const selects = target === "card" || target === "hub-head";
   return selects && key !== undefined ? { kind: "select", key } : { kind: "clear" };
 }
 

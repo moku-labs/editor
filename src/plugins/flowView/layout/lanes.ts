@@ -1,10 +1,12 @@
 /**
- * @file flowView layout module — the hub-lane layout of design §7.1–7.5, exactly: the prefix row,
- * the hub with one port per outcome in declared order, one lane per outcome (action node, its rows,
+ * @file flowView layout module — the hub-lane layout of design §7.1–7.5: the prefix row, the hub
+ * with one port per outcome in declared order, one lane per outcome (action node, its rows,
  * second-level nodes in the next column), return stubs instead of lines back to the hub, exits on
- * the frame's right edge, column heads. Pure and synchronous.
+ * the frame's right edge, column heads. The gap after the hub fits its widest outcome label; a
+ * label pass keeps every edge label clear of its source and of the other labels and items (shift
+ * down by 20 until free). Pure and synchronous.
  */
-import type { EdgePath, FlowJson, Item } from "../types";
+import type { EdgePath, FlowJson, Item, Rect } from "../types";
 import { exitOf, targetNode } from "./back-edges";
 import { anchorIn, anchorOut, orthogonalRoute } from "./routes";
 import type { FlowBox, NodeSizes } from "./types";
@@ -14,7 +16,9 @@ import {
   HUB_GAP,
   HUB_HEAD,
   HUB_W,
+  LABEL_H,
   LANE_PAD,
+  labelWidth,
   NODE_H,
   NODE_W,
   PORT,
@@ -55,6 +59,103 @@ const HUB_FOOT = 8;
  * How far the column heads sit above the first lane.
  */
 const HEAD_LIFT = 20;
+
+/**
+ * Space between an edge label and the item it leaves.
+ */
+const LABEL_GAP = 4;
+
+/**
+ * How far one step of the label pass moves a colliding label down.
+ */
+const LABEL_SHIFT = 20;
+
+/**
+ * Steps of the label pass before a label stays on its edge's row.
+ */
+const LABEL_STEPS = 8;
+
+/**
+ * The gap between the hub and column 1: HUB_GAP, or wider so the widest outcome label fits.
+ *
+ * @param outcomes - The hub's outcomes.
+ * @returns The gap in px.
+ * @example
+ * ```ts
+ * hubGap(["tap", "openSettings"]); // 99.2: "openSettings" is 91.2 px wide
+ * ```
+ */
+export function hubGap(outcomes: readonly string[]): number {
+  return Math.max(HUB_GAP, ...outcomes.map(outcome => labelWidth(outcome) + 2 * LABEL_GAP));
+}
+
+/**
+ * True when two rects overlap (touching edges do not).
+ *
+ * @param a - A rect.
+ * @param b - A rect.
+ * @returns Whether they overlap.
+ * @example
+ * ```ts
+ * overlaps({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 }); // true
+ * ```
+ */
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/**
+ * The rect of a label chip centred on a point.
+ *
+ * @param x - Centre x.
+ * @param y - Centre y.
+ * @param width - Chip width.
+ * @returns The rect.
+ * @example
+ * ```ts
+ * labelRect(100, 50, 38.4); // { x: 80.8, y: 41, w: 38.4, h: 18 }
+ * ```
+ */
+function labelRect(x: number, y: number, width: number): Rect {
+  return { x: x - width / 2, y: y - LABEL_H / 2, w: width, h: LABEL_H };
+}
+
+/**
+ * The label pass: each edge label sits on its first segment, right of its source, and moves down
+ * by 20 until it meets no other label and no item; when no step is free it stays on the row.
+ *
+ * @param work - The lane work (edges get their `labelAt`).
+ */
+function placeLabels(work: LaneWork): void {
+  const byKey = new Map(work.items.map(entry => [entry.key, entry]));
+  const blockers: Rect[] = work.items.filter(entry => entry.kind !== "port");
+  const labels: Rect[] = [];
+  const collides = (box: Rect): boolean =>
+    [...labels, ...blockers].some(other => overlaps(box, other));
+
+  for (const [index, edge] of work.edges.entries()) {
+    const [first, second] = edge.points;
+    if (edge.kind !== "edge" || edge.label === undefined) continue;
+    if (first === undefined || second === undefined) continue;
+
+    // On the first segment, clear of the source's right side.
+    const width = labelWidth(edge.label);
+    const from = byKey.get(edge.from);
+    const left = from === undefined ? first.x : from.x + from.w + LABEL_GAP;
+    const x = Math.max((first.x + second.x) / 2, left + width / 2);
+
+    // Down by 20 until free; nowhere free keeps the row.
+    const row = (first.y + second.y) / 2;
+    let y = row;
+    for (let step = 0; step < LABEL_STEPS && collides(labelRect(x, y, width)); step += 1) {
+      y += LABEL_SHIFT;
+    }
+    if (collides(labelRect(x, y, width))) y = row;
+
+    labels.push(labelRect(x, y, width));
+    work.edges[index] = { ...edge, labelAt: { x, y } };
+  }
+}
 
 /**
  * The size of a node: its expanded box, else a card.
@@ -447,7 +548,7 @@ export function layoutLanes(
   hubItem.ports = ports;
 
   // One lane per outcome, in declared order: its rows decide its height.
-  const columnOne = x + HUB_W + HUB_GAP;
+  const columnOne = x + HUB_W + hubGap(flow.nodes[hub]?.outcomes ?? []);
   const lanes: { index: number; outcome: string; y: number; h: number }[] = [];
   let laneTop = HUB_HEAD;
 
@@ -469,6 +570,7 @@ export function layoutLanes(
   const bandX = x + HUB_W;
   const entryY = prefix.length > 0 ? NODE_H / 2 : HUB_HEAD / 2;
   placePorts(work, right, entryY);
+  placeLabels(work);
 
   return {
     items: work.items,

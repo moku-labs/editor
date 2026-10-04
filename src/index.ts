@@ -57,6 +57,7 @@ export type {
   SourceDescriptor,
   SourceOverrides,
   SubId,
+  Tap,
   ToolsBoot,
   UnwatchParams,
   ValueParams,

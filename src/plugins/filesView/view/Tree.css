@@ -1,10 +1,10 @@
-/* filesView · Tree. The project tree: header with the file count and Refresh, 24 px rows with twisty, a 14 px indent per level (--level), kind glyph and name; the active file has the soft accent fill; the muted captures note; loading and failure lines. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · Tree. The project tree, filling the body of its SidePanel (the panel draws the edge line): header with the file count and Refresh, 24 px rows with twisty, a 14 px indent per level (--level), kind glyph and name; the active file has the soft accent fill; the muted captures note; loading and failure lines. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="files"] [data-part="tree"]) {
   :scope {
     display: flex;
+    flex: 1;
     flex-direction: column;
     min-height: 0;
-    border-right: 1px solid var(--line-1);
     background: var(--surface-panel-2);
   }
 

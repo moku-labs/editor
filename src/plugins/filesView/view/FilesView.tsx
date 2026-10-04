@@ -1,15 +1,18 @@
 /**
- * @file filesView plugin — A5, the Files workspace: the project tree beside the editor column
- * (tabs, file bar, Used by, body). The body shows the file by kind and mode; no tab open shows
- * the F5 Files text.
+ * @file filesView plugin — A5, the Files workspace: the project tree in its SidePanel
+ * (`files.tree`, D-29) beside the editor column (tabs, file bar, Used by, body). The body shows
+ * the file by kind and mode; no tab open shows the F5 Files text. A closed tree leaves a reopen
+ * button at the start edge.
  */
 import type { VNode } from "preact";
 import { langOf } from "../../panels/shared/highlight";
+import { SidePanel, useSidePanel } from "../../panels/shared/side-panel";
 import type { LinkStatus } from "../../registry/protocol";
 import { parseSeriesIndex } from "../preview/series";
 import { TOO_LARGE_MESSAGE } from "../tabs/load";
 import { activeTab } from "../tabs/model";
 import { closeTab } from "../tabs/open";
+import { TREE_PANEL, TREE_SIZE } from "../tree/side";
 import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
 import { CodeEditor } from "./CodeEditor";
 import { CodeView } from "./CodeView";
@@ -142,10 +145,34 @@ function Body(props: BodyProps): VNode {
 }
 
 /**
+ * The reopen button of a closed tree, at the start edge of the view; nothing while the tree
+ * shows.
+ *
+ * @returns The button, or nothing.
+ */
+function ReopenTree(): VNode | undefined {
+  const tree = useSidePanel(TREE_PANEL);
+  if (!tree.closed) return undefined;
+
+  return (
+    <button
+      type="button"
+      data-action="reopen-files.tree"
+      title="Show Files tree (\)"
+      aria-label="Show Files tree"
+      onClick={tree.show}
+    >
+      <span aria-hidden="true">›</span>
+      <span data-part="reopen-label">Files</span>
+    </button>
+  );
+}
+
+/**
  * The Files workspace view.
  *
  * @param props - Context, api and the link status of this render.
- * @returns The grid: tree | editor column.
+ * @returns The row: tree panel (or its reopen button) | editor column.
  */
 export function FilesView(props: FilesViewProps): VNode {
   const { ctx, api, status } = props;
@@ -153,7 +180,10 @@ export function FilesView(props: FilesViewProps): VNode {
 
   return (
     <div data-part="files-view">
-      <Tree ctx={ctx} api={api} />
+      <SidePanel id={TREE_PANEL} side="start" title="Files" {...TREE_SIZE}>
+        <Tree ctx={ctx} api={api} />
+      </SidePanel>
+      <ReopenTree />
       <div data-files-editor>
         {tab === undefined ? (
           <p data-empty>Pick a file in the tree, or press ⌘K and type a file name.</p>

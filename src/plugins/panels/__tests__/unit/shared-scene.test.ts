@@ -17,6 +17,7 @@ import {
   clientFromPage,
   drawnRect,
   elementAt,
+  isLayoutOnly,
   pageFromClient,
   parseTextureManifest,
   refId,
@@ -726,6 +727,25 @@ describe("elementAt", () => {
     expect(elementAt(scene, { x: 50, y: 65 })?.id).toBe("ui:root/middle/play");
     expect(elementAt(scene, { x: 50, y: 40 })?.id).toBe("ui:root/top");
     expect(elementAt(scene, { x: 50, y: 95 })?.id).toBe("ui:root/top");
+  });
+
+  it("isLayoutOnly: a ui layout type with no fill, stroke, nine-slice or shape", () => {
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("top", "column", rect(0, 0, 100, 100), [], { style: { padding: 8 } }),
+      ui("veil", "stack", rect(0, 0, 100, 100), [], { style: { fill: 0x1a_0f_08 } }),
+      ui("play", "button", rect(30, 60, 40, 10))
+    ]);
+    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+    const node = (id: string): SceneNode => {
+      const found = scene.nodes.get(id);
+      if (found === undefined) throw new Error(`no node ${id}`);
+      return found;
+    };
+
+    expect(isLayoutOnly(node("ui:root"))).toBe(true);
+    expect(isLayoutOnly(node("ui:root/top"))).toBe(true);
+    expect(isLayoutOnly(node("ui:root/veil"))).toBe(false);
+    expect(isLayoutOnly(node("ui:root/play"))).toBe(false);
   });
 
   it("gives the settings backdrop, not the board's settings icon under it", () => {

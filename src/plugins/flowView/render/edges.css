@@ -1,4 +1,4 @@
-/* flowView · edges (G): orthogonal paths with rounded corners; trail, rejected, related, selected, note and return edges; mono label chips. Trail opacity comes from the rank (style prop). No @layer wrapper (R7). */
+/* flowView · edges (G): orthogonal paths with rounded corners; trail (the last three 2 px at full strength, older ones fading by rank through the style prop), rejected, related, selected and return edges; mono label chips with an opaque background. A dimmed edge or label fades; the dimming wins over the trail. No @layer wrapper (R7). */
 
 @scope ([data-flow="edges"]) {
   /* The reset caps svg at max-width 100 %; the world layer has no width, so the cap would scale the viewBox to nothing. */
@@ -18,20 +18,23 @@
     stroke-width: 1.8px;
   }
 
-  path[data-trail],
+  path[data-trail] {
+    stroke: var(--accent);
+    stroke-width: 1.35px;
+  }
+
+  path[data-trail][data-recent] {
+    stroke-width: 2px;
+  }
+
   path[data-selected] {
     stroke: var(--accent);
-    stroke-width: 3.2px;
+    stroke-width: 2.4px;
   }
 
   path[data-rejected] {
     stroke: var(--status-error);
     stroke-dasharray: 5 4;
-  }
-
-  path[data-kind="note"] {
-    stroke: var(--note-line);
-    stroke-dasharray: 4 4;
   }
 
   path[data-kind="return"] {
@@ -56,7 +59,9 @@
     white-space: nowrap;
   }
 
+  /* A dimmed chip keeps its opaque background: only the text fades, nothing shows through. */
   :scope[data-dimmed] {
-    opacity: 0.16;
+    border-color: var(--line-1);
+    color: color-mix(in srgb, var(--text-2) 16%, var(--surface-panel));
   }
 }

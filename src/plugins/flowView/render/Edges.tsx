@@ -1,7 +1,9 @@
 /**
  * @file flowView render module — the edge layer (G edges): one SVG in the world layer with
- * orthogonal paths and 8 px rounded corners; trail, rejected, related, selected, note and return
- * edges by data attributes; mono label chips at the first segment's midpoint.
+ * orthogonal paths and 8 px rounded corners; trail (the last three 2 px), rejected, related,
+ * selected and return edges by data attributes; mono label chips where the layout placed them,
+ * else at the first segment's midpoint. The world draws this layer before the items, so cards
+ * paint over edges.
  */
 import type { VNode } from "preact";
 import { roundedPath } from "../layout/routes";
@@ -60,10 +62,11 @@ export function laneId(lane: Pick<LaneBand, "x" | "y">): string {
 }
 
 /**
- * The midpoint of an edge's first segment.
+ * Where an edge's label chip sits: the centre the layout placed (ELK, the lane label pass), else
+ * the midpoint of the edge's first segment.
  *
  * @param edge - The edge.
- * @returns The point, or undefined for an edge without two points.
+ * @returns The point, or undefined for an edge without a placed label and without two points.
  * @example
  * ```ts
  * labelPoint({
@@ -76,10 +79,27 @@ export function laneId(lane: Pick<LaneBand, "x" | "y">): string {
  * }); // { x: 236, y: 100 }
  * ```
  */
-function labelPoint(edge: EdgePath): { x: number; y: number } | undefined {
+export function labelPoint(edge: EdgePath): { x: number; y: number } | undefined {
+  if (edge.labelAt !== undefined) return edge.labelAt;
   const [first, second] = edge.points;
   if (first === undefined || second === undefined) return undefined;
   return { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+}
+
+/**
+ * The inline opacity of a trail edge: the older trail fades by rank; the last three, a dimmed edge
+ * and an edge off the trail take theirs from the sheet.
+ *
+ * @param view - The edge view.
+ * @returns The style, or undefined.
+ * @example
+ * ```ts
+ * trailStyle({ rank: 4, recent: false, rejected: false, related: false, dimmed: false, selected: false }); // { opacity: "0.48" }
+ * ```
+ */
+function trailStyle(view: EdgeView | undefined): { opacity: string } | undefined {
+  if (view?.rank === undefined || view.recent || view.dimmed) return undefined;
+  return { opacity: String(Math.round((1 - TRAIL_FADE * view.rank) * 100) / 100) };
 }
 
 /**
@@ -118,11 +138,12 @@ export function Edges(props: EdgesProps): VNode {
               data-kind={edge.kind}
               data-rank={rank}
               data-trail={rank === undefined ? undefined : ""}
+              data-recent={view?.recent === true ? "" : undefined}
               data-rejected={view?.rejected === true ? "" : undefined}
               data-related={view?.related === true ? "" : undefined}
               data-dimmed={view?.dimmed === true ? "" : undefined}
               data-selected={view?.selected === true ? "" : undefined}
-              style={rank === undefined ? undefined : { opacity: String(1 - TRAIL_FADE * rank) }}
+              style={trailStyle(view)}
             />
           );
         })}

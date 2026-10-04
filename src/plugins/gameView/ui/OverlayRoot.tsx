@@ -1,8 +1,9 @@
 /**
  * @file gameView plugin — gameView's root inside `workspace.gameFrame().overlay()` (device space,
- * game CSS px, scaled with the frame, above the iframe, R4): the picker layer, the hover, selected
- * and tree boxes with the hover label, the safe-area bands, the dynamic island, the home bar and
- * the shutter flash. Foreign DOM with its own Preact root, created once, removed on stop.
+ * game CSS px, scaled with the frame, above the iframe, R4): the Reference mode proxy layer, the
+ * picker layer, the hover, selected and tree boxes with the hover label, the safe-area bands, the
+ * dynamic island, the home bar and the shutter flash. Foreign DOM with its own Preact root,
+ * created once, removed on stop.
  */
 import type { VNode } from "preact";
 import { render } from "preact";
@@ -11,30 +12,17 @@ import { refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
 import type { DeviceSize } from "../../workspace/types";
-import { hasHomeBar, hasIsland, safeBands } from "../stage/geometry";
+import { hasHomeBar, hasIsland, rectStyle, safeBands } from "../stage/geometry";
 import { counterScale, labelPlacement, labelSize, labelText } from "../stage/label";
 import type { GameViewCtx } from "../types";
 import { PickerLayer } from "./PickerLayer";
+import { ProxyLayer } from "./ProxyLayer";
 import { useGameView } from "./useGameView";
 
 /**
  * Props of `OverlayRoot`.
  */
 export type OverlayRootProps = { readonly ctx: GameViewCtx };
-
-/**
- * Inline position of a rect in device px.
- *
- * @param rect - The rect.
- * @returns The style object.
- * @example
- * ```ts
- * rectStyle({ x: 1, y: 2, w: 3, h: 4 }); // { left: "1px", top: "2px", width: "3px", height: "4px" }
- * ```
- */
-function rectStyle(rect: PageRect): Record<string, string> {
-  return { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` };
-}
 
 /**
  * The hover box with its counter-scaled label.
@@ -128,9 +116,9 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
   const device = resolveDevice(choice.preset, choice.orientation);
   const scale = workspace.gameFrame().box()?.scale ?? 1;
   const nodes = state.scene?.nodes;
-  const { hover: pickerHover } = state.picker;
-  const isPickerHover = state.picker.on && pickerHover !== undefined;
-  const hover = isPickerHover ? nodes?.get(pickerHover) : undefined;
+  const { reference } = state;
+  const hoverId = state.picker.on ? state.picker.hover : reference.hover;
+  const hover = hoverId === undefined ? undefined : nodes?.get(hoverId);
   const { selected: selectedRef } = state;
   const isSelectedActive = active && selectedRef !== undefined;
   const selected = isSelectedActive ? nodes?.get(refId(selectedRef)) : undefined;
@@ -139,6 +127,7 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
 
   return (
     <>
+      {reference.on && <ProxyLayer ctx={ctx} />}
       {guides && (
         <SafeGuides
           device={device}

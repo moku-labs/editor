@@ -151,11 +151,10 @@ Identical content is still written and still emits.
 | Order | Rule | `kind` |
 |---|---|---|
 | 1 | starts with `.moku/captures/` | `capture` |
-| 2 | starts with `.moku/notes/` | `note` |
-| 3 | equals `.moku/editor/layout.json` | `layout` |
-| 4 | ends with `.css`, basename `styles.ts` or `styles.tsx`, or ends with `.styles.ts` or `.styles.tsx` | `style` |
-| 5 | other `.ts` and `.tsx` | `code` |
-| 6 | everything else | `other` |
+| 2 | equals `.moku/editor/layout.json` | `layout` |
+| 3 | ends with `.css`, basename `styles.ts` or `styles.tsx`, or ends with `.styles.ts` or `.styles.tsx` | `style` |
+| 4 | other `.ts` and `.tsx` | `code` |
+| 5 | everything else | `other` |
 
 The emit is not awaited. If the emit throws, the error is logged as `files:emit-failed`.
 

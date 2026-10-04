@@ -46,12 +46,13 @@ afterEach(() => {
 });
 
 describe("createHandlers", () => {
-  it("hooks link:status, workspace:changed, workspace:open-sheet and workspace:inspect", () => {
+  it("hooks link:status, workspace:changed, workspace:open-sheet, workspace:inspect and workspace:reference", () => {
     expect(Object.keys(createHandlers(ctx)).toSorted()).toEqual([
       "link:status",
       "workspace:changed",
       "workspace:inspect",
-      "workspace:open-sheet"
+      "workspace:open-sheet",
+      "workspace:reference"
     ]);
   });
 });

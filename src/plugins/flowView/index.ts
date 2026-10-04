@@ -1,8 +1,8 @@
 /**
- * VeryComplex tier — the Flow workspace: canvas, hub-lane layout, focus, notes, Inspector.
+ * VeryComplex tier — the Flow workspace: canvas, hub-lane layout, focus, Inspector.
  * Declares no events; emits the global `workspace:open-file` (its commands run through
  * panels.run). Hooks `link:status`, `workspace:changed`, `workspace:select-node`,
- * `workspace:focus-frame`, `workspace:new-note`.
+ * `workspace:focus-frame`, `workspace:density`. Watches the flow sources for the session.
  *
  * @see README.md
  */
@@ -12,7 +12,7 @@ import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
 import { createFlowViewApi } from "./api";
 import { createHandlers } from "./handlers";
-import { initFlowView, stopFlowView } from "./lifecycle";
+import { initFlowView, startFlowView, stopFlowView } from "./lifecycle";
 import { createFlowViewState } from "./state";
 import type { FlowViewConfig } from "./types";
 
@@ -23,8 +23,7 @@ const defaultConfig: FlowViewConfig = {
   hubMinOutcomes: 6,
   hubMinReturns: 4,
   layoutFile: ".moku/editor/layout.json",
-  notesDir: ".moku/notes",
-  stylesFile: "features/ui/styles.ts",
+  stylesFile: undefined,
   layoutWorker: true,
   layoutSaveDelayMs: 400,
   styleSaveDelayMs: 600,
@@ -34,7 +33,7 @@ const defaultConfig: FlowViewConfig = {
 };
 
 /**
- * Flow workspace plugin (tools core): `app.flowView.camera | focus | flows | layout | notes`.
+ * Flow workspace plugin (tools core): `app.flowView.camera | focus | flows | layout`.
  *
  * @example
  * ```ts
@@ -50,6 +49,7 @@ export const flowViewPlugin = createToolsPlugin("flowView", {
   api: createFlowViewApi,
   hooks: createHandlers,
   onInit: initFlowView,
+  onStart: startFlowView,
   // @no-resource-check — onStop terminates the ELK worker, clears timers and rAF, runs the removers
   onStop: stopFlowView
 });

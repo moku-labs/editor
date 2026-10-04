@@ -41,13 +41,12 @@ function noop(): void {}
 /** The default config of gameView (index.ts). */
 export const CONFIG: GameViewConfig = {
   capturesDir: ".moku/captures",
-  notesDir: ".moku/notes",
   manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"],
   captureCardMs: 10_000,
   seriesDurationsMs: [1000, 2000, 5000, 10_000, 20_000],
   seriesIntervalsMs: [16, 50, 100, 250, 500, 1000],
   seriesWarnShots: 200,
-  sourceSearch: { maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }
+  sourceSearch: { maxFiles: 1500, skip: ["node_modules", "dist", ".git", ".moku"] }
 };
 
 /** A 1×1 PNG data URL. */
@@ -201,6 +200,8 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       boot: () => undefined,
       frameUrl: url => url,
       isOtherTab: () => false,
+      onTap: vi.fn(() => noop),
+      heap: vi.fn(() => undefined),
       files: store
     },
     send(id, value) {
@@ -296,6 +297,8 @@ export function createWorkspaceMock(): WorkspaceMock {
       show,
       theme: () => "light",
       setTheme: vi.fn(),
+      density: () => "comfortable",
+      setDensity: vi.fn(),
       preview: () => ({
         visible: true,
         size: "S",
@@ -362,6 +365,8 @@ export function createWorkspaceMock(): WorkspaceMock {
       },
       overlayInGame: () => workspace.overlayOn,
       setOverlayInGame,
+      reference: () => false,
+      setReference: vi.fn(),
       onPrefs: fn => {
         prefsListeners.add(fn);
         return () => {

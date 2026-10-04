@@ -1,7 +1,7 @@
 /**
  * @file The tools stack of the root integration wave (plan §2.5): the tools page booted from the
  * HTML the real pages route serves, the tools core from `src/tools.ts` with the speed configs, a
- * tools probe that records all ten tools events, and the workspace mounted inside `act`.
+ * tools probe that records all eleven tools events, and the workspace mounted inside `act`.
  */
 import type { AnyPluginInstance } from "@moku-labs/core";
 import { act } from "preact/test-utils";
@@ -46,7 +46,7 @@ export type ToolsOptions = {
 export type ToolsStack = {
   readonly kind: "tools";
   readonly app: ToolsApp;
-  /** All ten tools events, in order. */
+  /** All eleven tools events, in order. */
   readonly events: ToolsEvent[];
   /** The payloads of one tools event, in order. */
   eventsOf<Name extends keyof ToolsEvents>(name: Name): ToolsEvents[Name][];
@@ -82,6 +82,12 @@ function createToolsProbe(events: ToolsEvent[]) {
       "workspace:ran": (payload: ToolsEvents["workspace:ran"]) => {
         events.push({ name: "workspace:ran", payload });
       },
+      "workspace:density": (payload: ToolsEvents["workspace:density"]) => {
+        events.push({ name: "workspace:density", payload });
+      },
+      "workspace:reference": (payload: ToolsEvents["workspace:reference"]) => {
+        events.push({ name: "workspace:reference", payload });
+      },
       "workspace:open-file": (payload: ToolsEvents["workspace:open-file"]) => {
         events.push({ name: "workspace:open-file", payload });
       },
@@ -90,9 +96,6 @@ function createToolsProbe(events: ToolsEvent[]) {
       },
       "workspace:focus-frame": (payload: ToolsEvents["workspace:focus-frame"]) => {
         events.push({ name: "workspace:focus-frame", payload });
-      },
-      "workspace:new-note": (payload: ToolsEvents["workspace:new-note"]) => {
-        events.push({ name: "workspace:new-note", payload });
       },
       "workspace:reveal": (payload: ToolsEvents["workspace:reveal"]) => {
         events.push({ name: "workspace:reveal", payload });

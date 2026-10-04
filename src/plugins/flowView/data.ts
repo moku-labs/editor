@@ -1,8 +1,8 @@
 /**
- * @file flowView plugin — the wire values of the Flow panel: parse game.graph, game.position and
- * game.history into structural types (no game import at run time), hash the graph, and ingest a
- * render's values into the state (relayout on a graph change, Follow on a position change, live
- * frames of new history entries).
+ * @file flowView plugin — the wire values of the session watches: parse game.graph, game.position
+ * and game.history into structural types (no game import at run time), hash the graph, and ingest
+ * the values into the state (relayout on a graph change, Follow on a position change, live frames
+ * of new history entries).
  */
 import { linkPlugin } from "../link";
 import type { Json } from "../registry/protocol";
@@ -382,7 +382,7 @@ function actionsStatus(ctx: FlowCtx): number | undefined {
  * relayout; the first graph also expands the stack.
  *
  * @param ctx - Domain context of flowView.
- * @param values - The panel values.
+ * @param values - The watch values.
  * @returns Whether a relayout is needed.
  */
 function takeGraph(ctx: FlowCtx, values: FlowValues): boolean {
@@ -412,8 +412,8 @@ function takeGraph(ctx: FlowCtx, values: FlowValues): boolean {
  * first values).
  *
  * @param ctx - Domain context of flowView.
- * @param values - The panel values.
- * @param firstValues - True for the first render's values.
+ * @param values - The watch values.
+ * @param firstValues - True for the first values of the session watches.
  */
 function takeRuntime(ctx: FlowCtx, values: FlowValues, firstValues: boolean): void {
   const { data } = ctx.state;
@@ -432,13 +432,14 @@ function takeRuntime(ctx: FlowCtx, values: FlowValues, firstValues: boolean): vo
 }
 
 /**
- * Takes a render's values into the state: a changed graph (by hash) relayouts and replaces the
- * Nodes palette group (the first graph also expands the stack); a changed current node moves the
- * camera when Follow is on; new history entries seen live get the link frame (F-H1 rule). An
- * invalid value keeps the last valid one and warns.
+ * Takes the watch values into the state: a changed graph (by hash) relayouts and replaces the
+ * Nodes palette group (the first graph also expands the stack); a changed current node opens the
+ * sub-flows that hold it, folds the ones the game left and moves the camera when Follow is on;
+ * new history entries seen live get the link frame (F-H1 rule). An invalid value keeps the last
+ * valid one and warns.
  *
  * @param ctx - Domain context of flowView.
- * @param values - The panel values.
+ * @param values - The latest value of each session watch.
  */
 export function ingest(ctx: FlowCtx, values: FlowValues): void {
   const actions = actionsOf(ctx);
@@ -448,6 +449,8 @@ export function ingest(ctx: FlowCtx, values: FlowValues): void {
   takeRuntime(ctx, values, firstValues);
 
   if (relayout) actions.layout.relayout().catch(() => {});
+  const moved = !firstValues && actions.focus.current() !== before;
+  if (moved) actions.layout.followStack();
   const spot = actions.focus.current() === before ? undefined : actions.focus.locateCurrent();
   if (spot !== undefined && ctx.state.camera.follow) actions.camera.followItem(spot.item);
   notify(ctx.state);

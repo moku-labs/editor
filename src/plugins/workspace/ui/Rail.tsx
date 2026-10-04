@@ -2,6 +2,7 @@
  * @file workspace plugin — B2, the left rail: six workspace buttons (icon + label,
  * `aria-current="page"` on the active one, tooltip "Flow ⌘1", roving tabindex with ↑/↓), the
  * rail badges (amber, red for errors; the label spoken in full) and "⌘ Commands" at the bottom.
+ * Every button carries its accessible name, so the 44 px icon rail under 560 px stays labelled.
  */
 import type { VNode } from "preact";
 import { showWorkspace } from "../actions";
@@ -91,6 +92,7 @@ export function Rail(props: RailProps): VNode {
       <button
         type="button"
         data-commands
+        aria-label="Commands"
         title={`Commands ${formatCombo("mod+k", apple)}`}
         onClick={() => openPalette(ctx)}
       >

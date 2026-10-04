@@ -9,7 +9,7 @@ import type { FilesWritten } from "./plugins/files/types";
 import type { HubSession } from "./plugins/hub/types";
 import type { ElementRef } from "./plugins/panels/shared/scene/types";
 import type { LinkStatus } from "./plugins/registry/protocol";
-import type { RanEvent, WorkspaceId } from "./plugins/workspace/types";
+import type { Density, RanEvent, WorkspaceId } from "./plugins/workspace/types";
 
 /**
  * Global config of the agent core (the game page). Empty: every option belongs to a plugin.
@@ -76,17 +76,16 @@ export type ToolsEvents = {
   "workspace:changed": { ws: WorkspaceId };
   /** A command run from the tools page settled (top bar, palette, key or a panel's tools.run). */
   "workspace:ran": RanEvent;
+  /** The applied density changed (a choice, or `auto` crossing 820 px of window width). */
+  "workspace:density": { density: Density };
+  /** Reference mode turned on or off (gameView shows its element proxies while on). */
+  "workspace:reference": { on: boolean };
   /** Open a file in the Files workspace (filesView hooks it). */
   "workspace:open-file": { path: string; line?: number };
   /** Focus a node in the Flow workspace (flowView hooks it). */
   "workspace:select-node": { id: string };
   /** Focus the edge taken at a frame (flowView hooks it). */
   "workspace:focus-frame": { frame: number };
-  /** Open the note editor, optionally with captures and a source node (flowView hooks it). */
-  "workspace:new-note": {
-    captures?: readonly string[];
-    from?: { node: string; outcome?: string };
-  };
   /** Select an element in the render tree (renderView hooks it). */
   "workspace:reveal": { ref: ElementRef };
   /** Inspect an element in the Game workspace (gameView hooks it, R9). */

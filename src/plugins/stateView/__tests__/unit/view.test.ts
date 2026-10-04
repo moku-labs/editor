@@ -220,6 +220,51 @@ describe("StateView", () => {
   });
 });
 
+describe("StateView narrow layout", () => {
+  it("keeps the four cards in reading order: Player, Last commit, Session, Runner", () => {
+    showPanel();
+    const labels = [...root.querySelectorAll("[data-card]")].map(card =>
+      card.getAttribute("aria-label")
+    );
+    expect(labels).toEqual(["Player", "Last commit", "Session", "Runner"]);
+  });
+
+  it("gives every card a collapse toggle in its head that marks the card collapsed", () => {
+    acceptModel(ctx, MODEL_BEFORE);
+    acceptModel(ctx, MODEL_AFTER);
+    showPanel();
+    for (const card of root.querySelectorAll<HTMLElement>("[data-card]")) {
+      const label = card.getAttribute("aria-label") ?? "";
+      const toggle = card.querySelector<HTMLButtonElement>(
+        ":scope > [data-part='head'] > [data-action='toggle-card']"
+      );
+      expect(toggle?.getAttribute("aria-expanded"), label).toBe("true");
+      expect(toggle?.getAttribute("aria-label")).toBe(`Collapse ${label}`);
+      expect(card.dataset.collapsed).toBeUndefined();
+      if (toggle === null) continue;
+
+      click(toggle);
+      expect(card.dataset.collapsed, label).toBe("");
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(toggle.getAttribute("aria-label")).toBe(`Expand ${label}`);
+
+      click(toggle);
+      expect(card.dataset.collapsed).toBeUndefined();
+    }
+  });
+
+  it("keeps a collapsed Last commit card collapsed when the first commit arrives", () => {
+    showPanel();
+    click(find("[data-part='patch-list'] [data-action='toggle-card']"));
+    act(() => {
+      acceptModel(ctx, MODEL_BEFORE);
+      acceptModel(ctx, MODEL_AFTER);
+    });
+    expect(find("[data-part='patch-list']").dataset.collapsed).toBe("");
+    expect(root.querySelectorAll("[data-part='patches'] > li")).toHaveLength(4);
+  });
+});
+
 describe("PatchList", () => {
   it("lists the patches with op tags, the ~f frame and the count", () => {
     acceptModel(ctx, MODEL_BEFORE);

@@ -1,5 +1,5 @@
 /**
- * @file gameView plugin — api factory: binds the scene, element, capture, series, sheet and notes
+ * @file gameView plugin — api factory: binds the scene, element, capture, series and sheet
  * functions to the plugin context. The contract and the examples live on `GameViewApi` in
  * types.ts.
  */
@@ -14,7 +14,6 @@ import {
   selectedElement,
   setPicker
 } from "./element/select";
-import { attachCapture, listNotes } from "./notes/attach";
 import { readManifest } from "./scene/manifest";
 import { locateElement, readScene } from "./scene/read";
 import type { GameViewApi, GameViewCtx } from "./types";
@@ -38,8 +37,6 @@ export function createGameViewApi(ctx: GameViewCtx): GameViewApi {
     capture: takeScreenshot.bind(undefined, ctx),
     series: recordSeries.bind(undefined, ctx),
     stopSeries: stopRecording.bind(undefined, ctx),
-    openSheet: openSheet.bind(undefined, ctx),
-    attach: attachCapture.bind(undefined, ctx),
-    notes: listNotes.bind(undefined, ctx)
+    openSheet: openSheet.bind(undefined, ctx)
   };
 }

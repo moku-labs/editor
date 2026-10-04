@@ -167,6 +167,16 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
 | `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
 
+Game-channel notifications of the agent and their params:
+
+| Method | Params | Sent by |
+|---|---|---|
+| `hello` | `HelloParams { manifest }` | the bridge, first |
+| `heartbeat` | `Heartbeat { frame, paused, at, heap? }`. `heap { usedMb, limitMb }` is the page's JS heap in MB, rounded to 0.1, only where Chromium's `performance.memory` exists. | the channel beat, through the bridge |
+| `value` | `ValueParams { sub, value }` | the bridge, per watched source |
+| `tap` | `Tap { x, y, at }`: one `pointerdown` in page CSS px of the game document, `at` = the page's `performance.now()` | the bridge, at most one per 50 ms |
+| `bye` | none | the bridge, on stop |
+
 ## Limits and game follow-ups
 
 | Item | Status |

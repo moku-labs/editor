@@ -76,6 +76,47 @@ describe("ingest", () => {
     expect(actionsOf(ctx).focus.current()).toBe("main/home");
   });
 
+  it("keeps sub-flows collapsed except the one holding the current node (finding 16)", async () => {
+    const { ctx } = createTestCtx();
+    ingest(ctx, values());
+    await flush(10);
+    expect([...ctx.state.layout.expanded]).toEqual(["main/board"]);
+    const settings = { path: "settings/open", flow: "settingsPopup", node: "open", waiting: [] };
+    ingest(ctx, values({ position: settings }));
+    await flush(10);
+    expect([...ctx.state.layout.expanded]).toEqual(["main/settings"]);
+    expect(ctx.state.layout.result?.byKey["main/board"]?.kind).toBe("node");
+    expect(ctx.state.layout.result?.byKey["main/settings"]?.kind).toBe("frame");
+    expect(actionsOf(ctx).focus.locateCurrent()?.item.key).toBe("main/settings>settingsPopup/open");
+  });
+
+  it("leaves a manual expand open and a manual collapse closed; a frame holding the selection stays", async () => {
+    const { ctx } = createTestCtx();
+    ingest(ctx, values());
+    await flush(10);
+    const actions = actionsOf(ctx);
+    actions.flows.expand("main/afterOrder");
+    actions.flows.collapse("main/board");
+    ingest(
+      ctx,
+      values({ position: { path: "board/merge", flow: "board", node: "merge", waiting: [] } })
+    );
+    await flush(10);
+    expect(ctx.state.layout.expanded.has("main/board")).toBe(false);
+    ingest(ctx, values({ position: { path: "home", flow: "main", node: "home", waiting: [] } }));
+    await flush(10);
+    expect(ctx.state.layout.expanded.has("main/afterOrder")).toBe(true);
+
+    ingest(ctx, values());
+    await flush(10);
+    expect(ctx.state.layout.expanded.has("main/board")).toBe(true);
+    actions.focus.select("board/merge");
+    ingest(ctx, values({ position: { path: "home", flow: "main", node: "home", waiting: [] } }));
+    await flush(10);
+    expect(ctx.state.layout.expanded.has("main/board")).toBe(true);
+    expect(actions.focus.selected()).toBe("main/board>board/merge");
+  });
+
   it("records the frame of entries that arrive live, never of the first batch or of F-H1 entries", () => {
     const { ctx, fakes } = createTestCtx();
     fakes.status = { kind: "live", frame: 1900 };

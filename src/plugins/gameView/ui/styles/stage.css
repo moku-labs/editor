@@ -1,4 +1,4 @@
-/* gameView · workspace layout and stage (A2, F12). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4), the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4), the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="workspace"]) {
   :scope {
     display: grid;
@@ -17,16 +17,15 @@
   }
 
   [data-part="body"] {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 0;
   }
 }
 
 @scope ([data-game="stage"]) {
   :scope {
-    --bezel-ink: color-mix(in srgb, var(--text-ink) 88%, var(--surface-canvas));
-
     position: relative;
     min-width: 0;
     min-height: 0;
@@ -52,7 +51,7 @@
   [data-part="bezel"] {
     padding: 10px;
     border-radius: var(--radius-34);
-    background: var(--bezel-ink);
+    background: var(--bezel);
   }
 
   [data-part="bezel"][data-kind="tablet"] {

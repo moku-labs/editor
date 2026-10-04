@@ -156,9 +156,9 @@ describe("view data edge cases", () => {
 });
 
 describe("focus and layout edge cases", () => {
-  it("select a note, walk from the current node, queries without a layout", async () => {
+  it("walks from the current node, queries without a layout", async () => {
     jumpCamera();
-    const { ctx, fakes } = createTestCtx();
+    const { ctx } = createTestCtx();
     const focus = actionsOf(ctx).focus;
     expect(focus.relatedRect()).toBeUndefined();
     expect(focus.locateCurrent()).toBeUndefined();
@@ -166,12 +166,11 @@ describe("focus and layout edge cases", () => {
     focus.moveHighlight(1);
     focus.selectHistory(99);
     expect(focus.stack()).toEqual([]);
-    fakes.files.store.set(".moku/notes/a.md", { text: "---\ntitle: A\n---\n", version: "v1" });
+    expect(focus.followEdge("main/home:play")).toBe(false);
+    expect(focus.back()).toBe(false);
+    expect(focus.findCurrent()).toBe(false);
     await prepare(ctx);
-    await actionsOf(ctx).notes.load();
     await flush(10);
-    expect(focus.select("note:.moku/notes/a.md")).toBe(true);
-    expect(ctx.state.focus.strip).toBe(false);
     focus.select(undefined);
     focus.walk("next");
     expect(focus.selected()).toBe("main/board>board/tapGenerator");
@@ -197,51 +196,6 @@ describe("focus and layout edge cases", () => {
     expect(ctx.state.layout.expanded.size).toBe(0);
     expect(actionsOf(ctx).layout.reveal("rewardPopup/show")).toBeUndefined();
   });
-
-  it("places notes: on a node without an outcome, on a hub port, pinned inside a frame, skipped off screen", async () => {
-    const pins = emptyPins();
-    pins.notes["c.md"] = { flow: "board", x: 24, y: 24 };
-    const result = await composeLayout({
-      graph: mergeGraph,
-      root: "main",
-      expanded: new Set(["main/board"]),
-      pins,
-      notes: [
-        { path: "a.md", flow: "main", from: { node: "main/home" }, title: "A" },
-        {
-          path: "b.md",
-          flow: "board",
-          from: { node: "board/awaitIntent", outcome: "tap" },
-          title: "B"
-        },
-        { path: "c.md", flow: "board", from: undefined, title: "C" },
-        {
-          path: "d.md",
-          flow: "settingsPopup",
-          from: { node: "settingsPopup/open", outcome: "close" },
-          title: "D"
-        }
-      ],
-      config: testConfig(),
-      engine: createInlineEngine()
-    });
-    const home = result.byKey["main/home"];
-    expect(result.byKey["note:a.md"]?.x).toBe((home?.x ?? 0) + (home?.w ?? 0) + 54);
-    expect(result.byKey["note:b.md"]).toMatchObject({
-      kind: "note",
-      flow: "board",
-      parent: "main/board",
-      x: 1264,
-      y: 265
-    });
-    const origin = result.origins["main/board|board"] ?? { x: 0, y: 0 };
-    expect(result.byKey["note:c.md"]).toMatchObject({
-      x: origin.x + 24,
-      y: origin.y + 24,
-      pinned: true
-    });
-    expect(result.byKey["note:d.md"]).toBeUndefined();
-  });
 });
 
 describe("more edge paths", () => {
@@ -251,7 +205,6 @@ describe("more edge paths", () => {
       root: "nope",
       expanded: new Set(),
       pins: emptyPins(),
-      notes: [],
       config: testConfig(),
       engine: createInlineEngine()
     });

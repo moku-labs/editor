@@ -31,7 +31,7 @@ function boxElement(): HTMLElement {
 }
 
 beforeEach(() => {
-  ctx = createCtx();
+  ctx = createCtx({ defaultWorkspace: "flow" });
   frame = createGameFrame(ctx);
 });
 
@@ -96,7 +96,18 @@ describe("syncFrame — docking table", () => {
     expect(element.style.transform).toContain("scale(0.5)");
     expect(element.style.visibility).toBe("visible");
     expect(element.dataset.docked).toBe("preview");
-    expect(ctx.state.frame.iframe?.tabIndex).toBe(-1);
+    expect(element.style.getPropertyValue("--frame-scale")).toBe("0.5");
+    expect(ctx.state.frame.iframe?.tabIndex).toBe(0);
+  });
+
+  it("marks the frame box while Reference mode is on", () => {
+    ctx.state.frame.previewBody = document.createElement("div");
+    ctx.state.reference = true;
+    syncFrame(ctx);
+    expect(boxElement().dataset.reference).toBe("");
+    ctx.state.reference = false;
+    syncFrame(ctx);
+    expect(boxElement().dataset.reference).toBeUndefined();
   });
 
   it("outside Game with the preview hidden: hidden", () => {
@@ -105,6 +116,7 @@ describe("syncFrame — docking table", () => {
     syncFrame(ctx);
     expect(frame.box()?.docked).toBe("hidden");
     expect(boxElement().style.visibility).toBe("hidden");
+    expect(ctx.state.frame.iframe?.tabIndex).toBe(-1);
   });
 
   it("in Game without a stage dock: hidden; with a dock: the stage slot, fit capped at 1", () => {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { actionsOf } from "../../actions";
 import { Minimap } from "../../camera/Minimap";
 import { nodeKinds, outgoing, parentsOf, resolveStack } from "../../focus/graph";
-import { NeighboursStrip } from "../../focus/NeighboursStrip";
+import { InfoTab } from "../../inspector/InfoTab";
 import { Inspector } from "../../inspector/Inspector";
 import { Breadcrumb } from "../../render/Breadcrumb";
 import { CanvasToolbar } from "../../render/CanvasToolbar";
@@ -13,7 +13,7 @@ import { HistoryLabels } from "../../render/HistoryStrip";
 import { YouAreHere } from "../../render/YouAreHere";
 import type { GraphJson } from "../../types";
 import { infoView } from "../../view-model";
-import { createTestCtx, flush } from "../ctx";
+import { createTestCtx } from "../ctx";
 import { cloneGraph, entry, mergeGraph } from "../helpers";
 import { mount, prepared, settle } from "../render";
 
@@ -23,21 +23,8 @@ afterEach(() => {
 });
 
 describe("Inspector variants", () => {
-  it("shows a selected note, and a hint when nothing is shown while live", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    fakes.files.store.set(".moku/notes/a.md", {
-      text: "---\ntitle: The note\n---\nBody\n",
-      version: "v1"
-    });
-    await actions.notes.load();
-    await flush(10);
-    actions.focus.select("note:.moku/notes/a.md");
-    const note = mount(h(Inspector, { ctx, actions, shown: undefined, info: undefined }));
-    expect(note.host.textContent).toContain("Note · idea for the agent");
-    expect(note.host.textContent).toContain("The note");
-    await settle(() => note.host.querySelector<HTMLElement>('[data-action="clear"]')?.click());
-    expect(ctx.state.focus.selected).toBeUndefined();
-    note.unmount();
+  it("shows a hint when nothing is shown while live; ←/→ cycle the three tabs", async () => {
+    const { ctx, actions } = await prepared();
     const empty = mount(h(Inspector, { ctx, actions, shown: undefined, info: undefined }));
     expect(empty.host.textContent).toContain("Select a node to inspect it.");
     empty.unmount();
@@ -49,7 +36,7 @@ describe("Inspector variants", () => {
         .querySelector<HTMLElement>('[role="tab"]')
         ?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
     );
-    expect(ctx.state.inspector.tab).toBe("notes");
+    expect(ctx.state.inspector.tab).toBe("styles");
     await settle(() =>
       tabs.host
         .querySelector<HTMLElement>('[role="tab"]')
@@ -61,31 +48,40 @@ describe("Inspector variants", () => {
   });
 });
 
-describe("NeighboursStrip variants", () => {
-  it("shows waiting rows and frames of the current hub; exit rows walk nowhere; closes for a stub", async () => {
+describe("Info tab variants", () => {
+  it("shows waiting rows and frames of the current hub, resolved exits and the highlighted row", async () => {
     const { ctx, actions } = await prepared();
     ctx.state.data.history = [
       entry(1, "board/awaitIntent", "tap", { next: "board/tapGenerator", frame: 5 })
     ];
     actions.focus.select("board/awaitIntent");
-    const { host, unmount } = mount(h(NeighboursStrip, { ctx, actions }));
-    expect(host.textContent).toContain("You are here");
-    expect(host.querySelector('[data-column="to"] [data-waiting]')).not.toBeNull();
-    expect(host.textContent).toContain("f5");
-    const leave = host.querySelector<HTMLElement>('[data-column="to"] [data-outcome="leave"]');
-    await settle(() => leave?.click());
-    await settle(() => actions.focus.select("board/giveToOrder"));
-    const exit = host.querySelector<HTMLElement>(
-      '[data-column="to"] [data-outcome="orderComplete"]'
+    const hub = mount(
+      h(InfoTab, { ctx, actions, info: infoView(ctx, actions, "board/awaitIntent") ?? never() })
     );
+    expect(hub.host.querySelector('[data-part="outcomes"] [data-waiting]')).not.toBeNull();
+    expect(hub.host.textContent).toContain("f5");
+    hub.unmount();
+
+    actions.focus.select("board/giveToOrder");
+    actions.focus.highlight("from", 0);
+    const give = mount(
+      h(InfoTab, { ctx, actions, info: infoView(ctx, actions, "board/giveToOrder") ?? never() })
+    );
+    const exit = give.host.querySelector('[data-part="outcomes"] [data-outcome="orderComplete"]');
     expect(exit?.textContent).toContain("main/afterOrder");
-    await settle(() => actions.focus.highlight("from", 0));
-    expect(host.querySelector('[data-column="from"] [data-highlight]')).not.toBeNull();
-    await settle(() => actions.focus.select("main/board>stub:board/merge:done"));
-    expect(host.querySelector('[data-flow="neighbours-strip"]')).toBeNull();
-    unmount();
+    expect(give.host.querySelector('[data-part="comes-from"] li[data-highlight]')).not.toBeNull();
+    give.unmount();
   });
 });
+
+/**
+ * Fails the test: the value was expected to exist.
+ *
+ * @throws {Error} Always.
+ */
+function never(): never {
+  throw new Error("expected a value");
+}
 
 describe("chrome variants", () => {
   it("hides You are here, the stack link and the minimap without data; Reset layout runs with pins", async () => {
@@ -97,7 +93,7 @@ describe("chrome variants", () => {
     const crumbs = mount(h(Breadcrumb, { ctx, actions: bare }));
     expect(crumbs.host.querySelector('[data-part="stack"]')).toBeNull();
     crumbs.unmount();
-    const map = mount(h(Minimap, { ctx, actions: bare }));
+    const map = mount(h(Minimap, { ctx, actions: bare, trail: [] }));
     expect(map.host.querySelector("svg")).toBeNull();
     map.unmount();
     const flow = await prepared();
@@ -152,7 +148,7 @@ describe("chrome variants", () => {
     const menu = mount(h(ContextMenu, { ctx, actions }));
     const element = menu.host.querySelector<HTMLElement>('[data-flow="context-menu"]');
     expect(element?.style.left).toBe(`${390 - 220}px`);
-    expect(element?.style.top).toBe(`${190 - 90}px`);
+    expect(element?.style.top).toBe(`${190 - 60}px`);
     menu.unmount();
   });
 });
@@ -170,35 +166,5 @@ describe("graph queries on other shapes", () => {
     expect(parentsOf(mergeGraph, "nope")).toEqual([]);
     expect(outgoing(mergeGraph, "nope/x")).toEqual([]);
     expect(outgoing(mergeGraph, "board/giveToOrder", "main/home")[1]?.to).toBeUndefined();
-  });
-});
-
-describe("note node variants", () => {
-  it("says '1 capture', shows the pinned mark and the selected state", async () => {
-    const { NoteNode } = await import("../../render/NoteNode");
-    const note = {
-      key: "note:a.md",
-      id: ".moku/notes/a.md",
-      kind: "note" as const,
-      x: 0,
-      y: 0,
-      w: 236,
-      h: 112,
-      flow: "main",
-      pinned: true
-    };
-    const { host, unmount } = mount(
-      h(NoteNode, {
-        item: note,
-        view: { title: "A", lines: [], captures: 1, status: "todo" },
-        selected: true
-      })
-    );
-    const element = host.querySelector<HTMLElement>('[data-flow="note-node"]');
-    expect(element?.textContent).toContain("1 capture");
-    expect(element?.dataset.pinned).toBe("");
-    expect(element?.dataset.selected).toBe("");
-    expect(element?.querySelector('[data-part="pin"]')).not.toBeNull();
-    unmount();
   });
 });

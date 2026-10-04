@@ -1,8 +1,8 @@
 /**
- * @file gameView plugin — texts of the views (pure): seconds, the stage badges (F12) and the
- * series result line (D3).
+ * @file gameView plugin — texts of the views (pure): seconds, the stage badges (F12), the
+ * series result line (D3) and one value of the Styles list (finding 4).
  */
-import type { LinkStatus } from "../../registry/protocol";
+import type { Json, LinkStatus } from "../../registry/protocol";
 
 /**
  * Milliseconds in a second.
@@ -106,4 +106,26 @@ export function linkBadge(status: LinkStatus, now: number): StageBadge | undefin
  */
 export function resultText(shots: number, durationMs: number, intervalMs: number): string {
   return `${shots} shots · ${secondsText(durationMs)} s at ${intervalMs} ms`;
+}
+
+/**
+ * One style value as text: strings, numbers and booleans as they are, an object as
+ * `key value` pairs joined by ` · `, an array joined by `, `; nested values the same way.
+ *
+ * @param value - A style value.
+ * @returns The text.
+ * @example
+ * ```ts
+ * styleValue({ top: 266, right: 72, bottom: 64, left: 72 }); // "top 266 · right 72 · bottom 64 · left 72"
+ * styleValue(["safeArea.top", 12]); // "safeArea.top, 12"
+ * ```
+ */
+export function styleValue(value: Json): string {
+  if (Array.isArray(value)) return value.map(item => styleValue(item)).join(", ");
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, item]) => `${key} ${styleValue(item)}`)
+      .join(" · ");
+  }
+  return String(value);
 }

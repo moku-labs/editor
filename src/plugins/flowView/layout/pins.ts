@@ -1,7 +1,8 @@
 /**
  * @file flowView layout module — the pins file `.moku/editor/layout.json` (design §7.8): parse,
  * serialize (sorted keys, 2 spaces, trailing newline, unknown keys kept), snap to 12, reset of the
- * visible flows, counts and the conflict merge.
+ * visible flows, counts and the conflict merge. Only node positions are read; any other top-level
+ * key (an old `notes` field too) is kept as it is.
  */
 import type { Json } from "../../registry/protocol";
 import type { PinsFile } from "./types";
@@ -43,14 +44,14 @@ function isNumber(value: unknown): value is number {
 /**
  * An empty pins file.
  *
- * @returns `{ version: 1, nodes: {}, notes: {}, extra: {} }`.
+ * @returns `{ version: 1, nodes: {}, extra: {} }`.
  * @example
  * ```ts
  * emptyPins().nodes; // {}
  * ```
  */
 export function emptyPins(): PinsFile {
-  return { version: 1, nodes: {}, notes: {}, extra: {} };
+  return { version: 1, nodes: {}, extra: {} };
 }
 
 /**
@@ -76,30 +77,6 @@ function readNodes(value: unknown): PinsFile["nodes"] | undefined {
 }
 
 /**
- * Reads the note entries: path → { flow, x, y }.
- *
- * @param value - The `notes` value.
- * @returns The entries, or undefined when one is malformed.
- * @example
- * ```ts
- * readNotes({ "a.md": { flow: "board", x: 1, y: 2 } });
- * ```
- */
-function readNotes(value: unknown): PinsFile["notes"] | undefined {
-  if (value === undefined) return {};
-  if (!isRecord(value)) return undefined;
-
-  const notes: PinsFile["notes"] = {};
-  for (const [path, pin] of Object.entries(value)) {
-    if (!isRecord(pin) || typeof pin.flow !== "string" || !isNumber(pin.x) || !isNumber(pin.y)) {
-      return undefined;
-    }
-    notes[path] = { flow: pin.flow, x: pin.x, y: pin.y };
-  }
-  return notes;
-}
-
-/**
  * Parses layout.json.
  *
  * @param text - The file text.
@@ -120,16 +97,13 @@ export function parsePins(text: string): PinsFile | undefined {
   if (parsed.version !== undefined && parsed.version !== 1) return undefined;
 
   const nodes = readNodes(parsed.nodes);
-  const notes = readNotes(parsed.notes);
-  if (nodes === undefined || notes === undefined) return undefined;
+  if (nodes === undefined) return undefined;
 
   const extra: Record<string, Json> = {};
   for (const [key, value] of Object.entries(parsed)) {
-    if (key !== "version" && key !== "nodes" && key !== "notes" && value !== undefined) {
-      extra[key] = value;
-    }
+    if (key !== "version" && key !== "nodes" && value !== undefined) extra[key] = value;
   }
-  return { version: 1, nodes, notes, extra };
+  return { version: 1, nodes, extra };
 }
 
 /**
@@ -153,15 +127,14 @@ function sorted<T>(record: Readonly<Record<string, T>>): Record<string, T> {
  * @returns The file text.
  * @example
  * ```ts
- * serializePins(emptyPins()); // '{\n  "nodes": {},\n  "notes": {},\n  "version": 1\n}\n'
+ * serializePins(emptyPins()); // '{\n  "nodes": {},\n  "version": 1\n}\n'
  * ```
  */
 export function serializePins(pins: PinsFile): string {
   const top: Record<string, Json> = {
     ...pins.extra,
     version: pins.version,
-    nodes: sorted(pins.nodes),
-    notes: sorted(pins.notes)
+    nodes: sorted(pins.nodes)
   };
   return `${JSON.stringify(sorted(top), undefined, 2)}\n`;
 }
@@ -196,7 +169,7 @@ export function flowOfId(id: string): string {
 }
 
 /**
- * The pins without the node and note entries of some flows (Reset layout).
+ * The pins without the node entries of some flows (Reset layout).
  *
  * @param pins - The pins.
  * @param flows - The visible flows.
@@ -210,14 +183,11 @@ export function resetPins(pins: PinsFile, flows: ReadonlySet<string>): PinsFile 
   const nodes = Object.fromEntries(
     Object.entries(pins.nodes).filter(([id]) => !flows.has(flowOfId(id)))
   );
-  const notes = Object.fromEntries(
-    Object.entries(pins.notes).filter(([, pin]) => !flows.has(pin.flow))
-  );
-  return { ...pins, nodes, notes };
+  return { ...pins, nodes };
 }
 
 /**
- * The node and note pins of some flows.
+ * The node pins of some flows.
  *
  * @param pins - The pins.
  * @param flows - The visible flows.
@@ -228,9 +198,7 @@ export function resetPins(pins: PinsFile, flows: ReadonlySet<string>): PinsFile 
  * ```
  */
 export function countPins(pins: PinsFile, flows: ReadonlySet<string>): number {
-  const nodes = Object.keys(pins.nodes).filter(id => flows.has(flowOfId(id))).length;
-  const notes = Object.values(pins.notes).filter(pin => flows.has(pin.flow)).length;
-  return nodes + notes;
+  return Object.keys(pins.nodes).filter(id => flows.has(flowOfId(id))).length;
 }
 
 /**
@@ -238,7 +206,7 @@ export function countPins(pins: PinsFile, flows: ReadonlySet<string>): number {
  *
  * @param fresh - The file as it is on disk now.
  * @param current - The pins in memory.
- * @param dirty - Node ids and note paths changed since the last save.
+ * @param dirty - Node ids changed since the last save.
  * @returns The merged pins.
  * @example
  * ```ts
@@ -251,15 +219,10 @@ export function mergeDirty(
   dirty: ReadonlySet<string>
 ): PinsFile {
   const nodes = { ...fresh.nodes };
-  const notes = { ...fresh.notes };
-
   for (const id of dirty) {
     const node = current.nodes[id];
-    const note = current.notes[id];
     if (node === undefined) delete nodes[id];
     else nodes[id] = node;
-    if (note === undefined) delete notes[id];
-    else notes[id] = note;
   }
-  return { ...fresh, nodes, notes };
+  return { ...fresh, nodes };
 }

@@ -1,8 +1,10 @@
 /**
  * @file workspace plugin — B1, the top bar, left to right: logo, game name, session chip, link
  * pill, Pause/Resume, Step 1 frame (only while paused), the palette search box, the Game switch
- * (preview of the current workspace), the Overlay in game switch, Registry counts, theme toggle.
- * Controls that cannot act now are `aria-disabled` so their tooltip still explains why.
+ * (preview of the current workspace), the Overlay in game switch, Reference mode, Registry
+ * counts, theme toggle. Controls that cannot act now are `aria-disabled` so their tooltip still
+ * explains why. Below 560 px the bar keeps the controls and drops the game name, the session chip,
+ * the search text and the counts (TopBar.css).
  */
 import type { ComponentChildren, VNode } from "preact";
 import { linkPlugin } from "../../link";
@@ -12,6 +14,7 @@ import { overlayAvailable, setOverlayInGame } from "../overlay";
 import { openPalette } from "../palette/items";
 import { chooseTheme } from "../prefs/apply";
 import { effectiveTheme } from "../prefs/theme";
+import { toggleReference } from "../reference";
 import type { WorkspaceCtx } from "../types";
 import { isPreviewWorkspace } from "../workspaces";
 import { Icon } from "./icons";
@@ -78,6 +81,7 @@ function Switch(props: SwitchProps): VNode {
  * @param props.onClick - The action.
  * @param props.children - Icon and text.
  * @param props.anchor - `data-popover-anchor` value for a popover placed under it.
+ * @param props.pressed - `aria-pressed` for a toggle button; omitted for a plain one.
  * @returns The button.
  * @example
  * ```tsx
@@ -89,6 +93,7 @@ function BarButton(props: {
   readonly title: string;
   readonly disabled?: boolean;
   readonly anchor?: string;
+  readonly pressed?: boolean;
   readonly onClick: () => void;
   readonly children: ComponentChildren;
 }): VNode {
@@ -99,6 +104,7 @@ function BarButton(props: {
       data-action={props.name}
       data-popover-anchor={props.anchor}
       aria-disabled={props.disabled === true}
+      aria-pressed={props.pressed}
       title={props.title}
       onClick={() => {
         if (props.disabled !== true) props.onClick();
@@ -107,6 +113,23 @@ function BarButton(props: {
       {props.children}
     </button>
   );
+}
+
+/**
+ * Splits a manifest game string into its name and its trailing version (design B1: the name in
+ * sans 600, the version in muted mono).
+ *
+ * @param game - The manifest game string, e.g. "merge-game 0.0.0".
+ * @returns The name and the version, the version undefined when the string has none.
+ * @example
+ * ```ts
+ * splitGameName("merge-game 0.0.0"); // { name: "merge-game", version: "0.0.0" }
+ * ```
+ */
+function splitGameName(game: string): { name: string; version: string | undefined } {
+  const match = /^(.*\S)\s+(v?\d[\w.+-]*)$/.exec(game);
+  if (match?.[1] === undefined || match[2] === undefined) return { name: game, version: undefined };
+  return { name: match[1], version: match[2] };
 }
 
 /**
@@ -128,6 +151,7 @@ export function TopBar(props: TopBarProps): VNode {
   const previewOn = !isPreviewWorkspace(active) || state.previews[active].visible;
   const overlayReady = overlayAvailable(ctx);
   const nextTheme = effectiveTheme(state.theme) === "dark" ? "light" : "dark";
+  const gameName = splitGameName(manifest?.game ?? "No game");
   const counts =
     manifest === undefined ? "– · –" : `${manifest.sources.length} · ${manifest.commands.length}`;
 
@@ -136,8 +160,16 @@ export function TopBar(props: TopBarProps): VNode {
       <span data-logo aria-hidden="true">
         <Icon name="logo" />
       </span>
-      <span data-game-name data-mono>
-        {manifest?.game ?? "No game"}
+      <span data-game-name>
+        <span data-part="name">{gameName.name}</span>
+        {gameName.version !== undefined && (
+          <>
+            {" "}
+            <span data-part="version" data-mono>
+              {gameName.version}
+            </span>
+          </>
+        )}
       </span>
       <SessionChip ctx={ctx} />
       <LinkPill ctx={ctx} />
@@ -183,6 +215,15 @@ export function TopBar(props: TopBarProps): VNode {
           void setOverlayInGame(ctx, !state.overlayInGame, "topbar");
         }}
       />
+      <BarButton
+        name="reference"
+        title="Reference mode (R) — pick game elements for the chat"
+        pressed={state.reference}
+        onClick={() => toggleReference(ctx)}
+      >
+        <Icon name="target" />
+        <span data-sr-only>Reference mode</span>
+      </BarButton>
       <BarButton
         name="registry"
         anchor="registry"

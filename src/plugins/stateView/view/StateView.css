@@ -1,6 +1,7 @@
-/* stateView · State workspace (A4): title line, three-column grid (Player 1.3fr · Last commit + Session 1fr · Runner 0.9fr), each column scrolls on its own; under 240 px per column the grid scrolls horizontally inside the workspace. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* stateView · State workspace (A4): title line, three-column grid (Player 1.3fr · Last commit + Session 1fr · Runner 0.9fr), each card scrolls on its own. The view is its own size container: below 760 px the columns stack in one column that scrolls (Player, Last commit, Session, Runner), each card collapses from the toggle in its head. Never a horizontal scroll. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="state"] [data-part="state-view"]) {
   :scope {
+    container-type: inline-size;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 10px;
@@ -29,12 +30,12 @@
   [data-part="columns"] {
     display: grid;
     grid-template-columns:
-      minmax(240px, 1.3fr)
-      minmax(240px, 1fr)
-      minmax(240px, 0.9fr);
+      minmax(0, 1.3fr)
+      minmax(0, 1fr)
+      minmax(0, 0.9fr);
     gap: 12px;
     min-height: 0;
-    overflow-x: auto;
+    overflow-x: hidden;
   }
 
   [data-part="commit-column"] {
@@ -70,8 +71,42 @@
     font-weight: 600;
   }
 
+  /* The collapse toggle of a card: only while the columns stack. */
+  [data-action="toggle-card"] {
+    display: none;
+    place-items: center;
+    inline-size: 24px;
+    padding: 0;
+    color: var(--text-2);
+  }
+
   button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
+  }
+
+  @container (width < 760px) {
+    [data-part="columns"] {
+      grid-template-columns: minmax(0, 1fr);
+      align-content: start;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    [data-part="commit-column"] {
+      grid-template-rows: auto auto;
+    }
+
+    [data-card] {
+      overflow: visible;
+    }
+
+    [data-action="toggle-card"] {
+      display: grid;
+    }
+
+    [data-card][data-collapsed] > :not([data-part="head"]) {
+      display: none;
+    }
   }
 }

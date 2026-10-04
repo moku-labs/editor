@@ -3,8 +3,6 @@
 import { h } from "preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Minimap } from "../../camera/Minimap";
-import { NeighboursStrip } from "../../focus/NeighboursStrip";
-import { NoteEditor } from "../../notes/NoteEditor";
 import { ContextMenu, menuItems } from "../../render/ContextMenu";
 import { Frame } from "../../render/Frame";
 import { HistoryStrip } from "../../render/HistoryStrip";
@@ -17,7 +15,7 @@ afterEach(() => {
 });
 
 describe("context menu items run", () => {
-  it("node items focus, open code and styles, expand, enter, add notes, step, pause and resume", async () => {
+  it("node items focus, open code and styles, expand, enter, step, pause and resume", async () => {
     const { ctx, actions, fakes } = await prepared();
     const enter = vi.spyOn(actions.flows, "enter").mockImplementation(() => {});
     const expand = vi.spyOn(actions.flows, "expand").mockImplementation(() => {});
@@ -55,7 +53,7 @@ describe("context menu items run", () => {
     ]);
   });
 
-  it("outcome and canvas items: focus the target, add a note at the point, fit, reset", async () => {
+  it("outcome and canvas items: focus the target, fit, reset", async () => {
     const { ctx, actions } = await prepared();
     menuItems(ctx, actions, {
       target: "outcome",
@@ -82,12 +80,7 @@ describe("context menu items run", () => {
       x: 50,
       y: 60
     });
-    canvas.find(entry => entry.label === "Add note here")?.run();
-    const { cam } = ctx.state.camera;
-    expect(ctx.state.notes.editor?.anchor).toEqual({
-      x: (50 - cam.x) / cam.z,
-      y: (60 - cam.y) / cam.z
-    });
+    expect(canvas.map(entry => entry.label)).toEqual(["Fit all", "Reset layout"]);
     const fit = vi.spyOn(actions.camera, "fitAll");
     canvas.find(entry => entry.label === "Fit all")?.run();
     expect(fit).toHaveBeenCalled();
@@ -116,8 +109,8 @@ describe("context menu items run", () => {
     await settle(() =>
       items[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }))
     );
-    expect(document.activeElement).toBe(items[2]);
-    await settle(() => items[2]?.click());
+    expect(document.activeElement).toBe(items[1]);
+    await settle(() => items[1]?.click());
     expect(ctx.state.focus.menu).toEqual({
       target: "canvas",
       key: undefined,
@@ -125,7 +118,7 @@ describe("context menu items run", () => {
       x: 5000,
       y: 5000
     });
-    await settle(() => items[1]?.click());
+    await settle(() => items[0]?.click());
     expect(ctx.state.focus.menu).toBeUndefined();
     unmount();
   });
@@ -178,22 +171,16 @@ describe("canvas gestures", () => {
     unmount();
   });
 
-  it("drags a note into its pin; ignores clicks inside the canvas chrome", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    fakes.files.store.set(".moku/notes/a.md", {
-      text: "---\ntitle: Free\n---\nBody\n",
-      version: "v1"
-    });
-    await actions.notes.load();
-    await settle();
-    const dropNote = vi.spyOn(actions.layout, "dropNote");
+  it("drops a dragged card; ignores clicks inside the canvas chrome", async () => {
+    const { ctx, actions } = await prepared();
+    const drop = vi.spyOn(actions.layout, "drop").mockImplementation(() => {});
     const { host, unmount } = await mountWorkspace(ctx);
-    const note = host.querySelector<HTMLElement>('[data-flow="note-node"]');
-    if (note === null) throw new Error("no note");
-    pointer(note, "pointerdown", 0, 0);
-    pointer(note, "pointermove", 30, 30);
-    pointer(note, "pointerup", 30, 30);
-    expect(dropNote).toHaveBeenCalled();
+    const card = host.querySelector<HTMLElement>('[data-flow="node-card"][data-key="main/home"]');
+    if (card === null) throw new Error("no card");
+    pointer(card, "pointerdown", 0, 0);
+    pointer(card, "pointermove", 30, 30);
+    pointer(card, "pointerup", 30, 30);
+    expect(drop).toHaveBeenCalledWith("main/home", expect.any(Number), expect.any(Number));
     ctx.state.focus.selected = "main/home";
     const zoom = host.querySelector<HTMLElement>('[data-action="zoom-in"]');
     if (zoom === null) throw new Error("no zoom bar");
@@ -209,7 +196,7 @@ describe("canvas gestures", () => {
 });
 
 describe("chrome pieces", () => {
-  it("frame Enter, history row keyboard and dot hover, minimap drag, strip buttons, editor keys", async () => {
+  it("frame Enter, history row keyboard and dot hover, minimap drag", async () => {
     const { ctx, actions, fakes } = await prepared();
     ctx.state.view.files = fakes.files;
     const enter = vi.spyOn(actions.flows, "enter").mockImplementation(() => {});
@@ -267,46 +254,7 @@ describe("chrome pieces", () => {
     expect(ctx.state.focus.edge).toBe("main/home:play");
     strip.unmount();
 
-    actions.focus.select("main/settings");
-    const neighbours = mount(h(NeighboursStrip, { ctx, actions }));
-    const buttons = [
-      ...neighbours.host.querySelectorAll<HTMLElement>('[data-part="buttons"] button')
-    ];
-    await settle(() => buttons.find(button => button.textContent === "Code")?.click());
-    expect(ctx.state.inspector.tab).toBe("code");
-    await settle(() => buttons.find(button => button.textContent === "Styles")?.click());
-    await settle(() => buttons.find(button => button.textContent === "Add note")?.click());
-    expect(ctx.state.notes.editor?.from).toEqual({ node: "main/settings" });
-    await settle(() => buttons.find(button => button.textContent === "Enter")?.click());
-    expect(enter).toHaveBeenCalledWith("main/settings");
-    neighbours.unmount();
-
-    const editor = mount(h(NoteEditor, { ctx, actions }));
-    await settle(() => actions.notes.edit({ captures: ["a.png", "b.png"] }));
-    expect(editor.host.textContent).toContain("2 shots attach to this note");
-    const dialog = editor.host.querySelector("dialog");
-    const body = dialog?.querySelector<HTMLTextAreaElement>('[data-field="body"]');
-    await settle(() => {
-      if (body === null || body === undefined) return;
-      body.value = "Build it";
-      body.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(ctx.state.notes.editor?.body).toBe("Build it");
-    const save = vi.spyOn(actions.notes, "save");
-    await settle(() =>
-      dialog?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "s", metaKey: true, bubbles: true })
-      )
-    );
-    expect(save).toHaveBeenCalled();
-    await settle(() => dialog?.dispatchEvent(new Event("cancel", { cancelable: true })));
-    expect(ctx.state.notes.editor).toBeUndefined();
-    await settle(() => actions.notes.edit({}));
-    await settle(() => editor.host.querySelector<HTMLElement>('[data-action="cancel"]')?.click());
-    expect(ctx.state.notes.editor).toBeUndefined();
-    editor.unmount();
-
-    const minimap = mount(h(Minimap, { ctx, actions }));
+    const minimap = mount(h(Minimap, { ctx, actions, trail: [] }));
     const map = minimap.host.querySelector("svg");
     const centre = vi.spyOn(actions.camera, "centreOn");
     if (map === null) throw new Error("no map");

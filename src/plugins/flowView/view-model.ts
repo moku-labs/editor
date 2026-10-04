@@ -4,10 +4,11 @@
  * render and inspector modules never import the focus module).
  */
 import type { Json } from "../registry/protocol";
+import { incomingEdge, localKey, outgoingEdgeKey } from "./focus/edges";
 import { incoming, nodeKinds, outgoing, parentsOf, resolveStack } from "./focus/graph";
 import { entryFrame, frameLabel, lastFires, rejectedEdges, trailRanks } from "./focus/trail";
 import { fileOfNode } from "./inspector/files";
-import type { InfoOutcome, InfoView } from "./inspector/types";
+import type { InfoOutcome, InfoSource, InfoView } from "./inspector/types";
 import { edgeId, laneId } from "./render/Edges";
 import type {
   CardView,
@@ -16,11 +17,11 @@ import type {
   Glyph,
   HistoryRow,
   HubView,
-  NoteView,
   StubView,
   WorldView
 } from "./render/types";
 import type {
+  EdgePath,
   FlowActions,
   FlowCtx,
   GraphJson,
@@ -32,6 +33,11 @@ import type {
 } from "./types";
 
 /**
+ * Trail edges drawn 2 px: the last three transitions.
+ */
+const RECENT_TRAIL = 3;
+
+/**
  * The parts of the state every view computation reads.
  */
 type ViewInputs = {
@@ -40,6 +46,7 @@ type ViewInputs = {
   readonly selected: ItemKey | undefined;
   readonly related: ReadonlySet<ItemKey> | undefined;
   readonly current: ItemKey | undefined;
+  readonly pulse: ItemKey | undefined;
   readonly stack: ReadonlySet<NodeId>;
   readonly trail: ReadonlyMap<string, number>;
   readonly rejected: ReadonlyMap<string, HistoryEntryJson>;
@@ -90,6 +97,18 @@ export function kindLine(graph: GraphJson, id: NodeId, kinds: readonly string[])
 }
 
 /**
+ * True for an item the selection dims: something is selected, the item is not related to it and
+ * it is not the current node (the current node never fades).
+ *
+ * @param inputs - The view inputs.
+ * @param key - The item key.
+ * @returns Whether the item is dimmed.
+ */
+function isDimmed(inputs: ViewInputs, key: ItemKey): boolean {
+  return inputs.related !== undefined && !inputs.related.has(key) && key !== inputs.current;
+}
+
+/**
  * The view of one card.
  *
  * @param inputs - The view inputs.
@@ -118,7 +137,8 @@ function cardOf(
     kindLine: kindLine(inputs.graph, item.id, kinds),
     selected: item.key === inputs.selected,
     current: item.key === inputs.current,
-    dimmed: inputs.related !== undefined && !inputs.related.has(item.key),
+    dimmed: isDimmed(inputs, item.key),
+    pulse: item.key === inputs.pulse,
     trail: trailItems.has(item.key),
     onStack: inputs.stack.has(item.id),
     expandable: node?.subFlow !== undefined || node?.slot !== undefined,
@@ -268,6 +288,7 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
     selected: ctx.state.focus.selected,
     related: actions.focus.related(),
     current: actions.focus.locateCurrent()?.item.key,
+    pulse: ctx.state.focus.pulse,
     stack: new Set(actions.focus.stack().map(entry => entry.id)),
     trail: trailRanks(history, graph, ctx.config.trailLength),
     rejected: rejectedEdges(history, graph, ctx.config.rejectedOutcomes)
@@ -275,7 +296,9 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
 }
 
 /**
- * The edge views and the items a trail edge touches.
+ * The edge views and the items a trail edge touches. Trail and rejections are graph facts (keyed
+ * by the local edge key); the selected edge is one instance. Edges into or out of the current
+ * node never dim.
  *
  * @param ctx - Domain context of flowView.
  * @param inputs - The view inputs.
@@ -288,19 +311,21 @@ function edgeViews(
   const trailItems = new Set<ItemKey>();
   const edges = new Map<string, EdgeView>();
   for (const edge of inputs.result.edges) {
-    const rank = edge.kind === "edge" ? inputs.trail.get(edge.key) : undefined;
+    const graphKey = localKey(edge.key);
+    const rank = edge.kind === "edge" ? inputs.trail.get(graphKey) : undefined;
     if (rank !== undefined) {
       trailItems.add(edge.from);
       if (edge.to !== undefined) trailItems.add(edge.to);
     }
-    const related =
-      inputs.selected !== undefined &&
-      (edge.from === inputs.selected || edge.to === inputs.selected);
+    const touches = (key: ItemKey | undefined): boolean =>
+      key !== undefined && (edge.from === key || edge.to === key);
+    const related = touches(inputs.selected);
     edges.set(edgeId(edge), {
       rank,
-      rejected: edge.kind === "edge" && inputs.rejected.has(edge.key),
+      recent: rank !== undefined && rank < RECENT_TRAIL,
+      rejected: edge.kind === "edge" && inputs.rejected.has(graphKey),
       related,
-      dimmed: inputs.related !== undefined && !related,
+      dimmed: inputs.related !== undefined && !related && !touches(inputs.current),
       selected: edge.kind === "edge" && ctx.state.focus.edge === edge.key
     });
   }
@@ -344,32 +369,13 @@ function hubOf(
  */
 function stubOf(ctx: FlowCtx, inputs: ViewInputs, item: Item): StubView {
   const into = inputs.result.edges.find(edge => edge.kind === "edge" && edge.to === item.key);
-  const entry = into === undefined ? undefined : inputs.rejected.get(into.key);
+  const graphKey = into === undefined ? undefined : localKey(into.key);
+  const entry = graphKey === undefined ? undefined : inputs.rejected.get(graphKey);
   return {
-    trail: into !== undefined && inputs.trail.has(into.key),
+    trail: graphKey !== undefined && inputs.trail.has(graphKey),
     rejected: entry === undefined ? undefined : rejectedText(entry, ctx.state.focus.frames),
     selected: inputs.selected === item.key,
-    dimmed: inputs.related !== undefined && !inputs.related.has(item.key)
-  };
-}
-
-/**
- * The view of a note node.
- *
- * @param ctx - Domain context of flowView.
- * @param item - The note item.
- * @returns The note view.
- */
-function noteOf(ctx: FlowCtx, item: Item): NoteView {
-  const note = ctx.state.notes.files.find(file => file.path === item.id)?.note;
-  return {
-    title: note?.title ?? item.label ?? item.id,
-    lines: (note?.body ?? "")
-      .split("\n")
-      .filter(line => line.trim() !== "")
-      .slice(0, 3),
-    captures: note?.captures.length ?? 0,
-    status: note?.status ?? "idea"
+    dimmed: isDimmed(inputs, item.key)
   };
 }
 
@@ -408,7 +414,6 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
   const hubs = new Map<ItemKey, HubView>();
   const frames = new Map<ItemKey, FrameView>();
   const stubs = new Map<ItemKey, StubView>();
-  const notes = new Map<ItemKey, NoteView>();
   for (const item of inputs.result.items) {
     switch (item.kind) {
       case "node": {
@@ -421,10 +426,6 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
       }
       case "stub": {
         stubs.set(item.key, stubOf(ctx, inputs, item));
-        break;
-      }
-      case "note": {
-        notes.set(item.key, noteOf(ctx, item));
         break;
       }
       case "frame": {
@@ -443,11 +444,28 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
     hubs,
     frames,
     stubs,
-    notes,
     edges,
     trailLanes: trailLanesOf(inputs.result, inputs.trail),
     stale: ctx.state.data.stale
   };
+}
+
+/**
+ * The trail edges of a world (the minimap draws them), newest first.
+ *
+ * @param world - The world view.
+ * @returns The drawn edges that are on the trail.
+ * @example
+ * ```ts
+ * trailEdges(world).map(edge => edge.key); // ["main/board>board/merge:done", "main/board>board/awaitIntent:merge"]
+ * ```
+ */
+export function trailEdges(world: WorldView | undefined): readonly EdgePath[] {
+  if (world === undefined) return [];
+  const rank = (edge: EdgePath): number | undefined => world.edges.get(edgeId(edge))?.rank;
+  return world.result.edges
+    .filter(edge => rank(edge) !== undefined)
+    .toSorted((a, b) => (rank(a) ?? 0) - (rank(b) ?? 0));
 }
 
 /**
@@ -522,17 +540,25 @@ function soleParentFrame(ctx: FlowCtx, graph: GraphJson, flow: string): NodeId |
 
 /**
  * The outcome rows of the Info tab: target, back edge, waiting, frame of the last fire and of the
- * last rejection.
+ * last rejection, and the instance edge on the canvas.
  *
  * @param ctx - Domain context of flowView.
  * @param graph - The graph.
  * @param id - The node id.
  * @param current - Whether it is the current node (its outcomes can be waiting).
+ * @param key - The instance key of the shown node on the canvas.
  * @returns The rows, in declared order.
  */
-function outcomeRows(ctx: FlowCtx, graph: GraphJson, id: NodeId, current: boolean): InfoOutcome[] {
+function outcomeRows(
+  ctx: FlowCtx,
+  graph: GraphJson,
+  id: NodeId,
+  current: boolean,
+  key: ItemKey | undefined
+): InfoOutcome[] {
   const { history, position } = ctx.state.data;
   const { frames } = ctx.state.focus;
+  const result = ctx.state.layout.result;
   const fires = lastFires(history, graph);
   const rejected = rejectedEdges(history, graph, ctx.config.rejectedOutcomes);
   const waiting = current ? (position?.waiting ?? []) : [];
@@ -542,6 +568,10 @@ function outcomeRows(ctx: FlowCtx, graph: GraphJson, id: NodeId, current: boolea
     const rejection = rejected.get(row.key);
     return {
       outcome: row.outcome,
+      edgeKey:
+        key === undefined || result === undefined
+          ? undefined
+          : outgoingEdgeKey(result, key, row.outcome),
       target: targetText(row.to, row.exit),
       targetId: row.to,
       back: row.back,
@@ -550,6 +580,58 @@ function outcomeRows(ctx: FlowCtx, graph: GraphJson, id: NodeId, current: boolea
       rejected: rejection === undefined ? undefined : `✕ ${frameLabel(rejection, frames)}`
     };
   });
+}
+
+/**
+ * The Comes from rows of the Info tab: source, outcome, "via" parent, frame of the last fire, and
+ * the instance edge and source on the canvas.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param graph - The graph.
+ * @param id - The node id.
+ * @param key - The instance key of the shown node on the canvas.
+ * @returns The rows.
+ */
+function sourceRows(
+  ctx: FlowCtx,
+  graph: GraphJson,
+  id: NodeId,
+  key: ItemKey | undefined
+): InfoSource[] {
+  const fires = lastFires(ctx.state.data.history, graph);
+  const result = ctx.state.layout.result;
+  return incoming(graph, id).map(row => {
+    const fire = fires.get(row.key);
+    const drawn =
+      key === undefined || result === undefined ? undefined : incomingEdge(result, key, row);
+    return {
+      from: row.from,
+      outcome: row.outcome,
+      via: row.via,
+      edgeKey: drawn?.edgeKey,
+      sourceKey: drawn?.sourceKey,
+      frame: fire === undefined ? undefined : frameLabel(fire, ctx.state.focus.frames)
+    };
+  });
+}
+
+/**
+ * The instance of a node the Info tab speaks for: the selection when it is that node, else the
+ * current node's item when it is, else the node's first instance.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param actions - The flowView actions.
+ * @param id - The node id.
+ * @returns The instance key, or undefined when the node is not on the canvas.
+ */
+function shownKey(ctx: FlowCtx, actions: FlowActions, id: NodeId): ItemKey | undefined {
+  const result = ctx.state.layout.result;
+  const selected = ctx.state.focus.selected;
+  const selectedItem = selected === undefined ? undefined : result?.byKey[selected];
+  if (selectedItem?.id === id && selectedItem.kind !== "stub") return selectedItem.key;
+  const current = actions.focus.locateCurrent()?.item;
+  if (current?.id === id) return current.key;
+  return result?.items.find(item => item.id === id && isNodeItem(item))?.key;
 }
 
 /**
@@ -569,9 +651,7 @@ export function infoView(ctx: FlowCtx, actions: FlowActions, id: NodeId): InfoVi
   if (graph === undefined || node === undefined) return undefined;
 
   const current = actions.focus.current() === id;
-  const key = ctx.state.layout.result?.items.find(
-    item => item.id === id && item.kind !== "stub" && item.kind !== "note"
-  )?.key;
+  const key = shownKey(ctx, actions, id);
   const lookup = ctx.state.inspector.sources;
 
   return {
@@ -588,12 +668,8 @@ export function infoView(ctx: FlowCtx, actions: FlowActions, id: NodeId): InfoVi
     subFlow: node.subFlow,
     key,
     expanded: key !== undefined && ctx.state.layout.expanded.has(key),
-    outcomes: outcomeRows(ctx, graph, id, current),
-    comesFrom: incoming(graph, id).map(row => ({
-      from: row.from,
-      outcome: row.outcome,
-      via: row.via
-    })),
+    outcomes: outcomeRows(ctx, graph, id, current, key),
+    comesFrom: sourceRows(ctx, graph, id, key),
     file: lookup === undefined ? undefined : fileOfNode(lookup, graph, id)
   };
 }

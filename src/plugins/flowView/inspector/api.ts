@@ -1,7 +1,8 @@
 /**
  * @file flowView inspector module — the inspector actions behind the Inspector tabs, the palette
- * items and the hooks: tabs, the Code tab (read, edit, save, reload), the Styles tab (cards,
- * steppers, keys for the palette), node files, "Open in Files" (R4) and "Open in editor" (D-08).
+ * items and the hooks: tabs, the Code tab (read, edit, save, reload), the Styles tab (the styles
+ * file, cards, steppers, keys for the palette), node files, "Open in Files" (R4) and "Open in
+ * editor" (D-08).
  */
 import { editorUrlOf } from "../../panels/shared/editor-url";
 import { isStyleEditError, loadStyleFile } from "../../panels/shared/style-edit";
@@ -9,7 +10,8 @@ import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
 import { lookupOf, openCode, reloadCode, saveCode } from "./code";
 import { fileOfNode, lineOf } from "./files";
-import { keysOf, openStyles, stepStyle, usedByOf } from "./styles";
+import { keysOf, openStyles, stepStyle } from "./styles";
+import { stylesFileOf } from "./styles-file";
 import type { InspectorActions } from "./types";
 
 /**
@@ -22,7 +24,7 @@ import type { InspectorActions } from "./types";
 export function shownNode(ctx: FlowCtx, env: FlowEnvironment): NodeId | undefined {
   const selected = ctx.state.focus.selected;
   const item = selected === undefined ? undefined : ctx.state.layout.result?.byKey[selected];
-  if (item !== undefined && item.kind !== "note" && item.kind !== "stub" && item.kind !== "port") {
+  if (item !== undefined && item.kind !== "stub" && item.kind !== "port") {
     return item.id;
   }
   return env.actions().focus.current();
@@ -106,7 +108,7 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
 
     selectStyle: key => {
       if (inspector.styles === undefined) return;
-      inspector.styles.key = key;
+      inspector.styles.key = key === "" ? undefined : key;
       inspector.styles.error = undefined;
       notify(ctx.state);
     },
@@ -117,13 +119,17 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
 
     readStyleKeys: async () => {
       try {
-        const loaded = await loadStyleFile(env.files(), ctx.config.stylesFile);
-        env.setStyleItems(isStyleEditError(loaded) ? [] : keysOf(loaded.file.blocks));
+        const file = await stylesFileOf(ctx, env);
+        const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+        const isReadable = loaded !== undefined && !isStyleEditError(loaded);
+        env.setStyleItems(isReadable ? keysOf(loaded.file.blocks) : []);
       } catch (error) {
         ctx.log.debug("flowView: style keys not read", { reason: String(error) });
         env.setStyleItems([]);
       }
     },
+
+    stylesFile: () => stylesFileOf(ctx, env),
 
     fileOf: async id => {
       const { graph } = ctx.state.data;
@@ -145,14 +151,6 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
     editorUrl: (path, line) => {
       const boot = env.boot();
       return boot === undefined ? undefined : editorUrlOf(boot.editorUrl, boot.root, path, line);
-    },
-
-    usedBy: async key => {
-      try {
-        return usedByOf(await env.read("game.ui"), key);
-      } catch {
-        return [];
-      }
     }
   };
   return actions;

@@ -17,7 +17,6 @@ export const ESC_RANK: readonly EscLayer[] = [
   "palette",
   "contactSheet",
   "contextMenu",
-  "noteEditor",
   "registry",
   "seriesPopover",
   "captureCard",
@@ -25,6 +24,7 @@ export const ESC_RANK: readonly EscLayer[] = [
   "fileEdit",
   "codeEdit",
   "stepPopover",
+  "reference",
   "selection"
 ];
 

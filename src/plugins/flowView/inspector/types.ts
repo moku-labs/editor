@@ -1,6 +1,7 @@
 /**
- * @file flowView inspector module — types: tabs, the code and styles slices, the node → file
- * lookup, the inspector actions. Style edit types come from panels/shared/style-edit.
+ * @file flowView inspector module — types: tabs, the code and styles slices, the found styles
+ * file, the node → file lookup, the inspector actions, the Info view. Style edit types come from
+ * panels/shared/style-edit.
  */
 import type { StyleBlock, StyleEditError } from "../../panels/shared/style-edit";
 import type { SourceOverrides } from "../../registry/protocol";
@@ -9,7 +10,7 @@ import type { NodeId } from "../types";
 /**
  * An Inspector tab.
  */
-export type InspectorTab = "info" | "code" | "styles" | "notes";
+export type InspectorTab = "info" | "code" | "styles";
 
 /**
  * The status line of a save.
@@ -55,9 +56,12 @@ export type CodeState = {
  * The Styles tab slice.
  */
 export type StylesState = {
+  /** The styles file the cards come from; undefined when none was found. */
+  file: string | undefined;
   text: string;
   version: string;
   blocks: StyleBlock[];
+  /** The chosen card; undefined until the person picks one (no preselect). */
   key: string | undefined;
   pending: PendingEdit | undefined;
   result: SaveResult | undefined;
@@ -74,6 +78,10 @@ export type InspectorState = {
   codeNote: string | undefined;
   styles: StylesState | undefined;
   sources: SourceLookup | undefined;
+  /** The styles file searched once per session (no `stylesFile` in the config). */
+  found:
+    | { readonly session: string | undefined; readonly path: Promise<string | undefined> }
+    | undefined;
 };
 
 /**
@@ -96,25 +104,28 @@ export type InspectorActions = {
   saveCode(force?: boolean): Promise<void>;
   /** Reads the file again and drops the draft ("Reload file"). */
   reloadCode(): Promise<void>;
-  /** Shows the Styles tab and reads stylesFile into it; selects a key's card. */
+  /** Shows the Styles tab and reads the styles file into it; selects a key's card. */
   openStyles(key?: string): Promise<void>;
-  /** Selects a style card. */
+  /** Selects a style card ("" = none). */
   selectStyle(key: string): void;
   /** One stepper press; a burst is written once after styleSaveDelayMs. */
   stepStyle(path: string, direction: 1 | -1, big: boolean): void;
   /**
-   * Reads stylesFile and replaces the palette group Styles (no tab change); an unreadable file
-   * empties the group.
+   * Reads the styles file and replaces the palette group Styles (no tab change); no file or an
+   * unreadable one empties the group.
    */
   readStyleKeys(): Promise<void>;
+  /**
+   * The styles file: `stylesFile` from the config, else the first `.ts`/`.tsx` file under the link
+   * root calling `defineTextStyles(` (searched once per session); undefined when none.
+   */
+  stylesFile(): Promise<string | undefined>;
   /** The file and line of a node (line 1 when the file cannot be read), or undefined. */
   fileOf(id: NodeId): Promise<{ readonly path: string; readonly line: number } | undefined>;
   /** "Open in Files": emits workspace:open-file (R4). */
   openInFiles(path: string, line?: number): void;
   /** "Open in editor" link from link.boot() (D-08), undefined without boot. */
   editorUrl(path: string, line?: number): string | undefined;
-  /** UI nodes whose text style is the key, from one game.ui read (F-G1); empty when it fails. */
-  usedBy(key: string): Promise<readonly string[]>;
 };
 
 /**
@@ -122,6 +133,8 @@ export type InspectorActions = {
  */
 export type InfoOutcome = {
   readonly outcome: string;
+  /** The instance edge on the canvas (`focus.followEdge`); undefined when it is not drawn. */
+  readonly edgeKey: string | undefined;
   /** "tapGenerator", "exit:left → home", "—". */
   readonly target: string;
   readonly targetId: NodeId | undefined;
@@ -131,6 +144,21 @@ export type InfoOutcome = {
   readonly frame: string | undefined;
   /** "✕ f1778" when the last fire was a rejection. */
   readonly rejected: string | undefined;
+};
+
+/**
+ * One Comes from row of the Info tab.
+ */
+export type InfoSource = {
+  readonly from: NodeId;
+  readonly outcome: string;
+  readonly via: NodeId | undefined;
+  /** The instance edge on the canvas (`focus.followEdge`); undefined when it is not drawn. */
+  readonly edgeKey: string | undefined;
+  /** The instance of the source on the canvas; undefined with the edge. */
+  readonly sourceKey: string | undefined;
+  /** Frame label of the edge's last fire. */
+  readonly frame: string | undefined;
 };
 
 /**
@@ -152,11 +180,7 @@ export type InfoView = {
   readonly key: string | undefined;
   readonly expanded: boolean;
   readonly outcomes: readonly InfoOutcome[];
-  readonly comesFrom: readonly {
-    readonly from: NodeId;
-    readonly outcome: string;
-    readonly via: NodeId | undefined;
-  }[];
+  readonly comesFrom: readonly InfoSource[];
   /** The node's file when the lookup is loaded. */
   readonly file: string | undefined;
 };

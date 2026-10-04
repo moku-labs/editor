@@ -6,7 +6,6 @@
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
-import type { Note } from "../panels/shared/notes";
 import type { FileEntry, Json, NodeRef, SourceOverrides } from "../registry/protocol";
 
 /**
@@ -173,12 +172,19 @@ export type SeriesIndex = {
 };
 
 /**
- * A markdown file split for the preview: no front matter, a note the shared codec read, or a
- * front matter it could not read (shown raw).
+ * Any Markdown file split for the preview (`frontMatterParts`): no front matter, or the raw lines
+ * of its front matter (shown as one plain `<pre data-front-matter>` block) and the body after it.
+ * The name is older than the notes removal; it stays because the public `FilesView` namespace
+ * (src/tools.ts) exports it.
+ *
+ * @example
+ * ```ts
+ * // The preview of docs/plan.md, a Markdown file with a title in its front matter.
+ * const parts: NoteParts = { kind: "raw", lines: ["title: Plan"], body: "# Plan\n" };
+ * ```
  */
 export type NoteParts =
   | { readonly kind: "none"; readonly body: string }
-  | { readonly kind: "note"; readonly note: Note; readonly body: string }
   | { readonly kind: "raw"; readonly lines: readonly string[]; readonly body: string };
 
 /**
@@ -324,7 +330,8 @@ export type FilesViewApi = {
    * @param mode - "preview" or "source".
    * @example
    * ```ts
-   * app.filesView.setMode(".moku/notes/2026-09-24-first-top-item.md", "source");
+   * await app.filesView.open("docs/levels.md");
+   * app.filesView.setMode("docs/levels.md", "source"); // the tab shows the Markdown as code
    * ```
    */
   setMode(path: string, mode: "preview" | "source"): void;

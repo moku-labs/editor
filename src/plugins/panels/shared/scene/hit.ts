@@ -44,7 +44,7 @@ const DRAWING_KEYS: readonly string[] = ["fill", "stroke", "nineSlice", "shape"]
  * isLayoutOnly(backdropNode); // false: a button with a fill
  * ```
  */
-function isLayoutOnly(node: SceneNode): boolean {
+export function isLayoutOnly(node: SceneNode): boolean {
   if (node.ref.kind !== "ui" || !LAYOUT_TYPES.has(node.type)) return false;
   const style = node.style ?? {};
   return DRAWING_KEYS.every(key => style[key] === undefined);

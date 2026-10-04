@@ -101,7 +101,6 @@ function compose(engine: LayoutEngine) {
     root: "main",
     expanded,
     pins: emptyPins(),
-    notes: [],
     config: testConfig(),
     engine
   });

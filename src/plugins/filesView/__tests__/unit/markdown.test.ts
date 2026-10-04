@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { render } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { linkTarget, renderMarkdown, resolvePath } from "../../preview/markdown";
+import { frontMatterParts, linkTarget, renderMarkdown, resolvePath } from "../../preview/markdown";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // renderMarkdown: a safe subset built from VNodes only — headings, lists, fences,
-// quotes, rules, paragraphs, inline marks and links (http(s), relative, text)
+// quotes, rules, paragraphs, inline marks and links (http(s), relative, text);
+// frontMatterParts: the front matter cut at the `---` fences, shown as plain text
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: HTMLElement;
@@ -145,5 +146,35 @@ describe("resolvePath and linkTarget", () => {
     expect(linkTarget("mailto:a@b.c")).toBe("text");
     expect(linkTarget("//evil.example/x")).toBe("text");
     expect(linkTarget("#top")).toBe("text");
+  });
+});
+
+describe("frontMatterParts", () => {
+  it("passes a file without front matter through as the body", () => {
+    expect(frontMatterParts("# Title\n")).toEqual({ kind: "none", body: "# Title\n" });
+  });
+
+  it("cuts the front matter at the fences and keeps the body after the closing one", () => {
+    expect(frontMatterParts("---\ntitle: First\nstatus: todo\n---\n# Body\n")).toEqual({
+      kind: "raw",
+      lines: ["title: First", "status: todo"],
+      body: "# Body\n"
+    });
+  });
+
+  it("reads a front matter after a byte order mark and with CRLF line ends", () => {
+    expect(frontMatterParts("\uFEFF---\r\ntitle: x\r\n---\r\nBody")).toEqual({
+      kind: "raw",
+      lines: ["title: x"],
+      body: "Body"
+    });
+  });
+
+  it("treats a front matter without a closing fence as raw lines and no body", () => {
+    expect(frontMatterParts("---\ntitle: x\nstill front\n")).toEqual({
+      kind: "raw",
+      lines: ["title: x", "still front", ""],
+      body: ""
+    });
   });
 });

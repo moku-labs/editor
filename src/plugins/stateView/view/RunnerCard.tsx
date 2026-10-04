@@ -9,6 +9,7 @@ import { field } from "../model";
 import { stackOf } from "../stack";
 import { compactJson } from "../tree";
 import type { StateViewApi } from "../types";
+import { Card } from "./Card";
 
 /**
  * Props of `RunnerCard`.
@@ -129,10 +130,7 @@ export function RunnerCard(props: RunnerCardProps): VNode {
       : frames.map(frame => `${frame.flow}/${frame.node}`).join(" › ");
 
   return (
-    <section data-card="" data-part="runner-card" aria-label="Runner">
-      <header data-part="head">
-        <h3>Runner</h3>
-      </header>
+    <Card part="runner-card" title="Runner">
       <dl data-props="">
         <dt>path</dt>
         <dd data-part="mono">{path ?? NONE}</dd>
@@ -157,6 +155,6 @@ export function RunnerCard(props: RunnerCardProps): VNode {
           </li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 }

@@ -62,9 +62,9 @@ describe("releaseIntent (M2)", () => {
     }
   });
 
-  it("a click on a card or a note selects it; a drag is no click", () => {
+  it("a click on a card selects it; a drag is no click", () => {
     expect(releaseIntent(0, "card", "board/merge")).toEqual({ kind: "select", key: "board/merge" });
-    expect(releaseIntent(1, "note", "note:a.md")).toEqual({ kind: "select", key: "note:a.md" });
+    expect(releaseIntent(1, "card", "main/home")).toEqual({ kind: "select", key: "main/home" });
     expect(releaseIntent(3, "card", "board/merge")).toBeUndefined();
     expect(releaseIntent(5, "canvas", undefined)).toBeUndefined();
   });

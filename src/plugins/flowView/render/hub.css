@@ -1,4 +1,4 @@
-/* flowView · hub (G): 200 px wide, head with name, You are here, kind and waiting count; one 22 px port row per outcome with a right-aligned label and a dot. No @layer wrapper (R7). */
+/* flowView · hub (G): 200 px wide, head with name, You are here, kind and waiting count; one 22 px port row per outcome with a right-aligned label and a dot. A dimmed hub stays opaque (only its content fades); a pulse plays one 600 ms ring. No @layer wrapper (R7). */
 
 @scope ([data-flow="hub"]) {
   :scope {
@@ -18,7 +18,36 @@
   }
 
   :scope[data-dimmed] {
+    border-color: var(--line-1);
+  }
+
+  :scope[data-dimmed] > * {
     opacity: 0.16;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope[data-pulse] {
+      animation: flow-hub-pulse 600ms var(--ease-out);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-pulse] {
+      outline: 2px solid var(--accent);
+      outline-offset: 4px;
+    }
+  }
+
+  @keyframes flow-hub-pulse {
+    from {
+      outline: 2px solid var(--accent);
+      outline-offset: 0;
+    }
+
+    to {
+      outline: 2px solid transparent;
+      outline-offset: 14px;
+    }
   }
 
   [data-part="head"] {

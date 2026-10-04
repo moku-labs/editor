@@ -1,8 +1,8 @@
 /**
  * Complex tier — the Game workspace: device stage, element picker, Element and Device tabs,
- * screenshots, series and the contact sheet. Declares no events; emits the global
- * `workspace:reveal`, `workspace:new-note`, `workspace:open-file`; hooks `link:status`,
- * `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
+ * screenshots, series, the contact sheet and the Reference mode proxies. Declares no events;
+ * emits the global `workspace:reveal`, `workspace:open-file`; hooks `link:status`,
+ * `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
  *
  * @see README.md
  */
@@ -18,13 +18,12 @@ import type { GameViewConfig } from "./types";
 
 const defaultConfig: GameViewConfig = {
   capturesDir: ".moku/captures",
-  notesDir: ".moku/notes",
   manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"],
   captureCardMs: 10_000,
   seriesDurationsMs: [1000, 2000, 5000, 10_000, 20_000],
   seriesIntervalsMs: [16, 50, 100, 250, 500, 1000],
   seriesWarnShots: 200,
-  sourceSearch: { maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }
+  sourceSearch: { maxFiles: 1500, skip: ["node_modules", "dist", ".git", ".moku"] }
 };
 
 /**

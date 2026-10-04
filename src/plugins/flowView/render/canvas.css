@@ -5,7 +5,8 @@
     --flow-node-w: 172px;
     --flow-row: 46px;
     --flow-label-min: 11px;
-    --flow-strip-h: 224px;
+    /* The containing block of the Inspector drawer (SidePanel overlay mode). */
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     height: 100%;

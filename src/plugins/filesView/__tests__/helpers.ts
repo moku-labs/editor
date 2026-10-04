@@ -192,6 +192,8 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       boot: () => link.bootValue,
       frameUrl: url => url,
       isOtherTab: () => false,
+      onTap: vi.fn(() => unwatch),
+      heap: vi.fn(() => undefined),
       files: files.client
     },
     attach(manifest) {

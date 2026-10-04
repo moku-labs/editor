@@ -1,15 +1,18 @@
 /**
  * @file workspace plugin — the palette index: items by id (an existing id is replaced), groups in
  * fixed order with 3 items each without a query and up to 8 with one (fuzzy only when nothing
- * matches as a substring), open/close, running an item or its ⇧↵ alt, and the built-in Commands.
+ * matches as a substring), open/close, running an item or its ⇧↵ alt, and the built-in Commands
+ * (game, Reference mode, preview, theme, density, Show taps, go-to, reload, registry, retry).
  */
 import { linkPlugin } from "../../link";
 import { openPopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { reloadFrame } from "../frame/reload";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { setOverlayInGame } from "../overlay";
-import { chooseTheme } from "../prefs/apply";
+import { chooseDensity, chooseShowTaps, chooseTheme } from "../prefs/apply";
+import { DENSITY_CHOICES } from "../prefs/density";
 import { effectiveTheme } from "../prefs/theme";
+import { toggleReference } from "../reference";
 import type {
   PaletteGroup,
   PaletteGroupView,
@@ -280,10 +283,10 @@ function needsGame(state: WorkspaceState): string | false {
 }
 
 /**
- * The game commands: step, pause/resume, overlay.
+ * The game commands: step, pause/resume, overlay, Reference mode.
  *
  * @param ctx - Domain context of workspace.
- * @returns Three items.
+ * @returns Four items.
  */
 function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -313,15 +316,71 @@ function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
         void setOverlayInGame(ctx, !state.overlayInGame, "palette");
       },
       { shortcut: "O" }
+    ),
+    command(
+      "cmd:reference",
+      () => `Reference mode ${state.reference ? "off" : "on"}`,
+      () => {
+        toggleReference(ctx);
+      },
+      { shortcut: "R", keywords: "reference pick element chat" }
     )
   ];
 }
 
 /**
- * The shell commands: preview, theme, the six go-to items.
+ * The density items, one per choice; the one in use is dimmed with its reason.
  *
  * @param ctx - Domain context of workspace.
- * @returns Eight items.
+ * @returns Three items: auto, compact, comfortable.
+ */
+function densityCommands(ctx: WorkspaceCtx): PaletteItem[] {
+  const { state } = ctx;
+  return DENSITY_CHOICES.map(choice =>
+    command(
+      `workspace:density-${choice}`,
+      () => `Density: ${choice}`,
+      () => {
+        chooseDensity(ctx, choice);
+      },
+      { keywords: "density compact comfortable spacing" },
+      () => (state.density.chosen === choice ? `Density is ${choice} now` : false)
+    )
+  );
+}
+
+/**
+ * The Show taps item: turns the tap ripples on or off; its hint names the state.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns The item.
+ */
+function tapsCommand(ctx: WorkspaceCtx): PaletteItem {
+  const { state } = ctx;
+  return {
+    id: "cmd:taps",
+    group: "Commands",
+    label: "Show taps in the game",
+    keywords: "tap ripple touch",
+    /**
+     * Whether taps show now.
+     *
+     * @returns "on" or "off".
+     */
+    get hint() {
+      return state.showTaps ? "on" : "off";
+    },
+    run: () => {
+      chooseShowTaps(ctx, !state.showTaps);
+    }
+  };
+}
+
+/**
+ * The shell commands: preview, theme, density, Show taps, the six go-to items.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns Twelve items.
  */
 function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -358,6 +417,8 @@ function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
         chooseTheme(ctx);
       }
     ),
+    ...densityCommands(ctx),
+    tapsCommand(ctx),
     ...goTo
   ];
 }

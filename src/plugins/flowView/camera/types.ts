@@ -51,7 +51,7 @@ export type CameraIntent =
 /**
  * What a pointer went down on (input.ts hit rules, M2).
  */
-export type HitTarget = "canvas" | "frame" | "lane" | "hub-head" | "card" | "note";
+export type HitTarget = "canvas" | "frame" | "lane" | "hub-head" | "card";
 
 /**
  * The camera namespace of the api (`app.flowView.camera`).
@@ -146,15 +146,20 @@ export type CameraActions = CameraApi & {
   focusItem(item: Item): void;
   /** Follow move onto an item (followCamera, 500 ms). */
   followItem(item: Item): void;
+  /**
+   * Fits the placed items among the keys (both ends of a followed edge) inside the insets,
+   * animated over 420 ms; false when none of them is placed.
+   */
+  frameItems(keys: readonly ItemKey[]): boolean;
   /** Applies the default camera once per root (M11), without a tween. */
   applyDefault(): void;
   /** Records the canvas size; applies the default camera when it was not yet applied. */
   setView(view: ViewSize): void;
-  /** The insets of the available rect: strip, preview column (also stored in state). */
+  /** The insets of the available rect: the preview column (also stored in state). */
   insets(): ViewInsets;
   /**
    * The insets of the preview zone in a canvas of this size: the top band, and at the bottom the
-   * zoom bar band and the strip, raised above the minimap when the float shares its columns.
+   * zoom bar band, raised above the minimap when the float shares its columns.
    */
   previewZone(canvas: ViewSize): ZoneInsets;
   /** Cancels the running tween. */

@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  projectionsBehind,
-  recalibrate,
-  startSceneWatches,
-  stopSceneWatches
-} from "../../scene/watch";
+import { recalibrate } from "../../scene/calibrate";
+import { projectionsBehind, startSceneWatches, stopSceneWatches } from "../../scene/watch";
 import { subscribe } from "../../state";
 import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
 
@@ -95,13 +91,18 @@ describe("startSceneWatches", () => {
     expect(ctx.state.scene?.calibrated).toBe(true);
   });
 
-  it("reads game.rect again after a device change (recalibrate)", async () => {
+  it("reads game.rect again after a device change, once the next ui snapshot arrived", async () => {
     startSceneWatches(ctx);
     sendBoard();
     await flush();
     ctx.link.values.set("game.rect", { x: 0, y: 0, w: 540, h: 720 });
 
     recalibrate(ctx);
+    ctx.link.send("game.entities", BOARD.entities);
+    await flush();
+    expect(ctx.link.read.mock.calls.filter(call => call[0] === "game.rect")).toHaveLength(1);
+
+    ctx.link.send("game.ui", BOARD.ui);
     await flush();
     flushFrames();
 

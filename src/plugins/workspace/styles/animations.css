@@ -17,3 +17,16 @@
     opacity: 0.35;
   }
 }
+
+/* A tap ripple in the game frame: 20 px → 36 px, fading out (frame/Frame.css). */
+@keyframes tap-ripple {
+  from {
+    opacity: 0.9;
+    scale: 1;
+  }
+
+  to {
+    opacity: 0;
+    scale: 1.8;
+  }
+}

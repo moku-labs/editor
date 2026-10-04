@@ -1,6 +1,7 @@
 /* Tools page CSS entry (R3). Family layer order and tokens come from workspace; every view sheet joins layer(components). Imports only, no rule of its own. */
 @import "../../workspace/styles/index.css";
 @import "../../panels/panels.css" layer(components);
+@import "../../panels/shared/side-panel/side-panel.css" layer(components);
 @import "../../flowView/camera/minimap.css" layer(components);
 @import "../../flowView/camera/zoom-bar.css" layer(components);
 @import "../../flowView/render/canvas.css" layer(components);
@@ -10,19 +11,16 @@
 @import "../../flowView/render/frame.css" layer(components);
 @import "../../flowView/render/edges.css" layer(components);
 @import "../../flowView/render/stub.css" layer(components);
-@import "../../flowView/render/note-node.css" layer(components);
 @import "../../flowView/render/you-are-here.css" layer(components);
+@import "../../flowView/render/offscreen.css" layer(components);
 @import "../../flowView/render/breadcrumb.css" layer(components);
 @import "../../flowView/render/canvas-toolbar.css" layer(components);
 @import "../../flowView/render/context-menu.css" layer(components);
 @import "../../flowView/render/history-strip.css" layer(components);
-@import "../../flowView/focus/neighbours-strip.css" layer(components);
-@import "../../flowView/notes/note-editor.css" layer(components);
 @import "../../flowView/inspector/inspector.css" layer(components);
 @import "../../flowView/inspector/InfoTab.css" layer(components);
 @import "../../flowView/inspector/CodeTab.css" layer(components);
 @import "../../flowView/inspector/StylesTab.css" layer(components);
-@import "../../flowView/inspector/NotesTab.css" layer(components);
 @import "../../gameView/ui/styles/game.css" layer(components);
 @import "../../renderView/styles/render.css" layer(components);
 @import "../../stateView/view/StateView.css" layer(components);

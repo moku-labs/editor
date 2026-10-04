@@ -102,13 +102,6 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
   if (subFlow !== undefined)
     items.push(menuItem(`Enter ${subFlow}`, () => actions.flows.enter(key)));
 
-  // One "Add note" per outcome of the node.
-  for (const outcome of node?.outcomes ?? []) {
-    items.push(
-      menuItem(`Add note on ${outcome}`, () => actions.notes.edit({ from: { node: id, outcome } }))
-    );
-  }
-
   // The node the game is on: step one frame (paused only), pause or resume.
   if (actions.focus.current() === id) {
     const isPaused = actions.focus.isPaused();
@@ -149,24 +142,14 @@ export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): 
     const { flow, node: name } = splitId(id);
     const raw = ctx.state.data.graph?.flows[flow]?.edges[name]?.[outcome] ?? "";
     const target = raw.startsWith("map:") ? raw.slice("map:".length) : raw;
-    const items = [
-      menuItem("Add note on this outcome", () =>
-        actions.notes.edit({ from: { node: id, outcome } })
-      )
+    if (target === "") return [];
+    return [
+      menuItem(`Focus ${target}`, () => {
+        if (!target.startsWith("exit:")) actions.focus.select(`${flow}/${target}`);
+      })
     ];
-    if (target !== "") {
-      items.push(
-        menuItem(`Focus ${target}`, () => {
-          if (!target.startsWith("exit:")) actions.focus.select(`${flow}/${target}`);
-        })
-      );
-    }
-    return items;
   }
-  const { cam } = ctx.state.camera;
-  const anchor = { x: (menu.x - cam.x) / cam.z, y: (menu.y - cam.y) / cam.z };
   return [
-    menuItem("Add note here", () => actions.notes.edit({ anchor })),
     menuItem("Fit all", () => actions.camera.fitAll()),
     menuItem(
       "Reset layout",
@@ -204,8 +187,8 @@ export function ContextMenu(props: ContextMenuProps): VNode {
     node.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [menu, element]);
 
-  if (menu === undefined) return <span data-closed="context-menu" hidden />;
-  const items = menuItems(ctx, actions, menu);
+  const items = menu === undefined ? [] : menuItems(ctx, actions, menu);
+  if (menu === undefined || items.length === 0) return <span data-closed="context-menu" hidden />;
   const canvas = ctx.state.view.root
     ?.querySelector('[data-flow="canvas"]')
     ?.getBoundingClientRect();

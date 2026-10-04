@@ -161,7 +161,7 @@ describe("workspace integration", () => {
     await app.stop();
   });
 
-  it("⌘2 shows Game and emits workspace:changed; Step while paused emits workspace:ran topbar", async () => {
+  it("⌘2 shows Flow and emits workspace:changed; Step while paused emits workspace:ran topbar", async () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));
@@ -173,8 +173,8 @@ describe("workspace integration", () => {
         new KeyboardEvent("keydown", { key: "2", code: "Digit2", metaKey: true, ctrlKey: true })
       );
     });
-    expect(app.workspace.active()).toBe("game");
-    expect(changed).toEqual(["game"]);
+    expect(app.workspace.active()).toBe("flow");
+    expect(changed).toEqual(["flow"]);
 
     hub.heartbeat("s-1", 1840, true);
     await until(() => app.link.status().kind === "paused", "paused");

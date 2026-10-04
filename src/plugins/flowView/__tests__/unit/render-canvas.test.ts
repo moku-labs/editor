@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHandlers } from "../../handlers";
+import { createTestCtx, jumpCamera } from "../ctx";
 import { mountWorkspace, pointer, prepared, settle } from "../render";
 
 afterEach(() => {
@@ -16,6 +17,18 @@ function card(host: HTMLElement, key: string): HTMLElement {
 }
 
 describe("Canvas (A1)", () => {
+  it("renders before the first flow values: the canvas and its chrome, no cards (the panel has no sources)", async () => {
+    jumpCamera();
+    vi.stubGlobal("ResizeObserver", undefined);
+    const { ctx } = createTestCtx();
+    const { host, unmount } = await mountWorkspace(ctx);
+    expect(host.querySelector('[data-flow="canvas"]')).not.toBeNull();
+    expect(host.querySelector('[data-flow="breadcrumb"]')).not.toBeNull();
+    expect(host.querySelectorAll('[data-flow="node-card"]')).toHaveLength(0);
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it("draws the world: frames, hub, lanes, cards, stubs, edges and the canvas chrome", async () => {
     const { ctx } = await prepared();
     const { host, unmount } = await mountWorkspace(ctx);
@@ -35,6 +48,37 @@ describe("Canvas (A1)", () => {
       expect(host.querySelector(`[data-flow="${part}"]`)).not.toBeNull();
     }
     expect(card(host, "main/board>board/awaitIntent").dataset.current).toBe("");
+    unmount();
+  });
+
+  it("paints the edges and their labels before the items, so cards cover the edges (finding 12)", async () => {
+    const { ctx } = await prepared();
+    const { host, unmount } = await mountWorkspace(ctx);
+    const children = [...host.querySelectorAll<HTMLElement>('[data-flow="world"] > *')];
+    const order = (flow: string) => children.findIndex(child => child.dataset.flow === flow);
+    const lastLabel = children.findLastIndex(child => child.dataset.flow === "edge-label");
+    expect(order("edges")).toBeGreaterThan(order("frame"));
+    expect(order("edges")).toBeGreaterThan(order("lane"));
+    expect(lastLabel).toBeGreaterThan(order("edges"));
+    for (const item of ["node", "hub", "stub", "port"]) {
+      expect(order(item), item).toBeGreaterThan(lastLabel);
+    }
+    unmount();
+  });
+
+  it("the current node never fades; edges into and out of it stay; unrelated items dim (finding 12)", async () => {
+    const { ctx, actions } = await prepared();
+    const { host, unmount } = await mountWorkspace(ctx);
+    await settle(() => actions.focus.select("main/home"));
+    const hub = card(host, "main/board>board/awaitIntent");
+    expect(hub.dataset.dimmed).toBeUndefined();
+    expect(card(host, "main/boot").dataset.dimmed).toBe("");
+    const { worldView } = await import("../../view-model");
+    const world = worldView(ctx, actions);
+    const tap = world?.edges.get("main/board>board/awaitIntent|tap|edge");
+    expect(tap?.dimmed).toBe(false);
+    const unrelated = world?.edges.get("main/board>board/merge|done|edge");
+    expect(unrelated?.dimmed).toBe(true);
     unmount();
   });
 

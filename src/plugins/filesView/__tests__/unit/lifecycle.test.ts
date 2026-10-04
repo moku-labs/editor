@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sidePanelState } from "../../../panels/shared/side-panel";
 import { initFilesView, startFilesView, stopFilesView } from "../../lifecycle";
 import { createFilesPanel } from "../../panel";
 import { setBuffer, setEditing } from "../../tabs/edit";
@@ -29,7 +30,7 @@ describe("initFilesView", () => {
     initFilesView(ctx);
     expect(ctx.register).toHaveBeenCalledTimes(1);
     expect(ctx.register.mock.calls[0]?.[0]).toMatchObject({ id: "files" });
-    expect(ctx.workspace.bindings).toHaveLength(1);
+    expect(ctx.workspace.bindings).toHaveLength(2);
     expect(ctx.workspace.bindings[0]).toMatchObject({
       keys: "mod+s",
       label: "Save file",
@@ -37,9 +38,30 @@ describe("initFilesView", () => {
       inInputs: true
     });
     expect(ctx.workspace.escapes.map(entry => entry.layer)).toEqual(["fileEdit"]);
-    expect(ctx.state.removers).toHaveLength(2);
+    expect(ctx.state.removers).toHaveLength(4);
     expect(ctx.files.client.list).not.toHaveBeenCalled();
     expect(ctx.files.client.read).not.toHaveBeenCalled();
+  });
+
+  it(String.raw`binds \ to the tree panel and adds the Show Files tree palette item`, () => {
+    localStorage.clear();
+    const ctx = createCtx();
+    initFilesView(ctx);
+    const toggle = ctx.workspace.bindings.find(binding => binding.keys === "\\");
+    expect(toggle).toMatchObject({
+      label: "Collapse or expand the Files tree",
+      workspace: "files"
+    });
+    expect(toggle?.inInputs).toBeUndefined();
+    toggle?.run(new KeyboardEvent("keydown", { key: "\\" }));
+    expect(sidePanelState("files.tree").collapsed).toBe(true);
+
+    const item = ctx.workspace.items.find(entry => entry.label === "Show Files tree");
+    expect(item).toMatchObject({ id: "files:show-tree", group: "Commands" });
+    item?.run();
+    expect(sidePanelState("files.tree").collapsed).toBe(false);
+    expect(ctx.workspace.show).toHaveBeenCalledWith("files");
+    localStorage.clear();
   });
 
   it("⌘S applies only while the active tab is editing and saves it", async () => {
@@ -137,11 +159,12 @@ describe("stopFilesView", () => {
     initFilesView(ctx);
     startFilesView(ctx);
     await ctx.state.indexing;
-    expect(ctx.workspace.paletteRemovers).toHaveLength(1);
+    // The Show Files tree item (onInit), then the file items (index build).
+    expect(ctx.workspace.paletteRemovers).toHaveLength(2);
     ctx.state.listeners.add(() => {});
     stopFilesView({ state: ctx.state });
     for (const remover of ctx.workspace.keyRemovers) expect(remover).toHaveBeenCalledTimes(1);
-    expect(ctx.workspace.paletteRemovers[0]).toHaveBeenCalledTimes(1);
+    for (const remover of ctx.workspace.paletteRemovers) expect(remover).toHaveBeenCalledTimes(1);
     expect(ctx.link.listeners.size).toBe(0);
     expect(remove).toHaveBeenCalledWith("beforeunload", expect.any(Function));
     expect(ctx.state.removers).toEqual([]);

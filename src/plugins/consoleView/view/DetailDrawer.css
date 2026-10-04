@@ -1,10 +1,12 @@
-/* consoleView · DetailDrawer. The bottom drawer of the selected line (max 40 % height): header with the close button, the property list ([data-props] atom) and the data as pretty JSON. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* consoleView · DetailDrawer. The bottom drawer of the selected line (max 40 % height, the full console width at every size): header with the close button, the property list ([data-props] atom, long values wrap) and the data as pretty JSON (scrolls inside). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="console"] [data-part="drawer"]) {
   :scope {
     display: flex;
     flex: none;
     flex-direction: column;
     gap: 8px;
+    inline-size: 100%;
+    min-inline-size: 0;
     max-block-size: 40%;
     padding: 10px 14px 14px;
     overflow: auto;
@@ -25,6 +27,11 @@
     color: var(--text-2);
   }
 
+  dd {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
   [data-field="source"],
   [data-field="event"],
   [data-field="time"] {
@@ -32,6 +39,7 @@
   }
 
   [data-json] {
+    max-inline-size: 100%;
     margin: 0;
     padding: 8px 10px;
     overflow: auto;

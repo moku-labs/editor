@@ -48,6 +48,24 @@ const SCREENLESS_IDS: ReadonlySet<string> = new Set([
   "game.projections"
 ]);
 
+/**
+ * The scene sources gameView watches while Game, the default workspace, is shown. On the
+ * screenless game they fail, so the link sends no `unwatch` for them (it has no wire sub to drop)
+ * and the tap still counts them open after Game was left: they are not wanted again.
+ */
+const SCENE_IDS: ReadonlySet<string> = new Set(["game.ui", "game.entities", "game.projections"]);
+
+/**
+ * The ids the tools page watches through the hub now: the tap's open watches without the failed
+ * scene watches of the Game workspace left behind.
+ *
+ * @param tap - The wire tap.
+ * @returns The watched ids, sorted, one per watch.
+ */
+function wantedIds(tap: Tap): string[] {
+  return tap.watchedIds().filter(id => !SCENE_IDS.has(id));
+}
+
 /** The consoleView meta line after a reload with Preserve log off. */
 const LOG_CLEARED = "Log cleared: the game page reloaded. Turn on Preserve log to keep it.";
 
@@ -444,7 +462,7 @@ describe("edge faults", () => {
     }, "the link status at the game's frame");
 
     const oldSession = link.session();
-    const oldIds = [...new Set(server.tap.watchedIds())];
+    const oldIds = [...new Set(wantedIds(server.tap))];
     const oldSubs = new Set(watchesOf(server.tap).map(watch => watch.sub));
     const watchCount = watchesOf(server.tap).length;
     const statusCount = tools.eventsOf("link:status").length;
@@ -536,7 +554,7 @@ describe("edge faults", () => {
     await showReady(stack, "state");
     await showReady(stack, "flow");
     await until(() => unanswered(server.tap).length === 0, "every tools call answered");
-    const oldIds = [...new Set(server.tap.watchedIds())];
+    const oldIds = [...new Set(wantedIds(server.tap))];
     const liveFrame = frameOf(link.status());
     const oldToken = server.token;
 

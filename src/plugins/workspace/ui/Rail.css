@@ -1,4 +1,4 @@
-/* workspace · Rail. B2: icon over label, soft accent fill and a 2 px accent bar on the active workspace, badges at the corner, Commands at the bottom. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Rail. B2: icon over label, soft accent fill and a 2 px accent bar on the active workspace, badges at the corner, Commands at the bottom. Under 560 px the rail is 44 px of icons: the labels hide (each button keeps its accessible name and tooltip). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="rail"]) {
   :scope {
     display: flex;
@@ -56,5 +56,21 @@
     position: absolute;
     top: 2px;
     right: 2px;
+  }
+
+  @media (max-width: 560px) {
+    button {
+      width: 36px;
+      padding: var(--space-3) 0;
+    }
+
+    [data-label] {
+      display: none;
+    }
+
+    [data-badge] {
+      top: 0;
+      right: 0;
+    }
   }
 }

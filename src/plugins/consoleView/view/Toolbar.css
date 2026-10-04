@@ -1,12 +1,13 @@
-/* consoleView · Toolbar. One 40 px row: the level segmented control with counts, the search field, Clear and the Preserve log switch. Atoms ([data-segmented], [data-switch], ghost buttons) come from workspace primitives. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* consoleView · Toolbar. A row of at least 40 px that wraps when the console is narrow: the level segmented control with counts, the search field, Clear and the Preserve log switch (never shrunk, so never cut at the host's edge). Below 560 px of console the search fills the rest of the level row. Atoms ([data-segmented], [data-switch], ghost buttons) come from workspace primitives. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="console"] [data-part="toolbar"]) {
   :scope {
     display: flex;
     flex: none;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    block-size: 40px;
-    padding: 0 12px;
+    gap: var(--space-2, 6px) 10px;
+    min-block-size: 40px;
+    padding: var(--space-2, 6px) 12px;
     border-block-end: 1px solid var(--line-1);
     background: var(--surface-panel);
     font-family: var(--font-sans);
@@ -55,8 +56,20 @@
     margin-inline-start: auto;
   }
 
+  [data-switch] {
+    flex: none;
+    white-space: nowrap;
+  }
+
   :is(button, input):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
+  }
+
+  @container console (width < 560px) {
+    [data-search] {
+      flex: 1 1 140px;
+      min-inline-size: 0;
+    }
   }
 }

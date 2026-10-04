@@ -110,7 +110,8 @@ function currentFrame(ctx: RenderViewCtx): number {
 }
 
 /**
- * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples).
+ * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples) and the page heap
+ * link holds from the last heartbeat.
  *
  * @param ctx - Domain context of renderView.
  * @param value - The value.
@@ -124,11 +125,13 @@ function onRender(ctx: RenderViewCtx, value: Json): void {
   }
 
   const frame = currentFrame(ctx);
+  const heap = ctx.require(linkPlugin).heap();
   clearError(state, "game.render");
   state.render = stats;
   state.lastFrame = frame;
   state.firstFrame ??= frame;
   state.fps = [...state.fps, stats.fps].slice(-config.fpsSamples);
+  state.heap = heap === undefined ? undefined : { usedMb: heap.usedMb, limitMb: heap.limitMb };
   notify(state);
 }
 

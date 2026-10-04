@@ -1,7 +1,6 @@
 /**
  * @file flowView camera module — pure geometry of the canvas chrome: the insets of the preview zone
- * (the pinned preview floats clear of the breadcrumb, the toolbar, the zoom bar, the strip and the
- * minimap) and the world point that brings a keyboard-focused item back into the clipped canvas.
+ * (the pinned preview floats clear of the breadcrumb, the toolbar, the zoom bar and the minimap) and the world point that brings a keyboard-focused item back into the clipped canvas.
  */
 import type { PreviewCorner } from "../../workspace/types";
 import type { Camera } from "../types";
@@ -77,33 +76,26 @@ function sharesMinimapColumn(canvasW: number, preview: ZonePreview): boolean {
 }
 
 /**
- * The insets of the preview zone: the top band always; at the bottom the zoom bar band and the
- * open strip, raised above the minimap when the float shares its columns, so the two never
- * overlap. The raise stops where the float would reach the top band (a tall float on a short
- * canvas).
+ * The insets of the preview zone: the top band always; at the bottom the zoom bar band, raised
+ * above the minimap when the float shares its columns, so the two never overlap. The raise stops
+ * where the float would reach the top band (a tall float on a short canvas).
  *
  * @param canvas - The canvas size in px.
- * @param lift - Height of the open neighbours strip in px; 0 while it is closed.
  * @param preview - Corner and float size of the preview.
  * @returns The top and bottom insets.
  * @example
  * ```ts
  * // A 720 px window: the 368 px canvas lifts the minimap to 56 px; S floats 12 px above it.
- * previewZoneInsets({ w: 368, h: 856 }, 0, { corner: "bottom-right", width: 150, height: 280 }); // { top: 56, bottom: 186 }
+ * previewZoneInsets({ w: 368, h: 856 }, { corner: "bottom-right", width: 150, height: 280 }); // { top: 56, bottom: 186 }
  * ```
  */
-export function previewZoneInsets(
-  canvas: ViewSize,
-  lift: number,
-  preview: ZonePreview
-): ZoneInsets {
-  const base = CHROME_BAND + lift;
-  if (!sharesMinimapColumn(canvas.w, preview)) return { top: CHROME_BAND, bottom: base };
+export function previewZoneInsets(canvas: ViewSize, preview: ZonePreview): ZoneInsets {
+  if (!sharesMinimapColumn(canvas.w, preview)) return { top: CHROME_BAND, bottom: CHROME_BAND };
 
   const isNarrow = canvas.w > 0 && canvas.w <= NARROW_CANVAS;
-  const mapTop = (isNarrow ? MINIMAP_OFFSET_NARROW : MINIMAP_OFFSET) + lift + MINIMAP_BOX.h;
+  const mapTop = (isNarrow ? MINIMAP_OFFSET_NARROW : MINIMAP_OFFSET) + MINIMAP_BOX.h;
   const room = canvas.h - CHROME_BAND - 2 * FLOAT_MARGIN - preview.height;
-  return { top: CHROME_BAND, bottom: Math.max(base, Math.min(mapTop, room)) };
+  return { top: CHROME_BAND, bottom: Math.max(CHROME_BAND, Math.min(mapTop, room)) };
 }
 
 /**

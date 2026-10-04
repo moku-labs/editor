@@ -1,4 +1,4 @@
-/* flowView · node card (G, F9): 172×44, glyph + name + tags on row 1, kind line on row 2; selected, current, dimmed, pinned and trail states by data attributes. The positioned node box holds the card and the expand button over its row 1 (siblings, so no nested interactive control). No @layer wrapper (R7). */
+/* flowView · node card (G, F9): 172×44, glyph + name + tags on row 1, kind line on row 2; selected, current, dimmed, pulse, pinned and trail states by data attributes. A dimmed card keeps its opaque background (only its content fades), so the edges behind never show through. The positioned node box holds the card and the expand button over its row 1 (siblings, so no nested interactive control). No @layer wrapper (R7). */
 
 @scope ([data-flow="node"]) {
   :scope {
@@ -61,11 +61,41 @@
   }
 
   :scope[data-dimmed] {
+    border-color: var(--line-1);
+  }
+
+  :scope[data-dimmed] > * {
     opacity: 0.16;
   }
 
   :scope[data-trail] {
     border-color: var(--accent-2);
+  }
+
+  /* A followed edge reached it, or Find current: one 600 ms ring. */
+  @media (prefers-reduced-motion: no-preference) {
+    :scope[data-pulse] {
+      animation: flow-node-pulse 600ms var(--ease-out);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :scope[data-pulse] {
+      outline: 2px solid var(--accent);
+      outline-offset: 4px;
+    }
+  }
+
+  @keyframes flow-node-pulse {
+    from {
+      outline: 2px solid var(--accent);
+      outline-offset: 0;
+    }
+
+    to {
+      outline: 2px solid transparent;
+      outline-offset: 14px;
+    }
   }
 
   [data-part="row"] {

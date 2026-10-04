@@ -103,13 +103,13 @@ afterEach(() => {
 });
 
 describe("RenderWorkspace", () => {
-  it("shows the title, six tiles and empty cards before any value", () => {
+  it("shows the title, five tiles without the heap tile and empty cards before any value", () => {
     show();
 
     expect(q("h1")?.textContent).toBe("Render · game.render · frame —");
-    expect(all("[data-render='tiles'] [data-tile]")).toHaveLength(6);
+    expect(all("[data-render='tiles'] [data-tile]")).toHaveLength(5);
     expect(q("[data-tile='draws']")?.textContent).toContain("Waiting for game.render");
-    expect(q("[data-tile='heap']")?.getAttribute("aria-label")).toBe("JS heap: not reported");
+    expect(q("[data-tile='heap']")).toBeNull();
     expect(q("[data-render='tree']")?.textContent).toContain("Waiting for the scene");
   });
 
@@ -130,6 +130,33 @@ describe("RenderWorkspace", () => {
     expect(q("[data-render='bundles']")?.textContent).toContain("Budget 192 MB · used 6 MB");
     expect(q("[data-render='pools']")?.textContent).toContain("All pools · 24 pooled · 180 in use");
     expect(q("[data-render='releases']")?.textContent).toContain("No bundle released");
+  });
+
+  it("shows the JS heap tile once the page reports it, and hides it again when it stops", async () => {
+    show();
+    ctx.link.api.heap = () => ({ usedMb: 12.8, limitMb: 4095.8 });
+    await fill();
+
+    expect(all("[data-render='tiles'] [data-tile]")).toHaveLength(6);
+    expect(q("[data-tile='heap'] h2")?.textContent).toBe("JS heap");
+    expect(q("[data-tile='heap'] [data-value]")?.textContent).toBe("12.8MB");
+    expect(q("[data-tile='heap'] [data-sub]")?.textContent).toBe("of 4095.8 MB");
+    expect(q("[data-tile='heap']")?.hasAttribute("data-absent")).toBe(false);
+
+    ctx.link.api.heap = () => undefined;
+    act(() => ctx.link.send("game.render", RENDER));
+    expect(q("[data-tile='heap']")).toBeNull();
+  });
+
+  it("names the game's 30 fps rest on the FPS tile and keeps the sparkline", async () => {
+    show();
+    await fill();
+    act(() => ctx.link.send("game.render", { ...(RENDER as object), fps: 30 }));
+
+    expect(q("[data-tile='fps'] [data-sub]")?.textContent).toBe(
+      "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)"
+    );
+    expect(q("[data-tile='fps'] svg polyline")).not.toBeNull();
   });
 
   it("shows the effects line and the render passes on game 0.0.3, the old texts before", async () => {
@@ -173,6 +200,16 @@ describe("RenderWorkspace", () => {
 });
 
 describe("render tree card", () => {
+  it("groups Expand all and Collapse so the header can wrap them onto their own line", async () => {
+    await fill();
+    show();
+
+    const actions = q("[data-render='tree'] header [data-actions]");
+    expect(
+      [...(actions?.querySelectorAll("button") ?? [])].map(button => button.dataset.action)
+    ).toEqual(["expand-all", "collapse-all"]);
+  });
+
   it("expands, collapses, hovers and selects rows", async () => {
     await fill();
     show();

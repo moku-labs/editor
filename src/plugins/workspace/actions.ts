@@ -40,7 +40,7 @@ function writeHash(ws: WorkspaceId): void {
 export function showWorkspace(ctx: WorkspaceCtx, ws: WorkspaceId): void {
   if (!isWorkspaceId(ws)) {
     throw new Error(
-      `${ERROR_PREFIX}Unknown workspace "${String(ws)}".\n  Use flow, game, render, state, files or console.`
+      `${ERROR_PREFIX}Unknown workspace "${String(ws)}".\n  Use game, flow, render, state, files or console.`
     );
   }
   const { state } = ctx;

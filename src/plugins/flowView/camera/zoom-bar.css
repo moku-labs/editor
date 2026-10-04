@@ -1,4 +1,4 @@
-/* flowView · zoom bar (B6), bottom-left 12 px: −, readout, +, Fit all, Fit selection; lifts by the strip height. No @layer wrapper (R7). */
+/* flowView · zoom bar (B6), bottom-left 12 px: −, readout, +, Fit all, Fit selection. No @layer wrapper (R7). */
 
 @scope ([data-flow="zoom-bar"]) {
   :scope {
@@ -12,18 +12,13 @@
     background: var(--surface-panel);
   }
 
-  :scope[data-lift] {
-    bottom: calc(12px + var(--flow-strip-h));
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    :scope {
-      transition: bottom var(--duration-zoom) var(--ease-out);
-    }
-  }
-
   button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     min-width: 28px;
+    min-height: 28px;
     padding: 4px 6px;
     border: 0;
     border-radius: var(--radius-6);

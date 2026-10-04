@@ -10,6 +10,7 @@ import type {
   Manifest,
   RunResult,
   SessionInfo,
+  Tap,
   ToolsBoot
 } from "../../registry/protocol";
 import { createWorkspaceState } from "../state";
@@ -44,7 +45,7 @@ export type LogMock = ReturnType<typeof createLog>;
 
 /** The default config of the plugin. */
 export const CONFIG: WorkspaceConfig = {
-  defaultWorkspace: "flow",
+  defaultWorkspace: "game",
   storageKey: "moku-editor-test",
   reloadTimeoutMs: 15_000,
   toastMs: 2600
@@ -123,11 +124,18 @@ export function tagged(url: string, frame = FRAME): string {
   return parsed.href;
 }
 
+/** A tap listener, as link's `onTap` takes it. */
+type TapListener = (tap: Tap) => void;
+
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
   [K in keyof Omit<LinkApi, "files">]: Mock<LinkApi[K]>;
 } & {
   files: LinkApi["files"];
+  /** Live tap listeners. */
+  readonly tapListeners: Set<TapListener>;
+  /** Calls every tap listener, like link on a game tap. */
+  tap(tap: Tap): void;
   /** The status `status()` answers. */
   current: LinkStatus;
   /** The manifest `manifest()` answers. */
@@ -149,6 +157,7 @@ export type LinkMock = {
  */
 export function createLinkMock(): LinkMock {
   const listeners = new Set<(manifest: Manifest | undefined) => void>();
+  const tapListeners = new Set<TapListener>();
   const link: LinkMock = {
     current: { kind: "connecting" },
     manifestValue: undefined,
@@ -183,6 +192,17 @@ export function createLinkMock(): LinkMock {
       write: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
       writeBinary: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
       readBinary: vi.fn(() => Promise.resolve({ dataUrl: "", version: "v" }))
+    },
+    onTap: vi.fn<LinkApi["onTap"]>(listener => {
+      tapListeners.add(listener);
+      return () => {
+        tapListeners.delete(listener);
+      };
+    }),
+    heap: vi.fn<LinkApi["heap"]>(() => undefined),
+    tapListeners,
+    tap(tap) {
+      for (const listener of tapListeners) listener(tap);
     },
     attach(manifest) {
       link.manifestValue = manifest;

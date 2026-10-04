@@ -13,7 +13,7 @@ export const STYLES_FIXTURE = new URL(
   import.meta.url
 ).pathname;
 
-/** The path of the note every tiny project starts with. */
+/** A markdown file with front matter every tiny project starts with (filesView edits it in F4). */
 export const FIRST_NOTE = ".moku/notes/2026-10-01-first-note.md";
 
 /** Every temp folder made in this test file, removed by `removeTemps`. */
@@ -117,7 +117,7 @@ export const TINY_MANIFEST = {
   }
 };
 
-/** The first note, in the shared front-matter format. */
+/** The text of FIRST_NOTE: front matter, then one line of markdown. */
 const FIRST_NOTE_TEXT = [
   "---",
   "title: First note",
@@ -134,8 +134,8 @@ const FIRST_NOTE_TEXT = [
 ].join("\n");
 
 /**
- * Fills a tiny project root: node and flow files, the styles file, the asset manifest, one note,
- * and two files that must never show in a list (`node_modules/x/index.ts`, `.env`).
+ * Fills a tiny project root: node and flow files, the styles file, the asset manifest, one
+ * markdown file, and two files that must never show in a list (`node_modules/x/index.ts`, `.env`).
  *
  * @param root - The empty project root.
  * @returns Resolves when every file is written.

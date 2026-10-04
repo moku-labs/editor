@@ -40,15 +40,16 @@ describe("camera api", () => {
     );
   });
 
-  it("leaves the strip and the preview column out of the available rect", async () => {
+  it("leaves the preview column out of the available rect; the canvas keeps its full height", async () => {
     const { ctx, fakes } = createTestCtx();
     const camera = actionsOf(ctx).camera;
     expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
-    ctx.state.focus.strip = true;
+    await prepare(ctx);
+    actionsOf(ctx).focus.select("main/home");
     fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
-    expect(camera.insets()).toEqual({ top: 0, right: 224, bottom: 224, left: 0 });
+    expect(camera.insets()).toEqual({ top: 0, right: 224, bottom: 0, left: 0 });
     fakes.preview = { visible: true, size: "L", corner: "top-left", width: 340, height: 660 };
-    expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 224, left: 364 });
+    expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 364 });
     expect(ctx.state.camera.insets.left).toBe(364);
   });
 
@@ -73,15 +74,16 @@ describe("camera api", () => {
     expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
   });
 
-  it("previewZone keeps the float clear of the minimap, lifted by the open strip", () => {
+  it("previewZone keeps the float clear of the minimap, also with a selection", async () => {
     const { ctx, fakes } = createTestCtx();
     const camera = actionsOf(ctx).camera;
     fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
     expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 186 });
-    ctx.state.focus.strip = true;
-    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 410 });
+    await prepare(ctx);
+    actionsOf(ctx).focus.select("main/home");
+    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 186 });
     fakes.preview = { visible: true, size: "S", corner: "top-left", width: 150, height: 280 };
-    expect(camera.previewZone({ w: 1088, h: 856 })).toEqual({ top: 56, bottom: 280 });
+    expect(camera.previewZone({ w: 1088, h: 856 })).toEqual({ top: 56, bottom: 56 });
   });
 
   it("a focus at half screen centres the card in the canvas, clear of the preview", async () => {

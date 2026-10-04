@@ -14,9 +14,7 @@ beforeEach(() => {
     callback(0);
     return 1;
   });
-  ctx = createCtx({
-    ".moku/notes/2026-09-24-a.md": "---\ntitle: A\nstatus: idea\ncaptures: []\n---\n"
-  });
+  ctx = createCtx();
   useScene(ctx);
   ctx.panels.answers.set("editor.capture", {
     image: PNG,
@@ -32,15 +30,13 @@ afterEach(() => {
 });
 
 describe("createGameViewApi", () => {
-  it("has the fourteen members of GameViewApi", () => {
+  it("has the twelve members of GameViewApi", () => {
     expect(Object.keys(createGameViewApi(ctx)).toSorted()).toEqual([
-      "attach",
       "capture",
       "highlight",
       "inspect",
       "locate",
       "manifest",
-      "notes",
       "openSheet",
       "pick",
       "scene",
@@ -63,7 +59,7 @@ describe("createGameViewApi", () => {
     expect(ctx.state.treeHover).toBeUndefined();
   });
 
-  it("scene, locate, manifest and notes read through the link", async () => {
+  it("scene, locate and manifest read through the link", async () => {
     const api = createGameViewApi(ctx);
     const scene = await api.scene();
     expect(scene.nodes.get("ui:boardScreen/boardSlot")?.rect).toEqual({
@@ -79,16 +75,14 @@ describe("createGameViewApi", () => {
       h: 223
     });
     expect(await api.manifest()).toBeUndefined();
-    expect(await api.notes()).toEqual([{ path: ".moku/notes/2026-09-24-a.md", title: "A" }]);
   });
 
-  it("capture runs editor.capture through panels.run, never link.run; attach writes the note", async () => {
+  it("capture runs editor.capture through panels.run, never link.run", async () => {
     const api = createGameViewApi(ctx);
     const shot = await api.capture();
     expect(ctx.panels.run).toHaveBeenCalledWith("editor.capture");
     expect(ctx.link.run).not.toHaveBeenCalled();
-    await api.attach(shot?.path ?? "", ".moku/notes/2026-09-24-a.md");
-    expect(ctx.link.files.text(".moku/notes/2026-09-24-a.md")).toContain(shot?.path ?? "?");
+    expect(ctx.link.files.paths()).toContain(shot?.path);
   });
 
   it("series, stopSeries and openSheet run through panels and files", async () => {

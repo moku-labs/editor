@@ -11,7 +11,7 @@ import { kindOf } from "./kind";
  * @returns The tab.
  * @example
  * ```ts
- * newTab(".moku/notes/a.md").mode; // "preview"
+ * newTab("docs/a.md").mode; // "preview"
  * ```
  */
 export function newTab(path: string): OpenTab {

@@ -2,8 +2,6 @@
 import { readFileSync } from "node:fs";
 import { h } from "preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NeighboursStrip } from "../../focus/NeighboursStrip";
-import { NoteEditor } from "../../notes/NoteEditor";
 import { ContextMenu, menuItems } from "../../render/ContextMenu";
 import { HistoryLabels, HistoryStrip, labelLayout } from "../../render/HistoryStrip";
 import { entry, PLUGIN_DIR } from "../helpers";
@@ -26,7 +24,7 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
     });
     const labels = items.map(entry => entry.label);
     expect(labels.slice(0, 3)).toEqual(["Focus", "Open code", "Open styles"]);
-    expect(labels).toContain("Add note on tap");
+    expect(labels.some(label => label.includes("note"))).toBe(false);
     expect(labels).toContain("Step 1 frame");
     expect(labels).toContain("Pause game");
     const step = items.find(entry => entry.label === "Step 1 frame");
@@ -64,10 +62,7 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
       x: 0,
       y: 0
     });
-    expect(outcome.map(entry => entry.label)).toEqual([
-      "Add note on this outcome",
-      "Focus awaitIntent"
-    ]);
+    expect(outcome.map(entry => entry.label)).toEqual(["Focus awaitIntent"]);
     const canvas = menuItems(ctx, actions, {
       target: "canvas",
       key: undefined,
@@ -75,10 +70,27 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
       x: 0,
       y: 0
     });
-    expect(canvas.map(entry => entry.label)).toEqual(["Add note here", "Fit all", "Reset layout"]);
+    expect(canvas.map(entry => entry.label)).toEqual(["Fit all", "Reset layout"]);
     expect(canvas.find(entry => entry.label === "Reset layout")?.disabled).toBe(true);
     outcome[0]?.run();
-    expect(ctx.state.notes.editor?.from).toEqual({ node: "board/merge", outcome: "done" });
+    expect(ctx.state.focus.selected).toBe("main/board>board/awaitIntent");
+  });
+
+  it("opens no menu for an outcome without an edge", async () => {
+    const { ctx, actions } = await prepared();
+    const graph = ctx.state.data.graph;
+    const edges = graph?.flows.board?.edges.merge;
+    if (edges !== undefined) delete edges.done;
+    actions.focus.openMenu({
+      target: "outcome",
+      key: "main/board>board/merge",
+      outcome: "done",
+      x: 10,
+      y: 10
+    });
+    const { host, unmount } = mount(h(ContextMenu, { ctx, actions }));
+    expect(host.querySelector('[data-flow="context-menu"]')).toBeNull();
+    unmount();
   });
 
   it("renders a popover menu with the first item focused; Enter runs, ↓ moves", async () => {
@@ -94,18 +106,12 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
       items[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     });
     expect(document.activeElement).toBe(items[1]);
-    expect(items[2]?.getAttribute("aria-disabled")).toBe("true");
+    expect(items[1]?.getAttribute("aria-disabled")).toBe("true");
+    const fit = vi.spyOn(actions.camera, "fitAll");
     await settle(() => {
       items[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
-    const { cam } = ctx.state.camera;
-    expect(ctx.state.notes.editor).toEqual({
-      title: "",
-      body: "",
-      from: undefined,
-      captures: [],
-      anchor: { x: (10 - cam.x) / cam.z, y: (10 - cam.y) / cam.z }
-    });
+    expect(fit).toHaveBeenCalled();
     expect(ctx.state.focus.menu).toBeUndefined();
     unmount();
   });
@@ -130,7 +136,7 @@ describe("HistoryStrip (B4, M3)", () => {
     expect(rows[1]?.textContent).toContain("f1778");
     expect(rows[1]?.textContent).toContain("✕ rejected");
     await settle(() => rows[1]?.click());
-    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:rejected");
     expect(actions.focus.selected()).toBe("main/board>board/merge");
     unmount();
   });
@@ -170,75 +176,6 @@ describe("HistoryStrip (B4, M3)", () => {
   });
 });
 
-describe("NeighboursStrip (C6)", () => {
-  it("lists Comes from, This node and Goes to; a row click walks; Nothing leads here", async () => {
-    const { ctx, actions } = await prepared();
-    actions.focus.select("board/merge");
-    const { host, unmount } = mount(h(NeighboursStrip, { ctx, actions }));
-    const strip = host.querySelector<HTMLElement>('[data-flow="neighbours-strip"]');
-    expect(strip?.tagName).toBe("SECTION");
-    expect(strip?.getAttribute("aria-label")).toBe("Neighbours of board/merge");
-    expect(strip?.textContent).toContain("Click a row to walk the graph");
-    const goes = strip?.querySelectorAll<HTMLElement>('[data-column="to"] [data-row]') ?? [];
-    expect([...goes].map(row => row.dataset.outcome)).toEqual(["done", "rejected"]);
-    const comes = strip?.querySelectorAll<HTMLElement>('[data-column="from"] [data-row]') ?? [];
-    expect(comes[0]?.textContent).toContain("board/awaitIntent");
-    await settle(() => goes[0]?.click());
-    expect(actions.focus.selected()).toBe("main/board>board/awaitIntent");
-    await settle(() => actions.focus.select("main/boot"));
-    expect(host.textContent).toContain("Nothing leads here");
-    unmount();
-  });
-});
-
-describe("NoteEditor (D5, M7)", () => {
-  it("opens as a modal dialog with the capture row; Save writes; focus returns to the opener", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    const opener = document.createElement("button");
-    document.body.append(opener);
-    opener.focus();
-    const { host, unmount } = mount(h(NoteEditor, { ctx, actions }));
-    expect(host.querySelector("dialog")).toBeNull();
-    await settle(() =>
-      actions.notes.edit({
-        captures: [".moku/captures/a.png"],
-        from: { node: "board/merge", outcome: "done" }
-      })
-    );
-    const dialog = host.querySelector("dialog");
-    expect(dialog?.getAttribute("aria-modal")).toBe("true");
-    expect(dialog?.open).toBe(true);
-    expect(dialog?.textContent).toContain("On board/merge · done");
-    expect(dialog?.textContent).toContain("The screenshot attaches to this note");
-    const title = dialog?.querySelector<HTMLInputElement>('[data-field="title"]');
-    await settle(() => {
-      if (title === null || title === undefined) return;
-      title.value = "First wood 4";
-      title.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(dialog?.textContent).toContain("-first-wood-4.md");
-    await settle(() => dialog?.querySelector<HTMLButtonElement>('[data-action="save"]')?.click());
-    await settle();
-    expect([...fakes.files.store.keys()].some(path => path.endsWith("-first-wood-4.md"))).toBe(
-      true
-    );
-    expect(host.querySelector("dialog")).toBeNull();
-    expect(document.activeElement).toBe(opener);
-    unmount();
-  });
-
-  it("the noteEditor Esc layer closes it", async () => {
-    const { ctx, actions } = await prepared();
-    const { host, unmount } = mount(h(NoteEditor, { ctx, actions }));
-    await settle(() => actions.notes.edit({}));
-    expect(host.querySelector("dialog")).not.toBeNull();
-    expect(host.textContent).toContain("Free note on the canvas");
-    await settle(() => actions.notes.close());
-    expect(host.querySelector("dialog")).toBeNull();
-    unmount();
-  });
-});
-
 describe("styles of flowView (M6, M10, M14, R5, R7)", () => {
   it("has no backdrop-filter, no class selector, no @layer wrapper; @scope per sheet; tokens only", async () => {
     const { readdirSync } = await import("node:fs");
@@ -246,7 +183,7 @@ describe("styles of flowView (M6, M10, M14, R5, R7)", () => {
     const sheets = readdirSync(root, { recursive: true, encoding: "utf8" }).filter(
       file => file.endsWith(".css") && !file.includes("__tests__")
     );
-    expect(sheets.length).toBe(22);
+    expect(sheets.length).toBe(19);
     for (const sheet of sheets) {
       const text = readFileSync(`${root}${sheet}`, "utf8");
       const code = text.replaceAll(/\/\*[\s\S]*?\*\//g, "");

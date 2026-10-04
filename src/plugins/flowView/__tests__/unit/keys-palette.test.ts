@@ -16,17 +16,19 @@ function key(name: string): KeyboardEvent {
   return new KeyboardEvent("keydown", { key: name, cancelable: true });
 }
 
+/** The Flow binding of a combo. */
+function bindingOf(fakes: Awaited<ReturnType<typeof prepared>>["fakes"], combo: string) {
+  return fakes.bindings.find(entry =>
+    typeof entry.keys === "string" ? entry.keys === combo : entry.keys.includes(combo)
+  );
+}
+
 describe("Flow keys", () => {
-  it("run their actions: note, history, camera ops, walk, highlight, focus, save", async () => {
+  it("run their actions: history, camera ops, walk, highlight, focus, save", async () => {
     const { ctx, actions, fakes } = await prepared();
     initFlowView(ctx);
-    const binding = (combo: string) =>
-      fakes.bindings.find(entry =>
-        typeof entry.keys === "string" ? entry.keys === combo : entry.keys.includes(combo)
-      );
-    binding("n")?.run(key("n"));
-    expect(ctx.state.notes.editor?.anchor).toEqual({ x: 1110, y: 609 });
-    actions.notes.close();
+    const binding = (combo: string) => bindingOf(fakes, combo);
+    expect(binding("n")).toBeUndefined();
 
     const fit = vi.spyOn(actions.camera, "fitAll");
     binding("f")?.run(key("f"));
@@ -35,6 +37,7 @@ describe("Flow keys", () => {
     binding("+")?.run(key("+"));
     expect(zoom).toHaveBeenCalledWith(1.25);
 
+    expect(binding("arrowright")?.when?.()).toBe(false);
     actions.focus.select("board/tapGenerator");
     expect(binding("arrowright")?.when?.()).toBe(true);
     binding("arrowdown")?.run(key("ArrowDown"));
@@ -48,6 +51,7 @@ describe("Flow keys", () => {
     document.body.append(root);
     ctx.state.view.root = root;
     root.querySelector<HTMLElement>("[data-key]")?.focus();
+    expect(binding("enter")?.when?.()).toBe(true);
     binding("enter")?.run(key("Enter"));
     expect(actions.focus.selected()).toBe("main/home");
 
@@ -56,11 +60,55 @@ describe("Flow keys", () => {
     binding("mod+s")?.run(event);
     expect(event.defaultPrevented).toBe(true);
     expect(save).toHaveBeenCalled();
-    const noteSave = vi.spyOn(actions.notes, "save");
-    actions.notes.edit({});
-    expect(binding("mod+s")?.when?.()).toBe(true);
-    binding("mod+s")?.run(key("s"));
-    expect(noteSave).toHaveBeenCalled();
+    expect(binding("mod+s")?.when?.()).toBe(false);
+  });
+
+  it(String.raw`C shows where the game is; \ collapses and expands the Inspector panel; Alt+← goes back`, async () => {
+    const { ctx, actions, fakes } = await prepared();
+    initFlowView(ctx);
+    const binding = (combo: string) => bindingOf(fakes, combo);
+    const focusItem = vi.spyOn(actions.camera, "focusItem");
+    binding("c")?.run(key("c"));
+    expect(focusItem).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "main/board>board/awaitIntent" })
+    );
+    expect(ctx.state.focus.pulse).toBe("main/board>board/awaitIntent");
+
+    localStorage.removeItem("moku-editor:panel:flow.inspector");
+    const { sidePanelState } = await import("../../../panels/shared/side-panel");
+    const before = sidePanelState("flow.inspector").collapsed;
+    binding("\\")?.run(key("\\"));
+    expect(sidePanelState("flow.inspector").collapsed).toBe(!before);
+    binding("\\")?.run(key("\\"));
+    expect(sidePanelState("flow.inspector").collapsed).toBe(before);
+
+    expect(binding("alt+arrowleft")?.when?.()).toBe(false);
+    actions.focus.select("board/merge");
+    actions.focus.followEdge("main/board>board/merge:done");
+    expect(binding("alt+arrowleft")?.when?.()).toBe(true);
+    binding("alt+arrowleft")?.run(key("ArrowLeft"));
+    expect(actions.focus.selected()).toBe("main/board>board/merge");
+  });
+
+  it("the walk keys leave the Inspector tabs and the resize handle alone; Enter leaves buttons alone", async () => {
+    const { ctx, actions, fakes } = await prepared();
+    initFlowView(ctx);
+    const binding = (combo: string) => bindingOf(fakes, combo);
+    actions.focus.select("board/merge");
+    actions.focus.moveHighlight(1);
+    const host = document.createElement("div");
+    host.innerHTML =
+      '<div role="tablist"><button type="button" role="tab">Info</button></div><div role="separator" tabindex="0"></div><button type="button" data-action="x">x</button>';
+    document.body.append(host);
+    host.querySelector<HTMLElement>('[role="tab"]')?.focus();
+    expect(binding("arrowright")?.when?.()).toBe(false);
+    host.querySelector<HTMLElement>('[role="separator"]')?.focus();
+    expect(binding("arrowleft")?.when?.()).toBe(false);
+    host.querySelector<HTMLElement>('[data-action="x"]')?.focus();
+    expect(binding("arrowleft")?.when?.()).toBe(true);
+    expect(binding("enter")?.when?.()).toBe(false);
+    host.querySelector<HTMLElement>('[data-action="x"]')?.blur();
+    expect(binding("enter")?.when?.()).toBe(true);
   });
 
   it("the codeEdit Esc layer cancels code editing", async () => {
@@ -71,7 +119,7 @@ describe("Flow keys", () => {
     actions.inspector.edit();
     expect(fakes.escapes.get("codeEdit")?.()).toBe(true);
     expect(ctx.state.inspector.code?.draft).toBeUndefined();
-    expect(fakes.escapes.get("noteEditor")?.()).toBe(false);
+    expect([...fakes.escapes.keys()]).toEqual(["contextMenu", "codeEdit", "selection"]);
   });
 });
 

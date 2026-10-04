@@ -1,6 +1,6 @@
 /**
- * @file bridge plugin — type definitions: config, constants, state, api, the structural net and
- * socket seams, the domain deps and the plugin context. No bun or DOM namespace type in an
+ * @file bridge plugin — type definitions: config, constants, state, api, the structural net,
+ * socket and tap window seams, the domain deps and the plugin context. No bun or DOM namespace type in an
  * exported shape (skeleton-conventions §3).
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -163,7 +163,7 @@ export type BridgeState = {
   pending: Map<SubId, Json>;
   /** Request id → deadline timer. */
   inflight: Map<number, ReturnType<typeof setTimeout>>;
-  /** Heartbeat listener and page listeners, removed on stop. */
+  /** Heartbeat listener and page listeners (visibility, taps), removed on stop. */
   off: (() => void)[];
 };
 
@@ -199,6 +199,32 @@ export type BridgeApi = {
 };
 
 /**
+ * A pointerdown as the tap watch reads it: the point in page CSS px and the event path.
+ */
+export type TapEvent = {
+  readonly clientX: number;
+  readonly clientY: number;
+  composedPath(): EventTarget[];
+};
+
+/**
+ * Listener options of the tap watch.
+ */
+export type TapOptions = { readonly capture: boolean; readonly passive: boolean };
+
+/**
+ * The window of the game page as the tap watch uses it (a browser `Window` is one).
+ */
+export type TapWindow = {
+  addEventListener(type: "pointerdown", fn: (event: TapEvent) => void, options: TapOptions): void;
+  removeEventListener(
+    type: "pointerdown",
+    fn: (event: TapEvent) => void,
+    options: TapOptions
+  ): void;
+};
+
+/**
  * Domain dependencies of every bridge module (unit tests pass fakes).
  */
 export type BridgeDeps = {
@@ -213,6 +239,8 @@ export type BridgeDeps = {
   readonly page: {
     readonly href: string | undefined;
     readonly document: (EventTarget & { readonly visibilityState?: string }) | undefined;
+    /** The page window for the tap watch; undefined outside a browser. */
+    readonly window: TapWindow | undefined;
   };
 };
 

@@ -208,7 +208,7 @@ export function Palette(props: PaletteProps): VNode {
               <p data-empty>No match. Try a node name, a file or a texture key.</p>
             )}
             {views.map(view => (
-              <section key={view.group} aria-label={`${view.group} ${view.total}`}>
+              <fieldset key={view.group} aria-label={`${view.group} ${view.total}`}>
                 <h3>
                   {view.group} <span>{view.total}</span>
                 </h3>
@@ -224,7 +224,7 @@ export function Palette(props: PaletteProps): VNode {
                     />
                   );
                 })}
-              </section>
+              </fieldset>
             ))}
           </div>
           <footer>

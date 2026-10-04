@@ -5,6 +5,8 @@ import { linkPlugin } from "../../../link";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { workspacePlugin } from "../..";
 import type {
+  Density,
+  DensityChoice,
   DeviceChoice,
   GameFrame,
   PreviewState,
@@ -33,6 +35,10 @@ describe("workspace types", () => {
     expectTypeOf(app.workspace.gameFrame().reload).returns.toEqualTypeOf<Promise<ReloadResult>>();
     expectTypeOf(app.workspace.host).returns.toEqualTypeOf<HTMLElement>();
     expectTypeOf(app.workspace.setOverlayInGame).returns.toEqualTypeOf<Promise<void>>();
+    expectTypeOf(app.workspace.density()).toEqualTypeOf<Density>();
+    expectTypeOf(app.workspace.setDensity).parameter(0).toEqualTypeOf<DensityChoice>();
+    expectTypeOf(app.workspace.reference()).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.setReference).parameter(0).toEqualTypeOf<boolean>();
     expect(typeof app.workspace.mount).toBe("function");
   });
 
@@ -53,6 +59,10 @@ describe("workspace types", () => {
     app.emit("workspace:ran", { id: "game.step", ok: true });
     expectTypeOf<ToolsEvents["workspace:ran"]>().toEqualTypeOf<RanEvent>();
     expectTypeOf<ToolsEvents["workspace:changed"]>().toEqualTypeOf<{ ws: WorkspaceId }>();
+    expectTypeOf<ToolsEvents["workspace:density"]>().toEqualTypeOf<{ density: Density }>();
+    expectTypeOf<ToolsEvents["workspace:reference"]>().toEqualTypeOf<{ on: boolean }>();
+    // @ts-expect-error — density is compact or comfortable, never auto
+    app.emit("workspace:density", { density: "auto" });
     expect(typeof app.emit).toBe("function");
   });
 

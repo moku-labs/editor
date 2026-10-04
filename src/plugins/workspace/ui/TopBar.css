@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line. In a half-screen window the row stays one line: the controls keep their size, the game name and the search shrink, and under 1180 px the ghost buttons, then under 820 px the switches and the search, drop their visible label (the label stays as the accessible name and the tooltip names the action). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line. In a half-screen window the row stays one line: the controls keep their size, the game name and the search shrink, and under 1180 px the ghost buttons, then under 820 px the switches and the search, drop their visible label (the label stays as the accessible name and the tooltip names the action); the game name drops its version. Under 560 px (a third of the screen) the bar keeps the logo and the controls only: no game name, no session chip, an icon-only search and no counts. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -25,15 +25,32 @@
     color: var(--surface-panel);
   }
 
+  /* The name shrinks with an ellipsis; the version keeps its width beside it. */
   [data-game-name] {
+    display: flex;
     flex-shrink: 1;
+    align-items: baseline;
+    gap: 0.3em;
     min-width: 48px;
     max-width: 180px;
     overflow: hidden;
     font-size: var(--font-size-12-5);
     font-weight: 600;
-    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  [data-game-name] [data-part="name"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The version reads quieter than the name (design B1): muted mono, regular weight. */
+  [data-game-name] [data-part="version"] {
+    flex: none;
+    color: var(--text-muted);
+    font-size: var(--font-size-12);
+    font-weight: 400;
   }
 
   [data-search] {
@@ -66,8 +83,14 @@
     font-size: var(--font-size-11-5);
   }
 
-  [data-action="theme"] {
+  [data-action="theme"],
+  [data-action="reference"] {
     padding: 0 6px;
+  }
+
+  [data-action="reference"][aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
   }
 
   /* Half-screen windows: labels become the accessible name only (same box as [data-sr-only]). */
@@ -107,6 +130,40 @@
 
     [data-game-name] {
       max-width: 96px;
+    }
+
+    [data-game-name] [data-part="version"] {
+      display: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    :scope {
+      gap: var(--space-1);
+      padding: 0 var(--space-2);
+    }
+
+    [data-game-name],
+    [data-search] > kbd,
+    [data-counts] {
+      display: none;
+    }
+
+    :scope > [data-ui="session-chip"] {
+      display: none;
+    }
+
+    :scope > [data-variant="ghost"],
+    :scope > [data-switch] {
+      padding: 0 var(--space-2);
+    }
+
+    [data-search] {
+      flex: none;
+      justify-content: center;
+      width: 28px;
+      margin: 0 auto;
+      padding: 0;
     }
   }
 }

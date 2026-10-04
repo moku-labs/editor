@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatNote, newNote } from "../../../panels/shared/notes";
 import { actionsOf } from "../../actions";
 import { createHandlers } from "../../handlers";
-import { createTestCtx, flush, jumpCamera, prepare } from "../ctx";
-import { entry } from "../helpers";
+import { startFlowView } from "../../lifecycle";
+import { createTestCtx, flush, jumpCamera, prepare, type TestCtx } from "../ctx";
+import { cloneGraph, entry } from "../helpers";
 
 beforeEach(() => {
   jumpCamera();
@@ -32,12 +32,11 @@ describe("link:status (M4, M13)", () => {
     expect(ctx.state.data.staleFrame).toBeUndefined();
   });
 
-  it("loads layout.json, the notes and the style keys on the first live status of a session", async () => {
+  it("loads layout.json and the style keys on the first live status of a session", async () => {
     const { ctx, fakes } = createTestCtx({
       files: {
         ".moku/editor/layout.json":
           '{ "version": 1, "nodes": { "main/home": { "x": 0, "y": 0 } } }\n',
-        ".moku/notes/2026-09-24-a.md": formatNote(newNote({ title: "A" })),
         "features/ui/styles.ts":
           'export const textStyles = defineTextStyles({\n  "ui.number": { size: 60 }\n});\n'
       }
@@ -46,7 +45,6 @@ describe("link:status (M4, M13)", () => {
     hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
     await flush(10);
     expect(ctx.state.layout.pins.nodes["main/home"]).toEqual({ x: 0, y: 0 });
-    expect(ctx.state.notes.files.map(file => file.path)).toEqual([".moku/notes/2026-09-24-a.md"]);
     expect(
       fakes.palette
         .flat()
@@ -70,18 +68,17 @@ describe("link:status (M4, M13)", () => {
     expect(ctx.log.warn).toHaveBeenCalled();
   });
 
-  it("empty clears the selection and closes the strip, the menu and the editor (M4)", async () => {
+  it("empty clears the selection, the Back stack and the menu (M4)", async () => {
     const { ctx } = createTestCtx();
     await prepare(ctx);
     const actions = actionsOf(ctx);
-    actions.focus.select("main/home");
+    actions.focus.select("board/merge");
+    actions.focus.followEdge("main/board>board/merge:done");
     actions.focus.openMenu({ target: "canvas", key: undefined, outcome: undefined, x: 0, y: 0 });
-    actions.notes.edit({});
     createHandlers(ctx)["link:status"]({ status: { kind: "empty" } });
     expect(ctx.state.focus.selected).toBeUndefined();
-    expect(ctx.state.focus.strip).toBe(false);
+    expect(ctx.state.focus.back).toEqual([]);
     expect(ctx.state.focus.menu).toBeUndefined();
-    expect(ctx.state.notes.editor).toBeUndefined();
     expect(ctx.state.data.status.kind).toBe("empty");
   });
 });
@@ -137,20 +134,91 @@ describe("intents of other views (R4)", () => {
     ctx.state.data.history = [entry(3, "board/merge", "rejected", { frame: 1778 })];
     createHandlers(ctx)["workspace:focus-frame"]({ frame: 1778 });
     expect(fakes.workspace.show).toHaveBeenCalledWith("flow");
-    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:rejected");
+  });
+});
+
+/** Starts the session watches and the hooks. */
+function started(): TestCtx & { readonly hooks: ReturnType<typeof createHandlers> } {
+  const test = createTestCtx();
+  startFlowView(test.ctx);
+  return { ...test, hooks: createHandlers(test.ctx) };
+}
+
+/** Delivers the three first values of the merge game. */
+function sendData(test: TestCtx): void {
+  test.fakes.send("game.graph", structuredClone(cloneGraph()));
+  test.fakes.send("game.position", { path: "board/awaitIntent", waiting: ["tap"] });
+  test.fakes.send("game.history", [entry(3, "board/merge", "rejected", { frame: 1778 })]);
+}
+
+describe("intents before the first flow values (Game is the default workspace)", () => {
+  it("select-node shows Flow, waits for the graph, then selects without a warning", () => {
+    const test = started();
+    test.hooks["workspace:select-node"]({ id: "board/merge" });
+    expect(test.fakes.workspace.show).toHaveBeenCalledWith("flow");
+    expect(test.ctx.state.focus.selected).toBeUndefined();
+
+    sendData(test);
+    expect(test.ctx.state.focus.selected).toBe("main/board>board/merge");
+    expect(test.ctx.log.warn).not.toHaveBeenCalled();
   });
 
-  it("workspace:new-note shows Flow and opens the editor with the captures and the origin", () => {
-    const { ctx, fakes } = createTestCtx();
+  it("an unknown id still warns, once the graph is in", () => {
+    const test = started();
+    test.hooks["workspace:select-node"]({ id: "board/nope" });
+    expect(test.ctx.log.warn).not.toHaveBeenCalled();
+    sendData(test);
+    expect(test.ctx.log.warn).toHaveBeenCalledWith("flowView:unknown-node", { id: "board/nope" });
+  });
+
+  it("focus-frame waits for the history, then focuses the edge at that frame", () => {
+    const test = started();
+    test.hooks["workspace:focus-frame"]({ frame: 1778 });
+    expect(test.fakes.workspace.show).toHaveBeenCalledWith("flow");
+    expect(test.fakes.workspace.toast).not.toHaveBeenCalled();
+
+    sendData(test);
+    expect(test.ctx.state.focus.edge).toBe("main/board>board/merge:rejected");
+    expect(test.fakes.workspace.toast).toHaveBeenCalledWith("Frame 1778 · board/merge · rejected");
+    expect(test.fakes.workspace.toast).not.toHaveBeenCalledWith(
+      "Frames are not recorded in this history"
+    );
+  });
+
+  it("the latest intent wins; an empty link drops it", () => {
+    const test = started();
+    test.hooks["workspace:focus-frame"]({ frame: 1778 });
+    test.hooks["workspace:select-node"]({ id: "main/home" });
+    sendData(test);
+    expect(test.ctx.state.focus.selected).toBe("main/home");
+    expect(test.ctx.state.focus.edge).toBeUndefined();
+
+    const dropped = started();
+    dropped.hooks["workspace:select-node"]({ id: "board/merge" });
+    dropped.hooks["link:status"]({ status: { kind: "empty" } });
+    sendData(dropped);
+    expect(dropped.ctx.state.focus.selected).toBeUndefined();
+  });
+});
+
+describe("workspace:density (finding 16)", () => {
+  it("takes the applied density and lays out again with its ELK spacing; the same value does nothing", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
     const hooks = createHandlers(ctx);
-    hooks["workspace:new-note"]({
-      captures: [".moku/captures/a.png"],
-      from: { node: "board/merge" }
-    });
-    expect(fakes.workspace.show).toHaveBeenCalledWith("flow");
-    expect(ctx.state.notes.editor?.captures).toEqual([".moku/captures/a.png"]);
-    expect(ctx.state.notes.editor?.from).toEqual({ node: "board/merge" });
-    hooks["workspace:new-note"]({});
-    expect(ctx.state.notes.editor?.captures).toEqual([]);
+    const relayout = vi.spyOn(actionsOf(ctx).layout, "relayout");
+    hooks["workspace:density"]({ density: "compact" });
+    expect(ctx.state.layout.density).toBe("compact");
+    expect(relayout).toHaveBeenCalledTimes(1);
+    hooks["workspace:density"]({ density: "compact" });
+    expect(relayout).toHaveBeenCalledTimes(1);
+    await flush(10);
+    const compact = ctx.state.layout.result;
+    hooks["workspace:density"]({ density: "comfortable" });
+    await flush(10);
+    const comfortable = ctx.state.layout.result;
+    const width = (result: typeof compact): number => result?.byKey["#main"]?.w ?? 0;
+    expect(width(compact)).toBeLessThan(width(comfortable));
   });
 });

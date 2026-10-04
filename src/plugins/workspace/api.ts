@@ -11,12 +11,14 @@ import { setOverlayInGame } from "./overlay";
 import { addPaletteItems, openPalette } from "./palette/items";
 import {
   addPrefsListener,
+  chooseDensity,
   chooseTheme,
   patchDevice,
   patchPreview,
   previewState
 } from "./prefs/apply";
 import { effectiveTheme } from "./prefs/theme";
+import { setReference } from "./reference";
 import { showToast } from "./toasts";
 import type { PreviewZone, WorkspaceApi, WorkspaceCtx } from "./types";
 import { mountShell } from "./ui/mount";
@@ -64,6 +66,12 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
 
     setTheme: theme => {
       chooseTheme(ctx, theme);
+    },
+
+    density: () => state.density.applied,
+
+    setDensity: value => {
+      chooseDensity(ctx, value);
     },
 
     preview: ws => previewState(state, ws),
@@ -118,6 +126,12 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
     overlayInGame: () => state.overlayInGame,
 
     setOverlayInGame: on => setOverlayInGame(ctx, on, "panel"),
+
+    reference: () => state.reference,
+
+    setReference: on => {
+      setReference(ctx, on);
+    },
 
     onPrefs: fn => addPrefsListener(state, fn)
   };

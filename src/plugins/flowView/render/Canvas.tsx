@@ -1,10 +1,11 @@
 /**
  * @file flowView render module — the Flow canvas (A1): the dot-grid clip box with the world layer
- * (frames, lanes, column heads, edges, cards, hub, stubs, notes, ports) and the pointer language of
- * design §4: wheel/pinch zoom and pan, drag on empty canvas pans, drag on a card or note moves it
- * (snap and pin on drop, Esc cancels), click selects or clears (M2), double-click enters, right
- * click opens a context menu. Tab onto a card, the hub or a note outside the clipped canvas pans
- * the camera onto it. The camera transform is written by the camera module, not by Preact.
+ * (frames, lanes, column heads, then the edges and their labels, then cards, hub, stubs and ports,
+ * so cards paint over edges) and the pointer language of design §4: wheel/pinch zoom and pan, drag
+ * on empty canvas pans, drag on a card moves it (snap and pin on drop, Esc cancels), click selects
+ * or clears (M2), double-click enters, right click opens a context menu. Tab onto a card or the hub
+ * outside the clipped canvas pans the camera onto it. The camera transform is written by the
+ * camera module, not by Preact.
  */
 import type { ComponentChildren, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -19,7 +20,6 @@ import { Frame } from "./Frame";
 import { Hub } from "./Hub";
 import { Lane } from "./Lane";
 import { NodeCard } from "./NodeCard";
-import { NoteNode } from "./NoteNode";
 import { Stub } from "./Stub";
 import type { WorldView } from "./types";
 
@@ -31,7 +31,7 @@ export type CanvasProps = {
   readonly actions: FlowActions;
   /** What the world draws; undefined before the first layout. */
   readonly world: WorldView | undefined;
-  /** The canvas chrome (breadcrumb, toolbar, zoom bar, minimap, labels, strip). */
+  /** The canvas chrome (breadcrumb, toolbar, zoom bar, minimap, labels, off-screen chevron). */
   readonly children?: ComponentChildren;
 };
 
@@ -62,7 +62,6 @@ type Drag = { readonly key: ItemKey; readonly dx: number; readonly dy: number };
  */
 const HITS: Readonly<Record<string, HitTarget>> = {
   card: "card",
-  note: "note",
   "hub-head": "hub-head",
   frame: "frame",
   "frame-head": "frame",
@@ -73,9 +72,9 @@ const HITS: Readonly<Record<string, HitTarget>> = {
 
 /**
  * The focusable world items a keyboard focus brings into view: a node card (and its expand
- * toggle), the hub (and its outcome rows) and a note.
+ * toggle) and the hub (and its outcome rows).
  */
-const REVEALED = '[data-hit="card"], [data-hit="hub-head"], [data-hit="note"]';
+const REVEALED = '[data-hit="card"], [data-hit="hub-head"]';
 
 /**
  * `PointerEvent.button` of the primary (left) button.
@@ -100,8 +99,8 @@ function hitOf(target: EventTarget | null): HTMLElement | undefined {
 }
 
 /**
- * True for an event inside the canvas chrome (toolbar, zoom bar, minimap, strip…), which handles
- * its own pointer input.
+ * True for an event inside the canvas chrome (toolbar, zoom bar, minimap…), which handles its own
+ * pointer input.
  *
  * @param target - The event target.
  * @returns Whether the canvas ignores the event.
@@ -151,7 +150,7 @@ function entersOnDoubleClick(hit: string | undefined): boolean {
 }
 
 /**
- * True for a `data-hit` the node menu opens on: a card, the hub head or a note.
+ * True for a `data-hit` the node menu opens on: a card or the hub head.
  *
  * @param hit - The `data-hit` value.
  * @returns Whether a right click opens the node menu.
@@ -161,7 +160,7 @@ function entersOnDoubleClick(hit: string | undefined): boolean {
  * ```
  */
 function opensNodeMenu(hit: string | undefined): boolean {
-  return hit === "card" || hit === "hub-head" || hit === "note";
+  return hit === "card" || hit === "hub-head";
 }
 
 /**
@@ -209,8 +208,8 @@ type WorldProps = {
 };
 
 /**
- * The element of one world item, looked up by key in the card, hub, stub and note views. A port
- * draws as a dot (entry) or a labelled tag (exit).
+ * The element of one world item, looked up by key in the card, hub and stub views. A port draws
+ * as a dot (entry) or a labelled tag (exit).
  *
  * @param props - The world layer props.
  * @param item - The item, already moved when it is the dragged one.
@@ -229,14 +228,9 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
     return <Hub key={item.key} ctx={ctx} actions={actions} item={item} view={hub} />;
   }
 
-  // A stub or a note: read-only views; a note shows its selection.
+  // A stub: a read-only view.
   const stub = world.stubs.get(item.key);
   if (stub !== undefined) return <Stub key={item.key} item={item} view={stub} />;
-  const note = world.notes.get(item.key);
-  if (note !== undefined) {
-    const isSelected = ctx.state.focus.selected === item.key;
-    return <NoteNode key={item.key} item={item} view={note} selected={isSelected} />;
-  }
 
   // A port: an entry dot or a labelled exit tag; anything else is not drawn.
   if (item.kind !== "port") return false;
@@ -255,7 +249,8 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
 }
 
 /**
- * The world layer.
+ * The world layer, in paint order: frames, lane bands, column heads, the edges with their labels,
+ * then the items, so a card always paints over the edges behind it.
  *
  * @param props - Context, actions, the world view, the drag and the hovered stub.
  * @returns The world element.
@@ -404,7 +399,7 @@ export function Canvas(props: CanvasProps): VNode {
     if (world !== undefined) actions.camera.apply();
   }, [actions, world === undefined]);
 
-  // A press starts a gesture: a drag on a card or note, otherwise a pan.
+  // A press starts a gesture: a drag on a card, otherwise a pan.
   const onPointerDown = useCallback(
     (event: PointerEvent) => {
       if (isIgnoredPress(event)) return;
@@ -414,7 +409,7 @@ export function Canvas(props: CanvasProps): VNode {
       const hit: HitTarget = name === undefined ? "canvas" : (HITS[name] ?? "canvas");
       const key = element?.dataset.key;
       const item = key === undefined ? undefined : world?.result.byKey[key];
-      const movable = item?.kind === "node" || item?.kind === "note";
+      const movable = item?.kind === "node";
       const pan = event.button === MIDDLE_BUTTON || space.current || !movable;
       gesture.current = {
         mode: pan ? "pan" : "drag",
@@ -474,10 +469,7 @@ export function Canvas(props: CanvasProps): VNode {
     const isDropOfMovedItem =
       current.mode === "drag" && current.moved >= DRAG_THRESHOLD && item !== undefined;
     if (isDropOfMovedItem) {
-      const x = item.x + current.dx;
-      const y = item.y + current.dy;
-      if (item.kind === "note") actions.layout.dropNote(item.id, item.flow, x, y);
-      else actions.layout.drop(item.key, x, y);
+      actions.layout.drop(item.key, item.x + current.dx, item.y + current.dy);
       return;
     }
     const intent = releaseIntent(current.moved, current.hit, current.key);
@@ -512,7 +504,7 @@ export function Canvas(props: CanvasProps): VNode {
       const hit = element?.dataset.hit;
       const key = element?.dataset.key;
 
-      // A card, the hub head or a note opens the node menu.
+      // A card or the hub head opens the node menu.
       if (opensNodeMenu(hit) && key !== undefined) {
         actions.focus.openMenu({ target: "node", key, outcome: undefined, x, y });
         return;

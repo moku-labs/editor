@@ -4,15 +4,24 @@
 
 The Files workspace has five parts:
 
-- A 272 px project tree ("Project · 24 files") built from `link.files.list`.
+- A project tree ("Project · 24 files") built from `link.files.list`, in the SidePanel `files.tree`.
 - Open-file tabs with a modified dot.
 - A file bar: crumb, Open in editor, Edit here.
 - A **Used by** row of flow and node chips.
-- The file body: code with line numbers and syntax colour, an in-place editor, and previews for Markdown notes, JSON, images and series `index.json`.
+- The file body: code with line numbers and syntax colour, an in-place editor, and previews for Markdown, JSON, images and series `index.json`.
 
 A save with a stale version shows "The file changed on disk · Reload / Overwrite".
 A game source saved outside `.moku/` while a game is linked reloads the game frame and restores the state (D-07).
 Every indexed file is a palette item (⌘K, group Files).
+
+### The tree panel
+
+The tree docks to the start edge in `SidePanel id="files.tree"` (panels/shared/side-panel, D-29): 272 px by default, resizable from 200 to 480 px.
+
+- `\` (Files only, not in inputs) collapses or expands it.
+- Its × closes it. A reopen button `data-action="reopen-files.tree"` then shows at the start edge. The palette item "Show Files tree" (Commands) shows Files and the tree.
+- Below a 600 px Files container (the Claude pane at 1/3) it floats over the editor as a drawer and starts collapsed. Picking a file shuts the drawer.
+- Width, collapsed and closed persist in localStorage `moku-editor:panel:files.tree`.
 
 ## Configuration
 
@@ -103,7 +112,7 @@ Log events: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revali
 | Plugin | Used for |
 |---|---|
 | `linkPlugin` | `files.list`, `files.read`, `files.write`, `files.readBinary`, `read("game.graph")`, `status()`, `onManifest`, `boot()` |
-| `workspacePlugin` | `show("files")`, `active()`, `toast`, `gameFrame().reload`, `palette.add`, `keys.bind`, `keys.escape` |
+| `workspacePlugin` | `show("files")`, `active()`, `toast`, `gameFrame().reload`, `palette.add` (files, "Show Files tree"), `keys.bind` (⌘S, `\`), `keys.escape` |
 | `panelsPlugin` | `register` the `files` panel |
 
 Shared modules, imported as plain modules:
@@ -112,7 +121,7 @@ Shared modules, imported as plain modules:
 |---|---|
 | `registry/protocol` (`source-files.ts`) | The node → file rule (R1): `nodeFile`, `flowFile`, overrides of `.moku/editor/files.json`. |
 | `panels/shared/highlight.ts` | `langOf`, `tokenizeLines`, `renderTokens`. |
-| `panels/shared/notes.ts` | `parseNote` for note front matter. |
+| `panels/shared/side-panel/` | `SidePanel`, `useSidePanel`, `showSidePanel`, `toggleSidePanel`, `sidePanelState` for the tree panel. |
 | `panels/shared/editor-url.ts` | `editorUrlOf` (R9). |
 
 filesView depends on no view (R4, D-13).
@@ -121,7 +130,7 @@ filesView depends on no view (R4, D-13).
 
 | Phase | What |
 |---|---|
-| `onInit` | Registers the Files panel. Binds ⌘S (`mod+s`, Files only, while editing) and the `fileEdit` Esc layer. No I/O. |
+| `onInit` | Registers the Files panel. Binds ⌘S (`mod+s`, Files only, while editing), `\` (the tree panel, Files only) and the `fileEdit` Esc layer. Adds the "Show Files tree" palette item. No I/O. |
 | `onStart` | Loads `game.graph` on every manifest. Starts the index build without awaiting it when the socket is open; otherwise the first `link:status` with an open socket starts it. Adds the `beforeunload` guard, active only while a tab is modified. |
 | `onStop` | Runs every remover and the palette remover. Clears the listeners. |
 
@@ -145,12 +154,13 @@ ctx.emit("workspace:open-file", { path: "nodes/merge.ts", line: 12 });
 - **flowView** hooks `workspace:select-node` from the Used-by chips. It emits `workspace:open-file` from the Inspector. Both views use the same node → file rule.
 - **gameView** hooks `workspace:open-sheet` and opens the contact sheet of a series. gameView writes the series `index.json` that filesView previews.
 - **workspace** serialises the D-07 reload (`gameFrame().reload({ restore: true })`). It runs only for `reloadExtensions` outside `.moku/` while the link is live or paused.
-- An unreadable note front matter is shown raw, cut at the `---` fences. Parsing stays in the shared `parseNote`.
+- A Markdown front matter shows as one plain block (`<pre data-front-matter>`) of its raw lines, cut at the `---` fences. filesView parses no front matter.
 - A failed read during Reload / Overwrite keeps the tab and its buffer and shows the reason in the status line.
 
 ## Styling
 
 One sheet per component in `view/`, each `@scope ([data-panel="files"] [data-part="<component>"])`.
+`FilesView.css` makes the view `position: relative`: it is the containing block of the tree drawer. The tree's edge line and width come from the SidePanel sheet.
 No sheet wraps itself in `@layer`: the tools page CSS entry imports them into `layer(components)` (R7).
 Only data attributes and elements are selected. Code colours come from the workspace `[data-token]` atoms.
 Markdown renders as VNodes, never `innerHTML`. Links only for http(s) and relative paths.

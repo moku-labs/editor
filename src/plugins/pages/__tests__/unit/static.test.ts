@@ -15,13 +15,13 @@ beforeAll(async () => {
   root = join(base, "game");
   await mkdir(join(root, "features", "board"), { recursive: true });
   await mkdir(join(root, ".git"), { recursive: true });
-  await mkdir(join(root, ".moku", "notes"), { recursive: true });
+  await mkdir(join(root, ".moku", "captures"), { recursive: true });
   await mkdir(join(root, "node_modules", "x"), { recursive: true });
   await writeFile(join(root, "manifest.json"), '{"a":1}');
   await writeFile(join(root, "features", "board", "tile 1.png"), new Uint8Array([1, 2, 3]));
   await writeFile(join(root, ".env"), "SECRET=1");
   await writeFile(join(root, ".git", "config"), "x");
-  await writeFile(join(root, ".moku", "notes", "a.md"), "x");
+  await writeFile(join(root, ".moku", "captures", "a.png"), "x");
   await writeFile(join(root, "node_modules", "x", "index.js"), "x");
   await writeFile(join(base, "outside.txt"), "outside");
   await symlink(join(base, "outside.txt"), join(root, "escape.txt"));
@@ -65,7 +65,7 @@ describe("createStaticFetch", () => {
     const paths = [
       "/.env",
       "/.git/config",
-      "/.moku/notes/a.md",
+      "/.moku/captures/a.png",
       "/node_modules/x/index.js",
       "/%2e%2e/outside.txt",
       "/features/%2e%2e/%2e%2e/outside.txt",

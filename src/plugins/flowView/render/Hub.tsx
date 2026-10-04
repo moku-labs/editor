@@ -40,6 +40,7 @@ export function Hub(props: HubProps): VNode {
       data-selected={view.selected ? "" : undefined}
       data-current={view.current ? "" : undefined}
       data-dimmed={view.dimmed ? "" : undefined}
+      data-pulse={view.pulse ? "" : undefined}
       data-trail={view.trail ? "" : undefined}
       role="button"
       tabIndex={0}

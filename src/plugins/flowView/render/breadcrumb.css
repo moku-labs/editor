@@ -1,4 +1,4 @@
-/* flowView · breadcrumb (B8), top-left: segments that navigate up, the last one bold, then the stack link. No @layer wrapper (R7). */
+/* flowView · breadcrumb (B8), top-left: segments that navigate up, the last one bold, then the stack link and the current node chip. No @layer wrapper (R7). */
 
 @scope ([data-flow="breadcrumb"]) {
   :scope {
@@ -32,6 +32,16 @@
   }
 
   [data-part="stack"] {
+    color: var(--accent-ink);
+  }
+
+  [data-part="current"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px;
+    border-radius: var(--radius-6);
+    background: var(--accent-soft);
     color: var(--accent-ink);
   }
 }

@@ -2,8 +2,8 @@
 
 > Standard plugin of the **tools** core (`createToolsPlugin`). The Render workspace (design A3, C9).
 
-Title "Render · game.render · frame N", six metric tiles, the render tree card and the textures
-card on the left, the Bundles, Pools and Release log cards on the right.
+Title "Render · game.render · frame N", five metric tiles (six with the JS heap tile in Chromium),
+the render tree card and the textures card on the left, the Bundles, Pools and Release log cards on the right.
 Hovering a tree row or a texture row draws a pink box (`--pick-tree`) around the element over the game frame.
 The box lives in renderView's own root inside `workspace.gameFrame().overlay()`, so it shows in the pinned preview.
 
@@ -34,6 +34,7 @@ The box lives in renderView's own root inside `workspace.gameFrame().overlay()`,
 const { tiles } = app.renderView.snapshot();
 tiles.drawCalls; // { kind: "absent" } in a production build
 tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium, { kind: "absent" } elsewhere
 
 app.renderView.reveal({ kind: "entity", id: 3_145_728 });
 app.renderView.snapshot().tree.find(row => row.id === "entity:3145728")?.depth; // 2
@@ -50,9 +51,10 @@ app.renderView.snapshot().textures.every(row => row.bundle === "ui"); // true
 | Output | Rule |
 |---|---|
 | Draw calls tile | The `game.render` counter, a dev-build counter on any backend. Without it: "Not counted in a production build". Sub-line "R render pass(es)" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
+| FPS tile | The newest sample, a sparkline of the kept samples. Sub-line "last N samples · low L". When the newest sample is 28-32 fps: "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)". Game time rests at 30 fps after 2 s without a change (D-28). |
 | Frame time tile | `frameMs`. One bar, no phase split. |
 | Scene tile | Entities, "V display objects · P pooled", and "P particles · E emitters · F filters" from `game.effects`. On an older game: "Particles and filters are not reported (follow-up F-R1)". |
-| JS heap tile | Always "Not reported". |
+| JS heap tile | `link.heap()` read on each `game.render` change: "JS heap · <used> MB · of <limit> MB". The page reports it from `performance.memory` (Chromium). Absent: the tile is not rendered. Cleared on a session change. |
 | Texture rows | Catalogue textures whose bundle is in `game.assets`. GPU MB = w × h × 4 / 2^20. |
 | Texture use | Per scene: referenced keys are in use. A key seen before and not referenced now is "unused since fF". A key never seen is "not seen since f<firstFrame>". Precision is one delivered value, only while Render is shown. |
 | Pools | One row "All pools". No per-pool counts. |
@@ -76,7 +78,7 @@ Log events: `renderView: unexpected source shape` (warn, once per wrong value), 
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the game sources, `read("game.rect")`, `files.read` of the manifest, `onManifest`, `status()` |
+| `linkPlugin` | `watch` of the game sources, `read("game.rect")`, `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
 | `workspacePlugin` | `show("render")`, `active()`, `onPrefs` (device change), `gameFrame().overlay()`, `palette.add` |
 | `panelsPlugin` | `register` the Render panel |
 
@@ -87,7 +89,7 @@ renderView depends on no other view (R4).
 
 | Watch | When | Why |
 |---|---|---|
-| `game.render`, `game.assets` | The whole session (onStart). | FPS samples and the release log need every change since the editor connected. |
+| `game.render`, `game.assets` | The whole session (onStart). | FPS samples and the release log need every change since the editor connected. Each `game.render` change also stores `link.heap()`. |
 | `game.effects` | The whole session, only while the manifest lists it (game 0.0.3). | Particles, emitters and filters for the Scene tile. |
 | `game.ui`, `game.entities`, `game.projections` | Only while Render is shown. | Entities can be large. |
 
@@ -148,11 +150,23 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `panel.tsx`, `components/` | The Render panel and its Preact components. |
 | `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7). |
 
+## Narrow layout
+
+The Render workspace is the inline-size container `render`.
+
+| Container width | Tiles grid | Card columns |
+|---|---|---|
+| ≥ 560 px | 6 columns, 3 at a viewport ≤ 1380 px | 2: tree and textures left, bundles, pools and release log right |
+| < 560 px | 2 columns | 1: the left column above the right |
+| < 380 px | 1 column | 1 |
+
+The render tree header wraps: Expand all and Collapse are one group that moves onto its own line, and the counts shrink (`min-inline-size: 0`).
+
 ## Limits and game follow-ups
 
 | Limit | Follow-up in `@moku-labs/game` |
 |---|---|
-| No render phase split, no JS heap, no per-pool counts. | F-R1. Particles, emitters, filters and render passes come from `game.effects` since game 0.0.3. |
+| No render phase split, no per-pool counts. | F-R1. Particles, emitters, filters and render passes come from `game.effects` since game 0.0.3. The JS heap comes from the page heartbeat. |
 | Texture rows come from the committed asset manifest. Without one the card says so. Texture use is approximate. | F-R2: `game.textures` with size and last use per texture. |
 | The release log is a diff. Its frame is approximate ("≈fN"). No reason. | F-R3: `assets:bundle-unloaded` with frame and reason. |
 | Tree types are ui tags and entity display kinds, not Pixi classes. | F-G1: a display-tree source. |

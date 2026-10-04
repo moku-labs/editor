@@ -20,7 +20,8 @@ import {
 // A scripted hub behind a fake WebSocket (no network) for the flowView
 // integration: the game channel answers watches with values the test sends,
 // runs with a RunResult, reads from a value map; the files channel works on an
-// in-memory project (versions, -32005 conflicts, -32601 for a missing file).
+// in-memory project (folders listed, versions, -32005 conflicts, -32601 for a
+// missing file).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** What a socket listener receives. */
@@ -77,6 +78,25 @@ export function createFlowHub(): FlowHub {
   const sessions: SessionInfo[] = [];
   const manifests = new Map<string, Manifest>();
 
+  /** The entries of a folder: its files and the folders under it. */
+  const listOf = (dir: string): Json[] => {
+    const prefix = dir === "" ? "" : `${dir}/`;
+    const entries = new Map<string, Json>();
+    for (const [file, entry] of hub.files) {
+      if (!file.startsWith(prefix)) continue;
+      const rest = file.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      const folder = `${prefix}${rest.slice(0, slash)}`;
+      entries.set(
+        slash === -1 ? file : folder,
+        slash === -1
+          ? { path: file, kind: "file", size: entry.text.length, version: entry.version }
+          : { path: folder, kind: "dir", size: 0 }
+      );
+    }
+    return [...entries.values()];
+  };
+
   const writeAnswer = (
     request: RpcRequest,
     path: string,
@@ -101,17 +121,9 @@ export function createFlowHub(): FlowHub {
     const path = typeof params.path === "string" ? params.path : "";
     if (request.method === "list") {
       const dir = typeof params.dir === "string" ? params.dir : "";
-      const prefix = dir === "" ? "" : `${dir}/`;
-      const entries = [...hub.files.entries()]
-        .filter(([file]) => file.startsWith(prefix) && !file.slice(prefix.length).includes("/"))
-        .map(([file, entry]) => ({
-          path: file,
-          kind: "file",
-          size: entry.text.length,
-          version: entry.version
-        }));
-      return encode(success(request.id, entries));
+      return encode(success(request.id, listOf(dir)));
     }
+
     if (request.method === "read") {
       const file = hub.files.get(path);
       if (file === undefined) {

@@ -5,6 +5,7 @@
 import type { VNode } from "preact";
 import { compactJson } from "../tree";
 import type { LastCommit, StatePatch, StateViewApi, TrackerNote } from "../types";
+import { Card } from "./Card";
 
 /**
  * Props of `PatchList`.
@@ -71,27 +72,28 @@ export function PatchList(props: PatchListProps): VNode {
   const { api, commit } = props;
   if (commit === undefined) {
     return (
-      <section data-card="" data-part="patch-list" aria-label="Last commit">
-        <header data-part="head">
-          <h3>Last commit</h3>
-        </header>
+      <Card part="patch-list" title="Last commit">
         <p data-part="empty">{EMPTY_TEXT[api.note()]}</p>
-      </section>
+      </Card>
     );
   }
 
   const total = commit.patches.length + commit.truncated;
   return (
-    <section data-card="" data-part="patch-list" aria-label="Last commit">
-      <header data-part="head">
-        <h3>Last commit</h3>
-        {commit.frame === undefined ? undefined : (
-          <span data-part="frame">{`~f${commit.frame}`}</span>
-        )}
-        <span data-tag="acc" data-part="count">
-          {total === 1 ? "1 patch" : `${total} patches`}
-        </span>
-      </header>
+    <Card
+      part="patch-list"
+      title="Last commit"
+      head={
+        <>
+          {commit.frame === undefined ? undefined : (
+            <span data-part="frame">{`~f${commit.frame}`}</span>
+          )}
+          <span data-tag="acc" data-part="count">
+            {total === 1 ? "1 patch" : `${total} patches`}
+          </span>
+        </>
+      }
+    >
       <ol data-part="patches">
         {commit.patches.map(patch => (
           <li key={patch.pointer} data-op={patch.op}>
@@ -105,6 +107,6 @@ export function PatchList(props: PatchListProps): VNode {
         <p data-part="more">{`+${commit.truncated} more patches`}</p>
       ) : undefined}
       {commit.rngChanged ? <p data-part="meta">rng advanced</p> : undefined}
-    </section>
+    </Card>
   );
 }

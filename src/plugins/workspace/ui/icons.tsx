@@ -25,7 +25,17 @@ export type IconName =
   | "commands"
   | "open"
   | "hide"
-  | "copy";
+  | "copy"
+  | "follow"
+  | "reset"
+  | "zoom-in"
+  | "zoom-out"
+  | "fit-all"
+  | "fit-selection"
+  | "history"
+  | "code"
+  | "styles"
+  | "target";
 
 /**
  * Props of `Icon`.
@@ -55,7 +65,18 @@ const PATHS: Readonly<Record<IconName, string>> = {
     "M6 4.5a1.5 1.5 0 1 0-1.5 1.5H11.5A1.5 1.5 0 1 0 10 4.5v7a1.5 1.5 0 1 0 1.5-1.5h-7A1.5 1.5 0 1 0 6 11.5z",
   open: "M9 3h4v4M13 3 7.5 8.5M11.5 9.5v3.5h-8.5v-8.5h3.5",
   hide: "M2.5 8s2-3.5 5.5-3.5S13.5 8 13.5 8 11.5 11.5 8 11.5 2.5 8 2.5 8zM3 13 13 3",
-  copy: "M5.5 5.5h7v7h-7zM3.5 10.5v-7h7"
+  copy: "M5.5 5.5h7v7h-7zM3.5 10.5v-7h7",
+  follow: "M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM8 1.5v2.5M8 12v2.5M1.5 8H4M12 8h2.5",
+  reset: "M3.5 8a4.5 4.5 0 1 0 1.5-3.4M3 2.5v2.5h2.5",
+  "zoom-in": "M3.5 8h9M8 3.5v9",
+  "zoom-out": "M3.5 8h9",
+  "fit-all": "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10",
+  "fit-selection": "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10M6.5 6.5h3v3h-3z",
+  code: "M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5",
+  styles: "M3 13l1-3.5L10.5 3 13 5.5 6.5 12zM9 4.5l2.5 2.5",
+  history: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2 1.3",
+  target:
+    "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM8 1v2M8 13v2M1 8h2M13 8h2"
 };
 
 /**

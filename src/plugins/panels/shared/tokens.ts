@@ -30,9 +30,6 @@ export const token = {
   teal: "--teal",
   edge: "--edge",
   canvasDot: "--canvas-dot",
-  noteFill: "--note-fill",
-  noteLine: "--note-line",
-  noteInk: "--note-ink",
   pickHover: "--pick-hover",
   pickTree: "--pick-tree",
   phase1: "--phase-1",
@@ -79,7 +76,6 @@ export const duration = {
   camera: "--duration-camera",
   zoom: "--duration-zoom",
   follow: "--duration-follow",
-  strip: "--duration-strip",
   walk: "--duration-walk",
   resize: "--duration-resize",
   toast: "--duration-toast"

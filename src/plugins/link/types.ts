@@ -1,6 +1,6 @@
 /**
- * @file link plugin — type definitions: config, private constants, the remote channel api, the
- * files client, state and the domain context. Wire shapes come from the protocol (R1).
+ * @file link plugin — type definitions: config, private constants, the remote channel api (with
+ * taps and the page heap), the files client, state and the domain context. Wire shapes come from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -15,6 +15,7 @@ import type {
   Manifest,
   SessionInfo,
   SubId,
+  Tap,
   ToolsBoot,
   WriteResult
 } from "../registry/protocol";
@@ -76,8 +77,8 @@ export type Config = {
  *
  * @example
  * ```ts
- * // The notes view saves a note while no game is connected.
- * await app.link.files.write(".moku/notes/2026-09-24-first-top-item.md", "# First top item\n");
+ * // The files view saves a Markdown tab while no game is connected.
+ * await app.link.files.write("docs/plan.md", "# Plan\n");
  * ```
  */
 export type FilesClient = {
@@ -88,9 +89,9 @@ export type FilesClient = {
    * @returns The entries.
    * @example
    * ```ts
-   * // The notes view lists the saved notes.
-   * await app.link.files.list(".moku/notes");
-   * // [{ path: ".moku/notes/a.md", kind: "file", size: 3, version: "v" }]
+   * // gameView lists the captures folder before it names a new capture.
+   * await app.link.files.list(".moku/captures");
+   * // [{ path: ".moku/captures/a.png", kind: "file", size: 3, version: "v" }]
    * ```
    */
   list(dir: string): Promise<readonly FileEntry[]>;
@@ -133,7 +134,7 @@ export type FilesClient = {
    * @returns `{ path, bytes, version }`.
    * @example
    * ```ts
-   * // A capture is saved next to the notes.
+   * // gameView saves a capture of the game frame.
    * await app.link.files.writeBinary(".moku/captures/a.png", "data:image/png;base64,iVBORw0KGgo=");
    * // { path: ".moku/captures/a.png", bytes: 8, version: "v" }
    * ```
@@ -296,6 +297,37 @@ export type LinkApi = EditorChannel & {
   isOtherTab(page: string): boolean;
 
   /**
+   * Listens to the taps of the attached game: every `pointerdown` on the game page, in page CSS
+   * px of the game document (device px of the frame) and the page's `performance.now()`. Taps of
+   * other sessions are dropped. The game page sends at most one tap per 50 ms. Each listener gets
+   * the same frozen tap; a throwing listener is logged and does not stop the others.
+   *
+   * @param listener - Called with each tap.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace draws a ripple where a click lands in the docked game frame.
+   * const stop = ctx.require(linkPlugin).onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
+   * stop();
+   * ```
+   */
+  onTap(listener: (tap: Tap) => void): () => void;
+
+  /**
+   * The JS heap of the attached game page from its last heartbeat, in MB rounded to 0.1. Only
+   * Chromium reports it.
+   *
+   * @returns A copy of `{ usedMb, limitMb }`; undefined until the page reports one, when its last
+   * beat had none, and after a session change.
+   * @example
+   * ```ts
+   * // The Render view shows the heap tile on each game.render change.
+   * ctx.require(linkPlugin).heap(); // { usedMb: 12.8, limitMb: 4095.8 } in Chromium, undefined elsewhere
+   * ```
+   */
+  heap(): { usedMb: number; limitMb: number } | undefined;
+
+  /**
    * The files channel client.
    *
    * @example
@@ -359,6 +391,8 @@ export type LinkState = {
   sticky: boolean;
   manifests: Map<string, Manifest>;
   manifestListeners: Set<(manifest: Manifest | undefined) => void>;
+  /** onTap listeners (wrappers: the same function added twice is two entries). */
+  tapListeners: Set<(tap: Tap) => void>;
   subs: Map<number, Subscription>;
   wire: Map<SubId, Subscription>;
   /** Only grows: a sub number is never reused, so late values of an old sub are dropped. */
@@ -366,7 +400,15 @@ export type LinkState = {
   /** Bumped on every attach; an answer of an older attach is ignored. */
   generation: number;
   nextKey: number;
-  heartbeat: { frame: number; paused: boolean; receivedAt: number } | undefined;
+  /** The last heartbeat of the chosen session; cleared on every attach and session loss. */
+  heartbeat:
+    | {
+        frame: number;
+        paused: boolean;
+        receivedAt: number;
+        heap?: { readonly usedMb: number; readonly limitMb: number };
+      }
+    | undefined;
   lostAt: number | undefined;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   silenceTimer: ReturnType<typeof setInterval> | undefined;

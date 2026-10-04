@@ -51,14 +51,10 @@ describe("Toasts", () => {
   it("shows at most 3 toasts, the file in mono after a middle dot", () => {
     act(() => {
       for (const text of ["one", "two", "three", "four"]) showToast(ctx, text);
-      showToast(ctx, "✓ Note saved", ".moku/notes/a.md");
+      showToast(ctx, "Saved", "src/styles.ts");
     });
-    expect(rows().map(row => row.textContent)).toEqual([
-      "three",
-      "four",
-      "✓ Note saved · .moku/notes/a.md"
-    ]);
-    expect(rows()[2]?.querySelector("code")?.textContent).toBe(".moku/notes/a.md");
+    expect(rows().map(row => row.textContent)).toEqual(["three", "four", "Saved · src/styles.ts"]);
+    expect(rows()[2]?.querySelector("code")?.textContent).toBe("src/styles.ts");
   });
 
   it("hover pauses a toast; leaving restarts its time", () => {

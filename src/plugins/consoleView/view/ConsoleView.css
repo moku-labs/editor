@@ -1,10 +1,11 @@
-/* consoleView · ConsoleView. The Console workspace frame: toolbar on top, the table area, the empty state and the bottom drawer. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* consoleView · ConsoleView. The Console workspace frame: toolbar on top, the table area, the empty state and the bottom drawer. The console is the inline-size container "console" its toolbar and drawer query at narrow widths. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="console"] [data-part="console"]) to (
   [data-part="toolbar"],
   [data-part="logtable"],
   [data-part="drawer"]
 ) {
   :scope {
+    container: console / inline-size;
     display: flex;
     flex-direction: column;
     block-size: 100%;

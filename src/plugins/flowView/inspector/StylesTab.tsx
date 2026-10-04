@@ -1,11 +1,12 @@
 /**
  * @file flowView inspector module — the Styles tab (C4): "Scene <scene> uses text styles from
- * <file> · Open in Files", one card per text-style key (select to switch), read-only font,
- * steppers only for fields with a shared rule (R8), read-only swatches, the applied bar, the block
- * excerpt with the changed line, the "Used by" chips (F-G1 fallback text). Fields shrink (M10).
+ * <file> · Open in Files" (the configured or found styles file), the text-style select with no
+ * card chosen until the person picks one ("Pick a text style"), read-only font, steppers only for
+ * fields with a shared rule (R8), read-only swatches, the applied bar, the block excerpt with the
+ * changed line. Fields shrink (M10).
  */
 import type { VNode } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useMemo } from "preact/hooks";
 import type { StyleField } from "../../panels/shared/style-edit";
 import {
   fieldRule,
@@ -99,41 +100,28 @@ export function StylesTab(props: StylesTabProps): VNode {
   const { ctx, actions, scene } = props;
   useFlowStore(ctx, state => state.view.revision);
   const styles = ctx.state.inspector.styles;
-  const file = ctx.config.stylesFile;
+  const file = styles?.file;
   const key = styles?.key;
-  const [usedBy, setUsedBy] = useState<readonly string[]>();
   const colours = useMemo(() => {
     const parsed = parseStyleFile(styles?.text ?? "");
     return isStyleEditError(parsed) ? new Map<string, string>() : parsed.colours;
   }, [styles?.text]);
 
-  useEffect(() => {
-    setUsedBy(undefined);
-    if (key === undefined) return;
-    let live = true;
-    actions.inspector
-      .usedBy(key)
-      .then(names => {
-        if (live) setUsedBy(names);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [actions, key]);
-
-  const header = (
-    <p data-part="header">
-      {`Scene ${scene ?? "—"} uses text styles from ${file} · `}
-      <button
-        type="button"
-        data-action="open-files"
-        onClick={() => actions.inspector.openInFiles(file)}
-      >
-        Open in Files
-      </button>
-    </p>
-  );
+  const header =
+    file === undefined ? (
+      <p data-part="header">{`Scene ${scene ?? "—"} · text styles`}</p>
+    ) : (
+      <p data-part="header">
+        {`Scene ${scene ?? "—"} uses text styles from ${file} · `}
+        <button
+          type="button"
+          data-action="open-files"
+          onClick={() => actions.inspector.openInFiles(file)}
+        >
+          Open in Files
+        </button>
+      </p>
+    );
   if (styles === undefined) {
     return (
       <div data-flow="styles-tab" data-part="body">
@@ -146,11 +134,7 @@ export function StylesTab(props: StylesTabProps): VNode {
     return (
       <div data-flow="styles-tab" data-part="body">
         {header}
-        <p data-part="reason">
-          {styles.error === undefined
-            ? `No text styles at ${file}`
-            : styleErrorText(styles.error, file)}
-        </p>
+        <p data-part="reason">{styleErrorText(styles.error ?? { error: "no-file" }, file)}</p>
       </div>
     );
   }
@@ -165,9 +149,10 @@ export function StylesTab(props: StylesTabProps): VNode {
       <label data-part="key">
         <span>Text style</span>
         <select
-          value={key}
+          value={key ?? ""}
           onChange={event => actions.inspector.selectStyle(event.currentTarget.value)}
         >
+          <option value="">Pick a text style</option>
           {keys.map(option => (
             <option key={option} value={option}>
               {option}
@@ -208,17 +193,6 @@ export function StylesTab(props: StylesTabProps): VNode {
           ))}
         </div>
       )}
-      <div data-part="used-by">
-        {usedBy === undefined || usedBy.length === 0 ? (
-          <span>Used by appears when the game reports style keys</span>
-        ) : (
-          usedBy.map(name => (
-            <span key={name} data-part="chip">
-              {name}
-            </span>
-          ))
-        )}
-      </div>
     </div>
   );
 }

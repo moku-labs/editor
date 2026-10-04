@@ -1,15 +1,15 @@
 /**
- * @file flowView inspector module — the Inspector (C1): kind glyph, path, clear ×, tags (kinds,
- * "current", "showing current · click a node", "Note · idea for the agent"), the tabs Info, Code,
- * Styles, Notes (count) with ←/→, the tab bodies; 320 px, wider for Code and Styles; the F5 string
- * "Nothing to inspect. Connect a game first." while no game is connected.
+ * @file flowView inspector module — the Inspector (C1) inside the `flow.inspector` SidePanel:
+ * Back (after a followed edge), kind glyph, path, clear ×, tags (kinds, "current", "showing
+ * current · click a node"), the tabs Info, Code, Styles with ←/→ (`data-wide` while Code or
+ * Styles shows: the panel's default width is 400 then), the tab bodies; the F5 string "Nothing to
+ * inspect. Connect a game first." while no game is connected.
  */
 import type { VNode } from "preact";
 import type { FlowActions, FlowCtx, NodeId } from "../types";
 import { useFlowStore } from "../useFlowStore";
 import { CodeTab } from "./CodeTab";
 import { InfoTab } from "./InfoTab";
-import { NotesTab } from "./NotesTab";
 import { StylesTab } from "./StylesTab";
 import type { InfoView, InspectorTab } from "./types";
 
@@ -28,7 +28,7 @@ export type InspectorProps = {
 /**
  * The tabs in order.
  */
-const TABS: readonly InspectorTab[] = ["info", "code", "styles", "notes"];
+const TABS: readonly InspectorTab[] = ["info", "code", "styles"];
 
 /**
  * The tab labels.
@@ -36,8 +36,7 @@ const TABS: readonly InspectorTab[] = ["info", "code", "styles", "notes"];
 const LABELS: Readonly<Record<InspectorTab, string>> = {
   info: "Info",
   code: "Code",
-  styles: "Styles",
-  notes: "Notes"
+  styles: "Styles"
 };
 
 /**
@@ -49,59 +48,39 @@ const LABELS: Readonly<Record<InspectorTab, string>> = {
 export function Inspector(props: InspectorProps): VNode {
   const { ctx, actions, shown, info } = props;
   const tab = useFlowStore(ctx, state => state.inspector.tab);
-  const { focus, data, layout } = ctx.state;
-  const selectedItem =
-    focus.selected === undefined ? undefined : layout.result?.byKey[focus.selected];
+  const { focus, data } = ctx.state;
   const status = data.status.kind;
   const stale = data.stale;
-  const wide = tab === "code" || tab === "styles";
-  const count = ctx.state.notes.files.filter(
-    file => shown !== undefined && file.note?.from?.node === shown
-  ).length;
-
-  if (selectedItem?.kind === "note") {
-    const note = ctx.state.notes.files.find(file => file.path === selectedItem.id)?.note;
-    return (
-      <aside data-flow="inspector" data-stale={stale ? "" : undefined} aria-label="Inspector">
-        <header data-part="head">
-          <code data-part="id">{selectedItem.id}</code>
-          <button
-            type="button"
-            data-action="clear"
-            aria-label="Clear"
-            onClick={() => actions.focus.leave()}
-          >
-            ×
-          </button>
-          <span data-tag="note">Note · idea for the agent</span>
-        </header>
-        <div data-part="body">
-          <strong>{note?.title ?? selectedItem.label}</strong>
-          <p>{note?.body}</p>
-        </div>
-      </aside>
-    );
-  }
 
   const empty = status === "empty" || status === "connecting";
   if (info === undefined || (empty && focus.selected === undefined)) {
     return (
-      <aside data-flow="inspector" data-stale={stale ? "" : undefined} aria-label="Inspector">
+      <div data-flow="inspector" data-stale={stale ? "" : undefined}>
         <p data-part="placeholder">
           {empty ? "Nothing to inspect. Connect a game first." : "Select a node to inspect it."}
         </p>
-      </aside>
+      </div>
     );
   }
 
   return (
-    <aside
+    <div
       data-flow="inspector"
       data-stale={stale ? "" : undefined}
-      data-wide={wide ? "" : undefined}
-      aria-label="Inspector"
+      data-wide={tab === "code" || tab === "styles" ? "" : undefined}
     >
       <header data-part="head">
+        {focus.back.length > 0 && (
+          <button
+            type="button"
+            data-action="back"
+            title="Back (Alt+←)"
+            aria-label="Back"
+            onClick={() => actions.focus.back()}
+          >
+            ‹
+          </button>
+        )}
         <span
           data-part="glyph"
           data-glyph={info.kinds.includes("sub-flow") ? "sub-flow" : info.kinds[0]}
@@ -137,6 +116,7 @@ export function Inspector(props: InspectorProps): VNode {
         onKeyDown={event => {
           if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
           event.preventDefault();
+          event.stopPropagation();
           const step = event.key === "ArrowRight" ? 1 : -1;
           const next = TABS[(TABS.indexOf(tab) + step + TABS.length) % TABS.length] ?? "info";
           actions.inspector.setTab(next);
@@ -151,14 +131,13 @@ export function Inspector(props: InspectorProps): VNode {
             tabIndex={tab === name ? 0 : -1}
             onClick={() => actions.inspector.setTab(name)}
           >
-            {name === "notes" ? `${LABELS[name]} (${count})` : LABELS[name]}
+            {LABELS[name]}
           </button>
         ))}
       </div>
       {tab === "info" && <InfoTab ctx={ctx} actions={actions} info={info} />}
       {tab === "code" && <CodeTab ctx={ctx} actions={actions} id={shown} />}
       {tab === "styles" && <StylesTab ctx={ctx} actions={actions} scene={info.scene} />}
-      {tab === "notes" && <NotesTab ctx={ctx} actions={actions} id={shown} />}
-    </aside>
+    </div>
   );
 }

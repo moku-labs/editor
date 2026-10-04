@@ -95,7 +95,7 @@ describe("fitRect", () => {
     expect(toScreen(cam, 500, 0).x).toBeCloseTo(194 - 194 / 8, 6);
   });
 
-  it("a desktop canvas keeps the full padding (1088 × 632 with the strip and the column)", () => {
+  it("a desktop canvas keeps the full padding (1088 × 632 with a bottom inset and the column)", () => {
     const desktop = { w: 1088, h: 856 };
     const insets = { top: 0, right: 224, bottom: 224, left: 0 };
     const rect = { x: 0, y: 0, w: 1000, h: 1000 };

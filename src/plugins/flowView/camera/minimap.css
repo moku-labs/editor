@@ -1,4 +1,4 @@
-/* flowView · minimap (B7), 200×128 bottom-right 12 px: item rects (accent current, note yellow notes, frames outlined) and the viewport rect; lifts with the strip; on a canvas under 480 px it sits above the zoom bar row so the two never overlap. No @layer wrapper (R7). */
+/* flowView · minimap (B7), 200×128 bottom-right 12 px: item rects (accent current, frames outlined), the trail lines, the current node's dot and the viewport rect; on a canvas under 480 px it sits above the zoom bar row so the two never overlap. No @layer wrapper (R7). */
 
 @scope ([data-flow="minimap"]) {
   :scope {
@@ -11,23 +11,9 @@
     cursor: pointer;
   }
 
-  :scope[data-lift] {
-    bottom: calc(12px + var(--flow-strip-h));
-  }
-
   @container flow-canvas (max-width: 480px) {
     :scope {
       bottom: 56px;
-    }
-
-    :scope[data-lift] {
-      bottom: calc(56px + var(--flow-strip-h));
-    }
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    :scope {
-      transition: bottom var(--duration-zoom) var(--ease-out);
     }
   }
 
@@ -49,12 +35,20 @@
     stroke: var(--line-2);
   }
 
-  [data-minimap-item][data-kind="note"] {
-    fill: var(--note-line);
-  }
-
   [data-minimap-item][data-current] {
     fill: var(--accent);
+  }
+
+  [data-part="trail"] {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5px;
+  }
+
+  [data-part="current"] {
+    fill: var(--accent);
+    stroke: var(--surface-panel);
+    stroke-width: 1px;
   }
 
   [data-part="viewport"] {

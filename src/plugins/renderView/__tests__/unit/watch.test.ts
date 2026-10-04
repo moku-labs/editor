@@ -95,6 +95,34 @@ describe("tracker", () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
+  it("reads the page heap from link on each game.render change", () => {
+    startTracker(ctx);
+    const heap = vi.fn<() => { usedMb: number; limitMb: number } | undefined>(() => ({
+      usedMb: 12.8,
+      limitMb: 4095.8
+    }));
+    ctx.link.api.heap = heap;
+
+    ctx.link.send("game.render", RENDER);
+    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
+
+    heap.mockReturnValue(undefined);
+    ctx.link.send("game.render", RENDER);
+    expect(ctx.state.heap).toBeUndefined();
+    expect(heap).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the heap of the last good game.render value after a bad one", () => {
+    startTracker(ctx);
+    ctx.link.api.heap = () => ({ usedMb: 12.8, limitMb: 4095.8 });
+    ctx.link.send("game.render", RENDER);
+
+    ctx.link.api.heap = () => undefined;
+    ctx.link.send("game.render", { fps: "fast" });
+
+    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
+  });
+
   it("logs a shape error and keeps the last value", () => {
     startTracker(ctx);
     ctx.link.send("game.render", RENDER);
