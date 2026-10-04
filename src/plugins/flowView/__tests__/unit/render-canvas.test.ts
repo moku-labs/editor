@@ -152,6 +152,57 @@ describe("Canvas (A1)", () => {
     unmount();
   });
 
+  it("Tab onto a card outside the clipped canvas pans onto it; the selection stays", async () => {
+    const { ctx, actions } = await prepared();
+    const centreOn = vi.spyOn(actions.camera, "centreOn");
+    const { host, unmount } = await mountWorkspace(ctx);
+    const canvas = host.querySelector<HTMLElement>('[data-flow="canvas"]');
+    if (canvas === null) throw new Error("no canvas");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+    ctx.state.camera.cam = { x: -100, y: 20, z: 2 };
+    const selected = ctx.state.focus.selected;
+
+    /** Places an element at a client rect and focuses it from the keyboard. */
+    const focusAt = async (element: HTMLElement, rect: DOMRect): Promise<void> => {
+      vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect);
+      await settle(() => {
+        globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab" }));
+        element.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      });
+    };
+
+    // Off the right edge: the camera centres the card, the selection is untouched.
+    await focusAt(card(host, "main/home"), new DOMRect(500, 100, 172, 46));
+    expect(centreOn).toHaveBeenCalledTimes(1);
+    expect(centreOn).toHaveBeenCalledWith((586 + 100) / 2, (123 - 20) / 2, true);
+    expect(ctx.state.focus.selected).toBe(selected);
+
+    // The hub counts too; a card fully inside does not move the camera.
+    await focusAt(card(host, "main/board>board/awaitIntent"), new DOMRect(-300, 40, 200, 200));
+    expect(centreOn).toHaveBeenCalledTimes(2);
+    await focusAt(card(host, "main/settings"), new DOMRect(20, 20, 172, 46));
+    expect(centreOn).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it("a focus that comes from a press in the canvas never moves the camera", async () => {
+    const { ctx, actions } = await prepared();
+    const centreOn = vi.spyOn(actions.camera, "centreOn");
+    const { host, unmount } = await mountWorkspace(ctx);
+    const canvas = host.querySelector<HTMLElement>('[data-flow="canvas"]');
+    if (canvas === null) throw new Error("no canvas");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 300));
+    const home = card(host, "main/home");
+    vi.spyOn(home, "getBoundingClientRect").mockReturnValue(new DOMRect(350, 100, 172, 46));
+    pointer(home, "pointerdown", 360, 110);
+    await settle(() => {
+      home.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    });
+    pointer(home, "pointerup", 360, 110);
+    expect(centreOn).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it("marks the data areas stale with the link silent (M13)", async () => {
     const { ctx } = await prepared();
     const { host, unmount } = await mountWorkspace(ctx);

@@ -7,6 +7,7 @@
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, Item, Rect } from "../types";
 import { animateTo, applyCamera, cancelAnimation, DURATION } from "./animate";
+import { previewZoneInsets } from "./chrome";
 import {
   centreAt,
   clampZoom,
@@ -201,6 +202,9 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
     },
 
     insets: () => insetsOf(ctx, env),
+
+    previewZone: canvas =>
+      previewZoneInsets(canvas, ctx.state.focus.strip ? STRIP_H : 0, env.preview()),
 
     cancel: () => {
       cancelAnimation(ctx);

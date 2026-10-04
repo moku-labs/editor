@@ -138,6 +138,11 @@ The Nodes group is replaced when the graph hash changes. The Styles group is rep
 | `←` `→` `↑` `↓` | Walk and move the highlight, while the strip is open. |
 | `enter` | Focus the card that has keyboard focus. |
 | `mod+s` | Save the code edit or the note, while editing. |
+| `tab` | Moves focus card to card. A card, the hub or a note outside the canvas pans the camera onto it. Zoom and selection stay. |
+
+The canvas clips (`overflow: clip`) and never scrolls, so the pan above is the only way a focused item comes into view.
+
+The pinned preview floats in the canvas, clear of the breadcrumb and toolbar band, the zoom bar, the strip and the minimap (`camera/chrome.ts`). When the float shares columns with the minimap, its bottom inset clears the minimap. That is bottom-right always, and bottom-left on a canvas too narrow for both. A tall float on a short canvas is raised only as far as it still fits under the top band.
 
 ## Usage
 
@@ -174,7 +179,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 
 | Folder | What |
 |---|---|
-| `camera/` | Pure camera math, input interpretation, the rAF tween (reduced motion jumps), the zoom bar and the minimap. Camera moves write the world transform directly and never re-render node cards. |
+| `camera/` | Pure camera math, the chrome geometry (preview zone, focus reveal), input interpretation, the rAF tween (reduced motion jumps), the zoom bar and the minimap. Camera moves write the world transform directly and never re-render node cards. |
 | `layout/` | Hub detection, the hub-lane layout, DFS back edges, the ELK input and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, the neighbours strip. |
 | `notes/` | Slugs, the note actions over the shared codec `panels/shared/notes`, the note editor. |

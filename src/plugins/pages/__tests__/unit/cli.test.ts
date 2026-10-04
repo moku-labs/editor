@@ -117,7 +117,7 @@ describe("startBin", () => {
 });
 
 describe("startBin dev server (D-22)", () => {
-  it("serves the game without Bun's HMR, keeps the browser console forwarding", async () => {
+  it("serves the game without Bun's HMR and without console forwarding", async () => {
     const serve = vi.spyOn(Bun, "serve");
     const { deps } = createDeps();
     const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
@@ -125,7 +125,7 @@ describe("startBin dev server (D-22)", () => {
       expect(started.code).toBe(0);
       expect(serve).toHaveBeenCalledTimes(1);
       const options: { development?: unknown } | undefined = serve.mock.calls[0]?.[0];
-      expect(options?.development).toEqual({ hmr: false, console: true });
+      expect(options?.development).toEqual({ hmr: false });
     } finally {
       serve.mockRestore();
       await started.stop?.();

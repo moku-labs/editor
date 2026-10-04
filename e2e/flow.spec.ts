@@ -432,7 +432,10 @@ test.describe("flow · canvas", () => {
     // A click on the frame head does not select the frame either.
     const head = flow(page).locator("[data-flow=frame][data-key='#main'] [data-part=head]");
     await reveal(page, head);
-    await head.click();
+    // Click the revealed centre: the head is wider than the canvas, and the middle of its part in
+    // the window can sit under the preview float.
+    const box = await head.boundingBox();
+    await head.click({ position: { x: (box?.width ?? 0) / 2, y: (box?.height ?? 0) / 2 } });
     await expect(flow(page).locator("[data-selected]")).toHaveCount(0);
   });
 });
@@ -776,6 +779,63 @@ test.describe("flow · camera", () => {
     );
     await expect.poll(async () => await camX(page)).toBeLessThan(clicked.x);
     expect(await zoomOf(page)).toBeCloseTo(before.z, 5);
+  });
+
+  test("Tab onto a card outside the canvas brings it into view; the selection stays", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showFlow(tools);
+    await card(page, "main/home").focus();
+    const before = await camera(page);
+    let revealed: string | undefined;
+    for (let presses = 0; presses < 60 && revealed === undefined; presses++) {
+      // Cards that are not fully inside the canvas before this Tab.
+      const outside = await flow(page)
+        .locator("[data-flow=node-card]")
+        .evaluateAll(cards => {
+          const box = document.querySelector("[data-flow=canvas]")?.getBoundingClientRect();
+          if (box === undefined) return [];
+          return cards
+            .filter(element => {
+              const rect = element.getBoundingClientRect();
+              const isInside =
+                rect.left >= box.left &&
+                rect.top >= box.top &&
+                rect.right <= box.right &&
+                rect.bottom <= box.bottom;
+              return !isInside;
+            })
+            .map(element => (element as HTMLElement).dataset.key ?? "");
+        });
+      await page.keyboard.press("Tab");
+      const focused = await page.evaluate(() => {
+        const active = document.activeElement;
+        return active instanceof HTMLElement && active.dataset.flow === "node-card"
+          ? active.dataset.key
+          : undefined;
+      });
+      if (focused !== undefined && outside.includes(focused)) revealed = focused;
+    }
+    expect(revealed, "Tab reached a card outside the canvas").toBeDefined();
+    if (revealed === undefined) return;
+    await expect(card(page, revealed)).toBeFocused();
+    await expect
+      .poll(async () => {
+        const canvas = await flow(page).locator("[data-flow=canvas]").boundingBox();
+        const box = await card(page, revealed).boundingBox();
+        if (canvas === null || box === null) return false;
+        return (
+          box.x >= canvas.x - 1 &&
+          box.y >= canvas.y - 1 &&
+          box.x + box.width <= canvas.x + canvas.width + 1 &&
+          box.y + box.height <= canvas.y + canvas.height + 1
+        );
+      }, `${revealed} inside the canvas`)
+      .toBe(true);
+    // A pan, not a focus move: the zoom and the selection stay.
+    expect(await zoomOf(page)).toBeCloseTo(before.z, 5);
+    await expect(flow(page).locator("[data-selected]")).toHaveCount(0);
   });
 
   test("a drag on empty canvas pans and selects nothing", async ({ tools }) => {

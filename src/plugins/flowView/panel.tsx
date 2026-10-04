@@ -7,7 +7,6 @@ import { useEffect, useLayoutEffect } from "preact/hooks";
 import { definePanel } from "../panels/define";
 import type { PanelSpec, PanelTools } from "../panels/types";
 import { actionsOf } from "./actions";
-import { STRIP_H } from "./camera/api";
 import { Minimap } from "./camera/Minimap";
 import { ZoomBar } from "./camera/ZoomBar";
 import { ingest } from "./data";
@@ -23,11 +22,6 @@ import { YouAreHere } from "./render/YouAreHere";
 import type { FlowCommands, FlowCtx, FlowValues } from "./types";
 import { useElement, useFlowStore } from "./useFlowStore";
 import { historyView, infoView, worldView } from "./view-model";
-
-/**
- * Height of the breadcrumb and toolbar band the pinned preview keeps clear of.
- */
-const CHROME_TOP = 56;
 
 /**
  * Props of the Flow workspace root.
@@ -98,11 +92,11 @@ export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
   useEffect(() => {
     const canvas = root.current?.querySelector<HTMLElement>('[data-flow="canvas"]');
     if (canvas === undefined || canvas === null) return;
-    return tools.workspace.previewZone("flow", canvas, () => ({
-      top: CHROME_TOP,
-      bottom: CHROME_TOP + (ctx.state.focus.strip ? STRIP_H : 0)
-    }));
-  }, [ctx, tools, root, empty]);
+    return tools.workspace.previewZone("flow", canvas, () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      return actions.camera.previewZone({ w: width, h: height });
+    });
+  }, [actions, tools, root, empty]);
 
   const world = empty ? undefined : worldView(ctx, actions);
   const rows = historyView(ctx);

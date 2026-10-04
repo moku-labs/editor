@@ -3,10 +3,12 @@
  * (frames, lanes, column heads, edges, cards, hub, stubs, notes, ports) and the pointer language of
  * design §4: wheel/pinch zoom and pan, drag on empty canvas pans, drag on a card or note moves it
  * (snap and pin on drop, Esc cancels), click selects or clears (M2), double-click enters, right
- * click opens a context menu. The camera transform is written by the camera module, not by Preact.
+ * click opens a context menu. Tab onto a card, the hub or a note outside the clipped canvas pans
+ * the camera onto it. The camera transform is written by the camera module, not by Preact.
  */
 import type { ComponentChildren, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { revealPoint } from "../camera/chrome";
 import { DRAG_THRESHOLD, isTextField, releaseIntent, wheelOp } from "../camera/input";
 import type { HitTarget } from "../camera/types";
 import { rerouteTouching } from "../layout/routes";
@@ -68,6 +70,12 @@ const HITS: Readonly<Record<string, HitTarget>> = {
   stub: "card",
   outcome: "card"
 };
+
+/**
+ * The focusable world items a keyboard focus brings into view: a node card (and its expand
+ * toggle), the hub (and its outcome rows) and a note.
+ */
+const REVEALED = '[data-hit="card"], [data-hit="hub-head"], [data-hit="note"]';
 
 /**
  * `PointerEvent.button` of the primary (left) button.
@@ -295,6 +303,8 @@ export function Canvas(props: CanvasProps): VNode {
   const canvas = useElement<HTMLDivElement>();
   const gesture = useRef<Gesture | undefined>(undefined);
   const space = useRef(false);
+  // True from a press in the canvas until the next key: a focus by pointer never moves the camera.
+  const pointing = useRef(false);
   // The hit of the last two presses: a double-click enters what its FIRST press was on, because
   // that press selects the item and the focus camera moves it away from under the pointer.
   const presses = useRef<{ readonly hit: string | undefined; readonly key: string | undefined }[]>(
@@ -346,11 +356,12 @@ export function Canvas(props: CanvasProps): VNode {
   // Track the Space key: while it is held, a drag pans.
   useEffect(() => {
     /**
-     * Space held outside a text field: drags pan.
+     * Space held outside a text field: drags pan. Any key ends a pointer focus.
      *
      * @param event - The keydown.
      */
     const down = (event: KeyboardEvent): void => {
+      pointing.current = false;
       if (event.code === "Space" && !isTextField(event.target)) space.current = true;
     };
     /**
@@ -525,6 +536,24 @@ export function Canvas(props: CanvasProps): VNode {
     [actions, canvas, world]
   );
 
+  // A keyboard focus on an item outside the clipped canvas pans the camera onto it; the
+  // selection stays (overflow: clip means the browser never scrolls it into view).
+  const onFocusIn = useCallback(
+    (event: FocusEvent) => {
+      const element = canvas.current;
+      const target = event.target;
+      const isItem = target instanceof Element && target.closest(REVEALED) !== null;
+      if (pointing.current || element === undefined || !isItem) return;
+      const point = revealPoint(
+        target.getBoundingClientRect(),
+        element.getBoundingClientRect(),
+        ctx.state.camera.cam
+      );
+      if (point !== undefined) actions.camera.centreOn(point.x, point.y, true);
+    },
+    [actions, canvas, ctx]
+  );
+
   // Hovering a stub draws its return edge.
   const onPointerOver = useCallback(
     (event: PointerEvent) => {
@@ -543,6 +572,9 @@ export function Canvas(props: CanvasProps): VNode {
       role="group"
       aria-label="Flow graph"
       ref={canvas.ref}
+      onPointerDownCapture={() => {
+        pointing.current = true;
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -550,6 +582,7 @@ export function Canvas(props: CanvasProps): VNode {
       onPointerOver={onPointerOver}
       onDblClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      onFocusIn={onFocusIn}
     >
       {world !== undefined && (
         <World ctx={ctx} actions={actions} world={world} drag={drag} hover={hover} />

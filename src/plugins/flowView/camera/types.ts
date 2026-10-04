@@ -3,6 +3,7 @@
  * intents, the public camera api and the internal camera actions.
  */
 import type { Camera, Item, ItemKey } from "../types";
+import type { ZoneInsets } from "./chrome";
 
 /**
  * Viewport size in px.
@@ -151,6 +152,11 @@ export type CameraActions = CameraApi & {
   setView(view: ViewSize): void;
   /** The insets of the available rect: strip, preview column (also stored in state). */
   insets(): ViewInsets;
+  /**
+   * The insets of the preview zone in a canvas of this size: the top band, and at the bottom the
+   * zoom bar band and the strip, raised above the minimap when the float shares its columns.
+   */
+  previewZone(canvas: ViewSize): ZoneInsets;
   /** Cancels the running tween. */
   cancel(): void;
   /** Writes the camera to the DOM and notifies the camera subscribers. */

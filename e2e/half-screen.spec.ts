@@ -398,7 +398,7 @@ test.describe("half-screen", () => {
       .toBeLessThanOrEqual(2);
   });
 
-  test("Flow: breadcrumb, canvas toolbar, zoom bar and minimap never overlap", async ({
+  test("Flow: breadcrumb, canvas toolbar, zoom bar, minimap and preview never overlap", async ({
     tools
   }) => {
     const page = tools.page;
@@ -429,6 +429,12 @@ test.describe("half-screen", () => {
         if (a === undefined || b === undefined) continue;
         expect(overlaps(a, b), `${nameA} overlaps ${nameB}`).toBe(false);
       }
+    }
+    // The pinned preview floats clear of the minimap (spec 12 §Available rect).
+    const preview = await rectOf(page, "[data-ui=preview]:not([hidden])");
+    expect(preview, "preview shows").toBeDefined();
+    if (preview !== undefined && parts.minimap !== undefined) {
+      expect(overlaps(preview, parts.minimap, 0), "minimap overlaps preview").toBe(false);
     }
     // Code widens the Inspector; in a half window it never gets narrower than the plain one.
     const plain = await rectOf(page, "[data-flow=inspector]");

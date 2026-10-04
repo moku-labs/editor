@@ -73,6 +73,17 @@ describe("camera api", () => {
     expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
   });
 
+  it("previewZone keeps the float clear of the minimap, lifted by the open strip", () => {
+    const { ctx, fakes } = createTestCtx();
+    const camera = actionsOf(ctx).camera;
+    fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
+    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 186 });
+    ctx.state.focus.strip = true;
+    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 410 });
+    fakes.preview = { visible: true, size: "S", corner: "top-left", width: 150, height: 280 };
+    expect(camera.previewZone({ w: 1088, h: 856 })).toEqual({ top: 56, bottom: 280 });
+  });
+
   it("a focus at half screen centres the card in the canvas, clear of the preview", async () => {
     const { ctx, fakes } = createTestCtx();
     await prepare(ctx);
