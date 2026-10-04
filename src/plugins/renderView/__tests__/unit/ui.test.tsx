@@ -183,6 +183,34 @@ describe("RenderWorkspace", () => {
     expect(q("[data-tile='draws']")?.hasAttribute("data-absent")).toBe(false);
   });
 
+  it("reads 'Effects not installed in this game' when the game has no effects plugin", async () => {
+    show();
+    await fill();
+    const manifest = manifestOf(["game.render", "game.assets"]);
+
+    ctx.link.attach({
+      ...manifest,
+      sources: [
+        ...manifest.sources,
+        {
+          id: "game.effects",
+          title: "Effects",
+          input: {},
+          changes: "frame",
+          available: false,
+          reason: "app.effects is undefined"
+        }
+      ]
+    });
+    await flush();
+    show();
+
+    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
+      "Effects not installed in this game"
+    );
+    expect(ctx.link.active("game.effects")).toEqual([]);
+  });
+
   it("marks stale data and lists the release log", async () => {
     await fill();
     ctx.link.current = { kind: "live", frame: 1900 };

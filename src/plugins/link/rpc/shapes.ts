@@ -227,20 +227,29 @@ function readDescriptor(
 }
 
 /**
- * Reads a source descriptor.
+ * Reads a source descriptor. `available: false` and its text `reason` are kept (a source the game
+ * does not have); any other `available` value, or a reason without it, is dropped.
  *
  * @param value - A Json value.
  * @returns The descriptor, or undefined.
  * @example
  * ```ts
  * readSource({ id: "game.graph", title: "Graph", input: {}, changes: "edge" });
+ * readSource({ id: "game.effects", title: "Effects", input: {}, changes: "frame", available: false, reason: "app.effects is undefined" });
  * ```
  */
 function readSource(value: Json): SourceDescriptor | undefined {
   const common = readDescriptor(value);
   const changes = common?.object.changes;
   if (common === undefined || !isChanges(changes)) return undefined;
-  return { id: common.id, title: common.title, input: common.input, changes };
+
+  const source = { id: common.id, title: common.title, input: common.input, changes };
+  if (common.object.available !== false) return source;
+
+  const reason = textOf(common.object, "reason");
+  return reason === undefined
+    ? { ...source, available: false }
+    : { ...source, available: false, reason };
 }
 
 /**

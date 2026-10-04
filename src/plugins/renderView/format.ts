@@ -1,10 +1,11 @@
 /**
  * @file renderView plugin — the pure texts of the Render workspace: the metric tiles, the
  * sparkline points, the texture use tags and the bounds line. What the game does not report is
- * named; the JS heap tile is left out where the page reports no heap.
+ * named; the JS heap tile is left out where the page reports no heap. A game without the effects
+ * plugin reads "Effects not installed in this game" on the Scene tile.
  */
 import type { PageRect } from "../panels/shared/scene";
-import type { MetricTiles, TextureUse } from "./types";
+import type { EffectsStats, MetricTiles, TextureUse } from "./types";
 
 /**
  * What one metric tile shows.
@@ -38,6 +39,11 @@ const NOT_COUNTED = "Not counted in a production build";
  * The Scene tile's effects line on a game without game.effects (older than 0.0.3).
  */
 const NO_EFFECTS = "Particles and filters are not reported (follow-up F-R1)";
+
+/**
+ * The Scene tile's effects line on a game without the effects plugin (game.effects not installed).
+ */
+const EFFECTS_NOT_INSTALLED = "Effects not installed in this game";
 
 /**
  * The FPS sub-line while the game rests at its idle rate (D-28).
@@ -184,31 +190,51 @@ function drawsView(draws: MetricTiles["drawCalls"]): TileView {
 }
 
 /**
- * The scene tile: entities, display objects and pooled, and the effects line (game 0.0.3) or
- * what the game does not report.
+ * The Scene tile's effects line: the counts (game 0.0.3), what an older game does not report, or
+ * that the game has no effects plugin.
+ *
+ * @param effects - The game.effects value, if delivered.
+ * @param installed - False when the game has no effects plugin.
+ * @returns The line.
+ * @example
+ * ```ts
+ * effectsLine({ particles: 18, emitters: 1, filters: 24, renderPasses: 49 }, true); // "18 particles · 1 emitter · 24 filters"
+ * effectsLine(undefined, false); // "Effects not installed in this game"
+ * ```
+ */
+function effectsLine(effects: EffectsStats | undefined, installed: boolean): string {
+  if (!installed) return EFFECTS_NOT_INSTALLED;
+  if (effects === undefined) return NO_EFFECTS;
+  return [
+    counted(effects.particles, "particle", "particles"),
+    counted(effects.emitters, "emitter", "emitters"),
+    counted(effects.filters, "filter", "filters")
+  ].join(" · ");
+}
+
+/**
+ * The scene tile: entities, display objects and pooled, and the effects line. While the scene is
+ * not there yet, the line shows only when the game has no effects plugin.
  *
  * @param scene - The tile data.
+ * @param installed - False when the game has no effects plugin.
  * @returns The view.
  * @example
  * ```ts
- * sceneView({ entities: 101, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }).note;
- * // "18 particles · 1 emitters · 24 filters"
+ * sceneView({ entities: 101, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }, true).note;
+ * // "18 particles · 1 emitter · 24 filters"
  * ```
  */
-function sceneView(scene: MetricTiles["scene"]): TileView {
-  if (scene === undefined) return waiting("scene", "Scene", "Waiting for the scene");
+function sceneView(scene: MetricTiles["scene"], installed: boolean): TileView {
+  if (scene === undefined) {
+    const view = waiting("scene", "Scene", "Waiting for the scene");
+    return installed ? view : { ...view, note: EFFECTS_NOT_INSTALLED };
+  }
   const { entities, views, pooled, effects } = scene;
   const sub = `${views} display objects · ${pooled} pooled`;
   return {
     ...shown("scene", "Scene", String(entities), "entities", sub),
-    note:
-      effects === undefined
-        ? NO_EFFECTS
-        : [
-            counted(effects.particles, "particle", "particles"),
-            counted(effects.emitters, "emitter", "emitters"),
-            counted(effects.filters, "filter", "filters")
-          ].join(" · ")
+    note: effectsLine(effects, installed)
   };
 }
 
@@ -300,7 +326,7 @@ export function tileViews(tiles: MetricTiles): readonly TileView[] {
         ),
     drawsView(tiles.drawCalls),
     texturesView(tiles.textures),
-    sceneView(tiles.scene),
+    sceneView(tiles.scene, tiles.effectsInstalled !== false),
     ...heapViews(tiles.heap)
   ];
 }

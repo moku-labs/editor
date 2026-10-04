@@ -28,7 +28,7 @@
     "moku-editor": "./dist/bin.mjs"
   },
   "license": "MIT",
-  "files": ["dist", "LICENSE", "README.md"],
+  "files": ["dist", "LICENSE", "README.md", "llms.txt", "llms-full.txt"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/moku-labs/editor.git"

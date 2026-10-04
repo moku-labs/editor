@@ -34,6 +34,7 @@ The box lives in renderView's own root inside `workspace.gameFrame().overlay()`,
 const { tiles } = app.renderView.snapshot();
 tiles.drawCalls; // { kind: "absent" } in a production build
 tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+tiles.effectsInstalled; // false on a game without the effects plugin, else absent
 tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium, { kind: "absent" } elsewhere
 
 app.renderView.reveal({ kind: "entity", id: 3_145_728 });
@@ -53,7 +54,7 @@ app.renderView.snapshot().textures.every(row => row.bundle === "ui"); // true
 | Draw calls tile | The `game.render` counter, a dev-build counter on any backend. Without it: "Not counted in a production build". Sub-line "R render pass(es)" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
 | FPS tile | The newest sample, a sparkline of the kept samples. Sub-line "last N samples · low L". When the newest sample is 28-32 fps: "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)". Game time rests at 30 fps after 2 s without a change (D-28). |
 | Frame time tile | `frameMs`. One bar, no phase split. |
-| Scene tile | Entities, "V display objects · P pooled", and "P particles · E emitters · F filters" from `game.effects`. On an older game: "Particles and filters are not reported (follow-up F-R1)". |
+| Scene tile | Entities, "V display objects · P pooled", and "P particles · E emitters · F filters" from `game.effects`. On an older game: "Particles and filters are not reported (follow-up F-R1)". On a game without the effects plugin (`game.effects` listed with `available: false`): "Effects not installed in this game", also while the tile waits for the scene. |
 | JS heap tile | `link.heap()` read on each `game.render` change: "JS heap · <used> MB · of <limit> MB". The page reports it from `performance.memory` (Chromium). Absent: the tile is not rendered. Cleared on a session change. |
 | Texture rows | Catalogue textures whose bundle is in `game.assets`. GPU MB = w × h × 4 / 2^20. |
 | Texture use | Per scene: referenced keys are in use. A key seen before and not referenced now is "unused since fF". A key never seen is "not seen since f<firstFrame>". Precision is one delivered value, only while Render is shown. |
@@ -90,7 +91,7 @@ renderView depends on no other view (R4).
 | Watch | When | Why |
 |---|---|---|
 | `game.render`, `game.assets` | The whole session (onStart). | FPS samples and the release log need every change since the editor connected. Each `game.render` change also stores `link.heap()`. |
-| `game.effects` | The whole session, only while the manifest lists it (game 0.0.3). | Particles, emitters and filters for the Scene tile. |
+| `game.effects` | The whole session, only while the manifest lists it as available (game 0.0.3). | Particles, emitters and filters for the Scene tile. |
 | `game.ui`, `game.entities`, `game.projections` | Only while Render is shown. | Entities can be large. |
 
 - The bridge re-reads each watched frame source once per heartbeat and sends changes only. No timer reads a frame source.
@@ -98,7 +99,7 @@ renderView depends on no other view (R4).
 - `game.rect` of the first keyed ui element calibrates the scene once per session and again after a device change.
 - The asset manifest is read from the first `manifestPaths` entry that holds a version-1 manifest.
 - `game.effects` follows `link.onManifest`. A manifest that lists it starts one watch. A manifest without it stops the watch and clears the value. A lost session keeps it.
-- A 0.0.3 game without the effects plugin still lists the source. Its read fails and link logs one `link:watch-failed { id: "game.effects" }`.
+- A game without the effects plugin lists the source with `available: false` (the agent's probe). renderView sends no watch, sets `effectsInstalled: false` on the tiles and the Scene tile reads "Effects not installed in this game". Nothing is logged. `empty` forgets the flag.
 - A value of the wrong shape warns once and the last good value stays.
 
 ## Lifecycle

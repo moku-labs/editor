@@ -264,9 +264,10 @@ describe("cross-intents: flow intents", () => {
     const live = await liveStack();
     const { tools } = live;
     const { workspace, filesView, flowView, consoleView, link } = tools.app;
-    // Flow mounts its panel, and so its watches, when first shown (Game is the default).
-    // flowView takes its first game.history value as the baseline: play must come after it, or
-    // the edge lands in the first batch with no live frame and the label is #0.
+    // flowView watches the flow sources from start; its canvas renders when Flow is first shown
+    // (Game is the default). flowView takes its first game.history value as the baseline: play
+    // must come after it, or the edge lands in the first batch with no live frame and the label
+    // is #0.
     workspace.show("flow");
     await until(() => delivered(live.server.tap, "game.history"), "flowView's first history value");
     await link.run("game.answer", { intent: "play" });

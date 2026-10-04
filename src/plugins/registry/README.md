@@ -38,7 +38,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 
 | Method | Returns | Notes |
 |---|---|---|
-| `manifest()` | `Manifest` | Frozen. Descriptors only, cached until the next `add`. `game`, `page`, `embedded` are read at call time. `panels` is omitted. |
+| `manifest()` | `Manifest` | Frozen. Descriptors only, cached until the next `add`. `game`, `page`, `embedded` are read at call time. `panels` is omitted. Each build probes the door sources first (see "Sources the game does not have"). |
 | `source(id)` | `SourceEntry \| undefined` | `undefined` for an unknown id. The caller maps it to -32601 `unknown_id`. |
 | `command(id)` | `CommandEntry \| undefined` | Door, module or editor command. |
 | `add(entry)` | `void` | Adds an editor command. Call it in `onInit`. |
@@ -58,13 +58,36 @@ registry.clock(); // { frame: 1840, paused: false }
 | Member | Signature | Behaviour |
 |---|---|---|
 | `SourceEntry.descriptor` | `SourceDescriptor` | Fresh frozen `{ id, title, input, changes }`. Never the door object. |
-| `SourceEntry.read` | `(raw: Json) => Json` | `checkInput`, the door read, `toWireValue`. `null` means no input. |
-| `SourceEntry.watch` | `(raw: Json, fn: (value: Json) => void) => () => void` | Checks the input now. Delivers on the next frame, not at once. Returns the door's unsubscribe (idempotent). |
+| `SourceEntry.read` | `(raw: Json) => Json` | Availability, `checkInput`, the door read, `toWireValue`. `null` means no input. |
+| `SourceEntry.watch` | `(raw: Json, fn: (value: Json) => void) => () => void` | Checks availability and the input now. Delivers on the next frame, not at once. Returns the door's unsubscribe (idempotent). |
 | `CommandEntry.descriptor` | `CommandDescriptor` | Fresh frozen `{ id, title, input, effect }`. |
 | `CommandEntry.run` | `(raw: Json) => Promise<RunResult>` | Async. Never throws synchronously. Door and module commands go through the game's `run` (dev guard, cheat journal). |
 
 A watch never throws into the game's frame loop. A door read error, a `toWireValue` error or a
 listener error is caught and logged once per streak. The next good delivery ends the streak.
+
+### Sources the game does not have
+
+A game can lack the plugin behind a door source: a merge game without `effectsPlugin`, a
+screenless game without `ui`, `world` or a renderer. The registry probes every door source once
+with its default input (`{}`) each time it builds the manifest: at `onStart` (the editor starts
+after the game) and after every `add` that dropped the cache. A door that throws is not installed:
+
+| Where | What |
+|---|---|
+| Manifest | The descriptor gains `available: false` and `reason` (the first line of what the door threw). An available source has neither key. |
+| `read`, `watch` | Throw -32008 `not_installed`, not retryable: `[moku-editor] source <id> is not available in this game: <reason>`. No door call, no warn. |
+| Log | One `registry:source-unavailable` info `{ id, reason }` when a source turns unavailable; none per read. |
+
+A source with a required input (`game.rect`) and every module source are never probed. The next
+build probes again: a source that answers is available again.
+
+```ts
+await editor.start(); // probes the door sources
+editor.registry.manifest().sources.find(source => source.id === "game.effects");
+// { id: "game.effects", title: "Effects", input: {}, changes: "frame", available: false, reason: "Cannot read properties of undefined (reading 'stats')" } in Chromium
+editor.registry.source("game.effects")?.read(null); // throws -32008 not_installed
+```
 
 ### `add` rules
 
@@ -94,14 +117,16 @@ registry.add({
 | A source door threw | -32000 `command_failed` | `[moku-editor] <id>: <door message>` |
 | A command door threw | -32000 `command_failed` | `[moku-editor] <id>: <first line of the door message>` |
 | The value is not JSON | -32006 `not_json` | `[moku-editor] test.leaky: function is not JSON at $.fn` |
+| The source is not installed in this game | -32008 `not_installed` | `[moku-editor] source game.effects is not available in this game: <reason>` |
 
-Logs (`ctx.log.warn`, payload `{ id, message }`):
+Logs (`ctx.log.warn`, payload `{ id, message }`, unless noted):
 
 | Event | When |
 |---|---|
 | `registry:source-failed` | A source door threw in `read`. |
 | `registry:command-failed` | A command door rejected in `run`. |
 | `registry:watch-failed` | A watch failed inside a frame. Once per streak. |
+| `registry:source-unavailable` | Info, payload `{ id, reason }`: the probe found a door source not installed. Once per source while it stays so. |
 
 ## Events
 
@@ -161,7 +186,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | Module | Holds |
 |---|---|
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
-| `errors.ts` | `ERROR_PREFIX`, `errorCode`, `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
+| `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
@@ -181,7 +206,7 @@ Game-channel notifications of the agent and their params:
 
 | Item | Status |
 |---|---|
-| Screen-only doors (`game.render`, `game.ui`, `game.capture`) on a headless app | Listed in the manifest. Calling them throws in the door: -32000 `command_failed`. |
+| Screen-only doors (`game.render`, `game.ui`, `game.capture`) on a headless app | The sources are listed with `available: false` and answer -32008 `not_installed`. The `game.capture` command throws in the door: -32000 `command_failed`. |
 | A `frame` source watched in process | One read per frame. The bridge throttles over the wire. |
 | `add` after start | The tools page sees it on the next `hello` only. |
 | F-T1 `runWith` in `@moku-labs/game/control` | Not needed. The typing spike passes without casts. |

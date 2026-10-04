@@ -350,6 +350,8 @@ export type Subscription = {
   readonly onValue: (value: Json) => void;
   /** Numeric wire sub while attached (R6), else undefined. */
   wireSub: SubId | undefined;
+  /** The session that answered -32008 `not_installed`: the watch is not sent to it again. */
+  refusedBy?: string | undefined;
 };
 
 /**

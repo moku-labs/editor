@@ -6,7 +6,8 @@
 - Peer dependency: `@moku-labs/game >= 0.0.2` (`game.effects` needs 0.0.3)
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
 - Bin: `moku-editor <game-html> [--port 3000] [--root .] [--help]` (Bun only)
-- Full reference: llms-full.txt (every Config, Api and event type verbatim)
+- Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
+- Built for a narrow pane: Claude's browser pane at 1/3 (480 px) or 1/2 (720 px) of the screen; every workspace works at 480 px.
 
 ## Entry points
 
@@ -24,10 +25,14 @@
 - Global configs `AgentConfig`, `ServerConfig`, `ToolsConfig` are empty. Every option belongs to a plugin and is set through `pluginConfigs` (shallow merge; arrays replace).
 - Registry: the doors and `.dev` modules become closure-erased entries. Raw `Json` in, `checkInput` against the descriptor's `InputSchema`, door call, `toWireValue` out.
 - Manifest: descriptors only (`sources`, `commands`), plus `game`, `page`, `embedded`. Sent by the bridge in `hello`.
+- Not installed: the registry probes every door source once with its default input at start and on each manifest rebuild. A door that throws (a game without `effectsPlugin`, a screenless game without `ui`/`world`) is listed with `available: false` and `reason`; its reads and watches answer -32008 `not_installed` (not retryable). The link neither logs nor retries it; Render reads "Effects not installed in this game".
+- Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") }`. With the flag `false` the bundle keeps no editor code; the package is `"sideEffects": false` and the agent core is `/* @__PURE__ */`.
 - EditorChannel: `read`, `watch`, `run`, `status`. In process it is the agent `channel`; remote it is the tools `link`. Every panel reads through it.
 - Source `changes`: `frame` (re-read by the bridge once per heartbeat), `commit`, `edge` (followed by watch). Values are sent only when their JSON text changed.
 - Command `effect`: `read`, `route`, `cosmetic`, `cheat`, `raw`. Editor-owned commands (`editor.*`) cannot be `cheat` or `raw`.
-- Sessions: one per connected game page, id `s-` + 4 hex. Tools pick one: sticky choice, then newest embedded, then newest.
+- Sessions: one per connected game page, id `s-` + 4 hex. Tools pick one: sticky choice, then this tab's own game frame (`__editorFrame`), then newest embedded, then newest.
+- Heartbeat: `{ frame, paused, at, heap? }`; `heap { usedMb, limitMb }` only in Chromium. Taps: the bridge sends `tap { x, y, at }` per pointerdown (at most one per 50 ms); `link.onTap` gets them; workspace draws ripples.
+- Tools page: Game is the default workspace; ⌘1–⌘6 = Game, Flow, Render, State, Files, Console. Density `auto` (compact below 820 px) / `compact` / `comfortable`. Reference mode (key R) lays `data-moku-*` proxies over the game elements; "Copy reference" copies an `@moku …` line for the chat. The pinned preview plays the game; S/M/L sizes it. Views' side panels are one `SidePanel` (resize, collapse, close, reopen, overlay drawer).
 - LinkStatus: `connecting`, `live { frame }`, `paused { frame }`, `silent { since, lastFrame }`, `lost { reason, lastFrame, retryInMs }`, `empty`.
 - Panels are data (D-04): `definePanel` returns a frozen spec; the `panels` host owns subscriptions, first-value waiting, stale marking, teardown.
 - Views never depend on each other (D-13): cross-view intents are global tools events (`workspace:open-file`, `workspace:select-node`, …).
@@ -39,17 +44,17 @@
 
 ## Quick start
 
-Game page (dev entry):
+Game page (dev entry; the agent drops out of a production build):
 
 ```ts
-import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
-
-const devPlugins = __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [];
-const editor = createApp({
-  plugins: devPlugins,
-  pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
-});
-await editor.start(); // never waits for the editor server
+if (__MOKU_GAME_DEV__) {
+  const { bridgePlugin, capturePlugin, createApp } = await import("@moku-labs/editor/agent");
+  const editor = createApp({
+    plugins: [bridgePlugin, capturePlugin],
+    pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
+  });
+  await editor.start(); // after the game; never waits for the editor server
+}
 ```
 
 Server (Bun):
@@ -105,14 +110,14 @@ toWireError(error: unknown): WireError
 fromWireError(error: WireError): ProtocolError
 isRetryable(error: unknown): boolean
 bareMessage(message: string): string                            // strips "[moku-editor] "
-errorCode, ERROR_PREFIX, ProtocolError
+errorCode, ERROR_PREFIX, ProtocolError                         // errorCode.notInstalled = -32008
 nodeFile, flowFile, kebab, parseOverrides, SOURCE_ROOTS, SOURCE_OVERRIDES_PATH   // node → file rule
 ```
 
 ### Agent APIs
 
 ```ts
-registry.manifest(): Manifest
+registry.manifest(): Manifest                    // probes door sources on each build; unavailable ones carry available: false
 registry.source(id: string): SourceEntry | undefined
 registry.command(id: string): CommandEntry | undefined
 registry.add(entry: CommandEntry): void          // in onInit; editor commands only
@@ -123,7 +128,7 @@ channel.read(id: string, input?: Json): Promise<Json>
 channel.watch(id: string, input: Json | undefined, onValue: (value: Json) => void): () => void
 channel.run(id: string, input?: Json): Promise<RunResult>
 channel.status(): LinkStatus
-channel.heartbeat(): Heartbeat                   // { frame, paused, at }
+channel.heartbeat(): Heartbeat                   // { frame, paused, at, heap? }
 channel.onHeartbeat(fn: HeartbeatListener): () => void
 
 overlay.open(): void
@@ -168,12 +173,15 @@ link.session(): string | undefined
 link.choose(session: string): Promise<Manifest>
 link.retry(): void
 link.boot(): ToolsBoot | undefined
+link.frameUrl(url: string): string / link.isOtherTab(page: string): boolean
+link.onTap(listener: (tap: Tap) => void): () => void
+link.heap(): { usedMb, limitMb } | undefined      // Chromium page heap from the last heartbeat
 link.files: { list, read, write, writeBinary(path, dataUrl), readBinary }
 
-workspace.active() / show(ws) / theme() / setTheme(theme?) / preview(ws) / setPreview(ws, patch)
+workspace.active() / show(ws) / theme() / setTheme(theme?) / density() / setDensity(choice) / preview(ws) / setPreview(ws, patch)
 workspace.device() / setDevice(patch) / devices() / gameFrame() / palette.add(item) / palette.open(query?)
 workspace.toast(message, file?) / mount(element) / host(ws) / badge(ws, badge?) / previewZone(ws, el, insets?)
-workspace.keys.bind(binding) / keys.escape(layer, close) / overlayInGame() / setOverlayInGame(on) / onPrefs(fn)
+workspace.keys.bind(binding) / keys.escape(layer, close) / overlayInGame() / setOverlayInGame(on) / reference() / setReference(on) / onPrefs(fn)
 
 panels.register(panel: PanelSpec): void
 panels.run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>
@@ -181,15 +189,15 @@ panels.list(): readonly PanelSpec[]
 panels.mountInto(ws: WorkspaceId, element: HTMLElement): () => void
 
 flowView.camera.{ get, fitAll, fitSelection, zoomBy, zoomTo, follow }
-flowView.focus.{ select, selected, current, walk, focusFrame, step, history }
+flowView.focus.{ select, selected, current, walk, followEdge, focusFrame, step, history }
 flowView.flows.{ expand, collapse, enter, up }
 flowView.layout.{ pinnedCount, reset }
-flowView.notes.{ list, edit, create, attach }
 
 gameView.pick(on?) / selected() / select(ref?) / inspect(ref) / scene() / locate(ref) / highlight(ref?)
-gameView.manifest() / capture() / series({ durationMs, intervalMs, label? }) / stopSeries() / openSheet(indexPath) / attach(capture, notePath) / notes()
+gameView.manifest() / capture() / series({ durationMs, intervalMs, label? }) / stopSeries() / openSheet(indexPath)
 
 renderView.refresh() / snapshot() / reveal(ref) / highlight(ref?) / sortTextures(key) / filterBundle(bundle)
+// snapshot().tiles.heap: { kind: "value", usedMb, limitMb } in Chromium, else { kind: "absent" }; tiles.effectsInstalled: false without effectsPlugin
 
 stateView.lastCommit() / note() / onCommit(fn) / tainted() / graph() / expanded(pointer, depth) / setExpanded(pointer, open) / expandAll(root, open)
 
@@ -211,16 +219,17 @@ type AgentEvents = {
 };
 type ServerEvents = {
   "hub:session": HubSession;       // { id, game, open, reason?: "bye" | "game_reloaded" }
-  "files:written": FilesWritten;   // { path, bytes, kind: "code" | "style" | "note" | "layout" | "capture" | "other" }
+  "files:written": FilesWritten;   // { path, bytes, kind: "code" | "style" | "layout" | "capture" | "other" }
 };
 type ToolsEvents = {
   "link:status": { status: LinkStatus; session?: string };
   "workspace:changed": { ws: WorkspaceId };
   "workspace:ran": RanEvent;
+  "workspace:density": { density: "compact" | "comfortable" };
+  "workspace:reference": { on: boolean };
   "workspace:open-file": { path: string; line?: number };
   "workspace:select-node": { id: string };
   "workspace:focus-frame": { frame: number };
-  "workspace:new-note": { captures?: readonly string[]; from?: { node: string; outcome?: string } };
   "workspace:reveal": { ref: ElementRef };
   "workspace:inspect": { ref: ElementRef };
   "workspace:open-sheet": { index: string };
@@ -233,26 +242,26 @@ One line each: core · tier · purpose · key methods · events (E = emits, H = 
 
 ### Agent core (`editor-agent`)
 
-- registry · agent · Complex · wraps game doors, `.dev` modules and `editor.*` commands into entries; builds the Manifest; owns `./protocol` · `manifest`, `source`, `command`, `add`, `envelope`, `clock` · no events
-- channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
+- registry · agent · Complex · wraps game doors, `.dev` modules and `editor.*` commands into entries; builds the Manifest; probes door sources (not installed → `available: false`, -32008); owns `./protocol` · `manifest`, `source`, `command`, `add`, `envelope`, `clock` · no events
+- channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms, `heap` in Chromium) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
 - overlay · agent · Standard · Preact card over the game: render chips and one-click cheats; off by default; adds command `editor.overlay` · `open`, `close`, `isOpen` · H `bridge:status`
-- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, backoff 1 s → 30 s · `status`, `session` · E `bridge:status`
+- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s · `status`, `session` · E `bridge:status`
 - capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own · no app api · no events
 
 ### Server core (`editor-server`)
 
 - files · server · Standard · project-root sandbox: list, read, atomic write with sha1 version, image captures under `.moku/captures/` · `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` · E `files:written`
-- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, backpressure; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `path` · E `hub:session`
+- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `path` · E `hub:session`
 - pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*` and `/hello`; home of the `moku-editor` bin · `routes` · no events
 
 ### Tools core (`editor-tools`)
 
-- link · tools · Complex · the tools page's only connection: boot JSON, socket, session choice, remote EditorChannel, files client, link status · `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `session`, `choose`, `retry`, `boot`, `files` · E `link:status`
-- workspace · tools · Complex · the shell: top bar, rail, palette, toasts, keys, Esc unwinding, prefs, one game iframe, D-07 reload, overlay-in-game switch · `show`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `badge`, `setOverlayInGame` · E `workspace:changed`, `workspace:ran`; H `link:status`
-- panels · tools · Standard · panel host for `definePanel` specs; holds `shared/` view modules · `register`, `run`, `list`, `mountInto` · E `workspace:ran`; H `link:status`, `workspace:changed`
-- flowView · tools · VeryComplex · Flow workspace: flow-graph canvas with ELK, focus and neighbours strip, trail, notes, code and style inspector · `camera`, `focus`, `flows`, `layout`, `notes` · E `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:new-note`
-- gameView · tools · Complex · Game workspace: device stage, picker, style card, screenshots, series, contact sheet · `pick`, `inspect`, `scene`, `locate`, `highlight`, `capture`, `series`, `stopSeries`, `openSheet`, `attach` · E `workspace:reveal`, `workspace:new-note`, `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`
-- renderView · tools · Standard · Render workspace: tiles, render tree, textures, bundles, pools, release log · `refresh`, `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle` · E `workspace:inspect`; H `workspace:changed`, `link:status`, `workspace:reveal`
+- link · tools · Complex · the tools page's only connection: boot JSON, socket, session choice, remote EditorChannel, files client, link status, taps and heap; a -32008 watch is not logged or retried · `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `session`, `choose`, `retry`, `boot`, `frameUrl`, `isOtherTab`, `onTap`, `heap`, `files` · E `link:status`
+- workspace · tools · Complex · the shell: top bar, rail (Game first and default), palette, toasts, keys, Esc unwinding, prefs (theme, density, preview, device, Show taps), one game iframe with a playable pinned preview, tap ripples, Reference mode, D-07 reload, overlay-in-game switch · `show`, `density`, `setDensity`, `reference`, `setReference`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `badge`, `setOverlayInGame` · E `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; H `link:status`
+- panels · tools · Standard · panel host for `definePanel` specs; holds `shared/` view modules (scene, style edit, highlight, `SidePanel`) · `register`, `run`, `list`, `mountInto` · E `workspace:ran`; H `link:status`, `workspace:changed`
+- flowView · tools · VeryComplex · Flow workspace: flow-graph canvas with ELK (spacing by density, labels never overlap), focus, Info-tab neighbours with followEdge (frames both ends, pulse), Find current, trail, code and style inspector · `camera`, `focus`, `flows`, `layout` · E `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`
+- gameView · tools · Complex · Game workspace (the default): device stage, picker, style card, Reference mode proxies and "Copy reference", screenshots, series, contact sheet · `pick`, `inspect`, `scene`, `locate`, `highlight`, `capture`, `series`, `stopSeries`, `openSheet` · E `workspace:reveal`, `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`
+- renderView · tools · Standard · Render workspace: tiles (JS heap in Chromium, FPS rest note, "Effects not installed in this game"), render tree, textures, bundles, pools, release log · `refresh`, `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle` · E `workspace:inspect`; H `workspace:changed`, `link:status`, `workspace:reveal`
 - stateView · tools · Standard · State workspace: player/session trees, last commit derived by diffing `game.model`, runner card · `lastCommit`, `note`, `onCommit`, `tainted`, `graph`, `expanded`, `setExpanded`, `expandAll` · H `link:status`, `workspace:ran`
 - filesView · tools · Complex · Files workspace: tree, tabs, viewer, editor, previews, conflict bar, Used by · `open`, `close`, `save`, `resolveConflict`, `refresh`, `fileOf`, `flowFileOf`, `usedBy`, `editorUrl`, `subscribe` · E `workspace:select-node`, `workspace:open-sheet`; H `link:status`, `workspace:changed`, `workspace:open-file`
 - consoleView · tools · Standard · Console workspace: `game.log` table, level filter, search, Preserve log, command errors, rail badge · `lines`, `visible`, `counts`, `setFilter`, `clear`, `setPreserve`, `refresh`, `focusFrame`, `subscribe` · E `workspace:focus-frame`; H `link:status`, `workspace:ran`
@@ -271,11 +280,11 @@ tools:  link → workspace → panels → flowView, gameView, renderView, stateV
 ## Wire
 
 - Socket URL: `{path}/ws?token=<t>&kind=agent|tools` (default path `/__editor`). Hello: `GET {path}/hello` → `{ ws, token }`.
-- Agent → hub: `hello { manifest }` (first, else close 1008), `heartbeat`, `value { sub, value }`, `bye`.
+- Agent → hub: `hello { manifest }` (first, else close 1008), `heartbeat`, `value { sub, value }`, `tap { x, y, at }`, `bye`.
 - Hub → agent: requests `manifest`, `read`, `watch`, `unwatch`, `run` (channel `game`); notification `session` (channel `editor`).
 - Tools → hub: `game` channel `manifest`, `read`, `run`, `watch`, `unwatch`; `files` channel `list`, `read`, `write`, `writeBinary`, `readBinary`.
-- Hub → tools: `sessions { list }`, `session`, forwarded `heartbeat` and `value`.
-- Error codes: -32600 invalid request, -32601 unknown method/id, -32602 invalid input, -32000 command failed, -32001 game reloaded (retryable), -32002 timeout / link closed (retryable), -32003 no session / choose session, -32004 forbidden path, -32005 version conflict, -32006 not JSON, -32007 unauthorized. Every message starts with `[moku-editor] `.
+- Hub → tools: `sessions { list }`, `session`, forwarded `heartbeat`, `value` and `tap`.
+- Error codes: -32600 invalid request, -32601 unknown method/id, -32602 invalid input, -32000 command failed, -32001 game reloaded (retryable), -32002 timeout / link closed (retryable), -32003 no session / choose session, -32004 forbidden path, -32005 version conflict, -32006 not JSON, -32007 unauthorized, -32008 not installed (the game does not have the source). Every message starts with `[moku-editor] `.
 
 ## File structure
 
@@ -296,7 +305,8 @@ src/
     <name>/__tests__/unit, __tests__/integration
 tests/
   unit/              framework-level unit tests
-  integration/       root stack tests (helpers/stack.ts: startStack, shutdown); tiny game in CI, merge-game locally
+  integration/       root stack tests (helpers/stack.ts: startStack, shutdown); tiny game in CI, merge-game locally;
+                     agent-bundle.test.ts (needs `bun run build`), not-installed.test.ts
 scripts/build-tools.ts   bundles the tools page into dist/tools
 ```
 
@@ -306,7 +316,7 @@ scripts/build-tools.ts   bundles the tools page into dist/tools
 
 ## Docs
 
-- README.md: overview, quick start, plugins, configuration, events
+- README.md: overview, quick start, production builds, plugins, configuration, events
 - llms-full.txt: verbatim Config/Api/Event types, config reference, examples, error codes, custom plugins
 - src/plugins/<name>/README.md: per-plugin detail
 - Moku Core specification: https://github.com/moku-labs/core/tree/main/specification

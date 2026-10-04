@@ -28,6 +28,8 @@ export type CameraState = {
   insets: ViewInsets;
   /** The default camera was applied once for the current root. */
   initialised: boolean;
+  /** A selection came before the first canvas measure: the default camera frames it instead. */
+  frameSelection: boolean;
 };
 
 /**
@@ -151,7 +153,10 @@ export type CameraActions = CameraApi & {
    * animated over 420 ms; false when none of them is placed.
    */
   frameItems(keys: readonly ItemKey[]): boolean;
-  /** Applies the default camera once per root (M11), without a tween. */
+  /**
+   * Applies the default camera once per root (M11), without a tween; frames the selection instead
+   * when one came before the first canvas measure (`frameSelection`).
+   */
   applyDefault(): void;
   /** Records the canvas size; applies the default camera when it was not yet applied. */
   setView(view: ViewSize): void;

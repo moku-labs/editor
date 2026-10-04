@@ -227,6 +227,24 @@ describe("decode", () => {
     });
   });
 
+  it("keeps the not_installed reason of a -32008 answer", () => {
+    const message = decode(
+      text({
+        ...base,
+        id: 4,
+        error: {
+          code: -32_008,
+          message: "[moku-editor] source game.effects is not available in this game: boom",
+          data: { reason: "not_installed", retryable: false, id: "game.effects" }
+        }
+      })
+    );
+
+    expect(message).toMatchObject({
+      error: { code: -32_008, data: { reason: "not_installed", retryable: false } }
+    });
+  });
+
   it("drops data keys of the wrong type", () => {
     const message = decode(
       text({

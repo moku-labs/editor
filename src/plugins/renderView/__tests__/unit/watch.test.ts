@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Manifest } from "../../../registry/protocol";
 import { createHandlers } from "../../handlers";
 import { startRenderView, stopRenderView } from "../../lifecycle";
 import {
@@ -179,6 +180,29 @@ async function attach(manifest: Parameters<TestCtx["link"]["attach"]>[0]): Promi
   await flush();
 }
 
+/**
+ * A manifest whose game.effects the game does not have (`available: false`).
+ *
+ * @returns The manifest.
+ */
+function notInstalledEffects(): Manifest {
+  const manifest = manifestOf(["game.render", "game.assets"]);
+  return {
+    ...manifest,
+    sources: [
+      ...manifest.sources,
+      {
+        id: "game.effects",
+        title: "Effects",
+        input: {},
+        changes: "frame",
+        available: false,
+        reason: "app.effects is undefined"
+      }
+    ]
+  };
+}
+
 describe("effects watch", () => {
   const WITH_EFFECTS = manifestOf(["game.render", "game.assets", "game.effects"]);
   const WITHOUT_EFFECTS = manifestOf(["game.render", "game.assets"]);
@@ -253,6 +277,38 @@ describe("effects watch", () => {
     expect(ctx.link.active("game.effects")).toEqual([]);
     expect(ctx.state.effectsWatch).toBeUndefined();
     expect(ctx.state.effects).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("a manifest that marks game.effects not installed starts no watch and says so", async () => {
+    const notInstalled = notInstalledEffects();
+    startRenderView(ctx);
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+
+    await attach(notInstalled);
+
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effectsWatch).toBeUndefined();
+    expect(ctx.state.effectsInstalled).toBe(false);
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("stops a running watch when a new session lacks the effects plugin, and starts it again when one has it", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    ctx.link.send("game.effects", EFFECTS);
+
+    ctx.link.attach(notInstalledEffects());
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effects).toBeUndefined();
+    expect(ctx.state.effectsInstalled).toBe(false);
+
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+    ctx.link.attach(WITH_EFFECTS);
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
+    expect(ctx.state.effectsInstalled).toBe(true);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 

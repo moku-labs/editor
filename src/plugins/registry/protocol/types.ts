@@ -89,6 +89,13 @@ export type SourceDescriptor = {
   readonly title: string;
   readonly input: InputSchema;
   readonly changes: Changes;
+  /**
+   * `false` when the game does not have this source: its door threw on the probe (the game plugin
+   * behind it is missing). Reads and watches answer -32008 `not_installed`. Absent = available.
+   */
+  readonly available?: false;
+  /** What the door threw on the probe; present only with `available: false`. */
+  readonly reason?: string;
 };
 
 /**
@@ -259,6 +266,7 @@ export type ErrorReason =
   | "forbidden_path"
   | "version_conflict"
   | "unauthorized"
+  | "not_installed"
   | "link_closed";
 
 /**

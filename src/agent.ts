@@ -36,7 +36,9 @@ import { channelPlugin } from "./plugins/channel";
 import { overlayPlugin } from "./plugins/overlay";
 import { registryPlugin } from "./plugins/registry";
 
-const framework = createAgentCore(agentCoreConfig, {
+// Pure: a bundle that uses neither createApp nor createPlugin drops the agent core (and a game's
+// production build, which reaches this entry only behind `if (__MOKU_GAME_DEV__)`, drops it all).
+const framework = /* @__PURE__ */ createAgentCore(agentCoreConfig, {
   // Dependency order: channel and overlay require registry, overlay requires channel.
   plugins: [registryPlugin, channelPlugin, overlayPlugin]
 });

@@ -1,6 +1,6 @@
 /**
  * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
- * for the session, and game.effects while the manifest lists it; the scene watches game.ui, game.entities and game.projections only while
+ * for the session, and game.effects while the manifest lists it as available; the scene watches game.ui, game.entities and game.projections only while
  * Render is shown and build one scene per animation frame; the calibration reads game.rect once
  * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
  */
@@ -190,25 +190,11 @@ export function stopEffects(state: RenderViewState): void {
 }
 
 /**
- * True when a manifest lists game.effects (game 0.0.3).
- *
- * @param manifest - A manifest, if any.
- * @returns Whether the source is listed.
- * @example
- * ```ts
- * listsEffects(link.manifest()); // true on game 0.0.3
- * ```
- */
-function listsEffects(manifest: Manifest | undefined): boolean {
-  return manifest?.sources.some(source => source.id === EFFECTS_ID) ?? false;
-}
-
-/**
- * Follows the manifest: one game.effects watch while it lists the source (game 0.0.3); a
- * manifest without it (an older game) stops the watch and clears the value; an undefined
- * manifest (session lost) keeps the watch, which link re-sends on attach. Both happen at once:
- * link sends a watch added inside the listener once per attach, and does not re-send a source
- * the new manifest lacks.
+ * Follows the manifest: one game.effects watch while it lists the source as available (game
+ * 0.0.3); a manifest without it (an older game) or with `available: false` (no effects plugin,
+ * "not installed") stops the watch and clears the value; an undefined manifest (session lost)
+ * keeps the watch, which link re-sends on attach. Both happen at once: link sends a watch added
+ * inside the listener once per attach, and does not re-send a source the new manifest lacks.
  *
  * @param ctx - Domain context of renderView.
  * @param manifest - The manifest of the session, undefined while none is attached.
@@ -217,10 +203,16 @@ export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined):
   if (manifest === undefined) return;
 
   const { state } = ctx;
-  if (listsEffects(manifest)) {
+  const effects = manifest.sources.find(source => source.id === EFFECTS_ID);
+  const installed = effects?.available !== false;
+  const changed = state.effectsInstalled !== installed;
+  state.effectsInstalled = installed;
+
+  if (effects !== undefined && installed) {
     state.effectsWatch ??= ctx
       .require(linkPlugin)
       .watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
+    if (changed) notify(state);
     return;
   }
   stopEffects(state);

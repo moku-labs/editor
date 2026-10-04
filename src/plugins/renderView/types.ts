@@ -122,8 +122,10 @@ export type RenderViewState = {
   assets: AssetsUsage | undefined;
   /** Last good game.effects value; undefined = not reported or not yet delivered. */
   effects: EffectsStats | undefined;
-  /** Unwatch of game.effects; set only while the manifest lists the source. */
+  /** Unwatch of game.effects; set only while the manifest lists the source as available. */
   effectsWatch: (() => void) | undefined;
+  /** False while the manifest lists game.effects with `available: false` (no effects plugin). */
+  effectsInstalled: boolean;
   /** Last scene values (while Render is shown). */
   sources: { ui?: Json; entities?: Json; projections?: Json };
   scene: SceneSnapshot | undefined;
@@ -254,6 +256,11 @@ export type MetricTiles = {
     | undefined;
   /** effects only when game.effects delivered (game 0.0.3). */
   scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
+  /**
+   * Present, and false, only when the game has no effects plugin: the manifest lists game.effects
+   * with `available: false` and the Scene tile reads "Effects not installed in this game".
+   */
+  effectsInstalled?: false;
   /** The page heap from its heartbeat (Chromium `performance.memory`); absent elsewhere. */
   heap: { kind: "value"; usedMb: number; limitMb: number } | { kind: "absent" };
 };
@@ -308,6 +315,7 @@ export type RenderViewApi = {
    * const { tiles } = app.renderView.snapshot();
    * tiles.drawCalls; // { kind: "absent" } in a production build
    * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+   * tiles.effectsInstalled; // false on a game without the effects plugin, else absent
    * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
    * tiles.heap; // { kind: "absent" } outside Chromium: the page reports no heap
    * ```

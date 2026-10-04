@@ -30,7 +30,8 @@ function clearSession(state: RenderViewState): void {
 }
 
 /**
- * Forgets every value (no game left): the session data, the last values, the scene and the box.
+ * Forgets every value (no game left): the session data, the last values, the scene, the effects
+ * flag and the box.
  *
  * @param state - renderView state.
  */
@@ -41,6 +42,7 @@ function clearAll(state: RenderViewState): void {
   state.render = undefined;
   state.assets = undefined;
   state.scene = undefined;
+  state.effectsInstalled = true;
   state.error = undefined;
   state.box = undefined;
   state.pendingReveal = undefined;

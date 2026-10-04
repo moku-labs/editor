@@ -302,8 +302,8 @@ function delivered(tap: Tap, id: string): boolean {
 }
 
 /**
- * Shows Flow, which mounts its panel and so its watches on first show (Game is the default
- * workspace), and waits for the home card.
+ * Shows Flow, whose canvas renders on first show (flowView watches the flow from start; Game is
+ * the default workspace), and waits for the home card.
  *
  * @param live - The live stack.
  * @returns Resolves when the home card is on the canvas.

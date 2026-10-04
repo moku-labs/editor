@@ -1,4 +1,5 @@
-import { createHeadless } from "@moku-labs/game/testing";
+import { createApp, defineGame, type } from "@moku-labs/game";
+import { createHeadless, fakeClock, memory } from "@moku-labs/game/testing";
 import { vi } from "vitest";
 import { loadMergeGame } from "../../../../tests/fixtures/merge-game";
 import { createRegistryState } from "../state";
@@ -62,6 +63,60 @@ export async function startGame(): Promise<StartedGame> {
   const game = await createHeadless(app);
 
   return { app, stop: () => game.stop() };
+}
+
+/** The flow of the bare game: one rest node. */
+const bareFlow = (() => {
+  const { defineNode, defineFlow } = defineGame<{
+    player: { coins: number };
+    session: Record<string, never>;
+    assets: string;
+    strings: Record<string, unknown>;
+  }>();
+  const home = defineNode({ outcomes: { stay: type() }, rest: true, checkpoint: true });
+  return defineFlow("main", { nodes: { home }, start: "home", edges: { home: { stay: "home" } } });
+})();
+
+/**
+ * Creates a bare game and starts it headless: the engine's core plugins only, so it has no
+ * world, ui, renderer, audio, effects or assets plugin. Runs on CI (no merge-game checkout).
+ *
+ * @returns The app and its stop.
+ */
+export async function startBareGame(): Promise<StartedGame> {
+  const app = createApp({
+    pluginConfigs: {
+      model: { playerProvider: memory(), initialPlayer: { coins: 0 }, initialSession: {}, seed: 1 },
+      clock: { source: fakeClock(1_000_000) },
+      flow: { mainFlow: bareFlow, safeNode: "home" }
+    }
+  });
+  app.log.clearSinks();
+  const game = await createHeadless(app);
+
+  return { app, stop: () => game.stop() };
+}
+
+/**
+ * The game behind a Proxy whose `effects` the test switches on and off: the effects plugin
+ * installed or missing.
+ *
+ * @param app - The game app.
+ * @returns The proxied app and the switch.
+ */
+export function withEffects(app: GameLike): { app: GameLike; install(on: boolean): void } {
+  let installed = false;
+  const effects = { stats: () => ({ particles: 0, emitters: 0, filters: 0, renderPasses: 0 }) };
+  const proxied = new Proxy(app, {
+    get: (target, key) => (key === "effects" && installed ? effects : Reflect.get(target, key))
+  });
+
+  return {
+    app: proxied,
+    install: on => {
+      installed = on;
+    }
+  };
 }
 
 /**

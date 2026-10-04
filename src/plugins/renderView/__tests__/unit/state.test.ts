@@ -18,6 +18,7 @@ describe("createRenderViewState", () => {
       firstFrame: undefined,
       render: undefined,
       assets: undefined,
+      effectsInstalled: true,
       sources: {},
       scene: undefined,
       calibration: undefined,

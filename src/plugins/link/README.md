@@ -143,6 +143,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 - Views use `link.files` (through `tools.files`) for captures, the layout file, file tabs and style edits.
 - A switch of session sends `unwatch` for the old subs first. Wire subs are numbers that never repeat, so late values of an old sub are dropped.
 - A source id missing from the new manifest is skipped with the warn `link:source-missing`. The watch record stays for a later session.
+- A watch the session refuses with -32008 `not_installed` (the game does not have the source: the manifest lists it with `available: false`) logs only the debug line `link:source-unavailable` and is never sent to that session again. A new session gets it again. `readManifest` keeps `available: false` and `reason` on a source descriptor.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.
 - The token is never logged. The connect log line carries `boot.ws` without its query.
@@ -150,6 +151,6 @@ const off = link.onManifest(manifest => recheck(manifest));
 ## Limits
 
 - Requests are not queued while disconnected. They reject at once. Only watch records are kept.
-- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed`; panels shows the waiting text.
+- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text.
 - A game reload mid-call rejects with the hub's -32001 `game_reloaded` (retryable).
 - A throttled hidden game tab that is not paused can read `silent`.

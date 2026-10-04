@@ -125,6 +125,30 @@ describe("tileViews on game 0.0.3", () => {
     expect(views[0]?.note).toBeUndefined();
   });
 
+  it("reads 'Effects not installed in this game' on the Scene tile, waiting or not", () => {
+    const shown = tileViews({
+      ...EMPTY,
+      drawCalls: undefined,
+      scene: { entities: 101, views: 180, pooled: 24 },
+      effectsInstalled: false
+    });
+    const waiting = tileViews({
+      ...EMPTY,
+      drawCalls: undefined,
+      scene: undefined,
+      effectsInstalled: false
+    });
+
+    expect(shown[4]).toMatchObject({
+      sub: "180 display objects · 24 pooled",
+      note: "Effects not installed in this game"
+    });
+    expect(waiting[4]).toMatchObject({
+      sub: "Waiting for the scene",
+      note: "Effects not installed in this game"
+    });
+  });
+
   it("names one FPS sample in the singular", () => {
     const [fps] = tileViews({
       fps: { now: 60, samples: [60], low: 60 },

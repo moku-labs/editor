@@ -14,7 +14,8 @@ describe("module states", () => {
       follow: false,
       viewport: { w: 0, h: 0 },
       insets: { top: 0, right: 0, bottom: 0, left: 0 },
-      initialised: false
+      initialised: false,
+      frameSelection: false
     });
     expect(createFocusState()).toMatchObject({
       selected: undefined,

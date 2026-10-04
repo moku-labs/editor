@@ -44,6 +44,36 @@ describe("readManifest", () => {
     expect(readManifest(toWireValue(manifest))).toEqual(manifest);
   });
 
+  it("keeps available: false and the reason of a source the game does not have", () => {
+    const good = toObject(manifestOf());
+    const effects = {
+      id: "game.effects",
+      title: "Effects",
+      input: {},
+      changes: "frame",
+      available: false,
+      reason: "app.effects is undefined"
+    };
+
+    expect(readManifest({ ...good, sources: [effects] })?.sources).toEqual([effects]);
+  });
+
+  it("drops an available flag that is not false and a reason without it", () => {
+    const good = toObject(manifestOf());
+    const read = readManifest({
+      ...good,
+      sources: [
+        { id: "a.one", title: "A", input: {}, changes: "frame", available: true },
+        { id: "a.two", title: "B", input: {}, changes: "frame", reason: "x" }
+      ]
+    });
+
+    expect(read?.sources).toEqual([
+      { id: "a.one", title: "A", input: {}, changes: "frame" },
+      { id: "a.two", title: "B", input: {}, changes: "frame" }
+    ]);
+  });
+
   it("rejects bad descriptors", () => {
     const good = toObject(manifestOf());
     expect(readManifest({ ...good, game: 3 })).toBeUndefined();

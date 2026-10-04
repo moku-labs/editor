@@ -23,7 +23,8 @@ export const errorCode = {
   forbiddenPath: -32_004,
   versionConflict: -32_005,
   notJson: -32_006,
-  unauthorized: -32_007
+  unauthorized: -32_007,
+  notInstalled: -32_008
 } as const;
 
 /**

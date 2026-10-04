@@ -471,7 +471,8 @@ function heapTileOf(heap: RenderViewState["heap"]): MetricTiles["heap"] {
  *
  * @param state - renderView state.
  * @param rows - The loaded texture rows (for the unused count).
- * @returns The tiles; a tile without its data is undefined, heap is absent until the page reports it.
+ * @returns The tiles; a tile without its data is undefined, heap is absent until the page reports it,
+ *   `effectsInstalled: false` only on a game without the effects plugin.
  */
 export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): MetricTiles {
   const { render, assets } = state;
@@ -481,7 +482,8 @@ export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): Me
     drawCalls: drawCallsOf(render),
     textures: texturesTileOf(render, assets, rows),
     scene: sceneOf(state),
-    heap: heapTileOf(state.heap)
+    heap: heapTileOf(state.heap),
+    ...(state.effectsInstalled ? {} : { effectsInstalled: false })
   };
 }
 

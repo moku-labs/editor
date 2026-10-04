@@ -2,7 +2,7 @@
 
 **Devtools for a running `@moku-labs/game`: see the flow, the state, the render and the files of the live game, and change them, from one tools page.**
 
-One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, and headless tests. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it has to ship in a production build.
+One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, and headless tests. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it has to ship in a production build (see [Production builds](#production-builds)).
 
 <br/>
 
@@ -15,7 +15,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 
 <br/>
 
-[Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
+[Install](#install) · [Quick start](#quick-start) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
 
 ---
 
@@ -59,7 +59,7 @@ const editor = createApp({
 await editor.start(); // never waits for the editor server
 ```
 
-`app` is the game made with `createApp` from `@moku-labs/game`; `modules` are the game's `.dev` modules (extra sources and commands). `__MOKU_GAME_DEV__` is the engine's dev flag: a dev build defines it `true`.
+`app` is the game made with `createApp` from `@moku-labs/game`; `modules` are the game's `.dev` modules (extra sources and commands). `__MOKU_GAME_DEV__` is the engine's dev flag: a dev build defines it `true`. Start the editor after the game: the registry probes the game's sources at start. For a game that ships, use the entry in [Production builds](#production-builds), which keeps the whole agent out of the production bundle.
 
 **2. Run the server.** The quickest way is the bin — it serves one game HTML file with the editor mounted:
 
@@ -101,6 +101,30 @@ is on, and the Element tab's "Copy reference" copies one `@moku …` line for th
 > await tools.start();
 > tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
 > ```
+
+## Production builds
+
+The agent is a dev tool. Import it only behind the engine's dev flag, with a dynamic import, so a
+production build (`__MOKU_GAME_DEV__` defined `false`) drops it whole:
+
+```ts
+if (__MOKU_GAME_DEV__) {
+  const { createApp, bridgePlugin, capturePlugin } = await import("@moku-labs/editor/agent");
+  await createApp({ plugins: [bridgePlugin, capturePlugin], pluginConfigs: { registry: { game: app } } }).start();
+}
+```
+
+Measured with `Bun.build` (browser, minified, the game itself external) in
+`tests/integration/agent-bundle.test.ts`:
+
+| `__MOKU_GAME_DEV__` | Editor code in the bundle | Size |
+|---|---|---|
+| `false` | None: no `/__editor/hello`, no `editor.capture`, no `bridge:` log line | 0 B (the whole entry is 73 B, the game's own lines) |
+| `true` | Agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 71.3 KB minified, 24.8 KB gzip |
+
+The package is `"sideEffects": false` and the agent core is created `/* @__PURE__ */`, so a static
+import used only inside `if (__MOKU_GAME_DEV__)` drops out too. An agent export used outside that
+branch (even one plugin instance) keeps the whole agent.
 
 ## How it works
 
@@ -388,8 +412,9 @@ JSON-RPC 2.0 text frames with a `channel` (`game`, `files`, `editor`) and, for f
 | -32005 | `versionConflict` | `version_conflict` | no |
 | -32006 | `notJson` | `not_json` | no |
 | -32007 | `unauthorized` | `unauthorized` | no |
+| -32008 | `notInstalled` | `not_installed`: the game does not have the source (its game plugin is missing) | no |
 
-Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A run of `editor.series` gets its `durationMs` (capped at +60 s) on top of the deadline in bridge, hub and link alike.
+Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs` (capped at +60 s) on top of the deadline in bridge, hub and link alike.
 
 ## Scripts
 

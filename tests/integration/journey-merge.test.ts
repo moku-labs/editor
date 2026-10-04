@@ -506,7 +506,8 @@ describe("journey-merge: open the editor on merge-game", () => {
       expect(idsOf(manifest?.commands, "game.")).toEqual(GAME_COMMANDS);
       expect(idsOf(manifest?.commands, "editor.")).toEqual(EDITOR_COMMANDS);
 
-      // Game is the default workspace; Flow mounts its panel, and so its watches, when shown.
+      // Game is the default workspace; flowView watches the flow from start, its canvas
+      // renders when Flow is shown.
       expect(workspace.active()).toBe("game");
       workspace.show("flow");
 
@@ -751,7 +752,8 @@ describe("journey-merge: edit a style", () => {
       await walkToBoard(live);
       const { tools, server, root, page } = live;
       const { workspace, flowView, link } = tools.app;
-      // Flow mounts its panel, and so its watches, when first shown (Game is the default).
+      // flowView watches the flow from start; its canvas renders when first shown (Game is the
+      // default).
       workspace.show("flow");
       await until(() => flowView.focus.current() === "board/awaitIntent", "Flow on the board");
       const before = await readFile(path.join(root, STYLES_FILE), "utf8");
@@ -836,7 +838,7 @@ describe("journey-merge: state and console", () => {
       const { tools, game, server, page } = live;
       const { workspace, panels, stateView, consoleView, link, flowView } = tools.app;
       // Flow first: flowView dates each edge by the frame its game.history value arrives at, from
-      // the first time Flow is shown (Game is the default).
+      // its first value (it watches from start; Game is the default workspace).
       workspace.show("flow");
       await until(() => delivered(server.tap, "game.history"), "flowView's first history value");
 

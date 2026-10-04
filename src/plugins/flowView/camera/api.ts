@@ -75,6 +75,21 @@ function currentFrame(
 }
 
 /**
+ * The selected item on screen, when a selection waits for the first canvas measure; the wait
+ * ends here either way.
+ *
+ * @param ctx - Domain context of flowView.
+ * @returns The item to frame, or undefined for the default camera.
+ */
+function waitingSelection(ctx: FlowCtx): Item | undefined {
+  const { camera, focus, layout } = ctx.state;
+  const waiting = camera.frameSelection;
+  camera.frameSelection = false;
+  if (!waiting || focus.selected === undefined) return undefined;
+  return layout.result?.byKey[focus.selected];
+}
+
+/**
  * The union of the placed items among some keys.
  *
  * @param ctx - Domain context of flowView.
@@ -215,7 +230,12 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       const { frame, current } = currentFrame(ctx, env);
       if (frame === undefined) return;
       cancelAnimation(ctx);
-      camera.cam = defaultCamera(frame, current, camera.viewport, insetsOf(ctx, env), ctx.config);
+      const insets = insetsOf(ctx, env);
+      const selected = waitingSelection(ctx);
+      camera.cam =
+        selected === undefined
+          ? defaultCamera(frame, current, camera.viewport, insets, ctx.config)
+          : focusCamera(selected, camera.cam, camera.viewport, insets);
       camera.initialised = true;
       applyCamera(ctx);
     },

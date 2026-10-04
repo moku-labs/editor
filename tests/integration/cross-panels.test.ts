@@ -463,9 +463,12 @@ describe("cross-plugin panels", () => {
       .filter(message => paramsOf(message)?.path === "manifest.json");
     expect(manifestReads.length).toBeGreaterThan(0);
 
+    // The tiny game has no effects plugin: the tiles carry `effectsInstalled: false`.
     const snapshot = renderView.snapshot();
+    expect(snapshot.tiles.effectsInstalled).toBe(false);
     expect(Object.keys(snapshot.tiles).toSorted()).toEqual([
       "drawCalls",
+      "effectsInstalled",
       "fps",
       "frameMs",
       "heap",
@@ -486,7 +489,7 @@ describe("cross-plugin panels", () => {
     expect(renderView.snapshot().textures).toEqual([]);
     renderView.filterBundle("all");
 
-    // A screenless game cannot answer game.ui (the game's source reads `app.ui.tree`), so the scene
+    // A screenless game has no ui plugin: game.ui answers -32008 not_installed, so the scene
     // rejects with the link's wire error, as GameViewApi.scene documents; locate goes through it.
     await expect(gameView.scene()).rejects.toThrow(ProtocolError);
     await expect(gameView.scene()).rejects.toThrow(/game\.ui/);

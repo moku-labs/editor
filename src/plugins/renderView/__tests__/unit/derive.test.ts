@@ -123,6 +123,16 @@ describe("tiles", () => {
     expect(tiles.scene).not.toHaveProperty("effects");
   });
 
+  it("mark the effects not installed only when the manifest says so", () => {
+    const state = stateWithData();
+    state.scene = boardScene();
+
+    expect(tilesOf(state, [])).not.toHaveProperty("effectsInstalled");
+
+    state.effectsInstalled = false;
+    expect(tilesOf(state, []).effectsInstalled).toBe(false);
+  });
+
   it("keep fps low at now while no sample was kept", () => {
     const state = stateWithData();
     state.fps = [];
