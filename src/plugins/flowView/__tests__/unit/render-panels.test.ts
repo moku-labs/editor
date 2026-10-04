@@ -264,4 +264,11 @@ describe("styles of flowView (M6, M10, M14, R5, R7)", () => {
     expect(canvas).toMatch(/--flow-label-min: 11px/);
     expect(canvas).toMatch(/\[data-stale\][^{]*\{[^}]*filter: saturate\(0\.2\)/);
   });
+
+  it("the canvas clips and never scrolls: the camera origin stays the canvas box", () => {
+    const canvas = readFileSync(`${PLUGIN_DIR}render/canvas.css`, "utf8");
+    const rule = /\[data-flow="canvas"\]\s*\{([^}]*)\}/.exec(canvas)?.[1] ?? "";
+    expect(rule).toMatch(/overflow: clip;/);
+    expect(rule).not.toMatch(/overflow: hidden/);
+  });
 });

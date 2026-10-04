@@ -33,12 +33,11 @@ const STYLES_FILE = "features/ui/styles.ts";
 const BOARD_LANES = 8;
 
 /**
- * Game-frame warnings a source write provokes that are not editor defects: Bun's dev server
- * (the bin serves the game with `development: true`, spec 09-pages) reports that no module accepts
- * the hot update, and the game restored onto the board logs textures and a bundle not loaded yet.
+ * Game-frame warnings a source write provokes that are not editor defects: the game restored onto
+ * the board logs textures and a bundle not loaded yet. The bin serves the game without Bun's HMR
+ * (D-22, spec 09-pages), so no "Hot update was not accepted" warning comes with a save.
  */
 const RELOAD_WARNINGS: readonly RegExp[] = [
-  /^\[Bun\] Hot update was not accepted/,
   /event: assets: texture is not loaded yet/,
   /event: renderer: no texture for asset key/,
   /event: assets: the node waited for a bundle/
@@ -237,6 +236,29 @@ async function drag(
 }
 
 /**
+ * Pans the canvas with the wheel until an element's centre sits a third across the canvas and
+ * half way down, as a user pans before clicking something the camera left off screen: the canvas
+ * clips and never scrolls, so on a half-screen window an item past its edge is out of reach.
+ *
+ * @param page - The test page.
+ * @param target - The element to bring into view.
+ */
+async function reveal(page: Page, target: Locator): Promise<void> {
+  const canvas = await flow(page).locator("[data-flow=canvas]").boundingBox();
+  const box = await target.boundingBox();
+  if (canvas === null || box === null) throw new Error("nothing to reveal");
+  const goal = { x: canvas.x + canvas.width / 3, y: canvas.y + canvas.height / 2 };
+  await page.mouse.move(goal.x, goal.y);
+  await page.mouse.wheel(box.x + box.width / 2 - goal.x, box.y + box.height / 2 - goal.y);
+  await expect
+    .poll(async () => {
+      const at = await target.boundingBox();
+      return at === null ? Number.POSITIVE_INFINITY : Math.abs(at.x + at.width / 2 - goal.x);
+    })
+    .toBeLessThan(2);
+}
+
+/**
  * The newest toast text.
  *
  * @param page - The test page.
@@ -385,6 +407,9 @@ test.describe("flow · canvas", () => {
     expect(Math.abs(at.y + at.height / 2 - (canvas.y + area.y) / 2)).toBeLessThan(4);
     expect(at.x).toBeGreaterThan(canvas.x);
     expect(at.x + at.width).toBeLessThan(canvas.x + canvas.width);
+    // The strip spans the canvas: the canvas never scrolls, so nothing shifts off its edge.
+    expect(area.x).toBeCloseTo(canvas.x, 0);
+    expect(area.x + area.width).toBeCloseTo(canvas.x + canvas.width, 0);
 
     await expect(inspector(page).locator("[data-tag=showing-current]")).toHaveCount(0);
     await expect(inspector(page)).toContainText("main/settings");
@@ -405,7 +430,9 @@ test.describe("flow · canvas", () => {
     await expect(flow(page).locator("[data-dimmed]")).toHaveCount(0);
     await expect(inspector(page).locator("[data-tag=showing-current]")).toBeVisible();
     // A click on the frame head does not select the frame either.
-    await flow(page).locator("[data-flow=frame][data-key='#main'] [data-part=head]").click();
+    const head = flow(page).locator("[data-flow=frame][data-key='#main'] [data-part=head]");
+    await reveal(page, head);
+    await head.click();
     await expect(flow(page).locator("[data-selected]")).toHaveCount(0);
   });
 });
@@ -495,18 +522,23 @@ test.describe("flow · sub-flows", () => {
     const crumbs = flow(page).locator("[data-flow=breadcrumb] [data-part=segment]");
 
     // Expand settings in place: a sub-flow frame with its own cards appears inside main.
-    await flow(page).getByRole("button", { name: "Expand main/settings" }).click();
+    const expand = flow(page).getByRole("button", { name: "Expand main/settings" });
+    await reveal(page, expand);
+    await expand.click();
     const frame = flow(page).locator("[data-flow=frame]:not([data-root])");
     await expect(frame).toHaveCount(1);
     await expect(frame.locator("[data-part=title]")).toContainText("settings");
     const inner = flow(page).locator("[data-flow=node-card][data-key^='main/settings>']");
     await expect.poll(async () => inner.count()).toBeGreaterThan(0);
+    await reveal(page, frame.locator("[data-action=collapse]"));
     await frame.locator("[data-action=collapse]").click();
     await expect(frame).toHaveCount(0);
     await expect(inner).toHaveCount(0);
 
     // Enter settings: the breadcrumb shows main › settingsPopup, only its cards show.
-    await flow(page).getByRole("button", { name: "Expand main/settings" }).click();
+    await reveal(page, expand);
+    await expand.click();
+    await reveal(page, frame.locator("[data-action=enter]"));
     await frame.locator("[data-action=enter]").click();
     await expect(crumbs).toHaveCount(2);
     await expect(crumbs.first()).toHaveText("main");
@@ -848,9 +880,9 @@ test.describe("flow · context menus", () => {
   test("the outcome menu and the canvas menu", async ({ tools }) => {
     const page = tools.page;
     await showFlow(tools);
-    await flow(page).locator("[data-flow=stub][data-key='stub:main/settings:closed']").click({
-      button: "right"
-    });
+    const stub = flow(page).locator("[data-flow=stub][data-key='stub:main/settings:closed']");
+    await reveal(page, stub);
+    await stub.click({ button: "right" });
     expect(await menuLabels(page)).toEqual(["Add note on this outcome", "Focus home"]);
     await menu(page).getByRole("menuitem", { name: "Focus home" }).click();
     await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");

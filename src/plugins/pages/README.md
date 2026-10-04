@@ -151,7 +151,7 @@ What `main` (`cli.ts`) does:
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
-4. One `Bun.serve(editor.hub.serve(...))` with `development: true`, the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path.
+4. One `Bun.serve(editor.hub.serve(...))` with `development: { hmr: false, console: true }`, the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. No Bun HMR (D-22): the editor's reload with restore is the one reload path. Bun re-bundles the page on the first request after a save. It bundles like `Bun.build`, so a bare `import "./x"` is dropped when the nearest `package.json` says `"sideEffects": false`. Bun streams the browser console over the HMR socket, so `console: true` forwards nothing while HMR is off.
 5. Prints the Game, Tools and Root lines. The token is never printed.
 6. On `SIGINT` or `SIGTERM`, once: `editor.stop()`, then `server.stop(true)` bounded to 500 ms, prints `stopped`, exits 0.
 

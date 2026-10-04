@@ -14,6 +14,10 @@
  * The fixture page of game v0.1.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
  * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
+ *
+ * The copy gets its own package.json, as a game project has. Without it the copy inherits the
+ * editor's `"sideEffects": false`, and the bin's bundler (Bun without HMR, D-22) drops the page's
+ * bare `import "./main"`: the game would never start.
  */
 import { cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -50,3 +54,7 @@ const tsconfig = {
   }
 };
 await writeFile(path.join(OUT, "tsconfig.json"), `${JSON.stringify(tsconfig, undefined, 2)}\n`);
+await writeFile(
+  path.join(OUT, "package.json"),
+  `${JSON.stringify({ name: "merge-game-e2e", private: true, type: "module" }, undefined, 2)}\n`
+);

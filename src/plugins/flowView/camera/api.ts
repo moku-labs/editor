@@ -1,7 +1,8 @@
 /**
  * @file flowView camera module — the camera actions (the public `camera` namespace plus the moves
  * the canvas, the minimap and the other modules use). The available rect leaves out the
- * neighbours strip and the pinned preview column.
+ * neighbours strip and the pinned preview column; on a narrow canvas the column shrinks so a card
+ * still fits.
  */
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, Item, Rect } from "../types";
@@ -15,6 +16,7 @@ import {
   fitRect,
   focusCamera,
   followCamera,
+  sideColumn,
   zoomAt
 } from "./math";
 import type { CameraActions, ViewInsets } from "./types";
@@ -41,7 +43,9 @@ const PREVIEW_MARGIN = 24;
 
 /**
  * The insets of the available rect: the strip at the bottom, the preview column on its corner's
- * side (at least the minimap width), stored in state for the components.
+ * side, stored in state for the components. The column is at least the minimap width; on a canvas
+ * too narrow for that (a half-screen window) it keeps only the preview clear, and on a narrower
+ * one nothing (sideColumn).
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
@@ -50,9 +54,9 @@ const PREVIEW_MARGIN = 24;
 function insetsOf(ctx: FlowCtx, env: FlowEnvironment): ViewInsets {
   const bottom = ctx.state.focus.strip ? STRIP_H : 0;
   const preview = env.preview();
-  const width = preview.visible
-    ? Math.max(PREVIEW_W[preview.size] + PREVIEW_MARGIN, MINIMAP_W + PREVIEW_MARGIN)
-    : 0;
+  const float = PREVIEW_W[preview.size] + PREVIEW_MARGIN;
+  const column = Math.max(float, MINIMAP_W + PREVIEW_MARGIN);
+  const width = preview.visible ? sideColumn(ctx.state.camera.viewport.w, [column, float]) : 0;
   const onLeft = preview.corner.endsWith("left");
   const insets = { top: 0, right: onLeft ? 0 : width, bottom, left: onLeft ? width : 0 };
   ctx.state.camera.insets = insets;

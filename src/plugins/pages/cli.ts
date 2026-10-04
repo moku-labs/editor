@@ -232,7 +232,8 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
     server = Bun.serve(
       editor.hub.serve({
         port: args.port,
-        development: true,
+        // No Bun HMR (D-22): the editor's reload with restore (D-07) is the one reload path.
+        development: { hmr: false, console: true },
         routes: { "/": bundle },
         fetch: createStaticFetch(rootPath, editor.hub.guard)
       })
