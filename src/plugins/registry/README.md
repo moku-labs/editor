@@ -79,8 +79,13 @@ after the game) and after every `add` that dropped the cache. A door that throws
 | `read`, `watch` | Throw -32008 `not_installed`, not retryable: `[moku-editor] source <id> is not available in this game: <reason>`. No door call, no warn. |
 | Log | One `registry:source-unavailable` info `{ id, reason }` when a source turns unavailable; none per read. |
 
-A source with a required input (`game.rect`) and every module source are never probed. The next
-build probes again: a source that answers is available again.
+A source with a required input, the element locators of `UNPROBED_SOURCES` (`game.rect` of game
+0.1 and `game.locate` of game 0.4, which throws on `{}`) and every module source are never probed.
+The next build probes again: a source that answers is available again.
+
+Game 0.4.2 makes its opt-in sources throw when their plugin is missing, for example
+`[game] The source game.sounds needs audioPlugin.`. The probe lists them as not installed with that
+first line as the reason.
 
 ```ts
 await editor.start(); // probes the door sources

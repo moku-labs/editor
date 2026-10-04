@@ -84,6 +84,46 @@ describe("Preview", () => {
     expect(float().style.top).toBe(`${50 + 400 - 12 - 40 - 280}px`);
   });
 
+  it("hides the body and the frame below 96 px of fitted width; the header stays", () => {
+    const zone = document.createElement("div");
+    stubRect(zone, rectOf(0, 0, 480, 800));
+    // A wide drawer leaves 11 px of room: 480 - 12 - 445 - 12.
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 445 }) });
+    act(() => ctx.state.ui.bump());
+
+    const element = float();
+    expect(element.dataset.collapsed).toBe("");
+    expect(element.style.width).toBe("");
+    expect(element.style.height).toBe("");
+    expect(element.style.left).toBe("12px");
+    expect(element.querySelector<HTMLElement>("[data-preview-body]")?.hidden).toBe(true);
+    expect(ctx.state.frame.previewBody).toBeUndefined();
+    expect(ctx.state.frame.box?.docked).not.toBe("preview");
+    expect(element.querySelector("[data-preview-head] [data-title]")?.textContent).toBe("Game");
+    expect(element.querySelectorAll("[role='radio']")).toHaveLength(3);
+    expect(element.querySelector("[aria-label='Open in Game']")).not.toBeNull();
+
+    // Room again (the drawer narrowed): the body and the frame come back.
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 300 }) });
+    act(() => ctx.state.ui.bump());
+    expect(float().dataset.collapsed).toBeUndefined();
+    expect(float().style.width).toBe("150px");
+    expect(float().querySelector<HTMLElement>("[data-preview-body]")?.hidden).toBe(false);
+    expect(ctx.state.frame.previewBody).toBe(float().querySelector("[data-preview-body]"));
+    expect(ctx.state.frame.box?.docked).toBe("preview");
+  });
+
+  it("keeps the body at exactly 96 px of fitted width", () => {
+    const zone = document.createElement("div");
+    stubRect(zone, rectOf(0, 0, 800, 600));
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 680 }) });
+    act(() => ctx.state.ui.bump());
+
+    expect(float().dataset.collapsed).toBeUndefined();
+    expect(float().style.width).toBe("96px");
+    expect(ctx.state.frame.box?.docked).toBe("preview");
+  });
+
   it("S/M/L is a radiogroup; M shows the device", () => {
     const radios = float().querySelectorAll<HTMLButtonElement>("[role='radio']");
     expect(float().querySelector("[role='radiogroup']")?.getAttribute("aria-label")).toBe(

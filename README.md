@@ -37,6 +37,8 @@ bun add -d @moku-labs/editor @moku-labs/game
 > [!NOTE]
 > **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.0.2` is a **peer dependency**; `game.effects` in the Render workspace needs game `0.0.3`.
 >
+> **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
+>
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order.
 
 > [!IMPORTANT]

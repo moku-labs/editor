@@ -1,6 +1,6 @@
 {
   "name": "@moku-labs/editor",
-  "version": "0.0.0",
+  "version": "0.0.3",
   "description": "Editor, devtools and MCP layer for @moku-labs/game: one registry of sources and commands, panels in an in-game overlay and a dev-server tools page.",
   "type": "module",
   "sideEffects": false,

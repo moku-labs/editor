@@ -500,3 +500,29 @@ describe("readCatalogue", () => {
     expect(await readCatalogue(ctx)).not.toBeNull();
   });
 });
+
+describe("calibrate: the rect source of the manifest (U11)", () => {
+  it("reads game.locate with { key } when the manifest lists it (game 0.4)", async () => {
+    ctx.link.manifestValue = manifestOf(["game.ui", "game.locate"]);
+    vi.mocked(ctx.link.api.read).mockResolvedValueOnce({ x: 0, y: 0, w: 540, h: 720 });
+    ctx.state.sources.ui = boardCapture().ui;
+
+    await calibrate(ctx);
+
+    expect(ctx.link.api.read).toHaveBeenCalledTimes(1);
+    expect(ctx.link.api.read).toHaveBeenCalledWith("game.locate", { key: "boardScreen" });
+    expect(ctx.state.calibration).toEqual({ scale: 0.5, x: 0, y: 0 });
+  });
+
+  it("reads nothing and warns nothing when the manifest lists neither", async () => {
+    ctx.link.manifestValue = manifestOf(["game.ui"]);
+    ctx.state.sources.ui = boardCapture().ui;
+
+    await calibrate(ctx);
+
+    expect(ctx.link.api.read).not.toHaveBeenCalled();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.state.calibration).toBeUndefined();
+    expect(ctx.state.calibrationAsked).toBe(true);
+  });
+});

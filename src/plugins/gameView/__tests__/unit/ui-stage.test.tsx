@@ -7,7 +7,7 @@ import type { LinkStatus } from "../../../registry/protocol";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { Stage } from "../../ui/Stage";
-import { createCtx, type TestCtx } from "../helpers";
+import { createCtx, manifestOf, type TestCtx } from "../helpers";
 import { find, findAll, type Mounted, mount } from "../ui";
 
 let ctx: TestCtx;
@@ -147,6 +147,26 @@ describe("Stage", () => {
     ctx.state.calibrationRead = true;
     expect(find(stage().root, "[data-part='hint']").textContent).toBe(
       "Picker needs one keyed element"
+    );
+  });
+
+  it("says the game reports no element rects when the manifest lists neither rect source", () => {
+    ctx.link.manifestValue = manifestOf(undefined, ["game.ui"]);
+    ctx.state.picker.on = true;
+    expect(find(stage().root, "[data-part='hint']").textContent).toBe(
+      "This game reports no element rects"
+    );
+    ctx.state.calibrationRead = true;
+    expect(find(stage().root, "[data-part='hint']").textContent).toBe(
+      "This game reports no element rects"
+    );
+  });
+
+  it("keeps the picker hint on a game 0.4 manifest (game.locate)", () => {
+    ctx.link.manifestValue = manifestOf(undefined, ["game.locate"]);
+    ctx.state.picker.on = true;
+    expect(find(stage().root, "[data-part='hint']").textContent).toBe(
+      "Hover the game, click to select · Esc"
     );
   });
 

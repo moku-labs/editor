@@ -130,7 +130,7 @@ export type RenderViewState = {
   sources: { ui?: Json; entities?: Json; projections?: Json };
   scene: SceneSnapshot | undefined;
   calibration: Calibration | undefined;
-  /** The game.rect calibration was asked in this session and for this device. */
+  /** The calibration (game.locate or game.rect) was asked in this session and for this device. */
   calibrationAsked: boolean;
   /** undefined = not asked, null = no manifest. */
   catalogue: TextureCatalogue | null | undefined;
@@ -290,9 +290,9 @@ export type RenderSnapshot = {
  */
 export type RenderViewApi = {
   /**
-   * Re-reads the asset manifest and the game.rect calibration (the Textures card's Refresh and a
-   * device change). Live values come from the watches: this is not a poll. Does nothing while the
-   * link is not live or paused.
+   * Re-reads the asset manifest and the calibration from game.locate or game.rect (the Textures
+   * card's Refresh and a device change). Live values come from the watches: this is not a poll.
+   * Does nothing while the link is not live or paused.
    *
    * @returns Resolves when both reads settled (never rejects).
    * @example

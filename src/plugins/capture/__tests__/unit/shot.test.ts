@@ -23,10 +23,20 @@ describe("takeShot", () => {
     });
   });
 
+  it("answers the png of a game 0.4 answer { png, legend? }", async () => {
+    const registry = fakeRegistry(() => ({ value: { png: PNG, legend: [] } }));
+
+    expect(await takeShot(registry)).toEqual({ image: PNG, state: { ...ENVELOPE, frame: 1778 } });
+  });
+
   it.each([
     ["null (inert renderer)", null],
     ["a string that is no image", "hello"],
-    ["a number", 3]
+    ["a number", 3],
+    ["an object without png", { legend: [] }],
+    ["an object whose png is no string", { png: 3 }],
+    ["an object whose png is no image", { png: "hello" }],
+    ["an array", [PNG]]
   ])("rejects -32000 when the door answers %s", async (_label, value) => {
     const error = await rejectionOf(takeShot(fakeRegistry(() => ({ value }))));
 

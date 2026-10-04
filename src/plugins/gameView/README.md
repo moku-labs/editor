@@ -90,7 +90,7 @@ Log events (warn): `gameView: calibration failed`, `gameView: copy reference fai
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.rect`, `game.render`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest`, `status()` |
+| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest`, `status()` |
 | `workspacePlugin` | `gameFrame()` (`dock`, `overlay`, `box`), `show`, `active`, `device`, `devices`, `setDevice`, `onPrefs`, `overlayInGame`, `reference`, `toast`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Game panel, `run` the `editor.*` commands |
 
@@ -141,7 +141,8 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Scene and picker
 
-- A `game.rect` read calibrates reference units to page px (finding 3).
+- One page rect read calibrates reference units to page px (finding 3). It reads `{ key }` from `game.locate` when the manifest lists it (game 0.4), else from `game.rect` (game 0.1).
+- A manifest with neither reports no element rects: nothing is read, nothing is warned, and the hint pill says "This game reports no element rects".
 - The target is the first keyed node that covers the ui root. Without one, it is the first keyed node with a width (the shared `calibrationTarget`).
 - It reads again when the target key, its drawn rect or the root rect changes.
 - After a device change it waits for the next `game.ui` snapshot, so the game has laid out at the new size first. While Game is hidden, the next `scene()` reads it.
@@ -211,5 +212,5 @@ A part that is not known is left out.
 | Limit | Follow-up in `@moku-labs/game` |
 |---|---|
 | No display-tree source. Picker rects are derived from `game.ui`, `game.entities`, `game.projections`. No text style card. | F-G1: display-tree source (type, bounds, texture, style key, entity per display object). |
-| The viewport transform is not exposed. The calibration reads `game.rect` of one keyed node. Live motion (a popup's entrance, a swing) is not modelled: the picker and the proxies use the rest pose. Safe areas are guides only: the game sees insets of 0. | F-G2: `game.viewport` source and safe-area emulation; real element bounds (release brief §1). |
+| The viewport transform is not exposed. The calibration reads `game.locate` (or `game.rect`) of one keyed node. Live motion (a popup's entrance, a swing) is not modelled: the picker and the proxies use the rest pose. Safe areas are guides only: the game sees insets of 0. | F-G2: `game.viewport` source and safe-area emulation; real element bounds (release brief §1). |
 | The Device tab cheat rows are empty on merge-game. | F-C1: merge-game `.dev` cheats. |

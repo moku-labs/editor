@@ -4,6 +4,7 @@
 
 - Package: `@moku-labs/editor` (MIT)
 - Peer dependency: `@moku-labs/game >= 0.0.2` (`game.effects` needs 0.0.3)
+- Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both.
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
 - Bin: `moku-editor <game-html> [--port 3000] [--root .] [--help]` (Bun only)
 - Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
@@ -25,7 +26,7 @@
 - Global configs `AgentConfig`, `ServerConfig`, `ToolsConfig` are empty. Every option belongs to a plugin and is set through `pluginConfigs` (shallow merge; arrays replace).
 - Registry: the doors and `.dev` modules become closure-erased entries. Raw `Json` in, `checkInput` against the descriptor's `InputSchema`, door call, `toWireValue` out.
 - Manifest: descriptors only (`sources`, `commands`), plus `game`, `page`, `embedded`. Sent by the bridge in `hello`.
-- Not installed: the registry probes every door source once with its default input at start and on each manifest rebuild. A door that throws (a game without `effectsPlugin`, a screenless game without `ui`/`world`) is listed with `available: false` and `reason`; its reads and watches answer -32008 `not_installed` (not retryable). The link neither logs nor retries it; Render reads "Effects not installed in this game".
+- Not installed: the registry probes every door source once with its default input at start and on each manifest rebuild (never `game.rect` or `game.locate`, which locate one element). A door that throws (a game without `effectsPlugin`, a screenless game without `ui`/`world`, game 0.4.2's `game.sounds` without `audioPlugin`: `[game] The source game.sounds needs audioPlugin.`) is listed with `available: false` and `reason`; its reads and watches answer -32008 `not_installed` (not retryable). The link neither logs nor retries it; Render reads "Effects not installed in this game".
 - Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") }`. With the flag `false` the bundle keeps no editor code; the package is `"sideEffects": false` and the agent core is `/* @__PURE__ */`.
 - EditorChannel: `read`, `watch`, `run`, `status`. In process it is the agent `channel`; remote it is the tools `link`. Every panel reads through it.
 - Source `changes`: `frame` (re-read by the bridge once per heartbeat), `commit`, `edge` (followed by watch). Values are sent only when their JSON text changed.
@@ -246,7 +247,7 @@ One line each: core · tier · purpose · key methods · events (E = emits, H = 
 - channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms, `heap` in Chromium) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
 - overlay · agent · Standard · Preact card over the game: render chips and one-click cheats; off by default; adds command `editor.overlay` · `open`, `close`, `isOpen` · H `bridge:status`
 - bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s · `status`, `session` · E `bridge:status`
-- capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own · no app api · no events
+- capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own; takes `game.capture` as a data URL (game 0.1) or `{ png }` (game 0.4) · no app api · no events
 
 ### Server core (`editor-server`)
 

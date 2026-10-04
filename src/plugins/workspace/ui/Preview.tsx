@@ -4,7 +4,8 @@
  * "Open in Game", "Hide". The header is the handle: a pointer drag on it (≥ 4 px) moves the float
  * and snaps to the nearest corner on release; Alt+arrows on it move the float a corner. The game
  * frame is docked over the body by geometry (the iframe never moves) and takes the pointer there,
- * so the preview plays the game; the size changes only through S/M/L (finding 1).
+ * so the preview plays the game; the size changes only through S/M/L (finding 1). Below 96 px of
+ * fitted width the float collapses to its header: no body, no frame.
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
@@ -122,25 +123,47 @@ export function cornerAfter(corner: PreviewCorner, key: string): PreviewCorner |
 }
 
 /**
- * Places the float in its corner and re-docks the frame over the body.
+ * Below this fitted width the float has no room to show the game: the body hides, the frame with
+ * it, and only the header stays (for example next to a wide Inspector drawer in the 480 px pane).
+ */
+const MIN_BODY_WIDTH = 96;
+
+/**
+ * Places the float in its corner of the zone. A fitted width below MIN_BODY_WIDTH collapses the
+ * float to its header: the body hides and the float takes the header's own size, at the same
+ * corner of the room.
  *
  * @param ctx - Domain context of workspace.
  * @param section - The float element.
  * @param ws - The workspace.
  * @param prefs - Its preview prefs.
+ * @param body - The body element the frame docks over.
+ * @returns True when the body has room (the frame docks over it), false when collapsed.
  */
 function placeFloat(
   ctx: WorkspaceCtx,
   section: HTMLElement,
   ws: PreviewWorkspace,
-  prefs: PreviewPrefs
-): void {
+  prefs: PreviewPrefs,
+  body: HTMLElement | undefined
+): boolean {
   const { rect, insets } = zoneOf(ctx, ws);
   const float = floatRect(rect, insets, prefs.corner, PREVIEW_SIZES[prefs.size]);
+  const hasRoom = float.width >= MIN_BODY_WIDTH;
+
+  // Collapsed: no body, the header's own size.
+  if (body !== undefined) body.hidden = !hasRoom;
+  if (hasRoom) delete section.dataset.collapsed;
+  else section.dataset.collapsed = "";
   section.style.left = `${float.left}px`;
-  section.style.top = `${float.top}px`;
-  section.style.width = `${float.width}px`;
-  section.style.height = `${float.height}px`;
+  section.style.width = hasRoom ? `${float.width}px` : "";
+  section.style.height = hasRoom ? `${float.height}px` : "";
+
+  // A collapsed float in a bottom corner sits on the bottom edge of the room.
+  const isLowHeader = !hasRoom && prefs.corner.startsWith("bottom");
+  const top = isLowHeader ? float.top + float.height - section.offsetHeight : float.top;
+  section.style.top = `${top}px`;
+  return hasRoom;
 }
 
 /**
@@ -269,9 +292,9 @@ export function Preview(props: PreviewProps): VNode {
 
   useLayoutEffect(() => {
     const element = section.current;
-    state.frame.previewBody = shown ? body.current : undefined;
     const isPlaceable = shown && element !== undefined && ws !== undefined && prefs !== undefined;
-    if (isPlaceable) placeFloat(ctx, element, ws, prefs);
+    const hasRoom = isPlaceable && placeFloat(ctx, element, ws, prefs, body.current);
+    state.frame.previewBody = hasRoom ? body.current : undefined;
     syncFrame(ctx);
   });
   useLayoutEffect(() => {

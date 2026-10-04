@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";
 import { calibrate, calibrationTargetOf, recalibrate } from "../../scene/calibrate";
 import { startSceneWatches } from "../../scene/watch";
-import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
+import { createCtx, flush, manifestOf, sceneCapture, type TestCtx, useScene } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The calibration of finding 3: the target (a full-screen keyed node first),
@@ -217,5 +217,43 @@ describe("recalibration while watching", () => {
     const second = calibrate(ctx);
     await Promise.all([first, second]);
     expect(rectReads()).toEqual(["boardScreen"]);
+  });
+});
+
+describe("the rect source of the manifest (U11)", () => {
+  it("reads game.locate with { key } when the manifest lists it (game 0.4)", async () => {
+    ctx.link.manifestValue = manifestOf(undefined, ["game.ui", "game.locate"]);
+    ctx.link.values.set("game.locate", { x: 0, y: 0, w: 540, h: 720 });
+    ctx.state.sources.ui = BOARD.ui;
+
+    await calibrate(ctx);
+
+    expect(ctx.link.read).toHaveBeenCalledWith("game.locate", { key: "boardScreen" });
+    expect(rectReads()).toEqual([]);
+    expect(ctx.state.calibration).toEqual({ scale: 0.5, x: 0, y: 0 });
+  });
+
+  it("reads game.rect when the manifest lists only game.rect (game 0.1)", async () => {
+    ctx.state.sources.ui = BOARD.ui;
+
+    await calibrate(ctx);
+
+    expect(rectReads()).toEqual(["boardScreen"]);
+    expect(ctx.state.calibration).toEqual({ scale: 1, x: 0, y: 0 });
+  });
+
+  it("reads nothing and warns nothing when the manifest lists neither", async () => {
+    ctx.link.manifestValue = manifestOf(undefined, ["game.ui"]);
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    await flush();
+    ctx.link.send("game.ui", BOARD.ui);
+    await flush();
+
+    expect(ctx.link.read).not.toHaveBeenCalled();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.state.calibration).toBeUndefined();
+    expect(ctx.state.calibrationRead).toBe(true);
+    expect(ctx.state.calibrationRun.used?.key).toBe("boardScreen");
   });
 });

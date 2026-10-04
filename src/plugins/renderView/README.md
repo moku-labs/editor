@@ -21,7 +21,7 @@ The box lives in renderView's own root inside `workspace.gameFrame().overlay()`,
 
 | Member | Signature | What |
 |---|---|---|
-| `refresh` | `() => Promise<void>` | Re-reads the asset manifest and the `game.rect` calibration. Not a poll. Does nothing while the link is not live or paused. Never rejects. |
+| `refresh` | `() => Promise<void>` | Re-reads the asset manifest and the calibration (`game.locate` or `game.rect`). Not a poll. Does nothing while the link is not live or paused. Never rejects. |
 | `snapshot` | `() => RenderSnapshot` | `{ frame, tiles, tree, textures, bundles, pools, releases }`. Texture rows have the filter and sort applied. Copies. |
 | `reveal` | `(ref: ElementRef) => void` | Shows Render, opens the ancestors, selects the row and scrolls it into view. Waits for the first scene when Render was hidden. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | Pink box around the element over the game frame. `undefined` clears it. A ref without a rect draws nothing. |
@@ -79,7 +79,7 @@ Log events: `renderView: unexpected source shape` (warn, once per wrong value), 
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the game sources, `read("game.rect")`, `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
+| `linkPlugin` | `watch` of the game sources, `read("game.locate")` or `read("game.rect")`, `manifest()`, `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
 | `workspacePlugin` | `show("render")`, `active()`, `onPrefs` (device change), `gameFrame().overlay()`, `palette.add` |
 | `panelsPlugin` | `register` the Render panel |
 
@@ -96,7 +96,8 @@ renderView depends on no other view (R4).
 
 - The bridge re-reads each watched frame source once per heartbeat and sends changes only. No timer reads a frame source.
 - A burst of scene values builds one scene per animation frame.
-- `game.rect` of the first keyed ui element calibrates the scene once per session and again after a device change.
+- The page rect of the first keyed ui element calibrates the scene once per session and again after a device change.
+- That rect is read with `{ key }` from `game.locate` when the manifest lists it (game 0.4), else from `game.rect` (game 0.1). A manifest that lists neither reports no element rects: nothing is read, nothing is warned, and the scene stays uncalibrated.
 - The asset manifest is read from the first `manifestPaths` entry that holds a version-1 manifest.
 - `game.effects` follows `link.onManifest`. A manifest that lists it starts one watch. A manifest without it stops the watch and clears the value. A lost session keeps it.
 - A game without the effects plugin lists the source with `available: false` (the agent's probe). renderView sends no watch, sets `effectsInstalled: false` on the tiles and the Scene tile reads "Effects not installed in this game". Nothing is logged. `empty` forgets the flag.

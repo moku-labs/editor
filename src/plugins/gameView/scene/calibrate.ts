@@ -1,13 +1,19 @@
 /**
  * @file gameView plugin — the calibration of the scene (finding 3): which keyed ui node gets
- * its `game.rect` read (a full-screen keyed node first, else the shared `calibrationTarget`),
- * when to read again (another target, drawn rect or root rect; the first ui snapshot after a
- * device change) and the discard of a read overtaken by a ui snapshot with another target (one
- * retry).
+ * its page rect read (a full-screen keyed node first, else the shared `calibrationTarget`), from
+ * the source the manifest lists (`game.locate` on game 0.4, `game.rect` on game 0.1, none: no
+ * read), when to read again (another target, drawn rect or root rect; the first ui snapshot
+ * after a device change) and the discard of a read overtaken by a ui snapshot with another
+ * target (one retry).
  */
 import { linkPlugin } from "../../link";
 import type { PageRect } from "../../panels/shared/scene";
-import { calibrationFrom, calibrationTarget, drawnRect } from "../../panels/shared/scene";
+import {
+  calibrationFrom,
+  calibrationTarget,
+  drawnRect,
+  rectSourceOf
+} from "../../panels/shared/scene";
 import { isShapePath, readUi, uiRoots, uiVisits } from "../../panels/shared/scene/wire";
 import type { Json } from "../../registry/protocol";
 import { isObject } from "../capture/shot";
@@ -17,9 +23,10 @@ import type { CalibrationTarget, GameViewCtx, GameViewState } from "../types";
 import { frameOf, rebuildScene } from "./rebuild";
 
 /**
- * Reads a game.rect value: `{ x, y, w, h }` in page px, or undefined (null on the wire).
+ * Reads a page rect value of `game.locate` or `game.rect`: `{ x, y, w, h }` in page px, or
+ * undefined (null on the wire).
  *
- * @param value - The game.rect value.
+ * @param value - The rect value.
  * @returns The rect, or undefined.
  * @example
  * ```ts
@@ -125,9 +132,9 @@ export function targetChanged(
  *
  * @param ctx - Domain context of gameView.
  * @param target - The target that was read.
- * @param page - Its page rect, undefined when not on screen or failed.
+ * @param page - Its page rect; omitted or undefined when not on screen, failed or not reported.
  */
-function keepRead(ctx: GameViewCtx, target: CalibrationTarget, page: PageRect | undefined): void {
+function keepRead(ctx: GameViewCtx, target: CalibrationTarget, page?: PageRect): void {
   const { state } = ctx;
   state.calibration = page === undefined ? undefined : calibrationFrom(page, target.drawn);
   state.calibrationRun.used = target;
@@ -139,11 +146,12 @@ function keepRead(ctx: GameViewCtx, target: CalibrationTarget, page: PageRect | 
 }
 
 /**
- * Calibrates from the stored game.ui: reads `game.rect` of the target and maps its drawn rect
- * onto it. Marks the calibration read first, so a burst asks once; a second call while a read
- * is in flight does nothing. A read overtaken by a ui snapshot with another target is
- * discarded and read once more; the second read is kept. While it runs, `calibrationRun.pending`
- * holds it, so `scene()` can wait for the calibrated scene.
+ * Calibrates from the stored game.ui: reads the page rect of the target (`game.locate`, else
+ * `game.rect`; without either nothing is read and the calibration stays undefined) and maps its
+ * drawn rect onto it. Marks the calibration read first, so a burst asks once; a second call
+ * while a read is in flight does nothing. A read overtaken by a ui snapshot with another target
+ * is discarded and read once more; the second read is kept. While it runs,
+ * `calibrationRun.pending` holds it, so `scene()` can wait for the calibrated scene.
  *
  * @param ctx - Domain context of gameView.
  * @param retries - How many overtaken reads may still be discarded.
@@ -185,11 +193,19 @@ async function readCalibration(ctx: GameViewCtx, retries: number): Promise<void>
     return;
   }
 
+  // A game that lists no rect source reports no element rects: nothing to read, no warn.
+  const link = ctx.require(linkPlugin);
+  const source = rectSourceOf(link.manifest());
+  if (source === undefined) {
+    keepRead(ctx, target);
+    return;
+  }
+
   const revision = run.revision;
   run.reading = true;
   let page: PageRect | undefined;
   try {
-    page = pageRectOf(await ctx.require(linkPlugin).read("game.rect", { key: target.key }));
+    page = pageRectOf(await link.read(source, { key: target.key }));
   } catch (error) {
     ctx.log.warn("gameView: calibration failed", { key: target.key, message: messageOf(error) });
   } finally {

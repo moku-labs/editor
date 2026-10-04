@@ -11,6 +11,13 @@ import type { DoorSource, GameLike } from "../types";
 import { firstLine, messageOf } from "./failures";
 
 /**
+ * Door sources never probed: they locate one element, so a read with `{}` says nothing about the
+ * game. `game.rect` (game 0.1) needs a key; `game.locate` (game 0.4) has only optional fields
+ * but throws without a key or a target.
+ */
+export const UNPROBED_SOURCES: ReadonlySet<string> = new Set(["game.rect", "game.locate"]);
+
+/**
  * The input a probe reads with: `{}` when every field of the schema is optional.
  *
  * @param schema - The descriptor's input schema.
@@ -75,7 +82,8 @@ export function withAvailability(
 /**
  * Builds the probe of a door source: it reads the door once with the default input. A throw marks
  * the source unavailable (one `registry:source-unavailable` info when it was available before);
- * a read that answers marks it available again. A source with a required input is never probed.
+ * a read that answers marks it available again. A source with a required input, and every
+ * source of `UNPROBED_SOURCES`, is never probed.
  *
  * @param game - The game app.
  * @param door - The door source.
@@ -90,7 +98,7 @@ export function probeOf(
   unavailable: Map<string, string>
 ): () => void {
   return () => {
-    const input = defaultInputOf(door.input);
+    const input = UNPROBED_SOURCES.has(door.id) ? undefined : defaultInputOf(door.input);
     if (input === undefined) return;
 
     try {

@@ -265,6 +265,7 @@ The barrel `scene/index.ts` exports:
 | `calibrationTarget` | `(ui: Json) => { key, drawn } \| undefined` | The first keyed ui element and its drawn rect, to calibrate from. |
 | `calibrationFrom` | `(page, drawn) => Calibration` | Reference units → page px. |
 | `toPage` | `(rect, calibration) => PageRect` | Applies a calibration. |
+| `rectSourceOf` | `(manifest) => "game.locate" \| "game.rect" \| undefined` | Where element rects are read: `game.locate` when listed (game 0.4), else `game.rect` (game 0.1); undefined when neither is (`RECT_SOURCE_IDS`). |
 | `drawnRect` | `(natural, fits) => PageRect` | The drawn rect through the fit chain. |
 | `transformedRect` | `(rect, parent, style, fit) => PageRect` | The drawn rect with the rest transform of the style on top (below). |
 | `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost visible node at a point; skips alpha 0 and `visible: false`. |

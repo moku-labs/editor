@@ -98,6 +98,12 @@ The header is the handle: a drag on it moves the float and snaps it to the neare
 Alt+arrows on it move it a corner. The body belongs to the game. The size changes only through
 S/M/L. "Open in Game (⌘1)" shows the Game workspace.
 
+The float is clamped to its zone: 12 px plus the zone insets from every edge, so it stays between
+the rail and an open drawer. A size the zone has no room for is fitted: it scales down with its
+aspect kept, never below the height of S. When the fitted width is below 96 px (a wide Inspector
+in the 480 px pane), the float collapses to its header (`data-collapsed`): title, S/M/L, Open in
+Game and Hide. The body hides and the game frame with it.
+
 ### Reference mode (D-27)
 
 The top-bar button (`data-action="reference"`, `aria-pressed`), key R, the palette item

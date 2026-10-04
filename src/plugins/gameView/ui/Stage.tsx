@@ -7,7 +7,9 @@
  */
 import type { RefObject, VNode } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { LinkStatus } from "../../registry/protocol";
+import { linkPlugin } from "../../link";
+import { rectSourceOf } from "../../panels/shared/scene";
+import type { LinkStatus, Manifest } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
 import { fitScale, slotSize } from "../stage/geometry";
@@ -135,13 +137,18 @@ function stageBadges(status: LinkStatus, state: GameViewState): readonly StageBa
 }
 
 /**
- * The hint pill while picking.
+ * The hint pill while picking. A game whose manifest lists neither `game.locate` nor `game.rect`
+ * reports no element rects, so the picker cannot place anything.
  *
  * @param state - gameView state.
+ * @param manifest - The game's manifest, undefined before a session.
  * @returns The hint, undefined while not picking.
  */
-function pickerHint(state: GameViewState): string | undefined {
+function pickerHint(state: GameViewState, manifest: Manifest | undefined): string | undefined {
   if (!state.picker.on) return undefined;
+  if (manifest !== undefined && rectSourceOf(manifest) === undefined) {
+    return "This game reports no element rects";
+  }
   if (state.calibrationRead && state.calibration === undefined) {
     return "Picker needs one keyed element";
   }
@@ -177,7 +184,7 @@ export function Stage(props: StageProps): VNode {
   const desktop = choice.preset.kind === "desktop";
   const fitted = measured.w > 0 ? fitScale(measured, size, desktop) : 1;
   const slotPx = slotSize(size, zoom === "fit" ? fitted : 1);
-  const hint = pickerHint(state);
+  const hint = pickerHint(state, ctx.require(linkPlugin).manifest());
 
   return (
     <div

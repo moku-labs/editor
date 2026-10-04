@@ -111,9 +111,11 @@ export function resultOf(value: Json = null, frame = 1841): RunResult {
 }
 
 /**
- * A manifest with the given commands.
+ * A manifest with the given commands and sources. By default it lists `game.rect`, as a game
+ * 0.1 does, so the calibration has its rect source.
  *
  * @param commands - Command ids with their effect.
+ * @param sources - Source ids.
  * @returns The manifest.
  */
 export function manifestOf(
@@ -122,13 +124,14 @@ export function manifestOf(
     ["editor.series", "read"],
     ["editor.seriesStop", "read"],
     ["editor.overlay", "cosmetic"]
-  ]
+  ],
+  sources: readonly string[] = ["game.rect"]
 ): Manifest {
   return {
     game: "merge-game 0.0.0",
     page: "http://127.0.0.1:3000/game.html",
     embedded: true,
-    sources: [],
+    sources: sources.map(id => ({ id, title: id, input: {}, changes: "frame" as const })),
     commands: commands.map(([id, effect]) => ({ id, title: id, input: {}, effect }))
   };
 }

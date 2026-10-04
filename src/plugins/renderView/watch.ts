@@ -1,8 +1,10 @@
 /**
  * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
  * for the session, and game.effects while the manifest lists it as available; the scene watches game.ui, game.entities and game.projections only while
- * Render is shown and build one scene per animation frame; the calibration reads game.rect once
- * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
+ * Render is shown and build one scene per animation frame; the calibration reads the page rect
+ * of one keyed element once per session and device (`game.locate` on game 0.4, `game.rect` on game
+ * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest. No timer
+ * reads a frame source.
  */
 import { linkPlugin } from "../link";
 import type { TextureCatalogue } from "../panels/shared/scene";
@@ -10,7 +12,8 @@ import {
   buildScene,
   calibrationFrom,
   calibrationTarget,
-  parseTextureManifest
+  parseTextureManifest,
+  rectSourceOf
 } from "../panels/shared/scene";
 import { rectOf } from "../panels/shared/scene/wire";
 import type { Json, LinkStatus, Manifest } from "../registry/protocol";
@@ -335,9 +338,11 @@ export function stopScene(ctx: RenderViewCtx): void {
 }
 
 /**
- * Calibrates from the stored game.ui: the first keyed element's drawn rect and its game.rect
- * (one read). Marks the calibration asked first, so a burst reads once; queues a rebuild while
- * the scene is watched. Never rejects.
+ * Calibrates from the stored game.ui: the first keyed element's drawn rect and its page rect (one
+ * read of `game.locate`, else `game.rect`). A manifest that lists neither reports no element
+ * rects: nothing is read, nothing is warned and the calibration stays undefined. Marks the
+ * calibration asked first, so a burst reads once; queues a rebuild while the scene is watched.
+ * Never rejects.
  *
  * @param ctx - Domain context of renderView.
  * @returns Resolves when the calibration is known.
@@ -348,15 +353,17 @@ export async function calibrate(ctx: RenderViewCtx): Promise<void> {
   if (ui === undefined) return;
 
   state.calibrationAsked = true;
+  const link = ctx.require(linkPlugin);
   const target = calibrationTarget(ui);
-  if (target === undefined) {
+  const source = rectSourceOf(link.manifest());
+  if (target === undefined || source === undefined) {
     state.calibration = undefined;
     notify(state);
     return;
   }
 
   try {
-    const page = rectOf(await ctx.require(linkPlugin).read("game.rect", { key: target.key }));
+    const page = rectOf(await link.read(source, { key: target.key }));
     state.calibration = page === undefined ? undefined : calibrationFrom(page, target.drawn);
   } catch (error) {
     state.calibration = undefined;
