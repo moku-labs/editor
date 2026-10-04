@@ -1,7 +1,7 @@
 /**
- * @file The shell of the tools page: top bar, rail and URL hash, command palette, toasts, status
- * card, the pinned preview dock (corners, drag, sizes S/M/L) and the theme, persisted across a
- * reload.
+ * @file The shell of the tools page: top bar, rail and URL hash (Game first and the default,
+ * ⌘1), command palette, toasts, status card, the pinned preview dock (corners, drag, sizes S/M/L)
+ * and the theme, persisted across a reload.
  */
 import type { Page } from "@playwright/test";
 import { expect, GAME_NAME, openTools, TOOLS_PATH, test, WORKSPACES, waitLive } from "./fixtures";
@@ -98,7 +98,7 @@ test.describe("top bar", () => {
 test.describe("rail", () => {
   test("switches all six workspaces and the URL hash", async ({ tools }) => {
     const page = tools.page;
-    // Flow is active on a fresh load, so the loop starts at Game and ends back on Flow.
+    // Game is active on a fresh load, so the loop starts at Flow and ends back on Game.
     for (const { id, label } of [...WORKSPACES.slice(1), WORKSPACES[0]]) {
       await tools.show(id);
       await expect(tools.railButton(id)).toHaveAttribute("aria-current", "page");
@@ -128,14 +128,17 @@ test.describe("rail", () => {
     await page.locator("[data-shell-main]").click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("ControlOrMeta+3");
     await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
+    // ⌘1 is Game, ⌘2 is Flow.
     await page.keyboard.press("ControlOrMeta+1");
+    await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "game");
+    await page.keyboard.press("ControlOrMeta+2");
     await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "flow");
 
-    await tools.railButton("flow").focus();
+    await tools.railButton("game").focus();
     await page.keyboard.press("ArrowDown");
-    await expect(tools.railButton("game")).toBeFocused();
-    await page.keyboard.press("ArrowUp");
     await expect(tools.railButton("flow")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(tools.railButton("game")).toBeFocused();
   });
 });
 
@@ -383,8 +386,22 @@ test.describe("theme", () => {
   });
 });
 
-test("the tools page title and a fresh load land on Flow", async ({ page }) => {
+test("the tools page title and a fresh load land on Game, ⌘1 in the rail", async ({ page }) => {
   await openTools(page);
   await expect(page).toHaveTitle("moku editor");
-  await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "flow");
+  await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "game");
+  const rail = page.locator("[data-ui=rail] button[data-workspace]");
+  await expect(rail.first()).toHaveAttribute("data-workspace", "game");
+  await expect(rail.first()).toHaveAttribute("aria-current", "page");
+  await expect(rail.nth(1)).toHaveAttribute("data-workspace", "flow");
+  // The preview's Open button (Render shows the preview) names the key of Game.
+  await page.locator("[data-ui=rail] button[data-workspace=render]").click();
+  await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
+  if (await page.locator("[data-ui=preview]").isHidden()) {
+    await page.getByRole("switch", { name: "Game", exact: true }).click();
+  }
+  await expect(page.locator('[data-ui=preview] button[aria-label="Open in Game"]')).toHaveAttribute(
+    "title",
+    "Open in Game (⌘1)"
+  );
 });

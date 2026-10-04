@@ -2,7 +2,8 @@
  * @file Exploratory QA regressions across workspaces: a save asked while a write is in flight
  * (Files and the Flow Code tab), a game source saved while paused, the watch bookkeeping under
  * rapid workspace switching and a game reload, Esc unwinding the palette over a workspace overlay,
- * and two tools tabs on one hub.
+ * and two tools tabs on one hub. Below 600 px the Files tree and the Flow Inspector are drawers
+ * that start collapsed: a test opens them before it works in them.
  */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -120,6 +121,32 @@ function inspector(page: Page): Locator {
 }
 
 /**
+ * Shows a side panel's content: below 600 px it is a drawer that starts collapsed (the Files tree
+ * also shuts when a file opens), so its rail button opens it; docked it already shows.
+ *
+ * @param page - The test page.
+ * @param id - The panel id, e.g. "files.tree".
+ */
+async function expandSide(page: Page, id: string): Promise<void> {
+  const panel = page.locator(`aside[data-side-panel="${id}"]`);
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
+
+/**
  * Shows a workspace with the rail.
  *
  * @param page - The test page.
@@ -158,6 +185,7 @@ test.describe("qa · a save during a save", () => {
     const gate = await holdWrites(page);
     await openTools(page, "#files");
     const host = files(page);
+    await expandSide(page, "files.tree");
     await host.locator(`[role=treeitem][data-path="${DIR}"]`).click();
     await host.locator(`[role=treeitem][data-path="${rel}"]`).click();
     const bar = host.locator("[data-part=file-bar]");
@@ -188,6 +216,7 @@ test.describe("qa · a save during a save", () => {
     await page
       .locator('[data-workspace-host=flow] [data-flow=node-card][data-key="main/home"]')
       .click();
+    await expandSide(page, "flow.inspector");
     await inspector(page).getByRole("tab", { name: "Code" }).click();
     const tab = inspector(page).locator("[data-flow=code-tab]");
     const file = (
@@ -244,6 +273,7 @@ test.describe("qa · a save while paused", () => {
     try {
       await tools.show("files");
       const host = files(page);
+      await expandSide(page, "files.tree");
       await host.locator('[role=treeitem][data-path="nodes"]').click();
       await host.locator(`[role=treeitem][data-path="${rel}"]`).click();
       await host.locator("[data-part=file-bar]").getByRole("button", { name: "Edit here" }).click();
@@ -350,6 +380,7 @@ test.describe("qa · Esc unwinds one layer", () => {
     const rel = `${DIR}/esc.md`;
     await tools.show("files");
     const host = files(page);
+    await expandSide(page, "files.tree");
     await host.locator("button", { hasText: "↻" }).click();
     await host.locator(`[role=treeitem][data-path="${DIR}"]`).click();
     await host.locator(`[role=treeitem][data-path="${rel}"]`).click();

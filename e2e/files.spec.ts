@@ -3,10 +3,12 @@
  * project tree (count, click, the keys ↑/↓/←/→/Home/End/Enter, Refresh picking up a file created
  * on disk), ⌘K "go to file", tabs (several, activate, ←/→, close, middle click, the discard
  * popover of a modified tab), the code view with colour for TS, CSS and JSON, the Markdown preview
- * with its front matter, the image preview of a capture PNG, the series card that opens the
- * contact sheet in Game, edit mode (Cancel, Esc, ⌘S, Save), the version conflict with Reload and
- * Overwrite, a game source save that reloads the game and restores its state (D-07), the "Used by"
- * chips that jump to the Flow node, the editor link, "file too large" and the sandbox.
+ * with its front matter as raw text, the image preview of a capture PNG, the series card that
+ * opens the contact sheet in Game, edit mode (Cancel, Esc, ⌘S, Save), the version conflict with
+ * Reload and Overwrite, a game source save that reloads the game and restores its state (D-07),
+ * the "Used by" chips that jump to the Flow node, the editor link, "file too large" and the
+ * sandbox. Below 600 px the tree is a drawer that starts collapsed and shuts when a file opens: a
+ * test opens it before it works in the tree.
  *
  * Every file this spec writes lives in `e2e-files/` or `.moku/captures/` of the served copy
  * (dist-e2e/game) and is removed after each test; a game source the D-07 test edits is restored.
@@ -52,13 +54,13 @@ const CSS_TEXT = ["/* e2e */", "[data-e2e] {", "  color: red;", "  margin: 4px;"
 /** The JSON sample. */
 const JSON_TEXT = `${JSON.stringify({ name: "e2e", count: 3, on: true }, undefined, 2)}\n`;
 
-/** The note: front matter with a capture, a body with a heading, a list, links and a fence. */
-const NOTE_TEXT = [
+/** The lines of the front matter of the Markdown sample. */
+const FRONT_MATTER = ["title: e2e doc", "status: idea", "captures:", `  - ${SHOT}`];
+
+/** The Markdown sample: a front matter, a body with a heading, a list, links and a fence. */
+const DOC_TEXT = [
   "---",
-  "title: e2e note",
-  "status: idea",
-  "captures:",
-  `  - ${SHOT}`,
+  ...FRONT_MATTER,
   "---",
   "# Heading one",
   "",
@@ -205,7 +207,7 @@ test.beforeEach(async () => {
   await clean();
   await put(`${DIR}/sample.css`, CSS_TEXT);
   await put(`${DIR}/sample.json`, JSON_TEXT);
-  await put(`${DIR}/note.md`, NOTE_TEXT);
+  await put(`${DIR}/doc.md`, DOC_TEXT);
   await put(`${DIR}/plain.md`, PLAIN_TEXT);
   // A symlink that leaves the root: the sandbox hides it and refuses to read it.
   await symlink(fileURLToPath(new URL("../README.md", import.meta.url)), abs(`${DIR}/outside.md`));
@@ -312,12 +314,38 @@ async function toastHistory(page: Page): Promise<string[]> {
 }
 
 /**
+ * Shows the tree: below 600 px it is a drawer that starts collapsed and shuts when a file opens,
+ * so its rail button opens it; docked it already shows.
+ *
+ * @param page - The test page.
+ */
+async function openTree(page: Page): Promise<void> {
+  const panel = files(page).locator('aside[data-side-panel="files.tree"]');
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
+
+/**
  * Shows Files and waits for the tree.
  *
  * @param tools - The driver.
  */
 async function showFiles(tools: Tools): Promise<void> {
   await tools.show("files");
+  await openTree(tools.page);
   await expect(files(tools.page).locator("[role=tree]")).toBeVisible();
 }
 
@@ -328,6 +356,7 @@ async function showFiles(tools: Tools): Promise<void> {
  * @param rel - Root-relative path.
  */
 async function openInTree(page: Page, rel: string): Promise<void> {
+  await openTree(page);
   const parts = rel.split("/");
   for (let index = 1; index < parts.length; index += 1) {
     const folder = row(page, parts.slice(0, index).join("/"));
@@ -619,6 +648,7 @@ test.describe("files · tabs", () => {
     await expect(tab(page, "nodes/merge.ts")).toHaveAttribute("aria-selected", "true");
 
     // Reopening an open file activates its tab, no duplicate.
+    await openTree(page);
     await row(page, "game.ts").click();
     expect(await tabPaths(page)).toEqual(["nodes/merge.ts", "flows/board.ts", "game.ts"]);
     await expect(tab(page, "game.ts")).toHaveAttribute("aria-selected", "true");
@@ -702,17 +732,18 @@ test.describe("files · views", () => {
     );
   });
 
-  test("Markdown preview: front matter rows, headings, lists, a capture link; Source shows the code", async ({
+  test("Markdown preview: the front matter as raw text, headings, lists, links; Source shows the code", async ({
     tools
   }) => {
     const page = tools.page;
     await showFiles(tools);
-    await openInTree(page, `${DIR}/note.md`);
+    await openInTree(page, `${DIR}/doc.md`);
     const preview = body(page).locator("[data-preview=markdown]");
     await expect(preview).toBeVisible();
-    const props = preview.locator("[data-front-matter=note]");
-    await expect(props).toContainText("e2e note");
-    await expect(props).toContainText("idea");
+    // The front matter is one plain block of its raw lines: nothing parsed, nothing to click.
+    const front = preview.locator("pre[data-front-matter]");
+    await expect(front).toHaveText(FRONT_MATTER.join("\n"));
+    await expect(front.locator("button, a")).toHaveCount(0);
     await expect(preview.locator("[data-md] h1")).toHaveText("Heading one");
     await expect(preview.locator("[data-md] li")).toHaveText(["first item", "second item"]);
     await expect(preview.locator("[data-md] strong")).toHaveText("bold");
@@ -721,7 +752,7 @@ test.describe("files · views", () => {
       "https://example.com"
     );
     await expect(preview.locator("[data-md-code]")).toContainText("const a = 1;");
-    // No markup leaks: the front matter is not shown as text in the body.
+    // No markup leaks: the front matter is not shown again in the body.
     await expect(preview.locator("[data-md]")).not.toContainText("title:");
 
     const modes = fileBar(page).getByRole("radiogroup", { name: "View" });
@@ -736,11 +767,7 @@ test.describe("files · views", () => {
     );
     await expect(body(page).locator("[data-part=code-view] [data-line='1']")).toHaveText(/---/);
     await modes.getByRole("radio", { name: "Preview" }).click();
-
-    // The capture link of the front matter opens the PNG.
-    await props.getByRole("button", { name: SHOT }).click();
-    await expect(tab(page, SHOT)).toHaveAttribute("aria-selected", "true");
-    await expect(body(page).locator("[data-preview=image] img")).toBeVisible();
+    await expect(front).toBeVisible();
   });
 
   test("image preview: the capture PNG, its size caption and the fit / 100 % toggle", async ({
@@ -835,10 +862,10 @@ test.describe("files · views", () => {
     const page = tools.page;
     await showFiles(tools);
     await row(page, DIR).click();
-    await expect(row(page, `${DIR}/note.md`)).toBeVisible();
+    await expect(row(page, `${DIR}/doc.md`)).toBeVisible();
     await expect(row(page, `${DIR}/outside.md`)).toHaveCount(0);
 
-    await row(page, `${DIR}/note.md`).click();
+    await row(page, `${DIR}/doc.md`).click();
     const md = body(page).locator("[data-md]");
     await md.getByRole("button", { name: "outside" }).click();
     await expect(tab(page, `${DIR}/outside.md`)).toHaveAttribute("aria-selected", "true");
@@ -847,7 +874,7 @@ test.describe("files · views", () => {
     );
 
     // "../../../package.json" from e2e-files/ is clamped to the root: the game's own package.json.
-    await tab(page, `${DIR}/note.md`).click();
+    await tab(page, `${DIR}/doc.md`).click();
     await md.getByRole("button", { name: "up" }).click();
     await expect(tab(page, "package.json")).toHaveAttribute("aria-selected", "true");
     await expect(body(page).locator("[data-part=code-view]")).toContainText("merge-game-e2e");

@@ -1,11 +1,12 @@
 /**
  * @file The Render workspace (spec 14-renderView) in a real browser, on the frozen merge-game: the
- * six metric tiles against the game's own `game.render`, `game.assets` and `game.effects` values,
- * the FPS sparkline and the frame bar, the render tree (Expand all, Collapse, twisties, the keys
- * ←/→/↑/↓/Enter and the inline detail), the pink box a hovered row draws over the game frame at
- * the element's real rect, "Inspect in Game", the textures table (bundle chips, every column sorted
- * both ways, use tags), the Bundles, Pools and Release log cards, Refresh, the palette's Textures
- * items and the workspace scrolling inside its own area.
+ * six metric tiles against the game's own `game.render`, `game.assets` and `game.effects` values
+ * and the page heap Chromium reports, the FPS sparkline (with the rest note at 30 fps) and the
+ * frame bar, the render tree (Expand all, Collapse, twisties, the keys ←/→/↑/↓/Enter and the
+ * inline detail), the pink box a hovered row draws over the game frame at the element's real
+ * rect, "Inspect in Game", the textures table (bundle chips, every column sorted both ways, use
+ * tags), the Bundles, Pools and Release log cards, Refresh, the palette's Textures items and the
+ * workspace scrolling inside its own area.
  *
  * Ground truth is read from the game page itself: the registry the editor agent exposes there
  * (`globalThis.editor`) answers the same sources the tools page watches.
@@ -57,6 +58,9 @@ type AssetsUsage = {
     readonly mb: number;
   }[];
 };
+
+/** The FPS sub line while the newest sample sits at the game's idle rate (D-28). */
+const RESTING = "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)";
 
 /** One texture row as the table shows it. */
 type TextureCells = {
@@ -401,7 +405,8 @@ test.describe("render · tiles", () => {
       /^Render · game\.render · frame \d+$/
     );
 
-    // FPS: a whole number, the sample count and the low, and one sparkline point per sample.
+    // FPS: a whole number, the sample count and the low, and one sparkline point per sample; at
+    // the game's idle rate (28-32 fps, D-28) the sub line says why instead.
     await expect
       .poll(async () => {
         const sub = await tileText(page, "fps", "[data-sub]");
@@ -409,6 +414,10 @@ test.describe("render · tiles", () => {
         const value = Number(await tileText(page, "fps", "[data-value] strong"));
         const points = (await tile(page, "fps").locator("polyline").getAttribute("points")) ?? "";
         const count = points.trim() === "" ? 0 : points.trim().split(/\s+/).length;
+        if (sub === RESTING) {
+          const isResting = Number.isInteger(value) && value >= 28 && value <= 32 && count >= 2;
+          return isResting ? "ok" : `resting value ${value} points ${count}`;
+        }
         if (match === null) return `sub ${sub}`;
         const samples = Number(match[1]);
         const pointsOk = count === Math.max(2, samples);
@@ -493,13 +502,23 @@ test.describe("render · tiles", () => {
     await expect(tile(page, "scene").locator("[data-value] strong")).toHaveText(/^\d+$/);
     await expect(tile(page, "scene").locator("[data-unit]")).toHaveText("entities");
 
-    // JS heap: never reported; the absent tile names it for assistive tech.
-    await expect(tile(page, "heap")).toHaveAttribute("data-absent", "");
-    await expect(tile(page, "heap")).toHaveAttribute("aria-label", "JS heap: not reported");
-    await expect(tile(page, "heap").locator("[data-value]")).toHaveText("Not reported");
-    await expect(tile(page, "heap").locator("[data-sub]")).toHaveText(
-      "Needs heap numbers in game.render"
-    );
+    // JS heap: Chromium reports the page heap (performance.memory) in the heartbeat, so the tile
+    // shows the used MB of the limit.
+    const heap = tile(page, "heap");
+    await expect(heap).toBeVisible();
+    await expect(heap).not.toHaveAttribute("data-absent");
+    await expect(heap.locator("h2")).toHaveText("JS heap");
+    await expect(heap.locator("[data-value] strong")).toHaveText(/^\d+(\.\d)?$/);
+    await expect(heap.locator("[data-unit]")).toHaveText("MB");
+    const limitMb = await gameFrame(page).evaluate(() => {
+      const memory = Reflect.get(performance, "memory") as { jsHeapSizeLimit: number } | undefined;
+      return memory === undefined ? -1 : Math.round((memory.jsHeapSizeLimit / 2 ** 20) * 10) / 10;
+    });
+    expect(limitMb, "Chromium reports performance.memory").toBeGreaterThan(0);
+    await expect(heap.locator("[data-sub]")).toHaveText(`of ${short(limitMb)} MB`);
+    const usedMb = Number(await heap.locator("[data-value] strong").textContent());
+    expect(usedMb).toBeGreaterThan(0);
+    expect(usedMb).toBeLessThanOrEqual(limitMb);
   });
 });
 

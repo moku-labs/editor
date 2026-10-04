@@ -1,19 +1,21 @@
 /**
  * @file The Game workspace (spec 13-gameView) in a real browser, on the frozen merge-game: the
  * device toolbar (presets, orientation, Fit and 100 %, safe-area bands, Reload), the Shot with its
- * PNG on disk, the capture card and Attach to note, the Series popover, the recording view, Stop,
- * the files of a series and the contact sheet with stepping and Mark as bug, the element picker on
- * the game's real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device
- * tab, the style stepper that writes the source and reloads with state restored (D-07), the
- * Overlay in game switch, and driving the game itself: pause, step, resume, palette commands and
- * real taps on the game canvas whose effect shows in State.
+ * PNG on disk and the capture card, the Series popover, the recording view, Stop, the files of a
+ * series and the contact sheet with stepping and Mark as bug, the element picker on the game's
+ * real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device tab, the
+ * style stepper that writes the source and reloads with state restored (D-07), the Overlay in
+ * game switch, and driving the game itself: pause, step, resume, palette commands and real taps on
+ * the game canvas whose effect shows in State. The Element and Device tabs live in the Element
+ * panel, a side panel that floats as a drawer below 600 px and starts collapsed there: a test
+ * opens it before it looks at or works in a tab.
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
  * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
  * tests remove or restore what they wrote, so a second run starts from the same files.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
@@ -24,12 +26,6 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /** The captures folder of gameView, relative to the game root. */
 const CAPTURES_DIR = ".moku/captures";
-
-/** The notes folder of gameView, relative to the game root. */
-const NOTES_DIR = ".moku/notes";
-
-/** The note this spec writes; the name sorts first, so it is the default choice. */
-const NOTE_FILE = `${NOTES_DIR}/9999-e2e-game.md`;
 
 /** The source file of the home screen styles (the Play button's style block). */
 const HOME_STYLES = "features/home/styles.ts";
@@ -493,32 +489,43 @@ function elementTab(page: Page): Locator {
 }
 
 /**
+ * Shows the Element panel's content: below 600 px it is a drawer that starts collapsed, so its
+ * rail button opens it; docked it already shows.
+ *
+ * @param page - The test page.
+ */
+async function openSide(page: Page): Promise<void> {
+  const panel = game(page).locator('aside[data-side-panel="game.side"]');
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
+
+/**
  * Removes every capture of this run.
  */
 async function clearCaptures(): Promise<void> {
   await rm(path.join(GAME_ROOT, CAPTURES_DIR), { recursive: true, force: true });
 }
 
-/** A note with no captures, the target of Attach to note. */
-const NOTE_TEXT = [
-  "---",
-  "title: e2e game note",
-  "status: idea",
-  "captures: []",
-  "---",
-  "A note the game spec attaches captures to.",
-  ""
-].join("\n");
-
 test.beforeEach(async () => {
   await clearCaptures();
-  await mkdir(path.join(GAME_ROOT, NOTES_DIR), { recursive: true });
-  await writeFile(path.join(GAME_ROOT, NOTE_FILE), NOTE_TEXT);
 });
 
 test.afterEach(async () => {
   await clearCaptures();
-  await rm(path.join(GAME_ROOT, NOTE_FILE), { force: true });
 });
 
 test.describe("game · device toolbar", () => {
@@ -557,6 +564,7 @@ test.describe("game · device toolbar", () => {
         .toBe(true);
     }
 
+    await openSide(page);
     await game(page).getByRole("tab", { name: "Device" }).click();
     const devices = game(page).locator("[data-part=devices] button");
     await expect(devices).toHaveCount(PRESETS.length);
@@ -735,9 +743,7 @@ test.describe("game · device toolbar", () => {
 });
 
 test.describe("game · capture", () => {
-  test("Shot writes a PNG under .moku/captures, shows the card, and attaches it to a note", async ({
-    tools
-  }) => {
+  test("Shot writes a PNG under .moku/captures and shows the card", async ({ tools }) => {
     const page = tools.page;
     await showGame(tools);
     await bar(page, "capture").click();
@@ -758,23 +764,23 @@ test.describe("game · capture", () => {
     const size = await pngSize(shown);
     expect(size.w / size.h).toBeCloseTo(393 / 852, 2);
 
-    // A second shot in the same minute gets a -2 suffix.
+    // A second shot in the same minute gets a -2 suffix (one in the next minute a name of its own).
     await bar(page, "capture").click();
-    await expect(card.locator("[data-part=path]")).toHaveText(shown.replace(".png", "-2.png"));
+    await expect(card.locator("[data-part=path]")).not.toHaveText(shown);
+    const second = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    const sameMinute = second.startsWith(shown.replace("-main.png", ""));
+    expect(second).toMatch(
+      sameMinute
+        ? shown.replace(".png", "-2.png")
+        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/
+    );
     expect(await list(CAPTURES_DIR)).toEqual(
-      [path.basename(shown), path.basename(shown).replace(".png", "-2.png")].toSorted()
+      [path.basename(shown), path.basename(second)].toSorted()
     );
 
-    // Attach to note: the newest note is the default; the capture lands in its front matter.
-    const select = card.getByRole("combobox", { name: "Note" });
-    await expect(select).toHaveValue(NOTE_FILE);
-    await expect(select.locator("option").last()).toHaveText("New note…");
-    await card.getByRole("button", { name: "Attach to note" }).click();
-    await expect(toast(page)).toContainText("✓ Attached to e2e game note");
-    await expect
-      .poll(() => readGameFile(NOTE_FILE))
-      .toContain(`captures:\n  - ${shown.replace(".png", "-2.png")}`);
-    expect(await readGameFile(NOTE_FILE)).toContain("A note the game spec attaches captures to.");
+    // Notes are gone: the card attaches nothing.
+    await expect(card.getByRole("button", { name: "Attach to note" })).toHaveCount(0);
+    await expect(card.getByRole("combobox")).toHaveCount(0);
 
     await card.getByRole("button", { name: "Close" }).click();
     await expect(card).toHaveCount(0);
@@ -1003,9 +1009,8 @@ test.describe("game · series", () => {
       )
       .toBeFalsy();
 
-    // Attach the series to the note: the index path lands in its captures.
-    await sheet.getByRole("button", { name: "Attach to note" }).click();
-    await expect.poll(() => readGameFile(NOTE_FILE)).toContain(`  - ${folder}/index.json`);
+    // Notes are gone: the sheet attaches nothing.
+    await expect(sheet.getByRole("button", { name: "Attach to note" })).toHaveCount(0);
 
     // Esc on the grid closes the sheet.
     await page.keyboard.press("Escape");
@@ -1047,6 +1052,7 @@ test.describe("game · element picker", () => {
     expect(await gamePath(page)).toBe("home");
 
     const tab = elementTab(page);
+    await openSide(page);
     await expect(game(page).getByRole("tab", { name: "Element" })).toHaveAttribute(
       "aria-selected",
       "true"
@@ -1100,6 +1106,7 @@ test.describe("game · element picker", () => {
     const at = await hoverFind(page, client, /^play · button/);
     await page.mouse.click(at.x, at.y);
     await expect(elementTab(page).locator("[data-part=name]")).toHaveText("play");
+    await openSide(page);
     await elementTab(page).getByRole("button", { name: "Show in render tree" }).click();
     await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
     const row = tools.host("render").locator("[role=treeitem][aria-selected=true]");
@@ -1178,6 +1185,7 @@ test.describe("game · element picker", () => {
     const at = await hoverFind(page, client, /^play · button/);
     await page.mouse.click(at.x, at.y);
     const card = elementTab(page).locator("[data-part=style-card]");
+    await openSide(page);
     await expect(card.locator("[data-part=where]")).toBeVisible();
     const where = ((await card.locator("[data-part=where]").textContent()) ?? "").trim();
     const file = where.split(":")[0] ?? "";
@@ -1239,6 +1247,7 @@ test.describe("game · overlay in game and driving the game", () => {
       /^Editor live · frame \d+$/
     );
 
+    await openSide(page);
     await game(page).getByRole("tab", { name: "Device" }).click();
     const box = game(page).locator("[data-part=overlay-box]");
     await expect(box.locator("header [data-tag]")).toHaveText("On");

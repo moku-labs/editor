@@ -1,11 +1,13 @@
 /**
- * @file Half-screen usability (D-21): in the 720×900 and 960×1080 windows every workspace fits.
- * The page never scrolls sideways; the top bar keeps every control on screen, unsqueezed and
- * unoverlapped (labels collapse to accessible names); the rail is reachable; the pinned preview
- * stays inside main; nothing in a workspace is cut off by a box that does not scroll (wide content
- * scrolls inside its panel); the Game toolbar wraps and its inspector stays in view; the Flow
- * chrome never overlaps; the palette and the Registry popover fit the window. Each workspace leaves
- * a screenshot in .planning/e2e/shots/half/ for review. The palette and popover check also runs on
+ * @file Narrow-window usability (D-21, the Claude pane): in the 480×900 (a third of the screen),
+ * 720×900 and 960×1080 windows every workspace fits. The page never scrolls sideways; the top bar
+ * keeps every control on screen, unsqueezed and unoverlapped (labels collapse to accessible names;
+ * under 560 px the game name, the session chip and the counts go); the rail is reachable; the
+ * pinned preview stays inside main; nothing in a workspace is cut off by a box that does not
+ * scroll (wide content scrolls inside its panel); the Game toolbar wraps and its Element panel
+ * stays in view (a drawer below 600 px); the Flow chrome never overlaps; the State columns stack
+ * below 760 px; the palette and the Registry popover fit the window. Each workspace leaves a
+ * screenshot in .planning/e2e/shots/half/ for review. The palette and popover check also runs on
  * desktop. All geometry is getBoundingClientRect, measured in the page and judged here.
  */
 import type { Page } from "@playwright/test";
@@ -43,8 +45,37 @@ type TextSample = {
   inside: number[];
 };
 
-/** The half-screen projects. */
-const HALF_PROJECTS = new Set(["chromium-half", "chromium-half-wide"]);
+/** The narrow-window projects: a third and a half of the screen, and half of a large one. */
+const HALF_PROJECTS = new Set(["chromium-third", "chromium-half", "chromium-half-wide"]);
+
+/** The window of the Claude pane at a third of the screen. */
+const THIRD = "chromium-third";
+
+/**
+ * Shows a side panel's content: below 600 px it is a drawer that starts collapsed, so its rail
+ * button opens it; docked it already shows.
+ *
+ * @param page - The tools page.
+ * @param id - The panel id, e.g. "game.side".
+ */
+async function expandSide(page: Page, id: string): Promise<void> {
+  const panel = page.locator(`aside[data-side-panel="${id}"]`);
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
 
 /**
  * The rect of the first element a selector matches, or undefined when it is missing or hidden.
@@ -346,28 +377,41 @@ test.describe("half-screen", () => {
     });
   }
 
-  test("top bar: collapsed labels stay the accessible names", async ({ tools }) => {
+  test("top bar: collapsed labels stay the accessible names", async ({ tools }, testInfo) => {
     const bar = tools.page.locator("[data-ui=top-bar]");
-    for (const name of ["Pause", "Step 1 frame", "Registry 15 · 18"]) {
+    // Under 560 px the counts, the game name and the session chip leave the bar.
+    const third = testInfo.project.name === THIRD;
+    const registry = third ? "Registry" : "Registry 15 · 18";
+    for (const name of ["Pause", "Step 1 frame", "Reference mode", registry]) {
       await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
     }
     for (const name of ["Game", "Overlay in game"]) {
       await expect(bar.getByRole("switch", { name, exact: true })).toBeVisible();
     }
     await expect(bar.locator("[data-logo]")).toBeVisible();
+    if (third) {
+      await expect(bar.locator("[data-game-name]")).toBeHidden();
+      await expect(bar.locator("[data-ui=session-chip]")).toBeHidden();
+      await expect(bar.locator("[data-counts]")).toBeHidden();
+      return;
+    }
     const gameName = await bar.locator("[data-game-name]").boundingBox();
     expect(gameName?.width ?? 0, "game name keeps a readable width").toBeGreaterThanOrEqual(48);
   });
 
-  test("Game: toolbar wraps, inspector and frame stay inside main", async ({ tools }) => {
+  test("Game: toolbar wraps, the Element panel and the frame stay inside main", async ({
+    tools
+  }) => {
     const page = tools.page;
     await tools.show("game");
     await expect(page.locator("[data-game=toolbar]")).toBeVisible();
+    // Below 600 px the Element panel is a drawer that starts collapsed.
+    await expandSide(page, "game.side");
     await expect(page.locator("[data-game=side]")).toBeVisible();
     await tools.settle();
     const main = await rectOf(page, "[data-shell-main]");
     const toolbar = await rectOf(page, "[data-game=toolbar]");
-    const side = await rectOf(page, "[data-game=side]");
+    const side = await rectOf(page, 'aside[data-side-panel="game.side"]');
     expect(main, "main").toBeDefined();
     expect(toolbar, "toolbar").toBeDefined();
     expect(side, "inspector").toBeDefined();
@@ -436,32 +480,96 @@ test.describe("half-screen", () => {
     if (preview !== undefined && parts.minimap !== undefined) {
       expect(overlaps(preview, parts.minimap, 0), "minimap overlaps preview").toBe(false);
     }
-    // Code widens the Inspector; in a half window it never gets narrower than the plain one.
-    const plain = await rectOf(page, "[data-flow=inspector]");
+    // Code widens the Inspector; in a narrow window it never gets narrower than the plain one.
+    const inspectorPanel = 'aside[data-side-panel="flow.inspector"]';
+    await expandSide(page, "flow.inspector");
+    const plain = await rectOf(page, inspectorPanel);
     await page.locator("[data-flow=inspector] [role=tab]", { hasText: "Code" }).click();
     await expect(page.locator("[data-flow=inspector]")).toHaveAttribute("data-wide", /.*/);
     await page.waitForTimeout(300);
-    const wide = await rectOf(page, "[data-flow=inspector]");
+    const wide = await rectOf(page, inspectorPanel);
     expect(wide?.width ?? 0).toBeGreaterThanOrEqual((plain?.width ?? 0) - 1);
   });
 
-  test("State: the columns scroll sideways inside the panel", async ({ tools }) => {
+  test("State: the columns stack below 760 px, never scroll sideways, and the cards fold", async ({
+    tools
+  }) => {
     const page = tools.page;
     await tools.show("state");
-    const columns = page.locator("[data-part=state-view] [data-part=columns]");
-    const moved = await columns.evaluate(element => {
-      element.scrollLeft = element.scrollWidth;
-      return {
-        overflow: element.scrollWidth - element.clientWidth,
-        left: element.scrollLeft,
-        right: element.getBoundingClientRect().right
-      };
-    });
-    if (moved.overflow > 0) expect(moved.left).toBeGreaterThan(0);
-    const runner = await rectOf(page, "[data-part=runner-card]");
-    expect(runner?.right ?? Number.POSITIVE_INFINITY, "Runner reachable").toBeLessThanOrEqual(
-      moved.right + 1
-    );
+    await expect(page.locator("[data-part=runner-card]")).toBeVisible();
+    const layout = await page
+      .locator("[data-part=state-view] [data-part=columns]")
+      .evaluate(columns => {
+        const view = columns.closest<HTMLElement>("[data-part=state-view]");
+        const style = view === null ? undefined : getComputedStyle(view);
+        const padding =
+          style === undefined
+            ? 0
+            : Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+        const cards = [...columns.children].map(child => {
+          const rect = child.getBoundingClientRect();
+          // How far the card's content runs past its own box (onto the card below).
+          const spill = Math.max(
+            0,
+            ...[child, ...child.querySelectorAll("[data-card]")].map(
+              box => box.scrollHeight - box.clientHeight
+            )
+          );
+          return { x: rect.x, y: rect.y, width: rect.width, spill };
+        });
+        return {
+          // The view is the size container: its content box decides the layout.
+          container: (view?.getBoundingClientRect().width ?? 0) - padding,
+          overflow: columns.scrollWidth - columns.clientWidth,
+          width: columns.clientWidth,
+          cards
+        };
+      });
+    expect(layout.overflow, "no horizontal scroll").toBeLessThanOrEqual(0);
+    expect(layout.cards).toHaveLength(3);
+    const stacked = layout.container < 760;
+    if (stacked) {
+      // A stacked card grows with its content: nothing runs onto the card below it.
+      expect(
+        layout.cards.map(card => Math.round(card.spill)),
+        "content past its card"
+      ).toEqual([0, 0, 0]);
+    }
+    for (const [index, card] of layout.cards.entries()) {
+      const previous = layout.cards[index - 1];
+      if (previous === undefined) continue;
+      if (stacked) {
+        // Player, Last commit + Session, Runner: one column, top to bottom, full width.
+        expect(Math.abs(card.x - previous.x), "stacked cards share the left edge").toBeLessThan(1);
+        expect(card.y, "stacked cards go down").toBeGreaterThan(previous.y);
+        expect(Math.abs(card.width - layout.width), "a stacked card spans the column").toBeLessThan(
+          1
+        );
+      } else {
+        expect(card.x, "columns go right").toBeGreaterThan(previous.x);
+        expect(Math.abs(card.y - previous.y), "columns share the top").toBeLessThan(1);
+      }
+    }
+
+    // The Runner is reachable inside the panel; the page never scrolls.
+    const runner = page.locator("[data-part=runner-card]");
+    await runner.scrollIntoViewIfNeeded();
+    await expect(runner).toBeInViewport();
+    expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0)).toBe(0);
+
+    // Stacked, each card folds from the toggle in its head.
+    const toggle = page.locator("[data-part=player-card] [data-action=toggle-card]");
+    if (!stacked) {
+      await expect(toggle).toBeHidden();
+      return;
+    }
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await toggle.click();
+    await expect(page.locator("[data-part=player-card]")).toHaveAttribute("data-collapsed", "");
+    await expect(page.getByRole("tree", { name: "Player" })).toBeHidden();
+    await toggle.click();
+    await expect(page.locator("[data-part=player-card]")).not.toHaveAttribute("data-collapsed", "");
+    await expect(page.getByRole("tree", { name: "Player" })).toBeVisible();
   });
 });
 
@@ -512,7 +620,7 @@ test.describe("half-screen and desktop", () => {
     const toolbar = await page.locator("[data-game=toolbar]").boundingBox();
     expect(toolbar?.height).toBe(44);
     await tools.show("flow");
-    const plain = await page.locator("[data-flow=inspector]").boundingBox();
+    const plain = await page.locator('aside[data-side-panel="flow.inspector"]').boundingBox();
     expect(plain?.width).toBe(320);
   });
 });

@@ -5,9 +5,10 @@
  * and stderr go to dist-e2e/server.log, which e2e/global-teardown.ts scans for errors.
  *
  * One worker: the bin hosts one game link, and every test opens its own tools page and game frame
- * on it. Chromium runs the full suite on desktop (1440×900) and on the two half-screen windows
- * (720×900, 960×1080). Phones are out of scope (no mobile layout, D-21): the Pixel 7 project only
- * runs the boot guard, e2e/no-js-errors.spec.ts.
+ * on it. Chromium runs the full suite on desktop (1440×900), on the two half-screen windows
+ * (720×900, 960×1080) and on the third-screen window of the Claude pane (480×900). Phones are out
+ * of scope (no mobile layout, D-21): the Pixel 7 project only runs the boot guard,
+ * e2e/no-js-errors.spec.ts.
  */
 import { defineConfig, devices } from "@playwright/test";
 
@@ -67,6 +68,15 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 720, height: 900 },
+        deviceScaleFactor: 1,
+        launchOptions: { args: CHROMIUM_FLAGS }
+      }
+    },
+    {
+      name: "chromium-third",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 480, height: 900 },
         deviceScaleFactor: 1,
         launchOptions: { args: CHROMIUM_FLAGS }
       }

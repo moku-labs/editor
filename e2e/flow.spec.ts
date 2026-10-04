@@ -1,17 +1,20 @@
 /**
  * @file The Flow workspace (spec 12-flowView) in a real browser, on the frozen merge-game: select
- * and focus (camera, dimming), the neighbours strip and its walk, sub-flows expanded in place and
- * entered, the breadcrumb, the board hub with its lanes and "You are here", the history strip,
- * zoom, fit, Follow, the minimap, pan, drag to pin with the layout file on disk, Reset layout, the
- * three context menus with Step 1 frame while paused, the Inspector tabs with a code save and a
- * style step that write the file and reload the game (D-07), a new note, the keys and the Esc
- * layers. The geometry is the browser's: camera transforms, card rects and drags are measured.
+ * and focus (camera, dimming, the current node never fades), the walk through the Inspector's
+ * Info rows (←/→, ↑/↓, Enter, Alt+← back), sub-flows expanded in place and entered, the
+ * breadcrumb, the board hub with its lanes and "You are here", the history strip, zoom, fit,
+ * Follow, the minimap, pan, drag to pin with the layout file on disk, Reset layout, the three
+ * context menus with Step 1 frame while paused, the Inspector tabs with a code save and a style
+ * step that write the file and reload the game (D-07), the keys and the Esc layers. The geometry
+ * is the browser's: camera transforms, card rects and drags are measured. Below 600 px the
+ * Inspector is a drawer that starts collapsed: a test opens it before it works in it, and a card
+ * the camera left outside the canvas (or under the preview float) is panned into view first.
  *
  * Every write lands in dist-e2e/game (the copy the bin serves). The tests restore what they wrote,
  * so a second run and the other specs start from the same files.
  */
 import { existsSync } from "node:fs";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
@@ -22,9 +25,6 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /** The pins file of flowView, relative to the game root. */
 const LAYOUT_FILE = ".moku/editor/layout.json";
-
-/** The notes folder of flowView, relative to the game root. */
-const NOTES_DIR = ".moku/notes";
 
 /** The text-styles file of flowView, relative to the game root. */
 const STYLES_FILE = "features/ui/styles.ts";
@@ -299,13 +299,81 @@ function inspector(page: Page): Locator {
 }
 
 /**
- * The neighbours strip.
+ * The Inspector's side panel (a drawer below 600 px).
  *
  * @param page - The test page.
- * @returns The locator.
+ * @returns The aside.
  */
-function strip(page: Page): Locator {
-  return flow(page).locator("[data-flow=neighbours-strip]");
+function inspectorPanel(page: Page): Locator {
+  return flow(page).locator('aside[data-side-panel="flow.inspector"]');
+}
+
+/**
+ * Shows the Inspector's content: below 600 px it is a drawer that starts collapsed, so its rail
+ * button opens it; docked it already shows.
+ *
+ * @param page - The test page.
+ */
+async function openInspector(page: Page): Promise<void> {
+  const panel = inspectorPanel(page);
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
+
+/**
+ * Tells whether a click at the centre of an element lands on it: inside the canvas and under no
+ * float (the preview, a drawer).
+ *
+ * @param target - The element.
+ * @returns True when the centre hits it.
+ */
+async function hitsCentre(target: Locator): Promise<boolean> {
+  return target.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    const canvas = element.closest("[data-flow=canvas]")?.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    if (
+      canvas !== undefined &&
+      (x < canvas.left || x > canvas.right || y < canvas.top || y > canvas.bottom)
+    ) {
+      return false;
+    }
+    const hit = document.elementFromPoint(x, y);
+    return hit !== null && element.contains(hit);
+  });
+}
+
+/**
+ * Clicks a node card, panning it into view first when the camera left it outside the canvas or
+ * a float covers it (the narrow windows).
+ *
+ * @param page - The test page.
+ * @param key - The layout key.
+ * @param options - Click options (a right click opens the menu).
+ * @param options.button - The mouse button.
+ */
+async function clickCard(
+  page: Page,
+  key: string,
+  options: { button?: "left" | "right" } = {}
+): Promise<void> {
+  const target = card(page, key);
+  if (!(await hitsCentre(target))) await reveal(page, target);
+  await target.click(options);
 }
 
 /**
@@ -378,13 +446,13 @@ test.describe("flow · canvas", () => {
     );
   });
 
-  test("a click on a node focuses it: camera moves, the rest dims, Inspector and strip follow", async ({
+  test("a click on a node focuses it: camera moves, the rest dims, the current node stays, the Inspector follows", async ({
     tools
   }) => {
     const page = tools.page;
     await showFlow(tools);
     const before = await camera(page);
-    await card(page, "main/settings").click();
+    await clickCard(page, "main/settings");
 
     await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
     await expect(card(page, "main/settings")).toHaveAttribute("data-selected", "");
@@ -393,27 +461,28 @@ test.describe("flow · canvas", () => {
     await expect(card(page, "main/boot")).toHaveAttribute("data-dimmed", "");
     await expect(card(page, "main/board")).toHaveAttribute("data-dimmed", "");
     await expect(card(page, "main/settings")).not.toHaveAttribute("data-dimmed", "");
-    expect(
-      Number(await card(page, "main/boot").evaluate(e => getComputedStyle(e).opacity))
-    ).toBeLessThan(0.5);
-    // The camera moved onto the node: its centre is the canvas centre.
+    // A dimmed card keeps its opaque background: only its content fades.
+    const dimmed = await card(page, "main/boot").evaluate(element => ({
+      card: Number(getComputedStyle(element).opacity),
+      content: Number(getComputedStyle(element.firstElementChild ?? element).opacity)
+    }));
+    expect(dimmed.card).toBe(1);
+    expect(dimmed.content).toBeLessThan(0.5);
+    // The camera moved onto the node: its centre is on the canvas's middle line.
     await expect.poll(async () => camera(page)).not.toEqual(before);
-    await expect(readout(page)).toHaveText("100 %");
+    await expect
+      .poll(async () => `${Math.round((await zoomOf(page)) * 100)} %`)
+      .toBe(await readout(page).textContent());
+    expect(await zoomOf(page)).toBeLessThanOrEqual(1.25);
     const canvas = await flow(page).locator("[data-flow=canvas]").boundingBox();
     const at = await card(page, "main/settings").boundingBox();
-    const area = await strip(page).boundingBox();
-    if (canvas === null || at === null || area === null) throw new Error("no boxes");
-    // Centred in the area the strip leaves: vertically between the canvas top and the strip.
-    expect(Math.abs(at.y + at.height / 2 - (canvas.y + area.y) / 2)).toBeLessThan(4);
+    if (canvas === null || at === null) throw new Error("no boxes");
+    expect(Math.abs(at.y + at.height / 2 - (canvas.y + canvas.height / 2))).toBeLessThan(4);
     expect(at.x).toBeGreaterThan(canvas.x);
     expect(at.x + at.width).toBeLessThan(canvas.x + canvas.width);
-    // The strip spans the canvas: the canvas never scrolls, so nothing shifts off its edge.
-    expect(area.x).toBeCloseTo(canvas.x, 0);
-    expect(area.x + area.width).toBeCloseTo(canvas.x + canvas.width, 0);
 
     await expect(inspector(page).locator("[data-tag=showing-current]")).toHaveCount(0);
-    await expect(inspector(page)).toContainText("main/settings");
-    await expect(strip(page)).toHaveAttribute("aria-label", "Neighbours of main/settings");
+    await expect(inspector(page).locator("[data-part=id]")).toHaveText("main/settings");
   });
 
   test("an empty-canvas click clears the selection and never focuses the frame (M2)", async ({
@@ -421,14 +490,13 @@ test.describe("flow · canvas", () => {
   }) => {
     const page = tools.page;
     await showFlow(tools);
-    await card(page, "main/settings").click();
-    await expect(strip(page)).toBeVisible();
+    await clickCard(page, "main/settings");
+    await expect(inspector(page).locator("[data-part=id]")).toHaveText("main/settings");
     const point = await emptyPoint(page);
     await page.mouse.click(point.x, point.y);
     await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "false");
-    await expect(strip(page)).toHaveCount(0);
     await expect(flow(page).locator("[data-dimmed]")).toHaveCount(0);
-    await expect(inspector(page).locator("[data-tag=showing-current]")).toBeVisible();
+    await expect(inspector(page).locator("[data-tag=showing-current]")).toHaveCount(1);
     // A click on the frame head does not select the frame either.
     const head = flow(page).locator("[data-flow=frame][data-key='#main'] [data-part=head]");
     await reveal(page, head);
@@ -440,81 +508,84 @@ test.describe("flow · canvas", () => {
   });
 });
 
-test.describe("flow · neighbours strip", () => {
-  test("shows Comes from, This node and Goes to, and walks the graph by key and click", async ({
+test.describe("flow · inspector walk", () => {
+  test("the Info rows: ↑/↓ move the highlight, Enter follows it, Alt+← goes back, ←/→ walk", async ({
     tools
   }) => {
     const page = tools.page;
     await showFlow(tools);
-    await card(page, "main/settings").click();
-    const from = strip(page).locator("[data-column=from]");
-    const self = strip(page).locator("[data-column=this]");
-    const to = strip(page).locator("[data-column=to]");
-    await expect(strip(page).locator("[data-part=hint]")).toHaveText(
-      "Click a row to walk the graph ← → · Close Esc"
+    const info = inspector(page).locator("[data-flow=info-tab]");
+    const outcomes = info.locator("[data-part=outcomes] > li");
+    const comesFrom = info.locator("[data-part=comes-from] > li");
+    const pressed = flow(page).locator(
+      "[data-flow=node-card][aria-pressed=true], [data-flow=hub][aria-pressed=true]"
     );
-    await expect(from.locator("[data-part=title]")).toHaveText("Comes from 1");
-    await expect(from.locator("[data-row] [data-part=path]")).toHaveText(["main/home"]);
-    await expect(self.locator("[data-part=name]")).toHaveText("settings");
-    await expect(self.locator("[data-part=kind]")).toContainText("sub-flow");
-    await expect(to.locator("[data-part=title]")).toHaveText("Goes to 1");
-    await expect(to.locator("[data-row] [data-part=outcome]")).toHaveText(["closed"]);
-    await expect(self.getByRole("button", { name: "Enter" })).toBeVisible();
 
-    // ← walks to the source: home, the current node.
-    await page.keyboard.press("ArrowLeft");
+    // A sub-flow: one row each side.
+    await clickCard(page, "main/settings");
+    await expect(inspector(page).locator("[data-part=id]")).toHaveText("main/settings");
+    await expect(comesFrom).toHaveCount(1);
+    await expect(comesFrom.first()).toContainText("main/home");
+    await expect(outcomes.locator("[data-part=outcome]")).toHaveText(["closed"]);
+
+    // Home, focused and selected: the current node waits for its four outcomes.
+    await clickCard(page, "main/home");
     await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");
-    await expect(strip(page)).toHaveAttribute("aria-label", "Neighbours of main/home");
-    await expect(self.locator("[data-tag=current]")).toHaveText("You are here");
-    await expect(to.locator("[data-part=title]")).toHaveText("Goes to 4");
-    await expect(to.locator("[data-row][data-waiting]")).toHaveCount(4);
-    await expect(from.locator("[data-part=title]")).toHaveText("Comes from 7");
+    await expect(inspector(page).locator("[data-tag=current]")).toHaveText("current");
+    await expect(outcomes).toHaveCount(4);
+    await expect(info.locator("[data-part=outcomes] > li[data-waiting]")).toHaveCount(4);
+    await expect(comesFrom).toHaveCount(7);
 
-    // ↓ moves the highlight in the Goes to column, → walks to its target.
+    // ↓/↑ move one highlight through Outcomes, then Comes from.
     await page.keyboard.press("ArrowDown");
-    const highlighted = to.locator("[data-row][data-highlight]");
-    await expect(highlighted).toHaveCount(1);
-    const targetText = await highlighted.locator("[data-part=path]").textContent();
-    const target = targetText?.trim() ?? "";
+    await expect(info.locator("li[data-highlight]")).toHaveCount(1);
+    await expect(outcomes.first()).toHaveAttribute("data-highlight", "");
+    await page.keyboard.press("ArrowDown");
+    await expect(outcomes.nth(1)).toHaveAttribute("data-highlight", "");
+    await page.keyboard.press("ArrowUp");
+    await expect(outcomes.first()).toHaveAttribute("data-highlight", "");
+
+    // Enter follows the highlighted outcome; the Inspector offers Back; Alt+← goes back.
+    await page.keyboard.press("Enter");
+    await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "false");
+    await expect(pressed).toHaveCount(1);
+    // The Back button (a drawer below 600 px, maybe shut: counted, not looked at).
+    await expect(inspector(page).locator("[data-action=back]")).toHaveAttribute(
+      "aria-label",
+      "Back"
+    );
+    await page.keyboard.press("Alt+ArrowLeft");
+    await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");
+
+    // ← walks to the first Comes from row, → walks on to a default outcome.
+    const source = ((await comesFrom.first().locator("button").textContent()) ?? "").split(
+      " · "
+    )[0];
+    await page.keyboard.press("ArrowLeft");
+    await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "false");
+    await expect(inspector(page).locator("[data-part=id]")).toHaveText(source ?? "");
     await page.keyboard.press("ArrowRight");
-    await expect(strip(page)).toHaveAttribute("aria-label", `Neighbours of ${target}`);
-    await expect(card(page, target)).toHaveAttribute("aria-pressed", "true");
+    await expect(inspector(page).locator("[data-part=id]")).not.toHaveText(source ?? "");
+    await expect(pressed).toHaveCount(1);
 
-    // A click on a Comes from row walks to it.
-    await from.locator("[data-row]").first().click();
-    await expect(strip(page)).toHaveAttribute("aria-label", "Neighbours of main/home");
-
-    // The strip buttons open the Inspector tabs.
-    await self.getByRole("button", { name: "Code" }).click();
-    await expect(inspector(page).getByRole("tab", { name: "Code" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    await self.getByRole("button", { name: "Styles" }).click();
-    await expect(inspector(page).getByRole("tab", { name: "Styles" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-
-    // Esc leaves focus and closes the strip.
+    // Esc leaves focus.
     await page.keyboard.press("Escape");
-    await expect(strip(page)).toHaveCount(0);
     await expect(flow(page).locator("[data-selected]")).toHaveCount(0);
   });
 
-  test("boot has nothing leading to it", async ({ tools }) => {
+  test("boot has nothing leading to it; the current node never fades", async ({ tools }) => {
     const page = tools.page;
     await showFlow(tools);
     // Boot sits left of the canvas at the default camera: keyboard focus + Enter selects it.
     await card(page, "main/boot").focus();
     await page.keyboard.press("Enter");
     await expect(card(page, "main/boot")).toHaveAttribute("aria-pressed", "true");
-    await expect(strip(page).locator("[data-column=from] [data-part=title]")).toHaveText(
-      "Comes from 0"
-    );
-    await expect(strip(page).locator("[data-column=from] [data-part=empty]")).toHaveText(
+    await expect(inspector(page).locator("[data-part=comes-from]")).toHaveCount(0);
+    await expect(inspector(page).locator("[data-flow=info-tab] [data-part=empty]")).toHaveText(
       "Nothing leads here"
     );
+    await expect(card(page, "main/home")).toHaveAttribute("data-current", "");
+    await expect(card(page, "main/home")).not.toHaveAttribute("data-dimmed", "");
   });
 });
 
@@ -553,6 +624,7 @@ test.describe("flow · sub-flows", () => {
     await expect(card(page, "main/home")).toBeVisible();
 
     // A double-click on a sub-flow card enters it too.
+    if (!(await hitsCentre(card(page, "main/board")))) await reveal(page, card(page, "main/board"));
     await card(page, "main/board").dblclick();
     await expect(crumbs).toHaveCount(2);
     await expect(crumbs.last()).toHaveText("board");
@@ -562,18 +634,20 @@ test.describe("flow · sub-flows", () => {
 });
 
 test.describe("flow · board hub", () => {
-  test("the board hub has one lane per outcome and You are here on the current node", async ({
+  test("on the board its sub-flow opens in place; the hub has one lane per outcome and You are here", async ({
     tools
   }) => {
     const page = tools.page;
     await showFlow(tools);
     await toBoard(page);
-    await expect(card(page, "main/board")).toHaveAttribute("data-current", "");
+    // The sub-flow that holds the current node opens in place (finding 16): a frame, no card.
+    const frame = flow(page).locator('[data-flow=frame][data-key="main/board"]');
+    await expect(frame).toHaveCount(1);
+    await expect(frame).toHaveAttribute("data-on-stack", "");
+    await expect(card(page, "main/board")).toHaveCount(0);
 
-    // Current inside a collapsed parent: the floating tag names it and focuses it on click.
-    const tag = flow(page).locator("[data-flow=you-are-here]");
-    await expect(tag).toHaveText("board/awaitIntent (inside main/board)");
-    await tag.click();
+    // The stack link focuses the current node: the hub inside the open sub-flow.
+    await flow(page).locator("[data-flow=breadcrumb] [data-part=stack]").click();
 
     const hub = flow(page).locator("[data-flow=hub]");
     await expect(hub).toHaveAttribute("data-key", "main/board>board/awaitIntent");
@@ -597,12 +671,17 @@ test.describe("flow · board hub", () => {
     await expect(
       flow(page).locator("[data-flow=frame][data-on-stack]:not([data-root])")
     ).toHaveCount(1);
-    // The golden is taken on desktop only: in the half windows the focused hub runs past the
-    // canvas edge, so its clipped box is not a stable image.
+    // The golden is taken on desktop only: in the narrow windows the focused hub runs past the
+    // canvas edge, so its clipped box is not a stable image. The canvas chrome the tall hub runs
+    // under (zoom bar, minimap) is masked.
     if (test.info().project.name === "chromium-desktop") {
       await tools.settle();
       await expect(flow(page).locator("[data-flow=hub]")).toHaveScreenshot("board-hub.png", {
-        mask: tools.volatile()
+        mask: [
+          ...tools.volatile(),
+          flow(page).locator("[data-flow=zoom-bar]"),
+          flow(page).locator("[data-flow=minimap]")
+        ]
       });
     }
   });
@@ -610,7 +689,7 @@ test.describe("flow · board hub", () => {
   test("the stack link focuses the current node", async ({ tools }) => {
     const page = tools.page;
     await showFlow(tools);
-    await card(page, "main/settings").click();
+    await clickCard(page, "main/settings");
     await flow(page).locator("[data-flow=breadcrumb] [data-part=stack]").click();
     await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");
   });
@@ -633,7 +712,7 @@ test.describe("flow · history strip", () => {
     const label = flow(page).locator("[data-flow=history-labels] [data-label]").first();
     await expect(label).toContainText("home · play");
     const labelBox = await label.boundingBox();
-    const inspectorBox = await inspector(page).boundingBox();
+    const inspectorBox = await inspectorPanel(page).boundingBox();
     if (labelBox === null || inspectorBox === null) throw new Error("no boxes");
     expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(inspectorBox.x + 0.5);
 
@@ -715,7 +794,7 @@ test.describe("flow · camera", () => {
     await expect.poll(async () => await zoomOf(page)).toBeCloseTo(fitted.z, 5);
 
     // Fit selection: the selected card fills more of the view than at fit all.
-    await card(page, "main/settings").click();
+    await clickCard(page, "main/settings");
     await flow(page).locator("[data-flow=zoom-bar] [data-action=fit-all]").click();
     await expect.poll(async () => await zoomOf(page)).toBeCloseTo(fitted.z, 5);
     await flow(page).locator("[data-flow=zoom-bar] [data-action=fit-selection]").click();
@@ -737,18 +816,20 @@ test.describe("flow · camera", () => {
     await expect(follow).toHaveAttribute("aria-pressed", "false");
     await follow.click();
     await expect(follow).toHaveAttribute("aria-pressed", "true");
-    await card(page, "main/settings").click();
+    await clickCard(page, "main/settings");
     await expect(follow).toHaveAttribute("aria-pressed", "true");
     const before = await camera(page);
     await toBoard(page);
-    // The camera follows onto main/board, the card that holds the current node.
+    // The camera follows onto the board hub, the current node in the board sub-flow that opens in
+    // place.
     await expect.poll(async () => camera(page)).not.toEqual(before);
     const view = await flow(page).locator("[data-flow=canvas]").boundingBox();
     if (view === null) throw new Error("no canvas");
     await expect
       .poll(async () => {
-        const box = await card(page, "main/board").boundingBox();
-        return box !== null && box.x > view.x && box.x + box.width < view.x + view.width;
+        const box = await flow(page).locator("[data-flow=hub]").boundingBox();
+        const middle = box === null ? Number.NaN : box.x + box.width / 2;
+        return middle > view.x && middle < view.x + view.width;
       })
       .toBe(true);
     await follow.click();
@@ -902,11 +983,12 @@ test.describe("flow · context menus", () => {
   test("the node menu, keyboard, and Step 1 frame only while paused (M5)", async ({ tools }) => {
     const page = tools.page;
     await showFlow(tools);
-    await card(page, "main/settings").click({ button: "right" });
+    await clickCard(page, "main/settings", { button: "right" });
     await expect(menu(page)).toBeVisible();
     expect(await menuLabels(page)).toEqual(
-      expect.arrayContaining(["Focus", "Open code", "Open styles", "Add note on closed"])
+      expect.arrayContaining(["Focus", "Open code", "Open styles"])
     );
+    expect(await menuLabels(page)).not.toContain("Add note on closed");
     await expect(menu(page).getByRole("menuitem").first()).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(menu(page).getByRole("menuitem").nth(1)).toBeFocused();
@@ -943,13 +1025,13 @@ test.describe("flow · context menus", () => {
     const stub = flow(page).locator("[data-flow=stub][data-key='stub:main/settings:closed']");
     await reveal(page, stub);
     await stub.click({ button: "right" });
-    expect(await menuLabels(page)).toEqual(["Add note on this outcome", "Focus home"]);
+    expect(await menuLabels(page)).toEqual(["Focus home"]);
     await menu(page).getByRole("menuitem", { name: "Focus home" }).click();
     await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");
 
     const point = await emptyPoint(page);
     await page.mouse.click(point.x, point.y, { button: "right" });
-    expect(await menuLabels(page)).toEqual(["Add note here", "Fit all", "Reset layout"]);
+    expect(await menuLabels(page)).toEqual(["Fit all", "Reset layout"]);
     await expect(menu(page).getByRole("menuitem", { name: "Reset layout" })).toHaveAttribute(
       "aria-disabled",
       "true"
@@ -967,12 +1049,13 @@ test.describe("flow · context menus", () => {
 });
 
 test.describe("flow · inspector", () => {
-  test("tabs Info, Code, Styles, Notes by click and arrow keys", async ({ tools }) => {
+  test("tabs Info, Code, Styles by click and arrow keys", async ({ tools }) => {
     const page = tools.page;
     await showFlow(tools);
-    await card(page, "main/home").click();
+    await clickCard(page, "main/home");
+    await openInspector(page);
     const tabs = inspector(page).getByRole("tab");
-    await expect(tabs).toHaveText(["Info", "Code", "Styles", /^Notes \(\d+\)$/]);
+    await expect(tabs).toHaveText(["Info", "Code", "Styles"]);
     await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
     await expect(inspector(page).locator("[data-flow=info-tab]")).toContainText(
       "rest · checkpoint"
@@ -982,11 +1065,10 @@ test.describe("flow · inspector", () => {
     await page.keyboard.press("ArrowRight");
     await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
     await expect(inspector(page).locator("[data-flow=styles-tab]")).toBeVisible();
+    // The arrows wrap around the three tabs.
     await page.keyboard.press("ArrowRight");
-    await expect(tabs.nth(3)).toHaveAttribute("aria-selected", "true");
-    await expect(inspector(page).locator("[data-flow=notes-tab]")).toContainText(
-      "Notes are files an agent can find and build."
-    );
+    await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    await expect(inspector(page).locator("[data-flow=info-tab]")).toBeVisible();
     await page.keyboard.press("ArrowLeft");
     await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
     // The clear button leaves focus.
@@ -1003,7 +1085,8 @@ test.describe("flow · inspector", () => {
     await showFlow(tools);
     // On the board: a restore brings the game back here, a plain reload would land on home.
     await toBoard(page);
-    await card(page, "main/home").click();
+    await clickCard(page, "main/home");
+    await openInspector(page);
     await inspector(page).getByRole("tab", { name: "Code" }).click();
     const tab = inspector(page).locator("[data-flow=code-tab]");
     const file = (
@@ -1053,7 +1136,10 @@ test.describe("flow · inspector", () => {
       await expect(flow(page).locator("[data-flow=breadcrumb] [data-part=stack]")).toHaveText(
         "Stack main/board › board/awaitIntent"
       );
-      await expect(card(page, "main/board")).toHaveAttribute("data-current", "");
+      await expect(flow(page).locator("[data-flow=hub]")).toHaveAttribute(
+        "aria-current",
+        "location"
+      );
     } finally {
       await writeFile(path.join(GAME_ROOT, file), original);
     }
@@ -1068,10 +1154,13 @@ test.describe("flow · inspector", () => {
     await showFlow(tools);
     await toBoard(page);
     const original = (await readGameFile(STYLES_FILE)) ?? "";
-    await card(page, "main/home").click();
+    await clickCard(page, "main/home");
+    await openInspector(page);
     await inspector(page).getByRole("tab", { name: "Styles" }).click();
     const tab = inspector(page).locator("[data-flow=styles-tab]");
     await expect(tab).toContainText(STYLES_FILE);
+    // No style is preselected: pick one first.
+    await tab.getByRole("combobox").selectOption("ui.title");
     const up = tab.getByRole("button", { name: "Increase size" }).first();
     const value = up.locator("xpath=..").locator("[data-part=value]");
     const before = Number(await value.textContent());
@@ -1100,65 +1189,31 @@ test.describe("flow · inspector", () => {
   });
 });
 
-test.describe("flow · notes and keys", () => {
-  test("a new note from the toolbar is written to .moku/notes and shows on the canvas", async ({
+test.describe("flow · keys", () => {
+  test(String.raw`Esc unwinds the menu, then the selection; \ folds the Inspector; H toggles the history`, async ({
     tools
   }) => {
     const page = tools.page;
     await showFlow(tools);
-    const before = new Set(await readdir(path.join(GAME_ROOT, NOTES_DIR)).catch(() => []));
-    await flow(page).locator("[data-flow=canvas-toolbar] [data-action=note]").click();
-    const dialog = page.getByRole("dialog", { name: "New note" });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("Free note on the canvas");
-    await dialog.getByRole("textbox", { name: "Title" }).fill("E2E free note");
-    await dialog
-      .getByRole("textbox", { name: "What should the agent build?" })
-      .fill("A note the e2e suite writes.");
-    await expect(dialog).toContainText(/\.moku\/notes\/\d{4}-\d{2}-\d{2}-e2e-free-note\.md/);
-    let written: string | undefined;
-    try {
-      await dialog.locator("[data-action=save]").click();
-      await expect(dialog).toBeHidden();
-      await expect(toast(page)).toContainText("✓ Note saved");
-      await expect
-        .poll(async () => {
-          const names = await readdir(path.join(GAME_ROOT, NOTES_DIR)).catch(() => []);
-          written = names.find(name => !before.has(name));
-          return written;
-        })
-        .toMatch(/^\d{4}-\d{2}-\d{2}-e2e-free-note\.md$/);
-      const text = (await readGameFile(`${NOTES_DIR}/${written}`)) ?? "";
-      expect(text).toMatch(/^title: "?E2E free note"?$/m);
-      expect(text).toContain("status: idea");
-      expect(text).toContain("A note the e2e suite writes.");
-      await expect(toast(page)).toContainText(`${NOTES_DIR}/${written}`);
-      await expect(flow(page).locator("[data-flow=note-node]")).toContainText("E2E free note");
-    } finally {
-      if (written !== undefined)
-        await rm(path.join(GAME_ROOT, NOTES_DIR, written), { force: true });
-    }
-  });
-
-  test("N opens the note editor; Esc unwinds menu, editor, then selection", async ({ tools }) => {
-    const page = tools.page;
-    await showFlow(tools);
-    await card(page, "main/settings").click();
-    await page.keyboard.press("n");
-    const dialog = page.getByRole("dialog", { name: "New note" });
-    await expect(dialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    await clickCard(page, "main/settings");
     await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
 
-    await card(page, "main/settings").click({ button: "right" });
+    await clickCard(page, "main/settings", { button: "right" });
     await expect(menu(page)).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(menu(page)).toHaveCount(0);
-    await expect(strip(page)).toBeVisible();
+    await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Escape");
-    await expect(strip(page)).toHaveCount(0);
     await expect(flow(page).locator("[data-selected]")).toHaveCount(0);
+
+    // \ collapses and expands the Inspector (opens and shuts its drawer below 600 px).
+    const panel = inspectorPanel(page);
+    const state = (await panel.getAttribute("data-state")) ?? "";
+    const other = state === "expanded" ? "collapsed" : "expanded";
+    await page.keyboard.press("Backslash");
+    await expect(panel).toHaveAttribute("data-state", other);
+    await page.keyboard.press("Backslash");
+    await expect(panel).toHaveAttribute("data-state", state);
 
     // H toggles the history strip.
     const history = flow(page).locator("[data-flow=history-strip]");
