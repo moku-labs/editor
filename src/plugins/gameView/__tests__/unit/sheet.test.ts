@@ -178,6 +178,14 @@ describe("seriesIndexOf", () => {
     });
   });
 
+  it("an index without a label takes the fallback, the series folder name", () => {
+    const unlabelled: Record<string, unknown> = { ...INDEX };
+    delete unlabelled.label;
+    expect(seriesIndexOf(unlabelled, "series-1")?.label).toBe("series-1");
+    expect(seriesIndexOf(unlabelled)).toBeUndefined();
+    expect(seriesIndexOf({ ...INDEX, label: 3 }, "series-1")).toBeUndefined();
+  });
+
   it("is undefined for anything else", () => {
     expect(seriesIndexOf([])).toBeUndefined();
     expect(seriesIndexOf({ ...INDEX, shots: [{ file: 3 }] })).toBeUndefined();

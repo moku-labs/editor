@@ -73,18 +73,22 @@ function indexDeviceOf(value: unknown): SeriesIndex["device"] {
 }
 
 /**
- * Reads a parsed index.json (the shape filesView reads too).
+ * Reads a parsed index.json (the shape filesView reads too: `label` is optional there, so an
+ * index without one takes the fallback, the series folder name).
  *
  * @param value - The parsed file (untrusted).
+ * @param fallbackLabel - The label of an index that has none.
  * @returns The index, or undefined for another shape.
  * @example
  * ```ts
  * seriesIndexOf({ label: "a", durationMs: 1, intervalMs: 1, fromFrame: 0, shots: [] })?.label; // "a"
+ * seriesIndexOf({ durationMs: 1, intervalMs: 1, fromFrame: 0, shots: [] }, "series-1")?.label; // "series-1"
  * ```
  */
-export function seriesIndexOf(value: unknown): SeriesIndex | undefined {
+export function seriesIndexOf(value: unknown, fallbackLabel?: string): SeriesIndex | undefined {
   if (!isRecord(value) || !Array.isArray(value.shots)) return undefined;
-  const { label, durationMs, intervalMs, fromFrame } = value;
+  const { durationMs, intervalMs, fromFrame } = value;
+  const label = value.label === undefined ? fallbackLabel : value.label;
   if (
     typeof label !== "string" ||
     typeof durationMs !== "number" ||
@@ -137,7 +141,7 @@ export async function openSheet(ctx: GameViewCtx, indexPath: string): Promise<vo
   try {
     const file = await ctx.require(linkPlugin).files.read(indexPath);
     const parsed: unknown = JSON.parse(file.text);
-    const index = seriesIndexOf(parsed);
+    const index = seriesIndexOf(parsed, folderOf(indexPath).split("/").at(-2));
     if (index === undefined) {
       throw new Error(
         `[moku-editor] ${indexPath} is not a series index.\n  Open a series folder's index.json.`

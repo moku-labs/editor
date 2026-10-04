@@ -1,17 +1,19 @@
 /**
  * @file consoleView plugin — the Console workspace (A6): toolbar, the log table or the Console's
- * own empty state (F5), and the detail drawer of the selected line.
+ * own empty state (F5), and the detail drawer of the selected line. The game preview floats in the
+ * log area, clear of the drawer.
  */
 import type { VNode } from "preact";
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 import type { LinkStatus } from "../../registry/protocol";
+import { workspacePlugin } from "../../workspace";
 import { createConsoleApi } from "../api";
 import { emptyStateOf } from "../filter";
 import type { ConsoleCtx } from "../types";
 import { DetailDrawer } from "./DetailDrawer";
 import { LogTable } from "./LogTable";
 import { Toolbar } from "./Toolbar";
-import { useConsole } from "./useConsole";
+import { keepPreviewInLogArea, useConsole } from "./useConsole";
 
 /**
  * Props of `ConsoleView`.
@@ -51,6 +53,11 @@ export function ConsoleView(props: ConsoleViewProps): VNode {
   }));
   const connected = ctx.state.everConnected || isAttached(status);
   const empty = emptyStateOf(view.lines, view.visible, connected);
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(
+    () => keepPreviewInLogArea(ctx.require(workspacePlugin), body.current ?? undefined),
+    [ctx]
+  );
 
   return (
     <div data-part="console">
@@ -62,7 +69,7 @@ export function ConsoleView(props: ConsoleViewProps): VNode {
         query={view.filter.query}
         preserve={view.preserve}
       />
-      <div data-body>
+      <div data-body ref={body}>
         {view.visible.length > 0 && (
           <LogTable
             ctx={ctx}
