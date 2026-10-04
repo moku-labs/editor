@@ -1,6 +1,6 @@
 {
   "name": "@moku-labs/editor",
-  "version": "0.0.3",
+  "version": "0.2.0",
   "description": "Editor, devtools and MCP layer for @moku-labs/game: one registry of sources and commands, panels in an in-game overlay and a dev-server tools page.",
   "type": "module",
   "sideEffects": false,
@@ -28,7 +28,13 @@
     "moku-editor": "./dist/bin.mjs"
   },
   "license": "MIT",
-  "files": ["dist", "LICENSE", "README.md", "llms.txt", "llms-full.txt"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "llms.txt",
+    "llms-full.txt"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/moku-labs/editor.git"
