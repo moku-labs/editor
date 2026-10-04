@@ -100,7 +100,7 @@ describe("tileViews on game 0.0.3", () => {
 
     expect(views[4]).toMatchObject({
       sub: "180 display objects · 24 pooled",
-      note: "18 particles · 1 emitters · 24 filters"
+      note: "18 particles · 1 emitter · 24 filters"
     });
     expect(views[0]?.note).toBeUndefined();
   });

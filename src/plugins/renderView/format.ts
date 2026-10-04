@@ -193,7 +193,11 @@ function sceneView(scene: MetricTiles["scene"]): TileView {
     note:
       effects === undefined
         ? NO_EFFECTS
-        : `${effects.particles} particles · ${effects.emitters} emitters · ${effects.filters} filters`
+        : [
+            counted(effects.particles, "particle", "particles"),
+            counted(effects.emitters, "emitter", "emitters"),
+            counted(effects.filters, "filter", "filters")
+          ].join(" · ")
   };
 }
 

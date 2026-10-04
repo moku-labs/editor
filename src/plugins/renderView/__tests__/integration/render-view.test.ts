@@ -186,7 +186,7 @@ describe("renderView integration", () => {
       effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
     });
     expect(root.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "18 particles · 1 emitters · 24 filters"
+      "18 particles · 1 emitter · 24 filters"
     );
 
     // One pushed game.effects value reaches the Scene tile.

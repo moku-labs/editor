@@ -149,7 +149,7 @@ describe("RenderWorkspace", () => {
     });
 
     expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "18 particles · 1 emitters · 24 filters"
+      "18 particles · 1 emitter · 24 filters"
     );
     expect(q("[data-tile='draws'] [data-value]")?.textContent).toBe("14per frame");
     expect(q("[data-tile='draws'] [data-sub]")?.textContent).toBe("1 render pass");
