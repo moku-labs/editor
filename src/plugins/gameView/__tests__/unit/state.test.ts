@@ -44,6 +44,8 @@ describe("createGameViewState", () => {
     expect(state.pick).toBeUndefined();
     expect(state.searches.size).toBe(0);
     expect(state.blocks.size).toBe(0);
+    expect(state.spawns.size).toBe(0);
+    expect(state.cards.size).toBe(0);
   });
 
   it("gives every app its own state", () => {

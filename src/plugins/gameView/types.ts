@@ -294,6 +294,58 @@ export type LastPick = {
 export type BlockAt = { readonly path: string; readonly line: number };
 
 /**
+ * Lines of one source file the Element tab and the reference card show (round 2b R12).
+ *
+ * @example
+ * ```ts
+ * const jsx: CodeSnippet = { path: "src/hud/Hud.tsx", line: 2, lines: ['<Pill key="coinPill" style={coinPill} />'] };
+ * ```
+ */
+export type CodeSnippet = {
+  readonly path: string;
+  /** The 1-based line of the first of `lines`. */
+  readonly line: number;
+  readonly lines: readonly string[];
+};
+
+/**
+ * The `defineStyle` block a ui element uses, named by its identifier.
+ */
+export type StyleSnippet = CodeSnippet & { readonly name: string };
+
+/**
+ * One component of an entity with its value, shortened to one line ("" without a JSON value).
+ */
+export type ComponentRow = { readonly name: string; readonly value: string };
+
+/**
+ * The code of a picked element (round 2b R12): for a ui element its JSX and the style block it
+ * uses; for an entity the projection that spawns it, where that projection is defined, and its
+ * components with their values.
+ *
+ * @example
+ * ```ts
+ * const code: ElementCode = { kind: "entity", projection: "board.items", spawn: { path: "features/board/items.tsx", line: 40 }, components: [{ name: "Order", value: "value 11" }] };
+ * ```
+ */
+export type ElementCode =
+  | {
+      readonly kind: "ui";
+      /** The element from the line that opens its tag to the line that closes it. */
+      readonly jsx: CodeSnippet | undefined;
+      /** The `defineStyle` block of `style={ident}`, named by the identifier. */
+      readonly style: StyleSnippet | undefined;
+    }
+  | {
+      readonly kind: "entity";
+      /** The projection key of game.projections (the entity's owner). */
+      readonly projection: string;
+      /** The line that defines the projection, undefined when no source names it. */
+      readonly spawn: BlockAt | undefined;
+      readonly components: readonly ComponentRow[];
+    };
+
+/**
  * A saved screenshot.
  *
  * @example
@@ -307,6 +359,22 @@ export type CaptureFile = {
   /** "iPhone 15 portrait". */
   readonly device: string;
   readonly image: string;
+};
+
+/**
+ * What the capture card shows (round 2b R14): a screenshot; the shot of a pick, with its
+ * reference line; or a written series, its folder in `path` and its first shot in `image`.
+ *
+ * @example
+ * ```ts
+ * const card: CaptureCardInfo = { path: ".moku/captures/series-2026-09-24-1015/", frame: 1777, device: "iPhone 15 portrait", image: "data:image/png;base64,…", series: { indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 } };
+ * ```
+ */
+export type CaptureCardInfo = CaptureFile & {
+  /** A series: its index.json ("Open" shows its contact sheet) and the shots written. */
+  readonly series?: { readonly indexPath: string; readonly shots: number };
+  /** The reference line of the pick that took the shot ("Reference" copies it). */
+  readonly reference?: string;
 };
 
 /**
@@ -348,7 +416,7 @@ export type GameViewState = {
   calibration: Calibration | undefined;
   /** undefined = not read, null = not found. */
   manifest: TextureCatalogue | null | undefined;
-  card: CaptureFile | undefined;
+  card: CaptureCardInfo | undefined;
   series: {
     popover: boolean;
     durationMs: number;
@@ -385,6 +453,10 @@ export type GameViewState = {
   searches: Map<string, Promise<StyleSource | undefined>>;
   /** The style block found per ui key (the reference block's `style:` and the proxies). */
   blocks: Map<string, BlockAt>;
+  /** The search for the definition of a projection, per projection key (round 2b R12). */
+  spawns: Map<string, Promise<BlockAt | undefined>>;
+  /** The reference card written last per `<node id>@<frame>` (round 2b R13). */
+  cards: Map<string, string>;
   /** Reference mode: the proxy layer in the frame overlay. */
   reference: ReferenceState;
   /** The bookmarks of the completed picks, newest first, at most 20. */
@@ -405,8 +477,9 @@ export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
    * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
-   * element bookmarks the game, saves the crop and the full frame under `capturesDir` and puts
-   * the reference block on the clipboard (see `copyReference`).
+   * element bookmarks the game, saves the crop and the full frame under `capturesDir`, writes the
+   * reference card next to them, puts its one reference line on the clipboard (see
+   * `copyReference`) and shows the capture card with a Reference action.
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -580,19 +653,22 @@ export type GameViewApi = {
   openSheet(indexPath: string): Promise<void>;
 
   /**
-   * Builds the reference block of the selected element, writes it to the clipboard and returns
-   * it. The block names the element for the chat, one fact per line, in a fixed order: `@moku`
-   * head, `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a
-   * pick of this element `restore` and `shot`. A line or a field that is not known is left out. A
-   * clipboard that refuses is toasted; the block is returned all the same.
+   * Writes the reference card of the selected element and puts its one line on the clipboard
+   * (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
+   * The card `<capturesDir>/<key>-f<frame>.md` holds the full reference block (`@moku` head,
+   * `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a pick
+   * `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
+   * the pick's crop and full frame. The same node and frame write the same card again. A field
+   * that is not known is left out; a card that cannot be written leaves its path out. A clipboard
+   * that refuses is toasted; the line is returned all the same.
    *
-   * @returns The block, undefined when nothing is selected or the selection is not in the scene.
+   * @returns The line, undefined when nothing is selected or the selection is not in the scene.
    * @example
    * ```ts
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
-   * const block = await app.gameView.copyReference();
-   * block?.split("\n")[0]; // "@moku settingsBoard · panel · settingsPopup/open · f1841"
+   * await app.gameView.copyReference();
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;

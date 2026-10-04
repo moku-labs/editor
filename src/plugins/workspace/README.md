@@ -6,13 +6,14 @@ The shell of the tools page: top bar (B1) with its ⋯ menu, rail with badges (B
 preview (B3), step and registry popovers (D1, D2), link pill note (D7), command palette (E1),
 toasts (F1), stale bar (F3) and the connecting and no-game cards (F4). It owns the single game
 iframe, the device presets, the per-viewer preferences (theme, density, preview per workspace,
-device and fold, Show taps), the key map with the Esc unwinding, the overlay-in-game switch,
+device and fold, Show taps, sound), the key map with the Esc unwinding, the overlay-in-game switch,
 Reference mode, the Hot reload switch, the tap ripples and the D-07 reload. It also ships the
 shared CSS layer every view uses (`styles/`).
 
 The shell is built narrow first: it runs in a browser pane at a third (480 px) or half (720 px)
-of the screen. Below 900 px the top bar is compact and moves the switches into a ⋯ menu; under
-560 px it also hides the game name, and the rail is 44 px of icons. No workspace scrolls the page
+of the screen. Below 900 px the top bar is compact: Reference mode and Hot reload stay as icons
+and the rest moves into a ⋯ menu. At 560 px and narrower it also hides the game name and keeps
+only Reference, and the rail is 44 px of icons. No workspace scrolls the page
 sideways.
 
 ## Configuration
@@ -42,9 +43,9 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `setDensity` | `(value: DensityChoice) => void` | `auto`, `compact` or `comfortable`. Persists, sets `data-density` on `<html>`, emits `workspace:density` when the applied value changes. |
 | `preview` | `(ws: PreviewWorkspace) => PreviewState` | Preview of a non-Game workspace: `visible`, `size`, `corner`, plus `width` and `height` in px. |
 | `setPreview` | `(ws, patch) => void` | Patches the preview. A visibility change toasts "Game preview hidden in Flow · remembered for this workspace". |
-| `device` | `() => DeviceChoice` | `{ preset, orientation, folded }`. `preset` is the screen in use: an unfolded foldable carries its inner screen's `w`, `h` and `radius`. Default `iphone-15`, portrait, folded. |
+| `device` | `() => DeviceChoice` | `{ preset, orientation, folded }`. `preset` is the screen in use: an unfolded foldable carries its inner screen's `w`, `h` and `radius`. Default `iphone-18-pro`, portrait, folded. |
 | `setDevice` | `(patch: { preset?, orientation?, folded? }) => void` | Changes preset, orientation or fold. The frame resizes live: the game sees a window resize, no reload. A new preset starts folded unless the patch sets `folded`. |
-| `devices` | `() => readonly DeviceSpec[]` | The sixteen presets in display order (see Devices). |
+| `devices` | `() => readonly DeviceSpec[]` | The twenty-one presets in display order (see Devices). |
 | `gameFrame` | `() => GameFrame` | `{ url, reload(opts?), dock(slot, { fit, clip? }), overlay(), box() }`. |
 | `palette.add` | `(item \| items) => () => void` | Adds palette items. A known id is replaced. The remover keeps newer items. |
 | `palette.open` | `(query?) => void` | Opens the palette. |
@@ -61,7 +62,9 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `setReference` | `(on) => void` | Turns Reference mode on or off. Emits `workspace:reference` on a change. |
 | `hotReload` | `() => HotReload \| undefined` | link's `{ hmr, owner }`: whether Bun reloads the game after a save, and who owns the server. `undefined` until the hub reported it. |
 | `setHotReload` | `(on) => Promise<boolean>` | Asks the server through `link.setHotReload`. A refusal toasts how to change it and keeps that hint in the switch tooltip. Never rejects. |
-| `onPrefs` | `(fn) => () => void` | Called after every theme, preview or device change. |
+| `muted` | `() => boolean` | The sound flag (R11): `true` while the viewer muted the game. Persisted; `false` for a fresh viewer. |
+| `setMuted` | `(on) => void` | Sets and persists the sound flag; `onPrefs` listeners get the new `muted`. The same value again does nothing. gameView sends `game.mute`; workspace never touches the game. |
+| `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device or sound change with `{ theme, previews, device, muted }`. |
 
 ```ts
 workspace.show("flow");
@@ -70,9 +73,11 @@ workspace.density(); // "compact"
 workspace.setReference(true); // the game gets no input; gameView draws its proxies
 workspace.preview("flow").size; // "S"
 workspace.setPreview("render", { visible: false });
-workspace.device().preset.w; // 393
+workspace.device().preset.w; // 402: the iPhone 18 Pro of a fresh viewer
 workspace.setDevice({ orientation: "landscape" });
 workspace.setDevice({ preset: "galaxy-z-fold-6", folded: false }); // the inner screen, 707 × 823
+workspace.setMuted(true); // persisted; onPrefs listeners get { …, muted: true }
+workspace.muted(); // true
 workspace.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
 await workspace.setHotReload(false); // false: "Start the bin with --no-hmr to turn hot reload off"
 await workspace.gameFrame().reload({ restore: true });
@@ -95,31 +100,47 @@ The bar picks its layout from the window width and writes it as `data-layout` on
   box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference
   mode, Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
   theme. Under 1180 px Pause and Step show their icons only.
-- **Below 900 px (`compact`)**: logo, game name (hidden under 560 px), link pill, Pause, Step, a
-  search icon and the ⋯ button (`data-action="more"`). The session chip is gone: the pill's
-  tooltip names the session ("… · session s-7f3a · connected 22:41:07"), and with more than one
-  session the pill opens the session menu.
+- **Below 900 px (`compact`)**: logo, game name (hidden at 560 px and narrower), link pill, Pause
+  and Step as icons (the label is their accessible name, the title says the key), then at the end
+  the icon toggles Reference mode (`data-action="reference"`, target icon) and Hot reload
+  (`data-action="hot-reload"`, flame icon with a dot while on), a search icon and the ⋯ button
+  (`data-action="more"`). Both toggles carry `aria-pressed`; Hot reload is inert with the hint
+  in its title when the bin does not own it. At 560 px and narrower only Reference stays; Hot
+  reload is a ⋯ row then (`barToggles(width)` in `ui/TopBar.tsx`). The session chip is gone: the
+  pill's tooltip names the session ("… · session s-7f3a · connected 22:41:07"), and with more
+  than one session the pill opens the session menu.
 - **The ⋯ menu** is a top-layer `role="menu"` popover. Rows: Game preview (G), Overlay in game
-  (O), Reference mode (R), Hot reload (H), each with its state and key; then Registry (counts),
+  (O), Reference mode (R), Hot reload (H), each with its state and key (Reference and Hot reload
+  are rows even when the bar shows them as icons); then Registry (counts),
   Density (cycles auto → compact → comfortable) and Theme. A toggle row keeps the menu open;
   Registry opens the registry popover under the ⋯ button. A second ⋯ click, Esc or a press
   outside closes it. ↑/↓ move through the rows; opening it from the keyboard focuses the first
   row. Rows keep the `data-action` names of the wide controls (`game`, `overlay`, `reference`,
-  `hot-reload`, `registry`, `theme`) plus `density`.
+  `hot-reload`, `registry`, `theme`) plus `density`. In the compact bar `reference` and
+  `hot-reload` name both the bar icon and the menu row: select the icon with
+  `[data-ui="top-bar"] > [data-action]`, the row inside `[data-ui="more-menu"]`.
 
 Every control keeps its size; only the game name and the wide search box shrink, and the search
 box clips its own content, so no control runs over another.
 
 ### Devices
 
-Sixteen presets from `.planning/build/research-devices.md`, in display order, each with `group`
-(the `<optgroup>`), `dpr`, safe insets and the screen corner `radius`. Sizes are the full-screen
-portrait viewport in CSS px. `DEVICE_GROUPS` (in `devices.ts`) names the groups.
+Twenty-one presets from `.planning/build/research-devices.md` and the apple.com specs of
+2026-10-04 (round 2b R10), in display order, each with `group` (the `<optgroup>`), `dpr`, safe
+insets, the screen corner `radius` and the `frame` gameView draws (R9). Sizes are the full-screen
+portrait viewport in CSS px. `DEVICE_GROUPS` (in `devices.ts`) names the groups. A fresh viewer
+starts with the iPhone 18 Pro; an unknown stored id falls back to it. The iPhone group lists the
+SE 3 and the iPhone 15 first, then the current models; the 15 Pro Max, 16 Pro and 16 Pro Max stay
+at its end, so a stored choice keeps working.
 
 | Group | Preset (`id`) | Viewport | DPR | Safe top/bottom | Radius |
 |---|---|---|---|---|---|
-| iPhone | iPhone SE 3 (`iphone-se`) | 375 × 667 | 2 | 20 / 0 | 0 |
+| iPhone | iPhone SE 3 · small, 2022 (`iphone-se`), home-button frame | 375 × 667 | 2 | 20 / 0 | 0 |
 | iPhone | iPhone 15 (`iphone-15`) | 393 × 852 | 3 | 59 / 34 | 55 |
+| iPhone | iPhone 17e (`iphone-17e`) — approx, notch | 390 × 844 | 3 | 47 / 34 | 47 |
+| iPhone | iPhone Air (`iphone-air`) — approx | 420 × 912 | 3 | 68 / 34 | 62 |
+| iPhone | iPhone 18 Pro (`iphone-18-pro`) — approx, default | 402 × 874 | 3 | 62 / 34 | 62 |
+| iPhone | iPhone 18 Pro Max (`iphone-18-pro-max`) — approx | 440 × 956 | 3 | 62 / 34 | 62 |
 | iPhone | iPhone 15 Pro Max (`iphone-15-pro-max`) | 430 × 932 | 3 | 59 / 34 | 55 |
 | iPhone | iPhone 16 Pro (`iphone-16-pro`) | 402 × 874 | 3 | 62 / 34 | 62 |
 | iPhone | iPhone 16 Pro Max (`iphone-16-pro-max`) | 440 × 956 | 3 | 62 / 34 | 62 |
@@ -131,11 +152,17 @@ portrait viewport in CSS px. `DEVICE_GROUPS` (in `devices.ts`) names the groups.
 | Foldable | Galaxy Z Fold 6 (`galaxy-z-fold-6`) — approx | cover 369 × 905, inner 707 × 823 | 2.625 | 0 / 0 | 30 |
 | Foldable | Galaxy Z Flip 6 (`galaxy-z-flip-6`) | 412 × 1005 | 2.625 | 0 / 0 | 30 |
 | Foldable | Pixel 9 Pro Fold (`pixel-9-pro-fold`) — approx | cover 411 × 923, inner 791 × 820 | 2.625 | 0 / 0 | 30 |
+| Foldable | iPhone Duo (`iphone-duo`) — approx | cover 466 × 678, inner 890 × 626 | 3 | 0 / 0 | 40 |
 | Tablet | iPad mini 7 (`ipad-mini`) | 744 × 1133 | 2 | 0 / 0 | 18 |
 | Tablet | iPad Air 11" (`ipad-air-11`) | 820 × 1180 | 2 | 0 / 0 | 18 |
 | Desktop | Desktop (`desktop`) | 1440 × 900 | 1 | 0 / 0 | 0 |
 
-- **approx** (`approx: true`): the size is computed from the panel, not published (low confidence).
+- **approx** (`approx: true`): the size or the safe insets are estimates, not published figures
+  (low confidence). The iPhone Duo's sizes are Apple's pixels (1398 × 2034, 2670 × 1878) divided
+  by 3; its safe insets are unknown, so 0. The iPhone 18 Pro and Pro Max take the insets of the
+  16 Pro and Pro Max, the same screens.
+- **frame** (`"modern" | "home-button"`, R9): only the SE 3 has `"home-button"`; gameView draws
+  it with 64 px bands and a round home button. Every other preset is `"modern"`.
 - Every corner radius is an estimate from device photos; Android insets and radii still need a
   real-device check.
 - A foldable has `fold: { cover, inner }`. Its top-level size is the cover screen. `folded`
@@ -337,7 +364,17 @@ in `styles/tokens.css`. TypeScript names for them are in `../panels/shared/token
 - Keys pressed while the game iframe has focus go to the game. A click in the preview or on the Game stage gives the game the keys; a click outside the device returns them.
 - The browser may keep ⌘1–⌘6. Bare 1–6, the rail and the palette are the fallback.
 - A hidden iframe can be throttled by the browser. The link pill shows the frame number stop.
-- localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density and Show taps loads them as their defaults.
+- localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density, Show taps and sound loads them as their defaults.
+
+## Breaking changes (round 2b)
+
+- `DeviceSpec.frame` (`"modern" | "home-button"`) is required.
+- Five presets are new (iPhone 17e, Air, 18 Pro, 18 Pro Max, Duo); every earlier id stays. The
+  SE 3 is named "iPhone SE 3 · small, 2022".
+- The default device is the iPhone 18 Pro (was the iPhone 15), also for an unknown stored id.
+- `Prefs` (the `onPrefs` payload) gains `muted`; `WorkspaceApi` gains `muted()` and `setMuted()`.
+- The compact top bar shows the Reference mode and Hot reload icon toggles before the search;
+  Pause and Step carry their label as the accessible name only.
 
 ## Breaking changes (round 2)
 

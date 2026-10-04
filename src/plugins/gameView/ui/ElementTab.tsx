@@ -2,8 +2,9 @@
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
  * children, the resolved style, the layout style card with its steppers (or the read-only call,
- * or where the key is defined, `(loop)` for a key built in a loop), the reference block for the
- * chat with Copy (round 2 R2), "Show in render tree" (workspace:reveal) and "Pick another".
+ * or where the key is defined, `(loop)` for a key built in a loop), the Code section (round 2b
+ * R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
+ * (workspace:reveal) and "Pick another".
  */
 import type { VNode } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -25,6 +26,7 @@ import { referenceText } from "../reference/facts";
 import { copySelectedReference } from "../reference/pick";
 import { readManifest } from "../scene/manifest";
 import type { GameViewCtx, StyleCard, StyleLookup } from "../types";
+import { CodeSection } from "./CodeSection";
 import { styleValue } from "./text";
 import { useGameView } from "./useGameView";
 
@@ -272,9 +274,10 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
 }
 
 /**
- * The reference block of the node, read-only, with Copy (round 2 R2). It is gathered again when
- * the node, its style search, its style block, its bounds, the flow node or the last pick
- * changes; not on every scene frame.
+ * The full reference block of the node, read-only, with Copy (round 2 R2): Copy writes the card
+ * and puts its one line on the clipboard (round 2b R13). It is gathered again when the node, its
+ * style search, its style block, its bounds, the flow node or the last pick changes; not on every
+ * scene frame.
  *
  * @param props - The context, the scene, the node and the flow node.
  * @param props.ctx - Domain context of gameView.
@@ -318,7 +321,7 @@ function ReferenceSection(props: {
           type="button"
           data-variant="ghost"
           data-action="copy-reference"
-          title="Copy the reference block for the chat"
+          title="Write the reference card and copy its line for the chat"
           onClick={() => void copySelectedReference(ctx)}
         >
           Copy
@@ -432,6 +435,7 @@ function NodeDetails(props: {
       {node.ref.kind === "ui" && node.key !== undefined && (
         <StyleSection ctx={ctx} nodeKey={node.key} />
       )}
+      <CodeSection key={node.id} ctx={ctx} node={node} />
       <ReferenceSection ctx={ctx} scene={scene} node={node} flowNode={flowNode} />
       <footer>
         <button type="button" data-variant="ghost" onClick={() => revealElement(ctx, node.ref)}>

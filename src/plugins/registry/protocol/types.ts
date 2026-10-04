@@ -485,14 +485,14 @@ export type FoldScreen = { readonly w: number; readonly h: number; readonly radi
 
 /**
  * A device preset of the tools page (R1, R4): the screen in CSS px, its pixel ratio, safe insets,
- * corner radius and the `<optgroup>` it is listed under. A foldable adds its two screens; its
- * top-level size is the cover screen.
+ * corner radius, the `<optgroup>` it is listed under and the frame drawn around it (R9). A foldable
+ * adds its two screens; its top-level size is the cover screen.
  *
  * @example
  * ```ts
  * const iphone15: DeviceSpec = {
  *   id: "iphone-15", name: "iPhone 15", w: 393, h: 852, safeTop: 59, safeBottom: 34, kind: "phone",
- *   dpr: 3, radius: 55, group: "iphone"
+ *   dpr: 3, radius: 55, group: "iphone", frame: "modern"
  * };
  * ```
  */
@@ -510,6 +510,12 @@ export type DeviceSpec = {
   readonly radius: number;
   /** The `<optgroup>` the preset is listed under. */
   readonly group: "iphone" | "android" | "foldable" | "tablet" | "desktop";
+  /**
+   * The frame drawn around the screen (R9): "modern" is the thin bezel every current device has;
+   * "home-button" is the iPhone SE look, with 64 px bands above and below the screen and a round
+   * home button in the bottom one.
+   */
+  readonly frame: "modern" | "home-button";
   /** Set when a value of the preset is an estimate, not a published figure. */
   readonly approx?: true;
   /** The two screens of a foldable: folded (cover) and unfolded (inner). */

@@ -42,7 +42,7 @@ export type IdentSource = Extract<StyleSource, { readonly kind: "ident" }>;
 /**
  * A block found in one of the candidate files, or the refusal to show.
  */
-type BlockResult =
+export type BlockResult =
   | { readonly path: string; readonly loaded: LoadedStyleFile; readonly block: StyleBlock }
   | { readonly path: string; readonly error: StyleEditError };
 
@@ -65,7 +65,7 @@ function isSelected(state: GameViewState, ref: ElementRef): boolean {
  * @param source - Where the key was found.
  * @returns The file and block, or the refusal.
  */
-async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<BlockResult> {
+export async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<BlockResult> {
   const files = ctx.require(linkPlugin).files;
   let refusal: BlockResult | undefined;
   for (const path of source.files) {

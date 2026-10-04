@@ -1,13 +1,15 @@
 /**
  * @file workspace plugin — the device presets (DeviceSpec, R1; round 2 R4 from
- * `.planning/build/research-devices.md`) in display order, their `<optgroup>` groups, and the pure
- * rules: resolveDevice (landscape swaps W and H; safe left = right = safeTop, bottom = safeBottom)
- * and screenOf (a foldable shows its cover folded, its inner screen unfolded). gameView imports
- * them by relative path (R8).
+ * `.planning/build/research-devices.md`; round 2b R10 adds the current iPhones and the iPhone
+ * Duo from the apple.com specs of 2026-10-04) in display order, their `<optgroup>` groups, and
+ * the pure rules: resolveDevice (landscape swaps W and H; safe left = right = safeTop, bottom =
+ * safeBottom) and screenOf (a foldable shows its cover folded, its inner screen unfolded).
+ * gameView imports them by relative path (R8).
  *
  * Sizes are the full-screen portrait viewport in CSS px. Every corner radius is an estimate from
- * device photos (a real-device check is open); `approx: true` marks the presets whose size itself
- * is computed, not published.
+ * device photos (a real-device check is open); `approx: true` marks the presets whose size or
+ * safe insets are estimates too, not published figures. `frame` is the bezel gameView draws (R9):
+ * only the SE 3 has the home-button frame.
  */
 import type { DeviceSpec } from "../registry/protocol";
 import type { DeviceChoice, DevicePresetId, DeviceSize, Orientation, StoredDevice } from "./types";
@@ -15,22 +17,27 @@ import type { DeviceChoice, DevicePresetId, DeviceSize, Orientation, StoredDevic
 /**
  * The default preset (and the fallback of an unknown id).
  */
-const IPHONE_15: DeviceSpec = {
-  id: "iphone-15",
-  name: "iPhone 15",
-  w: 393,
-  h: 852,
+const IPHONE_18_PRO: DeviceSpec = {
+  id: "iphone-18-pro",
+  name: "iPhone 18 Pro",
+  // approx: safe insets and radius taken from the iPhone 16 Pro, the same screen
+  w: 402,
+  h: 874,
   dpr: 3,
-  safeTop: 59,
+  safeTop: 62,
   safeBottom: 34,
-  radius: 55,
+  radius: 62,
   kind: "phone",
-  group: "iphone"
+  group: "iphone",
+  frame: "modern",
+  approx: true
 };
 
 /**
- * The sixteen presets in display order: iPhone, Android, Foldable, Tablet, Desktop. Android,
- * foldable and tablet browsers report no safe insets (research table).
+ * The twenty-one presets in display order: iPhone, Android, Foldable, Tablet, Desktop. In the
+ * iPhone group the SE 3 and the iPhone 15 come first, then the current models; the 15 Pro Max,
+ * 16 Pro and 16 Pro Max stay at the end because viewers may have them stored. Android, foldable
+ * and tablet browsers report no safe insets (research table).
  *
  * @example
  * ```ts
@@ -41,7 +48,7 @@ export const DEVICES: readonly DeviceSpec[] = [
   // iPhone
   {
     id: "iphone-se",
-    name: "iPhone SE 3",
+    name: "iPhone SE 3 · small, 2022",
     w: 375,
     h: 667,
     dpr: 2,
@@ -49,9 +56,68 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 0,
     kind: "phone",
-    group: "iphone"
+    group: "iphone",
+    frame: "home-button"
   },
-  IPHONE_15,
+  {
+    id: "iphone-15",
+    name: "iPhone 15",
+    w: 393,
+    h: 852,
+    dpr: 3,
+    safeTop: 59,
+    safeBottom: 34,
+    radius: 55,
+    kind: "phone",
+    group: "iphone",
+    frame: "modern"
+  },
+  {
+    id: "iphone-17e",
+    name: "iPhone 17e",
+    // approx: a notch, not an island; safe insets and radius estimated
+    w: 390,
+    h: 844,
+    dpr: 3,
+    safeTop: 47,
+    safeBottom: 34,
+    radius: 47,
+    kind: "phone",
+    group: "iphone",
+    frame: "modern",
+    approx: true
+  },
+  {
+    id: "iphone-air",
+    name: "iPhone Air",
+    // approx: safe insets and radius estimated
+    w: 420,
+    h: 912,
+    dpr: 3,
+    safeTop: 68,
+    safeBottom: 34,
+    radius: 62,
+    kind: "phone",
+    group: "iphone",
+    frame: "modern",
+    approx: true
+  },
+  IPHONE_18_PRO,
+  {
+    id: "iphone-18-pro-max",
+    name: "iPhone 18 Pro Max",
+    // approx: safe insets and radius taken from the iPhone 16 Pro Max, the same screen
+    w: 440,
+    h: 956,
+    dpr: 3,
+    safeTop: 62,
+    safeBottom: 34,
+    radius: 62,
+    kind: "phone",
+    group: "iphone",
+    frame: "modern",
+    approx: true
+  },
   {
     id: "iphone-15-pro-max",
     name: "iPhone 15 Pro Max",
@@ -62,7 +128,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 34,
     radius: 55,
     kind: "phone",
-    group: "iphone"
+    group: "iphone",
+    frame: "modern"
   },
   {
     id: "iphone-16-pro",
@@ -74,7 +141,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 34,
     radius: 62,
     kind: "phone",
-    group: "iphone"
+    group: "iphone",
+    frame: "modern"
   },
   {
     id: "iphone-16-pro-max",
@@ -86,7 +154,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 34,
     radius: 62,
     kind: "phone",
-    group: "iphone"
+    group: "iphone",
+    frame: "modern"
   },
 
   // Android
@@ -100,7 +169,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 40,
     kind: "phone",
-    group: "android"
+    group: "android",
+    frame: "modern"
   },
   {
     id: "galaxy-a55",
@@ -112,7 +182,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 35,
     kind: "phone",
-    group: "android"
+    group: "android",
+    frame: "modern"
   },
   {
     id: "redmi-note-13",
@@ -126,6 +197,7 @@ export const DEVICES: readonly DeviceSpec[] = [
     radius: 35,
     kind: "phone",
     group: "android",
+    frame: "modern",
     approx: true
   },
   {
@@ -138,7 +210,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 35,
     kind: "phone",
-    group: "android"
+    group: "android",
+    frame: "modern"
   },
   {
     id: "xperia-1-v",
@@ -150,7 +223,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 0,
     kind: "phone",
-    group: "android"
+    group: "android",
+    frame: "modern"
   },
 
   // Foldable: the top-level size is the cover screen (folded, the default)
@@ -166,6 +240,7 @@ export const DEVICES: readonly DeviceSpec[] = [
     radius: 30,
     kind: "phone",
     group: "foldable",
+    frame: "modern",
     approx: true,
     fold: { cover: { w: 369, h: 905, radius: 30 }, inner: { w: 707, h: 823, radius: 30 } }
   },
@@ -179,7 +254,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 30,
     kind: "phone",
-    group: "foldable"
+    group: "foldable",
+    frame: "modern"
   },
   {
     id: "pixel-9-pro-fold",
@@ -193,8 +269,26 @@ export const DEVICES: readonly DeviceSpec[] = [
     radius: 30,
     kind: "phone",
     group: "foldable",
+    frame: "modern",
     approx: true,
     fold: { cover: { w: 411, h: 923, radius: 30 }, inner: { w: 791, h: 820, radius: 30 } }
+  },
+  {
+    id: "iphone-duo",
+    name: "iPhone Duo",
+    // approx: Apple publishes pixels only (1398×2034 cover, 2670×1878 inner), divided by 3 here;
+    // a book that opens landscape-wide; radius estimated, safe insets unknown (0)
+    w: 466,
+    h: 678,
+    dpr: 3,
+    safeTop: 0,
+    safeBottom: 0,
+    radius: 40,
+    kind: "phone",
+    group: "foldable",
+    frame: "modern",
+    approx: true,
+    fold: { cover: { w: 466, h: 678, radius: 40 }, inner: { w: 890, h: 626, radius: 40 } }
   },
 
   // Tablet
@@ -208,7 +302,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 18,
     kind: "tablet",
-    group: "tablet"
+    group: "tablet",
+    frame: "modern"
   },
   {
     id: "ipad-air-11",
@@ -220,7 +315,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 18,
     kind: "tablet",
-    group: "tablet"
+    group: "tablet",
+    frame: "modern"
   },
 
   // Desktop
@@ -234,7 +330,8 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeBottom: 0,
     radius: 0,
     kind: "desktop",
-    group: "desktop"
+    group: "desktop",
+    frame: "modern"
   }
 ];
 
@@ -262,10 +359,10 @@ export const DEVICE_GROUPS: readonly {
  *
  * @example
  * ```ts
- * deviceById(DEFAULT_DEVICE)?.name; // "iPhone 15"
+ * deviceById(DEFAULT_DEVICE)?.name; // "iPhone 18 Pro"
  * ```
  */
-export const DEFAULT_DEVICE: DevicePresetId = "iphone-15";
+export const DEFAULT_DEVICE: DevicePresetId = "iphone-18-pro";
 
 /**
  * Size and safe insets of a preset in an orientation. Portrait keeps W×H with the safe bands on
@@ -330,18 +427,18 @@ export function deviceById(id: string): DeviceSpec | undefined {
 }
 
 /**
- * The preset with an id, the iPhone 15 for an unknown one.
+ * The preset with an id, the default iPhone 18 Pro for an unknown one.
  *
  * @param id - A preset id.
  * @returns The DeviceSpec.
  * @example
  * ```ts
  * presetOf("pixel-8").name; // "Pixel 8"
- * presetOf("nokia").name; // "iPhone 15"
+ * presetOf("nokia").name; // "iPhone 18 Pro"
  * ```
  */
 export function presetOf(id: string): DeviceSpec {
-  return deviceById(id) ?? IPHONE_15;
+  return deviceById(id) ?? IPHONE_18_PRO;
 }
 
 /**

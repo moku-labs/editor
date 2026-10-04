@@ -46,6 +46,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   ctx = createCtx({ defaultWorkspace: "flow" });
+  // The sizes below are the iPhone 15's (393×852), not the default device's.
+  ctx.state.device = { preset: "iphone-15", orientation: "portrait" };
   root = document.createElement("div");
   document.body.append(root);
   stubRect(hostOf(ctx.state, "flow"), rectOf(0, 0, 1000, 800));

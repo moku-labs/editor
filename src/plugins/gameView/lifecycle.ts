@@ -1,9 +1,10 @@
 /**
  * @file gameView plugin — onInit (the capturesDir check, panel, palette, key bindings, Esc layers,
  * device listener; sync, no I/O), onStart (scene watches when Game is already active, Reference
- * mode when already on) and onStop (disposers, watches, the game.position watch, timers, a running
- * recording).
+ * mode when already on, the sound flag applied to every game that connects) and onStop
+ * (disposers, watches, the game.position watch, timers, a running recording).
  */
+import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
 import type { DeviceChoice } from "../workspace/types";
@@ -12,6 +13,7 @@ import { paletteItems } from "./palette";
 import { dropReference, setReferenceMode } from "./reference/mode";
 import { recalibrate } from "./scene/calibrate";
 import { startSceneWatches } from "./scene/watch";
+import { reapplyMute } from "./sound";
 import { notify } from "./state";
 import type { GameViewCtx, GameViewState } from "./types";
 import { createGamePanel } from "./ui/panel";
@@ -93,6 +95,7 @@ export function initGameView(ctx: GameViewCtx): void {
 /**
  * onStart: a restored `#game` hash emits no workspace:changed, so start the scene watches here
  * when Game is already the active workspace; likewise Reference mode when workspace has it on.
+ * Every game that connects (a hot reload too) is muted again while the viewer has the sound off.
  *
  * @param ctx - Domain context of gameView.
  */
@@ -100,6 +103,8 @@ export function startGameView(ctx: GameViewCtx): void {
   const workspace = ctx.require(workspacePlugin);
   if (workspace.active() === "game") startSceneWatches(ctx);
   if (workspace.reference()) setReferenceMode(ctx, true);
+  const link = ctx.require(linkPlugin);
+  ctx.state.disposers.push(link.onManifest(manifest => reapplyMute(ctx, manifest)));
 }
 
 /**

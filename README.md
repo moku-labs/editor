@@ -41,7 +41,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order.
 >
-> **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` turns it off). "Copy reference" copies the multi-line [reference block](#the-reference-block), not one line, and `gameView.copyReference()` returns it. A pick also saves `<key>-f<frame>.png` and `f<frame>.png` in `capturesDir`, which must be `.moku/captures` or a folder under it. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; ten presets are new.
+> **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` turns it off). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>.png` and `f<frame>.png` in `capturesDir`, which must be `.moku/captures` or a folder under it. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
 
 > [!IMPORTANT]
 > The server core and the `moku-editor` bin run on **Bun** (`Bun.serve`, HTML imports). The agent and tools cores run in the browser. The package is **ESM only**.
@@ -99,7 +99,8 @@ window width), `compact` or `comfortable`, chosen in the palette or the ⋯ menu
 saved with the theme. Below 900 px the [top bar](#the-top-bar) is compact. **Reference mode**
 (key R) lays `data-moku-*` proxies over the game elements, so whoever reads the page can name
 them; the game gets no input while it is on. A click on an element (the picker, or a proxy in
-Reference mode) copies its [reference block](#the-reference-block) for the chat.
+Reference mode) copies its [reference line](#the-reference-line-and-card) for the chat and writes
+the card file that line names.
 
 > [!TIP]
 > The tools page is itself a Moku app (`src/plugins/pages/page/main.tsx`). To compose your own, start the tools core and mount the shell:
@@ -114,27 +115,47 @@ Reference mode) copies its [reference block](#the-reference-block) for the chat.
 ### The top bar
 
 The bar picks its layout from the window width (`data-layout` on `[data-ui="top-bar"]`). No two
-controls overlap from 480 to 1440 px.
+controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.ts`).
 
 | Width | The bar shows |
 |---|---|
 | 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 15 sources · 18 commands"), theme. |
-| Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause, Step, a search icon and **⋯**. |
-| Below 560 px | As below 900 px, without the game name. |
+| Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Reference mode** icon (target, R), the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
+| 560 px and narrower | As below 900 px, without the game name and the Hot reload icon. |
+
+In the compact bar Pause and Step keep their labels as the accessible name and the tooltip. The two
+icon toggles use `aria-pressed`; Hot reload is inert with its reason in the tooltip when the
+editor cannot change it.
 
 The **⋯** menu (`data-action="more"`) holds, each row with its state and key: Game preview (G),
 Overlay in game (O), Reference mode (R), Hot reload (H), then Registry (counts; opens the registry
-popover), Density (auto → compact → comfortable) and Theme. A toggle row keeps the menu open. Esc,
-a second ⋯ click or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no
-Overlay switch of its own.
+popover), Density (auto → compact → comfortable) and Theme. Reference mode and Hot reload stay in
+the menu while the bar shows their icons. A toggle row keeps the menu open. Esc, a second ⋯ click
+or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no Overlay switch of
+its own.
 
-### The reference block
+### The reference line and card
 
-A pick (a picker click, or a click on a Reference mode proxy) does four things: it bookmarks the
-game (`game.bookmark`), saves the element and the whole frame as PNGs, puts the reference block on
-the clipboard and toasts "Reference, shot and bookmark copied". Paste the block into the chat: it
-says what the element is, where its code is, where it sits, and how to get the game back to this
-moment.
+A pick (a picker click, or a click on a Reference mode proxy) bookmarks the game
+(`game.bookmark`), saves the element and the whole frame as PNGs, writes a card file next to them,
+puts one line on the clipboard and toasts "Reference, shot and bookmark copied". Paste the line
+into the chat: it names the element, its flow node, its code, its place, and the card that holds
+the rest.
+
+```text
+@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md
+```
+
+The card `<capturesDir>/<key>-f<frame>.md` (`-2`, `-3` … when taken) is Markdown:
+
+- a title `# @moku <name> <type>`;
+- the full reference block in a `text` fence (below);
+- `## JSX · <file:line>` and `## Style · <name> · <file:line>`, each a fenced snippet; for an
+  entity, `## Spawned by <projection> · <file:line>` and its components;
+- `![element](<key>-f<frame>.png)` and `![frame](f<frame>.png)`.
+
+The reference block says what the element is, where its code is, where it sits, and how to get the
+game back to this moment:
 
 ```text
 @moku settingsBoard · panel · settingsPopup/open · f212
@@ -164,9 +185,28 @@ shot: .moku/captures/settingsBoard-f212.png · frame: .moku/captures/f212.png
 | `restore` | The bookmark id. `gameView.bookmarks()` keeps the last 20; `panels.run("game.restore", { bookmark: value })` goes back. |
 | `shot` | The crop (`<key>-f<frame>.png`, the element plus 8 px) and the full frame (`f<frame>.png`) under `capturesDir`. |
 
-A line or a field that is not known is left out. "Copy reference" in the Element tab copies the
-same block, and the tab shows it read-only. Shot and Series copy `shot: <path>` and
-`series: <folder>/ (<n> frames)`.
+A line or a field that is not known is left out; a card that cannot be written leaves its path out
+of the line. The Element tab shows the full block read-only. Its "Copy reference" writes the card
+of the selection and copies its line; the same node and frame write the same card again. Shot and
+Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
+
+### The Game workspace
+
+- **Sound** (key M in Game, round 2b): a switch in the Game toolbar. It runs `game.mute { muted }`
+  when the game's manifest lists `game.mute`, and keeps the flag with the viewer's preferences. A
+  game that connects while the sound is off is muted again, so the flag survives a hot reload.
+  A game without `game.mute` (merge-game on @moku-labs/game 0.1.0) dims the switch, title "Needs
+  @moku-labs/game with game.mute".
+- **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
+  to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
+  its `file:line`, "Open in Files" and the shared highlighter; after 20 lines it shows "Show all N
+  lines". A key built in a loop shows its template line. An entity shows "Spawned by
+  <projection> · <file:line>" and its components with short values. A text style key
+  (`style="ui.link"`) and a style call (`style={boardOf(…)}`) show no style block yet.
+- **The capture card** after a Shot, a pick or a Series: a 56 px thumbnail, one line each for the
+  title ("✓ Screenshot saved"), the path (cut in the middle, the whole path in its tooltip) and
+  `f<frame> · <device>`, then Copy link (`shot: <path>`), Open and, after a pick, Reference (the
+  line again). At most 360 × 120 px; in a 480 px window it takes the width less 24.
 
 ### Hot reload
 
@@ -180,44 +220,65 @@ agent writing the file, goes like this:
 3. The tools page toasts "Game reloaded · state restored". It does not reload or restore a second
    time.
 
-`e2e/edit-loop.spec.ts` measures it on merge-game: five edits made only from the reference block
-(move an element, resize a button, recolour and resize a text style, swap a texture), each written
-to disk. Each shows in the game with its state restored in about 0.8 s; the recolour takes about
-1.1 s, because the test reads the colour back from captured frames.
+`e2e/edit-loop.spec.ts` measures it on merge-game: five edits made only from the reference line
+and the block in its card (move an element, resize a button, recolour and resize a text style, swap
+a texture), each written to disk. Each shows in the game with its state restored in about 0.8 s;
+the recolour takes about 1.1 s, because the test reads the colour back from captured frames.
 
 The **Hot reload** switch (key H) shows the state. Bun cannot switch HMR on a running server, so a
-click says how to change it: start the bin with `--no-hmr`, or without it. A game that serves itself
+click says how to change it: start the bin with `--no-hmr`, or without it. The refused change
+answers 200 with the unchanged state, so the page logs no error. A game that serves itself
 with its own `Bun.serve` owns the setting; the switch is inert there. Without hot reload, a save in
 the editor still keeps the state: the editor bookmarks, reloads the frame and restores (D-07).
 
 ### Devices
 
-Sixteen presets in five groups. Sizes are the portrait viewport in CSS px. Android, foldable and
-tablet browsers report no safe insets. Every corner radius is an estimate from photos.
+Twenty-one presets in five groups. Sizes are the portrait viewport in CSS px. A fresh viewer
+starts on the iPhone 18 Pro. Android, foldable and tablet browsers report no safe insets. Every
+corner radius is an estimate from photos.
 
-| Group | Preset | Viewport | DPR | Safe top / bottom | Radius |
-|---|---|---|---|---|---|
-| iPhone | iPhone SE 3 | 375 × 667 | 2 | 20 / 0 | 0 |
-| iPhone | iPhone 15 (default) | 393 × 852 | 3 | 59 / 34 | 55 |
-| iPhone | iPhone 15 Pro Max | 430 × 932 | 3 | 59 / 34 | 55 |
-| iPhone | iPhone 16 Pro | 402 × 874 | 3 | 62 / 34 | 62 |
-| iPhone | iPhone 16 Pro Max | 440 × 956 | 3 | 62 / 34 | 62 |
-| Android | Galaxy S24 | 360 × 780 | 3 | 0 / 0 | 40 |
-| Android | Galaxy A55 | 412 × 892 | 2.625 | 0 / 0 | 35 |
-| Android | Redmi Note 13 · approx | 393 × 873 | 2.75 | 0 / 0 | 35 |
-| Android | Pixel 8 | 412 × 915 | 2.625 | 0 / 0 | 35 |
-| Android | Xperia 1 V 21:9 | 411 × 960 | 4 | 0 / 0 | 0 |
-| Foldable | Galaxy Z Fold 6 · approx | cover 369 × 905, inner 707 × 823 | 2.625 | 0 / 0 | 30 |
-| Foldable | Galaxy Z Flip 6 | 412 × 1005 | 2.625 | 0 / 0 | 30 |
-| Foldable | Pixel 9 Pro Fold · approx | cover 411 × 923, inner 791 × 820 | 2.625 | 0 / 0 | 30 |
-| Tablet | iPad mini 7 | 744 × 1133 | 2 | 0 / 0 | 18 |
-| Tablet | iPad Air 11" | 820 × 1180 | 2 | 0 / 0 | 18 |
-| Desktop | Desktop | 1440 × 900 | 1 | 0 / 0 | 0 |
+| Group | Preset | Viewport | DPR | Safe top / bottom | Radius | Frame |
+|---|---|---|---|---|---|---|
+| iPhone | iPhone SE 3 · small, 2022 | 375 × 667 | 2 | 20 / 0 | 0 | home-button |
+| iPhone | iPhone 15 | 393 × 852 | 3 | 59 / 34 | 55 | modern |
+| iPhone | iPhone 17e · approx | 390 × 844 | 3 | 47 / 34 | 47 | modern |
+| iPhone | iPhone Air · approx | 420 × 912 | 3 | 68 / 34 | 62 | modern |
+| iPhone | iPhone 18 Pro · approx (default) | 402 × 874 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 18 Pro Max · approx | 440 × 956 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 15 Pro Max | 430 × 932 | 3 | 59 / 34 | 55 | modern |
+| iPhone | iPhone 16 Pro | 402 × 874 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 16 Pro Max | 440 × 956 | 3 | 62 / 34 | 62 | modern |
+| Android | Galaxy S24 | 360 × 780 | 3 | 0 / 0 | 40 | modern |
+| Android | Galaxy A55 | 412 × 892 | 2.625 | 0 / 0 | 35 | modern |
+| Android | Redmi Note 13 · approx | 393 × 873 | 2.75 | 0 / 0 | 35 | modern |
+| Android | Pixel 8 | 412 × 915 | 2.625 | 0 / 0 | 35 | modern |
+| Android | Xperia 1 V 21:9 | 411 × 960 | 4 | 0 / 0 | 0 | modern |
+| Foldable | Galaxy Z Fold 6 · approx | cover 369 × 905, inner 707 × 823 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | Galaxy Z Flip 6 | 412 × 1005 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | Pixel 9 Pro Fold · approx | cover 411 × 923, inner 791 × 820 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | iPhone Duo · approx | cover 466 × 678, inner 890 × 626 | 3 | 0 / 0 | 40 | modern |
+| Tablet | iPad mini 7 | 744 × 1133 | 2 | 0 / 0 | 18 | modern |
+| Tablet | iPad Air 11" | 820 × 1180 | 2 | 0 / 0 | 18 | modern |
+| Desktop | Desktop | 1440 × 900 | 1 | 0 / 0 | 0 | none |
 
-**approx**: the size is computed from the panel size and pixel ratio, not published. A foldable
-starts folded; its **Unfold** / **Fold** button switches the screen live (the game sees a resize,
-not a reload). The screen is clipped with its corner radius on the stage and in the pinned
-preview, and in the dark theme the bezel (`#2c2c34`, 1 px outline) stands off the canvas.
+**approx**: the size or the safe insets are estimates, not published figures. The iPhone Duo's
+sizes are Apple's pixels (1398 × 2034 cover, 2670 × 1878 inner) divided by 3; it opens like a book,
+wider than tall. The iPhone 18 Pro and Pro Max take the insets of the 16 Pro and Pro Max, the same
+screens. The 15 Pro Max, 16 Pro and 16 Pro Max stay at the end of the iPhone group, so a stored
+choice keeps working.
+
+**Fit** uses one scale for every preset of a kind: the scale that fits the tallest of them, its
+bezel included. An iPhone SE 3 shows smaller than an iPhone 18 Pro Max, in their real proportion.
+Foldables count as phones; tablets and the desktop have their own scale. **100 %** stays one CSS px
+per device px.
+
+**Frame** (`DeviceSpec.frame`): `modern` is a 10 px bezel with the dynamic island and the home bar
+as guides. `home-button` (the SE 3) has 64 px bezels above and below a square screen, 10 px at the
+sides and a round 44 px home button, and no island. Landscape turns the tall bezels to the sides.
+
+A foldable starts folded; its **Unfold** / **Fold** button switches the screen live (the game sees
+a resize, not a reload). The screen is clipped with its corner radius on the stage and in the
+pinned preview, and in the dark theme the bezel (`#2c2c34`, 1 px outline) stands off the canvas.
 
 ## Production builds
 
@@ -422,10 +483,10 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
 | [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`). | `routes`, `attachServer`, `hotReload`, `setHotReload` |
 | [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload` |
-| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its ⋯ menu, rail, palette, toasts, keys and Esc, preferences, the sixteen devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
+| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
 | [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, code and style inspector. | `camera`, `focus`, `flows`, `layout` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with Fold, element picker, style card, Reference mode proxies, the pick for the chat (bookmark, two PNGs, the reference block), screenshots, series and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound switch, element picker, style card, the Code section, Reference mode proxies, the pick for the chat (bookmark, two PNGs, the card file, one line), screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
 | [`renderView`](src/plugins/renderView/README.md) | tools | Standard | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |

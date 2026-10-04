@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   capturePath,
+  cardPath,
   deviceLabel,
   folderOf,
   nodeOf,
@@ -40,6 +41,25 @@ describe("capturePath", () => {
   it("keeps the name to letters, digits, - and _", () => {
     expect(capturePath(".moku/captures", "2026-09-24-1012", "board/merge it", new Set())).toBe(
       ".moku/captures/2026-09-24-1012-board-merge-it.png"
+    );
+  });
+});
+
+describe("cardPath (round 2b R13)", () => {
+  it("is <dir>/<name>-f<frame>.md, -2 when taken, unsafe characters as -", () => {
+    expect(cardPath(".moku/captures", "settingsBoard", 25, new Set())).toBe(
+      ".moku/captures/settingsBoard-f25.md"
+    );
+    expect(
+      cardPath(
+        ".moku/captures",
+        "settingsBoard",
+        25,
+        new Set([".moku/captures/settingsBoard-f25.md"])
+      )
+    ).toBe(".moku/captures/settingsBoard-f25-2.md");
+    expect(cardPath(".moku/captures", "board.items/3", 7, new Set())).toBe(
+      ".moku/captures/board-items-3-f7.md"
     );
   });
 });

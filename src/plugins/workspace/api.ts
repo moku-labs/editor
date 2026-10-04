@@ -15,6 +15,7 @@ import { addPaletteItems, openPalette } from "./palette/items";
 import {
   addPrefsListener,
   chooseDensity,
+  chooseMuted,
   chooseTheme,
   patchDevice,
   patchPreview,
@@ -136,6 +137,12 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
     hotReload: () => ctx.require(linkPlugin).hotReload(),
 
     setHotReload: on => setHotReload(ctx, on),
+
+    muted: () => state.muted,
+
+    setMuted: on => {
+      chooseMuted(ctx, on);
+    },
 
     onPrefs: fn => addPrefsListener(state, fn)
   };

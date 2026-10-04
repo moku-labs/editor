@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sidePanelState } from "../../../panels/shared/side-panel";
+import { DEVICES } from "../../../workspace/devices";
 import { initGameView, startGameView, stopGameView } from "../../lifecycle";
 import { createCtx, flush, manifestOf, type TestCtx, useScene } from "../helpers";
 
@@ -50,7 +51,7 @@ describe("initGameView", () => {
     });
   });
 
-  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and the sixteen devices", () => {
+  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and every device", () => {
     initGameView(ctx);
     expect(ctx.workspace.items.map(entry => entry.label)).toEqual([
       "Select element",
@@ -58,22 +59,7 @@ describe("initGameView", () => {
       "Record a series…",
       "Overlay in game",
       "Show Element panel",
-      "Device: iPhone SE 3",
-      "Device: iPhone 15",
-      "Device: iPhone 15 Pro Max",
-      "Device: iPhone 16 Pro",
-      "Device: iPhone 16 Pro Max",
-      "Device: Galaxy S24",
-      "Device: Galaxy A55",
-      "Device: Redmi Note 13",
-      "Device: Pixel 8",
-      "Device: Xperia 1 V 21:9",
-      "Device: Galaxy Z Fold 6",
-      "Device: Galaxy Z Flip 6",
-      "Device: Pixel 9 Pro Fold",
-      "Device: iPad mini 7",
-      'Device: iPad Air 11"',
-      "Device: Desktop"
+      ...DEVICES.map(device => `Device: ${device.name}`)
     ]);
     expect(item("Select element").shortcut).toBe("⇧⌘C");
   });
@@ -116,7 +102,7 @@ describe("initGameView", () => {
 
   it("binds the keys and the four Esc layers; every remover goes into the disposers", () => {
     initGameView(ctx);
-    expect(ctx.workspace.bindings).toHaveLength(5);
+    expect(ctx.workspace.bindings).toHaveLength(6);
     expect(ctx.workspace.escapes.map(entry => entry.layer)).toEqual([
       "contactSheet",
       "seriesPopover",
@@ -192,6 +178,14 @@ describe("startGameView", () => {
       "game.entities",
       "game.projections"
     ]);
+  });
+
+  it("mutes the attached game again when the viewer has the sound off (round 2b R11)", async () => {
+    ctx.workspace.mutedValue = true;
+    ctx.link.manifestValue = manifestOf([["game.mute", "cosmetic"]]);
+    startGameView(ctx);
+    await flush();
+    expect(ctx.panels.run).toHaveBeenCalledWith("game.mute", { muted: true });
   });
 
   it("does not watch while another workspace is active", () => {

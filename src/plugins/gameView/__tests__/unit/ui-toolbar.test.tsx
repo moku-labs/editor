@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { DeviceSpec } from "../../../registry/protocol";
+import { DEVICES } from "../../../workspace/devices";
 import { stopGameView } from "../../lifecycle";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
@@ -16,6 +18,16 @@ let view: Mounted;
  */
 function option(id: string): HTMLOptionElement {
   return find<HTMLOptionElement>(view.root, `option[value='${id}']`);
+}
+
+/**
+ * The presets listed under one group, in order.
+ *
+ * @param group - The group id.
+ * @returns The presets.
+ */
+function inGroup(group: string): DeviceSpec[] {
+  return DEVICES.filter(device => device.group === group);
 }
 
 beforeEach(() => {
@@ -49,7 +61,7 @@ describe("DeviceToolbar", () => {
 
   it("chooses the device and shows its size; the orientation swaps it", () => {
     const select = find<HTMLSelectElement>(view.root, "select[data-part='device']");
-    expect(findAll(select, "option")).toHaveLength(16);
+    expect(findAll(select, "option")).toHaveLength(DEVICES.length);
     expect(select.value).toBe("iphone-15");
     expect(find(view.root, "[data-part='size']").textContent).toBe("393 × 852");
 
@@ -71,16 +83,12 @@ describe("DeviceToolbar", () => {
       "Tablet",
       "Desktop"
     ]);
-    expect(findAll(groups[0] ?? select, "option").map(option => option.textContent)).toEqual([
-      "iPhone SE 3",
-      "iPhone 15",
-      "iPhone 15 Pro Max",
-      "iPhone 16 Pro",
-      "iPhone 16 Pro Max"
-    ]);
+    expect(findAll(groups[0] ?? select, "option").map(option => option.textContent)).toEqual(
+      inGroup("iphone").map(device => device.name)
+    );
     expect(
       findAll<HTMLOptionElement>(groups[2] ?? select, "option").map(option => option.value)
-    ).toEqual(["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold"]);
+    ).toEqual(inGroup("foldable").map(device => device.id));
   });
 
   it("marks the approximate presets in the option title", () => {
@@ -135,6 +143,33 @@ describe("DeviceToolbar", () => {
     const desktop = find(view.root, "[data-part='safe']");
     expect(desktop.getAttribute("aria-disabled")).toBe("true");
     expect(desktop.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("the Sound switch mutes the game with game.mute and keeps the flag (round 2b R11)", async () => {
+    view.unmount();
+    ctx.link.manifestValue = manifestOf([["game.mute", "cosmetic"]]);
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    const sound = find(view.root, "[data-part='sound']");
+    expect(sound.getAttribute("role")).toBe("switch");
+    expect(sound.textContent).toBe("Sound");
+    expect(sound.getAttribute("aria-checked")).toBe("true");
+    expect(sound.getAttribute("aria-disabled")).toBeNull();
+    expect(sound.getAttribute("title")).toBe("Sound on or off · M");
+
+    click(sound);
+    await settle();
+    expect(ctx.panels.run).toHaveBeenCalledWith("game.mute", { muted: true });
+    expect(ctx.workspace.setMuted).toHaveBeenCalledWith(true);
+    expect(find(view.root, "[data-part='sound']").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("disables the Sound switch with a tooltip when the game has no game.mute", async () => {
+    const sound = find(view.root, "[data-part='sound']");
+    expect(sound.getAttribute("aria-disabled")).toBe("true");
+    expect(sound.getAttribute("title")).toBe("Needs @moku-labs/game with game.mute");
+    click(sound);
+    await flush();
+    expect(ctx.panels.run).not.toHaveBeenCalled();
   });
 
   it("Reload reloads the game without restore", async () => {

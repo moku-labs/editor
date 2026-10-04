@@ -10,9 +10,10 @@ import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A completed pick (round 2 R2): game.bookmark (kept, newest first, 20 at
-// most), editor.capture, the crop and the full frame under capturesDir, then
-// the reference block on the clipboard with one toast. A game without a command
-// or a failing step leaves its lines and its toast word out.
+// most), editor.capture, the crop and the full frame under capturesDir, the
+// card file with the full block (round 2b R13), then one reference line on the
+// clipboard with one toast. A game without a command or a failing step leaves
+// its lines and its toast word out.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The commands of a game that can bookmark and capture. */
@@ -76,7 +77,7 @@ afterEach(() => {
 });
 
 describe("completePick", () => {
-  it("bookmarks, saves the crop and the full frame, copies the block and toasts", async () => {
+  it("bookmarks, saves the crop, the full frame and the card, copies one line and toasts", async () => {
     const text = await completePick(ctx, coinPill(), boardScene());
 
     expect(ctx.panels.run.mock.calls.map(call => call[0])).toEqual([
@@ -85,8 +86,22 @@ describe("completePick", () => {
     ]);
     expect(ctx.link.files.dataUrl(".moku/captures/coinPill-f1842.png")).toBe(CROP_PNG);
     expect(ctx.link.files.dataUrl(".moku/captures/f1842.png")).toBe(PNG);
-    expect(writeText).toHaveBeenCalledWith(text);
+    const card = ctx.link.files.text(".moku/captures/coinPill-f1842.md");
+    expect(card).toContain(`\`\`\`text\n${text}\n\`\`\``);
+    expect(card).toContain("![element](coinPill-f1842.png)\n![frame](f1842.png)\n");
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
+      /^@moku coinPill row · board\/awaitIntent · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/coinPill-f1842\.md$/
+    );
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
+    // The capture card of the pick (round 2b R14): the crop, and its Reference line.
+    expect(ctx.state.card).toMatchObject({
+      path: ".moku/captures/coinPill-f1842.png",
+      frame: 1842,
+      device: "iPhone 15 portrait",
+      image: CROP_PNG,
+      reference: String(writeText.mock.calls[0]?.at(0))
+    });
 
     const lines = text.split("\n");
     expect(lines[0]).toBe("@moku coinPill · row · board/awaitIntent · f1842");
@@ -132,7 +147,9 @@ describe("completePick", () => {
         .filter(path => path.startsWith(".moku/captures/"))
         .toSorted()
     ).toEqual([
+      ".moku/captures/coinPill-f1842-2.md",
       ".moku/captures/coinPill-f1842-2.png",
+      ".moku/captures/coinPill-f1842.md",
       ".moku/captures/coinPill-f1842.png",
       ".moku/captures/f1842-2.png",
       ".moku/captures/f1842.png"
@@ -154,10 +171,12 @@ describe("completePick", () => {
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference and shot copied");
   });
 
-  it("without editor.capture: no files, no shot line, the toast says bookmark only", async () => {
+  it("without editor.capture: no pictures, no shot line, the toast says bookmark only", async () => {
     ctx.link.manifestValue = manifestOf(COMMANDS.filter(([id]) => id !== "editor.capture"));
     const text = await completePick(ctx, coinPill(), boardScene());
-    expect(ctx.link.files.paths()).toEqual([]);
+    expect(ctx.state.card).toBeUndefined();
+    expect(ctx.link.files.paths()).toEqual([".moku/captures/coinPill-f1841.md"]);
+    expect(ctx.link.files.text(".moku/captures/coinPill-f1841.md")).not.toContain("![");
     expect(text).not.toContain("shot:");
     expect(text.split("\n")[0]).toBe("@moku coinPill · row · board/awaitIntent · f1841");
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference and bookmark copied");
@@ -185,11 +204,12 @@ describe("completePick", () => {
       message: "broken image"
     });
     expect(text.split("\n").at(-1)).toBe("frame: .moku/captures/f1842.png");
-    expect(ctx.link.files.paths()).toEqual([".moku/captures/f1842.png"]);
+    const pictures = (): string[] => ctx.link.files.paths().filter(path => path.endsWith(".png"));
+    expect(pictures()).toEqual([".moku/captures/f1842.png"]);
 
     const uncalibrated = { ...boardScene(), calibrated: false };
     await completePick(ctx, coinPill(), uncalibrated);
-    expect(ctx.link.files.paths()).not.toContain(".moku/captures/coinPill-f1842.png");
+    expect(pictures()).not.toContain(".moku/captures/coinPill-f1842.png");
   });
 
   it("toasts a clipboard that refuses and still keeps the pick", async () => {
@@ -204,6 +224,20 @@ describe("completePick", () => {
       full: ".moku/captures/f1842.png",
       tainted: true
     });
+  });
+});
+
+describe("the card file of a pick (round 2b R13)", () => {
+  it("copies the line without a card path when the card cannot be written", async () => {
+    ctx.link.files.failWrites(
+      ".moku/captures/coinPill-f1842.md",
+      Object.assign(new Error("[moku-editor] disk full"), { code: -32_000 })
+    );
+    await completePick(ctx, coinPill(), boardScene());
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: reference card failed", {
+      message: "[moku-editor] disk full"
+    });
+    expect(String(writeText.mock.calls[0]?.at(0))).not.toContain(".md");
   });
 });
 

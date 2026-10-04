@@ -1,4 +1,4 @@
-/* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4) with the preset's screen radius, the clip of the docked frame, the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4) with the preset's screen radius and frame (modern, or home-button with its round button, round 2b R9), the clip of the docked frame, the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="workspace"]) {
   :scope {
     display: grid;
@@ -55,12 +55,38 @@
     pointer-events: none;
   }
 
-  /* The bezel: its inner radius is the preset's screen radius at the stage scale (`--screen-radius`, set inline, round 2 R3), so it matches the docked frame's rounded clip; a 1 px outline keeps it visible on the dark canvas. */
+  /* The bezel: its inner radius is the preset's screen radius at the stage scale (`--screen-radius`, set inline, round 2 R3), so it matches the docked frame's rounded clip; a 1 px outline keeps it visible on the dark canvas. The padding is set inline from the frame (the fit scale leaves room for it). */
   [data-part="bezel"] {
+    position: relative;
     padding: 10px;
     border-radius: calc(var(--screen-radius, 0px) + 10px);
     background: var(--bezel);
     outline: 1px solid var(--border-strong);
+  }
+
+  /* A home-button phone (round 2b R9): a rounded body around a square screen, 64 px bezels above and below (left and right in landscape). */
+  [data-part="bezel"][data-frame="home-button"] {
+    border-radius: 44px;
+  }
+
+  /* Its home button: a ring of 44 px in the middle of the bottom bezel, of the right one in landscape. */
+  [data-part="home-button"] {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    border: 2px solid var(--border-strong);
+    border-radius: 50%;
+    transform: translateX(-50%);
+  }
+
+  [data-orientation="landscape"] > [data-part="home-button"] {
+    top: 50%;
+    right: 10px;
+    bottom: auto;
+    left: auto;
+    transform: translateY(-50%);
   }
 
   [data-part="bezel"][data-kind="desktop"] {

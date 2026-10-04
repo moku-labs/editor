@@ -1,19 +1,25 @@
 /**
- * @file The compact top bar (round 2 R1) at every window width the editor runs in: 480, 640 and
- * 720 px show the compact bar (logo, game name above 560 px, link pill, Pause, Step, the search
- * icon and the ⋯ menu), 960 and 1440 px the wide one (session chip, the labelled Preview, Overlay
- * and Hot reload switches, Reference mode, Registry as an icon with its counts in the title,
- * theme). The test loops `page.setViewportSize` itself, so it runs once, in the desktop project.
- * At each width no two controls of the bar overlap (bounding boxes), every control is on screen
- * and takes the pointer at its centre, and every action works: from the ⋯ menu below 900 px,
- * from the bar from 900 px. The Game toolbar has no overlay switch of its own any more.
+ * @file The compact top bar (round 2 R1, round 2b R15) at every window width the editor runs in:
+ * 480, 600, 640, 720 and 899 px show the compact bar (logo, game name above 560 px, link pill,
+ * Pause and Step as icons, the Reference mode icon toggle, above 560 px the Hot reload icon
+ * toggle, the search icon and the ⋯ menu), 960 and 1440 px the wide one (session chip, the
+ * labelled Preview, Overlay and Hot reload switches, Reference mode, Registry as an icon with its
+ * counts in the title, theme). The test loops `page.setViewportSize` itself, so it runs once, in
+ * the desktop project. At each width no two controls of the bar overlap (bounding boxes), every
+ * control is on screen and takes the pointer at its centre, and every action works: from the bar
+ * icons and the ⋯ menu below 900 px, from the bar from 900 px. A refused Hot reload change logs
+ * nothing (round 2b R16): the bin answers 200 with its state. The Game toolbar has no overlay
+ * switch of its own any more; its switches are Safe area and Sound.
  */
 import type { Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
 import { closeMore, isCompact, moreMenu, openMore, topBar } from "./top-bar";
 
 /** The window widths of the spec, in px; the height stays 900. */
-const WIDTHS = [480, 640, 720, 960, 1440] as const;
+const WIDTHS = [480, 600, 640, 720, 899, 960, 1440] as const;
+
+/** At this width and narrower the compact bar keeps only the Reference icon toggle (R15). */
+const NARROW_BAR_MAX = 560;
 
 /** The compact widths. */
 const COMPACT_WIDTHS = WIDTHS.filter(width => width < 900);
@@ -31,12 +37,6 @@ const MENU_ROWS = [
   { action: "density", label: "Density", key: undefined },
   { action: "theme", label: "Theme", key: undefined }
 ] as const;
-
-/** The refused Hot reload POST: the bin answers 409 and the browser logs the response. */
-const HMR_REFUSED: readonly RegExp[] = [
-  /\/__editor\/hmr$/,
-  /the server responded with a status of 409/
-];
 
 /** One direct child of the top bar, measured in the page. */
 type BarItem = {
@@ -162,6 +162,31 @@ function menuRow(page: Page, action: string) {
   return moreMenu(page).locator(`[data-action="${action}"]`);
 }
 
+/**
+ * Expects Pause and Step of the compact bar to show their icon only (R15): no visible label text,
+ * the label still their accessible name.
+ *
+ * @param page - The tools page.
+ * @param width - The window width, for the messages.
+ */
+async function expectIconButtons(page: Page, width: number): Promise<void> {
+  for (const [action, name] of [
+    ["pause", "Pause"],
+    ["step", "Step 1 frame"]
+  ] as const) {
+    const button = topBar(page).locator(`:scope > [data-action=${action}]`);
+    await expect(button.locator("svg")).toHaveCount(1);
+    const shown = await button.evaluate(element =>
+      [...element.querySelectorAll("span")]
+        .filter(span => span.checkVisibility() && span.dataset.srOnly === undefined)
+        .map(span => span.textContent)
+        .join("")
+    );
+    expect(shown, `${action} label at ${width} px`).toBe("");
+    await expect(topBar(page).getByRole("button", { name, exact: true })).toBeVisible();
+  }
+}
+
 test.describe("top bar · round 2", () => {
   test.beforeEach(({ browserName }, testInfo) => {
     test.skip(
@@ -170,7 +195,7 @@ test.describe("top bar · round 2", () => {
     );
   });
 
-  test("480 / 640 / 720 / 960 / 1440: no two controls overlap, each is on screen and takes the pointer", async ({
+  test("480 / 600 / 640 / 720 / 899 / 960 / 1440: no two controls overlap, each is on screen and takes the pointer", async ({
     tools
   }) => {
     const page = tools.page;
@@ -187,6 +212,8 @@ test.describe("top bar · round 2", () => {
             "link-pill",
             "pause",
             "step",
+            "reference",
+            ...(width > NARROW_BAR_MAX ? ["hot-reload"] : []),
             "search",
             "more"
           ]
@@ -206,6 +233,8 @@ test.describe("top bar · round 2", () => {
             "theme"
           ];
       expect(names, `controls at ${width} px`).toEqual(expected);
+      // Compact: Pause and Step are icons; their labels stay the accessible names.
+      if (compact) await expectIconButtons(page, width);
       // The search never shrinks under its content: the wide box keeps 88 px, the icon 28.
       const search = await topBar(page).locator("[data-search]").boundingBox();
       expect(search?.width ?? 0, `search at ${width} px`).toBeGreaterThanOrEqual(compact ? 28 : 88);
@@ -223,14 +252,65 @@ test.describe("top bar · round 2", () => {
     const toolbar = page.locator("[data-workspace-host=game] [data-game=toolbar]");
     await expect(toolbar).toBeVisible();
     await expect(toolbar.locator("[data-part=overlay]")).toHaveCount(0);
-    await expect(toolbar.getByRole("switch")).toHaveText(["Safe area"]);
+    await expect(toolbar.getByRole("switch")).toHaveText(["Safe area", "Sound"]);
+  });
+
+  test("below 900 px the Reference and Hot reload icons act from the bar, and stay in the ⋯ menu", async ({
+    tools,
+    errors
+  }) => {
+    const page = tools.page;
+    for (const width of COMPACT_WIDTHS) {
+      await resize(tools, width);
+      await tools.show("game");
+      const bar = topBar(page);
+
+      // Reference mode: a target icon, aria-pressed, the key in its title.
+      const reference = bar.locator(":scope > [data-action=reference]");
+      await expect(reference).toBeVisible();
+      await expect(reference).toHaveAccessibleName("Reference mode");
+      await expect(reference).toHaveAttribute("title", /\(R\)/);
+      await expect(reference).toHaveAttribute("aria-pressed", "false");
+      await reference.click();
+      await expect(reference).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
+      // The ⋯ row mirrors it.
+      await openMore(page);
+      await expect(menuRow(page, "reference")).toHaveAttribute("aria-checked", "true");
+      await closeMore(page);
+      await reference.click();
+      await expect(reference).toHaveAttribute("aria-pressed", "false");
+      await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
+
+      // Hot reload: a bar icon with a dot while on, above 560 px; a ⋯ row always.
+      const hot = bar.locator(":scope > [data-action=hot-reload]");
+      if (width <= NARROW_BAR_MAX) {
+        await expect(hot).toHaveCount(0);
+      } else {
+        await expect(hot).toBeVisible();
+        await expect(hot).toHaveAccessibleName("Hot reload");
+        await expect(hot).toHaveAttribute("aria-pressed", "true");
+        await expect(hot.locator("[data-part=dot]")).toHaveCount(1);
+        // A click asks the bin, which keeps hot reload on and says how to change it; nothing is
+        // logged (R16: the refusal answers 200 with the state).
+        await hot.click();
+        await expect(lastToast(page)).toHaveText(
+          "Start the bin with --no-hmr to turn hot reload off"
+        );
+        await expect(hot).toHaveAttribute("aria-pressed", "true");
+        await expect(hot).toHaveAttribute("title", /--no-hmr/);
+      }
+      await openMore(page);
+      await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
+      await closeMore(page);
+    }
+    expect(errors.unexpected(), "no console error from the refused change").toEqual([]);
   });
 
   test("below 900 px the ⋯ menu holds every action, and each one works", async ({
     tools,
     errors
   }) => {
-    for (const pattern of HMR_REFUSED) errors.allow(pattern);
     const page = tools.page;
     const html = page.locator("html");
     const card = gameFrame(page).locator("[data-moku-editor-overlay]");
@@ -295,10 +375,12 @@ test.describe("top bar · round 2", () => {
 
       // Density cycles auto → compact → comfortable → auto.
       await expect(menuRow(page, "density").locator("[data-part=state]")).toHaveText("auto");
+      // Auto is compact below 820 px of window width.
+      const auto = width < 820 ? "compact" : "comfortable";
       for (const [value, applied] of [
         ["compact", "compact"],
         ["comfortable", "comfortable"],
-        ["auto", "compact"]
+        ["auto", auto]
       ] as const) {
         await openMore(page);
         await menuRow(page, "density").click();
@@ -384,13 +466,13 @@ test.describe("top bar · round 2", () => {
         /session s-[0-9a-f]{4}/
       );
     }
+    expect(errors.unexpected(), "no console error from the refused hot reload change").toEqual([]);
   });
 
   test("from 900 px the bar shows the labelled switches, Registry as an icon, and every action works", async ({
     tools,
     errors
   }) => {
-    for (const pattern of HMR_REFUSED) errors.allow(pattern);
     const page = tools.page;
     const bar = topBar(page);
     const html = page.locator("html");
@@ -453,6 +535,17 @@ test.describe("top bar · round 2", () => {
       await expect(preview).toHaveAttribute("aria-checked", String(!shown));
       await preview.click();
       await expect(preview).toHaveAttribute("aria-checked", String(shown));
+    }
+    expect(errors.unexpected(), "no console error from the refused hot reload change").toEqual([]);
+  });
+
+  test("the compact bar icons look right at 720 and 480 px (golden)", async ({ tools }) => {
+    const page = tools.page;
+    for (const width of [720, 480]) {
+      await resize(tools, width);
+      await expect(topBar(page)).toHaveScreenshot(`compact-bar-${width}.png`, {
+        mask: [page.locator("[data-ui=link-pill]"), topBar(page).locator("[data-game-name]")]
+      });
     }
   });
 });

@@ -1,10 +1,13 @@
 /**
  * @file The Game workspace (spec 13-gameView) in a real browser, on the frozen merge-game: the
- * device toolbar (the sixteen presets in their groups, Fold / Unfold of a foldable, orientation,
- * Fit and 100 %, safe-area bands, Reload), the dark-theme bezel and the rounded screen, the Shot
- * with its PNG on disk and the capture card, the Series popover, the recording view, Stop, the
+ * device toolbar (the twenty-one presets in their groups, Fold / Unfold of the Galaxy Z Fold 6 and
+ * the iPhone Duo, orientation, Fit with one scale for every phone and 100 %, safe-area bands, the
+ * Sound switch that needs `game.mute`, Reload), the dark-theme bezel and the rounded screen, the
+ * iPhone SE 3 home-button frame, the fresh viewer on the iPhone 18 Pro (round 2b R9-R11), the Shot
+ * with its PNG on disk and the compact capture card (R14), the Series popover, the recording view, Stop, the
  * files of a series and the contact sheet with stepping and Mark as bug, the element picker on the
- * game's real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device tab,
+ * game's real geometry (hover ring, click, Element tab, its Code section of R12, Show in render
+ * tree, Esc), the Device tab,
  * the style stepper that writes the source and reloads with state restored (D-07, through Bun hot
  * reload), the Overlay in game switch of the top bar (round 2 R1: the toolbar lost its own), and
  * driving the game itself: pause, step, resume, palette commands and real taps on the game canvas
@@ -15,7 +18,9 @@
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
  * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
- * tests remove or restore what they wrote, so a second run starts from the same files.
+ * tests remove or restore what they wrote, so a second run starts from the same files. The specs
+ * written for the iPhone 15 pin it (e2e/fixtures.ts `pinnedDevice`); the tests of the new default
+ * opt out.
  */
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -65,175 +70,70 @@ type Preset = {
 };
 
 /**
- * The sixteen device presets (round 2 R4) in display order: id, name, `<optgroup>`, portrait W × H
- * (a foldable's cover screen), safe top and bottom, kind. Android, foldable and tablet browsers
- * report no safe insets.
+ * One row of the preset table: id, name, group, portrait W × H (a foldable's cover screen), safe
+ * top and bottom, kind, and whether the values are estimates.
  */
-const PRESETS: readonly Preset[] = [
-  {
-    id: "iphone-se",
-    name: "iPhone SE 3",
-    group: "iPhone",
-    w: 375,
-    h: 667,
-    top: 20,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "iphone-15",
-    name: "iPhone 15",
-    group: "iPhone",
-    w: 393,
-    h: 852,
-    top: 59,
-    bottom: 34,
-    kind: "phone"
-  },
-  {
-    id: "iphone-15-pro-max",
-    name: "iPhone 15 Pro Max",
-    group: "iPhone",
-    w: 430,
-    h: 932,
-    top: 59,
-    bottom: 34,
-    kind: "phone"
-  },
-  {
-    id: "iphone-16-pro",
-    name: "iPhone 16 Pro",
-    group: "iPhone",
-    w: 402,
-    h: 874,
-    top: 62,
-    bottom: 34,
-    kind: "phone"
-  },
-  {
-    id: "iphone-16-pro-max",
-    name: "iPhone 16 Pro Max",
-    group: "iPhone",
-    w: 440,
-    h: 956,
-    top: 62,
-    bottom: 34,
-    kind: "phone"
-  },
-  {
-    id: "galaxy-s24",
-    name: "Galaxy S24",
-    group: "Android",
-    w: 360,
-    h: 780,
-    top: 0,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "galaxy-a55",
-    name: "Galaxy A55",
-    group: "Android",
-    w: 412,
-    h: 892,
-    top: 0,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "redmi-note-13",
-    name: "Redmi Note 13",
-    group: "Android",
-    w: 393,
-    h: 873,
-    top: 0,
-    bottom: 0,
-    kind: "phone",
-    approx: true
-  },
-  {
-    id: "pixel-8",
-    name: "Pixel 8",
-    group: "Android",
-    w: 412,
-    h: 915,
-    top: 0,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "xperia-1-v",
-    name: "Xperia 1 V 21:9",
-    group: "Android",
-    w: 411,
-    h: 960,
-    top: 0,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "galaxy-z-fold-6",
-    name: "Galaxy Z Fold 6",
-    group: "Foldable",
-    w: 369,
-    h: 905,
-    top: 0,
-    bottom: 0,
-    kind: "phone",
-    approx: true
-  },
-  {
-    id: "galaxy-z-flip-6",
-    name: "Galaxy Z Flip 6",
-    group: "Foldable",
-    w: 412,
-    h: 1005,
-    top: 0,
-    bottom: 0,
-    kind: "phone"
-  },
-  {
-    id: "pixel-9-pro-fold",
-    name: "Pixel 9 Pro Fold",
-    group: "Foldable",
-    w: 411,
-    h: 923,
-    top: 0,
-    bottom: 0,
-    kind: "phone",
-    approx: true
-  },
-  {
-    id: "ipad-mini",
-    name: "iPad mini 7",
-    group: "Tablet",
-    w: 744,
-    h: 1133,
-    top: 0,
-    bottom: 0,
-    kind: "tablet"
-  },
-  {
-    id: "ipad-air-11",
-    name: 'iPad Air 11"',
-    group: "Tablet",
-    w: 820,
-    h: 1180,
-    top: 0,
-    bottom: 0,
-    kind: "tablet"
-  },
-  {
-    id: "desktop",
-    name: "Desktop",
-    group: "Desktop",
-    w: 1440,
-    h: 900,
-    top: 0,
-    bottom: 0,
-    kind: "desktop"
-  }
+type PresetRow = readonly [
+  id: string,
+  name: string,
+  group: string,
+  w: number,
+  h: number,
+  top: number,
+  bottom: number,
+  kind: Preset["kind"],
+  approx?: true
 ];
+
+/**
+ * The twenty-one device presets (round 2 R4, round 2b R10) in display order. In the iPhone group
+ * the SE 3 and the iPhone 15 come first, then the current models; the 15 Pro Max, 16 Pro and
+ * 16 Pro Max stay at the end. Android, foldable and tablet browsers report no safe insets.
+ */
+const PRESET_ROWS: readonly PresetRow[] = [
+  ["iphone-se", "iPhone SE 3 · small, 2022", "iPhone", 375, 667, 20, 0, "phone"],
+  ["iphone-15", "iPhone 15", "iPhone", 393, 852, 59, 34, "phone"],
+  ["iphone-17e", "iPhone 17e", "iPhone", 390, 844, 47, 34, "phone", true],
+  ["iphone-air", "iPhone Air", "iPhone", 420, 912, 68, 34, "phone", true],
+  ["iphone-18-pro", "iPhone 18 Pro", "iPhone", 402, 874, 62, 34, "phone", true],
+  ["iphone-18-pro-max", "iPhone 18 Pro Max", "iPhone", 440, 956, 62, 34, "phone", true],
+  ["iphone-15-pro-max", "iPhone 15 Pro Max", "iPhone", 430, 932, 59, 34, "phone"],
+  ["iphone-16-pro", "iPhone 16 Pro", "iPhone", 402, 874, 62, 34, "phone"],
+  ["iphone-16-pro-max", "iPhone 16 Pro Max", "iPhone", 440, 956, 62, 34, "phone"],
+  ["galaxy-s24", "Galaxy S24", "Android", 360, 780, 0, 0, "phone"],
+  ["galaxy-a55", "Galaxy A55", "Android", 412, 892, 0, 0, "phone"],
+  ["redmi-note-13", "Redmi Note 13", "Android", 393, 873, 0, 0, "phone", true],
+  ["pixel-8", "Pixel 8", "Android", 412, 915, 0, 0, "phone"],
+  ["xperia-1-v", "Xperia 1 V 21:9", "Android", 411, 960, 0, 0, "phone"],
+  ["galaxy-z-fold-6", "Galaxy Z Fold 6", "Foldable", 369, 905, 0, 0, "phone", true],
+  ["galaxy-z-flip-6", "Galaxy Z Flip 6", "Foldable", 412, 1005, 0, 0, "phone"],
+  ["pixel-9-pro-fold", "Pixel 9 Pro Fold", "Foldable", 411, 923, 0, 0, "phone", true],
+  ["iphone-duo", "iPhone Duo", "Foldable", 466, 678, 0, 0, "phone", true],
+  ["ipad-mini", "iPad mini 7", "Tablet", 744, 1133, 0, 0, "tablet"],
+  ["ipad-air-11", 'iPad Air 11"', "Tablet", 820, 1180, 0, 0, "tablet"],
+  ["desktop", "Desktop", "Desktop", 1440, 900, 0, 0, "desktop"]
+];
+
+/** The presets of the table as objects. */
+const PRESETS: readonly Preset[] = PRESET_ROWS.map(
+  ([id, name, group, w, h, top, bottom, kind, approx]) => ({
+    id,
+    name,
+    group,
+    w,
+    h,
+    top,
+    bottom,
+    kind,
+    ...(approx === true ? { approx } : {})
+  })
+);
+
+/** The bezel of a modern phone on each side, in stage px (it does not scale with the screen). */
+const MODERN_BEZEL = 10;
+
+/** The bezel above and below the iPhone SE 3 screen (home-button frame), in stage px. */
+const HOME_BUTTON_BEZEL = 64;
 
 /** The `<optgroup>` labels of the device select, in display order. */
 const GROUPS = ["iPhone", "Android", "Foldable", "Tablet", "Desktop"] as const;
@@ -1073,6 +973,333 @@ test.describe("game · device toolbar", () => {
   });
 });
 
+/**
+ * The client box of a locator, after it has one.
+ *
+ * @param locator - The element.
+ * @returns The box.
+ */
+async function boxOf(
+  locator: Locator
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error("no box");
+  return box;
+}
+
+/**
+ * Chooses a preset and waits until the game page sees its size and the frame docks on the slot at
+ * the device aspect.
+ *
+ * @param page - The test page.
+ * @param id - The preset id.
+ * @param size - The screen the game should see.
+ * @param size.w - Its width.
+ * @param size.h - Its height.
+ */
+async function choosePreset(page: Page, id: string, size: { w: number; h: number }): Promise<void> {
+  await bar(page, "device").selectOption(id);
+  await expect(bar(page, "size")).toHaveText(`${size.w} × ${size.h}`);
+  await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(size.w);
+  await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(size.h);
+  await expect
+    .poll(async () => {
+      const slot = await game(page).locator("[data-part=slot]").boundingBox();
+      const frame = await iframe(page).boundingBox();
+      if (slot === null || frame === null) return false;
+      const aspect = Math.round((slot.width / slot.height) * 100);
+      return (
+        aspect === Math.round((size.w / size.h) * 100) &&
+        Math.abs(slot.width - frame.width) < 1 &&
+        Math.abs(slot.x - frame.x) < 1
+      );
+    })
+    .toBe(true);
+}
+
+/**
+ * The slot and bezel boxes of the shown preset and its Fit scale (slot height over device height).
+ *
+ * @param page - The test page.
+ * @param h - The device height in CSS px.
+ * @returns The boxes and the scale.
+ */
+async function stageOf(
+  page: Page,
+  h: number
+): Promise<{
+  slot: { width: number; height: number };
+  bezel: { width: number; height: number };
+  scale: number;
+}> {
+  const slot = await boxOf(game(page).locator("[data-part=slot]"));
+  const bezel = await boxOf(game(page).locator("[data-part=bezel]"));
+  return { slot, bezel, scale: slot.height / h };
+}
+
+test.describe("game · round 2b devices", () => {
+  test("Fit uses one scale for every phone: the SE 3 frame shows smaller than the 18 Pro Max", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const zoom = game(page).getByRole("radiogroup", { name: "Zoom" });
+    await expect(zoom.getByRole("radio", { name: "Fit" })).toHaveAttribute("aria-checked", "true");
+
+    await choosePreset(page, "iphone-se", { w: 375, h: 667 });
+    const se = await stageOf(page, 667);
+    await choosePreset(page, "iphone-18-pro-max", { w: 440, h: 956 });
+    const max = await stageOf(page, 956);
+    await choosePreset(page, "iphone-15", { w: 393, h: 852 });
+    const fifteen = await stageOf(page, 852);
+
+    // One scale: the screens keep their real proportion to each other.
+    expect(Math.abs(se.scale - max.scale), `${se.scale} vs ${max.scale}`).toBeLessThan(0.01);
+    expect(Math.abs(fifteen.scale - max.scale)).toBeLessThan(0.01);
+    expect(se.slot.height / max.slot.height).toBeCloseTo(667 / 956, 2);
+    // The frames: the SE adds 64 + 64 px of bezel, the 18 Pro Max 10 + 10, unscaled.
+    const k = max.scale;
+    expect(Math.abs(se.bezel.height - (667 * k + 2 * HOME_BUTTON_BEZEL))).toBeLessThan(2);
+    expect(Math.abs(max.bezel.height - (956 * k + 2 * MODERN_BEZEL))).toBeLessThan(2);
+    expect(se.bezel.height / max.bezel.height).toBeCloseTo(
+      (667 * k + 2 * HOME_BUTTON_BEZEL) / (956 * k + 2 * MODERN_BEZEL),
+      2
+    );
+    // Visibly smaller, and both frames inside the stage.
+    expect(se.bezel.height).toBeLessThan(max.bezel.height * 0.95);
+    expect(se.bezel.width).toBeLessThan(max.bezel.width);
+    const viewport = await boxOf(game(page).locator("[data-part=viewport]"));
+    expect(max.bezel.height).toBeLessThanOrEqual(viewport.height);
+
+    // 100 % stays one CSS px per device px.
+    await zoom.getByRole("radio", { name: "100 %" }).click();
+    await expect.poll(() => heightOf(game(page).locator("[data-part=slot]"))).toBeCloseTo(852, 0);
+  });
+
+  test("the iPhone SE 3 has the home-button frame: 64 px bezels, the round button, a square screen, no island", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const bezel = game(page).locator("[data-part=bezel]");
+    const button = bezel.locator("[data-part=home-button]");
+    const guides = overlay(page).locator("[data-part=guides]");
+    await expect(bezel).toHaveAttribute("data-frame", "modern");
+    await expect(button).toHaveCount(0);
+
+    await choosePreset(page, "iphone-se", { w: 375, h: 667 });
+    await expect(bezel).toHaveAttribute("data-frame", "home-button");
+    const look = await bezel.evaluate(element => {
+      const style = getComputedStyle(element);
+      const slot = element.querySelector("[data-part=slot]");
+      return {
+        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+        screenRadius: style.getPropertyValue("--screen-radius").trim(),
+        slotRadius:
+          slot === null ? -1 : Number.parseFloat(getComputedStyle(slot).borderTopLeftRadius)
+      };
+    });
+    expect(look.padding).toEqual(["64px", "10px", "64px", "10px"]);
+    expect(look.screenRadius).toBe("0px");
+    expect(look.slotRadius).toBe(0);
+    // The docked frame is clipped square too.
+    await expect
+      .poll(() =>
+        page.locator("[data-frame-box]").evaluate(element => getComputedStyle(element).clipPath)
+      )
+      .not.toMatch(/round [1-9]/);
+
+    // The home button: a 44 px ring in the middle of the bottom bezel, below the screen.
+    await expect(button).toHaveCount(1);
+    const ring = await boxOf(button);
+    const slot = await boxOf(game(page).locator("[data-part=slot]"));
+    const frame = await boxOf(bezel);
+    expect(Math.round(ring.width)).toBe(44);
+    expect(Math.round(ring.height)).toBe(44);
+    expect(ring.y).toBeGreaterThanOrEqual(slot.y + slot.height);
+    expect(ring.y + ring.height).toBeLessThanOrEqual(frame.y + frame.height);
+    expect(Math.abs(ring.x + ring.width / 2 - (frame.x + frame.width / 2))).toBeLessThan(1.5);
+    expect(await button.evaluate(element => getComputedStyle(element).borderRadius)).toBe("50%");
+    // No island, no home bar: the SE has a status bar and its button.
+    await expect(guides.locator("[data-part=island]")).toHaveCount(0);
+    await expect(guides.locator("[data-part=home]")).toHaveCount(0);
+
+    // Landscape turns the tall bezels to the sides, the button into the right one.
+    const orientation = game(page).getByRole("radiogroup", { name: "Orientation" });
+    await orientation.getByRole("radio", { name: "Landscape" }).click();
+    await expect(bar(page, "size")).toHaveText("667 × 375");
+    await expect
+      .poll(() => bezel.evaluate(element => getComputedStyle(element).paddingLeft))
+      .toBe("64px");
+    await expect
+      .poll(async () => {
+        const turned = await boxOf(button);
+        const screen = await boxOf(game(page).locator("[data-part=slot]"));
+        return turned.x >= screen.x + screen.width;
+      })
+      .toBe(true);
+    await orientation.getByRole("radio", { name: "Portrait" }).click();
+    await expect(bar(page, "size")).toHaveText("375 × 667");
+
+    // Back on the iPhone 15: the modern frame, its island.
+    await choosePreset(page, "iphone-15", { w: 393, h: 852 });
+    await expect(bezel).toHaveAttribute("data-frame", "modern");
+    await expect(button).toHaveCount(0);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(1);
+  });
+
+  test("the SE 3 frame looks like an SE (golden)", async ({ tools, errors }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    await choosePreset(page, "iphone-se", { w: 375, h: 667 });
+    await tools.settle();
+    await expect(game(page).locator("[data-part=bezel]")).toHaveScreenshot("se-frame.png", {
+      mask: [page.locator("[data-frame-box]"), overlay(page)]
+    });
+  });
+
+  test("the new presets: iPhone 17e, Air, 18 Pro, 18 Pro Max; the iPhone Duo unfolds landscape-wide, live", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const select = bar(page, "device");
+    await expect(select.locator('optgroup[label="iPhone"] option')).toHaveText([
+      "iPhone SE 3 · small, 2022",
+      "iPhone 15",
+      "iPhone 17e",
+      "iPhone Air",
+      "iPhone 18 Pro",
+      "iPhone 18 Pro Max",
+      "iPhone 15 Pro Max",
+      "iPhone 16 Pro",
+      "iPhone 16 Pro Max"
+    ]);
+    await choosePreset(page, "iphone-17e", { w: 390, h: 844 });
+    await choosePreset(page, "iphone-air", { w: 420, h: 912 });
+    await choosePreset(page, "iphone-18-pro", { w: 402, h: 874 });
+    await choosePreset(page, "iphone-18-pro-max", { w: 440, h: 956 });
+
+    // The iPhone Duo: a book, folded on its cover screen.
+    const fold = game(page).locator("[data-game=toolbar] [data-action=fold]");
+    await expect(select.locator('optgroup[label="Foldable"] option').last()).toHaveText(
+      "iPhone Duo"
+    );
+    await expect(select.locator('option[value="iphone-duo"]')).toHaveAttribute(
+      "title",
+      "466×678 · dpr 3 · approx: estimated values"
+    );
+    await choosePreset(page, "iphone-duo", { w: 466, h: 678 });
+    await expect(fold).toHaveText("Unfold");
+    await markGame(page);
+
+    // Unfold: the inner screen is wider than tall in portrait, and the game sees a resize.
+    await fold.click();
+    await expect(fold).toHaveText("Fold");
+    await expect(bar(page, "size")).toHaveText("890 × 626");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(890);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(626);
+    await expect(
+      game(page).getByRole("radiogroup", { name: "Orientation" }).getByRole("radio", {
+        name: "Portrait"
+      })
+    ).toHaveAttribute("aria-checked", "true");
+    await expect
+      .poll(async () => {
+        const slot = await game(page).locator("[data-part=slot]").boundingBox();
+        return slot === null ? 0 : Math.round((slot.width / slot.height) * 100);
+      })
+      .toBe(Math.round((890 / 626) * 100));
+    expect(await reloadState(page)).toBe("marked");
+
+    // Fold: back to the cover screen.
+    await fold.click();
+    await expect(fold).toHaveText("Unfold");
+    await expect(bar(page, "size")).toHaveText("466 × 678");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(466);
+    expect(await reloadState(page)).toBe("marked");
+  });
+
+  test("Sound needs game.mute: on game 0.1.0 the switch is dimmed with the hint, and neither a click nor M changes it", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    const sound = bar(page, "sound");
+    await expect(sound).toHaveRole("switch");
+    await expect(sound).toHaveText("Sound");
+    await expect(sound).toHaveAttribute("aria-disabled", "true");
+    await expect(sound).toHaveAttribute("title", "Needs @moku-labs/game with game.mute");
+    await expect(sound).toHaveAttribute("aria-checked", "true");
+    // The game lists no game.mute.
+    const commands = await gameFrame(page).evaluate(() => {
+      const registry = (
+        Reflect.get(globalThis, "editor") as {
+          registry: { manifest(): { commands: readonly { id: string }[] } };
+        }
+      ).registry;
+      return registry.manifest().commands.map(command => command.id);
+    });
+    expect(commands).not.toContain("game.mute");
+
+    const toasts = page.locator("[data-ui=toasts] [data-toast]");
+    const before = await toasts.count();
+    await sound.dispatchEvent("click");
+    await page.keyboard.press("m");
+    await page.waitForTimeout(300);
+    await expect(sound).toHaveAttribute("aria-checked", "true");
+    await expect(toasts).toHaveCount(before);
+    const stored = await page.evaluate(() => localStorage.getItem("moku-editor") ?? "{}");
+    expect(JSON.parse(stored).muted ?? false).toBe(false);
+  });
+});
+
+test.describe("game · the default device (round 2b R10)", () => {
+  test.use({ pinnedDevice: false });
+
+  test("a fresh viewer starts on the iPhone 18 Pro: 402 × 874 with its island, on the Device tab too", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    const select = bar(page, "device");
+    await expect(select).toHaveValue("iphone-18-pro");
+    await expect(bar(page, "size")).toHaveText("402 × 874");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(402);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(874);
+    await expect(select.locator("option:checked")).toHaveAttribute(
+      "title",
+      "402×874 · dpr 3 · approx: estimated values"
+    );
+    const bezel = game(page).locator("[data-part=bezel]");
+    await expect(bezel).toHaveAttribute("data-frame", "modern");
+    await expect(bezel).toHaveAttribute("data-kind", "phone");
+    const guides = overlay(page).locator("[data-part=guides]");
+    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 62px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 34px/);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(1);
+    // The screen radius 62 at the stage scale.
+    const frame = await boxOf(iframe(page));
+    const slotRadius = await game(page)
+      .locator("[data-part=slot]")
+      .evaluate(element => Number.parseFloat(getComputedStyle(element).borderTopLeftRadius));
+    expect(slotRadius).toBeCloseTo((62 * frame.width) / 402, 0);
+
+    await openSide(page);
+    await game(page).getByRole("tab", { name: "Device" }).click();
+    await expect(
+      game(page).locator("[data-part=devices] button").filter({ hasText: "iPhone 18 Pro" }).first()
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 test.describe("game · capture", () => {
   test("Shot writes a PNG under .moku/captures and shows the card", async ({ tools }) => {
     const page = tools.page;
@@ -1082,9 +1309,10 @@ test.describe("game · capture", () => {
     const card = page.locator("[data-game=card]");
     await expect(card).toBeVisible();
     await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
-    const shown = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    // The path line is cut in the middle; its title holds the whole path (round 2b R14).
+    const shown = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
     expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/);
-    await expect(card.locator("[data-part=meta]")).toHaveText(/^frame \d+ · iPhone 15 portrait$/);
+    await expect(card.locator("[data-part=meta]")).toHaveText(/^f\d+ · iPhone 15 portrait$/);
     await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png|^blob:/);
     await expect(toast(page)).toContainText("✓ Screenshot saved");
     await expect(toast(page)).toContainText(shown);
@@ -1097,8 +1325,8 @@ test.describe("game · capture", () => {
 
     // A second shot in the same minute gets a -2 suffix (one in the next minute a name of its own).
     await bar(page, "capture").click();
-    await expect(card.locator("[data-part=path]")).not.toHaveText(shown);
-    const second = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    await expect(card.locator("[data-part=path]")).not.toHaveAttribute("title", shown);
+    const second = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
     const sameMinute = second.startsWith(shown.replace("-main.png", ""));
     expect(second).toMatch(
       sameMinute
@@ -1133,6 +1361,88 @@ test.describe("game · capture", () => {
     await expect(card).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(card).toHaveCount(0);
+  });
+});
+
+/**
+ * How many lines a text element wraps to: the distinct tops of its text's client rects.
+ *
+ * @param locator - The element.
+ * @returns The line count, 0 without text.
+ */
+async function lineCount(locator: Locator): Promise<number> {
+  return locator.evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const tops = new Set([...range.getClientRects()].map(rect => Math.round(rect.top)));
+    return tops.size;
+  });
+}
+
+test.describe("game · capture card (round 2b R14)", () => {
+  test("the card is compact: one line each for the title, the path and the meta, at most 360 × 120 (the window less 24 at 480 px)", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "capture").click();
+    const card = page.locator("[data-game=card]");
+    await expect(card).toBeVisible();
+    const path = card.locator("[data-part=path]");
+    const full = (await path.getAttribute("title")) ?? "";
+    expect(full).toMatch(/^\.moku\/captures\/.+\.png$/);
+    // The shown path is the whole one, or cut in the middle with an ellipsis.
+    const shown = (await path.textContent()) ?? "";
+    expect(shown === full || (shown.includes("…") && shown.length < full.length)).toBe(true);
+
+    const box = await boxOf(card);
+    const width = page.viewportSize()?.width ?? 0;
+    expect(box.height).toBeLessThanOrEqual(120);
+    if (width <= 480) expect(Math.abs(box.width - (width - 24))).toBeLessThan(1.5);
+    else expect(box.width).toBeLessThanOrEqual(360);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+
+    // No wrapped words: each text line is one line, and the path stays under the title.
+    for (const part of ["saved", "path", "meta"]) {
+      expect(await lineCount(card.locator(`[data-part=${part}]`)), part).toBe(1);
+    }
+    const title = await boxOf(card.locator("[data-part=saved]"));
+    const pathBox = await boxOf(path);
+    expect(pathBox.y).toBeGreaterThanOrEqual(title.y + title.height - 0.5);
+    for (const button of await card.locator("[data-part=actions] button").all()) {
+      expect(await lineCount(button)).toBe(1);
+    }
+    // The thumbnail is 56 px wide, no taller than the card.
+    const thumb = await boxOf(card.locator("img"));
+    expect(Math.round(thumb.width)).toBe(56);
+    expect(thumb.height).toBeLessThanOrEqual(box.height);
+
+    // A plain shot: Copy link and Open, no Reference; Copy link puts `shot: <path>` there.
+    await expect(card.locator("[data-part=actions] button")).toHaveText(["Copy link", "Open"]);
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await card.getByRole("button", { name: "Copy link" }).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(`shot: ${full}`);
+    await expect(toast(page)).toContainText("✓ Link copied");
+  });
+
+  test("the card looks compact (golden)", async ({ tools }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "capture").click();
+    const card = page.locator("[data-game=card]");
+    await expect(card).toBeVisible();
+    await card.hover();
+    await tools.settle();
+    await expect(card).toHaveScreenshot("capture-card.png", {
+      mask: [
+        card.locator("img"),
+        card.locator("[data-part=path]"),
+        card.locator("[data-part=meta]")
+      ]
+    });
   });
 });
 
@@ -1414,9 +1724,16 @@ test.describe("game · element picker", () => {
     await tab.locator("[data-part=children] button", { hasText: /^play$/ }).click();
     await expect(tab.locator("[data-part=name]")).toHaveText("play");
 
-    // Pick another turns the picker on; Esc leaves it and keeps the selection.
+    // Pick another turns the picker on. The pick's capture card (round 2b R14) is the upper Esc
+    // layer while it shows: the first Esc closes it; then Esc leaves the picker and keeps the
+    // selection.
     await tab.getByRole("button", { name: "Pick another" }).click();
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+    const card = page.locator("[data-game=card]");
+    if (await card.isVisible()) {
+      await page.keyboard.press("Escape");
+      await expect(card).toHaveCount(0);
+    }
     await page.keyboard.press("Escape");
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
     await expect(overlay(page).locator("[data-part=picker]")).toHaveCount(0);
@@ -1427,6 +1744,84 @@ test.describe("game · element picker", () => {
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("i");
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the Code section: the JSX of Play and its style block, each with Open in Files", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await pickerOn(page);
+    const client = await toClient(page, await gameRect(page, "play"));
+    const at = await hoverFind(page, client, /^play · button/);
+    await page.mouse.click(at.x, at.y);
+    await openSide(page);
+    const tab = elementTab(page);
+    await expect(tab.locator("[data-part=name]")).toHaveText("play");
+
+    // The JSX: from the line of key="play" to the end of the element, highlighted with a gutter.
+    const code = tab.locator("section[data-part=code]");
+    await expect(code.locator("h4")).toHaveText("Code", { timeout: 20_000 });
+    const snippets = code.locator("[data-part=snippet]");
+    await expect(snippets).toHaveCount(2);
+    const jsx = snippets.first();
+    await expect(jsx.locator("header [data-part=title]")).toHaveText("JSX");
+    await expect(jsx.locator("header [data-part=where]")).toHaveText(
+      /^features\/home\/view\.tsx:\d+$/
+    );
+    const first = jsx.locator("[data-part=code-lines] > div").first();
+    await expect(first.locator("code")).toContainText('<button key="play"');
+    await expect(jsx.locator("[data-part=code-lines] > div").last()).toContainText("</button>");
+    const jsxLine = Number(
+      ((await jsx.locator("[data-part=where]").textContent()) ?? "").split(":")[1]
+    );
+    await expect(first).toHaveAttribute("data-line", String(jsxLine));
+    await expect(first.locator("[data-part=gutter]")).toHaveText(String(jsxLine));
+    // The highlighter tokenised it: more than one span in the first line.
+    expect(await first.locator("code span").count()).toBeGreaterThan(1);
+
+    // The style block it uses: the defineStyle of playButton, where the style card points.
+    const style = snippets.nth(1);
+    await expect(style.locator("header [data-part=title]")).toHaveText("Style · playButton");
+    const where = ((await style.locator("header [data-part=where]").textContent()) ?? "").trim();
+    expect(where).toMatch(new RegExp(String.raw`^${escapeRegExp(HOME_STYLES)}:\d+$`));
+    await expect(tab.locator("[data-part=style-card] [data-part=where]")).toHaveText(where);
+    await expect(style.locator("[data-part=code-lines] > div").first()).toContainText(
+      "export const playButton = defineStyle({"
+    );
+    await expect(style.locator("[data-part=code-lines]")).toContainText(
+      'nineSlice: "ui.button-green"'
+    );
+    await expect(code.locator("[data-action=show-all]")).toHaveCount(0);
+
+    // Open in Files opens the style file in Files.
+    await style.getByRole("button", { name: "Open in Files" }).click();
+    await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "files");
+    await expect(tools.host("files")).toContainText(HOME_STYLES.split("/").at(-1) ?? HOME_STYLES);
+  });
+
+  test("the Code section of an entity: a board cell names the projection that spawns it and its components", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await toBoard(page);
+    await pickerOn(page);
+    const slot = await toClient(page, await gameRect(page, "boardSlot"));
+    const middle = { x: slot.x + slot.w / 2, y: slot.y + slot.h / 2 };
+    await hoverUntil(page, middle, /^c1_1 · NineSliceSprite · \d+×\d+$/);
+    await page.mouse.click(middle.x, middle.y);
+    await openSide(page);
+    const tab = elementTab(page);
+    await expect(tab.locator("[data-part=name]")).toHaveText("c1_1");
+    const code = tab.locator("section[data-part=code]");
+    await expect(code.locator("h4")).toHaveText("Code", { timeout: 20_000 });
+    const spawn = code.locator("[data-part=spawn]");
+    await expect(spawn).toHaveText(/^Spawned by board\.cells · view\/projections\.ts:\d+$/, {
+      timeout: 20_000
+    });
+    await expect(code.locator("[data-part=components] > div").first()).toBeVisible();
+    await expect(code.locator("[data-part=snippet]")).toHaveCount(0);
   });
 
   test("Show in render tree reveals the picked element in Render", async ({ tools }) => {

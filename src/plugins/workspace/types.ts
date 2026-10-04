@@ -85,11 +85,15 @@ export type PreviewPrefs = { visible: boolean; size: PreviewSize; corner: Previe
 export type PreviewState = PreviewPrefs & { width: number; height: number };
 
 /**
- * The sixteen device presets (round 2 R4), in display order.
+ * The twenty-one device presets (round 2 R4, round 2b R10), in display order.
  */
 export type DevicePresetId =
   | "iphone-se"
   | "iphone-15"
+  | "iphone-17e"
+  | "iphone-air"
+  | "iphone-18-pro"
+  | "iphone-18-pro-max"
   | "iphone-15-pro-max"
   | "iphone-16-pro"
   | "iphone-16-pro-max"
@@ -101,6 +105,7 @@ export type DevicePresetId =
   | "galaxy-z-fold-6"
   | "galaxy-z-flip-6"
   | "pixel-9-pro-fold"
+  | "iphone-duo"
   | "ipad-mini"
   | "ipad-air-11"
   | "desktop";
@@ -143,6 +148,8 @@ export type Prefs = {
   theme: Theme;
   previews: Record<PreviewWorkspace, PreviewPrefs>;
   device: DeviceChoice;
+  /** Whether the game's sound is off (R11); gameView applies it with `game.mute`. */
+  muted: boolean;
 };
 
 /**
@@ -156,6 +163,8 @@ export type StoredPrefs = {
   density: DensityChoice;
   /** Whether taps in the docked game draw a ripple (on by default). */
   showTaps: boolean;
+  /** Whether the game's sound is off (sound on by default, R11). */
+  muted: boolean;
 };
 
 /**
@@ -512,7 +521,8 @@ export type WorkspaceApi = {
    * @returns The device choice.
    * @example
    * ```ts
-   * app.workspace.device(); // { preset: { id: "iphone-15", w: 393, h: 852, … }, orientation: "portrait", folded: true }
+   * // A fresh viewer.
+   * app.workspace.device(); // { preset: { id: "iphone-18-pro", w: 402, h: 874, … }, orientation: "portrait", folded: true }
    * ```
    */
   device(): DeviceChoice;
@@ -538,14 +548,15 @@ export type WorkspaceApi = {
   setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation; folded?: boolean }): void;
 
   /**
-   * The sixteen presets in display order: iPhone, Android, Foldable, Tablet, Desktop.
+   * The twenty-one presets in display order: iPhone, Android, Foldable, Tablet, Desktop. Each
+   * carries its `frame` (R9): only the iPhone SE 3 has the home-button frame.
    *
    * @returns The DeviceSpec list.
    * @example
    * ```ts
    * // gameView lists the presets of each group under its own <optgroup>.
    * app.workspace.devices().filter(device => device.group === "foldable").map(device => device.id);
-   * // ["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold"]
+   * // ["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold", "iphone-duo"]
    * ```
    */
   devices(): readonly DeviceSpec[];
@@ -790,8 +801,37 @@ export type WorkspaceApi = {
   setHotReload(on: boolean): Promise<boolean>;
 
   /**
-   * Listens to preference changes (theme, preview, device). A throwing listener is logged and
-   * does not stop the others.
+   * The sound flag of the game (R11): true while the viewer muted it. Kept in the preferences,
+   * so it survives a reload of the tools page; false for a fresh viewer.
+   *
+   * @returns Whether the game's sound is off.
+   * @example
+   * ```ts
+   * // gameView mutes the game again after it connects.
+   * const workspace = ctx.require(workspacePlugin);
+   * if (workspace.muted()) await ctx.require(panelsPlugin).run("game.mute", { muted: true });
+   * ```
+   */
+  muted(): boolean;
+
+  /**
+   * Sets the sound flag and persists it; `onPrefs` listeners get the new `muted`. The same value
+   * again changes nothing and calls no listener. The game is not touched here: gameView sends
+   * `game.mute`.
+   *
+   * @param on - True to mute the game, false to give it its sound back.
+   * @example
+   * ```ts
+   * // gameView's Sound switch.
+   * app.workspace.setMuted(true);
+   * app.workspace.muted(); // true; onPrefs listeners got { …, muted: true }
+   * ```
+   */
+  setMuted(on: boolean): void;
+
+  /**
+   * Listens to preference changes (theme, preview, device, sound). A throwing listener is logged
+   * and does not stop the others.
    *
    * @param fn - The listener.
    * @returns Removes it.
@@ -912,6 +952,8 @@ export type WorkspaceState = {
   reference: boolean;
   /** Whether taps draw a ripple in the docked frame (persisted). */
   showTaps: boolean;
+  /** Whether the game's sound is off (persisted, R11). */
+  muted: boolean;
   /** The tap ripples alive in the overlay, oldest first (at most 8). */
   taps: TapRipple[];
   link: LinkStatus;

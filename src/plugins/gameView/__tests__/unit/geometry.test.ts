@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DEVICES, presetOf, resolveDevice } from "../../../workspace/devices";
+import type { DeviceSpec } from "../../../registry/protocol";
+import { DEVICES, presetOf, resolveDevice, screenOf } from "../../../workspace/devices";
 import {
+  bezelOf,
   drawerCover,
   fitScale,
+  frameOf,
   hasHomeBar,
   hasIsland,
+  kindScale,
   safeBands,
   slotSize
 } from "../../stage/geometry";
@@ -40,6 +44,99 @@ describe("fitScale", () => {
         expect(k).toBeGreaterThan(0);
         expect(k).toBeLessThanOrEqual(1);
       }
+    }
+  });
+});
+
+/** The iPhone SE 3 with its home-button frame (round 2b R9). */
+const SE_HOME: DeviceSpec = { ...presetOf("iphone-se"), frame: "home-button" as const };
+
+/** The phones of the list, with the SE in its home-button frame. */
+const PHONES: readonly DeviceSpec[] = DEVICES.map(device =>
+  device.id === "iphone-se" ? SE_HOME : device
+);
+
+describe("frameOf and bezelOf (round 2b R9)", () => {
+  it("reads the frame, modern by default", () => {
+    expect(frameOf(SE_HOME)).toBe("home-button");
+    expect(frameOf(presetOf("iphone-15"))).toBe("modern");
+  });
+
+  it("is 10 px all round for a modern phone or a tablet, nothing for the desktop", () => {
+    const modern = { top: 10, right: 10, bottom: 10, left: 10 };
+    expect(bezelOf(presetOf("iphone-15"), "portrait")).toEqual(modern);
+    expect(bezelOf(presetOf("ipad-mini"), "landscape")).toEqual(modern);
+    expect(bezelOf(presetOf("desktop"), "portrait")).toEqual({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0
+    });
+  });
+
+  it("is 64 px above and below a home-button screen, 10 at the sides; turned in landscape", () => {
+    expect(bezelOf(SE_HOME, "portrait")).toEqual({ top: 64, right: 10, bottom: 64, left: 10 });
+    expect(bezelOf(SE_HOME, "landscape")).toEqual({ top: 10, right: 64, bottom: 10, left: 64 });
+  });
+});
+
+describe("fitScale with a bezel (round 2b R9)", () => {
+  it("leaves room for the home-button bezel: pad 6 + 64 + 64 in height", () => {
+    const se = resolveDevice(SE_HOME, "portrait");
+    expect(fitScale(STAGE, se, false, bezelOf(SE_HOME, "portrait"))).toBeCloseTo(
+      (800 - 56 - 6 - 128) / 667,
+      6
+    );
+  });
+});
+
+describe("kindScale (round 2b R9)", () => {
+  const stage = { w: 1200, h: 900 };
+
+  it("gives every phone the scale of the tallest phone with its bezel", () => {
+    // The tallest modern phone binds: k·h + 10 + 10 ≤ 900 − 56 − 6.
+    const modern = PHONES.filter(p => p.kind === "phone" && frameOf(p) === "modern");
+    const expected = (900 - 56 - 26) / Math.max(...modern.map(p => p.h));
+    const se = kindScale(stage, PHONES, SE_HOME, "portrait");
+    const proMax = kindScale(stage, PHONES, presetOf("iphone-15-pro-max"), "portrait");
+    expect(se).toBeCloseTo(expected, 6);
+    expect(proMax).toBe(se);
+  });
+
+  it("shows an SE visibly smaller than a Pro Max at that scale", () => {
+    const scale = kindScale(stage, PHONES, SE_HOME, "portrait");
+    const se = slotSize(resolveDevice(SE_HOME, "portrait"), scale);
+    const proMax = slotSize(resolveDevice(presetOf("iphone-15-pro-max"), "portrait"), scale);
+    expect(se.h).toBeLessThan(proMax.h * 0.75);
+  });
+
+  it("gives the foldables the phone scale, tablets and the desktop their own", () => {
+    const phone = kindScale(stage, PHONES, presetOf("iphone-15"), "portrait");
+    expect(kindScale(stage, PHONES, presetOf("galaxy-z-fold-6"), "portrait")).toBe(phone);
+    const tablet = kindScale(stage, PHONES, presetOf("ipad-mini"), "portrait");
+    expect(tablet).toBeCloseTo((900 - 56 - 26) / 1180, 6);
+    expect(kindScale(stage, PHONES, presetOf("ipad-air-11"), "portrait")).toBe(tablet);
+    expect(kindScale(stage, PHONES, presetOf("desktop"), "portrait")).toBeCloseTo(
+      (1200 - 56 - 32) / 1440,
+      6
+    );
+  });
+
+  it("still fits a screen the list does not hold, like an unfolded inner screen", () => {
+    const narrow = { w: 700, h: 900 };
+    const inner = screenOf(presetOf("pixel-9-pro-fold"), false);
+    const scale = kindScale(narrow, PHONES, inner, "portrait");
+    expect(scale).toBeCloseTo((700 - 56 - 26) / 791, 6);
+    expect(inner.w * scale).toBeLessThanOrEqual(700 - 56 - 26 + 1e-9);
+  });
+
+  it("fits every phone of the list at the shared scale in landscape too", () => {
+    const scale = kindScale(stage, PHONES, presetOf("iphone-15"), "landscape");
+    for (const preset of PHONES.filter(p => p.kind === "phone")) {
+      const size = resolveDevice(preset, "landscape");
+      const bezel = bezelOf(preset, "landscape");
+      expect(size.w * scale + bezel.left + bezel.right).toBeLessThanOrEqual(1200 - 56 - 6 + 1e-9);
+      expect(size.h * scale + bezel.top + bezel.bottom).toBeLessThanOrEqual(900 - 56 - 6 + 1e-9);
     }
   });
 });
@@ -88,6 +185,12 @@ describe("dynamic island and home bar", () => {
     expect(hasHomeBar("phone", 16)).toBe(true);
     expect(hasHomeBar("phone", 0)).toBe(false);
     expect(hasHomeBar("desktop", 34)).toBe(false);
+  });
+
+  it("neither on a home-button phone (round 2b R9)", () => {
+    expect(hasIsland("phone", 59, "home-button")).toBe(false);
+    expect(hasHomeBar("phone", 34, "home-button")).toBe(false);
+    expect(hasIsland("phone", 59, "modern")).toBe(true);
   });
 });
 

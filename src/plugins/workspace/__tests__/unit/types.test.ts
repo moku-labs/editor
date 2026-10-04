@@ -10,6 +10,7 @@ import type {
   DeviceChoice,
   DevicePresetId,
   GameFrame,
+  Prefs,
   PreviewState,
   RanEvent,
   ReloadResult,
@@ -43,16 +44,29 @@ describe("workspace types", () => {
     expectTypeOf(app.workspace.device().folded).toEqualTypeOf<boolean>();
     expectTypeOf(app.workspace.hotReload()).toEqualTypeOf<HotReload | undefined>();
     expectTypeOf(app.workspace.setHotReload).returns.toEqualTypeOf<Promise<boolean>>();
+    expectTypeOf(app.workspace.muted()).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.setMuted).parameter(0).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.setMuted).returns.toEqualTypeOf<void>();
+    expectTypeOf<Prefs["muted"]>().toEqualTypeOf<boolean>();
     expect(typeof app.workspace.mount).toBe("function");
   });
 
-  it("DeviceSpec carries dpr, radius and group on every preset; the ids are the sixteen presets", () => {
+  it("DeviceSpec carries dpr, radius, group and frame on every preset; the ids are the twenty-one presets", () => {
     expectTypeOf<DeviceSpec["dpr"]>().toEqualTypeOf<number>();
+    expectTypeOf<DeviceSpec["frame"]>().toEqualTypeOf<"modern" | "home-button">();
     expectTypeOf<DeviceSpec["radius"]>().toEqualTypeOf<number>();
     expectTypeOf<DeviceSpec["group"]>().toEqualTypeOf<
       "iphone" | "android" | "foldable" | "tablet" | "desktop"
     >();
     const fold: DevicePresetId = "galaxy-z-fold-6";
+    const current: DevicePresetId[] = [
+      "iphone-17e",
+      "iphone-air",
+      "iphone-18-pro",
+      "iphone-18-pro-max",
+      "iphone-duo"
+    ];
+    expect(current).toHaveLength(5);
     // @ts-expect-error — not a preset id
     const unknown: DevicePresetId = "nokia";
     expect([fold, unknown]).toHaveLength(2);

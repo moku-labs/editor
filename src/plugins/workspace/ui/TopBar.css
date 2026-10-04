@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar; under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: logo, game name, link pill, Pause, Step, a 28 px search icon and the ⋯ button; under 560 px (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar; under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: logo, game name, link pill, Pause and Step as icons, the Reference and Hot reload icon toggles (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too and TopBar leaves out the Hot reload toggle (it stays a ⋯ row). Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -92,33 +92,44 @@
     padding: 0 6px;
   }
 
+  /* The Hot reload icon toggle carries a dot while hot reload is on. */
+  [data-variant="ghost"][data-action="hot-reload"] {
+    position: relative;
+  }
+
+  [data-action="hot-reload"] > [data-part="dot"] {
+    position: absolute;
+    top: 5px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 1.5px var(--surface-panel);
+  }
+
   [data-action="reference"][aria-pressed="true"],
   [data-action="more"][aria-expanded="true"] {
     background: var(--accent-soft);
     color: var(--accent-ink);
   }
 
-  /* Compact bar: the search is a fixed icon button that pushes itself and ⋯ to the end; Pause and Step show their icons only. */
+  /* Compact bar: the Reference toggle pushes itself, Hot reload, the search icon and ⋯ to the end; the search is a fixed icon button. Pause and Step render their label as the accessible name only (TopBar). */
+  :scope[data-layout="compact"] > [data-action="reference"] {
+    margin-inline-start: auto;
+  }
+
   :scope[data-layout="compact"] [data-search] {
     flex: none;
     justify-content: center;
     width: 28px;
     min-width: 28px;
-    margin: 0 0 0 auto;
+    margin: 0;
     padding: 0;
   }
 
   :scope[data-layout="compact"] > [data-variant="ghost"] {
     padding: 0 7px;
-  }
-
-  :scope[data-layout="compact"] > [data-variant="ghost"] > span:not([data-sr-only]) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   :scope[data-layout="compact"] [data-game-name] {

@@ -149,8 +149,8 @@ describe("setHotReload", () => {
     expect(call?.init?.credentials).toBe("same-origin");
   });
 
-  it("answers false on 409 and takes the state the server answered", async () => {
-    stubFetch(Response.json({ hmr: true, owner: "bin" }, { status: 409 }));
+  it("answers false on a 200 whose state differs from the asked value, and takes that state", async () => {
+    stubFetch(Response.json({ hmr: true, owner: "bin" }));
     const listener = vi.fn();
     addHotReloadListener(ctx, listener);
 
@@ -158,6 +158,16 @@ describe("setHotReload", () => {
 
     expect(createLinkApi(ctx).hotReload()).toEqual({ hmr: true, owner: "bin" });
     expect(listener).toHaveBeenCalledWith({ hmr: true, owner: "bin" });
+  });
+
+  it("answers false on a non-ok answer, even when its state matches", async () => {
+    stubFetch(Response.json({ hmr: false, owner: "bin" }, { status: 401 }));
+    await expect(requestHotReload(ctx, false)).resolves.toBe(false);
+  });
+
+  it("answers false on a 200 without a readable state", async () => {
+    stubFetch(new Response("nope"));
+    await expect(requestHotReload(ctx, true)).resolves.toBe(false);
   });
 
   it("answers false without a boot, without calling fetch", async () => {

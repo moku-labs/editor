@@ -23,7 +23,8 @@ describe("createWorkspaceState", () => {
     expect(state.active).toBe("files");
     expect(state.theme).toEqual({ chosen: undefined, os: "light" });
     expect(state.previews.console).toEqual({ visible: true, size: "S", corner: "bottom-right" });
-    expect(state.device).toEqual({ preset: "iphone-15", orientation: "portrait" });
+    expect(state.device).toEqual({ preset: "iphone-18-pro", orientation: "portrait" });
+    expect(state.muted).toBe(false);
     expect(state.overlayInGame).toBe(false);
     expect(state.reference).toBe(false);
     expect(state.showTaps).toBe(true);

@@ -1,7 +1,8 @@
 /**
  * @file gameView plugin — the device toolbar (A2): picker, device select grouped by kind (iPhone,
  * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
- * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, Reload, camera,
+ * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
+ * (`game.mute`, dimmed with a tooltip without it, round 2b R11), Reload, camera,
  * Series (red with the time while recording) and, while the Element panel is closed, its reopen
  * button. Camera and Series are dimmed with a tooltip when the game lacks their command. The
  * overlay-in-game switch lives in the top bar (round 2 R1).
@@ -19,6 +20,7 @@ import { GAME_COMMANDS, NO_CAPTURE_TEXT } from "../commands";
 import { setPicker } from "../element/select";
 import { missingCommand } from "../palette";
 import { SIDE_PANEL, SIDE_TITLE } from "../side";
+import { canMute, NO_MUTE_TEXT, setSound } from "../sound";
 import { foldDevice } from "../stage/fold";
 import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
@@ -184,7 +186,35 @@ function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
 }
 
 /**
- * The zoom segment, the safe-area switch (off for the desktop) and Reload.
+ * The Sound switch (round 2b R11): on while the game has its sound; dimmed with a tooltip when
+ * the game has no `game.mute`.
+ *
+ * @param props - The gameView domain context.
+ * @param props.ctx - Domain context of gameView.
+ * @returns The switch.
+ */
+function SoundSwitch(props: { readonly ctx: GameViewCtx }): VNode {
+  const { ctx } = props;
+  const muted = ctx.require(workspacePlugin).muted();
+  const off = !canMute(ctx);
+  return (
+    <button
+      type="button"
+      role="switch"
+      data-switch=""
+      data-part="sound"
+      aria-checked={!muted}
+      {...dimmed(off && NO_MUTE_TEXT, "Sound on or off · M")}
+      onClick={off ? undefined : () => void setSound(ctx)}
+    >
+      <span data-track="" />
+      Sound
+    </button>
+  );
+}
+
+/**
+ * The zoom segment, the safe-area switch (off for the desktop), the Sound switch and Reload.
  *
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
@@ -217,6 +247,7 @@ function ViewControls(props: { readonly ctx: GameViewCtx }): VNode {
         <span data-track="" />
         Safe area
       </button>
+      <SoundSwitch ctx={ctx} />
       <button type="button" data-part="reload" onClick={() => reloadGame(ctx, false)}>
         Reload
       </button>

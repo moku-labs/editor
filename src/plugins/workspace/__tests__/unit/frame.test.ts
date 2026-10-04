@@ -32,6 +32,8 @@ function boxElement(): HTMLElement {
 
 beforeEach(() => {
   ctx = createCtx({ defaultWorkspace: "flow" });
+  // The geometry below is the iPhone 15's (393×852, radius 55), not the default device's.
+  ctx.state.device = { preset: "iphone-15", orientation: "portrait" };
   frame = createGameFrame(ctx);
 });
 

@@ -7,9 +7,11 @@
  * theme toggle.
  *
  * Below 900 px (`data-layout="compact"`): logo, game name, link pill (the session id in its title;
- * it opens the session menu), Pause/Resume, Step, the search icon and the ⋯ menu holding the rest.
- * Under 560 px the game name hides too (TopBar.css). Controls that cannot act now are
- * `aria-disabled` so their tooltip still explains why.
+ * it opens the session menu), Pause/Resume and Step as icons (the label is their accessible name),
+ * the Reference mode (R) and Hot reload (H) icon toggles (round 2b R15), the search icon and the ⋯
+ * menu holding the rest; the two toggles stay in the menu too. At 560 px and narrower only the
+ * Reference toggle stays in the bar and the game name hides (TopBar.css). Controls that cannot act
+ * now are `aria-disabled` so their tooltip still explains why.
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
@@ -29,7 +31,7 @@ import {
   registryTitle,
   type ToggleControl
 } from "./controls";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { LinkPill } from "./LinkPill";
 import { MoreMenu } from "./MoreMenu";
 import { RegistryPopover } from "./RegistryPopover";
@@ -51,6 +53,35 @@ export type TopBarProps = { readonly ctx: WorkspaceCtx };
  * ```
  */
 export const COMPACT_BAR_BELOW = 900;
+
+/**
+ * At this window width and narrower the compact bar keeps only the Reference toggle; Hot reload
+ * is a ⋯ row then (R15), in px. TopBar.css hides the game name from the same width.
+ *
+ * @example
+ * ```ts
+ * barToggles(NARROW_BAR_MAX); // ["reference"]
+ * ```
+ */
+export const NARROW_BAR_MAX = 560;
+
+/**
+ * The icon toggles the compact bar shows before the search (R15): Reference mode and Hot reload,
+ * only Reference at 560 px and narrower, none in the wide bar (it has its own switches).
+ *
+ * @param width - The window width in CSS px.
+ * @returns The data-action names, in bar order.
+ * @example
+ * ```ts
+ * barToggles(720); // ["reference", "hot-reload"]
+ * barToggles(480); // ["reference"]
+ * barToggles(960); // []
+ * ```
+ */
+export function barToggles(width: number): readonly ("reference" | "hot-reload")[] {
+  if (barLayout(width) === "wide") return [];
+  return width <= NARROW_BAR_MAX ? ["reference"] : ["reference", "hot-reload"];
+}
 
 /**
  * The top-bar layout of a window width.
@@ -143,6 +174,73 @@ function SearchButton(props: { readonly ctx: WorkspaceCtx; readonly compact: boo
 }
 
 /**
+ * The text of a ghost button: visible in the wide bar, only the accessible name in the compact
+ * one, where the button shows its icon.
+ *
+ * @param props - The text and the layout.
+ * @param props.text - The label.
+ * @param props.compact - Whether the bar is compact.
+ * @returns The label span.
+ */
+function ButtonLabel(props: { readonly text: string; readonly compact: boolean }): VNode {
+  return props.compact ? <span data-sr-only>{props.text}</span> : <span>{props.text}</span>;
+}
+
+/**
+ * A toggle as an icon button: `aria-pressed` carries its state, the label is its accessible
+ * name, the title names its key and, when it cannot act, why.
+ *
+ * @param props - The control, its icon and whether a dot marks it on.
+ * @param props.control - What the button shows and does.
+ * @param props.icon - The icon.
+ * @param props.dot - Whether a dot shows while it is on (Hot reload).
+ * @returns The button.
+ */
+function IconToggle(props: {
+  readonly control: ToggleControl;
+  readonly icon: IconName;
+  readonly dot?: boolean;
+}): VNode {
+  const { control } = props;
+  return (
+    <BarButton
+      name={control.name}
+      title={control.title}
+      pressed={control.checked}
+      disabled={control.disabled}
+      onClick={control.toggle}
+    >
+      <Icon name={props.icon} />
+      {props.dot === true && control.checked && <span data-part="dot" aria-hidden="true" />}
+      <span data-sr-only>{control.label}</span>
+    </BarButton>
+  );
+}
+
+/**
+ * The icon toggles of the compact bar (R15), placed before the search.
+ *
+ * @param props - The workspace domain context and the window width.
+ * @param props.ctx - Domain context of workspace.
+ * @param props.width - The window width in CSS px.
+ * @returns The toggles.
+ */
+function CompactToggles(props: { readonly ctx: WorkspaceCtx; readonly width: number }): VNode {
+  const { ctx } = props;
+  const toggles = barToggles(props.width);
+  return (
+    <>
+      {toggles.includes("reference") && (
+        <IconToggle control={referenceControl(ctx)} icon="target" />
+      )}
+      {toggles.includes("hot-reload") && (
+        <IconToggle control={hotReloadControl(ctx)} icon="flame" dot />
+      )}
+    </>
+  );
+}
+
+/**
  * A toggle as a labelled switch of the wide bar.
  *
  * @param props - The control.
@@ -174,7 +272,6 @@ function WideControls(props: { readonly ctx: WorkspaceCtx }): VNode {
   const { ctx } = props;
   const { state } = ctx;
   const manifest = ctx.require(linkPlugin).manifest();
-  const reference = referenceControl(ctx);
   const nextTheme = effectiveTheme(state.theme) === "dark" ? "light" : "dark";
 
   return (
@@ -182,15 +279,7 @@ function WideControls(props: { readonly ctx: WorkspaceCtx }): VNode {
       <ControlSwitch control={previewControl(ctx)} />
       <ControlSwitch control={overlayControl(ctx)} />
       <ControlSwitch control={hotReloadControl(ctx)} />
-      <BarButton
-        name="reference"
-        title={reference.title}
-        pressed={reference.checked}
-        onClick={reference.toggle}
-      >
-        <Icon name="target" />
-        <span data-sr-only>Reference mode</span>
-      </BarButton>
+      <IconToggle control={referenceControl(ctx)} icon="target" />
       <BarButton
         name="registry"
         anchor="registry"
@@ -222,7 +311,8 @@ export function TopBar(props: TopBarProps): VNode {
   const { state } = ctx;
   useWorkspace(state.ui, () => state.ui.version);
   const manifest = ctx.require(linkPlugin).manifest();
-  const layout = barLayout(viewportWidth());
+  const width = viewportWidth();
+  const layout = barLayout(width);
   const compact = layout === "compact";
   const { kind } = state.link;
   const paused = kind === "paused";
@@ -243,7 +333,7 @@ export function TopBar(props: TopBarProps): VNode {
         onClick={() => togglePause(ctx, "topbar")}
       >
         <Icon name={paused ? "play" : "pause"} />
-        <span>{paused ? "Resume" : "Pause"}</span>
+        <ButtonLabel text={paused ? "Resume" : "Pause"} compact={compact} />
       </BarButton>
       <BarButton
         name="step"
@@ -253,8 +343,9 @@ export function TopBar(props: TopBarProps): VNode {
         onClick={() => stepOnce(ctx, "topbar")}
       >
         <Icon name="step" />
-        <span>Step 1 frame</span>
+        <ButtonLabel text="Step 1 frame" compact={compact} />
       </BarButton>
+      {compact && <CompactToggles ctx={ctx} width={width} />}
       <SearchButton ctx={ctx} compact={compact} />
       {compact ? <MoreMenu ctx={ctx} /> : <WideControls ctx={ctx} />}
       {compact && sessionsView(ctx).many && <SessionMenu ctx={ctx} />}

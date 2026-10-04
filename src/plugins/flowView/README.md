@@ -15,7 +15,8 @@ Clicking a node focuses it:
   current node inside (its key prefixes the current key, `main/board` for `main/board>board/…`),
   an expanded frame around it, or a node on the position stack. It gets the accent ring
   (`data-holds-current`) and a "here" tag, and the trail edge into it is drawn 2 px accent at full
-  strength (`data-here`);
+  strength (`data-here`). A collapsed card the current node sits inside is never `data-current`:
+  it holds the current node;
 - the Inspector (C1–C4) shows the node, in the `flow.inspector` side panel.
 
 The Info tab is the one place for the neighbours of a node (D-25). A click on a *Comes from* or
@@ -146,7 +147,7 @@ The Nodes group is replaced when the graph hash changes. The Styles group is rep
 | `\` | Collapse or expand the Inspector panel. |
 | `←` `→` / `↑` `↓` | With a selection: walk along a *Comes from* / *Outcomes* row; move the highlight through the Info tab rows (Outcomes, then Comes from). Not while the Inspector tabs, a resize handle, a menu or a select has focus. |
 | `alt+←` | Back to the selection before the last followed edge. |
-| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. A highlighted row wins over the focused card, so Enter after a walk follows the row. Other controls keep their own Enter. |
+| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. A highlighted row wins over the focused card, so Enter after a walk follows the row. Other controls keep their own Enter: a button inside a frame or card (the frame's Collapse) clicks by Enter. |
 | `mod+s` | Save the code edit, while editing. |
 | `tab` | Moves focus card to card. A card or the hub outside the canvas pans the camera onto it. Zoom and selection stay. |
 

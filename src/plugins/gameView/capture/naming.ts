@@ -1,6 +1,6 @@
 /**
  * @file gameView plugin — capture names (pure): the local minute stamp, screenshot paths, the two
- * files and the bookmark id of a pick, and series folders with `-2`, `-3` … on a collision,
+ * files, the card file (round 2b R13) and the bookmark id of a pick, and series folders with `-2`, `-3` … on a collision,
  * zero-padded shot names, and small readers of the values a capture needs (game.position, folder
  * of a path).
  */
@@ -115,6 +115,29 @@ export function pickPaths(
     crop: firstFree(`${capturesDir}/${safeName(name)}-f${frame}`, ".png", taken),
     full: firstFree(`${capturesDir}/f${frame}`, ".png", taken)
   };
+}
+
+/**
+ * The card file of a reference (round 2b R13): `<dir>/<name>-f<frame>.md`, with `-2`, `-3` …
+ * when taken.
+ *
+ * @param capturesDir - The captures folder.
+ * @param name - The ui key or name of the element (unsafe characters become "-").
+ * @param frame - The frame of the reference.
+ * @param taken - Paths already in the folder.
+ * @returns The card path.
+ * @example
+ * ```ts
+ * cardPath(".moku/captures", "settingsBoard", 25, new Set()); // ".moku/captures/settingsBoard-f25.md"
+ * ```
+ */
+export function cardPath(
+  capturesDir: string,
+  name: string,
+  frame: number,
+  taken: ReadonlySet<string>
+): string {
+  return firstFree(`${capturesDir}/${safeName(name)}-f${frame}`, ".md", taken);
 }
 
 /**

@@ -1,8 +1,8 @@
 /**
  * @file workspace plugin — preference changes (theme, preview per workspace, device and fold,
- * density, Show taps): apply to the state, persist to localStorage, tell the `onPrefs` listeners (theme,
- * preview and device only), re-render and re-dock the frame. Visibility changes of a preview toast
- * the workspace name.
+ * density, Show taps, sound): apply to the state, persist to localStorage, tell the `onPrefs`
+ * listeners (theme, preview, device and sound only), re-render and re-dock the frame. Visibility
+ * changes of a preview toast the workspace name.
  */
 import { ERROR_PREFIX } from "../../registry/protocol";
 import { DEVICES, deviceChoiceOf, isDevicePresetId } from "../devices";
@@ -36,13 +36,15 @@ export type PrefsCtx = Pick<WorkspaceCtx, "state" | "config" | "log">;
  * The preferences `onPrefs` listeners receive.
  *
  * @param state - Workspace state.
- * @returns Effective theme, a copy of the previews, the device choice (the screen in use).
+ * @returns Effective theme, a copy of the previews, the device choice (the screen in use) and
+ * the sound flag.
  */
 export function currentPrefs(state: WorkspaceState): Prefs {
   return {
     theme: effectiveTheme(state.theme),
     previews: structuredClone(state.previews),
-    device: deviceChoiceOf(state.device)
+    device: deviceChoiceOf(state.device),
+    muted: state.muted
   };
 }
 
@@ -60,7 +62,8 @@ export function persistPrefs(ctx: PrefsCtx): void {
       previews: state.previews,
       device: state.device,
       density: state.density.chosen,
-      showTaps: state.showTaps
+      showTaps: state.showTaps,
+      muted: state.muted
     },
     ctx.log
   );
@@ -149,6 +152,20 @@ export function chooseShowTaps(ctx: PrefsCtx, on: boolean): void {
   if (!on) clearTaps(ctx.state);
   persistPrefs(ctx);
   ctx.state.ui.bump();
+}
+
+/**
+ * Sets the sound flag (R11): persists it and tells the `onPrefs` listeners. The same value again
+ * does nothing.
+ *
+ * @param ctx - State, config and log.
+ * @param on - True to mute the game.
+ */
+export function chooseMuted(ctx: PrefsCtx, on: boolean): void {
+  if (ctx.state.muted === on) return;
+
+  ctx.state.muted = on;
+  commitPrefs(ctx);
 }
 
 /**

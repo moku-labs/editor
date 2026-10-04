@@ -1,11 +1,14 @@
 /**
- * @file gameView plugin — stage geometry (pure): the fit scale of the device in the stage, the
+ * @file gameView plugin — stage geometry (pure): the device frame and its bezel (round 2b R9),
+ * the fit scale of the device in the stage and the one scale every preset of a kind shares, the
  * slot size, the strip of the stage a floating drawer covers, the safe-area bands of a resolved
- * device, the dynamic island and home bar rules, and the inline position of a rect in device px. Sizes and insets come from workspace's
- * resolveDevice (R8); gameView has no rule of its own.
+ * device, the dynamic island and home bar rules, and the inline position of a rect in device px.
+ * Sizes and insets come from workspace's resolveDevice (R8); gameView has no rule of its own.
  */
 import type { PageRect } from "../../panels/shared/scene";
-import type { DeviceSize } from "../../workspace/types";
+import type { DeviceSpec } from "../../registry/protocol";
+import { resolveDevice } from "../../workspace/devices";
+import type { DeviceSize, Orientation } from "../../workspace/types";
 
 /**
  * Stage chrome around the device (toolbar gap and badges), in px.
@@ -13,14 +16,45 @@ import type { DeviceSize } from "../../workspace/types";
 const STAGE_CHROME = 56;
 
 /**
- * Padding around a phone or tablet.
+ * Room around a framed phone or tablet, beyond its bezel.
  */
-const DEVICE_PAD = 26;
+const DEVICE_MARGIN = 6;
 
 /**
  * Padding around the desktop preset.
  */
 const DESKTOP_PAD = 32;
+
+/**
+ * The bezel of a modern phone or a tablet: 10 px all round.
+ */
+const MODERN_BEZEL: Bezel = { top: 10, right: 10, bottom: 10, left: 10 };
+
+/**
+ * The bezel above and below a home-button screen (round 2b R9).
+ */
+const HOME_BUTTON_BEZEL = 64;
+
+/**
+ * No bezel: the desktop preset.
+ */
+const NO_BEZEL: Bezel = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * The frame drawn around a screen: a modern phone (thin bezel, island) or a phone with a home
+ * button (tall bezels above and below, a round button in the bottom one, square screen).
+ */
+export type DeviceFrame = DeviceSpec["frame"];
+
+/**
+ * The bezel around the screen slot, in stage px (not scaled with the screen).
+ */
+export type Bezel = {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+};
 
 /**
  * Smallest safeTop of a phone with a dynamic island.
@@ -41,14 +75,54 @@ export type SafeBand = {
 };
 
 /**
- * The fit scale `k = min(1, (stageW − 56 − pad) / W, (stageH − 56 − pad) / H)`, pad 32 for the
- * desktop and 26 otherwise; never below 0.
+ * The frame of a preset (`DeviceSpec.frame`): the home-button one, else modern.
+ *
+ * @param preset - The device preset.
+ * @returns The frame.
+ * @example
+ * ```ts
+ * frameOf(presetOf("iphone-15")); // "modern"
+ * ```
+ */
+export function frameOf(preset: DeviceSpec): DeviceFrame {
+  return preset.frame === "home-button" ? "home-button" : "modern";
+}
+
+/**
+ * The bezel of a preset in an orientation: nothing for the desktop, 10 px all round for a modern
+ * frame, 64 px above and below a home-button screen with 10 px at its sides. Landscape turns the
+ * home-button bezels to the left and the right.
+ *
+ * @param preset - The device preset.
+ * @param orientation - Portrait or landscape.
+ * @returns The bezel in stage px.
+ * @example
+ * ```ts
+ * bezelOf(presetOf("iphone-15"), "portrait"); // { top: 10, right: 10, bottom: 10, left: 10 }
+ * ```
+ */
+export function bezelOf(preset: DeviceSpec, orientation: Orientation): Bezel {
+  if (preset.kind === "desktop") return NO_BEZEL;
+  if (frameOf(preset) === "modern") return MODERN_BEZEL;
+
+  const side = MODERN_BEZEL.left;
+  const tall = HOME_BUTTON_BEZEL;
+  return orientation === "portrait"
+    ? { top: tall, right: side, bottom: tall, left: side }
+    : { top: side, right: tall, bottom: side, left: tall };
+}
+
+/**
+ * The fit scale `k = min(1, (stageW − 56 − padW) / W, (stageH − 56 − padH) / H)`: the pad is 32
+ * for the desktop, otherwise 6 plus the bezel on that axis (26 with the modern bezel); never
+ * below 0.
  *
  * @param stage - The stage size in px.
  * @param stage.w - Stage width.
  * @param stage.h - Stage height.
  * @param device - The resolved device (W×H).
  * @param desktop - True for the desktop preset.
+ * @param bezel - The bezel around the screen; the modern one by default.
  * @returns The scale.
  * @example
  * ```ts
@@ -58,15 +132,48 @@ export type SafeBand = {
 export function fitScale(
   stage: { readonly w: number; readonly h: number },
   device: DeviceSize,
-  desktop: boolean
+  desktop: boolean,
+  bezel: Bezel = MODERN_BEZEL
 ): number {
-  const pad = desktop ? DESKTOP_PAD : DEVICE_PAD;
+  const padW = desktop ? DESKTOP_PAD : DEVICE_MARGIN + bezel.left + bezel.right;
+  const padH = desktop ? DESKTOP_PAD : DEVICE_MARGIN + bezel.top + bezel.bottom;
   const scale = Math.min(
     1,
-    (stage.w - STAGE_CHROME - pad) / device.w,
-    (stage.h - STAGE_CHROME - pad) / device.h
+    (stage.w - STAGE_CHROME - padW) / device.w,
+    (stage.h - STAGE_CHROME - padH) / device.h
   );
   return Math.max(0, scale);
+}
+
+/**
+ * The one Fit scale of every preset of a kind (round 2b R9): the scale that fits the tallest of
+ * them, bezel included, so a small phone shows smaller than a big one. Foldables are phones;
+ * tablets and the desktop have their own. It is the smallest fit of the kind's presets and of the
+ * screen shown, so a screen the list does not hold (an unfolded inner screen) still fits.
+ *
+ * @param stage - The stage size in px.
+ * @param stage.w - Stage width.
+ * @param stage.h - Stage height.
+ * @param presets - Every preset (`workspace.devices()`).
+ * @param current - The screen shown (`workspace.device().preset`).
+ * @param orientation - The orientation.
+ * @returns The scale.
+ * @example
+ * ```ts
+ * kindScale({ w: 1200, h: 900 }, DEVICES, presetOf("iphone-se"), "portrait"); // ≈ 0.814, the Galaxy Z Flip 6's
+ * ```
+ */
+export function kindScale(
+  stage: { readonly w: number; readonly h: number },
+  presets: readonly DeviceSpec[],
+  current: DeviceSpec,
+  orientation: Orientation
+): number {
+  const desktop = current.kind === "desktop";
+  const scaleOf = (preset: DeviceSpec): number =>
+    fitScale(stage, resolveDevice(preset, orientation), desktop, bezelOf(preset, orientation));
+  const peers = presets.filter(preset => preset.kind === current.kind);
+  return Math.min(scaleOf(current), ...peers.map(preset => scaleOf(preset)));
 }
 
 /**
@@ -125,33 +232,45 @@ export function safeBands(device: DeviceSize): readonly SafeBand[] {
 }
 
 /**
- * True for a phone whose safeTop leaves room for a dynamic island (≥ 59).
+ * True for a modern phone whose safeTop leaves room for a dynamic island (≥ 59); a home-button
+ * phone has none.
  *
  * @param kind - The preset kind.
  * @param safeTop - The preset's safeTop.
+ * @param frame - The preset's frame; modern by default.
  * @returns Whether to draw the island.
  * @example
  * ```ts
  * hasIsland("phone", 59); // true
  * ```
  */
-export function hasIsland(kind: "phone" | "tablet" | "desktop", safeTop: number): boolean {
-  return kind === "phone" && safeTop >= ISLAND_SAFE_TOP;
+export function hasIsland(
+  kind: "phone" | "tablet" | "desktop",
+  safeTop: number,
+  frame: DeviceFrame = "modern"
+): boolean {
+  return kind === "phone" && frame === "modern" && safeTop >= ISLAND_SAFE_TOP;
 }
 
 /**
- * True for a phone whose safeBottom leaves room for a home bar (≥ 16).
+ * True for a modern phone whose safeBottom leaves room for a home bar (≥ 16); a home-button
+ * phone has its button instead.
  *
  * @param kind - The preset kind.
  * @param safeBottom - The preset's safeBottom.
+ * @param frame - The preset's frame; modern by default.
  * @returns Whether to draw the home bar.
  * @example
  * ```ts
  * hasHomeBar("phone", 34); // true
  * ```
  */
-export function hasHomeBar(kind: "phone" | "tablet" | "desktop", safeBottom: number): boolean {
-  return kind === "phone" && safeBottom >= HOME_BAR_SAFE_BOTTOM;
+export function hasHomeBar(
+  kind: "phone" | "tablet" | "desktop",
+  safeBottom: number,
+  frame: DeviceFrame = "modern"
+): boolean {
+  return kind === "phone" && frame === "modern" && safeBottom >= HOME_BAR_SAFE_BOTTOM;
 }
 
 /**

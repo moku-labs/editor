@@ -4,6 +4,13 @@
  * records console errors and warnings, uncaught exceptions, unhandled rejections and failed
  * responses on BOTH the tools page and the game frame, and fails the test on any entry the
  * allowlist does not name.
+ *
+ * `pinnedDevice` runs for every test too: a fresh browser context starts with the viewer
+ * preferences (localStorage `moku-editor`) holding that preset in portrait, so the specs written
+ * for the iPhone 15 keep their numbers after the default moved to the iPhone 18 Pro (round 2b
+ * R10). A spec of the new default opts out with `test.use({ pinnedDevice: false })` (Playwright
+ * reads `undefined` in `test.use` as "the default", so the opt-out is `false`). The pin only fills
+ * an empty record: a reload keeps what the test chose.
  */
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
@@ -27,6 +34,12 @@ export const GAME_NAME = "merge-game 0.0.0";
 
 /** The tools page path the bin serves. */
 export const TOOLS_PATH = "/__editor/";
+
+/** The localStorage key of the viewer preferences (workspace `storageKey`). */
+export const PREFS_KEY = "moku-editor";
+
+/** The preset the specs pin unless they opt out: the default before round 2b. */
+export const PINNED_DEVICE = "iphone-15";
 
 /**
  * Warnings of the game frame that are not defects of the editor: pixi probes WebGPU first and
@@ -128,6 +141,29 @@ async function recordErrors(page: Page): Promise<ErrorLog> {
 }
 
 /**
+ * Pins a device preset in every frame of the page before its scripts run: an empty preferences
+ * record becomes a version-1 record with that preset in portrait (every other field takes its
+ * default silently); a stored record is left as it is.
+ *
+ * @param page - The test page.
+ * @param preset - The preset id.
+ */
+async function pinDevice(page: Page, preset: string): Promise<void> {
+  await page.addInitScript(
+    ([key, id]) => {
+      try {
+        if (localStorage.getItem(key) !== null) return;
+        const record = { v: 1, previews: {}, device: { preset: id, orientation: "portrait" } };
+        localStorage.setItem(key, JSON.stringify(record));
+      } catch {
+        // A frame without storage keeps the defaults.
+      }
+    },
+    [PREFS_KEY, preset] as const
+  );
+}
+
+/**
  * Opens the tools page and waits for a live link with the merge-game manifest.
  *
  * @param page - The test page.
@@ -215,10 +251,28 @@ function driver(page: Page): Tools {
   };
 }
 
+/** The fixtures of the e2e test. */
+type Fixtures = {
+  /** The preset pinned before the page loads; false starts on the product default. */
+  pinnedDevice: string | false;
+  /** Applies `pinnedDevice` (automatic). */
+  devicePin: undefined;
+  errors: ErrorLog;
+  tools: Tools;
+};
+
 /**
- * The e2e test: `errors` is automatic, `tools` opens a live tools page.
+ * The e2e test: `errors` and the device pin are automatic, `tools` opens a live tools page.
  */
-export const test = base.extend<{ errors: ErrorLog; tools: Tools }>({
+export const test = base.extend<Fixtures>({
+  pinnedDevice: [PINNED_DEVICE, { option: true }],
+  devicePin: [
+    async ({ page, pinnedDevice }, use) => {
+      if (pinnedDevice !== false) await pinDevice(page, pinnedDevice);
+      await use(undefined);
+    },
+    { auto: true }
+  ],
   errors: [
     async ({ page }, use, testInfo) => {
       const log = await recordErrors(page);

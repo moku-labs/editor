@@ -100,6 +100,17 @@ describe("view data: items holding the current node (finding 7)", () => {
     });
   });
 
+  it("with the real locateCurrent, a collapsed card the position is inside holds it and is not current", async () => {
+    const { ctx, actions } = await collapsedBoard();
+    expect(actions.focus.locateCurrent()).toMatchObject({ inside: "main/board" });
+    const view = world(ctx, actions);
+    expect(view.cards.get("main/board")).toMatchObject({
+      holdsCurrent: true,
+      current: false,
+      dimmed: false
+    });
+  });
+
   it("an expanded frame holding the current node holds it; the root frame does not", async () => {
     const { ctx, actions } = await prepared();
     const view = world(ctx, actions);

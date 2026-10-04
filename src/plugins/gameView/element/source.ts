@@ -78,7 +78,7 @@ export type KeyStyle =
  * keyPattern("hudRow").test('<Row key="hudRow">'); // true
  * ```
  */
-function keyPattern(key: string): RegExp {
+export function keyPattern(key: string): RegExp {
   const escaped = key.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
   const quoted = `"${escaped}"`;
   return new RegExp(
@@ -213,14 +213,29 @@ function loopStem(key: string): string | undefined {
  * ```
  */
 export function matchLoopKey(text: string, key: string): number | undefined {
+  const pattern = loopKeyPattern(key);
+  if (pattern === undefined) return undefined;
+  const index = text.split("\n").findIndex(line => pattern.test(line));
+  return index === -1 ? undefined : index + 1;
+}
+
+/**
+ * The pattern of the template literal that builds a key in a loop: a backtick, the key's stem,
+ * then `${`.
+ *
+ * @param key - The ui key.
+ * @returns The pattern, undefined when the key has no loop form (no trailing digits after a stem).
+ * @example
+ * ```ts
+ * loopKeyPattern("card0")?.test("const id = `card${slot}`;"); // true
+ * ```
+ */
+export function loopKeyPattern(key: string): RegExp | undefined {
   const stem = loopStem(key);
   if (stem === undefined) return undefined;
 
   const escaped = stem.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
-  // A backtick, the stem, then `${`: the template literal that builds the key.
-  const pattern = new RegExp(`\`${escaped}\\$\\{`);
-  const index = text.split("\n").findIndex(line => pattern.test(line));
-  return index === -1 ? undefined : index + 1;
+  return new RegExp(`\`${escaped}\\$\\{`);
 }
 
 /**
@@ -311,7 +326,7 @@ async function listFolder(ctx: GameViewCtx, dir: string): Promise<readonly FileE
  * @param path - The file.
  * @returns Its text, or undefined.
  */
-async function readText(ctx: GameViewCtx, path: string): Promise<string | undefined> {
+export async function readText(ctx: GameViewCtx, path: string): Promise<string | undefined> {
   try {
     const file = await ctx.require(linkPlugin).files.read(path);
     return file.text;
@@ -349,7 +364,7 @@ function queueFolders(
  * @param ctx - Domain context of gameView.
  * @yields {string} The file paths in search order.
  */
-async function* sourceFiles(ctx: GameViewCtx): AsyncGenerator<string, void, undefined> {
+export async function* sourceFiles(ctx: GameViewCtx): AsyncGenerator<string, void, undefined> {
   const { maxFiles, skip } = ctx.config.sourceSearch;
   const entry = entryDirOf(ctx.require(linkPlugin).manifest()?.page);
   const queue = entry === "" ? [""] : [entry, ""];

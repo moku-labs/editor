@@ -157,7 +157,7 @@ function askedHmr(text: string): boolean | undefined {
  *
  * @param req - The request (HEAD drops the body).
  * @param deps - The state.
- * @param status - 200, or 409 for a refused change.
+ * @param status - The HTTP status.
  * @returns The response.
  */
 function stateAnswer(req: Request, deps: HotReloadDeps, status: number): Response {
@@ -179,9 +179,9 @@ function tokenOrUndefined(deps: HotReloadDeps): string | undefined {
 }
 
 /**
- * The POST answer: 503 before start, 401 without the boot token, 400 for a bad body, then 200
- * when hot reload is the asked value afterwards, else 409 (a game's own server, or a change Bun
- * cannot make). Both carry the state.
+ * The POST answer: 503 before start, 401 without the boot token, 400 for a bad body, else 200
+ * with the state. A refused change (a game's own server, or a change Bun cannot make) also
+ * answers 200: the caller compares the state with the asked value, and the page logs no error.
  *
  * @param req - The POST request (already guarded).
  * @param deps - Hub, state and log.
@@ -195,8 +195,8 @@ async function postAnswer(req: Request, deps: HotReloadDeps): Promise<Response> 
   const hmr = askedHmr(await req.text());
   if (hmr === undefined) return badRequest(req);
 
-  const applied = await setHotReload(deps, hmr);
-  return stateAnswer(req, deps, applied ? 200 : 409);
+  await setHotReload(deps, hmr);
+  return stateAnswer(req, deps, 200);
 }
 
 /**

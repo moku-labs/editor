@@ -367,7 +367,7 @@ describe("gameView integration", () => {
         { file: "003.png", frame: 1783, atMs: 100, bug: false },
         { file: "004.png", frame: 1786, atMs: 150, bug: false }
       ],
-      device: { name: "iPhone 15", w: 393, h: 852, orientation: "portrait" }
+      device: { name: app.workspace.device().preset.name, w: 393, h: 852, orientation: "portrait" }
     });
     await until(() => document.querySelector("dialog[data-game='sheet']") !== null, "sheet");
     await app.stop();

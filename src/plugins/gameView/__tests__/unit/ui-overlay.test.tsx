@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { presetOf } from "../../../workspace/devices";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ensureOverlayRoot } from "../../ui/OverlayRoot";
@@ -125,6 +126,21 @@ describe("OverlayRoot", () => {
     );
     expect(root.querySelector("[data-part='island']")).not.toBeNull();
     expect(root.querySelector("[data-part='home']")).not.toBeNull();
+  });
+
+  it("draws neither island nor home bar on a home-button phone, even with an island's insets", () => {
+    const homeButton = {
+      ...presetOf("iphone-15"),
+      frame: "home-button" as const
+    };
+    update(() => {
+      Object.assign(ctx.workspace.api, {
+        device: () => ({ preset: homeButton, orientation: "portrait", folded: true })
+      });
+    });
+    expect(root.querySelector("[data-part='guides']")).not.toBeNull();
+    expect(root.querySelector("[data-part='island']")).toBeNull();
+    expect(root.querySelector("[data-part='home']")).toBeNull();
   });
 
   it("draws no guides for the desktop, with the guides off, or outside Game", () => {

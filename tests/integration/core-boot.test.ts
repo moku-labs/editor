@@ -267,7 +267,7 @@ describe("core boot", () => {
       "/__dev/hmr"
     ]);
     expect(workspace.gameFrame().url.endsWith("/game.html")).toBe(true);
-    expect(workspace.devices()).toHaveLength(16);
+    expect(workspace.devices()).toHaveLength(21);
 
     const prefs: unknown[] = [];
     const off = workspace.onPrefs(next => {

@@ -310,7 +310,9 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
   const { graph, history } = ctx.state.data;
   const result = ctx.state.layout.result;
   if (graph === undefined || result === undefined) return undefined;
-  const current = actions.focus.locateCurrent()?.item.key;
+  // A collapsed parent the current node sits inside is not current; the stack rule makes it hold it.
+  const spot = actions.focus.locateCurrent();
+  const current = spot?.inside === undefined ? spot?.item.key : undefined;
   const stack = new Set(actions.focus.stack().map(entry => entry.id));
   const holders = result.items.filter(item => holdsCurrent(item, current, stack));
   return {

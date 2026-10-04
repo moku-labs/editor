@@ -179,20 +179,20 @@ describe("P/hmr route", () => {
     }
   });
 
-  it("POST answers 409 with the state for a game's own server", async () => {
+  it("POST answers 200 with the unchanged state for a game's own server", async () => {
     const harness = createHarness(undefined);
     const response = await call(hotReloadRoute(harness.deps), post('{"hmr":true}'));
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ hmr: false, owner: "server" });
   });
 
-  it("POST answers 200 when the bin already has the value, 409 for a change", async () => {
+  it("POST answers 200 with the state for the same value and for a refused change", async () => {
     const route = hotReloadRoute(attached().deps);
     const same = await call(route, post('{"hmr":true}'));
     const change = await call(route, post('{"hmr":false}'));
     expect(same.status).toBe(200);
     expect(await same.json()).toEqual({ hmr: true, owner: "bin" });
-    expect(change.status).toBe(409);
+    expect(change.status).toBe(200);
     expect(await change.json()).toEqual({ hmr: true, owner: "bin" });
   });
 

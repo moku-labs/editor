@@ -26,8 +26,9 @@ import {
 // helpers/merge.ts calls loadMergeGame, which needs the pinned game checkout,
 // so vitest.config.ts skips this file on CI (its text names loadMergeGame).
 // The settings popup is open; Reference mode is on; a click on the
-// settingsBoard proxy writes the crop and the full frame, puts the reference
-// block on the clipboard, and its bookmark brings the game back to the popup.
+// settingsBoard proxy writes the crop, the full frame and the card file with
+// the reference block (round 2b R13), puts the one reference line naming the
+// card on the clipboard, and its bookmark brings the game back to the popup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Three cores and a real game start for the test. */
@@ -38,6 +39,13 @@ const CROP_PNG = "data:image/png;base64,Q1JPUA==";
 
 /** Where the settings popup rests in the board flow. */
 const SETTINGS_OPEN = "board/settings/open";
+
+/** The one clipboard line of the pick: name, type, flow node, source, ref bounds, card. */
+const LINE =
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/settingsBoard-f\d+\.md)$/;
+
+/** The reference block inside the card file: its `text` fence. */
+const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
 
 /** The lines a pick with every fact known prints, in order. */
 const BLOCK_LINES = [
@@ -192,9 +200,26 @@ async function pngOf(root: string, file: string): Promise<string> {
   return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 
-describe("a pick for the chat on merge-game (round 2 R2)", () => {
+/**
+ * The card a reference line names and the reference block in its `text` fence.
+ *
+ * @param root - The project root.
+ * @param line - The clipboard line.
+ * @returns The card path, its text and the block lines.
+ */
+async function cardOf(
+  root: string,
+  line: string
+): Promise<{ card: string; text: string; lines: string[] }> {
+  const [, card = ""] = LINE.exec(line) ?? [];
+  const text = await readFile(path.join(root, card), "utf8");
+  const [, block = ""] = TEXT_FENCE.exec(text) ?? [];
+  return { card, text, lines: block.split("\n") };
+}
+
+describe("a pick for the chat on merge-game (round 2 R2, 2b R13)", () => {
   it(
-    "writes the crop and the full frame, copies the full reference block, and its bookmark restores the popup",
+    "writes the crop, the full frame and the card, copies the one line, and its bookmark restores the popup",
     async () => {
       const live = await pickStack();
       const { tools, game, root, page } = live;
@@ -218,11 +243,15 @@ describe("a pick for the chat on merge-game (round 2 R2)", () => {
       await act(() => {
         proxy()?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
       });
-      await until(() => written.length > 0, "the reference block on the clipboard");
+      await until(() => written.length > 0, "the reference line on the clipboard");
 
-      // 3. Every producible line, in order; the restore and shot lines name what was saved.
-      const [block = ""] = written;
-      const lines = block.split("\n");
+      // 3. One line names the card; the card holds every producible block line, in order; the
+      //    restore and shot lines name what was saved, the images link the two PNGs.
+      const [line = ""] = written;
+      expect(line).toMatch(LINE);
+      const { card, text, lines } = await cardOf(root, line);
+      expect(card).toMatch(/^\.moku\/captures\/settingsBoard-f\d+\.md$/);
+      expect(text.split("\n")[0]).toBe("# @moku settingsBoard panel");
       expect(lines.map(line => BLOCK_LINES.find(prefix => line.startsWith(prefix)))).toEqual(
         BLOCK_LINES
       );
@@ -238,7 +267,7 @@ describe("a pick for the chat on merge-game (round 2 R2)", () => {
       expect(lines[7]).toMatch(
         /^game: merge-game 0\.0\.0 · s-\S+ · f\d+ · \d\d:\d\d:\d\d · live · clean$/
       );
-      expect(lines[8]).toBe("device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0");
+      expect(lines[8]).toBe("device: iPhone 18 Pro 402×874 portrait · dpr 3 · safe 62/0/34/0");
 
       const [bookmark] = gameView.bookmarks();
       if (bookmark === undefined) throw new Error("the pick kept no bookmark");
@@ -249,6 +278,8 @@ describe("a pick for the chat on merge-game (round 2 R2)", () => {
       expect(full).toMatch(/^\.moku\/captures\/f\d+\.png$/);
       expect(await pngOf(root, crop)).toBe(CROP_PNG);
       expect(await pngOf(root, full)).toBe(PNG_1X1);
+      expect(text).toContain(`![element](${path.basename(crop)})`);
+      expect(text).toContain(`![frame](${path.basename(full)})`);
       expect(page.root.textContent).toContain("Reference, shot and bookmark copied");
 
       // 4. Close the popup, then restore the pick's bookmark: the game is back on it.

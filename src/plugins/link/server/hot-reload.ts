@@ -108,11 +108,12 @@ async function stateOf(response: Response): Promise<HotReload | undefined> {
 
 /**
  * Asks the server for hot reload on or off: `POST {path}/hmr` with `{ hmr }` and the boot token.
- * The state the server answers (200 or 409) is applied. Never rejects.
+ * The state the server answers is applied; a refused change answers 200 with the unchanged state.
+ * Never rejects.
  *
  * @param ctx - Domain context of link.
  * @param on - The asked value.
- * @returns True when the server answered 200 (hot reload is `on`), false otherwise.
+ * @returns True when the answer is ok and its state has hot reload `on`, false otherwise.
  */
 export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boolean> {
   const { boot } = ctx.state;
@@ -134,5 +135,5 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
 
   const answered = await stateOf(response);
   if (answered !== undefined) applyHotReload(ctx, answered);
-  return response.status === 200;
+  return response.ok && answered?.hmr === on;
 }

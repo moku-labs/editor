@@ -180,7 +180,9 @@ describe("pages integration", () => {
     const same = await post(true, boot.token);
     expect(same.status).toBe(200);
     expect(await same.json()).toEqual({ hmr: true, owner: "bin" });
-    await expect(post(false, boot.token)).resolves.toHaveProperty("status", 409);
+    const refused = await post(false, boot.token);
+    expect(refused.status).toBe(200);
+    expect(await refused.json()).toEqual({ hmr: true, owner: "bin" });
     expect(app.pages.hotReload()).toEqual({ hmr: true, owner: "bin" });
   });
 

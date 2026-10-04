@@ -1,7 +1,8 @@
 /**
  * @file gameView plugin — the key bindings and Esc closers gameView hands to the workspace keymap
  * (R4, design §4): ⇧⌘C and I toggle the picker (global, shows Game); \ collapses or expands the
- * Element panel in Game; ← → step and B marks a bug in Game while the contact sheet is open; Esc
+ * Element panel in Game; M switches the game's sound in Game when the game has `game.mute` (round
+ * 2b R11); ← → step and B marks a bug in Game while the contact sheet is open; Esc
  * layers contactSheet, seriesPopover, captureCard, picker, each `false` when gameView has nothing
  * open there.
  */
@@ -12,6 +13,7 @@ import { closeSheetLayer, stepSheet, toggleBug } from "./capture/sheet";
 import { hideCard } from "./capture/shot";
 import { setPicker } from "./element/select";
 import { SIDE_PANEL, SIDE_TITLE } from "./side";
+import { canMute, setSound } from "./sound";
 import type { GameViewCtx } from "./types";
 
 /**
@@ -28,6 +30,15 @@ function togglePicker(ctx: GameViewCtx): void {
  */
 function toggleSide(): void {
   toggleSidePanel(SIDE_PANEL);
+}
+
+/**
+ * M: the Sound switch.
+ *
+ * @param ctx - Domain context of gameView.
+ */
+function toggleSound(ctx: GameViewCtx): void {
+  void setSound(ctx);
 }
 
 /**
@@ -66,7 +77,7 @@ function closePicker(ctx: GameViewCtx): boolean {
  * gameView's key bindings for `workspace.keys.bind`.
  *
  * @param ctx - Domain context of gameView.
- * @returns The five bindings.
+ * @returns The six bindings.
  */
 export function keyBindings(ctx: GameViewCtx): readonly KeyBinding[] {
   const whenSheet = sheetOpen.bind(undefined, ctx);
@@ -77,6 +88,13 @@ export function keyBindings(ctx: GameViewCtx): readonly KeyBinding[] {
       label: `Collapse or expand the ${SIDE_TITLE}`,
       workspace: "game",
       run: toggleSide
+    },
+    {
+      keys: "m",
+      label: "Sound on or off",
+      workspace: "game",
+      when: canMute.bind(undefined, ctx),
+      run: toggleSound.bind(undefined, ctx)
     },
     {
       keys: "arrowleft",

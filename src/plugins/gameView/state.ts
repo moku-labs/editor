@@ -61,6 +61,8 @@ export function createGameViewState(): GameViewState {
     found: new Map(),
     searches: new Map(),
     blocks: new Map(),
+    spawns: new Map(),
+    cards: new Map(),
     reference: { on: false, hover: undefined, node: undefined, unwatch: undefined },
     bookmarks: [],
     pick: undefined

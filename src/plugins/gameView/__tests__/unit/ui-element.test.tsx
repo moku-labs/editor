@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
-import { createCtx, type TestCtx, templateOf } from "../helpers";
+import { createCtx, sceneCapture, type TestCtx, templateOf } from "../helpers";
 import { boardScene, button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
@@ -194,7 +194,7 @@ describe("ElementTab", () => {
     });
   });
 
-  it("shows the reference block read-only; Copy puts it on the clipboard", async () => {
+  it("shows the reference block read-only; Copy puts its one line on the clipboard", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
@@ -215,9 +215,70 @@ describe("ElementTab", () => {
     expect(copy.textContent).toBe("Copy");
     click(copy);
     await settle();
-    expect(writeText).toHaveBeenCalledWith(pre.textContent);
+    expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
+      /^@moku coinPill row · src\/hud\/Hud\.tsx:2 · ref .* · \.moku\/captures\/coinPill-f1841\.md$/
+    );
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
     vi.unstubAllGlobals();
+  });
+
+  it("shows the code: the element's JSX and its style block, highlighted, with Open in Files", async () => {
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await settle();
+    const code = find(view.root, "section[data-part='code']");
+    const [jsx, style] = findAll(code, "[data-part='snippet']");
+    if (jsx === undefined || style === undefined) throw new Error("two snippets");
+    expect(find(jsx, "[data-part='title']").textContent).toBe("JSX");
+    expect(find(jsx, "[data-part='where']").textContent).toBe("src/hud/Hud.tsx:2");
+    expect(findAll(jsx, "[data-line]").map(line => line.dataset.line)).toEqual(["2"]);
+    expect(findAll(jsx, "[data-token]").length).toBeGreaterThan(0);
+    expect(find(style, "[data-part='title']").textContent).toBe("Style · coinPill");
+    expect(find(style, "[data-part='where']").textContent).toBe("src/hud/styles.ts:1");
+    expect(findAll(style, "[data-line]")).toHaveLength(4);
+
+    click(button(jsx, "Open in Files"));
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:open-file", {
+      path: "src/hud/Hud.tsx",
+      line: 2
+    });
+  });
+
+  it("shows 20 lines of a long element and the rest after Show all", async () => {
+    const children = Array.from({ length: 30 }, (_, index) => `  <spacer key="s${index}" />`);
+    ctx.link.files.put(
+      "src/hud/Hud.tsx",
+      ['<Pill key="coinPill">', ...children, "</Pill>"].join("\n")
+    );
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await settle();
+    const jsx = find(view.root, "section[data-part='code'] [data-part='snippet']");
+    expect(findAll(jsx, "[data-line]")).toHaveLength(20);
+    const more = find(jsx, "button[data-action='show-all']");
+    expect(more.textContent).toBe("Show all 32 lines");
+    click(more);
+    expect(findAll(jsx, "[data-line]")).toHaveLength(32);
+    expect(jsx.querySelector("button[data-action='show-all']")).toBeNull();
+  });
+
+  it("shows an entity's projection with its definition and its components with values", async () => {
+    ctx.link.files.put(
+      "features/board/items.tsx",
+      'export const boardItems = projection({\n  name: "board.items",\n});'
+    );
+    ctx.state.sources.entities = sceneCapture("scene-board.txt").entities;
+    await select({ kind: "entity", id: 1_048_628 });
+    await settle();
+    const code = find(view.root, "section[data-part='code']");
+    const spawn = find(code, "[data-part='spawn']");
+    expect(spawn.textContent).toBe("Spawned by board.items · features/board/items.tsx:2");
+    click(find(spawn, "button"));
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:open-file", {
+      path: "features/board/items.tsx",
+      line: 2
+    });
+    const rows = findAll(code, "[data-part='components'] > div");
+    expect(rows[0]?.textContent).toBe("Layername items");
+    expect(rows.map(row => find(row, "dt").textContent)).toContain("Sprite");
   });
 
   it("marks a key built in a loop: Defined at file:line (loop)", async () => {

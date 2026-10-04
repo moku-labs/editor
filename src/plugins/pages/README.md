@@ -48,7 +48,7 @@ on a `Bun.serve` with an HTML route:
 | `hmr: true` | `hmr: false` | The page keeps the HMR client; a save still reloads the page, also after a manual page reload. |
 
 So the Hot reload switch is read-only: restart the bin to change hot reload. There is no restart
-fallback. `setHotReload` and `POST P/hmr` refuse a change (false, 409) and report the state.
+fallback. `setHotReload` refuses a change (false) and `POST P/hmr` answers 200 with the unchanged state.
 
 | `hotReload()` | When |
 |---|---|
@@ -66,7 +66,7 @@ fallback. `setHotReload` and `POST P/hmr` refuse a change (false, 409) and repor
 | `P` | `navigate` | 308 to `P/`. The query is kept. |
 | `P/` | `navigate` | The tools page with the boot tag. 503 when the page is not built, when `index.html` has no `</head>`, or before start. |
 | `P/hello` | `same-origin` | `HelloBody` JSON `{ ws, token }`. No CORS headers. 503 before start. |
-| `P/hmr` | `same-origin` | GET: `HotReload` JSON `{ hmr, owner }`. POST `{ hmr: boolean }` with `Authorization: Bearer <boot.token>`: 200 with the state when hot reload is the asked value afterwards, 409 with the state otherwise (a game's own server, or a change Bun cannot make). 401 without the token, 400 for another body (or over 1024 characters), 503 before start. |
+| `P/hmr` | `same-origin` | GET: `HotReload` JSON `{ hmr, owner }`. POST `{ hmr: boolean }` with `Authorization: Bearer <boot.token>`: 200 with the state, also for a refused change (a game's own server, or a change Bun cannot make): the caller compares `hmr` with the asked value. 401 without the token, 400 for another body (or over 1024 characters), 503 before start. |
 | `P/assets/*` | `navigate` | A regular file of `pageDir/assets/`. 404 for an unsafe or missing name. 400 for a malformed escape. |
 
 Headers:

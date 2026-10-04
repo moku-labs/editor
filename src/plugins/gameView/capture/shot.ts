@@ -12,7 +12,7 @@ import { copyQuietly } from "../clipboard";
 import { GAME_COMMANDS, gameReady, NO_GAME_TEXT } from "../commands";
 import { reportFailure } from "../report";
 import { notify } from "../state";
-import type { CaptureFile, GameViewCtx } from "../types";
+import type { CaptureCardInfo, CaptureFile, GameViewCtx } from "../types";
 import {
   capturePath,
   deviceLabel,
@@ -155,12 +155,12 @@ function scheduleCardHide(ctx: GameViewCtx, delayMs: number): void {
 }
 
 /**
- * Shows the capture card of a saved shot and arms its hide timer.
+ * Shows the capture card of a saved shot, a pick or a series and arms its hide timer.
  *
  * @param ctx - Domain context of gameView.
- * @param card - The saved capture.
+ * @param card - What the card shows.
  */
-export function showCard(ctx: GameViewCtx, card: CaptureFile): void {
+export function showCard(ctx: GameViewCtx, card: CaptureCardInfo): void {
   ctx.state.card = card;
   ctx.state.cardHeld = false;
   scheduleCardHide(ctx, ctx.config.captureCardMs);

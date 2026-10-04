@@ -2,7 +2,7 @@
 // @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkspaceApi } from "../../api";
-import { DEVICES } from "../../devices";
+import { DEVICES, deviceById } from "../../devices";
 import { stopWorkspace } from "../../lifecycle";
 import type { WorkspaceApi } from "../../types";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
@@ -144,9 +144,13 @@ describe("preview / setPreview", () => {
 });
 
 describe("device / setDevice / devices", () => {
-  it("device() returns the DeviceSpec, the orientation and folded", () => {
-    expect(api.device()).toEqual({ preset: DEVICES[1], orientation: "portrait", folded: true });
-    expect(api.device().preset.w).toBe(393);
+  it("device() returns the DeviceSpec, the orientation and folded; a fresh viewer has the iPhone 18 Pro", () => {
+    expect(api.device()).toEqual({
+      preset: deviceById("iphone-18-pro"),
+      orientation: "portrait",
+      folded: true
+    });
+    expect(api.device().preset.w).toBe(402);
     expect(api.devices()).toBe(DEVICES);
   });
 
@@ -183,7 +187,11 @@ describe("device / setDevice / devices", () => {
 
   it("folded on a preset without a fold changes nothing but the flag", () => {
     api.setDevice({ folded: false });
-    expect(api.device()).toEqual({ preset: DEVICES[1], orientation: "portrait", folded: false });
+    expect(api.device()).toEqual({
+      preset: deviceById("iphone-18-pro"),
+      orientation: "portrait",
+      folded: false
+    });
   });
 
   it("setDevice patches, persists and notifies onPrefs", () => {
@@ -192,7 +200,7 @@ describe("device / setDevice / devices", () => {
     api.setDevice({ orientation: "landscape" });
     api.setDevice({ preset: "ipad-mini" });
     expect(api.device()).toEqual({
-      preset: DEVICES[13],
+      preset: deviceById("ipad-mini"),
       orientation: "landscape",
       folded: true
     });
@@ -224,6 +232,40 @@ describe("device / setDevice / devices", () => {
       {},
       new Error("bad listener")
     );
+  });
+});
+
+describe("muted / setMuted", () => {
+  it("is off for a fresh viewer; setMuted persists and tells the onPrefs listeners", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    expect(api.muted()).toBe(false);
+
+    api.setMuted(true);
+    expect(api.muted()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]?.[0].muted).toBe(true);
+    expect(JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}").muted).toBe(true);
+  });
+
+  it("setting the value it already has does nothing", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    api.setMuted(false);
+    expect(listener).not.toHaveBeenCalled();
+    expect(localStorage.getItem("moku-editor-test")).toBeNull();
+
+    api.setMuted(true);
+    api.setMuted(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("every onPrefs call carries the muted flag", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    api.setMuted(true);
+    api.setTheme("dark");
+    expect(listener.mock.calls.at(-1)?.[0]).toMatchObject({ theme: "dark", muted: true });
   });
 });
 

@@ -1,12 +1,15 @@
 /**
- * @file A pick for the chat (round 2 R2) on the frozen merge-game: a picker click on the settings
- * board (opened from the board's HUD) bookmarks the game, saves the cropped element and the full
- * frame under .moku/captures of the game copy, puts the reference block on the clipboard (its
- * eleven lines in the fixed order) and toasts "Reference, shot and bookmark copied". The Element
- * tab shows the same block. Restoring the pick's bookmark from a fresh start brings the game back
- * to board/settings/open. In Reference mode the proxies carry the frame, the reference bounds and,
- * once a pick found it, the style source; a key built in a loop (card0) resolves to its template
- * literal. Shot and Series put their paths on the clipboard too.
+ * @file A pick for the chat (round 2 R2, round 2b R13) on the frozen merge-game: a picker click on
+ * the settings board (opened from the board's HUD) bookmarks the game, saves the cropped element
+ * and the full frame under .moku/captures of the game copy, writes the card `<key>-f<frame>.md`
+ * there (the reference block with its eleven lines in the fixed order inside a `text` fence, the
+ * JSX of the element and the links to both PNGs), puts ONE line naming the card on the clipboard
+ * and toasts "Reference, shot and bookmark copied". The Element tab shows the full block and the
+ * Code section; the capture card of the pick offers the line again. Restoring the pick's bookmark
+ * from a fresh start brings the game back to board/settings/open. In Reference mode the proxies
+ * carry the frame, the reference bounds and, once a pick found it, the style source; a key built
+ * in a loop (card0) resolves to its template literal. Shot and Series put their paths on the
+ * clipboard too.
  *
  * The bookmark value is read off the tools page's socket: the answer to the tools' own
  * `game.bookmark` run, as the hub sent it. The restore runs `game.restore` with that value through
@@ -39,6 +42,16 @@ const BLOCK_ORDER = [
   "restore",
   "shot"
 ] as const;
+
+/**
+ * The one clipboard line of a pick: `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h
+ * · <card path>`; the place and the ref bounds are left out when unknown. Group 1 is the name,
+ * group 2 the card path.
+ */
+const REFERENCE_LINE = /^@moku (\S+) \S+ · .* · (\.moku\/captures\/\S+-f\d+(?:-\d+)?\.md)$/;
+
+/** The reference block inside a card file: its `text` fence. */
+const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
 
 /** Game-frame warnings a reload provokes that are not editor defects (see flow.spec.ts). */
 const RELOAD_WARNINGS: readonly RegExp[] = [
@@ -298,22 +311,45 @@ async function clipboard(page: Page): Promise<string> {
   return page.evaluate(() => navigator.clipboard.readText());
 }
 
+/** What a pick shared: the clipboard line, the card it names, the card text and its block. */
+type Shared = {
+  readonly line: string;
+  readonly card: string;
+  readonly text: string;
+  readonly block: string;
+};
+
 /**
- * Picks an element through its Reference mode proxy (a click on a proxy is its pointerup) and
- * waits for its block on the clipboard, emptied first.
+ * Reads the card a reference line names, from the game copy, and the block in its `text` fence.
+ *
+ * @param line - The clipboard line.
+ * @returns The line, the card path, the card text and the block.
+ */
+async function sharedOf(line: string): Promise<Shared> {
+  const card = REFERENCE_LINE.exec(line)?.[2] ?? "";
+  expect(card, line).not.toBe("");
+  const text = await readFile(path.join(GAME_ROOT, card), "utf8");
+  const [, block = ""] = TEXT_FENCE.exec(text) ?? [];
+  expect(block, text).not.toBe("");
+  return { line, card, text, block };
+}
+
+/**
+ * Picks an element through its Reference mode proxy (a click on a proxy is its pointerup), waits
+ * for its one line on the clipboard (emptied first) and reads the card it names.
  *
  * @param page - The test page.
  * @param key - The ui key.
- * @returns The block.
+ * @returns What the pick shared.
  */
-async function pickProxy(page: Page, key: string): Promise<string> {
+async function pickProxy(page: Page, key: string): Promise<Shared> {
   await page.evaluate(() => navigator.clipboard.writeText(""));
   await page.locator(`[data-moku-proxy][data-moku-key="${key}"]`).dispatchEvent("pointerup");
-  await expect
-    .poll(() => clipboard(page), { timeout: 15_000 })
-    .toMatch(new RegExp(`^@moku ${key} · [^]*\nshot: `));
+  await expect.poll(() => clipboard(page), { timeout: 15_000 }).toMatch(REFERENCE_LINE);
   await expect(toast(page)).toHaveText("Reference, shot and bookmark copied");
-  return clipboard(page);
+  const line = await clipboard(page);
+  expect(REFERENCE_LINE.exec(line)?.[1], line).toBe(key);
+  return sharedOf(line);
 }
 
 /**
@@ -388,7 +424,7 @@ test.afterEach(async () => {
 });
 
 test.describe("pick · for the chat", () => {
-  test("a pick on settingsBoard copies the eleven-line block, saves both PNGs, and its bookmark restores board/settings/open", async ({
+  test("a pick on settingsBoard copies one line naming its card, the card holds the eleven-line block, both PNGs exist, and its bookmark restores board/settings/open", async ({
     page,
     errors
   }) => {
@@ -408,10 +444,16 @@ test.describe("pick · for the chat", () => {
     await expect(toast(page)).toHaveText("Reference, shot and bookmark copied", {
       timeout: 15_000
     });
-    const block = await clipboard(page);
+    // The clipboard holds one line: name, type, flow node, source, ref bounds and the card.
+    const line = await clipboard(page);
+    expect(line).not.toContain("\n");
+    expect(line).toMatch(
+      /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/settingsBoard-f\d+\.md$/
+    );
+    const { card, text, block } = await sharedOf(line);
     const lines = block.split("\n");
 
-    // Every line, in the fixed order.
+    // The card's block: every line, in the fixed order.
     expect(
       lines.map(text => (text.startsWith("@moku ") ? "@moku" : text.split(":")[0])),
       block
@@ -443,6 +485,16 @@ test.describe("pick · for the chat", () => {
     const [, crop = "", full = ""] = shotMatch ?? [];
     expect(crop).toBe(`${CAPTURES_DIR}/settingsBoard-f${frame}.png`);
     expect(full).toBe(`${CAPTURES_DIR}/f${frame}.png`);
+    // The card is named for the same frame; the line's ref bounds are the block's.
+    expect(card).toBe(`${CAPTURES_DIR}/settingsBoard-f${frame}.md`);
+    const ref = /· ref (\d+,\d+ \d+×\d+)$/.exec(bounds ?? "")?.[1];
+    expect(line).toContain(` · ref ${ref} · `);
+    // The card: its title, the block, the JSX of the board with file:line, and both images.
+    expect(text.split("\n")[0]).toBe("# @moku settingsBoard panel");
+    expect(text).toMatch(/^## JSX · features\/settings\/settings\.tsx:300$/m);
+    expect(text).toMatch(/^```tsx\n\s*<Signboard\n\s*id="settingsBoard"/m);
+    expect(text).toContain(`![element](settingsBoard-f${frame}.png)`);
+    expect(text).toContain(`![frame](f${frame}.png)`);
 
     // Both PNGs exist in the game copy: the full frame at the device aspect, the crop is the
     // element plus 8 px around it, scaled by the shot's pixel ratio.
@@ -457,13 +509,43 @@ test.describe("pick · for the chat", () => {
     expect(Math.abs(cropSize.w - (right - left) * ratio)).toBeLessThanOrEqual(2);
     expect(cropSize.w).toBeLessThan(fullSize.w);
 
-    // The Element tab shows the same block, read-only.
+    // The Element tab shows the card's block, read-only.
     await expandSide(page);
     const tab = page.locator("[data-workspace-host=game] [data-game=side] [data-part=element]");
     const pre = tab.locator("pre[data-part=reference]");
     await expect(pre).toHaveAttribute("aria-busy", "false");
     const shown = (await pre.textContent()) ?? "";
     expect(withoutClock(shown)).toBe(withoutClock(block));
+
+    // The Code section (round 2b R12): the board's JSX from <Signboard to </Signboard>, 20 lines
+    // and then Show all. The board takes no style={…} of its own, so no style block shows.
+    const code = tab.locator("section[data-part=code]");
+    const jsx = code.locator("[data-part=snippet]").first();
+    await expect(jsx.locator("header [data-part=title]")).toHaveText("JSX", { timeout: 20_000 });
+    await expect(jsx.locator("header [data-part=where]")).toHaveText(
+      "features/settings/settings.tsx:300"
+    );
+    const rows = jsx.locator("[data-part=code-lines] > div");
+    await expect(rows).toHaveCount(20);
+    await expect(rows.first()).toHaveAttribute("data-line", "300");
+    await expect(rows.nth(1)).toContainText('id="settingsBoard"');
+    const showAll = jsx.locator("[data-action=show-all]");
+    await expect(showAll).toHaveText("Show all 22 lines");
+    await showAll.click();
+    await expect(rows).toHaveCount(22);
+    await expect(rows.last()).toContainText("</Signboard>");
+    await expect(showAll).toHaveCount(0);
+    await expect(code.locator("[data-part=snippet]")).toHaveCount(1);
+
+    // The capture card of the pick offers the line again: its Reference action.
+    const shotCard = page.locator("[data-game=card]");
+    await expect(shotCard.locator("[data-part=path]")).toHaveAttribute("title", crop);
+    const again = shotCard.getByRole("button", { name: "Reference" });
+    await expect(again).toHaveAttribute("title", line);
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    await again.click();
+    await expect.poll(() => clipboard(page)).toBe(line);
+    await expect(toast(page)).toHaveText("✓ Reference copied");
 
     // The bookmark of the pick: its id names the frame of the game.bookmark answer.
     const id = /^restore: bookmark (settingsBoard-f(\d+))$/.exec(restore ?? "");
@@ -499,22 +581,30 @@ test.describe("pick · for the chat", () => {
     await expect(play).toHaveAttribute("data-moku-ref-bounds", /^\d+ \d+ \d+ \d+$/);
 
     // A pick through the proxy (its click is a pointerup) finds the source: the style source joins.
-    const block = await pickProxy(page, "play");
+    const { block, text } = await pickProxy(page, "play");
     const style = /· style: playButton (features\/home\/styles\.ts:\d+)/.exec(block);
     expect(style, block).not.toBeNull();
     await expect(play).toHaveAttribute("data-moku-style-source", style?.[1] ?? "");
     await expect(play).toHaveAttribute("data-moku-source", /^features\/home\/view\.tsx:\d+$/);
     const ref = /· ref (\d+),(\d+) (\d+)×(\d+)$/m.exec(block);
     await expect(play).toHaveAttribute("data-moku-ref-bounds", (ref?.slice(1) ?? []).join(" "));
+    // The card holds the JSX and the style block, each fenced with its file:line.
+    expect(text).toMatch(/^## JSX · features\/home\/view\.tsx:\d+$/m);
+    expect(text).toContain(`## Style · playButton · ${style?.[1] ?? ""}`);
+    expect(text).toContain("export const playButton = defineStyle({");
 
     // On the board, the order card keyed card0 is built in a loop: `card${slot}`.
     await answer(page, "play");
     await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
     const card0 = page.locator('[data-moku-proxy][data-moku-key="card0"]');
     await expect(card0).toHaveCount(1, { timeout: 15_000 });
-    const cardBlock = await pickProxy(page, "card0");
-    expect(cardBlock.split("\n")[0]).toMatch(/^@moku card0 · /);
-    expect(cardBlock).toMatch(/^source: features\/orders\/strip\.tsx:157 \(loop\)/m);
+    const card0Shared = await pickProxy(page, "card0");
+    expect(card0Shared.line).toMatch(/ · features\/orders\/strip\.tsx:157 \(loop\) · /);
+    expect(card0Shared.block.split("\n")[0]).toMatch(/^@moku card0 · /);
+    expect(card0Shared.block).toMatch(/^source: features\/orders\/strip\.tsx:157 \(loop\)/m);
+    // A loop key shows the element of its template line.
+    expect(card0Shared.text).toMatch(/^## JSX · features\/orders\/strip\.tsx:\d+$/m);
+    expect(card0Shared.text).toContain("`card${");
     await page.keyboard.press("r");
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
   });
@@ -525,7 +615,9 @@ test.describe("pick · for the chat", () => {
     await bar(page, "capture").click();
     const card = page.locator("[data-game=card]");
     await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
-    const shown = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    // The card cuts the path in the middle; its title holds the whole path (round 2b R14).
+    const shown = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
+    expect(shown).toMatch(/^\.moku\/captures\/.+\.png$/);
     await expect.poll(() => clipboard(page)).toBe(`shot: ${shown}`);
     await card.getByRole("button", { name: "Close" }).click();
 

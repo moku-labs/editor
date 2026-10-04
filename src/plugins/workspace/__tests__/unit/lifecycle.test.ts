@@ -71,7 +71,8 @@ describe("initWorkspace", () => {
         previews: { flow: { visible: false, size: "M", corner: "top-left" } },
         device: { preset: "pixel-8", orientation: "landscape" },
         density: "auto",
-        showTaps: false
+        showTaps: false,
+        muted: true
       })
     );
     vi.stubGlobal("innerWidth", 720);
@@ -89,6 +90,7 @@ describe("initWorkspace", () => {
     expect(ctx.state.overlayInGame).toBe(false);
     expect(ctx.state.density).toEqual({ chosen: "auto", applied: "compact" });
     expect(ctx.state.showTaps).toBe(false);
+    expect(ctx.state.muted).toBe(true);
     expect(ctx.state.reference).toBe(false);
   });
 

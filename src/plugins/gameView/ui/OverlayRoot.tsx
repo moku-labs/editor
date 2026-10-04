@@ -12,7 +12,14 @@ import { refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
 import type { DeviceSize } from "../../workspace/types";
-import { hasHomeBar, hasIsland, rectStyle, safeBands } from "../stage/geometry";
+import {
+  type DeviceFrame,
+  frameOf,
+  hasHomeBar,
+  hasIsland,
+  rectStyle,
+  safeBands
+} from "../stage/geometry";
 import { counterScale, labelPlacement, labelSize, labelText } from "../stage/label";
 import type { GameViewCtx } from "../types";
 import { PickerLayer } from "./PickerLayer";
@@ -62,28 +69,31 @@ function HoverBox(props: {
 }
 
 /**
- * The safe-area bands, the dynamic island and the home bar (guides only, F-G2).
+ * The safe-area bands, the dynamic island and the home bar (guides only, F-G2); a home-button
+ * phone has neither island nor home bar (round 2b R9).
  *
  * @param props - The device size and the preset.
  * @param props.device - The resolved device.
  * @param props.kind - The preset kind.
+ * @param props.frame - The preset's frame.
  * @param props.safeTop - The preset's safeTop.
  * @param props.safeBottom - The preset's safeBottom.
  * @param props.orientation - The orientation.
  * @returns The guides.
  * @example
  * ```tsx
- * <SafeGuides device={size} kind="phone" safeTop={59} safeBottom={34} orientation="portrait" />
+ * <SafeGuides device={size} kind="phone" frame="modern" safeTop={59} safeBottom={34} orientation="portrait" />
  * ```
  */
 function SafeGuides(props: {
   readonly device: DeviceSize;
   readonly kind: "phone" | "tablet" | "desktop";
+  readonly frame: DeviceFrame;
   readonly safeTop: number;
   readonly safeBottom: number;
   readonly orientation: "portrait" | "landscape";
 }): VNode {
-  const { device, kind, safeTop, safeBottom, orientation } = props;
+  const { device, kind, frame, safeTop, safeBottom, orientation } = props;
   return (
     <div data-part="guides" data-orientation={orientation} aria-hidden="true">
       {safeBands(device).map(band => (
@@ -94,8 +104,8 @@ function SafeGuides(props: {
           style={{ "--band": `${band.size}px` }}
         />
       ))}
-      {hasIsland(kind, safeTop) && <div data-part="island" />}
-      {hasHomeBar(kind, safeBottom) && <div data-part="home" />}
+      {hasIsland(kind, safeTop, frame) && <div data-part="island" />}
+      {hasHomeBar(kind, safeBottom, frame) && <div data-part="home" />}
     </div>
   );
 }
@@ -132,6 +142,7 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
         <SafeGuides
           device={device}
           kind={choice.preset.kind}
+          frame={frameOf(choice.preset)}
           safeTop={choice.preset.safeTop}
           safeBottom={choice.preset.safeBottom}
           orientation={choice.orientation}

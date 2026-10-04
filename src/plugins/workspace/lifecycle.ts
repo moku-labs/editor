@@ -99,6 +99,7 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
     applied: resolveDensity(prefs.density, viewportWidth())
   };
   state.showTaps = prefs.showTaps;
+  state.muted = prefs.muted;
 
   const hash = globalThis.location?.hash.slice(1);
   if (isWorkspaceId(hash)) state.active = hash;

@@ -58,6 +58,7 @@ export function createWorkspaceState(ctx: {
     overlayInGame: false,
     reference: false,
     showTaps: true,
+    muted: false,
     taps: [],
     link: { kind: "connecting" },
     everLive: false,

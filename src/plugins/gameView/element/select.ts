@@ -214,12 +214,12 @@ export function revealElement(ctx: GameViewCtx, ref: ElementRef): void {
 }
 
 /**
- * "Open in Files": filesView shows the file at the line (R4).
+ * "Open in Files": filesView shows the file, at the line when one is given (R4).
  *
  * @param ctx - Domain context of gameView.
  * @param path - The file.
- * @param line - The 1-based line.
+ * @param line - The 1-based line; omitted for a picture.
  */
-export function openInFiles(ctx: GameViewCtx, path: string, line: number): void {
-  ctx.emit("workspace:open-file", { path, line });
+export function openInFiles(ctx: GameViewCtx, path: string, line?: number): void {
+  ctx.emit("workspace:open-file", line === undefined ? { path } : { path, line });
 }

@@ -67,6 +67,33 @@ afterEach(() => {
 });
 
 /**
+ * The controls straight in the top bar, in order: each data-action, "search" for the search.
+ *
+ * @returns The names.
+ */
+function barActions(): string[] {
+  return [
+    ...root.querySelectorAll<HTMLElement>(
+      "[data-ui='top-bar'] > [data-action], [data-ui='top-bar'] > [data-search]"
+    )
+  ].map(element => element.dataset.action ?? "search");
+}
+
+/**
+ * A row of the open ⋯ menu by its data-action.
+ *
+ * @param name - The action.
+ * @returns The row.
+ */
+function row(name: string): HTMLButtonElement {
+  const button = root.querySelector<HTMLButtonElement>(
+    `[data-ui='more-menu'] [data-action="${name}"]`
+  );
+  if (button === null) throw new Error(`no ${name} row`);
+  return button;
+}
+
+/**
  * The visible label of a switch (its text without the track).
  *
  * @param name - The switch action.
@@ -425,14 +452,11 @@ describe("TopBar below 900 px (compact)", () => {
     ctx.link.manifestValue = manifestOf();
   });
 
-  it("keeps logo, game name, link pill, pause, step, the search icon and the ⋯ menu button only", () => {
+  it("keeps logo, game name, link pill, pause, step, Reference, Hot reload, the search icon and the ⋯ menu button only", () => {
     mount();
     const bar = root.querySelector<HTMLElement>("[data-ui='top-bar']");
     expect(bar?.dataset.layout).toBe("compact");
-    const actions = [
-      ...root.querySelectorAll<HTMLElement>("[data-ui='top-bar'] > [data-action]")
-    ].map(element => element.dataset.action);
-    expect(actions).toEqual(["pause", "step", "more"]);
+    expect(barActions()).toEqual(["pause", "step", "reference", "hot-reload", "search", "more"]);
     expect(root.querySelector("[data-logo]")).not.toBeNull();
     expect(root.querySelector("[data-game-name]")?.textContent).toContain("merge-game");
     expect(root.querySelector("[data-ui='link-pill']")).not.toBeNull();
@@ -468,6 +492,90 @@ describe("TopBar below 900 px (compact)", () => {
     act(() => rows[1]?.click());
     await flush();
     expect(ctx.link.choose).toHaveBeenCalledWith("s-2");
+  });
+
+  it("Pause and Step are icon-only: the label is the accessible name and the title explains", () => {
+    ctx.state.link = { kind: "paused", frame: 4 };
+    mount();
+    for (const [name, text] of [
+      ["pause", "Resume"],
+      ["step", "Step 1 frame"]
+    ] as const) {
+      const button = control(name);
+      expect(button.querySelector("[data-sr-only]")?.textContent).toBe(text);
+      expect(button.querySelectorAll("span:not([data-sr-only])")).toHaveLength(0);
+      expect(button.querySelector("svg[data-icon]")).not.toBeNull();
+    }
+    expect(control("pause").title).toBe("Resume the game (P)");
+    expect(control("step").title).toBe("Step 1 frame (.)");
+  });
+
+  it("Reference mode is an icon toggle before the search: target icon, aria-pressed, key R in its title", () => {
+    mount();
+    const reference = control("reference");
+    expect(reference.querySelector("[data-icon='target']")).not.toBeNull();
+    expect(reference.textContent).toBe("Reference mode");
+    expect(reference.title).toBe("Reference mode (R) — pick game elements for the chat");
+    expect(reference.getAttribute("aria-pressed")).toBe("false");
+
+    act(() => reference.click());
+    expect(ctx.state.reference).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
+    expect(control("reference").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("Hot reload is an icon toggle with a dot while on; it asks link when the bin owns it", async () => {
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+    mount();
+    const hot = control("hot-reload");
+    expect(hot.getAttribute("role")).toBeNull();
+    expect(hot.querySelector("[data-icon='flame']")).not.toBeNull();
+    expect(hot.textContent).toBe("Hot reload");
+    expect(hot.getAttribute("aria-pressed")).toBe("true");
+    expect(hot.getAttribute("aria-disabled")).toBe("false");
+    expect(hot.querySelector("[data-part='dot']")).not.toBeNull();
+    expect(hot.title).toBe(
+      "Hot reload (H): on · Bun reloads the game after a save and keeps its state"
+    );
+
+    await act(async () => {
+      control("hot-reload").click();
+      await flush();
+    });
+    expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
+
+    ctx.link.hotReload.mockReturnValue({ hmr: false, owner: "bin" });
+    bump();
+    expect(control("hot-reload").getAttribute("aria-pressed")).toBe("false");
+    expect(control("hot-reload").querySelector("[data-part='dot']")).toBeNull();
+  });
+
+  it("Hot reload is inert with the hint in its title when the bin does not own it", () => {
+    mount();
+    expect(control("hot-reload").getAttribute("aria-disabled")).toBe("true");
+    expect(control("hot-reload").title).toBe("Hot reload (H): waiting for the editor server");
+
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "server" });
+    bump();
+    const hot = control("hot-reload");
+    expect(hot.getAttribute("aria-disabled")).toBe("true");
+    expect(hot.getAttribute("aria-pressed")).toBe("true");
+    expect(hot.title).toBe("Hot reload (H): on · the game's own server sets it");
+    act(() => hot.click());
+    expect(ctx.link.setHotReload).not.toHaveBeenCalled();
+  });
+
+  it("at 560 px and narrower only Reference stays in the bar; Hot reload is a ⋯ row", () => {
+    vi.stubGlobal("innerWidth", 560);
+    mount();
+    expect(barActions()).toEqual(["pause", "step", "reference", "search", "more"]);
+    act(() => control("more").click());
+    expect(row("hot-reload").getAttribute("role")).toBe("menuitemcheckbox");
+    expect(row("reference").getAttribute("role")).toBe("menuitemcheckbox");
+
+    vi.stubGlobal("innerWidth", 561);
+    bump();
+    expect(barActions()).toEqual(["pause", "step", "reference", "hot-reload", "search", "more"]);
   });
 
   it("with one session the pill only names it", () => {
@@ -536,10 +644,10 @@ describe("the ⋯ menu", () => {
   it("a toggle row switches its action and the menu stays open", () => {
     ctx.state.active = "flow";
     openMenu();
-    act(() => control("reference").click());
+    act(() => row("reference").click());
     expect(ctx.state.reference).toBe(true);
-    expect(control("reference").getAttribute("aria-checked")).toBe("true");
-    act(() => control("game").click());
+    expect(row("reference").getAttribute("aria-checked")).toBe("true");
+    act(() => row("game").click());
     expect(ctx.state.previews.flow.visible).toBe(false);
     expect(ctx.state.popover).toBe("more");
   });
@@ -547,30 +655,30 @@ describe("the ⋯ menu", () => {
   it("a row that cannot act now is inert with its reason", () => {
     ctx.state.active = "game";
     openMenu();
-    expect(control("game").getAttribute("aria-disabled")).toBe("true");
-    expect(control("game").title).toBe("The Game workspace always shows the game");
-    expect(control("overlay").getAttribute("aria-disabled")).toBe("true");
-    act(() => control("overlay").click());
+    expect(row("game").getAttribute("aria-disabled")).toBe("true");
+    expect(row("game").title).toBe("The Game workspace always shows the game");
+    expect(row("overlay").getAttribute("aria-disabled")).toBe("true");
+    act(() => row("overlay").click());
     expect(ctx.state.overlayInGame).toBe(false);
   });
 
   it("Registry closes the menu and opens the registry popover; Density cycles; Theme toggles", () => {
     openMenu();
-    act(() => control("density").click());
+    act(() => row("density").click());
     expect(ctx.state.density.chosen).toBe("compact");
-    expect(rowText(control("density"))).toBe("Density · compact");
-    act(() => control("theme").click());
+    expect(rowText(row("density"))).toBe("Density · compact");
+    act(() => row("theme").click());
     expect(ctx.state.theme.chosen).toBe("dark");
-    act(() => control("registry").click());
+    act(() => row("registry").click());
     expect(ctx.state.popover).toBe("registry");
   });
 
   it("the Hot reload row asks link and toasts a refusal", async () => {
     ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
     openMenu();
-    expect(rowText(control("hot-reload"))).toBe("Hot reload · on · H");
+    expect(rowText(row("hot-reload"))).toBe("Hot reload · on · H");
     await act(async () => {
-      control("hot-reload").click();
+      row("hot-reload").click();
       await flush();
     });
     expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
@@ -585,7 +693,7 @@ describe("the ⋯ menu", () => {
     act(() => control("more").click());
     expect(ctx.state.popover).toBe("more");
     act(() => {
-      control("reference").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      row("reference").dispatchEvent(new Event("pointerdown", { bubbles: true }));
     });
     expect(ctx.state.popover).toBe("more");
     act(() => {
@@ -615,7 +723,7 @@ describe("the ⋯ menu", () => {
   it("the registry popover anchors to the ⋯ button in the compact bar", () => {
     mount();
     act(() => control("more").click());
-    act(() => control("registry").click());
+    act(() => row("registry").click());
     expect(root.querySelector("[data-ui='registry-popover']")?.textContent).toContain("Sources 1");
     expect(control("more").dataset.popoverAnchor).toBe("more");
   });

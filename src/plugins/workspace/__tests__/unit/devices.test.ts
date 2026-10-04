@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_DEVICE,
   DEVICE_GROUPS,
   DEVICES,
   deviceById,
@@ -11,14 +12,19 @@ import {
 } from "../../devices";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The device presets (round 2 R4, research-devices.md) and the orientation rule (R8)
+// The device presets (round 2 R4, research-devices.md; round 2b R9 frame, R10 current iPhones)
+// and the orientation rule (R8)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("DEVICES", () => {
-  it("lists the sixteen presets in display order, grouped iPhone → Android → Foldable → Tablet → Desktop", () => {
+  it("lists the twenty-one presets in display order, grouped iPhone → Android → Foldable → Tablet → Desktop", () => {
     expect(DEVICES.map(device => `${device.group} ${device.id}`)).toEqual([
       "iphone iphone-se",
       "iphone iphone-15",
+      "iphone iphone-17e",
+      "iphone iphone-air",
+      "iphone iphone-18-pro",
+      "iphone iphone-18-pro-max",
       "iphone iphone-15-pro-max",
       "iphone iphone-16-pro",
       "iphone iphone-16-pro-max",
@@ -30,6 +36,7 @@ describe("DEVICES", () => {
       "foldable galaxy-z-fold-6",
       "foldable galaxy-z-flip-6",
       "foldable pixel-9-pro-fold",
+      "foldable iphone-duo",
       "tablet ipad-mini",
       "tablet ipad-air-11",
       "desktop desktop"
@@ -42,8 +49,12 @@ describe("DEVICES", () => {
         `${device.name} ${device.w}×${device.h} @${device.dpr} ${device.safeTop}/${device.safeBottom} r${device.radius} ${device.kind}`
     );
     expect(rows).toEqual([
-      "iPhone SE 3 375×667 @2 20/0 r0 phone",
+      "iPhone SE 3 · small, 2022 375×667 @2 20/0 r0 phone",
       "iPhone 15 393×852 @3 59/34 r55 phone",
+      "iPhone 17e 390×844 @3 47/34 r47 phone",
+      "iPhone Air 420×912 @3 68/34 r62 phone",
+      "iPhone 18 Pro 402×874 @3 62/34 r62 phone",
+      "iPhone 18 Pro Max 440×956 @3 62/34 r62 phone",
       "iPhone 15 Pro Max 430×932 @3 59/34 r55 phone",
       "iPhone 16 Pro 402×874 @3 62/34 r62 phone",
       "iPhone 16 Pro Max 440×956 @3 62/34 r62 phone",
@@ -55,23 +66,40 @@ describe("DEVICES", () => {
       "Galaxy Z Fold 6 369×905 @2.625 0/0 r30 phone",
       "Galaxy Z Flip 6 412×1005 @2.625 0/0 r30 phone",
       "Pixel 9 Pro Fold 411×923 @2.625 0/0 r30 phone",
+      "iPhone Duo 466×678 @3 0/0 r40 phone",
       "iPad mini 7 744×1133 @2 0/0 r18 tablet",
       'iPad Air 11" 820×1180 @2 0/0 r18 tablet',
       "Desktop 1440×900 @1 0/0 r0 desktop"
     ]);
   });
 
-  it("marks the computed, low-confidence presets approx and only those", () => {
+  it("marks the presets with estimated sizes or safe insets approx and only those", () => {
     expect(DEVICES.filter(device => device.approx === true).map(device => device.id)).toEqual([
+      "iphone-17e",
+      "iphone-air",
+      "iphone-18-pro",
+      "iphone-18-pro-max",
       "redmi-note-13",
       "galaxy-z-fold-6",
-      "pixel-9-pro-fold"
+      "pixel-9-pro-fold",
+      "iphone-duo"
     ]);
   });
 
-  it("gives the two book foldables a cover and an inner screen; the top-level size is the cover", () => {
+  it("gives the SE 3 the home-button frame and every other preset the modern one (R9)", () => {
+    expect(
+      DEVICES.filter(device => device.frame === "home-button").map(device => device.id)
+    ).toEqual(["iphone-se"]);
+    expect(DEVICES.filter(device => device.frame !== "modern")).toHaveLength(1);
+  });
+
+  it("gives the three book foldables a cover and an inner screen; the top-level size is the cover", () => {
     const foldables = DEVICES.filter(device => device.fold !== undefined);
-    expect(foldables.map(device => device.id)).toEqual(["galaxy-z-fold-6", "pixel-9-pro-fold"]);
+    expect(foldables.map(device => device.id)).toEqual([
+      "galaxy-z-fold-6",
+      "pixel-9-pro-fold",
+      "iphone-duo"
+    ]);
     expect(deviceById("galaxy-z-fold-6")?.fold).toEqual({
       cover: { w: 369, h: 905, radius: 30 },
       inner: { w: 707, h: 823, radius: 30 }
@@ -79,6 +107,10 @@ describe("DEVICES", () => {
     expect(deviceById("pixel-9-pro-fold")?.fold).toEqual({
       cover: { w: 411, h: 923, radius: 30 },
       inner: { w: 791, h: 820, radius: 30 }
+    });
+    expect(deviceById("iphone-duo")?.fold).toEqual({
+      cover: { w: 466, h: 678, radius: 40 },
+      inner: { w: 890, h: 626, radius: 40 }
     });
     for (const device of foldables) {
       expect({ w: device.w, h: device.h, radius: device.radius }).toEqual(device.fold?.cover);
@@ -96,9 +128,23 @@ describe("DEVICES", () => {
     expect(deviceById("nokia")).toBeUndefined();
     expect(isDevicePresetId("ipad-mini")).toBe(true);
     expect(isDevicePresetId("galaxy-z-fold-6")).toBe(true);
+    expect(isDevicePresetId("iphone-18-pro")).toBe(true);
     expect(isDevicePresetId("nokia")).toBe(false);
     expect(isDevicePresetId(3)).toBe(false);
-    expect(presetOf("nokia").id).toBe("iphone-15");
+  });
+
+  it("keeps the earlier iPhone ids a viewer may have stored", () => {
+    for (const id of ["iphone-15", "iphone-15-pro-max", "iphone-16-pro", "iphone-16-pro-max"]) {
+      expect(isDevicePresetId(id)).toBe(true);
+    }
+  });
+});
+
+describe("DEFAULT_DEVICE", () => {
+  it("is the iPhone 18 Pro, which an unknown id falls back to too", () => {
+    expect(DEFAULT_DEVICE).toBe("iphone-18-pro");
+    expect(presetOf("nokia").id).toBe("iphone-18-pro");
+    expect(presetOf(DEFAULT_DEVICE).name).toBe("iPhone 18 Pro");
   });
 });
 

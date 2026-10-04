@@ -2,9 +2,10 @@
  * @file gameView plugin — a completed pick (round 2 R2) and "Copy reference". A pick (the picker
  * click or a Reference mode proxy click) bookmarks the game (`game.bookmark`, kept newest first,
  * 20 at most), captures the frame (`editor.capture`), saves the crop and the full frame under
- * `capturesDir`, then puts the reference block on the clipboard with one toast. Every command
- * runs through panels.run (R9); a game without the command, or a step that fails, leaves its
- * lines out of the block and its word out of the toast.
+ * `capturesDir`, writes the card file with the full reference block (round 2b R13), then puts
+ * the one reference line on the clipboard with one toast. Every command runs through panels.run
+ * (R9); a game without the command, or a step that fails, leaves its lines out of the block and
+ * its word out of the toast.
  */
 import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
@@ -13,15 +14,15 @@ import { refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
 import { cropImage } from "../capture/crop";
-import { bookmarkId, pickPaths } from "../capture/naming";
-import { listTaken, shotOf } from "../capture/shot";
+import { bookmarkId, deviceLabel, pickPaths } from "../capture/naming";
+import { listTaken, shotOf, showCard } from "../capture/shot";
 import { copyText } from "../clipboard";
 import { GAME_COMMANDS, gameReady } from "../commands";
 import { messageOf } from "../report";
 import { readScene } from "../scene/read";
 import { notify } from "../state";
 import type { GameViewCtx, PickBookmark } from "../types";
-import { referenceText } from "./facts";
+import { nameOf, shareReference } from "./card";
 
 /**
  * The bookmarks a session keeps.
@@ -45,19 +46,17 @@ type Taken = { readonly bookmark: PickBookmark; readonly tainted: boolean };
 
 /**
  * The files a pick saved: the frame of the shot, the crop (when it could be cut) and the full
- * frame.
+ * frame, with the thumbnail and the device text of its capture card.
  */
-type Shots = { readonly frame: number; readonly crop: string | undefined; readonly full: string };
-
-/**
- * The name a pick files its bookmark and crop under: the ui key, else the node name.
- *
- * @param node - The picked node.
- * @returns The name.
- */
-function nameOf(node: SceneNode): string {
-  return node.key ?? node.name;
-}
+type Shots = {
+  readonly frame: number;
+  readonly crop: string | undefined;
+  readonly full: string;
+  /** The crop, else the full frame, as a data URL. */
+  readonly thumb: string;
+  /** "iPhone 15 portrait". */
+  readonly device: string;
+};
 
 /**
  * Bookmarks the game for a pick and keeps the bookmark (newest first, at most 20).
@@ -142,10 +141,13 @@ async function saveShots(
     const paths = pickPaths(capturesDir, nameOf(node), shot.frame, taken);
     if (crop !== undefined) await link.files.writeBinary(paths.crop, crop);
     await link.files.writeBinary(paths.full, shot.image);
+    const { preset } = ctx.require(workspacePlugin).device();
     return {
       frame: shot.frame,
       crop: crop === undefined ? undefined : paths.crop,
-      full: paths.full
+      full: paths.full,
+      thumb: crop ?? shot.image,
+      device: deviceLabel(preset.name, shot.device.orientation)
     };
   } catch (error) {
     ctx.log.warn("gameView: pick shot failed", { message: messageOf(error) });
@@ -171,13 +173,14 @@ export function pickToast(shot: boolean, bookmark: boolean): string {
 }
 
 /**
- * A completed pick: bookmark, shot, crop and full frame, then the reference block on the
- * clipboard and one toast. The block also stays the Element tab's while the node is selected.
+ * A completed pick: bookmark, shot, crop and full frame, the card file, then the one reference
+ * line on the clipboard and one toast, and the capture card of the shot with its Reference
+ * action (round 2b R14). The block also stays the Element tab's while the node is selected.
  *
  * @param ctx - Domain context of gameView.
  * @param node - The picked node.
  * @param scene - Its scene.
- * @returns The block (resolves when copied or toasted; never rejects).
+ * @returns The full block (resolves when copied or toasted; never rejects).
  */
 export async function completePick(
   ctx: GameViewCtx,
@@ -196,9 +199,18 @@ export async function completePick(
   };
   notify(ctx.state);
 
-  const text = await referenceText(ctx, node, scene);
-  await copyText(ctx, text, pickToast(shots !== undefined, taken !== undefined));
-  return text;
+  const shared = await shareReference(ctx, node, scene, true);
+  await copyText(ctx, shared.line, pickToast(shots !== undefined, taken !== undefined));
+  if (shots !== undefined) {
+    showCard(ctx, {
+      path: shots.crop ?? shots.full,
+      frame: shots.frame,
+      device: shots.device,
+      image: shots.thumb,
+      reference: shared.line
+    });
+  }
+  return shared.block;
 }
 
 /**
@@ -218,10 +230,11 @@ async function sceneNow(ctx: GameViewCtx): Promise<SceneSnapshot | undefined> {
 }
 
 /**
- * "Copy reference": the block of the selected element on the clipboard (a refusal is toasted).
+ * "Copy reference": writes the card of the selected element and puts its one line on the
+ * clipboard (a refusal is toasted).
  *
  * @param ctx - Domain context of gameView.
- * @returns The block, undefined without a selection in the scene.
+ * @returns The line, undefined without a selection in the scene.
  */
 export async function copySelectedReference(ctx: GameViewCtx): Promise<string | undefined> {
   const { selected } = ctx.state;
@@ -230,9 +243,9 @@ export async function copySelectedReference(ctx: GameViewCtx): Promise<string | 
   const node = scene?.nodes.get(refId(selected));
   if (scene === undefined || node === undefined) return undefined;
 
-  const text = await referenceText(ctx, node, scene);
-  await copyText(ctx, text, COPIED_TEXT);
-  return text;
+  const shared = await shareReference(ctx, node, scene, false);
+  await copyText(ctx, shared.line, COPIED_TEXT);
+  return shared.line;
 }
 
 /**

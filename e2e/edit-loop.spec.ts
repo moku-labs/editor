@@ -3,10 +3,11 @@
  * game, on the merge-game copy the bin serves with Bun hot reload on (its default, D-23).
  *
  * Five scripted edits, each the way an agent in the chat works: pick the element (a click on its
- * Reference mode proxy), read the reference block off the clipboard, derive the edit only from
- * the block (its `source`, `style`, `texture`, `layout` and `bounds` lines, then the code those
- * lines point to), write the file on disk with `fs` (not through the editor), and measure the ms
- * from the save until the game page shows the new value with its state restored:
+ * Reference mode proxy), read the one reference line off the clipboard and the card file it names
+ * (round 2b R13), derive the edit only from the reference block in the card (its `source`,
+ * `style`, `texture`, `layout` and `bounds` lines, then the code those lines point to), write the
+ * file on disk with `fs` (not through the editor), and measure the ms from the save until the
+ * game page shows the new value with its state restored:
  *
  * 1. move homeCoins 20 px: the padding of its parent row (`layout`), scaled px → reference units
  *    with the `bounds` line; `game.rect` x moves by 20 px;
@@ -39,6 +40,12 @@ const LIMIT_MS = 1500;
 
 /** How long one edit may take to show before it counts as failed, in ms. */
 const GIVE_UP_MS = 10_000;
+
+/** The one clipboard line of a pick; group 1 is the name, group 2 the card it names. */
+const REFERENCE_LINE = /^@moku (\S+) \S+ · .* · (\.moku\/captures\/\S+\.md)$/;
+
+/** The reference block inside a card file: its `text` fence. */
+const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
 
 /** The colour the recolour edit gives the text style, as RGB. */
 const NEW_FILL: readonly [number, number, number] = [0x00, 0xc8, 0xff];
@@ -301,7 +308,7 @@ function numbers(text: string): number[] {
 /**
  * Reads the block: its head, source, style, texture, layout and bounds lines.
  *
- * @param text - The clipboard text.
+ * @param text - The reference block of the card file.
  * @returns The block.
  */
 function parseBlock(text: string): Block {
@@ -724,7 +731,8 @@ const SCRIPTS: readonly Script[] = [
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Picks an element through its Reference mode proxy and reads the block off the clipboard.
+ * Picks an element through its Reference mode proxy, reads the one line off the clipboard, then
+ * the reference block from the card file the line names.
  *
  * @param page - The test page.
  * @param key - The ui key.
@@ -736,17 +744,24 @@ async function pickBlock(page: Page, key: string): Promise<string> {
   await expect(proxy).toHaveCount(1, { timeout: 15_000 });
   // A click on a proxy is its pointerup.
   await proxy.dispatchEvent("pointerup");
-  let text = "";
+  let card = "";
   await expect
     .poll(
       async () => {
-        text = await page.evaluate(() => navigator.clipboard.readText());
-        return text.startsWith(`@moku ${key} · `) && text.includes("\nshot: ");
+        const line = await page.evaluate(() => navigator.clipboard.readText());
+        const match = REFERENCE_LINE.exec(line);
+        card = match?.[1] === key ? (match[2] ?? "") : "";
+        return card;
       },
       { timeout: 15_000 }
     )
-    .toBe(true);
-  return text;
+    .not.toBe("");
+  const text = await readGame(card);
+  const block = TEXT_FENCE.exec(text)?.[1];
+  if (block === undefined || !block.includes("\nshot: ")) {
+    throw new Error(`no reference block in ${card}:\n${text}`);
+  }
+  return block;
 }
 
 /**

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEVICES } from "../../../workspace/devices";
 import { stopGameView } from "../../lifecycle";
 import { DeviceTab } from "../../ui/DeviceTab";
 import { createCtx, manifestOf, type TestCtx } from "../helpers";
@@ -34,9 +35,9 @@ afterEach(() => {
 });
 
 describe("DeviceTab", () => {
-  it("lists the sixteen devices with size and safe insets; the current one is pressed", () => {
+  it("lists every device with size and safe insets; the current one is pressed", () => {
     const rows = findAll(view.root, "[data-part='devices'] button");
-    expect(rows).toHaveLength(16);
+    expect(rows).toHaveLength(DEVICES.length);
     expect(rows[1]?.textContent).toBe("iPhone 15393×852safe top 59 · bottom 34");
     expect(rows[1]?.getAttribute("aria-pressed")).toBe("true");
     expect(rows[0]?.getAttribute("aria-pressed")).toBe("false");
@@ -44,7 +45,8 @@ describe("DeviceTab", () => {
 
   it("a click sets the preset in its natural orientation", () => {
     ctx.workspace.device = { preset: "iphone-15", orientation: "landscape" };
-    click(findAll(view.root, "[data-part='devices'] button")[13] as HTMLElement);
+    const ipadMini = DEVICES.findIndex(device => device.id === "ipad-mini");
+    click(findAll(view.root, "[data-part='devices'] button")[ipadMini] as HTMLElement);
     expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({
       preset: "ipad-mini",
       orientation: "portrait"

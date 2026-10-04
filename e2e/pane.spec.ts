@@ -3,7 +3,8 @@
  * every window from the 480 px Claude pane to the desktop: the pinned preview plays the game (a
  * tap on Play walks it, the size stays), a tap draws a ripple at the tap point, Reference mode
  * (proxies named for the game elements at their Element tab bounds, no input reaches the game,
- * Copy reference with the reference block of round 2), the Element tab bounds of homeBackground
+ * Copy reference with the one line of round 2b R13 that names the card holding the reference
+ * block of round 2), the Element tab bounds of homeBackground
  * after splash → home and after a device change, the source of settingsBoard, Flow following a
  * Comes from edge (both ends framed,
  * the pulse, Alt+← back), find current (C), the Styles tab without a preselected style, and the
@@ -13,7 +14,8 @@
  * are compared in client px. Ground truth is read from the game page (`globalThis.editor`). A pick
  * saves two PNGs under .moku/captures of the game copy (round 2 R2); each test removes them.
  */
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
@@ -31,6 +33,29 @@ function withoutClock(text: string): string {
 
 /** The captures folder of the game copy the bin serves. */
 const CAPTURES = fileURLToPath(new URL("../dist-e2e/game/.moku/captures/", import.meta.url));
+
+/** The project root the bin serves. */
+const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
+
+/** The one reference line of settingsBoard; group 1 is the card it names. */
+const BOARD_LINE =
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/settingsBoard-f\d+\.md)$/;
+
+/** The reference block inside a card file: its `text` fence. */
+const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
+
+/**
+ * The reference block in the card a reference line names.
+ *
+ * @param line - The clipboard line.
+ * @returns The block.
+ */
+async function cardBlock(line: string): Promise<string> {
+  const card = BOARD_LINE.exec(line)?.[1] ?? "";
+  expect(card, line).not.toBe("");
+  const text = await readFile(path.join(GAME_ROOT, card), "utf8");
+  return TEXT_FENCE.exec(text)?.[1] ?? "";
+}
 
 /** A rect in px. */
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
@@ -824,12 +849,19 @@ test.describe("pane · reference mode", () => {
       .map(Number);
     expect(near(proxyBounds, bounds, 2), `${proxyBounds} near ${bounds}`).toBe(true);
 
-    // Copy reference writes the reference block of the pick: eleven lines in a fixed order.
+    // Copy reference writes the card again and copies its one line, the pick's line (the same
+    // node and frame name the same card); the card holds eleven lines in a fixed order.
+    await page.evaluate(() => navigator.clipboard.writeText(""));
     await tab.locator("[data-action=copy-reference]").click();
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
       "✓ Reference copied"
     );
-    const block = await page.evaluate(() => navigator.clipboard.readText());
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toMatch(BOARD_LINE);
+    const line = await page.evaluate(() => navigator.clipboard.readText());
+    expect(line).toBe(picked);
+    const block = await cardBlock(line);
     const lines = block.split("\n");
     expect(
       lines.map(text => (text.startsWith("@moku ") ? "@moku" : text.split(":")[0])),
@@ -860,8 +892,10 @@ test.describe("pane · reference mode", () => {
     expect(lines[10], block).toMatch(
       /^shot: \.moku\/captures\/settingsBoard-f\d+\.png · frame: \.moku\/captures\/f\d+\.png$/
     );
-    // Copy reference and the pick give the same facts (only the clock may differ).
-    expect(withoutClock(block)).toBe(withoutClock(picked));
+    // Copy reference and the pick give the same facts (only the clock may differ): the card's
+    // block is the one the Element tab shows.
+    const shown = (await tab.locator("pre[data-part=reference]").textContent()) ?? "";
+    expect(withoutClock(block)).toBe(withoutClock(shown));
 
     await flipBarToggle(page, "reference");
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);

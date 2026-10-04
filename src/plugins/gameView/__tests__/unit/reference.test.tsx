@@ -181,7 +181,7 @@ describe("the proxy layer", () => {
 });
 
 describe("a click on a proxy", () => {
-  it("selects its node and puts its reference block on the clipboard", async () => {
+  it("selects its node and puts its reference line on the clipboard", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     act(() => setReferenceMode(ctx, true));
@@ -195,27 +195,40 @@ describe("a click on a proxy", () => {
     expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
-      /^@moku coinPill · row · board\/awaitIntent · f1841\n/
+      /^@moku coinPill row · board\/awaitIntent · .* · \.moku\/captures\/coinPill-f1841\.md$/
     );
     expect(ctx.state.pick?.nodeId).toBe("ui:boardScreen/hudRow/coinPill");
   });
 });
 
 describe("copySelectedReference", () => {
-  it("writes the reference block of the selection, toasts and returns it", async () => {
+  it("writes the card of the selection, copies its one line, toasts and returns it", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
     ctx.state.found.set("coinPill", { kind: "defined", path: "src/hud/Hud.tsx", line: 2 });
 
-    const text = await copySelectedReference(ctx);
-    expect(text?.split("\n").slice(0, 3)).toEqual([
+    const line = await copySelectedReference(ctx);
+    expect(line).toMatch(
+      /^@moku coinPill row · board\/awaitIntent · src\/hud\/Hud\.tsx:2 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/coinPill-f1841\.md$/
+    );
+    expect(writeText).toHaveBeenCalledWith(line);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
+    const card = ctx.link.files.text(".moku/captures/coinPill-f1841.md");
+    expect(card.split("\n").slice(0, 6)).toEqual([
+      "# @moku coinPill row",
+      "",
+      "```text",
       "@moku coinPill · row · board/awaitIntent · f1841",
       "path: boardScreen/hudRow/coinPill",
       "source: src/hud/Hud.tsx:2 · texture: ui.hud-pill"
     ]);
-    expect(writeText).toHaveBeenCalledWith(text);
-    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
+
+    // The same node and frame again: the same card, written again.
+    await copySelectedReference(ctx);
+    expect(ctx.link.files.paths().filter(path => path.endsWith(".md"))).toEqual([
+      ".moku/captures/coinPill-f1841.md"
+    ]);
   });
 
   it("toasts when the clipboard refuses or does not exist, and returns the block all the same", async () => {

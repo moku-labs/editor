@@ -104,14 +104,19 @@ describe("createGameViewApi", () => {
 });
 
 describe("copyReference, bookmarks and fold", () => {
-  it("copyReference builds the block of the selection; bookmarks lists the pick bookmarks", async () => {
+  it("copyReference writes the card and returns its one line; bookmarks lists the pick bookmarks", async () => {
     vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(() => Promise.resolve()) } });
     const api = createGameViewApi(ctx);
     expect(await api.copyReference()).toBeUndefined();
 
     api.select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
-    const block = await api.copyReference();
-    expect(block?.split("\n")[0]).toBe("@moku coinPill · row · board/awaitIntent · f1841");
+    const line = await api.copyReference();
+    expect(line).toBe(
+      "@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · .moku/captures/coinPill-f1841.md"
+    );
+    expect(ctx.link.files.text(".moku/captures/coinPill-f1841.md")).toContain(
+      "@moku coinPill · row · board/awaitIntent · f1841"
+    );
     expect(api.bookmarks()).toEqual([]);
   });
 
