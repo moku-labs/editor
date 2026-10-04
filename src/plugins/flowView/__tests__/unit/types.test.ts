@@ -6,7 +6,16 @@ import { panelsPlugin } from "../../../panels";
 import type { RunResult } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import { flowViewPlugin } from "../..";
-import type { Camera, FlowViewApi, ItemKey, NodeId } from "../../types";
+import type {
+  Camera,
+  FlowHubConfig,
+  FlowLayoutConfig,
+  FlowViewApi,
+  FlowViewConfig,
+  FlowZoomConfig,
+  ItemKey,
+  NodeId
+} from "../../types";
 
 const framework = createToolsCore(toolsCoreConfig, {
   plugins: [linkPlugin, workspacePlugin, panelsPlugin, flowViewPlugin]
@@ -57,5 +66,31 @@ describe("flowView types", () => {
     expectTypeOf<ToolsEvents["workspace:density"]>().toEqualTypeOf<{
       density: "compact" | "comfortable";
     }>();
+  });
+
+  it("groups the layout, zoom and hub options into one-level objects with the defaults (D-30)", () => {
+    expectTypeOf<keyof FlowViewConfig>().toEqualTypeOf<
+      | "historyLast"
+      | "trailLength"
+      | "rejectedOutcomes"
+      | "stylesFile"
+      | "styleSaveDelayMs"
+      | "layout"
+      | "zoom"
+      | "hub"
+    >();
+    expectTypeOf<FlowViewConfig["layout"]>().toEqualTypeOf<FlowLayoutConfig>();
+    expectTypeOf<FlowViewConfig["zoom"]>().toEqualTypeOf<FlowZoomConfig>();
+    expectTypeOf<FlowViewConfig["hub"]>().toEqualTypeOf<FlowHubConfig>();
+    expect(flowViewPlugin.spec.config).toEqual({
+      historyLast: 20,
+      trailLength: 6,
+      rejectedOutcomes: ["rejected"],
+      stylesFile: undefined,
+      styleSaveDelayMs: 600,
+      layout: { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 },
+      zoom: { min: 0.08, max: 3, defaultMin: 0.8 },
+      hub: { minOutcomes: 6, minReturns: 4 }
+    });
   });
 });

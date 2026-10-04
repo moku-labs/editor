@@ -8,13 +8,13 @@
  * cannot be written leaves its path out of the line.
  */
 import { linkPlugin } from "../../link";
-import type { PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
+import type { SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { cardPath } from "../capture/naming";
 import { listTaken } from "../capture/shot";
 import { elementCode } from "../element/code";
 import { messageOf } from "../report";
 import type { CodeSnippet, ElementCode, GameViewCtx } from "../types";
-import { type ReferenceFacts, referenceBlock, sourceText } from "./block";
+import { flowNodeOf, type ReferenceFacts, rectText, referenceBlock, sourceText } from "./block";
 import { referenceFacts } from "./facts";
 
 /**
@@ -54,17 +54,6 @@ export function nameOf(node: SceneNode): string {
 }
 
 /**
- * A rect rounded as `x,y w×h`.
- *
- * @param rect - A rect.
- * @returns The text.
- */
-function rectText(rect: PageRect): string {
-  const [x, y, w, h] = [rect.x, rect.y, rect.w, rect.h].map(value => Math.round(value));
-  return `${x},${y} ${w}×${h}`;
-}
-
-/**
  * Where the element is in the source: the key's `file:line` (`(loop)` for a loop key), else the
  * line that defines an entity's projection.
  *
@@ -97,12 +86,14 @@ export function referenceLine(
   card: string | undefined
 ): string {
   const { node, position } = facts;
-  const flowNode =
-    position.flow !== undefined && position.node !== undefined
-      ? `${position.flow}/${position.node}`
-      : position.path;
   const ref = node.refRect === undefined ? undefined : `ref ${rectText(node.refRect)}`;
-  const fields = [`@moku ${node.name} ${node.type}`, flowNode, placeOf(facts, code), ref, card];
+  const fields = [
+    `@moku ${node.name} ${node.type}`,
+    flowNodeOf(position),
+    placeOf(facts, code),
+    ref,
+    card
+  ];
   return fields.filter(field => field !== undefined).join(" · ");
 }
 
@@ -174,16 +165,13 @@ function fileName(path: string): string {
 }
 
 /**
- * The card file of a reference: the full block, the code and the images of the pick.
+ * The card file of a reference: a heading with the node's name and type, the full block, the code
+ * and the images of the pick.
  *
  * @param block - The full reference block.
  * @param facts - The facts it was built from (the node and the pick's files).
  * @param code - The element's code.
  * @returns The markdown text, ending with a newline.
- * @example
- * ```ts
- * cardText(block, facts, code).split("\n")[0]; // "# @moku settingsBoard panel"
- * ```
  */
 export function cardText(
   block: string,
@@ -238,11 +226,14 @@ async function writeCard(
   const { capturesDir } = ctx.config;
   const memo = `${facts.node.id}@${facts.frame}`;
   try {
+    // "Copy reference" rewrites the card of this node and frame; a pick always takes a new name.
     let path = fresh ? undefined : ctx.state.cards.get(memo);
     if (path === undefined) {
       const taken = await listTaken(ctx, capturesDir);
       path = cardPath(capturesDir, nameOf(facts.node), facts.frame, taken);
     }
+
+    // Write the card, then remember it for the next "Copy reference".
     await ctx.require(linkPlugin).files.write(path, text);
     ctx.state.cards.set(memo, path);
     return path;

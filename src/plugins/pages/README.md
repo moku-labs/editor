@@ -26,7 +26,7 @@ A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` wit
 | `routes` | `routes(): EditorRoutes` | A copy of the routes registered with the hub in `onInit`. |
 | `attachServer` | `attachServer(server: { reload(options: BunServeOptions): void }, options: BunServeOptions): void` | The bin calls it right after `Bun.serve`. The bin owns hot reload from then on; HMR is read from `options.development`; the state is published with `hub.publish("hotReload", …)`. `server` is not used: Bun cannot switch HMR (see Hot reload). |
 | `hotReload` | `hotReload(): HotReload` | A fresh `{ hmr, owner }`. Owner `"server"` with `hmr: false` until `attachServer`. |
-| `setHotReload` | `setHotReload(on: boolean): Promise<boolean>` | Read-only switch: owner `"server"` answers false; the bin answers true only when HMR already is `on`. Publishes the state either way. |
+| `setHotReload` | `setHotReload(on: boolean): Promise<boolean>` | Read-only switch: owner `"server"` always answers false; the bin answers true only when its HMR already equals `on`. Publishes the state either way. |
 
 ```ts
 Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]

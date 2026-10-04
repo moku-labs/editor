@@ -10,6 +10,8 @@ import {
   takeStoredCheckpoint,
   watchReload
 } from "../../checkpoint/checkpoint";
+import { storageOf } from "../../checkpoint/hot";
+import type { CheckpointStorage } from "../../types";
 import type { TestDeps } from "../helpers";
 import { commandEntry, createDeps, flush, MANIFEST } from "../helpers";
 
@@ -276,5 +278,24 @@ describe("helloManifest", () => {
     expect(helloManifest(deps)).toEqual({ ...MANIFEST, restored: { bookmark: "{}", frame: 3 } });
     expect(helloManifest(deps)).toEqual(MANIFEST);
     expect(deps.state.restored).toBeUndefined();
+  });
+});
+
+describe("storageOf", () => {
+  it("is the scope's sessionStorage, undefined without one or where reading it throws", () => {
+    const storage: CheckpointStorage = {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined
+    };
+    const sandboxed = {
+      get sessionStorage(): CheckpointStorage {
+        throw new Error("SecurityError");
+      }
+    };
+
+    expect(storageOf({ sessionStorage: storage })).toBe(storage);
+    expect(storageOf({})).toBeUndefined();
+    expect(storageOf(sandboxed)).toBeUndefined();
   });
 });

@@ -26,7 +26,7 @@ import type {
 /** The default config of the plugin (same values as index.ts). */
 export const DEFAULT_CONFIG: HubConfig = {
   path: "/__editor",
-  allow: [],
+  allowOrigins: [],
   callTimeoutMs: 5000,
   silentAfterMs: 6000
 };

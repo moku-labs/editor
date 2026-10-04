@@ -2,7 +2,14 @@
 
 import { readFileSync } from "node:fs";
 import type { Json } from "../../registry/protocol";
-import type { FlowJson, FlowViewConfig, GraphJson, HistoryEntryJson, Item } from "../types";
+import type {
+  FlowJson,
+  FlowLayoutConfig,
+  FlowViewConfig,
+  GraphJson,
+  HistoryEntryJson,
+  Item
+} from "../types";
 import raw from "./fixtures/merge-graph.json";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,22 +32,22 @@ export function flowOf(name: string, graph: GraphJson = mergeGraph): FlowJson {
   return flow;
 }
 
-/** The default config of index.ts, with overrides. */
+/** The layout options of the tests (ELK inline), with overrides. */
+export function testLayout(overrides: Partial<FlowLayoutConfig> = {}): FlowLayoutConfig {
+  return { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400, ...overrides };
+}
+
+/** The default config of index.ts (ELK inline, a styles file set), with overrides. */
 export function testConfig(overrides: Partial<FlowViewConfig> = {}): FlowViewConfig {
   return {
     historyLast: 20,
     trailLength: 6,
     rejectedOutcomes: ["rejected"],
-    hubMinOutcomes: 6,
-    hubMinReturns: 4,
-    layoutFile: ".moku/editor/layout.json",
     stylesFile: "features/ui/styles.ts",
-    layoutWorker: false,
-    layoutSaveDelayMs: 400,
     styleSaveDelayMs: 600,
-    minZoom: 0.08,
-    maxZoom: 3,
-    defaultMinZoom: 0.8,
+    layout: testLayout(),
+    zoom: { min: 0.08, max: 3, defaultMin: 0.8 },
+    hub: { minOutcomes: 6, minReturns: 4 },
     ...overrides
   };
 }

@@ -39,7 +39,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 >
 > **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
 >
-> **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order.
+> **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole.
 >
 > **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` turns it off). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>.png` and `f<frame>.png` in `capturesDir`, which must be `.moku/captures` or a folder under it. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
 
@@ -521,7 +521,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | files | `allow` | `["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"]` | Globs a file must match. Case-sensitive. |
 | files | `deny` | `["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]` | Globs never listed, read or written. Case-insensitive. |
 | hub | `path` | `"/__editor"` | URL prefix of every editor route. |
-| hub | `allow` | `[]` | Extra exact origins allowed, e.g. `"http://192.168.1.4:3000"`. |
+| hub | `allowOrigins` | `[]` | Extra exact origins allowed, e.g. `"http://192.168.1.4:3000"`. |
 | hub | `callTimeoutMs` | `5000` | Deadline of a forwarded call. |
 | hub | `silentAfterMs` | `6000` | No heartbeat this long → silent (65 s after a paused beat). |
 | pages | `title` | `"moku editor"` | Tools page `<title>`. |
@@ -542,10 +542,10 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | workspace | `toastMs` | `2600` | How long one toast stays. |
 | panels | — | `{}` | No options. |
 | flowView | `historyLast` · `trailLength` · `rejectedOutcomes` | `20` · `6` · `["rejected"]` | History watched, trail edges, rejection outcomes. |
-| flowView | `hubMinOutcomes` · `hubMinReturns` | `6` · `4` | The hub rule. |
-| flowView | `layoutFile` · `stylesFile` | `".moku/editor/layout.json"` · `undefined` | Saved positions; the text styles file (unset: the first file that calls `defineTextStyles(`, found once per session). |
-| flowView | `layoutWorker` · `layoutSaveDelayMs` · `styleSaveDelayMs` | `true` · `400` · `600` | ELK in a worker, save debounces. |
-| flowView | `minZoom` · `maxZoom` · `defaultMinZoom` | `0.08` · `3` · `0.8` | Zoom range and default camera floor. |
+| flowView | `stylesFile` · `styleSaveDelayMs` | `undefined` · `600` | The text styles file (unset: the first file that calls `defineTextStyles(`, found once per session); style save debounce. |
+| flowView | `layout` | `{ file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 }` | Saved positions, ELK in a worker, layout save debounce. Replaced as a whole. |
+| flowView | `zoom` | `{ min: 0.08, max: 3, defaultMin: 0.8 }` | Zoom range and default camera floor. Replaced as a whole. |
+| flowView | `hub` | `{ minOutcomes: 6, minReturns: 4 }` | The hub rule. Replaced as a whole. |
 | gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go. `.moku/captures` or a folder under it. |
 | gameView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |

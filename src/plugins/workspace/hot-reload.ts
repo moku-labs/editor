@@ -113,7 +113,8 @@ function showAnswer(
  *
  * @param ctx - State, config and require.
  * @param on - The asked value.
- * @returns Whether hot reload is the asked value afterwards (never rejects).
+ * @returns link's answer: true when the server answers with its HMR equal to `on` (never
+ * rejects).
  */
 export async function setHotReload(ctx: HotReloadCtx, on: boolean): Promise<boolean> {
   const link = ctx.require(linkPlugin);

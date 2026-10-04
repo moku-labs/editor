@@ -39,7 +39,7 @@ export function createWorkerEngine(
 }
 
 /**
- * The inline engine: ELK on the main thread (tests, strict CSP, `layoutWorker: false`). Its
+ * The inline engine: ELK on the main thread (tests, strict CSP, `layout.worker: false`). Its
  * `dispose()` frees nothing: it holds no worker and no URL.
  *
  * @returns The engine.

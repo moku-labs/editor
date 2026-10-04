@@ -99,10 +99,11 @@ export type PagesApi = {
   /**
    * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
    * running server, so the switch is read-only: a game's own server always answers false, the
-   * bin answers true only when HMR already is `on`. Restart the bin to change hot reload.
+   * bin answers true only when its HMR already equals `on`. Restart the bin to change hot reload.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is `on` afterwards.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise
+   * (a game's own server always answers false).
    * @example
    * ```ts
    * // The bin serves with HMR on.

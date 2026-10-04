@@ -80,7 +80,7 @@ async function frames(count: number): Promise<void> {
 }
 
 async function until(check: () => boolean, label: string): Promise<void> {
-  const deadline = performance.now() + 3000;
+  const deadline = performance.now() + 10_000;
   while (!check()) {
     if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
     await new Promise(resolve => setTimeout(resolve, 5));

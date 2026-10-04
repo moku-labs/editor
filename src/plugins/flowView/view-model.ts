@@ -5,7 +5,15 @@
  */
 import type { Json } from "../registry/protocol";
 import { incomingEdge, localKey, outgoingEdgeKey } from "./focus/edges";
-import { incoming, nodeKinds, outgoing, parentsOf, resolveStack } from "./focus/graph";
+import {
+  incoming,
+  nodeKinds,
+  nodeOf,
+  outgoing,
+  parentsOf,
+  resolveStack,
+  splitId
+} from "./focus/graph";
 import { entryFrame, frameLabel, lastFires, rejectedEdges, trailRanks } from "./focus/trail";
 import { fileOfNode } from "./inspector/files";
 import type { InfoOutcome, InfoSource, InfoView } from "./inspector/types";
@@ -85,8 +93,7 @@ export function glyphOf(kinds: readonly string[]): Glyph {
  * ```
  */
 export function kindLine(graph: GraphJson, id: NodeId, kinds: readonly string[]): string {
-  const slash = id.indexOf("/");
-  const node = graph.flows[id.slice(0, slash)]?.nodes[id.slice(slash + 1)];
+  const node = nodeOf(graph, id);
   if (node?.subFlow !== undefined) return `sub-flow · ${node.subFlow}`;
   if (node?.slot !== undefined) {
     const parts = (graph.slots[node.slot] ?? []).map(
@@ -118,10 +125,6 @@ function isDimmed(inputs: ViewInputs, key: ItemKey): boolean {
  * @param expanded - Whether its key is expanded.
  * @param trailItems - Items touched by a trail edge.
  * @returns The card view.
- * @example
- * ```ts
- * cardOf(inputs, item, false, trailItems).glyph; // "rest"
- * ```
  */
 function cardOf(
   inputs: ViewInputs,
@@ -130,10 +133,9 @@ function cardOf(
   trailItems: ReadonlySet<ItemKey>
 ): CardView {
   const kinds = nodeKinds(inputs.graph, item.id);
-  const slash = item.id.indexOf("/");
-  const node = inputs.graph.flows[item.id.slice(0, slash)]?.nodes[item.id.slice(slash + 1)];
+  const node = nodeOf(inputs.graph, item.id);
   return {
-    name: item.id.slice(slash + 1),
+    name: item.id.slice(item.id.indexOf("/") + 1),
     glyph: glyphOf(kinds),
     kinds,
     kindLine: kindLine(inputs.graph, item.id, kinds),
@@ -189,10 +191,6 @@ function rejectedText(entry: HistoryEntryJson, frames: ReadonlyMap<number, numbe
  *
  * @param item - A laid-out item.
  * @returns Whether it is a node.
- * @example
- * ```ts
- * isNodeItem({ kind: "stub", … }); // false
- * ```
  */
 function isNodeItem(item: Item): boolean {
   return item.kind === "node" || item.kind === "hub" || item.kind === "frame";
@@ -274,8 +272,7 @@ function nodeFrameHead(
   frame: Item
 ): { readonly head: string; readonly onStack: boolean } {
   const { graph, result } = inputs;
-  const slash = frame.id.indexOf("/");
-  const node = graph.flows[frame.id.slice(0, slash)]?.nodes[frame.id.slice(slash + 1)];
+  const node = nodeOf(graph, frame.id);
   const inner = result.items.filter(entry => entry.parent === frame.key && isNodeItem(entry));
   const onStack = inputs.stack.has(frame.id);
   const what =
@@ -297,6 +294,25 @@ function frameHead(
   frame: Item
 ): { readonly head: string; readonly onStack: boolean } {
   return frame.key.startsWith("#") ? rootFrameHead(inputs, frame) : nodeFrameHead(inputs, frame);
+}
+
+/**
+ * The view of a frame: its head, whether its flow is on the stack, root or expanded node, and
+ * whether it holds the current node. A frame never dims.
+ *
+ * @param inputs - The view inputs.
+ * @param item - The frame item.
+ * @returns The frame view.
+ */
+function frameViewOf(inputs: ViewInputs, item: Item): FrameView {
+  const { head, onStack } = frameHead(inputs, item);
+  return {
+    head,
+    onStack,
+    root: item.key.startsWith("#"),
+    dimmed: false,
+    holdsCurrent: inputs.holders.has(item.key)
+  };
 }
 
 /**
@@ -330,6 +346,42 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
 }
 
 /**
+ * True when an edge starts or ends at an item.
+ *
+ * @param edge - A routed edge.
+ * @param key - The item key, if any.
+ * @returns Whether the edge touches the item.
+ * @example
+ * ```ts
+ * touches({ key: "main/home:play", from: "main/home", to: "main/board", outcome: "play", kind: "edge", points: [] }, "main/board"); // true
+ * ```
+ */
+function touches(edge: EdgePath, key: ItemKey | undefined): boolean {
+  return key !== undefined && (edge.from === key || edge.to === key);
+}
+
+/**
+ * True for an edge the selection dims: something is selected, and the edge is neither related to
+ * the selection, nor a trail edge into an item holding the current node, nor an edge of the
+ * current node.
+ *
+ * @param inputs - The view inputs.
+ * @param edge - The edge.
+ * @param kept - What keeps the edge bright.
+ * @param kept.related - It touches the selection.
+ * @param kept.here - It is a trail edge into an item holding the current node.
+ * @returns Whether the edge is dimmed.
+ */
+function isEdgeDimmed(
+  inputs: ViewInputs,
+  edge: EdgePath,
+  kept: { readonly related: boolean; readonly here: boolean }
+): boolean {
+  if (inputs.related === undefined || kept.related || kept.here) return false;
+  return !touches(edge, inputs.current);
+}
+
+/**
  * The edge views and the items a trail edge touches. Trail and rejections are graph facts (keyed
  * by the local edge key); the selected edge is one instance. Edges into or out of the current
  * node never dim; a trail edge into an item holding the current node is highlighted and never
@@ -346,23 +398,25 @@ function edgeViews(
   const trailItems = new Set<ItemKey>();
   const edges = new Map<string, EdgeView>();
   for (const edge of inputs.result.edges) {
+    // The trail rank is a graph fact; a trail edge marks both its ends.
     const graphKey = localKey(edge.key);
     const rank = edge.kind === "edge" ? inputs.trail.get(graphKey) : undefined;
     if (rank !== undefined) {
       trailItems.add(edge.from);
       if (edge.to !== undefined) trailItems.add(edge.to);
     }
-    const touches = (key: ItemKey | undefined): boolean =>
-      key !== undefined && (edge.from === key || edge.to === key);
-    const related = touches(inputs.selected);
+
+    // How the edge stands to the selection and to the item holding the current node.
+    const related = touches(edge, inputs.selected);
     const here = rank !== undefined && edge.to !== undefined && inputs.holders.has(edge.to);
+
     edges.set(edgeId(edge), {
       rank,
       recent: rank !== undefined && rank < RECENT_TRAIL,
       rejected: edge.kind === "edge" && inputs.rejected.has(graphKey),
       related,
       here,
-      dimmed: inputs.related !== undefined && !related && !here && !touches(inputs.current),
+      dimmed: isEdgeDimmed(inputs, edge, { related, here }),
       selected: edge.kind === "edge" && ctx.state.focus.edge === edge.key
     });
   }
@@ -385,8 +439,7 @@ function hubOf(
   trailItems: ReadonlySet<ItemKey>
 ): HubView {
   const card = cardOf(inputs, item, false, trailItems);
-  const slash = item.id.indexOf("/");
-  const node = inputs.graph.flows[item.id.slice(0, slash)]?.nodes[item.id.slice(slash + 1)];
+  const node = nodeOf(inputs.graph, item.id);
   const waiting = ctx.state.data.position?.waiting ?? [];
   return {
     ...card,
@@ -444,9 +497,12 @@ function trailLanesOf(result: LayoutResult, trail: ReadonlyMap<string, number>):
  * @returns The world view, or undefined before the first layout.
  */
 export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undefined {
+  // Gather the inputs and the edge views; the edges decide which items the trail touches.
   const inputs = inputsOf(ctx, actions);
   if (inputs === undefined) return undefined;
   const { edges, trailItems } = edgeViews(ctx, inputs);
+
+  // One view per item, by kind; a port draws from the layout alone.
   const cards = new Map<ItemKey, CardView>();
   const hubs = new Map<ItemKey, HubView>();
   const frames = new Map<ItemKey, FrameView>();
@@ -466,14 +522,7 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
         break;
       }
       case "frame": {
-        const { head, onStack } = frameHead(inputs, item);
-        frames.set(item.key, {
-          head,
-          onStack,
-          root: item.key.startsWith("#"),
-          dimmed: false,
-          holdsCurrent: inputs.holders.has(item.key)
-        });
+        frames.set(item.key, frameViewOf(inputs, item));
         break;
       }
       case "port": {
@@ -481,6 +530,8 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
       }
     }
   }
+
+  // Assemble the world: the layout, the views, the lanes on the trail, the stale mark.
   return {
     result: inputs.result,
     cards,
@@ -606,15 +657,15 @@ function outcomeRows(
   const rejected = rejectedEdges(history, graph, ctx.config.rejectedOutcomes);
   const waiting = current ? (position?.waiting ?? []) : [];
   const parent = soleParentFrame(ctx, graph, id.slice(0, id.indexOf("/")));
+
+  // A row names its instance edge only while the shown node is on the canvas.
+  const isOnCanvas = key !== undefined && result !== undefined;
   return outgoing(graph, id, parent).map(row => {
     const fire = fires.get(row.key);
     const rejection = rejected.get(row.key);
     return {
       outcome: row.outcome,
-      edgeKey:
-        key === undefined || result === undefined
-          ? undefined
-          : outgoingEdgeKey(result, key, row.outcome),
+      edgeKey: isOnCanvas ? outgoingEdgeKey(result, key, row.outcome) : undefined,
       target: targetText(row.to, row.exit),
       targetId: row.to,
       back: row.back,
@@ -687,10 +738,8 @@ function shownKey(ctx: FlowCtx, actions: FlowActions, id: NodeId): ItemKey | und
  */
 export function infoView(ctx: FlowCtx, actions: FlowActions, id: NodeId): InfoView | undefined {
   const { graph } = ctx.state.data;
-  const slash = id.indexOf("/");
-  const flow = id.slice(0, slash);
-  const name = id.slice(slash + 1);
-  const node = graph?.flows[flow]?.nodes[name];
+  const { flow, node: name } = splitId(id);
+  const node = graph === undefined ? undefined : nodeOf(graph, id);
   if (graph === undefined || node === undefined) return undefined;
 
   const current = actions.focus.current() === id;

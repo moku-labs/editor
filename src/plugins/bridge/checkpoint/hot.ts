@@ -35,7 +35,7 @@ function onBeforeFullReload(listener: () => void): () => void {
  * @returns The storage, or undefined.
  * @example
  * ```ts
- * storageOf(globalThis)?.getItem("moku-editor:checkpoint");
+ * storageOf({}); // undefined: no sessionStorage outside a browser
  * ```
  */
 export function storageOf(scope: {
@@ -53,10 +53,6 @@ export function storageOf(scope: {
  * beforeFullReload.
  *
  * @returns The seam the bridge deps carry.
- * @example
- * ```ts
- * const deps = { ...rest, reload: defaultReload() };
- * ```
  */
 export function defaultReload(): ReloadSeam {
   return { storage: storageOf(globalThis), doc: performance.timeOrigin, onBeforeFullReload };

@@ -85,6 +85,9 @@ const instant: LayoutEngine = {
   dispose() {}
 };
 
+/** Wall-clock budgets run only on request (`PERF=1 bun run test:unit`): a shared runner is noisy. */
+const isPerfRun = process.env.PERF === "1";
+
 const graph = syntheticGraph();
 const expanded = new Set(Object.keys(graph.flows.main?.nodes ?? {}).map(name => `main/${name}`));
 
@@ -106,7 +109,7 @@ function compose(engine: LayoutEngine) {
   });
 }
 
-describe("layout budgets (25 sub-flows, 200 nodes)", () => {
+describe("layout of the budget graph (25 sub-flows, 200 nodes)", () => {
   it("has the size of the budget graph", () => {
     const nodes = Object.values(graph.flows).reduce(
       (sum, flow) => sum + Object.keys(flow.nodes).length,
@@ -116,6 +119,23 @@ describe("layout budgets (25 sub-flows, 200 nodes)", () => {
     expect(nodes).toBeGreaterThanOrEqual(200);
   });
 
+  it("lays out 25 frames and 3 hubs with 22 ELK layouts", async () => {
+    let layouts = 0;
+    const counted: LayoutEngine = {
+      async layout(input: ElkNode): Promise<ElkNode> {
+        layouts += 1;
+        return instant.layout(input);
+      },
+      dispose() {}
+    };
+    const result = await compose(counted);
+    expect(result.frames).toHaveLength(25);
+    expect(result.items.filter(item => item.kind === "hub")).toHaveLength(3);
+    expect(layouts).toBe(22);
+  });
+});
+
+describe.skipIf(!isPerfRun)("layout budgets (PERF=1)", () => {
   it("hub-lane + compose + routes stay within 8 ms on the main thread (median of 5, CI factor 3)", async () => {
     await compose(instant);
     const times: number[] = [];

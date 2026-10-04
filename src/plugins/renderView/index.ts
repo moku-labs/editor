@@ -8,6 +8,7 @@
 import { createToolsPlugin } from "../../config";
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
+import { DEFAULT_MANIFEST_PATHS } from "../panels/shared/manifest-paths";
 import { workspacePlugin } from "../workspace";
 import { createRenderViewApi } from "./api";
 import { createHandlers } from "./handlers";
@@ -18,7 +19,7 @@ import type { RenderViewConfig } from "./types";
 const defaultConfig: RenderViewConfig = {
   fpsSamples: 60,
   releaseLogMax: 50,
-  manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"]
+  manifestPaths: DEFAULT_MANIFEST_PATHS
 };
 
 /**

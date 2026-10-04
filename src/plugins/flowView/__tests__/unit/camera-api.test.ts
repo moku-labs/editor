@@ -35,7 +35,7 @@ describe("camera api", () => {
         camera.insets(),
         FIT_ALL.pad,
         FIT_ALL.maxZ,
-        ctx.config
+        ctx.config.zoom
       )
     );
   });
@@ -115,6 +115,16 @@ describe("camera api", () => {
     expect(camera.get().z).toBeCloseTo(1, 9);
     camera.zoomBy(100);
     expect(camera.get().z).toBe(3);
+  });
+
+  it("clamps to the zoom object of the config (D-30)", () => {
+    const { ctx } = createTestCtx({ config: { zoom: { min: 0.5, max: 2, defaultMin: 0.8 } } });
+    ctx.state.camera.viewport = { w: 1000, h: 800 };
+    const camera = actionsOf(ctx).camera;
+    camera.zoomBy(100);
+    expect(camera.get().z).toBe(2);
+    camera.zoomBy(0.001);
+    expect(camera.get().z).toBe(0.5);
   });
 
   it("follow toggles; only the toggle changes it (M9)", async () => {

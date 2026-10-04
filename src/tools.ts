@@ -16,7 +16,14 @@
  * | workspace | reloadTimeoutMs | 15000 |
  * | workspace | hotReloadWaitMs | 1500 |
  * | workspace | toastMs | 2600 |
- * | flowView | historyLast, trailLength, stylesFile, layoutWorker … | see src/plugins/flowView/README.md |
+ * | flowView | historyLast | 20 |
+ * | flowView | trailLength | 6 |
+ * | flowView | rejectedOutcomes | ["rejected"] |
+ * | flowView | stylesFile | undefined (found once per session) |
+ * | flowView | styleSaveDelayMs | 600 |
+ * | flowView | layout | { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 } |
+ * | flowView | zoom | { min: 0.08, max: 3, defaultMin: 0.8 } |
+ * | flowView | hub | { minOutcomes: 6, minReturns: 4 } |
  * | gameView | capturesDir, manifestPaths, sourceSearch … | see src/plugins/gameView/README.md |
  * | renderView | fpsSamples | 60 |
  * | renderView | releaseLogMax | 50 |
@@ -32,6 +39,8 @@
  * | consoleView | preserveLog | false |
  * | consoleView | freshMs | 1200 |
  * | consoleView | summaryChars | 160 |
+ *
+ * An object option (flowView `layout`, `zoom`, `hub`) replaces its default as a whole.
  *
  * @file The tools page entry: the tools core and its plugins.
  * @example

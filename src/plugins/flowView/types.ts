@@ -17,7 +17,67 @@ import type { InspectorActions, InspectorState } from "./inspector/types";
 import type { FlowsApi, LayoutActions, LayoutApi, LayoutState } from "./layout/types";
 
 /**
- * flowView configuration (flat, spec/11 §2.6).
+ * Where the layout is saved and how ELK runs (`flowView.layout`). Replaced as a whole: an override
+ * gives every field.
+ *
+ * @example
+ * ```ts
+ * createApp({
+ *   pluginConfigs: {
+ *     flowView: { layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400 } }
+ *   }
+ * }); // ELK runs inline, positions save to .moku/editor/layout.json
+ * ```
+ */
+export type FlowLayoutConfig = {
+  /** Saved positions. Default ".moku/editor/layout.json". */
+  readonly file: string;
+  /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
+  readonly worker: boolean;
+  /** Debounce before the layout file is written after a drop. Default 400. */
+  readonly saveDelayMs: number;
+};
+
+/**
+ * The zoom range of the camera (`flowView.zoom`). Replaced as a whole: an override gives every
+ * field.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { flowView: { zoom: { min: 0.08, max: 2, defaultMin: 0.8 } } } });
+ * // zoomTo(3) stops at 200 %
+ * ```
+ */
+export type FlowZoomConfig = {
+  /** Lowest zoom (design §4: 8 %). Default 0.08. */
+  readonly min: number;
+  /** Highest zoom (design §4: 300 %). Default 3. */
+  readonly max: number;
+  /** Floor of the default camera (M11). Default 0.8. */
+  readonly defaultMin: number;
+};
+
+/**
+ * The hub rule (`flowView.hub`, design §7.1): the rest node drawn as a hub with one lane per
+ * outcome. Replaced as a whole: an override gives every field.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { flowView: { hub: { minOutcomes: 8, minReturns: 4 } } } });
+ * // a rest node with 6 outcomes is laid out by ELK, not as a hub
+ * ```
+ */
+export type FlowHubConfig = {
+  /** A hub has at least this many outcomes. Default 6. */
+  readonly minOutcomes: number;
+  /** A hub has at least this many distinct returning nodes. Default 4. */
+  readonly minReturns: number;
+};
+
+/**
+ * flowView configuration (spec/11 §2.6): flat fields plus the one-level objects `layout`, `zoom`
+ * and `hub`. The kernel merges shallowly, so an object given in `pluginConfigs` replaces the
+ * default object as a whole.
  *
  * @example
  * ```ts
@@ -31,29 +91,19 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /** Hub rule: a hub has at least this many outcomes (design §7.1). Default 6. */
-  hubMinOutcomes: number;
-  /** Hub rule: a hub has at least this many distinct returning nodes (design §7.1). Default 4. */
-  hubMinReturns: number;
-  /** Saved positions. Default ".moku/editor/layout.json". */
-  layoutFile: string;
   /**
    * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
    * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
    */
   stylesFile: string | undefined;
-  /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
-  layoutWorker: boolean;
-  /** Debounce before layout.json is written after a drop. Default 400. */
-  layoutSaveDelayMs: number;
   /** Debounce before a style stepper burst is written. Default 600. */
   styleSaveDelayMs: number;
-  /** Lowest zoom (design §4: 8 %). Default 0.08. */
-  minZoom: number;
-  /** Highest zoom (design §4: 300 %). Default 3. */
-  maxZoom: number;
-  /** Floor of the default camera (M11). Default 0.8. */
-  defaultMinZoom: number;
+  /** The layout file and the ELK engine. */
+  layout: FlowLayoutConfig;
+  /** The zoom range of the camera. */
+  zoom: FlowZoomConfig;
+  /** The hub rule. */
+  hub: FlowHubConfig;
 };
 
 /**

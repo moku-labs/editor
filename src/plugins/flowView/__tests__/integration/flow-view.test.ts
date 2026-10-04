@@ -66,13 +66,43 @@ let root: HTMLElement;
 let emits: { emit: <K extends keyof ToolsEvents>(name: K, payload: ToolsEvents[K]) => void }[];
 let opened: ToolsEvents["workspace:open-file"][];
 
-/** Waits until a check passes (real time; the hub answers on microtasks). */
+/** How long `until` waits for a check (real time; generous for a loaded CI runner). */
+const UNTIL_DEADLINE_MS = 10_000;
+
+/** The longest `until` sleeps between two checks while the page does not change. */
+const UNTIL_TICK_MS = 5;
+
+/** Resolves on the next change of the page (a DOM mutation), else after one tick. */
+async function nextChange(): Promise<void> {
+  await new Promise<void>(resolve => {
+    const observer = new MutationObserver(() => {
+      done();
+    });
+    const timer = setTimeout(() => {
+      done();
+    }, UNTIL_TICK_MS);
+    /** Stops watching and resolves. */
+    function done(): void {
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    }
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true
+    });
+  });
+}
+
+/** Waits until a check passes: checks again on each page change, or each tick for app state. */
 async function until(check: () => boolean, label: string): Promise<void> {
-  const deadline = performance.now() + 4000;
+  const deadline = performance.now() + UNTIL_DEADLINE_MS;
   while (!check()) {
     if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await nextChange();
     });
   }
 }
@@ -99,7 +129,10 @@ function createApp() {
   const app = framework.createApp({
     plugins: [probe],
     pluginConfigs: {
-      flowView: { layoutWorker: false, layoutSaveDelayMs: 0, styleSaveDelayMs: 0 },
+      flowView: {
+        layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 0 },
+        styleSaveDelayMs: 0
+      },
       workspace: { reloadTimeoutMs: 50 }
     }
   });

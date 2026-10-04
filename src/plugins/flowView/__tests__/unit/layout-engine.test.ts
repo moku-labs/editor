@@ -4,6 +4,7 @@ import { actionsOf } from "../../actions";
 import { createLazyEngine, createWorkerEngine } from "../../layout/engine";
 import type { LayoutEngine } from "../../layout/types";
 import { createTestCtx, jumpCamera, prepare } from "../ctx";
+import { testLayout } from "../helpers";
 
 vi.mock("../../layout/worker-source", () => ({
   workerUrl: vi.fn(async () => "blob:test"),
@@ -80,11 +81,11 @@ describe("createLazyEngine", () => {
 });
 
 describe("engine choice", () => {
-  it("uses a Blob worker when layoutWorker is on", async () => {
+  it("uses a Blob worker when layout.worker is on", async () => {
     jumpCamera();
     created = 0;
     vi.stubGlobal("Worker", FakeWorker);
-    const { ctx } = createTestCtx({ config: { layoutWorker: true } });
+    const { ctx } = createTestCtx({ config: { layout: testLayout({ worker: true }) } });
     await prepare(ctx);
     expect(created).toBe(1);
     expect(ctx.state.layout.result?.byKey["main/home"]?.kind).toBe("node");
@@ -101,7 +102,7 @@ describe("engine choice", () => {
         }
       }
     );
-    const { ctx } = createTestCtx({ config: { layoutWorker: true } });
+    const { ctx } = createTestCtx({ config: { layout: testLayout({ worker: true }) } });
     await prepare(ctx);
     expect(ctx.state.layout.result?.byKey["main/home"]?.kind).toBe("node");
     expect(ctx.log.warn).toHaveBeenCalledTimes(1);

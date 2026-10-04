@@ -217,7 +217,7 @@ export type Insets = { top?: number; right?: number; bottom?: number; left?: num
 export type GameFrame = {
   /**
    * Absolute URL of the game page: `link.boot()?.gameUrl` resolved against the page, "/" without
-   * a boot.
+   * a boot. Read again on every access, so a refreshed boot is seen.
    *
    * @example
    * ```ts
@@ -759,7 +759,9 @@ export type WorkspaceApi = {
    * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is the asked value afterwards; never rejects.
+   * @returns True when the server answers with its HMR equal to `on`: the bin does only when its
+   * HMR already equals `on`. False when Bun cannot make the change, on a 401, without a boot or
+   * on a network failure. Never rejects.
    * @example
    * ```ts
    * // Bun cannot switch HMR on a running bin.

@@ -114,7 +114,7 @@ function labelled(label: string, value: string | undefined): string | undefined 
 }
 
 /**
- * A rect rounded as `x,y w×h`.
+ * A rect rounded as `x,y w×h`; the block and the one reference line print rects this way.
  *
  * @param rect - A rect.
  * @returns The text.
@@ -123,9 +123,26 @@ function labelled(label: string, value: string | undefined): string | undefined 
  * rectText({ x: 235.4, y: 74, w: 290.4, h: 75.6 }); // "235,74 290×76"
  * ```
  */
-function rectText(rect: PageRect): string {
+export function rectText(rect: PageRect): string {
   const [x, y, w, h] = [rect.x, rect.y, rect.w, rect.h].map(value => Math.round(value));
   return `${x},${y} ${w}×${h}`;
+}
+
+/**
+ * Where the game is, as the head of the block and the one reference line name it: `flow/node`
+ * when both are known, else the position path.
+ *
+ * @param position - The game.position info.
+ * @returns The place, undefined when the position is not known.
+ * @example
+ * ```ts
+ * flowNodeOf({ path: "board/settingsPopup/open", flow: "settingsPopup", node: "open" }); // "settingsPopup/open"
+ * flowNodeOf({ path: "board/awaitIntent", flow: "board" }); // "board/awaitIntent"
+ * ```
+ */
+export function flowNodeOf(position: PositionInfo): string | undefined {
+  const { flow, node } = position;
+  return flow !== undefined && node !== undefined ? `${flow}/${node}` : position.path;
 }
 
 /**
@@ -217,10 +234,7 @@ function labelledValue(name: string, value: Json | undefined): string | undefine
  */
 function headLine(facts: ReferenceFacts): string {
   const { node, position } = facts;
-  const { flow, node: flowNode } = position;
-  const where =
-    flow !== undefined && flowNode !== undefined ? `${flow}/${flowNode}` : position.path;
-  return line([`@moku ${node.name}`, node.type, where, `f${facts.frame}`]) ?? "";
+  return line([`@moku ${node.name}`, node.type, flowNodeOf(position), `f${facts.frame}`]) ?? "";
 }
 
 /**
@@ -346,14 +360,11 @@ function deviceLine(device: DeviceFacts | undefined): string | undefined {
 }
 
 /**
- * The block of one element for the chat.
+ * The block of one element for the chat. The first line is the head, for example
+ * `@moku settingsBoard · panel · settingsPopup/open · f1841`.
  *
  * @param facts - What is known of the element, the game and the device.
  * @returns The block, one fact per line.
- * @example
- * ```ts
- * referenceBlock(facts).split("\n")[0]; // "@moku settingsBoard · panel · settingsPopup/open · f1841"
- * ```
  */
 export function referenceBlock(facts: ReferenceFacts): string {
   const { node, source, pick } = facts;

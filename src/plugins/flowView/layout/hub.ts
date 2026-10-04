@@ -2,7 +2,7 @@
  * @file flowView layout module — hub detection (design §7.1): the rest node with the most
  * returning nodes becomes the hub, when it has enough outcomes and returns.
  */
-import type { FlowJson, FlowViewConfig } from "../types";
+import type { FlowHubConfig, FlowJson } from "../types";
 import { targetNode } from "./back-edges";
 
 /**
@@ -26,24 +26,21 @@ export function returnsOf(flow: FlowJson, node: string): number {
 }
 
 /**
- * The hub of a flow: among rest nodes with ≥ hubMinOutcomes outcomes and ≥ hubMinReturns returns,
- * the one with the most returns; ties go to the earlier node in declared order.
+ * The hub of a flow: among rest nodes with ≥ `rule.minOutcomes` outcomes and ≥ `rule.minReturns`
+ * returns, the one with the most returns; ties go to the earlier node in declared order.
  *
  * @param flow - The flow.
- * @param config - hubMinOutcomes and hubMinReturns.
+ * @param rule - The hub rule: minOutcomes and minReturns.
  * @returns The hub node name, or undefined.
  */
-export function detectHub(
-  flow: FlowJson,
-  config: Pick<Readonly<FlowViewConfig>, "hubMinOutcomes" | "hubMinReturns">
-): string | undefined {
+export function detectHub(flow: FlowJson, rule: FlowHubConfig): string | undefined {
   let best: string | undefined;
   let bestReturns = -1;
 
   for (const [name, node] of Object.entries(flow.nodes)) {
-    if (!node.rest || node.outcomes.length < config.hubMinOutcomes) continue;
+    if (!node.rest || node.outcomes.length < rule.minOutcomes) continue;
     const returns = returnsOf(flow, name);
-    if (returns >= config.hubMinReturns && returns > bestReturns) {
+    if (returns >= rule.minReturns && returns > bestReturns) {
       best = name;
       bestReturns = returns;
     }

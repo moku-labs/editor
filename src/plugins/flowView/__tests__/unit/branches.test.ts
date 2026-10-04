@@ -9,7 +9,7 @@ import { emptyPins } from "../../layout/pins";
 import type { FlowValues } from "../../types";
 import { historyView, infoView, kindLine, worldView } from "../../view-model";
 import { createTestCtx, flush, jumpCamera, prepare } from "../ctx";
-import { cloneGraph, entry, mergeGraph, testConfig } from "../helpers";
+import { cloneGraph, entry, mergeGraph, testConfig, testLayout } from "../helpers";
 
 vi.mock("../../layout/worker-source", () => ({
   workerUrl: vi.fn(async () => {
@@ -178,7 +178,7 @@ describe("focus and layout edge cases", () => {
 
   it("falls back to the inline engine when the worker script does not load (one warning)", async () => {
     jumpCamera();
-    const { ctx } = createTestCtx({ config: { layoutWorker: true } });
+    const { ctx } = createTestCtx({ config: { layout: testLayout({ worker: true }) } });
     await prepare(ctx);
     expect(ctx.state.layout.result?.root).toBe("main");
     expect(ctx.log.warn).toHaveBeenCalledTimes(1);

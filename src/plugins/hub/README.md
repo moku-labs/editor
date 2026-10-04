@@ -15,9 +15,19 @@ Set through `pluginConfigs.hub`. Checked in `onInit`; a bad value makes `createA
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `path` | `string` | `"/__editor"` | URL prefix of every editor route. Starts with `/`. Letters, digits, `_`, `-`, `/`. No trailing or double slash. |
-| `allow` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and to call same-origin routes, for example `"http://192.168.1.4:3000"`. No path, no trailing slash. |
+| `allowOrigins` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and to call same-origin routes, for example `"http://192.168.1.4:3000"`. No path, no trailing slash. |
 | `callTimeoutMs` | `number` | `5000` | Deadline of a forwarded call before it fails with -32002. Integer ≥ 100. |
 | `silentAfterMs` | `number` | `6000` | A session with no heartbeat for this long is marked silent. Integer ≥ 100. After a `paused: true` heartbeat the limit is 65 s (`PAUSED_SILENT_AFTER_MS`). |
+
+Breaking (pre-1.0, D-30): `allow` is renamed `allowOrigins`. `files.allow` keeps its name: it
+lists globs, not origins.
+
+```ts
+// now
+createApp({ pluginConfigs: { hub: { allowOrigins: ["http://192.168.1.4:3000"] } } });
+// before
+createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
+```
 
 ## API
 
@@ -127,7 +137,7 @@ if (refused) return refused;
 
 Allowed hosts: `127.0.0.1:<port>` and `localhost:<port>`, plus the bare names on port 80.
 Compared lowercased and exact. Allowed origins: `http://` plus each allowed host, plus
-`config.allow`. The origin `null` never matches. A server without a port is refused.
+`config.allowOrigins`. The origin `null` never matches. A server without a port is refused.
 
 ### `publish(method, params)`
 

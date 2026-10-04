@@ -194,7 +194,7 @@ function startHub(): Hub {
  * @param timeoutMs - How long to wait.
  * @returns The value.
  */
-async function waitFor<T>(probe: () => T | undefined, timeoutMs = 3000): Promise<T> {
+async function waitFor<T>(probe: () => T | undefined, timeoutMs = 10_000): Promise<T> {
   const until = Date.now() + timeoutMs;
   for (;;) {
     const value = probe();

@@ -1,5 +1,5 @@
 /**
- * @file hub plugin — the onInit body: validates path, allow, callTimeoutMs, silentAfterMs and
+ * @file hub plugin — the onInit body: validates path, allowOrigins, callTimeoutMs, silentAfterMs and
  * builds state.origins. Synchronous, so createApp fails early on a bad config.
  */
 import type { HubCtx } from "./types";
@@ -32,7 +32,7 @@ function configError(problem: string, fix: string): Error {
 /**
  * True for a bare http(s) origin: parses, and equals its own origin (no path, no slash).
  *
- * @param entry - A config.allow entry.
+ * @param entry - A config.allowOrigins entry.
  * @returns Whether it is an origin.
  * @example
  * ```ts
@@ -66,30 +66,30 @@ function checkPath(path: unknown): void {
 }
 
 /**
- * Checks config.allow.
+ * Checks config.allowOrigins.
  *
- * @param allow - The configured extra origins.
+ * @param allowOrigins - The configured extra origins.
  * @returns The origins.
  * @throws {Error} When it is not a list of bare http(s) origins.
  * @example
  * ```ts
- * checkAllow(["http://192.168.1.4:3000"]);
+ * checkAllowOrigins(["http://192.168.1.4:3000"]); // ["http://192.168.1.4:3000"]
  * ```
  */
-function checkAllow(allow: unknown): readonly string[] {
-  if (!Array.isArray(allow)) {
+function checkAllowOrigins(allowOrigins: unknown): readonly string[] {
+  if (!Array.isArray(allowOrigins)) {
     throw configError(
-      "hub.allow must be a list of origins",
-      'Pass pluginConfigs.hub.allow as a list, for example ["http://192.168.1.4:3000"]'
+      "hub.allowOrigins must be a list of origins",
+      'Pass pluginConfigs.hub.allowOrigins as a list, for example ["http://192.168.1.4:3000"]'
     );
   }
 
   const origins: string[] = [];
-  for (const entry of allow) {
+  for (const entry of allowOrigins) {
     if (!isOrigin(entry)) {
       throw configError(
-        `hub.allow entry "${String(entry)}" is not an http(s) origin`,
-        'List origins like "http://192.168.1.4:3000" (no path, no trailing slash) in pluginConfigs.hub.allow'
+        `hub.allowOrigins entry "${String(entry)}" is not an http(s) origin`,
+        'List origins like "http://192.168.1.4:3000" (no path, no trailing slash) in pluginConfigs.hub.allowOrigins'
       );
     }
     origins.push(entry);
@@ -120,16 +120,16 @@ function checkMs(field: string, value: unknown, example: number): void {
 
 /**
  * Validates the config (spec/11 Part 3 format, `[moku-editor] hub.<field> …`) and builds
- * state.origins from config.allow.
+ * state.origins from config.allowOrigins.
  *
  * @param ctx - Domain context of the hub.
- * @throws {Error} On a bad path, allow entry, callTimeoutMs or silentAfterMs.
+ * @throws {Error} On a bad path, allowOrigins entry, callTimeoutMs or silentAfterMs.
  */
 export function validateHubConfig(ctx: HubCtx): void {
-  const { path, allow, callTimeoutMs, silentAfterMs } = ctx.config;
+  const { path, allowOrigins, callTimeoutMs, silentAfterMs } = ctx.config;
 
   checkPath(path);
-  const origins = checkAllow(allow);
+  const origins = checkAllowOrigins(allowOrigins);
   checkMs("callTimeoutMs", callTimeoutMs, 5000);
   checkMs("silentAfterMs", silentAfterMs, 6000);
 

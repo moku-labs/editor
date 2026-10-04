@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildScene, type SceneNode, type SceneSnapshot } from "../../../panels/shared/scene";
-import { type ReferenceFacts, referenceBlock, sourceText } from "../../reference/block";
+import {
+  flowNodeOf,
+  type ReferenceFacts,
+  rectText,
+  referenceBlock,
+  sourceText
+} from "../../reference/block";
 import { sceneCapture } from "../helpers";
 import { boardScene } from "../ui";
 
@@ -219,6 +225,22 @@ describe("sourceText", () => {
     expect(sourceText({ kind: "defined", path: "strip.tsx", line: 157, loop: true })).toBe(
       "strip.tsx:157 (loop)"
     );
+  });
+});
+
+describe("flowNodeOf", () => {
+  it("is flow/node when both are known, else the position path", () => {
+    expect(
+      flowNodeOf({ path: "board/settingsPopup/open", flow: "settingsPopup", node: "open" })
+    ).toBe("settingsPopup/open");
+    expect(flowNodeOf({ path: "board/awaitIntent", flow: "board" })).toBe("board/awaitIntent");
+    expect(flowNodeOf({})).toBeUndefined();
+  });
+});
+
+describe("rectText", () => {
+  it("rounds a rect as x,y w×h", () => {
+    expect(rectText({ x: 235.4, y: 74, w: 290.4, h: 75.6 })).toBe("235,74 290×76");
   });
 });
 

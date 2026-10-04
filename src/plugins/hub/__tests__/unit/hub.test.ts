@@ -26,7 +26,7 @@ describe("hub plugin wiring", () => {
       /^\[moku-editor] hub\.path /
     );
     expect(() =>
-      framework.createApp({ pluginConfigs: { hub: { allow: ["http://evil.com/"] } } })
-    ).toThrow(/^\[moku-editor] hub\.allow /);
+      framework.createApp({ pluginConfigs: { hub: { allowOrigins: ["http://evil.com/"] } } })
+    ).toThrow(/^\[moku-editor] hub\.allowOrigins /);
   });
 });
