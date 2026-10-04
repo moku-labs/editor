@@ -7,8 +7,8 @@
 import type { VNode } from "preact";
 import { useLayoutEffect } from "preact/hooks";
 import { linkPlugin } from "../../link";
+import { Icon } from "../../panels/shared/icons";
 import type { PaletteMatch, WorkspaceCtx } from "../types";
-import { Icon } from "../ui/icons";
 import { useElement, useWorkspace } from "../ui/store";
 import { closePalette, flatItems, groupedItems, runPaletteItem, type ShownItem } from "./items";
 

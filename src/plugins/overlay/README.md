@@ -22,7 +22,7 @@ Constants in `types.ts`:
 | `OK_MS` | `1200` | How long a cheat button shows ✓. |
 | `ERROR_MS` | `3000` | How long a cheat button shows !. |
 | `Z_INDEX` | `2_147_483_000` | z-index of the host. |
-| `HOST_ATTRIBUTE` | `"data-moku-editor-overlay"` | Attribute that marks the host element. |
+| `HOST_ATTRIBUTE` | `"data-moku-editor-overlay"` | Attribute that marks the host element. Re-exported from the protocol (`registry/protocol/overlay-host.ts`), where the bridge's tap watch reads it too. |
 
 ## API
 

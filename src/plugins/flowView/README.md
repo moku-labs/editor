@@ -209,7 +209,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 | `layout/` | Hub detection, the hub-lane layout and its label pass, DFS back edges, the ELK input (labels, spacing by density) and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, instance edges (`edges.ts`: the edge of an Info row, the other end of an edge). |
 | `inspector/` | The node → file lookup, the Code tab controller, the styles file search, the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
-| `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. |
+| `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. Icons come from `panels/shared/icons`. |
 
 ### Layout engine (elkjs)
 

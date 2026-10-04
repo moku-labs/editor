@@ -1,6 +1,6 @@
 /**
- * @file workspace plugin — the shell's own 16 px stroke icons (no icon font, no CDN). Decorative:
- * every icon is `aria-hidden`; the control around it carries the label.
+ * @file Shared view module — the 16 px stroke icons of the workspace shell and the views (no icon
+ * font, no CDN). Decorative: every icon is `aria-hidden`; the control around it carries the label.
  */
 import type { VNode } from "preact";
 

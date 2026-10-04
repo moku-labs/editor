@@ -1,6 +1,8 @@
-import { describe, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { LinkStatus } from "../../../registry/protocol";
+import { HOST_ATTRIBUTE as PROTOCOL_HOST_ATTRIBUTE } from "../../../registry/protocol";
 import type { Config, OverlayApi, OverlayHooks } from "../../types";
+import { HOST_ATTRIBUTE } from "../../types";
 
 describe("overlay types", () => {
   it("Config corner is the four-corner union", () => {
@@ -28,5 +30,10 @@ describe("overlay types", () => {
     expectTypeOf<OverlayApi["open"]>().toEqualTypeOf<() => void>();
     expectTypeOf<OverlayApi["close"]>().toEqualTypeOf<() => void>();
     expectTypeOf<OverlayApi["isOpen"]>().toEqualTypeOf<() => boolean>();
+  });
+
+  it("keeps HOST_ATTRIBUTE in Overlay.*, the protocol's marker", () => {
+    expect(HOST_ATTRIBUTE).toBe(PROTOCOL_HOST_ATTRIBUTE);
+    expect(HOST_ATTRIBUTE).toBe("data-moku-editor-overlay");
   });
 });

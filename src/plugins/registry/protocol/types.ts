@@ -521,3 +521,43 @@ export type DeviceSpec = {
   /** The two screens of a foldable: folded (cover) and unfolded (inner). */
   readonly fold?: { readonly cover: FoldScreen; readonly inner: FoldScreen };
 };
+
+/**
+ * The twenty-one device presets (round 2 R4, round 2b R10), in display order.
+ */
+export type DevicePresetId =
+  | "iphone-se"
+  | "iphone-15"
+  | "iphone-17e"
+  | "iphone-air"
+  | "iphone-18-pro"
+  | "iphone-18-pro-max"
+  | "iphone-15-pro-max"
+  | "iphone-16-pro"
+  | "iphone-16-pro-max"
+  | "galaxy-s24"
+  | "galaxy-a55"
+  | "redmi-note-13"
+  | "pixel-8"
+  | "xperia-1-v"
+  | "galaxy-z-fold-6"
+  | "galaxy-z-flip-6"
+  | "pixel-9-pro-fold"
+  | "iphone-duo"
+  | "ipad-mini"
+  | "ipad-air-11"
+  | "desktop";
+
+/**
+ * Device orientation.
+ */
+export type Orientation = "portrait" | "landscape";
+
+/**
+ * Size and safe insets of a preset in an orientation (resolveDevice, R8).
+ */
+export type DeviceSize = {
+  w: number;
+  h: number;
+  safe: { top: number; right: number; bottom: number; left: number };
+};

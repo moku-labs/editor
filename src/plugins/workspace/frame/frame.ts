@@ -8,7 +8,8 @@
  * pointer instead.
  */
 import { linkPlugin } from "../../link";
-import { deviceChoiceOf, resolveDevice } from "../devices";
+import { resolveDevice } from "../../registry/protocol";
+import { deviceChoiceOf } from "../devices";
 import { hostOf } from "../hosts";
 import { trackCleanup } from "../state";
 import type {

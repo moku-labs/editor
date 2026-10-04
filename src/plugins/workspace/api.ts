@@ -3,8 +3,9 @@
  */
 
 import { linkPlugin } from "../link";
+import { DEVICES } from "../registry/protocol";
 import { setBadge, showWorkspace } from "./actions";
-import { DEVICES, deviceChoiceOf } from "./devices";
+import { deviceChoiceOf } from "./devices";
 import { createGameFrame } from "./frame/frame";
 import { hostOf } from "./hosts";
 import { setHotReload } from "./hot-reload";

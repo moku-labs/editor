@@ -3,13 +3,13 @@
  * G, R, H) and the Esc layers the shell owns (palette, the session and ⋯ menus, registry, step
  * popover, Reference mode). In Flow, flowView's H (History) wins over the global Hot reload key.
  */
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { closePopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { toggleHotReload } from "../hot-reload";
 import { setOverlayInGame } from "../overlay";
 import { closePalette, togglePalette } from "../palette/items";
 import { closeReference, toggleReference } from "../reference";
 import type { KeyBinding, WorkspaceCtx } from "../types";
-import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../workspaces";
 import { addEscapeLayer } from "./escape";
 import { bindKey } from "./keymap";
 

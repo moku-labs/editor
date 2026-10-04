@@ -1,25 +1,10 @@
 /**
- * @file workspace plugin — the six workspaces: ids in rail order (Game first), the five with a pinned preview,
- * their labels and the guards that check unknown input (URL hash, stored prefs, api calls).
+ * @file workspace plugin — the five workspaces with a pinned preview and the guards that check
+ * unknown input (URL hash, stored prefs, api calls). The ids in rail order and their labels live
+ * in panels/shared/workspaces.ts, shared with panels.
  */
+import { WORKSPACE_IDS } from "../panels/shared/workspaces";
 import type { PreviewWorkspace, WorkspaceId } from "./types";
-
-/**
- * The six workspaces in rail order (⌘1–⌘6): Game first, then Flow.
- *
- * @example
- * ```ts
- * WORKSPACE_IDS.indexOf("game"); // 0
- * ```
- */
-export const WORKSPACE_IDS: readonly WorkspaceId[] = [
-  "game",
-  "flow",
-  "render",
-  "state",
-  "files",
-  "console"
-];
 
 /**
  * The ids as a set of unknown values, for the guard.
@@ -41,23 +26,6 @@ export const PREVIEW_WORKSPACES: readonly PreviewWorkspace[] = [
   "files",
   "console"
 ];
-
-/**
- * The label of each workspace, shown in the rail, the hosts and the toasts.
- *
- * @example
- * ```ts
- * WORKSPACE_LABELS.console; // "Console"
- * ```
- */
-export const WORKSPACE_LABELS: Readonly<Record<WorkspaceId, string>> = {
-  flow: "Flow",
-  game: "Game",
-  render: "Render",
-  state: "State",
-  files: "Files",
-  console: "Console"
-};
 
 /**
  * True for one of the six workspace ids.

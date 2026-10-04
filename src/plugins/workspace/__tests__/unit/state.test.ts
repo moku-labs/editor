@@ -2,15 +2,10 @@
 import { h, render } from "preact";
 import { act } from "preact/test-utils";
 import { describe, expect, it, vi } from "vitest";
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../../panels/shared/workspaces";
 import { createWorkspaceState, trackCleanup } from "../../state";
 import { createUiStore, useWorkspace } from "../../ui/store";
-import {
-  isPreviewWorkspace,
-  isWorkspaceId,
-  PREVIEW_WORKSPACES,
-  WORKSPACE_IDS,
-  WORKSPACE_LABELS
-} from "../../workspaces";
+import { isPreviewWorkspace, isWorkspaceId, PREVIEW_WORKSPACES } from "../../workspaces";
 import { CONFIG } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────

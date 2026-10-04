@@ -168,8 +168,8 @@ ctx.require(panelsPlugin).register(flowPanel);
 
 ## Shared view modules (`shared/`)
 
-Plain modules for the views. They exist so the views share one implementation without
-importing each other (D-16).
+Plain modules for the views and the workspace shell. They exist so the views share one
+implementation without importing each other or workspace internals (D-16).
 
 Rules for all of them:
 
@@ -177,8 +177,8 @@ Rules for all of them:
 - No state, except `side-panel/`: it keeps the state of each side panel (D-29), in memory and in localStorage.
 - Bad input never throws. Functions return a typed error value; the view writes its own text.
 - Only `loadStyleFile`, `writeNumber` and `findStylesFile` are async. They do I/O through the files client they get.
-- Not exported from `"."` and not a plugin api. Views import them by relative path, e.g. `../panels/shared/style-edit`.
-- Imports: the protocol by relative path; `preact` in `highlight.ts` and `side-panel/` only.
+- Not exported from `"."` and not a plugin api. Views and workspace import them by relative path, e.g. `../panels/shared/style-edit`.
+- Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `workspaces.ts` takes the `WorkspaceId` type from workspace.
 
 | Module | Imported by | Holds |
 |---|---|---|
@@ -189,6 +189,8 @@ Rules for all of them:
 | `scene/` | gameView, renderView | The scene mapping from `game.ui`, `game.entities`, `game.projections`. |
 | `editor-url.ts` | flowView, filesView | The "Open in editor" link. |
 | `side-panel/` | flowView, gameView, filesView | The one SidePanel of every view's side panel: resize, collapse, close and reopen, overlay. |
+| `icons.tsx` | workspace, flowView | `Icon` and `IconName`: the 16 px stroke icons of the shell and the views, `aria-hidden`. |
+| `workspaces.ts` | workspace, panels | `WORKSPACE_IDS` in rail order (Game first) and `WORKSPACE_LABELS`. |
 
 ### `style-edit.ts`
 

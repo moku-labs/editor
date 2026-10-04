@@ -5,8 +5,7 @@
  * field that is not known is left out. The facts are gathered elsewhere (reference/facts).
  */
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
-import type { Json } from "../../registry/protocol";
-import type { Orientation } from "../../workspace/types";
+import type { Json, Orientation } from "../../registry/protocol";
 import type { PositionInfo } from "../capture/naming";
 import type { BlockAt, StyleSource } from "../types";
 

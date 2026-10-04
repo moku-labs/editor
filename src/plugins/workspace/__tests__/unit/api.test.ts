@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEVICES, deviceById } from "../../../registry/protocol";
 import { createWorkspaceApi } from "../../api";
-import { DEVICES, deviceById } from "../../devices";
 import { stopWorkspace } from "../../lifecycle";
 import type { WorkspaceApi } from "../../types";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";

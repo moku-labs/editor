@@ -4,7 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSidePanel } from "../../../panels/shared/side-panel/store";
 import type { DeviceSpec, LinkStatus } from "../../../registry/protocol";
-import { DEVICES, presetOf } from "../../../workspace/devices";
+import { DEVICES, presetOf } from "../../../registry/protocol";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { Stage } from "../../ui/Stage";

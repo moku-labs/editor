@@ -4,8 +4,8 @@
  * its onStart), attached by the shell through a ref and never rendered into by Preact (the
  * foreign DOM rule): panels owns their content.
  */
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../panels/shared/workspaces";
 import type { WorkspaceId, WorkspaceState } from "./types";
-import { WORKSPACE_IDS, WORKSPACE_LABELS } from "./workspaces";
 
 /**
  * The host element of a workspace, created on the first call; the same element for the life of

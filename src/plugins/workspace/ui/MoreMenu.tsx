@@ -9,6 +9,7 @@
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
+import { Icon } from "../../panels/shared/icons";
 import { closePopover, openPopover } from "../actions";
 import { chooseDensity, chooseTheme } from "../prefs/apply";
 import { DENSITY_CHOICES } from "../prefs/density";
@@ -23,7 +24,6 @@ import {
   registryTitle,
   type ToggleControl
 } from "./controls";
-import { Icon } from "./icons";
 import { usePopover } from "./popover";
 import { type ElementHolder, useElement, useWorkspace } from "./store";
 

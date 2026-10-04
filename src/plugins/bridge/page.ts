@@ -3,9 +3,8 @@
  * microtask, after the game's lifecycle listener has flipped the pause state; a `pointerdown` on
  * the page sends one `tap` (at most one per 50 ms), so the tools page can show where it landed.
  */
-import { HOST_ATTRIBUTE } from "../overlay/types";
 import type { Tap } from "../registry/protocol";
-import { notification } from "../registry/protocol";
+import { HOST_ATTRIBUTE, notification } from "../registry/protocol";
 import { sendBeat } from "./connection/loop";
 import { sendNow } from "./dispatch/send";
 import type { BridgeDeps, TapEvent, TapOptions } from "./types";

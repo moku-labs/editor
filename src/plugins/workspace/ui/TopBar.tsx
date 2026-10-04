@@ -15,6 +15,7 @@
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
+import { Icon, type IconName } from "../../panels/shared/icons";
 import { closePopover, openPopover, stepOnce, togglePause } from "../actions";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { openPalette } from "../palette/items";
@@ -31,7 +32,6 @@ import {
   registryTitle,
   type ToggleControl
 } from "./controls";
-import { Icon, type IconName } from "./icons";
 import { LinkPill } from "./LinkPill";
 import { MoreMenu } from "./MoreMenu";
 import { RegistryPopover } from "./RegistryPopover";

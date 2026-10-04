@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sidePanelState } from "../../../panels/shared/side-panel";
-import { DEVICES } from "../../../workspace/devices";
+import { DEVICES } from "../../../registry/protocol";
 import { initGameView, startGameView, stopGameView } from "../../lifecycle";
 import { createCtx, flush, manifestOf, type TestCtx, useScene } from "../helpers";
 

@@ -7,7 +7,7 @@
  * Writes are wrapped in try/catch (quota). Nothing essential is stored here.
  */
 import type { Log } from "@moku-labs/common/browser";
-import { DEFAULT_DEVICE, isDevicePresetId } from "../devices";
+import { DEFAULT_DEVICE, isDevicePresetId } from "../../registry/protocol";
 import { defaultPreview, defaultPreviews } from "../state";
 import type {
   Orientation,

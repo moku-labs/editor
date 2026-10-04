@@ -128,7 +128,9 @@ box clips its own content, so no control runs over another.
 Twenty-one presets from `.planning/build/research-devices.md` and the apple.com specs of
 2026-10-04 (round 2b R10), in display order, each with `group` (the `<optgroup>`), `dpr`, safe
 insets, the screen corner `radius` and the `frame` gameView draws (R9). Sizes are the full-screen
-portrait viewport in CSS px. `DEVICE_GROUPS` (in `devices.ts`) names the groups. A fresh viewer
+portrait viewport in CSS px. `DEVICE_GROUPS` names the groups. The presets, the groups and the pure
+rules (`presetOf`, `screenOf`, `resolveDevice`) live in the protocol (`registry/protocol/devices.ts`),
+shared with gameView; workspace keeps the stored choice (`devices.ts`: `deviceChoiceOf`). A fresh viewer
 starts with the iPhone 18 Pro; an unknown stored id falls back to it. The iPhone group lists the
 SE 3 and the iPhone 15 first, then the current models; the 15 Pro Max, 16 Pro and 16 Pro Max stay
 at its end, so a stored choice keeps working.

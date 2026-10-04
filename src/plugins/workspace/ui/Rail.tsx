@@ -5,12 +5,12 @@
  * Every button carries its accessible name, so the 44 px icon rail under 560 px stays labelled.
  */
 import type { VNode } from "preact";
+import { Icon } from "../../panels/shared/icons";
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { showWorkspace } from "../actions";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { openPalette } from "../palette/items";
 import type { WorkspaceCtx } from "../types";
-import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../workspaces";
-import { Icon } from "./icons";
 import { useWorkspace } from "./store";
 import { badgeSpeech } from "./text";
 

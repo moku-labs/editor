@@ -1,9 +1,20 @@
 /**
  * @file Protocol barrel — the only barrel of the protocol module. Runtime-free: re-exports every
- * wire type and pure helper. Imported by hub, files, pages, link, workspace, panels, the views and
- * src/index.ts by relative path (D-02).
+ * wire type and pure helper, the device presets and the overlay host marker. Imported by hub,
+ * files, pages, link, workspace, panels, the views, the agent plugins and src/index.ts by relative
+ * path (D-02).
  */
 export { checkInput, isJson } from "./check";
+export {
+  DEFAULT_DEVICE,
+  DEVICE_GROUPS,
+  DEVICES,
+  deviceById,
+  isDevicePresetId,
+  presetOf,
+  resolveDevice,
+  screenOf
+} from "./devices";
 export {
   bareMessage,
   ERROR_PREFIX,
@@ -27,6 +38,7 @@ export {
   request,
   success
 } from "./messages";
+export { HOST_ATTRIBUTE } from "./overlay-host";
 export type { NodeRef, SourceOverrides } from "./source-files";
 export {
   flowFile,
@@ -40,6 +52,8 @@ export type {
   Changes,
   Channel,
   CommandDescriptor,
+  DevicePresetId,
+  DeviceSize,
   DeviceSpec,
   EditorChannel,
   Effect,
@@ -61,6 +75,7 @@ export type {
   Manifest,
   Message,
   Notification,
+  Orientation,
   PathParams,
   ReadParams,
   Request,
