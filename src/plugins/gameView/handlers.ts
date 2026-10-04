@@ -1,11 +1,12 @@
 /**
  * @file gameView plugin — hooks of the global tools events: link:status, workspace:changed,
- * workspace:open-sheet, workspace:inspect (R9).
+ * workspace:open-sheet, workspace:inspect (R9), workspace:reference (D-27).
  */
 import type { ToolsEvents } from "../../config";
 import { workspacePlugin } from "../workspace";
 import { openSheet } from "./capture/sheet";
 import { inspectElement } from "./element/select";
+import { setReferenceMode } from "./reference/mode";
 import { startSceneWatches, stopSceneWatches } from "./scene/watch";
 import { notify } from "./state";
 import type { GameViewCtx, GameViewHooks } from "./types";
@@ -14,14 +15,15 @@ import type { GameViewCtx, GameViewHooks } from "./types";
  * gameView's hooks factory (`hooks: createHandlers`).
  *
  * @param ctx - Domain context of gameView.
- * @returns The four hooks.
+ * @returns The five hooks.
  */
 export function createHandlers(ctx: GameViewCtx): GameViewHooks {
   return {
     "link:status": onLinkStatus(ctx),
     "workspace:changed": onWorkspaceChanged(ctx),
     "workspace:open-sheet": onOpenSheet(ctx),
-    "workspace:inspect": onInspect(ctx)
+    "workspace:inspect": onInspect(ctx),
+    "workspace:reference": onReference(ctx)
   };
 }
 
@@ -45,6 +47,8 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
     state.scene = undefined;
     state.calibration = undefined;
     state.calibrationRead = false;
+    state.calibrationRun.used = undefined;
+    state.calibrationRun.waiting = false;
     state.manifest = undefined;
   }
   if (status.kind === "empty") {
@@ -67,8 +71,9 @@ export function onLinkStatus(ctx: GameViewCtx): (payload: ToolsEvents["link:stat
 }
 
 /**
- * The workspace:changed hook: entering Game starts the scene watches; leaving stops them and
- * turns the picker off (a highlight box stays until cleared).
+ * The workspace:changed hook: entering Game starts the scene watches; leaving stops them (not
+ * while Reference mode keeps them) and turns the picker off (a highlight box stays until
+ * cleared).
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.
@@ -80,7 +85,7 @@ export function onWorkspaceChanged(
     if (ws === "game") {
       startSceneWatches(ctx);
     } else {
-      stopSceneWatches(ctx);
+      if (!ctx.state.reference.on) stopSceneWatches(ctx);
       ctx.state.picker = { on: false, hover: undefined };
     }
     notify(ctx.state);
@@ -112,4 +117,16 @@ export function onInspect(ctx: GameViewCtx): (payload: ToolsEvents["workspace:in
     ctx.require(workspacePlugin).show("game");
     inspectElement(ctx, ref);
   };
+}
+
+/**
+ * The workspace:reference hook (D-27): Reference mode on or off.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The handler.
+ */
+export function onReference(
+  ctx: GameViewCtx
+): (payload: ToolsEvents["workspace:reference"]) => void {
+  return ({ on }) => setReferenceMode(ctx, on);
 }

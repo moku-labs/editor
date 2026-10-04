@@ -151,8 +151,53 @@ function noteNoChanges(ctx: FilesViewCtx, tab: OpenTab): void {
 }
 
 /**
+ * The write in flight per tab, and the save queued behind it. A ⌘S during a write saves the
+ * newer buffer once the write lands, instead of being dropped.
+ */
+const writesInFlight = new WeakMap<OpenTab, Promise<SaveResult>>();
+const queuedSaves = new WeakMap<OpenTab, Promise<SaveResult>>();
+
+/**
+ * Queues one save of `tab` behind its write in flight; repeated asks share it.
+ *
+ * @param ctx - Domain context of filesView.
+ * @param tab - The tab being saved.
+ * @returns The queued save, or "Nothing to save" when no write is tracked.
+ */
+function queueSave(ctx: FilesViewCtx, tab: OpenTab): Promise<SaveResult> {
+  const queued = queuedSaves.get(tab);
+  if (queued !== undefined) return queued;
+  const running = writesInFlight.get(tab);
+  if (running === undefined) return Promise.resolve(NOTHING_TO_SAVE);
+
+  const next = (async (): Promise<SaveResult> => {
+    await running.catch(() => {});
+    queuedSaves.delete(tab);
+    return saveTab(ctx, tab.path);
+  })();
+  queuedSaves.set(tab, next);
+  return next;
+}
+
+/**
+ * Writes the tab and tracks the write as the one in flight.
+ *
+ * @param ctx - Domain context of filesView.
+ * @param tab - The tab to save.
+ * @param text - The buffer to write.
+ * @returns The save result.
+ */
+function trackedWrite(ctx: FilesViewCtx, tab: OpenTab, text: string): Promise<SaveResult> {
+  const run = write(ctx, tab, text, tab.version).finally(() => {
+    if (writesInFlight.get(tab) === run) writesInFlight.delete(tab);
+  });
+  writesInFlight.set(tab, run);
+  return run;
+}
+
+/**
  * The save flow of a tab: nothing to save, no changes, conflict while in conflict, else a
- * versioned write. Never rejects.
+ * versioned write. A save asked while a write is in flight runs once it lands. Never rejects.
  *
  * @param ctx - Domain context of filesView.
  * @param path - The tab's path.
@@ -161,12 +206,13 @@ function noteNoChanges(ctx: FilesViewCtx, tab: OpenTab): void {
 export async function saveTab(ctx: FilesViewCtx, path: string): Promise<SaveResult> {
   const tab = findTab(ctx.state, path);
   if (tab?.status === "conflict") return { kind: "conflict" };
+  if (tab?.status === "saving") return queueSave(ctx, tab);
   if (tab?.status !== "ready" || tab.buffer === undefined) return NOTHING_TO_SAVE;
   if (tab.buffer === tab.saved) {
     noteNoChanges(ctx, tab);
     return { kind: "unchanged" };
   }
-  return write(ctx, tab, tab.buffer, tab.version);
+  return trackedWrite(ctx, tab, tab.buffer);
 }
 
 /**

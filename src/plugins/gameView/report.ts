@@ -1,10 +1,10 @@
 /**
- * @file gameView plugin — one failure path for every capture, series, sheet, note and style
+ * @file gameView plugin — one failure path for every capture, series, sheet and style
  * write: a toast with the bare message (R7: no `[moku-editor]` prefix in the UI) and a log entry
  * that keeps the full message and the wire code.
  */
 
-import { bareMessage, errorCode, isWireError } from "../registry/protocol";
+import { bareMessage, isWireError } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import type { GameViewCtx } from "./types";
 
@@ -36,20 +36,6 @@ export function messageOf(error: unknown): string {
  */
 export function uiMessage(error: unknown): string {
   return bareMessage(messageOf(error)).split("\n")[0] ?? "";
-}
-
-/**
- * True for a version-conflict rejection (-32005).
- *
- * @param error - A rejection of the files client.
- * @returns Whether the file changed since it was read.
- * @example
- * ```ts
- * isConflict({ code: -32_005, message: "[moku-editor] changed" }); // true
- * ```
- */
-export function isConflict(error: unknown): boolean {
-  return isWireError(error) && error.code === errorCode.versionConflict;
 }
 
 /**

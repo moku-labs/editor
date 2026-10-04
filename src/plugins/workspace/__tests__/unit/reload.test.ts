@@ -2,9 +2,9 @@
 // @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
-import { gameUrl } from "../../frame/frame";
+import { gameUrl, taggedGameUrl } from "../../frame/frame";
 import { reloadFrame } from "../../frame/reload";
-import { createCtx, flush, manifestOf, resultOf, type TestCtx } from "../helpers";
+import { createCtx, flush, manifestOf, resultOf, type TestCtx, tagged } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // D-07 reload: bookmark → reload the frame in place → restore on the new
@@ -66,6 +66,103 @@ describe("gameUrl", () => {
     ctx.link.bootValue = undefined;
     expect(gameUrl(ctx)).toBe(new URL("/", location.href).href);
   });
+
+  it("taggedGameUrl is the game URL tagged with the frame id of this tools page", () => {
+    expect(taggedGameUrl(ctx)).toBe(tagged(gameUrl(ctx)));
+    expect(ctx.link.frameUrl).toHaveBeenCalledWith(gameUrl(ctx));
+  });
+});
+
+/**
+ * Tracks whether a promise settled.
+ *
+ * @param promise - The promise.
+ * @returns Reads true once it settled.
+ */
+function settledOf(promise: Promise<unknown>): () => boolean {
+  let settled = false;
+  promise
+    .finally(() => {
+      settled = true;
+    })
+    .catch(() => {});
+  return () => settled;
+}
+
+/**
+ * Runs `game.bookmark` with BOOKMARK, rejects the given command with a wire error, and answers
+ * the rest with an empty result.
+ *
+ * @param failing - The command id that fails.
+ * @param message - Its error message.
+ */
+function failOn(failing: string, message: string): void {
+  ctx.link.run.mockImplementation(id => {
+    if (id === failing) return Promise.reject(wireError(-32_000, message));
+    return Promise.resolve(id === "game.bookmark" ? resultOf(BOOKMARK) : resultOf());
+  });
+}
+
+/**
+ * The ids of the commands link ran, in order.
+ *
+ * @returns The ids.
+ */
+function ranIds(): string[] {
+  return ctx.link.run.mock.calls.map(call => call[0]);
+}
+
+describe("reloadFrame keeps the pause", () => {
+  const COMMANDS = ["game.bookmark", "game.restore", "game.pause"];
+
+  it("a game paused before the reload is paused again after the restore", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore", "game.pause"]);
+    expect(toasts()).toEqual(["Game reloaded · state restored from the last checkpoint"]);
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("a live game is not paused after the restore", async () => {
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+  });
+
+  it("a failed pause warns and keeps the restored result", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    failOn("game.pause", "pause refused");
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ctx.log.warn).toHaveBeenCalledWith("workspace:pause-failed", {
+      message: "[moku-editor] pause refused"
+    });
+    expect(toasts()).toEqual(["Game reloaded · state restored from the last checkpoint"]);
+  });
+
+  it("no pause without game.pause in the new manifest, nor after a failed restore", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    const first = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(["game.bookmark", "game.restore"]));
+    await expect(first).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+
+    ctx.link.run.mockClear();
+    failOn("game.restore", "shape changed");
+    const second = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(second).resolves.toEqual({ restored: false, reason: "restore_failed" });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+  });
 });
 
 describe("reloadFrame", () => {
@@ -83,7 +180,7 @@ describe("reloadFrame", () => {
     await flush();
 
     expect(ctx.link.run.mock.calls[0]?.[0]).toBe("game.bookmark");
-    expect(srcWrites).toEqual([gameUrl(ctx)]);
+    expect(srcWrites).toEqual([taggedGameUrl(ctx)]);
 
     // the immediate call of the existing manifest and the lost (undefined) call are ignored
     ctx.link.attach(undefined);
@@ -146,6 +243,18 @@ describe("reloadFrame", () => {
     await flush();
     ctx.link.attach(manifestOf([], false));
     ctx.link.attach(manifestOf([]));
+    await expect(pending).resolves.toEqual({ restored: false });
+  });
+
+  it("a manifest of another tools tab's frame does not end the wait; its own does", async () => {
+    const pending = reloadFrame(ctx, {});
+    const settled = settledOf(pending);
+    await flush();
+    ctx.link.attach({ ...manifestOf([]), page: tagged("http://127.0.0.1:3000/", "f-other") });
+    await flush();
+    expect(settled()).toBe(false);
+
+    ctx.link.attach({ ...manifestOf([]), page: tagged("http://127.0.0.1:3000/") });
     await expect(pending).resolves.toEqual({ restored: false });
   });
 

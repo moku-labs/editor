@@ -106,13 +106,18 @@ export type CommandEntry = {
 export type Clock = { readonly frame: number; readonly paused: boolean };
 
 /**
- * Registry state: entries by id in manifest order, one id namespace, the manifest cache.
+ * Registry state: entries by id in manifest order, one id namespace, the manifest cache, and the
+ * door sources the game does not have.
  */
 export type RegistryState = {
   sources: Map<string, SourceEntry>;
   commands: Map<string, CommandEntry>;
   origins: Map<string, "door" | "module" | "editor">;
   manifest: Manifest | undefined;
+  /** Door sources whose probe threw: id to the reason. Their reads and watches answer -32008. */
+  unavailable: Map<string, string>;
+  /** The probe of each door source, run each time the manifest is built. */
+  probes: Map<string, () => void>;
 };
 
 /**
@@ -122,7 +127,9 @@ export type RegistryState = {
 export type RegistryApi = {
   /**
    * The frozen manifest: descriptors only, no functions. Cached until the next `add`; `game`,
-   * `page` and `embedded` are computed at call time. `panels` is omitted (reserved).
+   * `page` and `embedded` are computed at call time. `panels` is omitted (reserved). Each build
+   * probes the door sources first: one the game does not have is listed with `available: false`
+   * and its `reason`.
    *
    * @returns The manifest the bridge sends in `hello`.
    * @example
@@ -130,6 +137,8 @@ export type RegistryApi = {
    * // The merge game without dev modules: its door catalogue only.
    * app.registry.manifest().sources.length; // 15
    * app.registry.manifest().commands.length; // 14
+   * // A game without the effects plugin:
+   * app.registry.manifest().sources.find(source => source.id === "game.effects")?.available; // false
    * ```
    */
   manifest(): Manifest;

@@ -1,24 +1,13 @@
-/* flowView · Inspector (C1): 320 px (296 px at ≤ 1380), Code and Styles widen it to min(440px, 34vw) over 200 ms; head, tags and tabs. No @layer wrapper (R7). */
+/* flowView · Inspector (C1) inside the flow.inspector SidePanel (which owns its width, resize, collapse and close): Back, head, tags and tabs. No @layer wrapper (R7). */
 
 @scope ([data-flow="inspector"]) {
   :scope {
     display: flex;
+    flex: 1;
     flex-direction: column;
-    width: var(--inspector-w);
     min-width: 0;
+    min-height: 0;
     overflow-y: auto;
-    border-left: 1px solid var(--line-1);
-    background: var(--surface-panel);
-  }
-
-  :scope[data-wide] {
-    width: min(440px, 34vw);
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    :scope {
-      transition: width var(--duration-zoom) var(--ease-out);
-    }
   }
 
   [data-part="head"] {
@@ -42,6 +31,15 @@
     cursor: pointer;
   }
 
+  [data-action="back"] {
+    padding: 0 6px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    cursor: pointer;
+  }
+
   [data-part="tags"] {
     display: flex;
     flex-wrap: wrap;
@@ -59,7 +57,7 @@
 
   [data-tag="current"] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [role="tablist"] {

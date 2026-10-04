@@ -2,11 +2,18 @@
  * @file filesView plugin — a safe Markdown subset rendered as Preact VNodes only (never
  * innerHTML): ATX headings, fenced code through the shared highlighter, one level of nested
  * lists, quotes, rules, paragraphs; inline code, strong, em and links (http(s) in a new tab, a
- * relative path opens in Files, anything else stays text).
+ * relative path opens in Files, anything else stays text). A front matter is cut off at its `---`
+ * fences and shown as plain text: filesView parses no front matter.
  */
 import type { ComponentChildren, VNode } from "preact";
 import { h } from "preact";
 import { langOf, renderTokens, tokenizeLines } from "../../panels/shared/highlight";
+import type { NoteParts } from "../types";
+
+/**
+ * The fence line of a front matter.
+ */
+const FRONT_MATTER_FENCE = "---";
 
 /**
  * What a link target is: a web page, a project path, or neither (rendered as text).
@@ -132,7 +139,7 @@ export function linkTarget(target: string): LinkTarget {
  * @returns The project path.
  * @example
  * ```ts
- * resolvePath(".moku/notes", "../captures/a.png#top"); // ".moku/captures/a.png"
+ * resolvePath("docs/levels", "../shots/a.png#top"); // "docs/shots/a.png"
  * ```
  */
 export function resolvePath(base: string, target: string): string {
@@ -615,6 +622,28 @@ function renderFence(lang: string, lines: readonly string[], key: number): VNode
       <code>{rendered}</code>
     </pre>
   );
+}
+
+/**
+ * Splits a Markdown file for the preview: no front matter, or the lines between the `---` fences
+ * and the body after the closing one. A front matter that never closes takes the whole file.
+ *
+ * @param text - The file text.
+ * @returns The parts.
+ * @example
+ * ```ts
+ * frontMatterParts("---\ntitle: First\n---\n# Body\n"); // { kind: "raw", lines: ["title: First"], body: "# Body\n" }
+ * frontMatterParts("# Title\n"); // { kind: "none", body: "# Title\n" }
+ * ```
+ */
+export function frontMatterParts(text: string): NoteParts {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
+  if (lines[0] !== FRONT_MATTER_FENCE) return { kind: "none", body: text };
+
+  const close = lines.findIndex((line, index) => index > 0 && line === FRONT_MATTER_FENCE);
+  if (close === -1) return { kind: "raw", lines: lines.slice(1), body: "" };
+
+  return { kind: "raw", lines: lines.slice(1, close), body: lines.slice(close + 1).join("\n") };
 }
 
 /**

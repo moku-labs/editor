@@ -6,11 +6,12 @@
  */
 import type { VNode } from "preact";
 import { Fragment } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useState } from "preact/hooks";
 import { notify } from "../store";
 import { extensionOf, IMAGE_EXTENSIONS } from "../tabs/kind";
 import { openOrLog } from "../tabs/open";
 import { countFiles, parentOf, toggleFolder, visibleRows } from "../tree/model";
+import { shutTreeDrawer } from "../tree/side";
 import type { FileIndex, FilesViewApi, FilesViewCtx, TreeRow } from "../types";
 import { useElement } from "./useFiles";
 
@@ -211,11 +212,14 @@ export function Tree(props: TreeProps): VNode {
   const current = rows.find(row => row.path === focused)?.path ?? state.active ?? rows[0]?.path;
   const tabStop = rows.some(row => row.path === current) ? current : rows[0]?.path;
 
-  useEffect(() => {
+  // A layout effect: the row takes focus in the same commit that shows it, before the next event,
+  // so a later click or programmatic focus elsewhere is never taken back by a stale request.
+  useLayoutEffect(() => {
     if (pendingFocus === undefined) return;
     const items = tree.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [];
     for (const item of items) if (item.dataset.path === pendingFocus) item.focus();
-    setPendingFocus(undefined);
+    // A key pressed before this effect ran asked for a newer row: keep that request.
+    setPendingFocus(current => (current === pendingFocus ? undefined : current));
   }, [pendingFocus, tree]);
 
   /**
@@ -229,7 +233,7 @@ export function Tree(props: TreeProps): VNode {
   };
 
   /**
-   * Opens a file or toggles a folder.
+   * Opens a file (and shuts the tree's drawer when it floats) or toggles a folder.
    *
    * @param row - The row.
    */
@@ -237,6 +241,7 @@ export function Tree(props: TreeProps): VNode {
     focusRow(row.path);
     if (row.kind === "file") {
       openOrLog(ctx, row.path, {});
+      shutTreeDrawer();
       return;
     }
     toggleFolder(state.expanded, row.path);

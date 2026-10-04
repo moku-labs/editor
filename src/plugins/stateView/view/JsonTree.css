@@ -41,7 +41,7 @@
   }
 
   [role="treeitem"][data-has-change] [data-part="key"] {
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [data-part="twisty"] {

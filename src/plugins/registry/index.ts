@@ -1,13 +1,14 @@
 /**
  * Complex tier — closure-erased entries for the game's doors, its .dev modules and the editor's
- * own commands; builds the manifest. Owns the runtime-free protocol module (./protocol).
- * Emits no events.
+ * own commands; builds the manifest and probes the door sources at start and on each rebuild.
+ * Owns the runtime-free protocol module (./protocol). Emits no events.
  *
  * @see README.md
  */
 import { createAgentPlugin } from "../../config";
 import { createRegistryApi } from "./api";
 import { buildCatalogue } from "./catalogue";
+import { refreshManifest } from "./manifest";
 import { createRegistryState } from "./state";
 import type { RegistryConfig } from "./types";
 
@@ -22,9 +23,10 @@ const defaultConfig: RegistryConfig = { game: undefined, modules: [], name: unde
  * editor.registry.manifest().sources.length; // 15 + the module's sources
  * ```
  */
-export const registryPlugin = createAgentPlugin("registry", {
+export const registryPlugin = /* @__PURE__ */ createAgentPlugin("registry", {
   config: defaultConfig,
   createState: createRegistryState,
   api: createRegistryApi,
-  onInit: buildCatalogue
+  onInit: buildCatalogue,
+  onStart: refreshManifest
 });

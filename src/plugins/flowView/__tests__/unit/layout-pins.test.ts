@@ -18,26 +18,26 @@ const text = `{
 }`;
 
 describe("parsePins", () => {
-  it("reads nodes, notes and keeps unknown top-level keys", () => {
+  it("reads nodes and keeps unknown top-level keys; an old notes field loads and is only kept", () => {
     const pins = parsePins(text);
     expect(pins?.nodes["board/merge"]).toEqual({ x: 624, y: 288 });
-    expect(pins?.notes[".moku/notes/2026-09-24-first-top-item.md"]).toEqual({
-      flow: "board",
-      x: 900,
-      y: 300
+    expect(pins?.extra).toEqual({
+      comment: "kept",
+      notes: { ".moku/notes/2026-09-24-first-top-item.md": { flow: "board", x: 900, y: 300 } }
     });
-    expect(pins?.extra).toEqual({ comment: "kept" });
+    expect(parsePins('{ "version": 1, "notes": { "n.md": { "x": 1, "y": 2 } } }')?.nodes).toEqual(
+      {}
+    );
   });
 
   it("returns undefined for invalid JSON or a wrong shape", () => {
     expect(parsePins("{ nope")).toBeUndefined();
     expect(parsePins("[]")).toBeUndefined();
-    expect(parsePins('{ "version": 2, "nodes": {}, "notes": {} }')).toBeUndefined();
+    expect(parsePins('{ "version": 2, "nodes": {} }')).toBeUndefined();
     expect(parsePins('{ "version": 1, "nodes": { "a/b": { "x": "1", "y": 2 } } }')).toBeUndefined();
-    expect(parsePins('{ "version": 1, "notes": { "n.md": { "x": 1, "y": 2 } } }')).toBeUndefined();
   });
 
-  it("reads a file without nodes or notes as empty", () => {
+  it("reads a file without nodes as empty", () => {
     expect(parsePins('{ "version": 1 }')).toEqual(emptyPins());
   });
 });
@@ -70,19 +70,17 @@ describe("resetPins and countPins", () => {
   const pins: PinsFile = {
     version: 1,
     nodes: { "board/merge": { x: 1, y: 2 }, "main/home": { x: 3, y: 4 } },
-    notes: { "a.md": { flow: "board", x: 1, y: 1 }, "b.md": { flow: "rewardPopup", x: 1, y: 1 } },
     extra: {}
   };
 
-  it("removes only the visible flows' node and note pins", () => {
+  it("removes only the visible flows' node pins", () => {
     const reset = resetPins(pins, new Set(["main", "board"]));
     expect(reset.nodes).toEqual({});
-    expect(Object.keys(reset.notes)).toEqual(["b.md"]);
     expect(resetPins(pins, new Set(["main"])).nodes).toEqual({ "board/merge": { x: 1, y: 2 } });
   });
 
   it("counts the pins of the visible flows (M8)", () => {
-    expect(countPins(pins, new Set(["main", "board"]))).toBe(3);
+    expect(countPins(pins, new Set(["main", "board"]))).toBe(2);
     expect(countPins(pins, new Set(["settingsPopup"]))).toBe(0);
   });
 });
@@ -92,21 +90,18 @@ describe("mergeDirty", () => {
     const fresh: PinsFile = {
       version: 1,
       nodes: { "main/home": { x: 99, y: 99 }, "main/boot": { x: 5, y: 5 } },
-      notes: {},
       extra: { other: true }
     };
     const current: PinsFile = {
       version: 1,
       nodes: { "board/merge": { x: 624, y: 288 }, "main/home": { x: 0, y: 0 } },
-      notes: { "n.md": { flow: "main", x: 12, y: 12 } },
       extra: {}
     };
-    const merged = mergeDirty(fresh, current, new Set(["board/merge", "n.md", "main/boot"]));
+    const merged = mergeDirty(fresh, current, new Set(["board/merge", "main/boot"]));
     expect(merged.nodes).toEqual({
       "main/home": { x: 99, y: 99 },
       "board/merge": { x: 624, y: 288 }
     });
-    expect(merged.notes).toEqual({ "n.md": { flow: "main", x: 12, y: 12 } });
     expect(merged.extra).toEqual({ other: true });
   });
 });

@@ -122,18 +122,22 @@ export type RenderViewState = {
   assets: AssetsUsage | undefined;
   /** Last good game.effects value; undefined = not reported or not yet delivered. */
   effects: EffectsStats | undefined;
-  /** Unwatch of game.effects; set only while the manifest lists the source. */
+  /** Unwatch of game.effects; set only while the manifest lists the source as available. */
   effectsWatch: (() => void) | undefined;
+  /** False while the manifest lists game.effects with `available: false` (no effects plugin). */
+  effectsInstalled: boolean;
   /** Last scene values (while Render is shown). */
   sources: { ui?: Json; entities?: Json; projections?: Json };
   scene: SceneSnapshot | undefined;
   calibration: Calibration | undefined;
-  /** The game.rect calibration was asked in this session and for this device. */
+  /** The calibration (game.locate or game.rect) was asked in this session and for this device. */
   calibrationAsked: boolean;
   /** undefined = not asked, null = no manifest. */
   catalogue: TextureCatalogue | null | undefined;
   /** Last `fpsSamples` fps values. */
   fps: number[];
+  /** The page heap `link.heap()` reported at the last game.render change; undefined = not reported. */
+  heap: { usedMb: number; limitMb: number } | undefined;
   /** Bundles of the previous game.assets value. */
   loaded: Map<string, { tier: string; mb: number }>;
   /** Newest first, at most releaseLogMax. */
@@ -252,8 +256,13 @@ export type MetricTiles = {
     | undefined;
   /** effects only when game.effects delivered (game 0.0.3). */
   scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
-  /** Not reported by the game (follow-up F-R1). */
-  heap: { kind: "absent" };
+  /**
+   * Present, and false, only when the game has no effects plugin: the manifest lists game.effects
+   * with `available: false` and the Scene tile reads "Effects not installed in this game".
+   */
+  effectsInstalled?: false;
+  /** The page heap from its heartbeat (Chromium `performance.memory`); absent elsewhere. */
+  heap: { kind: "value"; usedMb: number; limitMb: number } | { kind: "absent" };
 };
 
 /**
@@ -276,14 +285,14 @@ export type RenderSnapshot = {
  * @example
  * ```ts
  * app.workspace.show("render");
- * app.renderView.snapshot().tiles.heap; // { kind: "absent" }
+ * app.renderView.snapshot().tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium
  * ```
  */
 export type RenderViewApi = {
   /**
-   * Re-reads the asset manifest and the game.rect calibration (the Textures card's Refresh and a
-   * device change). Live values come from the watches: this is not a poll. Does nothing while the
-   * link is not live or paused.
+   * Re-reads the asset manifest and the calibration from game.locate or game.rect (the Textures
+   * card's Refresh and a device change). Live values come from the watches: this is not a poll.
+   * Does nothing while the link is not live or paused.
    *
    * @returns Resolves when both reads settled (never rejects).
    * @example
@@ -306,7 +315,9 @@ export type RenderViewApi = {
    * const { tiles } = app.renderView.snapshot();
    * tiles.drawCalls; // { kind: "absent" } in a production build
    * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+   * tiles.effectsInstalled; // false on a game without the effects plugin, else absent
    * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
+   * tiles.heap; // { kind: "absent" } outside Chromium: the page reports no heap
    * ```
    */
   snapshot(): RenderSnapshot;

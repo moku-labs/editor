@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StyleEditCode } from "../../../panels/shared/style-edit";
 import { actionsOf } from "../../actions";
 import { styleErrorText } from "../../inspector/styles";
+import { callsDefiner } from "../../inspector/styles-file";
 import { createTestCtx, flush, holdReads } from "../ctx";
 
 const STYLES = "features/ui/styles.ts";
@@ -23,16 +24,19 @@ async function settle(ms: number): Promise<void> {
 }
 
 describe("openStyles", () => {
-  it("loads one card per text-style key and selects the first or the asked key", async () => {
+  it("loads one card per text-style key, chooses none until asked (finding 9), then the asked key", async () => {
     const { ctx } = createTestCtx({ files: { [STYLES]: fixture } });
     await actionsOf(ctx).inspector.openStyles();
     const styles = ctx.state.inspector.styles;
     expect(styles?.blocks.length).toBeGreaterThan(10);
-    expect(styles?.key).toBe("ui.title");
+    expect(styles?.file).toBe(STYLES);
+    expect(styles?.key).toBeUndefined();
     await actionsOf(ctx).inspector.openStyles("ui.number");
     expect(ctx.state.inspector.styles?.key).toBe("ui.number");
     actionsOf(ctx).inspector.selectStyle("ui.plank");
     expect(ctx.state.inspector.styles?.key).toBe("ui.plank");
+    actionsOf(ctx).inspector.selectStyle("");
+    expect(ctx.state.inspector.styles?.key).toBeUndefined();
   });
 
   it("a late load keeps the chosen card and the pending step, so the step is written", async () => {
@@ -68,6 +72,126 @@ describe("openStyles", () => {
     expect(styleErrorText({ error: "no-file" }, STYLES)).toBe(
       "No text styles at features/ui/styles.ts · set flowView.stylesFile"
     );
+    expect(styleErrorText({ error: "no-file" }, undefined)).toBe(
+      "No file calls defineTextStyles( · set flowView.stylesFile"
+    );
+  });
+});
+
+/** The text of a game file that defines the text styles. */
+const DEFINES = 'export const textStyles = defineTextStyles({\n  "ui.number": { size: 60 }\n});\n';
+
+/**
+ * A files channel whose listing names folders too (the in-memory one lists files only).
+ *
+ * @param files - The files channel of a test context.
+ */
+function listFolders(files: ReturnType<typeof createTestCtx>["fakes"]["files"]): void {
+  vi.mocked(files.list).mockImplementation(async (dir: string) => {
+    const prefix = dir === "" ? "" : `${dir}/`;
+    const names = new Map<string, "file" | "dir">();
+    for (const path of files.store.keys()) {
+      if (!path.startsWith(prefix)) continue;
+      const rest = path.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      names.set(
+        slash === -1 ? path : `${prefix}${rest.slice(0, slash)}`,
+        slash === -1 ? "file" : "dir"
+      );
+    }
+    return [...names].map(([path, kind]) => ({ path, kind, size: 0 }));
+  });
+}
+
+describe("stylesFile auto-discovery (finding 16)", () => {
+  it("finds the first .ts/.tsx file calling defineTextStyles( breadth-first, skipping node_modules, dist, .git, .moku", async () => {
+    const { ctx, fakes } = createTestCtx({
+      config: { stylesFile: undefined },
+      files: {
+        "node_modules/game/text.ts": DEFINES,
+        "dist/app.ts": DEFINES,
+        ".moku/editor/x.ts": DEFINES,
+        "readme.md": "defineTextStyles(",
+        "src/main.ts": "createApp();\n",
+        "src/plugins/text/styles.ts": DEFINES,
+        "src/ui/deep/other.ts": DEFINES
+      }
+    });
+    listFolders(fakes.files);
+    const inspector = actionsOf(ctx).inspector;
+    expect(await inspector.stylesFile()).toBe("src/plugins/text/styles.ts");
+    await inspector.openStyles();
+    expect(ctx.state.inspector.styles?.file).toBe("src/plugins/text/styles.ts");
+    expect(ctx.state.inspector.styles?.blocks.map(block => block.ref)).toEqual([
+      { kind: "text", key: "ui.number" }
+    ]);
+    const listed = vi.mocked(fakes.files.list).mock.calls.map(call => call[0]);
+    expect(listed).not.toContain("node_modules");
+    expect(listed).not.toContain("dist");
+    expect(listed).not.toContain(".moku");
+  });
+
+  it("counts a call on a line of code, not a comment or the definer's own definition", async () => {
+    expect(callsDefiner(DEFINES)).toBe(true);
+    expect(callsDefiner('const styles = kit.defineTextStyles({ "a": {} });')).toBe(true);
+    expect(callsDefiner(" * defineTextStyles({ a: {} });\n// defineTextStyles(")).toBe(false);
+    expect(callsDefiner("export function defineTextStyles(map: Record<string, unknown>) {")).toBe(
+      false
+    );
+    expect(callsDefiner("const x = undefineTextStyles(1);")).toBe(false);
+    const { ctx, fakes } = createTestCtx({
+      config: { stylesFile: undefined },
+      files: {
+        "src/plugins/text/components.ts":
+          "/**\n * defineTextStyles({ a: {} });\n */\nexport function defineTextStyles(map) {}\n",
+        "src/game/ui/styles.ts": DEFINES
+      }
+    });
+    listFolders(fakes.files);
+    expect(await actionsOf(ctx).inspector.stylesFile()).toBe("src/game/ui/styles.ts");
+  });
+
+  it("searches once per session; a new session searches again; the config always wins", async () => {
+    const { ctx, fakes } = createTestCtx({
+      config: { stylesFile: undefined },
+      files: { "game/styles.ts": DEFINES }
+    });
+    listFolders(fakes.files);
+    const inspector = actionsOf(ctx).inspector;
+    ctx.state.data.session = "s-1";
+    await inspector.stylesFile();
+    await inspector.readStyleKeys();
+    const lists = vi.mocked(fakes.files.list).mock.calls.length;
+    await inspector.stylesFile();
+    expect(vi.mocked(fakes.files.list).mock.calls.length).toBe(lists);
+    ctx.state.data.session = "s-2";
+    expect(await inspector.stylesFile()).toBe("game/styles.ts");
+    expect(vi.mocked(fakes.files.list).mock.calls.length).toBeGreaterThan(lists);
+    expect(
+      fakes.palette
+        .flat()
+        .filter(item => item.group === "Styles")
+        .map(item => item.label)
+    ).toEqual(["ui.number"]);
+
+    const configured = createTestCtx({ config: { stylesFile: "x/styles.ts" } });
+    expect(await actionsOf(configured.ctx).inspector.stylesFile()).toBe("x/styles.ts");
+    expect(configured.fakes.files.list).not.toHaveBeenCalled();
+  });
+
+  it("no file calling the definer: no cards, the reason names the definer, the Styles group stays empty", async () => {
+    const { ctx, fakes } = createTestCtx({
+      config: { stylesFile: undefined },
+      files: { "src/main.ts": "createApp();\n" }
+    });
+    listFolders(fakes.files);
+    fakes.files.failing.set("src/main.ts", new Error("unreadable"));
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles();
+    expect(ctx.state.inspector.styles).toMatchObject({ file: undefined, blocks: [] });
+    expect(ctx.state.inspector.styles?.error).toEqual({ error: "no-file" });
+    await inspector.readStyleKeys();
+    expect(fakes.palette).toEqual([]);
   });
 });
 

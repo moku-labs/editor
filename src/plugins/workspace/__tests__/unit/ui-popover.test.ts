@@ -100,6 +100,19 @@ describe("usePopover", () => {
     expect(open.has(popover())).toBe(false);
   });
 
+  it("moves a popover left so it never runs off the window", () => {
+    act(() => {
+      render(h(Probe, { show: false, anchor: "step" }), root);
+    });
+    stubRect(root.querySelector("button") ?? root, rectOf(globalThis.innerWidth - 100, 8, 80, 28));
+    stubRect(popover(), rectOf(0, 0, 400, 300));
+
+    act(() => {
+      render(h(Probe, { show: true, anchor: "step" }), root);
+    });
+    expect(popover().style.left).toBe(`${globalThis.innerWidth - 400 - 8}px`);
+  });
+
   it("without an anchor keeps the CSS position", () => {
     act(() => {
       render(h(Probe, { show: true }), root);

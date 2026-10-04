@@ -34,7 +34,6 @@ export function testConfig(overrides: Partial<FlowViewConfig> = {}): FlowViewCon
     hubMinOutcomes: 6,
     hubMinReturns: 4,
     layoutFile: ".moku/editor/layout.json",
-    notesDir: ".moku/notes",
     stylesFile: "features/ui/styles.ts",
     layoutWorker: false,
     layoutSaveDelayMs: 400,

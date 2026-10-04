@@ -1,0 +1,1334 @@
+/**
+ * @file The Game workspace (spec 13-gameView) in a real browser, on the frozen merge-game: the
+ * device toolbar (presets, orientation, Fit and 100 %, safe-area bands, Reload), the Shot with its
+ * PNG on disk and the capture card, the Series popover, the recording view, Stop, the files of a
+ * series and the contact sheet with stepping and Mark as bug, the element picker on the game's
+ * real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device tab, the
+ * style stepper that writes the source and reloads with state restored (D-07), the Overlay in
+ * game switch, and driving the game itself: pause, step, resume, palette commands and real taps on
+ * the game canvas whose effect shows in State. The Element and Device tabs live in the Element
+ * panel, a side panel that floats as a drawer below 600 px and starts collapsed there: a test
+ * opens it before it looks at or works in a tab.
+ *
+ * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
+ * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
+ * tests remove or restore what they wrote, so a second run starts from the same files.
+ */
+import { existsSync } from "node:fs";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Frame, Locator, Page } from "@playwright/test";
+import { expect, type Tools, test } from "./fixtures";
+
+/** The project root the bin serves. */
+const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
+
+/** The captures folder of gameView, relative to the game root. */
+const CAPTURES_DIR = ".moku/captures";
+
+/** The source file of the home screen styles (the Play button's style block). */
+const HOME_STYLES = "features/home/styles.ts";
+
+/** Game-frame warnings a reload provokes that are not editor defects (see flow.spec.ts). */
+const RELOAD_WARNINGS: readonly RegExp[] = [
+  /event: assets: texture is not loaded yet/,
+  /event: renderer: no texture for asset key/,
+  /event: assets: the node waited for a bundle/
+];
+
+/**
+ * The game frame's renderer warning when the viewport resizes (a device or orientation change):
+ * pixi destroys nine-slice textures that a shader still binds. A game-side warning, not an editor
+ * defect: the game page logs it on any window resize.
+ */
+const PIXI_RESIZE = /PixiJS Warning: +\[BindGroup\] a 'texture(Source|Sampler)' was destroyed/;
+
+/** A rect in px. */
+type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+
+/** The device presets of design §8: id, name, W × H, safe top and bottom, kind. */
+const PRESETS = [
+  { id: "iphone-se", name: "iPhone SE", w: 375, h: 667, top: 20, bottom: 0, kind: "phone" },
+  { id: "iphone-15", name: "iPhone 15", w: 393, h: 852, top: 59, bottom: 34, kind: "phone" },
+  {
+    id: "iphone-15-pro-max",
+    name: "iPhone 15 Pro Max",
+    w: 430,
+    h: 932,
+    top: 59,
+    bottom: 34,
+    kind: "phone"
+  },
+  { id: "pixel-8", name: "Pixel 8", w: 412, h: 915, top: 24, bottom: 16, kind: "phone" },
+  { id: "ipad-mini", name: "iPad mini", w: 744, h: 1133, top: 24, bottom: 20, kind: "tablet" },
+  { id: "desktop", name: "Desktop", w: 1440, h: 900, top: 0, bottom: 0, kind: "desktop" }
+] as const;
+
+/**
+ * The Game workspace host.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function game(page: Page): Locator {
+  return page.locator("[data-workspace-host=game]");
+}
+
+/**
+ * A part of the device toolbar.
+ *
+ * @param page - The test page.
+ * @param part - The `data-part` value.
+ * @returns The locator.
+ */
+function bar(page: Page, part: string): Locator {
+  return game(page).locator(`[data-game=toolbar] [data-part=${part}]`);
+}
+
+/**
+ * The overlay root gameView draws over the game screen.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function overlay(page: Page): Locator {
+  return page.locator("[data-game=overlay]");
+}
+
+/**
+ * The game iframe element on the tools page.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function iframe(page: Page): Locator {
+  return page.locator("iframe").first();
+}
+
+/**
+ * The game page frame.
+ *
+ * @param page - The test page.
+ * @returns The frame.
+ */
+function gameFrame(page: Page): Frame {
+  const frame = page.frames().find(f => f !== page.mainFrame() && !f.url().includes("/__editor/"));
+  if (frame === undefined) throw new Error("no game frame");
+  return frame;
+}
+
+/**
+ * Reads a registry source of the game page directly, as ground truth for the editor's view.
+ *
+ * @param page - The test page.
+ * @param id - The source id, e.g. "game.rect".
+ * @param input - The source input.
+ * @returns The value.
+ */
+async function readSource<T>(page: Page, id: string, input: object = {}): Promise<T> {
+  const json = await gameFrame(page).evaluate(
+    async ([source, value]) => {
+      const registry = (
+        Reflect.get(globalThis, "editor") as {
+          registry: { source(id: string): { read(input: object): Promise<unknown> } };
+        }
+      ).registry;
+      return JSON.stringify(await registry.source(source).read(value));
+    },
+    [id, input] as const
+  );
+  return JSON.parse(json) as T;
+}
+
+/**
+ * The page rect of a keyed game element, in game CSS px.
+ *
+ * @param page - The test page.
+ * @param key - The ui key.
+ * @returns The rect.
+ */
+async function gameRect(page: Page, key: string): Promise<Rect> {
+  return readSource<Rect>(page, "game.rect", { key });
+}
+
+/**
+ * The game position path, e.g. "home" or "board/awaitIntent".
+ *
+ * @param page - The test page.
+ * @returns The path, or "pending" while the game page reloads.
+ */
+async function gamePath(page: Page): Promise<string> {
+  try {
+    const position = await readSource<{ path: string }>(page, "game.position");
+    return position.path;
+  } catch {
+    return "pending";
+  }
+}
+
+/**
+ * Maps a game page rect to client px through the iframe box (the frame is scaled to fit).
+ *
+ * @param page - The test page.
+ * @param rect - A rect in game CSS px.
+ * @returns The rect in client px.
+ */
+async function toClient(page: Page, rect: Rect): Promise<Rect> {
+  const box = await iframe(page).boundingBox();
+  if (box === null) throw new Error("no iframe box");
+  const inner = await gameFrame(page).evaluate(() => innerWidth);
+  const scale = box.width / inner;
+  return {
+    x: box.x + rect.x * scale,
+    y: box.y + rect.y * scale,
+    w: rect.w * scale,
+    h: rect.h * scale
+  };
+}
+
+/**
+ * Expects two client rects to match within a pixel.
+ *
+ * @param actual - The measured box.
+ * @param expected - The expected rect.
+ */
+function expectNear(
+  actual: { x: number; y: number; width: number; height: number } | null,
+  expected: Rect
+): void {
+  expect(actual).not.toBeNull();
+  if (actual === null) return;
+  expect(Math.abs(actual.x - expected.x)).toBeLessThan(1.5);
+  expect(Math.abs(actual.y - expected.y)).toBeLessThan(1.5);
+  expect(Math.abs(actual.width - expected.w)).toBeLessThan(1.5);
+  expect(Math.abs(actual.height - expected.h)).toBeLessThan(1.5);
+}
+
+/**
+ * The centre of a client rect.
+ *
+ * @param rect - The rect.
+ * @returns The point.
+ */
+function centre(rect: Rect): { x: number; y: number } {
+  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+}
+
+/**
+ * Taps a keyed game element with the real mouse, on the game canvas.
+ *
+ * @param page - The test page.
+ * @param key - The ui key.
+ */
+async function tapGame(page: Page, key: string): Promise<void> {
+  const at = centre(await toClient(page, await gameRect(page, key)));
+  await page.mouse.click(at.x, at.y);
+}
+
+/**
+ * Shows Game and waits for the stage to dock the frame.
+ *
+ * @param tools - The driver.
+ */
+async function showGame(tools: Tools): Promise<void> {
+  await tools.show("game");
+  await expect(game(tools.page).locator("[data-game=stage]")).toBeVisible();
+  await expect(overlay(tools.page)).toBeAttached();
+  await expect
+    .poll(async () => {
+      const slot = await game(tools.page).locator("[data-part=slot]").boundingBox();
+      const frame = await iframe(tools.page).boundingBox();
+      return slot !== null && frame !== null && Math.abs(slot.x - frame.x) < 1;
+    })
+    .toBe(true);
+}
+
+/**
+ * Walks from home onto the board with a real tap on Play.
+ *
+ * @param page - The test page.
+ */
+async function toBoard(page: Page): Promise<void> {
+  await expect.poll(() => gamePath(page)).toBe("home");
+  await tapGame(page, "play");
+  await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+}
+
+/**
+ * The newest toast.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function toast(page: Page): Locator {
+  return page.locator("[data-ui=toasts] [data-toast]").last();
+}
+
+/**
+ * The link pill frame ("Live · f123").
+ *
+ * @param page - The test page.
+ * @returns The frame number, -1 when none.
+ */
+async function pillFrame(page: Page): Promise<number> {
+  const text = await page.locator("[data-ui=link-pill] [data-text]").textContent();
+  const match = /f(\d+)/.exec(text ?? "");
+  return match === null ? -1 : Number(match[1]);
+}
+
+/**
+ * Lists the files of a folder of the game root.
+ *
+ * @param folder - The folder, relative to the root.
+ * @returns The names, empty when missing.
+ */
+async function list(folder: string): Promise<string[]> {
+  const names = await readdir(path.join(GAME_ROOT, folder)).catch(() => []);
+  return names.toSorted();
+}
+
+/**
+ * Escapes a text for use inside a RegExp.
+ *
+ * @param text - The literal text.
+ * @returns The escaped pattern.
+ */
+function escapeRegExp(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\/]/g, String.raw`\$&`);
+}
+
+/**
+ * The series folders under the captures folder.
+ *
+ * @returns The folder names, sorted.
+ */
+async function seriesFolders(): Promise<string[]> {
+  const names = await list(CAPTURES_DIR);
+  return names.filter(name => name.startsWith("series-"));
+}
+
+/**
+ * The rendered width of a locator, 0 while it has no box.
+ *
+ * @param locator - The element.
+ * @returns The width in px.
+ */
+async function widthOf(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  return box?.width ?? 0;
+}
+
+/**
+ * The rendered height of a locator, 0 while it has no box.
+ *
+ * @param locator - The element.
+ * @returns The height in px.
+ */
+async function heightOf(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox();
+  return box?.height ?? 0;
+}
+
+/**
+ * Reads a file of the game root.
+ *
+ * @param file - The path relative to the root.
+ * @returns The text, undefined when missing.
+ */
+async function readGameFile(file: string): Promise<string | undefined> {
+  const full = path.join(GAME_ROOT, file);
+  return existsSync(full) ? readFile(full, "utf8") : undefined;
+}
+
+/**
+ * The width and height of a PNG from its IHDR chunk.
+ *
+ * @param file - The path relative to the root.
+ * @returns The size, after checking the PNG signature.
+ */
+async function pngSize(file: string): Promise<{ w: number; h: number }> {
+  const bytes = await readFile(path.join(GAME_ROOT, file));
+  expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
+}
+
+/**
+ * Starts recording every toast the tools page shows, in order, with the ms since the start. A
+ * toast can be followed by the next one faster than a locator poll (the style stepper's "✓ Saved"
+ * and the reload toast after it), so a test reads the history instead of the last toast.
+ *
+ * @param page - The test page.
+ */
+async function recordToasts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const start = performance.now();
+    const seen = new WeakSet<Element>();
+    const history: string[] = [];
+    Reflect.set(globalThis, "__e2eToasts", history);
+    const scan = (): void => {
+      for (const toast of document.querySelectorAll("[data-ui=toasts] [data-toast]")) {
+        if (seen.has(toast)) continue;
+        seen.add(toast);
+        history.push(`${Math.round(performance.now() - start)} ${toast.textContent ?? ""}`);
+      }
+    };
+    new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  });
+}
+
+/**
+ * The toasts shown since `recordToasts`, oldest first, without the timestamps.
+ *
+ * @param page - The test page.
+ * @returns The toast texts.
+ */
+async function toastHistory(page: Page): Promise<string[]> {
+  const history = await page.evaluate(() => [...(Reflect.get(globalThis, "__e2eToasts") ?? [])]);
+  return history.map(entry => String(entry).replace(/^\d+ /, ""));
+}
+
+/**
+ * Marks the game page, so a reload shows as the mark being gone.
+ *
+ * @param page - The test page.
+ */
+async function markGame(page: Page): Promise<void> {
+  await gameFrame(page).evaluate(() => Reflect.set(globalThis, "__e2eMark", 1));
+}
+
+/**
+ * Tells whether the game page was reloaded since `markGame`.
+ *
+ * @param page - The test page.
+ * @returns "reloaded", "marked" or "pending".
+ */
+async function reloadState(page: Page): Promise<string> {
+  try {
+    return await gameFrame(page).evaluate(() =>
+      Reflect.get(globalThis, "__e2eMark") === 1 ? "marked" : "reloaded"
+    );
+  } catch {
+    return "pending";
+  }
+}
+
+/**
+ * Turns the picker on and waits for the scene (calibrated, from the watches).
+ *
+ * @param page - The test page.
+ */
+async function pickerOn(page: Page): Promise<void> {
+  await bar(page, "pick").click();
+  await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+  await expect(game(page).locator("[data-part=hint]")).toHaveText(
+    "Hover the game, click to select · Esc"
+  );
+  await expect(overlay(page).locator("[data-part=picker]")).toBeVisible();
+}
+
+/**
+ * Hovers a client point until the picker label matches.
+ *
+ * @param page - The test page.
+ * @param at - The point.
+ * @param at.x - Client x.
+ * @param at.y - Client y.
+ * @param label - The expected label.
+ */
+async function hoverUntil(page: Page, at: { x: number; y: number }, label: RegExp): Promise<void> {
+  await expect
+    .poll(async () => {
+      await page.mouse.move(at.x + 1, at.y);
+      await page.mouse.move(at.x, at.y);
+      return (await overlay(page).locator("[data-part=label]").textContent()) ?? "";
+    })
+    .toMatch(label);
+}
+
+/**
+ * Finds a point of a client rect where the picker label matches: a grid scan, as a user moves the
+ * pointer over a button until its own ring shows (decorations and the label lie inside it).
+ *
+ * @param page - The test page.
+ * @param rect - The client rect to scan.
+ * @param label - The expected label.
+ * @returns The point.
+ */
+async function hoverFind(page: Page, rect: Rect, label: RegExp): Promise<{ x: number; y: number }> {
+  await expect(overlay(page).locator("[data-part=picker]")).toBeVisible();
+  let found: { x: number; y: number } | undefined;
+  await expect
+    .poll(async () => {
+      for (const fy of [0.5, 0.25, 0.75]) {
+        for (const fx of [0.3, 0.2, 0.7, 0.8, 0.5]) {
+          const at = { x: rect.x + rect.w * fx, y: rect.y + rect.h * fy };
+          await page.mouse.move(at.x, at.y);
+          const text = (await overlay(page).locator("[data-part=label]").textContent()) ?? "";
+          if (label.test(text)) {
+            found = at;
+            return text;
+          }
+        }
+      }
+      return "";
+    })
+    .toMatch(label);
+  if (found === undefined) throw new Error("no point");
+  return found;
+}
+
+/**
+ * The Element tab body.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function elementTab(page: Page): Locator {
+  return game(page).locator("[data-game=side] [data-part=element]");
+}
+
+/**
+ * Shows the Element panel's content: below 600 px it is a drawer that starts collapsed, so its
+ * rail button opens it; docked it already shows.
+ *
+ * @param page - The test page.
+ */
+async function openSide(page: Page): Promise<void> {
+  const panel = game(page).locator('aside[data-side-panel="game.side"]');
+  await expect(panel).toBeVisible();
+  // The panel settles into drawer mode once its container is measured.
+  await expect
+    .poll(() =>
+      panel.evaluate(element => {
+        const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+        const isDrawer = element.dataset.overlay !== undefined;
+        return width > 0 && width < 600 === isDrawer;
+      })
+    )
+    .toBe(true);
+  if ((await panel.getAttribute("data-state")) === "collapsed") {
+    await panel.locator(":scope > [data-part=rail] [data-action=expand]").click();
+  }
+  await expect(panel).toHaveAttribute("data-state", "expanded");
+}
+
+/**
+ * Removes every capture of this run.
+ */
+async function clearCaptures(): Promise<void> {
+  await rm(path.join(GAME_ROOT, CAPTURES_DIR), { recursive: true, force: true });
+}
+
+test.beforeEach(async () => {
+  await clearCaptures();
+});
+
+test.afterEach(async () => {
+  await clearCaptures();
+});
+
+test.describe("game · device toolbar", () => {
+  test("every preset sizes the stage, the frame and the game viewport; the Device tab follows", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const select = bar(page, "device");
+    await expect(select).toHaveValue("iphone-15");
+    await expect(select.locator("option")).toHaveText(PRESETS.map(preset => preset.name));
+
+    for (const preset of PRESETS) {
+      await select.selectOption(preset.id);
+      await expect(bar(page, "size")).toHaveText(`${preset.w} × ${preset.h}`);
+      const bezel = game(page).locator("[data-part=bezel]");
+      await expect(bezel).toHaveAttribute("data-kind", preset.kind);
+      // The game page sees the device width; the slot keeps the device aspect.
+      await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(preset.w);
+      await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(preset.h);
+      await expect
+        .poll(async () => {
+          const slot = await game(page).locator("[data-part=slot]").boundingBox();
+          return slot === null ? 0 : Math.round((slot.width / slot.height) * 100);
+        })
+        .toBe(Math.round((preset.w / preset.h) * 100));
+      await expect
+        .poll(async () => {
+          const slot = await game(page).locator("[data-part=slot]").boundingBox();
+          const frame = await iframe(page).boundingBox();
+          if (slot === null || frame === null) return false;
+          return Math.abs(slot.width - frame.width) < 1 && Math.abs(slot.x - frame.x) < 1;
+        })
+        .toBe(true);
+    }
+
+    await openSide(page);
+    await game(page).getByRole("tab", { name: "Device" }).click();
+    const devices = game(page).locator("[data-part=devices] button");
+    await expect(devices).toHaveCount(PRESETS.length);
+    await expect(devices.filter({ hasText: "Desktop" })).toHaveAttribute("aria-pressed", "true");
+    for (const [index, preset] of PRESETS.entries()) {
+      await expect(devices.nth(index)).toContainText(preset.name);
+      await expect(devices.nth(index)).toContainText(`${preset.w}×${preset.h}`);
+      await expect(devices.nth(index)).toContainText(
+        `safe top ${preset.top} · bottom ${preset.bottom}`
+      );
+    }
+    await devices.filter({ hasText: "iPad mini" }).click();
+    await expect(select).toHaveValue("ipad-mini");
+    await expect(bar(page, "size")).toHaveText("744 × 1133");
+    await expect(devices.filter({ hasText: "iPad mini" })).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(744);
+  });
+
+  test("Landscape swaps W and H and moves the safe bands to the sides; Portrait puts them back", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const orientation = game(page).getByRole("radiogroup", { name: "Orientation" });
+    await expect(orientation.getByRole("radio", { name: "Portrait" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    const guides = overlay(page).locator("[data-part=guides]");
+    await expect(guides.locator("[data-part=band]")).toHaveCount(2);
+    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 59px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 34px/);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(1);
+    await expect(guides.locator("[data-part=home]")).toHaveCount(1);
+
+    await orientation.getByRole("radio", { name: "Landscape" }).click();
+    await expect(orientation.getByRole("radio", { name: "Landscape" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await expect(bar(page, "size")).toHaveText("852 × 393");
+    await expect(game(page).locator("[data-part=bezel]")).toHaveAttribute(
+      "data-orientation",
+      "landscape"
+    );
+    await expect(guides).toHaveAttribute("data-orientation", "landscape");
+    await expect(guides.locator("[data-side=left]")).toHaveAttribute("style", /--band: 59px/);
+    await expect(guides.locator("[data-side=right]")).toHaveAttribute("style", /--band: 59px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 34px/);
+    await expect(guides.locator("[data-side=top]")).toHaveCount(0);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(852);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(393);
+    // The band is drawn in device px, scaled with the frame: 59 device px on the left edge.
+    const frame = await iframe(page).boundingBox();
+    const left = await guides.locator("[data-side=left]").boundingBox();
+    if (frame === null || left === null) throw new Error("no boxes");
+    expect(Math.abs(left.width - (59 * frame.width) / 852)).toBeLessThan(1.5);
+    expect(Math.abs(left.x - frame.x)).toBeLessThan(1.5);
+
+    await orientation.getByRole("radio", { name: "Portrait" }).click();
+    await expect(bar(page, "size")).toHaveText("393 × 852");
+    await expect(guides.locator("[data-side=top]")).toHaveCount(1);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(393);
+  });
+
+  test("Fit scales the frame into the stage; 100 % shows it at device size", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    // The iPad mini (744 × 1133) is taller than every window of the suite, so Fit always scales it
+    // down; an iPhone 15 fits at scale 1 on the 960 × 1080 window.
+    await bar(page, "device").selectOption("ipad-mini");
+    await expect(bar(page, "size")).toHaveText("744 × 1133");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(744);
+    const zoom = game(page).getByRole("radiogroup", { name: "Zoom" });
+    await expect(zoom.getByRole("radio", { name: "Fit" })).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => widthOf(iframe(page))).toBeLessThan(744);
+    const viewport = await game(page).locator("[data-part=viewport]").boundingBox();
+    const fitted = await iframe(page).boundingBox();
+    if (viewport === null || fitted === null) throw new Error("no boxes");
+    // Fit: the whole device is inside the stage, at the device aspect.
+    expect(fitted.height).toBeLessThanOrEqual(viewport.height);
+    expect(fitted.width).toBeLessThanOrEqual(viewport.width);
+    expect(fitted.width / fitted.height).toBeCloseTo(744 / 1133, 2);
+
+    await zoom.getByRole("radio", { name: "100 %" }).click();
+    await expect(game(page).locator("[data-game=stage]")).toHaveAttribute("data-zoom", "100");
+    await expect(zoom.getByRole("radio", { name: "100 %" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await expect.poll(() => widthOf(iframe(page))).toBeCloseTo(744, 0);
+    await expect.poll(() => heightOf(game(page).locator("[data-part=slot]"))).toBeCloseTo(1133, 0);
+    // The game still sees its device size, and the overlay scales with the frame.
+    expect(await gameFrame(page).evaluate(() => innerWidth)).toBe(744);
+    const band = await overlay(page).locator("[data-side=top]").boundingBox();
+    expect(band?.height ?? 0).toBeCloseTo(24, 0);
+
+    await zoom.getByRole("radio", { name: "Fit" }).click();
+    await expect(game(page).locator("[data-game=stage]")).toHaveAttribute("data-zoom", "fit");
+    await expect.poll(() => widthOf(iframe(page))).toBeCloseTo(fitted.width, 0);
+  });
+
+  test("Safe area toggles the bands; small phones, the iPad and Desktop draw what their insets say", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const safe = bar(page, "safe");
+    const guides = overlay(page).locator("[data-part=guides]");
+    await expect(safe).toHaveAttribute("aria-checked", "true");
+    await expect(guides).toBeVisible();
+    await safe.click();
+    await expect(safe).toHaveAttribute("aria-checked", "false");
+    await expect(guides).toHaveCount(0);
+    await safe.click();
+    await expect(safe).toHaveAttribute("aria-checked", "true");
+    await expect(guides.locator("[data-part=band]")).toHaveCount(2);
+
+    // iPhone SE: a 20 px top band, no island, no home bar, no bottom band.
+    await bar(page, "device").selectOption("iphone-se");
+    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 20px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveCount(0);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(0);
+    await expect(guides.locator("[data-part=home]")).toHaveCount(0);
+
+    // iPad mini: bands, but no island and no home bar (not a phone).
+    await bar(page, "device").selectOption("ipad-mini");
+    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 24px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 20px/);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(0);
+    await expect(guides.locator("[data-part=home]")).toHaveCount(0);
+
+    // Desktop: no guides, the switch is off and disabled.
+    await bar(page, "device").selectOption("desktop");
+    await expect(guides).toHaveCount(0);
+    await expect(safe).toHaveAttribute("aria-disabled", "true");
+    await expect(safe).toHaveAttribute("aria-checked", "false");
+    await safe.dispatchEvent("click");
+    await expect(guides).toHaveCount(0);
+    await expect(safe).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("Reload reloads the game page without restoring: the board goes back to home", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of RELOAD_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    await showGame(tools);
+    await toBoard(page);
+    await markGame(page);
+    await bar(page, "reload").click();
+    await expect.poll(() => reloadState(page), { timeout: 30_000 }).toBe("reloaded");
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
+      timeout: 30_000
+    });
+    await expect.poll(() => gamePath(page), { timeout: 30_000 }).toBe("home");
+    await expect(game(page).locator("[data-part=badge]")).toHaveCount(0);
+    // The frame is docked on the stage again.
+    await expect
+      .poll(async () => {
+        const slot = await game(page).locator("[data-part=slot]").boundingBox();
+        const frame = await iframe(page).boundingBox();
+        return slot !== null && frame !== null && Math.abs(slot.width - frame.width) < 1;
+      })
+      .toBe(true);
+  });
+});
+
+test.describe("game · capture", () => {
+  test("Shot writes a PNG under .moku/captures and shows the card", async ({ tools }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "capture").click();
+
+    const card = page.locator("[data-game=card]");
+    await expect(card).toBeVisible();
+    await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
+    const shown = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/);
+    await expect(card.locator("[data-part=meta]")).toHaveText(/^frame \d+ · iPhone 15 portrait$/);
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png|^blob:/);
+    await expect(toast(page)).toContainText("✓ Screenshot saved");
+    await expect(toast(page)).toContainText(shown);
+    await expect(overlay(page).locator("[data-part=flash]")).toBeAttached();
+
+    // The PNG on disk is the game frame at the device size.
+    expect(await list(CAPTURES_DIR)).toEqual([path.basename(shown)]);
+    const size = await pngSize(shown);
+    expect(size.w / size.h).toBeCloseTo(393 / 852, 2);
+
+    // A second shot in the same minute gets a -2 suffix (one in the next minute a name of its own).
+    await bar(page, "capture").click();
+    await expect(card.locator("[data-part=path]")).not.toHaveText(shown);
+    const second = ((await card.locator("[data-part=path]").textContent()) ?? "").trim();
+    const sameMinute = second.startsWith(shown.replace("-main.png", ""));
+    expect(second).toMatch(
+      sameMinute
+        ? shown.replace(".png", "-2.png")
+        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/
+    );
+    expect(await list(CAPTURES_DIR)).toEqual(
+      [path.basename(shown), path.basename(second)].toSorted()
+    );
+
+    // Notes are gone: the card attaches nothing.
+    await expect(card.getByRole("button", { name: "Attach to note" })).toHaveCount(0);
+    await expect(card.getByRole("combobox")).toHaveCount(0);
+
+    await card.getByRole("button", { name: "Close" }).click();
+    await expect(card).toHaveCount(0);
+  });
+
+  test("Take a screenshot from the palette in another workspace; Esc closes the card", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await tools.show("state");
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.locator("dialog[data-ui=palette]");
+    await palette.getByRole("combobox", { name: "Search" }).fill("Take a screenshot");
+    await palette.getByRole("option", { name: /Take a screenshot/ }).click();
+    await expect(toast(page)).toContainText("✓ Screenshot saved");
+    await expect.poll(() => list(CAPTURES_DIR)).toHaveLength(1);
+    await showGame(tools);
+    const card = page.locator("[data-game=card]");
+    await expect(card).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveCount(0);
+  });
+});
+
+test.describe("game · series", () => {
+  test("the popover sets duration and interval, warns on a large series, and Cancel closes it", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "series").click();
+    const pop = page.locator("[data-game=series]");
+    await expect(pop).toBeVisible();
+    await expect(bar(page, "series")).toHaveAttribute("aria-expanded", "true");
+    await expect(pop.getByRole("heading")).toHaveText("Record a series");
+    const duration = pop.getByRole("radiogroup", { name: "Duration" });
+    const interval = pop.getByRole("radiogroup", { name: "Interval" });
+    await expect(duration.getByRole("radio")).toHaveText(["1 s", "2 s", "5 s", "10 s", "20 s"]);
+    await expect(interval.getByRole("radio")).toHaveText([
+      "16 ms",
+      "50 ms",
+      "100 ms",
+      "250 ms",
+      "500 ms",
+      "1000 ms"
+    ]);
+    await duration.getByRole("radio", { name: "2 s" }).click();
+    await interval.getByRole("radio", { name: "250 ms" }).click();
+    await expect(duration.getByRole("radio", { name: "2 s" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await expect(pop.locator("[data-part=result]")).toHaveText("8 shots · 2 s at 250 ms");
+    await expect(pop.locator("[data-part=warning]")).toHaveCount(0);
+    await expect(pop.locator("[data-part=folder]")).toHaveText(
+      /^Saves to \.moku\/captures\/series-\d{4}-\d{2}-\d{2}-\d{4}\/ with index\.json$/
+    );
+
+    await duration.getByRole("radio", { name: "20 s" }).click();
+    await interval.getByRole("radio", { name: "16 ms" }).click();
+    await expect(pop.locator("[data-part=result]")).toHaveText("1250 shots · 20 s at 16 ms");
+    await expect(pop.locator("[data-part=warning]")).toHaveText("! 1250 shots is a large series.");
+
+    await pop.getByRole("button", { name: "Cancel" }).click();
+    await expect(pop).toHaveCount(0);
+    await expect(bar(page, "series")).toHaveAttribute("aria-expanded", "false");
+    // Esc closes it too.
+    await bar(page, "series").click();
+    await expect(pop).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(pop).toHaveCount(0);
+    expect(await list(CAPTURES_DIR)).toEqual([]);
+  });
+
+  test("a full series writes NNN.png and index.json and opens the contact sheet", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "series").click();
+    const pop = page.locator("[data-game=series]");
+    await pop
+      .getByRole("radiogroup", { name: "Duration" })
+      .getByRole("radio", { name: "1 s" })
+      .click();
+    await pop
+      .getByRole("radiogroup", { name: "Interval" })
+      .getByRole("radio", { name: "250 ms" })
+      .click();
+    await pop.getByRole("button", { name: "● Start" }).click();
+    await expect(pop.locator("[data-part=recording]")).toBeVisible();
+    await expect(bar(page, "series")).toHaveAttribute("data-recording", "");
+
+    const sheet = page.locator("dialog[data-game=sheet]");
+    await expect(sheet).toBeVisible({ timeout: 20_000 });
+    await expect(toast(page)).toContainText("✓ 4 shots saved");
+    const folders = await seriesFolders();
+    expect(folders).toHaveLength(1);
+    const folder = `${CAPTURES_DIR}/${folders[0]}`;
+    expect(await list(folder)).toEqual(["001.png", "002.png", "003.png", "004.png", "index.json"]);
+    const index = JSON.parse((await readGameFile(`${folder}/index.json`)) ?? "{}");
+    expect(index.shots).toHaveLength(4);
+    expect(index.durationMs).toBe(1000);
+    expect(index.intervalMs).toBe(250);
+    expect(index.stoppedEarly).toBeUndefined();
+    expect(index.device).toEqual(
+      expect.objectContaining({ name: "iPhone 15", orientation: "portrait" })
+    );
+    expect(index.shots.map((shot: { file: string }) => shot.file)).toEqual([
+      "001.png",
+      "002.png",
+      "003.png",
+      "004.png"
+    ]);
+    await pngSize(`${folder}/001.png`);
+
+    await expect(sheet.getByRole("heading")).toHaveText(
+      new RegExp(`^Series · .+ · 4 shots · 1 s at 250 ms · from frame ${index.fromFrame}$`)
+    );
+    await expect(sheet.locator("[data-part=tile]")).toHaveCount(4);
+    await expect(sheet.locator("[data-part=saved]")).toHaveText(`Saved to ${folder}/ · index.json`);
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(bar(page, "series")).not.toHaveAttribute("data-recording", "");
+  });
+
+  test("Stop ends a series early; the sheet steps through the shots and marks a bug", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await bar(page, "series").click();
+    const pop = page.locator("[data-game=series]");
+    await pop
+      .getByRole("radiogroup", { name: "Duration" })
+      .getByRole("radio", { name: "10 s" })
+      .click();
+    await pop
+      .getByRole("radiogroup", { name: "Interval" })
+      .getByRole("radio", { name: "250 ms" })
+      .click();
+    await pop.getByRole("button", { name: "● Start" }).click();
+
+    // The recording view: ring, remaining, shots, every, length, the folder; the REC badge.
+    const rec = pop.locator("[data-part=recording]");
+    await expect(rec).toHaveAttribute("data-phase", "recording");
+    await expect(rec).toContainText("Every250 ms");
+    await expect(rec).toContainText("Length10 s");
+    await expect(rec).toContainText(/Writing to \.moku\/captures\/series-/);
+    await expect(game(page).locator("[data-part=badge][data-tone=rec]")).toHaveText(
+      /^● REC \d+\.\d s$/
+    );
+    await expect(bar(page, "series")).toHaveText(/^● \d+\.\d s$/);
+    await expect(rec.locator("[data-part=shots]")).toHaveText(/^≈([3-9]|\d\d) of 40$/, {
+      timeout: 10_000
+    });
+    await rec.getByRole("button", { name: "Stop" }).click();
+
+    const sheet = page.locator("dialog[data-game=sheet]");
+    await expect(sheet).toBeVisible({ timeout: 20_000 });
+    await expect(sheet.getByRole("heading")).toHaveText(/ · stopped early$/);
+    const [series] = await seriesFolders();
+    const folder = `${CAPTURES_DIR}/${series}`;
+    const index = JSON.parse((await readGameFile(`${folder}/index.json`)) ?? "{}");
+    expect(index.stoppedEarly).toBe(true);
+    const count: number = index.shots.length;
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(count).toBeLessThan(40);
+    expect(index.durationMs).toBeLessThan(10_000);
+    const files = await list(folder);
+    const pngs = files.filter(name => name.endsWith(".png"));
+    expect(pngs).toHaveLength(count);
+    await expect(sheet.locator("[data-part=tile]")).toHaveCount(count);
+    await expect(sheet.locator("[data-part=caption]").first()).toHaveText(
+      new RegExp(String.raw`^f${index.shots[0].frame} \+${index.shots[0].atMs} ms$`)
+    );
+
+    // The large view: open shot 1, step with the arrow keys and the buttons, the strip.
+    await sheet.getByRole("button", { name: "Open shot 1" }).click();
+    const big = sheet.locator("[data-part=big]");
+    await expect(big.locator("[data-part=position]")).toHaveText(`Shot 1 of ${count}`);
+    await expect(big).toContainText(`Frame${index.shots[0].frame}`);
+    await expect(big).toContainText("DeviceiPhone 15 portrait");
+    await page.keyboard.press("ArrowRight");
+    await expect(big.locator("[data-part=position]")).toHaveText(`Shot 2 of ${count}`);
+    await expect(big).toContainText(`Frame${index.shots[1].frame}`);
+    await big.getByRole("button", { name: "Previous shot" }).click();
+    await expect(big.locator("[data-part=position]")).toHaveText(`Shot 1 of ${count}`);
+    await big.getByRole("button", { name: "Next shot" }).click();
+    await expect(big.locator("[data-part=position]")).toHaveText(`Shot 2 of ${count}`);
+    await expect(big.getByRole("button", { name: "Shot 2", exact: true })).toHaveAttribute(
+      "aria-current",
+      "true"
+    );
+
+    // B marks the shown shot as a bug; index.json is written once after the burst.
+    await page.keyboard.press("b");
+    await expect(big.getByRole("button", { name: /Mark as bug/ })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(sheet.locator("[data-part=bugs]")).toHaveText("1 marked as bug");
+    await expect
+      .poll(
+        async () => JSON.parse((await readGameFile(`${folder}/index.json`)) ?? "{}").shots[1].bug
+      )
+      .toBe(true);
+    await expect(toast(page)).toContainText("index.json");
+    // The strip button shows the bug; a click on another strip shot moves there.
+    await expect(big.getByRole("button", { name: "Shot 2", exact: true })).toHaveAttribute(
+      "data-bug",
+      ""
+    );
+    await big.getByRole("button", { name: "Shot 1", exact: true }).click();
+    await expect(big.locator("[data-part=position]")).toHaveText(`Shot 1 of ${count}`);
+
+    // Esc goes back to the grid, where the tile shows the bug; the tile toggle clears it.
+    await page.keyboard.press("Escape");
+    await expect(big).toHaveCount(0);
+    await expect(sheet.locator("[data-part=tile]").nth(1)).toHaveAttribute("data-bug", "");
+    await sheet.getByRole("button", { name: "Mark shot 2 as bug" }).click();
+    await expect(sheet.locator("[data-part=bugs]")).toHaveCount(0);
+    await expect
+      .poll(
+        async () => JSON.parse((await readGameFile(`${folder}/index.json`)) ?? "{}").shots[1].bug
+      )
+      .toBeFalsy();
+
+    // Notes are gone: the sheet attaches nothing.
+    await expect(sheet.getByRole("button", { name: "Attach to note" })).toHaveCount(0);
+
+    // Esc on the grid closes the sheet.
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+  });
+});
+
+test.describe("game · element picker", () => {
+  test("hover rings the Play button at its real rect; click selects it; Esc leaves the picker", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await expect(elementTab(page)).toHaveAttribute("data-empty", "");
+    await expect(elementTab(page)).toContainText(
+      "Pick an element in the game to see its place in the render tree, its bounds, texture and styles."
+    );
+    await pickerOn(page);
+
+    const play = await gameRect(page, "play");
+    const client = await toClient(page, play);
+    const at = await hoverFind(page, client, /^play · button · \d+×\d+$/);
+    await expect(overlay(page).locator("[data-part=label]")).toHaveText(
+      `play · button · ${Math.round(play.w)}×${Math.round(play.h)}`
+    );
+    expectNear(await overlay(page).locator("[data-box=hover]").boundingBox(), client);
+
+    // A move off the frame clears the hover.
+    await page.mouse.move(5, 5);
+    await expect(overlay(page).locator("[data-box=hover]")).toHaveCount(0);
+
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.click(at.x, at.y);
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+    await expect(overlay(page).locator("[data-part=picker]")).toHaveCount(0);
+    await expect(game(page).locator("[data-part=hint]")).toHaveCount(0);
+    expectNear(await overlay(page).locator("[data-box=selected]").boundingBox(), client);
+    // The click did not reach the game: still on home.
+    expect(await gamePath(page)).toBe("home");
+
+    const tab = elementTab(page);
+    await openSide(page);
+    await expect(game(page).getByRole("tab", { name: "Element" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    await expect(tab.locator("[data-part=name]")).toHaveText("play");
+    await expect(tab.locator("[data-part=type]")).toHaveText("button");
+    await expect(tab.locator("[data-part=crumbs] button").first()).toHaveText("homeScreen");
+    await expect(tab.locator("[data-part=bounds] dd")).toHaveText([
+      String(Math.round(play.x)),
+      String(Math.round(play.y)),
+      String(Math.round(play.w)),
+      String(Math.round(play.h))
+    ]);
+    await expect(tab.locator("[data-part=device]")).toHaveText("iPhone 15 portrait · 393×852");
+    await expect(tab.getByRole("region", { name: "Styles" })).toBeVisible();
+    await expect(tab.locator("[data-part=style-card] [data-part=where]")).toHaveText(
+      new RegExp(String.raw`^${escapeRegExp(HOME_STYLES)}:\d+$`)
+    );
+
+    // A crumb selects the ancestor; hovering a crumb draws the pink tree box.
+    const crumb = tab.locator("[data-part=crumbs] button").last();
+    const parentName = (await crumb.textContent()) ?? "";
+    await crumb.hover();
+    await expect(overlay(page).locator("[data-box=tree]")).toBeVisible();
+    await crumb.click();
+    await expect(tab.locator("[data-part=name]")).toHaveText(parentName);
+    await expect(tab.locator("[data-part=children]")).toContainText("play");
+    await tab.locator("[data-part=children] button", { hasText: /^play$/ }).click();
+    await expect(tab.locator("[data-part=name]")).toHaveText("play");
+
+    // Pick another turns the picker on; Esc leaves it and keeps the selection.
+    await tab.getByRole("button", { name: "Pick another" }).click();
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+    await expect(overlay(page).locator("[data-part=picker]")).toHaveCount(0);
+    await expect(tab.locator("[data-part=name]")).toHaveText("play");
+
+    // The key I toggles the picker.
+    await page.keyboard.press("i");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("i");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("Show in render tree reveals the picked element in Render", async ({ tools }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await pickerOn(page);
+    const client = await toClient(page, await gameRect(page, "play"));
+    const at = await hoverFind(page, client, /^play · button/);
+    await page.mouse.click(at.x, at.y);
+    await expect(elementTab(page).locator("[data-part=name]")).toHaveText("play");
+    await openSide(page);
+    await elementTab(page).getByRole("button", { name: "Show in render tree" }).click();
+    await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
+    const row = tools.host("render").locator("[role=treeitem][aria-selected=true]");
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("play");
+    await expect(row).toBeInViewport();
+  });
+
+  test("on the board the picker finds the sawmill and each cell under its invisible glow", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await toBoard(page);
+    await pickerOn(page);
+    const slot = await toClient(page, await gameRect(page, "boardSlot"));
+    // The sawmill sits in the top-left cell of the 3 × 3 board.
+    const at = { x: slot.x + slot.w / 6, y: slot.y + slot.h / 6 };
+    // Board items carry their projection key, never a bare e<index>: the sawmill or the selection
+    // ring drawn over its cell.
+    await hoverUntil(page, at, /^(sawmill|c0_0) · Sprite · \d+×\d+$/);
+    const label = (await overlay(page).locator("[data-part=label]").textContent()) ?? "";
+    const name = label.split(" · ")[0] ?? "";
+    await page.mouse.click(at.x, at.y);
+    const tab = elementTab(page);
+    await expect(tab.locator("[data-part=name]")).toHaveText(name);
+    await expect(tab.locator("[data-part=type]")).toHaveText("Sprite");
+    await expect(tab.locator("[data-part=entity]")).toContainText(/owner\s*board\./);
+    await expect(tab.locator("[data-part=entity]")).toContainText("Sprite");
+    await expect(tab.locator("[data-part=crumbs]")).toContainText("boardSlot");
+    // The click went to the picker, not to the game: the generator was not tapped.
+    expect(await gamePath(page)).toBe("board/awaitIntent");
+
+    // Each cell carries a glow (a Graphics at alpha 0) over its grass: the picker looks through it
+    // and finds what is drawn, the grass NineSlice of an empty cell, never the glow.
+    await pickerOn(page);
+    for (const [col, row] of [
+      [1, 0],
+      [2, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [0, 2],
+      [1, 2],
+      [2, 2]
+    ] as const) {
+      const cell = {
+        x: slot.x + (slot.w * (2 * col + 1)) / 6,
+        y: slot.y + (slot.h * (2 * row + 1)) / 6
+      };
+      await hoverUntil(
+        page,
+        cell,
+        new RegExp(String.raw`^c${col}_${row} · NineSliceSprite · \d+×\d+$`)
+      );
+    }
+    const middle = { x: slot.x + slot.w / 2, y: slot.y + slot.h / 2 };
+    await page.mouse.click(middle.x, middle.y);
+    await expect(tab.locator("[data-part=name]")).toHaveText("c1_1");
+    await expect(tab.locator("[data-part=type]")).toHaveText("NineSliceSprite");
+    await expect(tab.locator("[data-part=entity]")).toContainText(/owner\s*board\.cells/);
+    await expect(tab.locator("[data-part=entity]")).not.toContainText("Glow");
+    expect(await gamePath(page)).toBe("board/awaitIntent");
+  });
+
+  test("the style stepper writes one number, reloads the game and restores its state (D-07)", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of RELOAD_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    await showGame(tools);
+    await pickerOn(page);
+    const before = await gameRect(page, "play");
+    const client = await toClient(page, before);
+    const at = await hoverFind(page, client, /^play · button/);
+    await page.mouse.click(at.x, at.y);
+    const card = elementTab(page).locator("[data-part=style-card]");
+    await openSide(page);
+    await expect(card.locator("[data-part=where]")).toBeVisible();
+    const where = ((await card.locator("[data-part=where]").textContent()) ?? "").trim();
+    const file = where.split(":")[0] ?? "";
+    const original = (await readGameFile(file)) ?? "";
+    expect(original.length).toBeGreaterThan(0);
+    const up = card.getByRole("button", { name: /^Increase / }).first();
+    const field = up.locator("xpath=ancestor::div[@data-field][1]");
+    const name = (await field.getAttribute("data-field")) ?? "";
+    const value = field.locator("output");
+    const start = Number(await value.textContent());
+    try {
+      await markGame(page);
+      await recordToasts(page);
+      await up.click();
+      await expect.poll(async () => Number(await value.textContent())).toBeGreaterThan(start);
+      // The write toasts "✓ Saved", then the reload with restore toasts its own line.
+      await expect
+        .poll(() => toastHistory(page), { timeout: 30_000 })
+        .toEqual([`✓ Saved · ${file}`, "Game reloaded · state restored from the last checkpoint"]);
+      await expect.poll(() => readGameFile(file)).not.toBe(original);
+      const after = (await readGameFile(file)) ?? "";
+      const changed = after
+        .split("\n")
+        .filter((line, index) => line !== original.split("\n")[index]);
+      expect(changed).toHaveLength(1);
+      expect(changed[0]).toContain(name.split(".").at(-1) ?? name);
+      await expect.poll(() => reloadState(page), { timeout: 30_000 }).toBe("reloaded");
+      await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
+        timeout: 30_000
+      });
+      await expect.poll(() => gamePath(page), { timeout: 30_000 }).toBe("home");
+    } finally {
+      await writeFile(path.join(GAME_ROOT, file), original);
+    }
+  });
+});
+
+test.describe("game · overlay in game and driving the game", () => {
+  test("Overlay in game shows the render card inside the game page; the Device tab mirrors it", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    const card = gameFrame(page).locator("[data-moku-editor-overlay]");
+    await expect(card).toBeHidden();
+    const toggle = bar(page, "overlay");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle.locator("[data-part=state]")).toHaveText("Off");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect(toggle.locator("[data-part=state]")).toHaveText("On");
+    await expect(toast(page)).toContainText("Overlay in game on");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(/fps \d+/);
+    await expect(card).toContainText("No cheats registered");
+    await expect(card.locator("[data-dot]")).toHaveAttribute("data-kind", "live");
+    await expect(card.locator("[data-dot]")).toHaveAttribute(
+      "aria-label",
+      /^Editor live · frame \d+$/
+    );
+
+    await openSide(page);
+    await game(page).getByRole("tab", { name: "Device" }).click();
+    const box = game(page).locator("[data-part=overlay-box]");
+    await expect(box.locator("header [data-tag]")).toHaveText("On");
+    await expect(box).toContainText(
+      "Only render numbers and the game's cheats. No graph controls. Off by default."
+    );
+    await expect(box.locator("[data-part=render] [data-chip]").first()).toHaveText(
+      /^fps \d+(\.\d+)?$/
+    );
+    await expect(box.locator("[data-part=render] [data-chip]").nth(1)).toHaveText(/^\d+\.\d ms$/);
+    await expect(box.locator("[data-part=render] [data-chip]").nth(2)).toHaveText(
+      /^textures \d+\.\d MB$/
+    );
+    await box.getByRole("switch", { name: "Overlay in game" }).click();
+    await expect(box.locator("header [data-tag]")).toHaveText("Off");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toast(page)).toContainText("Overlay in game off");
+    await expect(card).toBeHidden();
+  });
+
+  test("pause, step one frame, resume from the top bar: the stage badge and the frame follow", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    const top = page.locator("[data-ui=top-bar]");
+    const badge = game(page).locator("[data-part=badge]");
+    await top.locator("[data-action=pause]").click();
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "paused");
+    await expect(badge).toHaveText(/^Paused · frame \d+$/);
+    const before = await pillFrame(page);
+    await expect(badge).toHaveText(`Paused · frame ${before}`);
+    await top.locator("[data-action=step]").click();
+    await expect.poll(() => pillFrame(page)).toBe(before + 1);
+    await expect(badge).toHaveText(`Paused · frame ${before + 1}`);
+    // The . key steps too.
+    await page.keyboard.press(".");
+    await expect(badge).toHaveText(`Paused · frame ${before + 2}`);
+    // A tap while paused is queued by the game, not lost: it plays after resume.
+    await top.locator("[data-action=pause]").click();
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live");
+    await expect(badge).toHaveCount(0);
+    await expect.poll(() => pillFrame(page)).toBeGreaterThan(before + 2);
+  });
+
+  test("palette commands pause, resume and change the device; real taps walk the game, State shows it", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const palette = page.locator("dialog[data-ui=palette]");
+    const run = async (query: string, option: RegExp): Promise<void> => {
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(palette).toBeVisible();
+      await palette.getByRole("combobox", { name: "Search" }).fill(query);
+      await palette.getByRole("option", { name: option }).first().click();
+      await expect(palette).toBeHidden();
+    };
+    await run("Device: Pixel 8", /^Device: Pixel 8/);
+    await expect(bar(page, "device")).toHaveValue("pixel-8");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(412);
+    await run("Pause the game", /Pause the game/);
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "paused");
+    await run("Resume the game", /Resume the game/);
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live");
+
+    // A real tap on Play: the game walks onto the board.
+    await toBoard(page);
+    await tools.show("state");
+    const runner = tools.host("state").locator("[data-part=runner-card]");
+    await expect(runner).toContainText("pathboard/awaitIntent");
+    await expect(runner).toContainText("stackmain/board › board/awaitIntent");
+    await expect(runner).toContainText("Gate waits for 8");
+
+    // A real tap on the sawmill generator: the game takes the tap intent.
+    await showGame(tools);
+    const slot = await toClient(page, await gameRect(page, "boardSlot"));
+    await page.mouse.click(slot.x + slot.w / 6, slot.y + slot.h / 6);
+    await tools.show("state");
+    await expect(runner).toContainText(/last edge.*tap/);
+  });
+});

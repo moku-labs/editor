@@ -10,7 +10,8 @@ import {
   createLinkMock,
   createLog,
   type LinkMock,
-  type LogMock
+  type LogMock,
+  manifestOf
 } from "../../panels/__tests__/helpers";
 import type { Calibration, PageRect, SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene } from "../../panels/shared/scene";
@@ -236,8 +237,21 @@ export type TestCtx = Omit<RenderViewCtx, "emit" | "log"> & {
 };
 
 /**
+ * The manifest of a game 0.1 the test ctx starts with: the scene sources and game.rect.
+ */
+export const GAME_01_SOURCES: readonly string[] = [
+  "game.render",
+  "game.assets",
+  "game.ui",
+  "game.entities",
+  "game.projections",
+  "game.rect"
+];
+
+/**
  * A renderView domain ctx with a real state; require answers the mocks. The link is live at
- * frame 1841 in session "s-1"; game.rect answers the board capture's rects.
+ * frame 1841 in session "s-1" with a game 0.1 manifest; game.rect answers the board capture's
+ * rects.
  *
  * @param config - Config overrides.
  * @returns The ctx.
@@ -245,6 +259,7 @@ export type TestCtx = Omit<RenderViewCtx, "emit" | "log"> & {
 export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
   const link = createLinkMock();
   link.current = { kind: "live", frame: 1841 };
+  link.manifestValue = manifestOf(GAME_01_SOURCES);
   const capture = boardCapture();
   link.api.read = vi.fn((id: string, input?: Json) => {
     const key =

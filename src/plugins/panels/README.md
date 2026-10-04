@@ -168,25 +168,26 @@ ctx.require(panelsPlugin).register(flowPanel);
 
 ## Shared view modules (`shared/`)
 
-Plain modules for the views. They exist so flowView, gameView and filesView share one
-implementation without importing each other (D-16).
+Plain modules for the views. They exist so the views share one implementation without
+importing each other (D-16).
 
-Rules for all six:
+Rules for all of them:
 
-- No plugin, no `ctx`, no state, no timers, no logging.
+- No plugin, no `ctx`, no timers, no logging.
+- No state, except `side-panel/`: it keeps the state of each side panel (D-29), in memory and in localStorage.
 - Bad input never throws. Functions return a typed error value; the view writes its own text.
 - Only `loadStyleFile` and `writeNumber` are async. They do I/O through the files client they get.
 - Not exported from `"."` and not a plugin api. Views import them by relative path, e.g. `../panels/shared/style-edit`.
-- Imports: the protocol by relative path; `preact` in `highlight.ts` only.
+- Imports: the protocol by relative path; `preact` in `highlight.ts` and `side-panel/` only.
 
 | Module | Imported by | Holds |
 |---|---|---|
 | `style-edit.ts` | flowView, gameView | Style blocks of a TS source file, the one safe numeric-literal edit, the version-checked write. |
-| `notes.ts` | flowView, gameView, filesView | The codec of `.moku/notes/<date>-<slug>.md` front matter. |
 | `highlight.ts` | flowView, filesView | The one syntax highlighter (TS/TSX, CSS, JSON, Markdown). |
 | `tokens.ts` | renderView | CSS custom property names of the workspace tokens. |
 | `scene/` | gameView, renderView | The scene mapping from `game.ui`, `game.entities`, `game.projections`. |
 | `editor-url.ts` | flowView, filesView | The "Open in editor" link. |
+| `side-panel/` | flowView, gameView, filesView | The one SidePanel of every view's side panel: resize, collapse, close and reopen, overlay. |
 
 ### `style-edit.ts`
 
@@ -213,24 +214,6 @@ await writeNumber(tools.files, "features/ui/styles.ts", loaded, target, 64);
 ```
 
 Limit: the scanner does not recognise regex literals. Style files have none.
-
-### `notes.ts`
-
-| Export | Signature | What |
-|---|---|---|
-| `NOTE_STATUSES` | `["idea", "todo", "done"]` | Known statuses. Unknown ones are kept. |
-| `parseNote` | `(text) => Note \| NoteParseError` | Lenient parse. Unknown keys stay in `extra`. |
-| `formatNote` | `(note) => string` | Writes the note back, keeping its line ending. |
-| `newNote` | `(input: NewNote) => Note` | A new note; status `idea` by default. |
-| `addCaptures` | `(note, paths) => Note` | Adds capture paths. |
-| `isNoteParseError` | `(value) => value is NoteParseError` | Guard. An unreadable file is never rewritten. |
-
-```ts
-const note = newNote({ title: "First wood 4", from: { node: "board/merge", outcome: "done" } });
-await files.write(path, formatNote(addCaptures(note, [".moku/captures/2026-09-24-1012-board.png"])));
-```
-
-File naming stays in flowView.
 
 ### `highlight.ts`
 
@@ -259,7 +242,7 @@ here is declared there.
 | `token` | Semantic and layout names, e.g. `accent: "--accent"`, `topbarH: "--topbar-h"`. |
 | `TokenName` | `keyof typeof token`. |
 | `codeToken` | `--code-<kind>` for every highlight `TokenKind`. |
-| `duration` | `camera`, `zoom`, `follow`, `strip`, `walk`, `resize`, `toast` → `--duration-*`. |
+| `duration` | `camera`, `zoom`, `follow`, `walk`, `resize`, `toast` → `--duration-*`. |
 | `cssVar(name)` | `"var(--accent)"`. |
 | `readToken(element, name)` | Computed value, `""` when unset. |
 | `readDuration(element, name)` | `"420ms"` → 420, `"0.2s"` → 200, unset or invalid → 0. |
@@ -282,8 +265,11 @@ The barrel `scene/index.ts` exports:
 | `calibrationTarget` | `(ui: Json) => { key, drawn } \| undefined` | The first keyed ui element and its drawn rect, to calibrate from. |
 | `calibrationFrom` | `(page, drawn) => Calibration` | Reference units → page px. |
 | `toPage` | `(rect, calibration) => PageRect` | Applies a calibration. |
+| `rectSourceOf` | `(manifest) => "game.locate" \| "game.rect" \| undefined` | Where element rects are read: `game.locate` when listed (game 0.4), else `game.rect` (game 0.1); undefined when neither is (`RECT_SOURCE_IDS`). |
 | `drawnRect` | `(natural, fits) => PageRect` | The drawn rect through the fit chain. |
-| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost node at a point. |
+| `transformedRect` | `(rect, parent, style, fit) => PageRect` | The drawn rect with the rest transform of the style on top (below). |
+| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost visible node at a point; skips alpha 0 and `visible: false`. |
+| `isLayoutOnly` | `(node) => boolean` | A ui screen, column, row, stack or spacer with no fill, stroke, nine-slice or shape. `elementAt` looks through it; gameView's Reference proxies put it under the drawing nodes. |
 | `pageFromClient` / `clientFromPage` | `(point, box: FrameBoxLike) => point` | Tools page ↔ game page. |
 | `ancestorsOf` | `(scene, id) => readonly string[]` | Root first. |
 | `parseTextureManifest` | `(text, path) => TextureCatalogue \| undefined` | Texture catalogue with GPU MB. |
@@ -300,6 +286,23 @@ elementAt(scene, { x: 540, y: 990 })?.ref; // { kind: "entity", id: 1048628 }
 
 The module does no I/O. Views read or watch the sources and pass the values in.
 
+Rest transform (finding 3). A ui node's rect is the box it is drawn in at rest, not its layout box.
+`transformedRect` ports the game's `pivotOf` and `restTransform` (`ui/layout/motion.ts`):
+
+- The pivot comes from `style.origin`: the centre by default, `"top"`, `"topLeft"`, or `{ x, y }` fractions of the box.
+- `offsetX` and `offsetY` move the box. They are scaled by `fit`, the scale the node is drawn at.
+- `scale` and `rotation` (radians, clockwise) apply around the pivot. A rotation gives the axis-aligned box of the turned rect.
+- A style with none of `offsetX`, `offsetY`, `scale`, `rotation` changes nothing. `origin` alone moves nothing.
+
+`buildScene` applies it after `drawnRect`, and composes it through the ancestors: a child of a
+scaled or turned node is scaled or turned with it. Live motion (a popup's enter, a swing) is not
+modelled. Projection entities hosted by a transformed ui node keep the host's untransformed frame.
+
+```ts
+transformedRect({ x: 100, y: 200, w: 300, h: 100 }, undefined, { scale: 1.2, origin: "top" }, 1);
+// { x: 70, y: 200, w: 360, h: 120 }
+```
+
 Findings of the scene spike on merge-game (fixtures `__tests__/fixtures/scene-board.txt` and
 `scene-settings.txt`, checked by `shared-scene.test.ts`):
 
@@ -313,6 +316,53 @@ Findings of the scene spike on merge-game (fixtures `__tests__/fixtures/scene-bo
 | A ui image keeps its texture on its entity's `Sprite`. | `texture` stays `style.nineSlice`. `referencedTextures` has the key. |
 
 Follow-up F-G1: `scene/` exists until the game ships a display-tree source.
+
+### `side-panel/`
+
+The barrel `side-panel/index.ts` exports:
+
+| Export | Signature | What |
+|---|---|---|
+| `SidePanel` | Preact component, `SidePanelProps` | A view's side panel. |
+| `useSidePanel` | `(id) => SidePanelHandle` | `{ closed, expanded, show, toggle }` for the view's reopen button. Re-renders on every change. |
+| `sidePanelState` | `(id) => SidePanelState` | `{ width, collapsed, closed, overlay, drawer }`, outside a component (a palette item's `when`). |
+| `showSidePanel` | `(id) => void` | Shows the panel expanded: reopens it and opens the drawer, so a panel reopened below `overlayBelow` mounts as an open drawer. |
+| `toggleSidePanel` | `(id) => void` | Collapses or expands it (the drawer in overlay mode); shows it when closed. The view binds `\`. |
+
+Props:
+
+| Prop | Type | Meaning |
+|---|---|---|
+| `id` | `string` | Persistence key, e.g. `"flow.inspector"`. |
+| `side` | `"start" \| "end"` | The edge of the view it docks to. |
+| `title` | `string` | Head and rail text; the panel's `aria-label`. |
+| `defaultWidth`, `minWidth`, `maxWidth` | `number` | px. The width until the person resizes it, and the bounds. |
+| `overlayBelow` | `number`, optional | Container width in px below which the panel floats as a drawer. Never without it. |
+| `open`, `onOpenChange` | optional | Controlled open. Uncontrolled (the stored `closed`) when `open` is absent. Close calls `onOpenChange(false)` in both modes. |
+
+Behaviour:
+
+- Resize: a 6 px handle on the inner edge, `role="separator"`, `aria-orientation="vertical"`, `aria-valuenow` = width. A pointer drag clamps to [min, max] and stores on release. ←/→ on the focused handle step 16 px. A double-click goes back to `defaultWidth`.
+- Collapse: the head button (`data-action="collapse"`, `›` on an end panel, title "Collapse (\)") gives a 32 px rail with the title written down it and `data-action="expand"`. The content stays mounted, hidden.
+- Close: the head `×` (`data-action="close"`) renders nothing. The view shows `data-action="reopen-<id>"` in its toolbar while `useSidePanel(id).closed`, and registers the palette item "Show <title>" with `showSidePanel(id)`.
+- Overlay: when the parent container is narrower than `overlayBelow` (measured at mount and by `ResizeObserver`), the expanded panel floats over the content: `position: absolute`, at the inline edge, shadow, max 92 % of the container. It starts collapsed unless `showSidePanel` opened its drawer (the reopen button, the palette item); turning narrow on a resize shuts the drawer. The docked choice is kept for when the container grows. Width 0 (a hidden workspace) keeps the mode. The parent container must be `position: relative`.
+- Persistence: localStorage `moku-editor:panel:<id>` holds `{ width, collapsed, closed }` (`width` absent until resized). Every access is in try/catch; while storage fails, the panel keeps its state in memory. Overlay mode and the drawer are never stored.
+- Markup: `<aside data-side-panel="<id>" data-side data-state="expanded|collapsed" data-overlay? data-dragging?>`, parts `handle`, `head` (`title`), `rail` (`rail-title`), `body`.
+- CSS: `side-panel/side-panel.css`, one `@scope ([data-side-panel])`, child combinators only. Density tokens `--space-*` and `--row-h`; the transition uses `--duration-resize`, none under reduced motion.
+
+```tsx
+<div data-flow="workspace">
+  <Canvas />
+  <SidePanel id="flow.inspector" side="end" title="Inspector" defaultWidth={320} minWidth={220} maxWidth={560} overlayBelow={600}>
+    <Inspector ctx={ctx} />
+  </SidePanel>
+</div>
+
+// The toolbar's reopen button, and the palette item.
+const inspector = useSidePanel("flow.inspector");
+inspector.closed && <button type="button" data-action="reopen-flow.inspector" onClick={inspector.show}>Inspector</button>;
+palette.add({ id: "flow:show-inspector", label: "Show Inspector", run: () => showSidePanel("flow.inspector") });
+```
 
 ### `editor-url.ts`
 

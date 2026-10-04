@@ -2,10 +2,12 @@
  * @file flowView inspector module — the Info tab (C2): Flow, Node, Kind, Scene, Last visit, File
  * (link to the Code tab); the slot box; Expand in place / Collapse and Enter <flow> on sub-flows;
  * the outcomes (`outcome → target`, ↩ for back edges, waiting, frame of the last fire, ✕ for a
- * rejection); Comes from (click = select); the notes on this node.
+ * rejection) and Comes from (source, outcome, via, frame of the last fire). A row click follows
+ * its edge on the canvas (`focus.followEdge`); ↑/↓ move the highlight through the rows, Enter
+ * follows it, ←/→ walk (the Flow keys).
  */
 import type { VNode } from "preact";
-import type { FlowActions, FlowCtx } from "../types";
+import type { FlowActions, FlowCtx, NodeId } from "../types";
 import type { InfoView } from "./types";
 
 /**
@@ -18,6 +20,18 @@ export type InfoTabProps = {
 };
 
 /**
+ * Follows a row: its edge when it is drawn, else selects the node it names.
+ *
+ * @param actions - The flowView actions.
+ * @param edgeKey - The row's instance edge, if drawn.
+ * @param id - The node the row names, if any.
+ */
+function follow(actions: FlowActions, edgeKey: string | undefined, id: NodeId | undefined): void {
+  if (edgeKey !== undefined && actions.focus.followEdge(edgeKey)) return;
+  if (id !== undefined) actions.focus.select(id);
+}
+
+/**
  * The Info tab.
  *
  * @param props - Context, actions and the info of the shown node.
@@ -25,8 +39,17 @@ export type InfoTabProps = {
  */
 export function InfoTab(props: InfoTabProps): VNode {
   const { ctx, actions, info } = props;
-  const notes = ctx.state.notes.files.filter(file => file.note?.from?.node === info.id);
   const key = info.key;
+  const { highlight } = ctx.state.focus;
+  /**
+   * The highlight attribute of a row.
+   *
+   * @param side - "to" for Outcomes, "from" for Comes from.
+   * @param index - The row index.
+   * @returns "" when highlighted, else undefined.
+   */
+  const marked = (side: "from" | "to", index: number): "" | undefined =>
+    highlight.side === side && highlight.index === index ? "" : undefined;
   return (
     <div data-flow="info-tab" data-part="body">
       <dl data-part="properties">
@@ -58,6 +81,7 @@ export function InfoTab(props: InfoTabProps): VNode {
         <div data-part="actions">
           <button
             type="button"
+            data-variant="outline"
             onClick={() =>
               info.expanded ? actions.flows.collapse(key) : actions.flows.expand(key)
             }
@@ -65,7 +89,7 @@ export function InfoTab(props: InfoTabProps): VNode {
             {info.expanded ? "Collapse" : "Expand in place"}
           </button>
           {info.subFlow !== undefined && (
-            <button type="button" onClick={() => actions.flows.enter(key)}>
+            <button type="button" data-variant="outline" onClick={() => actions.flows.enter(key)}>
               {`Enter ${info.subFlow}`}
             </button>
           )}
@@ -73,17 +97,20 @@ export function InfoTab(props: InfoTabProps): VNode {
       )}
       <h3>Outcomes</h3>
       <ul data-part="outcomes">
-        {info.outcomes.map(row => (
-          <li key={row.outcome} data-waiting={row.waiting ? "" : undefined}>
-            <button
-              type="button"
-              onClick={() => {
-                if (row.targetId !== undefined) actions.focus.select(row.targetId);
-              }}
-            >
-              {`${row.outcome} → ${row.target}`}
+        {info.outcomes.map((row, index) => (
+          <li
+            key={row.outcome}
+            data-outcome={row.outcome}
+            data-waiting={row.waiting ? "" : undefined}
+            data-highlight={marked("to", index)}
+          >
+            <button type="button" onClick={() => follow(actions, row.edgeKey, row.targetId)}>
+              <span data-part="outcome">{row.outcome}</span>
+              {" → "}
+              <span data-part="target" data-back={row.back ? "" : undefined}>
+                {row.target}
+              </span>
             </button>
-            {row.back && <span data-tag="back">↩</span>}
             {row.waiting && <span data-tag="waiting">waiting</span>}
             {row.frame !== undefined && <code data-part="frame">{row.frame}</code>}
             {row.rejected !== undefined && <span data-tag="rejected">{row.rejected}</span>}
@@ -95,26 +122,21 @@ export function InfoTab(props: InfoTabProps): VNode {
         <p data-part="empty">Nothing leads here</p>
       ) : (
         <ul data-part="comes-from">
-          {info.comesFrom.map(row => (
-            <li key={`${row.from}:${row.outcome}`}>
-              <button type="button" onClick={() => actions.focus.select(row.from)}>
+          {info.comesFrom.map((row, index) => (
+            <li
+              key={`${row.from}:${row.outcome}`}
+              data-outcome={row.outcome}
+              data-highlight={marked("from", index)}
+            >
+              <button type="button" onClick={() => follow(actions, row.edgeKey, row.from)}>
                 {row.via === undefined
                   ? `${row.from} · ${row.outcome}`
                   : `${row.from} · ${row.outcome} · via ${row.via}`}
               </button>
+              {row.frame !== undefined && <code data-part="frame">{row.frame}</code>}
             </li>
           ))}
         </ul>
-      )}
-      {notes.length > 0 && (
-        <>
-          <h3>Notes on this node</h3>
-          <ul data-part="notes">
-            {notes.map(file => (
-              <li key={file.path}>{file.note?.title}</li>
-            ))}
-          </ul>
-        </>
       )}
     </div>
   );

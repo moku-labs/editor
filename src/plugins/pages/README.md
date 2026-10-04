@@ -151,9 +151,11 @@ What `main` (`cli.ts`) does:
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
-4. One `Bun.serve(editor.hub.serve(...))` with `development: true`, the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path.
+4. One `Bun.serve(editor.hub.serve(...))` with `development: { hmr: false }`, the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. There is no HMR. The editor reloads the game itself on every save and restores its state (D-07, D-22). Bun re-bundles the page on the first request after a save. There is no browser console forwarding to the terminal: Bun sends it only over the HMR socket.
 5. Prints the Game, Tools and Root lines. The token is never printed.
 6. On `SIGINT` or `SIGTERM`, once: `editor.stop()`, then `server.stop(true)` bounded to 500 ms, prints `stopped`, exits 0.
+
+> **Note: `"sideEffects": false` in a game.** Without HMR, Bun bundles the page like `Bun.build` and honours the game's `"sideEffects": false`. A bare `import "./x"` is then dropped. A game page that imports a module only for its side effects must not declare `"sideEffects": false` in the nearest `package.json`, or must list that file: `"sideEffects": ["./src/x.ts"]`.
 
 `createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400.
 

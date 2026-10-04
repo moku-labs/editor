@@ -1,14 +1,16 @@
 /**
  * @file gameView plugin — onInit (panel, palette, key bindings, Esc layers, device listener; sync,
- * no I/O), onStart (scene watches when Game is already active) and onStop (disposers, watches,
- * timers, a running recording).
+ * no I/O), onStart (scene watches when Game is already active, Reference mode when already on)
+ * and onStop (disposers, watches, the game.position watch, timers, a running recording).
  */
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
 import type { DeviceChoice } from "../workspace/types";
 import { escapeClosers, keyBindings } from "./keys";
 import { paletteItems } from "./palette";
-import { recalibrate, startSceneWatches } from "./scene/watch";
+import { dropReference, setReferenceMode } from "./reference/mode";
+import { recalibrate } from "./scene/calibrate";
+import { startSceneWatches } from "./scene/watch";
 import { notify } from "./state";
 import type { GameViewCtx, GameViewState } from "./types";
 import { createGamePanel } from "./ui/panel";
@@ -28,8 +30,8 @@ function deviceKey(choice: DeviceChoice): string {
 }
 
 /**
- * Listens to workspace preferences: a device change re-calibrates the scene and re-renders the
- * overlay; theme and preview changes do nothing here.
+ * Listens to workspace preferences: a device change re-calibrates the scene (after the next ui
+ * snapshot while watching) and re-renders the overlay; theme and preview changes do nothing here.
  *
  * @param ctx - Domain context of gameView.
  * @returns Removes the listener.
@@ -66,17 +68,20 @@ export function initGameView(ctx: GameViewCtx): void {
 
 /**
  * onStart: a restored `#game` hash emits no workspace:changed, so start the scene watches here
- * when Game is already the active workspace.
+ * when Game is already the active workspace; likewise Reference mode when workspace has it on.
  *
  * @param ctx - Domain context of gameView.
  */
 export function startGameView(ctx: GameViewCtx): void {
-  if (ctx.require(workspacePlugin).active() === "game") startSceneWatches(ctx);
+  const workspace = ctx.require(workspacePlugin);
+  if (workspace.active() === "game") startSceneWatches(ctx);
+  if (workspace.reference()) setReferenceMode(ctx, true);
 }
 
 /**
- * onStop: runs the disposers (newest first) and every unwatch, clears the timers and stops a
- * running recording. Uses the teardown context only.
+ * onStop: runs the disposers (newest first), every unwatch and the game.position watch of
+ * Reference mode, clears the timers and stops a running recording. Uses the teardown context
+ * only.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -85,6 +90,7 @@ export function stopGameView(ctx: { readonly state: GameViewState }): void {
   const { state } = ctx;
   for (const dispose of state.disposers.splice(0).toReversed()) dispose();
   for (const unwatch of state.watching.splice(0)) unwatch();
+  dropReference(state);
   for (const timer of Object.values(state.timers)) clearTimeout(timer);
   state.timers = {};
   if (state.series.recording !== undefined) state.series.recording.stopRequested = true;

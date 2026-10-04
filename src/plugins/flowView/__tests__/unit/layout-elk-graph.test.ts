@@ -1,12 +1,18 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import { classifyEdges } from "../../layout/back-edges";
-import { ELK_OPTIONS, fromElkGraph, toElkGraph } from "../../layout/elk-graph";
+import { ELK_OPTIONS, elkOptions, fromElkGraph, toElkGraph } from "../../layout/elk-graph";
 import { createInlineEngine } from "../../layout/engine";
-import { NODE_H, NODE_W, STUB_H, STUB_W } from "../../layout/types";
+import { COL_GAP, NODE_H, NODE_SPACING, NODE_W, STUB_H, STUB_W } from "../../layout/types";
+import type { Rect } from "../../types";
 import { flowOf } from "../helpers";
 
 const main = flowOf("main");
+
+/** True when two rects share area. */
+function meet(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
 const classes = classifyEdges(main);
 
 describe("toElkGraph", () => {
@@ -69,11 +75,80 @@ describe("toElkGraph", () => {
     expect(loop?.targets).toEqual(["s:setLoading:done"]);
   });
 
-  it("sizes an expanded node from the sizes map", () => {
-    const sized = toElkGraph("main", main, classes, new Map([["board", { w: 900, h: 700 }]]));
+  it("sizes an expanded node from the sizes map and never shrinks it below that size", () => {
+    const sized = toElkGraph("main", main, classes, {
+      sizes: new Map([["board", { w: 900, h: 700 }]])
+    });
     const board = sized.children?.find(child => child.id === "n:board");
     expect(board?.width).toBe(900);
     expect(board?.height).toBe(700);
+    expect(board?.layoutOptions?.["elk.nodeSize.minimum"]).toBe("(900, 700)");
+  });
+
+  it("gives every edge its outcome label sized like the chip, and the label spacing options (finding 11)", () => {
+    expect(input.layoutOptions).toMatchObject({
+      "elk.edgeLabels.placement": "CENTER",
+      "elk.spacing.edgeLabel": "4",
+      "elk.spacing.labelNode": "6",
+      "elk.spacing.portPort": "22",
+      "elk.spacing.edgeEdge": "10",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "10"
+    });
+    const play = input.edges?.find(edge => edge.id === "e:home:play");
+    expect(play?.labels).toEqual([
+      { id: "e:home:play:l", text: "play", width: 6.6 * 4 + 12, height: 18 }
+    ]);
+    expect(input.edges?.every(edge => edge.labels?.length === 1)).toBe(true);
+    const home = input.children?.find(child => child.id === "n:home");
+    expect(home?.layoutOptions?.["elk.nodeSize.constraints"]).toBe("[PORTS, MINIMUM_SIZE]");
+    expect(home?.layoutOptions?.["elk.nodeSize.minimum"]).toBe(`(${NODE_W}, ${NODE_H})`);
+  });
+
+  it("uses the density spacing instead of the base COL_GAP / NODE_SPACING", () => {
+    expect(elkOptions()).toMatchObject({
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(COL_GAP),
+      "elk.spacing.nodeNode": String(NODE_SPACING)
+    });
+    // The centred labels take a layer of their own, so each density gap is spent twice: half each side.
+    expect(
+      toElkGraph("main", main, classes, { density: "comfortable" }).layoutOptions
+    ).toMatchObject({
+      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
+      "elk.spacing.nodeNode": "20"
+    });
+    expect(toElkGraph("main", main, classes, { density: "compact" }).layoutOptions).toMatchObject({
+      "elk.layered.spacing.nodeNodeBetweenLayers": "48",
+      "elk.spacing.nodeNode": "14"
+    });
+  });
+});
+
+describe("ELK label placement", () => {
+  it("places every edge label (labelAt) apart from the others and off the nodes", async () => {
+    const settings = flowOf("settingsPopup");
+    const settingsClasses = classifyEdges(settings);
+    const output = await createInlineEngine().layout(
+      toElkGraph("settingsPopup", settings, settingsClasses)
+    );
+    const box = fromElkGraph("settingsPopup", settings, settingsClasses, output);
+    const labels = box.edges
+      .filter(edge => edge.kind === "edge")
+      .map(edge => {
+        const at = edge.labelAt;
+        if (at === undefined) throw new Error(`no label for ${edge.key}`);
+        const w = 6.6 * edge.outcome.length + 12;
+        return { key: edge.key, x: at.x - w / 2, y: at.y - 9, w, h: 18 };
+      });
+    expect(labels.map(label => label.key)).toContain("settingsPopup/open:close");
+    for (const [index, label] of labels.entries()) {
+      for (const other of labels.slice(index + 1))
+        expect(meet(label, other), label.key).toBe(false);
+      for (const item of box.items.filter(entry => entry.kind !== "port")) {
+        expect(meet(label, item), `${label.key} on ${item.key}`).toBe(false);
+      }
+    }
+    const open = box.items.find(entry => entry.key === "settingsPopup/open");
+    expect(open?.h).toBeGreaterThan(NODE_H);
   });
 });
 

@@ -1,12 +1,13 @@
 /**
  * @file flowView camera module — the minimap (B7), 200×128 bottom-right: the root flow name, every
- * item as a rect (accent = current node, note yellow = notes, frames outlined) and the viewport
- * rect; a click animates the camera centre to that world point, a drag moves the viewport live. It
- * lifts with the strip. Item rects redraw only with the layout; the viewport follows the camera.
+ * item as a rect (accent = current node, frames outlined), the trail as accent lines, a filled
+ * accent dot on the current node and the viewport rect; a click animates the camera centre to that
+ * world point, a drag moves the viewport live. Item rects redraw only with the layout; the
+ * viewport follows the camera.
  */
 import type { VNode } from "preact";
 import { useMemo, useRef } from "preact/hooks";
-import type { FlowActions, FlowCtx, LayoutResult } from "../types";
+import type { EdgePath, FlowActions, FlowCtx, LayoutResult } from "../types";
 import { useFlowStore } from "../useFlowStore";
 
 /**
@@ -25,9 +26,19 @@ const MAP_H = 128;
 const HEAD = 16;
 
 /**
+ * Radius of the current node's dot.
+ */
+const DOT_R = 3.5;
+
+/**
  * Props of `Minimap`.
  */
-export type MinimapProps = { readonly ctx: FlowCtx; readonly actions: FlowActions };
+export type MinimapProps = {
+  readonly ctx: FlowCtx;
+  readonly actions: FlowActions;
+  /** The trail edges (newest first) drawn as accent lines. */
+  readonly trail: readonly EdgePath[];
+};
 
 /**
  * The map transform of a layout: scale and offset that fit the bounds under the head line.
@@ -102,15 +113,58 @@ function Items(props: {
 }
 
 /**
+ * The trail lines and the current node's dot.
+ *
+ * @param props - The layout, the trail and the current item key.
+ * @param props.result - The layout.
+ * @param props.trail - The trail edges.
+ * @param props.current - The current item key.
+ * @returns The lines and the dot.
+ * @example
+ * ```tsx
+ * <Marks result={result} trail={trail} current="main/board>board/awaitIntent" />
+ * ```
+ */
+function Marks(props: {
+  readonly result: LayoutResult;
+  readonly trail: readonly EdgePath[];
+  readonly current: string | undefined;
+}): VNode {
+  const { result, trail, current } = props;
+  const { scale, ox, oy } = mapOf(result);
+  const item = current === undefined ? undefined : result.byKey[current];
+  return (
+    <>
+      {trail.map(edge => (
+        <polyline
+          key={edge.key}
+          data-part="trail"
+          points={edge.points
+            .map(point => `${ox + point.x * scale},${oy + point.y * scale}`)
+            .join(" ")}
+        />
+      ))}
+      {item !== undefined && (
+        <circle
+          data-part="current"
+          cx={ox + (item.x + item.w / 2) * scale}
+          cy={oy + (item.y + item.h / 2) * scale}
+          r={DOT_R}
+        />
+      )}
+    </>
+  );
+}
+
+/**
  * The minimap.
  *
- * @param props - Context and actions.
+ * @param props - Context, actions and the trail.
  * @returns The minimap, or an empty fragment before the first layout.
  */
 export function Minimap(props: MinimapProps): VNode {
-  const { ctx, actions } = props;
+  const { ctx, actions, trail } = props;
   const result = useFlowStore(ctx, state => state.layout.result);
-  const lift = useFlowStore(ctx, state => state.focus.strip);
   const current = useFlowStore(ctx, () => actions.focus.locateCurrent()?.item.key);
   const cam = useFlowStore(ctx, state => state.camera.cam, "camera");
   const press = useRef<{ moved: boolean } | undefined>(undefined);
@@ -134,7 +188,7 @@ export function Minimap(props: MinimapProps): VNode {
   };
 
   return (
-    <div data-flow="minimap" data-chrome="" data-lift={lift ? "" : undefined}>
+    <div data-flow="minimap" data-chrome="">
       <svg
         width={MAP_W}
         height={MAP_H}
@@ -167,6 +221,7 @@ export function Minimap(props: MinimapProps): VNode {
           {result.root}
         </text>
         <Items result={result} current={current} />
+        <Marks result={result} trail={trail} current={current} />
         <rect
           data-part="viewport"
           x={ox + (-cam.x / cam.z) * scale}

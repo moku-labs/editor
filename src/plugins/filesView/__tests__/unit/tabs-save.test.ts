@@ -1,10 +1,11 @@
+import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { wireError } from "../../../registry/protocol";
+import { SOURCE_OVERRIDES_PATH, wireError } from "../../../registry/protocol";
 import { findTab } from "../../tabs/model";
 import { openTab } from "../../tabs/open";
 import { resolveConflict, saveTab, shouldReload } from "../../tabs/save";
 import { hashOf } from "../fake-files";
-import { CONFIG, createCtx, GRAPH, type TestCtx } from "../helpers";
+import { CONFIG, createCtx, GRAPH, settle, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The save flow: unchanged → no write; saved → toast; D-07 reload only for game
@@ -178,6 +179,128 @@ describe("saveTab", () => {
     await saveTab(ctx, ".moku/editor/files.json");
     expect(ctx.state.overrides).toEqual({ board: "features/settings/nodes.ts" });
     expect(ctx.state.usedBy?.get("features/settings/nodes.ts")?.flows).toEqual(["board"]);
+  });
+});
+
+/**
+ * Holds the answer of every later call of a files mock until the returned release.
+ *
+ * @param mock - `ctx.files.client.write` or `.read`.
+ * @returns Lets the held calls answer.
+ */
+function hold<A extends unknown[], R>(mock: Mock<(...args: A) => Promise<R>>): () => void {
+  const gate = Promise.withResolvers<void>();
+  const original = mock.getMockImplementation();
+  if (original === undefined) throw new Error("the files fake has no implementation");
+  mock.mockImplementation(async (...args: A) => {
+    await gate.promise;
+    return original(...args);
+  });
+  return () => gate.resolve();
+}
+
+/**
+ * The text and version of every write, in call order.
+ *
+ * @returns The calls.
+ */
+function writes(): unknown[][] {
+  return ctx.files.client.write.mock.calls.map(([, text, version]) => [text, version]);
+}
+
+describe("saveTab while a write is in flight", () => {
+  const PATH = "nodes/merge.ts";
+  const ORIGINAL = "export const merge = 1;\n";
+
+  it("queues one save of the newer buffer; repeated asks share it", async () => {
+    await edited(PATH, "first");
+    const release = hold(ctx.files.client.write);
+    const first = saveTab(ctx, PATH);
+    expect(findTab(ctx.state, PATH)?.status).toBe("saving");
+
+    const tab = findTab(ctx.state, PATH);
+    if (tab) tab.buffer = "second";
+    const second = saveTab(ctx, PATH);
+    const third = saveTab(ctx, PATH);
+    await settle();
+    expect(writes()).toEqual([["first", hashOf(ORIGINAL)]]);
+
+    release();
+    expect(await first).toMatchObject({ kind: "saved", version: hashOf("first") });
+    const queued = await second;
+    expect(queued).toMatchObject({ kind: "saved", version: hashOf("second") });
+    expect(await third).toEqual(queued);
+    expect(writes()).toEqual([
+      ["first", hashOf(ORIGINAL)],
+      ["second", hashOf("first")]
+    ]);
+    expect(ctx.files.contents.get(PATH)).toBe("second");
+    expect(findTab(ctx.state, PATH)).toMatchObject({ status: "ready", saved: "second" });
+  });
+
+  it("the queued save writes nothing when the buffer did not change since", async () => {
+    await edited(PATH, "first");
+    const release = hold(ctx.files.client.write);
+    const first = saveTab(ctx, PATH);
+    const again = saveTab(ctx, PATH);
+    release();
+    await first;
+    expect(await again).toEqual({ kind: "unchanged" });
+    expect(writes()).toEqual([["first", hashOf(ORIGINAL)]]);
+  });
+
+  it("a later save after the write landed writes at once", async () => {
+    await edited(PATH, "first");
+    await saveTab(ctx, PATH);
+    const tab = findTab(ctx.state, PATH);
+    if (tab) tab.buffer = "second";
+    expect(await saveTab(ctx, PATH)).toMatchObject({ kind: "saved", version: hashOf("second") });
+    expect(writes()).toEqual([
+      ["first", hashOf(ORIGINAL)],
+      ["second", hashOf("first")]
+    ]);
+  });
+
+  it("a save during an untracked write (Overwrite) answers Nothing to save", async () => {
+    await edited(PATH, "mine");
+    const release = hold(ctx.files.client.write);
+    const overwrite = resolveConflict(ctx, PATH, "overwrite");
+    await settle();
+    expect(findTab(ctx.state, PATH)?.status).toBe("saving");
+    expect(await saveTab(ctx, PATH)).toEqual({
+      kind: "failed",
+      code: undefined,
+      message: "Nothing to save"
+    });
+    release();
+    expect(await overwrite).toMatchObject({ kind: "saved" });
+  });
+
+  it("a write started while the previous one finishes keeps its own tracking", async () => {
+    await edited(SOURCE_OVERRIDES_PATH, "{}\n");
+    const releaseRead = hold(ctx.files.client.read);
+    const first = saveTab(ctx, SOURCE_OVERRIDES_PATH);
+    await settle();
+    // The write landed; the overrides read after it is held, so the first save is not done.
+    const tab = findTab(ctx.state, SOURCE_OVERRIDES_PATH);
+    expect(tab?.status).toBe("ready");
+    if (tab) tab.buffer = '{ "a": "b.ts" }\n';
+    const releaseWrite = hold(ctx.files.client.write);
+    const second = saveTab(ctx, SOURCE_OVERRIDES_PATH);
+    releaseRead();
+    await first;
+
+    // The first write's end must not forget the second one: a save now queues behind it.
+    if (tab) tab.buffer = '{ "c": "d.ts" }\n';
+    const third = saveTab(ctx, SOURCE_OVERRIDES_PATH);
+    releaseWrite();
+    expect(await second).toMatchObject({ kind: "saved" });
+    expect(await third).toMatchObject({ kind: "saved", version: hashOf('{ "c": "d.ts" }\n') });
+    expect(writes().map(([text]) => text)).toEqual([
+      "{}\n",
+      '{ "a": "b.ts" }\n',
+      '{ "c": "d.ts" }\n'
+    ]);
   });
 });
 

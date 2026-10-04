@@ -87,7 +87,8 @@ describe("filesView integration", () => {
     const removed = vi.spyOn(globalThis, "removeEventListener");
     const app = framework.createApp({});
     app.log.clearSinks();
-    expect(workspace.bindings.map(binding => binding.keys)).toEqual(["mod+s"]);
+    expect(workspace.bindings.map(binding => binding.keys)).toEqual(["mod+s", "\\"]);
+    expect(workspace.items.map(item => item.label)).toContain("Show Files tree");
     await app.start();
 
     // index built, one palette item per file

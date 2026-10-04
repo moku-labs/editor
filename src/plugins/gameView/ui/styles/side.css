@@ -1,11 +1,10 @@
-/* gameView · side panel (C7, C8): 280 px, Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers, the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers (or the read-only call, or "Defined at"), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="side"]) {
   :scope {
     display: flex;
+    flex: 1;
     flex-direction: column;
     min-height: 0;
-    border-left: 1px solid var(--line-1);
-    background: var(--surface-panel);
     color: var(--text-ink);
     font-size: var(--font-size-12-5);
   }
@@ -116,6 +115,20 @@
     font-size: var(--font-size-11-5);
   }
 
+  /* A style computed by a call: the call as written, read-only (finding 5). */
+  [data-part="call"] {
+    display: block;
+    margin-block: var(--space-3) var(--space-1);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+    overflow-wrap: anywhere;
+  }
+
+  [data-part="read-only"] {
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+  }
+
   [data-part="lines"] {
     margin: 8px 0;
     line-height: var(--line-height-code);
@@ -172,7 +185,7 @@
 
   [data-part="devices"] button[aria-pressed="true"] {
     background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   [data-part="devices"] [data-part="safe"] {

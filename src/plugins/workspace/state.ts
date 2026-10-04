@@ -52,9 +52,13 @@ export function createWorkspaceState(ctx: {
   return {
     active: ctx.config.defaultWorkspace,
     theme: { chosen: undefined, os: "light" },
+    density: { chosen: "auto", applied: "comfortable" },
     previews: defaultPreviews(),
     device: { preset: DEFAULT_DEVICE, orientation: "portrait" },
     overlayInGame: false,
+    reference: false,
+    showTaps: true,
+    taps: [],
     link: { kind: "connecting" },
     everLive: false,
     badges: {},

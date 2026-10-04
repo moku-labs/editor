@@ -5,19 +5,15 @@ import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { CaptureCard } from "../../ui/CaptureCard";
 import { createCtx, PNG, type TestCtx } from "../helpers";
-import { button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
+import { click, find, fire, type Mounted, mount, settle } from "../ui";
 
 const SHOT = ".moku/captures/2026-09-24-1012-board.png";
-const NOTE = ".moku/notes/2026-09-24-first-top-item.md";
 let ctx: TestCtx;
 let view: Mounted;
 
 beforeEach(() => {
-  ctx = createCtx({
-    [NOTE]: "---\ntitle: First top item\nstatus: idea\ncaptures: []\n---\n",
-    ".moku/notes/2026-09-20-old.md": "---\ntitle: Old one\nstatus: idea\ncaptures: []\n---\n"
-  });
-  view = mount(<CaptureCard ctx={ctx} node="board/awaitIntent" />);
+  ctx = createCtx();
+  view = mount(<CaptureCard ctx={ctx} />);
 });
 
 afterEach(() => {
@@ -66,33 +62,5 @@ describe("CaptureCard", () => {
 
     click(find(card, "button[aria-label='Close']"));
     expect(ctx.state.card).toBeUndefined();
-  });
-
-  it("attaches the capture to the newest note by default", async () => {
-    await showCard();
-    const select = find<HTMLSelectElement>(view.root, "select[aria-label='Note']");
-    expect(findAll(select, "option").map(option => option.textContent)).toEqual([
-      "First top item",
-      "Old one",
-      "New note…"
-    ]);
-    expect(select.value).toBe(NOTE);
-    click(button(view.root, "Attach to note"));
-    await settle();
-    expect(ctx.link.files.text(NOTE)).toContain(`  - ${SHOT}`);
-  });
-
-  it("New note… asks flowView for its note editor with the capture and the node", async () => {
-    await showCard();
-    const select = find<HTMLSelectElement>(view.root, "select[aria-label='Note']");
-    act(() => {
-      select.value = "new";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    click(button(view.root, "New note…"));
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:new-note", {
-      captures: [SHOT],
-      from: { node: "board/awaitIntent" }
-    });
   });
 });

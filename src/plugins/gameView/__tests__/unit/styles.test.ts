@@ -103,6 +103,33 @@ describe("openStyleCard", () => {
     expect(ctx.state.styles).toBeUndefined();
   });
 
+  it("shows a style computed by a call read-only, with the file and line of the call", async () => {
+    ctx.link.files.put(
+      "src/hud/Hud.tsx",
+      '<Pill\n  key="coinPill"\n  style={pillOf(props.width, 2)}\n/>'
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toEqual({
+      key: "coinPill",
+      status: "call",
+      path: "src/hud/Hud.tsx",
+      line: 3,
+      call: "pillOf(props.width, 2)"
+    });
+    expect(ctx.state.styles).toBeUndefined();
+  });
+
+  it("says where the key is defined when its element has no style", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", '<Row>\n  <HudPill id="coinPill" />\n</Row>');
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toEqual({
+      key: "coinPill",
+      status: "defined",
+      path: "src/hud/Hud.tsx",
+      line: 2
+    });
+  });
+
   it("drops the result when the selection changed meanwhile", async () => {
     const pending = openStyleCard(ctx, COIN);
     ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow" };

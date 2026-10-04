@@ -1,6 +1,6 @@
 /**
  * @file bridge plugin — config check (onInit), the domain deps, start (onStart: heartbeat
- * listener, page listener, connect — not awaited) and stop (onStop: bye, close, clear timers).
+ * listener, page listeners, connect — not awaited) and stop (onStop: bye, close, clear timers).
  */
 import { channelPlugin } from "../channel";
 import { registryPlugin } from "../registry";
@@ -9,7 +9,7 @@ import { connectInBackground, onBeat } from "./connection/loop";
 import { defaultNet } from "./connection/socket";
 import { dropInflight, NORMAL_CLOSE, SOCKET_OPEN } from "./dispatch/send";
 import { dropAll } from "./dispatch/subscriptions";
-import { watchVisibility } from "./page";
+import { watchTaps, watchVisibility } from "./page";
 import { setStatus } from "./status";
 import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState } from "./types";
 import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
@@ -72,7 +72,7 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
 
 /**
  * Builds the domain deps: registry and channel through ctx.require, emit of bridge:status,
- * defaultNet(globalThis) and the page probe.
+ * defaultNet(globalThis) and the page probe (URL, document, window).
  *
  * @param ctx - Plugin context of the bridge.
  * @returns The deps every bridge module takes.
@@ -93,13 +93,17 @@ export function depsOf(ctx: BridgeCtx): BridgeDeps {
     registry: ctx.require(registryPlugin),
     channel: ctx.require(channelPlugin),
     net: defaultNet(globalThis),
-    page: { href: globalThis.location?.href, document: globalThis.document }
+    page: {
+      href: globalThis.location?.href,
+      document: globalThis.document,
+      window: globalThis.window
+    }
   };
 }
 
 /**
- * onStart: publishes connecting, installs the heartbeat and visibility listeners, then connects
- * without awaiting: `app.start()` never waits for, or fails on, the editor server.
+ * onStart: publishes connecting, installs the heartbeat, visibility and tap listeners, then
+ * connects without awaiting: `app.start()` never waits for, or fails on, the editor server.
  *
  * @param ctx - Plugin context of the bridge.
  */
@@ -110,7 +114,8 @@ export function startBridge(ctx: BridgeCtx): void {
     deps.channel.onHeartbeat(beat => {
       onBeat(deps, beat);
     }),
-    watchVisibility(deps)
+    watchVisibility(deps),
+    watchTaps(deps)
   );
   connectInBackground(deps);
 }

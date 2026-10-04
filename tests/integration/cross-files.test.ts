@@ -22,8 +22,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Files across the three cores (plan §3, cross-files): the link's files client
 // drives the real files plugin through the hub (F1), the sandbox holds over the
-// wire (F2), flowView and gameView write notes and layout through the stack
-// (F3), and filesView indexes, maps nodes to files and handles a conflict (F4).
+// wire (F2), flowView loads and resets its layout through the stack (F3), and
+// filesView indexes, maps nodes to files and handles a conflict (F4).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let stack: Stack | undefined;
@@ -126,24 +126,6 @@ function frameSrc(stackNow: Stack): string {
   return stackNow.page.window.document.querySelector("iframe")?.getAttribute("src") ?? "";
 }
 
-/**
- * The capture paths in a note's front matter (`captures:` list lines).
- *
- * @param text - The note text.
- * @returns The listed paths.
- */
-function capturesOf(text: string): string[] {
-  const lines = text.split("\n");
-  const start = lines.indexOf("captures:");
-  if (start === -1) return [];
-  const listed: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (!line.startsWith("  - ")) break;
-    listed.push(line.slice("  - ".length).replaceAll('"', ""));
-  }
-  return listed;
-}
-
 describe("cross-files: the files channel through the stack", () => {
   it("F1: round-trips list, read, write, writeBinary and readBinary and emits files:written", async () => {
     stack = await startStack();
@@ -241,9 +223,10 @@ describe("cross-files: the files channel through the stack", () => {
 });
 
 describe("cross-files: views write through the stack", () => {
-  it("F3: flowView and gameView write a note, attach a capture and reset the layout", async () => {
+  it("F3: flowView loads the pinned layout and resets it through the stack", async () => {
     stack = await startPreparedStack(async root => {
       await mkdir(path.join(root, ".moku/editor"), { recursive: true });
+      // A layout.json of an older editor: its notes field still loads and is ignored.
       await writeFile(
         path.join(root, ".moku/editor/layout.json"),
         `${JSON.stringify({ version: 1, nodes: { "main/home": { x: 48, y: 24 } }, notes: {} })}\n`
@@ -251,44 +234,8 @@ describe("cross-files: views write through the stack", () => {
     });
     const live = stack;
     const { server, tools } = live;
-    const { flowView, gameView, link } = tools.app;
+    const { flowView } = tools.app;
     await until(() => flowView.layout.pinnedCount() === 1, "the pinned layout loaded");
-
-    const note = await flowView.notes.create({
-      title: "Visit pays",
-      body: "Five coins.",
-      from: { node: "visit/enter", outcome: "done" }
-    });
-    expect(note.path).toMatch(/^\.moku\/notes\/\d{4}-\d{2}-\d{2}-visit-pays\.md$/);
-    const { text } = await server.app.files.read(note.path);
-    expect(text).toContain("title: Visit pays\n");
-    expect(text).toContain("from:\n  node: visit/enter\n  outcome: done\n");
-    expect(text).toContain("status: idea\n");
-    // `to` is the graph target of visit/enter · done: the next node of the sub-flow.
-    expect(text).toContain("to: visit/leave\n");
-    expect(text).toContain("Five coins.");
-    expect(server.written).toContainEqual(
-      expect.objectContaining({ path: note.path, kind: "note" })
-    );
-    await until(
-      () => toastTexts(live).some(toast => toast.includes(note.path)),
-      "a toast naming the note file"
-    );
-
-    const listed = flowView.notes.list().find(file => file.path === note.path);
-    expect(listed?.note?.title).toBe("Visit pays");
-    const gameNotes = await gameView.notes();
-    expect(gameNotes.find(entry => entry.path === note.path)?.title).toBe("Visit pays");
-    expect(gameNotes.map(entry => entry.path)).toContain(FIRST_NOTE);
-
-    const capture = ".moku/captures/2026-10-03-1200-home.png";
-    await link.files.writeBinary(capture, PNG_1X1);
-    await gameView.attach(capture, note.path);
-    const attached = await server.app.files.read(note.path);
-    expect(capturesOf(attached.text)).toEqual([capture]);
-    await gameView.attach(capture, note.path);
-    const attachedTwice = await server.app.files.read(note.path);
-    expect(capturesOf(attachedTwice.text)).toEqual([capture]);
 
     await flowView.layout.reset();
     expect(flowView.layout.pinnedCount()).toBe(0);

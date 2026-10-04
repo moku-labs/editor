@@ -128,6 +128,55 @@ describe("floatRect and PREVIEW_SIZES", () => {
     });
   });
 
+  // The 480 px Claude pane: the Flow canvas starts at 44 px (after the rail), 436 px wide.
+  const pane = { left: 44, top: 44, width: 436, height: 800 };
+
+  it("keeps the float inside the zone next to a wide drawer: never over the rail", () => {
+    // A 304 px Inspector drawer leaves 436 - 304 - 24 = 108 px: S keeps its height, fits the width.
+    const float = floatRect(pane, resolveInsets({ right: 304 }), "bottom-right", PREVIEW_SIZES.S);
+    expect(float).toEqual({ left: 56, top: 44 + 800 - 12 - 280, width: 108, height: 280 });
+    expect(float.left).toBeGreaterThanOrEqual(pane.left + 12);
+  });
+
+  it("scales a size that does not fit down to the zone, keeping its aspect", () => {
+    // M next to the 240 px drawer: 172 px of room, 280×540 becomes 172×331.
+    const float = floatRect(pane, resolveInsets({ right: 240 }), "bottom-left", PREVIEW_SIZES.M);
+    expect(float).toEqual({ left: 56, top: 44 + 800 - 12 - 331, width: 172, height: 331 });
+    // L in a short zone: the height decides, 340×660 becomes 257×500.
+    const short = { left: 0, top: 0, width: 1000, height: 524 };
+    expect(floatRect(short, resolveInsets(undefined), "top-right", PREVIEW_SIZES.L)).toEqual({
+      left: 1000 - 12 - 257,
+      top: 12,
+      width: 257,
+      height: 500
+    });
+  });
+
+  it("never scales below the height of S; when even S does not fit, it fits the zone", () => {
+    // M in 140 px of room would be 140×270: below 280, so S's box clipped to the zone.
+    const narrow = { left: 0, top: 0, width: 164, height: 900 };
+    expect(floatRect(narrow, resolveInsets(undefined), "top-left", PREVIEW_SIZES.M)).toEqual({
+      left: 12,
+      top: 12,
+      width: 140,
+      height: 280
+    });
+    // A zone 200 px tall: S keeps its width and takes the height there is.
+    const low = { left: 0, top: 0, width: 800, height: 224 };
+    expect(floatRect(low, resolveInsets(undefined), "bottom-right", PREVIEW_SIZES.S)).toEqual({
+      left: 800 - 12 - 150,
+      top: 12,
+      width: 150,
+      height: 200
+    });
+  });
+
+  it("keeps a size that fits as it is", () => {
+    expect(floatRect(pane, resolveInsets({ right: 240 }), "bottom-right", PREVIEW_SIZES.S)).toEqual(
+      { left: 44 + 436 - 12 - 240 - 150, top: 44 + 800 - 12 - 280, width: 150, height: 280 }
+    );
+  });
+
   it("resolves insets from an object or a function; missing sides are 0", () => {
     expect(resolveInsets({ top: 3 })).toEqual({ top: 3, right: 0, bottom: 0, left: 0 });
     expect(resolveInsets(() => ({ left: 7, right: 2 }))).toEqual({

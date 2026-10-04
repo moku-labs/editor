@@ -2,7 +2,9 @@
  * @file workspace plugin — the single game frame (R4, D-14). The first mount creates one fixed
  * layer in `document.body` holding the frame box with the iframe and the overlay element; it is
  * never re-parented, because moving an iframe reloads its document. Docking is geometry only:
- * `syncFrame` reads the target rects once and writes one transform and one clip.
+ * `syncFrame` reads the target rects once and writes one transform and one clip. The docked iframe
+ * takes the pointer and the keyboard in the preview and on the Game stage; Reference mode marks
+ * the box so its overlay takes the pointer instead.
  */
 import { linkPlugin } from "../../link";
 import { presetOf, resolveDevice } from "../devices";
@@ -54,6 +56,17 @@ export function gameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
 }
 
 /**
+ * The `src` of the game frame: the game URL tagged with the frame id of this tools page
+ * (`link.frameUrl`), so link and the reload know the frame's session from another tab's.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns The tagged URL.
+ */
+export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
+  return ctx.require(linkPlugin).frameUrl(gameUrl(ctx));
+}
+
+/**
  * The overlay element above the iframe (device space), created once; attached into the frame box
  * by the first mount.
  *
@@ -89,13 +102,26 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   iframe.title = "Game";
   iframe.setAttribute("allow", "autoplay; fullscreen");
   iframe.tabIndex = -1;
-  iframe.src = gameUrl(ctx);
+  iframe.src = taggedGameUrl(ctx);
+  markReference(box, state.reference);
 
   box.append(iframe, ensureOverlay(state));
   layer.append(box);
   document.body.append(layer);
   state.frame.layer = layer;
   state.frame.iframe = iframe;
+}
+
+/**
+ * Marks the frame box while Reference mode is on (`[data-reference]` in Frame.css gives the
+ * overlay the pointer and outlines the frame).
+ *
+ * @param element - The frame box.
+ * @param on - Whether Reference mode is on.
+ */
+function markReference(element: HTMLElement, on: boolean): void {
+  if (on) element.dataset.reference = "";
+  else delete element.dataset.reference;
 }
 
 /**
@@ -205,6 +231,7 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
   const size = deviceSize(state);
   element.style.width = `${size.w}px`;
   element.style.height = `${size.h}px`;
+  markReference(element, state.reference);
 
   const target = dockTarget(state);
   if (target === undefined) {
@@ -212,15 +239,16 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
     return;
   }
 
-  // Place and clip it over the target; only the Game stage frame takes keyboard focus.
+  // Place and clip it over the target; the docked game takes the pointer and the keyboard.
   const box = frameBoxOf(target, size);
   const clip = clipInsets(box, target.clip.getBoundingClientRect());
   state.frame.box = box;
   element.style.transform = `translate(${box.left}px, ${box.top}px) scale(${box.scale})`;
   element.style.clipPath = `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px)`;
+  element.style.setProperty("--frame-scale", String(box.scale));
   element.style.visibility = "visible";
   element.dataset.docked = target.docked;
-  iframe.tabIndex = target.docked === "stage" ? 0 : -1;
+  iframe.tabIndex = 0;
 }
 
 /**

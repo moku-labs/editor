@@ -39,6 +39,7 @@ const REASONS: Readonly<Record<ErrorReason, true>> = {
   forbidden_path: true,
   version_conflict: true,
   unauthorized: true,
+  not_installed: true,
   link_closed: true
 };
 

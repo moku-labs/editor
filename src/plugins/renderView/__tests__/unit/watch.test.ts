@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Manifest } from "../../../registry/protocol";
 import { createHandlers } from "../../handlers";
 import { startRenderView, stopRenderView } from "../../lifecycle";
 import {
@@ -95,6 +96,34 @@ describe("tracker", () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
+  it("reads the page heap from link on each game.render change", () => {
+    startTracker(ctx);
+    const heap = vi.fn<() => { usedMb: number; limitMb: number } | undefined>(() => ({
+      usedMb: 12.8,
+      limitMb: 4095.8
+    }));
+    ctx.link.api.heap = heap;
+
+    ctx.link.send("game.render", RENDER);
+    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
+
+    heap.mockReturnValue(undefined);
+    ctx.link.send("game.render", RENDER);
+    expect(ctx.state.heap).toBeUndefined();
+    expect(heap).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the heap of the last good game.render value after a bad one", () => {
+    startTracker(ctx);
+    ctx.link.api.heap = () => ({ usedMb: 12.8, limitMb: 4095.8 });
+    ctx.link.send("game.render", RENDER);
+
+    ctx.link.api.heap = () => undefined;
+    ctx.link.send("game.render", { fps: "fast" });
+
+    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
+  });
+
   it("logs a shape error and keeps the last value", () => {
     startTracker(ctx);
     ctx.link.send("game.render", RENDER);
@@ -149,6 +178,29 @@ describe("tracker", () => {
 async function attach(manifest: Parameters<TestCtx["link"]["attach"]>[0]): Promise<void> {
   ctx.link.attach(manifest);
   await flush();
+}
+
+/**
+ * A manifest whose game.effects the game does not have (`available: false`).
+ *
+ * @returns The manifest.
+ */
+function notInstalledEffects(): Manifest {
+  const manifest = manifestOf(["game.render", "game.assets"]);
+  return {
+    ...manifest,
+    sources: [
+      ...manifest.sources,
+      {
+        id: "game.effects",
+        title: "Effects",
+        input: {},
+        changes: "frame",
+        available: false,
+        reason: "app.effects is undefined"
+      }
+    ]
+  };
 }
 
 describe("effects watch", () => {
@@ -225,6 +277,38 @@ describe("effects watch", () => {
     expect(ctx.link.active("game.effects")).toEqual([]);
     expect(ctx.state.effectsWatch).toBeUndefined();
     expect(ctx.state.effects).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("a manifest that marks game.effects not installed starts no watch and says so", async () => {
+    const notInstalled = notInstalledEffects();
+    startRenderView(ctx);
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+
+    await attach(notInstalled);
+
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effectsWatch).toBeUndefined();
+    expect(ctx.state.effectsInstalled).toBe(false);
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("stops a running watch when a new session lacks the effects plugin, and starts it again when one has it", async () => {
+    startRenderView(ctx);
+    await attach(WITH_EFFECTS);
+    ctx.link.send("game.effects", EFFECTS);
+
+    ctx.link.attach(notInstalledEffects());
+    expect(ctx.link.active("game.effects")).toEqual([]);
+    expect(ctx.state.effects).toBeUndefined();
+    expect(ctx.state.effectsInstalled).toBe(false);
+
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+    ctx.link.attach(WITH_EFFECTS);
+    expect(ctx.link.active("game.effects")).toHaveLength(1);
+    expect(ctx.state.effectsInstalled).toBe(true);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
@@ -414,5 +498,31 @@ describe("readCatalogue", () => {
 
     serveManifest(ctx, "manifest.json", MANIFEST_TEXT);
     expect(await readCatalogue(ctx)).not.toBeNull();
+  });
+});
+
+describe("calibrate: the rect source of the manifest (U11)", () => {
+  it("reads game.locate with { key } when the manifest lists it (game 0.4)", async () => {
+    ctx.link.manifestValue = manifestOf(["game.ui", "game.locate"]);
+    vi.mocked(ctx.link.api.read).mockResolvedValueOnce({ x: 0, y: 0, w: 540, h: 720 });
+    ctx.state.sources.ui = boardCapture().ui;
+
+    await calibrate(ctx);
+
+    expect(ctx.link.api.read).toHaveBeenCalledTimes(1);
+    expect(ctx.link.api.read).toHaveBeenCalledWith("game.locate", { key: "boardScreen" });
+    expect(ctx.state.calibration).toEqual({ scale: 0.5, x: 0, y: 0 });
+  });
+
+  it("reads nothing and warns nothing when the manifest lists neither", async () => {
+    ctx.link.manifestValue = manifestOf(["game.ui"]);
+    ctx.state.sources.ui = boardCapture().ui;
+
+    await calibrate(ctx);
+
+    expect(ctx.link.api.read).not.toHaveBeenCalled();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.state.calibration).toBeUndefined();
+    expect(ctx.state.calibrationAsked).toBe(true);
   });
 });

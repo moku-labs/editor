@@ -1,4 +1,4 @@
-/* flowView · Info tab (C2): property rows, slot box, sub-flow buttons, outcomes and comes-from lists. No @layer wrapper (R7). */
+/* flowView · Info tab (C2): property rows, slot box, sub-flow buttons, outcomes and comes-from lists; the row the ↑/↓ keys highlight. No @layer wrapper (R7). */
 
 @scope ([data-flow="info-tab"]) {
   :scope {
@@ -32,16 +32,60 @@
 
   ul {
     display: grid;
-    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  /* Outcomes and Comes from are boxed lists (design C2): a 1 px line, a radius, one row each. */
+  [data-part="outcomes"],
+  [data-part="comes-from"] {
+    overflow: hidden;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-8);
   }
 
   li {
     display: flex;
     gap: 6px;
     align-items: center;
+  }
+
+  :is([data-part="outcomes"], [data-part="comes-from"]) > li {
+    min-height: 30px;
+    padding: 4px 10px;
+  }
+
+  :is([data-part="outcomes"], [data-part="comes-from"]) > li + li {
+    border-top: 1px solid var(--line-1);
+  }
+
+  :is([data-part="outcomes"], [data-part="comes-from"]) > li:hover,
+  :is([data-part="outcomes"], [data-part="comes-from"]) > li[data-highlight] {
+    background: var(--accent-soft);
+  }
+
+  /* The state of a row sits at its right end: "waiting", the frame, the rejection. */
+  li > :is([data-tag], [data-part="frame"]) {
+    color: var(--text-muted);
+    font: var(--font-size-11) / 1.4 var(--font-mono);
+  }
+
+  li > button + :is([data-tag], [data-part="frame"]) {
+    margin-inline-start: auto;
+  }
+
+  [data-part="outcome"] {
+    color: var(--accent-ink);
+  }
+
+  [data-part="target"] {
+    font-family: var(--font-sans);
+  }
+
+  /* A return edge reads "↩ target" (design C2). */
+  [data-part="target"][data-back]::before {
+    content: "↩ ";
   }
 
   li button,
@@ -54,6 +98,12 @@
     cursor: pointer;
   }
 
+  [data-part="actions"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
   [data-part="slot"] {
     padding: 8px;
     border: 1px dashed var(--status-warn);
@@ -61,11 +111,7 @@
     font: var(--font-size-12) / 1.5 var(--font-mono);
   }
 
-  [data-tag="rejected"] {
+  li > [data-tag="rejected"] {
     color: var(--status-error);
-  }
-
-  [data-tag="waiting"] {
-    color: var(--accent);
   }
 }

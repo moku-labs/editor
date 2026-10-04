@@ -4,7 +4,8 @@
 
 `link` reads the boot JSON (`ToolsBoot`) that the server put into the tools page. It opens one
 websocket to the hub and keeps the list of game sessions. It chooses one session: the sticky
-choice first, then the newest embedded one, then the newest. It caches that session's manifest
+choice first, then this page's own game frame, then the newest embedded one, then the newest.
+The game frame of another tools tab is attached only through `choose()`. It caches that session's manifest
 and exposes the remote `EditorChannel` that every panel reads through. It also carries the files
 client and derives the link status. It renders nothing.
 
@@ -29,7 +30,8 @@ Fixed constants in `types.ts` (not config):
 
 ## API
 
-`app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot and files.
+`app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap and
+files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -44,6 +46,10 @@ Fixed constants in `types.ts` (not config):
 | `choose` | `(session) => Promise<Manifest>` | Makes a session the sticky choice and attaches it. Rejects -32003 `choose_session` for an id that is not open. |
 | `retry` | `() => void` | "Retry now": reconnects, re-picks a session or re-reads the boot tag. No-op unless the status is `lost`. |
 | `boot` | `() => ToolsBoot \| undefined` | The boot data. `undefined` without a valid tag. Never log its token. |
+| `frameUrl` | `(url) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. |
+| `isOtherTab` | `(page) => boolean` | True when a page URL carries another tools page's frame id. A page without one is not another tab's. |
+| `onTap` | `(listener: (tap: Tap) => void) => () => void` | Called with every `tap { x, y, at }` of the chosen session: a `pointerdown` on the game page in page CSS px, `at` = the page's `performance.now()`. The bridge sends at most one per 50 ms. Taps of other sessions and malformed taps are dropped. Every listener gets the same frozen tap. A throwing listener is logged as `link:tap-listener-failed` and the others still run. The same function added twice is two subscriptions. Returns an idempotent unsubscribe. |
+| `heap` | `() => { usedMb, limitMb } \| undefined` | A copy of the heap from the last heartbeat of the chosen session, in MB. `undefined` until the page reports one (only Chromium does), when its last beat had none, and after every attach or session loss. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`. No session needed. |
 
 ```ts
@@ -54,8 +60,12 @@ app.link.status(); // { kind: "live", frame: 1840 }
 app.link.onManifest(m => palette.index(m?.commands ?? []));
 await app.link.choose("s-7f3a");
 app.link.boot()?.gameUrl; // "/"
-await app.link.files.write(".moku/notes/2026-09-24-first-top-item.md", text);
+app.link.frameUrl("http://127.0.0.1:3000/"); // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
+const offTaps = app.link.onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
+app.link.heap(); // { usedMb: 12.8, limitMb: 4095.8 } in Chromium, undefined elsewhere
+await app.link.files.write("docs/plan.md", text);
 app.link.retry();
+offTaps();
 stop();
 ```
 
@@ -122,15 +132,18 @@ const off = link.onManifest(manifest => recheck(manifest));
 | Phase | Does |
 |---|---|
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, closes the socket with 1000, forgets watches and manifest listeners. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, closes the socket with 1000, forgets watches, manifest listeners and tap listeners. |
 
 ## Integration notes
 
-- `workspace` requires `link` for `status`, `manifest`, `onManifest`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`. The frame URL is `boot()?.gameUrl`, else `"/"`.
+- `workspace` requires `link` for `status`, `manifest`, `onManifest`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `frameUrl`, `isOtherTab`. The frame URL is `frameUrl(boot()?.gameUrl ?? "/")`.
+- Two tools tabs on one hub: each embeds its own game. A session whose page carries this page's frame id wins. An embedded session with another page's frame id is never picked on its own, so a second tab does not take the first one over. An embedded page without a frame id is picked as before.
 - `panels` watches every panel source through `link.watch` and re-checks sources on `onManifest`.
-- Views use `link.files` (through `tools.files`) for notes, captures and style edits.
+- `workspace` subscribes once to `onTap` for the tap ripple over the docked game frame. `renderView` reads `heap()` on each `game.render` change for the heap tile.
+- Views use `link.files` (through `tools.files`) for captures, the layout file, file tabs and style edits.
 - A switch of session sends `unwatch` for the old subs first. Wire subs are numbers that never repeat, so late values of an old sub are dropped.
 - A source id missing from the new manifest is skipped with the warn `link:source-missing`. The watch record stays for a later session.
+- A watch the session refuses with -32008 `not_installed` (the game does not have the source: the manifest lists it with `available: false`) logs only the debug line `link:source-unavailable` and is never sent to that session again. A new session gets it again. `readManifest` keeps `available: false` and `reason` on a source descriptor.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.
 - The token is never logged. The connect log line carries `boot.ws` without its query.
@@ -138,6 +151,6 @@ const off = link.onManifest(manifest => recheck(manifest));
 ## Limits
 
 - Requests are not queued while disconnected. They reject at once. Only watch records are kept.
-- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed`; panels shows the waiting text.
+- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text.
 - A game reload mid-call rejects with the hub's -32001 `game_reloaded` (retryable).
 - A throttled hidden game tab that is not paused can read `silent`.

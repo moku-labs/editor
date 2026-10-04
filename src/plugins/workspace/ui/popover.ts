@@ -13,6 +13,28 @@ import type { ElementHolder } from "./store";
 const GAP = 6;
 
 /**
+ * Least distance between a popover and the window edge, in px.
+ */
+const EDGE = 8;
+
+/**
+ * The left edge of a popover under its anchor, moved left so it never runs off the window (the
+ * Registry popover under the right end of the top bar, any popover in a half-screen window).
+ *
+ * @param anchorLeft - The anchor's left edge.
+ * @param width - The popover width (0 before layout).
+ * @returns The left edge to use.
+ * @example
+ * ```ts
+ * clampLeft(1254, 760); // innerWidth 1440 → 672
+ * ```
+ */
+function clampLeft(anchorLeft: number, width: number): number {
+  const maxLeft = globalThis.innerWidth - width - EDGE;
+  return Math.max(EDGE, Math.min(anchorLeft, maxLeft));
+}
+
+/**
  * True while the element is shown in the top layer.
  *
  * @param element - A popover element.
@@ -53,11 +75,11 @@ export function usePopover(
       anchor === undefined
         ? undefined
         : state.dom.root?.querySelector(`[data-popover-anchor="${anchor}"]`);
+    if (!isPopoverOpen(element)) element.showPopover();
     if (trigger !== undefined && trigger !== null) {
       const rect = trigger.getBoundingClientRect();
       element.style.top = `${rect.bottom + GAP}px`;
-      element.style.left = `${rect.left}px`;
+      element.style.left = `${clampLeft(rect.left, element.getBoundingClientRect().width)}px`;
     }
-    if (!isPopoverOpen(element)) element.showPopover();
   });
 }

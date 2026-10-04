@@ -3,7 +3,6 @@ import { createCameraState } from "../../camera/state";
 import { createFocusState } from "../../focus/state";
 import { createInspectorState } from "../../inspector/state";
 import { createLayoutState } from "../../layout/state";
-import { createNotesState } from "../../notes/state";
 import { createFlowViewState, notify, notifyCamera, subscribe } from "../../state";
 import { testConfig } from "../helpers";
 
@@ -15,12 +14,15 @@ describe("module states", () => {
       follow: false,
       viewport: { w: 0, h: 0 },
       insets: { top: 0, right: 0, bottom: 0, left: 0 },
-      initialised: false
+      initialised: false,
+      frameSelection: false
     });
     expect(createFocusState()).toMatchObject({
       selected: undefined,
       edge: undefined,
-      strip: false,
+      highlight: { side: "to", index: -1 },
+      back: [],
+      pulse: undefined,
       historyOpen: false,
       menu: undefined
     });
@@ -30,14 +32,17 @@ describe("module states", () => {
       code: undefined,
       codeNote: undefined,
       styles: undefined,
-      sources: undefined
+      sources: undefined,
+      found: undefined
     });
     const layout = createLayoutState();
     expect(layout.seq).toBe(0);
     expect(layout.result).toBeUndefined();
-    expect(layout.pins).toEqual({ version: 1, nodes: {}, notes: {}, extra: {} });
+    expect(layout.pins).toEqual({ version: 1, nodes: {}, extra: {} });
     expect(layout.pinsReadOnly).toBe(false);
-    expect(createNotesState()).toEqual({ files: [], loaded: false, editor: undefined });
+    expect(layout.density).toBe("comfortable");
+    expect(layout.auto.size).toBe(0);
+    expect(layout.stack).toEqual([]);
   });
 
   it("gives every call fresh mutable containers", () => {

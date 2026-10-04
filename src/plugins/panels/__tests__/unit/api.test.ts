@@ -83,15 +83,15 @@ describe("register and list", () => {
     api.mountInto("flow", element);
     ctx.state.started = true;
 
-    api.register(panelOf("flow.notes"));
-    expect(idsIn(element)).toEqual(["flow", "flow.notes"]);
+    api.register(panelOf("flow.history"));
+    expect(idsIn(element)).toEqual(["flow", "flow.history"]);
     expect(ctx.workspace.items.map(item => [item.group, item.label, item.hint])).toEqual([
-      ["Panels", "Title flow.notes", "Flow"]
+      ["Panels", "Title flow.history", "Flow"]
     ]);
     expect(ctx.state.cleanup).toHaveLength(1);
 
     api.register(panelOf("state", "state"));
-    expect(idsIn(element)).toEqual(["flow", "flow.notes"]);
+    expect(idsIn(element)).toEqual(["flow", "flow.history"]);
     expect(ctx.state.mounted.has("state")).toBe(false);
   });
 

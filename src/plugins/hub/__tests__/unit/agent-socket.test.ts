@@ -216,6 +216,107 @@ describe("agent heartbeat", () => {
   });
 });
 
+describe("agent heartbeat heap", () => {
+  it("stores a beat with a heap and forwards it intact", () => {
+    const harness = createHarness();
+    const { agent, session } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+    const beat = { frame: 12, paused: false, at: 5, heap: { usedMb: 12.8, limitMb: 4095.8 } };
+
+    harness.send(agent, notification("game", "heartbeat", beat));
+
+    expect(harness.ctx.state.sessions.get(session)?.heartbeat).toEqual(beat);
+    expect(tools.messages()).toEqual([
+      { jsonrpc: "2.0", channel: "game", method: "heartbeat", params: beat, session }
+    ]);
+  });
+
+  it("drops a malformed heap, forwards the beat without it and counts no strike", () => {
+    const harness = createHarness();
+    const { agent, session } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    harness.send(
+      agent,
+      notification("game", "heartbeat", { frame: 12, paused: false, at: 5, heap: { usedMb: "a" } })
+    );
+
+    expect(paramsOf(tools.messages()[0])).toEqual({ frame: 12, paused: false, at: 5 });
+    expect(harness.ctx.state.sessions.get(session)?.heartbeat).toEqual({
+      frame: 12,
+      paused: false,
+      at: 5
+    });
+    expect(harness.agentConn(agent).invalid).toBe(0);
+  });
+});
+
+describe("agent tap", () => {
+  it("forwards it to every tools conn with the session", () => {
+    const harness = createHarness();
+    const { agent, session } = harness.hello();
+    const first = harness.connect("tools");
+    const second = harness.connect("tools");
+    first.clear();
+    second.clear();
+
+    harness.send(agent, notification("game", "tap", { x: 206, y: 640, at: 15_234.5 }));
+
+    const forwarded = {
+      jsonrpc: "2.0",
+      channel: "game",
+      method: "tap",
+      params: { x: 206, y: 640, at: 15_234.5 },
+      session
+    };
+    expect(first.messages()).toEqual([forwarded]);
+    expect(second.messages()).toEqual([forwarded]);
+    expect(agent.sent).toEqual([]);
+  });
+
+  it("forwards only x, y and at", () => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    harness.send(agent, notification("game", "tap", { x: 1, y: 2, at: 3, extra: "dropped" }));
+
+    expect(paramsOf(tools.messages()[0])).toEqual({ x: 1, y: 2, at: 3 });
+  });
+
+  it("drops it for a congested tools conn", () => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+    harness.toolsConn(tools).congested = true;
+
+    harness.send(agent, notification("game", "tap", { x: 206, y: 640, at: 1 }));
+
+    expect(tools.sent).toEqual([]);
+  });
+
+  it.each([
+    ["a text x", { x: "206", y: 640, at: 1 }],
+    ["no at", { x: 206, y: 640 }],
+    ["a list", [206, 640, 1]],
+    ["no params", undefined]
+  ])("ignores a tap with %s and counts it", (_label, params) => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    harness.send(agent, notification("game", "tap", params));
+
+    expect(tools.sent).toEqual([]);
+    expect(harness.agentConn(agent).invalid).toBe(1);
+  });
+});
+
 describe("agent requests and responses", () => {
   it("answers any agent request -32007 unauthorized; nothing dispatched (H26, H27)", () => {
     const harness = createHarness();

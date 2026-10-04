@@ -13,7 +13,16 @@ import type {
 import { decode, encode, request, wireError } from "../../registry/protocol";
 import type { SourceEntry } from "../../registry/types";
 import { createBridgeState } from "../state";
-import type { BridgeConfig, BridgeDeps, BridgeNet, HelloResponse, SocketLike } from "../types";
+import type {
+  BridgeConfig,
+  BridgeDeps,
+  BridgeNet,
+  HelloResponse,
+  SocketLike,
+  TapEvent,
+  TapOptions,
+  TapWindow
+} from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fakes of the bridge unit tests: a log mock, a FakeSocket, a fake net,
@@ -302,6 +311,45 @@ export function fakeChannel(): FakeChannel {
   return channel;
 }
 
+/** One pointerdown listener the fake window holds. */
+export type TapListener = {
+  readonly fn: (event: TapEvent) => void;
+  readonly options: TapOptions;
+};
+
+/** A window fake for the tap watch: records its listeners and lets the test press the pointer. */
+export type FakeWindow = TapWindow & {
+  readonly listeners: TapListener[];
+  /** Calls every pointerdown listener with a point in page CSS px and an event path. */
+  press(x: number, y: number, path?: EventTarget[]): void;
+};
+
+/**
+ * Builds the fake window. Removing matches the function and the capture flag, as in a browser.
+ *
+ * @returns The fake.
+ */
+export function fakeWindow(): FakeWindow {
+  const target: FakeWindow = {
+    listeners: [],
+    addEventListener: (_type, fn, options) => {
+      target.listeners.push({ fn, options });
+    },
+    removeEventListener: (_type, fn, options) => {
+      const index = target.listeners.findIndex(
+        entry => entry.fn === fn && entry.options.capture === options.capture
+      );
+      if (index !== -1) target.listeners.splice(index, 1);
+    },
+    press: (x, y, path = []) => {
+      for (const { fn } of target.listeners) {
+        fn({ clientX: x, clientY: y, composedPath: () => path });
+      }
+    }
+  };
+  return target;
+}
+
 /** Deps whose parts are the fakes. */
 export type TestDeps = BridgeDeps & {
   readonly log: LogMock;
@@ -337,17 +385,25 @@ export function createDeps(
     registry: fakeRegistry(),
     channel: fakeChannel(),
     net: fakeNet(),
-    page: overrides.page ?? { href: "http://127.0.0.1:3000/game.html", document: new EventTarget() }
+    page: overrides.page ?? {
+      href: "http://127.0.0.1:3000/game.html",
+      document: new EventTarget(),
+      window: fakeWindow()
+    }
   };
 }
 
 /**
  * Deps with an open FakeSocket in place (phase "open").
  *
+ * @param overrides - Config and page overrides, as for createDeps.
  * @returns The deps and the socket.
  */
-export function openDeps(): { deps: TestDeps; socket: FakeSocket } {
-  const deps = createDeps();
+export function openDeps(overrides: Parameters<typeof createDeps>[0] = {}): {
+  deps: TestDeps;
+  socket: FakeSocket;
+} {
+  const deps = createDeps(overrides);
   const socket = new FakeSocket();
   socket.readyState = 1;
   deps.state.socket = socket;

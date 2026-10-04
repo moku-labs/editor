@@ -4,13 +4,12 @@ import { act } from "preact/test-utils";
 import { vi } from "vitest";
 import { actionsOf } from "../actions";
 import { FlowWorkspace } from "../panel";
-import type { FlowActions, FlowCtx, FlowValues } from "../types";
+import type { FlowActions, FlowCtx } from "../types";
 import { createTestCtx, flush, jumpCamera, prepare, type TestCtx } from "./ctx";
-import { cloneGraph } from "./helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rendering helpers of the component tests (happy-dom): mount into a fresh
-// host, a prepared context with the merge graph laid out, and the panel values.
+// host and a prepared context with the merge graph laid out.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Does nothing. */
@@ -51,21 +50,12 @@ export async function prepared(
   return { ...test, actions: actionsOf(test.ctx) };
 }
 
-/** The panel values of the merge graph. */
-export function flowValues(ctx: FlowCtx): FlowValues {
-  return {
-    graph: ctx.state.data.graph ?? cloneGraph(),
-    position: ctx.state.data.position ?? { path: "board/awaitIntent", waiting: [] },
-    history: [...ctx.state.data.history]
-  } as unknown as FlowValues;
-}
-
 /** Mounts the whole Flow workspace for a context. */
 export async function mountWorkspace(ctx: FlowCtx): Promise<Mounted> {
   const tools = { workspace: { previewZone: () => noop } } as unknown as Parameters<
     typeof FlowWorkspace
   >[0]["tools"];
-  const mounted = mount(<FlowWorkspace ctx={ctx} values={flowValues(ctx)} tools={tools} />);
+  const mounted = mount(<FlowWorkspace ctx={ctx} tools={tools} />);
   await act(async () => {
     await flush(5);
   });

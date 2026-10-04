@@ -37,6 +37,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  document.body.innerHTML = "";
+  delete document.documentElement.dataset.density;
 });
 
 describe("addPaletteItems", () => {
@@ -180,10 +183,15 @@ describe("builtInCommands", () => {
       "cmd:step",
       "cmd:pause",
       "cmd:overlay",
+      "cmd:reference",
       "cmd:preview",
       "cmd:theme",
-      "cmd:go:flow",
+      "workspace:density-auto",
+      "workspace:density-compact",
+      "workspace:density-comfortable",
+      "cmd:taps",
       "cmd:go:game",
+      "cmd:go:flow",
       "cmd:go:render",
       "cmd:go:state",
       "cmd:go:files",
@@ -230,7 +238,7 @@ describe("builtInCommands", () => {
   });
 
   it("dynamic labels follow the state: overlay, preview, theme", () => {
-    const ctx = createCtx();
+    const ctx = createCtx({ defaultWorkspace: "flow" });
     const items = builtInCommands(ctx);
     expect(find(items, "cmd:overlay").label).toBe("Overlay in game on");
     ctx.state.overlayInGame = true;
@@ -259,6 +267,9 @@ describe("builtInCommands", () => {
     expect(find(items, "cmd:go:files").shortcut).toBe(
       formatCombo("mod+5", isApplePlatform(globalThis.navigator))
     );
+    expect(find(items, "cmd:go:game").shortcut).toBe(
+      formatCombo("mod+1", isApplePlatform(globalThis.navigator))
+    );
 
     find(items, "cmd:theme").run();
     expect(ctx.state.theme.chosen).toBe("dark");
@@ -271,6 +282,46 @@ describe("builtInCommands", () => {
 
     find(items, "cmd:retry").run();
     expect(ctx.link.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("the Reference mode item toggles it, with R as its shortcut", () => {
+    const ctx = createCtx();
+    const reference = find(builtInCommands(ctx), "cmd:reference");
+    expect(reference.label).toBe("Reference mode on");
+    expect(reference.shortcut).toBe("R");
+    reference.run();
+    expect(ctx.state.reference).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
+    expect(reference.label).toBe("Reference mode off");
+  });
+
+  it("the density items choose a density; the one in use is dimmed with its reason", () => {
+    vi.stubGlobal("innerWidth", 1440);
+    const ctx = createCtx();
+    const items = builtInCommands(ctx);
+    const compact = find(items, "workspace:density-compact");
+    expect(compact.label).toBe("Density: compact");
+    expect(find(items, "workspace:density-auto").label).toBe("Density: auto");
+    expect(find(items, "workspace:density-comfortable").label).toBe("Density: comfortable");
+    expect(find(items, "workspace:density-auto").disabled?.()).toBe("Density is auto now");
+    expect(compact.disabled?.()).toBe(false);
+
+    compact.run();
+    expect(ctx.state.density).toEqual({ chosen: "compact", applied: "compact" });
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:density", { density: "compact" });
+    expect(compact.disabled?.()).toBe("Density is compact now");
+  });
+
+  it("Show taps in the game toggles and persists the preference; its hint names the state", () => {
+    localStorage.clear();
+    const ctx = createCtx();
+    const taps = find(builtInCommands(ctx), "cmd:taps");
+    expect(taps.label).toBe("Show taps in the game");
+    expect(taps.hint).toBe("on");
+    taps.run();
+    expect(ctx.state.showTaps).toBe(false);
+    expect(taps.hint).toBe("off");
+    expect(JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}").showTaps).toBe(false);
   });
 
   it("the overlay item runs setOverlayInGame with origin palette", async () => {

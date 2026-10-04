@@ -1,11 +1,13 @@
 /**
  * @file stateView plugin — the State workspace (A4): the title, then three columns: the Player
- * tree, the Last commit patches with the Session tree below, and the Runner card.
+ * tree, the Last commit patches with the Session tree below, and the Runner card. Below 760 px
+ * of container the columns stack and every card collapses from its head (StateView.css).
  */
 import type { VNode } from "preact";
 import type { Json, LinkStatus } from "../../registry/protocol";
 import { frameOf, isModelSnapshot } from "../model";
 import type { Config, LastCommit, StateViewApi } from "../types";
+import { Card } from "./Card";
 import { JsonTree } from "./JsonTree";
 import { PatchList } from "./PatchList";
 import { RunnerCard } from "./RunnerCard";
@@ -80,28 +82,32 @@ export function StateView(props: StateViewProps): VNode {
     <div data-part="state-view">
       <Title frame={frameOf(status)} last={last} />
       <div data-part="columns">
-        <section data-card="" data-part="player-card" aria-label="Player">
-          <header data-part="head">
-            <h3>Player</h3>
-            <button
-              type="button"
-              data-variant="ghost"
-              data-size="sm"
-              data-part="expand-all"
-              onClick={() => api.expandAll("player", true)}
-            >
-              Expand all
-            </button>
-            <button
-              type="button"
-              data-variant="ghost"
-              data-size="sm"
-              data-part="collapse-all"
-              onClick={() => api.expandAll("player", false)}
-            >
-              Collapse all
-            </button>
-          </header>
+        <Card
+          part="player-card"
+          title="Player"
+          head={
+            <>
+              <button
+                type="button"
+                data-variant="ghost"
+                data-size="sm"
+                data-part="expand-all"
+                onClick={() => api.expandAll("player", true)}
+              >
+                Expand all
+              </button>
+              <button
+                type="button"
+                data-variant="ghost"
+                data-size="sm"
+                data-part="collapse-all"
+                onClick={() => api.expandAll("player", false)}
+              >
+                Collapse all
+              </button>
+            </>
+          }
+        >
           {snapshot === undefined ? undefined : (
             <JsonTree
               api={api}
@@ -111,14 +117,10 @@ export function StateView(props: StateViewProps): VNode {
               commit={last}
             />
           )}
-        </section>
+        </Card>
         <div data-part="commit-column">
           <PatchList api={api} commit={last} />
-          <section data-card="" data-part="session-card" aria-label="Session">
-            <header data-part="head">
-              <h3>Session</h3>
-              <span data-tag="mut">not saved</span>
-            </header>
+          <Card part="session-card" title="Session" head={<span data-tag="mut">not saved</span>}>
             {snapshot === undefined ? undefined : (
               <JsonTree
                 api={api}
@@ -128,7 +130,7 @@ export function StateView(props: StateViewProps): VNode {
                 commit={last}
               />
             )}
-          </section>
+          </Card>
         </div>
         <RunnerCard api={api} position={position} history={history} status={status} />
       </div>

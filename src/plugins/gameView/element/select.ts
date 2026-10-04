@@ -4,11 +4,12 @@
  * shared scene, R8), and the two cross-view intents of the Element tab (`workspace:reveal`,
  * `workspace:open-file`, R4).
  */
-import type { ElementRef, SceneNode } from "../../panels/shared/scene";
+import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
+import type { FrameBox } from "../../workspace/types";
 import { messageOf } from "../report";
-import { readScene } from "../scene/read";
+import { readFreshScene, readScene } from "../scene/read";
 import { notify } from "../state";
 import type { GameViewCtx } from "../types";
 import { ensureOverlayRoot } from "../ui/OverlayRoot";
@@ -113,18 +114,30 @@ export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
  * The scene node under a client point: through the frame box to page px, then the shared
  * elementAt. Nothing without a calibrated scene or a frame box.
  *
- * @param ctx - Domain context of gameView.
+ * @param scene - The scene, undefined before the first build.
+ * @param box - The frame box, undefined while the frame is not mounted.
  * @param client - The pointer in client px.
  * @returns The node, or undefined.
  */
-function nodeAt(ctx: GameViewCtx, client: ClientPoint): SceneNode | undefined {
-  const { scene } = ctx.state;
-  const workspace = ctx.require(workspacePlugin);
-  const box = workspace.gameFrame().box();
+function nodeIn(
+  scene: SceneSnapshot | undefined,
+  box: FrameBox | undefined,
+  client: ClientPoint
+): SceneNode | undefined {
   if (scene === undefined || !scene.calibrated || box === undefined || box.scale <= 0) {
     return undefined;
   }
   return elementAt(scene, pageFromClient(client, box));
+}
+
+/**
+ * The frame box now.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The box, undefined while the frame is not mounted.
+ */
+function frameBox(ctx: GameViewCtx): FrameBox | undefined {
+  return ctx.require(workspacePlugin).gameFrame().box();
 }
 
 /**
@@ -134,26 +147,40 @@ function nodeAt(ctx: GameViewCtx, client: ClientPoint): SceneNode | undefined {
  * @param client - The pointer in client px; omitted when it left the layer.
  */
 export function hoverAt(ctx: GameViewCtx, client?: ClientPoint): void {
-  const hover = client === undefined ? undefined : nodeAt(ctx, client)?.id;
+  const hover =
+    client === undefined ? undefined : nodeIn(ctx.state.scene, frameBox(ctx), client)?.id;
   if (ctx.state.picker.hover === hover) return;
   ctx.state.picker.hover = hover;
   notify(ctx.state);
 }
 
 /**
- * Picker click: selects the node under the pointer, turns the picker off, opens the Element tab.
- * A click on nothing keeps the picker on.
+ * Picker click: reads the scene once more and selects the node under the pointer in it, turns
+ * the picker off and opens the Element tab. The watched scene can be a heartbeat behind a screen
+ * change (R6), and a calibration may be in flight, so the click waits for both. A click on nothing
+ * keeps the picker on. A failed read picks from the scene there is. When the picker went off
+ * meanwhile (Esc, or an earlier click picked), the click does nothing.
  *
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px.
+ * @returns Resolves when the click is handled (never rejects).
  */
-export function pickAt(ctx: GameViewCtx, client: ClientPoint): void {
-  const node = nodeAt(ctx, client);
+export async function pickAt(ctx: GameViewCtx, client: ClientPoint): Promise<void> {
+  const { state } = ctx;
+  const box = frameBox(ctx);
+  try {
+    await readFreshScene(ctx);
+  } catch (error) {
+    ctx.log.debug("gameView: pick read failed", { message: messageOf(error) });
+  }
+  if (!state.picker.on) return;
+
+  const node = nodeIn(state.scene, box, client);
   if (node === undefined) return;
   selectElement(ctx, node.ref);
-  ctx.state.picker = { on: false, hover: undefined };
-  ctx.state.tab = "element";
-  notify(ctx.state);
+  state.picker = { on: false, hover: undefined };
+  state.tab = "element";
+  notify(state);
 }
 
 /**

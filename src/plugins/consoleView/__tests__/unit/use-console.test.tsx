@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createConsoleApi } from "../../api";
 import { startConsole } from "../../lifecycle";
 import type { ConsoleApi } from "../../types";
-import { useConsole } from "../../view/useConsole";
+import { keepPreviewInLogArea, useConsole } from "../../view/useConsole";
 import { createCtx, type TestCtx, traceValue } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,5 +66,63 @@ describe("useConsole", () => {
       render(undefined, host);
     });
     expect(ctx.state.listeners.size).toBe(0);
+  });
+});
+
+describe("keepPreviewInLogArea", () => {
+  /** A ResizeObserver stand-in whose callback the test fires. */
+  class FakeObserver {
+    static readonly made: FakeObserver[] = [];
+    readonly observed: Element[] = [];
+    disconnected = false;
+    constructor(readonly fire: () => void) {
+      FakeObserver.made.push(this);
+    }
+    observe(element: Element): void {
+      this.observed.push(element);
+    }
+    disconnect(): void {
+      this.disconnected = true;
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    FakeObserver.made.length = 0;
+  });
+
+  it("registers the log area as the console preview zone and removes it on stop", () => {
+    const remove = vi.fn();
+    const previewZone = vi.fn(() => remove);
+    const area = document.createElement("div");
+    vi.stubGlobal("ResizeObserver", undefined);
+
+    const stop = keepPreviewInLogArea({ previewZone }, area);
+    expect(previewZone).toHaveBeenCalledWith("console", area);
+    stop();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers the zone again on every resize (the drawer opens), dropping the old one", () => {
+    const removers = [vi.fn(), vi.fn()];
+    let call = 0;
+    const previewZone = vi.fn(() => removers[call++] ?? vi.fn());
+    const area = document.createElement("div");
+    vi.stubGlobal("ResizeObserver", FakeObserver);
+
+    const stop = keepPreviewInLogArea({ previewZone }, area);
+    expect(FakeObserver.made[0]?.observed).toEqual([area]);
+    FakeObserver.made[0]?.fire();
+    expect(previewZone).toHaveBeenCalledTimes(2);
+    expect(removers[0]).toHaveBeenCalledTimes(1);
+    stop();
+    expect(FakeObserver.made[0]?.disconnected).toBe(true);
+    expect(removers[1]).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing before the area renders", () => {
+    const previewZone = vi.fn(() => vi.fn());
+    keepPreviewInLogArea({ previewZone }, undefined)();
+    expect(previewZone).not.toHaveBeenCalled();
   });
 });

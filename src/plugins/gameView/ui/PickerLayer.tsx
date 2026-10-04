@@ -29,7 +29,7 @@ export function PickerLayer(props: PickerLayerProps): VNode {
       aria-label="Game element picker"
       onPointerMove={event => hoverAt(ctx, { x: event.clientX, y: event.clientY })}
       onPointerLeave={() => hoverAt(ctx)}
-      onPointerUp={event => pickAt(ctx, { x: event.clientX, y: event.clientY })}
+      onPointerUp={event => void pickAt(ctx, { x: event.clientX, y: event.clientY })}
     />
   );
 }

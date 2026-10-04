@@ -1,11 +1,13 @@
 /**
- * @file workspace plugin — onInit (validate config, load prefs, read the OS theme and the hash,
- * built-in keys, Esc layers, palette commands), onStart (window listeners, the manifest listener;
- * no mount, R3) and onStop (every cleanup, timers, unrender, remove the frame layer and hosts).
+ * @file workspace plugin — onInit (validate config, load prefs, read the OS theme, the density
+ * and the hash, built-in keys, Esc layers, palette commands), onStart (window listeners, the
+ * manifest and tap listeners; no mount, R3) and onStop (every cleanup, timers, tap ripples,
+ * unrender, remove the frame layer and hosts).
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
 import { removeFrameLayer, syncFrame } from "./frame/frame";
+import { clearTaps, watchTaps } from "./frame/taps";
 import { stopTicker } from "./handlers";
 import { removeHosts } from "./hosts";
 import { registerBuiltIns } from "./keys/builtins";
@@ -13,6 +15,7 @@ import { dispatchKey } from "./keys/keymap";
 import { reapplyOverlay } from "./overlay";
 import { addPaletteItems, builtInCommands } from "./palette/items";
 import { osThemeChanged } from "./prefs/apply";
+import { refreshDensity, resolveDensity, viewportWidth } from "./prefs/density";
 import { loadPrefs } from "./prefs/store";
 import { readOsTheme, watchOsTheme } from "./prefs/theme";
 import { trackCleanup } from "./state";
@@ -58,7 +61,7 @@ function isPositive(value: number): boolean {
  */
 export function validateConfig(config: Readonly<WorkspaceConfig>): void {
   if (!isWorkspaceId(config.defaultWorkspace)) {
-    throw invalid("defaultWorkspace", "Use flow, game, render, state, files or console");
+    throw invalid("defaultWorkspace", "Use game, flow, render, state, files or console");
   }
   if (typeof config.storageKey !== "string" || config.storageKey === "") {
     throw invalid("storageKey", "Use a non-empty localStorage key");
@@ -72,8 +75,8 @@ export function validateConfig(config: Readonly<WorkspaceConfig>): void {
 }
 
 /**
- * onInit: validation, prefs, OS theme, hash, built-in bindings and palette commands. Sync, no
- * DOM writes.
+ * onInit: validation, prefs, OS theme, density, hash, built-in bindings and palette commands.
+ * Sync, no DOM writes.
  *
  * @param ctx - Domain context of workspace.
  * @throws {Error} `[moku-editor] workspace.<field> is invalid.`
@@ -86,6 +89,11 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
   state.theme = { chosen: prefs.theme, os: readOsTheme() };
   state.previews = prefs.previews;
   state.device = prefs.device;
+  state.density = {
+    chosen: prefs.density,
+    applied: resolveDensity(prefs.density, viewportWidth())
+  };
+  state.showTaps = prefs.showTaps;
 
   const hash = globalThis.location?.hash.slice(1);
   if (isWorkspaceId(hash)) state.active = hash;
@@ -118,8 +126,9 @@ function listen(
 }
 
 /**
- * onStart: window keydown (capture), resize, capture scroll, the OS theme listener and
- * `link.onManifest` (palette counts, everLive, overlay re-apply). No shell mount here (R3).
+ * onStart: window keydown (capture), resize (shell, frame, auto density), capture scroll, the OS
+ * theme listener, `link.onManifest` (palette counts, everLive, overlay re-apply) and link's taps
+ * (ripples). No shell mount here (R3).
  *
  * @param ctx - Domain context of workspace.
  */
@@ -138,12 +147,14 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
     true
   );
 
-  // Layout: a resize re-renders the shell and re-places the frame; any scroll re-places it.
+  // Layout: a resize re-renders the shell, re-places the frame and re-resolves an auto density;
+  // any scroll re-places the frame.
   listen(
     state,
     window,
     "resize",
     () => {
+      refreshDensity(ctx);
       state.ui.bump();
       syncFrame(ctx);
     },
@@ -167,6 +178,9 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
       state.ui.bump();
     })
   );
+
+  // Taps: a tap in the docked game draws a ripple over it.
+  trackCleanup(state, watchTaps(ctx));
 }
 
 /**
@@ -181,6 +195,7 @@ export function stopWorkspace(ctx: { readonly state: WorkspaceState }): void {
   state.stopped = true;
   for (const cleanup of state.dom.cleanup.splice(0)) cleanup();
   clearToasts(state);
+  clearTaps(state);
   stopTicker(state);
   unmountShell(state);
   removeFrameLayer(state);

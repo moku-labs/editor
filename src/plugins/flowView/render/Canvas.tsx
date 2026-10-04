@@ -1,12 +1,15 @@
 /**
  * @file flowView render module — the Flow canvas (A1): the dot-grid clip box with the world layer
- * (frames, lanes, column heads, edges, cards, hub, stubs, notes, ports) and the pointer language of
- * design §4: wheel/pinch zoom and pan, drag on empty canvas pans, drag on a card or note moves it
- * (snap and pin on drop, Esc cancels), click selects or clears (M2), double-click enters, right
- * click opens a context menu. The camera transform is written by the camera module, not by Preact.
+ * (frames, lanes, column heads, then the edges and their labels, then cards, hub, stubs and ports,
+ * so cards paint over edges) and the pointer language of design §4: wheel/pinch zoom and pan, drag
+ * on empty canvas pans, drag on a card moves it (snap and pin on drop, Esc cancels), click selects
+ * or clears (M2), double-click enters, right click opens a context menu. Tab onto a card or the hub
+ * outside the clipped canvas pans the camera onto it. The camera transform is written by the
+ * camera module, not by Preact.
  */
 import type { ComponentChildren, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { revealPoint } from "../camera/chrome";
 import { DRAG_THRESHOLD, isTextField, releaseIntent, wheelOp } from "../camera/input";
 import type { HitTarget } from "../camera/types";
 import { rerouteTouching } from "../layout/routes";
@@ -17,7 +20,6 @@ import { Frame } from "./Frame";
 import { Hub } from "./Hub";
 import { Lane } from "./Lane";
 import { NodeCard } from "./NodeCard";
-import { NoteNode } from "./NoteNode";
 import { Stub } from "./Stub";
 import type { WorldView } from "./types";
 
@@ -29,7 +31,7 @@ export type CanvasProps = {
   readonly actions: FlowActions;
   /** What the world draws; undefined before the first layout. */
   readonly world: WorldView | undefined;
-  /** The canvas chrome (breadcrumb, toolbar, zoom bar, minimap, labels, strip). */
+  /** The canvas chrome (breadcrumb, toolbar, zoom bar, minimap, labels, off-screen chevron). */
   readonly children?: ComponentChildren;
 };
 
@@ -60,7 +62,6 @@ type Drag = { readonly key: ItemKey; readonly dx: number; readonly dy: number };
  */
 const HITS: Readonly<Record<string, HitTarget>> = {
   card: "card",
-  note: "note",
   "hub-head": "hub-head",
   frame: "frame",
   "frame-head": "frame",
@@ -68,6 +69,12 @@ const HITS: Readonly<Record<string, HitTarget>> = {
   stub: "card",
   outcome: "card"
 };
+
+/**
+ * The focusable world items a keyboard focus brings into view: a node card (and its expand
+ * toggle) and the hub (and its outcome rows).
+ */
+const REVEALED = '[data-hit="card"], [data-hit="hub-head"]';
 
 /**
  * `PointerEvent.button` of the primary (left) button.
@@ -92,8 +99,8 @@ function hitOf(target: EventTarget | null): HTMLElement | undefined {
 }
 
 /**
- * True for an event inside the canvas chrome (toolbar, zoom bar, minimap, strip…), which handles
- * its own pointer input.
+ * True for an event inside the canvas chrome (toolbar, zoom bar, minimap…), which handles its own
+ * pointer input.
  *
  * @param target - The event target.
  * @returns Whether the canvas ignores the event.
@@ -103,15 +110,29 @@ function inChrome(target: EventTarget | null): boolean {
 }
 
 /**
+ * True for an event on a native control inside the world (a frame's Collapse and Enter, a card's
+ * expand toggle). The canvas must not start a gesture there: its pointer capture would take the
+ * `click` away from the control.
+ *
+ * @param target - The event target.
+ * @returns Whether the target is a control with its own click.
+ */
+function onControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element && target.closest("button, a[href], input, select, textarea") !== null
+  );
+}
+
+/**
  * True for a press the canvas leaves alone: a button other than the primary or the middle one,
- * or a press inside the canvas chrome.
+ * a press inside the canvas chrome or on a native control in the world.
  *
  * @param event - The pointerdown.
  * @returns Whether the canvas ignores the press.
  */
 function isIgnoredPress(event: PointerEvent): boolean {
   const isPrimaryOrMiddle = event.button === PRIMARY_BUTTON || event.button === MIDDLE_BUTTON;
-  return !isPrimaryOrMiddle || inChrome(event.target);
+  return !isPrimaryOrMiddle || inChrome(event.target) || onControl(event.target);
 }
 
 /**
@@ -129,7 +150,7 @@ function entersOnDoubleClick(hit: string | undefined): boolean {
 }
 
 /**
- * True for a `data-hit` the node menu opens on: a card, the hub head or a note.
+ * True for a `data-hit` the node menu opens on: a card or the hub head.
  *
  * @param hit - The `data-hit` value.
  * @returns Whether a right click opens the node menu.
@@ -139,7 +160,7 @@ function entersOnDoubleClick(hit: string | undefined): boolean {
  * ```
  */
 function opensNodeMenu(hit: string | undefined): boolean {
-  return hit === "card" || hit === "hub-head" || hit === "note";
+  return hit === "card" || hit === "hub-head";
 }
 
 /**
@@ -187,8 +208,8 @@ type WorldProps = {
 };
 
 /**
- * The element of one world item, looked up by key in the card, hub, stub and note views. A port
- * draws as a dot (entry) or a labelled tag (exit).
+ * The element of one world item, looked up by key in the card, hub and stub views. A port draws
+ * as a dot (entry) or a labelled tag (exit).
  *
  * @param props - The world layer props.
  * @param item - The item, already moved when it is the dragged one.
@@ -207,14 +228,9 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
     return <Hub key={item.key} ctx={ctx} actions={actions} item={item} view={hub} />;
   }
 
-  // A stub or a note: read-only views; a note shows its selection.
+  // A stub: a read-only view.
   const stub = world.stubs.get(item.key);
   if (stub !== undefined) return <Stub key={item.key} item={item} view={stub} />;
-  const note = world.notes.get(item.key);
-  if (note !== undefined) {
-    const isSelected = ctx.state.focus.selected === item.key;
-    return <NoteNode key={item.key} item={item} view={note} selected={isSelected} />;
-  }
 
   // A port: an entry dot or a labelled exit tag; anything else is not drawn.
   if (item.kind !== "port") return false;
@@ -233,7 +249,8 @@ function renderItem(props: WorldProps, item: Item): VNode | false {
 }
 
 /**
- * The world layer.
+ * The world layer, in paint order: frames, lane bands, column heads, the edges with their labels,
+ * then the items, so a card always paints over the edges behind it.
  *
  * @param props - Context, actions, the world view, the drag and the hovered stub.
  * @returns The world element.
@@ -281,6 +298,13 @@ export function Canvas(props: CanvasProps): VNode {
   const canvas = useElement<HTMLDivElement>();
   const gesture = useRef<Gesture | undefined>(undefined);
   const space = useRef(false);
+  // True from a press in the canvas until the next key: a focus by pointer never moves the camera.
+  const pointing = useRef(false);
+  // The hit of the last two presses: a double-click enters what its FIRST press was on, because
+  // that press selects the item and the focus camera moves it away from under the pointer.
+  const presses = useRef<{ readonly hit: string | undefined; readonly key: string | undefined }[]>(
+    []
+  );
   const [drag, setDrag] = useState<Drag>();
   const [hover, setHover] = useState<string>();
 
@@ -327,11 +351,12 @@ export function Canvas(props: CanvasProps): VNode {
   // Track the Space key: while it is held, a drag pans.
   useEffect(() => {
     /**
-     * Space held outside a text field: drags pan.
+     * Space held outside a text field: drags pan. Any key ends a pointer focus.
      *
      * @param event - The keydown.
      */
     const down = (event: KeyboardEvent): void => {
+      pointing.current = false;
       if (event.code === "Space" && !isTextField(event.target)) space.current = true;
     };
     /**
@@ -374,16 +399,17 @@ export function Canvas(props: CanvasProps): VNode {
     if (world !== undefined) actions.camera.apply();
   }, [actions, world === undefined]);
 
-  // A press starts a gesture: a drag on a card or note, otherwise a pan.
+  // A press starts a gesture: a drag on a card, otherwise a pan.
   const onPointerDown = useCallback(
     (event: PointerEvent) => {
       if (isIgnoredPress(event)) return;
       const element = hitOf(event.target);
       const name = element?.dataset.hit;
+      presses.current = [...presses.current.slice(-1), { hit: name, key: element?.dataset.key }];
       const hit: HitTarget = name === undefined ? "canvas" : (HITS[name] ?? "canvas");
       const key = element?.dataset.key;
       const item = key === undefined ? undefined : world?.result.byKey[key];
-      const movable = item?.kind === "node" || item?.kind === "note";
+      const movable = item?.kind === "node";
       const pan = event.button === MIDDLE_BUTTON || space.current || !movable;
       gesture.current = {
         mode: pan ? "pan" : "drag",
@@ -443,10 +469,7 @@ export function Canvas(props: CanvasProps): VNode {
     const isDropOfMovedItem =
       current.mode === "drag" && current.moved >= DRAG_THRESHOLD && item !== undefined;
     if (isDropOfMovedItem) {
-      const x = item.x + current.dx;
-      const y = item.y + current.dy;
-      if (item.kind === "note") actions.layout.dropNote(item.id, item.flow, x, y);
-      else actions.layout.drop(item.key, x, y);
+      actions.layout.drop(item.key, item.x + current.dx, item.y + current.dy);
       return;
     }
     const intent = releaseIntent(current.moved, current.hit, current.key);
@@ -458,9 +481,11 @@ export function Canvas(props: CanvasProps): VNode {
   const onDoubleClick = useCallback(
     (event: MouseEvent) => {
       if (inChrome(event.target)) return;
+      // The canvas holds the pointer capture, so the target is the canvas: use the first press.
+      const first = presses.current.length === 2 ? presses.current[0] : undefined;
       const element = hitOf(event.target);
-      const key = element?.dataset.key;
-      if (key !== undefined && entersOnDoubleClick(element?.dataset.hit)) actions.flows.enter(key);
+      const press = first ?? { hit: element?.dataset.hit, key: element?.dataset.key };
+      if (press.key !== undefined && entersOnDoubleClick(press.hit)) actions.flows.enter(press.key);
     },
     [actions]
   );
@@ -479,7 +504,7 @@ export function Canvas(props: CanvasProps): VNode {
       const hit = element?.dataset.hit;
       const key = element?.dataset.key;
 
-      // A card, the hub head or a note opens the node menu.
+      // A card or the hub head opens the node menu.
       if (opensNodeMenu(hit) && key !== undefined) {
         actions.focus.openMenu({ target: "node", key, outcome: undefined, x, y });
         return;
@@ -503,6 +528,24 @@ export function Canvas(props: CanvasProps): VNode {
     [actions, canvas, world]
   );
 
+  // A keyboard focus on an item outside the clipped canvas pans the camera onto it; the
+  // selection stays (overflow: clip means the browser never scrolls it into view).
+  const onFocusIn = useCallback(
+    (event: FocusEvent) => {
+      const element = canvas.current;
+      const target = event.target;
+      const isItem = target instanceof Element && target.closest(REVEALED) !== null;
+      if (pointing.current || element === undefined || !isItem) return;
+      const point = revealPoint(
+        target.getBoundingClientRect(),
+        element.getBoundingClientRect(),
+        ctx.state.camera.cam
+      );
+      if (point !== undefined) actions.camera.centreOn(point.x, point.y, true);
+    },
+    [actions, canvas, ctx]
+  );
+
   // Hovering a stub draws its return edge.
   const onPointerOver = useCallback(
     (event: PointerEvent) => {
@@ -521,6 +564,9 @@ export function Canvas(props: CanvasProps): VNode {
       role="group"
       aria-label="Flow graph"
       ref={canvas.ref}
+      onPointerDownCapture={() => {
+        pointing.current = true;
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -528,6 +574,7 @@ export function Canvas(props: CanvasProps): VNode {
       onPointerOver={onPointerOver}
       onDblClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      onFocusIn={onFocusIn}
     >
       {world !== undefined && (
         <World ctx={ctx} actions={actions} world={world} drag={drag} hover={hover} />

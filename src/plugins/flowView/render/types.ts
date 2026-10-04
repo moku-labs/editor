@@ -1,6 +1,6 @@
 /**
  * @file flowView render module — the view data the Flow workspace computes for the canvas
- * components (cards, hubs, frames, stubs, notes, edges, history rows).
+ * components (cards, hubs, frames, stubs, edges, history rows).
  */
 import type { ItemKey, LayoutResult } from "../types";
 
@@ -20,7 +20,10 @@ export type CardView = {
   readonly kindLine: string;
   readonly selected: boolean;
   readonly current: boolean;
+  /** Dimmed by a selection it is not related to; the current node never is. */
   readonly dimmed: boolean;
+  /** The 600 ms pulse ring plays on it (a followed edge reached it, Find current). */
+  readonly pulse: boolean;
   readonly trail: boolean;
   readonly onStack: boolean;
   readonly expandable: boolean;
@@ -58,21 +61,13 @@ export type StubView = {
 };
 
 /**
- * What a note node shows.
- */
-export type NoteView = {
-  readonly title: string;
-  readonly lines: readonly string[];
-  readonly captures: number;
-  readonly status: string;
-};
-
-/**
  * How an edge is drawn.
  */
 export type EdgeView = {
   /** Trail rank, newest 0. */
   readonly rank: number | undefined;
+  /** One of the last three transitions (drawn 2 px accent at full strength). */
+  readonly recent: boolean;
   readonly rejected: boolean;
   readonly related: boolean;
   readonly dimmed: boolean;
@@ -88,7 +83,6 @@ export type WorldView = {
   readonly hubs: ReadonlyMap<ItemKey, HubView>;
   readonly frames: ReadonlyMap<ItemKey, FrameView>;
   readonly stubs: ReadonlyMap<ItemKey, StubView>;
-  readonly notes: ReadonlyMap<ItemKey, NoteView>;
   /** By edge id (`edgeId`). */
   readonly edges: ReadonlyMap<string, EdgeView>;
   /** Lane bands on the trail, by `laneId`. */

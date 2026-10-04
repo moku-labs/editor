@@ -1,4 +1,4 @@
-/* gameView · contact sheet (E2): a modal dialog in the top layer (R4), radius 12, the tiles grid (≥ 98 px), the large view with its filmstrip (30 px), the footer with the note select. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · contact sheet (E2): a modal dialog in the top layer (R4), radius 12, the tiles grid (≥ 98 px), the large view with its filmstrip (30 px), the footer with the saved folder. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="sheet"]) {
   :scope {
     width: min(960px, calc(100vw - 64px));

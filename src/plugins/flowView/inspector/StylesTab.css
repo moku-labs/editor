@@ -1,4 +1,4 @@
-/* flowView · Styles tab (C4): header, key select, the card (fields shrink, never clip: min-width 0 on every field, M10), applied bar, excerpt, Used by chips. No @layer wrapper (R7). */
+/* flowView · Styles tab (C4): header with the styles file, key select (empty until the person picks one), the card (fields shrink, never clip: min-width 0 on every field, M10), applied bar, excerpt. No @layer wrapper (R7). */
 
 @scope ([data-flow="styles-tab"]) {
   :scope {
@@ -81,13 +81,6 @@
 
   [data-part="gutter"] {
     color: var(--text-muted);
-  }
-
-  [data-part="chip"] {
-    padding: 0 8px;
-    border: 1px solid var(--line-2);
-    border-radius: 12px;
-    font-size: var(--font-size-11-5);
   }
 
   select,

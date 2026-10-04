@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { errorCode, wireError } from "../../../registry/protocol";
+import { errorCode, type Json, wireError } from "../../../registry/protocol";
 import { locateElement, readScene } from "../../scene/read";
 import { startSceneWatches } from "../../scene/watch";
 import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
@@ -34,6 +34,36 @@ describe("readScene", () => {
 
     expect(scene).toBe(watched);
     expect(ctx.link.read).not.toHaveBeenCalled();
+  });
+
+  it("waits for the calibration in flight while Game is shown, then returns the calibrated scene", async () => {
+    const rect = Promise.withResolvers<Json>();
+    const answer = ctx.link.read.getMockImplementation();
+    ctx.link.read.mockImplementation((id, input) =>
+      id === "game.rect" ? rect.promise : (answer?.(id, input) ?? Promise.reject(new Error(id)))
+    );
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    ctx.link.send("game.entities", BOARD.entities);
+    ctx.link.send("game.projections", BOARD.projections);
+    await flush();
+    expect(ctx.state.scene?.calibrated).toBe(false);
+
+    let settled = false;
+    const reading = readScene(ctx).then(scene => {
+      settled = true;
+      return scene;
+    });
+    await flush();
+    expect(settled).toBe(false);
+
+    const board = BOARD.rects.boardScreen;
+    if (board === undefined) throw new Error("no boardScreen rect in the fixture");
+    rect.resolve(board);
+    const scene = await reading;
+    expect(scene.calibrated).toBe(true);
+    expect(scene).toBe(ctx.state.scene);
+    expect(ctx.link.read.mock.calls.map(call => call[0])).toEqual(["game.rect"]);
   });
 
   it("reads the three sources once while Game is hidden, calibrates and builds", async () => {

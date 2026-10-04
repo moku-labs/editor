@@ -5,6 +5,7 @@
  */
 import type { ElkNode } from "elkjs";
 import type { Json } from "../../registry/protocol";
+import type { Density } from "../../workspace/types";
 import type {
   ColumnHead,
   EdgePath,
@@ -15,7 +16,6 @@ import type {
   LaneBand,
   LayoutResult,
   NodeId,
-  NoteAnchor,
   Rect
 } from "../types";
 
@@ -32,7 +32,7 @@ export const NODE_H = 44;
  */
 export const ROW = 46;
 /**
- * Gap between columns.
+ * Gap between columns: the hub lanes, and the ELK layers before the density spacing applies.
  */
 export const COL_GAP = 150;
 /**
@@ -60,14 +60,6 @@ export const STUB_W = 120;
  */
 export const STUB_H = 24;
 /**
- * Note width (height 112, grows up to 180).
- */
-export const NOTE_W = 236;
-/**
- * Note height.
- */
-export const NOTE_H = 112;
-/**
  * Frame padding.
  */
 export const FRAME_PAD = 22;
@@ -84,18 +76,44 @@ export const PORT = 12;
  */
 export const LANE_PAD = 5;
 /**
- * ELK node-node spacing.
+ * ELK node-node spacing before the density spacing applies.
  */
 export const NODE_SPACING = 24;
+/**
+ * ELK spacing by the applied density (finding 16): between layers and between the nodes of a layer.
+ */
+export const DENSITY_SPACING: Readonly<
+  Record<Density, { readonly layers: number; readonly nodes: number }>
+> = {
+  comfortable: { layers: 120, nodes: 20 },
+  compact: { layers: 96, nodes: 14 }
+};
+/**
+ * Height of an edge label chip (11 px mono, 1.5 line height, 1 px border).
+ */
+export const LABEL_H = 18;
 
 /**
- * `.moku/editor/layout.json`: positions per node id and per note file.
+ * Width of an edge label chip: 6.6 px per mono character plus padding and border.
+ *
+ * @param text - The label text.
+ * @returns The width in px.
+ * @example
+ * ```ts
+ * labelWidth("done"); // 38.4
+ * ```
+ */
+export function labelWidth(text: string): number {
+  return 6.6 * text.length + 12;
+}
+
+/**
+ * `.moku/editor/layout.json`: positions per node id.
  */
 export type PinsFile = {
   version: 1;
   nodes: Record<NodeId, { x: number; y: number }>;
-  notes: Record<string, { flow: string; x: number; y: number }>;
-  /** Unknown top-level keys, kept on write. */
+  /** Unknown top-level keys, kept on write (an old `notes` field among them). */
   extra: Record<string, Json>;
 };
 
@@ -141,9 +159,10 @@ export type ComposeInput = {
   readonly root: string;
   readonly expanded: ReadonlySet<ItemKey>;
   readonly pins: PinsFile;
-  readonly notes: readonly NoteAnchor[];
   readonly config: Readonly<FlowViewConfig>;
   readonly engine: LayoutEngine;
+  /** The applied density: the ELK spacing; absent = the base COL_GAP / NODE_SPACING. */
+  readonly density?: Density;
 };
 
 /**
@@ -156,13 +175,19 @@ export type LayoutState = {
   /** LRU 8. */
   cache: Map<string, LayoutResult>;
   expanded: Set<ItemKey>;
+  /** Keys the current position expanded (collapsed again when the game leaves them). */
+  auto: Set<ItemKey>;
+  /** The sub-flow keys of the stack the expanded set last followed. */
+  stack: readonly ItemKey[];
+  /** The applied density the ELK spacing follows. */
+  density: Density;
   /** Entered flows (breadcrumb). */
   enter: { flow: string; via: NodeId }[];
   pins: PinsFile;
   pinsVersion: string | undefined;
   /** layout.json is invalid: never written. */
   pinsReadOnly: boolean;
-  /** Node ids and note paths changed since the last save (re-applied after a conflict). */
+  /** Node ids changed since the last save (re-applied after a conflict). */
   dirty: Set<string>;
   saving: Promise<void> | undefined;
   /** Created lazily on the first non-hub layout. */
@@ -223,7 +248,7 @@ export type FlowsApi = {
  */
 export type LayoutApi = {
   /**
-   * Pinned items (node and note positions) in the visible flows: Reset layout is disabled at 0 (M8).
+   * Pinned node positions in the visible flows: Reset layout is disabled at 0 (M8).
    *
    * @returns The count.
    * @example
@@ -257,8 +282,6 @@ export type LayoutActions = LayoutApi & {
   loadPins(): Promise<void>;
   /** Pins a dragged node at a world position (snapped to 12) and schedules the save. */
   drop(key: ItemKey, x: number, y: number): void;
-  /** Pins a note at a world position inside a flow frame (snapped) and schedules the save. */
-  dropNote(path: string, flow: string, x: number, y: number): void;
   /** The flows on screen: the root and every expanded frame's flow. */
   visibleFlows(): ReadonlySet<string>;
   /** Expands the collapsed parents of a node id; returns the instance key it will get. */
@@ -267,4 +290,11 @@ export type LayoutActions = LayoutApi & {
   root(): string;
   /** Applies the default expanded set: every sub-flow node on the current stack. */
   expandStack(): void;
+  /**
+   * Keeps sub-flows collapsed except the ones holding the current node: collapses what the last
+   * position expanded, expands the new stack; a manual expand or collapse is left alone.
+   */
+  followStack(): void;
+  /** Takes the applied density and lays out again when it changed. */
+  setDensity(density: Density): void;
 };

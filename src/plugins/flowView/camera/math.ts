@@ -1,8 +1,9 @@
 /**
  * @file flowView camera module — pure camera math: screen = world · z + (x, y). Zoom clamping,
- * zoom at a point, fits, the default camera (M11), focus and follow moves, the dot grid pitch and
- * the log-scale zoom interpolation.
+ * zoom at a point, fits, the default camera (M11), focus and follow moves, the side column kept
+ * clear of the preview, the dot grid pitch and the log-scale zoom interpolation.
  */
+import { NODE_W } from "../layout/types";
 import type { Camera, FlowViewConfig, Item, Rect } from "../types";
 import type { ViewInsets, ViewSize } from "./types";
 
@@ -25,6 +26,28 @@ const TALL = 200;
  * How much of a tall item a focus move shows.
  */
 const TALL_VIEW = 900;
+
+/**
+ * Gap in px kept between a focused card and the edge of the available rect.
+ */
+const GUTTER = 8;
+
+/**
+ * Lowest zoom a focus or follow move shrinks a card to on a very narrow canvas.
+ */
+const MIN_FIT_Z = 0.35;
+
+/**
+ * Largest share of the available width or height a fit's padding takes, so a fit on a narrow
+ * canvas keeps room for the rect. On a desktop canvas the share is above every fit padding.
+ */
+const PAD_SHARE = 1 / 8;
+
+/**
+ * Narrowest graph area in px a side column may leave: one card at 100 % with a gutter on each
+ * side.
+ */
+export const MIN_AREA_W = NODE_W + 2 * GUTTER;
 
 /**
  * Grid pitch in world units.
@@ -116,6 +139,42 @@ export function availableRect(view: ViewSize, insets: ViewInsets): Rect {
 }
 
 /**
+ * The widest side column that still leaves the graph MIN_AREA_W of the canvas; 0 when none does.
+ * The candidates come widest first. An unmeasured canvas (width 0) takes the widest.
+ *
+ * @param canvasW - The canvas width in px; 0 before the first measure.
+ * @param widths - The candidate column widths in px, widest first.
+ * @returns The column width in px.
+ * @example
+ * ```ts
+ * // A 720 px window: the 368 px canvas keeps the preview clear, not the minimap.
+ * sideColumn(368, [224, 174]); // 174
+ * ```
+ */
+export function sideColumn(canvasW: number, widths: readonly number[]): number {
+  if (canvasW <= 0) return widths[0] ?? 0;
+  return widths.find(width => canvasW - width >= MIN_AREA_W) ?? 0;
+}
+
+/**
+ * Caps a zoom so an item's width fits the available width with a gutter on each side. On a wide
+ * canvas a card always fits, so the zoom is unchanged.
+ *
+ * @param z - The zoom.
+ * @param itemW - The item width in world units.
+ * @param area - The available rect in screen px.
+ * @returns The capped zoom, never under MIN_FIT_Z.
+ * @example
+ * ```ts
+ * fitWidth(1.25, 172, { x: 0, y: 0, w: 194, h: 632 }); // ≈ 1.035
+ * ```
+ */
+function fitWidth(z: number, itemW: number, area: Rect): number {
+  const fits = (area.w - 2 * GUTTER) / Math.max(1, itemW);
+  return Math.max(MIN_FIT_Z, Math.min(z, fits));
+}
+
+/**
  * The camera that shows a world point in the centre of the available rect at a zoom.
  *
  * @param point - The world point.
@@ -141,7 +200,8 @@ export function centreAt(
 }
 
 /**
- * Fits a world rect into the available rect with padding, centred.
+ * Fits a world rect into the available rect with padding, centred. The padding of each axis is at
+ * most an eighth of the available size on that axis (a half-screen canvas).
  *
  * @param rect - The world rect.
  * @param view - The viewport size.
@@ -164,9 +224,11 @@ export function fitRect(
   config: Pick<Readonly<FlowViewConfig>, "minZoom" | "maxZoom">
 ): Camera {
   const area = availableRect(view, insets);
+  const padX = Math.min(pad, area.w * PAD_SHARE);
+  const padY = Math.min(pad, area.h * PAD_SHARE);
   const fit = Math.min(
-    (area.w - 2 * pad) / Math.max(1, rect.w),
-    (area.h - 2 * pad) / Math.max(1, rect.h)
+    (area.w - 2 * padX) / Math.max(1, rect.w),
+    (area.h - 2 * padY) / Math.max(1, rect.h)
   );
   const z = clamp(fit, config.minZoom, maxZ);
   return centreAt({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, z, view, insets);
@@ -203,8 +265,9 @@ export function defaultCamera(
 }
 
 /**
- * The focus move onto an item: a card keeps a zoom in [1, 1.25] and is centred; a tall item (hub,
- * expanded frame) is zoomed so its top 900 units fit, centred 120 units right so lanes show.
+ * The focus move onto an item: a card keeps a zoom in [1, 1.25], shrunk only when the card would
+ * not fit the available width (a half-screen canvas), and is centred; a tall item (hub, expanded
+ * frame) is zoomed so its top 900 units fit, centred 120 units right so lanes show.
  *
  * @param item - The focused item.
  * @param cam - The current camera.
@@ -217,20 +280,20 @@ export function defaultCamera(
  * ```
  */
 export function focusCamera(item: Item, cam: Camera, view: ViewSize, insets: ViewInsets): Camera {
+  const area = availableRect(view, insets);
   if (item.h <= TALL) {
     const point = { x: item.x + item.w / 2, y: item.y + item.h / 2 };
-    return centreAt(point, clamp(cam.z, 1, 1.25), view, insets);
+    return centreAt(point, fitWidth(clamp(cam.z, 1, 1.25), item.w, area), view, insets);
   }
 
-  const area = availableRect(view, insets);
   const shown = Math.min(item.h, TALL_VIEW);
   const z = clamp((area.h - 60) / shown, 0.35, 1.05);
   return centreAt({ x: item.x + item.w / 2 + 120, y: item.y + shown / 2 }, z, view, insets);
 }
 
 /**
- * The follow move onto the current item: zoom in [0.7, 1.1]; a hub is centred 120 units below
- * its top.
+ * The follow move onto the current item: zoom in [0.7, 1.1], a card shrunk only when it would not
+ * fit the available width; a hub is centred 120 units below its top.
  *
  * @param item - The current item.
  * @param cam - The current camera.
@@ -243,8 +306,11 @@ export function focusCamera(item: Item, cam: Camera, view: ViewSize, insets: Vie
  * ```
  */
 export function followCamera(item: Item, cam: Camera, view: ViewSize, insets: ViewInsets): Camera {
-  const y = item.kind === "hub" ? item.y + 120 : item.y + item.h / 2;
-  return centreAt({ x: item.x + item.w / 2, y }, clamp(cam.z, 0.7, 1.1), view, insets);
+  const isHub = item.kind === "hub";
+  const y = isHub ? item.y + 120 : item.y + item.h / 2;
+  const z = clamp(cam.z, 0.7, 1.1);
+  const fitted = isHub ? z : fitWidth(z, item.w, availableRect(view, insets));
+  return centreAt({ x: item.x + item.w / 2, y }, fitted, view, insets);
 }
 
 /**

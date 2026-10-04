@@ -1,4 +1,4 @@
-/* renderView · tiles. The Render workspace frame (title, columns) and the six metric tiles (6 columns, 3 at ≤ 1380 px). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · tiles. The Render workspace frame (title, columns) and the metric tiles (6 columns, 3 at ≤ 1380 px; in the render container 2 under 560 px, 1 under 380 px; the card columns stack into one under 560 px). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-render="workspace"]) to (
   [data-render="tiles"],
   [data-render="tree"],
@@ -8,6 +8,7 @@
   [data-render="releases"]
 ) {
   :scope {
+    container: render / inline-size;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -41,6 +42,12 @@
     flex-direction: column;
     gap: 14px;
     min-inline-size: 0;
+  }
+
+  @container render (width < 560px) {
+    [data-columns] {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 }
 
@@ -120,6 +127,20 @@
   @scope ([data-render="tiles"]) {
     :scope {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+}
+
+@scope ([data-render="tiles"]) {
+  @container render (width < 560px) {
+    :scope {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container render (width < 380px) {
+    :scope {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 }

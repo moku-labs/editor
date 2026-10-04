@@ -14,7 +14,8 @@ const DEFAULT_SERIES_MS = 2000;
 const DEFAULT_INTERVAL_MS = 100;
 
 /**
- * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read.
+ * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read,
+ * Reference mode off.
  *
  * @returns A fresh state for one app.
  */
@@ -49,7 +50,16 @@ export function createGameViewState(): GameViewState {
     lookup: undefined,
     cardHeld: false,
     reloading: false,
-    highlightSeq: 0
+    highlightSeq: 0,
+    calibrationRun: {
+      revision: 0,
+      used: undefined,
+      reading: false,
+      pending: undefined,
+      waiting: false
+    },
+    found: new Map(),
+    reference: { on: false, hover: undefined, node: undefined, unwatch: undefined }
   };
 }
 

@@ -25,18 +25,20 @@ beforeEach(() => {
 afterEach(() => {
   stopWorkspace(ctx);
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   document.body.innerHTML = "";
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.density;
 });
 
 describe("active / show", () => {
-  it("show emits workspace:changed once and writes the hash", () => {
-    expect(api.active()).toBe("flow");
-    api.show("game");
+  it("starts in Game; show emits workspace:changed once and writes the hash", () => {
     expect(api.active()).toBe("game");
+    api.show("flow");
+    expect(api.active()).toBe("flow");
     expect(ctx.emit).toHaveBeenCalledTimes(1);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:changed", { ws: "game" });
-    expect(location.hash).toBe("#game");
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:changed", { ws: "flow" });
+    expect(location.hash).toBe("#flow");
   });
 
   it("show un-hides the new host before the re-render, so the preview measures a shown host", () => {
@@ -49,7 +51,7 @@ describe("active / show", () => {
   });
 
   it("showing the shown workspace emits nothing", () => {
-    api.show("flow");
+    api.show("game");
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 
@@ -74,6 +76,36 @@ describe("theme / setTheme", () => {
     api.setTheme();
     expect(api.theme()).toBe("light");
     expect(seen).toEqual(["dark", "dark", "light"]);
+  });
+});
+
+describe("density / setDensity", () => {
+  it("answers the applied value; setDensity persists, shows and emits a change", () => {
+    vi.stubGlobal("innerWidth", 1440);
+    expect(api.density()).toBe("comfortable");
+    api.setDensity("compact");
+    expect(api.density()).toBe("compact");
+    expect(document.documentElement.dataset.density).toBe("compact");
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:density", { density: "compact" });
+    expect(JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}").density).toBe("compact");
+
+    vi.stubGlobal("innerWidth", 600);
+    api.setDensity("auto");
+    expect(api.density()).toBe("compact");
+    expect(ctx.emit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("reference / setReference", () => {
+  it("is off at load; setReference emits workspace:reference on a change only", () => {
+    expect(api.reference()).toBe(false);
+    api.setReference(true);
+    api.setReference(true);
+    expect(api.reference()).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledTimes(1);
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
+    api.setReference(false);
+    expect(api.reference()).toBe(false);
   });
 });
 
@@ -157,21 +189,29 @@ describe("device / setDevice / devices", () => {
 
 describe("host / mount", () => {
   it("host(ws) is one element per workspace, created before mount and kept after it", () => {
-    const flow = api.host("flow");
-    expect(flow.tagName).toBe("SECTION");
-    expect(flow.dataset.workspaceHost).toBe("flow");
-    expect(flow.getAttribute("aria-label")).toBe("Flow");
-    expect(flow.hidden).toBe(false);
+    const game = api.host("game");
+    expect(game.tagName).toBe("SECTION");
+    expect(game.dataset.workspaceHost).toBe("game");
+    expect(game.getAttribute("aria-label")).toBe("Game");
+    expect(game.hidden).toBe(false);
     expect(api.host("console").hidden).toBe(true);
-    expect(api.host("flow")).toBe(flow);
+    expect(api.host("game")).toBe(game);
 
     const root = document.createElement("div");
     document.body.append(root);
     api.mount(root);
-    expect(api.host("flow")).toBe(flow);
-    expect(root.contains(flow)).toBe(true);
-    expect(flow.hidden).toBe(false);
+    expect(api.host("game")).toBe(game);
+    expect(root.contains(game)).toBe(true);
+    expect(game.hidden).toBe(false);
     expect(api.host("console").hidden).toBe(true);
+  });
+
+  it("mount shows the applied density on <html>", () => {
+    ctx.state.density = { chosen: "compact", applied: "compact" };
+    const root = document.createElement("div");
+    document.body.append(root);
+    api.mount(root);
+    expect(document.documentElement.dataset.density).toBe("compact");
   });
 });
 
@@ -201,16 +241,21 @@ describe("palette / toast / keys", () => {
   });
 
   it("toast shows a message with an optional file", () => {
-    api.toast("✓ Note saved", ".moku/notes/a.md");
+    api.toast("Saved", "src/styles.ts");
     expect(ctx.state.toasts[0]).toMatchObject({
-      message: "✓ Note saved",
-      file: ".moku/notes/a.md"
+      message: "Saved",
+      file: "src/styles.ts"
     });
   });
 
   it("keys.bind and keys.escape register and return removers", () => {
-    const off = api.keys.bind({ keys: "n", label: "Note", run: vi.fn(), workspace: "flow" });
-    const close = api.keys.escape("noteEditor", () => true);
+    const off = api.keys.bind({
+      keys: "c",
+      label: "Find current",
+      run: vi.fn(),
+      workspace: "flow"
+    });
+    const close = api.keys.escape("contextMenu", () => true);
     expect(ctx.state.keys.bindings).toHaveLength(1);
     expect(ctx.state.keys.escape).toHaveLength(1);
     off();

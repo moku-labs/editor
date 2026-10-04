@@ -45,13 +45,15 @@ export type ChannelState = {
  */
 export type ChannelApi = EditorChannel & {
   /**
-   * A fresh frozen beat now, from the registry clock.
+   * A fresh frozen beat now, from the registry clock. In Chromium it also carries the page heap
+   * from `performance.memory`, in MB rounded to 0.1; elsewhere `heap` is absent.
    *
-   * @returns `{ frame, paused, at }`, `at` in epoch ms.
+   * @returns `{ frame, paused, at }` plus `heap` when present, `at` in epoch ms.
    * @example
    * ```ts
    * // The bridge sends a beat right after the socket opens.
-   * ctx.require(channelPlugin).heartbeat(); // { frame: 1840, paused: false, at: 1790000000000 }
+   * ctx.require(channelPlugin).heartbeat(); // { frame: 1840, paused: false, at: 1790000000000 } in Bun
+   * // In Chromium: { frame: 1840, paused: false, at: 1790000000000, heap: { usedMb: 12.8, limitMb: 4095.8 } }
    * ```
    */
   heartbeat(): Heartbeat;

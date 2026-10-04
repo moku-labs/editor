@@ -1,21 +1,38 @@
 // @vitest-environment happy-dom
+
+import { readFileSync } from "node:fs";
 import { h } from "preact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Edges } from "../../render/Edges";
+import { Edges, labelPoint } from "../../render/Edges";
 import { Frame } from "../../render/Frame";
 import { Hub } from "../../render/Hub";
 import { Lane } from "../../render/Lane";
 import { NodeCard } from "../../render/NodeCard";
-import { NoteNode } from "../../render/NoteNode";
 import { Stub } from "../../render/Stub";
 import type { CardView } from "../../render/types";
-import { item } from "../helpers";
+import { item, PLUGIN_DIR } from "../helpers";
 import { mount, prepared, settle } from "../render";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
+
+/** A straight labelled edge from a source. */
+function straightEdge(from: string, outcome: string) {
+  return {
+    key: `${from}:${outcome}`,
+    from,
+    to: "t",
+    outcome,
+    kind: "edge" as const,
+    points: [
+      { x: 0, y: 0 },
+      { x: 40, y: 0 }
+    ],
+    label: outcome
+  };
+}
 
 const view: CardView = {
   name: "settings",
@@ -25,6 +42,7 @@ const view: CardView = {
   selected: true,
   current: false,
   dimmed: false,
+  pulse: false,
   trail: true,
   onStack: true,
   expandable: true,
@@ -47,14 +65,23 @@ describe("NodeCard (G)", () => {
     expect(card?.hasAttribute("data-current")).toBe(false);
     expect(card?.getAttribute("role")).toBe("button");
     expect(card?.getAttribute("aria-pressed")).toBe("true");
-    expect(card?.style.left).toBe("10px");
-    expect(card?.style.width).toBe("172px");
+    const box = card?.parentElement;
+    expect(box?.dataset.flow).toBe("node");
+    expect(box?.style.left).toBe("10px");
+    expect(box?.style.width).toBe("172px");
+    expect(card?.hasAttribute("data-expandable")).toBe(true);
     expect(card?.textContent).toContain("settings");
     expect(card?.textContent).toContain("sub-flow · settingsPopup");
     expect(card?.textContent).toContain("on stack");
     expect(card?.querySelector<HTMLElement>('[data-part="glyph"]')?.dataset.glyph).toBe("sub-flow");
     expect(card?.querySelector('[data-part="pin"]')).not.toBeNull();
-    await settle(() => card?.querySelector<HTMLElement>('[data-part="expand"]')?.click());
+    // The expand button is a sibling of the focusable card, not a descendant (axe nested-interactive).
+    expect(card?.querySelector('[data-part="expand"], button')).toBeNull();
+    const toggle = box?.querySelector<HTMLElement>(':scope > [data-part="expand"]');
+    expect(toggle?.getAttribute("aria-label")).toBe("Expand main/settings");
+    expect(toggle?.dataset.hit).toBe("card");
+    expect(toggle?.dataset.key).toBe("main/settings");
+    await settle(() => toggle?.click());
     expect(expand).toHaveBeenCalledWith("main/settings");
     unmount();
   });
@@ -67,12 +94,13 @@ describe("NodeCard (G)", () => {
     const card = host.querySelector<HTMLElement>('[data-flow="node-card"]');
     expect(card?.getAttribute("aria-current")).toBe("location");
     expect(card?.hasAttribute("data-dimmed")).toBe(true);
-    expect(card?.querySelector('[data-part="expand"]')).toBeNull();
+    expect(card?.parentElement?.querySelector('[data-part="expand"]')).toBeNull();
+    expect(card?.hasAttribute("data-expandable")).toBe(false);
     unmount();
   });
 });
 
-describe("Hub, Lane, Frame, Stub, NoteNode, Edges (G, F8)", () => {
+describe("Hub, Lane, Frame, Stub, Edges (G, F8)", () => {
   it("hub: head with You are here and waiting count, one port row per outcome", async () => {
     const { ctx, actions } = await prepared();
     const hub = item({
@@ -103,7 +131,7 @@ describe("Hub, Lane, Frame, Stub, NoteNode, Edges (G, F8)", () => {
     unmount();
   });
 
-  it("lane band, frame head, stub and note node", async () => {
+  it("lane band, frame head and stub", async () => {
     const { ctx, actions } = await prepared();
     const lane = { index: 1, outcome: "select", x: 0, y: 0, w: 500, h: 56, trail: false };
     const laneMount = mount(h(Lane, { lane, trail: true }));
@@ -154,19 +182,6 @@ describe("Hub, Lane, Frame, Stub, NoteNode, Edges (G, F8)", () => {
     expect(pill?.hasAttribute("data-rejected")).toBe(true);
     expect(pill?.textContent).toContain("✕ rejected · frame 1778 · empty");
     stubMount.unmount();
-
-    const note = item({ key: "note:a.md", id: "a.md", kind: "note", w: 236, h: 112, label: "A" });
-    const noteMount = mount(
-      h(NoteNode, {
-        item: note,
-        view: { title: "First wood 4", lines: ["a", "b", "c"], captures: 2, status: "idea" }
-      })
-    );
-    const noteElement = noteMount.host.querySelector<HTMLElement>('[data-flow="note-node"]');
-    expect(noteElement?.dataset.status).toBe("idea");
-    expect(noteElement?.dataset.hit).toBe("note");
-    expect(noteElement?.textContent).toContain("2 captures");
-    noteMount.unmount();
   });
 
   it("edges: rounded paths, trail rank opacity, rejected dash, label chips", async () => {
@@ -188,7 +203,7 @@ describe("Hub, Lane, Frame, Stub, NoteNode, Edges (G, F8)", () => {
     const views = new Map([
       [
         "m|rejected|edge",
-        { rank: 2, rejected: true, related: false, dimmed: false, selected: false }
+        { rank: 4, recent: false, rejected: true, related: false, dimmed: false, selected: false }
       ]
     ]);
     const { host, unmount } = mount(
@@ -202,12 +217,91 @@ describe("Hub, Lane, Frame, Stub, NoteNode, Edges (G, F8)", () => {
     const path = host.querySelector<SVGPathElement>("path");
     expect(path?.getAttribute("d")).toBe("M 0 0 L 92 0 Q 100 0 100 8 L 100 50");
     expect(path?.dataset.rejected).toBe("");
-    expect(path?.dataset.rank).toBe("2");
-    expect(path?.style.opacity).toBe(String(1 - 0.13 * 2));
+    expect(path?.dataset.rank).toBe("4");
+    expect(path?.style.opacity).toBe("0.48");
+    expect(path?.hasAttribute("data-recent")).toBe(false);
     const label = host.querySelector<HTMLElement>('[data-flow="edge-label"]');
     expect(label?.textContent).toBe("rejected");
     expect(label?.dataset.hit).toBe("outcome");
     expect(label?.dataset.outcome).toBe("rejected");
+    unmount();
+  });
+
+  it("edges: the last three trail edges are recent (2 px, no fade); a dimmed edge never gets the trail opacity", async () => {
+    const views = new Map([
+      [
+        "a|x|edge",
+        { rank: 0, recent: true, rejected: false, related: false, dimmed: false, selected: false }
+      ],
+      [
+        "b|y|edge",
+        { rank: 3, recent: false, rejected: false, related: false, dimmed: true, selected: false }
+      ]
+    ]);
+    const { host, unmount } = mount(
+      h(Edges, {
+        edges: [straightEdge("a", "x"), straightEdge("b", "y")],
+        bounds: { x: 0, y: 0, w: 100, h: 100 },
+        views,
+        showReturns: new Set<string>()
+      })
+    );
+    const [recent, dimmed] = host.querySelectorAll<SVGPathElement>("path");
+    expect(recent?.hasAttribute("data-recent")).toBe(true);
+    expect(recent?.style.opacity).toBe("");
+    expect(dimmed?.hasAttribute("data-dimmed")).toBe(true);
+    expect(dimmed?.style.opacity).toBe("");
+    const labels = host.querySelectorAll<HTMLElement>('[data-flow="edge-label"]');
+    expect(labels[1]?.hasAttribute("data-dimmed")).toBe(true);
+    unmount();
+  });
+
+  it("edges: a label sits where the layout placed it, else at the first segment's midpoint", async () => {
+    const plain = straightEdge("a", "x");
+    const placed = { ...plain, labelAt: { x: 300, y: 120 } };
+    expect(labelPoint(placed)).toEqual({ x: 300, y: 120 });
+    expect(labelPoint(plain)).toEqual({ x: 20, y: 0 });
+    expect(labelPoint({ ...plain, points: [] })).toBeUndefined();
+    const { host, unmount } = mount(
+      h(Edges, {
+        edges: [placed],
+        bounds: { x: 0, y: 0, w: 400, h: 400 },
+        views: new Map(),
+        showReturns: new Set<string>()
+      })
+    );
+    const label = host.querySelector<HTMLElement>('[data-flow="edge-label"]');
+    expect(label?.style.left).toBe("300px");
+    expect(label?.style.top).toBe("120px");
+    unmount();
+  });
+});
+
+describe("dimmed and pulsing items keep their card (finding 12, 14)", () => {
+  it("a dimmed card, hub and stub keep an opaque background: the sheets fade their content, not the box", () => {
+    const sheets = [
+      "render/node-card.css",
+      "render/hub.css",
+      "render/stub.css",
+      "render/edges.css"
+    ];
+    for (const sheet of sheets) {
+      const code = readFileSync(`${PLUGIN_DIR}${sheet}`, "utf8").replaceAll(
+        /\/\*[\s\S]*?\*\//g,
+        ""
+      );
+      const dimmed = /:scope\[data-dimmed\]\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+      expect(dimmed, sheet).not.toMatch(/opacity/);
+    }
+  });
+
+  it("a pulsing card carries data-pulse", async () => {
+    const { ctx, actions } = await prepared();
+    const node = item({ key: "main/home" });
+    const { host, unmount } = mount(
+      h(NodeCard, { ctx, actions, item: node, view: { ...view, pulse: true } })
+    );
+    expect(host.querySelector('[data-flow="node-card"]')?.hasAttribute("data-pulse")).toBe(true);
     unmount();
   });
 });

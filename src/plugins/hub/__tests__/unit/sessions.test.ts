@@ -6,6 +6,7 @@ import {
   chooseSession,
   isManifest,
   PAUSED_SILENT_AFTER_MS,
+  readHeartbeat,
   sessionIdFrom,
   sessionList,
   tickSilent,
@@ -161,6 +162,52 @@ describe("isManifest", () => {
 
     expect(isManifest(manifestWith({ commands: many }))).toBe(false);
     expect(isManifest(manifestWith({ commands: many.slice(0, 1000) }))).toBe(true);
+  });
+});
+
+describe("readHeartbeat", () => {
+  it("reads finite frame and at with a boolean paused", () => {
+    expect(readHeartbeat({ frame: 12, paused: false, at: 5 })).toEqual({
+      frame: 12,
+      paused: false,
+      at: 5
+    });
+  });
+
+  it("keeps a heap whose usedMb and limitMb are finite numbers", () => {
+    const beat = readHeartbeat({
+      frame: 12,
+      paused: true,
+      at: 5,
+      heap: { usedMb: 12.8, limitMb: 4095.8 }
+    });
+
+    expect(beat).toEqual({
+      frame: 12,
+      paused: true,
+      at: 5,
+      heap: { usedMb: 12.8, limitMb: 4095.8 }
+    });
+  });
+
+  it.each([
+    ["a text usedMb", { usedMb: "12.8", limitMb: 4095.8 }],
+    ["no limitMb", { usedMb: 12.8 }],
+    ["a null limitMb", { usedMb: 12.8, limitMb: null }],
+    ["an infinite usedMb", { usedMb: Number.POSITIVE_INFINITY, limitMb: 1 }],
+    ["a list", [12.8, 4095.8]],
+    ["a number", 12.8]
+  ])("drops a heap with %s and keeps the beat", (_label, heap) => {
+    const beat = readHeartbeat({ frame: 12, paused: false, at: 5, heap });
+
+    expect(beat).toEqual({ frame: 12, paused: false, at: 5 });
+    expect(beat !== undefined && "heap" in beat).toBe(false);
+  });
+
+  it("refuses a beat without a boolean paused, heap or not", () => {
+    expect(readHeartbeat({ frame: 12, paused: "no", at: 5, heap: { usedMb: 1, limitMb: 2 } })).toBe(
+      undefined
+    );
   });
 });
 

@@ -20,6 +20,7 @@ import {
   startAgent,
   startServer,
   type Tap,
+  type ToolsConfigs,
   type ToolsStack,
   trackUnhandled,
   type UnhandledTracker,
@@ -119,6 +120,8 @@ type StackChoice = {
   readonly game?: MergeOptions;
   /** A data URL the game's renderer answers (`withRenderer`; headless games only). */
   readonly png?: string;
+  /** Extra tools pluginConfigs (e.g. another default workspace than Game). */
+  readonly tools?: ToolsConfigs;
 };
 
 /** One file of an asset manifest, as far as the texture checks read it. */
@@ -170,7 +173,9 @@ async function mergeStack(choice: StackChoice = {}): Promise<MergeStack> {
       ...(choice.png === undefined ? {} : { png: choice.png })
     })
   );
-  const tools = keep(await bootTools(server));
+  const tools = keep(
+    await bootTools(server, choice.tools === undefined ? {} : { configs: choice.tools })
+  );
   const { link } = tools.app;
   await until(
     () => link.status().kind === "live" && link.manifest()?.game === MERGE_NAME,
@@ -304,7 +309,7 @@ async function click(element: HTMLElement | undefined): Promise<void> {
  * One tab of flowView's Inspector by its label.
  *
  * @param flow - The Flow host.
- * @param label - "Info", "Code", "Styles" or "Notes".
+ * @param label - "Info", "Code" or "Styles".
  * @returns The tab.
  * @throws {Error} When the Inspector has no such tab.
  */
@@ -489,7 +494,7 @@ function countSrcSets(iframe: HTMLIFrameElement): () => number {
 
 describe("journey-merge: open the editor on merge-game", () => {
   it(
-    "M1: real manifest, splash to board, the board hub in Flow, neighbours and Open in Files",
+    "M1: real manifest, splash to board, the board hub in Flow, the Inspector walk and Open in Files",
     async () => {
       const live = await mergeStack();
       const { tools, game, root } = live;
@@ -500,6 +505,11 @@ describe("journey-merge: open the editor on merge-game", () => {
       expect(idsOf(manifest?.sources, "game.")).toEqual(GAME_SOURCES);
       expect(idsOf(manifest?.commands, "game.")).toEqual(GAME_COMMANDS);
       expect(idsOf(manifest?.commands, "editor.")).toEqual(EDITOR_COMMANDS);
+
+      // Game is the default workspace; flowView watches the flow from start, its canvas
+      // renders when Flow is shown.
+      expect(workspace.active()).toBe("game");
+      workspace.show("flow");
 
       // 1. splash → home
       expect(game.app.flow.state().path).toBe("splash");
@@ -529,19 +539,22 @@ describe("journey-merge: open the editor on merge-game", () => {
       const lanes = [...flow.querySelectorAll<HTMLElement>('[data-flow="lane"]')];
       expect(lanes.map(lane => lane.dataset.outcome).toSorted()).toEqual(BOARD_OUTCOMES);
 
-      // The neighbours strip: board/merge comes from board/awaitIntent and goes back to it.
-      const strip = (): HTMLElement => elementIn(flow, '[data-flow="neighbours-strip"]');
-      expect(strip().getAttribute("aria-label")).toBe("Neighbours of board/merge");
-      const comes = [...strip().querySelectorAll('[data-column="from"] [data-part="path"]')];
-      expect(comes.map(path => path.textContent)).toEqual(["board/awaitIntent"]);
-      const goes = [...strip().querySelectorAll<HTMLElement>('[data-column="to"] [data-row]')];
+      // The Inspector walk: board/merge comes from board/awaitIntent and goes back to it.
+      const info = (): HTMLElement => elementIn(flow, '[data-flow="info-tab"]');
+      await until(() => flow.querySelector('[data-flow="info-tab"]') !== null, "the Info tab");
+      const comes = [...info().querySelectorAll('[data-part="comes-from"] li button')];
+      expect(comes.map(row => row.textContent)).toEqual(["board/awaitIntent · merge"]);
+      const goes = [...info().querySelectorAll<HTMLElement>('[data-part="outcomes"] li')];
       expect(
-        goes.map(row => `${row.dataset.outcome ?? ""} → ${elementIn(row, "code").textContent}`)
-      ).toEqual(["done → board/awaitIntent", "rejected → board/awaitIntent"]);
-      await until(
-        () => strip().querySelector('[data-part="file"]')?.textContent === "nodes/merge.ts",
-        "the node file in the strip"
-      );
+        goes.map(
+          row =>
+            `${row.dataset.outcome ?? ""} → ${elementIn(row, '[data-part="target"]').textContent}`
+        )
+      ).toEqual(["done → awaitIntent", "rejected → awaitIntent"]);
+      // ← walks to the first Comes from row, the hub.
+      flowView.focus.walk("prev");
+      expect(flowView.focus.selected()).toBe("main/board>board/awaitIntent");
+      expect(flowView.focus.select("board/merge")).toBe(true);
 
       // 4. Code → Open in Files: workspace:open-file reaches filesView.
       await click(inspectorTab(flow, "Code"));
@@ -576,9 +589,13 @@ describe("journey-merge: Game and Render", () => {
       const { workspace, gameView, renderView, filesView } = tools.app;
 
       // 1. The scene of the board, laid out by the game (one reference unit is one page px).
-      workspace.show("game");
-      const scene = await gameView.scene();
-      expect(scene.calibrated).toBe(true);
+      // Game is the default workspace: its scene watch is calibrated a moment after the values.
+      expect(workspace.active()).toBe("game");
+      let scene = await gameView.scene();
+      await until(async () => {
+        scene = await gameView.scene();
+        return scene.calibrated;
+      }, "a calibrated scene");
       expect(scene.nodes.get(BOARD_SLOT)?.rect).toEqual({ x: 55, y: 801, w: 970, h: 970 });
       const sawmill = [...scene.nodes.values()].find(
         node => node.entity?.owner === "board.generators"
@@ -695,7 +712,11 @@ describe("journey-merge: Game and Render", () => {
   it(
     "M2b: a select right after the Game panel first renders reaches the Element tab",
     async () => {
-      const live = await mergeStack({ game: { screen: true, board: true } });
+      // Flow first, so the Game panel renders for the first time on show.
+      const live = await mergeStack({
+        game: { screen: true, board: true },
+        tools: { workspace: { defaultWorkspace: "flow" } }
+      });
       const { workspace, gameView } = live.tools.app;
       const scene = await gameView.scene();
       const sawmill = [...scene.nodes.values()].find(
@@ -731,6 +752,10 @@ describe("journey-merge: edit a style", () => {
       await walkToBoard(live);
       const { tools, server, root, page } = live;
       const { workspace, flowView, link } = tools.app;
+      // flowView watches the flow from start; its canvas renders when first shown (Game is the
+      // default).
+      workspace.show("flow");
+      await until(() => flowView.focus.current() === "board/awaitIntent", "Flow on the board");
       const before = await readFile(path.join(root, STYLES_FILE), "utf8");
       const iframe = document.querySelector("iframe[data-game-frame]");
       if (!(iframe instanceof HTMLIFrameElement)) throw new Error("no game frame");
@@ -812,6 +837,10 @@ describe("journey-merge: state and console", () => {
       const live = await mergeStack({ game: { board: true } });
       const { tools, game, server, page } = live;
       const { workspace, panels, stateView, consoleView, link, flowView } = tools.app;
+      // Flow first: flowView dates each edge by the frame its game.history value arrives at, from
+      // its first value (it watches from start; Game is the default workspace).
+      workspace.show("flow");
+      await until(() => delivered(server.tap, "game.history"), "flowView's first history value");
 
       // 1. State
       workspace.show("state");
@@ -906,12 +935,12 @@ describe("journey-merge: state and console", () => {
 
 describe("journey-merge: capture", () => {
   it(
-    "M5: a series on merge-game: shots on real frames, index, sheet and a note that lists them",
+    "M5: a series on merge-game: shots on real frames, index and the contact sheet",
     async () => {
       const live = await mergeStack({ png: PNG_1X1 });
       await walkToBoard(live);
       const { tools, game, server } = live;
-      const { gameView, workspace, flowView, filesView, link } = tools.app;
+      const { gameView, workspace, link } = tools.app;
 
       // One series while the game steps 16 ms frames.
       let stepping = true;
@@ -958,23 +987,6 @@ describe("journey-merge: capture", () => {
         "a tile per shot on the contact sheet"
       );
 
-      // A note with the captures renders them in the filesView md preview.
-      const firstShot = `${series.folder}${index.shots[0]?.file ?? ""}`;
-      const note = await flowView.notes.create({
-        title: "Sawmill series",
-        body: "Ten shots of the board.",
-        from: { node: "board/awaitIntent" },
-        captures: [series.indexPath, firstShot]
-      });
-      await filesView.open(note.path);
-      workspace.show("files");
-      const files = workspace.host("files");
-      const captures = '[data-preview="markdown"] [data-front-matter="note"] button[data-link]';
-      await until(() => files.querySelectorAll(captures).length === 2, "the capture links");
-      expect([...files.querySelectorAll(captures)].map(capture => capture.textContent)).toEqual([
-        series.indexPath,
-        firstShot
-      ]);
       expect(unhandled?.list).toEqual([]);
     },
     TIMEOUT_MS

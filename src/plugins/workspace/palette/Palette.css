@@ -45,6 +45,14 @@
     padding: 6px;
   }
 
+  /* A result group is a fieldset (role group, valid inside a listbox); drop its default frame. */
+  fieldset {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
   h3 {
     padding: 8px 8px 4px;
     color: var(--text-muted);

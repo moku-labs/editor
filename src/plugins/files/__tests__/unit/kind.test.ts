@@ -5,7 +5,7 @@ import type { WrittenKind } from "../../types";
 const rows: ReadonlyArray<readonly [string, WrittenKind]> = [
   [".moku/captures/2026-09-24-1012-board.png", "capture"],
   [".moku/captures/series-x/index.json", "capture"],
-  [".moku/notes/2026-09-24-first-top-item.md", "note"],
+  [".moku/notes/2026-09-24-first-top-item.md", "other"],
   [".moku/editor/layout.json", "layout"],
   ["features/ui/board.css", "style"],
   ["features/ui/styles.ts", "style"],
@@ -30,7 +30,8 @@ describe("classifyWrite", () => {
     expect(classifyWrite(".moku/captures/a.css")).toBe("capture");
   });
 
-  it("gives notes priority over the code rule", () => {
-    expect(classifyWrite(".moku/notes/a.ts")).toBe("note");
+  it("has no note kind: a file under .moku/notes/ follows the general rules", () => {
+    expect(classifyWrite(".moku/notes/a.ts")).toBe("code");
+    expect(classifyWrite(".moku/notes/a.md")).toBe("other");
   });
 });

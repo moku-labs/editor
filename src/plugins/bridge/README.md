@@ -20,8 +20,11 @@ What it does:
    re-read once per heartbeat. After every `run`, every watched source is re-read. A value is sent
    only when its JSON text changed. An `edge` or `commit` value that a run changed opens its
    `channel.watch` again, so the next frame is compared with the value sent last.
-6. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff.
-7. **Bye.** On stop it sends `bye` and closes with 1000.
+6. **Taps.** A `pointerdown` on the page window sends `tap { x, y, at }`: page CSS px
+   (`clientX`, `clientY`) and the page's `performance.now()`. At most one per 50 ms
+   (`TAP_THROTTLE_MS`), only while open. Overlay input sends none.
+7. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff.
+8. **Bye.** On stop it sends `bye` and closes with 1000.
 
 The token is never logged. Log lines name the hello origin and path only.
 
@@ -131,13 +134,20 @@ hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, s
 | Phase | What happens |
 |---|---|
 | `onInit` | `checkConfig`: `hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100. |
-| `onStart` | `startBridge`: publishes `connecting`, listens to `channel.onHeartbeat` and to `visibilitychange`, then connects without awaiting. `app.start()` resolves even when no editor server answers. |
+| `onStart` | `startBridge`: publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange` and to `pointerdown` on the window, then connects without awaiting. `app.start()` resolves even when no editor server answers. |
 | `onStop` | `stopBridge`: phase `stopped`, clears the retry timer and every deadline, removes the listeners, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
 
 Heartbeat tick, only while open: send the beat (always, even when congested), update the status,
 send the backlog when below `LOW_WATER`, then re-read every `frame` subscription (skipped while congested).
 
 A `visibilitychange` (either way) sends one heartbeat in a microtask while open.
+
+`watchTaps` listens to `pointerdown` on the window in the capture phase, so a game that stops the
+event at its canvas still sends the tap, and passive, so it never delays the game's input. The
+overlay stops its own input at its host, but a window capture listener runs first, so the tap watch
+skips any event whose path holds the overlay host (`data-moku-editor-overlay`). A tap dropped
+because the bridge is not open does not count for the 50 ms throttle. Outside a browser (no
+`window`) it does nothing.
 
 Log events:
 
@@ -155,7 +165,7 @@ Log events:
 
 | Direction | Message |
 |---|---|
-| agent to hub | `hello { manifest }` (first), `heartbeat Heartbeat`, `value { sub, value }`, `bye` (channel `game`), and the responses |
+| agent to hub | `hello { manifest }` (first), `heartbeat Heartbeat` (with `heap` in Chromium), `value { sub, value }`, `tap Tap`, `bye` (channel `game`), and the responses |
 | hub to agent | requests `manifest`, `read { id, input? }`, `watch { sub, id, input? }`, `unwatch { sub }`, `run { id, input? }` (channel `game`). Notification `session { id, game, open }` (channel `editor`). |
 
 - `sub` is a safe integer of at least 0, else -32602 with field `sub`.
@@ -165,8 +175,8 @@ Log events:
 - A `read` or `run` past its deadline answers -32002 `{ reason: "timeout", retryable: true, id }`.
   The command is not cancelled. Its late result is dropped.
 - Every error message starts with `[moku-editor] `. No stack is sent.
-- While the socket holds more than 1 MiB, values wait in a backlog, the latest per sub. Responses
-  and heartbeats are always sent at once.
+- While the socket holds more than 1 MiB, values wait in a backlog, the latest per sub. Responses,
+  heartbeats and taps are always sent at once.
 - Binary frames, undecodable text and responses from the hub are ignored.
 
 **`hub`.** It closes an agent with 1008 `hello first` when anything else comes first. After `hello` it

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registryPlugin } from "../..";
+import { refreshManifest } from "../../manifest";
 import { createRegistryState } from "../../state";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,11 +37,11 @@ describe("registryPlugin", () => {
     expect(registryPlugin.spec.config).toEqual({ game: undefined, modules: [], name: undefined });
   });
 
-  it("wires state, api and onInit, and no start or stop", () => {
+  it("wires state, api, onInit and the start probe, and no stop", () => {
     expect(registryPlugin.spec.createState).toBe(createRegistryState);
     expect(typeof registryPlugin.spec.api).toBe("function");
     expect(typeof registryPlugin.spec.onInit).toBe("function");
-    expect("onStart" in registryPlugin.spec).toBe(false);
+    expect(registryPlugin.spec.onStart).toBe(refreshManifest);
     expect("onStop" in registryPlugin.spec).toBe(false);
     expect("events" in registryPlugin.spec).toBe(false);
     expect("depends" in registryPlugin.spec).toBe(false);

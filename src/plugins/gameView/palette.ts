@@ -1,8 +1,10 @@
 /**
  * @file gameView plugin — the palette items gameView adds in onInit: Select element, Take a
- * screenshot, Record a series…, Overlay in game and the six device presets (group Commands).
+ * screenshot, Record a series…, Overlay in game, Show Element panel and the six device presets
+ * (group Commands).
  */
 import { linkPlugin } from "../link";
+import { showSidePanel } from "../panels/shared/side-panel";
 import type { DeviceSpec } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { isDevicePresetId } from "../workspace/devices";
@@ -17,6 +19,7 @@ import {
   OVERLAY_COMMAND
 } from "./commands";
 import { setPicker } from "./element/select";
+import { SIDE_PANEL, SIDE_TITLE } from "./side";
 import type { GameViewCtx } from "./types";
 
 /**
@@ -64,6 +67,17 @@ export async function toggleOverlay(ctx: GameViewCtx): Promise<void> {
 }
 
 /**
+ * Shows Game and the Element panel expanded (open again after a close, the drawer open when it
+ * floats).
+ *
+ * @param ctx - Domain context of gameView.
+ */
+export function showSide(ctx: GameViewCtx): void {
+  ctx.require(workspacePlugin).show("game");
+  showSidePanel(SIDE_PANEL);
+}
+
+/**
  * Chooses a device preset in its natural orientation.
  *
  * @param ctx - Domain context of gameView.
@@ -96,7 +110,7 @@ function deviceItem(ctx: GameViewCtx, device: DeviceSpec): PaletteItem {
  * gameView's palette items.
  *
  * @param ctx - Domain context of gameView.
- * @returns The ten items.
+ * @returns The eleven items.
  */
 export function paletteItems(ctx: GameViewCtx): readonly PaletteItem[] {
   return [
@@ -131,6 +145,14 @@ export function paletteItems(ctx: GameViewCtx): readonly PaletteItem[] {
       keywords: "overlay render cheats",
       run: toggleOverlay.bind(undefined, ctx),
       disabled: missingCommand.bind(undefined, ctx, OVERLAY_COMMAND, NO_OVERLAY_TEXT)
+    },
+    {
+      id: "game:show-side",
+      group: "Commands",
+      label: `Show ${SIDE_TITLE}`,
+      shortcut: "\\",
+      keywords: "inspector element device side panel",
+      run: showSide.bind(undefined, ctx)
     },
     ...ctx
       .require(workspacePlugin)

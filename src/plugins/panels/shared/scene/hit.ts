@@ -25,10 +25,39 @@ function contains(rect: PageRect, point: Point): boolean {
   );
 }
 
+/** The ui types that only lay out their children: they draw nothing unless styled to. */
+const LAYOUT_TYPES: ReadonlySet<string> = new Set(["screen", "column", "row", "stack", "spacer"]);
+
+/** The style keys that make a layout node draw something of its own. */
+const DRAWING_KEYS: readonly string[] = ["fill", "stroke", "nineSlice", "shape"];
+
 /**
- * The last node in paint order that contains the point (rule 6). A node covering the whole device
- * (w ≥ W − 1 and h ≥ H − 1, a popup backdrop) contains every point, so it blocks everything painted
- * before it: a node painted after it wins where it contains the point, the backdrop wins elsewhere.
+ * Tells whether a node only lays out its children: a ui column, row, stack, screen or spacer with
+ * no fill, stroke, nine-slice or shape. It draws nothing and takes no tap in the game, so the
+ * picker looks through it (merge-game's full-screen `homeTop` column lies over the Play button).
+ *
+ * @param node - A scene node.
+ * @returns True for a layout-only node.
+ * @example
+ * ```ts
+ * isLayoutOnly(homeTopNode); // true: a column with position and padding only
+ * isLayoutOnly(backdropNode); // false: a button with a fill
+ * ```
+ */
+export function isLayoutOnly(node: SceneNode): boolean {
+  if (node.ref.kind !== "ui" || !LAYOUT_TYPES.has(node.type)) return false;
+  const style = node.style ?? {};
+  return DRAWING_KEYS.every(key => style[key] === undefined);
+}
+
+/**
+ * The last node in paint order that contains the point and draws or takes input (rule 6). An
+ * invisible node (alpha 0 or `visible: false`, merge-game's glow over each cell at rest) is
+ * skipped: the picker finds what is drawn under it. A layout-only node (see `isLayoutOnly`) is
+ * looked through: it wins only where no other node contains the point. A node covering the whole
+ * device that draws (a popup backdrop) contains every point, so it blocks everything painted
+ * before it: a node painted after it wins where it contains the point, the backdrop wins
+ * elsewhere.
  *
  * @param scene - The scene.
  * @param point - A point in page px (reference units when the scene is not calibrated).
@@ -45,13 +74,15 @@ export function elementAt(
   scene: SceneSnapshot,
   point: { readonly x: number; readonly y: number }
 ): SceneNode | undefined {
+  let layout: SceneNode | undefined;
   for (const id of scene.paintOrder.toReversed()) {
     const node = scene.nodes.get(id);
-
-    if (node?.rect !== undefined && contains(node.rect, point)) return node;
+    if (node?.rect === undefined || !node.visible || !contains(node.rect, point)) continue;
+    if (!isLayoutOnly(node)) return node;
+    layout ??= node;
   }
 
-  return undefined;
+  return layout;
 }
 
 /**

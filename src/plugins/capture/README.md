@@ -4,7 +4,16 @@
 
 Capture is not in the agent's default plugins (registry, channel, overlay). A game's dev entry adds it next to the bridge.
 
-Every shot runs the engine's door command `game.capture`. The door answers a PNG data URL of the whole canvas, taken at the end of the next drawn frame, or at once while the clock is paused. It answers no picture while the renderer is inert, headless or in a production build.
+Every shot runs the engine's door command `game.capture`. The door answers a picture of the whole canvas, taken at the end of the next drawn frame, or at once while the clock is paused. It answers no picture while the renderer is inert, headless or in a production build.
+
+The picture comes in two shapes, and both are taken:
+
+| Game | `game.capture` answers | Picture |
+|---|---|---|
+| 0.1.x | `"data:image/png;base64,…"` | The string itself. |
+| 0.4.x | `{ png: "data:image/png;base64,…", legend? }` | The string `png`. |
+
+Anything else is no picture (-32000).
 
 **No auto-capture.** The plugin has no hooks, no `onStart` and no timer outside a running series. A picture exists only because a caller ran one of its commands. The plugin writes no files: the tools page saves what it receives.
 

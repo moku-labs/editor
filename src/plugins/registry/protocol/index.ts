@@ -71,6 +71,7 @@ export type {
   SessionsParams,
   SourceDescriptor,
   SubId,
+  Tap,
   ToolsBoot,
   UnwatchParams,
   ValueParams,

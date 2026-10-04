@@ -38,8 +38,8 @@ afterEach(async () => {
 /** Bun's own Event, taken before the page stubs `Event` with the happy-dom class. */
 const NativeEvent = globalThis.Event;
 
-/** The six workspaces in the order I1 shows them. */
-const SHOWN = ["game", "render", "state", "files", "console", "flow"] as const;
+/** The workspaces in the order I1 shows them after Game, the default. */
+const SHOWN = ["render", "state", "files", "console", "flow", "game"] as const;
 
 /** The scene sources gameView and renderView watch only while their workspace is shown. */
 const SCENE_IDS = ["game.entities", "game.projections", "game.ui"] as const;
@@ -204,10 +204,12 @@ describe("cross-intents: workspace:changed", () => {
     const { tools } = live;
     const { workspace } = tools.app;
     const changedBefore = tools.eventsOf("workspace:changed").length;
-    expect(workspace.active()).toBe("flow");
-    expect(sceneRequests(live)).toEqual([0, 0, 0]);
+    // Game is the default workspace: it watches the scene sources from the start.
+    expect(workspace.active()).toBe("game");
+    await until(() => sceneRequests(live).every(count => count === 1), "the game scene watches");
 
     const scenes: Partial<Record<(typeof SHOWN)[number], number[]>> = {};
+    const sceneSets: Partial<Record<(typeof SHOWN)[number], number>> = { render: 2, game: 3 };
     for (const ws of SHOWN) {
       workspace.show(ws);
       expect(workspace.active()).toBe(ws);
@@ -216,8 +218,8 @@ describe("cross-intents: workspace:changed", () => {
         () => host.querySelector(`[data-panel="${ws}"][data-panel-state="ready"]`) !== null,
         `the ${ws} panel ready in its host`
       );
-      if (ws === "game" || ws === "render") {
-        const expected = ws === "game" ? 1 : 2;
+      const expected = sceneSets[ws];
+      if (expected !== undefined) {
         await until(
           () => sceneRequests(live).every(count => count === expected),
           `the ${ws} scene watches`
@@ -230,22 +232,22 @@ describe("cross-intents: workspace:changed", () => {
     expect(tools.eventsOf("workspace:changed").slice(changedBefore)).toEqual(
       SHOWN.map(ws => ({ ws }))
     );
-    // Game opens one watch per scene source, Render its own set; State, Files, Console and Flow
-    // open none.
+    // Render opens its own set of scene watches, Game a fresh one when shown again; State,
+    // Files, Console and Flow open none.
     expect(scenes).toEqual({
-      game: [1, 1, 1],
       render: [2, 2, 2],
       state: [2, 2, 2],
       files: [2, 2, 2],
       console: [2, 2, 2],
-      flow: [2, 2, 2]
+      flow: [2, 2, 2],
+      game: [3, 3, 3]
     });
     // Both views stopped their watches on leaving: showing them again starts a fresh set
     // (a view still watching would not).
-    workspace.show("game");
-    await until(() => sceneRequests(live).every(count => count === 3), "Game watching again");
     workspace.show("render");
     await until(() => sceneRequests(live).every(count => count === 4), "Render watching again");
+    workspace.show("game");
+    await until(() => sceneRequests(live).every(count => count === 5), "Game watching again");
 
     // renderView's tracker and consoleView's log are session watches: one request, still open.
     expect(watchRequests(live, "game.render")).toBe(1);
@@ -258,12 +260,15 @@ describe("cross-intents: workspace:changed", () => {
 });
 
 describe("cross-intents: flow intents", () => {
-  it("I2: select-node, focus-frame and new-note reach flowView from filesView, consoleView and gameView", async () => {
+  it("I2: select-node and focus-frame reach flowView from filesView and consoleView", async () => {
     const live = await liveStack();
     const { tools } = live;
-    const { workspace, filesView, flowView, consoleView, gameView, link } = tools.app;
-    // flowView takes its first game.history value as the baseline: play must come after it, or
-    // the edge lands in the first batch with no live frame and the label is #0.
+    const { workspace, filesView, flowView, consoleView, link } = tools.app;
+    // flowView watches the flow sources from start; its canvas renders when Flow is first shown
+    // (Game is the default). flowView takes its first game.history value as the baseline: play
+    // must come after it, or the edge lands in the first batch with no live frame and the label
+    // is #0.
+    workspace.show("flow");
     await until(() => delivered(live.server.tap, "game.history"), "flowView's first history value");
     await link.run("game.answer", { intent: "play" });
 
@@ -320,39 +325,8 @@ describe("cross-intents: flow intents", () => {
       )
     ).toEqual([label]);
 
-    // 3. the capture card's "New note…" emits workspace:new-note
-    workspace.show("game");
-    await settle();
-    const capture = await gameView.capture();
-    if (capture === undefined) throw new Error("the capture failed");
-    expect(capture.path).toMatch(/^\.moku\/captures\/.+\.png$/);
-    const game = workspace.host("game");
-    await until(
-      () => game.querySelector('[data-game="card"] [data-part="attach"] select option') !== null,
-      "the capture card's note select"
-    );
-    const select = elementIn(game, '[data-game="card"] [data-part="attach"] select');
-    await act(() => {
-      if (select instanceof HTMLSelectElement) select.value = "new";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    const newNote = elementIn(game, '[data-game="card"] [data-part="attach"] button');
-    expect(newNote.textContent).toBe("New note…");
-    await click(newNote);
-    await until(() => tools.eventsOf("workspace:new-note").length === 1, "new-note");
-    expect(tools.eventsOf("workspace:new-note")).toEqual([
-      { captures: [capture.path], from: { node: "home" } }
-    ]);
-    expect(workspace.active()).toBe("flow");
-    await until(
-      () => flow.querySelector('[data-flow="note-editor"][open]') !== null,
-      "the open note editor"
-    );
-    const editor = elementIn(flow, '[data-flow="note-editor"]');
-    expect(elementIn(editor, '[data-part="context"]').textContent).toBe("On home");
-    expect(elementIn(editor, '[data-part="thumbnail"]').getAttribute("alt")).toBe(capture.path);
-    // No view depends on another: filesView, consoleView and gameView reached flowView through
-    // the global tools events alone.
+    // No view depends on another: filesView and consoleView reached flowView through the global
+    // tools events alone.
     expect(realErrors(...appsOf(live))).toEqual([]);
     expect(unhandled?.list).toEqual([]);
   });

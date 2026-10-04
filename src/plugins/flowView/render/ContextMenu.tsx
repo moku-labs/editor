@@ -1,8 +1,8 @@
 /**
  * @file flowView render module — the context menus (D4) on a node, an outcome (edge label, port,
  * stub) and the empty canvas: `role="menu"` in the browser top layer (`popover`, M7), first item
- * focused, ↑/↓ move, Enter runs, Esc closes (workspace Esc layer contextMenu), flipped to stay inside
- * the canvas. Step 1 frame is disabled unless paused (M5); Reset layout while nothing is pinned (M8).
+ * focused, ↑/↓ move, Enter runs, Esc closes (workspace Esc layer contextMenu), flipped or pushed
+ * against the far edge to stay inside the canvas. Step 1 frame is disabled unless paused (M5); Reset layout while nothing is pinned (M8).
  */
 import type { VNode } from "preact";
 import { useLayoutEffect } from "preact/hooks";
@@ -26,14 +26,34 @@ export type MenuItem = {
 export type ContextMenuProps = { readonly ctx: FlowCtx; readonly actions: FlowActions };
 
 /**
- * Width kept for the menu when it flips.
+ * Width kept for the menu when it flips or meets the canvas edge.
  */
 const MENU_W = 220;
 
 /**
- * Height of one item when the menu flips.
+ * Height of one item when the menu flips or meets the canvas edge.
  */
 const ITEM_H = 30;
+
+/**
+ * Places the menu on one axis of the canvas: at the click when it fits; else flipped to end at the
+ * click when there is room before it; else against the far edge. Never before 0.
+ *
+ * @param at - The click on this axis, in canvas px.
+ * @param size - The menu size on this axis.
+ * @param room - The canvas size on this axis.
+ * @returns The menu start on this axis, in canvas px.
+ * @example
+ * ```ts
+ * placeOnAxis(150, 220, 300); // 80: no room on either side of the click, so against the right edge
+ * placeOnAxis(250, 220, 300); // 30: flipped to end at the click
+ * ```
+ */
+function placeOnAxis(at: number, size: number, room: number): number {
+  if (at + size <= room) return at;
+
+  return Math.max(0, at > size ? at - size : room - size);
+}
 
 /**
  * Builds one item.
@@ -102,13 +122,6 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
   if (subFlow !== undefined)
     items.push(menuItem(`Enter ${subFlow}`, () => actions.flows.enter(key)));
 
-  // One "Add note" per outcome of the node.
-  for (const outcome of node?.outcomes ?? []) {
-    items.push(
-      menuItem(`Add note on ${outcome}`, () => actions.notes.edit({ from: { node: id, outcome } }))
-    );
-  }
-
   // The node the game is on: step one frame (paused only), pause or resume.
   if (actions.focus.current() === id) {
     const isPaused = actions.focus.isPaused();
@@ -149,24 +162,14 @@ export function menuItems(ctx: FlowCtx, actions: FlowActions, menu: MenuState): 
     const { flow, node: name } = splitId(id);
     const raw = ctx.state.data.graph?.flows[flow]?.edges[name]?.[outcome] ?? "";
     const target = raw.startsWith("map:") ? raw.slice("map:".length) : raw;
-    const items = [
-      menuItem("Add note on this outcome", () =>
-        actions.notes.edit({ from: { node: id, outcome } })
-      )
+    if (target === "") return [];
+    return [
+      menuItem(`Focus ${target}`, () => {
+        if (!target.startsWith("exit:")) actions.focus.select(`${flow}/${target}`);
+      })
     ];
-    if (target !== "") {
-      items.push(
-        menuItem(`Focus ${target}`, () => {
-          if (!target.startsWith("exit:")) actions.focus.select(`${flow}/${target}`);
-        })
-      );
-    }
-    return items;
   }
-  const { cam } = ctx.state.camera;
-  const anchor = { x: (menu.x - cam.x) / cam.z, y: (menu.y - cam.y) / cam.z };
   return [
-    menuItem("Add note here", () => actions.notes.edit({ anchor })),
     menuItem("Fit all", () => actions.camera.fitAll()),
     menuItem(
       "Reset layout",
@@ -204,18 +207,15 @@ export function ContextMenu(props: ContextMenuProps): VNode {
     node.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [menu, element]);
 
-  if (menu === undefined) return <span data-closed="context-menu" hidden />;
-  const items = menuItems(ctx, actions, menu);
+  const items = menu === undefined ? [] : menuItems(ctx, actions, menu);
+  if (menu === undefined || items.length === 0) return <span data-closed="context-menu" hidden />;
   const canvas = ctx.state.view.root
     ?.querySelector('[data-flow="canvas"]')
     ?.getBoundingClientRect();
   const width = canvas?.width ?? ctx.state.camera.viewport.w;
   const height = canvas?.height ?? ctx.state.camera.viewport.h;
-  const menuHeight = items.length * ITEM_H;
-  const flipsLeft = menu.x + MENU_W > width && menu.x > MENU_W;
-  const flipsUp = menu.y + menuHeight > height && menu.y > menuHeight;
-  const x = flipsLeft ? menu.x - MENU_W : menu.x;
-  const y = flipsUp ? menu.y - menuHeight : menu.y;
+  const x = placeOnAxis(menu.x, MENU_W, width);
+  const y = placeOnAxis(menu.y, items.length * ITEM_H, height);
 
   /**
    * Runs an enabled item and closes the menu.

@@ -1,9 +1,10 @@
 /**
  * @file hub plugin — messages of an agent (game page) connection: `hello` first (else close
- * 1008), heartbeats, values, bye, responses to forwarded calls; any request is answered -32007
- * `unauthorized` (R6). On close the session ends: pending calls fail -32001 and tools are told.
+ * 1008), heartbeats, values, taps, bye, responses to forwarded calls; any request is answered
+ * -32007 `unauthorized` (R6). On close the session ends: pending calls fail -32001 and tools are
+ * told.
  */
-import type { Json, Manifest, Message, Notification } from "../../registry/protocol";
+import type { Json, Manifest, Message, Notification, Tap } from "../../registry/protocol";
 import {
   errorCode,
   failure,
@@ -127,7 +128,53 @@ function onValue(ctx: HubCtx, conn: AgentConn, session: Session, note: Notificat
 }
 
 /**
- * A notification after hello: heartbeat, value, bye; a second hello closes 1008.
+ * Reads a tap: finite `x`, `y` and `at`; other fields are left out.
+ *
+ * @param params - The tap params.
+ * @returns A fresh Tap, or undefined when malformed.
+ * @example
+ * ```ts
+ * readTap({ x: 206, y: 640, at: 15234.5 }); // { x: 206, y: 640, at: 15234.5 }
+ * readTap({ x: "206", y: 640, at: 1 }); // undefined
+ * ```
+ */
+function readTap(params: Json | undefined): Tap | undefined {
+  const fields =
+    typeof params === "object" && params !== null && !Array.isArray(params) ? params : {};
+  const { x, y, at } = fields;
+
+  return typeof x === "number" &&
+    typeof y === "number" &&
+    typeof at === "number" &&
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    Number.isFinite(at)
+    ? { x, y, at }
+    : undefined;
+}
+
+/**
+ * A tap `{x, y, at}` of the game page: forwarded to every tools connection with the session, the
+ * way a heartbeat is (dropped while a connection is congested). A malformed one is a strike.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The agent connection.
+ * @param session - Its session.
+ * @param note - The tap notification.
+ */
+function onTap(ctx: HubCtx, conn: AgentConn, session: Session, note: Notification): void {
+  const tap = readTap(note.params);
+  if (tap === undefined) {
+    strike(conn);
+    return;
+  }
+
+  const forwarded = notification("game", "tap", tap, session.id);
+  for (const tools of toolsConns(ctx.state)) sendDroppable(tools, forwarded);
+}
+
+/**
+ * A notification after hello: heartbeat, value, tap, bye; a second hello closes 1008.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
@@ -146,6 +193,10 @@ function onNotification(ctx: HubCtx, conn: AgentConn, session: Session, note: No
     }
     case "value": {
       onValue(ctx, conn, session, note);
+      return;
+    }
+    case "tap": {
+      onTap(ctx, conn, session, note);
       return;
     }
     case "bye": {

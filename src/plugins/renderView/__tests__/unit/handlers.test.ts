@@ -128,6 +128,33 @@ describe("link:status", () => {
     expect(ctx.state.effects).toBeUndefined();
   });
 
+  it("keeps the effects-not-installed flag over a session change, forgets it on empty", () => {
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    ctx.state.effectsInstalled = false;
+
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-2" });
+    expect(ctx.state.effectsInstalled).toBe(false);
+
+    hooks["link:status"]({ status: { kind: "empty" } });
+    expect(ctx.state.effectsInstalled).toBe(true);
+  });
+
+  it("clears the heap after a session change and on empty, keeps it on the same session", () => {
+    const heap = { usedMb: 12.8, limitMb: 4095.8 };
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    ctx.state.heap = heap;
+
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
+    expect(ctx.state.heap).toEqual(heap);
+
+    hooks["link:status"]({ status: { kind: "live", frame: 3 }, session: "s-2" });
+    expect(ctx.state.heap).toBeUndefined();
+
+    ctx.state.heap = heap;
+    hooks["link:status"]({ status: { kind: "empty" } });
+    expect(ctx.state.heap).toBeUndefined();
+  });
+
   it("does not clear on the same session and does not refresh while hidden", async () => {
     hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
     await fill();

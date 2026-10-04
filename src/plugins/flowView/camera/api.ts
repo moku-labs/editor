@@ -1,11 +1,12 @@
 /**
  * @file flowView camera module — the camera actions (the public `camera` namespace plus the moves
- * the canvas, the minimap and the other modules use). The available rect leaves out the
- * neighbours strip and the pinned preview column.
+ * the canvas, the minimap and the other modules use). The available rect leaves out the pinned
+ * preview column; on a narrow canvas the column shrinks so a card still fits.
  */
 import { notify } from "../state";
-import type { FlowCtx, FlowEnvironment, Item, Rect } from "../types";
+import type { FlowCtx, FlowEnvironment, Item, ItemKey, Rect } from "../types";
 import { animateTo, applyCamera, cancelAnimation, DURATION } from "./animate";
+import { previewZoneInsets } from "./chrome";
 import {
   centreAt,
   clampZoom,
@@ -15,14 +16,10 @@ import {
   fitRect,
   focusCamera,
   followCamera,
+  sideColumn,
   zoomAt
 } from "./math";
 import type { CameraActions, ViewInsets } from "./types";
-
-/**
- * Height of the open neighbours strip.
- */
-export const STRIP_H = 224;
 
 /**
  * Width of the minimap.
@@ -40,21 +37,21 @@ const PREVIEW_W = { S: 150, M: 280, L: 340 } as const;
 const PREVIEW_MARGIN = 24;
 
 /**
- * The insets of the available rect: the strip at the bottom, the preview column on its corner's
- * side (at least the minimap width), stored in state for the components.
+ * The insets of the available rect: the preview column on its corner's side, stored in state for
+ * the components. The column is at least the minimap width; on a canvas too narrow for that (a
+ * half-screen window) it keeps only the preview clear, and on a narrower one nothing (sideColumn).
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
  * @returns The insets.
  */
 function insetsOf(ctx: FlowCtx, env: FlowEnvironment): ViewInsets {
-  const bottom = ctx.state.focus.strip ? STRIP_H : 0;
   const preview = env.preview();
-  const width = preview.visible
-    ? Math.max(PREVIEW_W[preview.size] + PREVIEW_MARGIN, MINIMAP_W + PREVIEW_MARGIN)
-    : 0;
+  const float = PREVIEW_W[preview.size] + PREVIEW_MARGIN;
+  const column = Math.max(float, MINIMAP_W + PREVIEW_MARGIN);
+  const width = preview.visible ? sideColumn(ctx.state.camera.viewport.w, [column, float]) : 0;
   const onLeft = preview.corner.endsWith("left");
-  const insets = { top: 0, right: onLeft ? 0 : width, bottom, left: onLeft ? width : 0 };
+  const insets = { top: 0, right: onLeft ? 0 : width, bottom: 0, left: onLeft ? width : 0 };
   ctx.state.camera.insets = insets;
   return insets;
 }
@@ -75,6 +72,39 @@ function currentFrame(
   const spot = env.actions().focus.locateCurrent();
   const parent = spot?.item.parent === undefined ? undefined : result.byKey[spot.item.parent];
   return { frame: parent ?? result.bounds, current: spot?.item };
+}
+
+/**
+ * The selected item on screen, when a selection waits for the first canvas measure; the wait
+ * ends here either way.
+ *
+ * @param ctx - Domain context of flowView.
+ * @returns The item to frame, or undefined for the default camera.
+ */
+function waitingSelection(ctx: FlowCtx): Item | undefined {
+  const { camera, focus, layout } = ctx.state;
+  const waiting = camera.frameSelection;
+  camera.frameSelection = false;
+  if (!waiting || focus.selected === undefined) return undefined;
+  return layout.result?.byKey[focus.selected];
+}
+
+/**
+ * The union of the placed items among some keys.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param keys - Item keys.
+ * @returns The rect, or undefined when none is placed.
+ */
+function placedRect(ctx: FlowCtx, keys: readonly ItemKey[]): Rect | undefined {
+  const byKey = ctx.state.layout.result?.byKey ?? {};
+  const items = keys.flatMap(key => byKey[key] ?? []);
+  if (items.length === 0) return undefined;
+  const left = Math.min(...items.map(item => item.x));
+  const top = Math.min(...items.map(item => item.y));
+  const right = Math.max(...items.map(item => item.x + item.w));
+  const bottom = Math.max(...items.map(item => item.y + item.h));
+  return { x: left, y: top, w: right - left, h: bottom - top };
 }
 
 /**
@@ -180,12 +210,32 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       );
     },
 
+    frameItems: keys => {
+      const rect = placedRect(ctx, keys);
+      if (rect === undefined) return false;
+      const target = fitRect(
+        rect,
+        camera.viewport,
+        insetsOf(ctx, env),
+        FIT_SELECTION.pad,
+        FIT_SELECTION.maxZ,
+        ctx.config
+      );
+      animateTo(ctx, target, DURATION.camera);
+      return true;
+    },
+
     applyDefault: () => {
       if (camera.initialised || camera.viewport.w === 0) return;
       const { frame, current } = currentFrame(ctx, env);
       if (frame === undefined) return;
       cancelAnimation(ctx);
-      camera.cam = defaultCamera(frame, current, camera.viewport, insetsOf(ctx, env), ctx.config);
+      const insets = insetsOf(ctx, env);
+      const selected = waitingSelection(ctx);
+      camera.cam =
+        selected === undefined
+          ? defaultCamera(frame, current, camera.viewport, insets, ctx.config)
+          : focusCamera(selected, camera.cam, camera.viewport, insets);
       camera.initialised = true;
       applyCamera(ctx);
     },
@@ -197,6 +247,8 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
     },
 
     insets: () => insetsOf(ctx, env),
+
+    previewZone: canvas => previewZoneInsets(canvas, env.preview()),
 
     cancel: () => {
       cancelAnimation(ctx);

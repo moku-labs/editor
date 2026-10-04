@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { layoutLanes } from "../../layout/lanes";
-import { COL_GAP, HUB_GAP, HUB_HEAD, HUB_W, LANE_PAD, NODE_W, ROW } from "../../layout/types";
-import type { Item } from "../../types";
+import { hubGap, layoutLanes } from "../../layout/lanes";
+import {
+  COL_GAP,
+  HUB_GAP,
+  HUB_HEAD,
+  HUB_W,
+  LABEL_H,
+  LANE_PAD,
+  labelWidth,
+  NODE_W,
+  ROW
+} from "../../layout/types";
+import type { Item, Rect } from "../../types";
 import { flowOf } from "../helpers";
 
 const box = layoutLanes("board", flowOf("board"), "awaitIntent");
+
+/** True when two rects share area. */
+function meet(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
 const byKey = new Map(box.items.map(entry => [entry.key, entry]));
 
 /** An item of the box. */
@@ -45,7 +60,7 @@ describe("layoutLanes (design §7.1–7.4)", () => {
   });
 
   it("puts the action node in column 1 and second-level nodes in column 2 of the same lane", () => {
-    const columnOne = HUB_W + HUB_GAP;
+    const columnOne = HUB_W + hubGap(flowOf("board").nodes.awaitIntent?.outcomes ?? []);
     const columnTwo = columnOne + NODE_W + COL_GAP;
     const tap = box.lanes[0];
     expect(get("board/tapGenerator").x).toBe(columnOne);
@@ -100,5 +115,32 @@ describe("layoutLanes (design §7.1–7.4)", () => {
     expect(settings?.h).toBe(300);
     const lane = grown.lanes.find(entry => entry.outcome === "openSettings");
     expect(lane?.h).toBe(300 + 2 * LANE_PAD);
+  });
+
+  it("widens the gap after the hub so its widest outcome label fits (openSettings: 91.2 px + 2 × 4)", () => {
+    expect(hubGap(["tap", "merge"])).toBe(HUB_GAP);
+    expect(hubGap(["tap", "openSettings"])).toBeCloseTo(labelWidth("openSettings") + 8, 6);
+  });
+
+  it("places every edge label right of its source and clear of the other labels and items (finding 11)", () => {
+    const byKey = new Map(box.items.map(entry => [entry.key, entry]));
+    const labels = box.edges
+      .filter(edge => edge.kind === "edge" && edge.label !== undefined)
+      .map(edge => {
+        const at = edge.labelAt;
+        if (at === undefined) throw new Error(`no label for ${edge.key}`);
+        const w = labelWidth(edge.label ?? "");
+        return { edge, rect: { x: at.x - w / 2, y: at.y - LABEL_H / 2, w, h: LABEL_H } };
+      });
+    expect(labels.length).toBeGreaterThan(20);
+    for (const [index, { edge, rect }] of labels.entries()) {
+      const source = byKey.get(edge.from);
+      expect(rect.x, edge.key).toBeGreaterThanOrEqual((source?.x ?? 0) + (source?.w ?? 0));
+      for (const other of labels.slice(index + 1))
+        expect(meet(rect, other.rect), edge.key).toBe(false);
+      for (const entry of box.items.filter(item => item.kind !== "port")) {
+        expect(meet(rect, entry), `${edge.key} on ${entry.key}`).toBe(false);
+      }
+    }
   });
 });

@@ -1,9 +1,11 @@
 /**
  * @file workspace plugin — B3, the pinned game preview: a float in a corner of the workspace's
  * preview zone (12 px margin plus the zone insets), header "Game" (M/L add the device), S/M/L,
- * "Open in Game", "Hide"; a body click cycles S → M → L → S; a pointer drag (≥ 4 px) moves it and
- * snaps to the nearest corner on release; Alt+arrows on the header move it a corner. The game
- * frame is docked over the body by geometry (the iframe never moves; it takes no pointer here).
+ * "Open in Game", "Hide". The header is the handle: a pointer drag on it (≥ 4 px) moves the float
+ * and snaps to the nearest corner on release; Alt+arrows on it move the float a corner. The game
+ * frame is docked over the body by geometry (the iframe never moves) and takes the pointer there,
+ * so the preview plays the game; the size changes only through S/M/L (finding 1). Below 96 px of
+ * fitted width the float collapses to its header: no body, no frame.
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
@@ -34,11 +36,6 @@ export type PreviewProps = { readonly ctx: WorkspaceCtx };
  * Pointer travel before a press becomes a drag, in px.
  */
 const DRAG_THRESHOLD = 4;
-
-/**
- * The size after a body click.
- */
-const NEXT_SIZE: Readonly<Record<PreviewSize, PreviewSize>> = { S: "M", M: "L", L: "S" };
 
 /**
  * The sizes in segmented order.
@@ -76,14 +73,22 @@ const CORNER_MOVES: Readonly<Record<string, Readonly<Record<PreviewCorner, Previ
 };
 
 /**
- * A pointer press on the float.
+ * A pointer press on the header.
  */
 type Press = {
   readonly id: number;
   readonly x: number;
   readonly y: number;
-  readonly onBody: boolean;
   moved: boolean;
+};
+
+/**
+ * The header's pointer handlers: press, drag and release.
+ */
+type DragHandlers = {
+  readonly onPress: (event: PointerEvent) => void;
+  readonly onDrag: (event: PointerEvent) => void;
+  readonly onRelease: (event: PointerEvent) => void;
 };
 
 /**
@@ -118,25 +123,47 @@ export function cornerAfter(corner: PreviewCorner, key: string): PreviewCorner |
 }
 
 /**
- * Places the float in its corner and re-docks the frame over the body.
+ * Below this fitted width the float has no room to show the game: the body hides, the frame with
+ * it, and only the header stays (for example next to a wide Inspector drawer in the 480 px pane).
+ */
+const MIN_BODY_WIDTH = 96;
+
+/**
+ * Places the float in its corner of the zone. A fitted width below MIN_BODY_WIDTH collapses the
+ * float to its header: the body hides and the float takes the header's own size, at the same
+ * corner of the room.
  *
  * @param ctx - Domain context of workspace.
  * @param section - The float element.
  * @param ws - The workspace.
  * @param prefs - Its preview prefs.
+ * @param body - The body element the frame docks over.
+ * @returns True when the body has room (the frame docks over it), false when collapsed.
  */
 function placeFloat(
   ctx: WorkspaceCtx,
   section: HTMLElement,
   ws: PreviewWorkspace,
-  prefs: PreviewPrefs
-): void {
+  prefs: PreviewPrefs,
+  body: HTMLElement | undefined
+): boolean {
   const { rect, insets } = zoneOf(ctx, ws);
   const float = floatRect(rect, insets, prefs.corner, PREVIEW_SIZES[prefs.size]);
+  const hasRoom = float.width >= MIN_BODY_WIDTH;
+
+  // Collapsed: no body, the header's own size.
+  if (body !== undefined) body.hidden = !hasRoom;
+  if (hasRoom) delete section.dataset.collapsed;
+  else section.dataset.collapsed = "";
   section.style.left = `${float.left}px`;
-  section.style.top = `${float.top}px`;
-  section.style.width = `${float.width}px`;
-  section.style.height = `${float.height}px`;
+  section.style.width = hasRoom ? `${float.width}px` : "";
+  section.style.height = hasRoom ? `${float.height}px` : "";
+
+  // A collapsed float in a bottom corner sits on the bottom edge of the room.
+  const isLowHeader = !hasRoom && prefs.corner.startsWith("bottom");
+  const top = isLowHeader ? float.top + float.height - section.offsetHeight : float.top;
+  section.style.top = `${top}px`;
+  return hasRoom;
 }
 
 /**
@@ -168,20 +195,22 @@ function dropFloat(
 }
 
 /**
- * The preview header: title, device, S/M/L, open in Game, hide.
+ * The preview header, the drag handle: title, device, S/M/L, open in Game, hide.
  *
- * @param props - Context, workspace and prefs.
+ * @param props - Context, workspace, prefs and the drag handlers.
  * @param props.ctx - Domain context of workspace.
  * @param props.ws - The workspace.
  * @param props.prefs - Its preview prefs.
+ * @param props.drag - Press, drag and release handlers.
  * @returns The header.
  */
 function PreviewHead(props: {
   readonly ctx: WorkspaceCtx;
   readonly ws: PreviewWorkspace;
   readonly prefs: PreviewPrefs;
+  readonly drag: DragHandlers;
 }): VNode {
-  const { ctx, ws, prefs } = props;
+  const { ctx, ws, prefs, drag } = props;
   const preset = presetOf(ctx.state.device.preset);
   const size = resolveDevice(preset, ctx.state.device.orientation);
 
@@ -191,6 +220,9 @@ function PreviewHead(props: {
       role="toolbar"
       tabIndex={0}
       aria-label="Game preview, Alt and an arrow key move it"
+      onPointerDown={drag.onPress}
+      onPointerMove={drag.onDrag}
+      onPointerUp={drag.onRelease}
       onKeyDown={event => {
         const corner = event.altKey ? cornerAfter(prefs.corner, event.key) : undefined;
         if (corner === undefined) return;
@@ -220,7 +252,7 @@ function PreviewHead(props: {
         type="button"
         data-variant="ghost"
         data-size="sm"
-        title="Open in Game (⌘2)"
+        title="Open in Game (⌘1)"
         aria-label="Open in Game"
         onClick={() => showWorkspace(ctx, "game")}
       >
@@ -260,9 +292,9 @@ export function Preview(props: PreviewProps): VNode {
 
   useLayoutEffect(() => {
     const element = section.current;
-    state.frame.previewBody = shown ? body.current : undefined;
     const isPlaceable = shown && element !== undefined && ws !== undefined && prefs !== undefined;
-    if (isPlaceable) placeFloat(ctx, element, ws, prefs);
+    const hasRoom = isPlaceable && placeFloat(ctx, element, ws, prefs, body.current);
+    state.frame.previewBody = hasRoom ? body.current : undefined;
     syncFrame(ctx);
   });
   useLayoutEffect(() => {
@@ -279,7 +311,7 @@ export function Preview(props: PreviewProps): VNode {
   }
 
   /**
-   * Starts a press with the primary button anywhere but on a header button.
+   * Starts a press with the primary button on the header, not on one of its buttons.
    *
    * @param event - The pointer down.
    */
@@ -289,15 +321,9 @@ export function Preview(props: PreviewProps): VNode {
     const isPrimaryPress = event.button === 0 && !isOnButton;
     if (!isPrimaryPress) return;
 
-    const onBody = target !== undefined && target.closest("[data-preview-body]") !== null;
-    press.current = {
-      id: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-      onBody,
-      moved: false
-    };
-    section.current?.setPointerCapture?.(event.pointerId);
+    press.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    const head = event.currentTarget instanceof Element ? event.currentTarget : undefined;
+    head?.setPointerCapture?.(event.pointerId);
   };
 
   /**
@@ -321,7 +347,7 @@ export function Preview(props: PreviewProps): VNode {
   };
 
   /**
-   * Ends the press: a drag snaps to a corner, a click on the body cycles the size.
+   * Ends the press: a drag snaps to the nearest corner; a click on the header does nothing.
    *
    * @param event - The pointer up.
    */
@@ -329,13 +355,9 @@ export function Preview(props: PreviewProps): VNode {
     const current = press.current;
     const element = section.current;
     press.current = undefined;
-    if (current === undefined || element === undefined) return;
+    if (current === undefined || element === undefined || !current.moved) return;
 
-    if (current.moved) {
-      dropFloat(ctx, element, ws, { x: event.clientX - current.x, y: event.clientY - current.y });
-    } else if (current.onBody) {
-      patchPreview(ctx, ws, { size: NEXT_SIZE[prefs.size] });
-    }
+    dropFloat(ctx, element, ws, { x: event.clientX - current.x, y: event.clientY - current.y });
   };
 
   return (
@@ -345,12 +367,9 @@ export function Preview(props: PreviewProps): VNode {
       data-corner={prefs.corner}
       aria-label="Game preview"
       ref={section.ref}
-      onPointerDown={onPress}
-      onPointerMove={onDrag}
-      onPointerUp={onRelease}
     >
-      <PreviewHead ctx={ctx} ws={ws} prefs={prefs} />
-      <div data-preview-body ref={body.ref} title="Click to change the size, drag to move" />
+      <PreviewHead ctx={ctx} ws={ws} prefs={prefs} drag={{ onPress, onDrag, onRelease }} />
+      <div data-preview-body ref={body.ref} />
     </section>
   );
 }

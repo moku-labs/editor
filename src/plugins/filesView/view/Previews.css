@@ -1,4 +1,4 @@
-/* filesView · Previews. Markdown notes (front matter on the [data-props] atom, the safe body), the invalid JSON bar, the series card on [data-card] with "Open contact sheet", and the image on a checkerboard (fit / 100 %) with its caption. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · Previews. Markdown (the front matter as one plain mono block, the safe body), the invalid JSON bar, the series card on [data-card] with "Open contact sheet", and the image on a checkerboard (fit / 100 %) with its caption. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="files"] [data-part="preview"]) {
   :scope[data-preview="markdown"] {
     max-width: 72ch;
@@ -6,13 +6,7 @@
     line-height: var(--line-height-ui);
   }
 
-  [data-front-matter="note"] {
-    margin: 0 0 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--line-1);
-  }
-
-  [data-front-matter="raw"] {
+  [data-front-matter] {
     margin: 0 0 16px;
     padding: 8px 12px;
     border-radius: var(--radius-6);
@@ -20,14 +14,6 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-12);
     white-space: pre-wrap;
-  }
-
-  dd {
-    margin: 0;
-  }
-
-  dd button + button {
-    margin-left: 8px;
   }
 
   [data-link] {

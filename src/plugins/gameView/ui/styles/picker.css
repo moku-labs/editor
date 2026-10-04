@@ -1,4 +1,4 @@
-/* gameView · overlay root inside gameFrame().overlay() (F11, F12): picker layer, hover / selected / tree boxes, the hover label (counter-scaled so its text stays 11 px), safe-area bands, dynamic island, home bar, shutter flash. Device space: game CSS px, scaled with the frame. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · overlay root inside gameFrame().overlay() (F11, F12): the Reference mode proxy layer (D-27), picker layer, hover / selected / tree boxes, the hover label (counter-scaled so its text stays 11 px), safe-area bands, dynamic island, home bar, shutter flash. Device space: game CSS px, scaled with the frame. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="overlay"]) {
   :scope {
     position: absolute;
@@ -10,6 +10,17 @@
     position: absolute;
     inset: 0;
     cursor: crosshair;
+    pointer-events: auto;
+  }
+
+  /* Reference mode: invisible boxes at the element bounds, later ones on top. They take the pointer (the frame overlay has it while Reference mode is on), so a hover draws the picker box. */
+  [data-moku-proxies] {
+    position: absolute;
+    inset: 0;
+  }
+
+  [data-moku-proxy] {
+    position: absolute;
     pointer-events: auto;
   }
 
@@ -88,7 +99,7 @@
     width: 126px;
     height: 37px;
     border-radius: 999px;
-    background: var(--text-ink);
+    background: var(--device-black);
     transform: translateX(-50%);
   }
 
@@ -107,7 +118,7 @@
     width: 134px;
     height: 5px;
     border-radius: 999px;
-    background: var(--text-ink);
+    background: color-mix(in srgb, var(--device-black) 55%, transparent);
     transform: translateX(-50%);
   }
 

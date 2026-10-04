@@ -10,17 +10,17 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe("focus.select", () => {
-  it("selects = focuses: strip opens, the unrelated items dim, the camera moves", async () => {
+  it("selects = focuses: the unrelated items dim, the camera moves", async () => {
     const { ctx } = createTestCtx();
     await prepare(ctx);
     const actions = actionsOf(ctx);
     expect(actions.focus.select("board/merge")).toBe(true);
     expect(actions.focus.selected()).toBe("main/board>board/merge");
-    expect(ctx.state.focus.strip).toBe(true);
     const related = actions.focus.related();
     expect(related?.has("main/board>board/merge")).toBe(true);
     expect(related?.has("main/board>board/awaitIntent")).toBe(true);
@@ -38,14 +38,13 @@ describe("focus.select", () => {
     expect(actions.focus.selected()).toBe("main/home");
   });
 
-  it("undefined leaves focus and closes the strip", async () => {
+  it("undefined leaves focus", async () => {
     const { ctx } = createTestCtx();
     await prepare(ctx);
     const actions = actionsOf(ctx);
     actions.focus.select("main/home");
     expect(actions.focus.select(undefined)).toBe(true);
     expect(actions.focus.selected()).toBeUndefined();
-    expect(ctx.state.focus.strip).toBe(false);
     expect(actions.focus.related()).toBeUndefined();
     expect(actions.focus.leave()).toBe(false);
     actions.focus.select("main/home");
@@ -94,7 +93,7 @@ describe("focus queries", () => {
 });
 
 describe("focus.walk", () => {
-  it("→ walks to the Goes to row, ← to the Comes from row", async () => {
+  it("→ walks to the Outcomes row, ← to the Comes from row, along their edges", async () => {
     const { ctx } = createTestCtx();
     await prepare(ctx);
     const actions = actionsOf(ctx);
@@ -102,11 +101,150 @@ describe("focus.walk", () => {
     actions.focus.highlight("to", 1);
     actions.focus.walk("next");
     expect(actions.focus.selected()).toBe("main/board>board/energy");
+    expect(ctx.state.focus.edge).toBe("main/board>board/tapGenerator:noEnergy");
     actions.focus.walk("prev");
     expect(actions.focus.selected()).toBe("main/board>board/tapGenerator");
     actions.focus.highlight("to", 0);
     actions.focus.moveHighlight(1);
     expect(ctx.state.focus.highlight).toEqual({ side: "to", index: 1 });
+  });
+
+  it("followHighlight follows the highlighted row's edge; without a highlight it does nothing", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.flows.collapse("main/board");
+    await flush(10);
+    actions.focus.select("main/home");
+    actions.focus.highlight("to", 0);
+    expect(actions.focus.followHighlight()).toBe(true);
+    expect(actions.focus.selected()).toBe("main/board");
+    expect(actions.focus.followHighlight()).toBe(false);
+  });
+});
+
+describe("focus.followEdge (finding 14)", () => {
+  it("an Outcomes edge selects its target instance, marks the edge, frames both ends and pulses for 600 ms", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const actions = actionsOf(ctx);
+    actions.focus.select("board/merge");
+    const frame = vi.spyOn(actions.camera, "frameItems");
+    expect(actions.focus.followEdge("main/board>board/merge:done")).toBe(true);
+    expect(actions.focus.selected()).toBe("main/board>board/awaitIntent");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:done");
+    expect(frame).toHaveBeenCalledWith(["main/board>board/merge", "main/board>board/awaitIntent"]);
+    expect(ctx.state.focus.pulse).toBe("main/board>board/awaitIntent");
+    expect(ctx.state.focus.back).toEqual(["main/board>board/merge"]);
+    vi.advanceTimersByTime(599);
+    expect(ctx.state.focus.pulse).toBe("main/board>board/awaitIntent");
+    vi.advanceTimersByTime(1);
+    expect(ctx.state.focus.pulse).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it("a Comes from edge selects the source; the camera fits both ends", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.focus.select("board/merge");
+    expect(actions.focus.followEdge("main/board>board/awaitIntent:merge")).toBe(true);
+    expect(actions.focus.selected()).toBe("main/board>board/awaitIntent");
+    const byKey = ctx.state.layout.result?.byKey;
+    const cam = actions.camera.get();
+    for (const key of ["main/board>board/merge", "main/board>board/awaitIntent"]) {
+      const item = byKey?.[key];
+      if (item === undefined) throw new Error(`no ${key}`);
+      expect(item.x * cam.z + cam.x).toBeGreaterThanOrEqual(0);
+      expect((item.x + item.w) * cam.z + cam.x).toBeLessThanOrEqual(1200);
+      expect(item.y * cam.z + cam.y).toBeGreaterThanOrEqual(0);
+      expect((item.y + item.h) * cam.z + cam.y).toBeLessThanOrEqual(800);
+    }
+  });
+
+  it("an exit goes on through its frame's edge; a via edge walks back out of the frame", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.focus.select("board/giveToOrder");
+    expect(actions.focus.followEdge("main/board>board/giveToOrder:orderComplete")).toBe(true);
+    expect(actions.focus.selected()).toBe("main/afterOrder");
+    actions.focus.select("board/awaitIntent");
+    expect(actions.focus.followEdge("main/home:play")).toBe(true);
+    expect(actions.focus.selected()).toBe("main/home");
+  });
+
+  it("only the followed instance's edge is selected (one key per instance)", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.flows.expand("main/settings");
+    actions.flows.expand("main/board>board/settings");
+    await flush(10);
+    actions.focus.select("main/settings>settingsPopup/open");
+    expect(actions.focus.followEdge("main/settings>settingsPopup/open:close")).toBe(true);
+    const selected = (ctx.state.layout.result?.edges ?? []).filter(
+      edge => edge.kind === "edge" && edge.key === ctx.state.focus.edge
+    );
+    expect(selected.map(edge => edge.from)).toEqual(["main/settings>settingsPopup/open"]);
+  });
+
+  it("returns false for an edge that is not drawn; Back returns, Esc empties the stack", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    expect(actions.focus.followEdge("main/nope:x")).toBe(false);
+    expect(ctx.state.focus.back).toEqual([]);
+    expect(actions.focus.followEdge("main/home:play")).toBe(true);
+    expect(ctx.state.focus.back).toEqual([undefined]);
+    expect(actions.focus.back()).toBe(true);
+    expect(actions.focus.selected()).toBeUndefined();
+    expect(actions.focus.back()).toBe(false);
+    actions.focus.select("board/merge");
+    actions.focus.followEdge("main/board>board/merge:done");
+    actions.focus.followEdge("main/board>board/awaitIntent:tap");
+    expect(ctx.state.focus.back).toHaveLength(2);
+    expect(actions.focus.leave()).toBe(true);
+    expect(ctx.state.focus.back).toEqual([]);
+  });
+
+  it("Back reselects a key that left the canvas through select", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.focus.select("board/merge");
+    actions.focus.followEdge("main/board>board/merge:done");
+    ctx.state.focus.back = ["settingsPopup/open"];
+    expect(actions.focus.back()).toBe(true);
+    expect(actions.focus.selected()).toBe("main/settings>settingsPopup/open");
+  });
+});
+
+describe("camera.frameItems and focus.findCurrent", () => {
+  it("frameItems fits the placed keys, false when none is placed", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    expect(actions.camera.frameItems(["nope"])).toBe(false);
+    expect(actions.camera.frameItems(["main/home", "nope"])).toBe(true);
+    const home = ctx.state.layout.result?.byKey["main/home"];
+    const cam = actions.camera.get();
+    expect(((home?.x ?? 0) + (home?.w ?? 0) / 2) * cam.z + cam.x).toBeCloseTo(600, 0);
+  });
+
+  it("findCurrent moves onto the current node with a pulse and keeps the selection", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.focus.select("main/home");
+    const focusItem = vi.spyOn(actions.camera, "focusItem");
+    expect(actions.focus.findCurrent()).toBe(true);
+    expect(focusItem).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "main/board>board/awaitIntent" })
+    );
+    expect(ctx.state.focus.pulse).toBe("main/board>board/awaitIntent");
+    expect(actions.focus.selected()).toBe("main/home");
   });
 });
 
@@ -165,7 +303,7 @@ describe("focus.focusFrame", () => {
     ];
     const actions = actionsOf(ctx);
     expect(actions.focus.focusFrame(1778)).toBe(true);
-    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:rejected");
     expect(actions.focus.selected()).toBe("main/board>board/merge");
     expect(fakes.workspace.toast).toHaveBeenCalledWith("Frame 1778 · board/merge · rejected");
     expect(actions.focus.focusFrame(1790)).toBe(true);
@@ -184,7 +322,7 @@ describe("focus.focusFrame", () => {
       entry(2, "board/merge", "rejected", { frame: 1778 })
     ];
     expect(actionsOf(ctx).focus.focusFrame(1778)).toBe(true);
-    expect(ctx.state.focus.edge).toBe("board/merge:rejected");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:rejected");
     expect(ctx.state.focus.historySelected).toBe(2);
   });
 
@@ -193,7 +331,7 @@ describe("focus.focusFrame", () => {
     await prepare(ctx);
     ctx.state.data.history = [entry(5, "board/merge", "done")];
     actionsOf(ctx).focus.selectHistory(5);
-    expect(ctx.state.focus.edge).toBe("board/merge:done");
+    expect(ctx.state.focus.edge).toBe("main/board>board/merge:done");
     expect(ctx.state.focus.historySelected).toBe(5);
     actionsOf(ctx).focus.hoverHistory(5);
     expect(ctx.state.focus.historyHover).toBe(5);

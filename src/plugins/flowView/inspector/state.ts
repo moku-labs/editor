@@ -14,6 +14,7 @@ export function createInspectorState(): InspectorState {
     code: undefined,
     codeNote: undefined,
     styles: undefined,
-    sources: undefined
+    sources: undefined,
+    found: undefined
   };
 }

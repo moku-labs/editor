@@ -2,21 +2,20 @@
  * @file gameView plugin — the contact sheet (E2): a modal `<dialog>` (top layer, focus trap,
  * focus return) with the header, the bug count, the grid of tiles (thumbnail, "fN +ms", bug
  * toggle), the large view (‹ ›, shot, frame, time, device, Mark as bug, filmstrip) and the footer
- * (saved folder, note select for the index.json).
+ * (the saved folder).
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
 import { folderOf } from "../capture/naming";
 import { closeSheetLayer, showShot, stepSheet, toggleBug } from "../capture/sheet";
 import type { GameViewCtx, SeriesIndex, Sheet } from "../types";
-import { NoteSelect } from "./NoteSelect";
 import { secondsText } from "./text";
 import { useGameView } from "./useGameView";
 
 /**
  * Props of `ContactSheet`.
  */
-export type ContactSheetProps = { readonly ctx: GameViewCtx; readonly node: string | undefined };
+export type ContactSheetProps = { readonly ctx: GameViewCtx };
 
 /**
  * The sheet header: label, shots, length, interval, first frame, stopped early.
@@ -172,11 +171,11 @@ function openModal(dialog: HTMLDialogElement | null): () => void {
 /**
  * The contact sheet.
  *
- * @param props - The context and the node of the watched position.
+ * @param props - The gameView domain context.
  * @returns The dialog, undefined without a sheet.
  */
 export function ContactSheet(props: ContactSheetProps): VNode | undefined {
-  const { ctx, node } = props;
+  const { ctx } = props;
   const { state } = ctx;
   const sheet = useGameView(state, () => state.series.sheet);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -211,7 +210,6 @@ export function ContactSheet(props: ContactSheetProps): VNode | undefined {
       )}
       <footer>
         <p data-part="saved">Saved to {folderOf(sheet.indexPath)} · index.json</p>
-        <NoteSelect ctx={ctx} capture={sheet.indexPath} node={node} />
       </footer>
     </dialog>
   );

@@ -1,8 +1,8 @@
-/* filesView · FilesView. A5 grid: the 272 px tree beside the editor column (tabs 30 px → file bar → Used by → body that scrolls); the F5 empty text and the body states (loading, missing, error). Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · FilesView. A5 row: the tree in its SidePanel (files.tree, default 272 px, a drawer over the editor below a 600 px container: the view is its positioned containing block) or the reopen button of a closed tree, beside the editor column (tabs 30 px → file bar → Used by → body that scrolls); the F5 empty text and the body states (loading, missing, error). Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="files"] [data-part="files-view"]) {
   :scope {
-    display: grid;
-    grid-template-columns: 272px minmax(0, 1fr);
+    position: relative;
+    display: flex;
     height: 100%;
     min-height: 0;
     background: var(--surface-panel);
@@ -13,10 +13,37 @@
   }
 
   [data-files-editor] {
+    flex: 1;
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);
     min-width: 0;
     min-height: 0;
+  }
+
+  [data-action="reopen-files.tree"] {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2, 6px);
+    inline-size: 32px;
+    padding: var(--space-2, 6px) 0;
+    border: 0;
+    border-inline-end: 1px solid var(--line-1);
+    background: var(--surface-panel-2);
+    color: var(--text-2);
+    font: inherit;
+    font-size: var(--font-size-12);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  [data-action="reopen-files.tree"]:hover {
+    color: var(--text-ink);
+  }
+
+  [data-part="reopen-label"] {
+    writing-mode: vertical-rl;
   }
 
   [data-empty] {

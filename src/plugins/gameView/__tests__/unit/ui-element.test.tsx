@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
@@ -117,6 +117,8 @@ describe("ElementTab", () => {
       "margin",
       "padding"
     ]);
+    const values = findAll(view.root, "[data-part='style'] dd").map(value => value.textContent);
+    expect(values.slice(-2)).toEqual(["top 40", "right 40 · left 40"]);
     await select({ kind: "entity", id: 1_048_628 });
     expect(view.root.textContent).toContain("No style of its own.");
   });
@@ -163,6 +165,47 @@ describe("ElementTab", () => {
       path: "src/hud/Row.tsx",
       line: 1
     });
+  });
+
+  it("shows a style call read-only and where a key without a style is defined", async () => {
+    ctx.link.files.put("src/hud/Orders.tsx", '<Board\n  id="orders"\n  style={boardOf(3)}\n/>');
+    await select({ kind: "ui", path: "boardScreen/orders" });
+    const card = find(view.root, "[data-part='style-card']");
+    expect(find(card, "[data-part='where']").textContent).toBe("src/hud/Orders.tsx:3");
+    expect(find(card, "[data-part='call']").textContent).toBe("boardOf(3)");
+    expect(card.textContent).toContain("Computed by a call · read-only");
+    expect(card.querySelector("[data-field]")).toBeNull();
+    click(button(card, "Open in Files"));
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:open-file", {
+      path: "src/hud/Orders.tsx",
+      line: 3
+    });
+
+    ctx.link.files.put("src/hud/Orders.tsx", '<Board id="orders" />');
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await select({ kind: "ui", path: "boardScreen/orders" });
+    const defined = find(view.root, "[data-part='style-card']");
+    expect(defined.textContent).toContain("Defined at src/hud/Orders.tsx:1");
+    expect(defined.textContent).not.toContain("Source not found");
+    click(button(defined, "Open in Files"));
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:open-file", {
+      path: "src/hud/Orders.tsx",
+      line: 1
+    });
+  });
+
+  it("Copy reference puts one line for the chat on the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    const copy = find(view.root, "button[data-action='copy-reference']");
+    expect(copy.textContent).toBe("Copy reference");
+    click(copy);
+    await settle();
+    expect(writeText).toHaveBeenCalledWith(
+      "@moku coinPill · row · src/hud/Hud.tsx:2 · 235,74 290×76"
+    );
+    vi.unstubAllGlobals();
   });
 
   it("says searching while the sources are read", () => {

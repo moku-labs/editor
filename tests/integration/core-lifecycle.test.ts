@@ -84,8 +84,21 @@ function kindsOf(statuses: readonly { readonly status: LinkStatus }[]): string[]
 }
 
 /**
- * The error entries of the apps, without the watch failures a screenless tiny game always causes
- * (renderView watches game.render, game.assets and game.effects for every session).
+ * Sources a screenless tiny game fails to read: renderView watches game.render, game.assets and
+ * game.effects for every session, and gameView the three scene sources while Game (the default
+ * workspace) is shown.
+ */
+const SCREENLESS_IDS: ReadonlySet<string> = new Set([
+  "game.render",
+  "game.assets",
+  "game.effects",
+  "game.ui",
+  "game.entities",
+  "game.projections"
+]);
+
+/**
+ * The error entries of the apps, without the watch failures a screenless tiny game always causes.
  *
  * @param apps - The apps to read.
  * @returns The other error entries.
@@ -95,7 +108,8 @@ function realErrors(...apps: readonly Logged[]) {
     const data: { readonly id?: unknown } = entry.data ?? {};
     return !(
       entry.event === "link:watch-failed" &&
-      (data.id === "game.render" || data.id === "game.assets" || data.id === "game.effects")
+      typeof data.id === "string" &&
+      SCREENLESS_IDS.has(data.id)
     );
   });
 }
@@ -242,8 +256,8 @@ describe("core lifecycle", () => {
     await tools.mount();
     expect(page.root.querySelector('[data-ui="top-bar"]')).not.toBeNull();
     expect(page.root.querySelectorAll('[data-ui="rail"] [data-workspace]')).toHaveLength(6);
-    expect(workspace.active()).toBe("flow");
-    expect(workspace.host("flow").childElementCount).toBeGreaterThan(0);
+    expect(workspace.active()).toBe("game");
+    expect(workspace.host("game").childElementCount).toBeGreaterThan(0);
     expect(workspace.host("state").childElementCount).toBe(0);
     await act(() => {
       workspace.show("state");

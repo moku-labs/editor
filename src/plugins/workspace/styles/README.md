@@ -36,15 +36,19 @@ names, themed with `light-dark()`:
 
 - Surfaces and text: `--surface-ground`, `--surface-panel`, `--surface-panel-2`,
   `--surface-canvas`, `--line-1`, `--line-2`, `--text-ink`, `--text-2`, `--text-muted`.
-- Meaning: `--accent`, `--accent-2`, `--accent-soft` (9 % / 13 %), `--accent-soft-strong`
-  (20 % / 28 %), `--status-live`, `--status-warn`, `--status-error`, `--teal`, `--edge`,
-  `--canvas-dot`, `--note-fill`, `--note-line`, `--note-ink`, `--pick-hover`, `--pick-tree`,
-  `--phase-1` … `--phase-5`.
+- Meaning: `--accent`, `--accent-2`, `--accent-ink` (accent as text), `--on-accent` (text on
+  a solid accent), `--accent-soft` (9 % / 13 %), `--accent-soft-strong` (20 % / 28 %),
+  `--status-live`, `--status-warn`, `--status-error`, `--teal`, `--edge`, `--canvas-dot`,
+  `--pick-hover`, `--pick-tree`, `--phase-1` … `--phase-5`.
 - Code colours: `--code-<kind>` for every highlighter `TokenKind`.
 - Motion: `--duration-camera` 420, `--duration-zoom` 200, `--duration-follow` 500,
-  `--duration-strip` 240, `--duration-walk` 220, `--duration-resize` 210, `--duration-toast` 180.
-- Layout: `--topbar-h` 44 px, `--rail-w` 52 px, `--inspector-w` 320 px (296 px at ≤ 1380 px),
-  `--toast-band` 64 px.
+  `--duration-walk` 220, `--duration-resize` 210, `--duration-toast` 180.
+- Layout: `--topbar-h` 44 px, `--rail-w` 52 px (44 px at ≤ 560 px), `--inspector-w` 320 px
+  (296 px at ≤ 1380 px, 260 px at ≤ 820 px, 240 px at ≤ 560 px), `--toast-band` 64 px.
+- Density: `--space-1` … `--space-5`, `--row-h`, `--font-size-ui`, `--font-size-code-ui`.
+  Comfortable 4/6/8/12/16 px, row 28 px, 13 / 12.5 px; `:root[data-density="compact"]`
+  2/4/6/8/12 px, row 24 px, 12 / 11.5 px. workspace sets `data-density` on `<html>`. New and
+  touched CSS uses them.
 - Type: `--font-sans` (Geist), `--font-mono` (Geist Mono); body text 13/1.42 with `ss01`.
 
 `:root` has `color-scheme: light dark` (the OS decides on first load); `[data-theme="light"]` /
@@ -56,7 +60,8 @@ names, themed with `light-dark()`:
 
 `button[data-variant=primary|ghost|danger]`, `[data-size=sm]`, `[data-chip]`,
 `[data-tag=ok|err|warn|acc|mut]`, `[data-badge][data-tone]`, `kbd`, `[role=switch][data-switch]`,
-`[data-segmented]`, `[role=tablist][data-tabs]`, `[data-card]`, `[data-props]`, `[data-spinner]`,
+`[data-segmented]`, `[role=tablist][data-tabs]`, `[data-card]`, `[data-props]` (a `dt`/`dd`
+grid; a pair may sit in a `<div>`, long values wrap), `[data-spinner]`,
 `[data-stale]` (saturate 0.25, opacity 0.62, 210 ms) and `[data-token="<kind>"]` for the
 `<span data-token>` output of the shared highlighter.
 

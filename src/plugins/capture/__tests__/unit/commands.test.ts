@@ -82,6 +82,18 @@ describe("editor.capture", () => {
     expect(registry.capture).not.toHaveBeenCalled();
   });
 
+  it("answers the picture of a game 0.4 door that answers { png, legend }", async () => {
+    const { registry } = setup(fakeRegistry(() => ({ value: { png: PNG, legend: [] } })));
+
+    const ran = await run(registry, "editor.capture");
+
+    expect(ran.value).toEqual({
+      image: PNG,
+      frame: 1778,
+      device: { w: 0, h: 0, orientation: "portrait" }
+    });
+  });
+
   it("rejects -32000 when the door gives no picture", async () => {
     const { registry } = setup(fakeRegistry(() => ({ value: null })));
 
@@ -105,6 +117,20 @@ describe("editor.series", () => {
         device: { w: 0, h: 0, orientation: "portrait" }
       },
       state: { ...ENVELOPE, frame: 1780 }
+    });
+  });
+
+  it("records a game 0.4 door that answers { png }: the shots carry the png", async () => {
+    const { registry } = setup(fakeRegistry(() => ({ value: { png: PNG } })));
+
+    const ran = await run(registry, "editor.series", { durationMs: 200, intervalMs: 100 });
+
+    expect(ran.value).toEqual({
+      shots: [
+        { image: PNG, frame: 1778, atMs: 0 },
+        { image: PNG, frame: 1779, atMs: 100 }
+      ],
+      device: { w: 0, h: 0, orientation: "portrait" }
     });
   });
 

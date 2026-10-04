@@ -94,7 +94,7 @@ describe("connect — happy path", () => {
   it("sends the hello origin as a header and a socket option outside a browser", async () => {
     const deps = createDeps({
       config: { hello: "http://127.0.0.1:4000/__editor/hello" },
-      page: { href: undefined, document: undefined }
+      page: { href: undefined, document: undefined, window: undefined }
     });
 
     await connect(deps);
@@ -222,7 +222,7 @@ describe("connect — failures", () => {
   });
 
   it("a relative hello without a page URL: lost for good", async () => {
-    const deps = createDeps({ page: { href: undefined, document: undefined } });
+    const deps = createDeps({ page: { href: undefined, document: undefined, window: undefined } });
 
     await connect(deps);
 

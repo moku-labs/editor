@@ -1,6 +1,6 @@
 /**
- * @file channel plugin — config check (onInit), the beat, the heartbeat interval (onStart) and
- * the teardown (onStop).
+ * @file channel plugin — config check (onInit), the beat (with the page heap where Chromium
+ * reports it), the heartbeat interval (onStart) and the teardown (onStop).
  */
 import type { Heartbeat } from "../registry/protocol";
 import { depsOf } from "./deps";
@@ -34,15 +34,54 @@ export function checkConfig(ctx: { readonly config: Readonly<ChannelConfig> }): 
 }
 
 /**
- * A frozen beat from the registry clock.
+ * Bytes in one MB (MiB, the unit Chromium's task manager shows).
+ */
+const BYTES_PER_MB = 2 ** 20;
+
+/**
+ * A byte count in MB, rounded to 0.1.
+ *
+ * @param bytes - The byte count.
+ * @returns The MB value, e.g. 12.8.
+ * @example
+ * ```ts
+ * toMb(13_421_773); // 12.8
+ * ```
+ */
+function toMb(bytes: number): number {
+  return Math.round((bytes / BYTES_PER_MB) * 10) / 10;
+}
+
+/**
+ * The JS heap of the page from Chromium's non-standard `performance.memory`, frozen.
+ *
+ * @returns `{ usedMb, limitMb }`, or undefined where the runtime has no such counters.
+ */
+function heapOf(): Heartbeat["heap"] {
+  if (!("memory" in performance)) return undefined;
+  const { memory } = performance;
+  if (typeof memory !== "object" || memory === null) return undefined;
+  if (!("usedJSHeapSize" in memory) || !("jsHeapSizeLimit" in memory)) return undefined;
+
+  const { usedJSHeapSize, jsHeapSizeLimit } = memory;
+  if (typeof usedJSHeapSize !== "number" || !Number.isFinite(usedJSHeapSize)) return undefined;
+  if (typeof jsHeapSizeLimit !== "number" || !Number.isFinite(jsHeapSizeLimit)) return undefined;
+  return Object.freeze({ usedMb: toMb(usedJSHeapSize), limitMb: toMb(jsHeapSizeLimit) });
+}
+
+/**
+ * A frozen beat from the registry clock, with the page heap where the runtime reports it.
  *
  * @param registry - The registry slice with `clock()`.
  * @param now - Epoch ms of the beat.
- * @returns `{ frame, paused, at }`, frozen.
+ * @returns `{ frame, paused, at }` plus `heap` when present, frozen.
  */
 export function beatOf(registry: ChannelRegistry, now: number): Heartbeat {
   const { frame, paused } = registry.clock();
-  return Object.freeze({ frame, paused, at: now });
+  const heap = heapOf();
+  return Object.freeze(
+    heap === undefined ? { frame, paused, at: now } : { frame, paused, at: now, heap }
+  );
 }
 
 /**

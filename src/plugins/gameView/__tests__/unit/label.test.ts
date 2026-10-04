@@ -61,6 +61,7 @@ describe("labelText", () => {
     texture: undefined,
     key: "coinPill",
     style: undefined,
+    visible: true,
     entity: undefined
   };
 

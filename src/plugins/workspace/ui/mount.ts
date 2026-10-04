@@ -7,6 +7,7 @@
 import { h, render } from "preact";
 import { createFrameLayer, syncFrame } from "../frame/frame";
 import { showTheme } from "../prefs/apply";
+import { showDensity } from "../prefs/density";
 import type { WorkspaceCtx, WorkspaceState } from "../types";
 import { Shell } from "./Shell";
 
@@ -21,6 +22,7 @@ export function mountShell(ctx: WorkspaceCtx, element: HTMLElement): void {
   if (state.stopped) return;
 
   showTheme(state);
+  showDensity(state);
   createFrameLayer(ctx);
   const previous = state.dom.root;
   if (previous !== undefined && previous !== element) render(undefined, previous);

@@ -1,26 +1,27 @@
 /**
  * @file flowView plugin — hooks of the global tools events (R4): link:status (stale marking,
- * first-live loads, empty reset), workspace:changed (active flag, default camera), and the intents
- * of other views: workspace:select-node, workspace:focus-frame, workspace:new-note. The handler of
- * an intent shows its own workspace.
+ * first-live loads, empty reset), workspace:changed (active flag, default camera),
+ * workspace:density (the layout spacing), and the intents of other views: workspace:select-node,
+ * workspace:focus-frame. The handler of an intent shows its own workspace; an intent that comes
+ * before the first flow values waits for them (intents.ts).
  */
 import type { ToolsEvents } from "../../config";
 import { workspacePlugin } from "../workspace";
 import { actionsOf } from "./actions";
+import { requestIntent } from "./intents";
 import { notify } from "./state";
 import type { FlowCtx, FlowHooks } from "./types";
 
 /**
- * Loads what a session needs once: layout.json, the notes and the style keys (errors → warn).
+ * Loads what a session needs once: layout.json and the style keys (errors → warn).
  *
  * @param ctx - Domain context of flowView.
- * @returns Resolves when the three loads settled.
+ * @returns Resolves when both loads settled.
  */
 async function loadSession(ctx: FlowCtx): Promise<void> {
   const actions = actionsOf(ctx);
   const loads: [string, Promise<void>][] = [
     ["layout.json", actions.layout.loadPins()],
-    ["notes", actions.notes.load()],
     ["style keys", actions.inspector.readStyleKeys()]
   ];
   for (const [what, load] of loads) {
@@ -34,8 +35,8 @@ async function loadSession(ctx: FlowCtx): Promise<void> {
 
 /**
  * link:status — stores the status; silent/lost mark the data stale (M13); live/paused clear it and,
- * first in a session, load the session files; empty clears the selection and closes the strip, the
- * menu and the note editor (M4).
+ * first in a session, load the session files; empty clears the selection, closes the menu (M4) and
+ * drops an intent still waiting for the flow values.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
@@ -69,7 +70,7 @@ export function onLinkStatus(ctx: FlowCtx): (payload: ToolsEvents["link:status"]
         const actions = actionsOf(ctx);
         actions.focus.leave();
         actions.focus.closeMenu();
-        actions.notes.close();
+        data.pending = undefined;
 
         break;
       }
@@ -104,7 +105,7 @@ export function onWorkspaceChanged(
 
 /**
  * workspace:select-node — shows Flow, then selects the node (a collapsed parent expands first);
- * an unknown id warns.
+ * an unknown id warns. Before the first graph the selection waits for it.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
@@ -114,12 +115,13 @@ export function onSelectNode(
 ): (payload: ToolsEvents["workspace:select-node"]) => void {
   return ({ id }) => {
     ctx.require(workspacePlugin).show("flow");
-    if (!actionsOf(ctx).focus.select(id)) ctx.log.warn("flowView:unknown-node", { id });
+    requestIntent(ctx, { kind: "select", id });
   };
 }
 
 /**
  * workspace:focus-frame — shows Flow, then focuses the edge taken at the frame (with its toasts).
+ * Before the first history the focus waits for it.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
@@ -129,24 +131,19 @@ export function onFocusFrame(
 ): (payload: ToolsEvents["workspace:focus-frame"]) => void {
   return ({ frame }) => {
     ctx.require(workspacePlugin).show("flow");
-    actionsOf(ctx).focus.focusFrame(frame);
+    requestIntent(ctx, { kind: "frame", frame });
   };
 }
 
 /**
- * workspace:new-note — shows Flow, then opens the note editor (D5) with the captures and the
- * origin node.
+ * workspace:density — the layout spaces by the applied density and lays out again on a change.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
  */
-export function onNewNote(ctx: FlowCtx): (payload: ToolsEvents["workspace:new-note"]) => void {
-  return ({ captures, from }) => {
-    ctx.require(workspacePlugin).show("flow");
-    actionsOf(ctx).notes.edit({
-      ...(captures === undefined ? {} : { captures: [...captures] }),
-      ...(from === undefined ? {} : { from: { ...from } })
-    });
+export function onDensity(ctx: FlowCtx): (payload: ToolsEvents["workspace:density"]) => void {
+  return ({ density }) => {
+    actionsOf(ctx).layout.setDensity(density);
   };
 }
 
@@ -162,6 +159,6 @@ export function createHandlers(ctx: FlowCtx): FlowHooks {
     "workspace:changed": onWorkspaceChanged(ctx),
     "workspace:select-node": onSelectNode(ctx),
     "workspace:focus-frame": onFocusFrame(ctx),
-    "workspace:new-note": onNewNote(ctx)
+    "workspace:density": onDensity(ctx)
   };
 }

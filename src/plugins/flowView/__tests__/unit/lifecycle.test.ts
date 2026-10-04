@@ -14,23 +14,27 @@ afterEach(() => {
 });
 
 describe("initFlowView", () => {
-  it("registers the Flow panel with its sources and commands", () => {
+  it("registers the Flow panel with its commands and no sources (flowView watches them itself)", () => {
     const { ctx, fakes } = createTestCtx();
     initFlowView(ctx);
     const [panel] = fakes.panels;
     expect(panel?.id).toBe("flow");
     expect(panel?.workspace).toBe("flow");
-    expect(panel?.sources).toEqual({
-      graph: "game.graph",
-      position: "game.position",
-      history: ["game.history", { last: 20 }]
-    });
+    expect(panel?.sources).toEqual({});
+    expect(fakes.watches).toEqual([]);
     expect(panel?.commands).toEqual({
       step: "game.step",
       pause: "game.pause",
       resume: "game.resume"
     });
     expect(ctx.state.view.files).toBe(fakes.files);
+  });
+
+  it("takes the density the shell applies now", () => {
+    const { ctx, fakes } = createTestCtx();
+    fakes.density = "compact";
+    initFlowView(ctx);
+    expect(ctx.state.layout.density).toBe("compact");
   });
 
   it("adds the Commands palette items; Reset layout is disabled while nothing is pinned (M8)", async () => {
@@ -42,8 +46,9 @@ describe("initFlowView", () => {
       "Fit selection",
       "Follow the game",
       "Reset layout",
-      "Add a note",
-      "Go to current node"
+      "Go to current node",
+      "Show where the game is",
+      "Show Inspector"
     ]);
     expect(commands.every(item => item.group === "Commands")).toBe(true);
     const reset = commands.find(item => item.label === "Reset layout");
@@ -53,27 +58,31 @@ describe("initFlowView", () => {
     expect(reset?.disabled?.()).toBe(false);
     commands.find(item => item.label === "Follow the game")?.run();
     expect(ctx.state.camera.follow).toBe(true);
-    commands.find(item => item.label === "Add a note")?.run();
-    expect(ctx.state.notes.editor).toEqual({
-      title: "",
-      body: "",
-      from: undefined,
-      captures: [],
-      anchor: { x: 1110, y: 258 }
-    });
     commands.find(item => item.label === "Go to current node")?.run();
     expect(ctx.state.focus.selected).toBe("main/board>board/awaitIntent");
+    commands.find(item => item.label === "Show where the game is")?.run();
+    expect(ctx.state.focus.pulse).toBe("main/board>board/awaitIntent");
+    const { sidePanelState, updateSidePanel } = await import(
+      "../../../panels/shared/side-panel/store"
+    );
+    updateSidePanel("flow.inspector", { closed: true });
+    commands.find(item => item.label === "Show Inspector")?.run();
+    expect(sidePanelState("flow.inspector").closed).toBe(false);
+    expect(fakes.workspace.show).toHaveBeenCalledWith("flow");
   });
 
-  it("binds the Flow keys to the flow workspace and the four Esc layers", async () => {
+  it("binds the Flow keys to the flow workspace and the three Esc layers", async () => {
     const { ctx, fakes } = createTestCtx();
     initFlowView(ctx);
     const keys = fakes.bindings.flatMap(binding =>
       typeof binding.keys === "string" ? [binding.keys] : [...binding.keys]
     );
+    expect(keys).not.toContain("n");
     for (const key of [
-      "n",
       "h",
+      "c",
+      "\\",
+      "alt+arrowleft",
       "f",
       "shift+1",
       "shift+2",
@@ -91,12 +100,7 @@ describe("initFlowView", () => {
       expect(keys).toContain(key);
     }
     expect(fakes.bindings.every(binding => binding.workspace === "flow")).toBe(true);
-    expect([...fakes.escapes.keys()]).toEqual([
-      "contextMenu",
-      "noteEditor",
-      "codeEdit",
-      "selection"
-    ]);
+    expect([...fakes.escapes.keys()]).toEqual(["contextMenu", "codeEdit", "selection"]);
     expect(fakes.escapes.get("contextMenu")?.()).toBe(false);
     await prepare(ctx);
     actionsOf(ctx).focus.select("main/home");

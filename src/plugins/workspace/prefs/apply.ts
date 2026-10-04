@@ -1,14 +1,17 @@
 /**
- * @file workspace plugin — preference changes (theme, preview per workspace, device): apply to
- * the state, persist to localStorage, tell the `onPrefs` listeners, re-render and re-dock the
- * frame. Visibility changes of a preview toast the workspace name.
+ * @file workspace plugin — preference changes (theme, preview per workspace, device, density,
+ * Show taps): apply to the state, persist to localStorage, tell the `onPrefs` listeners (theme,
+ * preview and device only), re-render and re-dock the frame. Visibility changes of a preview toast
+ * the workspace name.
  */
 import { ERROR_PREFIX } from "../../registry/protocol";
 import { DEVICES, isDevicePresetId, presetOf } from "../devices";
 import { PREVIEW_SIZES } from "../frame/dock";
 import { syncFrame } from "../frame/frame";
+import { clearTaps } from "../frame/taps";
 import { showToast } from "../toasts";
 import type {
+  DensityChoice,
   DevicePresetId,
   Orientation,
   Prefs,
@@ -20,6 +23,7 @@ import type {
   WorkspaceState
 } from "../types";
 import { WORKSPACE_LABELS } from "../workspaces";
+import { isDensityChoice, refreshDensity } from "./density";
 import { savePrefs } from "./store";
 import { applyTheme, effectiveTheme } from "./theme";
 
@@ -43,6 +47,26 @@ export function currentPrefs(state: WorkspaceState): Prefs {
 }
 
 /**
+ * Writes the preferences record of the state to localStorage.
+ *
+ * @param ctx - State, config and log.
+ */
+export function persistPrefs(ctx: PrefsCtx): void {
+  const { state } = ctx;
+  savePrefs(
+    ctx.config.storageKey,
+    {
+      theme: state.theme.chosen,
+      previews: state.previews,
+      device: state.device,
+      density: state.density.chosen,
+      showTaps: state.showTaps
+    },
+    ctx.log
+  );
+}
+
+/**
  * Persists the preferences, calls every listener (one that throws is logged), re-renders and
  * re-docks the frame.
  *
@@ -50,11 +74,7 @@ export function currentPrefs(state: WorkspaceState): Prefs {
  */
 export function commitPrefs(ctx: PrefsCtx): void {
   const { state } = ctx;
-  savePrefs(
-    ctx.config.storageKey,
-    { theme: state.theme.chosen, previews: state.previews, device: state.device },
-    ctx.log
-  );
+  persistPrefs(ctx);
 
   const prefs = currentPrefs(state);
   for (const listener of state.listeners) {
@@ -93,6 +113,42 @@ export function chooseTheme(ctx: PrefsCtx, theme?: Theme): void {
   state.theme.chosen = theme ?? (effectiveTheme(state.theme) === "dark" ? "light" : "dark");
   showTheme(state);
   commitPrefs(ctx);
+}
+
+/**
+ * Chooses the density and persists it; a changed applied value shows on `<html>` and emits
+ * `workspace:density`.
+ *
+ * @param ctx - State, config, log and emit.
+ * @param choice - auto, compact or comfortable.
+ * @throws {Error} `[moku-editor] Unknown density "<value>".` for another value.
+ */
+export function chooseDensity(
+  ctx: PrefsCtx & Pick<WorkspaceCtx, "emit">,
+  choice: DensityChoice
+): void {
+  if (!isDensityChoice(choice)) {
+    throw new Error(
+      `${ERROR_PREFIX}Unknown density "${String(choice)}".\n  Use auto, compact or comfortable.`
+    );
+  }
+  ctx.state.density.chosen = choice;
+  persistPrefs(ctx);
+  refreshDensity(ctx);
+  ctx.state.ui.bump();
+}
+
+/**
+ * Turns the tap ripples on or off and persists the choice; off removes the ripples alive.
+ *
+ * @param ctx - State, config and log.
+ * @param on - Whether taps draw a ripple.
+ */
+export function chooseShowTaps(ctx: PrefsCtx, on: boolean): void {
+  ctx.state.showTaps = on;
+  if (!on) clearTaps(ctx.state);
+  persistPrefs(ctx);
+  ctx.state.ui.bump();
 }
 
 /**

@@ -1,9 +1,13 @@
 /**
  * @file link plugin — watch records (kept while disconnected, R4) and their numeric wire subs
- * (R6: taken from `nextSub`, never reused, so a late value of an old sub is dropped).
+ * (R6: taken from `nextSub`, never reused, so a late value of an old sub is dropped). A watch the
+ * session refuses with -32008 `not_installed` (the game does not have the source) is not retried
+ * there and not logged above debug.
  */
 import type { Json, SubId } from "../../registry/protocol";
+import { errorCode, isWireError } from "../../registry/protocol";
 import { describeError, request } from "../rpc/calls";
+import { currentManifest } from "../sessions/manifest";
 import { isAttached } from "../state";
 import type { LinkCtx, Subscription } from "../types";
 
@@ -16,6 +20,27 @@ import type { LinkCtx, Subscription } from "../types";
 function isReady(ctx: LinkCtx): boolean {
   const { state } = ctx;
   return isAttached(state) && state.chosen !== undefined && state.manifests.has(state.chosen);
+}
+
+/**
+ * True when the chosen session already refused this watch with -32008 `not_installed`.
+ *
+ * @param ctx - Domain context of link.
+ * @param sub - The record.
+ * @returns Whether the watch must not be sent again.
+ */
+function wasRefused(ctx: LinkCtx, sub: Subscription): boolean {
+  return sub.refusedBy !== undefined && sub.refusedBy === ctx.state.chosen;
+}
+
+/**
+ * True for a -32008 `not_installed` answer.
+ *
+ * @param error - The rejection of a watch.
+ * @returns Whether the session does not have the source.
+ */
+function isNotInstalledError(error: unknown): boolean {
+  return isWireError(error) && error.code === errorCode.notInstalled;
 }
 
 /**
@@ -32,9 +57,35 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 }
 
 /**
- * Sends `watch { sub, id, input? }` with a new wire sub. An error answer is logged as
- * `link:watch-failed`; the record stays and is sent again on the next attach. A watch the link
- * itself closed on stop (`link_closed`) is not logged.
+ * Records a refused watch: -32008 marks the session that does not have the source (debug only,
+ * never sent to it again); any other answer is logged as `link:watch-failed` and the record is
+ * sent again on the next attach. A watch the link itself closed on stop (`link_closed`) is not
+ * logged.
+ *
+ * @param ctx - Domain context of link.
+ * @param sub - The record.
+ * @param session - The session the watch went to.
+ * @param error - The rejection.
+ */
+function onWatchRefused(
+  ctx: LinkCtx,
+  sub: Subscription,
+  session: string | undefined,
+  error: unknown
+): void {
+  const details = { id: sub.id, ...describeError(error) };
+
+  if (isNotInstalledError(error)) {
+    sub.refusedBy = session;
+    ctx.log.debug("link:source-unavailable", details);
+  } else if (!ctx.state.stopped) {
+    ctx.log.error("link:watch-failed", details);
+  }
+}
+
+/**
+ * Sends `watch { sub, id, input? }` with a new wire sub; a refusal goes to `onWatchRefused` and
+ * frees the wire sub.
  *
  * @param ctx - Domain context of link.
  * @param sub - The record.
@@ -42,6 +93,7 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 function sendWatch(ctx: LinkCtx, sub: Subscription): void {
   const { state } = ctx;
   const wireSub = state.nextSub;
+  const session = state.chosen;
 
   state.nextSub += 1;
   sub.wireSub = wireSub;
@@ -51,8 +103,8 @@ function sendWatch(ctx: LinkCtx, sub: Subscription): void {
     sub.input === undefined
       ? { sub: wireSub, id: sub.id }
       : { sub: wireSub, id: sub.id, input: sub.input };
-  request(ctx, "game", "watch", params, state.chosen).catch((error: unknown) => {
-    if (!state.stopped) ctx.log.error("link:watch-failed", { id: sub.id, ...describeError(error) });
+  request(ctx, "game", "watch", params, session).catch((error: unknown) => {
+    onWatchRefused(ctx, sub, session, error);
     if (state.wire.get(wireSub) !== sub) return;
     state.wire.delete(wireSub);
     sub.wireSub = undefined;
@@ -94,7 +146,8 @@ export function addWatch(
 
 /**
  * Sends every record to the chosen session with a new wire sub. A source the manifest does not
- * list is skipped with `link:source-missing` (the record stays for a later session). A record that
+ * list is skipped with `link:source-missing` (the record stays for a later session); a record the
+ * session refused with -32008 is skipped without a warning (never retried there). A record that
  * already has a wire sub was sent in this attach (a manifest listener added it) and is skipped;
  * attach clears every wire sub first, so each record goes out once per attach.
  *
@@ -102,12 +155,11 @@ export function addWatch(
  */
 export function resubscribeAll(ctx: LinkCtx): void {
   const { state } = ctx;
-  const manifest = state.chosen === undefined ? undefined : state.manifests.get(state.chosen);
-  const known = new Set(manifest?.sources.map(source => source.id));
+  const known = new Set(currentManifest(state)?.sources.map(source => source.id));
 
   for (const sub of state.subs.values()) {
     if (!known.has(sub.id)) ctx.log.warn("link:source-missing", { id: sub.id });
-    else if (sub.wireSub === undefined) sendWatch(ctx, sub);
+    else if (sub.wireSub === undefined && !wasRefused(ctx, sub)) sendWatch(ctx, sub);
   }
 }
 

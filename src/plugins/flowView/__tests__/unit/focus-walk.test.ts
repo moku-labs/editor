@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultRow, moveHighlight, walkTarget } from "../../focus/walk";
+import { defaultRow, moveHighlight, walkRow, walkTarget } from "../../focus/walk";
 import { mergeGraph } from "../helpers";
 
 const none = new Map<string, number>();
@@ -77,16 +77,37 @@ describe("defaultRow and moveHighlight", () => {
     expect(defaultRow([], none)).toBe(0);
   });
 
-  it("moves the highlight inside the column and clamps", () => {
-    expect(moveHighlight({ side: "to", index: 0 }, 1, { from: 1, to: 4 })).toEqual({
-      side: "to",
+  it("moves the highlight through Outcomes, then Comes from, and clamps at both ends", () => {
+    const counts = { from: 2, to: 4 };
+    expect(moveHighlight({ side: "to", index: -1 }, 1, counts)).toEqual({ side: "to", index: 0 });
+    expect(moveHighlight({ side: "to", index: -1 }, -1, counts)).toEqual({ side: "to", index: 0 });
+    expect(moveHighlight({ side: "to", index: 0 }, 1, counts)).toEqual({ side: "to", index: 1 });
+    expect(moveHighlight({ side: "to", index: 3 }, 1, counts)).toEqual({ side: "from", index: 0 });
+    expect(moveHighlight({ side: "from", index: 0 }, -1, counts)).toEqual({ side: "to", index: 3 });
+    expect(moveHighlight({ side: "from", index: 1 }, 1, counts)).toEqual({
+      side: "from",
       index: 1
     });
-    expect(moveHighlight({ side: "to", index: 3 }, 1, { from: 1, to: 4 })).toEqual({
-      side: "to",
-      index: 3
+    expect(moveHighlight({ side: "to", index: 0 }, -1, counts)).toEqual({ side: "to", index: 0 });
+    expect(moveHighlight({ side: "to", index: -1 }, 1, { from: 3, to: 0 })).toEqual({
+      side: "from",
+      index: 0
     });
-    expect(moveHighlight({ side: "from", index: 0 }, -1, { from: 2, to: 4 })).toEqual({
+    expect(moveHighlight({ side: "to", index: 0 }, 1, { from: 0, to: 0 })).toEqual({
+      side: "to",
+      index: -1
+    });
+  });
+
+  it("walkRow takes the highlighted row of its side, else the default", () => {
+    expect(
+      walkRow(mergeGraph, "board/tapGenerator", "next", { side: "from", index: 0 }, none)
+    ).toEqual({ side: "to", index: 0 });
+    expect(walkRow(mergeGraph, "board/energy", "prev", { side: "from", index: 1 }, none)).toEqual({
+      side: "from",
+      index: 1
+    });
+    expect(walkRow(mergeGraph, "board/energy", "prev", { side: "to", index: 1 }, none)).toEqual({
       side: "from",
       index: 0
     });

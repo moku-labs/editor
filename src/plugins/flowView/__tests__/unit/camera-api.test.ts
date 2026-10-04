@@ -40,16 +40,69 @@ describe("camera api", () => {
     );
   });
 
-  it("leaves the strip and the preview column out of the available rect", async () => {
+  it("leaves the preview column out of the available rect; the canvas keeps its full height", async () => {
     const { ctx, fakes } = createTestCtx();
     const camera = actionsOf(ctx).camera;
     expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
-    ctx.state.focus.strip = true;
+    await prepare(ctx);
+    actionsOf(ctx).focus.select("main/home");
     fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
-    expect(camera.insets()).toEqual({ top: 0, right: 224, bottom: 224, left: 0 });
+    expect(camera.insets()).toEqual({ top: 0, right: 224, bottom: 0, left: 0 });
     fakes.preview = { visible: true, size: "L", corner: "top-left", width: 340, height: 660 };
-    expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 224, left: 364 });
+    expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 364 });
     expect(ctx.state.camera.insets.left).toBe(364);
+  });
+
+  it("on a narrow canvas the column shrinks to the preview alone, then to none (half screen)", () => {
+    const { ctx, fakes } = createTestCtx();
+    const camera = actionsOf(ctx).camera;
+    fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
+    // Desktop 1440: the canvas is 1088 px; the column keeps the minimap width.
+    ctx.state.camera.viewport = { w: 1088, h: 856 };
+    expect(camera.insets().right).toBe(224);
+    // Half screen 720: the canvas is 368 px; only the preview float is kept clear.
+    ctx.state.camera.viewport = { w: 368, h: 856 };
+    expect(camera.insets().right).toBe(174);
+    expect(ctx.state.camera.insets.right).toBe(174);
+    // Narrower still: nothing is kept clear, the preview may cover the corner.
+    ctx.state.camera.viewport = { w: 300, h: 856 };
+    expect(camera.insets().right).toBe(0);
+    fakes.preview = { visible: true, size: "L", corner: "top-left", width: 340, height: 660 };
+    ctx.state.camera.viewport = { w: 600, h: 856 };
+    expect(camera.insets().left).toBe(364);
+    ctx.state.camera.viewport = { w: 520, h: 856 };
+    expect(camera.insets()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+  });
+
+  it("previewZone keeps the float clear of the minimap, also with a selection", async () => {
+    const { ctx, fakes } = createTestCtx();
+    const camera = actionsOf(ctx).camera;
+    fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
+    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 186 });
+    await prepare(ctx);
+    actionsOf(ctx).focus.select("main/home");
+    expect(camera.previewZone({ w: 368, h: 856 })).toEqual({ top: 56, bottom: 186 });
+    fakes.preview = { visible: true, size: "S", corner: "top-left", width: 150, height: 280 };
+    expect(camera.previewZone({ w: 1088, h: 856 })).toEqual({ top: 56, bottom: 56 });
+  });
+
+  it("a focus at half screen centres the card in the canvas, clear of the preview", async () => {
+    const { ctx, fakes } = createTestCtx();
+    await prepare(ctx);
+    fakes.preview = { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 };
+    ctx.state.camera.viewport = { w: 368, h: 856 };
+    const actions = actionsOf(ctx);
+    actions.focus.select("main/home");
+    const key = ctx.state.focus.selected;
+    const card = key === undefined ? undefined : ctx.state.layout.result?.byKey[key];
+    if (card === undefined) throw new Error("no card");
+    const cam = actions.camera.get();
+    const left = card.x * cam.z + cam.x;
+    const right = (card.x + card.w) * cam.z + cam.x;
+    expect(cam.z).toBe(1);
+    expect(left).toBeGreaterThanOrEqual(8);
+    expect(right).toBeLessThanOrEqual(368 - 174);
+    expect((left + right) / 2).toBeCloseTo((368 - 174) / 2, 6);
   });
 
   it("zoomBy and zoomTo zoom around the viewport centre and clamp", () => {

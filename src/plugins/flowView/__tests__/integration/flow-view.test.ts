@@ -16,9 +16,9 @@ import { createFlowHub, type FlowHub } from "./fake-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The real tools core (link, workspace, panels, flowView) over a scripted hub:
-// start → mount Flow → board hub with 8 lanes and You are here → default camera
-// → select → drag → layout.json → note → style edit → intents of other views →
-// stale → stop.
+// start → mount, show Flow → board hub with 8 lanes and You are here → default
+// camera → select → follow an Info tab row → drag → layout.json → style edit →
+// intents of other views → stale → stop.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
@@ -123,6 +123,8 @@ beforeEach(() => {
     return this.dataset.flow === "canvas" ? new DOMRect(0, 0, 1200, 800) : new DOMRect(0, 0, 0, 0);
   });
   localStorage.clear();
+  // The shown workspace lives in the URL hash: every app starts on the default (Game).
+  history.replaceState(undefined, "", location.pathname);
   document.body.innerHTML = `<script type="application/json" id="moku-editor-boot">${JSON.stringify(BOOT)}</script>`;
   root = document.createElement("div");
   root.dataset.editorRoot = "";
@@ -137,6 +139,116 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+/** The first values of the merge game: graph, position and a history with one framed edge. */
+function sendFlowValues(): void {
+  hub.value(SESSION.id, "game.graph", structuredClone(cloneGraph()));
+  hub.value(SESSION.id, "game.position", {
+    path: "board/awaitIntent",
+    flow: "board",
+    node: "awaitIntent",
+    waiting: ["tap", "leave"]
+  });
+  hub.value(SESSION.id, "game.history", [
+    {
+      index: 3,
+      path: "board/merge",
+      outcome: "rejected",
+      // eslint-disable-next-line unicorn/no-null -- JSON null is a wire value
+      payload: null,
+      next: "board/awaitIntent",
+      now: 1_790_000_000_003,
+      hash: "h3",
+      frame: 1778
+    }
+  ]);
+  hub.heartbeat(SESSION.id, 1840, false);
+}
+
+/** Waits until the session watches of the three flow sources went out. */
+async function untilWatched(): Promise<void> {
+  await until(
+    () => ["game.graph", "game.position", "game.history"].every(id => hub.watches(id).length > 0),
+    "the session watches"
+  );
+}
+
+/** Starts the app on its default workspace (Game) with the flow values in; Flow is never shown. */
+async function startOnGame(): Promise<ReturnType<typeof createApp>> {
+  const app = createApp();
+  await app.start();
+  act(() => app.workspace.mount(root));
+  hub.open(SESSION, MANIFEST);
+  await untilWatched();
+  sendFlowValues();
+  await until(() => app.flowView.focus.current() === "board/awaitIntent", "the flow values");
+  expect(app.workspace.active()).toBe("game");
+  return app;
+}
+
+/** The palette option with a label, if it shows. */
+function paletteOption(label: string): HTMLElement | undefined {
+  return [...root.querySelectorAll<HTMLElement>('[data-ui="palette"] [role="option"]')].find(
+    element => element.querySelector("[data-label]")?.textContent === label
+  );
+}
+
+/** The warnings of an app with one event name. */
+function warned(app: ReturnType<typeof createApp>, event: string): unknown[] {
+  return app.log.trace().filter(entry => entry.event === event);
+}
+
+describe("flowView before Flow is shown (Game is the default workspace)", () => {
+  it("a Nodes palette item shows Flow and selects its node", async () => {
+    const app = await startOnGame();
+    act(() => app.workspace.palette.open("board/merge"));
+    await until(() => paletteOption("board/merge") !== undefined, "the Nodes item of board/merge");
+    act(() => paletteOption("board/merge")?.click());
+    expect(app.workspace.active()).toBe("flow");
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+    await app.stop();
+  });
+
+  it("workspace:select-node shows Flow and selects, with no unknown-node warning", async () => {
+    const app = await startOnGame();
+    act(() => emits[0]?.emit("workspace:select-node", { id: "board/merge" }));
+    expect(app.workspace.active()).toBe("flow");
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+    expect(warned(app, "flowView:unknown-node")).toEqual([]);
+    await app.stop();
+  });
+
+  it("workspace:focus-frame shows Flow and focuses the edge taken at that frame", async () => {
+    const app = await startOnGame();
+    act(() => emits[0]?.emit("workspace:focus-frame", { frame: 1778 }));
+    expect(app.workspace.active()).toBe("flow");
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+    await until(
+      () => document.body.textContent?.includes("Frame 1778 · board/merge · rejected") === true,
+      "the focus-frame toast"
+    );
+    expect(document.body.textContent).not.toContain("Frames are not recorded in this history");
+    await app.stop();
+  });
+
+  it("an intent that comes before the first values is applied once they are in", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    act(() => emits[0]?.emit("workspace:focus-frame", { frame: 1778 }));
+    expect(app.workspace.active()).toBe("flow");
+    hub.open(SESSION, MANIFEST);
+    await untilWatched();
+    sendFlowValues();
+    await until(() => app.flowView.focus.selected() === "main/board>board/merge", "the selection");
+    await until(
+      () => document.body.textContent?.includes("Frame 1778 · board/merge · rejected") === true,
+      "the focus-frame toast"
+    );
+    expect(document.body.textContent).not.toContain("Frames are not recorded in this history");
+    await app.stop();
+  });
+});
+
 describe("flowView integration", () => {
   it("types the app surface: namespaced api, no events of its own", () => {
     const app = createApp();
@@ -145,13 +257,7 @@ describe("flowView integration", () => {
     expectTypeOf(app.flowView.focus.select).returns.toEqualTypeOf<boolean>();
     expectTypeOf(app.flowView.focus.step).returns.toEqualTypeOf<Promise<RunResult | undefined>>();
     expect(app.panels.list().map(panel => panel.id)).toEqual(["flow"]);
-    expect(Object.keys(app.flowView).toSorted()).toEqual([
-      "camera",
-      "flows",
-      "focus",
-      "layout",
-      "notes"
-    ]);
+    expect(Object.keys(app.flowView).toSorted()).toEqual(["camera", "flows", "focus", "layout"]);
     expect(Object.keys(app.flowView.camera).toSorted()).toEqual([
       "fitAll",
       "fitSelection",
@@ -162,10 +268,11 @@ describe("flowView integration", () => {
     ]);
   });
 
-  it("start → board hub → select → drag → note → style edit → intents → stale → stop", async () => {
+  it("start → board hub → select → follow → drag → style edit → intents → stale → stop", async () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));
+    act(() => app.workspace.show("flow"));
     hub.open(SESSION, MANIFEST);
     await until(
       () => hub.watches("game.graph").length > 0 && hub.watches("game.history").length > 0,
@@ -190,9 +297,18 @@ describe("flowView integration", () => {
     expect(app.flowView.focus.current()).toBe("board/awaitIntent");
 
     expect(app.flowView.focus.select("board/merge")).toBe(true);
-    await until(() => root.querySelector('[data-flow="neighbours-strip"]') !== null, "the strip");
-    const comes = find('[data-flow="neighbours-strip"] [data-column="from"]');
+    await until(
+      () => root.querySelector('[data-flow="info-tab"] [data-part="comes-from"]') !== null,
+      "the Info tab"
+    );
+    const comes = find('[data-flow="info-tab"] [data-part="comes-from"]');
     expect(comes.textContent).toContain("board/awaitIntent");
+    act(() => find('[data-flow="info-tab"] [data-part="comes-from"] button').click());
+    expect(app.flowView.focus.selected()).toBe("main/board>board/awaitIntent");
+    expect(find('[data-key="main/board>board/awaitIntent"]').dataset.pulse).toBe("");
+    act(() => find('[data-flow="inspector"] [data-action="back"]').click());
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+    expect(root.querySelector('[data-flow="neighbours-strip"]')).toBeNull();
 
     const merge = find('[data-flow="node-card"][data-key="main/board>board/merge"]');
     const z = app.flowView.camera.get().z;
@@ -207,18 +323,6 @@ describe("flowView integration", () => {
       "the layout toast"
     );
     expect(app.flowView.layout.pinnedCount()).toBe(1);
-
-    const note = await app.flowView.notes.create({
-      title: "First wood 4",
-      body: "Show a popup.",
-      from: { node: "board/merge", outcome: "done" }
-    });
-    const written = hub.files.get(note.path)?.text ?? "";
-    expect(note.path).toMatch(/^\.moku\/notes\/\d{4}-\d{2}-\d{2}-first-wood-4\.md$/);
-    expect(written).toContain("title: First wood 4");
-    expect(written).toContain("from:\n  node: board/merge\n  outcome: done");
-    expect(written).toContain("to: board/awaitIntent");
-    expect(written).toContain("status: idea");
 
     const styles = [
       ...root.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')
@@ -253,16 +357,6 @@ describe("flowView integration", () => {
     expect(app.workspace.active()).toBe("flow");
     expect(app.flowView.focus.selected()).toBe("main/board>board/toast");
 
-    act(() =>
-      emits[0]?.emit("workspace:new-note", {
-        captures: [".moku/captures/2026-09-24-1012-board.png"]
-      })
-    );
-    await until(() => root.querySelector('[data-flow="note-editor"]') !== null, "the note editor");
-    expect(find('[data-flow="note-editor"]').textContent).toContain(
-      "The screenshot attaches to this note"
-    );
-
     const codeTab = [
       ...root.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')
     ].find(tab => tab.textContent === "Code");
@@ -286,6 +380,7 @@ describe("flowView integration", () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));
+    act(() => app.workspace.show("flow"));
     hub.open(SESSION, MANIFEST);
     await until(
       () => hub.watches("game.graph").length > 0 && hub.watches("game.history").length > 0,

@@ -27,7 +27,7 @@ export function startLink(ctx: LinkCtx): void {
 /**
  * onStop: stopped = true (every socket callback returns early from now on), clears the retry and
  * silence timers, rejects pending calls with `link_closed`, closes the socket with 1000 and
- * forgets the watches and the manifest listeners.
+ * forgets the watches, the manifest listeners and the tap listeners.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -49,4 +49,5 @@ export function stopLink(ctx: { readonly state: LinkState }): void {
   state.subs.clear();
   state.wire.clear();
   state.manifestListeners.clear();
+  state.tapListeners.clear();
 }

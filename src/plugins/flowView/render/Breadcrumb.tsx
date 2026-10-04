@@ -1,9 +1,11 @@
 /**
  * @file flowView render module — the breadcrumb (B8): `main › board`, every segment leaves the
  * entered flows up to its level (M1), the last one bold; then "Stack main/board › board/awaitIntent"
- * as a link to the current node.
+ * as a link that selects the current node; it ends with the current node chip (a click shows
+ * where the game is).
  */
 import type { VNode } from "preact";
+import { Icon } from "../../workspace/ui/icons";
 import type { FlowActions, FlowCtx } from "../types";
 import { useFlowStore } from "../useFlowStore";
 
@@ -30,6 +32,7 @@ export function Breadcrumb(props: BreadcrumbProps): VNode {
       .map(entry => entry.id)
       .join(" › ")
   );
+  const current = useFlowStore(ctx, () => actions.focus.current());
   return (
     <nav data-flow="breadcrumb" data-chrome="" aria-label="Flows">
       {segments.map((segment, depth) => (
@@ -56,6 +59,18 @@ export function Breadcrumb(props: BreadcrumbProps): VNode {
           onClick={() => actions.focus.select(actions.focus.current())}
         >
           {`Stack ${stack}`}
+        </button>
+      )}
+      {current !== undefined && (
+        <button
+          type="button"
+          data-part="current"
+          data-action="find-current"
+          title="Show where the game is (C)"
+          onClick={() => actions.focus.findCurrent()}
+        >
+          <Icon name="target" />
+          {current.slice(current.indexOf("/") + 1)}
         </button>
       )}
     </nav>

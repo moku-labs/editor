@@ -1,4 +1,4 @@
-/* workspace · Preview. B3: the pinned float (fixed, below the frame layer), its header and the body the game frame docks over. Resizes in 210 ms; no transition while dragged. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Preview. B3: the pinned float (fixed, below the frame layer), its header (the drag handle) and the body the game frame docks over; the game takes the pointer in the body. Resizes in 210 ms; no transition while dragged. Below 96 px of fitted width it collapses to the header. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="preview"]) {
   :scope {
     position: fixed;
@@ -9,7 +9,6 @@
     border-radius: var(--radius-12);
     background: var(--surface-panel);
     box-shadow: var(--shadow-float);
-    touch-action: none;
     transition:
       left var(--duration-resize) var(--ease-out),
       top var(--duration-resize) var(--ease-out),
@@ -33,6 +32,7 @@
     height: 28px;
     padding: 0 3px 0 7px;
     cursor: grab;
+    touch-action: none;
     font-size: var(--font-size-11-5);
     font-weight: 600;
   }
@@ -77,6 +77,14 @@
     margin: 0 6px 6px;
     border-radius: var(--radius-8);
     background: var(--surface-canvas);
-    cursor: zoom-in;
+  }
+
+  /* Collapsed (fitted width below 96 px): the header alone, at its own size; the body is hidden. */
+  :scope[data-collapsed] [data-device] {
+    display: none;
+  }
+
+  [data-preview-body][hidden] {
+    display: none;
   }
 }

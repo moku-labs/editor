@@ -1,20 +1,12 @@
 /**
  * @file flowView layout module — the layout actions (relayout with cache and stale-result drop,
- * the lazy ELK engine, pins load/drop/save/reset with version checks) and the flows namespace
- * (expand, collapse, enter, up).
+ * the lazy ELK engine, the density spacing, pins load/drop/save/reset with version checks, the
+ * sub-flows that follow the current node) and the flows namespace (expand, collapse, enter, up).
  */
 import type { FilesClient } from "../../link/types";
 import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
 import { notify } from "../state";
-import type {
-  FlowCtx,
-  FlowEnvironment,
-  GraphJson,
-  ItemKey,
-  LayoutResult,
-  NodeId,
-  NoteAnchor
-} from "../types";
+import type { FlowCtx, FlowEnvironment, GraphJson, ItemKey, LayoutResult, NodeId } from "../types";
 import { childFlows, composeLayout, instanceKey, originKey } from "./compose";
 import { createInlineEngine, createLazyEngine, createWorkerEngine } from "./engine";
 import {
@@ -182,16 +174,15 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
    * The cache key of a layout: every input the composition reads.
    *
    * @param root - The root flow.
-   * @param notes - The note anchors.
    * @returns The key.
    */
-  function cacheKey(root: string, notes: readonly NoteAnchor[]): string {
+  function cacheKey(root: string): string {
     return JSON.stringify([
       ctx.state.data.graphHash,
       root,
       [...layout.expanded].toSorted(),
       serializePins(layout.pins),
-      notes,
+      layout.density,
       ctx.config.hubMinOutcomes,
       ctx.config.hubMinReturns
     ]);
@@ -202,14 +193,9 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
    *
    * @param graph - The graph.
    * @param root - The root flow.
-   * @param notes - The note anchors.
    * @returns The result, or undefined when the layout failed.
    */
-  async function compose(
-    graph: GraphJson,
-    root: string,
-    notes: readonly NoteAnchor[]
-  ): Promise<LayoutResult | undefined> {
+  async function compose(graph: GraphJson, root: string): Promise<LayoutResult | undefined> {
     layout.engine ??= createLazyEngine(() => realEngine(ctx));
     try {
       return await composeLayout({
@@ -217,9 +203,9 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
         root,
         expanded: new Set(layout.expanded),
         pins: layout.pins,
-        notes,
         config: ctx.config,
-        engine: layout.engine
+        engine: layout.engine,
+        density: layout.density
       });
     } catch (error) {
       ctx.log.warn("flowView: layout failed", { message: messageOf(error) });
@@ -361,6 +347,35 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
     actions.relayout().catch(() => {});
   }
 
+  /**
+   * The sub-flow keys that show the current node: every stack level from the root flow down to
+   * the current node's parent.
+   *
+   * @returns Instance keys, outermost first.
+   */
+  function stackKeys(): ItemKey[] {
+    const stack = env.actions().focus.stack();
+    const start = stack.findIndex(entry => entry.flow === rootFlow());
+    if (start === -1) return [];
+    const keys: ItemKey[] = [];
+    let prefix = "";
+    for (const entry of stack.slice(start, -1)) {
+      prefix = instanceKey(prefix, entry.id);
+      keys.push(prefix);
+    }
+    return keys;
+  }
+
+  /**
+   * True when the selection sits inside an expanded key (that frame stays open).
+   *
+   * @param key - An expanded key.
+   * @returns Whether the selected item is inside it.
+   */
+  function holdsSelection(key: ItemKey): boolean {
+    return ctx.state.focus.selected?.startsWith(`${key}>`) === true;
+  }
+
   const actions: LayoutActions = {
     pinnedCount: () => countPins(layout.pins, actions.visibleFlows()),
 
@@ -379,8 +394,6 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       }
       for (const id of Object.keys(layout.pins.nodes))
         if (flows.has(flowOfId(id))) layout.dirty.add(id);
-      for (const [note, pin] of Object.entries(layout.pins.notes))
-        if (flows.has(pin.flow)) layout.dirty.add(note);
       layout.pins = resetPins(layout.pins, flows);
       if (saveTimer !== undefined) clearTimeout(saveTimer);
       saveTimer = undefined;
@@ -392,15 +405,14 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       const { graph } = ctx.state.data;
       if (graph === undefined) return;
       const root = rootFlow();
-      const notes = env.actions().notes.anchors();
-      const key = cacheKey(root, notes);
+      const key = cacheKey(root);
       layout.seq += 1;
       const seq = layout.seq;
 
       // A cache miss composes; a failed layout or a newer relayout started meanwhile drops it.
       let result = layout.cache.get(key);
       if (result === undefined) {
-        result = await compose(graph, root, notes);
+        result = await compose(graph, root);
         if (result === undefined || seq !== layout.seq) return;
       }
       remember(key, result);
@@ -443,23 +455,10 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       scheduleSave();
     },
 
-    dropNote: (note, flow, x, y) => {
-      const result = layout.result;
-      const frame = result?.frames.find(
-        entry => result.origins[originKey(entry.key, flow)] !== undefined
-      );
-      const origin = frame === undefined ? undefined : result?.origins[originKey(frame.key, flow)];
-      if (origin === undefined) return;
-      layout.pins.notes[note] = { flow, x: snap(x - origin.x), y: snap(y - origin.y) };
-      layout.dirty.add(note);
-      refresh();
-      scheduleSave();
-    },
-
     visibleFlows: () => {
       const flows = new Set<string>([rootFlow()]);
       for (const item of layout.result?.items ?? []) {
-        if (item.kind !== "note" && item.kind !== "frame") flows.add(item.flow);
+        if (item.kind !== "frame") flows.add(item.flow);
       }
       return flows;
     },
@@ -488,14 +487,40 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
     root: () => rootFlow(),
 
     expandStack: () => {
-      const stack = env.actions().focus.stack();
-      const start = stack.findIndex(entry => entry.flow === rootFlow());
-      if (start === -1) return;
-      let prefix = "";
-      for (const entry of stack.slice(start, -1)) {
-        prefix = instanceKey(prefix, entry.id);
-        layout.expanded.add(prefix);
+      layout.stack = stackKeys();
+      for (const key of layout.stack) {
+        layout.expanded.add(key);
+        layout.auto.add(key);
       }
+    },
+
+    followStack: () => {
+      const next = stackKeys();
+      const previous = new Set(layout.stack);
+      if (next.length === previous.size && next.every(key => previous.has(key))) return;
+      layout.stack = next;
+
+      // Fold what the last position opened and the game left; open the levels it entered.
+      let changed = false;
+      for (const key of layout.auto) {
+        if (next.includes(key) || holdsSelection(key)) continue;
+        layout.auto.delete(key);
+        layout.expanded.delete(key);
+        changed = true;
+      }
+      for (const key of next) {
+        if (previous.has(key) || layout.expanded.has(key)) continue;
+        layout.expanded.add(key);
+        layout.auto.add(key);
+        changed = true;
+      }
+      if (changed) refresh();
+    },
+
+    setDensity: density => {
+      if (layout.density === density) return;
+      layout.density = density;
+      refresh();
     }
   };
   return actions;
@@ -538,6 +563,7 @@ export function createFlowsApi(ctx: FlowCtx, env: FlowEnvironment): FlowsApi {
    */
   function reroot(): void {
     layout.expanded.clear();
+    layout.auto.clear();
     ctx.state.camera.initialised = false;
     env.actions().layout.expandStack();
     relayout();
@@ -548,13 +574,16 @@ export function createFlowsApi(ctx: FlowCtx, env: FlowEnvironment): FlowsApi {
       const node = nodeAt(key);
       if (node?.subFlow === undefined && node?.slot === undefined) return;
       layout.expanded.add(key);
+      layout.auto.delete(key);
       relayout();
     },
 
     collapse: key => {
-      // The item and everything expanded inside it.
+      // The item and everything expanded inside it; the position no longer reopens them.
       for (const expanded of layout.expanded) {
-        if (expanded === key || expanded.startsWith(`${key}>`)) layout.expanded.delete(expanded);
+        if (expanded !== key && !expanded.startsWith(`${key}>`)) continue;
+        layout.expanded.delete(expanded);
+        layout.auto.delete(expanded);
       }
       relayout();
     },

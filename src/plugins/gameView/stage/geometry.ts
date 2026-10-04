@@ -1,8 +1,10 @@
 /**
  * @file gameView plugin — stage geometry (pure): the fit scale of the device in the stage, the
- * slot size, the safe-area bands of a resolved device and the dynamic island and home bar rules.
- * Sizes and insets come from workspace's resolveDevice (R8); gameView has no rule of its own.
+ * slot size, the strip of the stage a floating drawer covers, the safe-area bands of a resolved
+ * device, the dynamic island and home bar rules, and the inline position of a rect in device px. Sizes and insets come from workspace's
+ * resolveDevice (R8); gameView has no rule of its own.
  */
+import type { PageRect } from "../../panels/shared/scene";
 import type { DeviceSize } from "../../workspace/types";
 
 /**
@@ -83,6 +85,29 @@ export function slotSize(device: DeviceSize, scale: number): { w: number; h: num
 }
 
 /**
+ * The strip of the stage, from its right edge, that a drawer floating over its end covers: from
+ * the drawer's left edge to the stage's right edge, 0 when they do not meet, never more than the
+ * stage width.
+ *
+ * @param stage - The stage's left and right edges in page px.
+ * @param stage.left - Left edge.
+ * @param stage.right - Right edge.
+ * @param drawerLeft - The drawer's left edge in page px.
+ * @returns The covered width in px.
+ * @example
+ * ```ts
+ * drawerCover({ left: 0, right: 480 }, 197); // 283
+ * ```
+ */
+export function drawerCover(
+  stage: { readonly left: number; readonly right: number },
+  drawerLeft: number
+): number {
+  const covered = stage.right - Math.max(drawerLeft, stage.left);
+  return Math.max(0, covered);
+}
+
+/**
  * The hatched bands of the resolved safe insets, top, right, bottom, left; empty sides left out.
  *
  * @param device - The resolved device.
@@ -127,4 +152,18 @@ export function hasIsland(kind: "phone" | "tablet" | "desktop", safeTop: number)
  */
 export function hasHomeBar(kind: "phone" | "tablet" | "desktop", safeBottom: number): boolean {
   return kind === "phone" && safeBottom >= HOME_BAR_SAFE_BOTTOM;
+}
+
+/**
+ * Inline position of a rect in device px (the overlay carries the frame box transform).
+ *
+ * @param rect - The rect.
+ * @returns The style object.
+ * @example
+ * ```ts
+ * rectStyle({ x: 1, y: 2, w: 3, h: 4 }); // { left: "1px", top: "2px", width: "3px", height: "4px" }
+ * ```
+ */
+export function rectStyle(rect: PageRect): Record<string, string> {
+  return { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px` };
 }

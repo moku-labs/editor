@@ -9,7 +9,7 @@ import { cornerAfter, Preview } from "../../ui/Preview";
 import { createCtx, rectOf, stubRect, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// B3 pinned preview: placement, S/M/L, body click cycle, drag snap, Alt+arrows
+// B3 pinned preview: placement, S/M/L, the body plays the game, header drag snap, Alt+arrows
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -45,7 +45,7 @@ function pointer(target: Element, type: string, x: number, y: number): void {
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
-  ctx = createCtx();
+  ctx = createCtx({ defaultWorkspace: "flow" });
   root = document.createElement("div");
   document.body.append(root);
   stubRect(hostOf(ctx.state, "flow"), rectOf(0, 0, 1000, 800));
@@ -84,6 +84,46 @@ describe("Preview", () => {
     expect(float().style.top).toBe(`${50 + 400 - 12 - 40 - 280}px`);
   });
 
+  it("hides the body and the frame below 96 px of fitted width; the header stays", () => {
+    const zone = document.createElement("div");
+    stubRect(zone, rectOf(0, 0, 480, 800));
+    // A wide drawer leaves 11 px of room: 480 - 12 - 445 - 12.
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 445 }) });
+    act(() => ctx.state.ui.bump());
+
+    const element = float();
+    expect(element.dataset.collapsed).toBe("");
+    expect(element.style.width).toBe("");
+    expect(element.style.height).toBe("");
+    expect(element.style.left).toBe("12px");
+    expect(element.querySelector<HTMLElement>("[data-preview-body]")?.hidden).toBe(true);
+    expect(ctx.state.frame.previewBody).toBeUndefined();
+    expect(ctx.state.frame.box?.docked).not.toBe("preview");
+    expect(element.querySelector("[data-preview-head] [data-title]")?.textContent).toBe("Game");
+    expect(element.querySelectorAll("[role='radio']")).toHaveLength(3);
+    expect(element.querySelector("[aria-label='Open in Game']")).not.toBeNull();
+
+    // Room again (the drawer narrowed): the body and the frame come back.
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 300 }) });
+    act(() => ctx.state.ui.bump());
+    expect(float().dataset.collapsed).toBeUndefined();
+    expect(float().style.width).toBe("150px");
+    expect(float().querySelector<HTMLElement>("[data-preview-body]")?.hidden).toBe(false);
+    expect(ctx.state.frame.previewBody).toBe(float().querySelector("[data-preview-body]"));
+    expect(ctx.state.frame.box?.docked).toBe("preview");
+  });
+
+  it("keeps the body at exactly 96 px of fitted width", () => {
+    const zone = document.createElement("div");
+    stubRect(zone, rectOf(0, 0, 800, 600));
+    ctx.state.frame.zones.set("flow", { element: zone, insets: () => ({ right: 680 }) });
+    act(() => ctx.state.ui.bump());
+
+    expect(float().dataset.collapsed).toBeUndefined();
+    expect(float().style.width).toBe("96px");
+    expect(ctx.state.frame.box?.docked).toBe("preview");
+  });
+
   it("S/M/L is a radiogroup; M shows the device", () => {
     const radios = float().querySelectorAll<HTMLButtonElement>("[role='radio']");
     expect(float().querySelector("[role='radiogroup']")?.getAttribute("aria-label")).toBe(
@@ -96,25 +136,30 @@ describe("Preview", () => {
     expect(float().style.width).toBe("280px");
   });
 
-  it("a body click cycles S → M → L → S", () => {
-    for (const size of ["M", "L", "S"]) {
-      const body = float().querySelector("[data-preview-body]");
-      if (body === null) throw new Error("no body");
-      pointer(body, "pointerdown", 900, 700);
-      pointer(body, "pointerup", 901, 701);
-      expect(ctx.state.previews.flow.size).toBe(size);
-    }
-  });
-
-  it("a drag moves the float and snaps it to the nearest corner on release", () => {
-    const body = float().querySelector("[data-preview-body]");
+  it("a press on the body is the game's: no size change, no drag, no tooltip", () => {
+    const body = float().querySelector<HTMLElement>("[data-preview-body]");
     if (body === null) throw new Error("no body");
+    expect(body.title).toBe("");
     pointer(body, "pointerdown", 900, 700);
-    pointer(body, "pointermove", 600, 400);
-    expect(float().dataset.dragging).toBe("");
-    expect(float().style.transform).toBe("translate(-300px, -300px)");
+    pointer(body, "pointerup", 901, 701);
+    expect(ctx.state.previews.flow.size).toBe("S");
+
+    pointer(body, "pointerdown", 900, 700);
     pointer(body, "pointermove", 100, 100);
     pointer(body, "pointerup", 100, 100);
+    expect(float().dataset.dragging).toBeUndefined();
+    expect(ctx.state.previews.flow.corner).toBe("bottom-right");
+  });
+
+  it("a header drag moves the float and snaps it to the nearest corner on release", () => {
+    const head = float().querySelector("[data-preview-head] [data-title]");
+    if (head === null) throw new Error("no head");
+    pointer(head, "pointerdown", 900, 700);
+    pointer(head, "pointermove", 600, 400);
+    expect(float().dataset.dragging).toBe("");
+    expect(float().style.transform).toBe("translate(-300px, -300px)");
+    pointer(head, "pointermove", 100, 100);
+    pointer(head, "pointerup", 100, 100);
 
     expect(ctx.state.previews.flow.corner).toBe("top-left");
     expect(ctx.state.previews.flow.size).toBe("S");
@@ -145,6 +190,11 @@ describe("Preview", () => {
       head?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
     });
     expect(ctx.state.previews.flow.corner).toBe("top-right");
+  });
+
+  it("Open in Game names ⌘1 in its tooltip", () => {
+    const open = float().querySelector<HTMLButtonElement>("[aria-label='Open in Game']");
+    expect(open?.title).toBe("Open in Game (⌘1)");
   });
 
   it("Open in Game shows Game; Hide hides it with the workspace toast; hidden in Game", () => {

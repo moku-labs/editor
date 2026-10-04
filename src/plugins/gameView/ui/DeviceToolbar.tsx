@@ -1,12 +1,14 @@
 /**
  * @file gameView plugin — the device toolbar (A2): picker, device select with W × H, Portrait /
  * Landscape, Fit / 100 %, safe-area switch, Reload, camera, Series (red with the time while
- * recording) and the overlay-in-game switch (workspace owns the flag, R4). Camera, Series and the
- * overlay switch are dimmed with a tooltip when the game lacks their command.
+ * recording), the overlay-in-game switch (workspace owns the flag, R4) and, while the Element
+ * panel is closed, its reopen button. Camera, Series and the overlay switch are dimmed with a
+ * tooltip when the game lacks their command.
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
+import { useSidePanel } from "../../panels/shared/side-panel";
 import { workspacePlugin } from "../../workspace";
 import { isDevicePresetId, resolveDevice } from "../../workspace/devices";
 import { setPopover } from "../capture/series";
@@ -14,6 +16,7 @@ import { takeScreenshot } from "../capture/shot";
 import { GAME_COMMANDS, NO_CAPTURE_TEXT, NO_OVERLAY_TEXT, OVERLAY_COMMAND } from "../commands";
 import { setPicker } from "../element/select";
 import { missingCommand, toggleOverlay } from "../palette";
+import { SIDE_PANEL, SIDE_TITLE } from "../side";
 import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
@@ -257,6 +260,26 @@ function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
 }
 
 /**
+ * The reopen button of the Element panel, only while the panel is closed.
+ *
+ * @returns The button, undefined while the panel shows.
+ */
+function ReopenSide(): VNode | undefined {
+  const side = useSidePanel(SIDE_PANEL);
+  if (!side.closed) return undefined;
+  return (
+    <button
+      type="button"
+      data-action={`reopen-${SIDE_PANEL}`}
+      title={`Show ${SIDE_TITLE}`}
+      onClick={side.show}
+    >
+      {SIDE_TITLE}
+    </button>
+  );
+}
+
+/**
  * The device toolbar.
  *
  * @param props - The gameView domain context.
@@ -288,6 +311,7 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
       <CameraButton ctx={ctx} />
       <SeriesButton ctx={ctx} />
       <OverlaySwitch ctx={ctx} />
+      <ReopenSide />
     </div>
   );
 }

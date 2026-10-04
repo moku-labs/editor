@@ -10,6 +10,8 @@ import {
   followCamera,
   gridStep,
   logLerp,
+  MIN_AREA_W,
+  sideColumn,
   zoomAt
 } from "../../camera/math";
 import type { Camera } from "../../types";
@@ -81,6 +83,25 @@ describe("fitRect", () => {
     expect(centre.y).toBeCloseTo((800 - 224) / 2, 6);
     expect(availableRect(view, insets)).toEqual({ x: 0, y: 0, w: 776, h: 576 });
   });
+
+  it("narrow area: the padding of an axis is at most an eighth of it", () => {
+    // Half screen: 194 × 632 px left; Fit selection's 70 px pads would leave 54 px across.
+    const narrow = { w: 368, h: 856 };
+    const insets = { top: 0, right: 174, bottom: 224, left: 0 };
+    const rect = { x: 0, y: 0, w: 500, h: 100 };
+    const cam = fitRect(rect, narrow, insets, 70, 1.3, config);
+    expect(cam.z).toBeCloseTo((194 - 2 * (194 / 8)) / 500, 6);
+    expect(toScreen(cam, 0, 0).x).toBeCloseTo(194 / 8, 6);
+    expect(toScreen(cam, 500, 0).x).toBeCloseTo(194 - 194 / 8, 6);
+  });
+
+  it("a desktop canvas keeps the full padding (1088 × 632 with a bottom inset and the column)", () => {
+    const desktop = { w: 1088, h: 856 };
+    const insets = { top: 0, right: 224, bottom: 224, left: 0 };
+    const rect = { x: 0, y: 0, w: 1000, h: 1000 };
+    const cam = fitRect(rect, desktop, insets, 70, 1.3, config);
+    expect(cam.z).toBeCloseTo((632 - 140) / 1000, 6);
+  });
 });
 
 describe("defaultCamera (M11)", () => {
@@ -113,6 +134,22 @@ describe("focusCamera", () => {
     expect(focusCamera(card, { x: 0, y: 0, z: 2 }, view, noInsets).z).toBe(1.25);
   });
 
+  it("narrow area (half screen): the zoom shrinks so the card fits with an 8 px gutter", () => {
+    // A 720 px window: the canvas is 368 px, the preview column 174 px leaves 194 px.
+    const narrow = { w: 368, h: 856 };
+    const insets = { top: 0, right: 174, bottom: 224, left: 0 };
+    const card = item({ key: "main/settings", x: 988, y: 300 });
+    const cam = focusCamera(card, { x: 0, y: 0, z: 2 }, narrow, insets);
+    expect(cam.z).toBeCloseTo((194 - 16) / 172, 6);
+    expect(toScreen(cam, 988, 300).x).toBeCloseTo(8, 6);
+    expect(toScreen(cam, 988 + 172, 300).x).toBeCloseTo(186, 6);
+    expect(toScreen(cam, 988, 322).y).toBeCloseTo((856 - 224) / 2, 6);
+    // At 100 % the card fits as it is.
+    const at100 = focusCamera(card, { x: 0, y: 0, z: 1 }, narrow, insets);
+    expect(at100.z).toBe(1);
+    expect(toScreen(at100, 988, 300).x).toBeCloseTo((194 - 172) / 2, 6);
+  });
+
   it("tall item: zoom from the available height, top 900 units, shifted 120 right", () => {
     const hub = item({ key: "board/awaitIntent", kind: "hub", x: 0, y: 0, w: 200, h: 1200 });
     const cam = focusCamera(hub, { x: 0, y: 0, z: 1 }, view, noInsets);
@@ -132,6 +169,37 @@ describe("followCamera", () => {
     expect(centre.x).toBeCloseTo(500, 6);
     expect(centre.y).toBeCloseTo(400, 6);
     expect(followCamera(hub, { x: 0, y: 0, z: 0.2 }, view, noInsets).z).toBe(0.7);
+  });
+
+  it("narrow area: a card keeps its width inside the available rect", () => {
+    const narrow = { w: 368, h: 856 };
+    const insets = { top: 0, right: 174, bottom: 0, left: 0 };
+    const card = item({ key: "main/board", x: 640, y: 120 });
+    const cam = followCamera(card, { x: 0, y: 0, z: 1.1 }, narrow, insets);
+    expect(cam.z).toBeCloseTo((194 - 16) / 172, 6);
+    expect(toScreen(cam, 640, 120).x).toBeGreaterThanOrEqual(8 - 1e-6);
+    expect(toScreen(cam, 640 + 172, 120).x).toBeLessThanOrEqual(186 + 1e-6);
+    // A wide canvas keeps the [0.7, 1.1] clamp.
+    expect(followCamera(card, { x: 0, y: 0, z: 2 }, view, noInsets).z).toBe(1.1);
+  });
+});
+
+describe("sideColumn", () => {
+  it("keeps the widest column while the graph keeps one card at 100 % (MIN_AREA_W)", () => {
+    expect(MIN_AREA_W).toBe(188);
+    expect(sideColumn(1088, [224, 174])).toBe(224);
+    expect(sideColumn(224 + 188, [224, 174])).toBe(224);
+  });
+
+  it("falls back to the next column on a narrow canvas, then to none", () => {
+    expect(sideColumn(368, [224, 174])).toBe(174);
+    expect(sideColumn(174 + 188, [224, 174])).toBe(174);
+    expect(sideColumn(300, [224, 174])).toBe(0);
+  });
+
+  it("an unmeasured canvas (0) takes the widest column", () => {
+    expect(sideColumn(0, [224, 174])).toBe(224);
+    expect(sideColumn(0, [])).toBe(0);
   });
 });
 

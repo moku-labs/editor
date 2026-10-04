@@ -6,7 +6,7 @@ import { boundsText, fixed, sparkPoints, tagOfUse, tileViews } from "../../forma
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("tileViews", () => {
-  it("names what is waiting and what the game does not report", () => {
+  it("names what is waiting and leaves out the heap tile the game does not report", () => {
     const views = tileViews({
       fps: undefined,
       frameMs: undefined,
@@ -21,10 +21,9 @@ describe("tileViews", () => {
       ["frame", "—", "Waiting for game.render"],
       ["draws", "—", "Waiting for game.render"],
       ["textures", "—", "Waiting for game.render and game.assets"],
-      ["scene", "—", "Waiting for the scene"],
-      ["heap", "Not reported", "Needs heap numbers in game.render"]
+      ["scene", "—", "Waiting for the scene"]
     ]);
-    expect(views[5]).toMatchObject({ absent: true, aria: "JS heap: not reported" });
+    expect(views.map(view => view.id)).not.toContain("heap");
   });
 
   it("formats every tile with data", () => {
@@ -42,14 +41,35 @@ describe("tileViews", () => {
       ["3.4", "ms", "Phase split not reported by game.render", undefined],
       ["Not counted in a production build", "", "game.render reports no draw counter", undefined],
       ["41.25", "MB GPU", "12 textures · 2 bundles · of 192 MB budget", "3 unused · 5.73 MB"],
-      ["101", "entities", "180 display objects · 24 pooled", undefined],
-      ["Not reported", "", "Needs heap numbers in game.render", undefined]
+      ["101", "entities", "180 display objects · 24 pooled", undefined]
     ]);
     expect(views[2]).toMatchObject({
       absent: true,
       aria: "Draw calls: not counted in a production build"
     });
     expect(views[4]?.note).toBe("Particles and filters are not reported (follow-up F-R1)");
+  });
+
+  it("shows the JS heap tile last when the page reports it", () => {
+    const views = tileViews({
+      fps: undefined,
+      frameMs: undefined,
+      drawCalls: undefined,
+      textures: undefined,
+      scene: undefined,
+      heap: { kind: "value", usedMb: 12.8, limitMb: 4095.75 }
+    });
+
+    expect(views).toHaveLength(6);
+    expect(views[5]).toMatchObject({
+      id: "heap",
+      label: "JS heap",
+      value: "12.8",
+      unit: "MB",
+      sub: "of 4095.8 MB",
+      absent: false,
+      aria: undefined
+    });
   });
 
   it("shows a draw counter and no warn line without unused textures", () => {
@@ -100,9 +120,33 @@ describe("tileViews on game 0.0.3", () => {
 
     expect(views[4]).toMatchObject({
       sub: "180 display objects · 24 pooled",
-      note: "18 particles · 1 emitters · 24 filters"
+      note: "18 particles · 1 emitter · 24 filters"
     });
     expect(views[0]?.note).toBeUndefined();
+  });
+
+  it("reads 'Effects not installed in this game' on the Scene tile, waiting or not", () => {
+    const shown = tileViews({
+      ...EMPTY,
+      drawCalls: undefined,
+      scene: { entities: 101, views: 180, pooled: 24 },
+      effectsInstalled: false
+    });
+    const waiting = tileViews({
+      ...EMPTY,
+      drawCalls: undefined,
+      scene: undefined,
+      effectsInstalled: false
+    });
+
+    expect(shown[4]).toMatchObject({
+      sub: "180 display objects · 24 pooled",
+      note: "Effects not installed in this game"
+    });
+    expect(waiting[4]).toMatchObject({
+      sub: "Waiting for the scene",
+      note: "Effects not installed in this game"
+    });
   });
 
   it("names one FPS sample in the singular", () => {
@@ -164,5 +208,47 @@ describe("helpers", () => {
     expect(boundsText(undefined)).toBe("not placed");
     expect(fixed(4)).toBe("4.00");
     expect(fixed(3.456, 1)).toBe("3.5");
+  });
+});
+
+/**
+ * The FPS tile sub-line for kept samples, the newest last.
+ *
+ * @param samples - The kept samples, oldest first.
+ * @returns The sub-line.
+ */
+function fpsSub(samples: readonly number[]): string | undefined {
+  const now = samples.at(-1) ?? 0;
+  const [fps] = tileViews({
+    ...EMPTY,
+    fps: { now, samples, low: Math.min(...samples) },
+    drawCalls: undefined,
+    scene: undefined
+  });
+  return fps?.sub;
+}
+
+describe("FPS tile at the game's idle rate (D-28)", () => {
+  const RESTING = "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)";
+
+  it("names the rest when the newest sample is within 28-32 fps", () => {
+    expect(fpsSub([60, 59, 30])).toBe(RESTING);
+    expect(fpsSub([60, 28])).toBe(RESTING);
+    expect(fpsSub([60, 32])).toBe(RESTING);
+  });
+
+  it("keeps the low below 28 fps and above 32 fps", () => {
+    expect(fpsSub([60, 30, 27])).toBe("last 3 samples · low 27");
+    expect(fpsSub([30, 33])).toBe("last 2 samples · low 30");
+  });
+
+  it("keeps the value and the unit while resting", () => {
+    const [fps] = tileViews({
+      ...EMPTY,
+      fps: { now: 30, samples: [60, 30], low: 30 },
+      drawCalls: undefined,
+      scene: undefined
+    });
+    expect(fps).toMatchObject({ value: "30", unit: "fps", absent: false });
   });
 });

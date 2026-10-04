@@ -116,6 +116,23 @@ describe("startBin", () => {
   });
 });
 
+describe("startBin dev server (D-22)", () => {
+  it("serves the game without Bun's HMR and without console forwarding", async () => {
+    const serve = vi.spyOn(Bun, "serve");
+    const { deps } = createDeps();
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
+    try {
+      expect(started.code).toBe(0);
+      expect(serve).toHaveBeenCalledTimes(1);
+      const options: { development?: unknown } | undefined = serve.mock.calls[0]?.[0];
+      expect(options?.development).toEqual({ hmr: false });
+    } finally {
+      serve.mockRestore();
+      await started.stop?.();
+    }
+  });
+});
+
 describe("main", () => {
   it("resolves with the code and stops on SIGINT while serving", async () => {
     expect(await main(["--help"], createDeps().deps)).toBe(0);

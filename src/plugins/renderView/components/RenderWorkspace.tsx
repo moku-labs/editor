@@ -1,6 +1,6 @@
 /**
- * @file renderView plugin — the Render workspace (design A3): the title with the frame, six metric
- * tiles, the left column (render tree, textures) and the right column (bundles, pools, release
+ * @file renderView plugin — the Render workspace (design A3): the title with the frame, the metric
+ * tiles (the JS heap tile only where the page reports it), the left column (render tree, textures) and the right column (bundles, pools, release
  * log). Re-renders on every notify; marks stale data while the link is silent or lost.
  */
 import type { JSX } from "preact";

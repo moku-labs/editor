@@ -1,8 +1,9 @@
 /**
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
- * children, the resolved style, the layout style card with its steppers, "Show in render tree"
- * (workspace:reveal) and "Pick another".
+ * children, the resolved style, the layout style card with its steppers (or the read-only call,
+ * or where the key is defined), "Show in render tree" (workspace:reveal), "Pick another" and
+ * "Copy reference" (one line for the chat).
  */
 import type { VNode } from "preact";
 import { useEffect } from "preact/hooks";
@@ -10,7 +11,6 @@ import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/s
 import { ancestorsOf, refId } from "../../panels/shared/scene";
 import type { StyleField } from "../../panels/shared/style-edit";
 import { fieldRule, formatNumber } from "../../panels/shared/style-edit";
-import type { Json } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
 import {
@@ -21,28 +21,17 @@ import {
   setPicker
 } from "../element/select";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
+import { copyReference } from "../reference/mode";
 import { readManifest } from "../scene/manifest";
 import type { GameViewCtx, StyleCard, StyleLookup } from "../types";
+import { styleValue } from "./text";
 import { useGameView } from "./useGameView";
 
 /**
- * Props of `ElementTab`.
+ * Props of `ElementTab`: the context and "<flow>/<node>" of the game position (the panel's
+ * `game.position`), undefined when not known.
  */
-export type ElementTabProps = { readonly ctx: GameViewCtx };
-
-/**
- * One style value as text: strings and numbers as they are, objects as compact JSON.
- *
- * @param value - A style value.
- * @returns The text.
- * @example
- * ```ts
- * styleValue({ top: 40 }); // '{"top":40}'
- * ```
- */
-function styleValue(value: Json): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
-}
+export type ElementTabProps = { readonly ctx: GameViewCtx; readonly flowNode?: string | undefined };
 
 /**
  * A chip that selects an element and draws the pink box while hovered.
@@ -161,8 +150,38 @@ function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleC
 }
 
 /**
- * What the style card section says while no card is shown: the search failed, found no source,
- * or still runs.
+ * The read-only card of a style computed by a call: where the call is, Open in Files, the call.
+ *
+ * @param props - The context and the call lookup.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.lookup - The lookup with status "call".
+ * @returns The card body.
+ */
+function CallCard(props: {
+  readonly ctx: GameViewCtx;
+  readonly lookup: Extract<StyleLookup, { readonly status: "call" }>;
+}): VNode {
+  const { ctx, lookup } = props;
+  return (
+    <>
+      <header>
+        <code data-part="where">
+          {lookup.path}:{lookup.line}
+        </code>
+        <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.line)}>
+          Open in Files
+        </button>
+      </header>
+      <code data-part="call">{lookup.call}</code>
+      <p data-part="read-only">Computed by a call · read-only</p>
+    </>
+  );
+}
+
+/**
+ * What the style card section says while no card is shown: the search failed, found a style
+ * call (read-only card), found the key without a style ("Defined at"), found nothing, or still
+ * runs.
  *
  * @param props - The context, the lookup and the ui key.
  * @param props.ctx - Domain context of gameView.
@@ -181,6 +200,20 @@ function LookupNote(props: {
       <p data-part="error" role="alert">
         {styleErrorText(lookup.error)}{" "}
         <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}>
+          Open in Files
+        </button>
+      </p>
+    );
+  }
+  if (lookup?.status === "call") return <CallCard ctx={ctx} lookup={lookup} />;
+  if (lookup?.status === "defined") {
+    return (
+      <p data-part="defined">
+        Defined at{" "}
+        <code data-part="where">
+          {lookup.path}:{lookup.line}
+        </code>{" "}
+        <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.line)}>
           Open in Files
         </button>
       </p>
@@ -239,18 +272,20 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
 /**
  * The filled tab for one node.
  *
- * @param props - The context, the scene and the node.
+ * @param props - The context, the scene, the node and the flow node.
  * @param props.ctx - Domain context of gameView.
  * @param props.scene - The scene.
  * @param props.node - The selected node.
+ * @param props.flowNode - "<flow>/<node>" of the game position.
  * @returns The tab body.
  */
 function NodeDetails(props: {
   readonly ctx: GameViewCtx;
   readonly scene: SceneSnapshot;
   readonly node: SceneNode;
+  readonly flowNode: string | undefined;
 }): VNode {
-  const { ctx, scene, node } = props;
+  const { ctx, scene, node, flowNode } = props;
   const choice = ctx.require(workspacePlugin).device();
   const size = resolveDevice(choice.preset, choice.orientation);
   const ancestors = ancestorsOf(scene, node.id).flatMap(id => scene.nodes.get(id) ?? []);
@@ -342,6 +377,15 @@ function NodeDetails(props: {
         <button type="button" data-variant="ghost" onClick={() => setPicker(ctx, true)}>
           Pick another
         </button>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-action="copy-reference"
+          title="Copy a one-line reference for the chat"
+          onClick={() => copyReference(ctx, node, flowNode)}
+        >
+          Copy reference
+        </button>
       </footer>
     </div>
   );
@@ -379,6 +423,7 @@ function loadDetails(
  */
 export function ElementTab(props: ElementTabProps): VNode {
   const { ctx } = props;
+  const flowNode = props.flowNode ?? ctx.state.reference.node;
   const { state } = ctx;
   useGameView(state, () => state.selected);
   const { selected, scene } = state;
@@ -407,5 +452,5 @@ export function ElementTab(props: ElementTabProps): VNode {
       </div>
     );
   }
-  return <NodeDetails ctx={ctx} scene={scene} node={node} />;
+  return <NodeDetails ctx={ctx} scene={scene} node={node} flowNode={flowNode} />;
 }

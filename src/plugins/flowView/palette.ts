@@ -1,10 +1,12 @@
 /**
  * @file flowView plugin — the palette items flowView adds to the workspace palette (E1): the static
  * Commands, the Nodes group (replaced when the graph changes; ⇧↵ "Open in Files") and the Styles
- * group (replaced whenever stylesFile is read).
+ * group (replaced whenever the styles file is read).
  */
+import { showSidePanel } from "../panels/shared/side-panel";
 import { workspacePlugin } from "../workspace";
 import type { PaletteGroup, PaletteItem } from "../workspace/types";
+import { INSPECTOR_PANEL } from "./keys";
 import type { FlowActions, FlowCtx } from "./types";
 
 /**
@@ -29,17 +31,6 @@ function paletteItem(
   extra: Partial<Pick<PaletteItem, "mono" | "hint" | "alt" | "disabled" | "shortcut">> = {}
 ): PaletteItem {
   return { id, group, label, run, ...extra };
-}
-
-/**
- * The world point at the viewport centre (where a free note opens).
- *
- * @param ctx - Domain context of flowView.
- * @returns World coordinates.
- */
-export function viewportCentre(ctx: FlowCtx): { x: number; y: number } {
-  const { cam, viewport } = ctx.state.camera;
-  return { x: (viewport.w / 2 - cam.x) / cam.z, y: (viewport.h / 2 - cam.y) / cam.z };
 }
 
 /**
@@ -116,19 +107,23 @@ export function commandItems(ctx: FlowCtx, actions: FlowActions): PaletteItem[] 
       },
       { disabled: resetDisabled }
     ),
-    paletteItem(
-      "flow:add-note",
-      "Commands",
-      "Add a note",
-      () => {
-        show();
-        actions.notes.edit({ anchor: viewportCentre(ctx) });
-      },
-      { shortcut: "N" }
-    ),
     paletteItem("flow:go-to-current", "Commands", "Go to current node", () => {
       show();
       actions.focus.select(actions.focus.current());
+    }),
+    paletteItem(
+      "flow:find-current",
+      "Commands",
+      "Show where the game is",
+      () => {
+        show();
+        actions.focus.findCurrent();
+      },
+      { shortcut: "C" }
+    ),
+    paletteItem("flow:show-inspector", "Commands", "Show Inspector", () => {
+      show();
+      showSidePanel(INSPECTOR_PANEL);
     })
   ];
 }

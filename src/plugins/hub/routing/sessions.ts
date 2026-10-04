@@ -187,13 +187,39 @@ export function isManifest(value: unknown): value is Manifest {
 }
 
 /**
- * Reads a heartbeat: finite `frame` and `at`, boolean `paused`.
+ * Reads the `heap` of a heartbeat: finite `usedMb` and `limitMb`.
+ *
+ * @param value - The `heap` member.
+ * @returns A fresh heap, or undefined when absent or malformed.
+ * @example
+ * ```ts
+ * readHeap({ usedMb: 12.8, limitMb: 4095.8 }); // { usedMb: 12.8, limitMb: 4095.8 }
+ * readHeap({ usedMb: "12.8" }); // undefined
+ * ```
+ */
+function readHeap(value: unknown): Heartbeat["heap"] {
+  const fields = fieldsOf(value);
+  const usedMb = fields?.get("usedMb");
+  const limitMb = fields?.get("limitMb");
+
+  return Number.isFinite(usedMb) &&
+    Number.isFinite(limitMb) &&
+    typeof usedMb === "number" &&
+    typeof limitMb === "number"
+    ? { usedMb, limitMb }
+    : undefined;
+}
+
+/**
+ * Reads a heartbeat: finite `frame` and `at`, boolean `paused`. A well-formed `heap` is kept; a
+ * malformed one is dropped and the beat is still read.
  *
  * @param params - The notification params.
  * @returns A fresh Heartbeat, or undefined when malformed.
  * @example
  * ```ts
  * readHeartbeat({ frame: 12, paused: false, at: 5 }); // { frame: 12, paused: false, at: 5 }
+ * readHeartbeat({ frame: 12, paused: false, at: 5, heap: { usedMb: "x" } }); // { frame: 12, paused: false, at: 5 }
  * ```
  */
 export function readHeartbeat(params: Json | undefined): Heartbeat | undefined {
@@ -201,14 +227,16 @@ export function readHeartbeat(params: Json | undefined): Heartbeat | undefined {
   const frame = fields?.get("frame");
   const paused = fields?.get("paused");
   const at = fields?.get("at");
-
-  return Number.isFinite(frame) &&
+  const isBeat =
+    Number.isFinite(frame) &&
     Number.isFinite(at) &&
     typeof frame === "number" &&
     typeof at === "number" &&
-    typeof paused === "boolean"
-    ? { frame, paused, at }
-    : undefined;
+    typeof paused === "boolean";
+  if (!isBeat) return undefined;
+
+  const heap = readHeap(fields?.get("heap"));
+  return heap === undefined ? { frame, paused, at } : { frame, paused, at, heap };
 }
 
 /**

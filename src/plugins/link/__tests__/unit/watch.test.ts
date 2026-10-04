@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Manifest } from "../../../registry/protocol";
 import { toWireValue } from "../../../registry/protocol";
 import { stopLink } from "../../lifecycle";
 import { attach } from "../../sessions/choose";
@@ -154,6 +155,75 @@ describe("addWatch", () => {
     socket.reject(socket.last("unwatch"), { code: -32_600, message: "[moku-editor] x" });
     await flush();
     expect(ctx.log.debug).toHaveBeenCalledWith("link:unwatch-failed", { sub: 1, code: -32_600 });
+  });
+});
+
+/**
+ * A manifest whose game.effects source the game does not have.
+ *
+ * @returns The manifest: game.position available, game.effects not installed.
+ */
+function withoutEffects(): Manifest {
+  const manifest = manifestOf(["game.position"]);
+  return {
+    ...manifest,
+    sources: [
+      ...manifest.sources,
+      {
+        id: "game.effects",
+        title: "Effects",
+        input: {},
+        changes: "frame",
+        available: false,
+        reason: "app.effects is undefined"
+      }
+    ]
+  };
+}
+
+/** The -32008 answer of a source the game does not have. */
+const NOT_INSTALLED = {
+  code: -32_008,
+  message:
+    "[moku-editor] source game.effects is not available in this game: app.effects is undefined",
+  data: { reason: "not_installed" as const, retryable: false, id: "game.effects" }
+};
+
+describe("a source the game does not have (-32008 not_installed)", () => {
+  it("a refused watch logs no link:watch-failed and is not retried on the next attach", async () => {
+    const socket = await connected(ctx, [sessionOf("s-1")], manifestOf(["game.effects"]));
+    addWatch(ctx, "game.effects", undefined, vi.fn());
+    socket.reject(socket.last("watch"), NOT_INSTALLED);
+    await flush();
+
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:source-unavailable", {
+      id: "game.effects",
+      code: -32_008,
+      reason: "not_installed"
+    });
+    expect(ctx.state.wire.size).toBe(0);
+    expect(ctx.state.subs.size).toBe(1);
+
+    await attach(ctx, "s-1");
+    expect(socket.requests("watch")).toHaveLength(1);
+  });
+
+  it("a new session gets the refused watch again", async () => {
+    const socket = await connected(ctx, [sessionOf("s-1")], withoutEffects());
+    addWatch(ctx, "game.effects", undefined, vi.fn());
+    socket.reject(socket.last("watch"), NOT_INSTALLED);
+    await flush();
+    socket.notify("editor", "session", { id: "s-1", game: "g", open: false });
+    sendSessions(socket, [sessionOf("s-2")]);
+    socket.answer(socket.last("manifest"), toWireValue(manifestOf(["game.effects"])));
+    await flush();
+
+    expect(socket.last("watch")).toMatchObject({
+      params: { id: "game.effects" },
+      session: "s-2"
+    });
   });
 });
 

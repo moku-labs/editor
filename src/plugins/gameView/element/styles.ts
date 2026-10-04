@@ -26,13 +26,18 @@ import { workspacePlugin } from "../../workspace";
 import { messageOf, reportFailure } from "../report";
 import { reloadGame } from "../stage/reload";
 import { notify } from "../state";
-import type { GameViewCtx, GameViewState } from "../types";
-import { findStyleSource, type StyleSource } from "./source";
+import type { GameViewCtx, GameViewState, StyleLookup, StyleSource } from "../types";
+import { findStyleSource } from "./source";
 
 /**
  * Debounce of a stepper burst before the one write.
  */
 const STYLE_SAVE_MS = 400;
+
+/**
+ * A source search result with `style={ident}`: the block lives in one of its files.
+ */
+type IdentSource = Extract<StyleSource, { readonly kind: "ident" }>;
 
 /**
  * A block found in one of the candidate files, or the refusal to show.
@@ -60,7 +65,7 @@ function isSelected(state: GameViewState, ref: ElementRef): boolean {
  * @param source - Where the key was found.
  * @returns The file and block, or the refusal.
  */
-async function loadBlock(ctx: GameViewCtx, source: StyleSource): Promise<BlockResult> {
+async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<BlockResult> {
   const files = ctx.require(linkPlugin).files;
   let refusal: BlockResult | undefined;
   for (const path of source.files) {
@@ -101,11 +106,33 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
 }
 
 /**
+ * What the style section says for a source without an editable block: the call (read-only, at
+ * the line of the call), the line that defines the key, or nothing found.
+ *
+ * @param key - The ui key.
+ * @param source - The search result, undefined when no file names the key.
+ * @returns The lookup to show.
+ * @example
+ * ```ts
+ * lookupOf("settingsBoard", { kind: "defined", path: "settings.tsx", line: 301 }); // { key: "settingsBoard", status: "defined", path: "settings.tsx", line: 301 }
+ * ```
+ */
+function lookupOf(key: string, source: Exclude<StyleSource, IdentSource> | undefined): StyleLookup {
+  if (source === undefined) return { key, status: "missing" };
+  if (source.kind === "call") {
+    return { key, status: "call", path: source.path, line: source.callLine, call: source.call };
+  }
+  return { key, status: "defined", path: source.path, line: source.line };
+}
+
+/**
  * Finds and shows the layout style card of a ui element with a key; anything else has none.
+ * A style computed by a call shows read-only; an element without a style shows where it is
+ * defined.
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The selected element.
- * @returns Resolves when the card, "missing" or the refusal is shown.
+ * @returns Resolves when the card, the call, the definition, "missing" or the refusal is shown.
  */
 export async function openStyleCard(ctx: GameViewCtx, ref: ElementRef): Promise<void> {
   const { state } = ctx;
@@ -117,12 +144,12 @@ export async function openStyleCard(ctx: GameViewCtx, ref: ElementRef): Promise<
 
   try {
     const source = await findStyleSource(ctx, key);
-    if (source === undefined) {
-      if (isSelected(state, ref)) state.lookup = { key, status: "missing" };
-      notify(state);
+    if (source?.kind === "ident") {
+      applyBlock(ctx, ref, key, await loadBlock(ctx, source));
       return;
     }
-    applyBlock(ctx, ref, key, await loadBlock(ctx, source));
+    if (isSelected(state, ref)) state.lookup = lookupOf(key, source);
+    notify(state);
   } catch (error) {
     ctx.log.warn("gameView: style search failed", { key, message: messageOf(error) });
     if (isSelected(state, ref)) state.lookup = { key, status: "missing" };

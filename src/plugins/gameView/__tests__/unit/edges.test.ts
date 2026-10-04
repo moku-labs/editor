@@ -11,10 +11,10 @@ import { highlightElement, hoverAt, selectElement } from "../../element/select";
 import { findStyleSource, importCandidates, matchKey } from "../../element/source";
 import { openStyleCard, stepStyle } from "../../element/styles";
 import { stopGameView } from "../../lifecycle";
-import { listNotes } from "../../notes/attach";
 import { chooseDevice } from "../../palette";
-import { isConflict, messageOf, uiMessage } from "../../report";
-import { calibrate, frameOf, pageRectOf } from "../../scene/watch";
+import { messageOf, uiMessage } from "../../report";
+import { calibrate, pageRectOf } from "../../scene/calibrate";
+import { frameOf } from "../../scene/rebuild";
 import { reloadGame } from "../../stage/reload";
 import { createCtx, flush, type TestCtx, useScene } from "../helpers";
 import { boardScene } from "../ui";
@@ -40,7 +40,6 @@ describe("report", () => {
     );
     expect(messageOf(42)).toBe("42");
     expect(uiMessage(new Error("[moku-editor] A is invalid.\n  Use B."))).toBe("A is invalid.");
-    expect(isConflict(new Error("plain"))).toBe(false);
   });
 });
 
@@ -111,14 +110,6 @@ describe("failure paths", () => {
     ctx = createCtx();
     chooseDevice(ctx, "nope");
     expect(ctx.workspace.api.setDevice).not.toHaveBeenCalled();
-  });
-
-  it("listNotes titles a note without an extension by its file name", async () => {
-    ctx = createCtx({ ".moku/notes/README": "no front matter" });
-    vi.spyOn(ctx.link.files, "list").mockResolvedValueOnce([
-      { path: ".moku/notes/old.md", kind: "file", size: 1 }
-    ]);
-    expect(await listNotes(ctx)).toEqual([{ path: ".moku/notes/old.md", title: "old" }]);
   });
 
   it("findStyleSource skips a folder that cannot be listed", async () => {

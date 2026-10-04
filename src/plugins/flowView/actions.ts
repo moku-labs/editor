@@ -10,7 +10,6 @@ import { createCameraApi } from "./camera/api";
 import { createFocusApi } from "./focus/api";
 import { createInspectorApi } from "./inspector/api";
 import { createFlowsApi, createLayoutApi } from "./layout/api";
-import { createNotesApi } from "./notes/api";
 import { setStyleItems } from "./palette";
 import type { FlowActions, FlowCtx, FlowEnvironment, FlowServices, FlowViewState } from "./types";
 
@@ -36,7 +35,6 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
     },
     run: (id, input) => ctx.require(panelsPlugin).run(id, input),
     status: () => ctx.require(linkPlugin).status(),
-    read: id => ctx.require(linkPlugin).read(id),
     boot: () => ctx.require(linkPlugin).boot(),
     show: () => {
       ctx.require(workspacePlugin).show("flow");
@@ -84,7 +82,6 @@ export function actionsOf(ctx: FlowCtx): FlowActions {
     focus: createFocusApi(ctx, env),
     flows: createFlowsApi(ctx, env),
     layout: createLayoutApi(ctx, env),
-    notes: createNotesApi(ctx, env),
     inspector: createInspectorApi(ctx, env)
   };
   holder.actions = actions;

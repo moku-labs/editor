@@ -145,8 +145,32 @@ export function anchorIn(item: Item): { x: number; y: number } {
 }
 
 /**
- * Re-routes the edges that touch one moved item with the 3-segment route; every other edge is kept
- * as it is (same object).
+ * An edge on a new route: the label centre of the old route no longer applies.
+ *
+ * @param edge - The edge.
+ * @param points - The new route.
+ * @returns The re-routed edge (its label goes back to the first segment's midpoint).
+ * @example
+ * ```ts
+ * rerouted({ ...edge, labelAt: { x: 5, y: 0 } }, [{ x: 0, y: 0 }, { x: 40, y: 0 }]).labelAt; // undefined
+ * ```
+ */
+export function rerouted(edge: EdgePath, points: readonly { x: number; y: number }[]): EdgePath {
+  const route: EdgePath = {
+    key: edge.key,
+    from: edge.from,
+    to: edge.to,
+    outcome: edge.outcome,
+    kind: edge.kind,
+    points
+  };
+  if (edge.label !== undefined) route.label = edge.label;
+  return route;
+}
+
+/**
+ * Re-routes the edges that touch one moved item with the 3-segment route (their label goes back to
+ * the first segment's midpoint); every other edge is kept as it is (same object).
  *
  * @param edges - The edges.
  * @param byKey - Items by key, with the moved item at its new place.
@@ -162,14 +186,14 @@ export function rerouteTouching(
   byKey: Readonly<Record<ItemKey, Item>>,
   key: ItemKey
 ): { readonly edges: EdgePath[]; readonly rerouted: number } {
-  let rerouted = 0;
+  let count = 0;
   const next = edges.map(edge => {
     if (edge.from !== key && edge.to !== key) return edge;
     const from = byKey[edge.from];
     const to = edge.to === undefined ? undefined : byKey[edge.to];
     if (from === undefined || to === undefined) return edge;
-    rerouted += 1;
-    return { ...edge, points: orthogonalRoute(anchorOut(from, edge.outcome), anchorIn(to)) };
+    count += 1;
+    return rerouted(edge, orthogonalRoute(anchorOut(from, edge.outcome), anchorIn(to)));
   });
-  return { edges: next, rerouted };
+  return { edges: next, rerouted: count };
 }

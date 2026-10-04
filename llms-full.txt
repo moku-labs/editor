@@ -24,6 +24,9 @@ Contents:
 
 - Name: `@moku-labs/editor`, MIT, ESM only (`"type": "module"`).
 - Peer dependency: `@moku-labs/game >= 0.0.2`. The Render workspace's `game.effects` needs game 0.0.3.
+- Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
+- `files` in the package: `dist`, `LICENSE`, `README.md`, `llms.txt`, `llms-full.txt`. `"sideEffects": false`.
+- Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 71.3 KB minified (24.8 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
 - Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
 - Engines: node >= 24, bun >= 1.3.14. The server core and the bin need Bun (`Bun.serve`, HTML imports).
 - Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`).
@@ -39,7 +42,10 @@ Default plugins per core (from the entries):
 
 ```ts
 // src/agent.ts — dependency order: channel and overlay require registry, overlay requires channel.
-createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin, overlayPlugin] });
+// Pure: a bundle that uses neither createApp nor createPlugin drops the agent core.
+const framework = /* @__PURE__ */ createAgentCore(agentCoreConfig, {
+  plugins: [registryPlugin, channelPlugin, overlayPlugin]
+});
 // opt-in: bridgePlugin, capturePlugin (passed in createApp({ plugins }))
 
 // src/server.ts — dependency order (D-03): files ← hub ← pages.
@@ -71,7 +77,7 @@ import type { FilesWritten } from "./plugins/files/types";
 import type { HubSession } from "./plugins/hub/types";
 import type { ElementRef } from "./plugins/panels/shared/scene/types";
 import type { LinkStatus } from "./plugins/registry/protocol";
-import type { RanEvent, WorkspaceId } from "./plugins/workspace/types";
+import type { Density, RanEvent, WorkspaceId } from "./plugins/workspace/types";
 
 /**
  * Global config of the agent core (the game page). Empty: every option belongs to a plugin.
@@ -138,17 +144,16 @@ export type ToolsEvents = {
   "workspace:changed": { ws: WorkspaceId };
   /** A command run from the tools page settled (top bar, palette, key or a panel's tools.run). */
   "workspace:ran": RanEvent;
+  /** The applied density changed (a choice, or `auto` crossing 820 px of window width). */
+  "workspace:density": { density: Density };
+  /** Reference mode turned on or off (gameView shows its element proxies while on). */
+  "workspace:reference": { on: boolean };
   /** Open a file in the Files workspace (filesView hooks it). */
   "workspace:open-file": { path: string; line?: number };
   /** Focus a node in the Flow workspace (flowView hooks it). */
   "workspace:select-node": { id: string };
   /** Focus the edge taken at a frame (flowView hooks it). */
   "workspace:focus-frame": { frame: number };
-  /** Open the note editor, optionally with captures and a source node (flowView hooks it). */
-  "workspace:new-note": {
-    captures?: readonly string[];
-    from?: { node: string; outcome?: string };
-  };
   /** Select an element in the render tree (renderView hooks it). */
   "workspace:reveal": { ref: ElementRef };
   /** Inspect an element in the Game workspace (gameView hooks it, R9). */
@@ -326,6 +331,13 @@ export type SourceDescriptor = {
   readonly title: string;
   readonly input: InputSchema;
   readonly changes: Changes;
+  /**
+   * `false` when the game does not have this source: its door threw on the probe (the game plugin
+   * behind it is missing). Reads and watches answer -32008 `not_installed`. Absent = available.
+   */
+  readonly available?: false;
+  /** What the door threw on the probe; present only with `available: false`. */
+  readonly reason?: string;
 };
 
 /**
@@ -370,9 +382,33 @@ export type RunState = { readonly path: string; readonly frame: number; readonly
 export type RunResult = { readonly value: Json; readonly state: RunState };
 
 /**
- * One heartbeat of a game page.
+ * One heartbeat of a game page. `heap` is the JS heap of the page in MB, rounded to 0.1, and
+ * only present where the browser reports it (Chromium's `performance.memory`).
+ *
+ * @example
+ * ```ts
+ * const beat: Heartbeat = { frame: 1840, paused: false, at: 1790000000000, heap: { usedMb: 12.8, limitMb: 4095.8 } };
+ * ```
  */
-export type Heartbeat = { readonly frame: number; readonly paused: boolean; readonly at: number };
+export type Heartbeat = {
+  readonly frame: number;
+  readonly paused: boolean;
+  /** Epoch ms of the beat. */
+  readonly at: number;
+  readonly heap?: { readonly usedMb: number; readonly limitMb: number };
+};
+
+/**
+ * Params of the game-channel `tap` notification: one pointerdown on the game page. `x` and `y`
+ * are page CSS px of the game document (`clientX`, `clientY`); `at` is the page's
+ * `performance.now()`.
+ *
+ * @example
+ * ```ts
+ * const tap: Tap = { x: 206, y: 640, at: 15234.5 };
+ * ```
+ */
+export type Tap = { readonly x: number; readonly y: number; readonly at: number };
 
 /**
  * The link state shown everywhere (design-context §6 B1, F3).
@@ -426,6 +462,7 @@ export type ErrorReason =
   | "forbidden_path"
   | "version_conflict"
   | "unauthorized"
+  | "not_installed"
   | "link_closed";
 
 /**
@@ -565,7 +602,8 @@ export const errorCode = {
   forbiddenPath: -32_004,
   versionConflict: -32_005,
   notJson: -32_006,
-  unauthorized: -32_007
+  unauthorized: -32_007,
+  notInstalled: -32_008
 } as const;
 /**
  * Any wire message.
@@ -713,6 +751,7 @@ All errors are JSON-RPC error objects (`WireError`). Messages start with `[moku-
 | -32005 | `versionConflict` | `version_conflict` | no | files | stale `version`, or a `version` for a missing file |
 | -32006 | `notJson` | `not_json` | no | registry (`toWireValue`) | a value is not JSON (function, symbol, bigint, cycle, depth over 64) |
 | -32007 | `unauthorized` | `unauthorized` | no | hub | a request from an agent connection |
+| -32008 | `notInstalled` | `not_installed` (with `data.id`) | no | registry | a read or watch of a source the game does not have: its door threw on the probe (manifest `available: false`). Message `[moku-editor] source <id> is not available in this game: <reason>`. The link does not log or retry it. |
 
 Deadlines: bridge `callTimeoutMs` (5000), hub `callTimeoutMs` (5000), link `CALL_TIMEOUT_MS` (10000). A `run` of `editor.series` gets `min(input.durationMs, 60000)` on top in all three.
 
@@ -743,19 +782,20 @@ Global events only; no plugin declares its own `events` field. Payload types are
 | tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | status changed kind or any field, or the session changed | workspace, panels, flowView, gameView, renderView, stateView, filesView, consoleView |
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | `show()` changed the workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` | workspace (origins `topbar`, `key`, `palette`), panels (origin `panel`, or the api `run` origin) | a command run from the tools page settled | stateView (taint), consoleView (error lines) |
+| tools | `workspace:density` | `{ density: Density }` (`"compact" \| "comfortable"`) | workspace | the applied density changed: a choice in the palette, or `auto` crossing 820 px of window width | flowView (ELK spacing) |
+| tools | `workspace:reference` | `{ on: boolean }` | workspace | Reference mode turned on or off (key R, the top-bar target button, `setReference`) | gameView (element proxies) |
 | tools | `workspace:open-file` | `{ path: string; line?: number }` | flowView, gameView | "Open in Files" | filesView |
 | tools | `workspace:select-node` | `{ id: string }` | filesView | a Used-by chip | flowView |
 | tools | `workspace:focus-frame` | `{ frame: number }` | consoleView | a frame link, `focusFrame()` | flowView |
-| tools | `workspace:new-note` | `{ captures?: readonly string[]; from?: { node: string; outcome?: string } }` | gameView | "New note…" on a capture card or contact sheet | flowView |
 | tools | `workspace:reveal` | `{ ref: ElementRef }` | gameView | "Show in render tree" | renderView |
 | tools | `workspace:inspect` | `{ ref: ElementRef }` | renderView | "Inspect in Game" | gameView |
 | tools | `workspace:open-sheet` | `{ index: string }` | filesView | "Open contact sheet" on a series `index.json` | gameView |
 
-`files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; starts with `.moku/notes/` → `note`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, or ends with `.styles.ts`/`.styles.tsx` → `style`; other `.ts`/`.tsx` → `code`; else `other`.
+`files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, or ends with `.styles.ts`/`.styles.tsx` → `style`; other `.ts`/`.tsx` → `code`; else `other`.
 
 `LinkStatus` semantics: `connecting` (socket open or session attached, no heartbeat yet); `live`/`paused` (the chosen session beats; `paused` from the heartbeat flag); `silent` (no heartbeat for 6 s, or 65 s after a `paused: true` beat); `lost` (socket closed, chosen session closed, or no boot tag `no_boot`); `empty` (connected, no game session, also 10 s after a lost session). The bridge reports only `connecting`, `live`, `paused`, `lost`.
 
-Not events: heartbeats are a callback api (`channel.onHeartbeat`); `ctx.log` lines such as `hub:refused`, `bridge:lost`, `registry:watch-failed`, `link:watch-failed`, `panels:view-failed` are log events, listed in each plugin README.
+Not events: heartbeats are a callback api (`channel.onHeartbeat`), and so are taps (`link.onTap`); `ctx.log` lines such as `hub:refused`, `bridge:lost`, `registry:watch-failed`, `registry:source-unavailable`, `link:watch-failed`, `panels:view-failed` are log events, listed in each plugin README.
 
 ---
 
@@ -802,7 +842,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 |---|---|---|---|---|
 | link | `retryMs` | `number` | `1000` | Base of the reconnect backoff `min(retryMs × 2^n, 8000)`. |
 | link | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the boot JSON tag `pages` injects. |
-| workspace | `defaultWorkspace` | `WorkspaceId` | `"flow"` | Shown at start when the URL hash names none. |
+| workspace | `defaultWorkspace` | `WorkspaceId` | `"game"` | Shown at start when the URL hash names none. |
 | workspace | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | workspace | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
 | workspace | `toastMs` | `number` | `2600` | How long one toast stays; hover or focus pauses it. |
@@ -813,8 +853,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | flowView | `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
 | flowView | `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
-| flowView | `notesDir` | `string` | `".moku/notes"` | Note files. |
-| flowView | `stylesFile` | `string` | `"features/ui/styles.ts"` | Text styles the Styles tab edits. |
+| flowView | `stylesFile` | `string \| undefined` | `undefined` | Text styles the Styles tab edits. Unset: the first project file that calls `defineTextStyles(`, found once per session. |
 | flowView | `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
 | flowView | `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
 | flowView | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
@@ -822,7 +861,6 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `maxZoom` | `number` | `3` | Highest zoom. |
 | flowView | `defaultMinZoom` | `number` | `0.8` | Floor of the default camera. |
 | gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots and series. |
-| gameView | `notesDir` | `string` | `".moku/notes"` | Notes. |
 | gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
 | gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
@@ -864,10 +902,11 @@ Each section: core, tier, depends, lifecycle, then the Config, Api and constants
 
 ### 7.1 registry — agent, Complex
 
-- depends: none (first agent plugin). Lifecycle: `onInit` (`buildCatalogue`).
+- depends: none (first agent plugin). Lifecycle: `onInit` (`buildCatalogue`), `onStart` (`refreshManifest`: drops the manifest cache and builds it again, so the door sources are probed once the game runs; start the editor after the game).
 - Imports from the game: `read`, `watch`, `sources` from `@moku-labs/game/inspect`; `run`, `commands` from `@moku-labs/game/control`.
 - Manifest order: door entries, then modules in config order, then editor commands in `add` order. Sources and commands share one id namespace.
-- Events: none. Logs: `registry:source-failed`, `registry:command-failed`, `registry:watch-failed` (warn, `{ id, message }`).
+- Sources the game does not have: every manifest build probes each door source once with its default input `{}` (a source with a required input, the element locators of `UNPROBED_SOURCES` — `game.rect` and `game.locate`, which throws on `{}` — and module sources are not probed). A door that throws (a game without `effectsPlugin`; a screenless game without `ui`, `world`, a renderer, audio or assets; game 0.4.2's `game.sounds` without `audioPlugin`, reason `[game] The source game.sounds needs audioPlugin.`) is listed with `available: false` and `reason`, and its `read`/`watch` throw -32008 `not_installed` (`[moku-editor] source <id> is not available in this game: <reason>`, not retryable) without a door call or a warn. The next build probes again.
+- Events: none. Logs: `registry:source-failed`, `registry:command-failed`, `registry:watch-failed` (warn, `{ id, message }`); `registry:source-unavailable` (info, `{ id, reason }`, once per source while it stays unavailable).
 
 ~~~ts
 /**
@@ -943,7 +982,7 @@ export type Clock = { readonly frame: number; readonly paused: boolean };
  * ```
  */
 export type RegistryApi = {
-  /** The frozen manifest: descriptors only, no functions. */
+  /** The frozen manifest: descriptors only, no functions; unavailable door sources carry `available: false`. */
   manifest(): Manifest;
   /** A source entry, or undefined for an unknown id. */
   source(id: string): SourceEntry | undefined;
@@ -962,6 +1001,7 @@ export type RegistryApi = {
 
 - depends: `[registryPlugin]`. Lifecycle: `onInit` (`checkConfig`), `onStart` (`startHeartbeat`, unref'd interval), `onStop` (`stopChannel`).
 - `watch` delivers the current value before it returns; `run` dispatches in a microtask; the heartbeat runs on `setInterval`, so a paused game still beats.
+- In Chromium the beat also carries `heap { usedMb, limitMb }` from `performance.memory` (MB, rounded to 0.1); elsewhere `heap` is absent.
 - Events: none. Log: `channel:heartbeat-listener-failed` (warn, `{ message }`).
 
 ~~~ts
@@ -1074,6 +1114,7 @@ export type OverlayApi = {
 - depends: `[registryPlugin, channelPlugin]`. Lifecycle: `onInit` (`checkConfig`), `onStart` (`startBridge`, connects without awaiting), `onStop` (`stopBridge`: `bye`, close 1000).
 - Backoff with defaults and `random() = 0.5`: 1000, 2000, 4000, 8000, 16000, 30000, 30000.
 - Lost reasons: `no WebSocket in this runtime` (no retry), `no page URL for <hello>` (no retry), `hello unreachable`, `hello <status>`, `hello answered without ws and token`, `hello answered a bad ws URL`, `socket failed`, `socket closed (<code>)[: <reason>]`, `stopped` (no retry).
+- Taps: a `pointerdown` on the page window sends the `tap { x, y, at }` notification (page CSS px, `at` = `performance.now()`), at most one per 50 ms, passive, never for events inside the overlay host. The tools page draws a ripple at the tap point.
 - Events: emits `bridge:status`. Logs: `bridge:connected` (info), `bridge:lost` (warn then debug), `bridge:disabled` (error), `bridge:connect-crashed`, `bridge:request-crashed` (error), others at debug.
 
 ~~~ts
@@ -1142,7 +1183,7 @@ export type BridgeApi = {
 
 - depends: `[registryPlugin]`. Lifecycle: `createState`, `onInit` (adds three commands), `onStop` (ends a running series). No app api.
 - Commands: `editor.capture` (`{}`, effect `read`, value `Shot`), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`).
-- Every shot runs the door command `game.capture` (needs `__MOKU_GAME_DEV__`). A series plans `max(1, floor(durationMs / intervalMs))` shots, never overlapping, one series at a time.
+- Every shot runs the door command `game.capture` (needs `__MOKU_GAME_DEV__`). The picture is the PNG data URL the door answers (game 0.1) or the string `png` of `{ png, legend? }` (game 0.4); anything else is -32000 "gave no picture". A series plans `max(1, floor(durationMs / intervalMs))` shots, never overlapping, one series at a time.
 - Events: none. Logs: `capture:series-large`, `capture:shots-skipped` (warn).
 
 ~~~ts
@@ -1225,7 +1266,7 @@ export type FilesConfig = {
 /**
  * What a write was about, classified from its path.
  */
-export type WrittenKind = "code" | "style" | "note" | "layout" | "capture" | "other";
+export type WrittenKind = "code" | "style" | "layout" | "capture" | "other";
 
 /**
  * Payload of the global server event `files:written`.
@@ -1269,6 +1310,7 @@ export type FilesApi = {
 - `serve` throws: before start, on a second call, with a `websocket` option, with `unix` or `tls`, with a hostname other than `127.0.0.1`/`localhost`, with a game route under the editor path.
 - Guard modes: `upgrade` (Origin required), `same-origin` (Origin and Sec-Fetch-Site checked when present), `navigate`.
 - Session choice for a game request without `session`: one open session wins; with several, the only embedded one wins; else -32003.
+- Heartbeats (with a well-formed `heap` kept) and `tap { x, y, at }` notifications are forwarded to every tools connection with `session`. A malformed heartbeat, value or tap is one strike; ten strikes close with 1008.
 - Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
 
 ~~~ts
@@ -1406,8 +1448,10 @@ export type BinArgs =
 ### 7.9 link — tools, Complex
 
 - depends: none (first tools plugin). Lifecycle: `onStart` (silence check, read boot tag, open socket without waiting), `onStop` (reject pending with `link_closed`, close 1000).
-- Session choice: sticky choice, then newest embedded, then newest. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
-- Events: emits `link:status`. Logs: `link:source-missing`, `link:watch-failed`.
+- Session choice: sticky choice, then this page's own game frame (its `__editorFrame` id, `frameUrl`), then newest embedded, then newest. An embedded session of another tools tab is never picked on its own. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
+- A watch the session refuses with -32008 `not_installed` (the game does not have the source; the manifest lists it with `available: false`) is logged only at debug (`link:source-unavailable`) and never sent to that session again; a new session gets it again.
+- Taps: every `tap { x, y, at }` notification of the chosen session goes to the `onTap` listeners (frozen, at most one per 50 ms from the bridge). `heap()` is the `heap` of the chosen session's last heartbeat (Chromium only).
+- Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
 ~~~ts
 /**
@@ -1465,7 +1509,8 @@ export type Config = {
  *
  * @example
  * ```ts
- * await app.link.files.write(".moku/notes/2026-09-24-first-top-item.md", text);
+ * // The files view saves a Markdown tab while no game is connected.
+ * await app.link.files.write("docs/plan.md", "# Plan\n");
  * ```
  */
 export type FilesClient = {
@@ -1492,6 +1537,14 @@ export type LinkApi = EditorChannel & {
   choose(session: string): Promise<Manifest>;
   retry(): void;
   boot(): ToolsBoot | undefined;
+  /** The game URL tagged with this tools page's frame id (`__editorFrame`): each tab follows its own game. */
+  frameUrl(url: string): string;
+  /** True when a page URL is the game frame of another tools tab (another frame id). */
+  isOtherTab(page: string): boolean;
+  /** Called with every tap of the chosen session; returns an idempotent unsubscribe. */
+  onTap(listener: (tap: Tap) => void): () => void;
+  /** The page heap of the chosen session's last heartbeat; undefined where it is not reported. */
+  heap(): { usedMb: number; limitMb: number } | undefined;
   files: FilesClient;
 };
 ~~~
@@ -1499,10 +1552,16 @@ export type LinkApi = EditorChannel & {
 ### 7.10 workspace — tools, Complex
 
 - depends: `[linkPlugin]`. Lifecycle: `onInit` (config, prefs, theme, hash, keys, Esc layers, palette), `onStart` (window listeners, `link.onManifest`), `mount(el)` (renders the shell, creates the frame layer once), `onStop`.
-- Keys: ⌘1–⌘6 and 1–6 switch workspaces; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; Esc unwinds layers in `EscLayer` order.
+- Workspaces in rail order: Game (the default, ⌘1), Flow (⌘2), Render, State, Files, Console.
+- Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; Esc unwinds layers in `EscLayer` order.
+- Narrow first: built for Claude's browser pane at 1/3 (480 px) and 1/2 (720 px) of the screen; every workspace works at 480 px without horizontal page scroll.
+- Density: `auto` (default; compact below 820 px of window width, comfortable from there), `compact` or `comfortable`. Palette items "Density: …"; saved with the theme; `data-density` on `<html>`; `workspace:density` when the applied value changes.
+- Reference mode (D-27): key R, the top-bar target button, the palette or `setReference`. The frame takes no game input while it is on; gameView draws `data-moku-*` proxies at the element bounds. Never persisted; Esc turns it off.
+- Pinned preview: the header drags it (snaps to a corner); the body plays the game (taps and keys reach it); the size changes only through S/M/L.
+- Tap ripples: `link.onTap` draws a ring at the tap point over the docked frame while "Show taps in the game" is on.
 - Devices: iPhone SE, iPhone 15 (default, portrait), iPhone 15 Pro Max, Pixel 8, iPad mini, Desktop.
 - D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`.
-- Events: emits `workspace:changed`, `workspace:ran`; hooks `link:status`.
+- Events: emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`.
 
 ~~~ts
 /**
@@ -1533,6 +1592,16 @@ export type WorkspaceConfig = {
  * The colour theme.
  */
 export type Theme = "light" | "dark";
+
+/**
+ * The applied density of the tools page.
+ */
+export type Density = "compact" | "comfortable";
+
+/**
+ * The chosen density; `auto` is compact below 820 px of window width, comfortable otherwise.
+ */
+export type DensityChoice = "auto" | Density;
 
 /**
  * A workspace that has a pinned game preview (every one but Game).
@@ -1648,7 +1717,6 @@ export type EscLayer =
   | "palette"
   | "contactSheet"
   | "contextMenu"
-  | "noteEditor"
   | "registry"
   | "seriesPopover"
   | "captureCard"
@@ -1656,6 +1724,7 @@ export type EscLayer =
   | "fileEdit"
   | "codeEdit"
   | "stepPopover"
+  | "reference"
   | "selection";
 
 /**
@@ -1664,7 +1733,8 @@ export type EscLayer =
  * @example
  * ```ts
  * app.workspace.show("game");
- * app.workspace.toast("✓ Note saved", ".moku/notes/2026-09-24-first-top-item.md");
+ * app.workspace.setDensity("compact");
+ * app.workspace.setReference(true); // the game gets no input; gameView draws its proxies
  * ```
  */
 export type WorkspaceApi = {
@@ -1672,6 +1742,8 @@ export type WorkspaceApi = {
   show(ws: WorkspaceId): void;
   theme(): Theme;
   setTheme(theme?: Theme): void;
+  density(): Density;
+  setDensity(value: DensityChoice): void;
   preview(ws: PreviewWorkspace): PreviewState;
   setPreview(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>): void;
   device(): DeviceChoice;
@@ -1697,6 +1769,8 @@ export type WorkspaceApi = {
   };
   overlayInGame(): boolean;
   setOverlayInGame(on: boolean): Promise<void>;
+  reference(): boolean;
+  setReference(on: boolean): void;
   onPrefs(fn: (prefs: Prefs) => void): () => void;
 };
 ~~~
@@ -1706,7 +1780,8 @@ export type WorkspaceApi = {
 - depends: `[linkPlugin, workspacePlugin]`. Lifecycle: `onStart` (mount the active workspace, one palette item per panel, `link.onManifest` → recheck), `onStop` (unmount, unwatch).
 - Mount states (`data-panel-state`): `missing`, `no-game`, `waiting`, `ready`, `error`. Stale marking (`data-stale`): `silent`, `lost`, `resync`.
 - `definePanel` (root export) validates id `/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)*$/`, workspace, source refs, command ids, `view`, `compact`.
-- `shared/` modules (not exported from the root): `style-edit.ts`, `notes.ts`, `highlight.ts`, `tokens.ts`, `scene/`, `editor-url.ts`.
+- `shared/` modules (not exported from the root; views import them by relative path): `style-edit.ts`, `highlight.ts`, `tokens.ts`, `scene/`, `editor-url.ts`, `side-panel/`.
+- `side-panel/` is the one SidePanel of every view's side panel (flowView Inspector, gameView, filesView): `SidePanel` (Preact; props `id`, `side: "start" | "end"`, `title`, `defaultWidth`, `minWidth`, `maxWidth`, `overlayBelow?`, `open?`, `onOpenChange?`), `useSidePanel(id)` → `{ closed, expanded, show, toggle }`, `sidePanelState(id)` → `{ width, collapsed, closed, overlay, drawer }`, `showSidePanel(id)`, `toggleSidePanel(id)` (views bind `\`). Resize by a 6 px handle (←/→ step 16 px, double-click resets), collapse to a 32 px rail, close and reopen (toolbar `reopen-<id>` button, palette "Show <title>"), overlay drawer below `overlayBelow` px of container width. Persisted per id in localStorage `moku-editor:panel:<id>` (`{ width, collapsed, closed }`).
 - Events: emits `workspace:ran`; hooks `link:status`, `workspace:changed`.
 
 ~~~ts
@@ -1810,9 +1885,14 @@ export type PanelsApi = {
 
 ### 7.12 flowView — tools, VeryComplex
 
-- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (registers the Flow panel with sources `game.graph`, `game.position`, `game.history { last: historyLast }` and commands `step`, `pause`, `resume`; palette; keys; Esc layers), `onStop` (waits for a pending layout save ≤ 1000 ms, disposes ELK).
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (registers the Flow panel with commands `step`, `pause`, `resume`; palette; keys; Esc layers; takes `workspace.density()`), `onStart` (watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session, so the Nodes palette, other views' intents and history frames work before Flow is shown; the canvas renders when Flow is first shown), `onStop` (waits for a pending layout save ≤ 1000 ms, disposes ELK).
 - Runs commands only through `panels.run`; never `link.run`.
-- Events: emits `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:new-note`.
+- The Info tab is the one place for a node's neighbours (D-25; the neighbours strip is gone). A click on a *Comes from* or *Outcomes* row follows its edge (`focus.followEdge`): the other end is selected, the camera frames both ends, a 600 ms pulse plays on the reached node, Back (Alt+←) returns. The current node is never dimmed.
+- Find current (key `c`, the toolbar button): the camera moves onto the current node with a pulse; a chevron points to it while it is out of view.
+- Density: ELK spacing follows `workspace:density` (comfortable 120 / 20, compact 96 / 14), edge labels take their own layer so they never overlap.
+- A `workspace:select-node` that shows Flow for the first time is framed by the first canvas measure, not the current node.
+- Notes are gone: no `notes` namespace, no `notesDir`, no `workspace:new-note`.
+- Events: emits `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`.
 
 ~~~ts
 /**
@@ -1824,7 +1904,7 @@ export type PanelsApi = {
  * ```
  */
 export type FlowViewConfig = {
-  /** Entries of game.history the panel watches. Default 20. */
+  /** Entries of game.history flowView watches. Default 20. */
   historyLast: number;
   /** Edges drawn as the trail, newest strongest. Default 6. */
   trailLength: number;
@@ -1836,10 +1916,11 @@ export type FlowViewConfig = {
   hubMinReturns: number;
   /** Saved positions. Default ".moku/editor/layout.json". */
   layoutFile: string;
-  /** Note files. Default ".moku/notes". */
-  notesDir: string;
-  /** The text-styles file the Styles tab reads and edits. Default "features/ui/styles.ts". */
-  stylesFile: string;
+  /**
+   * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
+   * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
+   */
+  stylesFile: string | undefined;
   /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
   layoutWorker: boolean;
   /** Debounce before layout.json is written after a drop. Default 400. */
@@ -1859,16 +1940,52 @@ export type FlowViewConfig = {
  *
  * @example
  * ```ts
- * app.flowView.focus.select("board/merge"); // true, the neighbours strip opens
+ * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
  * app.flowView.camera.fitAll(); // the whole main frame in view
  * ```
  */
 export type FlowViewApi = {
+  /**
+   * The camera: fit all, fit the selection, zoom, Follow the game.
+   *
+   * @example
+   * ```ts
+   * app.flowView.camera.zoomTo(1); // 100 %
+   * ```
+   */
   camera: CameraApi;
+
+  /**
+   * Focus: select a node, walk the graph, follow an edge, focus the edge of a frame, Step, the
+   * history strip.
+   *
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
+   * ```
+   */
   focus: FocusApi;
+
+  /**
+   * Sub-flows: expand and collapse in place, enter as the canvas root, go back up.
+   *
+   * @example
+   * ```ts
+   * app.flowView.flows.enter("main/board"); // breadcrumb main › board
+   * ```
+   */
   flows: FlowsApi;
+
+  /**
+   * Pinned positions: how many are pinned in the visible flows, and Reset layout.
+   *
+   * @example
+   * ```ts
+   * // merge and toast were dragged on the board.
+   * app.flowView.layout.pinnedCount(); // 2
+   * ```
+   */
   layout: LayoutApi;
-  notes: NotesApi;
 };
 
 /**
@@ -1888,7 +2005,8 @@ export type CameraApi = {
   get(): Camera;
 
   /**
-   * Fits every item of the root frame (F / ⇧1), leaving room for the preview and the minimap.
+   * Fits every item of the root frame (F / ⇧1), leaving room for the preview and the minimap;
+   * animated over 420 ms. Does nothing before the first layout.
    *
    * @example
    * ```ts
@@ -1900,6 +2018,7 @@ export type CameraApi = {
 
   /**
    * Fits the selection and its neighbours (⇧2); the current node when nothing is selected.
+   * Animated over 420 ms.
    *
    * @example
    * ```ts
@@ -1933,6 +2052,7 @@ export type CameraApi = {
 
   /**
    * Toggles or sets Follow the game (B5). Only this call and the toolbar toggle change it (M9).
+   * Turning it on moves the camera to the current node over 500 ms.
    *
    * @param on - The new value; omitted = toggle.
    * @returns The new value.
@@ -1949,15 +2069,15 @@ export type CameraApi = {
  */
 export type FocusApi = {
   /**
-   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item and
-   * the neighbours strip opens. A bare NodeId resolves to its first visible instance; inside a
-   * collapsed sub-flow the parents expand first. `undefined` leaves focus.
+   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item.
+   * A bare NodeId resolves to its first visible instance; inside a collapsed sub-flow the parents
+   * expand first. `undefined` leaves focus.
    *
    * @param key - An ItemKey, a NodeId, or undefined.
    * @returns False for an unknown key, else true.
    * @example
    * ```ts
-   * app.flowView.focus.select("board/merge"); // true, strip opens
+   * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
    * app.flowView.focus.select("board/nope"); // false, nothing selected
    * ```
    */
@@ -1988,17 +2108,34 @@ export type FocusApi = {
   current(): NodeId | undefined;
 
   /**
-   * Walks the graph through the neighbours strip: "next" (→) focuses the highlighted *Goes to*
-   * row's target (default: the row on the trail), "prev" (←) the highlighted *Comes from* source.
+   * Walks the graph from the shown node: "next" (→) follows the highlighted *Outcomes* row of the
+   * Info tab (default: the row on the trail), "prev" (←) the highlighted *Comes from* row
+   * (default: the first). A row with its edge on screen is followed like `followEdge`.
    *
    * @param direction - "prev" = ←, "next" = →.
    * @example
    * ```ts
    * app.flowView.focus.select("board/merge");
-   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Goes to" row
+   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Outcomes" row
    * ```
    */
   walk(direction: "prev" | "next"): void;
+
+  /**
+   * Follows an edge from the shown node to its other end: the target of an *Outcomes* edge, the
+   * source of a *Comes from* edge (an exit resolves through its frame's edge). Selects that
+   * instance, marks the edge, frames both ends, plays a 600 ms pulse on the reached node and
+   * keeps the previous selection for Back (Alt+←).
+   *
+   * @param edgeKey - An instance edge key, "main/board>board/merge:done".
+   * @returns False when the edge or its other end is not on the canvas, else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge");
+   * app.flowView.focus.followEdge("main/board>board/merge:done"); // true: awaitIntent selected, both ends framed
+   * ```
+   */
+  followEdge(edgeKey: string): boolean;
 
   /**
    * Focuses the edge taken at a frame and marks its history row (the `workspace:focus-frame` hook
@@ -2093,7 +2230,7 @@ export type FlowsApi = {
  */
 export type LayoutApi = {
   /**
-   * Pinned items (node and note positions) in the visible flows: Reset layout is disabled at 0 (M8).
+   * Pinned node positions in the visible flows: Reset layout is disabled at 0 (M8).
    *
    * @returns The count.
    * @example
@@ -2116,108 +2253,16 @@ export type LayoutApi = {
    */
   reset(): Promise<void>;
 };
-
-/**
- * One note file under notesDir.
- */
-export type NoteFile = {
-  readonly path: string;
-  readonly version: string;
-  /** undefined when the front matter is not readable (the file is never rewritten). */
-  readonly note: Note | undefined;
-  readonly error: NoteParseError | undefined;
-};
-
-/**
- * The note editor (D5) draft.
- */
-export type NoteDraft = {
-  title: string;
-  body: string;
-  from: { node: string; outcome?: string } | undefined;
-  captures: readonly string[];
-  /** Free note position in world units (viewport centre). */
-  anchor: { x: number; y: number } | undefined;
-};
-
-/**
- * The input of notes.create.
- *
- * @example
- * ```ts
- * const input: NoteInput = { title: "First wood 4", from: { node: "board/merge", outcome: "done" } };
- * ```
- */
-export type NoteInput = {
-  readonly title: string;
-  readonly body?: string;
-  readonly from?: { readonly node: string; readonly outcome?: string };
-  readonly to?: string;
-  readonly captures?: readonly string[];
-};
-
-/**
- * The notes namespace of the api (`app.flowView.notes`).
- */
-export type NotesApi = {
-  /**
-   * The parsed note files, newest first (at most 200).
-   *
-   * @returns A copy of the list.
-   * @example
-   * ```ts
-   * app.flowView.notes.list()[0]?.path; // ".moku/notes/2026-09-24-first-top-item.md"
-   * ```
-   */
-  list(): readonly NoteFile[];
-
-  /**
-   * Opens the note editor (D5). The `workspace:new-note` hook calls it with `{ captures, from }`.
-   *
-   * @param draft - Prefilled fields; omitted = a free note.
-   * @example
-   * ```ts
-   * app.flowView.notes.edit({ from: { node: "board/merge", outcome: "done" } }); // "On board/merge · done"
-   * ```
-   */
-  edit(draft?: Partial<NoteDraft>): void;
-
-  /**
-   * Writes a new note file `<notesDir>/<date>-<slug>.md` with the contract front matter and
-   * toasts "✓ Note saved · <path>" (M12).
-   *
-   * @param input - Title and optional body, origin, target and captures.
-   * @returns The written note file.
-   * @example
-   * ```ts
-   * await app.flowView.notes.create({ title: "First wood 4", body: "…", from: { node: "board/merge", outcome: "done" } });
-   * // { path: ".moku/notes/2026-09-24-first-wood-4.md", note: { status: "idea", to: "board/awaitIntent", … } }
-   * ```
-   */
-  create(input: NoteInput): Promise<NoteFile>;
-
-  /**
-   * Appends capture paths to a note's front matter (version checked, one retry) and toasts
-   * "✓ Attached to <title>".
-   *
-   * @param path - The note file.
-   * @param captures - Capture paths (PNGs or series index.json).
-   * @returns The rewritten note file.
-   * @throws {Error} When the note's front matter is not readable (it is never rewritten).
-   * @example
-   * ```ts
-   * await app.flowView.notes.attach(".moku/notes/2026-09-24-first-top-item.md", [".moku/captures/2026-09-24-1012-board.png"]);
-   * ```
-   */
-  attach(path: string, captures: readonly string[]): Promise<NoteFile>;
-};
 ~~~
 
 ### 7.13 gameView — tools, Complex
 
-- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active), `onStop`.
-- Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown. Runs `editor.*` commands through `panels.run`. Never captures on its own.
-- Events: emits `workspace:reveal`, `workspace:new-note`, `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active; Reference mode on when workspace has it on), `onStop`.
+- Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown or Reference mode is on. Runs `editor.*` commands through `panels.run`. Never captures on its own.
+- Calibration: reads `{ key }` of one keyed ui node from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1). A manifest with neither: no read, no warn, and the picker hint says "This game reports no element rects".
+- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-bounds`. The Element tab's "Copy reference" copies one line, e.g. `@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76`.
+- The Element panel is a `SidePanel` (panels/shared/side-panel). Notes and the attach api are gone (no `attach`, `notes`, `notesDir`, `workspace:new-note`).
+- Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
 
 ~~~ts
 /**
@@ -2231,8 +2276,6 @@ export type NotesApi = {
 export type GameViewConfig = {
   /** Folder of screenshots and series, relative to the files root. */
   capturesDir: string;
-  /** Folder of notes, relative to the files root. */
-  notesDir: string;
   /** Where the game's asset manifest may live, tried in order. */
   manifestPaths: readonly string[];
   /** The capture card hides after this unless hovered or focused. */
@@ -2243,7 +2286,18 @@ export type GameViewConfig = {
   seriesIntervalsMs: readonly number[];
   /** Above this many planned shots the popover warns. */
   seriesWarnShots: number;
-  /** Source search for the style block of a picked element. */
+  /**
+   * Source search for the style block of a picked element: from the folder of the game page
+   * entry first, then the root. Config merges shallowly, so an override replaces this object as a
+   * whole: pass both fields.
+   *
+   * @example
+   * ```ts
+   * createApp({
+   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 3000, skip: ["node_modules", "dist", ".git", ".moku"] } } }
+   * });
+   * ```
+   */
   sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
 };
 
@@ -2339,8 +2393,9 @@ export type GameViewApi = {
 
   /**
    * The scene built with the shared `buildScene` from the watched `game.ui`, `game.entities`
-   * and `game.projections` (watched while Game is shown, R6). While Game is hidden it reads the
-   * three once. Rejects with the link's WireError when no game is connected.
+   * and `game.projections` (watched while Game is shown, R6); a calibration in flight is waited
+   * for, so the rects are the calibrated ones. While Game is hidden it reads the three once.
+   * Rejects with the link's WireError when no game is connected.
    *
    * @returns The scene snapshot.
    * @throws {Error} The link's WireError, or `[moku-editor] game.ui has the wrong shape …`.
@@ -2358,6 +2413,7 @@ export type GameViewApi = {
    *
    * @param ref - The element.
    * @returns Its rect in page CSS px, undefined when it is unknown or could not be placed.
+   * @throws {Error} What `scene()` throws: the link's WireError, or a wrong game.ui shape.
    * @example
    * ```ts
    * // The first board item of merge-game at board/awaitIntent.
@@ -2458,40 +2514,15 @@ export type GameViewApi = {
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
-
-  /**
-   * Adds a capture (a PNG or a series index.json) to a note's front matter `captures[]` through
-   * the shared codec; writes with the version and toasts "✓ Attached to <title>". A path already
-   * listed is not added twice; a note whose front matter is not readable is never rewritten.
-   *
-   * @param capture - Path of the PNG or the series index.json.
-   * @param notePath - Path of the note.
-   * @returns Resolves when written (or a toast said why not).
-   * @example
-   * ```ts
-   * // Keep the screenshot with the bug note it belongs to.
-   * await app.gameView.attach(".moku/captures/2026-09-24-1012-board.png", ".moku/notes/2026-09-24-first-top-item.md");
-   * ```
-   */
-  attach(capture: string, notePath: string): Promise<void>;
-
-  /**
-   * The notes under `notesDir` for the note select, newest first (by file name).
-   *
-   * @returns Path and front-matter title of every note.
-   * @example
-   * ```ts
-   * // The note select of the capture card.
-   * await app.gameView.notes(); // [{ path: ".moku/notes/2026-09-24-first-top-item.md", title: "First top item" }]
-   * ```
-   */
-  notes(): Promise<readonly { path: string; title: string }[]>;
 };
 ~~~
 
 ### 7.14 renderView — tools, Standard
 
-- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Render panel), `onStart` (session watches `game.render`, `game.assets`, `game.effects` by manifest), `onStop`.
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Render panel), `onStart` (session watches `game.render`, `game.assets`, and `game.effects` while the manifest lists it as available), `onStop`.
+- Tiles: FPS (sparkline; "Resting at 30 fps …" while the game rests at its idle rate, D-28), frame time, draw calls ("Not counted in a production build" without the dev counter), texture memory, Scene (entities, display objects, pooled, and the effects line), and JS heap only where the page heartbeat reports `heap` (Chromium, `link.heap()`).
+- Effects line: the `game.effects` counts (game 0.0.3); "Particles and filters are not reported (follow-up F-R1)" on an older game; "Effects not installed in this game" when the manifest lists `game.effects` with `available: false` (a game without `effectsPlugin`; `snapshot().tiles.effectsInstalled === false`, no watch is sent, nothing is logged).
+- Calibration: `{ key }` of the first keyed ui element from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1); neither listed: no read, no warn, an uncalibrated scene.
 - Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `workspace:reveal`. Logs: `renderView: unexpected source shape` (warn), `renderView: calibration failed` (warn).
 
 ~~~ts
@@ -2518,6 +2549,56 @@ export type RenderViewConfig = {
 export type TextureSortKey = "key" | "bundle" | "size" | "gpuMb" | "fileMb" | "use";
 
 /**
+ * game.effects as renderView reads it (mirrors the game's EffectsStats, game 0.0.3).
+ *
+ * @example
+ * ```ts
+ * const effects: EffectsStats = { particles: 18, emitters: 1, filters: 24, renderPasses: 49 };
+ * ```
+ */
+export type EffectsStats = {
+  /** Live particles over every instance and orphan. */
+  particles: number;
+  /** Running emitter instances plus the orphans still flying. */
+  emitters: number;
+  /** Filter instances over every view. */
+  filters: number;
+  /** Render passes of the frame. */
+  renderPasses: number;
+};
+
+/**
+ * The six metric tiles.
+ */
+export type MetricTiles = {
+  fps: { now: number; samples: readonly number[]; low: number } | undefined;
+  frameMs: number | undefined;
+  /** The counter, or absent in a production build; renderPasses only when game.render reports it. */
+  drawCalls:
+    | (({ kind: "value"; value: number } | { kind: "absent" }) & { renderPasses?: number })
+    | undefined;
+  textures:
+    | {
+        gpuMb: number;
+        count: number;
+        bundles: number;
+        budgetMb: number;
+        unused: number;
+        unusedMb: number;
+      }
+    | undefined;
+  /** effects only when game.effects delivered (game 0.0.3). */
+  scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
+  /**
+   * Present, and false, only when the game has no effects plugin: the manifest lists game.effects
+   * with `available: false` and the Scene tile reads "Effects not installed in this game".
+   */
+  effectsInstalled?: false;
+  /** The page heap from its heartbeat (Chromium `performance.memory`); absent elsewhere. */
+  heap: { kind: "value"; usedMb: number; limitMb: number } | { kind: "absent" };
+};
+
+/**
  * The derived view data (copies, never the live maps).
  */
 export type RenderSnapshot = {
@@ -2537,14 +2618,14 @@ export type RenderSnapshot = {
  * @example
  * ```ts
  * app.workspace.show("render");
- * app.renderView.snapshot().tiles.heap; // { kind: "absent" }
+ * app.renderView.snapshot().tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium
  * ```
  */
 export type RenderViewApi = {
   /**
-   * Re-reads the asset manifest and the game.rect calibration (the Textures card's Refresh and a
-   * device change). Live values come from the watches: this is not a poll. Does nothing while the
-   * link is not live or paused.
+   * Re-reads the asset manifest and the calibration from game.locate or game.rect (the Textures
+   * card's Refresh and a device change). Live values come from the watches: this is not a poll.
+   * Does nothing while the link is not live or paused.
    *
    * @returns Resolves when both reads settled (never rejects).
    * @example
@@ -2567,7 +2648,9 @@ export type RenderViewApi = {
    * const { tiles } = app.renderView.snapshot();
    * tiles.drawCalls; // { kind: "absent" } in a production build
    * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
+   * tiles.effectsInstalled; // false on a game without the effects plugin, else absent
    * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
+   * tiles.heap; // { kind: "absent" } outside Chromium: the page reports no heap
    * ```
    */
   snapshot(): RenderSnapshot;
@@ -3062,7 +3145,8 @@ export type FilesViewApi = {
    * @param mode - "preview" or "source".
    * @example
    * ```ts
-   * app.filesView.setMode(".moku/notes/2026-09-24-first-top-item.md", "source");
+   * await app.filesView.open("docs/levels.md");
+   * app.filesView.setMode("docs/levels.md", "source"); // the tab shows the Markdown as code
    * ```
    */
   setMode(path: string, mode: "preview" | "source"): void;
@@ -3462,21 +3546,30 @@ Every plugin imports the runtime-free protocol from `src/plugins/registry/protoc
 
 ### 9.1 Game dev entry: agent with bridge and capture
 
-```ts
-import { bridgePlugin, capturePlugin, createApp } from "@moku-labs/editor/agent";
+The recommended entry: the agent is imported only behind the dev flag, so a production build
+(`__MOKU_GAME_DEV__` defined `false`) keeps no editor code. Start it after the game: the registry
+probes the game's sources at start.
 
-const devPlugins = __MOKU_GAME_DEV__ ? [bridgePlugin, capturePlugin] : [];
-const editor = createApp({
-  plugins: devPlugins,
-  pluginConfigs: {
-    registry: { game: app, modules: [mergeDev] },
-    bridge: { retryMs: 500 },
-    capture: { maxDurationMs: 10_000 }
-  }
-});
-await editor.start(); // never waits for the editor server
-editor.bridge.status(); // { kind: "connecting" }, then { kind: "live", frame: 12 }
+```ts
+if (__MOKU_GAME_DEV__) {
+  const { bridgePlugin, capturePlugin, createApp } = await import("@moku-labs/editor/agent");
+  const editor = createApp({
+    plugins: [bridgePlugin, capturePlugin],
+    pluginConfigs: {
+      registry: { game: app, modules: [mergeDev] },
+      bridge: { retryMs: 500 },
+      capture: { maxDurationMs: 10_000 }
+    }
+  });
+  await editor.start(); // never waits for the editor server
+  editor.bridge.status(); // { kind: "connecting" }, then { kind: "live", frame: 12 }
+}
 ```
+
+Measured with `Bun.build` (browser, minified, the game external; `tests/integration/agent-bundle.test.ts`):
+flag `false` adds 0 B (no `/__editor/hello`, `editor.capture` or `bridge:` in the output); flag
+`true` adds 71.3 KB minified (24.8 KB gzip: agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common`). A static import used only inside the `if` drops out too (`"sideEffects":
+false`); an agent export used outside it keeps the whole agent.
 
 ### 9.2 In process, without a server (tests, headless)
 
@@ -3519,9 +3612,11 @@ tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!
 
 tools.link.status(); // { kind: "live", frame: 1840 }
 await tools.link.run("game.step", { frames: 1 });
-tools.flowView.focus.select("board/merge"); // true, the strip opens
+tools.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
+tools.workspace.setDensity("compact");
+tools.workspace.setReference(true); // gameView draws data-moku-* proxies over the game
 const shot = await tools.gameView.capture(); // { path: ".moku/captures/…png", frame, device, image }
-await tools.flowView.notes.create({ title: "First wood 4", body: "…", from: { node: "board/merge", outcome: "done" } });
+tools.renderView.snapshot().tiles.effectsInstalled; // false on a game without effectsPlugin
 await tools.filesView.open("nodes/merge.ts", { line: 12 });
 tools.consoleView.setFilter({ level: "error" });
 const off = tools.stateView.onCommit(() => report(tools.stateView.lastCommit()?.patches.length));
@@ -3639,6 +3734,7 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | agent → hub | game | notification | `hello` | `{ manifest: Manifest }` (must be first) | — |
 | agent → hub | game | notification | `heartbeat` | `Heartbeat` | — |
 | agent → hub | game | notification | `value` | `{ sub, value }` | — |
+| agent → hub | game | notification | `tap` | `Tap` (`{ x, y, at }`, at most one per 50 ms) | — |
 | agent → hub | game | notification | `bye` | — | — |
 | hub → agent | game | request | `manifest` | `{}` | `Manifest` |
 | hub → agent | game | request | `read` | `{ id, input? }` | `Json` |
@@ -3654,6 +3750,6 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
 | hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
-| hub → tools | game | notification | `heartbeat`, `value` | forwarded, with `session` | — |
+| hub → tools | game | notification | `heartbeat`, `value`, `tap` | forwarded, with `session` | — |
 
-Fan-out: one agent-side watch per `(session, source, input)` (object keys sorted). Backpressure: congested tools connections coalesce values to the latest per `sub` and drop heartbeats; the bridge backlogs values above 1 MiB buffered and flushes below 256 KiB.
+A `read` or `watch` of a source listed with `available: false` answers -32008 `not_installed`. Fan-out: one agent-side watch per `(session, source, input)` (object keys sorted). Backpressure: congested tools connections coalesce values to the latest per `sub` and drop heartbeats and taps; the bridge backlogs values above 1 MiB buffered and flushes below 256 KiB.

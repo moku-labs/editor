@@ -7,7 +7,6 @@ import { createCameraState } from "./camera/state";
 import { createFocusState } from "./focus/state";
 import { createInspectorState } from "./inspector/state";
 import { createLayoutState } from "./layout/state";
-import { createNotesState } from "./notes/state";
 import type { FlowViewConfig, FlowViewState } from "./types";
 
 /**
@@ -30,12 +29,13 @@ export function createFlowViewState(_ctx: {
       stale: false,
       staleFrame: undefined,
       session: undefined,
-      loaded: undefined
+      loaded: undefined,
+      values: { graph: undefined, position: undefined, history: undefined },
+      pending: undefined
     },
     camera: createCameraState(),
     layout: createLayoutState(),
     focus: createFocusState(),
-    notes: createNotesState(),
     inspector: createInspectorState(),
     view: {
       active: false,

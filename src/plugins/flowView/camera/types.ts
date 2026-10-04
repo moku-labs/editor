@@ -3,6 +3,7 @@
  * intents, the public camera api and the internal camera actions.
  */
 import type { Camera, Item, ItemKey } from "../types";
+import type { ZoneInsets } from "./chrome";
 
 /**
  * Viewport size in px.
@@ -27,6 +28,8 @@ export type CameraState = {
   insets: ViewInsets;
   /** The default camera was applied once for the current root. */
   initialised: boolean;
+  /** A selection came before the first canvas measure: the default camera frames it instead. */
+  frameSelection: boolean;
 };
 
 /**
@@ -50,7 +53,7 @@ export type CameraIntent =
 /**
  * What a pointer went down on (input.ts hit rules, M2).
  */
-export type HitTarget = "canvas" | "frame" | "lane" | "hub-head" | "card" | "note";
+export type HitTarget = "canvas" | "frame" | "lane" | "hub-head" | "card";
 
 /**
  * The camera namespace of the api (`app.flowView.camera`).
@@ -145,12 +148,25 @@ export type CameraActions = CameraApi & {
   focusItem(item: Item): void;
   /** Follow move onto an item (followCamera, 500 ms). */
   followItem(item: Item): void;
-  /** Applies the default camera once per root (M11), without a tween. */
+  /**
+   * Fits the placed items among the keys (both ends of a followed edge) inside the insets,
+   * animated over 420 ms; false when none of them is placed.
+   */
+  frameItems(keys: readonly ItemKey[]): boolean;
+  /**
+   * Applies the default camera once per root (M11), without a tween; frames the selection instead
+   * when one came before the first canvas measure (`frameSelection`).
+   */
   applyDefault(): void;
   /** Records the canvas size; applies the default camera when it was not yet applied. */
   setView(view: ViewSize): void;
-  /** The insets of the available rect: strip, preview column (also stored in state). */
+  /** The insets of the available rect: the preview column (also stored in state). */
   insets(): ViewInsets;
+  /**
+   * The insets of the preview zone in a canvas of this size: the top band, and at the bottom the
+   * zoom bar band, raised above the minimap when the float shares its columns.
+   */
+  previewZone(canvas: ViewSize): ZoneInsets;
   /** Cancels the running tween. */
   cancel(): void;
   /** Writes the camera to the DOM and notifies the camera subscribers. */

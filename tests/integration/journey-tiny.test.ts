@@ -10,7 +10,6 @@ import {
   bootTools,
   createProject,
   createTinyGame,
-  FIRST_NOTE,
   installPage,
   type Logged,
   logErrors,
@@ -287,6 +286,34 @@ function watchSubs(tap: Tap, from = 0): unknown[] {
 }
 
 /**
+ * True when every tools watch of a source got at least one value from the hub.
+ *
+ * @param tap - The wire tap.
+ * @param id - The source id.
+ * @returns Whether all its watches delivered.
+ */
+function delivered(tap: Tap, id: string): boolean {
+  const subs = tap
+    .requests("tools", "watch", "game")
+    .filter(message => paramsOf(message)?.id === id)
+    .map(message => paramsOf(message)?.sub);
+  const valued = new Set(tap.sent("tools", "value", "game").map(note => paramsOf(note)?.sub));
+  return subs.length > 0 && subs.every(sub => valued.has(sub));
+}
+
+/**
+ * Shows Flow, whose canvas renders on first show (flowView watches the flow from start; Game is
+ * the default workspace), and waits for the home card.
+ *
+ * @param live - The live stack.
+ * @returns Resolves when the home card is on the canvas.
+ */
+async function showFlow(live: Live): Promise<void> {
+  live.tools.app.workspace.show("flow");
+  await until(() => cardKeys(live).includes("main/home"), "the home card");
+}
+
+/**
  * The flow canvas of the tools page.
  *
  * @param live - The live stack.
@@ -525,7 +552,7 @@ async function walkStack(): Promise<Live & { readonly game: WalkGame }> {
 }
 
 describe("journey-tiny: open the editor", () => {
-  it("J1: top bar, Flow by default, camera calls and a drag that pins one card", async () => {
+  it("J1: top bar, Game by default, then Flow: camera calls and a drag that pins one card", async () => {
     const live = await liveStack();
     const { tools, page, server, root } = live;
     const { workspace, flowView } = tools.app;
@@ -541,9 +568,10 @@ describe("journey-tiny: open the editor", () => {
       /^Live · f\d+$/
     );
 
-    // 3. the Flow canvas
+    // 3. Game by default, then the Flow canvas
+    expect(workspace.active()).toBe("game");
+    await showFlow(live);
     expect(workspace.active()).toBe("flow");
-    await until(() => cardKeys(live).includes("main/home"), "the home card");
     expect(cardKeys(live)).toEqual(["main/home", "main/visit"]);
     const home = elementIn(flowHost(live), '[data-flow="node-card"][data-key="main/home"]');
     expect(home.getAttribute("aria-current")).toBe("location");
@@ -606,6 +634,9 @@ describe("journey-tiny: pause and walk", () => {
     const { tools, page, game } = live;
     const { panels, flowView, link } = tools.app;
     const pause = () => elementIn(page.root, '[data-ui="top-bar"] [data-action="pause"]');
+    // flowView takes its first game.history value as the baseline: the rounds come after it.
+    await showFlow(live);
+    await until(() => delivered(live.server.tap, "game.history"), "flowView's first history value");
 
     // 1. two rounds, one frame apart
     await panels.run("game.answer", { intent: "play" });
@@ -705,6 +736,7 @@ describe("journey-tiny: edit a style", () => {
     const { tools, server, root } = live;
     const { panels, flowView, stateView } = tools.app;
     const flow = flowHost(live);
+    await showFlow(live);
     await panels.run("game.answer", { intent: "play" });
     await attached(live);
     const subsBefore = watchSubs(server.tap);
@@ -722,8 +754,14 @@ describe("journey-tiny: edit a style", () => {
     if (styles === undefined) throw new Error("no Styles tab");
     await click(styles);
     const stylesText = () => flow.querySelector('[data-flow="styles-tab"]')?.textContent ?? "";
-    await until(() => stylesText().includes('"ui.title": {'), "styles.ts read into the tab");
+    await until(
+      () =>
+        flow.querySelector('[data-flow="styles-tab"] select option[value="ui.number"]') !== null,
+      "styles.ts read into the tab"
+    );
+    // No style is chosen until the person picks one.
     const select = elementIn(flow, '[data-flow="styles-tab"] select');
+    expect(select instanceof HTMLSelectElement ? select.value : undefined).toBe("");
     await act(() => {
       if (select instanceof HTMLSelectElement) select.value = "ui.number";
       select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -776,7 +814,7 @@ describe("journey-tiny: edit a style", () => {
 });
 
 describe("journey-tiny: pictures", () => {
-  it("J4: capture, series, stopped series, previews, contact sheet and a note", async () => {
+  it("J4: capture, series, stopped series, previews and the contact sheet", async () => {
     const live = await liveStack({ agent: { png: PNG_1X1 } });
     const { tools, server, root } = live;
     const { gameView, filesView, workspace } = tools.app;
@@ -862,11 +900,6 @@ describe("journey-tiny: pictures", () => {
       "a tile per shot"
     );
 
-    // 6. attach the capture to the first note
-    await gameView.attach(capture.path, FIRST_NOTE);
-    const note = await readFile(path.join(root, FIRST_NOTE), "utf8");
-    expect(note).toContain(`captures:\n  - ${capture.path}\n`);
-
     expect(agentRuns(server.tap, "editor.capture")).toHaveLength(1);
     await attached(live);
     expect(realErrors(...appsOf(live))).toEqual([]);
@@ -943,11 +976,13 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     expect(workspace.overlayInGame()).toBe(false);
     expect(toastTexts(live)).toContain("Overlay in game off");
 
-    // 7. the palette, then Escape: one layer per press
-    let editorOpen = true;
-    const offLayer = workspace.keys.escape("noteEditor", () => {
-      if (!editorOpen) return false;
-      editorOpen = false;
+    // 7. the palette, then Escape: one layer per press. Flow lists its nodes in the palette once
+    // its panel has the graph.
+    await showFlow(live);
+    let menuOpen = true;
+    const offLayer = workspace.keys.escape("contextMenu", () => {
+      if (!menuOpen) return false;
+      menuOpen = false;
       return true;
     });
     const paletteOpen = () =>
@@ -960,9 +995,9 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     expect(options).toContain("main/visit");
     await pressKey("Escape");
     expect(paletteOpen()).toBe(false);
-    expect(editorOpen).toBe(true);
+    expect(menuOpen).toBe(true);
     await pressKey("Escape");
-    expect(editorOpen).toBe(false);
+    expect(menuOpen).toBe(false);
     offLayer();
 
     // a fresh tools app on the same localStorage keeps the device, preview and theme

@@ -45,7 +45,7 @@ function usage(names: readonly string[]): AssetsUsage {
 }
 
 describe("tiles", () => {
-  it("are all undefined without data, heap is always absent", () => {
+  it("are all undefined without data, heap absent until the page reports it", () => {
     const tiles = tilesOf(createRenderViewState({ config: CONFIG }), []);
 
     expect(tiles).toEqual({
@@ -56,6 +56,14 @@ describe("tiles", () => {
       scene: undefined,
       heap: { kind: "absent" }
     });
+  });
+
+  it("read the page heap stored with the last game.render change", () => {
+    const state = stateWithData();
+    state.heap = { usedMb: 12.8, limitMb: 4095.8 };
+
+    expect(tilesOf(state, []).heap).toEqual({ kind: "value", usedMb: 12.8, limitMb: 4095.8 });
+    expect(deriveSnapshot(state).tiles.heap).not.toBe(state.heap);
   });
 
   it("read game.render, game.assets and the scene", () => {
@@ -113,6 +121,16 @@ describe("tiles", () => {
     expect(tiles.drawCalls).not.toHaveProperty("renderPasses");
     expect(tiles.scene).toStrictEqual({ entities: 104, views: 180, pooled: 24 });
     expect(tiles.scene).not.toHaveProperty("effects");
+  });
+
+  it("mark the effects not installed only when the manifest says so", () => {
+    const state = stateWithData();
+    state.scene = boardScene();
+
+    expect(tilesOf(state, [])).not.toHaveProperty("effectsInstalled");
+
+    state.effectsInstalled = false;
+    expect(tilesOf(state, []).effectsInstalled).toBe(false);
   });
 
   it("keep fps low at now while no sample was kept", () => {

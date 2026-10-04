@@ -1,14 +1,16 @@
 /**
  * @file gameView plugin — `scene()` and `locate()`: the watched scene while Game is shown, else
- * one read of the three sources (and the calibration when not read yet), built with the shared
- * buildScene (R8).
+ * one read of the three sources (and the calibration when not read yet or its target changed),
+ * built with the shared buildScene (R8). The picker click reads the three once more too
+ * (`readFreshScene`), so it never picks from a screen the game already left.
  */
 import { linkPlugin } from "../../link";
 import type { ElementRef, PageRect, SceneError, SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene, refId } from "../../panels/shared/scene";
 import { notify } from "../state";
 import type { GameViewCtx } from "../types";
-import { calibrate, frameOf } from "./watch";
+import { calibrate, targetChanged } from "./calibrate";
+import { frameOf } from "./rebuild";
 
 /**
  * The startup-style error of a scene value of the wrong shape.
@@ -27,7 +29,20 @@ function shapeError(error: SceneError): Error {
 }
 
 /**
- * The scene: the watched one while Game is shown, else built from one read of the three sources.
+ * Waits until no calibration runs: one in flight rebuilds the watched scene when it lands, and
+ * may start the next one when the target changed meanwhile.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns Resolves when the calibration is settled.
+ */
+async function calibrationSettled(ctx: GameViewCtx): Promise<void> {
+  const run = ctx.state.calibrationRun;
+  while (run.pending !== undefined) await run.pending;
+}
+
+/**
+ * The scene: the watched one while Game is shown (after the calibration in flight), else built
+ * from one read of the three sources.
  *
  * @param ctx - Domain context of gameView.
  * @returns The scene snapshot.
@@ -35,8 +50,27 @@ function shapeError(error: SceneError): Error {
  */
 export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
   const { state } = ctx;
-  if (state.watching.length > 0 && state.scene !== undefined) return state.scene;
+  if (state.watching.length > 0 && state.scene !== undefined) {
+    await calibrationSettled(ctx);
+    if (state.scene !== undefined) return state.scene;
+  }
+  return readFreshScene(ctx);
+}
 
+/**
+ * The scene from one read of the three sources, also while Game is shown: the bridge sends a
+ * watched frame source at most once per heartbeat (R6), so after a screen change the watched
+ * scene can still be the screen before. The values read become the newest ones, so a calibration
+ * read in flight counts as overtaken. The calibration settles first: the read in flight, then a
+ * new one when nothing was read yet or the target changed. A value the watch brought in meanwhile
+ * is newer still, so the scene is built from the newest values.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The scene snapshot.
+ * @throws {Error} The link's WireError, or a shape error.
+ */
+export async function readFreshScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
+  const { state } = ctx;
   const link = ctx.require(linkPlugin);
   const [ui, entities, projections] = await Promise.all([
     link.read("game.ui"),
@@ -44,12 +78,17 @@ export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
     link.read("game.projections")
   ]);
   state.sources = { ui, entities, projections };
-  if (!state.calibrationRead) await calibrate(ctx);
+  state.calibrationRun.revision += 1;
 
+  await calibrationSettled(ctx);
+  if (!state.calibrationRead || targetChanged(state)) await calibrate(ctx);
+  await calibrationSettled(ctx);
+
+  const latest = state.sources;
   const built = buildScene({
-    ui,
-    entities,
-    projections,
+    ui: latest.ui ?? ui,
+    entities: latest.entities ?? entities,
+    projections: latest.projections ?? projections,
     frame: frameOf(link.status(), 0),
     calibration: state.calibration
   });

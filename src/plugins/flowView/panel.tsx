@@ -1,46 +1,43 @@
 /**
- * @file flowView plugin — the Flow panel (definePanel data, registered in onInit) and the
- * FlowWorkspace root component (composition only).
+ * @file flowView plugin — the Flow panel (definePanel data, registered in onInit; no sources: the
+ * flow values come from flowView's session watches) and the FlowWorkspace root component
+ * (composition only).
  */
 import type { VNode } from "preact";
 import { useEffect, useLayoutEffect } from "preact/hooks";
 import { definePanel } from "../panels/define";
+import { SidePanel } from "../panels/shared/side-panel";
 import type { PanelSpec, PanelTools } from "../panels/types";
 import { actionsOf } from "./actions";
-import { STRIP_H } from "./camera/api";
 import { Minimap } from "./camera/Minimap";
 import { ZoomBar } from "./camera/ZoomBar";
-import { ingest } from "./data";
-import { NeighboursStrip } from "./focus/NeighboursStrip";
 import { Inspector } from "./inspector/Inspector";
-import { NoteEditor } from "./notes/NoteEditor";
+import { INSPECTOR_MAX_W, INSPECTOR_MIN_W, inspectorWidth } from "./inspector/size";
+import { INSPECTOR_PANEL } from "./keys";
+import { followPreviewZone } from "./preview-zone";
 import { Breadcrumb } from "./render/Breadcrumb";
 import { Canvas } from "./render/Canvas";
 import { CanvasToolbar } from "./render/CanvasToolbar";
 import { ContextMenu } from "./render/ContextMenu";
 import { HistoryLabels, HistoryStrip } from "./render/HistoryStrip";
+import { Offscreen } from "./render/Offscreen";
 import { YouAreHere } from "./render/YouAreHere";
-import type { FlowCommands, FlowCtx, FlowValues } from "./types";
+import type { FlowCommands, FlowCtx } from "./types";
 import { useElement, useFlowStore } from "./useFlowStore";
-import { historyView, infoView, worldView } from "./view-model";
-
-/**
- * Height of the breadcrumb and toolbar band the pinned preview keeps clear of.
- */
-const CHROME_TOP = 56;
+import { historyView, infoView, trailEdges, worldView } from "./view-model";
 
 /**
  * Props of the Flow workspace root.
  */
 export type FlowWorkspaceProps = {
   readonly ctx: FlowCtx;
-  readonly values: FlowValues;
   readonly tools: PanelTools<FlowCommands>;
 };
 
 /**
- * The Flow panel: sources game.graph, game.position, game.history {last: historyLast}; commands
- * step, pause, resume (flowView runs them through panels.run, R9).
+ * The Flow panel: no sources (flowView watches game.graph, game.position and game.history for the
+ * whole session, watch.ts); commands step, pause, resume (flowView runs them through panels.run,
+ * R9).
  *
  * @param ctx - Domain context of flowView.
  * @returns The PanelSpec.
@@ -50,41 +47,33 @@ export function createFlowPanel(ctx: FlowCtx): PanelSpec {
     id: "flow",
     title: "Flow",
     workspace: "flow",
-    sources: {
-      graph: "game.graph",
-      position: "game.position",
-      history: ["game.history", { last: ctx.config.historyLast }]
-    },
+    sources: {},
     commands: { step: "game.step", pause: "game.pause", resume: "game.resume" },
     /**
-     * Renders the Flow workspace with the panel's values and tools.
+     * Renders the Flow workspace with the panel's tools.
      *
-     * @param values - graph, position, history.
+     * @param _values - None: the panel declares no sources.
      * @param tools - run, status, channel, files, workspace.
      * @returns The workspace element.
      */
-    view: (values, tools) => <FlowWorkspace ctx={ctx} values={values} tools={tools} />
+    view: (_values, tools) => <FlowWorkspace ctx={ctx} tools={tools} />
   });
 }
 
 /**
- * The Flow workspace root: takes the panel values into the state, then composes the canvas (world
- * and chrome), the Inspector, the history strip, the context menu and the note editor, passing the
- * view data by props. With the link empty it renders no world, no minimap, no "You are here" and no
- * history dots (M4): the host shows its empty card.
+ * The Flow workspace root: composes the canvas (world and chrome), the Inspector in its side
+ * panel, the history strip and the context menu from the state the session watches fill, passing
+ * the view data by props. With the link empty it renders no world, no minimap, no "You are here"
+ * and no history dots (M4): the host shows its empty card.
  *
- * @param props - Plugin context, panel values and panel tools.
+ * @param props - Plugin context and panel tools.
  * @returns The workspace.
  */
 export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
-  const { ctx, values, tools } = props;
+  const { ctx, tools } = props;
   const actions = actionsOf(ctx);
   const root = useElement<HTMLDivElement>();
   useFlowStore(ctx, state => state.view.revision);
-
-  useLayoutEffect(() => {
-    ingest(ctx, values);
-  }, [ctx, values.graph, values.position, values.history]);
 
   useLayoutEffect(() => {
     ctx.state.view.root = root.current;
@@ -96,13 +85,11 @@ export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
 
   const empty = ctx.state.data.status.kind === "empty";
   useEffect(() => {
-    const canvas = root.current?.querySelector<HTMLElement>('[data-flow="canvas"]');
-    if (canvas === undefined || canvas === null) return;
-    return tools.workspace.previewZone("flow", canvas, () => ({
-      top: CHROME_TOP,
-      bottom: CHROME_TOP + (ctx.state.focus.strip ? STRIP_H : 0)
-    }));
-  }, [ctx, tools, root, empty]);
+    const workspace = root.current;
+    const canvas = workspace?.querySelector<HTMLElement>('[data-flow="canvas"]') ?? undefined;
+    if (workspace === undefined || canvas === undefined) return;
+    return followPreviewZone(ctx, actions, tools.workspace, { root: workspace, canvas });
+  }, [ctx, actions, tools, root, empty]);
 
   const world = empty ? undefined : worldView(ctx, actions);
   const rows = historyView(ctx);
@@ -116,6 +103,7 @@ export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
       ? selected.id
       : actions.focus.current();
   const info = shown === undefined ? undefined : infoView(ctx, actions, shown);
+  const tab = ctx.state.inspector.tab;
 
   return (
     <div data-flow="workspace" ref={root.ref} data-empty={empty ? "" : undefined}>
@@ -124,16 +112,25 @@ export function FlowWorkspace(props: FlowWorkspaceProps): VNode {
           <Breadcrumb ctx={ctx} actions={actions} />
           <CanvasToolbar ctx={ctx} actions={actions} />
           <YouAreHere ctx={ctx} actions={actions} />
+          <Offscreen ctx={ctx} actions={actions} />
           <HistoryLabels ctx={ctx} actions={actions} rows={rows} />
           <ZoomBar ctx={ctx} actions={actions} />
-          <Minimap ctx={ctx} actions={actions} />
-          <NeighboursStrip ctx={ctx} actions={actions} />
+          <Minimap ctx={ctx} actions={actions} trail={trailEdges(world)} />
         </Canvas>
       )}
-      <Inspector ctx={ctx} actions={actions} shown={shown} info={info} />
+      <SidePanel
+        id={INSPECTOR_PANEL}
+        side="end"
+        title="Inspector"
+        defaultWidth={inspectorWidth(tab)}
+        minWidth={INSPECTOR_MIN_W}
+        maxWidth={INSPECTOR_MAX_W}
+        overlayBelow={600}
+      >
+        <Inspector ctx={ctx} actions={actions} shown={shown} info={info} />
+      </SidePanel>
       {!empty && <HistoryStrip ctx={ctx} actions={actions} rows={rows} />}
       <ContextMenu ctx={ctx} actions={actions} />
-      <NoteEditor ctx={ctx} actions={actions} />
     </div>
   );
 }

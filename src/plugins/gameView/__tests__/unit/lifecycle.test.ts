@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sidePanelState } from "../../../panels/shared/side-panel";
 import { initGameView, startGameView, stopGameView } from "../../lifecycle";
 import { createCtx, flush, manifestOf, type TestCtx, useScene } from "../helpers";
 
@@ -49,13 +50,14 @@ describe("initGameView", () => {
     });
   });
 
-  it("adds palette items for the picker, screenshot, series, overlay and the six devices", () => {
+  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and the six devices", () => {
     initGameView(ctx);
     expect(ctx.workspace.items.map(entry => entry.label)).toEqual([
       "Select element",
       "Take a screenshot",
       "Record a series…",
       "Overlay in game",
+      "Show Element panel",
       "Device: iPhone SE",
       "Device: iPhone 15",
       "Device: iPhone 15 Pro Max",
@@ -78,6 +80,13 @@ describe("initGameView", () => {
     expect(ctx.workspace.show).toHaveBeenCalledWith("game");
     item("Overlay in game").run();
     expect(ctx.workspace.setOverlayInGame).toHaveBeenCalledWith(true);
+    localStorage.setItem("moku-editor:panel:game.side", JSON.stringify({ closed: true }));
+    expect(sidePanelState("game.side").closed).toBe(true);
+    ctx.workspace.show.mockClear();
+    item("Show Element panel").run();
+    expect(ctx.workspace.show).toHaveBeenCalledWith("game");
+    expect(sidePanelState("game.side").closed).toBe(false);
+    expect(item("Show Element panel").shortcut).toBe("\\");
     ctx.workspace.device.orientation = "landscape";
     item("Device: Pixel 8").run();
     expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({
@@ -97,7 +106,7 @@ describe("initGameView", () => {
 
   it("binds the keys and the four Esc layers; every remover goes into the disposers", () => {
     initGameView(ctx);
-    expect(ctx.workspace.bindings).toHaveLength(4);
+    expect(ctx.workspace.bindings).toHaveLength(5);
     expect(ctx.workspace.escapes.map(entry => entry.layer)).toEqual([
       "contactSheet",
       "seriesPopover",

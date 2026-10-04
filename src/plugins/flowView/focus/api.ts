@@ -1,7 +1,8 @@
 /**
  * @file flowView focus module — the focus actions: select = focus (design §4), the neighbours of
- * the selection, the current node on the canvas, walking the strip, frames of the history, Step
- * (M5), Pause and Resume through panels.run (R9), the history strip and the context menu.
+ * the selection, the current node on the canvas, walking and following edges from the Info tab
+ * (with the pulse and the Back stack), frames of the history, Step (M5), Pause and Resume through
+ * panels.run (R9), the history strip and the context menu.
  */
 import { notify } from "../state";
 import type {
@@ -13,15 +14,31 @@ import type {
   NodeId,
   Rect
 } from "../types";
+import { incomingEdge, otherEnd, outgoingEdgeKey } from "./edges";
 import { incoming, nodeOf, outgoing, parentsOf, resolveStack, splitId } from "./graph";
 import { entryFrame, entryKey, trailRanks } from "./trail";
-import type { FocusActions } from "./types";
-import { moveHighlight, walkTarget } from "./walk";
+import type { FocusActions, FocusState } from "./types";
+import { moveHighlight, walkRow, walkTarget } from "./walk";
 
 /**
  * Item kinds that stand for a graph node.
  */
 const NODE_KINDS: ReadonlySet<Item["kind"]> = new Set(["node", "hub", "frame"]);
+
+/**
+ * How long the pulse ring plays on a reached node, in ms.
+ */
+const PULSE_MS = 600;
+
+/**
+ * Most selections the Back stack keeps.
+ */
+const BACK_LIMIT = 50;
+
+/**
+ * No Info tab row highlighted.
+ */
+const NO_HIGHLIGHT: FocusState["highlight"] = { side: "to", index: -1 };
 
 /**
  * The first visible instance of a node id (root frame first, then frames in layout order).
@@ -132,19 +149,20 @@ function reportRun(ctx: FlowCtx, env: FlowEnvironment, id: string, error: unknow
 export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions {
   const { focus } = ctx.state;
 
+  let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+
   /**
-   * Leaves focus: no selection, no edge, strip closed.
+   * Leaves focus: no selection, no edge, no highlight.
    */
   function clear(): void {
     focus.selected = undefined;
     focus.edge = undefined;
-    focus.strip = false;
-    focus.highlight = { side: "to", index: -1 };
+    focus.highlight = NO_HIGHLIGHT;
   }
 
   /**
-   * Selects an item key that exists in the layout (or will after a relayout); a note opens no
-   * strip, an item on screen gets the focus move.
+   * Selects an item key that exists in the layout (or will after a relayout); an item on screen
+   * gets the focus move.
    *
    * @param key - The item key.
    * @param item - The item when it is on screen.
@@ -152,12 +170,84 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
   function take(key: ItemKey, item?: Item): void {
     focus.selected = key;
     focus.edge = undefined;
-    const opensStrip = item === undefined || item.kind !== "note";
-    focus.strip = opensStrip;
-    focus.highlight = { side: "to", index: -1 };
+    focus.highlight = NO_HIGHLIGHT;
     focus.menu = undefined;
     notify(ctx.state);
     if (item !== undefined) env.actions().camera.focusItem(item);
+  }
+
+  /**
+   * Plays the 600 ms pulse ring on an item; a newer pulse replaces it.
+   *
+   * @param key - The item key.
+   */
+  function pulse(key: ItemKey): void {
+    if (pulseTimer !== undefined) {
+      clearTimeout(pulseTimer);
+      ctx.state.view.timers.delete(pulseTimer);
+    }
+    focus.pulse = key;
+    const timer = setTimeout(() => {
+      ctx.state.view.timers.delete(timer);
+      pulseTimer = undefined;
+      focus.pulse = undefined;
+      notify(ctx.state);
+    }, PULSE_MS);
+    pulseTimer = timer;
+    ctx.state.view.timers.add(timer);
+  }
+
+  /**
+   * The node instance the Inspector shows: the selected node, else the current node's item.
+   *
+   * @returns The item, or undefined.
+   */
+  function shownItem(): Item | undefined {
+    const selected = selectedItem();
+    if (selected !== undefined && NODE_KINDS.has(selected.kind)) return selected;
+    const spot = actions.locateCurrent();
+    return spot?.inside === undefined ? spot?.item : undefined;
+  }
+
+  /**
+   * The instance edge of an Info tab row of the shown node, when it is drawn.
+   *
+   * @param shown - The shown item.
+   * @param row - The row's side and index.
+   * @returns The edge key, or undefined.
+   */
+  function rowEdge(shown: Item, row: FocusState["highlight"]): string | undefined {
+    const { graph } = ctx.state.data;
+    const result = ctx.state.layout.result;
+    if (graph === undefined || result === undefined) return undefined;
+    if (row.side === "to") {
+      const outcome = outgoing(graph, shown.id, soleParent(ctx, shown.id))[row.index]?.outcome;
+      return outcome === undefined ? undefined : outgoingEdgeKey(result, shown.key, outcome);
+    }
+    const incomingRow = incoming(graph, shown.id)[row.index];
+    return incomingRow === undefined
+      ? undefined
+      : incomingEdge(result, shown.key, incomingRow)?.edgeKey;
+  }
+
+  /**
+   * Follows an Info tab row of the shown node: its edge when drawn, else selects the node it names.
+   *
+   * @param row - The row's side and index.
+   * @returns False when the row names no node.
+   */
+  function followRow(row: FocusState["highlight"]): boolean {
+    const { graph, history } = ctx.state.data;
+    const shown = shownItem();
+    const id = shown?.id ?? currentId(ctx);
+    if (graph === undefined || id === undefined) return false;
+    const edge = shown === undefined ? undefined : rowEdge(shown, row);
+    if (edge !== undefined && actions.followEdge(edge)) return true;
+
+    const trail = trailRanks(history, graph, ctx.config.trailLength);
+    const direction = row.side === "to" ? "next" : "prev";
+    const target = walkTarget(graph, id, direction, row, trail, soleParent(ctx, id));
+    return target !== undefined && actions.select(target);
   }
 
   /**
@@ -202,11 +292,27 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
 
     walk: direction => {
       const { graph, history } = ctx.state.data;
-      const id = selectedItem()?.id ?? currentId(ctx);
+      const id = shownItem()?.id ?? currentId(ctx);
       if (graph === undefined || id === undefined) return;
       const trail = trailRanks(history, graph, ctx.config.trailLength);
-      const target = walkTarget(graph, id, direction, focus.highlight, trail, soleParent(ctx, id));
-      if (target !== undefined) actions.select(target);
+      followRow(walkRow(graph, id, direction, focus.highlight, trail, soleParent(ctx, id)));
+    },
+
+    followEdge: edgeKey => {
+      const result = ctx.state.layout.result;
+      const ends = result === undefined ? undefined : otherEnd(result, edgeKey, shownItem()?.key);
+      if (ends === undefined) return false;
+
+      // Remember where the walk came from, then select the reached end with its edge.
+      focus.back = [...focus.back, focus.selected].slice(-BACK_LIMIT);
+      focus.selected = ends.reached;
+      focus.edge = edgeKey;
+      focus.highlight = NO_HIGHLIGHT;
+      focus.menu = undefined;
+      pulse(ends.reached);
+      notify(ctx.state);
+      env.actions().camera.frameItems([ends.start, ends.reached]);
+      return true;
     },
 
     focusFrame: frame => {
@@ -252,7 +358,8 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
 
     selectEdge: (edge, source) => {
       actions.select(source);
-      focus.edge = edge;
+      const selected = focus.selected;
+      focus.edge = selected === undefined ? undefined : `${selected}${edge.slice(source.length)}`;
       notify(ctx.state);
     },
 
@@ -312,16 +419,37 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
       const { graph } = ctx.state.data;
       const selected = selectedItem();
       if (graph === undefined || selected === undefined) return;
-
-      // The first press highlights row 0 of the column; later presses move inside it.
-      const unset = focus.highlight.index < 0;
-      focus.highlight = unset
-        ? { ...focus.highlight, index: 0 }
-        : moveHighlight(focus.highlight, delta, {
-            from: incoming(graph, selected.id).length,
-            to: outgoing(graph, selected.id).length
-          });
+      focus.highlight = moveHighlight(focus.highlight, delta, {
+        from: incoming(graph, selected.id).length,
+        to: outgoing(graph, selected.id, soleParent(ctx, selected.id)).length
+      });
       notify(ctx.state);
+    },
+
+    followHighlight: () => focus.highlight.index >= 0 && followRow(focus.highlight),
+
+    back: () => {
+      if (focus.back.length === 0) return false;
+      const previous = focus.back.at(-1);
+      focus.back = focus.back.slice(0, -1);
+      if (previous === undefined) {
+        clear();
+        notify(ctx.state);
+        return true;
+      }
+      const item = ctx.state.layout.result?.byKey[previous];
+      if (item === undefined) actions.select(previous);
+      else take(previous, item);
+      return true;
+    },
+
+    findCurrent: () => {
+      const spot = actions.locateCurrent();
+      if (spot === undefined) return false;
+      env.actions().camera.focusItem(spot.item);
+      pulse(spot.item.key);
+      notify(ctx.state);
+      return true;
     },
 
     openMenu: menu => {
@@ -337,9 +465,9 @@ export function createFocusApi(ctx: FlowCtx, env: FlowEnvironment): FocusActions
     },
 
     leave: () => {
-      const hasFocus = focus.selected !== undefined || focus.strip;
-      if (!hasFocus) return false;
+      if (focus.selected === undefined) return false;
       clear();
+      focus.back = [];
       notify(ctx.state);
       return true;
     },

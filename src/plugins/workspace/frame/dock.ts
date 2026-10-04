@@ -187,13 +187,53 @@ export function resolveInsets(insets: Insets | (() => Insets) | undefined): Full
 }
 
 /**
+ * A float never scales below this height (the height of S) while the zone has the room.
+ */
+const MIN_FLOAT_HEIGHT = PREVIEW_SIZES.S.h;
+
+/**
+ * The float size that fits the room of the zone. A size that fits stays. A bigger one scales
+ * down with its aspect kept, to whole px. Below the height of S it stops: the size at that height
+ * is clipped to the room instead, so the float always fits the zone.
+ *
+ * @param size - The chosen size.
+ * @param size.w - Its width.
+ * @param size.h - Its height.
+ * @param room - The room inside the zone margins and insets (never negative).
+ * @param room.w - Room width.
+ * @param room.h - Room height.
+ * @returns The size to draw.
+ * @example
+ * ```ts
+ * fitFloat(PREVIEW_SIZES.M, { w: 172, h: 776 }); // { w: 172, h: 331 }
+ * fitFloat(PREVIEW_SIZES.S, { w: 108, h: 776 }); // { w: 108, h: 280 }
+ * ```
+ */
+function fitFloat(
+  size: { readonly w: number; readonly h: number },
+  room: { readonly w: number; readonly h: number }
+): { w: number; h: number } {
+  if (size.w <= room.w && size.h <= room.h) return { w: size.w, h: size.h };
+
+  const scale = Math.min(room.w / size.w, room.h / size.h);
+  const scaled = { w: Math.floor(size.w * scale), h: Math.floor(size.h * scale) };
+  const floor = Math.min(size.h, MIN_FLOAT_HEIGHT);
+  if (scaled.h >= floor) return scaled;
+
+  const atFloor = { w: Math.floor((size.w * floor) / size.h), h: floor };
+  return { w: Math.min(atFloor.w, room.w), h: Math.min(atFloor.h, room.h) };
+}
+
+/**
  * The preview float rect: in the chosen corner of the zone, PREVIEW_MARGIN plus the zone insets
- * away from its edges.
+ * away from its edges, and always inside them. A size the zone has no room for scales down (see
+ * `fitFloat`), so the float never runs past the zone, for example over the rail next to a wide
+ * Inspector drawer in the 480 px pane.
  *
  * @param zone - The zone rect in tools-page px.
  * @param insets - The zone insets.
  * @param corner - The corner.
- * @param size - The float size.
+ * @param size - The chosen float size.
  * @param size.w - Float width.
  * @param size.h - Float height.
  * @returns The float rect.
@@ -202,6 +242,7 @@ export function resolveInsets(insets: Insets | (() => Insets) | undefined): Full
  * const zone = { left: 0, top: 0, width: 800, height: 600 };
  * const noInsets = { top: 0, right: 0, bottom: 0, left: 0 };
  * floatRect(zone, noInsets, "bottom-right", PREVIEW_SIZES.S); // { left: 638, top: 308, width: 150, height: 280 }
+ * floatRect(zone, { ...noInsets, right: 680 }, "bottom-right", PREVIEW_SIZES.S); // { left: 12, top: 308, width: 96, height: 280 }
  * ```
  */
 export function floatRect(
@@ -210,11 +251,16 @@ export function floatRect(
   corner: PreviewCorner,
   size: { readonly w: number; readonly h: number }
 ): RectBox {
-  const left = corner.endsWith("left")
-    ? zone.left + PREVIEW_MARGIN + insets.left
-    : zone.left + zone.width - PREVIEW_MARGIN - insets.right - size.w;
-  const top = corner.startsWith("top")
-    ? zone.top + PREVIEW_MARGIN + insets.top
-    : zone.top + zone.height - PREVIEW_MARGIN - insets.bottom - size.h;
-  return { left, top, width: size.w, height: size.h };
+  // The room inside the margins and the insets, and the size that fits it.
+  const minLeft = zone.left + PREVIEW_MARGIN + insets.left;
+  const minTop = zone.top + PREVIEW_MARGIN + insets.top;
+  const maxRight = zone.left + zone.width - PREVIEW_MARGIN - insets.right;
+  const maxBottom = zone.top + zone.height - PREVIEW_MARGIN - insets.bottom;
+  const room = { w: Math.max(0, maxRight - minLeft), h: Math.max(0, maxBottom - minTop) };
+  const { w, h } = fitFloat(size, room);
+
+  // The corner, kept inside the room.
+  const left = corner.endsWith("left") ? minLeft : Math.max(minLeft, maxRight - w);
+  const top = corner.startsWith("top") ? minTop : Math.max(minTop, maxBottom - h);
+  return { left, top, width: w, height: h };
 }

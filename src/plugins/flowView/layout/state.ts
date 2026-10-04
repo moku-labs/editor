@@ -5,8 +5,8 @@ import { emptyPins } from "./pins";
 import type { LayoutState } from "./types";
 
 /**
- * Creates the layout slice: no result, empty cache, nothing expanded or entered, empty pins, no
- * engine.
+ * Creates the layout slice: no result, empty cache, nothing expanded or entered, comfortable
+ * spacing, empty pins, no engine.
  *
  * @returns The layout state.
  */
@@ -16,6 +16,9 @@ export function createLayoutState(): LayoutState {
     seq: 0,
     cache: new Map(),
     expanded: new Set(),
+    auto: new Set(),
+    stack: [],
+    density: "comfortable",
     enter: [],
     pins: emptyPins(),
     pinsVersion: undefined,

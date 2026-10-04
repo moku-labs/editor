@@ -17,6 +17,7 @@ import {
   clientFromPage,
   drawnRect,
   elementAt,
+  isLayoutOnly,
   pageFromClient,
   parseTextureManifest,
   refId,
@@ -704,12 +705,47 @@ describe("elementAt", () => {
   it("blocks everything painted before a full-device backdrop: the backdrop wins there", () => {
     const tree = ui("root", "screen", rect(0, 0, 100, 100), [
       ui("button", "button", rect(10, 10, 20, 20)),
-      ui("veil", "stack", rect(0, 0, 99, 99), [ui("ok", "button", rect(40, 40, 20, 20))])
+      ui("veil", "stack", rect(0, 0, 99, 99), [ui("ok", "button", rect(40, 40, 20, 20))], {
+        style: { fill: 0x1a_0f_08, alpha: 0.5 }
+      })
     ]);
     const scene = sceneOf({ ui: tree, entities: [], projections: {} });
 
     expect(elementAt(scene, { x: 15, y: 15 })?.id).toBe("ui:root/veil");
     expect(elementAt(scene, { x: 45, y: 45 })?.id).toBe("ui:root/veil/ok");
+  });
+
+  it("looks through a full-screen layout column that draws nothing (merge-game homeTop)", () => {
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("middle", "column", rect(0, 20, 100, 60), [ui("play", "button", rect(30, 60, 40, 10))]),
+      ui("top", "column", rect(0, 0, 100, 100), [ui("bar", "row", rect(0, 0, 100, 10))], {
+        style: { position: "absolute", width: "100%", height: "100%" }
+      })
+    ]);
+    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+
+    expect(elementAt(scene, { x: 50, y: 65 })?.id).toBe("ui:root/middle/play");
+    expect(elementAt(scene, { x: 50, y: 40 })?.id).toBe("ui:root/top");
+    expect(elementAt(scene, { x: 50, y: 95 })?.id).toBe("ui:root/top");
+  });
+
+  it("isLayoutOnly: a ui layout type with no fill, stroke, nine-slice or shape", () => {
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("top", "column", rect(0, 0, 100, 100), [], { style: { padding: 8 } }),
+      ui("veil", "stack", rect(0, 0, 100, 100), [], { style: { fill: 0x1a_0f_08 } }),
+      ui("play", "button", rect(30, 60, 40, 10))
+    ]);
+    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+    const node = (id: string): SceneNode => {
+      const found = scene.nodes.get(id);
+      if (found === undefined) throw new Error(`no node ${id}`);
+      return found;
+    };
+
+    expect(isLayoutOnly(node("ui:root"))).toBe(true);
+    expect(isLayoutOnly(node("ui:root/top"))).toBe(true);
+    expect(isLayoutOnly(node("ui:root/veil"))).toBe(false);
+    expect(isLayoutOnly(node("ui:root/play"))).toBe(false);
   });
 
   it("gives the settings backdrop, not the board's settings icon under it", () => {
@@ -735,6 +771,80 @@ describe("elementAt", () => {
 
     expect(hit?.ref.kind).toBe("ui");
     expect(hit?.id.startsWith("ui:settingsScreen/settingsBoard")).toBe(true);
+  });
+
+  it("looks through an invisible node: the item under merge-game's glow at rest wins", () => {
+    // The glow (Shape alpha 0) is painted after the item over the whole cell.
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("slot", "stack", rect(0, 0, 100, 90))
+    ]);
+    const glow = { kind: "rect", w: 40, h: 40, fill: 0xff_ff_ff, fillAlpha: 0, alpha: 0 };
+    const entities = [
+      uiEntity(1, rect(0, 0, 100, 100)),
+      uiEntity(2, rect(0, 0, 100, 90), 1),
+      projected(10, "board.items", {
+        Transform: transform(10, 10),
+        Parent: { entity: 2 },
+        Order: { value: 1 },
+        Sprite: { texture: "item", width: 20, height: 20, anchor: { x: 0, y: 0 } }
+      }),
+      projected(11, "board.glows", {
+        Transform: transform(0, 0),
+        Parent: { entity: 2 },
+        Order: { value: 2 },
+        Shape: glow
+      }),
+      projected(12, "board.glows", {
+        Transform: transform(50, 0),
+        Parent: { entity: 2 },
+        Order: { value: 3 },
+        Shape: { ...glow, alpha: 1 }
+      }),
+      projected(13, "board.glows", {
+        Transform: transform(0, 50),
+        Parent: { entity: 2 },
+        Order: { value: 4 },
+        Shape: { kind: "rect", w: 40, h: 40 },
+        Alpha: { alpha: 0, enabled: true, order: 0 }
+      })
+    ];
+    const scene = sceneOf({ ui: tree, entities, projections: {} });
+
+    expect(nodeOf(scene, "entity:11").visible).toBe(false);
+    expect(nodeOf(scene, "entity:13").visible).toBe(false);
+    expect(nodeOf(scene, "entity:10").visible).toBe(true);
+    expect(elementAt(scene, { x: 15, y: 15 })?.id).toBe("entity:10");
+    expect(elementAt(scene, { x: 35, y: 35 })?.id).toBe("ui:root/slot");
+    expect(elementAt(scene, { x: 55, y: 5 })?.id).toBe("entity:12");
+    expect(elementAt(scene, { x: 5, y: 55 })?.id).toBe("ui:root/slot");
+  });
+
+  it("looks through a ui node with alpha 0 or visible false", () => {
+    const tree = ui("root", "screen", rect(0, 0, 100, 100), [
+      ui("button", "button", rect(10, 10, 20, 20), [], { style: { fill: 0x10_20_30 } }),
+      ui("faded", "button", rect(0, 0, 50, 50), [], { style: { fill: 0x10_20_30, alpha: 0 } }),
+      ui("hidden", "image", rect(0, 0, 50, 50), [], { style: { visible: false } })
+    ]);
+    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+
+    expect(nodeOf(scene, "ui:root/faded").visible).toBe(false);
+    expect(nodeOf(scene, "ui:root/hidden").visible).toBe(false);
+    expect(nodeOf(scene, "ui:root/button").visible).toBe(true);
+    expect(elementAt(scene, { x: 15, y: 15 })?.id).toBe("ui:root/button");
+  });
+
+  it("never gives a board glow at rest: every cell gives what is drawn on it", () => {
+    const scene = sceneOf();
+    const glows = [...scene.nodes.values()].filter(node => node.entity?.owner === "board.glows");
+
+    expect(glows).toHaveLength(9);
+    for (const glow of glows) {
+      const box = glow.rect ?? rect(0, 0, 0, 0);
+      const hit = elementAt(scene, { x: box.x + box.w / 2, y: box.y + box.h / 2 });
+      expect(glow.visible).toBe(false);
+      expect(hit?.entity?.owner).not.toBe("board.glows");
+      expect(hit?.name).toMatch(/^(c\d_\d|i\d)$/);
+    }
   });
 
   it("finds nothing outside every rect", () => {

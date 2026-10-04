@@ -451,11 +451,28 @@ function texturesTileOf(
 }
 
 /**
+ * The JS heap tile: the heap the page reported, or absent.
+ *
+ * @param heap - The heap stored at the last game.render change.
+ * @returns The tile data.
+ * @example
+ * ```ts
+ * heapTileOf({ usedMb: 12.8, limitMb: 4095.8 }); // { kind: "value", usedMb: 12.8, limitMb: 4095.8 }
+ * heapTileOf(undefined); // { kind: "absent" }
+ * ```
+ */
+function heapTileOf(heap: RenderViewState["heap"]): MetricTiles["heap"] {
+  if (heap === undefined) return { kind: "absent" };
+  return { kind: "value", usedMb: heap.usedMb, limitMb: heap.limitMb };
+}
+
+/**
  * The six metric tiles from game.render, game.assets, the scene and the texture rows.
  *
  * @param state - renderView state.
  * @param rows - The loaded texture rows (for the unused count).
- * @returns The tiles; a tile without its data is undefined, heap is always absent.
+ * @returns The tiles; a tile without its data is undefined, heap is absent until the page reports it,
+ *   `effectsInstalled: false` only on a game without the effects plugin.
  */
 export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): MetricTiles {
   const { render, assets } = state;
@@ -465,7 +482,8 @@ export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): Me
     drawCalls: drawCallsOf(render),
     textures: texturesTileOf(render, assets, rows),
     scene: sceneOf(state),
-    heap: { kind: "absent" }
+    heap: heapTileOf(state.heap),
+    ...(state.effectsInstalled ? {} : { effectsInstalled: false })
   };
 }
 

@@ -38,6 +38,16 @@ export type WorkspaceConfig = {
 export type Theme = "light" | "dark";
 
 /**
+ * The applied density: compact (tighter spacing, smaller UI text) or comfortable.
+ */
+export type Density = "compact" | "comfortable";
+
+/**
+ * The chosen density; `auto` is compact below 820 px of window width, comfortable otherwise.
+ */
+export type DensityChoice = "auto" | Density;
+
+/**
  * A workspace that has a pinned game preview (every one but Game).
  */
 export type PreviewWorkspace = Exclude<WorkspaceId, "game">;
@@ -113,6 +123,10 @@ export type StoredPrefs = {
   theme: Theme | undefined;
   previews: Record<PreviewWorkspace, PreviewPrefs>;
   device: { preset: DevicePresetId; orientation: Orientation };
+  /** The chosen density (`auto` by default). */
+  density: DensityChoice;
+  /** Whether taps in the docked game draw a ripple (on by default). */
+  showTaps: boolean;
 };
 
 /**
@@ -341,7 +355,6 @@ export type EscLayer =
   | "palette"
   | "contactSheet"
   | "contextMenu"
-  | "noteEditor"
   | "registry"
   | "seriesPopover"
   | "captureCard"
@@ -349,6 +362,7 @@ export type EscLayer =
   | "fileEdit"
   | "codeEdit"
   | "stepPopover"
+  | "reference"
   | "selection";
 
 /**
@@ -356,8 +370,8 @@ export type EscLayer =
  *
  * @example
  * ```ts
- * // Save a note, then show the game.
- * app.workspace.toast("✓ Note saved", ".moku/notes/a.md");
+ * // Save a style, then show the game.
+ * app.workspace.toast("Saved", "src/styles.ts");
  * app.workspace.show("game");
  * ```
  */
@@ -368,7 +382,7 @@ export type WorkspaceApi = {
    * @returns Its id.
    * @example
    * ```ts
-   * app.workspace.active(); // "flow" with the default config
+   * app.workspace.active(); // "game" with the default config
    * ```
    */
   active(): WorkspaceId;
@@ -408,6 +422,31 @@ export type WorkspaceApi = {
    * ```
    */
   setTheme(theme?: Theme): void;
+
+  /**
+   * The applied density: `auto` resolves to compact below 820 px of window width.
+   *
+   * @returns compact or comfortable.
+   * @example
+   * ```ts
+   * // flowView spaces its layout by the density the shell shows.
+   * ctx.require(workspacePlugin).density(); // "compact" in a 720 px window with the default "auto"
+   * ```
+   */
+  density(): Density;
+
+  /**
+   * Chooses the density, persists the choice and sets `data-density` on `<html>`. Emits
+   * `workspace:density` when the applied value changes.
+   *
+   * @param value - auto, compact or comfortable.
+   * @example
+   * ```ts
+   * app.workspace.setDensity("compact"); // emits workspace:density { density: "compact" } in a wide window
+   * app.workspace.density(); // "compact"
+   * ```
+   */
+  setDensity(value: DensityChoice): void;
 
   /**
    * The preview state of a non-Game workspace.
@@ -529,7 +568,7 @@ export type WorkspaceApi = {
    * @param file - A file to name.
    * @example
    * ```ts
-   * app.workspace.toast("✓ Note saved", ".moku/notes/a.md");
+   * app.workspace.toast("Saved", "src/styles.ts");
    * ```
    */
   toast(message: string, file?: string): void;
@@ -600,9 +639,9 @@ export type WorkspaceApi = {
    *
    * @example
    * ```ts
-   * // flowView binds "n" in Flow and closes its note editor on Esc.
-   * app.workspace.keys.bind({ keys: "n", label: "New note", workspace: "flow", run: () => {} });
-   * app.workspace.keys.escape("noteEditor", () => true);
+   * // flowView binds "c" in Flow and closes its context menu on Esc.
+   * app.workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "flow", run: () => {} });
+   * app.workspace.keys.escape("contextMenu", () => true);
    * ```
    */
   keys: {
@@ -615,8 +654,8 @@ export type WorkspaceApi = {
      * @throws {Error} `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash.
      * @example
      * ```ts
-     * // flowView: "n" opens a new note while Flow is shown.
-     * const off = app.workspace.keys.bind({ keys: "n", label: "New note", workspace: "flow", run: () => {} });
+     * // flowView: "c" shows where the game is while Flow is shown.
+     * const off = app.workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "flow", run: () => {} });
      * off();
      * ```
      */
@@ -630,8 +669,8 @@ export type WorkspaceApi = {
      * @returns Removes it.
      * @example
      * ```ts
-     * // The note editor closes on Esc before the registry popover does.
-     * const off = app.workspace.keys.escape("noteEditor", () => true);
+     * // The context menu closes on Esc before the registry popover does.
+     * const off = app.workspace.keys.escape("contextMenu", () => true);
      * off();
      * ```
      */
@@ -663,6 +702,30 @@ export type WorkspaceApi = {
   setOverlayInGame(on: boolean): Promise<void>;
 
   /**
+   * The Reference mode flag: while on, the frame overlay takes the pointer, so the game gets no
+   * input. Always false at load; never persisted.
+   *
+   * @returns Whether it is on.
+   * @example
+   * ```ts
+   * app.workspace.reference(); // false
+   * ```
+   */
+  reference(): boolean;
+
+  /**
+   * Turns Reference mode on or off; emits `workspace:reference` when it changes. Esc turns it off.
+   *
+   * @param on - The new flag.
+   * @example
+   * ```ts
+   * app.workspace.setReference(true); // emits workspace:reference { on: true }
+   * app.workspace.reference(); // true
+   * ```
+   */
+  setReference(on: boolean): void;
+
+  /**
    * Listens to preference changes (theme, preview, device). A throwing listener is logged and
    * does not stop the others.
    *
@@ -676,6 +739,14 @@ export type WorkspaceApi = {
    * ```
    */
   onPrefs(fn: (prefs: Prefs) => void): () => void;
+};
+
+/**
+ * One tap ripple alive in the frame overlay.
+ */
+export type TapRipple = {
+  readonly element: HTMLElement;
+  readonly timer: ReturnType<typeof setTimeout>;
 };
 
 /**
@@ -767,10 +838,18 @@ export type UiStore = {
 export type WorkspaceState = {
   active: WorkspaceId;
   theme: { chosen: Theme | undefined; os: Theme };
+  /** The chosen density and the value it resolves to now. */
+  density: { chosen: DensityChoice; applied: Density };
   previews: Record<PreviewWorkspace, PreviewPrefs>;
   device: { preset: DevicePresetId; orientation: Orientation };
   /** Always false at load; never persisted. */
   overlayInGame: boolean;
+  /** Reference mode: always false at load; never persisted. */
+  reference: boolean;
+  /** Whether taps draw a ripple in the docked frame (persisted). */
+  showTaps: boolean;
+  /** The tap ripples alive in the overlay, oldest first (at most 8). */
+  taps: TapRipple[];
   link: LinkStatus;
   everLive: boolean;
   badges: Partial<Record<WorkspaceId, Badge>>;
@@ -801,7 +880,12 @@ export type WorkspaceState = {
 export type WorkspaceCtx = {
   readonly config: Readonly<WorkspaceConfig>;
   state: WorkspaceState;
-  readonly emit: EmitFn<Pick<ToolsEvents, "workspace:changed" | "workspace:ran">>;
+  readonly emit: EmitFn<
+    Pick<
+      ToolsEvents,
+      "workspace:changed" | "workspace:ran" | "workspace:density" | "workspace:reference"
+    >
+  >;
   readonly log: Log.LogApi;
   readonly require: Require;
 };

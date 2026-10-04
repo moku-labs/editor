@@ -1,7 +1,9 @@
 /**
  * @file registry plugin — the manifest: descriptors only, cached until the next add; game, page
- * and embedded computed at call time.
+ * and embedded computed at call time. Each build probes the door sources first, so a source the
+ * game does not have is listed with `available: false`.
  */
+import { withAvailability } from "./entries/probe";
 import type { Manifest } from "./protocol";
 import type { RegistryConfig, RegistryState } from "./types";
 
@@ -12,7 +14,7 @@ const MAX_PAGE_LENGTH = 2048;
 
 /**
  * Builds the frozen manifest from the entries (their descriptors are fresh frozen copies, never
- * door objects).
+ * door objects). A source in `state.unavailable` is listed with `available: false` and its reason.
  *
  * @param state - Registry state.
  * @param name - Display name of the game.
@@ -20,14 +22,26 @@ const MAX_PAGE_LENGTH = 2048;
  */
 export function buildManifest(state: RegistryState, name: string): Manifest {
   const { page, embedded } = pageInfo();
+  const sources = [...state.sources.values()].map(({ descriptor }) =>
+    withAvailability(descriptor, state.unavailable.get(descriptor.id))
+  );
 
   return Object.freeze({
     game: name,
     page,
     embedded,
-    sources: Object.freeze([...state.sources.values()].map(entry => entry.descriptor)),
+    sources: Object.freeze(sources),
     commands: Object.freeze([...state.commands.values()].map(entry => entry.descriptor))
   });
+}
+
+/**
+ * Runs the probe of every door source (before a manifest build).
+ *
+ * @param state - Registry state.
+ */
+function probeSources(state: RegistryState): void {
+  for (const probe of state.probes.values()) probe();
 }
 
 /**
@@ -82,7 +96,8 @@ export function gameName(config: Readonly<RegistryConfig>): string {
 
 /**
  * The manifest now: the cached one while game, page and embedded are unchanged; a refreshed copy
- * (same descriptor lists) when one of them moved; a new build after the cache was dropped.
+ * (same descriptor lists) when one of them moved; after the cache was dropped, the door sources
+ * are probed and a new manifest is built.
  *
  * @param state - Registry state (holds the cache).
  * @param config - Resolved registry config.
@@ -91,6 +106,7 @@ export function gameName(config: Readonly<RegistryConfig>): string {
 export function currentManifest(state: RegistryState, config: Readonly<RegistryConfig>): Manifest {
   const game = gameName(config);
   const { page, embedded } = pageInfo();
+  if (state.manifest === undefined) probeSources(state);
   const cached = state.manifest ?? buildManifest(state, game);
   const current =
     cached.game === game && cached.page === page && cached.embedded === embedded
@@ -100,4 +116,20 @@ export function currentManifest(state: RegistryState, config: Readonly<RegistryC
   state.manifest = current;
 
   return current;
+}
+
+/**
+ * onStart: drops the manifest cache and builds it again, so every door source is probed now that
+ * the game runs (the editor starts after the game).
+ *
+ * @param ctx - Domain context of the registry.
+ * @param ctx.state - Registry state.
+ * @param ctx.config - Resolved registry config.
+ */
+export function refreshManifest(ctx: {
+  readonly state: RegistryState;
+  readonly config: Readonly<RegistryConfig>;
+}): void {
+  ctx.state.manifest = undefined;
+  currentManifest(ctx.state, ctx.config);
 }

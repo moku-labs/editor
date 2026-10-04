@@ -1,9 +1,11 @@
 /**
- * @file renderView plugin — the pure texts of the Render workspace: the six tiles, the sparkline
- * points, the texture use tags and the bounds line. What the game does not report is named.
+ * @file renderView plugin — the pure texts of the Render workspace: the metric tiles, the
+ * sparkline points, the texture use tags and the bounds line. What the game does not report is
+ * named; the JS heap tile is left out where the page reports no heap. A game without the effects
+ * plugin reads "Effects not installed in this game" on the Scene tile.
  */
 import type { PageRect } from "../panels/shared/scene";
-import type { MetricTiles, TextureUse } from "./types";
+import type { EffectsStats, MetricTiles, TextureUse } from "./types";
 
 /**
  * What one metric tile shows.
@@ -37,6 +39,21 @@ const NOT_COUNTED = "Not counted in a production build";
  * The Scene tile's effects line on a game without game.effects (older than 0.0.3).
  */
 const NO_EFFECTS = "Particles and filters are not reported (follow-up F-R1)";
+
+/**
+ * The Scene tile's effects line on a game without the effects plugin (game.effects not installed).
+ */
+const EFFECTS_NOT_INSTALLED = "Effects not installed in this game";
+
+/**
+ * The FPS sub-line while the game rests at its idle rate (D-28).
+ */
+const RESTING = "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)";
+
+/**
+ * The fps band of the game's idle rate: game time rests at 30 fps after 2 s without a change.
+ */
+const IDLE_FPS = { min: 28, max: 32 } as const;
 
 /**
  * Formats a number with fixed decimals.
@@ -173,27 +190,51 @@ function drawsView(draws: MetricTiles["drawCalls"]): TileView {
 }
 
 /**
- * The scene tile: entities, display objects and pooled, and the effects line (game 0.0.3) or
- * what the game does not report.
+ * The Scene tile's effects line: the counts (game 0.0.3), what an older game does not report, or
+ * that the game has no effects plugin.
+ *
+ * @param effects - The game.effects value, if delivered.
+ * @param installed - False when the game has no effects plugin.
+ * @returns The line.
+ * @example
+ * ```ts
+ * effectsLine({ particles: 18, emitters: 1, filters: 24, renderPasses: 49 }, true); // "18 particles · 1 emitter · 24 filters"
+ * effectsLine(undefined, false); // "Effects not installed in this game"
+ * ```
+ */
+function effectsLine(effects: EffectsStats | undefined, installed: boolean): string {
+  if (!installed) return EFFECTS_NOT_INSTALLED;
+  if (effects === undefined) return NO_EFFECTS;
+  return [
+    counted(effects.particles, "particle", "particles"),
+    counted(effects.emitters, "emitter", "emitters"),
+    counted(effects.filters, "filter", "filters")
+  ].join(" · ");
+}
+
+/**
+ * The scene tile: entities, display objects and pooled, and the effects line. While the scene is
+ * not there yet, the line shows only when the game has no effects plugin.
  *
  * @param scene - The tile data.
+ * @param installed - False when the game has no effects plugin.
  * @returns The view.
  * @example
  * ```ts
- * sceneView({ entities: 101, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }).note;
- * // "18 particles · 1 emitters · 24 filters"
+ * sceneView({ entities: 101, views: 180, pooled: 24, effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } }, true).note;
+ * // "18 particles · 1 emitter · 24 filters"
  * ```
  */
-function sceneView(scene: MetricTiles["scene"]): TileView {
-  if (scene === undefined) return waiting("scene", "Scene", "Waiting for the scene");
+function sceneView(scene: MetricTiles["scene"], installed: boolean): TileView {
+  if (scene === undefined) {
+    const view = waiting("scene", "Scene", "Waiting for the scene");
+    return installed ? view : { ...view, note: EFFECTS_NOT_INSTALLED };
+  }
   const { entities, views, pooled, effects } = scene;
   const sub = `${views} display objects · ${pooled} pooled`;
   return {
     ...shown("scene", "Scene", String(entities), "entities", sub),
-    note:
-      effects === undefined
-        ? NO_EFFECTS
-        : `${effects.particles} particles · ${effects.emitters} emitters · ${effects.filters} filters`
+    note: effectsLine(effects, installed)
   };
 }
 
@@ -221,27 +262,59 @@ function texturesView(textures: MetricTiles["textures"]): TileView {
 }
 
 /**
- * The texts of the six tiles, in display order.
+ * The FPS tile: the current fps, and the rest note while the newest sample sits at the game's
+ * idle rate (28-32 fps, D-28), else the sample count and the low.
+ *
+ * @param fps - The tile data.
+ * @returns The view.
+ * @example
+ * ```ts
+ * fpsView({ now: 59.6, samples: [58, 60, 59.6], low: 58 }).sub; // "last 3 samples · low 58"
+ * fpsView({ now: 30, samples: [60, 30], low: 30 }).sub; // "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)"
+ * ```
+ */
+function fpsView(fps: MetricTiles["fps"]): TileView {
+  if (fps === undefined) return waiting("fps", "FPS", "Waiting for game.render");
+  const { now, samples, low } = fps;
+  const resting = now >= IDLE_FPS.min && now <= IDLE_FPS.max;
+  const sub = resting
+    ? RESTING
+    : `last ${counted(samples.length, "sample", "samples")} · low ${Math.round(low)}`;
+  return shown("fps", "FPS", String(Math.round(now)), "fps", sub);
+}
+
+/**
+ * The JS heap tile, only while the page reports its heap (Chromium).
+ *
+ * @param heap - The tile data.
+ * @returns The view, or none when the heap is absent.
+ * @example
+ * ```ts
+ * heapViews({ kind: "value", usedMb: 12.8, limitMb: 4095.8 })[0]?.sub; // "of 4095.8 MB"
+ * heapViews({ kind: "absent" }); // []
+ * ```
+ */
+function heapViews(heap: MetricTiles["heap"]): readonly TileView[] {
+  if (heap.kind === "absent") return [];
+  return [shown("heap", "JS heap", short(heap.usedMb), "MB", `of ${short(heap.limitMb)} MB`)];
+}
+
+/**
+ * The texts of the tiles, in display order. The JS heap tile is left out while the page does
+ * not report its heap.
  *
  * @param tiles - The derived tiles.
- * @returns FPS, frame time, draw calls, texture memory, scene, JS heap.
+ * @returns FPS, frame time, draw calls, texture memory, scene and, when reported, JS heap.
  * @example
  * ```ts
  * tileViews(snapshot.tiles)[0]?.sub; // "last 3 samples · low 58"
+ * tileViews(snapshot.tiles).length; // 5 outside Chromium, 6 with the JS heap tile
  * ```
  */
 export function tileViews(tiles: MetricTiles): readonly TileView[] {
-  const { fps, frameMs } = tiles;
+  const { frameMs } = tiles;
   return [
-    fps === undefined
-      ? waiting("fps", "FPS", "Waiting for game.render")
-      : shown(
-          "fps",
-          "FPS",
-          String(Math.round(fps.now)),
-          "fps",
-          `last ${counted(fps.samples.length, "sample", "samples")} · low ${Math.round(fps.low)}`
-        ),
+    fpsView(tiles.fps),
     frameMs === undefined
       ? waiting("frame", "Frame time", "Waiting for game.render")
       : shown(
@@ -253,12 +326,8 @@ export function tileViews(tiles: MetricTiles): readonly TileView[] {
         ),
     drawsView(tiles.drawCalls),
     texturesView(tiles.textures),
-    sceneView(tiles.scene),
-    {
-      ...shown("heap", "JS heap", "Not reported", "", "Needs heap numbers in game.render"),
-      absent: true,
-      aria: "JS heap: not reported"
-    }
+    sceneView(tiles.scene, tiles.effectsInstalled !== false),
+    ...heapViews(tiles.heap)
   ];
 }
 

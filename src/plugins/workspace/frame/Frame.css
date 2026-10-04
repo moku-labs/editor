@@ -1,4 +1,4 @@
-/* workspace · Frame. The one game frame layer in document.body (R4, D-14): fixed over the viewport, above the workspace content and the preview chrome, below the browser top layer. Docking is a transform on the box; the iframe takes pointer events only on the Game stage. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Frame. The one game frame layer in document.body (R4, D-14): fixed over the viewport, above the workspace content and the preview chrome, below the browser top layer. Docking is a transform on the box; the docked iframe (preview and Game stage) takes the pointer, so the pinned preview plays the game. Reference mode gives the overlay the pointer instead and outlines the frame. Tap ripples draw in the overlay in device px. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-frame-layer]) {
   :scope {
     position: fixed;
@@ -25,7 +25,7 @@
     pointer-events: none;
   }
 
-  [data-frame-box][data-docked="stage"] iframe {
+  [data-frame-box]:is([data-docked="stage"], [data-docked="preview"]) iframe {
     pointer-events: auto;
   }
 
@@ -33,5 +33,37 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+  }
+
+  /* Reference mode: the game gets no input; a 1 px accent outline on screen (the box is scaled, so the width divides by the scale), drawn inside the clip. */
+  [data-frame-box][data-reference] {
+    outline: calc(1px / var(--frame-scale, 1)) solid var(--accent);
+    outline-offset: calc(-1px / var(--frame-scale, 1));
+  }
+
+  [data-frame-box][data-reference] [data-frame-overlay] {
+    pointer-events: auto;
+  }
+
+  /* A tap: a 20 px accent ring centred on the tap point, grown to 36 px and faded in 400 ms. */
+  [data-tap-ripple] {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: tap-ripple 400ms var(--ease-out) forwards;
+  }
+
+  /* Reduced motion: a static dot for 300 ms (the timer removes it). */
+  [data-tap-ripple="dot"] {
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    border: 0;
+    background: var(--accent);
+    animation: none;
   }
 }

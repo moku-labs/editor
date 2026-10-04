@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startLink, stopLink } from "../../lifecycle";
 import { request } from "../../rpc/calls";
 import { addManifestListener } from "../../sessions/manifest";
+import { addTapListener } from "../../subscriptions/taps";
 import { addWatch } from "../../subscriptions/watch";
 import {
   beat,
@@ -73,6 +74,7 @@ describe("stopLink", () => {
     sendSessions(socket, [sessionOf("s-1")]);
     addWatch(ctx, "game.position", undefined, vi.fn());
     addManifestListener(ctx, vi.fn());
+    addTapListener(ctx, vi.fn());
     const pending = request(ctx, "game", "read", { id: "x" }, "s-1").catch(
       (error: unknown) => error
     );
@@ -88,6 +90,7 @@ describe("stopLink", () => {
     expect(ctx.state.subs.size).toBe(0);
     expect(ctx.state.wire.size).toBe(0);
     expect(ctx.state.manifestListeners.size).toBe(0);
+    expect(ctx.state.tapListeners.size).toBe(0);
   });
 
   it("events after stop are ignored and nothing reconnects", async () => {

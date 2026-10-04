@@ -21,10 +21,14 @@ export type MenuState = {
  */
 export type FocusState = {
   selected: ItemKey | undefined;
-  /** Selected edge key "<id>:<outcome>". */
+  /** Selected edge, instance-prefixed: "main/board>board/merge:done". */
   edge: string | undefined;
-  strip: boolean;
+  /** The highlighted Info tab row: an Outcomes row ("to") or a Comes from row ("from"); -1 = none. */
   highlight: { side: "from" | "to"; index: number };
+  /** Selections a followed edge left, newest last (Alt+← and the Inspector Back button return). */
+  back: (ItemKey | undefined)[];
+  /** The item the 600 ms pulse ring plays on (a followed edge's end, Find current). */
+  pulse: ItemKey | undefined;
   historyOpen: boolean;
   historySelected: number | undefined;
   historyHover: number | undefined;
@@ -83,15 +87,15 @@ export type CurrentSpot = { readonly item: Item; readonly inside: NodeId | undef
  */
 export type FocusApi = {
   /**
-   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item and
-   * the neighbours strip opens. A bare NodeId resolves to its first visible instance; inside a
-   * collapsed sub-flow the parents expand first. `undefined` leaves focus.
+   * Select = focus (design §4): the camera moves, the rest dims, the Inspector shows the item.
+   * A bare NodeId resolves to its first visible instance; inside a collapsed sub-flow the parents
+   * expand first. `undefined` leaves focus.
    *
    * @param key - An ItemKey, a NodeId, or undefined.
    * @returns False for an unknown key, else true.
    * @example
    * ```ts
-   * app.flowView.focus.select("board/merge"); // true, strip opens
+   * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
    * app.flowView.focus.select("board/nope"); // false, nothing selected
    * ```
    */
@@ -122,17 +126,34 @@ export type FocusApi = {
   current(): NodeId | undefined;
 
   /**
-   * Walks the graph through the neighbours strip: "next" (→) focuses the highlighted *Goes to*
-   * row's target (default: the row on the trail), "prev" (←) the highlighted *Comes from* source.
+   * Walks the graph from the shown node: "next" (→) follows the highlighted *Outcomes* row of the
+   * Info tab (default: the row on the trail), "prev" (←) the highlighted *Comes from* row
+   * (default: the first). A row with its edge on screen is followed like `followEdge`.
    *
    * @param direction - "prev" = ←, "next" = →.
    * @example
    * ```ts
    * app.flowView.focus.select("board/merge");
-   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Goes to" row
+   * app.flowView.focus.walk("next"); // focus moves to "board/awaitIntent", the "Outcomes" row
    * ```
    */
   walk(direction: "prev" | "next"): void;
+
+  /**
+   * Follows an edge from the shown node to its other end: the target of an *Outcomes* edge, the
+   * source of a *Comes from* edge (an exit resolves through its frame's edge). Selects that
+   * instance, marks the edge, frames both ends, plays a 600 ms pulse on the reached node and
+   * keeps the previous selection for Back (Alt+←).
+   *
+   * @param edgeKey - An instance edge key, "main/board>board/merge:done".
+   * @returns False when the edge or its other end is not on the canvas, else true.
+   * @example
+   * ```ts
+   * app.flowView.focus.select("board/merge");
+   * app.flowView.focus.followEdge("main/board>board/merge:done"); // true: awaitIntent selected, both ends framed
+   * ```
+   */
+  followEdge(edgeKey: string): boolean;
 
   /**
    * Focuses the edge taken at a frame and marks its history row (the `workspace:focus-frame` hook
@@ -189,15 +210,21 @@ export type FocusActions = FocusApi & {
   stack(): readonly StackEntry[];
   /** Whether the link says the game is paused (Step is enabled only then, M5). */
   isPaused(): boolean;
-  /** Moves the strip highlight to a row. */
+  /** Moves the Info tab highlight to a row. */
   highlight(side: "from" | "to", index: number): void;
-  /** Moves the strip highlight up (-1) or down (1) in the column last used. */
+  /** Moves the Info tab highlight up (-1) or down (1): through Outcomes, then Comes from. */
   moveHighlight(delta: 1 | -1): void;
+  /** Follows the highlighted Info tab row (Enter); false when no row is highlighted. */
+  followHighlight(): boolean;
+  /** Returns to the selection before the last followed edge; false when there is none. */
+  back(): boolean;
+  /** Moves the camera onto the current node with a pulse (C, toolbar, breadcrumb chip). */
+  findCurrent(): boolean;
   /** Opens a context menu. */
   openMenu(menu: MenuState): void;
   /** Closes the context menu; false when none was open (Esc layer contextMenu). */
   closeMenu(): boolean;
-  /** Leaves focus and closes the strip; false when nothing was selected (Esc layer selection). */
+  /** Leaves focus and empties the Back stack; false when nothing was selected (Esc layer selection). */
   leave(): boolean;
   /** Hovers a history dot. */
   hoverHistory(index?: number): void;

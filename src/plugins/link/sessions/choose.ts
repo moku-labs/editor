@@ -1,6 +1,7 @@
 /**
- * @file link plugin — the session choice (R7: sticky choice, then embedded first, then newest by
- * `connectedAt`), attach (manifest + resubscribe), session loss and the session retry.
+ * @file link plugin — the session choice (R7: sticky choice, then this page's own game frame, then
+ * embedded first, then newest by `connectedAt`; another tools tab's frame only by `choose()`),
+ * attach (manifest + resubscribe), session loss and the session retry.
  */
 
 import type { Manifest, SessionInfo } from "../../registry/protocol";
@@ -13,6 +14,7 @@ import { applyStatus, emitStatus } from "../status/machine";
 import { detachAll, resubscribeAll, unwatchAll } from "../subscriptions/watch";
 import type { LinkCtx } from "../types";
 import { EMPTY_AFTER_LOST_MS } from "../types";
+import { frameOf, isOtherFrame } from "./frame";
 import { notifyManifest } from "./manifest";
 
 /**
@@ -38,26 +40,45 @@ function newest(list: readonly SessionInfo[]): SessionInfo | undefined {
 }
 
 /**
- * Picks the session to attach (pure): the sticky current one, else the newest embedded one, else
- * the current one, else the newest.
+ * True when a session is the game frame of another tools tab: embedded, with a frame id in its
+ * page that is not `frame`.
+ *
+ * @param session - A session.
+ * @param frame - The frame id of this tools page.
+ * @returns Whether the session belongs to another tools tab.
+ */
+function isOtherTab(session: SessionInfo, frame: string): boolean {
+  return session.embedded && isOtherFrame(session.page, frame);
+}
+
+/**
+ * Picks the session to attach (pure): the sticky current one, else the newest embedded session
+ * of this page's own frame, else the newest other embedded one, else the current one, else the
+ * newest. With a frame id, the game frame of another tools tab is never picked on its own (only
+ * `choose()` attaches it).
  *
  * @param list - The open sessions.
  * @param current - The chosen session.
  * @param sticky - Whether `current` was chosen through `choose()`.
+ * @param frame - The frame id of this tools page; omitted, frame ids are not looked at.
  * @returns The session id, or undefined for an empty list.
  */
 export function pickSession(
   list: readonly SessionInfo[],
   current: string | undefined,
-  sticky: boolean
+  sticky: boolean,
+  frame?: string
 ): string | undefined {
-  const listed = list.some(({ id }) => id === current);
+  if (sticky && list.some(({ id }) => id === current)) return current;
 
-  if (sticky && listed) return current;
-  const embedded = newest(list.filter(session => session.embedded));
-  if (embedded !== undefined) return embedded.id;
-  if (listed) return current;
-  return newest(list)?.id;
+  // Leave the other tabs' frames out, then: own frame, any other embedded, current, newest.
+  const open = frame === undefined ? list : list.filter(session => !isOtherTab(session, frame));
+  const embedded = open.filter(session => session.embedded);
+  const own = frame === undefined ? [] : embedded.filter(({ page }) => frameOf(page) === frame);
+  const pick = newest(own) ?? newest(embedded);
+  if (pick !== undefined) return pick.id;
+  if (open.some(({ id }) => id === current)) return current;
+  return newest(open)?.id;
 }
 
 /**
@@ -116,7 +137,7 @@ export function retrySession(ctx: LinkCtx): void {
   clearRetry(state);
   if (state.stopped || !state.open) return;
 
-  const pick = pickSession(state.sessions, state.chosen, state.sticky);
+  const pick = pickSession(state.sessions, state.chosen, state.sticky, state.frame);
   if (pick !== undefined) {
     attachLater(ctx, pick);
     return;
@@ -242,7 +263,7 @@ export function applySessions(ctx: LinkCtx, list: readonly SessionInfo[]): void 
   if (lostChosen) closeChosen(ctx, "game_reloaded");
 
   // Attach the pick when it is new or nothing is attached on this socket yet.
-  const pick = pickSession(list, state.chosen, state.sticky);
+  const pick = pickSession(list, state.chosen, state.sticky, state.frame);
   if (pick === undefined) {
     applyStatus(ctx, { type: "sessions", attached: state.chosen !== undefined, count: 0 });
     return;

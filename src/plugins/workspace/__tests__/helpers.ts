@@ -10,6 +10,7 @@ import type {
   Manifest,
   RunResult,
   SessionInfo,
+  Tap,
   ToolsBoot
 } from "../../registry/protocol";
 import { createWorkspaceState } from "../state";
@@ -44,7 +45,7 @@ export type LogMock = ReturnType<typeof createLog>;
 
 /** The default config of the plugin. */
 export const CONFIG: WorkspaceConfig = {
-  defaultWorkspace: "flow",
+  defaultWorkspace: "game",
   storageKey: "moku-editor-test",
   reloadTimeoutMs: 15_000,
   toastMs: 2600
@@ -107,11 +108,34 @@ export function resultOf(value: Json = null, frame = 1841): RunResult {
   return { value, state: { path: "board/awaitIntent", frame, tainted: false } };
 }
 
+/** The frame id of the link mock: `frameUrl` tags with it, `isOtherTab` compares against it. */
+export const FRAME = "f-test";
+
+/**
+ * A page URL tagged with a frame id, as link's `frameUrl` builds it.
+ *
+ * @param url - The page URL.
+ * @param frame - The frame id; default the mock's own.
+ * @returns The tagged URL.
+ */
+export function tagged(url: string, frame = FRAME): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set("__editorFrame", frame);
+  return parsed.href;
+}
+
+/** A tap listener, as link's `onTap` takes it. */
+type TapListener = (tap: Tap) => void;
+
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
   [K in keyof Omit<LinkApi, "files">]: Mock<LinkApi[K]>;
 } & {
   files: LinkApi["files"];
+  /** Live tap listeners. */
+  readonly tapListeners: Set<TapListener>;
+  /** Calls every tap listener, like link on a game tap. */
+  tap(tap: Tap): void;
   /** The status `status()` answers. */
   current: LinkStatus;
   /** The manifest `manifest()` answers. */
@@ -133,6 +157,7 @@ export type LinkMock = {
  */
 export function createLinkMock(): LinkMock {
   const listeners = new Set<(manifest: Manifest | undefined) => void>();
+  const tapListeners = new Set<TapListener>();
   const link: LinkMock = {
     current: { kind: "connecting" },
     manifestValue: undefined,
@@ -156,12 +181,28 @@ export function createLinkMock(): LinkMock {
     choose: vi.fn<LinkApi["choose"]>(() => Promise.resolve(manifestOf())),
     retry: vi.fn<LinkApi["retry"]>(),
     boot: vi.fn<LinkApi["boot"]>(() => link.bootValue),
+    frameUrl: vi.fn<LinkApi["frameUrl"]>(url => tagged(url)),
+    isOtherTab: vi.fn<LinkApi["isOtherTab"]>(page => {
+      const frame = new URL(page).searchParams.get("__editorFrame");
+      return frame !== null && frame !== FRAME;
+    }),
     files: {
       list: vi.fn(() => Promise.resolve([])),
       read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),
       write: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
       writeBinary: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
       readBinary: vi.fn(() => Promise.resolve({ dataUrl: "", version: "v" }))
+    },
+    onTap: vi.fn<LinkApi["onTap"]>(listener => {
+      tapListeners.add(listener);
+      return () => {
+        tapListeners.delete(listener);
+      };
+    }),
+    heap: vi.fn<LinkApi["heap"]>(() => undefined),
+    tapListeners,
+    tap(tap) {
+      for (const listener of tapListeners) listener(tap);
     },
     attach(manifest) {
       link.manifestValue = manifest;

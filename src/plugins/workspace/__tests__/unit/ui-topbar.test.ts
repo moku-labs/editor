@@ -51,7 +51,7 @@ beforeEach(() => {
     toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"]
   });
   vi.setSystemTime(100_000);
-  ctx = createCtx();
+  ctx = createCtx({ defaultWorkspace: "flow" });
   root = document.createElement("div");
   document.body.append(root);
 });
@@ -140,6 +140,29 @@ describe("TopBar", () => {
       "workspace:ran",
       expect.objectContaining({ id: "editor.overlay", origin: "topbar" })
     );
+  });
+
+  it("the Reference mode button toggles it and shows its state", () => {
+    mount();
+    const reference = control("reference");
+    expect(reference.title).toBe("Reference mode (R) — pick game elements for the chat");
+    expect(reference.getAttribute("aria-pressed")).toBe("false");
+    expect(reference.textContent).toBe("Reference mode");
+    expect(reference.querySelector("[data-icon='target']")).not.toBeNull();
+
+    act(() => reference.click());
+    expect(ctx.state.reference).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
+    expect(control("reference").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("splits the game name from its version", () => {
+    ctx.link.manifestValue = manifestOf();
+    mount();
+    expect(root.querySelector("[data-game-name] [data-part='name']")?.textContent).toBe(
+      "merge-game"
+    );
+    expect(root.querySelector("[data-game-name] [data-part='version']")?.textContent).toBe("0.0.0");
   });
 
   it("the search box opens the palette; the theme button toggles the theme", () => {

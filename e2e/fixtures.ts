@@ -8,11 +8,11 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
 /**
- * The six workspaces in rail order, with their labels.
+ * The six workspaces in rail order (⌘1-⌘6), with their labels. Game is first and the default.
  */
 export const WORKSPACES = [
-  { id: "flow", label: "Flow" },
   { id: "game", label: "Game" },
+  { id: "flow", label: "Flow" },
   { id: "render", label: "Render" },
   { id: "state", label: "State" },
   { id: "files", label: "Files" },
@@ -199,6 +199,11 @@ function driver(page: Page): Tools {
       page.locator("[data-part=title]"),
       page.locator("[data-part=runner-card]"),
       page.locator("[data-part=session-card]"),
+      // State's Last commit: which commit lands before the shot is timing, so its body and its
+      // frame and patch count vary.
+      page.locator("[data-part=patch-list] > :not([data-part=head])"),
+      page.locator("[data-part=patch-list] > [data-part=head] > [data-part=frame]"),
+      page.locator("[data-part=patch-list] > [data-part=head] > [data-part=count]"),
       page.locator("[data-frame-link]")
     ],
     settle: async () => {

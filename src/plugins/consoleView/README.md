@@ -138,13 +138,14 @@ off();
 
 | Part | What |
 |---|---|
-| Toolbar | Level segments with counts (warn amber, error red when > 0). Search "Search the log"; Esc clears and blurs it. Clear. Preserve log switch. |
+| Toolbar | Level segments with counts (warn amber, error red when > 0). Search "Search the log"; Esc clears and blurs it. Clear. Preserve log switch. At least 40 px; it wraps when the console is narrow, and the switch never shrinks. Below 560 px of console the search fills the rest of the level row. |
 | Log table | `<table role="grid">`, sticky header, fixed 27 px rows, windowed (rows in view ± 20 with spacers). Frame links, level tags, `<mark data-hit>` hits, meta rows, a highlight on a fresh error. Auto-scroll at the bottom; otherwise an "N new lines ↓" pill. ↑/↓ move the selection, Esc closes the drawer. |
-| Detail drawer | Time `HH:MM:SS.mmm`, level, source, frame link, raw event, data as pretty JSON. Close button and Esc. |
+| Detail drawer | Time `HH:MM:SS.mmm`, level, source, frame link, raw event, data as pretty JSON. Close button and Esc. Full console width at every size; long values wrap, the JSON scrolls inside. |
 | Empty states | "No game connected. The log starts when a game connects." / "The log is empty. Lines appear here as the game logs." / "No lines match this filter." |
 
 Log text renders as text nodes only, never as markup.
 Each component has one sheet with `@scope ([data-panel="console"] [data-part="…"])` and no `@layer` wrapper (R7).
+The console is the inline-size container `console`; the toolbar queries it at 480 px (the Claude pane at 1/3).
 Reduced motion turns off the highlight and smooth scroll.
 
 ## Limits and game follow-ups

@@ -30,7 +30,8 @@ const reasonTable: readonly [ErrorReason, number, boolean][] = [
   ["not_json", -32_006, false],
   ["forbidden_path", -32_004, false],
   ["version_conflict", -32_005, false],
-  ["unauthorized", -32_007, false]
+  ["unauthorized", -32_007, false],
+  ["not_installed", -32_008, false]
 ];
 
 describe("errorCode", () => {
@@ -46,7 +47,8 @@ describe("errorCode", () => {
       forbiddenPath: -32_004,
       versionConflict: -32_005,
       notJson: -32_006,
-      unauthorized: -32_007
+      unauthorized: -32_007,
+      notInstalled: -32_008
     });
   });
 

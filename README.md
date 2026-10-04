@@ -2,7 +2,7 @@
 
 **Devtools for a running `@moku-labs/game`: see the flow, the state, the render and the files of the live game, and change them, from one tools page.**
 
-One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, and headless tests. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it has to ship in a production build.
+One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, and headless tests. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it has to ship in a production build (see [Production builds](#production-builds)).
 
 <br/>
 
@@ -15,7 +15,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 
 <br/>
 
-[Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
+[Install](#install) · [Quick start](#quick-start) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
 
 ---
 
@@ -36,6 +36,10 @@ bun add -d @moku-labs/editor @moku-labs/game
 
 > [!NOTE]
 > **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.0.2` is a **peer dependency**; `game.effects` in the Render workspace needs game `0.0.3`.
+>
+> **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
+>
+> **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order.
 
 > [!IMPORTANT]
 > The server core and the `moku-editor` bin run on **Bun** (`Bun.serve`, HTML imports). The agent and tools cores run in the browser. The package is **ESM only**.
@@ -57,7 +61,7 @@ const editor = createApp({
 await editor.start(); // never waits for the editor server
 ```
 
-`app` is the game made with `createApp` from `@moku-labs/game`; `modules` are the game's `.dev` modules (extra sources and commands). `__MOKU_GAME_DEV__` is the engine's dev flag: a dev build defines it `true`.
+`app` is the game made with `createApp` from `@moku-labs/game`; `modules` are the game's `.dev` modules (extra sources and commands). `__MOKU_GAME_DEV__` is the engine's dev flag: a dev build defines it `true`. Start the editor after the game: the registry probes the game's sources at start. For a game that ships, use the entry in [Production builds](#production-builds), which keeps the whole agent out of the production bundle.
 
 **2. Run the server.** The quickest way is the bin — it serves one game HTML file with the editor mounted:
 
@@ -84,6 +88,14 @@ Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAss
 
 **3. Open the tools page** at `http://127.0.0.1:3000/__editor/`. It ships prebuilt in `dist/tools/` and embeds the game at `gameUrl` (default `/`). The link pill goes `connecting` → `live · frame N` as soon as the game page's bridge says `hello`.
 
+**In a narrow pane.** The tools page is built to sit next to a chat, in Claude's browser pane at
+1/2 (720 px) or 1/3 (480 px) of the screen. Game is the first workspace and the default
+(⌘1 Game, ⌘2 Flow, then Render, State, Files, Console). Density is `auto` (compact below 820 px of
+window width), `compact` or `comfortable`, chosen in the palette ("Density: …") and saved with the
+theme. **Reference mode** (key R, or the target button in the top bar) lays `data-moku-*` proxies
+over the game elements, so whoever reads the page can name them; the game gets no input while it
+is on, and the Element tab's "Copy reference" copies one `@moku …` line for the chat.
+
 > [!TIP]
 > The tools page is itself a Moku app (`src/plugins/pages/page/main.tsx`). To compose your own, start the tools core and mount the shell:
 > ```ts
@@ -91,6 +103,38 @@ Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAss
 > await tools.start();
 > tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
 > ```
+
+## Production builds
+
+The agent is a dev tool. Import it only behind the engine's dev flag, with a dynamic import, so a
+production build (`__MOKU_GAME_DEV__` defined `false`) drops it whole:
+
+```ts
+if (__MOKU_GAME_DEV__) {
+  const { createApp, bridgePlugin, capturePlugin } = await import("@moku-labs/editor/agent");
+  await createApp({ plugins: [bridgePlugin, capturePlugin], pluginConfigs: { registry: { game: app } } }).start();
+}
+```
+
+Measured with `Bun.build` (browser, minified, the game itself external) in
+`tests/integration/agent-bundle.test.ts`:
+
+| `__MOKU_GAME_DEV__` | Editor code in the bundle | Size |
+|---|---|---|
+| `false` | None: no `/__editor/hello`, no `editor.capture`, no `bridge:` log line | 0 B (the whole entry is 73 B, the game's own lines) |
+| `true` | Agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 71.3 KB minified, 24.8 KB gzip |
+
+The package is `"sideEffects": false`. The agent core, each agent plugin and each core config are
+created `/* @__PURE__ */`. So a static import used only inside `if (__MOKU_GAME_DEV__)` drops out
+too, and so does a type-only import of a plugin.
+
+An agent export used outside that branch keeps what it references. A game entry that logs
+`bridgePlugin.name` outside the branch, with `__MOKU_GAME_DEV__` `false`:
+
+| Plugins created | Editor code in the bundle | Size |
+|---|---|---|
+| Without `/* @__PURE__ */` | The whole agent, capture included | 69,947 B minified, 24,068 B gzip |
+| With `/* @__PURE__ */` | Bridge, registry, channel, overlay and the agent core. Capture drops out | 66,026 B minified, 22,830 B gzip |
 
 ## How it works
 
@@ -154,7 +198,7 @@ flowchart LR
   L["link"] -- "link:status" --> W["workspace · panels · views"]
   P["panels.run / workspace"] -- "workspace:ran" --> CS["consoleView · stateView"]
   V["any view"] -- "workspace:open-file" --> FV["filesView"]
-  V -- "workspace:select-node<br/>workspace:focus-frame<br/>workspace:new-note" --> FL["flowView"]
+  V -- "workspace:select-node<br/>workspace:focus-frame" --> FL["flowView"]
   V -- "workspace:reveal" --> RV["renderView"]
   V -- "workspace:inspect<br/>workspace:open-sheet" --> GV["gameView"]
   classDef m fill:#1864ab,stroke:#0d3d6e,color:#fff;
@@ -194,8 +238,8 @@ const server = createApp({
   }
 });
 
-// tools: start on the Game workspace
-const tools = createApp({ pluginConfigs: { workspace: { defaultWorkspace: "game" } } });
+// tools: start on the Flow workspace (Game is the default)
+const tools = createApp({ pluginConfigs: { workspace: { defaultWorkspace: "flow" } } });
 ```
 
 ### Reaching plugin APIs
@@ -265,8 +309,8 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files` |
 | [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar, rail, palette, toasts, keys and Esc, preferences, the one game iframe and the D-07 reload. | `show`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
-| [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, notes, code and style inspector. | `camera`, `focus`, `flows`, `layout`, `notes` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace: device stage, element picker, style card, screenshots, series and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `attach` |
+| [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, code and style inspector. | `camera`, `focus`, `flows`, `layout` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage, element picker, style card, Reference mode proxies, screenshots, series and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet` |
 | [`renderView`](src/plugins/renderView/README.md) | tools | Standard | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |
@@ -315,17 +359,17 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 |---|---|---|---|
 | link | `retryMs` | `1000` | Base of the reconnect backoff, capped at 8 s. |
 | link | `boot` | `"#moku-editor-boot"` | Selector of the boot JSON tag. |
-| workspace | `defaultWorkspace` | `"flow"` | Shown at start when the hash names none. |
+| workspace | `defaultWorkspace` | `"game"` | Shown at start when the hash names none. |
 | workspace | `storageKey` | `"moku-editor"` | localStorage key of the preferences. |
 | workspace | `reloadTimeoutMs` | `15000` | How long `reload()` waits for the new session. |
 | workspace | `toastMs` | `2600` | How long one toast stays. |
 | panels | — | `{}` | No options. |
 | flowView | `historyLast` · `trailLength` · `rejectedOutcomes` | `20` · `6` · `["rejected"]` | History watched, trail edges, rejection outcomes. |
 | flowView | `hubMinOutcomes` · `hubMinReturns` | `6` · `4` | The hub rule. |
-| flowView | `layoutFile` · `notesDir` · `stylesFile` | `".moku/editor/layout.json"` · `".moku/notes"` · `"features/ui/styles.ts"` | Saved positions, notes, text styles. |
+| flowView | `layoutFile` · `stylesFile` | `".moku/editor/layout.json"` · `undefined` | Saved positions; the text styles file (unset: the first file that calls `defineTextStyles(`, found once per session). |
 | flowView | `layoutWorker` · `layoutSaveDelayMs` · `styleSaveDelayMs` | `true` · `400` · `600` | ELK in a worker, save debounces. |
 | flowView | `minZoom` · `maxZoom` · `defaultMinZoom` | `0.08` · `3` · `0.8` | Zoom range and default camera floor. |
-| gameView | `capturesDir` · `notesDir` | `".moku/captures"` · `".moku/notes"` | Where captures and notes go. |
+| gameView | `capturesDir` | `".moku/captures"` | Where captures go. |
 | gameView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |
 | gameView | `seriesDurationsMs` · `seriesIntervalsMs` | `[1000, 2000, 5000, 10000, 20000]` · `[16, 50, 100, 250, 500, 1000]` | Series popover chips. |
@@ -350,10 +394,11 @@ Global events are declared per core in `src/config.ts`. No plugin declares its o
 | tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | workspace, panels, all six views |
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` = `{ id, input, origin, at } & ({ ok: true, result } \| { ok: false, error })` | workspace, panels | stateView, consoleView |
+| tools | `workspace:density` | `{ density: "compact" \| "comfortable" }` | workspace | flowView |
+| tools | `workspace:reference` | `{ on: boolean }` | workspace | gameView |
 | tools | `workspace:open-file` | `{ path: string; line?: number }` | flowView, gameView | filesView |
 | tools | `workspace:select-node` | `{ id: string }` | filesView | flowView |
 | tools | `workspace:focus-frame` | `{ frame: number }` | consoleView | flowView |
-| tools | `workspace:new-note` | `{ captures?: readonly string[]; from?: { node: string; outcome?: string } }` | gameView | flowView |
 | tools | `workspace:reveal` | `{ ref: ElementRef }` | gameView | renderView |
 | tools | `workspace:inspect` | `{ ref: ElementRef }` | renderView | gameView |
 | tools | `workspace:open-sheet` | `{ index: string }` | filesView | gameView |
@@ -377,8 +422,9 @@ JSON-RPC 2.0 text frames with a `channel` (`game`, `files`, `editor`) and, for f
 | -32005 | `versionConflict` | `version_conflict` | no |
 | -32006 | `notJson` | `not_json` | no |
 | -32007 | `unauthorized` | `unauthorized` | no |
+| -32008 | `notInstalled` | `not_installed`: the game does not have the source (its game plugin is missing) | no |
 
-Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A run of `editor.series` gets its `durationMs` (capped at +60 s) on top of the deadline in bridge, hub and link alike.
+Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs` (capped at +60 s) on top of the deadline in bridge, hub and link alike.
 
 ## Scripts
 

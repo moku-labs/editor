@@ -406,11 +406,11 @@ describe("mountPanel: errors and unmount", () => {
       deps
     );
     const other = definePanel({
-      id: "flow.notes",
-      title: "Notes",
+      id: "flow.history",
+      title: "History",
       workspace: "flow",
       sources: {},
-      view: () => h("p", null, "notes")
+      view: () => h("p", null, "history")
     });
     mountPanel(other, sibling, deps);
     deliverAll(deps);
@@ -423,7 +423,7 @@ describe("mountPanel: errors and unmount", () => {
       id: "flow",
       message: "boom"
     });
-    expect(sibling.textContent).toBe("notes");
+    expect(sibling.textContent).toBe("history");
 
     deps.linkMock.send("game.position", { path: "board" });
     deps.frames.flush();

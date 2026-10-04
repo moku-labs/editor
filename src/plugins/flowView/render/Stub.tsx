@@ -41,7 +41,7 @@ export function Stub(props: StubProps): VNode {
         height: `${item.h}px`
       }}
     >
-      {view.rejected ?? item.label}
+      <span data-part="label">{view.rejected ?? item.label}</span>
     </div>
   );
 }

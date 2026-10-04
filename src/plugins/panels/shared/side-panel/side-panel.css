@@ -1,0 +1,159 @@
+/* panels · shared · SidePanel (finding 2, D-29). A view's side panel: docked at --side-panel-w (set inline from the store), a 6 px resize handle on its inner edge, a 32 px rail when collapsed, a drawer floating over the content in overlay mode (the parent container is its containing block, views make it position: relative). Every rule reaches the panel's own parts through child combinators, so nothing leaks into the view's content in the body. Density tokens carry fallbacks until every theme declares them. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-side-panel]) {
+  :scope {
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    inline-size: var(--side-panel-w);
+    min-inline-size: 0;
+    min-block-size: 0;
+    background: var(--surface-panel);
+  }
+
+  :scope[data-side="end"] {
+    border-inline-start: 1px solid var(--line-1);
+  }
+
+  :scope[data-side="start"] {
+    border-inline-end: 1px solid var(--line-1);
+  }
+
+  :scope[data-state="collapsed"] {
+    inline-size: 32px;
+  }
+
+  /* Overlay: the expanded panel floats over its container's content as a drawer. */
+  :scope[data-overlay][data-state="expanded"] {
+    position: absolute;
+    inset-block: 0;
+    z-index: 10;
+    max-inline-size: 92%;
+    box-shadow: var(--shadow-float);
+  }
+
+  :scope[data-overlay][data-state="expanded"][data-side="end"] {
+    inset-inline-end: 0;
+  }
+
+  :scope[data-overlay][data-state="expanded"][data-side="start"] {
+    inset-inline-start: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :scope:not([data-dragging]) {
+      transition: inline-size var(--duration-resize) var(--ease-out);
+    }
+  }
+
+  /* The resize handle straddles the inner edge. */
+  :scope > [data-part="handle"] {
+    position: absolute;
+    inset-block: 0;
+    z-index: 1;
+    inline-size: 6px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  :scope[data-side="end"] > [data-part="handle"] {
+    inset-inline-start: -3px;
+  }
+
+  :scope[data-side="start"] > [data-part="handle"] {
+    inset-inline-end: -3px;
+  }
+
+  :scope > [data-part="handle"]:hover,
+  :scope[data-dragging] > [data-part="handle"] {
+    background: var(--accent-soft-strong);
+  }
+
+  :scope > [data-part="handle"]:focus-visible {
+    outline: none;
+    background: var(--accent-soft-strong);
+    box-shadow: var(--focus-ring);
+  }
+
+  :scope > [data-part="head"] {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1, 4px);
+    min-block-size: var(--row-h, 28px);
+    padding-inline: var(--space-3, 8px) var(--space-1, 4px);
+    border-block-end: 1px solid var(--line-1);
+  }
+
+  :scope > [data-part="head"] > [data-part="title"] {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :scope > [data-part="head"] > button,
+  :scope > [data-part="rail"] > button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: calc(var(--row-h, 28px) - 4px);
+    block-size: calc(var(--row-h, 28px) - 4px);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-6);
+    background: none;
+    color: var(--text-2);
+    font-size: var(--font-size-14);
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  :scope > [data-part="head"] > button:hover,
+  :scope > [data-part="rail"] > button:hover {
+    background: var(--surface-panel-2);
+    color: var(--text-ink);
+  }
+
+  :scope > [data-part="head"] > button:focus-visible,
+  :scope > [data-part="rail"] > button:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  /* The collapsed rail: the expand button and the title written down the rail. */
+  :scope > [data-part="rail"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-2, 6px);
+    align-items: center;
+    min-block-size: 0;
+    padding-block: var(--space-1, 4px);
+    overflow: hidden;
+  }
+
+  :scope > [data-part="rail"] > [data-part="rail-title"] {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 600;
+    white-space: nowrap;
+    writing-mode: vertical-rl;
+  }
+
+  :scope > [data-part="body"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-block-size: 0;
+    overflow: auto;
+  }
+
+  /* Collapsed: the content stays mounted, out of sight. */
+  :scope > [data-part="body"][hidden] {
+    display: none;
+  }
+}

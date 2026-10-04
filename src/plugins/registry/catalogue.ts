@@ -7,6 +7,7 @@ import type { Log } from "@moku-labs/common/browser";
 import { commands } from "@moku-labs/game/control";
 import { sources } from "@moku-labs/game/inspect";
 import { commandEntry, guardEntry } from "./entries/command-entry";
+import { probeOf } from "./entries/probe";
 import { sourceEntry } from "./entries/source-entry";
 import { checkDescriptor } from "./entries/validate";
 import type {
@@ -80,7 +81,8 @@ function claim(state: RegistryState, id: string, origin: Origin): void {
 }
 
 /**
- * Checks and adds the door or module sources.
+ * Checks and adds the door or module sources. Each door source also gets its probe (module
+ * sources are never probed).
  *
  * @param ctx - Domain context of the registry.
  * @param ctx.state - Registry state.
@@ -95,10 +97,13 @@ function addSources(
   doors: readonly DoorSource[],
   origin: Origin
 ): void {
+  const { state, log } = ctx;
+
   for (const door of doors) {
     checkDescriptor("source", door);
-    claim(ctx.state, door.id, origin);
-    ctx.state.sources.set(door.id, sourceEntry(game, door, ctx.log));
+    claim(state, door.id, origin);
+    state.sources.set(door.id, sourceEntry(game, door, log, state.unavailable));
+    if (origin === "door") state.probes.set(door.id, probeOf(game, door, log, state.unavailable));
   }
 }
 
@@ -147,6 +152,8 @@ export function buildCatalogue(ctx: RegistryCtx): void {
   state.sources.clear();
   state.commands.clear();
   state.origins.clear();
+  state.unavailable.clear();
+  state.probes.clear();
   state.manifest = undefined;
 
   addSources(ctx, game, Object.values(sources), "door");

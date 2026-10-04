@@ -7,13 +7,14 @@
     background: color-mix(in srgb, var(--surface-panel) 60%, transparent);
   }
 
-  :scope[data-root] {
-    border-style: dashed;
-    background: transparent;
-  }
-
   :scope[data-on-stack] {
     border-color: var(--accent);
+  }
+
+  /* The root frame is the quiet outline of the whole graph (design G): solid, empty, never accent. */
+  :scope[data-root] {
+    border-color: var(--line-2);
+    background: transparent;
   }
 
   [data-part="head"] {

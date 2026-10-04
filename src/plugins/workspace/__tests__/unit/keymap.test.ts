@@ -87,7 +87,7 @@ describe("isApplePlatform and formatCombo", () => {
 describe("bindKey", () => {
   it("throws the exact message for a duplicate combo in one scope without when", () => {
     const ctx = createCtx();
-    bindKey(ctx, { keys: "n", label: "Note", run: vi.fn(), workspace: "flow" });
+    bindKey(ctx, { keys: "n", label: "Next", run: vi.fn(), workspace: "flow" });
 
     expect(() =>
       bindKey(ctx, { keys: ["x", "n"], label: "Other", run: vi.fn(), workspace: "flow" })
@@ -131,7 +131,7 @@ describe("dispatchKey", () => {
   });
 
   it("prefers a binding of the active workspace over a global one", () => {
-    const ctx = createCtx();
+    const ctx = createCtx({ defaultWorkspace: "flow" });
     const global = vi.fn();
     const flow = vi.fn();
     const game = vi.fn();

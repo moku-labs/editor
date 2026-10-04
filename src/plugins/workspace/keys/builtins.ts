@@ -1,10 +1,12 @@
 /**
  * @file workspace plugin — the built-in keys of design §4 (⌘1–⌘6 and bare 1–6, ⌘K, `.`, P, O,
- * G) and the Esc layers the shell owns (palette, session menu, registry, step popover).
+ * G, R) and the Esc layers the shell owns (palette, session menu, registry, step popover,
+ * Reference mode).
  */
 import { closePopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { setOverlayInGame } from "../overlay";
 import { closePalette, togglePalette } from "../palette/items";
+import { closeReference, toggleReference } from "../reference";
 import type { KeyBinding, WorkspaceCtx } from "../types";
 import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../workspaces";
 import { addEscapeLayer } from "./escape";
@@ -49,6 +51,7 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
     void setOverlayInGame(ctx, !state.overlayInGame, "key");
   });
   bind(ctx, "g", "Game preview", () => togglePreview(ctx));
+  bind(ctx, "r", "Reference mode", () => toggleReference(ctx));
 
   addEscapeLayer(ctx, "palette", () => {
     if (!state.palette.open) return false;
@@ -58,4 +61,5 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
   addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "session"));
   addEscapeLayer(ctx, "registry", () => closePopover(state, "registry"));
   addEscapeLayer(ctx, "stepPopover", () => closePopover(state, "step"));
+  addEscapeLayer(ctx, "reference", () => closeReference(ctx));
 }

@@ -9,14 +9,12 @@ import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
 import type { FilesClient } from "../link/types";
-import type { PanelValues } from "../panels/types";
 import type { Json, LinkStatus, RunResult, ToolsBoot } from "../registry/protocol";
 import type { PreviewState, ReloadResult } from "../workspace/types";
 import type { CameraActions, CameraApi, CameraState } from "./camera/types";
 import type { FocusActions, FocusApi, FocusState } from "./focus/types";
 import type { InspectorActions, InspectorState } from "./inspector/types";
 import type { FlowsApi, LayoutActions, LayoutApi, LayoutState } from "./layout/types";
-import type { NotesActions, NotesApi, NotesState } from "./notes/types";
 
 /**
  * flowView configuration (flat, spec/11 §2.6).
@@ -27,7 +25,7 @@ import type { NotesActions, NotesApi, NotesState } from "./notes/types";
  * ```
  */
 export type FlowViewConfig = {
-  /** Entries of game.history the panel watches. Default 20. */
+  /** Entries of game.history flowView watches. Default 20. */
   historyLast: number;
   /** Edges drawn as the trail, newest strongest. Default 6. */
   trailLength: number;
@@ -39,10 +37,11 @@ export type FlowViewConfig = {
   hubMinReturns: number;
   /** Saved positions. Default ".moku/editor/layout.json". */
   layoutFile: string;
-  /** Note files. Default ".moku/notes". */
-  notesDir: string;
-  /** The text-styles file the Styles tab reads and edits. Default "features/ui/styles.ts". */
-  stylesFile: string;
+  /**
+   * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
+   * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
+   */
+  stylesFile: string | undefined;
   /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
   layoutWorker: boolean;
   /** Debounce before layout.json is written after a drop. Default 400. */
@@ -145,14 +144,14 @@ export type Rect = { x: number; y: number; w: number; h: number };
 /**
  * What a laid-out item is.
  */
-export type ItemKind = "node" | "hub" | "frame" | "stub" | "note" | "port";
+export type ItemKind = "node" | "hub" | "frame" | "stub" | "port";
 
 /**
  * One laid-out item, in world coordinates.
  */
 export type Item = {
   key: ItemKey;
-  /** The node id; the flow name for the root frame, the file path for a note. */
+  /** The node id; the flow name for the root frame. */
   id: NodeId;
   kind: ItemKind;
   x: number;
@@ -174,14 +173,16 @@ export type Item = {
  * One routed edge.
  */
 export type EdgePath = {
-  /** "<id>:<outcome>". */
+  /** "<id>:<outcome>", instance-prefixed like `from` ("main/board>board/merge:done"). */
   key: string;
   from: ItemKey;
   to: ItemKey | undefined;
   outcome: string;
-  kind: "edge" | "return" | "note";
+  kind: "edge" | "return";
   points: readonly { x: number; y: number }[];
   label?: string;
+  /** The label centre ELK or the lane label pass placed; absent = the first segment's midpoint. */
+  labelAt?: { x: number; y: number };
 };
 
 /**
@@ -219,16 +220,6 @@ export type LayoutResult = {
 };
 
 /**
- * Where a note sits: its flow ("" = the root frame) and, for an anchored note, its node and outcome.
- */
-export type NoteAnchor = {
-  readonly path: string;
-  readonly flow: string;
-  readonly from: { readonly node: NodeId; readonly outcome?: string } | undefined;
-  readonly title: string;
-};
-
-/**
  * The Flow panel's commands (declared on the panel; flowView runs them through panels.run, R9).
  */
 export type FlowCommands = {
@@ -238,7 +229,8 @@ export type FlowCommands = {
 };
 
 /**
- * The Flow panel's sources.
+ * The sources flowView watches for the whole session (R6), whatever workspace shows. The Flow
+ * panel declares none.
  */
 export type FlowSources = {
   readonly graph: "game.graph";
@@ -247,9 +239,17 @@ export type FlowSources = {
 };
 
 /**
- * The values the Flow panel view gets.
+ * The latest value of each session watch, as it came over the wire (data.ts parses them).
  */
-export type FlowValues = PanelValues<FlowSources>;
+export type FlowValues = { readonly [K in keyof FlowSources]: Json };
+
+/**
+ * An intent of another view (`workspace:select-node`, `workspace:focus-frame`). One that comes
+ * before the first flow values waits for them.
+ */
+export type FlowIntent =
+  | { readonly kind: "select"; readonly id: string }
+  | { readonly kind: "frame"; readonly frame: number };
 
 /**
  * Composed flowView state (never exposed by reference).
@@ -265,13 +265,16 @@ export type FlowViewState = {
     staleFrame: number | undefined;
     /** Session of the last link:status. */
     session: string | undefined;
-    /** The session whose layout, notes and style keys were loaded; undefined before the first load. */
+    /** The session whose layout and style keys were loaded; undefined before the first load. */
     loaded: { session: string | undefined } | undefined;
+    /** The latest value of each session watch; they go in once all three arrived. */
+    values: { -readonly [K in keyof FlowValues]: Json | undefined };
+    /** The intent that came before the first flow values; the latest wins. */
+    pending: FlowIntent | undefined;
   };
   camera: CameraState;
   layout: LayoutState;
   focus: FocusState;
-  notes: NotesState;
   inspector: InspectorState;
   view: {
     active: boolean;
@@ -293,7 +296,7 @@ export type FlowViewState = {
  *
  * @example
  * ```ts
- * app.flowView.focus.select("board/merge"); // true, the neighbours strip opens
+ * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
  * app.flowView.camera.fitAll(); // the whole main frame in view
  * ```
  */
@@ -309,11 +312,12 @@ export type FlowViewApi = {
   camera: CameraApi;
 
   /**
-   * Focus: select a node, walk the graph, focus the edge of a frame, Step, the history strip.
+   * Focus: select a node, walk the graph, follow an edge, focus the edge of a frame, Step, the
+   * history strip.
    *
    * @example
    * ```ts
-   * app.flowView.focus.select("board/merge"); // true, the neighbours strip opens
+   * app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
    * ```
    */
   focus: FocusApi;
@@ -338,16 +342,6 @@ export type FlowViewApi = {
    * ```
    */
   layout: LayoutApi;
-
-  /**
-   * Notes: the note files, the note editor, create and attach captures.
-   *
-   * @example
-   * ```ts
-   * app.flowView.notes.list()[0]?.path; // ".moku/notes/2026-09-24-first-top-item.md"
-   * ```
-   */
-  notes: NotesApi;
 };
 
 /**
@@ -359,7 +353,6 @@ export type FlowActions = {
   readonly focus: FocusActions;
   readonly flows: FlowsApi;
   readonly layout: LayoutActions;
-  readonly notes: NotesActions;
   readonly inspector: InspectorActions;
 };
 
@@ -376,8 +369,6 @@ export type FlowServices = {
   readonly run: (id: string, input?: Json) => Promise<RunResult>;
   /** link.status(). */
   readonly status: () => LinkStatus;
-  /** link.read(id): a one-shot read. */
-  readonly read: (id: string) => Promise<Json>;
   /** link.boot(). */
   readonly boot: () => ToolsBoot | undefined;
   /** workspace.show("flow"). */
@@ -418,5 +409,5 @@ export type FlowHooks = {
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "workspace:select-node": (payload: ToolsEvents["workspace:select-node"]) => void;
   readonly "workspace:focus-frame": (payload: ToolsEvents["workspace:focus-frame"]) => void;
-  readonly "workspace:new-note": (payload: ToolsEvents["workspace:new-note"]) => void;
+  readonly "workspace:density": (payload: ToolsEvents["workspace:density"]) => void;
 };

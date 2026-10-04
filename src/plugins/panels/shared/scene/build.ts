@@ -1,9 +1,11 @@
 /**
  * @file Shared view module — scene: ui nodes, projection entities, host slots, paint order.
- * Rules 1–3, 5 and 9 of the scene mapping (11-panels, R8).
+ * Rules 1–3, 5 and 9 of the scene mapping (11-panels, R8); a ui node's rect carries the rest
+ * transform of its style and its ancestors' (finding 3).
  */
 import { toPage } from "./calibrate";
-import { drawnRect, fitScaleOf } from "./fits";
+import type { RestMap } from "./fits";
+import { boundsOf, composeMaps, drawnRect, fitScaleOf, restMapOf } from "./fits";
 import type {
   Calibration,
   ElementRef,
@@ -93,6 +95,8 @@ type Builder = {
   readonly children: Map<string, string[]>;
   /** Natural rect ("x,y,w,h") → the ui nodes with that rect, in tree order. */
   readonly hosts: Map<string, Host[]>;
+  /** Ui node id → its rest transform composed with its ancestors', for the nodes that have one. */
+  readonly transforms: Map<string, RestMap>;
   readonly textures: Set<string>;
   readonly uiRoots: string[];
 };
@@ -220,8 +224,42 @@ function appendTo<Item>(lists: Map<string, Item[]>, key: string, item: Item): vo
 }
 
 /**
- * Adds one ui node (rule 1): path id, name key ?? type, drawn rect through the fit chain,
- * texture = style.nineSlice; registers it as a possible host under its natural rect.
+ * The rest transform of a ui node composed with its ancestors': its own (from its style, on its
+ * drawn rect) first, then the one its parent carries. The visits come parents first, so the
+ * parent's is known.
+ *
+ * @param builder - The scene under construction.
+ * @param visit - The ui node with its fit chain.
+ * @param parent - The parent's node id, undefined for a root.
+ * @param drawn - The node's drawn rect (drawnRect).
+ * @returns The map, or undefined when neither the node nor an ancestor moves anything.
+ * @example
+ * ```ts
+ * restOf(builder, visit, parent, drawn); // the card's scale 1.2 about its top middle
+ * ```
+ */
+function restOf(
+  builder: Builder,
+  visit: UiVisit,
+  parent: string | undefined,
+  drawn: PageRect
+): RestMap | undefined {
+  const { node, fits } = visit;
+  const above = parent === undefined ? undefined : builder.transforms.get(parent);
+  const parentLink = fits[1];
+  const parentDrawn =
+    parentLink === undefined ? undefined : drawnRect(parentLink.rect, fits.slice(1));
+  const own = restMapOf(drawn, parentDrawn, node.style, fitScaleOf(fits));
+
+  if (own === undefined) return above;
+
+  return above === undefined ? own : composeMaps(above, own);
+}
+
+/**
+ * Adds one ui node (rule 1): path id, name key ?? type, drawn rect through the fit chain with the
+ * rest transform of its style and its ancestors' on top, texture = style.nineSlice; registers it
+ * as a possible host under its natural rect.
  *
  * @param builder - The scene under construction.
  * @param visit - The ui node with its path and fit chain.
@@ -231,12 +269,16 @@ function appendTo<Item>(lists: Map<string, Item[]>, key: string, item: Item): vo
  * ```
  */
 function addUiNode(builder: Builder, visit: UiVisit): void {
-  // Where the node sits and how it is drawn.
+  // Where the node sits and how it is drawn, at rest.
   const { node, path, fits } = visit;
   const id = refId({ kind: "ui", path });
   const parent = visit.parent === undefined ? undefined : refId({ kind: "ui", path: visit.parent });
   const drawn = drawnRect(node.rect, fits);
+  const rest = restOf(builder, visit, parent, drawn);
+  const shown = rest === undefined ? drawn : boundsOf(rest, drawn);
   const texture = stringOf(node.style?.nineSlice);
+
+  if (rest !== undefined) builder.transforms.set(id, rest);
 
   // The node, and the host its natural rect stands for.
   builder.drafts.set(id, {
@@ -245,10 +287,11 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
     name: node.key ?? node.type,
     type: node.type,
     parent,
-    rect: placeRect(drawn, builder.calibration),
+    rect: placeRect(shown, builder.calibration),
     texture,
     key: node.key,
     style: node.style,
+    visible: isShown(node.style),
     entity: undefined
   });
   appendTo(builder.hosts, rectKey(node.rect), {
@@ -262,6 +305,40 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
   if (texture !== undefined) builder.textures.add(texture);
   if (parent === undefined) builder.uiRoots.push(id);
   else appendTo(builder.children, parent, id);
+}
+
+/**
+ * Tells whether a style or a display component draws: not when its `alpha` is 0 or its `visible`
+ * is false. An absent value draws.
+ *
+ * @param value - A ui style or a display component value.
+ * @returns False for alpha 0 or visible false.
+ * @example
+ * ```ts
+ * isShown({ kind: "rect", w: 272, h: 272, alpha: 0 }); // false: merge-game's glow at rest
+ * isShown(undefined); // true
+ * ```
+ */
+function isShown(value: SceneNode["style"]): boolean {
+  return value?.alpha !== 0 && value?.visible !== false;
+}
+
+/**
+ * Tells whether an entity draws: its display component is shown (see `isShown`) and an enabled
+ * `Alpha` filter does not fade it to 0.
+ *
+ * @param entity - The entity.
+ * @returns False for an invisible entity.
+ * @example
+ * ```ts
+ * isEntityShown(glow); // false: Shape { alpha: 0 }
+ * isEntityShown(sawmill); // true
+ * ```
+ */
+function isEntityShown(entity: EntityWire): boolean {
+  const filter = componentOf(entity, "Alpha");
+  const faded = filter !== undefined && filter.enabled !== false && filter.alpha === 0;
+  return !faded && isShown(displayOf(entity)?.value);
 }
 
 /**
@@ -536,6 +613,7 @@ function addEntityNode(builder: Builder, entity: EntityWire, world: World): Plac
     texture: texturesOf(entity)[0],
     key: undefined,
     style: undefined,
+    visible: isEntityShown(entity),
     entity: {
       id: entity.id,
       owner: entity.owner.name,
@@ -604,6 +682,7 @@ function assemble(
     drafts: new Map(),
     children: new Map(),
     hosts: new Map(),
+    transforms: new Map(),
     textures: new Set(),
     uiRoots: []
   };

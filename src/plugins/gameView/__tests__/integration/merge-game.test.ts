@@ -130,7 +130,7 @@ describe("gameView on merge-game", () => {
     ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
     ctx.state.picker.on = true;
 
-    pickAt(ctx, { x: item.rect.x + item.rect.w / 2, y: item.rect.y + item.rect.h / 2 });
+    await pickAt(ctx, { x: item.rect.x + item.rect.w / 2, y: item.rect.y + item.rect.h / 2 });
 
     expect(ctx.state.selected).toEqual(item.ref);
     expect(refId(item.ref)).toBe(item.id);

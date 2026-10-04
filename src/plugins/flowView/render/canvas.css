@@ -5,7 +5,8 @@
     --flow-node-w: 172px;
     --flow-row: 46px;
     --flow-label-min: 11px;
-    --flow-strip-h: 224px;
+    /* The containing block of the Inspector drawer (SidePanel overlay mode). */
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     height: 100%;
@@ -18,7 +19,9 @@
 
   [data-flow="canvas"] {
     position: relative;
-    overflow: hidden;
+    /* clip, not hidden: a hidden box still scrolls when focus or a scroll into view reaches an
+       item past its edge, and the scroll shifts the world and the chrome off the camera origin. */
+    overflow: clip;
     min-width: 0;
     background-color: var(--surface-canvas);
     background-image: radial-gradient(circle, var(--canvas-dot) 1px, transparent 1px);
@@ -26,6 +29,8 @@
     touch-action: none;
     cursor: default;
     outline: none;
+    /* The chrome (toolbar, minimap) re-places itself when the canvas is narrow. */
+    container: flow-canvas / inline-size;
   }
 
   [data-flow="world"] {

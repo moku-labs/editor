@@ -227,6 +227,128 @@ describe("tree", () => {
   });
 });
 
+/**
+ * Gives the Files view container a measured width (happy-dom lays nothing out).
+ *
+ * @param width - The width in px.
+ */
+function containerWidth(width: number): void {
+  const measure = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement
+  ) {
+    return this.dataset.part === "files-view" ? ({ width } as DOMRect) : measure.call(this);
+  });
+}
+
+describe("tree side panel", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it("docks the tree to the start edge in the files.tree SidePanel, 272 px within 200..480", () => {
+    mount();
+    const aside = get('aside[data-side-panel="files.tree"]');
+    expect(aside.dataset.side).toBe("start");
+    expect(aside.dataset.state).toBe("expanded");
+    expect(aside.style.getPropertyValue("--side-panel-w")).toBe("272px");
+    expect(aside.querySelector('[data-part="tree"]')).not.toBeNull();
+    const handle = get('aside[data-side-panel="files.tree"] [role="separator"]');
+    expect(handle.getAttribute("aria-valuemin")).toBe("200");
+    expect(handle.getAttribute("aria-valuemax")).toBe("480");
+    expect(root.querySelector('[data-action="reopen-files.tree"]')).toBeNull();
+  });
+
+  it("closes to a reopen button that shows the tree again", () => {
+    mount();
+    act(() => {
+      get('aside[data-side-panel="files.tree"] [data-action="close"]').click();
+    });
+    expect(root.querySelector("[data-side-panel]")).toBeNull();
+    const reopen = get<HTMLButtonElement>('[data-action="reopen-files.tree"]');
+    expect(reopen.title).toBe(String.raw`Show Files tree (\)`);
+    act(() => {
+      reopen.click();
+    });
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    expect(root.querySelector('[data-action="reopen-files.tree"]')).toBeNull();
+  });
+
+  it("floats over the editor as a drawer below a 600 px container and starts collapsed", () => {
+    containerWidth(480);
+    mount();
+    const aside = get('aside[data-side-panel="files.tree"]');
+    expect(aside.dataset.overlay).toBe("");
+    expect(aside.dataset.state).toBe("collapsed");
+    expect(get("[data-files-editor]")).not.toBeNull();
+  });
+
+  it("opens the shut drawer from a crumb folder, then focuses the folder's row in it", async () => {
+    containerWidth(480);
+    mount();
+    await act(async () => {
+      await api.refresh();
+      await api.open("nodes/merge.ts", { line: 1 });
+    });
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("collapsed");
+
+    act(() => {
+      button("nodes").click();
+    });
+    await flush();
+
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    expect(row("nodes").closest("[hidden]")).toBeNull();
+    expect(document.activeElement).toBe(row("nodes"));
+  });
+
+  it("shows a closed tree again from a crumb folder", async () => {
+    mount();
+    await act(async () => {
+      await api.refresh();
+      await api.open("nodes/merge.ts", { line: 1 });
+    });
+    act(() => {
+      get('aside[data-side-panel="files.tree"] [data-action="close"]').click();
+    });
+    expect(root.querySelector("[data-side-panel]")).toBeNull();
+
+    act(() => {
+      button("nodes").click();
+    });
+    await flush();
+
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    expect(document.activeElement).toBe(row("nodes"));
+  });
+
+  it("shuts the drawer when a file is picked in it, and keeps it for a folder", async () => {
+    containerWidth(480);
+    mount();
+    await act(async () => {
+      await api.refresh();
+    });
+    act(() => {
+      get('[data-action="expand"]').click();
+    });
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    act(() => {
+      row("flows").click();
+    });
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    act(() => {
+      row("README.md").click();
+    });
+    await flush();
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("collapsed");
+    expect(api.active()).toBe("README.md");
+  });
+});
+
 describe("tabs", () => {
   beforeEach(async () => {
     mount();

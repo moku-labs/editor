@@ -25,6 +25,7 @@ function toolsOf(): PanelTools<Readonly<Record<string, string>>> {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   ctx = createCtx();
   useScene(ctx);
   ctx.workspace.activeValue = "game";
@@ -44,14 +45,28 @@ afterEach(() => {
 });
 
 describe("GameWorkspace", () => {
-  it("lays out the toolbar, the stage and the side panel", () => {
+  it("lays out the toolbar, the stage and the Element panel in a SidePanel", () => {
     expect(
       find(view.root, "[data-game='workspace'] [data-game='toolbar']").getAttribute("aria-label")
     ).toBe("Game device");
     expect(find(view.root, "[data-game='stage']").dataset.zoom).toBe("fit");
-    expect(find(view.root, "aside[data-game='side']").getAttribute("aria-label")).toBe(
-      "Game inspector"
-    );
+    const aside = find(view.root, "[data-part='body'] > aside[data-side-panel='game.side']");
+    expect(aside.getAttribute("aria-label")).toBe("Element panel");
+    expect(aside.dataset.side).toBe("end");
+    expect(aside.style.getPropertyValue("--side-panel-w")).toBe("280px");
+    expect(find(aside, "[data-game='side'] [role='tablist']")).not.toBeNull();
+    expect(view.root.querySelector("[data-action='reopen-game.side']")).toBeNull();
+  });
+
+  it("closes the Element panel; the toolbar reopens it", () => {
+    click(find(view.root, "aside[data-side-panel='game.side'] [data-action='close']"));
+    expect(view.root.querySelector("aside[data-side-panel='game.side']")).toBeNull();
+    const reopen = find(view.root, "[data-game='toolbar'] [data-action='reopen-game.side']");
+    expect(reopen.getAttribute("title")).toBe("Show Element panel");
+
+    click(reopen);
+    expect(view.root.querySelector("aside[data-side-panel='game.side']")).not.toBeNull();
+    expect(view.root.querySelector("[data-action='reopen-game.side']")).toBeNull();
   });
 
   it("switches between the Element and the Device tab", () => {

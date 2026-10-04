@@ -10,14 +10,15 @@ import type { RenderViewCtx, RenderViewHooks, RenderViewState } from "./types";
 import { refreshRenderView, startScene, stopScene } from "./watch";
 
 /**
- * Forgets what belongs to one game session: FPS samples, loaded bundles, the release log, texture
- * use, the first frame, the effects, the catalogue and the calibration (link re-sends the
- * watches, R4).
+ * Forgets what belongs to one game session: FPS samples, the page heap, loaded bundles, the
+ * release log, texture use, the first frame, the effects, the catalogue and the calibration (link
+ * re-sends the watches, R4).
  *
  * @param state - renderView state.
  */
 function clearSession(state: RenderViewState): void {
   state.fps = [];
+  state.heap = undefined;
   state.loaded = new Map();
   state.releases = [];
   state.seen = new Map();
@@ -29,7 +30,8 @@ function clearSession(state: RenderViewState): void {
 }
 
 /**
- * Forgets every value (no game left): the session data, the last values, the scene and the box.
+ * Forgets every value (no game left): the session data, the last values, the scene, the effects
+ * flag and the box.
  *
  * @param state - renderView state.
  */
@@ -40,6 +42,7 @@ function clearAll(state: RenderViewState): void {
   state.render = undefined;
   state.assets = undefined;
   state.scene = undefined;
+  state.effectsInstalled = true;
   state.error = undefined;
   state.box = undefined;
   state.pendingReveal = undefined;

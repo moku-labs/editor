@@ -4,7 +4,8 @@
 import type { FocusState } from "./types";
 
 /**
- * Creates the focus slice: nothing selected, strip and history closed, no menu.
+ * Creates the focus slice: nothing selected or highlighted, empty Back stack, history closed, no
+ * menu.
  *
  * @returns The focus state.
  */
@@ -12,8 +13,9 @@ export function createFocusState(): FocusState {
   return {
     selected: undefined,
     edge: undefined,
-    strip: false,
     highlight: { side: "to", index: -1 },
+    back: [],
+    pulse: undefined,
     historyOpen: false,
     historySelected: undefined,
     historyHover: undefined,

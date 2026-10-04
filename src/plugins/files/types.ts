@@ -43,7 +43,7 @@ export type FilesState = {
 /**
  * What a write was about, classified from its path.
  */
-export type WrittenKind = "code" | "style" | "note" | "layout" | "capture" | "other";
+export type WrittenKind = "code" | "style" | "layout" | "capture" | "other";
 
 /**
  * Payload of the global server event `files:written`.

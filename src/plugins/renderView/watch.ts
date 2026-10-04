@@ -1,8 +1,10 @@
 /**
  * @file renderView plugin — the data path (R6): the tracker watches game.render and game.assets
- * for the session, and game.effects while the manifest lists it; the scene watches game.ui, game.entities and game.projections only while
- * Render is shown and build one scene per animation frame; the calibration reads game.rect once
- * per session and device; the catalogue reads the asset manifest. No timer reads a frame source.
+ * for the session, and game.effects while the manifest lists it as available; the scene watches game.ui, game.entities and game.projections only while
+ * Render is shown and build one scene per animation frame; the calibration reads the page rect
+ * of one keyed element once per session and device (`game.locate` on game 0.4, `game.rect` on game
+ * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest. No timer
+ * reads a frame source.
  */
 import { linkPlugin } from "../link";
 import type { TextureCatalogue } from "../panels/shared/scene";
@@ -10,7 +12,8 @@ import {
   buildScene,
   calibrationFrom,
   calibrationTarget,
-  parseTextureManifest
+  parseTextureManifest,
+  rectSourceOf
 } from "../panels/shared/scene";
 import { rectOf } from "../panels/shared/scene/wire";
 import type { Json, LinkStatus, Manifest } from "../registry/protocol";
@@ -110,7 +113,8 @@ function currentFrame(ctx: RenderViewCtx): number {
 }
 
 /**
- * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples).
+ * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples) and the page heap
+ * link holds from the last heartbeat.
  *
  * @param ctx - Domain context of renderView.
  * @param value - The value.
@@ -124,11 +128,13 @@ function onRender(ctx: RenderViewCtx, value: Json): void {
   }
 
   const frame = currentFrame(ctx);
+  const heap = ctx.require(linkPlugin).heap();
   clearError(state, "game.render");
   state.render = stats;
   state.lastFrame = frame;
   state.firstFrame ??= frame;
   state.fps = [...state.fps, stats.fps].slice(-config.fpsSamples);
+  state.heap = heap === undefined ? undefined : { usedMb: heap.usedMb, limitMb: heap.limitMb };
   notify(state);
 }
 
@@ -187,25 +193,11 @@ export function stopEffects(state: RenderViewState): void {
 }
 
 /**
- * True when a manifest lists game.effects (game 0.0.3).
- *
- * @param manifest - A manifest, if any.
- * @returns Whether the source is listed.
- * @example
- * ```ts
- * listsEffects(link.manifest()); // true on game 0.0.3
- * ```
- */
-function listsEffects(manifest: Manifest | undefined): boolean {
-  return manifest?.sources.some(source => source.id === EFFECTS_ID) ?? false;
-}
-
-/**
- * Follows the manifest: one game.effects watch while it lists the source (game 0.0.3); a
- * manifest without it (an older game) stops the watch and clears the value; an undefined
- * manifest (session lost) keeps the watch, which link re-sends on attach. Both happen at once:
- * link sends a watch added inside the listener once per attach, and does not re-send a source
- * the new manifest lacks.
+ * Follows the manifest: one game.effects watch while it lists the source as available (game
+ * 0.0.3); a manifest without it (an older game) or with `available: false` (no effects plugin,
+ * "not installed") stops the watch and clears the value; an undefined manifest (session lost)
+ * keeps the watch, which link re-sends on attach. Both happen at once: link sends a watch added
+ * inside the listener once per attach, and does not re-send a source the new manifest lacks.
  *
  * @param ctx - Domain context of renderView.
  * @param manifest - The manifest of the session, undefined while none is attached.
@@ -214,10 +206,16 @@ export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined):
   if (manifest === undefined) return;
 
   const { state } = ctx;
-  if (listsEffects(manifest)) {
+  const effects = manifest.sources.find(source => source.id === EFFECTS_ID);
+  const installed = effects?.available !== false;
+  const changed = state.effectsInstalled !== installed;
+  state.effectsInstalled = installed;
+
+  if (effects !== undefined && installed) {
     state.effectsWatch ??= ctx
       .require(linkPlugin)
       .watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
+    if (changed) notify(state);
     return;
   }
   stopEffects(state);
@@ -340,9 +338,11 @@ export function stopScene(ctx: RenderViewCtx): void {
 }
 
 /**
- * Calibrates from the stored game.ui: the first keyed element's drawn rect and its game.rect
- * (one read). Marks the calibration asked first, so a burst reads once; queues a rebuild while
- * the scene is watched. Never rejects.
+ * Calibrates from the stored game.ui: the first keyed element's drawn rect and its page rect (one
+ * read of `game.locate`, else `game.rect`). A manifest that lists neither reports no element
+ * rects: nothing is read, nothing is warned and the calibration stays undefined. Marks the
+ * calibration asked first, so a burst reads once; queues a rebuild while the scene is watched.
+ * Never rejects.
  *
  * @param ctx - Domain context of renderView.
  * @returns Resolves when the calibration is known.
@@ -353,15 +353,17 @@ export async function calibrate(ctx: RenderViewCtx): Promise<void> {
   if (ui === undefined) return;
 
   state.calibrationAsked = true;
+  const link = ctx.require(linkPlugin);
   const target = calibrationTarget(ui);
-  if (target === undefined) {
+  const source = rectSourceOf(link.manifest());
+  if (target === undefined || source === undefined) {
     state.calibration = undefined;
     notify(state);
     return;
   }
 
   try {
-    const page = rectOf(await ctx.require(linkPlugin).read("game.rect", { key: target.key }));
+    const page = rectOf(await link.read(source, { key: target.key }));
     state.calibration = page === undefined ? undefined : calibrationFrom(page, target.drawn);
   } catch (error) {
     state.calibration = undefined;

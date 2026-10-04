@@ -9,6 +9,8 @@ describe("createRegistryState", () => {
     expect(state.commands.size).toBe(0);
     expect(state.origins.size).toBe(0);
     expect(state.manifest).toBeUndefined();
+    expect(state.unavailable.size).toBe(0);
+    expect(state.probes.size).toBe(0);
   });
 
   it("returns fresh maps on every call", () => {
@@ -17,5 +19,7 @@ describe("createRegistryState", () => {
 
     expect(first.sources).not.toBe(second.sources);
     expect(first.commands).not.toBe(second.commands);
+    expect(first.unavailable).not.toBe(second.unavailable);
+    expect(first.probes).not.toBe(second.probes);
   });
 });

@@ -1,29 +1,67 @@
 /**
  * @file flowView layout module — the ELK input of a non-hub flow (design §7.6: nodes with
- * FIXED_ORDER east ports, back edges as 120×24 stub nodes, exits in the last layer) and the
- * mapping of ELK's output back to items and edges.
+ * FIXED_ORDER east ports that grow tall enough for their ports, back edges as 120×24 stub nodes,
+ * exits in the last layer, every edge with its outcome label sized for ELK to place) and the
+ * mapping of ELK's output back to items, edges and label centres.
  */
-import type { ElkExtendedEdge, ElkNode, ElkPort, LayoutOptions } from "elkjs";
-import type { EdgePath, FlowJson, Item } from "../types";
+import type { ElkExtendedEdge, ElkLabel, ElkNode, ElkPort, LayoutOptions } from "elkjs";
+import type { Density } from "../../workspace/types";
+import type { EdgePath, FlowJson, Item, Rect } from "../types";
 import { exitOf, targetNode } from "./back-edges";
 import { anchorIn, anchorOut, orthogonalRoute } from "./routes";
 import type { EdgeClass, FlowBox, NodeSizes } from "./types";
-import { FRAME_PAD, NODE_H, NODE_W, PORT, STUB_H, STUB_W } from "./types";
+import {
+  COL_GAP,
+  DENSITY_SPACING,
+  FRAME_PAD,
+  LABEL_H,
+  labelWidth,
+  NODE_H,
+  NODE_SPACING,
+  NODE_W,
+  PORT,
+  STUB_H,
+  STUB_W
+} from "./types";
 
 /**
- * The ELK options of every non-hub flow (spec layout/ §4), seed 1 for determinism.
+ * The ELK options of every non-hub flow (spec layout/ §4), seed 1 for determinism; edge labels in
+ * the centre of their edge with room around them (finding 11).
  */
 export const ELK_OPTIONS: LayoutOptions = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.edgeRouting": "ORTHOGONAL",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "150",
-  "elk.spacing.nodeNode": "24",
+  "elk.layered.spacing.nodeNodeBetweenLayers": String(COL_GAP),
+  "elk.spacing.nodeNode": String(NODE_SPACING),
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
   "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
   "elk.portConstraints": "FIXED_ORDER",
+  "elk.edgeLabels.placement": "CENTER",
+  "elk.spacing.edgeLabel": "4",
+  "elk.spacing.labelNode": "6",
+  "elk.spacing.portPort": "22",
+  "elk.spacing.edgeEdge": "10",
+  "elk.layered.spacing.edgeEdgeBetweenLayers": "10",
   "elk.randomSeed": "1",
   "elk.padding": "[top=0,left=0,bottom=0,right=0]"
+};
+
+/**
+ * What `toElkGraph` lays out beyond the flow itself.
+ *
+ * @example
+ * ```ts
+ * const options: ElkGraphOptions = { sizes: new Map([["board", { w: 900, h: 700 }]]), density: "compact" };
+ * ```
+ */
+export type ElkGraphOptions = {
+  /** Sizes of expanded boxes by node name. */
+  readonly sizes?: NodeSizes;
+  /** Lay out only these nodes (the unreached block of a hub flow). */
+  readonly only?: ReadonlySet<string>;
+  /** The applied density: its spacing replaces the base COL_GAP / NODE_SPACING. */
+  readonly density?: Density;
 };
 
 /**
@@ -88,6 +126,21 @@ function included(build: ElkBuild, node: string): boolean {
 }
 
 /**
+ * The label of an edge, sized like the chip the canvas draws.
+ *
+ * @param id - The ELK edge id.
+ * @param outcome - The outcome it is labelled with.
+ * @returns The ELK labels.
+ * @example
+ * ```ts
+ * labelsOf("e:home:play", "play"); // [{ id: "e:home:play:l", text: "play", width: 38.4, height: 18 }]
+ * ```
+ */
+function labelsOf(id: string, outcome: string): ElkLabel[] {
+  return [{ id: `${id}:l`, text: outcome, width: labelWidth(outcome), height: LABEL_H }];
+}
+
+/**
  * Adds the ELK edge of one outcome: to an exit node (added once, last layer), to a stub node for a
  * back edge or a target outside the subset, else to the target's entry port.
  *
@@ -104,6 +157,7 @@ function addEdge(build: ElkBuild, node: string, outcome: string): void {
   if (raw === undefined) return;
   const source = `${ID.port}${node}:${outcome}`;
   const id = `${ID.edge}${node}:${outcome}`;
+  const labels = labelsOf(id, outcome);
   const exit = exitOf(raw);
   const target = targetNode(raw);
 
@@ -117,29 +171,57 @@ function addEdge(build: ElkBuild, node: string, outcome: string): void {
         layoutOptions: { "elk.layered.layering.layerConstraint": "LAST" }
       });
     }
-    build.edges.push({ id, sources: [source], targets: [`${ID.exit}${exit}`] });
+    build.edges.push({ id, sources: [source], targets: [`${ID.exit}${exit}`], labels });
     return;
   }
   if (target === undefined || build.flow.nodes[target] === undefined) return;
   const isStub = build.classes.get(`${node}:${outcome}`) === "back" || !included(build, target);
   if (isStub) {
     build.children.push({ id: `${ID.stub}${node}:${outcome}`, width: STUB_W, height: STUB_H });
-    build.edges.push({ id, sources: [source], targets: [`${ID.stub}${node}:${outcome}`] });
+    build.edges.push({
+      id,
+      sources: [source],
+      targets: [`${ID.stub}${node}:${outcome}`],
+      labels
+    });
   } else {
-    build.edges.push({ id, sources: [source], targets: [`${ID.entry}${target}`] });
+    build.edges.push({ id, sources: [source], targets: [`${ID.entry}${target}`], labels });
   }
 }
 
 /**
- * Builds the ELK input of a flow: every node (card size, or its expanded box), every forward and
- * short-loop edge, one stub node per back edge (or per edge leaving the `only` subset), exits as
- * small nodes in the last layer.
+ * The ELK options of a flow at a density: the base options, the density's spacing when one is
+ * applied. Every edge carries its label (finding 11) and ELK puts the centred labels in a layer of
+ * their own between two node layers, so the layer gap is spent twice: half the density gap each
+ * side keeps the flow as wide as it was before the labels.
+ *
+ * @param density - The applied density, if any.
+ * @returns The layout options.
+ * @example
+ * ```ts
+ * elkOptions("compact")["elk.spacing.nodeNode"]; // "14"
+ * elkOptions("comfortable")["elk.layered.spacing.nodeNodeBetweenLayers"]; // "60"
+ * ```
+ */
+export function elkOptions(density?: Density): LayoutOptions {
+  if (density === undefined) return { ...ELK_OPTIONS };
+  const spacing = DENSITY_SPACING[density];
+  return {
+    ...ELK_OPTIONS,
+    "elk.layered.spacing.nodeNodeBetweenLayers": String(spacing.layers / 2),
+    "elk.spacing.nodeNode": String(spacing.nodes)
+  };
+}
+
+/**
+ * Builds the ELK input of a flow: every node (card size, or its expanded box, growing tall enough
+ * for its ports), every forward and short-loop edge with its label, one stub node per back edge
+ * (or per edge leaving the `only` subset), exits as small nodes in the last layer.
  *
  * @param flowName - The flow name.
  * @param flow - The flow.
  * @param classes - The DFS edge classes.
- * @param sizes - Sizes of expanded boxes by node name.
- * @param only - Lay out only these nodes (the unreached block of a hub flow).
+ * @param options - Expanded box sizes, the subset to lay out and the density.
  * @returns The ELK graph.
  * @example
  * ```ts
@@ -150,9 +232,9 @@ export function toElkGraph(
   flowName: string,
   flow: FlowJson,
   classes: ReadonlyMap<string, EdgeClass>,
-  sizes: NodeSizes = new Map(),
-  only?: ReadonlySet<string>
+  options: ElkGraphOptions = {}
 ): ElkNode {
+  const { sizes = new Map(), only, density } = options;
   const build: ElkBuild = { flow, classes, only, children: [], edges: [], exits: new Set() };
   const nodes = Object.entries(flow.nodes).filter(([node]) => included(build, node));
   for (const [node, info] of nodes) {
@@ -161,7 +243,11 @@ export function toElkGraph(
       id: `${ID.node}${node}`,
       width: size.w,
       height: size.h,
-      layoutOptions: { "elk.portConstraints": "FIXED_ORDER" },
+      layoutOptions: {
+        "elk.portConstraints": "FIXED_ORDER",
+        "elk.nodeSize.constraints": "[PORTS, MINIMUM_SIZE]",
+        "elk.nodeSize.minimum": `(${size.w}, ${size.h})`
+      },
       ports: portsOf(node, info.outcomes)
     });
   }
@@ -169,7 +255,7 @@ export function toElkGraph(
     for (const outcome of info.outcomes) addEdge(build, node, outcome);
   return {
     id: flowName,
-    layoutOptions: { ...ELK_OPTIONS },
+    layoutOptions: elkOptions(density),
     children: build.children,
     edges: build.edges
   };
@@ -304,8 +390,39 @@ function pointsOf(edge: ElkExtendedEdge): { x: number; y: number }[] {
 }
 
 /**
+ * The box of the label ELK placed on an edge.
+ *
+ * @param edge - The laid-out ELK edge.
+ * @returns The rect, or undefined when ELK placed no label.
+ * @example
+ * ```ts
+ * labelBox({ id: "e:a:b", sources: [], targets: [], labels: [{ id: "l", x: 10, y: 20, width: 40, height: 18 }] }); // { x: 10, y: 20, w: 40, h: 18 }
+ * ```
+ */
+function labelBox(edge: ElkExtendedEdge): Rect | undefined {
+  const [label] = edge.labels ?? [];
+  if (label?.x === undefined || label.y === undefined) return undefined;
+  return { x: label.x, y: label.y, w: label.width ?? 0, h: label.height ?? 0 };
+}
+
+/**
+ * The centre of the label ELK placed on an edge.
+ *
+ * @param edge - The laid-out ELK edge.
+ * @returns The point, or undefined when ELK placed no label.
+ * @example
+ * ```ts
+ * labelCentre({ id: "e:a:b", sources: [], targets: [], labels: [{ id: "l", x: 10, y: 20, width: 40, height: 18 }] }); // { x: 30, y: 29 }
+ * ```
+ */
+function labelCentre(edge: ElkExtendedEdge): { x: number; y: number } | undefined {
+  const box = labelBox(edge);
+  return box === undefined ? undefined : { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+}
+
+/**
  * The edges of one ELK edge: the edge with ELK's points (extended onto a moved exit port, routed
- * when ELK gave no section) and, into a stub, the stub's return edge.
+ * when ELK gave no section) and its label centre and, into a stub, the stub's return edge.
  *
  * @param flowName - The flow name.
  * @param edge - The laid-out ELK edge.
@@ -329,6 +446,7 @@ function edgesOf(
   const fromItem = byKey.get(from);
   const toItem = byKey.get(to);
   let points = pointsOf(edge);
+  const labelAt = points.length === 0 ? undefined : labelCentre(edge);
   const end = points.at(-1);
   if (toItem?.kind === "port" && end !== undefined) {
     toItem.y = end.y - PORT / 2;
@@ -337,9 +455,17 @@ function edgesOf(
   if (points.length === 0 && fromItem !== undefined && toItem !== undefined) {
     points = [...orthogonalRoute(anchorOut(fromItem, outcome), anchorIn(toItem))];
   }
-  const edges: EdgePath[] = [
-    { key: `${from}:${outcome}`, from, to, outcome, kind: "edge", points, label: outcome }
-  ];
+  const main: EdgePath = {
+    key: `${from}:${outcome}`,
+    from,
+    to,
+    outcome,
+    kind: "edge",
+    points,
+    label: outcome
+  };
+  if (labelAt !== undefined) main.labelAt = labelAt;
+  const edges: EdgePath[] = [main];
   const target =
     toItem?.kind === "stub" && toItem.target !== undefined ? byKey.get(toItem.target) : undefined;
   if (toItem !== undefined && target !== undefined) {
@@ -356,8 +482,9 @@ function edgesOf(
 }
 
 /**
- * Maps ELK's output back to a flow box: node, stub and exit items, edges with ELK's bend points,
- * the return edges of the stubs, exits moved onto the frame's right edge, the entry port.
+ * Maps ELK's output back to a flow box: node, stub and exit items, edges with ELK's bend points
+ * and label centres, the return edges of the stubs, exits moved onto the frame's right edge past
+ * the labels, the entry port.
  *
  * @param flowName - The flow name.
  * @param flow - The flow.
@@ -378,7 +505,11 @@ export function fromElkGraph(
   const items = (output.children ?? []).flatMap(
     child => itemOf(flowName, flow, classes, child) ?? []
   );
-  const content = items.filter(entry => entry.kind !== "port");
+  // The content: the items and the label boxes ELK placed (exits sit past both).
+  const content: Rect[] = [
+    ...items.filter(entry => entry.kind !== "port"),
+    ...(output.edges ?? []).flatMap(edge => labelBox(edge) ?? [])
+  ];
   const left = Math.min(0, ...content.map(entry => entry.x));
   const top = Math.min(0, ...content.map(entry => entry.y));
   const right = Math.max(0, ...content.map(entry => entry.x + entry.w));

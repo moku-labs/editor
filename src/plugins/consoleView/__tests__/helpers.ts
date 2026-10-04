@@ -147,7 +147,8 @@ export function createWorkspaceMock(): WorkspaceMock {
       show,
       active: () => "console",
       palette: { add, open: vi.fn() },
-      keys: { bind, escape: vi.fn(() => noop) }
+      keys: { bind, escape: vi.fn(() => noop) },
+      previewZone: vi.fn(() => noop)
     } as unknown as WorkspaceApi
   };
 }

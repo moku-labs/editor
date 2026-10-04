@@ -1,0 +1,23 @@
+/* flowView · off-screen chevron (finding 16): a round accent button on the canvas edge pointing towards the current node while it is out of view; a click shows where the game is. No @layer wrapper (R7). */
+
+@scope ([data-flow="offscreen"]) {
+  :scope {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    font: 600 var(--font-size-14) / 1 var(--font-sans);
+    box-shadow: var(--shadow-float);
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+  }
+
+  [data-part="chevron"] {
+    transform: rotate(var(--flow-offscreen-angle, 0deg));
+  }
+}

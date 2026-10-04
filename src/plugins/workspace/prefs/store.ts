@@ -1,8 +1,10 @@
 /**
  * @file workspace plugin — the per-viewer preferences record in localStorage:
- * `{ v: 1, theme?, previews, device }`. Invalid JSON, another version or a throwing storage →
- * the defaults; an unknown value → the default of that value; one `workspace:prefs` warn either
- * way. Writes are wrapped in try/catch (quota). Nothing essential is stored here.
+ * `{ v: 1, theme?, previews, device, density, showTaps }`. Invalid JSON, another version or a
+ * throwing storage → the defaults; an unknown value → the default of that value; one
+ * `workspace:prefs` warn either way. A field added after the first records (density, showTaps)
+ * that is missing takes its default silently. Writes are wrapped in try/catch (quota). Nothing
+ * essential is stored here.
  */
 import type { Log } from "@moku-labs/common/browser";
 import { DEFAULT_DEVICE, isDevicePresetId } from "../devices";
@@ -16,6 +18,7 @@ import type {
   Theme
 } from "../types";
 import { PREVIEW_WORKSPACES } from "../workspaces";
+import { isDensityChoice } from "./density";
 
 /**
  * Version of the stored record.
@@ -35,7 +38,7 @@ type JsonObject = { readonly [key: string]: unknown };
 /**
  * The preferences of a fresh viewer.
  *
- * @returns No chosen theme, default previews, iPhone 15 portrait.
+ * @returns No chosen theme, default previews, iPhone 15 portrait, auto density, taps shown.
  * @example
  * ```ts
  * defaultStoredPrefs().device; // { preset: "iphone-15", orientation: "portrait" }
@@ -45,7 +48,9 @@ export function defaultStoredPrefs(): StoredPrefs {
   return {
     theme: undefined,
     previews: defaultPreviews(),
-    device: { preset: DEFAULT_DEVICE, orientation: "portrait" }
+    device: { preset: DEFAULT_DEVICE, orientation: "portrait" },
+    density: "auto",
+    showTaps: true
   };
 }
 
@@ -190,6 +195,12 @@ function readRecord(record: JsonObject, invalid: string[]): StoredPrefs {
   if (isOrientation(stored.orientation)) prefs.device.orientation = stored.orientation;
   else invalid.push("device.orientation");
 
+  // Added after the first records: a missing value is the default, silently.
+  if (isDensityChoice(record.density)) prefs.density = record.density;
+  else if (record.density !== undefined) invalid.push("density");
+  if (typeof record.showTaps === "boolean") prefs.showTaps = record.showTaps;
+  else if (record.showTaps !== undefined) invalid.push("showTaps");
+
   return prefs;
 }
 
@@ -261,7 +272,14 @@ export function savePrefs(key: string, prefs: StoredPrefs, log: Log.LogApi): voi
   const storage: Storage | undefined = globalThis.localStorage;
   if (storage === undefined) return;
 
-  const record = { v: VERSION, theme: prefs.theme, previews: prefs.previews, device: prefs.device };
+  const record = {
+    v: VERSION,
+    theme: prefs.theme,
+    previews: prefs.previews,
+    device: prefs.device,
+    density: prefs.density,
+    showTaps: prefs.showTaps
+  };
   try {
     storage.setItem(key, JSON.stringify(record));
   } catch (error) {

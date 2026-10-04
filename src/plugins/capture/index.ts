@@ -21,7 +21,7 @@ const defaultConfig: Config = { maxDurationMs: 20_000, minIntervalMs: 16 };
  * const editor = createApp({ plugins: [bridgePlugin, capturePlugin], pluginConfigs: { registry: { game } } });
  * ```
  */
-export const capturePlugin = createAgentPlugin("capture", {
+export const capturePlugin = /* @__PURE__ */ createAgentPlugin("capture", {
   depends: [registryPlugin],
   config: defaultConfig,
   createState: createCaptureState,

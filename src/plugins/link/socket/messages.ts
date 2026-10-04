@@ -1,17 +1,18 @@
 /**
  * @file link plugin — routes what the hub sends: responses settle calls; `editor` notifications
  * (`sessions`, `session`) drive the session choice; `game` notifications of the chosen session
- * (`heartbeat`, `value`) drive the status and the watches (R1).
+ * (`heartbeat`, `value`, `tap`) drive the status, the heap, the watches and the tap listeners (R1).
  */
 
-import type { Message, Notification } from "../../registry/protocol";
+import type { Json, Message, Notification } from "../../registry/protocol";
 import { decode, isRequest, isResponse } from "../../registry/protocol";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
 import { applySessions, closeChosen } from "../sessions/choose";
 import { applyStatus } from "../status/machine";
+import { notifyTap } from "../subscriptions/taps";
 import { deliver } from "../subscriptions/watch";
-import type { LinkCtx } from "../types";
+import type { LinkCtx, LinkState } from "../types";
 
 /**
  * The reason of a session close the hub sent without one.
@@ -56,7 +57,28 @@ function onSession(ctx: LinkCtx, note: Notification): void {
 }
 
 /**
- * `game` · `heartbeat` of the chosen session: stored with the local arrival time.
+ * The `heap` of a heartbeat: finite `usedMb` and `limitMb`.
+ *
+ * @param value - The `heap` member.
+ * @returns A frozen heap, or undefined when absent or malformed.
+ * @example
+ * ```ts
+ * heapOf({ usedMb: 12.8, limitMb: 4095.8 }); // { usedMb: 12.8, limitMb: 4095.8 }
+ * heapOf({ usedMb: 12.8 }); // undefined
+ * ```
+ */
+function heapOf(value: Json | undefined): NonNullable<LinkState["heartbeat"]>["heap"] {
+  const heap = objectOf(value);
+  const usedMb = heap && numberOf(heap, "usedMb");
+  const limitMb = heap && numberOf(heap, "limitMb");
+  if (usedMb === undefined || limitMb === undefined) return undefined;
+
+  return Object.freeze({ usedMb, limitMb });
+}
+
+/**
+ * `game` · `heartbeat` of the chosen session: stored with the local arrival time and its heap
+ * (a beat without a well-formed heap clears it).
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
@@ -68,7 +90,10 @@ function onHeartbeat(ctx: LinkCtx, note: Notification): void {
   const paused = params && flagOf(params, "paused");
   if (note.session !== state.chosen || frame === undefined || paused === undefined) return;
 
-  state.heartbeat = { frame, paused, receivedAt: Date.now() };
+  const receivedAt = Date.now();
+  const heap = heapOf(params?.heap);
+  state.heartbeat =
+    heap === undefined ? { frame, paused, receivedAt } : { frame, paused, receivedAt, heap };
   applyStatus(ctx, { type: "heartbeat", frame, paused });
 }
 
@@ -88,13 +113,31 @@ function onValue(ctx: LinkCtx, note: Notification): void {
 }
 
 /**
+ * `game` · `tap { x, y, at }` of the chosen session: given to the tap listeners.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onTap(ctx: LinkCtx, note: Notification): void {
+  const params = objectOf(note.params);
+  const x = params && numberOf(params, "x");
+  const y = params && numberOf(params, "y");
+  const at = params && numberOf(params, "at");
+  const isTap = x !== undefined && y !== undefined && at !== undefined;
+  if (note.session !== ctx.state.chosen || !isTap) return;
+
+  notifyTap(ctx, { x, y, at });
+}
+
+/**
  * Handlers by `channel.method`.
  */
 const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.sessions", onSessions],
   ["editor.session", onSession],
   ["game.heartbeat", onHeartbeat],
-  ["game.value", onValue]
+  ["game.value", onValue],
+  ["game.tap", onTap]
 ]);
 
 /**

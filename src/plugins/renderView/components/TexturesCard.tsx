@@ -7,6 +7,7 @@ import { filterTo, hoverTexture, sortBy } from "../actions";
 import { bundleCounts, firstNodeWithTexture, textureRowsOf } from "../derive";
 import { fixed, tagOfUse } from "../format";
 import type { RenderViewCtx, TextureRow, TextureSortKey } from "../types";
+import { refreshRenderView } from "../watch";
 
 /**
  * Props of `TexturesCard`.
@@ -105,6 +106,14 @@ export function TexturesCard(props: TexturesCardProps): JSX.Element {
       <header>
         <h2>Textures</h2>
         <span data-note>GPU MB = w × h × 4</span>
+        <button
+          type="button"
+          data-action="refresh"
+          title="Read the asset manifest and the calibration again"
+          onClick={() => void refreshRenderView(ctx)}
+        >
+          Refresh
+        </button>
       </header>
       <div role="radiogroup" aria-label="Bundle">
         <BundleChip ctx={ctx} bundle="all" label={`All ${all.length}`} />

@@ -34,13 +34,15 @@
     cursor: pointer;
   }
 
-  [data-part="clock"] {
-    display: block;
-    width: 14px;
-    height: 14px;
-    margin: auto;
-    border: 1.5px solid var(--text-2);
-    border-radius: 50%;
+  [data-action="history"] {
+    display: grid;
+    place-items: center;
+    color: var(--text-2);
+  }
+
+  [data-action="history"][aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
   }
 
   [data-flow="history-dot"] {

@@ -10,7 +10,10 @@ registry entries directly. The channel solves three timing problems of the game'
 2. **Run off the frame loop.** `time.step()` throws inside a frame callback. `run` always dispatches
    in a microtask (`queueMicrotask`), so a caller inside a frame still gets a clean run.
 3. **Heartbeat on `setInterval`.** A `{ frame, paused, at }` beat every `heartbeatMs`, driven by a
-   timer, so a paused game still beats. `frame` and `paused` come from `registry.clock()`.
+   timer, so a paused game still beats. `frame` and `paused` come from `registry.clock()`. In
+   Chromium the beat also carries `heap { usedMb, limitMb }`: `performance.memory`
+   `usedJSHeapSize` and `jsHeapSizeLimit` divided by 2^20, rounded to 0.1. Where the runtime has no
+   `performance.memory` (Firefox, Safari, Bun) `heap` is absent.
 
 The channel is a default plugin of `@moku-labs/editor/agent`: `[registryPlugin, channelPlugin, overlayPlugin]`.
 
@@ -39,7 +42,7 @@ A bad value throws:
 | `watch` | `(id: string, input: Json \| undefined, onValue: (value: Json) => void) => () => void` | Calls `onValue` with the current value before it returns, then on every door delivery. The first door delivery is dropped when its JSON text equals the first read. Later equal deliveries are passed on. An unknown id, an invalid input or an `onValue` throw on the first value throws synchronously and opens no door watch. Returns an idempotent stop. |
 | `run` | `(id: string, input?: Json) => Promise<RunResult>` | Runs the command in a microtask. Rejects -32601 `[moku-editor] <id>: unknown command`, or with the command's error. A synchronous throw of the entry also rejects. No timeout. |
 | `status` | `() => LinkStatus` | `{ kind: "paused", frame }` when `registry.clock()` says paused, else `{ kind: "live", frame }`. Never a wire state. |
-| `heartbeat` | `() => Heartbeat` | A fresh frozen `{ frame, paused, at }`. `at` is `Date.now()`. Works before `start`. |
+| `heartbeat` | `() => Heartbeat` | A fresh frozen `{ frame, paused, at }`, plus a frozen `heap { usedMb, limitMb }` where `performance.memory` has finite numbers. `at` is `Date.now()`. Works before `start`. |
 | `onHeartbeat` | `(fn: HeartbeatListener) => () => void` | Calls `fn` on every interval tick with the same frozen beat, in subscription order. Returns an idempotent remover. The same `fn` added twice is two subscriptions. A throwing listener is logged as `channel:heartbeat-listener-failed` with `{ message }`. The other listeners still run. |
 
 ```ts
@@ -52,6 +55,7 @@ stop();
 
 channel.status(); // { kind: "live", frame: 1840 }
 channel.heartbeat(); // { frame: 1840, paused: true, at: 1790000000000 }
+// in Chromium: { frame: 1840, paused: true, at: 1790000000000, heap: { usedMb: 12.8, limitMb: 4095.8 } }
 
 const off = channel.onHeartbeat(beat => send("heartbeat", beat));
 off();

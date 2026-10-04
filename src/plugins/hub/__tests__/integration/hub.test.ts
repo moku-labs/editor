@@ -4,7 +4,7 @@ import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServerCore, createServerPlugin, serverCoreConfig } from "../../../../config";
 import { filesPlugin } from "../../../files";
-import { failure, request, success } from "../../../registry/protocol";
+import { failure, notification, request, success } from "../../../registry/protocol";
 import { hubPlugin } from "../..";
 import type { HubSession } from "../../types";
 import type { Client } from "./clients";
@@ -219,6 +219,22 @@ describe("hub over real websockets", () => {
     expect(paramsOf(value)).toEqual({ sub: 9, value: ["x"] });
     expect("session" in value ? value.session : undefined).toBe(session);
     expect(game.messages.filter(isRequestOf("watch"))).toHaveLength(1);
+  });
+
+  it("forwards a heartbeat with its heap and a tap of the agent to a tools page", async () => {
+    await serveEditor();
+    const { agent: game, session } = await agent();
+    const page = await tools();
+    const heap = { usedMb: 12.8, limitMb: 4095.8 };
+
+    game.send(notification("game", "heartbeat", { frame: 12, paused: false, at: 5, heap }));
+    game.send(notification("game", "tap", { x: 206, y: 640, at: 15_234.5 }));
+
+    const beat = await page.next(isNote("game", "heartbeat"));
+    expect(paramsOf(beat)).toEqual({ frame: 12, paused: false, at: 5, heap });
+    const tap = await page.next(isNote("game", "tap"));
+    expect(paramsOf(tap)).toEqual({ x: 206, y: 640, at: 15_234.5 });
+    expect("session" in tap ? tap.session : undefined).toBe(session);
   });
 
   it("fails a call in flight -32001 when the game reloads, and tells tools", async () => {

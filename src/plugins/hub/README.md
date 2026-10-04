@@ -146,12 +146,13 @@ Agent connection:
 | `hello {manifest}`, manifest valid | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true}`. Tools get `session` and `sessions {list}`. `hub:session` is emitted. |
 | `hello` with a bad manifest | close 1008 `bad manifest` |
 | `hello` a second time | close 1008 `hello twice` |
-| `heartbeat` | stored, a silent session comes back, forwarded to every tools connection |
+| `heartbeat {frame, paused, at, heap?}` | stored, a silent session comes back, forwarded to every tools connection. `heap {usedMb, limitMb}` is kept when both are finite numbers. A malformed `heap` is dropped and the beat still goes through. |
 | `value {sub, value}` | fanned out to the tools subscribers |
+| `tap {x, y, at}` | forwarded to every tools connection with `session`, like a heartbeat. Only `x`, `y` and `at` are kept. |
 | `bye` | the close reason becomes `bye` |
 | Response to a forwarded call | settled to its target. An unknown id is a `hub:late-response` debug log. |
 | Any request | error -32007 `unauthorized`, nothing dispatched |
-| Malformed heartbeat or value, undecodable text | one strike. Ten strikes close with 1008. |
+| Malformed heartbeat, value or tap, undecodable text | one strike. Ten strikes close with 1008. |
 
 Tools connection:
 
@@ -200,7 +201,8 @@ Fan-out: one agent-side watch per `(session, source, input)`. The key sorts obje
 last unwatch sends one `unwatch` to the agent.
 
 Backpressure: when `send` returns -1 a tools connection is congested. Values coalesce to the
-latest per `sub`, heartbeats are dropped, responses and session notifications are still sent.
+latest per `sub`, heartbeats and taps are dropped, responses and session notifications are still
+sent.
 `drain` flushes the backlog in order.
 
 ## Events
@@ -266,7 +268,7 @@ export const auditPlugin = createPlugin("audit", {
 | `files` | server | Answers the files channel. Its errors pass through unchanged. |
 | `pages` | server | Depends on hub. In `onInit` it calls `addRoutes` for `{path}`, `{path}/`, `{path}/hello`, `{path}/assets/*`. Every route runs `guard` first (`navigate`, `same-origin` for hello). The boot JSON uses `path()` and `token()`. The bin passes `guard` to `createStaticFetch`. |
 | `bridge` | agent | Gets `{ ws, token }` from `{path}/hello`, opens `{path}/ws?token=…&kind=agent`, sends an Origin header outside a browser, sends `hello`, reads its id from the `session` notification on channel `editor`. |
-| `link` | tools | Opens `{boot.ws}?token=…&kind=tools`. Computes silence itself from forwarded heartbeats (`SILENT_AFTER_MS`, `SILENT_AFTER_PAUSED_MS`). Its own call timeout is `CALL_TIMEOUT_MS` (10 s), longer than the hub default of 5 s. |
+| `link` | tools | Opens `{boot.ws}?token=…&kind=tools`. Computes silence itself from forwarded heartbeats (`SILENT_AFTER_MS`, `SILENT_AFTER_PAUSED_MS`). Reads `heap` from them and passes forwarded taps to `onTap`. Its own call timeout is `CALL_TIMEOUT_MS` (10 s), longer than the hub default of 5 s. |
 
 Lifecycle:
 

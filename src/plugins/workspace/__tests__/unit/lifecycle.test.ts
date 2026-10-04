@@ -24,6 +24,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
+  delete document.documentElement.dataset.density;
 });
 
 /**
@@ -66,9 +67,12 @@ describe("initWorkspace", () => {
         v: 1,
         theme: "dark",
         previews: { flow: { visible: false, size: "M", corner: "top-left" } },
-        device: { preset: "pixel-8", orientation: "landscape" }
+        device: { preset: "pixel-8", orientation: "landscape" },
+        density: "auto",
+        showTaps: false
       })
     );
+    vi.stubGlobal("innerWidth", 720);
     vi.stubGlobal(
       "matchMedia",
       vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
@@ -81,6 +85,14 @@ describe("initWorkspace", () => {
     expect(ctx.state.device).toEqual({ preset: "pixel-8", orientation: "landscape" });
     expect(ctx.state.active).toBe("console");
     expect(ctx.state.overlayInGame).toBe(false);
+    expect(ctx.state.density).toEqual({ chosen: "auto", applied: "compact" });
+    expect(ctx.state.showTaps).toBe(false);
+    expect(ctx.state.reference).toBe(false);
+  });
+
+  it("starts in Game without a hash", () => {
+    initWorkspace(ctx);
+    expect(ctx.state.active).toBe("game");
   });
 
   it("ignores an unknown hash and keeps defaultWorkspace", () => {
@@ -96,10 +108,13 @@ describe("initWorkspace", () => {
     expect(ctx.state.keys.escape.map(entry => entry.layer).toSorted()).toEqual([
       "contextMenu",
       "palette",
+      "reference",
       "registry",
       "stepPopover"
     ]);
     expect(ctx.state.palette.items.has("cmd:step")).toBe(true);
+    expect(ctx.state.palette.items.has("cmd:reference")).toBe(true);
+    expect(ctx.state.palette.items.has("workspace:density-compact")).toBe(true);
   });
 
   it("throws on an invalid config before touching state", () => {
@@ -115,12 +130,12 @@ describe("startWorkspace — keys", () => {
     startWorkspace(ctx);
   });
 
-  it("⌘2 / Ctrl+2 and bare 2 show Game; 1 goes back to Flow", () => {
+  it("⌘2 / Ctrl+2 and bare 2 show Flow; 1 goes back to Game", () => {
     const event = press("2", { metaKey: true, ctrlKey: true, code: "Digit2" });
-    expect(ctx.state.active).toBe("game");
+    expect(ctx.state.active).toBe("flow");
     expect(event.defaultPrevented).toBe(true);
     press("1", { code: "Digit1" });
-    expect(ctx.state.active).toBe("flow");
+    expect(ctx.state.active).toBe("game");
     press("6", { code: "Digit6" });
     expect(ctx.state.active).toBe("console");
   });
@@ -161,7 +176,36 @@ describe("startWorkspace — keys", () => {
     expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { on: true });
   });
 
+  it("R turns Reference mode on and off, not while typing; Esc turns it off", () => {
+    press("r");
+    expect(ctx.state.reference).toBe(true);
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
+    press("r");
+    expect(ctx.state.reference).toBe(false);
+
+    const field = document.createElement("input");
+    document.body.append(field);
+    field.dispatchEvent(keyEvent("r"));
+    expect(ctx.state.reference).toBe(false);
+
+    press("r");
+    press("Escape");
+    expect(ctx.state.reference).toBe(false);
+    expect(ctx.emit).toHaveBeenLastCalledWith("workspace:reference", { on: false });
+  });
+
+  it("Esc closes the step popover before Reference mode", () => {
+    press("r");
+    ctx.state.popover = "step";
+    press("Escape");
+    expect(ctx.state.popover).toBeUndefined();
+    expect(ctx.state.reference).toBe(true);
+    press("Escape");
+    expect(ctx.state.reference).toBe(false);
+  });
+
   it("G shows and hides the preview of the current workspace and is a no-op in Game", () => {
+    ctx.state.active = "flow";
     press("g");
     expect(ctx.state.previews.flow.visible).toBe(false);
     press("g");
@@ -203,6 +247,37 @@ describe("startWorkspace — listeners", () => {
     expect(removeDocument.mock.calls.map(call => call[0])).toContain("scroll");
     expect(ctx.link.manifestListeners.size).toBe(0);
     expect(ctx.state.dom.cleanup).toEqual([]);
+  });
+
+  it("subscribes to link taps once; a tap draws a ripple while docked; onStop clears it", () => {
+    initWorkspace(ctx);
+    startWorkspace(ctx);
+    const api = createWorkspaceApi(ctx);
+    const root = document.createElement("div");
+    document.body.append(root);
+    api.mount(root);
+    expect(ctx.link.onTap).toHaveBeenCalledTimes(1);
+    ctx.state.frame.box = { left: 0, top: 0, width: 393, height: 852, scale: 1, docked: "stage" };
+
+    ctx.link.tap({ x: 12, y: 34, at: 1 });
+    expect(document.querySelectorAll("[data-frame-overlay] [data-tap-ripple]")).toHaveLength(1);
+
+    stopWorkspace(ctx);
+    expect(ctx.link.tapListeners.size).toBe(0);
+    expect(ctx.state.taps).toEqual([]);
+  });
+
+  it("resize re-evaluates the auto density and emits workspace:density on a change", () => {
+    vi.stubGlobal("innerWidth", 1440);
+    initWorkspace(ctx);
+    startWorkspace(ctx);
+    expect(ctx.state.density.applied).toBe("comfortable");
+
+    vi.stubGlobal("innerWidth", 480);
+    globalThis.dispatchEvent(new Event("resize"));
+    expect(ctx.state.density.applied).toBe("compact");
+    expect(document.documentElement.dataset.density).toBe("compact");
+    expect(ctx.emit).toHaveBeenCalledWith("workspace:density", { density: "compact" });
   });
 
   it("a manifest marks everLive, bumps the UI and re-applies the overlay while on", async () => {

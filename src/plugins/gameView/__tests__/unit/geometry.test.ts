@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { DEVICES, resolveDevice } from "../../../workspace/devices";
-import { fitScale, hasHomeBar, hasIsland, safeBands, slotSize } from "../../stage/geometry";
+import {
+  drawerCover,
+  fitScale,
+  hasHomeBar,
+  hasIsland,
+  safeBands,
+  slotSize
+} from "../../stage/geometry";
 
 const STAGE = { w: 1200, h: 800 };
 
@@ -89,5 +96,20 @@ describe("dynamic island and home bar", () => {
     expect(hasHomeBar("phone", 16)).toBe(true);
     expect(hasHomeBar("phone", 0)).toBe(false);
     expect(hasHomeBar("desktop", 34)).toBe(false);
+  });
+});
+
+describe("drawerCover", () => {
+  it("is the strip from the drawer's left edge to the stage's right edge", () => {
+    expect(drawerCover({ left: 0, right: 480 }, 197)).toBe(283);
+  });
+
+  it("is 0 when the drawer starts at or past the stage's right edge", () => {
+    expect(drawerCover({ left: 0, right: 448 }, 448)).toBe(0);
+    expect(drawerCover({ left: 0, right: 448 }, 460)).toBe(0);
+  });
+
+  it("never covers more than the whole stage", () => {
+    expect(drawerCover({ left: 100, right: 480 }, 40)).toBe(380);
   });
 });

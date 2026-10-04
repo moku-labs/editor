@@ -6,7 +6,6 @@ import { panelsPlugin } from "../../../panels";
 import type { RunResult } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import { flowViewPlugin } from "../..";
-import type { NoteFile, NoteInput } from "../../notes/types";
 import type { Camera, FlowViewApi, ItemKey, NodeId } from "../../types";
 
 const framework = createToolsCore(toolsCoreConfig, {
@@ -33,19 +32,18 @@ describe("flowView types", () => {
     expectTypeOf<App["flowView"]["focus"]["step"]>().returns.toEqualTypeOf<
       Promise<RunResult | undefined>
     >();
-    expectTypeOf<App["flowView"]["notes"]["create"]>().returns.toEqualTypeOf<Promise<NoteFile>>();
+    expectTypeOf<App["flowView"]["focus"]["followEdge"]>().toEqualTypeOf<
+      (edgeKey: string) => boolean
+    >();
+    expectTypeOf<App["flowView"]>().not.toHaveProperty("notes");
     expect(flowViewPlugin.name).toBe("flowView");
   });
 
-  it("requires a title for a note and hides the state", () => {
-    // @ts-expect-error — a note needs a title
-    const missing: NoteInput = { body: "no title" };
-    const ok: NoteInput = { title: "First wood 4" };
-    expect([missing, ok]).toHaveLength(2);
+  it("hides the state", () => {
     expect(surface).toBeTypeOf("function");
   });
 
-  it("declares no events of its own; workspace:open-file and workspace:new-note are typed from the tools core", () => {
+  it("declares no events of its own; workspace:open-file and workspace:density are typed from the tools core", () => {
     const probe = framework.createPlugin("typesProbe", {
       onInit: ctx => {
         ctx.emit("workspace:open-file", { path: "nodes/merge.ts" });
@@ -56,9 +54,8 @@ describe("flowView types", () => {
       }
     });
     expect(probe.name).toBe("typesProbe");
-    expectTypeOf<ToolsEvents["workspace:new-note"]>().toEqualTypeOf<{
-      captures?: readonly string[];
-      from?: { node: string; outcome?: string };
+    expectTypeOf<ToolsEvents["workspace:density"]>().toEqualTypeOf<{
+      density: "compact" | "comfortable";
     }>();
   });
 });
