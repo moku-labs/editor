@@ -1,9 +1,11 @@
 /**
  * @file gameView plugin — the dotted stage (A2): the bezel around the screen slot sized W·k × H·k,
- * the dock of the one game frame over the slot (`gameFrame().dock`, the iframe never moves, R4,
- * D-14) clipped to the stage less the open Element panel drawer, the badges (F12) and the picker
- * hint pill. Everything drawn over the game screen lives in gameView's overlay root
- * (ensureOverlayRoot), not here.
+ * k the one Fit scale of the preset's kind (round 2b R9), with the preset's screen radius at the
+ * same scale (`--screen-radius`, round 2 R3) and the frame of the preset (a modern phone, or a
+ * home-button phone with tall bezels and its round button), the dock of the one game frame over
+ * the slot (`gameFrame().dock`, the iframe never moves, R4, D-14) clipped to the stage less the
+ * open Element panel drawer, the badges (F12) and the picker hint pill. Everything drawn over the
+ * game screen lives in gameView's overlay root (ensureOverlayRoot), not here.
  */
 import type { RefObject, VNode } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -12,7 +14,7 @@ import { rectSourceOf } from "../../panels/shared/scene";
 import type { LinkStatus, Manifest } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { resolveDevice } from "../../workspace/devices";
-import { fitScale, slotSize } from "../stage/geometry";
+import { type Bezel, bezelOf, frameOf, kindScale, slotSize } from "../stage/geometry";
 import type { GameViewCtx, GameViewState } from "../types";
 import { ensureOverlayRoot } from "./OverlayRoot";
 import { elapsedText, linkBadge, type StageBadge } from "./text";
@@ -156,6 +158,20 @@ function pickerHint(state: GameViewState, manifest: Manifest | undefined): strin
 }
 
 /**
+ * The inline padding of a bezel.
+ *
+ * @param bezel - The bezel in stage px.
+ * @returns "64px 10px 64px 10px".
+ * @example
+ * ```ts
+ * bezelPadding({ top: 10, right: 10, bottom: 10, left: 10 }); // "10px 10px 10px 10px"
+ * ```
+ */
+function bezelPadding(bezel: Bezel): string {
+  return `${bezel.top}px ${bezel.right}px ${bezel.bottom}px ${bezel.left}px`;
+}
+
+/**
  * The stage.
  *
  * @param props - The gameView domain context and the link status.
@@ -179,11 +195,14 @@ export function Stage(props: StageProps): VNode {
     silent ? SILENT_TICK_MS : RECORD_TICK_MS
   );
 
-  const choice = ctx.require(workspacePlugin).device();
-  const size = resolveDevice(choice.preset, choice.orientation);
-  const desktop = choice.preset.kind === "desktop";
-  const fitted = measured.w > 0 ? fitScale(measured, size, desktop) : 1;
-  const slotPx = slotSize(size, zoom === "fit" ? fitted : 1);
+  const workspace = ctx.require(workspacePlugin);
+  const choice = workspace.device();
+  const { preset, orientation } = choice;
+  const size = resolveDevice(preset, orientation);
+  const frame = frameOf(preset);
+  const fitted = measured.w > 0 ? kindScale(measured, workspace.devices(), preset, orientation) : 1;
+  const scale = zoom === "fit" ? fitted : 1;
+  const slotPx = slotSize(size, scale);
   const hint = pickerHint(state, ctx.require(linkPlugin).manifest());
 
   return (
@@ -194,12 +213,22 @@ export function Stage(props: StageProps): VNode {
       data-stale={silent ? status.kind : undefined}
     >
       <div data-part="viewport" ref={viewport}>
-        <div data-part="bezel" data-kind={choice.preset.kind} data-orientation={choice.orientation}>
+        <div
+          data-part="bezel"
+          data-kind={preset.kind}
+          data-orientation={orientation}
+          data-frame={frame}
+          style={{
+            padding: bezelPadding(bezelOf(preset, orientation)),
+            "--screen-radius": `${preset.radius * scale}px`
+          }}
+        >
           <div
             data-part="slot"
             ref={slot}
             style={{ width: `${slotPx.w}px`, height: `${slotPx.h}px` }}
           />
+          {frame === "home-button" && <div data-part="home-button" aria-hidden="true" />}
         </div>
       </div>
       <div data-part="clip" ref={clip} aria-hidden="true" style={{ right: `${cover}px` }} />

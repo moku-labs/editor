@@ -3,16 +3,59 @@
  * every window from the 480 px Claude pane to the desktop: the pinned preview plays the game (a
  * tap on Play walks it, the size stays), a tap draws a ripple at the tap point, Reference mode
  * (proxies named for the game elements at their Element tab bounds, no input reaches the game,
- * Copy reference), the Element tab bounds of homeBackground after splash → home and after a
- * device change, the source of settingsBoard, Flow following a Comes from edge (both ends framed,
+ * Copy reference with the one line of round 2b R13 that names the card holding the reference
+ * block of round 2), the Element tab bounds of homeBackground
+ * after splash → home and after a device change, the source of settingsBoard, Flow following a
+ * Comes from edge (both ends framed,
  * the pulse, Alt+← back), find current (C), the Styles tab without a preselected style, and the
  * side panels of Flow, Game and Files (collapse, resize, close, reopen; a drawer below 600 px).
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
- * are compared in client px. Ground truth is read from the game page (`globalThis.editor`).
+ * are compared in client px. Ground truth is read from the game page (`globalThis.editor`). A pick
+ * saves two PNGs under .moku/captures of the game copy (round 2 R2); each test removes them.
  */
+import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
+import { barChecked, flipBarToggle, showPreview } from "./top-bar";
+
+/**
+ * A reference block without its clock (the HH:MM:SS of its game line).
+ *
+ * @param text - The block.
+ * @returns The block without the time.
+ */
+function withoutClock(text: string): string {
+  return text.replace(/ · \d\d:\d\d:\d\d · /, " · ");
+}
+
+/** The captures folder of the game copy the bin serves. */
+const CAPTURES = fileURLToPath(new URL("../dist-e2e/game/.moku/captures/", import.meta.url));
+
+/** The project root the bin serves. */
+const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
+
+/** The one reference line of settingsBoard; group 1 is the card it names. */
+const BOARD_LINE =
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/settingsBoard-f\d+\.md)$/;
+
+/** The reference block inside a card file: its `text` fence. */
+const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
+
+/**
+ * The reference block in the card a reference line names.
+ *
+ * @param line - The clipboard line.
+ * @returns The block.
+ */
+async function cardBlock(line: string): Promise<string> {
+  const card = BOARD_LINE.exec(line)?.[1] ?? "";
+  expect(card, line).not.toBe("");
+  const text = await readFile(path.join(GAME_ROOT, card), "utf8");
+  return TEXT_FENCE.exec(text)?.[1] ?? "";
+}
 
 /** A rect in px. */
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
@@ -255,16 +298,12 @@ async function waitDocked(page: Page, where: "stage" | "preview"): Promise<void>
 
 /**
  * Makes the game preview visible in the shown workspace: the narrow windows may start with it
- * hidden, then the Game switch of the top bar shows it.
+ * hidden, then the Game preview toggle of the top bar (a ⋯ menu row below 900 px) shows it.
  *
  * @param page - The test page.
  */
 async function ensurePreview(page: Page): Promise<void> {
-  const preview = page.locator("[data-ui=preview]");
-  if (await preview.isHidden()) {
-    await page.getByRole("switch", { name: "Game", exact: true }).click();
-  }
-  await expect(preview).toBeVisible();
+  await showPreview(page);
   await waitDocked(page, "preview");
 }
 
@@ -653,6 +692,10 @@ async function pulses(page: Page): Promise<string[]> {
 // Tests
 // ---------------------------------------------------------------------------------------------
 
+test.afterEach(async () => {
+  await rm(CAPTURES, { recursive: true, force: true });
+});
+
 test.describe("pane · the pinned preview plays the game", () => {
   test("a tap on Play in the preview walks the game off home; the preview keeps its size", async ({
     tools
@@ -706,13 +749,13 @@ test.describe("pane · reference mode", () => {
     const page = tools.page;
     await showGame(tools);
     await expect.poll(() => gamePath(page)).toBe("home");
-    const toggle = page.locator("[data-ui=top-bar] [data-action=reference]");
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // The Reference mode toggle: a button of the wide bar, a ⋯ menu row below 900 px.
+    expect(await barChecked(page, "reference")).toBe(false);
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
 
     // R (focus is on the rail button, not in an input) turns it on.
     await page.keyboard.press("r");
-    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => barChecked(page, "reference")).toBe(true);
     await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
     const background = page.locator('[data-moku-proxy][data-moku-key="homeBackground"]');
     await expect(background).toHaveCount(1);
@@ -738,8 +781,8 @@ test.describe("pane · reference mode", () => {
     expect(await gamePath(page)).toBe("home");
 
     // Off: no proxy left, and the game takes the tap again.
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await flipBarToggle(page, "reference");
+    await expect.poll(() => barChecked(page, "reference")).toBe(false);
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
     await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
     await tapGame(page, "play");
@@ -747,25 +790,26 @@ test.describe("pane · reference mode", () => {
   });
 
   test("settingsBoard: the frame matches game.rect, the source is found, the proxy and Copy reference carry the bounds", async ({
-    tools,
-    context
+    tools
   }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const page = tools.page;
     await showGame(tools);
     await expect.poll(() => gamePath(page)).toBe("home");
+    // Settings from the board's HUD: the position stack is board > settings > open.
+    await answer(page, "play");
+    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
     await answer(page, "openSettings");
-    await expect.poll(() => gamePath(page)).toMatch(/^settings\//);
+    await expect.poll(() => gamePath(page)).toBe("board/settings/open");
     const board = await settledRect(page, "settingsBoard");
 
-    // Pick inside the settings pane, then its settingsBoard crumb (or the board itself).
-    await pickIn(page, await toClient(page, await settledRect(page, "settingsPane")), /\S/);
+    // Pick the board itself, where no child of it is drawn over the point.
+    await pickIn(page, await toClient(page, board), /^settingsBoard · /);
+    await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
+      "Reference, shot and bookmark copied"
+    );
+    const picked = await page.evaluate(() => navigator.clipboard.readText());
     await expandSide(page, "game.side");
     const tab = elementTab(page);
-    await expect(tab.locator("[data-part=name]")).not.toHaveText("");
-    if ((await tab.locator("[data-part=name]").textContent()) !== "settingsBoard") {
-      await tab.locator("[data-part=crumbs] button", { hasText: /^settingsBoard$/ }).click();
-    }
     await expect(tab.locator("[data-part=name]")).toHaveText("settingsBoard");
 
     // The selected frame and the bounds are the element's real rect (2 px).
@@ -796,7 +840,7 @@ test.describe("pane · reference mode", () => {
 
     // Reference mode: the settingsBoard proxy has the Element tab bounds (2 px).
     const bounds = await tabBounds(page);
-    await page.locator("[data-ui=top-bar] [data-action=reference]").click();
+    await flipBarToggle(page, "reference");
     const proxy = page.locator('[data-moku-proxy][data-moku-key="settingsBoard"]');
     await expect(proxy).toHaveCount(1);
     await expect(proxy).toHaveAttribute("aria-label", "settingsBoard");
@@ -805,18 +849,55 @@ test.describe("pane · reference mode", () => {
       .map(Number);
     expect(near(proxyBounds, bounds, 2), `${proxyBounds} near ${bounds}`).toBe(true);
 
-    // Copy reference writes the one line for the chat.
+    // Copy reference writes the card again and copies its one line, the pick's line (the same
+    // node and frame name the same card); the card holds eleven lines in a fixed order.
+    await page.evaluate(() => navigator.clipboard.writeText(""));
     await tab.locator("[data-action=copy-reference]").click();
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
       "✓ Reference copied"
     );
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toMatch(BOARD_LINE);
     const line = await page.evaluate(() => navigator.clipboard.readText());
+    expect(line).toBe(picked);
+    const block = await cardBlock(line);
+    const lines = block.split("\n");
+    expect(
+      lines.map(text => (text.startsWith("@moku ") ? "@moku" : text.split(":")[0])),
+      block
+    ).toEqual([
+      "@moku",
+      "path",
+      "source",
+      "layout",
+      "bounds",
+      "state",
+      "flow",
+      "game",
+      "device",
+      "restore",
+      "shot"
+    ]);
+    const [head, , sourceLine, , boundsLine, , flowLine] = lines;
+    expect(head, block).toMatch(/^@moku settingsBoard · panel · settingsPopup\/open · f\d+$/);
+    expect(sourceLine, block).toMatch(/^source: features\/settings\/settings\.tsx:301\b/);
+    // The bounds: device px as the Element tab shows them, then the reference units.
     const [x, y, w, h] = bounds;
-    expect(line.startsWith("@moku settingsBoard · "), line).toBe(true);
-    expect(line).toContain(` · ${await gamePath(page)} · `);
-    expect(line.endsWith(` · ${x},${y} ${w}×${h}`), line).toBe(true);
+    expect(boundsLine, block).toMatch(
+      new RegExp(String.raw`^bounds: ${x},${y} ${w}×${h} px · ref \d+,\d+ \d+×\d+$`)
+    );
+    expect(flowLine, block).toMatch(/^flow: board > settings > open( · last: .+)?$/);
+    expect(lines[9], block).toMatch(/^restore: bookmark settingsBoard-f\d+$/);
+    expect(lines[10], block).toMatch(
+      /^shot: \.moku\/captures\/settingsBoard-f\d+\.png · frame: \.moku\/captures\/f\d+\.png$/
+    );
+    // Copy reference and the pick give the same facts (only the clock may differ): the card's
+    // block is the one the Element tab shows.
+    const shown = (await tab.locator("pre[data-part=reference]").textContent()) ?? "";
+    expect(withoutClock(block)).toBe(withoutClock(shown));
 
-    await page.locator("[data-ui=top-bar] [data-action=reference]").click();
+    await flipBarToggle(page, "reference");
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
   });
 });

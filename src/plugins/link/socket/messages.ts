@@ -1,6 +1,6 @@
 /**
  * @file link plugin — routes what the hub sends: responses settle calls; `editor` notifications
- * (`sessions`, `session`) drive the session choice; `game` notifications of the chosen session
+ * (`sessions`, `session`) drive the session choice, `hotReload` the hot reload state; `game` notifications of the chosen session
  * (`heartbeat`, `value`, `tap`) drive the status, the heap, the watches and the tap listeners (R1).
  */
 
@@ -8,6 +8,7 @@ import type { Json, Message, Notification } from "../../registry/protocol";
 import { decode, isRequest, isResponse } from "../../registry/protocol";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
+import { onHotReloadNote } from "../server/hot-reload";
 import { applySessions, closeChosen } from "../sessions/choose";
 import { applyStatus } from "../status/machine";
 import { notifyTap } from "../subscriptions/taps";
@@ -54,6 +55,16 @@ function onSession(ctx: LinkCtx, note: Notification): void {
   else if (id === ctx.state.chosen) {
     closeChosen(ctx, textOf(params, "reason") ?? DEFAULT_CLOSE_REASON);
   }
+}
+
+/**
+ * `editor` · `hotReload { hmr, owner }`: the hot reload state of the game server (R6).
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onHotReload(ctx: LinkCtx, note: Notification): void {
+  onHotReloadNote(ctx, note.params);
 }
 
 /**
@@ -135,6 +146,7 @@ function onTap(ctx: LinkCtx, note: Notification): void {
 const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.sessions", onSessions],
   ["editor.session", onSession],
+  ["editor.hotReload", onHotReload],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]

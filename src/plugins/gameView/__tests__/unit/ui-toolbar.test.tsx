@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { DeviceSpec } from "../../../registry/protocol";
+import { DEVICES } from "../../../workspace/devices";
 import { stopGameView } from "../../lifecycle";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
@@ -7,6 +9,26 @@ import { button, click, find, findAll, type Mounted, mount, settle } from "../ui
 
 let ctx: TestCtx;
 let view: Mounted;
+
+/**
+ * The option of a preset in the device select.
+ *
+ * @param id - The preset id.
+ * @returns The option.
+ */
+function option(id: string): HTMLOptionElement {
+  return find<HTMLOptionElement>(view.root, `option[value='${id}']`);
+}
+
+/**
+ * The presets listed under one group, in order.
+ *
+ * @param group - The group id.
+ * @returns The presets.
+ */
+function inGroup(group: string): DeviceSpec[] {
+  return DEVICES.filter(device => device.group === group);
+}
 
 beforeEach(() => {
   ctx = createCtx();
@@ -39,14 +61,7 @@ describe("DeviceToolbar", () => {
 
   it("chooses the device and shows its size; the orientation swaps it", () => {
     const select = find<HTMLSelectElement>(view.root, "select[data-part='device']");
-    expect(findAll(select, "option").map(option => option.textContent)).toEqual([
-      "iPhone SE",
-      "iPhone 15",
-      "iPhone 15 Pro Max",
-      "Pixel 8",
-      "iPad mini",
-      "Desktop"
-    ]);
+    expect(findAll(select, "option")).toHaveLength(DEVICES.length);
     expect(select.value).toBe("iphone-15");
     expect(find(view.root, "[data-part='size']").textContent).toBe("393 × 852");
 
@@ -56,6 +71,52 @@ describe("DeviceToolbar", () => {
 
     click(button(view.root, "Landscape"));
     expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({ orientation: "landscape" });
+  });
+
+  it("groups the presets: iPhone, Android, Foldable, Tablet, Desktop", () => {
+    const select = find<HTMLSelectElement>(view.root, "select[data-part='device']");
+    const groups = findAll<HTMLOptGroupElement>(select, "optgroup");
+    expect(groups.map(group => group.label)).toEqual([
+      "iPhone",
+      "Android",
+      "Foldable",
+      "Tablet",
+      "Desktop"
+    ]);
+    expect(findAll(groups[0] ?? select, "option").map(option => option.textContent)).toEqual(
+      inGroup("iphone").map(device => device.name)
+    );
+    expect(
+      findAll<HTMLOptionElement>(groups[2] ?? select, "option").map(option => option.value)
+    ).toEqual(inGroup("foldable").map(device => device.id));
+  });
+
+  it("marks the approximate presets in the option title", () => {
+    expect(option("redmi-note-13").title).toBe("393×873 · dpr 2.75 · approx: estimated values");
+    expect(option("pixel-8").title).toBe("412×915 · dpr 2.625");
+  });
+
+  it("shows Fold / Unfold only for a foldable; it switches the screen through workspace", () => {
+    expect(view.root.querySelector("[data-action='fold']")).toBeNull();
+
+    view.unmount();
+    ctx.workspace.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    const fold = find(view.root, "[data-action='fold']");
+    expect(fold.textContent).toBe("Unfold");
+    expect(fold.getAttribute("title")).toBe("Unfold to the inner screen");
+    click(fold);
+    expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({ folded: false });
+
+    view.unmount();
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    expect(find(view.root, "[data-part='size']").textContent).toBe("707 × 823");
+    expect(find(view.root, "[data-action='fold']").textContent).toBe("Fold");
+  });
+
+  it("has no overlay switch: the top bar keeps it (round 2 R1)", () => {
+    expect(view.root.querySelector("[data-part='overlay']")).toBeNull();
+    expect(view.root.textContent).not.toContain("Overlay in game");
   });
 
   it("switches the zoom between Fit and 100 % (radio group)", () => {
@@ -84,6 +145,33 @@ describe("DeviceToolbar", () => {
     expect(desktop.getAttribute("aria-checked")).toBe("false");
   });
 
+  it("the Sound switch mutes the game with game.mute and keeps the flag (round 2b R11)", async () => {
+    view.unmount();
+    ctx.link.manifestValue = manifestOf([["game.mute", "cosmetic"]]);
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    const sound = find(view.root, "[data-part='sound']");
+    expect(sound.getAttribute("role")).toBe("switch");
+    expect(sound.textContent).toBe("Sound");
+    expect(sound.getAttribute("aria-checked")).toBe("true");
+    expect(sound.getAttribute("aria-disabled")).toBeNull();
+    expect(sound.getAttribute("title")).toBe("Sound on or off · M");
+
+    click(sound);
+    await settle();
+    expect(ctx.panels.run).toHaveBeenCalledWith("game.mute", { muted: true });
+    expect(ctx.workspace.setMuted).toHaveBeenCalledWith(true);
+    expect(find(view.root, "[data-part='sound']").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("disables the Sound switch with a tooltip when the game has no game.mute", async () => {
+    const sound = find(view.root, "[data-part='sound']");
+    expect(sound.getAttribute("aria-disabled")).toBe("true");
+    expect(sound.getAttribute("title")).toBe("Needs @moku-labs/game with game.mute");
+    click(sound);
+    await flush();
+    expect(ctx.panels.run).not.toHaveBeenCalled();
+  });
+
   it("Reload reloads the game without restore", async () => {
     click(find(view.root, "[data-part='reload']"));
     await settle();
@@ -109,9 +197,20 @@ describe("DeviceToolbar", () => {
     await flush();
     expect(ctx.panels.run).not.toHaveBeenCalled();
     expect(ctx.state.series.popover).toBe(false);
-    expect(find(view.root, "[data-part='overlay']").getAttribute("title")).toBe(
-      "The game did not add the overlay"
-    );
+  });
+
+  it("Shot and Series carry an icon and a label; title and aria-label name them (round 2b R17)", () => {
+    const shot = find(view.root, "[data-part='capture']");
+    expect(shot.getAttribute("aria-label")).toBe("Take a screenshot");
+    expect(shot.getAttribute("title")).toBe("Take a screenshot");
+    expect(find(shot, "[data-part='tool-label']").textContent).toBe("Shot");
+    expect(find(shot, "svg[data-part='tool-icon']").getAttribute("aria-hidden")).toBe("true");
+
+    const series = find(view.root, "[data-part='series']");
+    expect(series.getAttribute("aria-label")).toBe("Record a series");
+    expect(series.getAttribute("title")).toBe("Record a series");
+    expect(find(series, "[data-part='tool-label']").textContent).toBe("Series");
+    expect(find(series, "svg[data-part='tool-icon']").getAttribute("aria-hidden")).toBe("true");
   });
 
   it("the Series button opens the popover; while recording it is red with the time", () => {
@@ -136,14 +235,5 @@ describe("DeviceToolbar", () => {
     const recording = find(view.root, "[data-part='series']");
     expect(recording.dataset.recording).toBe("");
     expect(recording.textContent).toMatch(/^● 0\.9 s$/);
-  });
-
-  it("the overlay switch shows workspace's flag and flips it", () => {
-    const overlay = find(view.root, "[data-part='overlay']");
-    expect(overlay.getAttribute("role")).toBe("switch");
-    expect(overlay.getAttribute("aria-checked")).toBe("false");
-    expect(overlay.textContent).toContain("Off");
-    click(overlay);
-    expect(ctx.workspace.setOverlayInGame).toHaveBeenCalledWith(true);
   });
 });

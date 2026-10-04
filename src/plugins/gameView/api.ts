@@ -1,6 +1,6 @@
 /**
- * @file gameView plugin — api factory: binds the scene, element, capture, series and sheet
- * functions to the plugin context. The contract and the examples live on `GameViewApi` in
+ * @file gameView plugin — api factory: binds the scene, element, capture, series, sheet,
+ * reference and fold functions to the plugin context. The contract and the examples live on `GameViewApi` in
  * types.ts.
  */
 
@@ -14,8 +14,10 @@ import {
   selectedElement,
   setPicker
 } from "./element/select";
+import { copySelectedReference, listBookmarks } from "./reference/pick";
 import { readManifest } from "./scene/manifest";
 import { locateElement, readScene } from "./scene/read";
+import { foldDevice } from "./stage/fold";
 import type { GameViewApi, GameViewCtx } from "./types";
 
 /**
@@ -37,6 +39,9 @@ export function createGameViewApi(ctx: GameViewCtx): GameViewApi {
     capture: takeScreenshot.bind(undefined, ctx),
     series: recordSeries.bind(undefined, ctx),
     stopSeries: stopRecording.bind(undefined, ctx),
-    openSheet: openSheet.bind(undefined, ctx)
+    openSheet: openSheet.bind(undefined, ctx),
+    copyReference: copySelectedReference.bind(undefined, ctx),
+    fold: foldDevice.bind(undefined, ctx),
+    bookmarks: listBookmarks.bind(undefined, ctx)
   };
 }

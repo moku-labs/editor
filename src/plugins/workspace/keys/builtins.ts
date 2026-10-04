@@ -1,9 +1,10 @@
 /**
  * @file workspace plugin — the built-in keys of design §4 (⌘1–⌘6 and bare 1–6, ⌘K, `.`, P, O,
- * G, R) and the Esc layers the shell owns (palette, session menu, registry, step popover,
- * Reference mode).
+ * G, R, H) and the Esc layers the shell owns (palette, the session and ⋯ menus, registry, step
+ * popover, Reference mode). In Flow, flowView's H (History) wins over the global Hot reload key.
  */
 import { closePopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
+import { toggleHotReload } from "../hot-reload";
 import { setOverlayInGame } from "../overlay";
 import { closePalette, togglePalette } from "../palette/items";
 import { closeReference, toggleReference } from "../reference";
@@ -52,6 +53,7 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
   });
   bind(ctx, "g", "Game preview", () => togglePreview(ctx));
   bind(ctx, "r", "Reference mode", () => toggleReference(ctx));
+  bind(ctx, "h", "Hot reload", () => toggleHotReload(ctx));
 
   addEscapeLayer(ctx, "palette", () => {
     if (!state.palette.open) return false;
@@ -59,6 +61,7 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
     return true;
   });
   addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "session"));
+  addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "more"));
   addEscapeLayer(ctx, "registry", () => closePopover(state, "registry"));
   addEscapeLayer(ctx, "stepPopover", () => closePopover(state, "step"));
   addEscapeLayer(ctx, "reference", () => closeReference(ctx));

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { sidePanelState } from "../../../panels/shared/side-panel";
 import type { KeyBinding } from "../../../workspace/types";
 import { escapeClosers, keyBindings } from "../../keys";
-import { createCtx, PNG, type TestCtx } from "../helpers";
+import { createCtx, flush, manifestOf, PNG, type TestCtx } from "../helpers";
 
 let ctx: TestCtx;
 
@@ -53,6 +53,18 @@ describe("keyBindings", () => {
     expect(sidePanelState("game.side").collapsed).toBe(true);
     side.run(new KeyboardEvent("keydown", { key: "\\" }));
     expect(sidePanelState("game.side").collapsed).toBe(false);
+  });
+
+  it("binds M in Game to the Sound switch, only when the game has game.mute (round 2b R11)", async () => {
+    const sound = bindingOf(keyBindings(ctx), "m");
+    expect(sound.workspace).toBe("game");
+    expect(sound.when?.()).toBe(false);
+
+    ctx.link.manifestValue = manifestOf([["game.mute", "cosmetic"]]);
+    expect(sound.when?.()).toBe(true);
+    sound.run(new KeyboardEvent("keydown", { key: "m" }));
+    await flush();
+    expect(ctx.panels.run).toHaveBeenCalledWith("game.mute", { muted: true });
   });
 
   it("binds ⇧⌘C and I globally to toggle the picker, which shows Game", () => {

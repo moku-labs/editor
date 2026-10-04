@@ -1,5 +1,6 @@
 /**
- * @file flowView render module — the hub (G, 200 px wide): head with name, "You are here", kind and
+ * @file flowView render module — the hub (G, 200 px wide): head with name, "You are here" (or
+ * "here" while the current node is inside it), kind and
  * scene, "waiting for N outcomes"; one 22 px port row per outcome with a right-aligned label and a
  * dot (accent while the outcome is waited for). Dragging a hub pans.
  */
@@ -39,6 +40,7 @@ export function Hub(props: HubProps): VNode {
       data-key={item.key}
       data-selected={view.selected ? "" : undefined}
       data-current={view.current ? "" : undefined}
+      data-holds-current={view.holdsCurrent && !view.current ? "" : undefined}
       data-dimmed={view.dimmed ? "" : undefined}
       data-pulse={view.pulse ? "" : undefined}
       data-trail={view.trail ? "" : undefined}
@@ -57,6 +59,7 @@ export function Hub(props: HubProps): VNode {
       <div data-part="head">
         <span data-part="name">{view.name}</span>
         {view.current && <span data-tag="current">You are here</span>}
+        {view.holdsCurrent && !view.current && <span data-tag="here">here</span>}
         <span data-part="kind">{view.kindLine}</span>
         {view.current && count > 0 && (
           <span data-part="waiting">{`waiting for ${count} ${count === 1 ? "outcome" : "outcomes"}`}</span>

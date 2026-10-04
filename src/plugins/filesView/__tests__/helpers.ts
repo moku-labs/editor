@@ -194,6 +194,9 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       isOtherTab: () => false,
       onTap: vi.fn(() => unwatch),
       heap: vi.fn(() => undefined),
+      hotReload: vi.fn(() => undefined),
+      onHotReload: vi.fn(() => unwatch),
+      setHotReload: vi.fn(() => Promise.resolve(false)),
       files: files.client
     },
     attach(manifest) {

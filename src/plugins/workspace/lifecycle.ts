@@ -1,15 +1,17 @@
 /**
  * @file workspace plugin — onInit (validate config, load prefs, read the OS theme, the density
  * and the hash, built-in keys, Esc layers, palette commands), onStart (window listeners, the
- * manifest and tap listeners; no mount, R3) and onStop (every cleanup, timers, tap ripples,
+ * manifest, restore, tap and hot reload listeners; no mount, R3) and onStop (every cleanup, timers, tap ripples,
  * unrender, remove the frame layer and hosts).
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
 import { removeFrameLayer, syncFrame } from "./frame/frame";
+import { watchRestores } from "./frame/restored";
 import { clearTaps, watchTaps } from "./frame/taps";
 import { stopTicker } from "./handlers";
 import { removeHosts } from "./hosts";
+import { watchHotReload } from "./hot-reload";
 import { registerBuiltIns } from "./keys/builtins";
 import { dispatchKey } from "./keys/keymap";
 import { reapplyOverlay } from "./overlay";
@@ -69,6 +71,9 @@ export function validateConfig(config: Readonly<WorkspaceConfig>): void {
   if (!isPositive(config.reloadTimeoutMs)) {
     throw invalid("reloadTimeoutMs", "Use a positive number of milliseconds");
   }
+  if (!isPositive(config.hotReloadWaitMs)) {
+    throw invalid("hotReloadWaitMs", "Use a positive number of milliseconds");
+  }
   if (!isPositive(config.toastMs)) {
     throw invalid("toastMs", "Use a positive number of milliseconds");
   }
@@ -94,6 +99,7 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
     applied: resolveDensity(prefs.density, viewportWidth())
   };
   state.showTaps = prefs.showTaps;
+  state.muted = prefs.muted;
 
   const hash = globalThis.location?.hash.slice(1);
   if (isWorkspaceId(hash)) state.active = hash;
@@ -126,9 +132,10 @@ function listen(
 }
 
 /**
- * onStart: window keydown (capture), resize (shell, frame, auto density), capture scroll, the OS
- * theme listener, `link.onManifest` (palette counts, everLive, overlay re-apply) and link's taps
- * (ripples). No shell mount here (R3).
+ * onStart: window keydown (capture), resize (shell and its top-bar layout, frame, auto density),
+ * capture scroll, the OS theme listener, `link.onManifest` (palette counts, everLive, overlay
+ * re-apply; the restore toast), link's taps (ripples) and link's hot reload state (the switch). No
+ * shell mount here (R3).
  *
  * @param ctx - Domain context of workspace.
  */
@@ -179,8 +186,14 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
     })
   );
 
+  // Restores: a session the bridge restored across Bun's reload toasts once.
+  trackCleanup(state, watchRestores(ctx));
+
   // Taps: a tap in the docked game draws a ripple over it.
   trackCleanup(state, watchTaps(ctx));
+
+  // Hot reload: the switch follows the server's state.
+  trackCleanup(state, watchHotReload(ctx));
 }
 
 /**

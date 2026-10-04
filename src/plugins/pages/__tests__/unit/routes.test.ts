@@ -54,15 +54,15 @@ afterEach(async () => {
 });
 
 describe("createRoutes", () => {
-  it("returns the four frozen routes under the hub path", () => {
+  it("returns the five frozen routes under the hub path", () => {
     const routes = createRoutes(createHarness(pageDir).deps);
-    expect(Object.keys(routes)).toEqual([P, `${P}/`, `${P}/hello`, `${P}/assets/*`]);
+    expect(Object.keys(routes)).toEqual([P, `${P}/`, `${P}/hello`, `${P}/hmr`, `${P}/assets/*`]);
     expect(Object.isFrozen(routes)).toBe(true);
   });
 
-  it("answers 405 with Allow on every route for other methods", async () => {
+  it("answers 405 with Allow on every read-only route for other methods", async () => {
     const routes = createRoutes(createHarness(pageDir).deps);
-    for (const key of Object.keys(routes)) {
+    for (const key of [P, `${P}/`, `${P}/hello`, `${P}/assets/*`]) {
       const path = key.replace("*", "app-abc.js");
       const response = await call(routes, key, request(path, { method: "POST" }));
       expect(response.status).toBe(405);
@@ -77,6 +77,7 @@ describe("createRoutes", () => {
       [`${P}/`, request(`${P}/`)],
       [`${P}/hello`, request(`${P}/hello`)],
       [`${P}/hello`, request(`${P}/hello`, { headers: { origin: "http://evil.com" } })],
+      [`${P}/hmr`, request(`${P}/hmr`)],
       [`${P}/assets/*`, request(`${P}/assets/app-abc.js`)],
       [`${P}/assets/*`, request(`${P}/assets/missing.js`)]
     ];

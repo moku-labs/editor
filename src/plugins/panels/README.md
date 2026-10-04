@@ -176,13 +176,14 @@ Rules for all of them:
 - No plugin, no `ctx`, no timers, no logging.
 - No state, except `side-panel/`: it keeps the state of each side panel (D-29), in memory and in localStorage.
 - Bad input never throws. Functions return a typed error value; the view writes its own text.
-- Only `loadStyleFile` and `writeNumber` are async. They do I/O through the files client they get.
+- Only `loadStyleFile`, `writeNumber` and `findStylesFile` are async. They do I/O through the files client they get.
 - Not exported from `"."` and not a plugin api. Views import them by relative path, e.g. `../panels/shared/style-edit`.
 - Imports: the protocol by relative path; `preact` in `highlight.ts` and `side-panel/` only.
 
 | Module | Imported by | Holds |
 |---|---|---|
 | `style-edit.ts` | flowView, gameView | Style blocks of a TS source file, the one safe numeric-literal edit, the version-checked write. |
+| `styles-file.ts` | flowView, gameView | `findStylesFile`: the first `.ts`/`.tsx` file that calls `defineTextStyles(`, breadth-first, at most 400 reads. |
 | `highlight.ts` | flowView, filesView | The one syntax highlighter (TS/TSX, CSS, JSON, Markdown). |
 | `tokens.ts` | renderView | CSS custom property names of the workspace tokens. |
 | `scene/` | gameView, renderView | The scene mapping from `game.ui`, `game.entities`, `game.projections`. |

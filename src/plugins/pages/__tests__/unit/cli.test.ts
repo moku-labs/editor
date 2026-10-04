@@ -47,6 +47,7 @@ describe("startBin", () => {
     const { deps, lines } = createDeps();
     await expect(startBin(["--help"], deps)).resolves.toHaveProperty("code", 0);
     expect(lines.join("\n")).toContain("moku-editor <game-html>");
+    expect(lines.join("\n")).toContain("--no-hmr");
   });
 
   it("prints the error and usage with 2 for bad arguments", async () => {
@@ -116,8 +117,8 @@ describe("startBin", () => {
   });
 });
 
-describe("startBin dev server (D-22)", () => {
-  it("serves the game without Bun's HMR and without console forwarding", async () => {
+describe("startBin dev server (D-23)", () => {
+  it("serves the game with Bun's HMR and console forwarding", async () => {
     const serve = vi.spyOn(Bun, "serve");
     const { deps } = createDeps();
     const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
@@ -125,9 +126,53 @@ describe("startBin dev server (D-22)", () => {
       expect(started.code).toBe(0);
       expect(serve).toHaveBeenCalledTimes(1);
       const options: { development?: unknown } | undefined = serve.mock.calls[0]?.[0];
-      expect(options?.development).toEqual({ hmr: false });
+      expect(options?.development).toEqual({ hmr: true, console: true });
     } finally {
       serve.mockRestore();
+      await started.stop?.();
+    }
+  });
+
+  it("attaches its server: GET /__editor/hmr answers the bin's hot reload state", async () => {
+    const { deps, lines } = createDeps();
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
+    try {
+      const port = Number(/127\.0\.0\.1:(\d+)\//.exec(lines.join("\n"))?.[1]);
+      const response = await fetch(`http://127.0.0.1:${port}/__editor/hmr`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ hmr: true, owner: "bin" });
+    } finally {
+      await started.stop?.();
+    }
+  });
+});
+
+describe("startBin --no-hmr (R6)", () => {
+  it("serves with Bun HMR off and console forwarding kept", async () => {
+    const serve = vi.spyOn(Bun, "serve");
+    const { deps } = createDeps();
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game, "--no-hmr"];
+    const started = await startBin(argv, deps);
+    try {
+      expect(started.code).toBe(0);
+      const options: { development?: unknown } | undefined = serve.mock.calls[0]?.[0];
+      expect(options?.development).toEqual({ hmr: false, console: true });
+    } finally {
+      serve.mockRestore();
+      await started.stop?.();
+    }
+  });
+
+  it("still attaches its server: GET /__editor/hmr answers hmr false, owner bin", async () => {
+    const { deps, lines } = createDeps();
+    const argv = [join(game, "index.html"), "--no-hmr", "--port", "0", "--root", game];
+    const started = await startBin(argv, deps);
+    try {
+      const port = Number(/127\.0\.0\.1:(\d+)\//.exec(lines.join("\n"))?.[1]);
+      const response = await fetch(`http://127.0.0.1:${port}/__editor/hmr`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ hmr: false, owner: "bin" });
+    } finally {
       await started.stop?.();
     }
   });

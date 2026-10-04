@@ -1,26 +1,41 @@
 /**
- * @file workspace plugin — B1, the top bar, left to right: logo, game name, session chip, link
- * pill, Pause/Resume, Step 1 frame (only while paused), the palette search box, the Game switch
- * (preview of the current workspace), the Overlay in game switch, Reference mode, Registry
- * counts, theme toggle. Controls that cannot act now are `aria-disabled` so their tooltip still
- * explains why. Below 560 px the bar keeps the controls and drops the game name, the session chip,
- * the search text and the counts (TopBar.css).
+ * @file workspace plugin — B1, the top bar, in two layouts by window width (round 2 R1).
+ *
+ * 900 px and wider (`data-layout="wide"`), left to right: logo, game name, session chip, link
+ * pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O) and Hot
+ * reload (H) switches with visible labels, Reference mode, Registry (icon; counts in its title),
+ * theme toggle.
+ *
+ * Below 900 px (`data-layout="compact"`): logo, game name, link pill (the session id in its title;
+ * it opens the session menu), Pause/Resume and Step as icons (the label is their accessible name),
+ * the Reference mode (R) and Hot reload (H) icon toggles (round 2b R15), the search icon and the ⋯
+ * menu holding the rest; the two toggles stay in the menu too. At 560 px and narrower only the
+ * Reference toggle stays in the bar and the game name hides (TopBar.css). Controls that cannot act
+ * now are `aria-disabled` so their tooltip still explains why.
  */
-import type { ComponentChildren, VNode } from "preact";
+import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
-import { closePopover, openPopover, stepOnce, togglePause, togglePreview } from "../actions";
+import { closePopover, openPopover, stepOnce, togglePause } from "../actions";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
-import { overlayAvailable, setOverlayInGame } from "../overlay";
 import { openPalette } from "../palette/items";
 import { chooseTheme } from "../prefs/apply";
+import { viewportWidth } from "../prefs/density";
 import { effectiveTheme } from "../prefs/theme";
-import { toggleReference } from "../reference";
 import type { WorkspaceCtx } from "../types";
-import { isPreviewWorkspace } from "../workspaces";
-import { Icon } from "./icons";
+import { BarButton, Switch } from "./BarControls";
+import {
+  hotReloadControl,
+  overlayControl,
+  previewControl,
+  referenceControl,
+  registryTitle,
+  type ToggleControl
+} from "./controls";
+import { Icon, type IconName } from "./icons";
 import { LinkPill } from "./LinkPill";
+import { MoreMenu } from "./MoreMenu";
 import { RegistryPopover } from "./RegistryPopover";
-import { SessionChip } from "./SessionChip";
+import { SessionChip, SessionMenu, sessionsView } from "./SessionChip";
 import { StepPopover } from "./StepPopover";
 import { useWorkspace } from "./store";
 
@@ -30,89 +45,57 @@ import { useWorkspace } from "./store";
 export type TopBarProps = { readonly ctx: WorkspaceCtx };
 
 /**
- * Props of a top-bar switch.
- */
-type SwitchProps = {
-  readonly label: string;
-  readonly checked: boolean;
-  readonly disabled: boolean;
-  readonly title: string;
-  readonly name: string;
-  readonly onToggle: () => void;
-};
-
-/**
- * A labelled `role="switch"` button.
+ * Below this window width the top bar is compact, in px.
  *
- * @param props - Label, state and the toggle action.
- * @returns The switch.
  * @example
- * ```tsx
- * <Switch name="game" label="Game" checked disabled={false} title="Show the game preview (G)" onToggle={toggle} />
+ * ```ts
+ * barLayout(COMPACT_BAR_BELOW - 1); // "compact"
  * ```
  */
-function Switch(props: SwitchProps): VNode {
-  return (
-    <button
-      type="button"
-      role="switch"
-      data-switch
-      data-action={props.name}
-      aria-checked={props.checked}
-      aria-disabled={props.disabled}
-      title={props.title}
-      onClick={() => {
-        if (!props.disabled) props.onToggle();
-      }}
-    >
-      <span data-track aria-hidden="true" />
-      <span>{props.label}</span>
-    </button>
-  );
+export const COMPACT_BAR_BELOW = 900;
+
+/**
+ * At this window width and narrower the compact bar keeps only the Reference toggle; Hot reload
+ * is a ⋯ row then (R15), in px. TopBar.css hides the game name from the same width.
+ *
+ * @example
+ * ```ts
+ * barToggles(NARROW_BAR_MAX); // ["reference"]
+ * ```
+ */
+export const NARROW_BAR_MAX = 560;
+
+/**
+ * The icon toggles the compact bar shows before the search (R15): Reference mode and Hot reload,
+ * only Reference at 560 px and narrower, none in the wide bar (it has its own switches).
+ *
+ * @param width - The window width in CSS px.
+ * @returns The data-action names, in bar order.
+ * @example
+ * ```ts
+ * barToggles(720); // ["reference", "hot-reload"]
+ * barToggles(480); // ["reference"]
+ * barToggles(960); // []
+ * ```
+ */
+export function barToggles(width: number): readonly ("reference" | "hot-reload")[] {
+  if (barLayout(width) === "wide") return [];
+  return width <= NARROW_BAR_MAX ? ["reference"] : ["reference", "hot-reload"];
 }
 
 /**
- * A ghost button of the top bar.
+ * The top-bar layout of a window width.
  *
- * @param props - The action name, tooltip, disabled state, click handler and content.
- * @param props.name - `data-action` value.
- * @param props.title - Tooltip.
- * @param props.disabled - aria-disabled; the click does nothing then.
- * @param props.onClick - The action.
- * @param props.children - Icon and text.
- * @param props.anchor - `data-popover-anchor` value for a popover placed under it.
- * @param props.pressed - `aria-pressed` for a toggle button; omitted for a plain one.
- * @returns The button.
+ * @param width - The window width in CSS px.
+ * @returns compact below 900 px, wide from there.
  * @example
- * ```tsx
- * <BarButton name="step" title="Step 1 frame (.)" disabled={false} onClick={step}>Step</BarButton>
+ * ```ts
+ * barLayout(720); // "compact"
+ * barLayout(960); // "wide"
  * ```
  */
-function BarButton(props: {
-  readonly name: string;
-  readonly title: string;
-  readonly disabled?: boolean;
-  readonly anchor?: string;
-  readonly pressed?: boolean;
-  readonly onClick: () => void;
-  readonly children: ComponentChildren;
-}): VNode {
-  return (
-    <button
-      type="button"
-      data-variant="ghost"
-      data-action={props.name}
-      data-popover-anchor={props.anchor}
-      aria-disabled={props.disabled === true}
-      aria-pressed={props.pressed}
-      title={props.title}
-      onClick={() => {
-        if (props.disabled !== true) props.onClick();
-      }}
-    >
-      {props.children}
-    </button>
-  );
+export function barLayout(width: number): "compact" | "wide" {
+  return width < COMPACT_BAR_BELOW ? "compact" : "wide";
 }
 
 /**
@@ -133,6 +116,191 @@ function splitGameName(game: string): { name: string; version: string | undefine
 }
 
 /**
+ * The game name and its version.
+ *
+ * @param props - The manifest game string.
+ * @param props.game - E.g. "merge-game 0.0.0", "No game" without one.
+ * @returns The name.
+ */
+function GameName(props: { readonly game: string }): VNode {
+  const { name, version } = splitGameName(props.game);
+  return (
+    <span data-game-name>
+      <span data-part="name">{name}</span>
+      {version !== undefined && (
+        <>
+          {" "}
+          <span data-part="version" data-mono>
+            {version}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The palette search: a box with its placeholder and ⌘K in the wide bar, an icon button in the
+ * compact one. It never shrinks under its content.
+ *
+ * @param props - The workspace domain context and the layout.
+ * @param props.ctx - Domain context of workspace.
+ * @param props.compact - Whether the bar is compact.
+ * @returns The button.
+ */
+function SearchButton(props: { readonly ctx: WorkspaceCtx; readonly compact: boolean }): VNode {
+  const combo = formatCombo("mod+k", isApplePlatform(globalThis.navigator));
+  const placeholder = "Jump to node, file, style, texture";
+  if (props.compact) {
+    return (
+      <button
+        type="button"
+        data-search
+        aria-label={`${placeholder} (${combo})`}
+        title={`${placeholder} (${combo})`}
+        onClick={() => openPalette(props.ctx)}
+      >
+        <Icon name="search" />
+      </button>
+    );
+  }
+  return (
+    <button type="button" data-search onClick={() => openPalette(props.ctx)}>
+      <Icon name="search" />
+      <span>{placeholder}…</span>
+      <kbd>{combo}</kbd>
+    </button>
+  );
+}
+
+/**
+ * The text of a ghost button: visible in the wide bar, only the accessible name in the compact
+ * one, where the button shows its icon.
+ *
+ * @param props - The text and the layout.
+ * @param props.text - The label.
+ * @param props.compact - Whether the bar is compact.
+ * @returns The label span.
+ */
+function ButtonLabel(props: { readonly text: string; readonly compact: boolean }): VNode {
+  return props.compact ? <span data-sr-only>{props.text}</span> : <span>{props.text}</span>;
+}
+
+/**
+ * A toggle as an icon button: `aria-pressed` carries its state, the label is its accessible
+ * name, the title names its key and, when it cannot act, why.
+ *
+ * @param props - The control, its icon and whether a dot marks it on.
+ * @param props.control - What the button shows and does.
+ * @param props.icon - The icon.
+ * @param props.dot - Whether a dot shows while it is on (Hot reload).
+ * @returns The button.
+ */
+function IconToggle(props: {
+  readonly control: ToggleControl;
+  readonly icon: IconName;
+  readonly dot?: boolean;
+}): VNode {
+  const { control } = props;
+  return (
+    <BarButton
+      name={control.name}
+      title={control.title}
+      pressed={control.checked}
+      disabled={control.disabled}
+      onClick={control.toggle}
+    >
+      <Icon name={props.icon} />
+      {props.dot === true && control.checked && <span data-part="dot" aria-hidden="true" />}
+      <span data-sr-only>{control.label}</span>
+    </BarButton>
+  );
+}
+
+/**
+ * The icon toggles of the compact bar (R15), placed before the search.
+ *
+ * @param props - The workspace domain context and the window width.
+ * @param props.ctx - Domain context of workspace.
+ * @param props.width - The window width in CSS px.
+ * @returns The toggles.
+ */
+function CompactToggles(props: { readonly ctx: WorkspaceCtx; readonly width: number }): VNode {
+  const { ctx } = props;
+  const toggles = barToggles(props.width);
+  return (
+    <>
+      {toggles.includes("reference") && (
+        <IconToggle control={referenceControl(ctx)} icon="target" />
+      )}
+      {toggles.includes("hot-reload") && (
+        <IconToggle control={hotReloadControl(ctx)} icon="flame" dot />
+      )}
+    </>
+  );
+}
+
+/**
+ * A toggle as a labelled switch of the wide bar.
+ *
+ * @param props - The control.
+ * @param props.control - What the switch shows and does.
+ * @returns The switch.
+ */
+function ControlSwitch(props: { readonly control: ToggleControl }): VNode {
+  const { control } = props;
+  return (
+    <Switch
+      name={control.name}
+      label={control.short}
+      checked={control.checked}
+      disabled={control.disabled}
+      title={control.title}
+      onToggle={control.toggle}
+    />
+  );
+}
+
+/**
+ * The right part of the wide bar: the three switches, Reference mode, Registry, theme.
+ *
+ * @param props - The workspace domain context.
+ * @param props.ctx - Domain context of workspace.
+ * @returns The controls.
+ */
+function WideControls(props: { readonly ctx: WorkspaceCtx }): VNode {
+  const { ctx } = props;
+  const { state } = ctx;
+  const manifest = ctx.require(linkPlugin).manifest();
+  const nextTheme = effectiveTheme(state.theme) === "dark" ? "light" : "dark";
+
+  return (
+    <>
+      <ControlSwitch control={previewControl(ctx)} />
+      <ControlSwitch control={overlayControl(ctx)} />
+      <ControlSwitch control={hotReloadControl(ctx)} />
+      <IconToggle control={referenceControl(ctx)} icon="target" />
+      <BarButton
+        name="registry"
+        anchor="registry"
+        title={registryTitle(manifest)}
+        onClick={() => {
+          if (state.popover === "registry") closePopover(state, "registry");
+          else openPopover(state, "registry");
+        }}
+      >
+        <Icon name="registry" />
+        <span data-sr-only>Registry</span>
+      </BarButton>
+      <BarButton name="theme" title={`Theme: ${nextTheme}`} onClick={() => chooseTheme(ctx)}>
+        <Icon name="theme" />
+        <span data-sr-only>Theme: {nextTheme}</span>
+      </BarButton>
+    </>
+  );
+}
+
+/**
  * The top bar.
  *
  * @param props - The workspace domain context.
@@ -143,36 +311,21 @@ export function TopBar(props: TopBarProps): VNode {
   const { state } = ctx;
   useWorkspace(state.ui, () => state.ui.version);
   const manifest = ctx.require(linkPlugin).manifest();
-  const apple = isApplePlatform(globalThis.navigator);
+  const width = viewportWidth();
+  const layout = barLayout(width);
+  const compact = layout === "compact";
   const { kind } = state.link;
   const paused = kind === "paused";
   const running = kind === "live" || paused;
-  const { active } = state;
-  const previewOn = !isPreviewWorkspace(active) || state.previews[active].visible;
-  const overlayReady = overlayAvailable(ctx);
-  const nextTheme = effectiveTheme(state.theme) === "dark" ? "light" : "dark";
-  const gameName = splitGameName(manifest?.game ?? "No game");
-  const counts =
-    manifest === undefined ? "– · –" : `${manifest.sources.length} · ${manifest.commands.length}`;
 
   return (
-    <header data-ui="top-bar">
+    <header data-ui="top-bar" data-layout={layout}>
       <span data-logo aria-hidden="true">
         <Icon name="logo" />
       </span>
-      <span data-game-name>
-        <span data-part="name">{gameName.name}</span>
-        {gameName.version !== undefined && (
-          <>
-            {" "}
-            <span data-part="version" data-mono>
-              {gameName.version}
-            </span>
-          </>
-        )}
-      </span>
-      <SessionChip ctx={ctx} />
-      <LinkPill ctx={ctx} />
+      <GameName game={manifest?.game ?? "No game"} />
+      {!compact && <SessionChip ctx={ctx} />}
+      <LinkPill ctx={ctx} session={compact} />
       <BarButton
         name="pause"
         title={paused ? "Resume the game (P)" : "Pause the game (P)"}
@@ -180,7 +333,7 @@ export function TopBar(props: TopBarProps): VNode {
         onClick={() => togglePause(ctx, "topbar")}
       >
         <Icon name={paused ? "play" : "pause"} />
-        <span>{paused ? "Resume" : "Pause"}</span>
+        <ButtonLabel text={paused ? "Resume" : "Pause"} compact={compact} />
       </BarButton>
       <BarButton
         name="step"
@@ -190,61 +343,14 @@ export function TopBar(props: TopBarProps): VNode {
         onClick={() => stepOnce(ctx, "topbar")}
       >
         <Icon name="step" />
-        <span>Step 1 frame</span>
+        <ButtonLabel text="Step 1 frame" compact={compact} />
       </BarButton>
-      <button type="button" data-search onClick={() => openPalette(ctx)}>
-        <Icon name="search" />
-        <span>Jump to node, file, style, texture…</span>
-        <kbd>{formatCombo("mod+k", apple)}</kbd>
-      </button>
-      <Switch
-        name="game"
-        label="Game"
-        checked={previewOn}
-        disabled={active === "game"}
-        title={active === "game" ? "The Game workspace always shows the game" : "Game preview (G)"}
-        onToggle={() => togglePreview(ctx)}
-      />
-      <Switch
-        name="overlay"
-        label="Overlay in game"
-        checked={state.overlayInGame}
-        disabled={!overlayReady}
-        title={overlayReady ? "Overlay in game (O)" : "Connect a game with editor.overlay first"}
-        onToggle={() => {
-          void setOverlayInGame(ctx, !state.overlayInGame, "topbar");
-        }}
-      />
-      <BarButton
-        name="reference"
-        title="Reference mode (R) — pick game elements for the chat"
-        pressed={state.reference}
-        onClick={() => toggleReference(ctx)}
-      >
-        <Icon name="target" />
-        <span data-sr-only>Reference mode</span>
-      </BarButton>
-      <BarButton
-        name="registry"
-        anchor="registry"
-        title="What the game registered"
-        onClick={() => {
-          if (state.popover === "registry") closePopover(state, "registry");
-          else openPopover(state, "registry");
-        }}
-      >
-        <Icon name="registry" />
-        <span>Registry</span>
-        <span data-counts data-mono>
-          {counts}
-        </span>
-      </BarButton>
-      <BarButton name="theme" title={`Theme: ${nextTheme}`} onClick={() => chooseTheme(ctx)}>
-        <Icon name="theme" />
-        <span data-sr-only>Theme: {nextTheme}</span>
-      </BarButton>
+      {compact && <CompactToggles ctx={ctx} width={width} />}
+      <SearchButton ctx={ctx} compact={compact} />
+      {compact ? <MoreMenu ctx={ctx} /> : <WideControls ctx={ctx} />}
+      {compact && sessionsView(ctx).many && <SessionMenu ctx={ctx} />}
       <StepPopover ctx={ctx} />
-      <RegistryPopover ctx={ctx} />
+      <RegistryPopover ctx={ctx} anchor={compact ? "more" : "registry"} />
     </header>
   );
 }

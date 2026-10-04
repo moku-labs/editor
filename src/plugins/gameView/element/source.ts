@@ -6,7 +6,12 @@
  * the JSX element (to the line that closes it, eight lines at most). `style={ident}` is the
  * StyleBlockRef `{ kind: "const", name: ident }` (R8) the shared style edit finds in that file or
  * in the file the ident is imported from; `style={call(...)}` is shown read-only; an element with
- * no style is still "defined at" its line. Every result is remembered per key in `state.found`.
+ * no style is still "defined at" its line, a text node with `style="ui.link"` too, with its text
+ * style key (round 2b R17: the Code section shows that key's block). A key no file names
+ * literally that ends in digits is
+ * looked for as built in a loop: the template literal of its stem (`card${` for "card0") is
+ * "defined at" its line with `loop`. Every result is remembered per key in `state.found`; one
+ * search per key runs at a time (`state.searches`).
  */
 import { linkPlugin } from "../../link";
 import type { FileEntry } from "../../registry/protocol";
@@ -33,6 +38,16 @@ const CALL = /^[$A-Z_a-z][\w$.]*\s*\(/;
 const STYLE_OPEN = /(?<![\w$.-])style=\{/;
 
 /**
+ * A text style key as a string attribute: `style="ui.link"` (not `data-style=`).
+ */
+const TEXT_STYLE = /(?<![\w$.-])style="([^"]+)"/;
+
+/**
+ * A quoted string: the whole text of a `style={"ui.link"}`.
+ */
+const QUOTED = /^"([^"]+)"$/;
+
+/**
  * A `>` that closes a JSX tag: not the arrow of `=>`.
  */
 const CLOSES_TAG = /(?<!=)>/;
@@ -48,17 +63,23 @@ const ELEMENT_LINES = 8;
 const REGEX_SPECIAL = /[$()*+.?[\\\]^{|}]/g;
 
 /**
+ * The trailing characters of a key built in a loop.
+ */
+const DIGITS = "0123456789";
+
+/**
  * A named import list and its module specifier.
  */
 const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
 
 /**
- * The style of an element: a plain identifier, or a call shown as written (`…` when it goes on
- * past its line), with its 1-based line.
+ * The style of an element: a plain identifier, a call shown as written (`…` when it goes on
+ * past its line), or the text style key of a text node, with its 1-based line.
  */
 export type KeyStyle =
   | { readonly kind: "ident"; readonly name: string; readonly line: number }
-  | { readonly kind: "call"; readonly text: string; readonly line: number };
+  | { readonly kind: "call"; readonly text: string; readonly line: number }
+  | { readonly kind: "text"; readonly key: string; readonly line: number };
 
 /**
  * The pattern of a key in its six forms: `key` or `id`, as `="k"`, `={"k"}` or `: "k"`.
@@ -70,7 +91,7 @@ export type KeyStyle =
  * keyPattern("hudRow").test('<Row key="hudRow">'); // true
  * ```
  */
-function keyPattern(key: string): RegExp {
+export function keyPattern(key: string): RegExp {
   const escaped = key.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
   const quoted = `"${escaped}"`;
   return new RegExp(
@@ -102,8 +123,9 @@ function bracedText(line: string, start: number): string {
 }
 
 /**
- * The style attribute on one line: an identifier or a call; anything else (an inline object, a
- * condition) is no style the search can show.
+ * The style attribute on one line: an identifier, a call or a text style key (`style="ui.link"`,
+ * `style={"ui.link"}`); anything else (an inline object, a condition) is no style the search can
+ * show.
  *
  * @param line - A line.
  * @param number - Its 1-based line number.
@@ -111,15 +133,20 @@ function bracedText(line: string, start: number): string {
  * @example
  * ```ts
  * styleOn("  style={hudRow}", 5); // { kind: "ident", name: "hudRow", line: 5 }
+ * styleOn('  style="ui.link"', 6); // { kind: "text", key: "ui.link", line: 6 }
  * ```
  */
 function styleOn(line: string, number: number): KeyStyle | undefined {
+  const textKey = TEXT_STYLE.exec(line)?.[1];
+  if (textKey !== undefined) return { kind: "text", key: textKey, line: number };
   const open = STYLE_OPEN.exec(line);
   if (open === null) return undefined;
+
   const text = bracedText(line, open.index + open[0].length);
   if (IDENT.test(text)) return { kind: "ident", name: text, line: number };
   if (CALL.test(text)) return { kind: "call", text, line: number };
-  return undefined;
+  const quoted = QUOTED.exec(text)?.[1];
+  return quoted === undefined ? undefined : { kind: "text", key: quoted, line: number };
 }
 
 /**
@@ -174,6 +201,60 @@ export function matchKey(
     first ??= { line: index + 1, style: undefined };
   }
   return first;
+}
+
+/**
+ * The stem of a key built in a loop: the key without its trailing digits.
+ *
+ * @param key - The ui key.
+ * @returns The stem, undefined when the key has no trailing digits or nothing before them.
+ * @example
+ * ```ts
+ * loopStem("card0"); // "card"
+ * ```
+ */
+function loopStem(key: string): string | undefined {
+  let end = key.length;
+  while (end > 0 && DIGITS.includes(key.charAt(end - 1))) end -= 1;
+  return end === key.length || end === 0 ? undefined : key.slice(0, end);
+}
+
+/**
+ * The line that builds a key in a loop: a template literal that starts with the key's stem and
+ * goes on with an interpolation (`` `card${slot}` `` for "card0", also as `key={`card${i}`}`).
+ *
+ * @param text - A file text.
+ * @param key - The ui key; only a key that ends in digits after a stem has a loop form.
+ * @returns The 1-based line, or undefined.
+ * @example
+ * ```ts
+ * matchLoopKey("const id = `card${slot}`;", "card0"); // 1
+ * ```
+ */
+export function matchLoopKey(text: string, key: string): number | undefined {
+  const pattern = loopKeyPattern(key);
+  if (pattern === undefined) return undefined;
+  const index = text.split("\n").findIndex(line => pattern.test(line));
+  return index === -1 ? undefined : index + 1;
+}
+
+/**
+ * The pattern of the template literal that builds a key in a loop: a backtick, the key's stem,
+ * then `${`.
+ *
+ * @param key - The ui key.
+ * @returns The pattern, undefined when the key has no loop form (no trailing digits after a stem).
+ * @example
+ * ```ts
+ * loopKeyPattern("card0")?.test("const id = `card${slot}`;"); // true
+ * ```
+ */
+export function loopKeyPattern(key: string): RegExp | undefined {
+  const stem = loopStem(key);
+  if (stem === undefined) return undefined;
+
+  const escaped = stem.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
+  return new RegExp(`\`${escaped}\\$\\{`);
 }
 
 /**
@@ -264,7 +345,7 @@ async function listFolder(ctx: GameViewCtx, dir: string): Promise<readonly FileE
  * @param path - The file.
  * @returns Its text, or undefined.
  */
-async function readText(ctx: GameViewCtx, path: string): Promise<string | undefined> {
+export async function readText(ctx: GameViewCtx, path: string): Promise<string | undefined> {
   try {
     const file = await ctx.require(linkPlugin).files.read(path);
     return file.text;
@@ -302,7 +383,7 @@ function queueFolders(
  * @param ctx - Domain context of gameView.
  * @yields {string} The file paths in search order.
  */
-async function* sourceFiles(ctx: GameViewCtx): AsyncGenerator<string, void, undefined> {
+export async function* sourceFiles(ctx: GameViewCtx): AsyncGenerator<string, void, undefined> {
   const { maxFiles, skip } = ctx.config.sourceSearch;
   const entry = entryDirOf(ctx.require(linkPlugin).manifest()?.page);
   const queue = entry === "" ? [""] : [entry, ""];
@@ -348,36 +429,66 @@ function sourceOf(
   }
   if (style?.kind === "call")
     return { kind: "call", path, line, call: style.text, callLine: style.line };
+  if (style?.kind === "text") return { kind: "defined", path, line, textStyle: style.key };
   return { kind: "defined", path, line };
 }
 
 /**
- * Searches the source of a ui key: the first element with a style (an identifier or a call),
- * else the first file that defines the key. The result is remembered in `state.found`; a key no
- * file names is forgotten there.
+ * One search of a ui key over the source files: the first element with a style (a text style key
+ * too) returns at once; else the first file that defines the key, else the first loop that
+ * builds it.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
  * @returns Where the key and its style are, undefined when no file names the key.
  */
-export async function findStyleSource(
-  ctx: GameViewCtx,
-  key: string
-): Promise<StyleSource | undefined> {
+async function searchSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
   let defined: StyleSource | undefined;
+  let loop: StyleSource | undefined;
   for await (const path of sourceFiles(ctx)) {
     const text = await readText(ctx, path);
-    const match = text === undefined ? undefined : matchKey(text, key);
-    if (text === undefined || match === undefined) continue;
+    if (text === undefined) continue;
 
-    const source = sourceOf(path, text, match);
-    if (source.kind !== "defined") {
-      ctx.state.found.set(key, source);
-      return source;
+    const match = matchKey(text, key);
+    if (match === undefined) {
+      const line = loop === undefined ? matchLoopKey(text, key) : undefined;
+      if (line !== undefined) loop = { kind: "defined", path, line, loop: true };
+      continue;
     }
+    const source = sourceOf(path, text, match);
+    if (source.kind !== "defined" || source.textStyle !== undefined) return source;
     defined ??= source;
   }
-  if (defined === undefined) ctx.state.found.delete(key);
-  else ctx.state.found.set(key, defined);
-  return defined;
+  return defined ?? loop;
+}
+
+/**
+ * Searches the source of a ui key: the first element with a style (an identifier or a call),
+ * else the first file that defines the key, else the loop that builds it. The result is
+ * remembered in `state.found`; a key no file names is forgotten there. A second call for a key
+ * whose search still runs gets that search.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param key - The ui key.
+ * @returns Where the key and its style are, undefined when no file names the key.
+ */
+export function findStyleSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
+  const { found, searches } = ctx.state;
+  const running = searches.get(key);
+  if (running !== undefined) return running;
+
+  const search = searchSource(ctx, key).then(
+    source => {
+      searches.delete(key);
+      if (source === undefined) found.delete(key);
+      else found.set(key, source);
+      return source;
+    },
+    (error: unknown) => {
+      searches.delete(key);
+      throw error;
+    }
+  );
+  searches.set(key, search);
+  return search;
 }

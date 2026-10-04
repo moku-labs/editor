@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sidePanelState } from "../../../panels/shared/side-panel";
+import { DEVICES } from "../../../workspace/devices";
 import { initGameView, startGameView, stopGameView } from "../../lifecycle";
 import { createCtx, flush, manifestOf, type TestCtx, useScene } from "../helpers";
 
@@ -50,7 +51,7 @@ describe("initGameView", () => {
     });
   });
 
-  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and the six devices", () => {
+  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and every device", () => {
     initGameView(ctx);
     expect(ctx.workspace.items.map(entry => entry.label)).toEqual([
       "Select element",
@@ -58,12 +59,7 @@ describe("initGameView", () => {
       "Record a series…",
       "Overlay in game",
       "Show Element panel",
-      "Device: iPhone SE",
-      "Device: iPhone 15",
-      "Device: iPhone 15 Pro Max",
-      "Device: Pixel 8",
-      "Device: iPad mini",
-      "Device: Desktop"
+      ...DEVICES.map(device => `Device: ${device.name}`)
     ]);
     expect(item("Select element").shortcut).toBe("⇧⌘C");
   });
@@ -106,7 +102,7 @@ describe("initGameView", () => {
 
   it("binds the keys and the four Esc layers; every remover goes into the disposers", () => {
     initGameView(ctx);
-    expect(ctx.workspace.bindings).toHaveLength(5);
+    expect(ctx.workspace.bindings).toHaveLength(6);
     expect(ctx.workspace.escapes.map(entry => entry.layer)).toEqual([
       "contactSheet",
       "seriesPopover",
@@ -136,6 +132,41 @@ describe("initGameView", () => {
     ctx.workspace.changeDevice("pixel-8", "portrait");
     expect(ctx.state.calibrationRead).toBe(false);
   });
+
+  it("re-calibrates after a fold: the same preset on its other screen", () => {
+    ctx.workspace.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    initGameView(ctx);
+    startGameView(ctx);
+    ctx.state.calibrationRead = true;
+
+    ctx.workspace.changeDevice("galaxy-z-fold-6", "portrait", true);
+    expect(ctx.state.calibrationRead).toBe(true);
+
+    ctx.workspace.changeDevice("galaxy-z-fold-6", "portrait", false);
+    expect(ctx.state.calibrationRead).toBe(false);
+  });
+
+  it.each([
+    ".moku/captures",
+    ".moku/captures/picks",
+    ".moku/captures/a/b"
+  ])("accepts capturesDir %s", capturesDir => {
+    expect(() => initGameView({ ...ctx, config: { ...ctx.config, capturesDir } })).not.toThrow();
+    stopGameView(ctx);
+  });
+
+  it.each([
+    "captures",
+    ".moku/capturesX",
+    ".moku",
+    "/srv/captures",
+    "../.moku/captures"
+  ])("refuses capturesDir %s with the startup error", capturesDir => {
+    expect(() => initGameView({ ...ctx, config: { ...ctx.config, capturesDir } })).toThrow(
+      '[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.\n  Set pluginConfigs.gameView.capturesDir to ".moku/captures/<sub>".'
+    );
+    expect(ctx.panels.registered).toEqual([]);
+  });
 });
 
 describe("startGameView", () => {
@@ -147,6 +178,14 @@ describe("startGameView", () => {
       "game.entities",
       "game.projections"
     ]);
+  });
+
+  it("mutes the attached game again when the viewer has the sound off (round 2b R11)", async () => {
+    ctx.workspace.mutedValue = true;
+    ctx.link.manifestValue = manifestOf([["game.mute", "cosmetic"]]);
+    startGameView(ctx);
+    await flush();
+    expect(ctx.panels.run).toHaveBeenCalledWith("game.mute", { muted: true });
   });
 
   it("does not watch while another workspace is active", () => {

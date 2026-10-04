@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildScene } from "../../../panels/shared/scene";
-import { proxyList, referenceLine } from "../../reference/proxies";
+import { proxyList } from "../../reference/proxies";
 import type { StyleSource } from "../../types";
 import { sceneCapture } from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reference mode proxies (finding 17, D-27): one per placed visible scene node,
-// layout-only nodes under the drawing ones, paint order kept, and the line
-// "Copy reference" puts on the clipboard.
+// layout-only nodes under the drawing ones, paint order kept; round 2 adds the
+// frame, the reference bounds and the place of the style block.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COIN_SOURCE: StyleSource = {
@@ -22,7 +22,7 @@ const COIN_SOURCE: StyleSource = {
 describe("proxyList", () => {
   it("has one proxy per placed visible node, layout-only nodes first, each group in paint order", () => {
     const scene = boardScene();
-    const proxies = proxyList(scene, { node: undefined, found: new Map() });
+    const proxies = proxyList(scene, { node: undefined, found: new Map(), blocks: new Map() });
     const ids = proxies.map(proxy => proxy.id);
     const placed = scene.paintOrder.filter(id => {
       const node = scene.nodes.get(id);
@@ -46,7 +46,8 @@ describe("proxyList", () => {
   it("gives a ui proxy its name, type, key, path, flow node, source, style and bounds", () => {
     const proxies = proxyList(boardScene(), {
       node: "board/awaitIntent",
-      found: new Map([["coinPill", COIN_SOURCE]])
+      found: new Map([["coinPill", COIN_SOURCE]]),
+      blocks: new Map([["coinPill", { path: "src/hud/styles.ts", line: 3 }]])
     });
     const coin = proxies.find(proxy => proxy.id === "ui:boardScreen/hudRow/coinPill");
 
@@ -61,14 +62,19 @@ describe("proxyList", () => {
       "data-moku-node": "board/awaitIntent",
       "data-moku-source": "src/hud/Hud.tsx:2",
       "data-moku-style": "coinPill",
-      "data-moku-bounds": "235 74 290 76"
+      "data-moku-style-source": "src/hud/styles.ts:3",
+      "data-moku-bounds": "235 74 290 76",
+      "data-moku-ref-bounds": "235 74 290 76",
+      "data-moku-frame": "1841"
     });
   });
 
   it("falls back to the nine-slice texture as the style, a call shows as written", () => {
-    const energy = proxyList(boardScene(), { node: undefined, found: new Map() }).find(
-      proxy => proxy.id === "ui:boardScreen/hudRow/energyPill"
-    );
+    const energy = proxyList(boardScene(), {
+      node: undefined,
+      found: new Map(),
+      blocks: new Map()
+    }).find(proxy => proxy.id === "ui:boardScreen/hudRow/energyPill");
     expect(energy?.attributes["data-moku-style"]).toBe("ui.hud-pill");
     expect(energy?.attributes["data-moku-source"]).toBeUndefined();
 
@@ -81,16 +87,47 @@ describe("proxyList", () => {
     };
     const withCall = proxyList(boardScene(), {
       node: undefined,
-      found: new Map([["energyPill", call]])
+      found: new Map([["energyPill", call]]),
+      blocks: new Map()
     }).find(proxy => proxy.id === "ui:boardScreen/hudRow/energyPill");
     expect(withCall?.attributes["data-moku-style"]).toBe("pillOf(2)");
     expect(withCall?.attributes["data-moku-source"]).toBe("kit.tsx:9");
+    expect(withCall?.attributes["data-moku-style-source"]).toBe("kit.tsx:10");
+  });
+
+  it("marks a source built in a loop; an identifier without a found block has no style source", () => {
+    const proxies = proxyList(boardScene(), {
+      node: undefined,
+      found: new Map<string, StyleSource>([
+        ["coinPill", COIN_SOURCE],
+        ["energyPill", { kind: "defined", path: "strip.tsx", line: 157, loop: true }]
+      ]),
+      blocks: new Map()
+    });
+    const coin = proxies.find(proxy => proxy.id === "ui:boardScreen/hudRow/coinPill");
+    const energy = proxies.find(proxy => proxy.id === "ui:boardScreen/hudRow/energyPill");
+    expect(coin?.attributes["data-moku-style-source"]).toBeUndefined();
+    expect(energy?.attributes["data-moku-source"]).toBe("strip.tsx:157 (loop)");
+  });
+
+  it("gives the reference bounds in reference units and the scene frame", () => {
+    const capture = sceneCapture("scene-board.txt");
+    const half = buildScene({ ...capture, frame: 7, calibration: { scale: 0.5, x: 0, y: 0 } });
+    if ("error" in half) throw new Error("fixture");
+    const coin = proxyList(half, { node: undefined, found: new Map(), blocks: new Map() }).find(
+      proxy => proxy.id === "ui:boardScreen/hudRow/coinPill"
+    );
+    expect(coin?.attributes["data-moku-bounds"]).toBe("118 37 145 38");
+    expect(coin?.attributes["data-moku-ref-bounds"]).toBe("235 74 290 76");
+    expect(coin?.attributes["data-moku-frame"]).toBe("7");
   });
 
   it("names an entity proxy by its entity path and rounds its bounds", () => {
-    const item = proxyList(boardScene(), { node: undefined, found: new Map() }).find(
-      proxy => proxy.id === "entity:1048628"
-    );
+    const item = proxyList(boardScene(), {
+      node: undefined,
+      found: new Map(),
+      blocks: new Map()
+    }).find(proxy => proxy.id === "entity:1048628");
     expect(item?.attributes["data-moku-path"]).toBe("entity:1048628");
     expect(item?.attributes["data-moku-key"]).toBeUndefined();
     expect(item?.attributes["data-moku-bounds"]).toBe("429 881 223 223");
@@ -100,23 +137,6 @@ describe("proxyList", () => {
     const capture = sceneCapture("scene-board.txt");
     const scene = buildScene({ ...capture, frame: 1, calibration: undefined });
     if ("error" in scene) throw new Error("fixture");
-    expect(proxyList(scene, { node: undefined, found: new Map() })).toEqual([]);
-  });
-});
-
-describe("referenceLine", () => {
-  it("is one line: name, type, flow node, source and bounds", () => {
-    const coin = boardScene().nodes.get("ui:boardScreen/hudRow/coinPill");
-    if (coin === undefined) throw new Error("fixture");
-    expect(referenceLine(coin, "board/awaitIntent", COIN_SOURCE)).toBe(
-      "@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76"
-    );
-  });
-
-  it("leaves out what is not known", () => {
-    const scene = boardScene();
-    const unplaced = scene.nodes.get("entity:1048641");
-    if (unplaced === undefined) throw new Error("fixture");
-    expect(referenceLine(unplaced, undefined, undefined)).toBe("@moku coins · Container");
+    expect(proxyList(scene, { node: undefined, found: new Map(), blocks: new Map() })).toEqual([]);
   });
 });

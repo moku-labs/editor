@@ -1,6 +1,7 @@
 /**
  * @file gameView plugin — a series (D3, F10): one `editor.series` call through panels.run (R1,
- * R9), `editor.seriesStop` to end it early, then the numbered PNGs and index.json, and the contact
+ * R9), `editor.seriesStop` to end it early, then the numbered PNGs and index.json, the
+ * `series:` line on the clipboard (round 2 R2), the series card (round 2b R14) and the contact
  * sheet with the in-memory images. A failed call writes nothing; a failed PNG write leaves a
  * partial index marked stoppedEarly.
  */
@@ -8,12 +9,13 @@ import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
 import type { Json } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
+import { copyQuietly } from "../clipboard";
 import { GAME_COMMANDS, gameReady, NO_GAME_TEXT } from "../commands";
 import { reportFailure } from "../report";
 import { notify } from "../state";
 import type { GameViewCtx, Recording, SeriesIndex, SeriesResult, SeriesShot } from "../types";
-import { plannedShots, seriesFolder, shotName, stamp } from "./naming";
-import { currentPosition, deviceOf, isObject, listTaken, type ShotValue } from "./shot";
+import { deviceLabel, plannedShots, seriesFolder, shotName, stamp } from "./naming";
+import { currentPosition, deviceOf, isObject, listTaken, type ShotValue, showCard } from "./shot";
 
 /**
  * One shot of an `editor.series` value.
@@ -183,7 +185,8 @@ function seriesIndex(
 }
 
 /**
- * Writes the shots in order, then index.json; opens the contact sheet.
+ * Writes the shots in order, then index.json; puts `series: <folder> (<n> frames)` on the
+ * clipboard and shows the series card when a shot was written; opens the contact sheet.
  *
  * @param ctx - Domain context of gameView.
  * @param recording - The recording.
@@ -222,10 +225,23 @@ async function writeSeries(
   } else {
     reportFailure(ctx, "Series not fully saved", "gameView: series write failed", failure);
   }
+  if (written.shots.length > 0) {
+    await copyQuietly(ctx, `series: ${recording.folder} (${written.shots.length} frames)`);
+  }
   state.series.recording = undefined;
   state.series.popover = false;
   state.series.sheet = { indexPath, index, images: written.images, version, big: undefined };
   notify(state);
+  const [first] = written.images;
+  if (first !== undefined) {
+    showCard(ctx, {
+      path: recording.folder,
+      frame: index.fromFrame,
+      device: deviceLabel(index.device?.name ?? "", value.device.orientation),
+      image: first,
+      series: { indexPath, shots: written.shots.length }
+    });
+  }
   return { folder: recording.folder, indexPath, shots: written.shots.length };
 }
 

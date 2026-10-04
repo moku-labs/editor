@@ -1,11 +1,11 @@
 /**
- * @file workspace plugin — preference changes (theme, preview per workspace, device, density,
- * Show taps): apply to the state, persist to localStorage, tell the `onPrefs` listeners (theme,
- * preview and device only), re-render and re-dock the frame. Visibility changes of a preview toast
- * the workspace name.
+ * @file workspace plugin — preference changes (theme, preview per workspace, device and fold,
+ * density, Show taps, sound): apply to the state, persist to localStorage, tell the `onPrefs`
+ * listeners (theme, preview, device and sound only), re-render and re-dock the frame. Visibility
+ * changes of a preview toast the workspace name.
  */
 import { ERROR_PREFIX } from "../../registry/protocol";
-import { DEVICES, isDevicePresetId, presetOf } from "../devices";
+import { DEVICES, deviceChoiceOf, isDevicePresetId } from "../devices";
 import { PREVIEW_SIZES } from "../frame/dock";
 import { syncFrame } from "../frame/frame";
 import { clearTaps } from "../frame/taps";
@@ -36,13 +36,15 @@ export type PrefsCtx = Pick<WorkspaceCtx, "state" | "config" | "log">;
  * The preferences `onPrefs` listeners receive.
  *
  * @param state - Workspace state.
- * @returns Effective theme, a copy of the previews, the device choice.
+ * @returns Effective theme, a copy of the previews, the device choice (the screen in use) and
+ * the sound flag.
  */
 export function currentPrefs(state: WorkspaceState): Prefs {
   return {
     theme: effectiveTheme(state.theme),
     previews: structuredClone(state.previews),
-    device: { preset: presetOf(state.device.preset), orientation: state.device.orientation }
+    device: deviceChoiceOf(state.device),
+    muted: state.muted
   };
 }
 
@@ -60,7 +62,8 @@ export function persistPrefs(ctx: PrefsCtx): void {
       previews: state.previews,
       device: state.device,
       density: state.density.chosen,
-      showTaps: state.showTaps
+      showTaps: state.showTaps,
+      muted: state.muted
     },
     ctx.log
   );
@@ -152,6 +155,20 @@ export function chooseShowTaps(ctx: PrefsCtx, on: boolean): void {
 }
 
 /**
+ * Sets the sound flag (R11): persists it and tells the `onPrefs` listeners. The same value again
+ * does nothing.
+ *
+ * @param ctx - State, config and log.
+ * @param on - True to mute the game.
+ */
+export function chooseMuted(ctx: PrefsCtx, on: boolean): void {
+  if (ctx.state.muted === on) return;
+
+  ctx.state.muted = on;
+  commitPrefs(ctx);
+}
+
+/**
  * Follows an OS theme change (visible only while no theme is chosen).
  *
  * @param ctx - State, config and log.
@@ -205,18 +222,24 @@ export function patchPreview(
 }
 
 /**
- * Changes the device preset and/or orientation; the frame box resizes (a real window resize in
- * the game page).
+ * Changes the device preset, orientation and/or fold; the frame box resizes (a real window resize
+ * in the game page, no reload). A new preset starts folded (the flag is dropped) unless the patch
+ * sets `folded`.
  *
  * @param ctx - State, config and log.
- * @param patch - The preset and/or orientation.
+ * @param patch - The preset, orientation and/or fold.
  * @param patch.preset - A preset id.
  * @param patch.orientation - portrait or landscape.
+ * @param patch.folded - true for a foldable's cover screen, false for its inner one.
  * @throws {Error} `[moku-editor] Unknown device "<id>".` for an unknown preset.
  */
 export function patchDevice(
   ctx: PrefsCtx,
-  patch: { readonly preset?: DevicePresetId; readonly orientation?: Orientation }
+  patch: {
+    readonly preset?: DevicePresetId;
+    readonly orientation?: Orientation;
+    readonly folded?: boolean;
+  }
 ): void {
   const { device } = ctx.state;
   if (patch.preset !== undefined && !isDevicePresetId(patch.preset)) {
@@ -225,8 +248,12 @@ export function patchDevice(
       `${ERROR_PREFIX}Unknown device "${String(patch.preset)}".\n  Use one of ${ids}.`
     );
   }
-  if (patch.preset !== undefined) device.preset = patch.preset;
+  if (patch.preset !== undefined && patch.preset !== device.preset) {
+    device.preset = patch.preset;
+    delete device.folded;
+  }
   if (patch.orientation !== undefined) device.orientation = patch.orientation;
+  if (patch.folded !== undefined) device.folded = patch.folded;
   commitPrefs(ctx);
 }
 

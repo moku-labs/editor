@@ -1,10 +1,13 @@
 /**
  * @file workspace plugin — api factory: composes the sub-module functions.
  */
+
+import { linkPlugin } from "../link";
 import { setBadge, showWorkspace } from "./actions";
-import { DEVICES, presetOf } from "./devices";
+import { DEVICES, deviceChoiceOf } from "./devices";
 import { createGameFrame } from "./frame/frame";
 import { hostOf } from "./hosts";
+import { setHotReload } from "./hot-reload";
 import { addEscapeLayer } from "./keys/escape";
 import { bindKey } from "./keys/keymap";
 import { setOverlayInGame } from "./overlay";
@@ -12,6 +15,7 @@ import { addPaletteItems, openPalette } from "./palette/items";
 import {
   addPrefsListener,
   chooseDensity,
+  chooseMuted,
   chooseTheme,
   patchDevice,
   patchPreview,
@@ -80,10 +84,7 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
       patchPreview(ctx, ws, patch);
     },
 
-    device: () => ({
-      preset: presetOf(state.device.preset),
-      orientation: state.device.orientation
-    }),
+    device: () => deviceChoiceOf(state.device),
 
     setDevice: patch => {
       patchDevice(ctx, patch);
@@ -131,6 +132,16 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
 
     setReference: on => {
       setReference(ctx, on);
+    },
+
+    hotReload: () => ctx.require(linkPlugin).hotReload(),
+
+    setHotReload: on => setHotReload(ctx, on),
+
+    muted: () => state.muted,
+
+    setMuted: on => {
+      chooseMuted(ctx, on);
     },
 
     onPrefs: fn => addPrefsListener(state, fn)

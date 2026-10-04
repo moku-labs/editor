@@ -15,7 +15,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 
 <br/>
 
-[Install](#install) · [Quick start](#quick-start) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
+[Install](#install) · [Quick start](#quick-start) · [The tools page](#the-tools-page) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
 
 ---
 
@@ -25,7 +25,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 - **Doors, not hooks.** The editor touches the game only through `@moku-labs/game/inspect` and `@moku-labs/game/control`, plus the game's own `.dev` modules. If the engine does not expose it, the editor does not see it.
 - **Three runtimes, three cores.** The game page, the Bun server and the tools page each get their own Moku core with their own events (`editor-agent`, `editor-server`, `editor-tools`). Bun code never reaches the browser; Preact never reaches the server.
 - **A panel is data.** `definePanel` returns a frozen spec of sources, commands and a view. The `panels` host owns every subscription, stale marking and teardown — views never poll.
-- **Edits without engine HMR.** Saving a style or a node writes the file, bookmarks the game, reloads the frame and restores the bookmark. "Game reloaded · state restored from the last checkpoint."
+- **Edits keep the game state.** With Bun hot reload on (the bin's default), a save of a game source reloads the game page and the bridge restores the bookmark it took just before: "Game reloaded · state restored", in about a second on merge-game. Without hot reload the editor bookmarks, reloads the frame and restores it itself (D-07).
 - **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. No shell, no spawned processes.
 
 ## Install
@@ -40,6 +40,8 @@ bun add -d @moku-labs/editor @moku-labs/game
 > **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order.
+>
+> **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` turns it off). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>.png` and `f<frame>.png` in `capturesDir`, which must be `.moku/captures` or a folder under it. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
 
 > [!IMPORTANT]
 > The server core and the `moku-editor` bin run on **Bun** (`Bun.serve`, HTML imports). The agent and tools cores run in the browser. The package is **ESM only**.
@@ -75,6 +77,8 @@ Tools  http://127.0.0.1:3000/__editor/
 Root   /Users/alex/game
 ```
 
+Hot reload is on: Bun reloads the game page after a save, and the game comes back where it was (see [Hot reload](#hot-reload)). To turn it off, start with `--no-hmr`. `bunx moku-editor --help` lists every flag.
+
 Or wrap the game's own `Bun.serve` with the server core:
 
 ```ts
@@ -91,10 +95,12 @@ Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAss
 **In a narrow pane.** The tools page is built to sit next to a chat, in Claude's browser pane at
 1/2 (720 px) or 1/3 (480 px) of the screen. Game is the first workspace and the default
 (⌘1 Game, ⌘2 Flow, then Render, State, Files, Console). Density is `auto` (compact below 820 px of
-window width), `compact` or `comfortable`, chosen in the palette ("Density: …") and saved with the
-theme. **Reference mode** (key R, or the target button in the top bar) lays `data-moku-*` proxies
-over the game elements, so whoever reads the page can name them; the game gets no input while it
-is on, and the Element tab's "Copy reference" copies one `@moku …` line for the chat.
+window width), `compact` or `comfortable`, chosen in the palette or the ⋯ menu ("Density: …") and
+saved with the theme. Below 900 px the [top bar](#the-top-bar) is compact. **Reference mode**
+(key R) lays `data-moku-*` proxies over the game elements, so whoever reads the page can name
+them; the game gets no input while it is on. A click on an element (the picker, or a proxy in
+Reference mode) copies its [reference line](#the-reference-line-and-card) for the chat and writes
+the card file that line names.
 
 > [!TIP]
 > The tools page is itself a Moku app (`src/plugins/pages/page/main.tsx`). To compose your own, start the tools core and mount the shell:
@@ -103,6 +109,176 @@ is on, and the Element tab's "Copy reference" copies one `@moku …` line for th
 > await tools.start();
 > tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
 > ```
+
+## The tools page
+
+### The top bar
+
+The bar picks its layout from the window width (`data-layout` on `[data-ui="top-bar"]`). No two
+controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.ts`).
+
+| Width | The bar shows |
+|---|---|
+| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 15 sources · 18 commands"), theme. |
+| Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Reference mode** icon (target, R), the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
+| 560 px and narrower | As below 900 px, without the game name and the Hot reload icon. |
+
+In the compact bar Pause and Step keep their labels as the accessible name and the tooltip. The two
+icon toggles use `aria-pressed`; Hot reload is inert with its reason in the tooltip when the
+editor cannot change it.
+
+The **⋯** menu (`data-action="more"`) holds, each row with its state and key: Game preview (G),
+Overlay in game (O), Reference mode (R), Hot reload (H), then Registry (counts; opens the registry
+popover), Density (auto → compact → comfortable) and Theme. Reference mode and Hot reload stay in
+the menu while the bar shows their icons. A toggle row keeps the menu open. Esc, a second ⋯ click
+or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no Overlay switch of
+its own.
+
+### The reference line and card
+
+A pick (a picker click, or a click on a Reference mode proxy) bookmarks the game
+(`game.bookmark`), saves the element and the whole frame as PNGs, writes a card file next to them,
+puts one line on the clipboard and toasts "Reference, shot and bookmark copied". Paste the line
+into the chat: it names the element, its flow node, its code, its place, and the card that holds
+the rest.
+
+```text
+@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md
+```
+
+The card `<capturesDir>/<key>-f<frame>.md` (`-2`, `-3` … when taken) is Markdown:
+
+- a title `# @moku <name> <type>`;
+- the full reference block in a `text` fence (below);
+- `## JSX · <file:line>` and `## Style · <name> · <file:line>`, each a fenced snippet; for an
+  entity, `## Spawned by <projection> · <file:line>` and its components;
+- `![element](<key>-f<frame>.png)` and `![frame](f<frame>.png)`.
+
+The reference block says what the element is, where its code is, where it sits, and how to get the
+game back to this moment:
+
+```text
+@moku settingsBoard · panel · settingsPopup/open · f212
+path: settingsScreen/settingsBoard
+source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+layout: settingsScreen (column, padding 0/0/0/0)
+bounds: 24,233 346×386 px · ref 65,641 950×1060
+state: visible
+flow: board > settings > open · last: board/settings/enter → done
+game: merge-game 0.0.0 · s-1f12 · f212 · 15:31:13 · live · clean
+device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
+restore: bookmark settingsBoard-f210
+shot: .moku/captures/settingsBoard-f212.png · frame: .moku/captures/f212.png
+```
+
+| Line | Says |
+|---|---|
+| `@moku` | Name, type, flow/node of the game position, frame. |
+| `path` | The ui path, or `entity #<id>` with up to 5 components. |
+| `source` | `file:line` of the key (` (loop)` for a key built in a loop, `card${i}` for `card0`), the style identifier with the `file:line` of its block, the nine-slice or texture. |
+| `layout` | Up to 3 ui parents, nearest first: direction, padding and margin as `t/r/b/l`, gap. |
+| `bounds` | The rect in device px, then in the game's reference units (`ref`). |
+| `state` | visible or hidden, the true flags (pressed, disabled, selected), the text, alpha. |
+| `flow` | The position stack, and the last edge with its frame. |
+| `game` | Name and version, session, frame, time, live or paused, clean or tainted. |
+| `device` | Preset, size, orientation, pixel ratio, safe insets. |
+| `restore` | The bookmark id. `gameView.bookmarks()` keeps the last 20; `panels.run("game.restore", { bookmark: value })` goes back. |
+| `shot` | The crop (`<key>-f<frame>.png`, the element plus 8 px) and the full frame (`f<frame>.png`) under `capturesDir`. |
+
+A line or a field that is not known is left out; a card that cannot be written leaves its path out
+of the line. The Element tab shows the full block read-only. Its "Copy reference" writes the card
+of the selection and copies its line; the same node and frame write the same card again. Shot and
+Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
+
+### The Game workspace
+
+- **Sound** (key M in Game, round 2b): a switch in the Game toolbar. It runs `game.mute { muted }`
+  when the game's manifest lists `game.mute`, and keeps the flag with the viewer's preferences. A
+  game that connects while the sound is off is muted again, so the flag survives a hot reload.
+  A game without `game.mute` (merge-game on @moku-labs/game 0.1.0) dims the switch, title "Needs
+  @moku-labs/game with game.mute".
+- **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
+  to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
+  its `file:line`, "Open in Files" and the shared highlighter; after 20 lines it shows "Show all N
+  lines". A key built in a loop shows its template line. An entity shows "Spawned by
+  <projection> · <file:line>" and its components with short values. A text style key
+  (`style="ui.link"`) and a style call (`style={boardOf(…)}`) show no style block yet.
+- **The capture card** after a Shot, a pick or a Series: a 56 px thumbnail, one line each for the
+  title ("✓ Screenshot saved"), the path (cut in the middle, the whole path in its tooltip) and
+  `f<frame> · <device>`, then Copy link (`shot: <path>`), Open and, after a pick, Reference (the
+  line again). At most 360 × 120 px; in a 480 px window it takes the width less 24.
+
+### Hot reload
+
+The bin serves the game with Bun hot reload on. A save of a game source, by the editor or by an
+agent writing the file, goes like this:
+
+1. Bun tells the page it will reload. The bridge takes a `game.bookmark` and keeps it in
+   `sessionStorage`, with the paused flag.
+2. The new page restores the bookmark (and pauses again), then says hello with
+   `manifest.restored`.
+3. The tools page toasts "Game reloaded · state restored". It does not reload or restore a second
+   time.
+
+`e2e/edit-loop.spec.ts` measures it on merge-game: five edits made only from the reference line
+and the block in its card (move an element, resize a button, recolour and resize a text style, swap
+a texture), each written to disk. Each shows in the game with its state restored in about 0.8 s;
+the recolour takes about 1.1 s, because the test reads the colour back from captured frames.
+
+The **Hot reload** switch (key H) shows the state. Bun cannot switch HMR on a running server, so a
+click says how to change it: start the bin with `--no-hmr`, or without it. The refused change
+answers 200 with the unchanged state, so the page logs no error. A game that serves itself
+with its own `Bun.serve` owns the setting; the switch is inert there. Without hot reload, a save in
+the editor still keeps the state: the editor bookmarks, reloads the frame and restores (D-07).
+
+### Devices
+
+Twenty-one presets in five groups. Sizes are the portrait viewport in CSS px. A fresh viewer
+starts on the iPhone 18 Pro. Android, foldable and tablet browsers report no safe insets. Every
+corner radius is an estimate from photos.
+
+| Group | Preset | Viewport | DPR | Safe top / bottom | Radius | Frame |
+|---|---|---|---|---|---|---|
+| iPhone | iPhone SE 3 · small, 2022 | 375 × 667 | 2 | 20 / 0 | 0 | home-button |
+| iPhone | iPhone 15 | 393 × 852 | 3 | 59 / 34 | 55 | modern |
+| iPhone | iPhone 17e · approx | 390 × 844 | 3 | 47 / 34 | 47 | modern |
+| iPhone | iPhone Air · approx | 420 × 912 | 3 | 68 / 34 | 62 | modern |
+| iPhone | iPhone 18 Pro · approx (default) | 402 × 874 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 18 Pro Max · approx | 440 × 956 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 15 Pro Max | 430 × 932 | 3 | 59 / 34 | 55 | modern |
+| iPhone | iPhone 16 Pro | 402 × 874 | 3 | 62 / 34 | 62 | modern |
+| iPhone | iPhone 16 Pro Max | 440 × 956 | 3 | 62 / 34 | 62 | modern |
+| Android | Galaxy S24 | 360 × 780 | 3 | 0 / 0 | 40 | modern |
+| Android | Galaxy A55 | 412 × 892 | 2.625 | 0 / 0 | 35 | modern |
+| Android | Redmi Note 13 · approx | 393 × 873 | 2.75 | 0 / 0 | 35 | modern |
+| Android | Pixel 8 | 412 × 915 | 2.625 | 0 / 0 | 35 | modern |
+| Android | Xperia 1 V 21:9 | 411 × 960 | 4 | 0 / 0 | 0 | modern |
+| Foldable | Galaxy Z Fold 6 · approx | cover 369 × 905, inner 707 × 823 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | Galaxy Z Flip 6 | 412 × 1005 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | Pixel 9 Pro Fold · approx | cover 411 × 923, inner 791 × 820 | 2.625 | 0 / 0 | 30 | modern |
+| Foldable | iPhone Duo · approx | cover 466 × 678, inner 890 × 626 | 3 | 0 / 0 | 40 | modern |
+| Tablet | iPad mini 7 | 744 × 1133 | 2 | 0 / 0 | 18 | modern |
+| Tablet | iPad Air 11" | 820 × 1180 | 2 | 0 / 0 | 18 | modern |
+| Desktop | Desktop | 1440 × 900 | 1 | 0 / 0 | 0 | none |
+
+**approx**: the size or the safe insets are estimates, not published figures. The iPhone Duo's
+sizes are Apple's pixels (1398 × 2034 cover, 2670 × 1878 inner) divided by 3; it opens like a book,
+wider than tall. The iPhone 18 Pro and Pro Max take the insets of the 16 Pro and Pro Max, the same
+screens. The 15 Pro Max, 16 Pro and 16 Pro Max stay at the end of the iPhone group, so a stored
+choice keeps working.
+
+**Fit** uses one scale for every preset of a kind: the scale that fits the tallest of them, its
+bezel included. An iPhone SE 3 shows smaller than an iPhone 18 Pro Max, in their real proportion.
+Foldables count as phones; tablets and the desktop have their own scale. **100 %** stays one CSS px
+per device px.
+
+**Frame** (`DeviceSpec.frame`): `modern` is a 10 px bezel with the dynamic island and the home bar
+as guides. `home-button` (the SE 3) has 64 px bezels above and below a square screen, 10 px at the
+sides and a round 44 px home button, and no island. Landscape turns the tall bezels to the sides.
+
+A foldable starts folded; its **Unfold** / **Fold** button switches the screen live (the game sees
+a resize, not a reload). The screen is clipped with its corner radius on the stage and in the
+pinned preview, and in the dark theme the bezel (`#2c2c34`, 1 px outline) stands off the canvas.
 
 ## Production builds
 
@@ -304,13 +480,13 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect. | `status`, `session` |
 | [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop` |
 | [`files`](src/plugins/files/README.md) | server | Standard | The project-root sandbox: list, read, atomic write with version check, image captures. | `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` |
-| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `path` |
-| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets and the `hello` route. Home of the `moku-editor` bin. | `routes` |
-| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files` |
-| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar, rail, palette, toasts, keys and Esc, preferences, the one game iframe and the D-07 reload. | `show`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame` |
+| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
+| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`). | `routes`, `attachServer`, `hotReload`, `setHotReload` |
+| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload` |
+| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
 | [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, code and style inspector. | `camera`, `focus`, `flows`, `layout` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage, element picker, style card, Reference mode proxies, screenshots, series and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound switch, element picker, style card, the Code section, Reference mode proxies, the pick for the chat (bookmark, two PNGs, the card file, one line), screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
 | [`renderView`](src/plugins/renderView/README.md) | tools | Standard | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |
@@ -362,6 +538,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | workspace | `defaultWorkspace` | `"game"` | Shown at start when the hash names none. |
 | workspace | `storageKey` | `"moku-editor"` | localStorage key of the preferences. |
 | workspace | `reloadTimeoutMs` | `15000` | How long `reload()` waits for the new session. |
+| workspace | `hotReloadWaitMs` | `1500` | After a save with Bun hot reload on: how long the reload waits for the page Bun reloads before it reloads the frame itself. |
 | workspace | `toastMs` | `2600` | How long one toast stays. |
 | panels | — | `{}` | No options. |
 | flowView | `historyLast` · `trailLength` · `rejectedOutcomes` | `20` · `6` · `["rejected"]` | History watched, trail edges, rejection outcomes. |
@@ -369,7 +546,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | flowView | `layoutFile` · `stylesFile` | `".moku/editor/layout.json"` · `undefined` | Saved positions; the text styles file (unset: the first file that calls `defineTextStyles(`, found once per session). |
 | flowView | `layoutWorker` · `layoutSaveDelayMs` · `styleSaveDelayMs` | `true` · `400` · `600` | ELK in a worker, save debounces. |
 | flowView | `minZoom` · `maxZoom` · `defaultMinZoom` | `0.08` · `3` · `0.8` | Zoom range and default camera floor. |
-| gameView | `capturesDir` | `".moku/captures"` | Where captures go. |
+| gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go. `.moku/captures` or a folder under it. |
 | gameView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |
 | gameView | `seriesDurationsMs` · `seriesIntervalsMs` | `[1000, 2000, 5000, 10000, 20000]` · `[16, 50, 100, 250, 500, 1000]` | Series popover chips. |
@@ -440,6 +617,7 @@ bun run lint               # Biome check + ESLint
 bun run lint:fix           # auto-fix lint issues
 bun run format             # Biome format
 bun run validate           # publint + attw (esm-only profile)
+bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px windows; prints the edit-loop table
 ```
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI.

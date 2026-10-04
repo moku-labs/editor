@@ -1,4 +1,4 @@
-/* workspace · LinkPill. One look per link status: spinner while connecting, live dot, pause glyph, warn while silent, error with "Retry now" when lost. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · LinkPill. One look per link status: spinner while connecting, live dot, pause glyph, warn while silent, error with "Retry now" when lost. In the compact top bar the dot and the text sit in a plain button that opens the session menu. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="link-pill"]) {
   :scope {
     display: inline-flex;
@@ -11,6 +11,18 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-11-5);
     white-space: nowrap;
+  }
+
+  [data-part="status"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    color: inherit;
+  }
+
+  [data-part="status"][aria-haspopup="menu"]:hover [data-text] {
+    text-decoration: underline;
   }
 
   [data-dot] {

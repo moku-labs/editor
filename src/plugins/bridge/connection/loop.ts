@@ -5,6 +5,7 @@
  */
 import type { Heartbeat, HelloBody } from "../../registry/protocol";
 import { bareMessage, notification, toWireValue } from "../../registry/protocol";
+import { helloManifest } from "../checkpoint/checkpoint";
 import { asError, handleText } from "../dispatch/dispatch";
 import { dropInflight, flushPending, messageOf, sendNow } from "../dispatch/send";
 import { dropAll, sampleFrames } from "../dispatch/subscriptions";
@@ -53,7 +54,8 @@ export function onBeat(deps: BridgeDeps, beat: Heartbeat): void {
 
 /**
  * Socket open: resets the failure streak, sends `hello { manifest }` first (the hub closes an
- * agent that sends anything else first), then a heartbeat, publishes live or paused.
+ * agent that sends anything else first; the first hello after a checkpoint restore carries
+ * `manifest.restored`), then a heartbeat, publishes live or paused.
  *
  * @param deps - The domain deps.
  */
@@ -65,7 +67,7 @@ export function onOpen(deps: BridgeDeps): void {
   if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
   state.retryTimer = undefined;
 
-  sendNow(deps, notification("game", "hello", { manifest: toWireValue(deps.registry.manifest()) }));
+  sendNow(deps, notification("game", "hello", { manifest: toWireValue(helloManifest(deps)) }));
   sendBeat(deps, deps.channel.heartbeat());
   deps.log.info("bridge:connected", { url: helloLabel(deps) });
 }

@@ -1,10 +1,10 @@
 /**
  * @file workspace plugin — the per-viewer preferences record in localStorage:
- * `{ v: 1, theme?, previews, device, density, showTaps }`. Invalid JSON, another version or a
- * throwing storage → the defaults; an unknown value → the default of that value; one
- * `workspace:prefs` warn either way. A field added after the first records (density, showTaps)
- * that is missing takes its default silently. Writes are wrapped in try/catch (quota). Nothing
- * essential is stored here.
+ * `{ v: 1, theme?, previews, device: { preset, orientation, folded? }, density, showTaps, muted }`.
+ * Invalid JSON, another version or a throwing storage → the defaults; an unknown value → the
+ * default of that value; one `workspace:prefs` warn either way. A field added after the first
+ * records (density, showTaps, muted, device.folded) that is missing takes its default silently.
+ * Writes are wrapped in try/catch (quota). Nothing essential is stored here.
  */
 import type { Log } from "@moku-labs/common/browser";
 import { DEFAULT_DEVICE, isDevicePresetId } from "../devices";
@@ -38,10 +38,11 @@ type JsonObject = { readonly [key: string]: unknown };
 /**
  * The preferences of a fresh viewer.
  *
- * @returns No chosen theme, default previews, iPhone 15 portrait, auto density, taps shown.
+ * @returns No chosen theme, default previews, iPhone 18 Pro portrait, auto density, taps shown,
+ * sound on.
  * @example
  * ```ts
- * defaultStoredPrefs().device; // { preset: "iphone-15", orientation: "portrait" }
+ * defaultStoredPrefs().device; // { preset: "iphone-18-pro", orientation: "portrait" }
  * ```
  */
 export function defaultStoredPrefs(): StoredPrefs {
@@ -50,7 +51,8 @@ export function defaultStoredPrefs(): StoredPrefs {
     previews: defaultPreviews(),
     device: { preset: DEFAULT_DEVICE, orientation: "portrait" },
     density: "auto",
-    showTaps: true
+    showTaps: true,
+    muted: false
   };
 }
 
@@ -167,6 +169,53 @@ function readPreviews(previews: JsonObject, prefs: StoredPrefs, invalid: string[
 }
 
 /**
+ * Reads the stored device into the prefs; an unknown preset or orientation takes the default, a
+ * folded flag that is not a boolean is dropped.
+ *
+ * @param device - The stored device value.
+ * @param prefs - The preferences being built.
+ * @param invalid - Collects the paths of unknown values.
+ * @example
+ * ```ts
+ * readDevice({ preset: "pixel-8", orientation: "landscape" }, prefs, invalid);
+ * ```
+ */
+function readDevice(device: unknown, prefs: StoredPrefs, invalid: string[]): void {
+  const stored = isObject(device) ? device : {};
+  if (isDevicePresetId(stored.preset)) prefs.device.preset = stored.preset;
+  else invalid.push("device.preset");
+  if (isOrientation(stored.orientation)) prefs.device.orientation = stored.orientation;
+  else invalid.push("device.orientation");
+  if (typeof stored.folded === "boolean") prefs.device.folded = stored.folded;
+  else if (stored.folded !== undefined) invalid.push("device.folded");
+}
+
+/**
+ * Reads an on/off field added after the first records: a missing value is the default, silently;
+ * a value that is not a boolean is the default too, and its name goes into `invalid`.
+ *
+ * @param value - The stored value.
+ * @param field - The field name.
+ * @param fallback - The default.
+ * @param invalid - Collects the paths of unknown values.
+ * @returns The stored flag, or the default.
+ * @example
+ * ```ts
+ * readFlag(undefined, "muted", false, invalid); // false, nothing collected
+ * ```
+ */
+function readFlag(
+  value: unknown,
+  field: "showTaps" | "muted",
+  fallback: boolean,
+  invalid: string[]
+): boolean {
+  if (typeof value === "boolean") return value;
+  if (value !== undefined) invalid.push(field);
+  return fallback;
+}
+
+/**
  * Reads a version-1 record field by field; every unknown value takes its default and its path
  * goes into `invalid`.
  *
@@ -185,21 +234,15 @@ function readRecord(record: JsonObject, invalid: string[]): StoredPrefs {
   if (isTheme(record.theme)) prefs.theme = record.theme;
   else if (record.theme !== undefined) invalid.push("theme");
 
-  const { previews, device } = record;
-  if (isObject(previews)) readPreviews(previews, prefs, invalid);
+  if (isObject(record.previews)) readPreviews(record.previews, prefs, invalid);
   else invalid.push("previews");
-
-  const stored = isObject(device) ? device : {};
-  if (isDevicePresetId(stored.preset)) prefs.device.preset = stored.preset;
-  else invalid.push("device.preset");
-  if (isOrientation(stored.orientation)) prefs.device.orientation = stored.orientation;
-  else invalid.push("device.orientation");
+  readDevice(record.device, prefs, invalid);
 
   // Added after the first records: a missing value is the default, silently.
   if (isDensityChoice(record.density)) prefs.density = record.density;
   else if (record.density !== undefined) invalid.push("density");
-  if (typeof record.showTaps === "boolean") prefs.showTaps = record.showTaps;
-  else if (record.showTaps !== undefined) invalid.push("showTaps");
+  prefs.showTaps = readFlag(record.showTaps, "showTaps", prefs.showTaps, invalid);
+  prefs.muted = readFlag(record.muted, "muted", prefs.muted, invalid);
 
   return prefs;
 }
@@ -278,7 +321,8 @@ export function savePrefs(key: string, prefs: StoredPrefs, log: Log.LogApi): voi
     previews: prefs.previews,
     device: prefs.device,
     density: prefs.density,
-    showTaps: prefs.showTaps
+    showTaps: prefs.showTaps,
+    muted: prefs.muted
   };
   try {
     storage.setItem(key, JSON.stringify(record));

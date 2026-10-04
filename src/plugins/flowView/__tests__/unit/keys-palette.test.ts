@@ -111,6 +111,24 @@ describe("Flow keys", () => {
     expect(binding("enter")?.when?.()).toBe(true);
   });
 
+  it("Enter leaves a button inside a frame or card alone (the frame's Collapse clicks by Enter)", async () => {
+    const { ctx, actions, fakes } = await prepared();
+    initFlowView(ctx);
+    const binding = (combo: string) => bindingOf(fakes, combo);
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<div data-key="main/board"><button type="button" data-action="collapse">Collapse</button></div>';
+    document.body.append(root);
+    ctx.state.view.root = root;
+    root.querySelector<HTMLElement>('[data-action="collapse"]')?.focus();
+    expect(binding("enter")?.when?.()).toBe(false);
+
+    // Even with a highlighted row the button keeps its Enter.
+    actions.focus.select("board/merge");
+    actions.focus.moveHighlight(1);
+    expect(binding("enter")?.when?.()).toBe(false);
+  });
+
   it("Enter after an Inspector walk follows the highlighted row, not the card that kept focus", async () => {
     const { ctx, actions, fakes } = await prepared();
     initFlowView(ctx);

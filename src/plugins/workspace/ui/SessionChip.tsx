@@ -1,7 +1,9 @@
 /**
- * @file workspace plugin — the session chip of the top bar: the short id of the chosen session
- * with its connect time; with more than one session it opens a menu (game, page, "embedded",
- * connect time) whose rows call `link.choose`.
+ * @file workspace plugin — the session chip of the top bar (900 px and wider): the short id of the
+ * chosen session with its connect time; with more than one session it opens the session menu
+ * (game, page, "embedded", connect time) whose rows call `link.choose`. Below 900 px the chip is
+ * gone: the link pill names the session and opens the same menu (`SessionMenu`, anchored to
+ * `[data-popover-anchor="session"]`).
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
@@ -13,7 +15,7 @@ import { useElement, useWorkspace } from "./store";
 import { clockTime } from "./text";
 
 /**
- * Props of `SessionChip`.
+ * Props of `SessionChip` and `SessionMenu`.
  */
 export type SessionChipProps = { readonly ctx: WorkspaceCtx };
 
@@ -21,6 +23,49 @@ export type SessionChipProps = { readonly ctx: WorkspaceCtx };
  * Longest id shown in the chip.
  */
 const SHORT_ID = 8;
+
+/**
+ * The sessions as the chip, the pill and the menu read them.
+ */
+export type SessionsView = {
+  readonly sessions: readonly SessionInfo[];
+  /** The chosen session id. */
+  readonly current: string | undefined;
+  /** The chosen session's info, when listed. */
+  readonly info: SessionInfo | undefined;
+  /** More than one session: the menu can open. */
+  readonly many: boolean;
+};
+
+/**
+ * Reads the sessions from link.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns The sessions, the chosen one and whether there are several.
+ */
+export function sessionsView(ctx: WorkspaceCtx): SessionsView {
+  const link = ctx.require(linkPlugin);
+  const sessions = link.sessions();
+  const current = link.session();
+  return {
+    sessions,
+    current,
+    info: sessions.find(session => session.id === current),
+    many: sessions.length > 1
+  };
+}
+
+/**
+ * Opens a closed session menu, closes an open one; does nothing with one session.
+ *
+ * @param ctx - Domain context of workspace.
+ * @param many - Whether there is more than one session.
+ */
+export function toggleSessionMenu(ctx: WorkspaceCtx, many: boolean): void {
+  if (!many) return;
+  if (ctx.state.popover === "session") closePopover(ctx.state, "session");
+  else openPopover(ctx.state, "session");
+}
 
 /**
  * Picks a session from the menu.
@@ -39,6 +84,45 @@ function choose(ctx: WorkspaceCtx, session: SessionInfo): void {
 }
 
 /**
+ * The session menu (top layer), placed under `[data-popover-anchor="session"]`. Render it only
+ * while there is more than one session.
+ *
+ * @param props - The workspace domain context.
+ * @returns The menu.
+ */
+export function SessionMenu(props: SessionChipProps): VNode {
+  const { ctx } = props;
+  const { state } = ctx;
+  useWorkspace(state.ui, () => state.ui.version);
+  const menu = useElement<HTMLElement>();
+  const { sessions, current, many } = sessionsView(ctx);
+  const open = many && state.popover === "session";
+  usePopover(menu, open, state, "session");
+
+  return (
+    <div data-ui="session-menu" popover="manual" role="menu" ref={menu.ref}>
+      {open &&
+        sessions.map(session => (
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={session.id === current}
+            key={session.id}
+            onClick={() => choose(ctx, session)}
+          >
+            <span data-mono>{session.game}</span>
+            <span data-muted>{session.page}</span>
+            {session.embedded && <span data-tag="acc">embedded</span>}
+            <span data-mono data-muted>
+              {clockTime(session.connectedAt)}
+            </span>
+          </button>
+        ))}
+    </div>
+  );
+}
+
+/**
  * The session chip and its menu.
  *
  * @param props - The workspace domain context.
@@ -48,14 +132,8 @@ export function SessionChip(props: SessionChipProps): VNode {
   const { ctx } = props;
   const { state } = ctx;
   useWorkspace(state.ui, () => state.ui.version);
-  const menu = useElement<HTMLElement>();
-  const link = ctx.require(linkPlugin);
-  const sessions = link.sessions();
-  const current = link.session();
-  const info = sessions.find(session => session.id === current);
-  const many = sessions.length > 1;
+  const { current, info, many } = sessionsView(ctx);
   const open = many && state.popover === "session";
-  usePopover(menu, open, state, "session");
 
   if (current === undefined) {
     return (
@@ -73,35 +151,11 @@ export function SessionChip(props: SessionChipProps): VNode {
         title={info === undefined ? current : `connected ${clockTime(info.connectedAt)}`}
         aria-haspopup={many ? "menu" : undefined}
         aria-expanded={many ? open : undefined}
-        onClick={() => {
-          if (!many) return;
-          if (open) closePopover(state, "session");
-          else openPopover(state, "session");
-        }}
+        onClick={() => toggleSessionMenu(ctx, many)}
       >
         {current.slice(0, SHORT_ID)}
       </button>
-      {many && (
-        <div data-ui="session-menu" popover="manual" role="menu" ref={menu.ref}>
-          {open &&
-            sessions.map(session => (
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={session.id === current}
-                key={session.id}
-                onClick={() => choose(ctx, session)}
-              >
-                <span data-mono>{session.game}</span>
-                <span data-muted>{session.page}</span>
-                {session.embedded && <span data-tag="acc">embedded</span>}
-                <span data-mono data-muted>
-                  {clockTime(session.connectedAt)}
-                </span>
-              </button>
-            ))}
-        </div>
-      )}
+      {many && <SessionMenu ctx={ctx} />}
     </span>
   );
 }

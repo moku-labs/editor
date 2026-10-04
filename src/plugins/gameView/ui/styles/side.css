@@ -1,4 +1,4 @@
-/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers (or the read-only call, or "Defined at"), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers (or the read-only call, or "Defined at"), the Code section (round 2b R12), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="side"]) {
   :scope {
     display: flex;
@@ -167,6 +167,106 @@
 
   [data-part="error"] {
     color: var(--status-error);
+  }
+
+  /* The Code section (round 2b R12): the JSX and the style block, highlighted with the shared [data-token] colours, a gutter, 20 lines then Show all; an entity's spawn line and its components. */
+  [data-part="snippet"] {
+    margin-top: var(--space-2);
+  }
+
+  [data-part="snippet"] header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  [data-part="snippet"] [data-part="title"] {
+    color: var(--text-2);
+    font-weight: 500;
+  }
+
+  [data-part="snippet"] [data-part="where"] {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-part="code-lines"] {
+    margin-top: var(--space-1);
+    padding: var(--space-2) 0;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+    line-height: var(--line-height-code);
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  [data-part="code-lines"] [data-line] {
+    padding-right: var(--space-2);
+  }
+
+  [data-part="spawn"] {
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="spawn"] button {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-part="components"] {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px var(--space-2);
+    margin-top: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-part="components"] > div {
+    display: contents;
+  }
+
+  [data-part="components"] dt {
+    color: var(--text-muted);
+  }
+
+  [data-part="components"] dd {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The reference block for the chat (round 2 R2): read-only, wrapped, with Copy in its head. */
+  [data-part="reference-block"] header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  [data-part="reference"] {
+    margin: var(--space-2) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+    line-height: var(--line-height-code);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  [data-part="reference"][aria-busy="true"],
+  [data-part="loop"] {
+    color: var(--text-muted);
   }
 
   [data-part="devices"] {

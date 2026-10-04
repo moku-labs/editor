@@ -48,6 +48,8 @@ type ViewInputs = {
   readonly current: ItemKey | undefined;
   readonly pulse: ItemKey | undefined;
   readonly stack: ReadonlySet<NodeId>;
+  /** Items holding the current node (`holdsCurrent`). */
+  readonly holders: ReadonlySet<ItemKey>;
   readonly trail: ReadonlyMap<string, number>;
   readonly rejected: ReadonlyMap<string, HistoryEntryJson>;
 };
@@ -98,14 +100,14 @@ export function kindLine(graph: GraphJson, id: NodeId, kinds: readonly string[])
 
 /**
  * True for an item the selection dims: something is selected, the item is not related to it and
- * it is not the current node (the current node never fades).
+ * it does not hold the current node (the current node and what holds it never fade).
  *
  * @param inputs - The view inputs.
  * @param key - The item key.
  * @returns Whether the item is dimmed.
  */
 function isDimmed(inputs: ViewInputs, key: ItemKey): boolean {
-  return inputs.related !== undefined && !inputs.related.has(key) && key !== inputs.current;
+  return inputs.related !== undefined && !inputs.related.has(key) && !inputs.holders.has(key);
 }
 
 /**
@@ -137,6 +139,7 @@ function cardOf(
     kindLine: kindLine(inputs.graph, item.id, kinds),
     selected: item.key === inputs.selected,
     current: item.key === inputs.current,
+    holdsCurrent: inputs.holders.has(item.key),
     dimmed: isDimmed(inputs, item.key),
     pulse: item.key === inputs.pulse,
     trail: trailItems.has(item.key),
@@ -193,6 +196,31 @@ function rejectedText(entry: HistoryEntryJson, frames: ReadonlyMap<number, numbe
  */
 function isNodeItem(item: Item): boolean {
   return item.kind === "node" || item.kind === "hub" || item.kind === "frame";
+}
+
+/**
+ * True for an item holding the current node: the current node itself, a collapsed sub-flow, slot
+ * or hub, or an expanded frame with the current node inside (its key prefixes the current key), or
+ * a node on the position stack.
+ *
+ * @param item - A laid-out item.
+ * @param current - The current item key.
+ * @param stack - The node ids of the position stack.
+ * @returns Whether it holds the current node.
+ * @example
+ * ```ts
+ * holdsCurrent(boardCard, "main/board>board/awaitIntent", new Set()); // true
+ * holdsCurrent(homeCard, "main/board>board/awaitIntent", new Set()); // false
+ * ```
+ */
+function holdsCurrent(
+  item: Item,
+  current: ItemKey | undefined,
+  stack: ReadonlySet<NodeId>
+): boolean {
+  if (!isNodeItem(item)) return false;
+  if (item.key === current || current?.startsWith(`${item.key}>`) === true) return true;
+  return stack.has(item.id);
 }
 
 /**
@@ -282,14 +310,20 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
   const { graph, history } = ctx.state.data;
   const result = ctx.state.layout.result;
   if (graph === undefined || result === undefined) return undefined;
+  // A collapsed parent the current node sits inside is not current; the stack rule makes it hold it.
+  const spot = actions.focus.locateCurrent();
+  const current = spot?.inside === undefined ? spot?.item.key : undefined;
+  const stack = new Set(actions.focus.stack().map(entry => entry.id));
+  const holders = result.items.filter(item => holdsCurrent(item, current, stack));
   return {
     graph,
     result,
     selected: ctx.state.focus.selected,
     related: actions.focus.related(),
-    current: actions.focus.locateCurrent()?.item.key,
+    current,
     pulse: ctx.state.focus.pulse,
-    stack: new Set(actions.focus.stack().map(entry => entry.id)),
+    stack,
+    holders: new Set(holders.map(item => item.key)),
     trail: trailRanks(history, graph, ctx.config.trailLength),
     rejected: rejectedEdges(history, graph, ctx.config.rejectedOutcomes)
   };
@@ -298,7 +332,8 @@ function inputsOf(ctx: FlowCtx, actions: FlowActions): ViewInputs | undefined {
 /**
  * The edge views and the items a trail edge touches. Trail and rejections are graph facts (keyed
  * by the local edge key); the selected edge is one instance. Edges into or out of the current
- * node never dim.
+ * node never dim; a trail edge into an item holding the current node is highlighted and never
+ * dims either.
  *
  * @param ctx - Domain context of flowView.
  * @param inputs - The view inputs.
@@ -320,12 +355,14 @@ function edgeViews(
     const touches = (key: ItemKey | undefined): boolean =>
       key !== undefined && (edge.from === key || edge.to === key);
     const related = touches(inputs.selected);
+    const here = rank !== undefined && edge.to !== undefined && inputs.holders.has(edge.to);
     edges.set(edgeId(edge), {
       rank,
       recent: rank !== undefined && rank < RECENT_TRAIL,
       rejected: edge.kind === "edge" && inputs.rejected.has(graphKey),
       related,
-      dimmed: inputs.related !== undefined && !related && !touches(inputs.current),
+      here,
+      dimmed: inputs.related !== undefined && !related && !here && !touches(inputs.current),
       selected: edge.kind === "edge" && ctx.state.focus.edge === edge.key
     });
   }
@@ -430,7 +467,13 @@ export function worldView(ctx: FlowCtx, actions: FlowActions): WorldView | undef
       }
       case "frame": {
         const { head, onStack } = frameHead(inputs, item);
-        frames.set(item.key, { head, onStack, root: item.key.startsWith("#"), dimmed: false });
+        frames.set(item.key, {
+          head,
+          onStack,
+          root: item.key.startsWith("#"),
+          dimmed: false,
+          holdsCurrent: inputs.holders.has(item.key)
+        });
         break;
       }
       case "port": {

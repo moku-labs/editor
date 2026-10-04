@@ -5,6 +5,7 @@
  */
 import type { Message } from "../../registry/protocol";
 import { decode } from "../../registry/protocol";
+import { replayPublished } from "../routing/publish";
 import { sessionsNotification } from "../routing/sessions";
 import type { HubCtx, HubSocket, HubWebSocketHandler, ToolsConn } from "../types";
 import { onAgentClose, onAgentMessage } from "./agent";
@@ -50,8 +51,8 @@ function tryDecode(text: string): Message | undefined {
 }
 
 /**
- * Registers a new connection; a tools page gets `sessions {list}` at once. A socket that opens
- * after stop is closed with 1001.
+ * Registers a new connection; a tools page gets `sessions {list}` at once, then every published
+ * value. A socket that opens after stop is closed with 1001.
  *
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
@@ -82,6 +83,7 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
   };
   state.conns.set(conn, tools);
   sendJson(tools, sessionsNotification(state));
+  replayPublished(state, tools);
 }
 
 /**

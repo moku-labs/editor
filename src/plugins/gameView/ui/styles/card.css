@@ -1,12 +1,17 @@
-/* gameView · capture card (F2), in the browser top layer (R4). Radius 10, a shadow because it floats. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · capture card (F2, round 2b R14), in the browser top layer (R4): a 56 px thumbnail, the title, path and meta lines (one line each, never wrapped), the actions row and the close button. At most 360 px wide and 120 px tall; at 480 px of window, the whole width less 24. Radius 10, a shadow because it floats. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="card"]) {
   :scope {
     inset: auto 24px 24px auto;
+    box-sizing: border-box;
     display: grid;
-    grid-template-columns: 88px minmax(0, 1fr) auto;
-    gap: 10px;
-    width: 380px;
-    padding: 10px;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 2px 10px;
+    width: 360px;
+    max-width: calc(100vw - 24px);
+    max-height: 120px;
+    padding: 8px;
+    overflow: hidden;
     border: 1px solid var(--line-2);
     border-radius: var(--radius-10);
     background: var(--surface-panel);
@@ -16,10 +21,24 @@
   }
 
   img {
-    width: 88px;
-    height: auto;
+    grid-row: 1 / -1;
+    width: 56px;
+    height: 100%;
+    max-height: 100px;
     border-radius: var(--radius-6);
     background: var(--surface-canvas);
+    object-fit: cover;
+    object-position: top;
+  }
+
+  [data-part="saved"],
+  [data-part="path"],
+  [data-part="meta"] {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   [data-part="saved"] {
@@ -30,15 +49,47 @@
   [data-part="path"] {
     font-family: var(--font-mono);
     font-size: var(--font-size-11);
-    overflow-wrap: anywhere;
   }
 
   [data-part="meta"] {
     color: var(--text-muted);
   }
 
+  [data-part="actions"] {
+    grid-column: 2 / -1;
+    display: flex;
+    align-self: end;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  [data-part="actions"] button {
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    font-size: var(--font-size-11-5);
+    white-space: nowrap;
+  }
+
+  [data-part="actions"] button:hover {
+    background: var(--surface-panel-2);
+  }
+
+  [data-part="close"] {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
   button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  @media (max-width: 480px) {
+    :scope {
+      inset: auto 12px 12px;
+      width: auto;
+    }
   }
 }

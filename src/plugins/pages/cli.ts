@@ -1,7 +1,8 @@
 /**
  * @file pages plugin — the moku-editor bin program: parse arguments, import the game HTML at run
- * time, start the server core, Bun.serve(hub.serve(...)), print the URLs through the branded
- * console (MC1). The token is never printed.
+ * time, start the server core, Bun.serve(hub.serve(...)) with Bun HMR on (off with `--no-hmr`), attach the server to
+ * pages (hot reload), print the URLs through the branded console (MC1). The token is never
+ * printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -16,9 +17,10 @@ import { createStaticFetch } from "./static";
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
-  "Usage: moku-editor <game-html> [--port 3000] [--root .] [--help]",
+  "Usage: moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
-  "  --root, -r  project root the editor reads and writes (default .)"
+  "  --root, -r  project root the editor reads and writes (default .)",
+  "  --no-hmr    serve the game without hot reload (default: hot reload on)"
 ];
 
 /**
@@ -228,17 +230,17 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
   if (editor === undefined) return { code: 1 };
 
   let server: ReturnType<typeof Bun.serve>;
+  let options: ReturnType<typeof editor.hub.serve>;
   try {
-    server = Bun.serve(
-      editor.hub.serve({
-        port: args.port,
-        // No Bun HMR (D-22): the editor's reload with restore (D-07) is the one reload path.
-        // No `console: true` either: Bun forwards the browser console only over the HMR socket.
-        development: { hmr: false },
-        routes: { "/": bundle },
-        fetch: createStaticFetch(rootPath, editor.hub.guard)
-      })
-    );
+    options = editor.hub.serve({
+      port: args.port,
+      // Bun HMR reloads the game page on a save (D-23), unless `--no-hmr`; `console: true`
+      // forwards the browser console.
+      development: { hmr: args.hmr, console: true },
+      routes: { "/": bundle },
+      fetch: createStaticFetch(rootPath, editor.hub.guard)
+    });
+    server = Bun.serve(options);
   } catch (error) {
     const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
     const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
@@ -247,6 +249,7 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
     return { code: 1 };
   }
 
+  editor.pages.attachServer(server, options);
   printServing(ui, server.port ?? args.port, editor.hub.path(), rootPath);
   return { code: 0, stop: stopper(editor, server) };
 }

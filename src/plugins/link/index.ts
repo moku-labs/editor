@@ -1,6 +1,7 @@
 /**
  * Complex tier — the tools page's link to the editor server: boot JSON, websocket, sessions,
- * manifest cache, the remote EditorChannel and the files client. Emits the global `link:status`.
+ * manifest cache, the remote EditorChannel, the hot reload state and the files client. Emits the
+ * global `link:status`.
  *
  * @see README.md
  */

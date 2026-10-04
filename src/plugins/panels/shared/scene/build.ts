@@ -258,8 +258,9 @@ function restOf(
 
 /**
  * Adds one ui node (rule 1): path id, name key ?? type, drawn rect through the fit chain with the
- * rest transform of its style and its ancestors' on top, texture = style.nineSlice; registers it
- * as a possible host under its natural rect.
+ * rest transform of its style and its ancestors' on top (kept as `refRect` in reference units,
+ * then calibrated to `rect`), texture = style.nineSlice; registers it as a possible host under its
+ * natural rect.
  *
  * @param builder - The scene under construction.
  * @param visit - The ui node with its path and fit chain.
@@ -288,6 +289,7 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
     type: node.type,
     parent,
     rect: placeRect(shown, builder.calibration),
+    refRect: shown,
     texture,
     key: node.key,
     style: node.style,
@@ -587,7 +589,7 @@ function texturesOf(entity: EntityWire): string[] {
 
 /**
  * Adds one projection entity (rules 2 and 3): name, type, texture, entity info, its rect when it
- * can be placed, and its node parent.
+ * can be placed (root units as `refRect`, calibrated as `rect`), and its node parent.
  *
  * @param builder - The scene under construction.
  * @param entity - A projection entity.
@@ -610,6 +612,7 @@ function addEntityNode(builder: Builder, entity: EntityWire, world: World): Plac
     type: displayOf(entity)?.display.type ?? CONTAINER,
     parent,
     rect: rect === undefined ? undefined : placeRect(rect, builder.calibration),
+    refRect: rect,
     texture: texturesOf(entity)[0],
     key: undefined,
     style: undefined,

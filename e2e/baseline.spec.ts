@@ -3,7 +3,9 @@
  * in the file name). The live regions (link pill, session chip, game canvas, frame counters, fps
  * tiles, the runner and session cards, the Last commit body and tags) are masked; animations are
  * off and fonts are ready. State shows one known commit, so the Last commit card always has the
- * same height: whether a boot commit lands after the tools page attached is timing.
+ * same height: whether a boot commit lands after the tools page attached is timing. The goldens
+ * show what a fresh viewer sees: the default device (the iPhone 18 Pro since round 2b R10), not
+ * the iPhone 15 the other specs pin.
  */
 import type { Frame, Page } from "@playwright/test";
 import { expect, type Tools, test, WORKSPACES } from "./fixtures";
@@ -97,6 +99,8 @@ async function showKnownCommit(tools: Tools): Promise<void> {
 }
 
 test.describe("baseline", () => {
+  test.use({ pinnedDevice: false });
+
   for (const { id, label } of WORKSPACES) {
     test(`${label} workspace`, async ({ tools }) => {
       await tools.show(id);

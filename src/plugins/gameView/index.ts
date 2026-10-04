@@ -1,6 +1,7 @@
 /**
  * Complex tier — the Game workspace: device stage, element picker, Element and Device tabs,
- * screenshots, series, the contact sheet and the Reference mode proxies. Declares no events;
+ * screenshots, series, the contact sheet, the Reference mode proxies and the reference block a
+ * pick puts on the clipboard (with its bookmark and shots). Declares no events;
  * emits the global `workspace:reveal`, `workspace:open-file`; hooks `link:status`,
  * `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
  *

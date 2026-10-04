@@ -1,16 +1,18 @@
 /**
  * @file gameView plugin — one screenshot: `editor.capture` through panels.run (R9), the PNG
- * through link.files.writeBinary, the toast, the capture card (F2) and its hide timer. Only a
- * user action or an api call starts it; nothing here runs on a timer, an error or a reload.
+ * through link.files.writeBinary, the toast, `shot: <path>` on the clipboard (round 2 R2), the
+ * capture card (F2) and its hide timer. Only a user action or an api call starts it; nothing here
+ * runs on a timer, an error or a reload.
  */
 import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
 import type { Json } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
+import { copyQuietly } from "../clipboard";
 import { GAME_COMMANDS, gameReady, NO_GAME_TEXT } from "../commands";
 import { reportFailure } from "../report";
 import { notify } from "../state";
-import type { CaptureFile, GameViewCtx } from "../types";
+import type { CaptureCardInfo, CaptureFile, GameViewCtx } from "../types";
 import {
   capturePath,
   deviceLabel,
@@ -153,12 +155,12 @@ function scheduleCardHide(ctx: GameViewCtx, delayMs: number): void {
 }
 
 /**
- * Shows the capture card of a saved shot and arms its hide timer.
+ * Shows the capture card of a saved shot, a pick or a series and arms its hide timer.
  *
  * @param ctx - Domain context of gameView.
- * @param card - The saved capture.
+ * @param card - What the card shows.
  */
-export function showCard(ctx: GameViewCtx, card: CaptureFile): void {
+export function showCard(ctx: GameViewCtx, card: CaptureCardInfo): void {
   ctx.state.card = card;
   ctx.state.cardHeld = false;
   scheduleCardHide(ctx, ctx.config.captureCardMs);
@@ -166,7 +168,8 @@ export function showCard(ctx: GameViewCtx, card: CaptureFile): void {
 }
 
 /**
- * Takes one screenshot through panels.run and saves it under `capturesDir`.
+ * Takes one screenshot through panels.run, saves it under `capturesDir` and puts `shot: <path>`
+ * on the clipboard (a refusal is only logged).
  *
  * @param ctx - Domain context of gameView.
  * @returns The saved capture, undefined without a game or on a failure (toasted).
@@ -202,6 +205,7 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
     };
     showCard(ctx, card);
     workspace.toast("✓ Screenshot saved", path);
+    await copyQuietly(ctx, `shot: ${path}`);
     return card;
   } catch (error) {
     reportFailure(ctx, "Screenshot failed", "gameView: capture failed", error);

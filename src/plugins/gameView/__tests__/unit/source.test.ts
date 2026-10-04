@@ -2,8 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
-import { entryDirOf, findStyleSource, importCandidates, matchKey } from "../../element/source";
-import { CONFIG, createCtx, manifestOf } from "../helpers";
+import {
+  entryDirOf,
+  findStyleSource,
+  importCandidates,
+  matchKey,
+  matchLoopKey
+} from "../../element/source";
+import { CONFIG, createCtx, manifestOf, templateOf } from "../helpers";
 
 /** The Signboard of merge-game's settings popup (features/settings/settings.tsx:299-308). */
 const SETTINGS = [
@@ -119,6 +125,27 @@ describe("matchKey", () => {
   it("finds settingsBoard in merge-game's settings popup with no style of its own", () => {
     expect(matchKey(SETTINGS, "settingsBoard")).toEqual({ line: 4, style: undefined });
     expect(matchKey(KIT, "settingsBoard")).toBeUndefined();
+  });
+});
+
+describe("matchLoopKey", () => {
+  it("finds the template literal that builds a key ending in digits from its stem", () => {
+    const strip = [
+      "export function cardKey(slot: number): string {",
+      `  return ${templateOf("card", "slot")};`,
+      "}"
+    ];
+    expect(matchLoopKey(strip.join("\n"), "card0")).toBe(2);
+    expect(matchLoopKey(`<Button id={${templateOf("deliver", "card.slot")}} />`, "deliver12")).toBe(
+      1
+    );
+  });
+
+  it("is undefined for a key without trailing digits, an empty stem or another stem", () => {
+    expect(matchLoopKey(`return ${templateOf("card", "slot")};`, "card")).toBeUndefined();
+    expect(matchLoopKey(`return ${templateOf("", "slot")};`, "7")).toBeUndefined();
+    expect(matchLoopKey(`return ${templateOf("cards", "slot")};`, "card0")).toBeUndefined();
+    expect(matchLoopKey(`return ${templateOf("", "id", "Picture")};`, "card0")).toBeUndefined();
   });
 });
 
@@ -264,6 +291,45 @@ describe("findStyleSource", () => {
     expect(read.mock.calls.map(call => call[0])).toEqual(["a.ts", "b.ts"]);
   });
 
+  it("falls back to the loop that builds a key: kind defined with loop", async () => {
+    const ctx = createCtx({
+      "features/orders/strip.tsx": `export const cardKey = (slot: number) =>\n  ${templateOf("card", "slot")};\n`
+    });
+    expect(await findStyleSource(ctx, "card0")).toEqual({
+      kind: "defined",
+      path: "features/orders/strip.tsx",
+      line: 2,
+      loop: true
+    });
+    expect(ctx.state.found.get("card0")).toMatchObject({ loop: true });
+  });
+
+  it("prefers a literal key anywhere over a loop found first", async () => {
+    const ctx = createCtx({
+      "a.tsx": `const key = ${templateOf("card", "slot")};`,
+      "src/b.tsx": '<Card key="card0" />'
+    });
+    expect(await findStyleSource(ctx, "card0")).toEqual({
+      kind: "defined",
+      path: "src/b.tsx",
+      line: 1
+    });
+  });
+
+  it("shares one search per key while it runs", async () => {
+    const ctx = createCtx({ "a.tsx": '<A key="hudRow" style={a} />' });
+    const list = vi.spyOn(ctx.link.files, "list");
+    const [first, second] = await Promise.all([
+      findStyleSource(ctx, "hudRow"),
+      findStyleSource(ctx, "hudRow")
+    ]);
+    expect(second).toBe(first);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(ctx.state.searches.size).toBe(0);
+    await findStyleSource(ctx, "hudRow");
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
   it("is undefined when the root cannot be listed, and forgets an older result", async () => {
     const ctx = createCtx();
     ctx.state.found.set("hudRow", { kind: "defined", path: "gone.tsx", line: 1 });
@@ -284,5 +350,50 @@ describe.skipIf(!existsSync(MERGE_GAME_DIR))(
       const found = await findStyleSource(createCtx(files), "settingsBoard");
       expect(found).toEqual({ kind: "defined", path: "features/settings/settings.tsx", line: 301 });
     });
+
+    it("resolves the order card card0 to the template literal of cardKey (loop)", async () => {
+      const files: Record<string, string> = {};
+      for (const file of ["features/orders/strip.tsx", "features/settings/settings.tsx"]) {
+        files[file] = readFileSync(path.join(MERGE_GAME_DIR, file), "utf8");
+      }
+      const found = await findStyleSource(createCtx(files), "card0");
+      expect(found).toEqual({
+        kind: "defined",
+        path: "features/orders/strip.tsx",
+        line: 157,
+        loop: true
+      });
+      const lines = files["features/orders/strip.tsx"]?.split("\n") ?? [];
+      expect(lines[156]).toContain(templateOf("card", "slot"));
+    });
   }
 );
+
+describe("text style keys (round 2b R17)", () => {
+  it('reads style="ui.link" (and style={"ui.link"}) as the text style key of the element', () => {
+    expect(matchKey('<text key="resetLabel" style="ui.link" content={x} />', "resetLabel")).toEqual(
+      { line: 1, style: { kind: "text", key: "ui.link", line: 1 } }
+    );
+    expect(matchKey('<text\n  key="resetLabel"\n  style={"ui.tab"}\n/>', "resetLabel")).toEqual({
+      line: 2,
+      style: { kind: "text", key: "ui.tab", line: 3 }
+    });
+    expect(matchKey('<a data-style="ui.link" key="k" />', "k")).toEqual({
+      line: 1,
+      style: undefined
+    });
+  });
+
+  it("finds a text node as defined at its line with its text style key, at once", async () => {
+    const ctx = createCtx({
+      "a.tsx": '<text key="resetLabel" style="ui.link" content={x} />',
+      "b.tsx": '<text key="resetLabel" style={other} />'
+    });
+    expect(await findStyleSource(ctx, "resetLabel")).toEqual({
+      kind: "defined",
+      path: "a.tsx",
+      line: 1,
+      textStyle: "ui.link"
+    });
+  });
+});

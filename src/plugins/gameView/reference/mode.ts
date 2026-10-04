@@ -3,18 +3,15 @@
  * or off. While on, the scene watch stays alive in every workspace, `game.position` is watched
  * for the flow node of the proxies and gameView's overlay root renders the proxy layer (the
  * frame overlay takes the pointer, workspace's part). Off drops the layer and, outside Game, the
- * watch. Also the proxy hover and "Copy reference".
+ * watch. Also the proxy hover.
  */
 import { linkPlugin } from "../../link";
-import type { SceneNode } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import { positionOf } from "../capture/naming";
-import { reportFailure } from "../report";
 import { startSceneWatches, stopSceneWatches } from "../scene/watch";
 import { notify } from "../state";
 import type { GameViewCtx, ReferenceState } from "../types";
 import { ensureOverlayRoot } from "../ui/OverlayRoot";
-import { referenceLine } from "./proxies";
 
 /**
  * Reference mode while off.
@@ -81,32 +78,6 @@ export function hoverProxy(ctx: GameViewCtx, id?: string): void {
   if (ctx.state.reference.hover === id) return;
   ctx.state.reference.hover = id;
   notify(ctx.state);
-}
-
-/**
- * "Copy reference": the reference line of a node on the clipboard, then a toast; a clipboard
- * that refuses or does not exist is toasted.
- *
- * @param ctx - Domain context of gameView.
- * @param node - The node.
- * @param flowNode - "<flow>/<node>" of the game position.
- * @returns Resolves when copied or toasted.
- */
-export async function copyReference(
-  ctx: GameViewCtx,
-  node: SceneNode,
-  flowNode: string | undefined
-): Promise<void> {
-  const source = node.key === undefined ? undefined : ctx.state.found.get(node.key);
-  const line = referenceLine(node, flowNode, source);
-  try {
-    const clipboard = globalThis.navigator?.clipboard;
-    if (clipboard === undefined) throw new Error("The clipboard is not available.");
-    await clipboard.writeText(line);
-    ctx.require(workspacePlugin).toast("✓ Reference copied");
-  } catch (error) {
-    reportFailure(ctx, "Copy failed", "gameView: copy reference failed", error);
-  }
 }
 
 /**

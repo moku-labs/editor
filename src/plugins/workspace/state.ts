@@ -58,6 +58,7 @@ export function createWorkspaceState(ctx: {
     overlayInGame: false,
     reference: false,
     showTaps: true,
+    muted: false,
     taps: [],
     link: { kind: "connecting" },
     everLive: false,
@@ -67,6 +68,8 @@ export function createWorkspaceState(ctx: {
     palette: { open: false, query: "", index: 0, items: new Map() },
     keys: { bindings: [], escape: [] },
     popover: undefined,
+    hotReloadNote: undefined,
+    lastRestore: undefined,
     step: undefined,
     frame: {
       iframe: undefined,

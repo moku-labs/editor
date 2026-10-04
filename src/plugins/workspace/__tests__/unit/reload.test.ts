@@ -2,8 +2,9 @@
 // @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
-import { gameUrl, taggedGameUrl } from "../../frame/frame";
+import { createGameFrame, gameUrl, taggedGameUrl } from "../../frame/frame";
 import { reloadFrame } from "../../frame/reload";
+import { RESTORED_TOAST } from "../../frame/restored";
 import { createCtx, flush, manifestOf, resultOf, type TestCtx, tagged } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -319,5 +320,128 @@ describe("reloadFrame", () => {
     for (const cleanup of ctx.state.dom.cleanup) cleanup();
     await expect(pending).resolves.toEqual({ restored: false, reason: "timeout" });
     expect(toasts()).toEqual([]);
+  });
+});
+
+describe("reloadFrame after a save with Bun hot reload on (round 2 R6)", () => {
+  const COMMANDS = ["game.bookmark", "game.restore", "game.pause"];
+  const RESTORE = { bookmark: JSON.stringify(BOOKMARK), frame: 1840 };
+
+  beforeEach(() => {
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+  });
+
+  it("Bun's new session that restored the state ends the run: no second reload, restore or pause", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    expect(srcWrites).toEqual([]);
+
+    ctx.link.attach({ ...manifestOf(COMMANDS), restored: RESTORE });
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(srcWrites).toEqual([]);
+    expect(ranIds()).toEqual(["game.bookmark"]);
+    expect(toasts()).toEqual([RESTORED_TOAST]);
+    expect(ctx.state.lastRestore).toBeDefined();
+  });
+
+  it("Bun's new session without a restore gets the workspace checkpoint (D-07 fallback)", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(srcWrites).toEqual([]);
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore", "game.pause"]);
+    expect(toasts()).toEqual(["Game reloaded · state restored from the last checkpoint"]);
+  });
+
+  it("no new session within hotReloadWaitMs: workspace reloads the frame itself", async () => {
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(srcWrites).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(srcWrites).toEqual([taggedGameUrl(ctx)]);
+
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+  });
+
+  it("a bookmark lost to Bun's reload is no warn when the bridge restored the state", async () => {
+    failOn("game.bookmark", "game page reloaded");
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    ctx.link.attach({ ...manifestOf(COMMANDS), restored: RESTORE });
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a bookmark lost to Bun's reload warns when nothing restored the state", async () => {
+    failOn("game.bookmark", "game page reloaded");
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: false, reason: "bookmark_failed" });
+    expect(ctx.log.warn).toHaveBeenCalledWith("workspace:bookmark-failed", {
+      message: "[moku-editor] game page reloaded"
+    });
+    expect(toasts()).toEqual(["Game reloaded"]);
+    expect(srcWrites).toEqual([]);
+  });
+
+  it("without restore Bun's session only toasts Game reloaded", async () => {
+    const pending = reloadFrame(ctx, { afterSave: true });
+    await flush();
+    ctx.link.attach(manifestOf());
+    await expect(pending).resolves.toEqual({ restored: false });
+    expect(ctx.link.run).not.toHaveBeenCalled();
+    expect(toasts()).toEqual(["Game reloaded"]);
+  });
+
+  it("gameFrame().reload is the after-save reload: it waits for Bun", async () => {
+    const pending = createGameFrame(ctx).reload({ restore: true });
+    await flush();
+    expect(srcWrites).toEqual([]);
+    ctx.link.attach({ ...manifestOf(COMMANDS), restored: RESTORE });
+    await expect(pending).resolves.toEqual({ restored: true });
+  });
+
+  it("a palette reload (no save) and hot reload off reload the frame at once", async () => {
+    const palette = reloadFrame(ctx, { restore: true });
+    await flush();
+    expect(srcWrites).toHaveLength(1);
+    ctx.link.attach(manifestOf(COMMANDS));
+    await palette;
+
+    ctx.link.hotReload.mockReturnValue({ hmr: false, owner: "bin" });
+    const save = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    expect(srcWrites).toHaveLength(2);
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(save).resolves.toEqual({ restored: true });
+  });
+
+  it("a restored session that ends the D-07 wait is not restored again", async () => {
+    ctx.link.hotReload.mockReturnValue(undefined);
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    expect(srcWrites).toHaveLength(1);
+    ctx.link.attach({ ...manifestOf(COMMANDS), restored: RESTORE });
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark"]);
+    expect(toasts()).toEqual([RESTORED_TOAST]);
+  });
+
+  it("the run a call made during a save reload starts is an after-save run too", async () => {
+    const first = reloadFrame(ctx, { restore: true, afterSave: true });
+    void reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await first;
+    await flush();
+    expect(ctx.state.frame.reload).toBeDefined();
+    expect(srcWrites).toEqual([]);
   });
 });

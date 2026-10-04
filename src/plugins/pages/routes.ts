@@ -1,14 +1,15 @@
 /**
- * @file pages plugin — the four editor routes under `P = hub.path()`: `P` (308 to `P/`), `P/`
- * (the tools page with the boot JSON and the CSP), `P/hello` (`{ ws, token }`, same-origin only)
- * and `P/assets/*` (the built files). Every handler runs hub.guard first, then answers GET and
- * HEAD only.
+ * @file pages plugin — the five editor routes under `P = hub.path()`: `P` (308 to `P/`), `P/`
+ * (the tools page with the boot JSON and the CSP), `P/hello` (`{ ws, token }`, same-origin only),
+ * `P/hmr` (hot reload, hot-reload.ts) and `P/assets/*` (the built files). Every handler runs
+ * hub.guard first; all but `P/hmr` answer GET and HEAD only.
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path/posix";
 import type { EditorRoutes, GuardMode, HubServer, RouteHandler } from "../hub/types";
 import type { HelloBody, ToolsBoot } from "../registry/protocol";
 import { buildBoot, injectBoot, wsUrlOf } from "./boot";
+import { hotReloadRoute } from "./hot-reload";
 import {
   badRequest,
   decodePath,
@@ -244,7 +245,7 @@ function assetAnswer(deps: RouteDeps, path: string): Answer {
  * Creates the editor routes of pages (frozen), keyed under hub.path().
  *
  * @param deps - Hub, files, config, state and log.
- * @returns The four routes, in the order `P`, `P/`, `P/hello`, `P/assets/*`.
+ * @returns The five routes, in the order `P`, `P/`, `P/hello`, `P/hmr`, `P/assets/*`.
  */
 export function createRoutes(deps: RouteDeps): EditorRoutes {
   const path = deps.hub.path();
@@ -253,6 +254,7 @@ export function createRoutes(deps: RouteDeps): EditorRoutes {
     [path]: guarded(deps, "navigate", redirectTo(path)),
     [`${path}/`]: guarded(deps, "navigate", pageAnswer(deps)),
     [`${path}/hello`]: guarded(deps, "same-origin", helloAnswer(deps)),
+    [`${path}/hmr`]: hotReloadRoute(deps),
     [`${path}/assets/*`]: guarded(deps, "navigate", assetAnswer(deps, path))
   });
 }

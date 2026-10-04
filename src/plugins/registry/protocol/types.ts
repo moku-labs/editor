@@ -127,6 +127,12 @@ export type Manifest = {
   readonly commands: readonly CommandDescriptor[];
   /** Reserved for code-loaded game panels; unused this change. */
   readonly panels?: readonly { readonly id: string; readonly module: string }[];
+  /**
+   * Set by the bridge in its hello when it restored the checkpoint it stored before Bun's full
+   * reload (R6): `bookmark` is the JSON text of the restored `game.bookmark` value, `frame` the
+   * frame of the page that took it. Absent on every other hello.
+   */
+  readonly restored?: { readonly bookmark: string; readonly frame: number };
 };
 
 /**
@@ -456,7 +462,39 @@ export type ToolsBoot = {
 };
 
 /**
- * A device preset of the tools page (R1).
+ * The hot reload state of the game server (R6): Bun HMR on or off, and who owns the server. The
+ * hub sends it to every tools page as the editor-channel notification `hotReload`, and again
+ * after each tools connection opens.
+ *
+ * @example
+ * ```ts
+ * const state: HotReload = { hmr: true, owner: "bin" };
+ * ```
+ */
+export type HotReload = {
+  /** True when Bun reloads the game page on a source change. */
+  readonly hmr: boolean;
+  /** "bin" when the moku-editor bin serves the game, "server" for a game's own Bun.serve. */
+  readonly owner: "bin" | "server";
+};
+
+/**
+ * The size and corner radius of one screen of a foldable device, in CSS px.
+ */
+export type FoldScreen = { readonly w: number; readonly h: number; readonly radius: number };
+
+/**
+ * A device preset of the tools page (R1, R4): the screen in CSS px, its pixel ratio, safe insets,
+ * corner radius, the `<optgroup>` it is listed under and the frame drawn around it (R9). A foldable
+ * adds its two screens; its top-level size is the cover screen.
+ *
+ * @example
+ * ```ts
+ * const iphone15: DeviceSpec = {
+ *   id: "iphone-15", name: "iPhone 15", w: 393, h: 852, safeTop: 59, safeBottom: 34, kind: "phone",
+ *   dpr: 3, radius: 55, group: "iphone", frame: "modern"
+ * };
+ * ```
  */
 export type DeviceSpec = {
   readonly id: string;
@@ -466,4 +504,20 @@ export type DeviceSpec = {
   readonly safeTop: number;
   readonly safeBottom: number;
   readonly kind: "phone" | "tablet" | "desktop";
+  /** Device pixel ratio of the screen. */
+  readonly dpr: number;
+  /** Corner radius of the screen in CSS px (0 for a desktop). */
+  readonly radius: number;
+  /** The `<optgroup>` the preset is listed under. */
+  readonly group: "iphone" | "android" | "foldable" | "tablet" | "desktop";
+  /**
+   * The frame drawn around the screen (R9): "modern" is the thin bezel every current device has;
+   * "home-button" is the iPhone SE look, with 64 px bands above and below the screen and a round
+   * home button in the bottom one.
+   */
+  readonly frame: "modern" | "home-button";
+  /** Set when a value of the preset is an estimate, not a published figure. */
+  readonly approx?: true;
+  /** The two screens of a foldable: folded (cover) and unfolded (inner). */
+  readonly fold?: { readonly cover: FoldScreen; readonly inner: FoldScreen };
 };

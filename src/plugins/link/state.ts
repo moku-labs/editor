@@ -27,6 +27,8 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
     manifests: new Map(),
     manifestListeners: new Set(),
     tapListeners: new Set(),
+    hotReload: undefined,
+    hotReloadListeners: new Set(),
     subs: new Map(),
     wire: new Map(),
     nextSub: 1,

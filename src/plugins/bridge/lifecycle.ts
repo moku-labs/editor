@@ -1,17 +1,21 @@
 /**
  * @file bridge plugin — config check (onInit), the domain deps, start (onStart: heartbeat
- * listener, page listeners, connect — not awaited) and stop (onStop: bye, close, clear timers).
+ * listener, page and reload listeners, the checkpoint restore, connect — not awaited) and stop
+ * (onStop: bye, close, clear timers).
  */
 import { channelPlugin } from "../channel";
 import { registryPlugin } from "../registry";
 import { encode, notification } from "../registry/protocol";
+import { restoreCheckpoint, takeStoredCheckpoint, watchReload } from "./checkpoint/checkpoint";
+import { defaultReload } from "./checkpoint/hot";
 import { connectInBackground, onBeat } from "./connection/loop";
 import { defaultNet } from "./connection/socket";
+import { asError } from "./dispatch/dispatch";
 import { dropInflight, NORMAL_CLOSE, SOCKET_OPEN } from "./dispatch/send";
 import { dropAll } from "./dispatch/subscriptions";
 import { watchTaps, watchVisibility } from "./page";
 import { setStatus } from "./status";
-import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState } from "./types";
+import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState, TakenCheckpoint } from "./types";
 import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
 
 /**
@@ -72,7 +76,7 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
 
 /**
  * Builds the domain deps: registry and channel through ctx.require, emit of bridge:status,
- * defaultNet(globalThis) and the page probe (URL, document, window).
+ * defaultNet(globalThis), the reload seam and the page probe (URL, document, window).
  *
  * @param ctx - Plugin context of the bridge.
  * @returns The deps every bridge module takes.
@@ -93,6 +97,7 @@ export function depsOf(ctx: BridgeCtx): BridgeDeps {
     registry: ctx.require(registryPlugin),
     channel: ctx.require(channelPlugin),
     net: defaultNet(globalThis),
+    reload: defaultReload(),
     page: {
       href: globalThis.location?.href,
       document: globalThis.document,
@@ -102,8 +107,26 @@ export function depsOf(ctx: BridgeCtx): BridgeDeps {
 }
 
 /**
- * onStart: publishes connecting, installs the heartbeat, visibility and tap listeners, then
- * connects without awaiting: `app.start()` never waits for, or fails on, the editor server.
+ * Restores the checkpoint the previous document stored, then connects, so the first hello
+ * carries `restored`. Never throws: a crash is logged.
+ *
+ * @param deps - The domain deps.
+ * @param checkpoint - The checkpoint to restore.
+ */
+function restoreThenConnect(deps: BridgeDeps, checkpoint: TakenCheckpoint): void {
+  restoreCheckpoint(deps, checkpoint)
+    .then(() => {
+      connectInBackground(deps);
+    })
+    .catch((error: unknown) => {
+      deps.log.error("bridge:connect-crashed", undefined, asError(error));
+    });
+}
+
+/**
+ * onStart: publishes connecting, installs the heartbeat, visibility, tap and reload listeners,
+ * then connects without awaiting: `app.start()` never waits for, or fails on, the editor server.
+ * A checkpoint stored before Bun's full reload is restored first (R6).
  *
  * @param ctx - Plugin context of the bridge.
  */
@@ -115,9 +138,13 @@ export function startBridge(ctx: BridgeCtx): void {
       onBeat(deps, beat);
     }),
     watchVisibility(deps),
-    watchTaps(deps)
+    watchTaps(deps),
+    watchReload(deps)
   );
-  connectInBackground(deps);
+
+  const checkpoint = takeStoredCheckpoint(deps);
+  if (checkpoint === undefined) connectInBackground(deps);
+  else restoreThenConnect(deps, checkpoint);
 }
 
 /**

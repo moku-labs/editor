@@ -34,8 +34,8 @@ const BOARD_LANES = 8;
 
 /**
  * Game-frame warnings a source write provokes that are not editor defects: the game restored onto
- * the board logs textures and a bundle not loaded yet. The bin serves the game without Bun's HMR
- * (D-22, spec 09-pages), so no "Hot update was not accepted" warning comes with a save.
+ * the board logs textures and a bundle not loaded yet. The bin serves the game with Bun hot reload
+ * on (D-23); its "Hot update was not accepted" notice is allowed for every spec (fixtures.ts).
  */
 const RELOAD_WARNINGS: readonly RegExp[] = [
   /event: assets: texture is not loaded yet/,
@@ -692,6 +692,39 @@ test.describe("flow · board hub", () => {
     await clickCard(page, "main/settings");
     await flow(page).locator("[data-flow=breadcrumb] [data-part=stack]").click();
     await expect(card(page, "main/home")).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test.describe("flow · a collapsed card holds the current node (round 2 R5)", () => {
+  test("on the board, the collapsed board card is current: here tag, never dimmed, its trail edge lit", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showFlow(tools);
+    await toBoard(page);
+    // The sub-flow holding the current node opens in place; collapse it back to its card.
+    const frame = flow(page).locator('[data-flow=frame][data-key="main/board"]');
+    await expect(frame).toHaveCount(1);
+    // From the keyboard (Space): in the narrow windows the "You are here" chip can lie over the
+    // button, and Enter is the flow's own key (it follows the highlighted row).
+    await frame.locator("[data-action=collapse]").first().press("Space");
+    await expect(frame).toHaveCount(0);
+
+    const board = card(page, "main/board");
+    await expect(board).toBeVisible();
+    // Another node selected: what is unrelated dims, the card holding the game does not.
+    await clickCard(page, "main/settings");
+    await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
+    await expect(card(page, "main/boot")).toHaveAttribute("data-dimmed", "");
+    await expect(board).not.toHaveAttribute("data-dimmed", "");
+    // The trail edge into it is highlighted.
+    await expect(flow(page).locator("path[data-here]")).not.toHaveCount(0);
+
+    // It holds the current node (the node itself is inside it): the accent ring of a holder and
+    // the "here" tag (R5, flowView README).
+    await expect(board).toHaveAttribute("data-holds-current", "");
+    await expect(board.locator("[data-tag=here]")).toHaveText("here");
+    await expect(board).not.toHaveAttribute("data-current", "");
   });
 });
 

@@ -263,10 +263,11 @@ describe("core boot", () => {
       "/__dev",
       "/__dev/",
       "/__dev/assets/*",
-      "/__dev/hello"
+      "/__dev/hello",
+      "/__dev/hmr"
     ]);
     expect(workspace.gameFrame().url.endsWith("/game.html")).toBe(true);
-    expect(workspace.devices()).toHaveLength(6);
+    expect(workspace.devices()).toHaveLength(21);
 
     const prefs: unknown[] = [];
     const off = workspace.onPrefs(next => {

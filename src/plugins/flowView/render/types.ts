@@ -20,7 +20,13 @@ export type CardView = {
   readonly kindLine: string;
   readonly selected: boolean;
   readonly current: boolean;
-  /** Dimmed by a selection it is not related to; the current node never is. */
+  /**
+   * Holds the current node: it is the current node, has it inside (a collapsed sub-flow, slot or
+   * hub) or is on the position stack. Such a card never dims; when it is not the current node it
+   * gets the accent ring and a "here" marker.
+   */
+  readonly holdsCurrent: boolean;
+  /** Dimmed by a selection it is not related to; an item holding the current node never is. */
   readonly dimmed: boolean;
   /** The 600 ms pulse ring plays on it (a followed edge reached it, Find current). */
   readonly pulse: boolean;
@@ -47,6 +53,8 @@ export type FrameView = {
   readonly onStack: boolean;
   readonly root: boolean;
   readonly dimmed: boolean;
+  /** The current node is inside it (never on a root frame): accent ring and a "here" marker. */
+  readonly holdsCurrent: boolean;
 };
 
 /**
@@ -70,6 +78,8 @@ export type EdgeView = {
   readonly recent: boolean;
   readonly rejected: boolean;
   readonly related: boolean;
+  /** A trail edge into an item holding the current node: drawn 2 px accent at full strength. */
+  readonly here: boolean;
   readonly dimmed: boolean;
   readonly selected: boolean;
 };

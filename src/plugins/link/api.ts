@@ -1,10 +1,12 @@
 /**
  * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
- * the frame id helpers, taps, the page heap and the files client, composed from the sub-modules.
+ * the frame id helpers, taps, the page heap, hot reload and the files client, composed from the
+ * sub-modules.
  */
 import { createFilesClient } from "./files/client";
 import { gameRequest } from "./rpc/calls";
 import { expectShape, readRunResult } from "./rpc/shapes";
+import { addHotReloadListener, requestHotReload } from "./server/hot-reload";
 import { chooseSession } from "./sessions/choose";
 import { isOtherFrame, tagFrame } from "./sessions/frame";
 import { addManifestListener, currentManifest } from "./sessions/manifest";
@@ -60,6 +62,12 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
       const heap = state.heartbeat?.heap;
       return heap === undefined ? undefined : { ...heap };
     },
+
+    hotReload: () => (state.hotReload === undefined ? undefined : { ...state.hotReload }),
+
+    onHotReload: listener => addHotReloadListener(ctx, listener),
+
+    setHotReload: on => requestHotReload(ctx, on),
 
     files: createFilesClient(ctx)
   };

@@ -98,7 +98,7 @@ export function labelPoint(edge: EdgePath): { x: number; y: number } | undefined
  * ```
  */
 function trailStyle(view: EdgeView | undefined): { opacity: string } | undefined {
-  if (view?.rank === undefined || view.recent || view.dimmed) return undefined;
+  if (view?.rank === undefined || view.recent || view.here || view.dimmed) return undefined;
   return { opacity: String(Math.round((1 - TRAIL_FADE * view.rank) * 100) / 100) };
 }
 
@@ -141,6 +141,7 @@ export function Edges(props: EdgesProps): VNode {
               data-recent={view?.recent === true ? "" : undefined}
               data-rejected={view?.rejected === true ? "" : undefined}
               data-related={view?.related === true ? "" : undefined}
+              data-here={view?.here === true ? "" : undefined}
               data-dimmed={view?.dimmed === true ? "" : undefined}
               data-selected={view?.selected === true ? "" : undefined}
               style={trailStyle(view)}

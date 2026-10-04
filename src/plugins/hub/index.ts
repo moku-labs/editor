@@ -1,6 +1,7 @@
 /**
  * Complex tier — the editor's websocket switchboard: token + Origin/Host checks before upgrade,
- * one websocket handler (agent, tools), sessions, routing, pending calls, fan-out, serve().
+ * one websocket handler (agent, tools), sessions, routing, pending calls, fan-out, published
+ * server state, serve().
  * Emits the global server event `hub:session`.
  *
  * @see README.md

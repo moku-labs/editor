@@ -3,7 +3,8 @@
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateSidePanel } from "../../../panels/shared/side-panel/store";
-import type { LinkStatus } from "../../../registry/protocol";
+import type { DeviceSpec, LinkStatus } from "../../../registry/protocol";
+import { DEVICES, presetOf } from "../../../workspace/devices";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { Stage } from "../../ui/Stage";
@@ -48,6 +49,53 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+/**
+ * Makes every element measure as a stage of this size.
+ *
+ * @param width - Stage width.
+ * @param height - Stage height.
+ */
+function measureStage(width: number, height: number): void {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: width,
+    bottom: height,
+    width,
+    height,
+    toJSON: () => ({})
+  });
+}
+
+/** The iPhone SE 3 with its home-button frame (round 2b R9). */
+const SE_HOME: DeviceSpec = { ...presetOf("iphone-se"), frame: "home-button" as const };
+
+/**
+ * Shows one preset on the workspace mock, with the SE of the list in its home-button frame.
+ *
+ * @param preset - The preset shown.
+ * @param orientation - Its orientation.
+ */
+function showDevice(preset: DeviceSpec, orientation: "portrait" | "landscape" = "portrait"): void {
+  Object.assign(ctx.workspace.api, {
+    device: () => ({ preset, orientation, folded: true }),
+    devices: () => DEVICES.map(device => (device.id === "iphone-se" ? SE_HOME : device))
+  });
+}
+
+/**
+ * The inline padding of an element, top, right, bottom, left.
+ *
+ * @param element - The element.
+ * @returns The four sides.
+ */
+function paddingOf(element: HTMLElement): string[] {
+  const { paddingTop, paddingRight, paddingBottom, paddingLeft } = element.style;
+  return [paddingTop, paddingRight, paddingBottom, paddingLeft];
+}
+
 describe("Stage", () => {
   it("docks the frame over its slot, clipped by the whole stage, and creates the overlay root", () => {
     const mounted = stage();
@@ -76,23 +124,32 @@ describe("Stage", () => {
     expect(document.querySelector("iframe")).toBeNull();
   });
 
-  it("sizes the slot W·k × H·k from the measured stage", () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 1200,
-      bottom: 800,
-      width: 1200,
-      height: 800,
-      toJSON: () => ({})
-    });
+  it("sizes the slot W·k × H·k from the measured stage, k shared by every phone", () => {
+    measureStage(1200, 800);
     const mounted = stage();
     const slot = find(mounted.root, "[data-part='slot']");
-    const k = (800 - 56 - 26) / 852;
+    // One phone scale (round 2b R9): the tallest phone of the list, the Galaxy Z Flip 6, binds.
+    const tallest = Math.max(...DEVICES.filter(p => p.kind === "phone").map(p => p.h));
+    const k = (800 - 56 - 26) / tallest;
     expect(Number.parseFloat(slot.style.width)).toBeCloseTo(393 * k, 3);
     expect(Number.parseFloat(slot.style.height)).toBeCloseTo(852 * k, 3);
+    // The screen corners: the preset radius at the same scale (round 2 R3).
+    const bezel = find(mounted.root, "[data-part='bezel']");
+    expect(Number.parseFloat(bezel.style.getPropertyValue("--screen-radius"))).toBeCloseTo(
+      55 * k,
+      3
+    );
+  });
+
+  it("rounds the screen with the preset radius at 100 %; the desktop is square", () => {
+    ctx.state.zoom = "100";
+    expect(
+      find(stage().root, "[data-part='bezel']").style.getPropertyValue("--screen-radius")
+    ).toBe("55px");
+    ctx.workspace.device = { preset: "desktop", orientation: "portrait" };
+    expect(
+      find(stage().root, "[data-part='bezel']").style.getPropertyValue("--screen-radius")
+    ).toBe("0px");
   });
 
   it("uses the device size at 100 %", () => {
@@ -100,6 +157,40 @@ describe("Stage", () => {
     const slot = find(stage().root, "[data-part='slot']");
     expect(slot.style.width).toBe("393px");
     expect(slot.style.height).toBe("852px");
+  });
+
+  it("shows an SE smaller than a Pro Max: one Fit scale for every phone (round 2b R9)", () => {
+    measureStage(1200, 900);
+    showDevice(SE_HOME);
+    const se = find(stage().root, "[data-part='slot']");
+    showDevice(presetOf("iphone-15-pro-max"));
+    const proMax = find(stage().root, "[data-part='slot']");
+    const seScale = Number.parseFloat(se.style.height) / 667;
+    expect(Number.parseFloat(proMax.style.height) / 932).toBeCloseTo(seScale, 6);
+    expect(Number.parseFloat(se.style.height)).toBeLessThan(Number.parseFloat(proMax.style.height));
+  });
+
+  it("frames an SE with tall bezels and a round home button, square, without an island", () => {
+    showDevice(SE_HOME);
+    const bezel = find(stage().root, "[data-part='bezel']");
+    expect(bezel.dataset.frame).toBe("home-button");
+    expect(paddingOf(bezel)).toEqual(["64px", "10px", "64px", "10px"]);
+    expect(bezel.style.getPropertyValue("--screen-radius")).toBe("0px");
+    expect(find(bezel, "[data-part='home-button']").getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("turns the home-button bezels to the sides in landscape", () => {
+    showDevice(SE_HOME, "landscape");
+    const bezel = find(stage().root, "[data-part='bezel']");
+    expect(paddingOf(bezel)).toEqual(["10px", "64px", "10px", "64px"]);
+    expect(bezel.dataset.orientation).toBe("landscape");
+  });
+
+  it("keeps the thin modern bezel and no home button on an iPhone 15", () => {
+    const bezel = find(stage().root, "[data-part='bezel']");
+    expect(bezel.dataset.frame).toBe("modern");
+    expect(paddingOf(bezel)).toEqual(["10px", "10px", "10px", "10px"]);
+    expect(bezel.querySelector("[data-part='home-button']")).toBeNull();
   });
 
   it("draws the bezel for the device kind and orientation", () => {

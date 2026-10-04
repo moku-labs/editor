@@ -80,6 +80,25 @@ describe("recordSeries", () => {
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ 4 shots saved", FOLDER);
   });
 
+  it("puts series: <folder> (<n> frames) on the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
+    vi.unstubAllGlobals();
+    expect(writeText).toHaveBeenCalledWith(`series: ${FOLDER} (4 frames)`);
+  });
+
+  it("shows the series card: the shots saved, the folder, the first shot (round 2b R14)", async () => {
+    await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
+    expect(ctx.state.card).toMatchObject({
+      path: FOLDER,
+      frame: ctx.state.series.sheet?.index.fromFrame,
+      device: "iPhone 15 portrait",
+      image: ctx.state.series.sheet?.images[0],
+      series: { indexPath: INDEX, shots: 4 }
+    });
+  });
+
   it("opens the contact sheet with the in-memory images", async () => {
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50, label: "merge refused shake" });
 

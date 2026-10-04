@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
+import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { FilesApi } from "../../files/types";
 import { guard } from "../../hub/security/guard";
@@ -60,8 +61,8 @@ export function createLog() {
   };
 }
 
-/** A fake hub: the real guard, a switchable token. */
-export type FakeHub = HubApi & { started: boolean };
+/** A fake hub: the real guard, a switchable token, a recording publish. */
+export type FakeHub = HubApi & { started: boolean; readonly publish: Mock<HubApi["publish"]> };
 
 /**
  * A fake hub api with the real guard and a token that throws when not started.
@@ -89,6 +90,7 @@ export function createHub(): FakeHub {
     },
     addRoutes: vi.fn(),
     guard: (req, server, mode) => guard(req, server, mode, new Set()),
+    publish: vi.fn<HubApi["publish"]>(),
     path: () => "/__editor"
   };
   return hub;
@@ -119,18 +121,20 @@ export const SERVER: HubServer = { port: 4000, upgrade: () => false };
  * A request to the fake server with the loopback Host.
  *
  * @param path - Path and query.
- * @param init - Method and extra headers.
+ * @param init - Method, extra headers and body.
  * @param init.method - HTTP method (default GET).
  * @param init.headers - Extra headers.
+ * @param init.body - Request body (POST).
  * @returns The request.
  */
 export function request(
   path: string,
-  init: { method?: string; headers?: Record<string, string> } = {}
+  init: { method?: string; headers?: Record<string, string>; body?: string } = {}
 ): Request {
   return new Request(`http://127.0.0.1:4000${path}`, {
     method: init.method ?? "GET",
-    headers: { host: "127.0.0.1:4000", ...init.headers }
+    headers: { host: "127.0.0.1:4000", ...init.headers },
+    ...(init.body === undefined ? {} : { body: init.body })
   });
 }
 

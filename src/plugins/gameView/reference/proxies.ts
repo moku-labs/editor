@@ -1,13 +1,15 @@
 /**
  * @file gameView plugin — Reference mode proxies (finding 17, D-27), pure: one proxy per placed
  * visible scene node with its rect in device px and the attributes Claude's DOM picker and
- * read_page see (`aria-label`, `title`, `data-moku-*`), layout-only nodes under the drawing ones,
- * paint order kept; and the one line "Copy reference" puts on the clipboard.
+ * read_page see (`aria-label`, `title`, `data-moku-*`, round 2 adds the frame, the reference
+ * bounds and the place of the style block), layout-only nodes under the drawing ones, paint order
+ * kept.
  */
 
 import type { PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { isLayoutOnly } from "../../panels/shared/scene";
-import type { StyleSource } from "../types";
+import type { BlockAt, StyleSource } from "../types";
+import { sourceText } from "./block";
 
 /**
  * The attributes of one proxy element.
@@ -22,12 +24,18 @@ export type ProxyAttributes = {
   readonly "data-moku-path": string;
   /** "<flow>/<node>" of the game position. */
   readonly "data-moku-node": string | undefined;
-  /** `file:line` of the key, from the source search results. */
+  /** `file:line` of the key, from the source search results (` (loop)` for a key built in a loop). */
   readonly "data-moku-source": string | undefined;
   /** The style identifier or call, else the nine-slice texture. */
   readonly "data-moku-style": string | undefined;
+  /** `file:line` of the style block of an identifier, or of the style call. */
+  readonly "data-moku-style-source": string | undefined;
   /** `x y w h` in device px, rounded as the Element tab shows them. */
   readonly "data-moku-bounds": string;
+  /** `x y w h` in reference units (SceneNode.refRect), rounded. */
+  readonly "data-moku-ref-bounds": string | undefined;
+  /** The frame of the scene the proxy was drawn from. */
+  readonly "data-moku-frame": string;
 };
 
 /**
@@ -40,11 +48,13 @@ export type Proxy = {
 };
 
 /**
- * What the proxies read besides the scene: the flow node and the source search results.
+ * What the proxies read besides the scene: the flow node, the source search results and the
+ * style blocks found.
  */
 export type ProxyContext = {
   readonly node: string | undefined;
   readonly found: ReadonlyMap<string, StyleSource>;
+  readonly blocks: ReadonlyMap<string, BlockAt>;
 };
 
 /**
@@ -77,15 +87,33 @@ function styleName(node: SceneNode, source: StyleSource | undefined): string | u
 }
 
 /**
+ * Where the style of a node is written: the block of its identifier, or its call.
+ *
+ * @param source - Its source search result.
+ * @param block - The block found for its key.
+ * @returns `file:line`, or undefined.
+ */
+function styleSource(
+  source: StyleSource | undefined,
+  block: BlockAt | undefined
+): string | undefined {
+  if (source?.kind === "call") return `${source.path}:${source.callLine}`;
+  if (source?.kind === "ident" && block !== undefined) return `${block.path}:${block.line}`;
+  return undefined;
+}
+
+/**
  * The proxy of one placed node.
  *
  * @param node - The node.
  * @param rect - Its rect.
- * @param context - The flow node and the source search results.
+ * @param context - The flow node, the source search results and the style blocks.
+ * @param frame - The frame of the scene.
  * @returns The proxy.
  */
-function proxyOf(node: SceneNode, rect: PageRect, context: ProxyContext): Proxy {
+function proxyOf(node: SceneNode, rect: PageRect, context: ProxyContext, frame: number): Proxy {
   const source = node.key === undefined ? undefined : context.found.get(node.key);
+  const block = node.key === undefined ? undefined : context.blocks.get(node.key);
   return {
     id: node.id,
     rect,
@@ -97,9 +125,13 @@ function proxyOf(node: SceneNode, rect: PageRect, context: ProxyContext): Proxy 
       "data-moku-type": node.type,
       "data-moku-path": node.ref.kind === "ui" ? node.ref.path : `entity:${node.ref.id}`,
       "data-moku-node": context.node,
-      "data-moku-source": source === undefined ? undefined : `${source.path}:${source.line}`,
+      "data-moku-source": source === undefined ? undefined : sourceText(source),
       "data-moku-style": styleName(node, source),
-      "data-moku-bounds": rounded(rect).join(" ")
+      "data-moku-style-source": styleSource(source, block),
+      "data-moku-bounds": rounded(rect).join(" "),
+      "data-moku-ref-bounds":
+        node.refRect === undefined ? undefined : rounded(node.refRect).join(" "),
+      "data-moku-frame": String(frame)
     }
   };
 }
@@ -110,11 +142,11 @@ function proxyOf(node: SceneNode, rect: PageRect, context: ProxyContext): Proxy 
  * scene has none: its rects are not device px.
  *
  * @param scene - The scene.
- * @param context - The flow node and the source search results.
+ * @param context - The flow node, the source search results and the style blocks.
  * @returns The proxies, back to front.
  * @example
  * ```ts
- * proxyList(scene, { node: "board/awaitIntent", found: new Map() })[0]?.id; // "ui:boardScreen"
+ * proxyList(scene, { node: "board/awaitIntent", found: new Map(), blocks: new Map() })[0]?.id; // "ui:boardScreen"
  * ```
  */
 export function proxyList(scene: SceneSnapshot, context: ProxyContext): readonly Proxy[] {
@@ -124,35 +156,7 @@ export function proxyList(scene: SceneSnapshot, context: ProxyContext): readonly
   for (const id of scene.paintOrder) {
     const node = scene.nodes.get(id);
     if (node?.rect === undefined || !node.visible) continue;
-    (isLayoutOnly(node) ? layout : drawing).push(proxyOf(node, node.rect, context));
+    (isLayoutOnly(node) ? layout : drawing).push(proxyOf(node, node.rect, context, scene.frame));
   }
   return [...layout, ...drawing];
-}
-
-/**
- * The reference line of one node for the chat: `@moku <name> · <type> · <flow/node> ·
- * <file:line> · <x>,<y> <w>×<h>`; a part that is not known is left out.
- *
- * @param node - The node.
- * @param flowNode - "<flow>/<node>" of the game position.
- * @param source - The source search result of its key.
- * @returns The line.
- * @example
- * ```ts
- * referenceLine(coinPill, "board/awaitIntent", source); // "@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76"
- * ```
- */
-export function referenceLine(
-  node: SceneNode,
-  flowNode: string | undefined,
-  source: StyleSource | undefined
-): string {
-  const parts = [`@moku ${node.name}`, node.type];
-  if (flowNode !== undefined) parts.push(flowNode);
-  if (source !== undefined) parts.push(`${source.path}:${source.line}`);
-  if (node.rect !== undefined) {
-    const [x, y, w, h] = rounded(node.rect);
-    parts.push(`${x},${y} ${w}×${h}`);
-  }
-  return parts.join(" · ");
 }

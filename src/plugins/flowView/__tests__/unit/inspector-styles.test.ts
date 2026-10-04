@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StyleEditCode } from "../../../panels/shared/style-edit";
 import { actionsOf } from "../../actions";
 import { styleErrorText } from "../../inspector/styles";
-import { callsDefiner } from "../../inspector/styles-file";
 import { createTestCtx, flush, holdReads } from "../ctx";
 
 const STYLES = "features/ui/styles.ts";
@@ -131,14 +130,7 @@ describe("stylesFile auto-discovery (finding 16)", () => {
     expect(listed).not.toContain(".moku");
   });
 
-  it("counts a call on a line of code, not a comment or the definer's own definition", async () => {
-    expect(callsDefiner(DEFINES)).toBe(true);
-    expect(callsDefiner('const styles = kit.defineTextStyles({ "a": {} });')).toBe(true);
-    expect(callsDefiner(" * defineTextStyles({ a: {} });\n// defineTextStyles(")).toBe(false);
-    expect(callsDefiner("export function defineTextStyles(map: Record<string, unknown>) {")).toBe(
-      false
-    );
-    expect(callsDefiner("const x = undefineTextStyles(1);")).toBe(false);
+  it("skips a file that only mentions or defines the definer", async () => {
     const { ctx, fakes } = createTestCtx({
       config: { stylesFile: undefined },
       files: {

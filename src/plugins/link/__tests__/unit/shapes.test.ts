@@ -74,6 +74,18 @@ describe("readManifest", () => {
     ]);
   });
 
+  it("keeps a well-formed restored entry and drops a malformed one (R6)", () => {
+    const good = toObject(manifestOf());
+    const restored = { bookmark: '{"path":"home"}', frame: 1840 };
+
+    expect(readManifest({ ...good, restored })?.restored).toEqual(restored);
+    expect(readManifest({ ...good, restored: { bookmark: 1, frame: 1 } })).not.toHaveProperty(
+      "restored"
+    );
+    expect(readManifest({ ...good, restored: "yes" })).not.toHaveProperty("restored");
+    expect(readManifest(good)).not.toHaveProperty("restored");
+  });
+
   it("rejects bad descriptors", () => {
     const good = toObject(manifestOf());
     expect(readManifest({ ...good, game: 3 })).toBeUndefined();

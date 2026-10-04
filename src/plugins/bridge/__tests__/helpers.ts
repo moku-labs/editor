@@ -11,13 +11,15 @@ import type {
   SourceDescriptor
 } from "../../registry/protocol";
 import { decode, encode, request, wireError } from "../../registry/protocol";
-import type { SourceEntry } from "../../registry/types";
+import type { CommandEntry, SourceEntry } from "../../registry/types";
 import { createBridgeState } from "../state";
 import type {
   BridgeConfig,
   BridgeDeps,
   BridgeNet,
+  CheckpointStorage,
   HelloResponse,
+  ReloadSeam,
   SocketLike,
   TapEvent,
   TapOptions,
@@ -182,21 +184,99 @@ export const MANIFEST: Manifest = {
   commands: [{ id: "game.step", title: "Step", input: { frames: "number" }, effect: "cosmetic" }]
 };
 
-/** A fake registry slice: manifest and source descriptors. */
-export type FakeRegistry = BridgeDeps["registry"];
+/** A fake registry slice: manifest, source descriptors, commands and the clock. */
+export type FakeRegistry = BridgeDeps["registry"] & {
+  /** Command entries by id; empty unless a test adds one. */
+  readonly commands: Map<string, CommandEntry>;
+  /** What `clock()` answers. */
+  clockValue: { frame: number; paused: boolean };
+};
 
 /**
  * Builds the fake registry.
  *
- * @returns The fake.
+ * @returns The registry slice the bridge reads.
  */
 export function fakeRegistry(): FakeRegistry {
-  return {
+  const registry: FakeRegistry = {
+    commands: new Map(),
+    clockValue: { frame: 12, paused: false },
     manifest: () => MANIFEST,
     source: (id: string): SourceEntry | undefined => {
       const descriptor = SOURCES.find(source => source.id === id);
       if (descriptor === undefined) return undefined;
       return { descriptor, read: () => null, watch: noWatch };
+    },
+    command: (id: string) => registry.commands.get(id),
+    clock: () => registry.clockValue
+  };
+  return registry;
+}
+
+/**
+ * A command entry whose run is a mock.
+ *
+ * @param id - The command id.
+ * @param run - The run.
+ * @returns The entry.
+ */
+export function commandEntry(
+  id: string,
+  run: Mock<(raw: Json) => Promise<RunResult>>
+): CommandEntry {
+  return { descriptor: { id, title: id, input: {}, effect: "read" }, run };
+}
+
+/** A Map-backed sessionStorage double. */
+export type FakeStorage = CheckpointStorage & { readonly items: Map<string, string> };
+
+/**
+ * Builds the storage double.
+ *
+ * @returns The storage.
+ */
+export function fakeStorage(): FakeStorage {
+  const items = new Map<string, string>();
+  return {
+    items,
+    getItem: key => items.get(key) ?? null,
+    setItem: (key, value) => {
+      items.set(key, value);
+    },
+    removeItem: key => {
+      items.delete(key);
+    }
+  };
+}
+
+/** The reload seam double: a storage, a document id and a fireable beforeFullReload. */
+export type FakeReload = ReloadSeam & {
+  readonly storage: FakeStorage;
+  readonly listeners: Set<() => void>;
+  /** Fires bun:beforeFullReload. */
+  fire(): void;
+};
+
+/**
+ * Builds the reload seam double for document `doc`.
+ *
+ * @param doc - performance.timeOrigin of this document.
+ * @returns The seam.
+ */
+export function fakeReload(doc = 5000): FakeReload {
+  const listeners = new Set<() => void>();
+  return {
+    storage: fakeStorage(),
+    doc,
+    listeners,
+    onBeforeFullReload: listener => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    fire: () => {
+      for (const listener of listeners) listener();
     }
   };
 }
@@ -356,6 +436,8 @@ export type TestDeps = BridgeDeps & {
   readonly emit: Mock<(payload: AgentEvents["bridge:status"]) => void>;
   readonly net: FakeNet;
   readonly channel: FakeChannel;
+  readonly registry: FakeRegistry;
+  readonly reload: FakeReload;
 };
 
 /** The default config of the tests. */
@@ -385,6 +467,7 @@ export function createDeps(
     registry: fakeRegistry(),
     channel: fakeChannel(),
     net: fakeNet(),
+    reload: fakeReload(),
     page: overrides.page ?? {
       href: "http://127.0.0.1:3000/game.html",
       document: new EventTarget(),

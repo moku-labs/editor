@@ -2,11 +2,12 @@
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
  * children, the resolved style, the layout style card with its steppers (or the read-only call,
- * or where the key is defined), "Show in render tree" (workspace:reveal), "Pick another" and
- * "Copy reference" (one line for the chat).
+ * or where the key is defined, `(loop)` for a key built in a loop), the Code section (round 2b
+ * R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
+ * (workspace:reveal) and "Pick another".
  */
 import type { VNode } from "preact";
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { ancestorsOf, refId } from "../../panels/shared/scene";
 import type { StyleField } from "../../panels/shared/style-edit";
@@ -21,9 +22,11 @@ import {
   setPicker
 } from "../element/select";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
-import { copyReference } from "../reference/mode";
+import { referenceText } from "../reference/facts";
+import { copySelectedReference } from "../reference/pick";
 import { readManifest } from "../scene/manifest";
 import type { GameViewCtx, StyleCard, StyleLookup } from "../types";
+import { CodeSection } from "./CodeSection";
 import { styleValue } from "./text";
 import { useGameView } from "./useGameView";
 
@@ -213,6 +216,7 @@ function LookupNote(props: {
         <code data-part="where">
           {lookup.path}:{lookup.line}
         </code>{" "}
+        {lookup.loop === true && <span data-part="loop">(loop) </span>}
         <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.line)}>
           Open in Files
         </button>
@@ -265,6 +269,67 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
           {info.width}×{info.height} · {info.gpuMb.toFixed(2)} MB · {info.bundle}
         </span>
       )}
+    </section>
+  );
+}
+
+/**
+ * The full reference block of the node, read-only, with Copy (round 2 R2): Copy writes the card
+ * and puts its one line on the clipboard (round 2b R13). It is gathered again when the node, its
+ * style search, its style block, its bounds, the flow node or the last pick changes; not on every
+ * scene frame.
+ *
+ * @param props - The context, the scene, the node and the flow node.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.scene - The scene.
+ * @param props.node - The selected node.
+ * @param props.flowNode - "<flow>/<node>" of the game position (a change gathers again).
+ * @returns The section.
+ */
+function ReferenceSection(props: {
+  readonly ctx: GameViewCtx;
+  readonly scene: SceneSnapshot;
+  readonly node: SceneNode;
+  readonly flowNode: string | undefined;
+}): VNode {
+  const { ctx, scene, node, flowNode } = props;
+  const { state } = ctx;
+  const [text, setText] = useState<string | undefined>();
+  const block = node.key === undefined ? undefined : state.blocks.get(node.key);
+  const where = block === undefined ? undefined : `${block.path}:${block.line}`;
+  const bounds = node.rect === undefined ? undefined : Object.values(node.rect).join(",");
+  useEffect(() => {
+    let alive = true;
+    referenceText(ctx, node, scene).then(
+      next => {
+        if (alive) setText(next);
+      },
+      (error: unknown) => {
+        ctx.log.warn("gameView: reference block failed", { error });
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [node.id, state.lookup?.status, where, bounds, flowNode, state.pick]);
+
+  return (
+    <section data-part="reference-block" aria-label="Reference">
+      <header>
+        <h4>Reference</h4>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-action="copy-reference"
+          title="Write the reference card and copy its line for the chat"
+          onClick={() => void copySelectedReference(ctx)}
+        >
+          Copy
+        </button>
+      </header>
+      <pre data-part="reference" aria-busy={text === undefined}>
+        {text ?? "Gathering the reference…"}
+      </pre>
     </section>
   );
 }
@@ -370,21 +435,14 @@ function NodeDetails(props: {
       {node.ref.kind === "ui" && node.key !== undefined && (
         <StyleSection ctx={ctx} nodeKey={node.key} />
       )}
+      <CodeSection key={node.id} ctx={ctx} node={node} />
+      <ReferenceSection ctx={ctx} scene={scene} node={node} flowNode={flowNode} />
       <footer>
         <button type="button" data-variant="ghost" onClick={() => revealElement(ctx, node.ref)}>
           Show in render tree
         </button>
         <button type="button" data-variant="ghost" onClick={() => setPicker(ctx, true)}>
           Pick another
-        </button>
-        <button
-          type="button"
-          data-variant="ghost"
-          data-action="copy-reference"
-          title="Copy a one-line reference for the chat"
-          onClick={() => copyReference(ctx, node, flowNode)}
-        >
-          Copy reference
         </button>
       </footer>
     </div>

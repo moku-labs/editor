@@ -6,7 +6,7 @@
 - Peer dependency: `@moku-labs/game >= 0.0.2` (`game.effects` needs 0.0.3)
 - Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both.
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
-- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--help]` (Bun only)
+- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` turns it off.
 - Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
 - Built for a narrow pane: Claude's browser pane at 1/3 (480 px) or 1/2 (720 px) of the screen; every workspace works at 480 px.
 
@@ -33,12 +33,38 @@
 - Command `effect`: `read`, `route`, `cosmetic`, `cheat`, `raw`. Editor-owned commands (`editor.*`) cannot be `cheat` or `raw`.
 - Sessions: one per connected game page, id `s-` + 4 hex. Tools pick one: sticky choice, then this tab's own game frame (`__editorFrame`), then newest embedded, then newest.
 - Heartbeat: `{ frame, paused, at, heap? }`; `heap { usedMb, limitMb }` only in Chromium. Taps: the bridge sends `tap { x, y, at }` per pointerdown (at most one per 50 ms); `link.onTap` gets them; workspace draws ripples.
-- Tools page: Game is the default workspace; ⌘1–⌘6 = Game, Flow, Render, State, Files, Console. Density `auto` (compact below 820 px) / `compact` / `comfortable`. Reference mode (key R) lays `data-moku-*` proxies over the game elements; "Copy reference" copies an `@moku …` line for the chat. The pinned preview plays the game; S/M/L sizes it. Views' side panels are one `SidePanel` (resize, collapse, close, reopen, overlay drawer).
+- Tools page: Game is the default workspace; ⌘1–⌘6 = Game, Flow, Render, State, Files, Console. Density `auto` (compact below 820 px) / `compact` / `comfortable`. Reference mode (key R) lays `data-moku-*` proxies over the game elements. The pinned preview plays the game; S/M/L sizes it. Views' side panels are one `SidePanel` (resize, collapse, close, reopen, overlay drawer).
+- Top bar (round 2, 2b R15): from 900 px it shows the Preview (G), Overlay (O) and Hot reload (H) switches with labels, Reference mode, Registry (icon; counts in its title) and theme. Below 900 px it is compact: logo, game name, link pill (session in its title), Pause and Step as icons (labels are their accessible names), the Reference mode icon toggle (target, `aria-pressed`, R) and the Hot reload icon toggle (flame with a dot while on, H), a search icon and a ⋯ menu (`data-action="more"`) holding Game preview, Overlay in game, Reference mode, Hot reload, Registry, Density and Theme, each with its state and key. At 560 px and narrower the game name and the Hot reload icon go (Hot reload stays in ⋯). The icons share the `data-action` of the menu rows: `[data-ui=top-bar] > [data-action=reference]`, `[data-ui=more-menu] [data-action=reference]`.
+- Pick for the chat (round 2, 2b R13): a picker click or a Reference proxy click bookmarks the game (`gameView.bookmarks()`), saves `<capturesDir>/<key>-f<frame>.png` (the element + 8 px) and `<capturesDir>/f<frame>.png` (the frame), writes the card `<capturesDir>/<key>-f<frame>.md` (`-2` … when taken) and puts ONE line on the clipboard. "Copy reference" in the Element tab writes the card of the selection again and copies its line (`copyReference()` returns it):
+
+  ```text
+  @moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md
+  ```
+
+  Line fields: name and type, flow/node, the `file:line` of the key (an entity: the line that defines its projection), `ref` bounds in the game's reference units, the card path; an unknown field is left out. The card is Markdown: `# @moku <name> <type>`, the full reference block in a `text` fence, `## JSX · <file:line>` and `## Style · <name> · <file:line>` fenced snippets (an entity: `## Spawned by <projection> · <file:line>` and its components), then `![element](<key>-f<frame>.png)` and `![frame](f<frame>.png)`. The block in the card:
+
+  ```text
+  @moku settingsBoard · panel · settingsPopup/open · f212
+  path: settingsScreen/settingsBoard
+  source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+  layout: settingsScreen (column, padding 0/0/0/0)
+  bounds: 24,233 346×386 px · ref 65,641 950×1060
+  state: visible
+  flow: board > settings > open · last: board/settings/enter → done
+  game: merge-game 0.0.0 · s-1f12 · f212 · 15:31:13 · live · clean
+  device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
+  restore: bookmark settingsBoard-f210
+  shot: .moku/captures/settingsBoard-f212.png · frame: .moku/captures/f212.png
+  ```
+
+  An unknown line or field is left out. `bounds` is device px, then the game's reference units (`SceneNode.refRect`). `restore` names the kept bookmark: `panels.run("game.restore", { bookmark: gameView.bookmarks()[0].value })` goes back to it.
+- Devices (round 2b R9, R10): twenty-one presets grouped iPhone (SE 3 · small, 2022 with the home-button frame, 15, 17e approx, Air approx, 18 Pro approx — the default, 18 Pro Max approx, then 15 Pro Max, 16 Pro, 16 Pro Max), Android (Galaxy S24, Galaxy A55, Redmi Note 13 approx, Pixel 8, Xperia 1 V 21:9), Foldable (Galaxy Z Fold 6 approx, Galaxy Z Flip 6, Pixel 9 Pro Fold approx, iPhone Duo approx: cover 466×678, inner 890×626 landscape-wide; the folding ones with Fold/Unfold), Tablet (iPad mini 7, iPad Air 11"), Desktop. Each has `dpr`, safe insets (Android, foldable and tablet report 0), a screen `radius` and `frame` (`"modern"` | `"home-button"`); the docked frame is clipped round. Fit is one scale per kind (the tallest preset of the kind, bezel included), so an SE shows smaller than an 18 Pro Max; foldables are phones; 100 % is 1 CSS px per px.
+- Game toolbar (round 2b): a Sound switch (key M in Game) runs `game.mute { muted }` when the manifest lists it and keeps the flag (`workspace.muted()`, `setMuted(on)`, re-applied to every game that connects); without `game.mute` (game 0.1.0) it is dimmed, title "Needs @moku-labs/game with game.mute". The Element tab's Code section (`data-part="code"`) shows the picked element's JSX and its `defineStyle` block with `file:line`, Open in Files and highlighting (20 lines, then "Show all N lines"); an entity shows "Spawned by <projection> · <file:line>" and its components. The capture card (Shot, pick, Series) is compact: a 56 px thumbnail, one line each for the title, the path (cut in the middle, the whole path in `title`) and `f<frame> · <device>`, then Copy link, Open and (a pick) Reference; at most 360 × 120 px.
 - LinkStatus: `connecting`, `live { frame }`, `paused { frame }`, `silent { since, lastFrame }`, `lost { reason, lastFrame, retryInMs }`, `empty`.
 - Panels are data (D-04): `definePanel` returns a frozen spec; the `panels` host owns subscriptions, first-value waiting, stale marking, teardown.
 - Views never depend on each other (D-13): cross-view intents are global tools events (`workspace:open-file`, `workspace:select-node`, …).
 - One game iframe (D-14): `workspace` owns it and never moves it in the DOM; views dock it and draw in its overlay.
-- Live edits (D-07): save → `game.bookmark` → reload the frame → `game.restore` on reconnect. The session reads tainted.
+- Live edits (D-07, D-23): with Bun hot reload on (the bin's default) a save of a game source makes Bun reload the game page; the bridge stores a `game.bookmark` checkpoint in `sessionStorage` before and restores it after (hello `manifest.restored`), toast "Game reloaded · state restored". Without it (`--no-hmr`, a game's own server, or no new page within `hotReloadWaitMs`) the editor runs D-07: `game.bookmark` → reload the frame → `game.restore` on reconnect. The session reads tainted. The Hot reload switch (key H) shows the state; Bun cannot change it on a running server, so it says to restart the bin with or without `--no-hmr` (the refused POST answers 200 with the state, so nothing is logged). Measured on merge-game (e2e/edit-loop.spec.ts): save → updated frame with state restored in about 0.8 s (a recolour, read back from captured frames, about 1.1 s).
 - Files sandbox (D-09): `files` works under one root, allowlist + denylist, realpath check, atomic writes, optional sha1 `version`.
 - Security: the server binds 127.0.0.1 only; Host, Origin and a per-start 43-char token gate every upgrade. The token is never logged or printed.
 - Tools page ships prebuilt (D-06): `bun run build:tools` bundles `src/plugins/pages/page/` into `dist/tools/`; `pages` serves it.
@@ -159,8 +185,12 @@ hub.websocket: HubWebSocketHandler
 hub.addRoutes(routes: EditorRoutes): void
 hub.guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined
 hub.path(): string
+hub.publish(method: "hotReload", params: HotReload): void   // to every tools socket; replayed after each tools hello
 
 pages.routes(): EditorRoutes
+pages.attachServer(server, options): void        // the bin calls it right after Bun.serve
+pages.hotReload(): HotReload                     // { hmr, owner: "bin" | "server" }
+pages.setHotReload(on: boolean): Promise<boolean> // false: Bun cannot switch HMR live
 ```
 
 ### Tools APIs
@@ -178,11 +208,14 @@ link.frameUrl(url: string): string / link.isOtherTab(page: string): boolean
 link.onTap(listener: (tap: Tap) => void): () => void
 link.heap(): { usedMb, limitMb } | undefined      // Chromium page heap from the last heartbeat
 link.files: { list, read, write, writeBinary(path, dataUrl), readBinary }
+link.hotReload(): HotReload | undefined / onHotReload(listener) / setHotReload(on): Promise<boolean>
 
 workspace.active() / show(ws) / theme() / setTheme(theme?) / density() / setDensity(choice) / preview(ws) / setPreview(ws, patch)
 workspace.device() / setDevice(patch) / devices() / gameFrame() / palette.add(item) / palette.open(query?)
 workspace.toast(message, file?) / mount(element) / host(ws) / badge(ws, badge?) / previewZone(ws, el, insets?)
 workspace.keys.bind(binding) / keys.escape(layer, close) / overlayInGame() / setOverlayInGame(on) / reference() / setReference(on) / onPrefs(fn)
+workspace.muted() / setMuted(on)                  // the sound flag, persisted; gameView sends game.mute
+workspace.setDevice({ preset?, orientation?, folded? }) / hotReload() / setHotReload(on)
 
 panels.register(panel: PanelSpec): void
 panels.run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>
@@ -196,6 +229,8 @@ flowView.layout.{ pinnedCount, reset }
 
 gameView.pick(on?) / selected() / select(ref?) / inspect(ref) / scene() / locate(ref) / highlight(ref?)
 gameView.manifest() / capture() / series({ durationMs, intervalMs, label? }) / stopSeries() / openSheet(indexPath)
+gameView.copyReference(): Promise<string | undefined>   // writes the card of the selection, puts its one line on the clipboard, returns the line
+gameView.fold(inner?) / bookmarks(): readonly PickBookmark[]   // { id, frame, key, at, value }, newest first, 20 at most
 
 renderView.refresh() / snapshot() / reveal(ref) / highlight(ref?) / sortTextures(key) / filterBundle(bundle)
 // snapshot().tiles.heap: { kind: "value", usedMb, limitMb } in Chromium, else { kind: "absent" }; tiles.effectsInstalled: false without effectsPlugin
@@ -246,22 +281,22 @@ One line each: core · tier · purpose · key methods · events (E = emits, H = 
 - registry · agent · Complex · wraps game doors, `.dev` modules and `editor.*` commands into entries; builds the Manifest; probes door sources (not installed → `available: false`, -32008); owns `./protocol` · `manifest`, `source`, `command`, `add`, `envelope`, `clock` · no events
 - channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms, `heap` in Chromium) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
 - overlay · agent · Standard · Preact card over the game: render chips and one-click cheats; off by default; adds command `editor.overlay` · `open`, `close`, `isOpen` · H `bridge:status`
-- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s · `status`, `session` · E `bridge:status`
+- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s, a checkpoint in sessionStorage across Bun's reload · `status`, `session` · E `bridge:status`
 - capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own; takes `game.capture` as a data URL (game 0.1) or `{ png }` (game 0.4) · no app api · no events
 
 ### Server core (`editor-server`)
 
 - files · server · Standard · project-root sandbox: list, read, atomic write with sha1 version, image captures under `.moku/captures/` · `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` · E `files:written`
-- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `path` · E `hub:session`
-- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*` and `/hello`; home of the `moku-editor` bin · `routes` · no events
+- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure, the `hotReload` notification; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` · E `hub:session`
+- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*`, `/hello` and `/hmr`; home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`) · `routes`, `attachServer`, `hotReload`, `setHotReload` · no events
 
 ### Tools core (`editor-tools`)
 
-- link · tools · Complex · the tools page's only connection: boot JSON, socket, session choice, remote EditorChannel, files client, link status, taps and heap; a -32008 watch is not logged or retried · `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `session`, `choose`, `retry`, `boot`, `frameUrl`, `isOtherTab`, `onTap`, `heap`, `files` · E `link:status`
-- workspace · tools · Complex · the shell: top bar, rail (Game first and default), palette, toasts, keys, Esc unwinding, prefs (theme, density, preview, device, Show taps), one game iframe with a playable pinned preview, tap ripples, Reference mode, D-07 reload, overlay-in-game switch · `show`, `density`, `setDensity`, `reference`, `setReference`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `badge`, `setOverlayInGame` · E `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; H `link:status`
+- link · tools · Complex · the tools page's only connection: boot JSON, socket, session choice, remote EditorChannel, files client, link status, taps and heap; a -32008 watch is not logged or retried · `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `session`, `choose`, `retry`, `boot`, `frameUrl`, `isOtherTab`, `onTap`, `heap`, `files`, `hotReload`, `onHotReload`, `setHotReload` · E `link:status`
+- workspace · tools · Complex · the shell: top bar (compact with a ⋯ menu below 900 px), rail (Game first and default), palette, toasts, keys, Esc unwinding, prefs (theme, density, preview, device and fold, Show taps, sound), twenty-one device presets (default iPhone 18 Pro), the compact bar's Reference and Hot reload icons, one game iframe with a playable pinned preview, tap ripples, Reference mode, D-07 reload and Bun hot reload, overlay-in-game and Hot reload switches · `show`, `density`, `setDensity`, `reference`, `setReference`, `device`, `setDevice`, `devices`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `badge`, `setOverlayInGame`, `hotReload`, `setHotReload` · E `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; H `link:status`
 - panels · tools · Standard · panel host for `definePanel` specs; holds `shared/` view modules (scene, style edit, highlight, `SidePanel`) · `register`, `run`, `list`, `mountInto` · E `workspace:ran`; H `link:status`, `workspace:changed`
-- flowView · tools · VeryComplex · Flow workspace: flow-graph canvas with ELK (spacing by density, labels never overlap), focus, Info-tab neighbours with followEdge (frames both ends, pulse), Find current, trail, code and style inspector · `camera`, `focus`, `flows`, `layout` · E `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`
-- gameView · tools · Complex · Game workspace (the default): device stage, picker, style card, Reference mode proxies and "Copy reference", screenshots, series, contact sheet · `pick`, `inspect`, `scene`, `locate`, `highlight`, `capture`, `series`, `stopSeries`, `openSheet` · E `workspace:reveal`, `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`
+- flowView · tools · VeryComplex · Flow workspace: flow-graph canvas with ELK (spacing by density, labels never overlap), focus, Info-tab neighbours with followEdge (frames both ends, pulse), Find current, trail, an item holding the current node is never dimmed and says "here", code and style inspector · `camera`, `focus`, `flows`, `layout` · E `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`
+- gameView · tools · Complex · Game workspace (the default): device stage (grouped presets, one Fit scale per kind, modern and home-button frames, Fold/Unfold), Sound switch, picker, style card, Code section, Reference mode proxies, a pick that bookmarks, saves two PNGs, writes the card file and copies one line, screenshots, series, compact capture card, contact sheet · `pick`, `inspect`, `scene`, `locate`, `highlight`, `capture`, `series`, `stopSeries`, `openSheet`, `copyReference`, `fold`, `bookmarks` · E `workspace:reveal`, `workspace:open-file`; H `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`
 - renderView · tools · Standard · Render workspace: tiles (JS heap in Chromium, FPS rest note, "Effects not installed in this game"), render tree, textures, bundles, pools, release log · `refresh`, `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle` · E `workspace:inspect`; H `workspace:changed`, `link:status`, `workspace:reveal`
 - stateView · tools · Standard · State workspace: player/session trees, last commit derived by diffing `game.model`, runner card · `lastCommit`, `note`, `onCommit`, `tainted`, `graph`, `expanded`, `setExpanded`, `expandAll` · H `link:status`, `workspace:ran`
 - filesView · tools · Complex · Files workspace: tree, tabs, viewer, editor, previews, conflict bar, Used by · `open`, `close`, `save`, `resolveConflict`, `refresh`, `fileOf`, `flowFileOf`, `usedBy`, `editorUrl`, `subscribe` · E `workspace:select-node`, `workspace:open-sheet`; H `link:status`, `workspace:changed`, `workspace:open-file`
@@ -284,7 +319,7 @@ tools:  link → workspace → panels → flowView, gameView, renderView, stateV
 - Agent → hub: `hello { manifest }` (first, else close 1008), `heartbeat`, `value { sub, value }`, `tap { x, y, at }`, `bye`.
 - Hub → agent: requests `manifest`, `read`, `watch`, `unwatch`, `run` (channel `game`); notification `session` (channel `editor`).
 - Tools → hub: `game` channel `manifest`, `read`, `run`, `watch`, `unwatch`; `files` channel `list`, `read`, `write`, `writeBinary`, `readBinary`.
-- Hub → tools: `sessions { list }`, `session`, forwarded `heartbeat`, `value` and `tap`.
+- Hub → tools: `sessions { list }`, `session`, `hotReload { hmr, owner }` (channel `editor`), forwarded `heartbeat`, `value` and `tap`.
 - Error codes: -32600 invalid request, -32601 unknown method/id, -32602 invalid input, -32000 command failed, -32001 game reloaded (retryable), -32002 timeout / link closed (retryable), -32003 no session / choose session, -32004 forbidden path, -32005 version conflict, -32006 not JSON, -32007 unauthorized, -32008 not installed (the game does not have the source). Every message starts with `[moku-editor] `.
 
 ## File structure
@@ -313,7 +348,7 @@ scripts/build-tools.ts   bundles the tools page into dist/tools
 
 ## Scripts
 
-`bun run build` (tsdown + build:tools) · `bun run build:tools` · `bun run typecheck` · `bun run test` · `bun run test:unit` · `bun run test:integration` · `bun run test:coverage` · `bun run lint` · `bun run lint:fix` · `bun run format` · `bun run validate`
+`bun run build` (tsdown + build:tools) · `bun run build:tools` · `bun run typecheck` · `bun run test` · `bun run test:unit` · `bun run test:integration` · `bun run test:coverage` · `bun run test:e2e` (Playwright: four Chromium windows 480–1440 px; e2e/edit-loop.spec.ts prints save → frame ms per edit) · `bun run lint` · `bun run lint:fix` · `bun run format` · `bun run validate`
 
 ## Docs
 

@@ -19,14 +19,15 @@ afterEach(() => {
 });
 
 describe("defaultStoredPrefs", () => {
-  it("has no chosen theme, S bottom-right previews and the iPhone 15 portrait", () => {
+  it("has no chosen theme, S bottom-right previews, the iPhone 18 Pro portrait and sound on", () => {
     const prefs = defaultStoredPrefs();
     expect(prefs.theme).toBeUndefined();
     expect(Object.keys(prefs.previews)).toEqual(["flow", "render", "state", "files", "console"]);
     expect(prefs.previews.flow).toEqual({ visible: true, size: "S", corner: "bottom-right" });
-    expect(prefs.device).toEqual({ preset: "iphone-15", orientation: "portrait" });
+    expect(prefs.device).toEqual({ preset: "iphone-18-pro", orientation: "portrait" });
     expect(prefs.density).toBe("auto");
     expect(prefs.showTaps).toBe(true);
+    expect(prefs.muted).toBe(false);
   });
 });
 
@@ -38,7 +39,8 @@ describe("loadPrefs / savePrefs", () => {
       theme: "dark",
       device: { preset: "pixel-8", orientation: "landscape" },
       density: "compact",
-      showTaps: false
+      showTaps: false,
+      muted: true
     };
     prefs.previews.render = { visible: false, size: "L", corner: "top-left" };
 
@@ -48,7 +50,7 @@ describe("loadPrefs / savePrefs", () => {
     expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("a record from before density and taps loads them as defaults, silently", () => {
+  it("a record from before density, taps and sound loads them as defaults, silently", () => {
     const log = createLog();
     localStorage.setItem(
       KEY,
@@ -58,11 +60,11 @@ describe("loadPrefs / savePrefs", () => {
         device: { preset: "iphone-15", orientation: "portrait" }
       })
     );
-    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true });
+    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true, muted: false });
     expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("an unknown density or showTaps takes the default with one warn naming them", () => {
+  it("an unknown density, showTaps or muted takes the default with one warn naming them", () => {
     const log = createLog();
     localStorage.setItem(
       KEY,
@@ -71,12 +73,13 @@ describe("loadPrefs / savePrefs", () => {
         previews: {},
         device: { preset: "iphone-15", orientation: "portrait" },
         density: "cosy",
-        showTaps: "yes"
+        showTaps: "yes",
+        muted: 1
       })
     );
-    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true });
+    expect(loadPrefs(KEY, log)).toMatchObject({ density: "auto", showTaps: true, muted: false });
     expect(log.warn).toHaveBeenCalledWith("workspace:prefs", {
-      invalid: ["density", "showTaps"]
+      invalid: ["density", "showTaps", "muted"]
     });
   });
 
@@ -137,18 +140,63 @@ describe("loadPrefs / savePrefs", () => {
     expect(prefs.previews.flow).toEqual({ visible: false, size: "M", corner: "top-right" });
     expect(prefs.previews.render).toEqual(defaultStoredPrefs().previews.render);
     expect(prefs.previews.files).toEqual(defaultStoredPrefs().previews.files);
-    expect(prefs.device).toEqual({ preset: "iphone-15", orientation: "landscape" });
+    expect(prefs.device).toEqual({ preset: "iphone-18-pro", orientation: "landscape" });
     expect(log.warn).toHaveBeenCalledTimes(1);
     expect(log.warn).toHaveBeenCalledWith("workspace:prefs", {
       invalid: ["theme", "previews.render", "previews.files", "device.preset"]
     });
   });
 
+  it("keeps the folded flag of a foldable; a record without it loads folded (absent)", () => {
+    const log = createLog();
+    const prefs: StoredPrefs = {
+      ...defaultStoredPrefs(),
+      device: { preset: "galaxy-z-fold-6", orientation: "portrait", folded: false }
+    };
+    savePrefs(KEY, prefs, log);
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "galaxy-z-fold-6",
+      orientation: "portrait",
+      folded: false
+    });
+
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "pixel-9-pro-fold", orientation: "portrait" }
+      })
+    );
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "pixel-9-pro-fold",
+      orientation: "portrait"
+    });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a folded flag that is not a boolean is dropped with a warn", () => {
+    const log = createLog();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "galaxy-z-fold-6", orientation: "portrait", folded: "no" }
+      })
+    );
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "galaxy-z-fold-6",
+      orientation: "portrait"
+    });
+    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", { invalid: ["device.folded"] });
+  });
+
   it("a bad orientation and missing previews fall back too", () => {
     const log = createLog();
     localStorage.setItem(KEY, JSON.stringify({ v: 1, device: { orientation: "upside" } }));
     const prefs = loadPrefs(KEY, log);
-    expect(prefs.device).toEqual({ preset: "iphone-15", orientation: "portrait" });
+    expect(prefs.device).toEqual({ preset: "iphone-18-pro", orientation: "portrait" });
     expect(prefs.previews).toEqual(defaultStoredPrefs().previews);
     expect(log.warn).toHaveBeenCalledWith("workspace:prefs", {
       invalid: ["previews", "device.preset", "device.orientation"]

@@ -1,4 +1,4 @@
-/* flowView · sub-flow frame (G): head with the frame line, Collapse and Enter; accent border while on the stack. The frame background is empty canvas (M2). No @layer wrapper (R7). */
+/* flowView · sub-flow frame (G): head with the frame line, Collapse and Enter; accent border while on the stack, the accent ring and a "here" tag while the current node is inside. The frame background is empty canvas (M2). No @layer wrapper (R7). */
 
 @scope ([data-flow="frame"]) {
   :scope {
@@ -9,6 +9,11 @@
 
   :scope[data-on-stack] {
     border-color: var(--accent);
+  }
+
+  /* The current node is inside: the accent ring of the current card (finding 7). */
+  :scope[data-holds-current] {
+    box-shadow: 0 0 0 4px var(--accent-soft);
   }
 
   /* The root frame is the quiet outline of the whole graph (design G): solid, empty, never accent. */
@@ -31,6 +36,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  [data-tag="here"] {
+    flex: none;
+    padding: 0 6px;
+    border-radius: var(--radius-4);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--font-size-11);
   }
 
   button {

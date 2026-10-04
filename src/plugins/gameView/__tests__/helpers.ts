@@ -10,7 +10,7 @@ import type { PageRect } from "../../panels/shared/scene";
 import type { PanelSpec, PanelsApi } from "../../panels/types";
 import type { Json, LinkStatus, Manifest, RunResult, WireError } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
-import { DEVICES, presetOf } from "../../workspace/devices";
+import { DEVICES, presetOf, screenOf } from "../../workspace/devices";
 import type {
   DevicePresetId,
   EscLayer,
@@ -52,6 +52,21 @@ export const CONFIG: GameViewConfig = {
 /** A 1×1 PNG data URL. */
 export const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+/** The opening of a template placeholder as text, built so no string literal holds one. */
+const PLACEHOLDER = ["$", "{"].join("");
+
+/**
+ * The source text of a template literal that builds a key in a loop: `` `card${slot}` ``.
+ *
+ * @param stem - The text before the placeholder ("card").
+ * @param variable - The expression inside it ("slot").
+ * @param rest - The text after it ("Picture"); empty by default.
+ * @returns The literal as source text, backticks included.
+ */
+export function templateOf(stem: string, variable: string, rest = ""): string {
+  return `\`${stem}${PLACEHOLDER}${variable}}${rest}\``;
+}
 
 /** One capture of the three scene sources plus game.rect of some keys (panels fixtures). */
 export type SceneCapture = {
@@ -205,6 +220,9 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       isOtherTab: () => false,
       onTap: vi.fn(() => noop),
       heap: vi.fn(() => undefined),
+      hotReload: vi.fn(() => undefined),
+      onHotReload: vi.fn(() => noop),
+      setHotReload: vi.fn(() => Promise.resolve(false)),
       files: store
     },
     send(id, value) {
@@ -230,15 +248,19 @@ export type WorkspaceMock = {
   readonly release: Mock<() => void>;
   readonly reload: Mock<GameFrame["reload"]>;
   readonly setOverlayInGame: Mock<WorkspaceApi["setOverlayInGame"]>;
+  readonly setMuted: Mock<WorkspaceApi["setMuted"]>;
   activeValue: WorkspaceId;
-  device: { preset: DevicePresetId; orientation: Orientation };
+  /** The sound flag `muted()` answers. */
+  mutedValue: boolean;
+  /** `folded` absent = folded (the cover screen), as workspace stores it. */
+  device: { preset: DevicePresetId; orientation: Orientation; folded?: boolean };
   overlayOn: boolean;
   box: FrameBox | undefined;
   overlayElement: HTMLElement | undefined;
   /** Called by show(); the test wires it to the hook it wants to see. */
   onShow: (ws: WorkspaceId) => void;
   /** Sets the device and calls every onPrefs listener. */
-  changeDevice(preset: DevicePresetId, orientation: Orientation): void;
+  changeDevice(preset: DevicePresetId, orientation: Orientation, folded?: boolean): void;
 };
 
 /**
@@ -263,6 +285,9 @@ export function createWorkspaceMock(): WorkspaceMock {
     workspace.overlayOn = on;
     return Promise.resolve();
   });
+  const setMuted = vi.fn<WorkspaceApi["setMuted"]>((on: boolean) => {
+    workspace.mutedValue = on;
+  });
   const prefs = (): Prefs => ({
     theme: "light",
     previews: {
@@ -272,7 +297,12 @@ export function createWorkspaceMock(): WorkspaceMock {
       files: { visible: true, size: "S", corner: "bottom-right" },
       console: { visible: true, size: "S", corner: "bottom-right" }
     },
-    device: { preset: presetOf(workspace.device.preset), orientation: workspace.device.orientation }
+    device: {
+      preset: screenOf(presetOf(workspace.device.preset), workspace.device.folded ?? true),
+      orientation: workspace.device.orientation,
+      folded: workspace.device.folded ?? true
+    },
+    muted: workspace.mutedValue
   });
   const workspace: WorkspaceMock = {
     items,
@@ -285,14 +315,16 @@ export function createWorkspaceMock(): WorkspaceMock {
     release,
     reload,
     setOverlayInGame,
+    setMuted,
     activeValue: "flow",
-    device: { preset: "iphone-15", orientation: "portrait" },
+    mutedValue: false,
+    device: { preset: "iphone-15", orientation: "portrait", folded: true },
     overlayOn: false,
     box: { left: 100, top: 50, width: 393, height: 852, scale: 1, docked: "stage" },
     overlayElement: undefined,
     onShow: () => {},
-    changeDevice(preset, orientation) {
-      workspace.device = { preset, orientation };
+    changeDevice(preset, orientation, folded = true) {
+      workspace.device = { preset, orientation, folded };
       for (const fn of prefsListeners) fn(prefs());
     },
     api: {
@@ -311,13 +343,18 @@ export function createWorkspaceMock(): WorkspaceMock {
       }),
       setPreview: vi.fn(),
       device: () => ({
-        preset: presetOf(workspace.device.preset),
-        orientation: workspace.device.orientation
+        preset: screenOf(presetOf(workspace.device.preset), workspace.device.folded ?? true),
+        orientation: workspace.device.orientation,
+        folded: workspace.device.folded ?? true
       }),
       setDevice: vi.fn(patch => {
+        const preset = patch.preset ?? workspace.device.preset;
+        const kept = patch.preset === undefined ? workspace.device.folded : undefined;
+        const folded = patch.folded ?? kept ?? true;
         workspace.device = {
-          preset: patch.preset ?? workspace.device.preset,
-          orientation: patch.orientation ?? workspace.device.orientation
+          preset,
+          orientation: patch.orientation ?? workspace.device.orientation,
+          folded
         };
       }),
       devices: () => DEVICES,
@@ -370,6 +407,10 @@ export function createWorkspaceMock(): WorkspaceMock {
       setOverlayInGame,
       reference: () => false,
       setReference: vi.fn(),
+      hotReload: () => undefined,
+      setHotReload: vi.fn(() => Promise.resolve(false)),
+      muted: () => workspace.mutedValue,
+      setMuted,
       onPrefs: fn => {
         prefsListeners.add(fn);
         return () => {

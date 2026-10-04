@@ -46,7 +46,7 @@ function createCtx(config: Partial<PagesConfig> = {}) {
 }
 
 describe("initPages", () => {
-  it("resolves the page folder, builds the routes and calls addRoutes once with four keys", () => {
+  it("resolves the page folder, builds the routes and calls addRoutes once with five keys", () => {
     const { ctx, hub } = createCtx();
     initPages(ctx);
     expect(ctx.state.pageDir).toBe(pageDir);
@@ -56,6 +56,7 @@ describe("initPages", () => {
       "/__editor",
       "/__editor/",
       "/__editor/hello",
+      "/__editor/hmr",
       "/__editor/assets/*"
     ]);
   });

@@ -158,13 +158,17 @@ async function show(page: Page, ws: string): Promise<void> {
 }
 
 /**
- * The session chip of a tools page.
+ * The session a tools page follows: the session chip from 900 px, the link pill's tooltip in the
+ * compact top bar below 900 px ("… · session s-7f3a · connected 22:41:07", round 2 R1).
  *
  * @param target - A tools page.
- * @returns The locator.
+ * @returns The session id, "" while none shows.
  */
-function chip(target: Page): Locator {
-  return target.locator("[data-ui=session-chip] button");
+async function sessionOf(target: Page): Promise<string> {
+  const chip = target.locator("[data-ui=session-chip] button");
+  if ((await chip.count()) > 0) return ((await chip.textContent()) ?? "").trim();
+  const title = (await target.locator("[data-ui=link-pill]").getAttribute("title")) ?? "";
+  return /session (s-[0-9a-f]{4})/.exec(title)?.[1] ?? "";
 }
 
 test.describe("qa · a save during a save", () => {
@@ -266,10 +270,10 @@ test.describe("qa · a save while paused", () => {
     expect(original.length).toBeGreaterThan(0);
     const pill = page.locator("[data-ui=link-pill]");
     const pause = page.locator("[data-ui=top-bar] [data-action=pause]");
-    const pageChip = chip(page);
     await pause.click();
     await expect(pill).toHaveAttribute("data-kind", "paused");
-    const old = (await pageChip.textContent()) ?? "";
+    const old = await sessionOf(page);
+    expect(old).toMatch(/^s-[0-9a-f]{4}$/);
     try {
       await tools.show("files");
       const host = files(page);
@@ -281,7 +285,7 @@ test.describe("qa · a save while paused", () => {
       await page.keyboard.press("ControlOrMeta+s");
 
       await expect.poll(() => readGameFile(rel)).toBe(`${original}// qa paused\n`);
-      await expect(pageChip).not.toHaveText(old, { timeout: 30_000 });
+      await expect.poll(() => sessionOf(page), { timeout: 30_000 }).not.toBe(old);
       await expect(pill).toHaveAttribute("data-kind", "paused", { timeout: 30_000 });
       await expect(pause).toHaveText("Resume");
     } finally {
@@ -320,16 +324,16 @@ test.describe("qa · watches across workspaces", () => {
     await expect.poll(open).toBe(atRest);
 
     // A game reload: the new session gets its own watches, each source delivers once per value.
-    const pageChip = chip(page);
-    const old = (await pageChip.textContent()) ?? "";
+    const old = await sessionOf(page);
+    expect(old).toMatch(/^s-[0-9a-f]{4}$/);
     await show(page, "game");
     await page.locator("[data-workspace-host=game] [data-game=toolbar] [data-part=reload]").click();
     await show(page, "state");
-    await expect(pageChip).not.toHaveText(old, { timeout: 30_000 });
+    await expect.poll(() => sessionOf(page), { timeout: 30_000 }).not.toBe(old);
     await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
       timeout: 30_000
     });
-    const session = (await pageChip.textContent()) ?? "";
+    const session = await sessionOf(page);
     const watched = (): Frame[] =>
       sent.filter(frame => frame.method === "watch" && frame.session === session);
     await expect.poll(() => watched().length).toBeGreaterThan(0);
@@ -403,12 +407,14 @@ test.describe("qa · two tools tabs", () => {
   // prefers the session whose page carries it, so a second tab never takes the first one over.
   test("a second tools tab leaves the first tab on its own game", async ({ tools }) => {
     const page = tools.page;
-    const own = await chip(page).textContent();
+    const own = await sessionOf(page);
+    expect(own).toMatch(/^s-[0-9a-f]{4}$/);
     const second = await page.context().newPage();
     try {
       await openTools(second);
-      await expect(chip(second)).not.toHaveText(own ?? "");
-      await expect(chip(page)).toHaveText(own ?? "", { timeout: 5000 });
+      await expect.poll(() => sessionOf(second)).toMatch(/^s-[0-9a-f]{4}$/);
+      await expect.poll(() => sessionOf(second)).not.toBe(own);
+      await expect.poll(() => sessionOf(page), { timeout: 5000 }).toBe(own);
     } finally {
       await second.close();
     }

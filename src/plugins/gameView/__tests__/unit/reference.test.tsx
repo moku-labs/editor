@@ -3,16 +3,18 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHandlers } from "../../handlers";
 import { startGameView, stopGameView } from "../../lifecycle";
-import { copyReference, hoverProxy, setReferenceMode } from "../../reference/mode";
+import { hoverProxy, setReferenceMode } from "../../reference/mode";
+import { copySelectedReference } from "../../reference/pick";
 import { notify } from "../../state";
-import { createCtx, type TestCtx, useScene } from "../helpers";
+import { createCtx, flush, type TestCtx, useScene } from "../helpers";
 import { boardScene, find, findAll, fire } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reference mode in gameView (finding 17, D-27): the scene watch stays alive
 // while on in every workspace, game.position is watched for the flow node, the
 // proxy layer lives in gameView's overlay root and updates by key, hover draws
-// the picker box, off removes the layer. Copy reference writes one line.
+// the picker box, a click picks, off removes the layer. Copy reference writes
+// the reference block of the selection (round 2 R2).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -178,34 +180,89 @@ describe("the proxy layer", () => {
   });
 });
 
-describe("copyReference", () => {
-  it("writes the reference line to the clipboard and toasts", async () => {
+describe("a click on a proxy", () => {
+  it("selects its node and puts its reference line on the clipboard", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    const coin = boardScene().nodes.get("ui:boardScreen/hudRow/coinPill");
-    if (coin === undefined) throw new Error("fixture");
+    act(() => setReferenceMode(ctx, true));
+    const coin = find(layer() ?? document.body, "[data-moku-key='coinPill']");
+
+    fire(coin, new PointerEvent("pointerup"));
+    await act(async () => {
+      await flush();
+    });
+
+    expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
+      /^@moku coinPill row · board\/awaitIntent · .* · \.moku\/captures\/coinPill-f1841\.md$/
+    );
+    expect(ctx.state.pick?.nodeId).toBe("ui:boardScreen/hudRow/coinPill");
+  });
+});
+
+describe("copySelectedReference", () => {
+  it("writes the card of the selection, copies its one line, toasts and returns it", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
     ctx.state.found.set("coinPill", { kind: "defined", path: "src/hud/Hud.tsx", line: 2 });
 
-    await copyReference(ctx, coin, "board/awaitIntent");
-    expect(writeText).toHaveBeenCalledWith(
-      "@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76"
+    const line = await copySelectedReference(ctx);
+    expect(line).toMatch(
+      /^@moku coinPill row · board\/awaitIntent · src\/hud\/Hud\.tsx:2 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/coinPill-f1841\.md$/
     );
+    expect(writeText).toHaveBeenCalledWith(line);
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
+    const card = ctx.link.files.text(".moku/captures/coinPill-f1841.md");
+    expect(card.split("\n").slice(0, 6)).toEqual([
+      "# @moku coinPill row",
+      "",
+      "```text",
+      "@moku coinPill · row · board/awaitIntent · f1841",
+      "path: boardScreen/hudRow/coinPill",
+      "source: src/hud/Hud.tsx:2 · texture: ui.hud-pill"
+    ]);
+
+    // The same node and frame again: the same card, written again.
+    await copySelectedReference(ctx);
+    expect(ctx.link.files.paths().filter(path => path.endsWith(".md"))).toEqual([
+      ".moku/captures/coinPill-f1841.md"
+    ]);
   });
 
-  it("toasts when the clipboard refuses or does not exist", async () => {
-    const coin = boardScene().nodes.get("ui:boardScreen/hudRow/coinPill");
-    if (coin === undefined) throw new Error("fixture");
+  it("toasts when the clipboard refuses or does not exist, and returns the block all the same", async () => {
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
     vi.stubGlobal("navigator", {
       clipboard: { writeText: () => Promise.reject(new Error("Document is not focused.")) }
     });
-    await copyReference(ctx, coin, undefined);
+    expect(await copySelectedReference(ctx)).toMatch(/^@moku coinPill/);
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Copy failed · Document is not focused.");
 
     vi.stubGlobal("navigator", {});
-    await copyReference(ctx, coin, undefined);
+    await copySelectedReference(ctx);
     expect(ctx.workspace.toast).toHaveBeenLastCalledWith(
       "Copy failed · The clipboard is not available."
     );
+  });
+
+  it("is undefined without a selection, or for one the scene does not have", async () => {
+    expect(await copySelectedReference(ctx)).toBeUndefined();
+    ctx.state.selected = { kind: "ui", path: "nowhere" };
+    expect(await copySelectedReference(ctx)).toBeUndefined();
+  });
+
+  it("reads the scene when there is none yet, and gives up when that read fails", async () => {
+    ctx.state.scene = undefined;
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
+    vi.stubGlobal("navigator", {});
+    expect(await copySelectedReference(ctx)).toMatch(/^@moku coinPill/);
+
+    ctx.state.scene = undefined;
+    ctx.link.values.delete("game.ui");
+    expect(await copySelectedReference(ctx)).toBeUndefined();
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: copy reference read failed", {
+      message: "no value for game.ui"
+    });
   });
 });

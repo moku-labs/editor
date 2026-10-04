@@ -7,7 +7,14 @@
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ServerEvents } from "../../config";
-import type { Heartbeat, Json, Manifest, SessionInfo, SubId } from "../registry/protocol";
+import type {
+  Heartbeat,
+  HotReload,
+  Json,
+  Manifest,
+  SessionInfo,
+  SubId
+} from "../registry/protocol";
 
 /**
  * Hub configuration.
@@ -135,7 +142,7 @@ export type MergedServeOptions = {
 export type HubWebSocketHandler = {
   /**
    * Registers the connection of the upgrade's kind; a tools page gets `sessions {list}` at
-   * once. A socket that opens after stop is closed with 1001.
+   * once, then every published value. A socket that opens after stop is closed with 1001.
    *
    * @param ws - The socket.
    */
@@ -249,6 +256,11 @@ export type SharedSub = {
 };
 
 /**
+ * A method `publish` sends to the tools pages (R6).
+ */
+export type PublishMethod = "hotReload";
+
+/**
  * Hub state (the api returns closures and copies, never these maps).
  */
 export type HubState = {
@@ -266,6 +278,8 @@ export type HubState = {
   nextCallId: number;
   shared: Map<string, SharedSub>;
   silentTimer: ReturnType<typeof setInterval> | undefined;
+  /** The last value of each published method, replayed to every tools connection that opens. */
+  published: Map<PublishMethod, Json>;
 };
 
 /**
@@ -389,6 +403,22 @@ export type HubApi = {
    * ```
    */
   guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined;
+
+  /**
+   * Sends server state to every tools page as the editor-channel notification `<method>` and
+   * keeps it: a tools page that connects later gets the last value right after its
+   * `sessions {list}`. Works before start too; the value waits for the first tools page.
+   *
+   * @param method - The state: `"hotReload"`.
+   * @param params - Its value.
+   * @example
+   * ```ts
+   * // pages tells every tools page whether Bun reloads the game page on a save.
+   * ctx.require(hubPlugin).publish("hotReload", { hmr: true, owner: "bin" });
+   * // each tools socket gets {"jsonrpc":"2.0","channel":"editor","method":"hotReload","params":{"hmr":true,"owner":"bin"}}
+   * ```
+   */
+  publish(method: PublishMethod, params: HotReload): void;
 
   /**
    * The editor path, `config.path` (R3).

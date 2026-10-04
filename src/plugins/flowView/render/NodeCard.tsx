@@ -22,6 +22,22 @@ export type NodeCardProps = {
 };
 
 /**
+ * The tag on row 1: "here" on a card holding the current node (a collapsed sub-flow or slot with
+ * it inside), else "on stack" for a card on the stack.
+ *
+ * @param view - The card view.
+ * @returns The tag, or false.
+ * @example
+ * ```tsx
+ * <span data-part="row">{stackTag(view)}</span>
+ * ```
+ */
+function stackTag(view: CardView): VNode | false {
+  if (view.holdsCurrent && !view.current) return <span data-tag="here">here</span>;
+  return view.onStack && <span data-tag="on-stack">on stack</span>;
+}
+
+/**
  * The card, unmemoised.
  *
  * @param props - Context, actions, the item and its view.
@@ -47,6 +63,7 @@ function Card(props: NodeCardProps): VNode {
         data-kind={view.glyph}
         data-selected={view.selected ? "" : undefined}
         data-current={view.current ? "" : undefined}
+        data-holds-current={view.holdsCurrent && !view.current ? "" : undefined}
         data-dimmed={view.dimmed ? "" : undefined}
         data-pulse={view.pulse ? "" : undefined}
         data-pinned={item.pinned ? "" : undefined}
@@ -61,7 +78,7 @@ function Card(props: NodeCardProps): VNode {
         <span data-part="row">
           <span data-part="glyph" data-glyph={view.glyph} aria-hidden="true" />
           <span data-part="name">{view.name}</span>
-          {view.onStack && <span data-tag="on-stack">on stack</span>}
+          {stackTag(view)}
           {item.pinned && <span data-part="pin" role="img" aria-label="Pinned" />}
         </span>
         <span data-part="kind">{view.kindLine}</span>

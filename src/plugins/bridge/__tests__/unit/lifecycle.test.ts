@@ -24,7 +24,8 @@ describe("createBridgeState", () => {
       subs: new Map(),
       pending: new Map(),
       inflight: new Map(),
-      off: []
+      off: [],
+      restored: undefined
     });
   });
 

@@ -40,6 +40,10 @@ names, themed with `light-dark()`:
   a solid accent), `--accent-soft` (9 % / 13 %), `--accent-soft-strong` (20 % / 28 %),
   `--status-live`, `--status-warn`, `--status-error`, `--teal`, `--edge`, `--canvas-dot`,
   `--pick-hover`, `--pick-tree`, `--phase-1` … `--phase-5`.
+- Device frame: `--bezel` (`#1b1b20` light, `#2c2c34` dark, so the frame reads on the dark
+  canvas), `--border-strong` (the 1 px outline of the bezel; the edge grey of each theme),
+  `--device-black`. The docked game frame itself is clipped to the preset's corner radius
+  (`frame/frame.ts`), not by a token.
 - Code colours: `--code-<kind>` for every highlighter `TokenKind`.
 - Motion: `--duration-camera` 420, `--duration-zoom` 200, `--duration-follow` 500,
   `--duration-walk` 220, `--duration-resize` 210, `--duration-toast` 180.
@@ -55,6 +59,23 @@ names, themed with `light-dark()`:
 `[data-theme="dark"]` on `<html>` forces one. The names views use from TypeScript are mirrored in
 `src/plugins/panels/shared/tokens.ts`; a panels test checks every name there is declared in
 `tokens.css`.
+
+## Top bar (`ui/TopBar.css`, `ui/MoreMenu.css`)
+
+The top bar has two layouts, picked by the component from the window width and written as
+`[data-layout]` on the bar:
+
+| Window | Layout | What the CSS does |
+|---|---|---|
+| 1180 px and up | `wide` | Every label visible. The search box grows to 380 px. |
+| 900–1179 px | `wide` | Pause and Step show icons only; the Preview, Overlay and Hot reload switches keep their labels in a tighter box (gap 4 px). |
+| 561–899 px | `compact` | Logo, game name (120 px at most, no version), link pill, Pause, Step, a 28 px search icon and the ⋯ button. |
+| 560 px and below | `compact` | The game name hides too; gaps and padding use the density tokens. |
+
+Every control keeps its size (`flex-shrink: 0`). Only the game name and the wide search box shrink.
+The search box stops at 88 px and clips its own content (`overflow: hidden`), so it never runs
+over a neighbour. The ⋯ menu (`[data-ui="more-menu"]`) is a top-layer popover: a row grid of
+label, state and key, using `--row-h` and the spacing tokens.
 
 ## Primitives (`primitives.css`, unscoped global atoms)
 

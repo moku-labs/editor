@@ -1,13 +1,15 @@
 /**
  * @file gameView plugin — selection and the picker (F11): pick on/off, select, inspect, the pink
  * highlight box, hover and click through the frame box (`pageFromClient`, `elementAt` of the
- * shared scene, R8), and the two cross-view intents of the Element tab (`workspace:reveal`,
- * `workspace:open-file`, R4).
+ * shared scene, R8), the click on a Reference mode proxy (both complete the pick, round 2 R2), and
+ * the two cross-view intents of the Element tab (`workspace:reveal`, `workspace:open-file`, R4).
  */
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import type { FrameBox } from "../../workspace/types";
+import { hideCard } from "../capture/shot";
+import { completePick } from "../reference/pick";
 import { messageOf } from "../report";
 import { readFreshScene, readScene } from "../scene/read";
 import { notify } from "../state";
@@ -21,8 +23,8 @@ import { saveStyle } from "./styles";
 export type ClientPoint = { readonly x: number; readonly y: number };
 
 /**
- * Turns the picker on (shows Game and the Element tab) or off (clears the hover); toggles
- * without an argument.
+ * Turns the picker on (shows Game and the Element tab, hides the capture card so the first Esc
+ * leaves the picker, round 2b R17) or off (clears the hover); toggles without an argument.
  *
  * @param ctx - Domain context of gameView.
  * @param on - The wanted state; omitted toggles.
@@ -34,6 +36,7 @@ export function setPicker(ctx: GameViewCtx, on?: boolean): void {
     ctx.require(workspacePlugin).show("game");
     state.tab = "element";
     ensureOverlayRoot(ctx);
+    hideCard(ctx);
   }
   state.picker = { on: next, hover: undefined };
   notify(state);
@@ -156,14 +159,15 @@ export function hoverAt(ctx: GameViewCtx, client?: ClientPoint): void {
 
 /**
  * Picker click: reads the scene once more and selects the node under the pointer in it, turns
- * the picker off and opens the Element tab. The watched scene can be a heartbeat behind a screen
- * change (R6), and a calibration may be in flight, so the click waits for both. A click on nothing
- * keeps the picker on. A failed read picks from the scene there is. When the picker went off
- * meanwhile (Esc, or an earlier click picked), the click does nothing.
+ * the picker off and opens the Element tab, then completes the pick (bookmark, shot, the
+ * reference block on the clipboard). The watched scene can be a heartbeat behind a screen change
+ * (R6), and a calibration may be in flight, so the click waits for both. A click on nothing keeps
+ * the picker on. A failed read picks from the scene there is. When the picker went off meanwhile
+ * (Esc, or an earlier click picked), the click does nothing.
  *
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px.
- * @returns Resolves when the click is handled (never rejects).
+ * @returns Resolves when the click is handled and the pick completed (never rejects).
  */
 export async function pickAt(ctx: GameViewCtx, client: ClientPoint): Promise<void> {
   const { state } = ctx;
@@ -175,12 +179,30 @@ export async function pickAt(ctx: GameViewCtx, client: ClientPoint): Promise<voi
   }
   if (!state.picker.on) return;
 
-  const node = nodeIn(state.scene, box, client);
-  if (node === undefined) return;
+  const { scene } = state;
+  const node = nodeIn(scene, box, client);
+  if (scene === undefined || node === undefined) return;
   selectElement(ctx, node.ref);
   state.picker = { on: false, hover: undefined };
   state.tab = "element";
   notify(state);
+  await completePick(ctx, node, scene);
+}
+
+/**
+ * A click on a Reference mode proxy: selects its node and completes the pick, like a picker
+ * click, in whatever workspace shows.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param id - The node id of the proxy.
+ * @returns Resolves when the pick completed (never rejects); nothing for a node not in the scene.
+ */
+export async function pickProxy(ctx: GameViewCtx, id: string): Promise<void> {
+  const { scene } = ctx.state;
+  const node = scene?.nodes.get(id);
+  if (scene === undefined || node === undefined) return;
+  selectElement(ctx, node.ref);
+  await completePick(ctx, node, scene);
 }
 
 /**
@@ -194,12 +216,12 @@ export function revealElement(ctx: GameViewCtx, ref: ElementRef): void {
 }
 
 /**
- * "Open in Files": filesView shows the file at the line (R4).
+ * "Open in Files": filesView shows the file, at the line when one is given (R4).
  *
  * @param ctx - Domain context of gameView.
  * @param path - The file.
- * @param line - The 1-based line.
+ * @param line - The 1-based line; omitted for a picture.
  */
-export function openInFiles(ctx: GameViewCtx, path: string, line: number): void {
-  ctx.emit("workspace:open-file", { path, line });
+export function openInFiles(ctx: GameViewCtx, path: string, line?: number): void {
+  ctx.emit("workspace:open-file", line === undefined ? { path } : { path, line });
 }

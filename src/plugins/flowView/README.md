@@ -11,6 +11,12 @@ current node.
 Clicking a node focuses it:
 
 - the camera moves and the rest dims; the current node never dims;
+- an item holding the current node never dims either: a collapsed sub-flow, slot or hub with the
+  current node inside (its key prefixes the current key, `main/board` for `main/board>board/…`),
+  an expanded frame around it, or a node on the position stack. It gets the accent ring
+  (`data-holds-current`) and a "here" tag, and the trail edge into it is drawn 2 px accent at full
+  strength (`data-here`). A collapsed card the current node sits inside is never `data-current`:
+  it holds the current node;
 - the Inspector (C1–C4) shows the node, in the `flow.inspector` side panel.
 
 The Info tab is the one place for the neighbours of a node (D-25). A click on a *Comes from* or
@@ -32,7 +38,7 @@ A save writes the file and runs the D-07 reload/restore flow.
 | `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
 | `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
-| `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped). |
+| `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped; the search is `panels/shared/styles-file`, shared with gameView). |
 | `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
 | `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
 | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
@@ -141,7 +147,7 @@ The Nodes group is replaced when the graph hash changes. The Styles group is rep
 | `\` | Collapse or expand the Inspector panel. |
 | `←` `→` / `↑` `↓` | With a selection: walk along a *Comes from* / *Outcomes* row; move the highlight through the Info tab rows (Outcomes, then Comes from). Not while the Inspector tabs, a resize handle, a menu or a select has focus. |
 | `alt+←` | Back to the selection before the last followed edge. |
-| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. A highlighted row wins over the focused card, so Enter after a walk follows the row. Other controls keep their own Enter. |
+| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. A highlighted row wins over the focused card, so Enter after a walk follows the row. Other controls keep their own Enter: a button inside a frame or card (the frame's Collapse) clicks by Enter. |
 | `mod+s` | Save the code edit, while editing. |
 | `tab` | Moves focus card to card. A card or the hub outside the canvas pans the camera onto it. Zoom and selection stay. |
 

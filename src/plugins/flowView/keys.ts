@@ -96,14 +96,16 @@ export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
    */
   const walking = (): boolean => ctx.state.focus.selected !== undefined && !focusIn(ARROW_WIDGETS);
   /**
-   * True while Enter has a row to follow (and no control takes it), or a card has focus.
+   * True while Enter has a row to follow or a card has focus, and no control takes it: a button
+   * inside a frame or card (the frame's Collapse) clicks by its own Enter.
    *
    * @returns Whether Enter belongs to Flow.
    */
   const entering = (): boolean => {
+    if (focusIn(CONTROLS)) return false;
     const { focus } = ctx.state;
     const following = focus.selected !== undefined && focus.highlight.index >= 0;
-    return focusedCard(ctx) !== undefined || (following && !focusIn(CONTROLS));
+    return focusedCard(ctx) !== undefined || following;
   };
   /**
    * True while a followed edge left a selection to go back to.

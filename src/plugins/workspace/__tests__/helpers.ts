@@ -48,6 +48,7 @@ export const CONFIG: WorkspaceConfig = {
   defaultWorkspace: "game",
   storageKey: "moku-editor-test",
   reloadTimeoutMs: 15_000,
+  hotReloadWaitMs: 1500,
   toastMs: 2600
 };
 
@@ -200,6 +201,9 @@ export function createLinkMock(): LinkMock {
       };
     }),
     heap: vi.fn<LinkApi["heap"]>(() => undefined),
+    hotReload: vi.fn<LinkApi["hotReload"]>(() => undefined),
+    onHotReload: vi.fn<LinkApi["onHotReload"]>(() => vi.fn()),
+    setHotReload: vi.fn<LinkApi["setHotReload"]>(() => Promise.resolve(false)),
     tapListeners,
     tap(tap) {
       for (const listener of tapListeners) listener(tap);

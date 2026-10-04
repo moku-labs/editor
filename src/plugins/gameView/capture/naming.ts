@@ -1,7 +1,8 @@
 /**
- * @file gameView plugin — capture names (pure): the local minute stamp, screenshot paths and
- * series folders with `-2`, `-3` … on a collision, zero-padded shot names, and small readers of
- * the values a capture needs (game.position, folder of a path).
+ * @file gameView plugin — capture names (pure): the local minute stamp, screenshot paths, the two
+ * files, the card file (round 2b R13) and the bookmark id of a pick, and series folders with `-2`, `-3` … on a collision,
+ * zero-padded shot names, and small readers of the values a capture needs (game.position, folder
+ * of a path).
  */
 import type { FileEntry, Json } from "../../registry/protocol";
 
@@ -87,7 +88,86 @@ export function capturePath(
   node: string,
   taken: ReadonlySet<string>
 ): string {
-  return firstFree(`${capturesDir}/${minute}-${node.replaceAll(UNSAFE_NAME, "-")}`, ".png", taken);
+  return firstFree(`${capturesDir}/${minute}-${safeName(node)}`, ".png", taken);
+}
+
+/**
+ * The two files of a pick: the crop `<dir>/<name>-f<frame>.png` and the full frame
+ * `<dir>/f<frame>.png`, each with `-2`, `-3` … when taken.
+ *
+ * @param capturesDir - The captures folder.
+ * @param name - The ui key or name of the picked element (unsafe characters become "-").
+ * @param frame - The frame of the shot.
+ * @param taken - Paths already in the folder.
+ * @returns The crop and the full frame paths.
+ * @example
+ * ```ts
+ * pickPaths(".moku/captures", "settingsBoard", 1841, new Set()); // { crop: ".moku/captures/settingsBoard-f1841.png", full: ".moku/captures/f1841.png" }
+ * ```
+ */
+export function pickPaths(
+  capturesDir: string,
+  name: string,
+  frame: number,
+  taken: ReadonlySet<string>
+): { readonly crop: string; readonly full: string } {
+  return {
+    crop: firstFree(`${capturesDir}/${safeName(name)}-f${frame}`, ".png", taken),
+    full: firstFree(`${capturesDir}/f${frame}`, ".png", taken)
+  };
+}
+
+/**
+ * The card file of a reference (round 2b R13): `<dir>/<name>-f<frame>.md`, with `-2`, `-3` …
+ * when taken.
+ *
+ * @param capturesDir - The captures folder.
+ * @param name - The ui key or name of the element (unsafe characters become "-").
+ * @param frame - The frame of the reference.
+ * @param taken - Paths already in the folder.
+ * @returns The card path.
+ * @example
+ * ```ts
+ * cardPath(".moku/captures", "settingsBoard", 25, new Set()); // ".moku/captures/settingsBoard-f25.md"
+ * ```
+ */
+export function cardPath(
+  capturesDir: string,
+  name: string,
+  frame: number,
+  taken: ReadonlySet<string>
+): string {
+  return firstFree(`${capturesDir}/${safeName(name)}-f${frame}`, ".md", taken);
+}
+
+/**
+ * The id of a pick bookmark: `<name>-f<frame>`, with `-2`, `-3` … when taken.
+ *
+ * @param name - The ui key or name of the picked element (unsafe characters become "-").
+ * @param frame - The frame of the bookmark.
+ * @param taken - The ids already kept.
+ * @returns The id.
+ * @example
+ * ```ts
+ * bookmarkId("card0", 96, new Set(["card0-f96"])); // "card0-f96-2"
+ * ```
+ */
+export function bookmarkId(name: string, frame: number, taken: ReadonlySet<string>): string {
+  return firstFree(`${safeName(name)}-f${frame}`, "", taken);
+}
+
+/**
+ * A name a file keeps: every run of unsafe characters becomes "-".
+ *
+ * @param name - A node name.
+ * @returns The safe name.
+ * @example
+ * ```ts
+ * safeName("board.cells/3"); // "board-cells-3"
+ * ```
+ */
+function safeName(name: string): string {
+  return name.replaceAll(UNSAFE_NAME, "-");
 }
 
 /**

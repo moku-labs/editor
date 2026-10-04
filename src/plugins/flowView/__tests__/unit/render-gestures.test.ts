@@ -205,7 +205,7 @@ describe("chrome pieces", () => {
         ctx,
         actions,
         item: item({ key: "main/board", kind: "frame" }),
-        view: { head: "# board", onStack: false, root: false, dimmed: false }
+        view: { head: "# board", onStack: false, root: false, dimmed: false, holdsCurrent: false }
       })
     );
     await settle(() => frame.host.querySelector<HTMLElement>('[data-action="enter"]')?.click());

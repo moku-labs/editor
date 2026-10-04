@@ -30,8 +30,8 @@ Fixed constants in `types.ts` (not config):
 
 ## API
 
-`app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap and
-files.
+`app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap, hot
+reload and files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -50,6 +50,9 @@ files.
 | `isOtherTab` | `(page) => boolean` | True when a page URL carries another tools page's frame id. A page without one is not another tab's. |
 | `onTap` | `(listener: (tap: Tap) => void) => () => void` | Called with every `tap { x, y, at }` of the chosen session: a `pointerdown` on the game page in page CSS px, `at` = the page's `performance.now()`. The bridge sends at most one per 50 ms. Taps of other sessions and malformed taps are dropped. Every listener gets the same frozen tap. A throwing listener is logged as `link:tap-listener-failed` and the others still run. The same function added twice is two subscriptions. Returns an idempotent unsubscribe. |
 | `heap` | `() => { usedMb, limitMb } \| undefined` | A copy of the heap from the last heartbeat of the chosen session, in MB. `undefined` until the page reports one (only Chromium does), when its last beat had none, and after every attach or session loss. |
+| `hotReload` | `() => HotReload \| undefined` | A copy of `{ hmr, owner }` from the hub's `editor.hotReload` notification (R6). `undefined` until the hub sent one. Kept across reconnects. |
+| `onHotReload` | `(listener: (state: HotReload) => void) => () => void` | Called at once when the state is known, then on each change (the same state again is no change). Each listener gets the same frozen state. A throwing listener is logged as `link:hot-reload-listener-failed`. Returns an idempotent unsubscribe. |
+| `setHotReload` | `(on: boolean) => Promise<boolean>` | `POST {path}/hmr` on the page origin (the boot socket's http origin outside a page) with `{ hmr }` and `Authorization: Bearer <boot.token>`. Takes the state the server answers. True when the answer is ok and its state has `hmr === on`. False when the state differs (the server answers 200 with the unchanged state: Bun cannot switch HMR live, or a game's own server), on 401, without a boot, or on a network failure (`link:hot-reload-failed` warn). Never rejects. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`. No session needed. |
 
 ```ts
@@ -63,6 +66,8 @@ app.link.boot()?.gameUrl; // "/"
 app.link.frameUrl("http://127.0.0.1:3000/"); // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
 const offTaps = app.link.onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
 app.link.heap(); // { usedMb: 12.8, limitMb: 4095.8 } in Chromium, undefined elsewhere
+app.link.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
+await app.link.setHotReload(false); // false: restart the bin to change hot reload
 await app.link.files.write("docs/plan.md", text);
 app.link.retry();
 offTaps();
@@ -132,7 +137,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 | Phase | Does |
 |---|---|
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, closes the socket with 1000, forgets watches, manifest listeners and tap listeners. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners. |
 
 ## Integration notes
 
@@ -144,6 +149,8 @@ const off = link.onManifest(manifest => recheck(manifest));
 - A switch of session sends `unwatch` for the old subs first. Wire subs are numbers that never repeat, so late values of an old sub are dropped.
 - A source id missing from the new manifest is skipped with the warn `link:source-missing`. The watch record stays for a later session.
 - A watch the session refuses with -32008 `not_installed` (the game does not have the source: the manifest lists it with `available: false`) logs only the debug line `link:source-unavailable` and is never sent to that session again. A new session gets it again. `readManifest` keeps `available: false` and `reason` on a source descriptor.
+- `readManifest` keeps `restored { bookmark, frame }` (set by the bridge in the first hello after it restored its checkpoint across Bun's full reload, R6) and drops a malformed one; the manifest stays.
+- Hot reload: the hub sends `editor.hotReload { hmr, owner }` after `sessions {list}` and on each change. A malformed one is the warn `link:bad-hot-reload`. workspace (wave 2a) shows the Hot reload switch from `hotReload()`/`onHotReload` and calls `setHotReload`.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.
 - The token is never logged. The connect log line carries `boot.ws` without its query.

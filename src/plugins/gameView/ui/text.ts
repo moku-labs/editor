@@ -93,6 +93,24 @@ export function linkBadge(status: LinkStatus, now: number): StageBadge | undefin
 }
 
 /**
+ * A text cut in the middle to at most `max` characters, so both ends of a path stay readable.
+ *
+ * @param text - The text.
+ * @param max - The most characters shown, the "…" included.
+ * @returns The text, or its start, "…" and its end.
+ * @example
+ * ```ts
+ * middleEllipsis(".moku/captures/2026-09-24-1012-board.png", 36); // ".moku/captures/20…-24-1012-board.png"
+ * ```
+ */
+export function middleEllipsis(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  const head = Math.floor(keep / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
+}
+
+/**
  * The series result line: planned shots, length and interval.
  *
  * @param shots - Planned shots.

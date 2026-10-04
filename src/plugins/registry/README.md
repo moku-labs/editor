@@ -197,6 +197,14 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
 | `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
 
+Shapes added in round 2 (R4, R6):
+
+| Type | Fields |
+|---|---|
+| `Manifest.restored?` | `{ bookmark: string, frame: number }`: the bridge's first hello after it restored its checkpoint across Bun's full reload. `bookmark` is the JSON text of the restored bookmark, `frame` the frame of the page that took it. |
+| `HotReload` | `{ hmr: boolean, owner: "bin" \| "server" }`: the hub's editor-channel notification `hotReload`. |
+| `DeviceSpec` | Gains `dpr`, `radius`, `group` (`iphone`, `android`, `foldable`, `tablet`, `desktop`), `frame` (`"modern"` \| `"home-button"`, round 2b R9: the bezel gameView draws), `approx?: true`, `fold?: { cover, inner }` of `FoldScreen { w, h, radius }`. `dpr`, `radius`, `group` and `frame` are required: workspace fills them for its 21 presets. |
+
 Game-channel notifications of the agent and their params:
 
 | Method | Params | Sent by |

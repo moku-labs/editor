@@ -16,8 +16,11 @@
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
  *
  * The copy gets its own package.json, as a game project has. Without it the copy inherits the
- * editor's `"sideEffects": false`, and the bin's bundler (Bun without HMR, D-22) drops the page's
- * bare `import "./main"`: the game would never start.
+ * editor's `"sideEffects": false`, and the bin's bundler drops the page's bare `import "./main"`:
+ * the game would never start.
+ *
+ * The bin serves the copy with Bun hot reload on (D-23): a spec that writes a game source sees the
+ * game page reload and restore its checkpoint, and restores the file it wrote.
  */
 import { cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
