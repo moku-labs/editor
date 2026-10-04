@@ -319,6 +319,8 @@ describe("gameView integration", () => {
         })
       );
     });
+    // The click reads the scene once more through the hub before it picks.
+    await until(() => app.gameView.selected() !== undefined, "the picked element");
     expect(app.gameView.selected()).toEqual(ITEM);
     await app.stop();
   });

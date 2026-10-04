@@ -1,7 +1,8 @@
 /**
  * @file gameView plugin — `scene()` and `locate()`: the watched scene while Game is shown, else
  * one read of the three sources (and the calibration when not read yet or its target changed),
- * built with the shared buildScene (R8).
+ * built with the shared buildScene (R8). The picker click reads the three once more too
+ * (`readFreshScene`), so it never picks from a screen the game already left.
  */
 import { linkPlugin } from "../../link";
 import type { ElementRef, PageRect, SceneError, SceneSnapshot } from "../../panels/shared/scene";
@@ -53,7 +54,23 @@ export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
     await calibrationSettled(ctx);
     if (state.scene !== undefined) return state.scene;
   }
+  return readFreshScene(ctx);
+}
 
+/**
+ * The scene from one read of the three sources, also while Game is shown: the bridge sends a
+ * watched frame source at most once per heartbeat (R6), so after a screen change the watched
+ * scene can still be the screen before. The values read become the newest ones, so a calibration
+ * read in flight counts as overtaken. The calibration settles first: the read in flight, then a
+ * new one when nothing was read yet or the target changed. A value the watch brought in meanwhile
+ * is newer still, so the scene is built from the newest values.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The scene snapshot.
+ * @throws {Error} The link's WireError, or a shape error.
+ */
+export async function readFreshScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
+  const { state } = ctx;
   const link = ctx.require(linkPlugin);
   const [ui, entities, projections] = await Promise.all([
     link.read("game.ui"),
@@ -61,12 +78,17 @@ export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
     link.read("game.projections")
   ]);
   state.sources = { ui, entities, projections };
-  if (!state.calibrationRead || targetChanged(state)) await calibrate(ctx);
+  state.calibrationRun.revision += 1;
 
+  await calibrationSettled(ctx);
+  if (!state.calibrationRead || targetChanged(state)) await calibrate(ctx);
+  await calibrationSettled(ctx);
+
+  const latest = state.sources;
   const built = buildScene({
-    ui,
-    entities,
-    projections,
+    ui: latest.ui ?? ui,
+    entities: latest.entities ?? entities,
+    projections: latest.projections ?? projections,
     frame: frameOf(link.status(), 0),
     calibration: state.calibration
   });

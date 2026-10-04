@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
+import type { Json } from "../../../registry/protocol";
 import {
   highlightElement,
   hoverAt,
@@ -12,9 +13,12 @@ import {
   selectedElement,
   setPicker
 } from "../../element/select";
+import { recalibrate } from "../../scene/calibrate";
+import { startSceneWatches } from "../../scene/watch";
 import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
+const SETTINGS = sceneCapture("scene-settings.txt");
 const ITEM = { kind: "entity", id: 1_048_628 } as const;
 const COIN = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
 
@@ -151,18 +155,103 @@ describe("hoverAt and pickAt", () => {
     expect(ctx.state.picker.hover).toBeUndefined();
   });
 
-  it("click selects the element, turns the picker off and opens the Element tab", () => {
+  it("click selects the element, turns the picker off and opens the Element tab", async () => {
     ctx.state.tab = "device";
-    pickAt(ctx, { x: 370, y: 545 });
+    await pickAt(ctx, { x: 370, y: 545 });
     expect(ctx.state.selected).toEqual(ITEM);
     expect(ctx.state.picker).toEqual({ on: false, hover: undefined });
     expect(ctx.state.tab).toBe("element");
   });
 
-  it("a click on nothing keeps the picker on", () => {
-    pickAt(ctx, { x: -500, y: -500 });
+  it("a click on nothing keeps the picker on", async () => {
+    await pickAt(ctx, { x: -500, y: -500 });
     expect(ctx.state.picker.on).toBe(true);
     expect(ctx.state.selected).toBeUndefined();
+  });
+});
+
+/** Starts the watches and delivers the board, calibrated at scale 1. */
+async function watchBoard(): Promise<void> {
+  startSceneWatches(ctx);
+  ctx.link.send("game.ui", BOARD.ui);
+  ctx.link.send("game.entities", BOARD.entities);
+  ctx.link.send("game.projections", BOARD.projections);
+  await flush();
+}
+
+describe("a pick right after a screen change", () => {
+  // The bridge sends a watched game.ui at most once per heartbeat (1 s, R6): after a screen
+  // change the watched scene can still be the screen before when the click comes.
+  const PANE = { kind: "ui", path: "settingsScreen/settingsBoard/settingsPane" } as const;
+
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("picks from the screen the game shows now, not from the last watched snapshot", async () => {
+    await watchBoard();
+    expect(ctx.state.scene?.nodes.has("ui:boardScreen/boardSlot")).toBe(true);
+
+    // The game opened Settings; its game.ui has not come through the watch yet.
+    useScene(ctx, SETTINGS);
+    ctx.state.picker.on = true;
+    await pickAt(ctx, { x: 137 + 806 / 2, y: 456 + 610 / 2 });
+
+    expect(ctx.state.selected).toEqual(PANE);
+    expect(ctx.state.picker.on).toBe(false);
+    expect(ctx.state.scene?.nodes.has("ui:settingsScreen/settingsBoard")).toBe(true);
+  });
+
+  it("waits for the calibration in flight and picks with it", async () => {
+    await watchBoard();
+    const rect = Promise.withResolvers<Json>();
+    const answer = ctx.link.read.getMockImplementation();
+    ctx.link.read.mockImplementation((id, input) =>
+      id === "game.rect" ? rect.promise : (answer?.(id, input) ?? Promise.reject(new Error(id)))
+    );
+    // A device change: the next snapshot reads game.rect again, the answer is on its way.
+    recalibrate(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    await flush();
+    ctx.state.picker.on = true;
+
+    // The board item at (540, 990) in reference units sits at (270, 495) at half scale.
+    const picking = pickAt(ctx, { x: 270, y: 495 });
+    await flush();
+    expect(ctx.state.selected).toBeUndefined();
+
+    rect.resolve({ x: 0, y: 0, w: 540, h: 720 });
+    await picking;
+    expect(ctx.state.calibration).toEqual({ scale: 0.5, x: 0, y: 0 });
+    expect(ctx.state.selected).toEqual(ITEM);
+  });
+
+  it("drops the pick when the picker went off while it read", async () => {
+    ctx.state.scene = boardScene();
+    ctx.state.picker.on = true;
+    const picking = pickAt(ctx, { x: 540, y: 990 });
+    setPicker(ctx, false);
+    await picking;
+    expect(ctx.state.selected).toBeUndefined();
+  });
+
+  it("picks from the scene it has when the read fails", async () => {
+    ctx.state.scene = boardScene();
+    ctx.state.picker.on = true;
+    ctx.link.values.delete("game.ui");
+    await pickAt(ctx, { x: 540, y: 990 });
+    expect(ctx.state.selected).toEqual(ITEM);
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: pick read failed", {
+      message: "no value for game.ui"
+    });
   });
 });
 

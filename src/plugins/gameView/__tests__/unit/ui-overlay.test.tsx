@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ensureOverlayRoot } from "../../ui/OverlayRoot";
-import { createCtx, PNG, type TestCtx } from "../helpers";
+import { createCtx, flush, PNG, type TestCtx } from "../helpers";
 import { boardScene, find, findAll, fire } from "../ui";
 
 let ctx: TestCtx;
@@ -92,7 +92,7 @@ describe("OverlayRoot", () => {
     expect(find(root, "[data-part='label']").style.transform).toBe("scale(2)");
   });
 
-  it("the picker layer takes pointer events only while picking in Game", () => {
+  it("the picker layer takes pointer events only while picking in Game", async () => {
     expect(root.querySelector("[data-part='picker']")).toBeNull();
     update(() => {
       ctx.state.picker.on = true;
@@ -108,6 +108,8 @@ describe("OverlayRoot", () => {
     fire(layer, new PointerEvent("pointerleave", { bubbles: false }));
     expect(ctx.state.picker.hover).toBeUndefined();
     fire(layer, new PointerEvent("pointerup", { clientX: 540, clientY: 990, bubbles: true }));
+    // The click reads the scene once more first; without a game it picks from the scene it has.
+    await act(flush);
     expect(ctx.state.selected).toEqual({ kind: "entity", id: 1_048_628 });
     expect(root.querySelector("[data-part='picker']")).toBeNull();
   });

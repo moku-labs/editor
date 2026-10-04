@@ -150,6 +150,8 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - A burst of watched values rebuilds the scene once, on the next animation frame.
 - A value of the wrong shape keeps the last scene and logs `gameView: scene shape`.
 - The picker maps the pointer through `pageFromClient(client, gameFrame().box())` and the shared `elementAt`.
+- Hover uses the watched scene. A click reads `game.ui`, `game.entities` and `game.projections` once more and waits for the calibration first. The bridge sends a watched frame source at most once per heartbeat (R6), so after a screen change the watched scene can still show the screen before. The click picks from the screen the game shows now.
+- A click whose read fails picks from the scene there is. A click is dropped when the picker went off while it read.
 
 ### Style card
 
