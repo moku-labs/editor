@@ -249,6 +249,7 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
     texture,
     key: node.key,
     style: node.style,
+    visible: isShown(node.style),
     entity: undefined
   });
   appendTo(builder.hosts, rectKey(node.rect), {
@@ -262,6 +263,40 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
   if (texture !== undefined) builder.textures.add(texture);
   if (parent === undefined) builder.uiRoots.push(id);
   else appendTo(builder.children, parent, id);
+}
+
+/**
+ * Tells whether a style or a display component draws: not when its `alpha` is 0 or its `visible`
+ * is false. An absent value draws.
+ *
+ * @param value - A ui style or a display component value.
+ * @returns False for alpha 0 or visible false.
+ * @example
+ * ```ts
+ * isShown({ kind: "rect", w: 272, h: 272, alpha: 0 }); // false: merge-game's glow at rest
+ * isShown(undefined); // true
+ * ```
+ */
+function isShown(value: SceneNode["style"]): boolean {
+  return value?.alpha !== 0 && value?.visible !== false;
+}
+
+/**
+ * Tells whether an entity draws: its display component is shown (see `isShown`) and an enabled
+ * `Alpha` filter does not fade it to 0.
+ *
+ * @param entity - The entity.
+ * @returns False for an invisible entity.
+ * @example
+ * ```ts
+ * isEntityShown(glow); // false: Shape { alpha: 0 }
+ * isEntityShown(sawmill); // true
+ * ```
+ */
+function isEntityShown(entity: EntityWire): boolean {
+  const filter = componentOf(entity, "Alpha");
+  const faded = filter !== undefined && filter.enabled !== false && filter.alpha === 0;
+  return !faded && isShown(displayOf(entity)?.value);
 }
 
 /**
@@ -536,6 +571,7 @@ function addEntityNode(builder: Builder, entity: EntityWire, world: World): Plac
     texture: texturesOf(entity)[0],
     key: undefined,
     style: undefined,
+    visible: isEntityShown(entity),
     entity: {
       id: entity.id,
       owner: entity.owner.name,

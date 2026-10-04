@@ -43,6 +43,8 @@ export type SceneNode = {
   readonly texture: string | undefined;
   readonly key: string | undefined;
   readonly style: Readonly<Record<string, Json>> | undefined;
+  /** false: the node draws nothing (alpha 0 or `visible: false`); the picker looks through it. */
+  readonly visible: boolean;
   readonly entity:
     | { readonly id: number; readonly owner: string; readonly components: readonly string[] }
     | undefined;

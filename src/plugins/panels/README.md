@@ -283,7 +283,7 @@ The barrel `scene/index.ts` exports:
 | `calibrationFrom` | `(page, drawn) => Calibration` | Reference units → page px. |
 | `toPage` | `(rect, calibration) => PageRect` | Applies a calibration. |
 | `drawnRect` | `(natural, fits) => PageRect` | The drawn rect through the fit chain. |
-| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost node at a point. |
+| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost visible node at a point; skips alpha 0 and `visible: false`. |
 | `pageFromClient` / `clientFromPage` | `(point, box: FrameBoxLike) => point` | Tools page ↔ game page. |
 | `ancestorsOf` | `(scene, id) => readonly string[]` | Root first. |
 | `parseTextureManifest` | `(text, path) => TextureCatalogue \| undefined` | Texture catalogue with GPU MB. |

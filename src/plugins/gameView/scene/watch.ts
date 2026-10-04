@@ -30,7 +30,7 @@ export const SCENE_SOURCES: readonly SceneSource[] = [
 /**
  * What one watch session shares between its three callbacks.
  */
-type WatchSession = { frame: number; scheduled: boolean; stopped: boolean };
+type WatchSession = { frame: number; scheduled: boolean; stopped: boolean; refreshing: boolean };
 
 /**
  * The frame a link status reports, or a fallback.
@@ -154,6 +154,64 @@ export function recalibrate(ctx: GameViewCtx): void {
 }
 
 /**
+ * Tells whether the entities name a projection entity the projections map does not list. The game
+ * declares `game.projections` a commit source, but a view mounts its projections on a frame after
+ * the commit (merge-game's board after Play), so the watch can hold the map of the screen before.
+ *
+ * @param entities - The game.entities value.
+ * @param projections - The game.projections value.
+ * @returns True when a projection entity has no key in the map.
+ * @example
+ * ```ts
+ * projectionsBehind([{ id: 7, owner: { kind: "projection", name: "board.cells" } }], {}); // true
+ * ```
+ */
+export function projectionsBehind(entities: Json, projections: Json | undefined): boolean {
+  if (!Array.isArray(entities)) return false;
+  const known = new Set<number>();
+  if (isObject(projections)) {
+    for (const keys of Object.values(projections)) {
+      if (!isObject(keys)) continue;
+      for (const id of Object.values(keys)) if (typeof id === "number") known.add(id);
+    }
+  }
+  return entities.some(entity => {
+    if (!isObject(entity) || !isObject(entity.owner)) return false;
+    return (
+      entity.owner.kind === "projection" && typeof entity.id === "number" && !known.has(entity.id)
+    );
+  });
+}
+
+/**
+ * Reads game.projections once when the entities are ahead of the watched map (see
+ * `projectionsBehind`); one read at a time, the next entities value asks again.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param session - The watch session.
+ */
+async function refreshProjections(ctx: GameViewCtx, session: WatchSession): Promise<void> {
+  const { sources } = ctx.state;
+  // Before the first map arrives the watch itself delivers it.
+  if (session.refreshing || sources.entities === undefined || sources.projections === undefined) {
+    return;
+  }
+  if (!projectionsBehind(sources.entities, sources.projections)) return;
+
+  session.refreshing = true;
+  try {
+    const value = await ctx.require(linkPlugin).read("game.projections");
+    if (session.stopped) return;
+    sources.projections = value;
+    onSceneValue(ctx, session);
+  } catch (error) {
+    ctx.log.warn("gameView: projections read failed", { message: messageOf(error) });
+  } finally {
+    session.refreshing = false;
+  }
+}
+
+/**
  * One watched value: stored, calibration asked once, one rebuild on the next animation frame.
  *
  * @param ctx - Domain context of gameView.
@@ -181,13 +239,19 @@ export function startSceneWatches(ctx: GameViewCtx): void {
   if (state.watching.length > 0) return;
 
   const link = ctx.require(linkPlugin);
-  const session: WatchSession = { frame: 0, scheduled: false, stopped: false };
+  const session: WatchSession = {
+    frame: 0,
+    scheduled: false,
+    stopped: false,
+    refreshing: false
+  };
   for (const [key, id] of SCENE_SOURCES) {
     state.watching.push(
       link.watch(id, undefined, value => {
         state.sources[key] = value;
         session.frame = frameOf(link.status(), session.frame);
         onSceneValue(ctx, session);
+        if (key === "entities") void refreshProjections(ctx, session);
       })
     );
   }

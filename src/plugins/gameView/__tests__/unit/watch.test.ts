@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recalibrate, startSceneWatches, stopSceneWatches } from "../../scene/watch";
+import {
+  projectionsBehind,
+  recalibrate,
+  startSceneWatches,
+  stopSceneWatches
+} from "../../scene/watch";
 import { subscribe } from "../../state";
 import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
 
@@ -196,5 +201,48 @@ describe("recalibrate while hidden", () => {
     expect(ctx.state.calibrationRead).toBe(false);
     expect(ctx.link.read).not.toHaveBeenCalled();
     expect(ctx.state.sources).toEqual({});
+  });
+});
+
+describe("projections behind the entities", () => {
+  it("tells when a projection entity has no key in the map", () => {
+    const entity = { id: 7, owner: { kind: "projection", name: "board.cells" } };
+    const plugin = { id: 8, owner: { kind: "plugin", name: "ui" } };
+
+    expect(projectionsBehind([entity], {})).toBe(true);
+    expect(projectionsBehind([entity], { "board.cells": { c0_0: 7 } })).toBe(false);
+    expect(projectionsBehind([plugin], {})).toBe(false);
+    expect(projectionsBehind({ wrong: true }, {})).toBe(false);
+    expect(projectionsBehind(BOARD.entities, BOARD.projections)).toBe(false);
+  });
+
+  it("reads game.projections once when the watched map is the screen before", async () => {
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    ctx.link.send("game.projections", {});
+    ctx.link.send("game.entities", BOARD.entities);
+    await flush();
+    flushFrames();
+    await flush();
+    flushFrames();
+
+    expect(ctx.link.read.mock.calls.filter(call => call[0] === "game.projections")).toHaveLength(1);
+    expect(ctx.state.sources.projections).toEqual(BOARD.projections);
+    const names = [...(ctx.state.scene?.nodes.values() ?? [])].map(node => node.name);
+    expect(names).toContain("sawmill");
+  });
+
+  it("warns and keeps the old map when the read fails", async () => {
+    ctx.link.values.delete("game.projections");
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    ctx.link.send("game.projections", {});
+    ctx.link.send("game.entities", BOARD.entities);
+    await flush();
+
+    expect(ctx.state.sources.projections).toEqual({});
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: projections read failed", {
+      message: "no value for game.projections"
+    });
   });
 });
