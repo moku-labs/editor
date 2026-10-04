@@ -8,6 +8,7 @@ import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/s
 import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import type { FrameBox } from "../../workspace/types";
+import { hideCard } from "../capture/shot";
 import { completePick } from "../reference/pick";
 import { messageOf } from "../report";
 import { readFreshScene, readScene } from "../scene/read";
@@ -22,8 +23,8 @@ import { saveStyle } from "./styles";
 export type ClientPoint = { readonly x: number; readonly y: number };
 
 /**
- * Turns the picker on (shows Game and the Element tab) or off (clears the hover); toggles
- * without an argument.
+ * Turns the picker on (shows Game and the Element tab, hides the capture card so the first Esc
+ * leaves the picker, round 2b R17) or off (clears the hover); toggles without an argument.
  *
  * @param ctx - Domain context of gameView.
  * @param on - The wanted state; omitted toggles.
@@ -35,6 +36,7 @@ export function setPicker(ctx: GameViewCtx, on?: boolean): void {
     ctx.require(workspacePlugin).show("game");
     state.tab = "element";
     ensureOverlayRoot(ctx);
+    hideCard(ctx);
   }
   state.picker = { on: next, hover: undefined };
   notify(state);

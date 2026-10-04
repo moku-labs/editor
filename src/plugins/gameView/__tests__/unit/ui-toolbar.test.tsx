@@ -199,6 +199,20 @@ describe("DeviceToolbar", () => {
     expect(ctx.state.series.popover).toBe(false);
   });
 
+  it("Shot and Series carry an icon and a label; title and aria-label name them (round 2b R17)", () => {
+    const shot = find(view.root, "[data-part='capture']");
+    expect(shot.getAttribute("aria-label")).toBe("Take a screenshot");
+    expect(shot.getAttribute("title")).toBe("Take a screenshot");
+    expect(find(shot, "[data-part='tool-label']").textContent).toBe("Shot");
+    expect(find(shot, "svg[data-part='tool-icon']").getAttribute("aria-hidden")).toBe("true");
+
+    const series = find(view.root, "[data-part='series']");
+    expect(series.getAttribute("aria-label")).toBe("Record a series");
+    expect(series.getAttribute("title")).toBe("Record a series");
+    expect(find(series, "[data-part='tool-label']").textContent).toBe("Series");
+    expect(find(series, "svg[data-part='tool-icon']").getAttribute("aria-hidden")).toBe("true");
+  });
+
   it("the Series button opens the popover; while recording it is red with the time", () => {
     const series = find(view.root, "[data-part='series']");
     click(series);

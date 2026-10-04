@@ -150,7 +150,7 @@ A device change re-calibrates the picker: another preset, orientation or a fold 
 | `←` / `→` | Previous / next shot, in Game while the contact sheet is open. |
 | `b` | Mark a shot as bug, same scope. |
 
-Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`.
+Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker.
 
 ## Usage
 
@@ -200,6 +200,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - The bezel has a 1 px `var(--border-strong)` outline. Its inner radius is the preset's `radius` at the stage scale (`--screen-radius` on the bezel), so it matches workspace's rounded frame clip.
 - Fit is one scale per device kind (round 2b R9): the scale that fits the tallest preset of the kind, its bezel included, so an iPhone SE shows smaller than a Pro Max. Foldables are phones. Tablets and the desktop have their own scale. The screen shown always fits too, so an unfolded inner screen never runs off the stage. 100 % stays 1 CSS px per px.
 - The bezel follows `DeviceSpec.frame`. `modern`: 10 px all round, the island and the home bar as guides. `home-button` (iPhone SE 3): 64 px above and below the screen, 10 px at the sides, a round 44 px home button in the bottom bezel, a square screen, no island and no home bar. Landscape turns the tall bezels and the button to the sides. The bezel is in stage px, not scaled; Fit leaves room for it.
+- Shot (`data-part="capture"`) and Series (`data-part="series"`) carry an icon and a label (round 2b R17). The Game workspace is the `game` inline-size container; below 1000 px the two show the icon only, 28 px square, the label visually hidden and named by `title` and `aria-label` ("Take a screenshot", "Record a series"). So a 960 px window keeps the toolbar on one row. Wider, they show the label only. A recording Series keeps its red time.
 - The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run`, then keeps the flag with `workspace.setMuted`. It is on while the game has its sound. A game without `game.mute` dims it, title "Needs @moku-labs/game with game.mute". A refusal keeps the flag and toasts "Sound switch failed · <message>".
 
 ### Style card
@@ -209,7 +210,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 3. The style is searched from the key line to the line that closes the JSX element, eight lines at most.
 4. `style={ident}`: the block is the `StyleBlockRef` `{ kind: "const", name: ident }`. The shared style edit looks for it in that file first. If the ident is imported from a relative module, it then looks in that module (`.ts`, `.tsx`, `/index.ts`). This is how merge-game keeps its styles.
 5. `style={call(...)}`: a read-only card with the call, its `file:line` and "Open in Files".
-6. No style in any file: "Defined at file:line" and "Open in Files", from the first file that names the key. "Source not found" only when no file names it.
+6. No style in any file: "Defined at file:line" and "Open in Files", from the first file that names the key. "Source not found" only when no file names it. A text node with a text style key (`style="ui.link"`, also `style={"ui.link"}`) is "defined at" its line too, and the search stops there: the source keeps the key as `textStyle` for the Code section (round 2b R17).
 7. No file names the key literally, and the key ends in digits: the search looks for the template literal of its stem. `card0` finds `` `card${slot}` `` (merge-game `features/orders/strip.tsx:157`). It shows "Defined at file:line (loop)".
 8. Steppers exist only for fields with a `fieldRule`.
 9. A burst writes once with `writeNumber`. A success toasts "✓ Saved" and reloads the game with restore (D-07).
@@ -225,7 +226,7 @@ The side panel of the Game workspace is the shared `SidePanel` (D-29): id `game.
 
 The Element tab's `data-part="code"` section (round 2b R12) shows where the element is written:
 
-- A ui element: its JSX, from the line that opens its tag to the line that closes it, and the `defineStyle` block of `style={ident}`. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
+- A ui element: its JSX, from the line that opens its tag to the line that closes it, and the `defineStyle` block of `style={ident}`. A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17). The block is in the file that calls `defineTextStyles(`: the search of `panels/shared/styles-file`, run once per app and remembered. A remembered file that is gone is searched for again. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
 - The element is found by the style card's source search. A key built in a loop shows the element of its template line, or the template line alone when it is in no tag (merge-game `cardKey`).
 - An entity: "Spawned by <projection> · <file:line>", the line that names the projection key (`name: "board.items"`) inside a `projection({…})` call, else the first line that names it. Then its components with a short value (48 characters) from `game.entities`.
 - It reads again when the element, its source or its style file changes.

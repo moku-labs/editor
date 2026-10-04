@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
 import type { Json } from "../../../registry/protocol";
+import { hideCard, showCard } from "../../capture/shot";
 import {
   highlightElement,
   hoverAt,
@@ -13,9 +14,10 @@ import {
   selectedElement,
   setPicker
 } from "../../element/select";
+import { escapeClosers } from "../../keys";
 import { recalibrate } from "../../scene/calibrate";
 import { startSceneWatches } from "../../scene/watch";
-import { createCtx, flush, sceneCapture, type TestCtx, useScene } from "../helpers";
+import { createCtx, flush, PNG, sceneCapture, type TestCtx, useScene } from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
 const SETTINGS = sceneCapture("scene-settings.txt");
@@ -58,6 +60,24 @@ describe("setPicker", () => {
     expect(ctx.state.picker).toEqual({ on: false, hover: undefined });
     setPicker(ctx);
     expect(ctx.state.picker.on).toBe(true);
+  });
+
+  it("on hides the capture card, so the first Esc leaves the picker (round 2b R17)", () => {
+    showCard(ctx, { path: "a.png", frame: 1, device: "iPhone 15 portrait", image: PNG });
+    expect(ctx.state.card).toBeDefined();
+    setPicker(ctx, true);
+    expect(ctx.state.card).toBeUndefined();
+    expect(ctx.state.timers.card).toBeUndefined();
+    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([false, false, false, true]);
+    expect(ctx.state.picker.on).toBe(false);
+  });
+
+  it("off keeps the capture card", () => {
+    setPicker(ctx, true);
+    showCard(ctx, { path: "a.png", frame: 1, device: "iPhone 15 portrait", image: PNG });
+    setPicker(ctx, false);
+    expect(ctx.state.card?.path).toBe("a.png");
+    hideCard(ctx);
   });
 
   it("creates gameView's overlay root inside gameFrame().overlay() when it turns on", () => {

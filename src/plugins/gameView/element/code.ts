@@ -1,7 +1,8 @@
 /**
  * @file gameView plugin — the code of a picked element (round 2b R12) for the Element tab's Code
  * section and the reference card: a ui element's JSX (element/jsx around the line the source
- * search found) and the `defineStyle` block of `style={ident}` (the style card's loader); an
+ * search found) and the `defineStyle` block of `style={ident}` (the style card's loader), or the
+ * text style key block of a text node's `style="ui.link"` (element/text-styles, round 2b R17); an
  * entity's projection, the line that defines it (element/spawn) and its components with their
  * values from the raw `game.entities`. Nothing here throws: what cannot be read is left out.
  */
@@ -21,6 +22,7 @@ import { elementLines, keyColumn } from "./jsx";
 import { findStyleSource, readText } from "./source";
 import { findProjectionSource } from "./spawn";
 import { type IdentSource, loadBlock } from "./styles";
+import { textStyleOf } from "./text-styles";
 
 /**
  * The characters a component value keeps before it is cut with "…".
@@ -97,6 +99,25 @@ async function styleOf(ctx: GameViewCtx, source: IdentSource): Promise<StyleSnip
 }
 
 /**
+ * The style block of a key source: the `defineStyle` block of `style={ident}`, the text style key
+ * block of `style="ui.link"`; none for a call or an element without a style.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param source - Where the key is.
+ * @returns The block, undefined when there is none or it cannot be read.
+ */
+async function styleBlockOf(
+  ctx: GameViewCtx,
+  source: StyleSource
+): Promise<StyleSnippet | undefined> {
+  if (source.kind === "ident") return styleOf(ctx, source);
+  if (source.kind === "defined" && source.textStyle !== undefined) {
+    return textStyleOf(ctx, source.textStyle);
+  }
+  return undefined;
+}
+
+/**
  * The components of an entity with their values from the raw `game.entities` ("" for a
  * component the game sent without a JSON value, or an entity it did not send).
  *
@@ -143,9 +164,6 @@ export async function elementCode(
 
   const source = await sourceOfKey(ctx, node.key);
   if (source === undefined) return undefined;
-  const [jsx, style] = await Promise.all([
-    jsxOf(ctx, source, node.key),
-    source.kind === "ident" ? styleOf(ctx, source) : undefined
-  ]);
+  const [jsx, style] = await Promise.all([jsxOf(ctx, source, node.key), styleBlockOf(ctx, source)]);
   return { kind: "ui", jsx, style };
 }

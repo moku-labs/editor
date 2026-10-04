@@ -148,12 +148,14 @@ export type StyleCard = {
  * Where a source search found a ui key: `ident` with `style={ident}` (the editable card), `call`
  * with `style={call(...)}` (a read-only card), `defined` with no style on the element. `line` is
  * the 1-based line of the key. A `defined` with `loop` found no literal key: its line builds the
- * key in a template literal (`card${slot}` for "card0").
+ * key in a template literal (`card${slot}` for "card0"). A `defined` with `textStyle` is a text
+ * node with `style="ui.link"`: the Code section shows that key's block (round 2b R17).
  *
  * @example
  * ```ts
  * const source: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 301 };
  * const card: StyleSource = { kind: "defined", path: "features/orders/strip.tsx", line: 157, loop: true };
+ * const link: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 318, textStyle: "ui.link" };
  * ```
  */
 export type StyleSource =
@@ -180,6 +182,8 @@ export type StyleSource =
       readonly line: number;
       /** The key is built in a loop: the line holds its template literal. */
       readonly loop?: true;
+      /** The text style key of a text node (`style="ui.link"`): its block is in the styles file. */
+      readonly textStyle?: string;
     };
 
 /**
@@ -309,7 +313,8 @@ export type CodeSnippet = {
 };
 
 /**
- * The `defineStyle` block a ui element uses, named by its identifier.
+ * The style block a ui element uses: the `defineStyle` block of `style={ident}` named by the
+ * identifier, or the text style key block of `style="ui.link"` named by the key (round 2b R17).
  */
 export type StyleSnippet = CodeSnippet & { readonly name: string };
 
@@ -333,7 +338,7 @@ export type ElementCode =
       readonly kind: "ui";
       /** The element from the line that opens its tag to the line that closes it. */
       readonly jsx: CodeSnippet | undefined;
-      /** The `defineStyle` block of `style={ident}`, named by the identifier. */
+      /** The `defineStyle` block of `style={ident}`, or the text style key block of `style="ui.link"`. */
       readonly style: StyleSnippet | undefined;
     }
   | {
@@ -455,6 +460,11 @@ export type GameViewState = {
   blocks: Map<string, BlockAt>;
   /** The search for the definition of a projection, per projection key (round 2b R12). */
   spawns: Map<string, Promise<BlockAt | undefined>>;
+  /**
+   * The search for the file that calls `defineTextStyles(` (round 2b R17), once per app; dropped
+   * when it finds none or the file is gone.
+   */
+  textStyles: Promise<string | undefined> | undefined;
   /** The reference card written last per `<node id>@<frame>` (round 2b R13). */
   cards: Map<string, string>;
   /** Reference mode: the proxy layer in the frame overlay. */

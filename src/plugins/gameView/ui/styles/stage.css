@@ -1,6 +1,8 @@
 /* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4) with the preset's screen radius and frame (modern, or home-button with its round button, round 2b R9), the clip of the docked frame, the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="workspace"]) {
   :scope {
+    /* The toolbar's container queries measure the workspace (round 2b R17). */
+    container: game / inline-size;
     display: grid;
     grid-template-rows: 44px minmax(0, 1fr);
     /* One column no wider than the host: the toolbar's nowrap row never widens the body. */

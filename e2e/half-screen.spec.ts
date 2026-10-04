@@ -6,8 +6,9 @@
  * pill's tooltip; under 560 px the game name goes too; labels collapse to accessible names; the
  * full width loop is e2e/top-bar.spec.ts); the rail is reachable; the
  * pinned preview stays inside main; nothing in a workspace is cut off by a box that does not
- * scroll (wide content scrolls inside its panel); the Game toolbar wraps and its Element panel
- * stays in view (a drawer below 600 px); the Flow chrome never overlaps; the State columns stack
+ * scroll (wide content scrolls inside its panel); the Game toolbar wraps (at 960 px it keeps one
+ * row: Shot and Series are icons below a 1000 px workspace) and its Element panel stays in view
+ * (a drawer below 600 px); the Flow chrome never overlaps; the State columns stack
  * below 760 px; the palette and the Registry popover fit the window. Each workspace leaves a
  * screenshot in .planning/e2e/shots/half/ for review. The palette and popover check also runs on
  * desktop. All geometry is getBoundingClientRect, measured in the page and judged here.
@@ -467,6 +468,39 @@ test.describe("half-screen", () => {
         return Math.max(Math.abs(slot.left - frame.left), Math.abs(slot.top - frame.top));
       })
       .toBeLessThanOrEqual(2);
+  });
+
+  test("Game: at 960 px the toolbar keeps one row; Shot and Series are icons", async ({
+    tools
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium-half-wide", "the 960 px window only");
+    const page = tools.page;
+    await tools.show("game");
+    const toolbar = page.locator("[data-game=toolbar]");
+    await expect(toolbar).toBeVisible();
+    await tools.settle();
+    const rows = await toolbar.locator(":is(button, select)").evaluateAll(elements =>
+      elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        return { text: element.textContent?.trim() ?? "", middle: (rect.top + rect.bottom) / 2 };
+      })
+    );
+    expect(rows.length).toBeGreaterThan(5);
+    // One row: every control is centred on the same line (a segment sits inside its group).
+    const first = rows[0];
+    for (const row of rows) {
+      expect(Math.abs(row.middle - (first?.middle ?? 0)), `${row.text} on the row`).toBeLessThan(2);
+    }
+    const box = await toolbar.boundingBox();
+    expect(box?.height ?? 0, "one-row toolbar").toBeLessThanOrEqual(44);
+    // The labels moved into the names: the buttons show their icons, 28 px square.
+    for (const name of ["Take a screenshot", "Record a series"]) {
+      const control = toolbar.getByRole("button", { name, exact: true });
+      await expect(control).toHaveAttribute("title", name);
+      await expect(control.locator("[data-part=tool-icon]")).toBeVisible();
+      const size = await control.boundingBox();
+      expect(size?.width).toBe(28);
+    }
   });
 
   test("Flow: breadcrumb, canvas toolbar, zoom bar, minimap and preview never overlap", async ({

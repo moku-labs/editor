@@ -38,7 +38,7 @@ A save writes the file and runs the D-07 reload/restore flow.
 | `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
 | `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
-| `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped). |
+| `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped; the search is `panels/shared/styles-file`, shared with gameView). |
 | `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
 | `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
 | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |

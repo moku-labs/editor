@@ -368,3 +368,32 @@ describe.skipIf(!existsSync(MERGE_GAME_DIR))(
     });
   }
 );
+
+describe("text style keys (round 2b R17)", () => {
+  it('reads style="ui.link" (and style={"ui.link"}) as the text style key of the element', () => {
+    expect(matchKey('<text key="resetLabel" style="ui.link" content={x} />', "resetLabel")).toEqual(
+      { line: 1, style: { kind: "text", key: "ui.link", line: 1 } }
+    );
+    expect(matchKey('<text\n  key="resetLabel"\n  style={"ui.tab"}\n/>', "resetLabel")).toEqual({
+      line: 2,
+      style: { kind: "text", key: "ui.tab", line: 3 }
+    });
+    expect(matchKey('<a data-style="ui.link" key="k" />', "k")).toEqual({
+      line: 1,
+      style: undefined
+    });
+  });
+
+  it("finds a text node as defined at its line with its text style key, at once", async () => {
+    const ctx = createCtx({
+      "a.tsx": '<text key="resetLabel" style="ui.link" content={x} />',
+      "b.tsx": '<text key="resetLabel" style={other} />'
+    });
+    expect(await findStyleSource(ctx, "resetLabel")).toEqual({
+      kind: "defined",
+      path: "a.tsx",
+      line: 1,
+      textStyle: "ui.link"
+    });
+  });
+});

@@ -1724,16 +1724,11 @@ test.describe("game · element picker", () => {
     await tab.locator("[data-part=children] button", { hasText: /^play$/ }).click();
     await expect(tab.locator("[data-part=name]")).toHaveText("play");
 
-    // Pick another turns the picker on. The pick's capture card (round 2b R14) is the upper Esc
-    // layer while it shows: the first Esc closes it; then Esc leaves the picker and keeps the
-    // selection.
+    // Pick another turns the picker on and hides the pick's capture card (round 2b R17), so the
+    // first Esc leaves the picker and keeps the selection.
     await tab.getByRole("button", { name: "Pick another" }).click();
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
-    const card = page.locator("[data-game=card]");
-    if (await card.isVisible()) {
-      await page.keyboard.press("Escape");
-      await expect(card).toHaveCount(0);
-    }
+    await expect(page.locator("[data-game=card]")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
     await expect(overlay(page).locator("[data-part=picker]")).toHaveCount(0);

@@ -4,8 +4,10 @@
  * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
  * (`game.mute`, dimmed with a tooltip without it, round 2b R11), Reload, camera,
  * Series (red with the time while recording) and, while the Element panel is closed, its reopen
- * button. Camera and Series are dimmed with a tooltip when the game lacks their command. The
- * overlay-in-game switch lives in the top bar (round 2 R1).
+ * button. Camera and Series are dimmed with a tooltip when the game lacks their command; each
+ * carries an icon and a label, and below a 1000 px workspace shows the icon only, named by its
+ * title and aria-label (round 2b R17, toolbar.css). The overlay-in-game switch lives in the top
+ * bar (round 2 R1).
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
@@ -25,6 +27,7 @@ import { foldDevice } from "../stage/fold";
 import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
+import { ToolIcon } from "./ToolIcon";
 import { elapsedText } from "./text";
 import { RECORD_TICK_MS, useGameView, useTicker } from "./useGameView";
 
@@ -291,7 +294,8 @@ function CameraButton(props: { readonly ctx: GameViewCtx }): VNode {
       {...dimmed(off, "Take a screenshot")}
       onClick={off ? undefined : () => takeScreenshot(ctx)}
     >
-      Shot
+      <ToolIcon name="camera" />
+      <span data-part="tool-label">Shot</span>
     </button>
   );
 }
@@ -326,10 +330,12 @@ function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
       type="button"
       data-part="series"
       aria-expanded={popover}
+      aria-label="Record a series"
       {...dimmed(off, "Record a series")}
       onClick={off ? undefined : () => setPopover(ctx, !popover)}
     >
-      Series
+      <ToolIcon name="series" />
+      <span data-part="tool-label">Series</span>
     </button>
   );
 }

@@ -1,4 +1,4 @@
-/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload, camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload, camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. Below a 1000 px workspace (the `game` container, stage.css) Shot and Series show their icon only, the label kept for screen readers, so a 960 px window keeps one row (round 2b R17). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="toolbar"]) {
   :scope {
     display: flex;
@@ -53,6 +53,10 @@
     margin-left: auto;
   }
 
+  [data-part="tool-icon"] {
+    display: none;
+  }
+
   [data-part="series"][data-recording] {
     border-color: var(--status-error);
     background: var(--status-error);
@@ -67,6 +71,32 @@
       height: auto;
       min-height: 44px;
       padding: 7px 12px;
+    }
+  }
+
+  @container game (width < 1000px) {
+    :scope {
+      column-gap: 6px;
+    }
+
+    :has(> [data-part="tool-icon"]) {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      padding: 0;
+    }
+
+    [data-part="tool-icon"] {
+      display: block;
+    }
+
+    [data-part="tool-label"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
   }
 }

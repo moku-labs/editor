@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SceneNode } from "../../../panels/shared/scene";
 import { elementCode, shortValue } from "../../element/code";
 import { matchProjection } from "../../element/spawn";
+import { missing } from "../files-store";
 import { createCtx, sceneCapture, type TestCtx } from "../helpers";
 import { boardScene } from "../ui";
 
@@ -147,5 +148,71 @@ describe("elementCode of an entity (round 2b R12)", () => {
       line: 4
     });
     expect(first?.kind === "entity" ? first.components.map(row => row.value)[0] : "?").toBe("");
+  });
+});
+
+describe("elementCode of a text node (round 2b R17)", () => {
+  const TEXT_HUD = '<text key="coinPill" style="ui.link" content={tr("reset")} />\n';
+  const TEXT_STYLES = [
+    'import { defineTextStyles } from "../../kit";',
+    "export const uiStyles = defineTextStyles({",
+    '  "ui.title": { size: 64 },',
+    '  "ui.link": {',
+    "    size: 40,",
+    "    fill: berry",
+    "  }",
+    "});"
+  ].join("\n");
+
+  it("shows the text style key block from the file that calls defineTextStyles", async () => {
+    const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
+    expect(await elementCode(ctx, coinPill())).toEqual({
+      kind: "ui",
+      jsx: { path: "src/hud/Hud.tsx", line: 1, lines: [TEXT_HUD.trim()] },
+      style: {
+        path: "features/ui/styles.ts",
+        line: 4,
+        lines: ['  "ui.link": {', "    size: 40,", "    fill: berry", "  }"],
+        name: "ui.link"
+      }
+    });
+  });
+
+  it("searches the styles file once", async () => {
+    const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
+    await elementCode(ctx, coinPill());
+    const read = vi.spyOn(ctx.link.files, "read");
+    const list = vi.spyOn(ctx.link.files, "list");
+    const code = await elementCode(ctx, coinPill());
+    expect(code?.kind === "ui" ? code.style?.name : "?").toBe("ui.link");
+    expect(list).not.toHaveBeenCalled();
+    expect(read.mock.calls.map(call => call[0])).toEqual([
+      "src/hud/Hud.tsx",
+      "features/ui/styles.ts"
+    ]);
+  });
+
+  it("has no style block when no file defines the key or calls defineTextStyles", async () => {
+    const other = TEXT_STYLES.replace('"ui.link"', '"ui.other"');
+    const noKey = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": other });
+    const code = await elementCode(noKey, coinPill());
+    expect(code?.kind === "ui" ? code.style : "?").toBeUndefined();
+    expect(code?.kind === "ui" ? code.jsx?.line : "?").toBe(1);
+
+    const none = createCtx({ "src/hud/Hud.tsx": TEXT_HUD });
+    const bare = await elementCode(none, coinPill());
+    expect(bare?.kind === "ui" ? bare.style : "?").toBeUndefined();
+  });
+
+  it("looks for the styles file again when the remembered one is gone", async () => {
+    const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
+    await elementCode(ctx, coinPill());
+    ctx.link.files.put("features/text/styles.ts", TEXT_STYLES);
+    const read = ctx.link.files.read.bind(ctx.link.files);
+    vi.spyOn(ctx.link.files, "read").mockImplementation(path =>
+      path === "features/ui/styles.ts" ? Promise.reject(missing(path)) : read(path)
+    );
+    const code = await elementCode(ctx, coinPill());
+    expect(code?.kind === "ui" ? code.style?.path : "?").toBe("features/text/styles.ts");
   });
 });

@@ -6,7 +6,9 @@
  * the JSX element (to the line that closes it, eight lines at most). `style={ident}` is the
  * StyleBlockRef `{ kind: "const", name: ident }` (R8) the shared style edit finds in that file or
  * in the file the ident is imported from; `style={call(...)}` is shown read-only; an element with
- * no style is still "defined at" its line. A key no file names literally that ends in digits is
+ * no style is still "defined at" its line, a text node with `style="ui.link"` too, with its text
+ * style key (round 2b R17: the Code section shows that key's block). A key no file names
+ * literally that ends in digits is
  * looked for as built in a loop: the template literal of its stem (`card${` for "card0") is
  * "defined at" its line with `loop`. Every result is remembered per key in `state.found`; one
  * search per key runs at a time (`state.searches`).
@@ -36,6 +38,16 @@ const CALL = /^[$A-Z_a-z][\w$.]*\s*\(/;
 const STYLE_OPEN = /(?<![\w$.-])style=\{/;
 
 /**
+ * A text style key as a string attribute: `style="ui.link"` (not `data-style=`).
+ */
+const TEXT_STYLE = /(?<![\w$.-])style="([^"]+)"/;
+
+/**
+ * A quoted string: the whole text of a `style={"ui.link"}`.
+ */
+const QUOTED = /^"([^"]+)"$/;
+
+/**
  * A `>` that closes a JSX tag: not the arrow of `=>`.
  */
 const CLOSES_TAG = /(?<!=)>/;
@@ -61,12 +73,13 @@ const DIGITS = "0123456789";
 const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
 
 /**
- * The style of an element: a plain identifier, or a call shown as written (`…` when it goes on
- * past its line), with its 1-based line.
+ * The style of an element: a plain identifier, a call shown as written (`…` when it goes on
+ * past its line), or the text style key of a text node, with its 1-based line.
  */
 export type KeyStyle =
   | { readonly kind: "ident"; readonly name: string; readonly line: number }
-  | { readonly kind: "call"; readonly text: string; readonly line: number };
+  | { readonly kind: "call"; readonly text: string; readonly line: number }
+  | { readonly kind: "text"; readonly key: string; readonly line: number };
 
 /**
  * The pattern of a key in its six forms: `key` or `id`, as `="k"`, `={"k"}` or `: "k"`.
@@ -110,8 +123,9 @@ function bracedText(line: string, start: number): string {
 }
 
 /**
- * The style attribute on one line: an identifier or a call; anything else (an inline object, a
- * condition) is no style the search can show.
+ * The style attribute on one line: an identifier, a call or a text style key (`style="ui.link"`,
+ * `style={"ui.link"}`); anything else (an inline object, a condition) is no style the search can
+ * show.
  *
  * @param line - A line.
  * @param number - Its 1-based line number.
@@ -119,15 +133,20 @@ function bracedText(line: string, start: number): string {
  * @example
  * ```ts
  * styleOn("  style={hudRow}", 5); // { kind: "ident", name: "hudRow", line: 5 }
+ * styleOn('  style="ui.link"', 6); // { kind: "text", key: "ui.link", line: 6 }
  * ```
  */
 function styleOn(line: string, number: number): KeyStyle | undefined {
+  const textKey = TEXT_STYLE.exec(line)?.[1];
+  if (textKey !== undefined) return { kind: "text", key: textKey, line: number };
   const open = STYLE_OPEN.exec(line);
   if (open === null) return undefined;
+
   const text = bracedText(line, open.index + open[0].length);
   if (IDENT.test(text)) return { kind: "ident", name: text, line: number };
   if (CALL.test(text)) return { kind: "call", text, line: number };
-  return undefined;
+  const quoted = QUOTED.exec(text)?.[1];
+  return quoted === undefined ? undefined : { kind: "text", key: quoted, line: number };
 }
 
 /**
@@ -410,12 +429,14 @@ function sourceOf(
   }
   if (style?.kind === "call")
     return { kind: "call", path, line, call: style.text, callLine: style.line };
+  if (style?.kind === "text") return { kind: "defined", path, line, textStyle: style.key };
   return { kind: "defined", path, line };
 }
 
 /**
- * One search of a ui key over the source files: the first element with a style returns at once;
- * else the first file that defines the key, else the first loop that builds it.
+ * One search of a ui key over the source files: the first element with a style (a text style key
+ * too) returns at once; else the first file that defines the key, else the first loop that
+ * builds it.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
@@ -435,7 +456,7 @@ async function searchSource(ctx: GameViewCtx, key: string): Promise<StyleSource 
       continue;
     }
     const source = sourceOf(path, text, match);
-    if (source.kind !== "defined") return source;
+    if (source.kind !== "defined" || source.textStyle !== undefined) return source;
     defined ??= source;
   }
   return defined ?? loop;
