@@ -103,15 +103,29 @@ function inChrome(target: EventTarget | null): boolean {
 }
 
 /**
+ * True for an event on a native control inside the world (a frame's Collapse and Enter, a card's
+ * expand toggle). The canvas must not start a gesture there: its pointer capture would take the
+ * `click` away from the control.
+ *
+ * @param target - The event target.
+ * @returns Whether the target is a control with its own click.
+ */
+function onControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element && target.closest("button, a[href], input, select, textarea") !== null
+  );
+}
+
+/**
  * True for a press the canvas leaves alone: a button other than the primary or the middle one,
- * or a press inside the canvas chrome.
+ * a press inside the canvas chrome or on a native control in the world.
  *
  * @param event - The pointerdown.
  * @returns Whether the canvas ignores the press.
  */
 function isIgnoredPress(event: PointerEvent): boolean {
   const isPrimaryOrMiddle = event.button === PRIMARY_BUTTON || event.button === MIDDLE_BUTTON;
-  return !isPrimaryOrMiddle || inChrome(event.target);
+  return !isPrimaryOrMiddle || inChrome(event.target) || onControl(event.target);
 }
 
 /**
@@ -281,6 +295,11 @@ export function Canvas(props: CanvasProps): VNode {
   const canvas = useElement<HTMLDivElement>();
   const gesture = useRef<Gesture | undefined>(undefined);
   const space = useRef(false);
+  // The hit of the last two presses: a double-click enters what its FIRST press was on, because
+  // that press selects the item and the focus camera moves it away from under the pointer.
+  const presses = useRef<{ readonly hit: string | undefined; readonly key: string | undefined }[]>(
+    []
+  );
   const [drag, setDrag] = useState<Drag>();
   const [hover, setHover] = useState<string>();
 
@@ -380,6 +399,7 @@ export function Canvas(props: CanvasProps): VNode {
       if (isIgnoredPress(event)) return;
       const element = hitOf(event.target);
       const name = element?.dataset.hit;
+      presses.current = [...presses.current.slice(-1), { hit: name, key: element?.dataset.key }];
       const hit: HitTarget = name === undefined ? "canvas" : (HITS[name] ?? "canvas");
       const key = element?.dataset.key;
       const item = key === undefined ? undefined : world?.result.byKey[key];
@@ -458,9 +478,11 @@ export function Canvas(props: CanvasProps): VNode {
   const onDoubleClick = useCallback(
     (event: MouseEvent) => {
       if (inChrome(event.target)) return;
+      // The canvas holds the pointer capture, so the target is the canvas: use the first press.
+      const first = presses.current.length === 2 ? presses.current[0] : undefined;
       const element = hitOf(event.target);
-      const key = element?.dataset.key;
-      if (key !== undefined && entersOnDoubleClick(element?.dataset.hit)) actions.flows.enter(key);
+      const press = first ?? { hit: element?.dataset.hit, key: element?.dataset.key };
+      if (press.key !== undefined && entersOnDoubleClick(press.hit)) actions.flows.enter(press.key);
     },
     [actions]
   );
