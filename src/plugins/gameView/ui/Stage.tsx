@@ -1,10 +1,11 @@
 /**
  * @file gameView plugin — the dotted stage (A2): the bezel around the screen slot sized W·k × H·k,
  * the dock of the one game frame over the slot (`gameFrame().dock`, the iframe never moves, R4,
- * D-14), the badges (F12) and the picker hint pill. Everything drawn over the game screen lives
- * in gameView's overlay root (ensureOverlayRoot), not here.
+ * D-14) clipped to the stage less the open Element panel drawer, the badges (F12) and the picker
+ * hint pill. Everything drawn over the game screen lives in gameView's overlay root
+ * (ensureOverlayRoot), not here.
  */
-import type { VNode } from "preact";
+import type { RefObject, VNode } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { LinkStatus } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
@@ -13,6 +14,7 @@ import { fitScale, slotSize } from "../stage/geometry";
 import type { GameViewCtx, GameViewState } from "../types";
 import { ensureOverlayRoot } from "./OverlayRoot";
 import { elapsedText, linkBadge, type StageBadge } from "./text";
+import { useDrawerCover } from "./useDrawerCover";
 import { RECORD_TICK_MS, SILENT_TICK_MS, useGameView, useTicker } from "./useGameView";
 
 /**
@@ -53,12 +55,12 @@ function observeSize(element: HTMLElement | null, onSize: (size: Size) => void):
 }
 
 /**
- * Docks the game frame over the slot (fit or actual size, clipped by the stage viewport); the
+ * Docks the game frame over the slot (fit or actual size, clipped by the stage clip); the
  * release goes into the disposers so onStop releases it too.
  *
  * @param ctx - Domain context of gameView.
  * @param slot - The screen slot.
- * @param clip - The stage viewport.
+ * @param clip - The stage clip: the stage less the open drawer.
  * @param zoom - The stage zoom.
  * @returns Releases the dock (and drops it from the disposers).
  */
@@ -79,6 +81,35 @@ function dockSlot(
     if (index !== -1) disposers.splice(index, 1);
     release();
   };
+}
+
+/**
+ * Keeps the game frame docked over the slot: docked at mount, again on a zoom change and on a
+ * change of the drawer cover (so the frame clips in the same pass, not a resize observation
+ * later), released on unmount. The newer dock replaces the older one before the older one is
+ * released, so the frame never hides in between.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param parts - The screen slot and the stage clip.
+ * @param parts.slot - The screen slot.
+ * @param parts.clip - The stage clip.
+ * @param zoom - The stage zoom.
+ * @param cover - The px the open drawer covers.
+ */
+function useStageDock(
+  ctx: GameViewCtx,
+  parts: { readonly slot: RefObject<HTMLElement>; readonly clip: RefObject<HTMLElement> },
+  zoom: GameViewState["zoom"],
+  cover: number
+): void {
+  const release = useRef<() => void>(() => {});
+
+  useLayoutEffect(() => {
+    const previous = release.current;
+    release.current = dockSlot(ctx, parts.slot.current, parts.clip.current, zoom);
+    previous();
+  }, [zoom, cover]);
+  useLayoutEffect(() => () => release.current(), []);
 }
 
 /**
@@ -127,11 +158,14 @@ export function Stage(props: StageProps): VNode {
   const { ctx, status } = props;
   const { state } = ctx;
   const zoom = useGameView(state, () => state.zoom);
+  const root = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const slot = useRef<HTMLDivElement>(null);
+  const clip = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Size>({ w: 0, h: 0 });
+  const cover = useDrawerCover(root);
   useLayoutEffect(() => observeSize(viewport.current, setMeasured), []);
-  useLayoutEffect(() => dockSlot(ctx, slot.current, viewport.current, zoom), [zoom]);
+  useStageDock(ctx, { slot, clip }, zoom, cover);
   const silent = status.kind === "silent" || status.kind === "lost";
   useTicker(
     silent || state.series.recording !== undefined,
@@ -146,7 +180,12 @@ export function Stage(props: StageProps): VNode {
   const hint = pickerHint(state);
 
   return (
-    <div data-game="stage" data-zoom={zoom} data-stale={silent ? status.kind : undefined}>
+    <div
+      data-game="stage"
+      ref={root}
+      data-zoom={zoom}
+      data-stale={silent ? status.kind : undefined}
+    >
       <div data-part="viewport" ref={viewport}>
         <div data-part="bezel" data-kind={choice.preset.kind} data-orientation={choice.orientation}>
           <div
@@ -156,6 +195,7 @@ export function Stage(props: StageProps): VNode {
           />
         </div>
       </div>
+      <div data-part="clip" ref={clip} aria-hidden="true" style={{ right: `${cover}px` }} />
       <div data-part="badges">
         {stageBadges(status, state).map(badge => (
           <span key={badge.key} data-part="badge" data-tone={badge.tone}>

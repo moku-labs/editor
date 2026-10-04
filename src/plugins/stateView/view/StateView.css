@@ -1,4 +1,4 @@
-/* stateView · State workspace (A4): title line, three-column grid (Player 1.3fr · Last commit + Session 1fr · Runner 0.9fr), each card scrolls on its own. The view is its own size container: below 760 px the columns stack in one column that scrolls (Player, Last commit, Session, Runner), each card collapses from the toggle in its head. Never a horizontal scroll. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* stateView · State workspace (A4): title line, three-column grid (Player 1.3fr · Last commit + Session 1fr · Runner 0.9fr), each card scrolls on its own. The view is its own size container: below 760 px the columns stack in one column that scrolls (Player, Last commit, Session, Runner), each card at its content height, each card collapses from the toggle in its head. Never a horizontal scroll. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="state"] [data-part="state-view"]) {
   :scope {
     container-type: inline-size;
@@ -71,8 +71,8 @@
     font-weight: 600;
   }
 
-  /* The collapse toggle of a card: only while the columns stack. */
-  [data-action="toggle-card"] {
+  /* The collapse toggle of a card: only while the columns stack. The head in the selector outranks the ghost button primitive (button[data-variant], same layer). */
+  [data-part="head"] > [data-action="toggle-card"] {
     display: none;
     place-items: center;
     inline-size: 24px;
@@ -86,8 +86,10 @@
   }
 
   @container (width < 760px) {
+    /* Rows at their content height: the column scrolls, a card never shrinks under its content. */
     [data-part="columns"] {
       grid-template-columns: minmax(0, 1fr);
+      grid-auto-rows: max-content;
       align-content: start;
       overflow-x: hidden;
       overflow-y: auto;
@@ -98,10 +100,11 @@
     }
 
     [data-card] {
+      min-height: auto;
       overflow: visible;
     }
 
-    [data-action="toggle-card"] {
+    [data-part="head"] > [data-action="toggle-card"] {
       display: grid;
     }
 

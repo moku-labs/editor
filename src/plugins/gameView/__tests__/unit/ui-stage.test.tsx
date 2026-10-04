@@ -2,6 +2,7 @@
 
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { updateSidePanel } from "../../../panels/shared/side-panel/store";
 import type { LinkStatus } from "../../../registry/protocol";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
@@ -48,11 +49,13 @@ afterEach(() => {
 });
 
 describe("Stage", () => {
-  it("docks the frame over its slot, clipped by the stage viewport, and creates the overlay root", () => {
+  it("docks the frame over its slot, clipped by the whole stage, and creates the overlay root", () => {
     const mounted = stage();
     const slot = find(mounted.root, "[data-part='slot']");
-    const viewport = find(mounted.root, "[data-part='viewport']");
-    expect(ctx.workspace.dock).toHaveBeenCalledWith(slot, { fit: "fit", clip: viewport });
+    const clip = find(mounted.root, "[data-game='stage'] > [data-part='clip']");
+    expect(clip.getAttribute("aria-hidden")).toBe("true");
+    expect(clip.style.right).toBe("0px");
+    expect(ctx.workspace.dock).toHaveBeenCalledWith(slot, { fit: "fit", clip });
     expect(ctx.state.overlayRoot?.parentElement).toBe(ctx.workspace.overlayElement);
   });
 
@@ -168,5 +171,130 @@ describe("Stage", () => {
     mounted.unmount();
     view = undefined;
     vi.useRealTimers();
+  });
+});
+
+/** Lets the cover's first measure (a microtask after the render) run and its render commit. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/** The page rect of a box from its left, top, width and height. */
+function rectOf(left: number, top: number, width: number, height: number): DOMRect {
+  const box = {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height
+  };
+  return { ...box, toJSON: () => box } as DOMRect;
+}
+
+/**
+ * Mounts the stage in a Game body beside an Element panel aside with its resize handle: the
+ * stage spans 0..480 px, the drawer 200..480 px and its handle straddles the drawer's edge.
+ *
+ * @returns The mounted body.
+ */
+function stageBesideDrawer(): Mounted {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement
+  ) {
+    if (this.dataset.game === "stage") return rectOf(0, 50, 480, 800);
+    if (this.dataset.sidePanel === "game.side") return rectOf(200, 50, 280, 800);
+    if (this.dataset.part === "handle") return rectOf(197, 50, 6, 800);
+    return rectOf(0, 0, 0, 0);
+  });
+  view?.unmount();
+  view = mount(
+    <div data-part="body">
+      <Stage ctx={ctx} status={{ kind: "live", frame: 1 }} />
+      <aside data-side-panel="game.side">
+        <div data-part="handle" />
+      </aside>
+    </div>
+  );
+  return view;
+}
+
+describe("Stage beside the Element panel drawer", () => {
+  afterEach(() => {
+    updateSidePanel("game.side", { overlay: false, drawer: false });
+    vi.unstubAllGlobals();
+  });
+
+  it("clips the docked frame to the stage left of the open drawer and its handle", async () => {
+    updateSidePanel("game.side", { overlay: true, drawer: true });
+    const mounted = stageBesideDrawer();
+    await settle();
+
+    const clip = find(mounted.root, "[data-part='clip']");
+    expect(clip.style.right).toBe("283px");
+    expect(ctx.workspace.dock).toHaveBeenLastCalledWith(find(mounted.root, "[data-part='slot']"), {
+      fit: "fit",
+      clip
+    });
+  });
+
+  it("re-docks at once when the drawer opens and shuts; the newer dock comes before the release", async () => {
+    updateSidePanel("game.side", { overlay: true, drawer: false });
+    const mounted = stageBesideDrawer();
+    const clip = find(mounted.root, "[data-part='clip']");
+    expect(clip.style.right).toBe("0px");
+    expect(ctx.workspace.dock).toHaveBeenCalledTimes(1);
+
+    act(() => updateSidePanel("game.side", { drawer: true }));
+    await settle();
+    expect(clip.style.right).toBe("283px");
+    expect(ctx.workspace.dock).toHaveBeenCalledTimes(2);
+    expect(ctx.workspace.release).toHaveBeenCalledTimes(1);
+    const [docked] = ctx.workspace.dock.mock.invocationCallOrder.slice(-1);
+    const [released] = ctx.workspace.release.mock.invocationCallOrder.slice(-1);
+    expect(docked ?? 0).toBeLessThan(released ?? 0);
+
+    act(() => updateSidePanel("game.side", { drawer: false }));
+    await settle();
+    expect(clip.style.right).toBe("0px");
+    expect(ctx.workspace.dock).toHaveBeenCalledTimes(3);
+  });
+
+  it("clips nothing while the Element panel is docked beside the stage", async () => {
+    updateSidePanel("game.side", { overlay: false, drawer: true });
+    const mounted = stageBesideDrawer();
+    await settle();
+
+    expect(find(mounted.root, "[data-part='clip']").style.right).toBe("0px");
+  });
+
+  it("follows a resize of the open drawer", async () => {
+    const observers: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      }
+    );
+    updateSidePanel("game.side", { overlay: true, drawer: true });
+    const mounted = stageBesideDrawer();
+    await settle();
+    const aside = find(mounted.root, "aside[data-side-panel='game.side']");
+    aside.querySelector("[data-part='handle']")?.remove();
+    vi.spyOn(aside, "getBoundingClientRect").mockReturnValue(rectOf(120, 50, 360, 800));
+
+    act(() => {
+      for (const callback of observers) callback();
+    });
+
+    expect(find(mounted.root, "[data-part='clip']").style.right).toBe("360px");
   });
 });

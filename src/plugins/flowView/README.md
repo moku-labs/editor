@@ -141,13 +141,15 @@ The Nodes group is replaced when the graph hash changes. The Styles group is rep
 | `\` | Collapse or expand the Inspector panel. |
 | `←` `→` / `↑` `↓` | With a selection: walk along a *Comes from* / *Outcomes* row; move the highlight through the Info tab rows (Outcomes, then Comes from). Not while the Inspector tabs, a resize handle, a menu or a select has focus. |
 | `alt+←` | Back to the selection before the last followed edge. |
-| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. Other controls keep their own Enter. |
+| `enter` | Follow the highlighted row; on a card with keyboard focus, focus that card. A highlighted row wins over the focused card, so Enter after a walk follows the row. Other controls keep their own Enter. |
 | `mod+s` | Save the code edit, while editing. |
 | `tab` | Moves focus card to card. A card or the hub outside the canvas pans the camera onto it. Zoom and selection stay. |
 
 The canvas clips (`overflow: clip`) and never scrolls, so the pan above is the only way a focused item comes into view.
 
 The pinned preview floats in the canvas, clear of the breadcrumb and toolbar band, the zoom bar and the minimap (`camera/chrome.ts`). When the float shares columns with the minimap, its bottom inset clears the minimap. That is bottom-right always, and bottom-left on a canvas too narrow for both. A tall float on a short canvas is raised only as far as it still fits under the top band.
+
+While the Inspector floats open over the canvas as a drawer (below 600 px), the zone ends where the drawer starts, so the preview never covers it (`preview-zone.ts`, `drawerInset` in `camera/chrome.ts`). The zone is registered again on every change of the Inspector panel and every resize of the canvas, so the preview follows an open, a resize, a collapse or a close at once.
 
 Canvas chrome: the breadcrumb ends with the current node chip and the toolbar has Show where the
 game is (both run Find current, key `c`). While the current node is out of view, a chevron on the
@@ -192,6 +194,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 - `watch.ts` holds the session watches and `data.ts` parses and ingests their values;
 - `intents.ts` runs the intents of other views, or keeps one until the first flow values;
 - `view-model.ts` computes the view data the render and inspector components get by props;
+- `preview-zone.ts` makes the canvas the preview zone, clear of an open Inspector drawer, and keeps it in step with the panel and the canvas size;
 - `panel.tsx` composes the components.
 
 | Folder | What |
@@ -199,7 +202,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 | `camera/` | Pure camera math, the chrome geometry (preview zone, focus reveal), input interpretation, the rAF tween (reduced motion jumps), the zoom bar and the minimap. Camera moves write the world transform directly and never re-render node cards. |
 | `layout/` | Hub detection, the hub-lane layout and its label pass, DFS back edges, the ELK input (labels, spacing by density) and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, instance edges (`edges.ts`: the edge of an Info row, the other end of an edge). |
-| `inspector/` | The node → file lookup, the Code tab controller, the styles file search, the Styles tab controller over `panels/shared/style-edit`, the tabs. |
+| `inspector/` | The node → file lookup, the Code tab controller, the styles file search, the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
 | `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. |
 
 ### Layout engine (elkjs)
@@ -220,7 +223,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 - Component tokens: `--flow-node-w`, `--flow-row`, `--flow-label-min: 11px` (M14).
 - Stale data areas get `filter: saturate(0.2); opacity: 0.55`, never `backdrop-filter` (M6).
 - A dimmed card, hub or stub keeps its opaque background; only its content fades, so no edge shows through. The world paints frames, lanes, heads, then the edges and their labels, then the items.
-- The context menu is a `popover` (M7, D-14).
+- The context menu is a `popover` (M7, D-14). It opens at the click when it fits; else it flips to end at the click; else it sits against the far canvas edge, never before 0.
 
 ## Limits and game follow-ups
 

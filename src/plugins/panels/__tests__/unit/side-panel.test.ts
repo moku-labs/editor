@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
 import type { ComponentChildren } from "preact";
-import { h, render } from "preact";
+import { Fragment, h, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SidePanelProps } from "../../shared/side-panel";
-import { SidePanel, sidePanelState, toggleSidePanel, useSidePanel } from "../../shared/side-panel";
+import {
+  SidePanel,
+  showSidePanel,
+  sidePanelState,
+  toggleSidePanel,
+  useSidePanel
+} from "../../shared/side-panel";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SidePanel (finding 2, D-29): resize handle (pointer, keys, double-click),
@@ -130,6 +136,11 @@ function resizeContainer(width: number): void {
   act(() => {
     for (const callback of observers) callback();
   });
+}
+
+/** Stores a panel as closed, as a close in an earlier session leaves it. */
+function updateClosed(id: string): void {
+  localStorage.setItem(`moku-editor:panel:${id}`, JSON.stringify({ closed: true }));
 }
 
 const HANDLE = "[data-part='handle']";
@@ -403,6 +414,48 @@ describe("SidePanel: overlay below the threshold", () => {
     });
     mountPanel(props(freshId(), { overlayBelow: 600 }));
     expect(panel()?.hasAttribute("data-overlay")).toBe(true);
+  });
+
+  it("comes back as an open drawer when its reopen button shows it below the threshold", () => {
+    const id = freshId();
+    containerWidth = 500;
+    act(() => {
+      render(
+        h(Fragment, {}, h(Toolbar, { id }), h(SidePanel, props(id, { overlayBelow: 600 }), "x")),
+        container
+      );
+    });
+    click("[data-action='expand']");
+    click("[data-action='close']");
+    expect(panel()).toBeNull();
+
+    click(`[data-action='reopen-${id}']`);
+
+    expect(panel()?.hasAttribute("data-overlay")).toBe(true);
+    expect(panel()?.dataset.state).toBe("expanded");
+    expect(sidePanelState(id)).toMatchObject({ closed: false, overlay: true, drawer: true });
+  });
+
+  it("mounts as an open drawer when showSidePanel ran while it was closed", () => {
+    const id = freshId();
+    containerWidth = 500;
+    updateClosed(id);
+
+    act(() => showSidePanel(id));
+    mountPanel(props(id, { overlayBelow: 600 }));
+
+    expect(panel()?.dataset.state).toBe("expanded");
+  });
+
+  it("shuts the drawer when a shown docked panel turns narrow on a resize", () => {
+    const id = freshId();
+    mountPanel(props(id, { overlayBelow: 600 }));
+    act(() => showSidePanel(id));
+
+    resizeContainer(480);
+
+    expect(panel()?.hasAttribute("data-overlay")).toBe(true);
+    expect(panel()?.dataset.state).toBe("collapsed");
   });
 
   it("toggles the drawer, not the docked choice, from outside in overlay mode", () => {

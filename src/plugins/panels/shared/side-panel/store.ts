@@ -242,8 +242,9 @@ export function subscribeSidePanel(id: string, listener: () => void): () => void
 }
 
 /**
- * Shows a side panel expanded: open again when closed; in overlay mode with its drawer open (the
- * docked choice stays), docked not collapsed.
+ * Shows a side panel expanded: open again when closed, with its drawer open; in overlay mode the
+ * docked choice stays, docked it is not collapsed. A closed panel has no overlay mode (nothing is
+ * measured), so the open drawer is what makes it mount as an open drawer below its threshold.
  *
  * @param id - The panel id.
  * @example
@@ -256,7 +257,7 @@ export function showSidePanel(id: string): void {
   const state = sidePanelState(id);
 
   if (state.overlay) updateSidePanel(id, { closed: false, drawer: true });
-  else updateSidePanel(id, { closed: false, collapsed: false });
+  else updateSidePanel(id, { closed: false, collapsed: false, drawer: true });
 }
 
 /**

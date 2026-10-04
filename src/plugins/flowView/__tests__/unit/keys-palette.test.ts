@@ -111,6 +111,32 @@ describe("Flow keys", () => {
     expect(binding("enter")?.when?.()).toBe(true);
   });
 
+  it("Enter after an Inspector walk follows the highlighted row, not the card that kept focus", async () => {
+    const { ctx, actions, fakes } = await prepared();
+    initFlowView(ctx);
+    const binding = (combo: string) => bindingOf(fakes, combo);
+
+    // The person clicked main/home: its card keeps keyboard focus through the walk.
+    const root = document.createElement("div");
+    root.innerHTML = '<div data-key="main/home" tabindex="0"></div>';
+    document.body.append(root);
+    ctx.state.view.root = root;
+    root.querySelector<HTMLElement>("[data-key]")?.focus();
+
+    // The walk put board/merge in the Inspector; ↓ highlights its first row.
+    actions.focus.select("board/merge");
+    actions.focus.moveHighlight(1);
+    const follow = vi.spyOn(actions.focus, "followHighlight");
+    binding("enter")?.run(key("Enter"));
+    expect(follow).toHaveReturnedWith(true);
+    expect(actions.focus.selected()).not.toBe("main/home");
+
+    // With no row highlighted, Enter on the focused card still focuses that card.
+    expect(ctx.state.focus.highlight.index).toBe(-1);
+    binding("enter")?.run(key("Enter"));
+    expect(actions.focus.selected()).toBe("main/home");
+  });
+
   it("the codeEdit Esc layer cancels code editing", async () => {
     const { ctx, actions, fakes } = await prepared();
     fakes.files.store.set("nodes/merge.ts", { text: "export const merge = 1;\n", version: "v1" });

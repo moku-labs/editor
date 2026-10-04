@@ -1,15 +1,17 @@
 /**
- * @file filesView plugin — the file bar: the path crumb (a folder segment reveals and focuses it
- * in the tree), Preview · Source for markdown and series, Open in editor (D-08), Edit here /
- * Cancel / Save ⌘S, the status line and the conflict bar.
+ * @file filesView plugin — the file bar: the path crumb (a folder segment shows the tree, reveals
+ * the folder and focuses it), Preview · Source for markdown and series, Open in editor (D-08),
+ * Edit here / Cancel / Save ⌘S, the status line and the conflict bar.
  */
 import type { VNode } from "preact";
+import { showSidePanel } from "../../panels/shared/side-panel";
 import { workspacePlugin } from "../../workspace";
 import { notify } from "../store";
 import { cancelEdit } from "../tabs/edit";
 import { isTextKind } from "../tabs/kind";
 import { isModified } from "../tabs/model";
 import { revealPath } from "../tree/model";
+import { TREE_PANEL } from "../tree/side";
 import type { FilesViewApi, FilesViewCtx, OpenTab } from "../types";
 
 /**
@@ -42,7 +44,8 @@ function foldersOf(path: string): Segment[] {
 }
 
 /**
- * Reveals a folder in the tree and focuses its row once it is rendered.
+ * Reveals a folder in the tree and focuses its row once it is rendered. The tree shows first:
+ * a closed, collapsed or shut-drawer tree has no row to focus.
  *
  * @param ctx - Domain context of filesView.
  * @param folder - The folder path.
@@ -50,6 +53,7 @@ function foldersOf(path: string): Segment[] {
  */
 function revealFolder(ctx: FilesViewCtx, folder: string, from: HTMLElement): void {
   revealPath(ctx.state.expanded, folder);
+  showSidePanel(TREE_PANEL);
   notify(ctx.state);
   const view = from.closest('[data-part="files-view"]');
   setTimeout(() => {

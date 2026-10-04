@@ -159,6 +159,18 @@ describe("showSidePanel and toggleSidePanel", () => {
     expect(sidePanelState("test.show")).toMatchObject({ closed: false, collapsed: false });
   });
 
+  it("opens the drawer of a closed panel too, so it floats open when it mounts narrow", () => {
+    updateSidePanel("test.showClosed", { closed: true });
+
+    showSidePanel("test.showClosed");
+
+    expect(sidePanelState("test.showClosed")).toMatchObject({
+      closed: false,
+      collapsed: false,
+      drawer: true
+    });
+  });
+
   it("shows a panel in overlay mode with its drawer open, keeping the docked choice", () => {
     updateSidePanel("test.showOverlay", { closed: true, collapsed: true, overlay: true });
 

@@ -139,8 +139,11 @@ export function flowKeys(ctx: FlowCtx, actions: FlowActions): KeyBinding[] {
       "enter",
       "Follow the highlighted row, or focus the card",
       () => {
+        // The focused card wins only when it is not the selection and no row is highlighted.
+        const { focus } = ctx.state;
         const card = focusedCard(ctx);
-        const isOtherCard = card !== undefined && card !== ctx.state.focus.selected;
+        const isHighlighted = focus.highlight.index >= 0;
+        const isOtherCard = card !== undefined && card !== focus.selected && !isHighlighted;
         if (!isOtherCard && actions.focus.followHighlight()) return;
         if (card !== undefined) actions.focus.select(card);
       },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previewZoneInsets, revealPoint } from "../../camera/chrome";
+import { drawerInset, previewZoneInsets, revealPoint } from "../../camera/chrome";
 
 const S = { width: 150, height: 280 } as const;
 const L = { width: 340, height: 660 } as const;
@@ -112,5 +112,28 @@ describe("revealPoint", () => {
     expect(revealPoint(outside, canvas, cam)).toEqual({ x: 436, y: 178 });
     const across = { left: 450, top: 100, right: 622, bottom: 146 };
     expect(revealPoint(across, canvas, { x: 0, y: 0, z: 1 })).toEqual({ x: 436, y: 73 });
+  });
+});
+
+describe("drawerInset", () => {
+  // The 480 px window: a 436 px canvas filling the Flow workspace up to its right edge.
+  const canvas = { right: 480 };
+  const container = { right: 480, width: 436 };
+
+  it("is 0 while no drawer is open", () => {
+    expect(drawerInset(canvas, container, undefined)).toBe(0);
+  });
+
+  it("is the drawer width when the canvas reaches the container's right edge", () => {
+    expect(drawerInset(canvas, container, 240)).toBe(240);
+  });
+
+  it("caps the drawer at 92 % of its container, as side-panel.css does", () => {
+    expect(drawerInset(canvas, container, 560)).toBeCloseTo(436 * 0.92);
+  });
+
+  it("is only the part over the canvas; 0 when the drawer starts right of it", () => {
+    expect(drawerInset({ right: 400 }, container, 240)).toBe(160);
+    expect(drawerInset({ right: 200 }, container, 240)).toBe(0);
   });
 });

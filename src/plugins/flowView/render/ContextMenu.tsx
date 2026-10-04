@@ -1,8 +1,8 @@
 /**
  * @file flowView render module — the context menus (D4) on a node, an outcome (edge label, port,
  * stub) and the empty canvas: `role="menu"` in the browser top layer (`popover`, M7), first item
- * focused, ↑/↓ move, Enter runs, Esc closes (workspace Esc layer contextMenu), flipped to stay inside
- * the canvas. Step 1 frame is disabled unless paused (M5); Reset layout while nothing is pinned (M8).
+ * focused, ↑/↓ move, Enter runs, Esc closes (workspace Esc layer contextMenu), flipped or pushed
+ * against the far edge to stay inside the canvas. Step 1 frame is disabled unless paused (M5); Reset layout while nothing is pinned (M8).
  */
 import type { VNode } from "preact";
 import { useLayoutEffect } from "preact/hooks";
@@ -26,14 +26,34 @@ export type MenuItem = {
 export type ContextMenuProps = { readonly ctx: FlowCtx; readonly actions: FlowActions };
 
 /**
- * Width kept for the menu when it flips.
+ * Width kept for the menu when it flips or meets the canvas edge.
  */
 const MENU_W = 220;
 
 /**
- * Height of one item when the menu flips.
+ * Height of one item when the menu flips or meets the canvas edge.
  */
 const ITEM_H = 30;
+
+/**
+ * Places the menu on one axis of the canvas: at the click when it fits; else flipped to end at the
+ * click when there is room before it; else against the far edge. Never before 0.
+ *
+ * @param at - The click on this axis, in canvas px.
+ * @param size - The menu size on this axis.
+ * @param room - The canvas size on this axis.
+ * @returns The menu start on this axis, in canvas px.
+ * @example
+ * ```ts
+ * placeOnAxis(150, 220, 300); // 80: no room on either side of the click, so against the right edge
+ * placeOnAxis(250, 220, 300); // 30: flipped to end at the click
+ * ```
+ */
+function placeOnAxis(at: number, size: number, room: number): number {
+  if (at + size <= room) return at;
+
+  return Math.max(0, at > size ? at - size : room - size);
+}
 
 /**
  * Builds one item.
@@ -194,11 +214,8 @@ export function ContextMenu(props: ContextMenuProps): VNode {
     ?.getBoundingClientRect();
   const width = canvas?.width ?? ctx.state.camera.viewport.w;
   const height = canvas?.height ?? ctx.state.camera.viewport.h;
-  const menuHeight = items.length * ITEM_H;
-  const flipsLeft = menu.x + MENU_W > width && menu.x > MENU_W;
-  const flipsUp = menu.y + menuHeight > height && menu.y > menuHeight;
-  const x = flipsLeft ? menu.x - MENU_W : menu.x;
-  const y = flipsUp ? menu.y - menuHeight : menu.y;
+  const x = placeOnAxis(menu.x, MENU_W, width);
+  const y = placeOnAxis(menu.y, items.length * ITEM_H, height);
 
   /**
    * Runs an enabled item and closes the menu.

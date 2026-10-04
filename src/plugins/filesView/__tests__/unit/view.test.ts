@@ -287,6 +287,45 @@ describe("tree side panel", () => {
     expect(get("[data-files-editor]")).not.toBeNull();
   });
 
+  it("opens the shut drawer from a crumb folder, then focuses the folder's row in it", async () => {
+    containerWidth(480);
+    mount();
+    await act(async () => {
+      await api.refresh();
+      await api.open("nodes/merge.ts", { line: 1 });
+    });
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("collapsed");
+
+    act(() => {
+      button("nodes").click();
+    });
+    await flush();
+
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    expect(row("nodes").closest("[hidden]")).toBeNull();
+    expect(document.activeElement).toBe(row("nodes"));
+  });
+
+  it("shows a closed tree again from a crumb folder", async () => {
+    mount();
+    await act(async () => {
+      await api.refresh();
+      await api.open("nodes/merge.ts", { line: 1 });
+    });
+    act(() => {
+      get('aside[data-side-panel="files.tree"] [data-action="close"]').click();
+    });
+    expect(root.querySelector("[data-side-panel]")).toBeNull();
+
+    act(() => {
+      button("nodes").click();
+    });
+    await flush();
+
+    expect(get('aside[data-side-panel="files.tree"]').dataset.state).toBe("expanded");
+    expect(document.activeElement).toBe(row("nodes"));
+  });
+
   it("shuts the drawer when a file is picked in it, and keeps it for a folder", async () => {
     containerWidth(480);
     mount();

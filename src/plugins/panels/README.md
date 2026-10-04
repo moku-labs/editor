@@ -325,7 +325,7 @@ The barrel `side-panel/index.ts` exports:
 | `SidePanel` | Preact component, `SidePanelProps` | A view's side panel. |
 | `useSidePanel` | `(id) => SidePanelHandle` | `{ closed, expanded, show, toggle }` for the view's reopen button. Re-renders on every change. |
 | `sidePanelState` | `(id) => SidePanelState` | `{ width, collapsed, closed, overlay, drawer }`, outside a component (a palette item's `when`). |
-| `showSidePanel` | `(id) => void` | Shows the panel expanded: reopens it, opens the drawer in overlay mode. |
+| `showSidePanel` | `(id) => void` | Shows the panel expanded: reopens it and opens the drawer, so a panel reopened below `overlayBelow` mounts as an open drawer. |
 | `toggleSidePanel` | `(id) => void` | Collapses or expands it (the drawer in overlay mode); shows it when closed. The view binds `\`. |
 
 Props:
@@ -344,7 +344,7 @@ Behaviour:
 - Resize: a 6 px handle on the inner edge, `role="separator"`, `aria-orientation="vertical"`, `aria-valuenow` = width. A pointer drag clamps to [min, max] and stores on release. ←/→ on the focused handle step 16 px. A double-click goes back to `defaultWidth`.
 - Collapse: the head button (`data-action="collapse"`, `›` on an end panel, title "Collapse (\)") gives a 32 px rail with the title written down it and `data-action="expand"`. The content stays mounted, hidden.
 - Close: the head `×` (`data-action="close"`) renders nothing. The view shows `data-action="reopen-<id>"` in its toolbar while `useSidePanel(id).closed`, and registers the palette item "Show <title>" with `showSidePanel(id)`.
-- Overlay: when the parent container is narrower than `overlayBelow` (measured at mount and by `ResizeObserver`), the expanded panel floats over the content: `position: absolute`, at the inline edge, shadow, max 92 % of the container. It starts collapsed; the docked choice is kept for when the container grows. Width 0 (a hidden workspace) keeps the mode. The parent container must be `position: relative`.
+- Overlay: when the parent container is narrower than `overlayBelow` (measured at mount and by `ResizeObserver`), the expanded panel floats over the content: `position: absolute`, at the inline edge, shadow, max 92 % of the container. It starts collapsed unless `showSidePanel` opened its drawer (the reopen button, the palette item); turning narrow on a resize shuts the drawer. The docked choice is kept for when the container grows. Width 0 (a hidden workspace) keeps the mode. The parent container must be `position: relative`.
 - Persistence: localStorage `moku-editor:panel:<id>` holds `{ width, collapsed, closed }` (`width` absent until resized). Every access is in try/catch; while storage fails, the panel keeps its state in memory. Overlay mode and the drawer are never stored.
 - Markup: `<aside data-side-panel="<id>" data-side data-state="expanded|collapsed" data-overlay? data-dragging?>`, parts `handle`, `head` (`title`), `rail` (`rail-title`), `body`.
 - CSS: `side-panel/side-panel.css`, one `@scope ([data-side-panel])`, child combinators only. Density tokens `--space-*` and `--row-h`; the transition uses `--duration-resize`, none under reduced motion.

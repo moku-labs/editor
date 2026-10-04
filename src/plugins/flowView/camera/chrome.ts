@@ -1,6 +1,8 @@
 /**
  * @file flowView camera module — pure geometry of the canvas chrome: the insets of the preview zone
- * (the pinned preview floats clear of the breadcrumb, the toolbar, the zoom bar and the minimap) and the world point that brings a keyboard-focused item back into the clipped canvas.
+ * (the pinned preview floats clear of the breadcrumb, the toolbar, the zoom bar, the minimap and
+ * an open Inspector drawer) and the world point that brings a keyboard-focused item back into the
+ * clipped canvas.
  */
 import type { PreviewCorner } from "../../workspace/types";
 import type { Camera } from "../types";
@@ -35,6 +37,11 @@ const MINIMAP_OFFSET_NARROW = 56;
  * Widest canvas in px on which the minimap sits above the zoom bar row (minimap.css).
  */
 const NARROW_CANVAS = 480;
+
+/**
+ * The widest share of its container a side-panel drawer takes (side-panel.css `max-inline-size`).
+ */
+const DRAWER_MAX_SHARE = 0.92;
 
 /**
  * What the zone insets read of the preview: its corner and its float size in px.
@@ -96,6 +103,35 @@ export function previewZoneInsets(canvas: ViewSize, preview: ZonePreview): ZoneI
   const mapTop = (isNarrow ? MINIMAP_OFFSET_NARROW : MINIMAP_OFFSET) + MINIMAP_BOX.h;
   const room = canvas.h - CHROME_BAND - 2 * FLOAT_MARGIN - preview.height;
   return { top: CHROME_BAND, bottom: Math.max(CHROME_BAND, Math.min(mapTop, room)) };
+}
+
+/**
+ * How far an open drawer at the right edge of its container reaches into the canvas: the drawer
+ * width, never more than 92 % of the container (side-panel.css), counted from the container's
+ * right edge; only the part over the canvas.
+ *
+ * @param canvas - The canvas rect in client px.
+ * @param canvas.right - Its right edge.
+ * @param container - The rect of the drawer's container (the Flow workspace) in client px.
+ * @param container.right - Its right edge.
+ * @param container.width - Its width.
+ * @param drawer - The drawer width in px; undefined while no drawer is open.
+ * @returns The right inset of the preview zone in px; 0 when the drawer misses the canvas.
+ * @example
+ * ```ts
+ * // The 480 px window: a 436 px canvas and the 240 px Inspector drawer over its right part.
+ * drawerInset({ right: 480 }, { right: 480, width: 436 }, 240); // 240
+ * ```
+ */
+export function drawerInset(
+  canvas: { readonly right: number },
+  container: { readonly right: number; readonly width: number },
+  drawer: number | undefined
+): number {
+  if (drawer === undefined) return 0;
+
+  const width = Math.min(drawer, container.width * DRAWER_MAX_SHARE);
+  return Math.max(0, canvas.right - (container.right - width));
 }
 
 /**

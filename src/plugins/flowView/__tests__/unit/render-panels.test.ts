@@ -117,6 +117,34 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
   });
 });
 
+describe("ContextMenu placement", () => {
+  it("stays inside a narrow canvas: at the click, flipped, or against the far edge; never before 0", async () => {
+    const { ctx, actions } = await prepared();
+    /** Opens the canvas menu (2 items, 60 px) at a canvas point; returns where it shows. */
+    const placed = (x: number, y: number) => {
+      actions.focus.openMenu({ target: "canvas", key: undefined, outcome: undefined, x, y });
+      const { host, unmount } = mount(h(ContextMenu, { ctx, actions }));
+      const style = host.querySelector<HTMLElement>('[data-flow="context-menu"]')?.style;
+      const at = { left: style?.left, top: style?.top };
+      unmount();
+      return at;
+    };
+
+    // A 300 × 200 canvas and the 220 px menu.
+    ctx.state.camera.viewport = { w: 300, h: 200 };
+    expect(placed(20, 20)).toEqual({ left: "20px", top: "20px" });
+    // Too little room on either side of the click: against the right edge.
+    expect(placed(150, 20)).toEqual({ left: "80px", top: "20px" });
+    // Room before the click: flipped to end at it, on both axes.
+    expect(placed(250, 180)).toEqual({ left: "30px", top: "120px" });
+
+    // A canvas narrower than the menu: at its left edge; too little room below or above the
+    // click: against the bottom edge.
+    ctx.state.camera.viewport = { w: 200, h: 100 };
+    expect(placed(100, 50)).toEqual({ left: "0px", top: "40px" });
+  });
+});
+
 describe("HistoryStrip (B4, M3)", () => {
   it("draws 20 dots newest first with trail and rejected marks; open rows select edges", async () => {
     const { ctx, actions } = await prepared();

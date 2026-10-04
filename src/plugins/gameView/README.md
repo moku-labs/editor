@@ -4,7 +4,7 @@
 
 What it does:
 
-- It docks the one game frame over its stage slot with `workspace.gameFrame().dock`. The iframe never moves (R4, D-14).
+- It docks the one game frame over its stage slot with `workspace.gameFrame().dock`. The iframe never moves (R4, D-14). The dock clips the frame to the stage, less the strip the open Element panel drawer covers, so the frame never draws over the drawer.
 - It draws over the game only inside its own root in `gameFrame().overlay()`.
 - It watches `game.ui`, `game.entities` and `game.projections` while Game is shown (R6) or Reference mode is on (D-27). No timer reads a frame source.
 - It runs every command through `ctx.require(panelsPlugin).run(id, input)` (R9). There is no `link.run` in gameView.
@@ -167,7 +167,7 @@ The Styles list shows an object value as `key value` pairs (`top 266 · right 72
 
 ### Element panel
 
-The side panel of the Game workspace is the shared `SidePanel` (D-29): id `game.side`, title "Element panel", docked at the end, 280 px by default (220 to 520), a drawer over the stage below 600 px of body width. It resizes, collapses to a rail and closes. While it is closed, the toolbar shows `data-action="reopen-game.side"`. The palette item "Show Element panel" shows it, `\` collapses or expands it.
+The side panel of the Game workspace is the shared `SidePanel` (D-29): id `game.side`, title "Element panel", docked at the end, 280 px by default (220 to 520), a drawer over the stage below 600 px of body width. While the drawer is open, the stage's clip (`[data-part="clip"]`, the frame's dock clip) ends at the drawer's edge, its resize handle included: the frame layer sits above the workspace, so the game would otherwise cover the drawer and take its clicks. It resizes, collapses to a rail and closes. While it is closed, the toolbar shows `data-action="reopen-game.side"`. The palette item "Show Element panel" shows it, `\` collapses or expands it.
 
 ### Reference mode
 

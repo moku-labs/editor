@@ -156,8 +156,9 @@ function isNarrow(parent: HTMLElement, below: number): boolean | undefined {
 
 /**
  * Keeps the panel's overlay mode in step with its parent container: measured at mount and on
- * every size change (ResizeObserver, where it exists). Entering or leaving overlay mode shuts
- * the drawer, so a narrow panel starts collapsed.
+ * every size change (ResizeObserver, where it exists). A narrow panel mounts collapsed unless
+ * showSidePanel opened its drawer (the reopen button, the palette); entering or leaving overlay
+ * mode on a resize shuts the drawer.
  *
  * @param id - The panel id.
  * @param root - The panel element, absent while closed.
@@ -178,7 +179,8 @@ function useOverlay(
       return;
     }
 
-    updateSidePanel(id, { overlay: isNarrow(parent, overlayBelow) ?? false, drawer: false });
+    const narrow = isNarrow(parent, overlayBelow) ?? false;
+    updateSidePanel(id, { overlay: narrow, drawer: narrow && sidePanelState(id).drawer });
     if (globalThis.ResizeObserver === undefined) return;
 
     const observer = new ResizeObserver(() => {

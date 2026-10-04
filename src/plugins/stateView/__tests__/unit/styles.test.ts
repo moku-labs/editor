@@ -38,6 +38,27 @@ describe("State view sheet", () => {
     expect(narrow).toMatch(/\[data-part="columns"\] \{[^}]*overflow-y: auto;/);
   });
 
+  it("sizes stacked cards to their content, so a card never runs under the next one", () => {
+    const narrow = narrowBlock();
+    expect(narrow).toMatch(/\[data-part="columns"\] \{[^}]*grid-auto-rows: max-content;/);
+    expect(narrow).toMatch(/\[data-card\] \{[^}]*min-height: auto;/);
+  });
+
+  it("hides the card toggle with a selector that outranks the ghost button primitive", () => {
+    // button[data-variant] is (0,1,1): a lone [data-action] (0,1,0) loses to it in the same layer.
+    const wide = CSS.slice(0, CSS.indexOf("@container (width < 760px)"));
+    expect(wide).toMatch(
+      /\[data-part="head"\] > \[data-action="toggle-card"\] \{[^}]*display: none;/
+    );
+    expect(narrowBlock()).toMatch(
+      /\[data-part="head"\] > \[data-action="toggle-card"\] \{[^}]*display: grid;/
+    );
+    const lone = CSS.split("\n").filter(line =>
+      line.trimStart().startsWith('[data-action="toggle-card"] {')
+    );
+    expect(lone).toEqual([]);
+  });
+
   it("shows the card toggles and hides a collapsed card's body only when stacked", () => {
     expect(CSS).toMatch(/\[data-action="toggle-card"\] \{[^}]*display: none;/);
     const narrow = narrowBlock();

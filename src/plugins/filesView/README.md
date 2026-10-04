@@ -21,6 +21,7 @@ The tree docks to the start edge in `SidePanel id="files.tree"` (panels/shared/s
 - `\` (Files only, not in inputs) collapses or expands it.
 - Its × closes it. A reopen button `data-action="reopen-files.tree"` then shows at the start edge. The palette item "Show Files tree" (Commands) shows Files and the tree.
 - Below a 600 px Files container (the Claude pane at 1/3) it floats over the editor as a drawer and starts collapsed. Picking a file shuts the drawer.
+- A folder in the file bar's crumb shows the tree (reopened, expanded, or its drawer opened), reveals the folder and focuses its row.
 - Width, collapsed and closed persist in localStorage `moku-editor:panel:files.tree`.
 
 ## Configuration
