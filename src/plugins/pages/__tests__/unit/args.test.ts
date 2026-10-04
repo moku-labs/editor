@@ -7,7 +7,8 @@ describe("parseBinArgs", () => {
       kind: "run",
       html: "web/index.html",
       port: 3000,
-      root: "."
+      root: ".",
+      hmr: true
     });
   });
 
@@ -16,14 +17,33 @@ describe("parseBinArgs", () => {
       kind: "run",
       html: "web/index.html",
       port: 0,
-      root: ".."
+      root: "..",
+      hmr: true
     });
     expect(parseBinArgs(["-p", "65535", "-r", "game", "INDEX.HTML"])).toEqual({
       kind: "run",
       html: "INDEX.HTML",
       port: 65_535,
-      root: "game"
+      root: "game",
+      hmr: true
     });
+  });
+
+  it("turns hot reload off with --no-hmr, anywhere in argv", () => {
+    expect(parseBinArgs(["web/index.html", "--no-hmr"])).toEqual({
+      kind: "run",
+      html: "web/index.html",
+      port: 3000,
+      root: ".",
+      hmr: false
+    });
+    const first = parseBinArgs(["--no-hmr", "-p", "0", "web/index.html"]);
+    expect(first.kind === "run" && first.hmr).toBe(false);
+  });
+
+  it("refuses a value on --no-hmr and an unknown --hmr", () => {
+    expect(parseBinArgs(["a.html", "--no-hmr=1"]).kind).toBe("error");
+    expect(parseBinArgs(["a.html", "--hmr"]).kind).toBe("error");
   });
 
   it("returns help for --help or -h anywhere", () => {

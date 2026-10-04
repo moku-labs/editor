@@ -37,7 +37,7 @@ editor.pages.hotReload(); // { hmr: true, owner: "bin" } in the bin
 
 The bin serves the game with Bun HMR on: Bun reloads the game page after a source save. The
 editor does not hold, delay or queue that reload; the bridge keeps the game state across it
-(see bridge README, Checkpoint).
+(see bridge README, Checkpoint). To turn hot reload off, start with `--no-hmr`.
 
 **Spike, Bun 1.3.14: `server.reload` does not switch HMR.** Verified with a real Chromium page
 on a `Bun.serve` with an HTML route:
@@ -53,6 +53,7 @@ fallback. `setHotReload` and `POST P/hmr` refuse a change (false, 409) and repor
 | `hotReload()` | When |
 |---|---|
 | `{ hmr: true, owner: "bin" }` | The moku-editor bin (it passes `development: { hmr: true, console: true }`). |
+| `{ hmr: false, owner: "bin" }` | The moku-editor bin started with `--no-hmr` (it passes `development: { hmr: false, console: true }`). |
 | `{ hmr, owner: "bin" }` | `attachServer` with other options: `development: true` or an object whose `hmr` is not false is on; `false` or no `development` is off. |
 | `{ hmr: false, owner: "server" }` | A game's own `Bun.serve` that never called `attachServer`. |
 
@@ -163,7 +164,7 @@ Source in `page/`:
 ## Bin
 
 ```
-moku-editor <game-html> [--port 3000] [--root .] [--help]
+moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
 ```
 
 `package.json` maps `moku-editor` to `./dist/bin.mjs` (from `bin.ts`). Bun only.
@@ -172,6 +173,7 @@ moku-editor <game-html> [--port 3000] [--root .] [--help]
 |---|---|---|---|
 | `--port` | `-p` | `3000` | Digits, 0 to 65535. `0` picks a free port. |
 | `--root` | `-r` | `.` | Project root the editor reads and writes. Not empty. |
+| `--no-hmr` | | hot reload on | Serves the game without Bun HMR. Takes no value. |
 | `--help` | `-h` | | Prints usage, exit 0. |
 
 The positional must be one file ending in `.html`. Unknown flags are errors, so there is no `--host`. The server always binds 127.0.0.1.
@@ -181,14 +183,14 @@ What `main` (`cli.ts`) does:
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
-4. One `Bun.serve(editor.hub.serve(...))` with `development: { hmr: true, console: true }`, the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket.
-5. `editor.pages.attachServer(server, options)`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }`, every tools page gets the `hotReload` notification.
+4. One `Bun.serve(editor.hub.serve(...))` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket.
+5. `editor.pages.attachServer(server, options)`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification.
 6. Prints the Game, Tools and Root lines. The token is never printed.
 7. On `SIGINT` or `SIGTERM`, once: `editor.stop()`, then `server.stop(true)` bounded to 500 ms, prints `stopped`, exits 0.
 
 > **Note: Bun stability.** D-22 saw Bun 1.3.14 crash after about 23 HMR reloads (1.13 GB RSS). D-23 accepts it as a Bun issue: restart the bin when it happens.
 >
-> **Note: `"sideEffects": false` in a game.** Only without HMR does Bun bundle the page like `Bun.build` and honour the game's `"sideEffects": false`, dropping a bare `import "./x"`. The bin serves with HMR, so this applies to a game's own server with HMR off: such a page must not declare `"sideEffects": false` in the nearest `package.json`, or must list that file: `"sideEffects": ["./src/x.ts"]`.
+> **Note: `"sideEffects": false` in a game.** Only without HMR does Bun bundle the page like `Bun.build` and honour the game's `"sideEffects": false`, dropping a bare `import "./x"`. The bin serves with HMR by default, so this applies to the bin with `--no-hmr` and to a game's own server with HMR off: such a page must not declare `"sideEffects": false` in the nearest `package.json`, or must list that file: `"sideEffects": ["./src/x.ts"]`.
 
 `createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400.
 
@@ -215,4 +217,4 @@ What `main` (`cli.ts`) does:
 - The template is read once per app. A rebuild needs a restart.
 - `gameUrl` must be same-origin. The game's bridge fetches `hello` from this server.
 - The bin serves one game HTML file at `/` and binds 127.0.0.1 only.
-- Hot reload cannot be switched while the bin runs (Bun 1.3.14, spike above). The bin has no flag to start with HMR off.
+- Hot reload cannot be switched while the bin runs (Bun 1.3.14, spike above). Start the bin with `--no-hmr` to serve without it.

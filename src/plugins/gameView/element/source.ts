@@ -6,7 +6,10 @@
  * the JSX element (to the line that closes it, eight lines at most). `style={ident}` is the
  * StyleBlockRef `{ kind: "const", name: ident }` (R8) the shared style edit finds in that file or
  * in the file the ident is imported from; `style={call(...)}` is shown read-only; an element with
- * no style is still "defined at" its line. Every result is remembered per key in `state.found`.
+ * no style is still "defined at" its line. A key no file names literally that ends in digits is
+ * looked for as built in a loop: the template literal of its stem (`card${` for "card0") is
+ * "defined at" its line with `loop`. Every result is remembered per key in `state.found`; one
+ * search per key runs at a time (`state.searches`).
  */
 import { linkPlugin } from "../../link";
 import type { FileEntry } from "../../registry/protocol";
@@ -46,6 +49,11 @@ const ELEMENT_LINES = 8;
  * Regex special characters of a key.
  */
 const REGEX_SPECIAL = /[$()*+.?[\\\]^{|}]/g;
+
+/**
+ * The trailing characters of a key built in a loop.
+ */
+const DIGITS = "0123456789";
 
 /**
  * A named import list and its module specifier.
@@ -174,6 +182,45 @@ export function matchKey(
     first ??= { line: index + 1, style: undefined };
   }
   return first;
+}
+
+/**
+ * The stem of a key built in a loop: the key without its trailing digits.
+ *
+ * @param key - The ui key.
+ * @returns The stem, undefined when the key has no trailing digits or nothing before them.
+ * @example
+ * ```ts
+ * loopStem("card0"); // "card"
+ * ```
+ */
+function loopStem(key: string): string | undefined {
+  let end = key.length;
+  while (end > 0 && DIGITS.includes(key.charAt(end - 1))) end -= 1;
+  return end === key.length || end === 0 ? undefined : key.slice(0, end);
+}
+
+/**
+ * The line that builds a key in a loop: a template literal that starts with the key's stem and
+ * goes on with an interpolation (`` `card${slot}` `` for "card0", also as `key={`card${i}`}`).
+ *
+ * @param text - A file text.
+ * @param key - The ui key; only a key that ends in digits after a stem has a loop form.
+ * @returns The 1-based line, or undefined.
+ * @example
+ * ```ts
+ * matchLoopKey("const id = `card${slot}`;", "card0"); // 1
+ * ```
+ */
+export function matchLoopKey(text: string, key: string): number | undefined {
+  const stem = loopStem(key);
+  if (stem === undefined) return undefined;
+
+  const escaped = stem.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
+  // A backtick, the stem, then `${`: the template literal that builds the key.
+  const pattern = new RegExp(`\`${escaped}\\$\\{`);
+  const index = text.split("\n").findIndex(line => pattern.test(line));
+  return index === -1 ? undefined : index + 1;
 }
 
 /**
@@ -352,32 +399,60 @@ function sourceOf(
 }
 
 /**
- * Searches the source of a ui key: the first element with a style (an identifier or a call),
- * else the first file that defines the key. The result is remembered in `state.found`; a key no
- * file names is forgotten there.
+ * One search of a ui key over the source files: the first element with a style returns at once;
+ * else the first file that defines the key, else the first loop that builds it.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
  * @returns Where the key and its style are, undefined when no file names the key.
  */
-export async function findStyleSource(
-  ctx: GameViewCtx,
-  key: string
-): Promise<StyleSource | undefined> {
+async function searchSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
   let defined: StyleSource | undefined;
+  let loop: StyleSource | undefined;
   for await (const path of sourceFiles(ctx)) {
     const text = await readText(ctx, path);
-    const match = text === undefined ? undefined : matchKey(text, key);
-    if (text === undefined || match === undefined) continue;
+    if (text === undefined) continue;
 
-    const source = sourceOf(path, text, match);
-    if (source.kind !== "defined") {
-      ctx.state.found.set(key, source);
-      return source;
+    const match = matchKey(text, key);
+    if (match === undefined) {
+      const line = loop === undefined ? matchLoopKey(text, key) : undefined;
+      if (line !== undefined) loop = { kind: "defined", path, line, loop: true };
+      continue;
     }
+    const source = sourceOf(path, text, match);
+    if (source.kind !== "defined") return source;
     defined ??= source;
   }
-  if (defined === undefined) ctx.state.found.delete(key);
-  else ctx.state.found.set(key, defined);
-  return defined;
+  return defined ?? loop;
+}
+
+/**
+ * Searches the source of a ui key: the first element with a style (an identifier or a call),
+ * else the first file that defines the key, else the loop that builds it. The result is
+ * remembered in `state.found`; a key no file names is forgotten there. A second call for a key
+ * whose search still runs gets that search.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param key - The ui key.
+ * @returns Where the key and its style are, undefined when no file names the key.
+ */
+export function findStyleSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
+  const { found, searches } = ctx.state;
+  const running = searches.get(key);
+  if (running !== undefined) return running;
+
+  const search = searchSource(ctx, key).then(
+    source => {
+      searches.delete(key);
+      if (source === undefined) found.delete(key);
+      else found.set(key, source);
+      return source;
+    },
+    (error: unknown) => {
+      searches.delete(key);
+      throw error;
+    }
+  );
+  searches.set(key, search);
+  return search;
 }

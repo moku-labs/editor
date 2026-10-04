@@ -1,6 +1,6 @@
 /**
  * @file gameView plugin — the palette items gameView adds in onInit: Select element, Take a
- * screenshot, Record a series…, Overlay in game, Show Element panel and the six device presets
+ * screenshot, Record a series…, Overlay in game, Show Element panel and the sixteen device presets
  * (group Commands).
  */
 import { linkPlugin } from "../link";
@@ -110,7 +110,7 @@ function deviceItem(ctx: GameViewCtx, device: DeviceSpec): PaletteItem {
  * gameView's palette items.
  *
  * @param ctx - Domain context of gameView.
- * @returns The eleven items.
+ * @returns The five commands and one item per device preset.
  */
 export function paletteItems(ctx: GameViewCtx): readonly PaletteItem[] {
   return [

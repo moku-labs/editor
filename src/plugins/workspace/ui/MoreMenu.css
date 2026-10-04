@@ -1,0 +1,58 @@
+/* workspace · MoreMenu. The ⋯ menu of the compact top bar, in the browser top layer (popover) under its button: one row per control with its label, its state (mono, accent when on) and its key; a line between the toggles and the value rows. Rows use the density tokens. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="more-menu"]) {
+  :scope {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 240px;
+    padding: var(--space-1);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+    color: var(--text-ink);
+  }
+
+  [role^="menuitem"] {
+    display: grid;
+    grid-template-columns: 1fr auto 24px;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--row-h);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-6);
+    font-size: var(--font-size-ui);
+    text-align: start;
+  }
+
+  [role^="menuitem"]:hover:not([aria-disabled="true"]),
+  [role^="menuitem"]:focus-visible {
+    background: var(--surface-panel-2);
+  }
+
+  [role^="menuitem"][aria-disabled="true"] {
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  [data-part="state"] {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [aria-checked="true"] [data-part="state"] {
+    color: var(--accent-ink);
+  }
+
+  kbd {
+    justify-self: end;
+  }
+
+  [data-part="separator"] {
+    margin: var(--space-1) var(--space-2);
+    border: 0;
+    border-top: 1px solid var(--line-1);
+  }
+}

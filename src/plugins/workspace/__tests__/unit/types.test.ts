@@ -2,12 +2,13 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
 import { linkPlugin } from "../../../link";
-import type { DeviceSpec } from "../../../registry/protocol";
+import type { DeviceSpec, HotReload } from "../../../registry/protocol";
 import { workspacePlugin } from "../..";
 import type {
   Density,
   DensityChoice,
   DeviceChoice,
+  DevicePresetId,
   GameFrame,
   PreviewState,
   RanEvent,
@@ -39,7 +40,26 @@ describe("workspace types", () => {
     expectTypeOf(app.workspace.setDensity).parameter(0).toEqualTypeOf<DensityChoice>();
     expectTypeOf(app.workspace.reference()).toEqualTypeOf<boolean>();
     expectTypeOf(app.workspace.setReference).parameter(0).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.device().folded).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.hotReload()).toEqualTypeOf<HotReload | undefined>();
+    expectTypeOf(app.workspace.setHotReload).returns.toEqualTypeOf<Promise<boolean>>();
     expect(typeof app.workspace.mount).toBe("function");
+  });
+
+  it("DeviceSpec carries dpr, radius and group on every preset; the ids are the sixteen presets", () => {
+    expectTypeOf<DeviceSpec["dpr"]>().toEqualTypeOf<number>();
+    expectTypeOf<DeviceSpec["radius"]>().toEqualTypeOf<number>();
+    expectTypeOf<DeviceSpec["group"]>().toEqualTypeOf<
+      "iphone" | "android" | "foldable" | "tablet" | "desktop"
+    >();
+    const fold: DevicePresetId = "galaxy-z-fold-6";
+    // @ts-expect-error — not a preset id
+    const unknown: DevicePresetId = "nokia";
+    expect([fold, unknown]).toHaveLength(2);
+
+    const app = framework.createApp({});
+    app.workspace.setDevice({ preset: fold, folded: false });
+    expect(app.workspace.device().folded).toBe(false);
   });
 
   it("rejects an unknown workspace and a Game preview", () => {

@@ -34,6 +34,22 @@ describe("takeScreenshot", () => {
     expect(ctx.state.card).toEqual(shot);
   });
 
+  it("puts shot: <path> on the clipboard; a refused clipboard is only logged", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await takeScreenshot(ctx);
+    expect(writeText).toHaveBeenCalledWith(`shot: ${PATH}`);
+
+    writeText.mockRejectedValue(new Error("Document is not focused."));
+    const shot = await takeScreenshot(ctx);
+    vi.unstubAllGlobals();
+    expect(shot?.path).toBe(".moku/captures/2026-09-24-1012-board-2.png");
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: clipboard refused", {
+      message: "Document is not focused."
+    });
+    expect(ctx.workspace.toast).not.toHaveBeenCalledWith(expect.stringContaining("Copy failed"));
+  });
+
   it("works before the Game panel's first render: nothing registered, it runs at once", async () => {
     expect(ctx.panels.registered).toHaveLength(0);
     const shot = await takeScreenshot(ctx);

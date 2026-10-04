@@ -12,6 +12,7 @@
 @import "../ui/SessionChip.css" layer(components);
 @import "../ui/StepPopover.css" layer(components);
 @import "../ui/RegistryPopover.css" layer(components);
+@import "../ui/MoreMenu.css" layer(components);
 @import "../ui/Rail.css" layer(components);
 @import "../ui/Preview.css" layer(components);
 @import "../ui/Toasts.css" layer(components);

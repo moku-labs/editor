@@ -162,6 +162,47 @@ describe("syncFrame — docking table", () => {
     expect(boxElement().style.height).toBe("393px");
   });
 
+  it("rounds the docked screen by the preset radius in local px (radius × scale on screen)", () => {
+    ctx.state.active = "game";
+    const slot = document.createElement("div");
+    stubRect(slot, rectOf(0, 0, 393, 426));
+    const clip = document.createElement("div");
+    stubRect(clip, rectOf(-100, -100, 2000, 2000));
+    frame.dock(slot, { fit: "fit", clip });
+    expect(frame.box()?.scale).toBeCloseTo(0.5);
+    expect(boxElement().style.clipPath).toBe("inset(0px 0px 0px 0px round 55px 55px 55px 55px)");
+
+    ctx.state.device = { preset: "desktop", orientation: "portrait" };
+    syncFrame(ctx);
+    expect(boxElement().style.clipPath).toBe("inset(0px 0px 0px 0px)");
+  });
+
+  it("the pinned preview clips with the same rounded screen", () => {
+    ctx.state.active = "flow";
+    const body = document.createElement("div");
+    stubRect(body, rectOf(0, 0, 150, 256));
+    ctx.state.frame.previewBody = body;
+    createFrameLayer(ctx);
+    syncFrame(ctx);
+    expect(frame.box()?.docked).toBe("preview");
+    expect(boxElement().style.clipPath).toContain("round 55px");
+  });
+
+  it("an unfolded foldable docks its inner screen; folded, its cover", () => {
+    ctx.state.active = "game";
+    ctx.state.device = { preset: "galaxy-z-fold-6", orientation: "portrait", folded: false };
+    const slot = document.createElement("div");
+    stubRect(slot, rectOf(0, 0, 4000, 4000));
+    frame.dock(slot, { fit: "fit" });
+    expect(boxElement().style.width).toBe("707px");
+    expect(boxElement().style.height).toBe("823px");
+
+    ctx.state.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    syncFrame(ctx);
+    expect(boxElement().style.width).toBe("369px");
+    expect(boxElement().style.height).toBe("905px");
+  });
+
   it("a newer dock replaces an older one; the older release does nothing", () => {
     ctx.state.active = "game";
     const releaseOld = frame.dock(document.createElement("div"), { fit: "fit" });

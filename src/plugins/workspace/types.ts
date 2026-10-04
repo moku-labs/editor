@@ -6,7 +6,14 @@
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
-import type { DeviceSpec, Json, LinkStatus, RunResult, WireError } from "../registry/protocol";
+import type {
+  DeviceSpec,
+  HotReload,
+  Json,
+  LinkStatus,
+  RunResult,
+  WireError
+} from "../registry/protocol";
 
 /**
  * The six workspaces.
@@ -28,6 +35,11 @@ export type WorkspaceConfig = {
   storageKey: string;
   /** How long reload() waits for the new session before giving up. */
   reloadTimeoutMs: number;
+  /**
+   * After a save with Bun hot reload on, how long `gameFrame().reload()` waits for the page Bun
+   * reloads before it reloads the frame itself.
+   */
+  hotReloadWaitMs: number;
   /** How long one toast stays (hover or focus pauses it). */
   toastMs: number;
 };
@@ -73,14 +85,24 @@ export type PreviewPrefs = { visible: boolean; size: PreviewSize; corner: Previe
 export type PreviewState = PreviewPrefs & { width: number; height: number };
 
 /**
- * The six device presets.
+ * The sixteen device presets (round 2 R4), in display order.
  */
 export type DevicePresetId =
   | "iphone-se"
   | "iphone-15"
   | "iphone-15-pro-max"
+  | "iphone-16-pro"
+  | "iphone-16-pro-max"
+  | "galaxy-s24"
+  | "galaxy-a55"
+  | "redmi-note-13"
   | "pixel-8"
+  | "xperia-1-v"
+  | "galaxy-z-fold-6"
+  | "galaxy-z-flip-6"
+  | "pixel-9-pro-fold"
   | "ipad-mini"
+  | "ipad-air-11"
   | "desktop";
 
 /**
@@ -89,9 +111,16 @@ export type DevicePresetId =
 export type Orientation = "portrait" | "landscape";
 
 /**
- * What device() returns (R4).
+ * What device() returns (R4): the preset as it shows now (an unfolded foldable carries its inner
+ * screen's size and radius), the orientation, and whether a foldable is folded (true = cover).
  */
-export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation };
+export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation; folded: boolean };
+
+/**
+ * The stored device choice: the preset id, the orientation and, after a fold change, the folded
+ * flag (absent = folded, the cover screen).
+ */
+export type StoredDevice = { preset: DevicePresetId; orientation: Orientation; folded?: boolean };
 
 /**
  * Size and safe insets of a preset in an orientation (resolveDevice, R8).
@@ -122,7 +151,7 @@ export type Prefs = {
 export type StoredPrefs = {
   theme: Theme | undefined;
   previews: Record<PreviewWorkspace, PreviewPrefs>;
-  device: { preset: DevicePresetId; orientation: Orientation };
+  device: StoredDevice;
   /** The chosen density (`auto` by default). */
   density: DensityChoice;
   /** Whether taps in the docked game draw a ripple (on by default). */
@@ -222,8 +251,10 @@ export type GameFrame = {
   readonly url: string;
 
   /**
-   * The D-07 reload: bookmark, reload in place, restore on the new session, toast. Concurrent
-   * calls share one run.
+   * The D-07 reload after a save: bookmark, reload in place, restore on the new session, toast.
+   * With Bun hot reload on, Bun reloads the page itself: the run waits up to `hotReloadWaitMs` for
+   * that session and reloads the frame only when none came; a session the bridge already restored
+   * (`manifest.restored`) is not restored or paused again. Concurrent calls share one run.
    *
    * @param opts - `restore: true` bookmarks first and restores after.
    * @param opts.restore - Whether to bookmark and restore the game state.
@@ -475,40 +506,46 @@ export type WorkspaceApi = {
   setPreview(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>): void;
 
   /**
-   * The current device: the preset (DeviceSpec) and the orientation.
+   * The current device: the preset as it shows now (an unfolded foldable carries its inner
+   * screen), the orientation and the folded flag.
    *
    * @returns The device choice.
    * @example
    * ```ts
-   * app.workspace.device().preset.w; // 393: the default iPhone 15
+   * app.workspace.device(); // { preset: { id: "iphone-15", w: 393, h: 852, … }, orientation: "portrait", folded: true }
    * ```
    */
   device(): DeviceChoice;
 
   /**
-   * Changes the preset and/or the orientation; the frame resizes; the choice persists and
-   * `onPrefs` listeners run.
+   * Changes the preset, the orientation and/or the fold; the frame resizes live (the game sees a
+   * window resize, no reload); the choice persists and `onPrefs` listeners run. A new preset
+   * starts folded unless the patch says otherwise.
    *
-   * @param patch - The preset and/or the orientation.
+   * @param patch - The preset, the orientation and/or the fold.
    * @param patch.preset - A preset id.
    * @param patch.orientation - portrait or landscape.
+   * @param patch.folded - true for the cover screen of a foldable, false for the inner one.
    * @throws {Error} `[moku-editor] Unknown device "<id>".` for an unknown preset.
    * @example
    * ```ts
-   * app.workspace.setDevice({ preset: "ipad-mini", orientation: "landscape" });
-   * app.workspace.device().preset.name; // "iPad mini"
+   * // gameView's Fold button opens the Galaxy Z Fold 6.
+   * app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
+   * app.workspace.setDevice({ folded: false });
+   * app.workspace.device().preset.w; // 707: the inner screen
    * ```
    */
-  setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation }): void;
+  setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation; folded?: boolean }): void;
 
   /**
-   * The six presets in display order.
+   * The sixteen presets in display order: iPhone, Android, Foldable, Tablet, Desktop.
    *
    * @returns The DeviceSpec list.
    * @example
    * ```ts
-   * app.workspace.devices().map(device => device.id);
-   * // ["iphone-se", "iphone-15", "iphone-15-pro-max", "pixel-8", "ipad-mini", "desktop"]
+   * // gameView lists the presets of each group under its own <optgroup>.
+   * app.workspace.devices().filter(device => device.group === "foldable").map(device => device.id);
+   * // ["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold"]
    * ```
    */
   devices(): readonly DeviceSpec[];
@@ -726,6 +763,33 @@ export type WorkspaceApi = {
   setReference(on: boolean): void;
 
   /**
+   * The hot reload state of the game server, as link reports it: whether Bun reloads the game
+   * page after a save, and who owns the server.
+   *
+   * @returns A copy of `{ hmr, owner }`; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // Under the moku-editor bin.
+   * app.workspace.hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  hotReload(): HotReload | undefined;
+
+  /**
+   * Asks the server for hot reload on or off (`link.setHotReload`). A refusal toasts how to
+   * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is the asked value afterwards; never rejects.
+   * @example
+   * ```ts
+   * // Bun cannot switch HMR on a running bin.
+   * await app.workspace.setHotReload(false); // false; toast "Start the bin with --no-hmr to turn hot reload off"
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
+
+  /**
    * Listens to preference changes (theme, preview, device). A throwing listener is logged and
    * does not stop the others.
    *
@@ -841,7 +905,7 @@ export type WorkspaceState = {
   /** The chosen density and the value it resolves to now. */
   density: { chosen: DensityChoice; applied: Density };
   previews: Record<PreviewWorkspace, PreviewPrefs>;
-  device: { preset: DevicePresetId; orientation: Orientation };
+  device: StoredDevice;
   /** Always false at load; never persisted. */
   overlayInGame: boolean;
   /** Reference mode: always false at load; never persisted. */
@@ -857,7 +921,11 @@ export type WorkspaceState = {
   nextToastId: number;
   palette: { open: boolean; query: string; index: number; items: Map<string, PaletteItem> };
   keys: { bindings: KeyBindingEntry[]; escape: EscEntry[] };
-  popover: "step" | "registry" | "session" | undefined;
+  popover: "step" | "registry" | "session" | "more" | undefined;
+  /** How to change hot reload, after the server refused a change; shown in the switch title. */
+  hotReloadNote: string | undefined;
+  /** The last `manifest.restored` toasted (frame and bookmark), so each restore toasts once. */
+  lastRestore: string | undefined;
   /** Last step result for D1. */
   step: RanEvent | undefined;
   frame: FrameState;

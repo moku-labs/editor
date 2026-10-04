@@ -147,11 +147,13 @@ export type StyleCard = {
 /**
  * Where a source search found a ui key: `ident` with `style={ident}` (the editable card), `call`
  * with `style={call(...)}` (a read-only card), `defined` with no style on the element. `line` is
- * the 1-based line of the key.
+ * the 1-based line of the key. A `defined` with `loop` found no literal key: its line builds the
+ * key in a template literal (`card${slot}` for "card0").
  *
  * @example
  * ```ts
  * const source: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 301 };
+ * const card: StyleSource = { kind: "defined", path: "features/orders/strip.tsx", line: 157, loop: true };
  * ```
  */
 export type StyleSource =
@@ -172,7 +174,13 @@ export type StyleSource =
       /** 1-based line of the `style={…}` attribute. */
       readonly callLine: number;
     }
-  | { readonly kind: "defined"; readonly path: string; readonly line: number };
+  | {
+      readonly kind: "defined";
+      readonly path: string;
+      readonly line: number;
+      /** The key is built in a loop: the line holds its template literal. */
+      readonly loop?: true;
+    };
 
 /**
  * Where the style search of the selected element stands while no StyleCard is shown: searching,
@@ -200,6 +208,8 @@ export type StyleLookup =
       readonly status: "defined";
       readonly path: string;
       readonly line: number;
+      /** The key is built in a loop: the line holds its template literal. */
+      readonly loop?: true;
     };
 
 /**
@@ -241,6 +251,47 @@ export type ReferenceState = {
   /** Unwatches game.position; undefined while off. */
   unwatch: (() => void) | undefined;
 };
+
+/**
+ * The bookmark a completed pick took (`game.bookmark`), kept in gameView state, newest first, at
+ * most 20. `value` is what `game.restore { bookmark }` takes back.
+ *
+ * @example
+ * ```ts
+ * const bookmark: PickBookmark = { id: "settingsBoard-f1841", frame: 1841, key: "settingsBoard", at: 1_790_000_000_000, value: { path: "settingsPopup/open" } };
+ * ```
+ */
+export type PickBookmark = {
+  /** `<key>-f<frame>`, with `-2`, `-3` … when taken; the `restore:` line prints it. */
+  readonly id: string;
+  /** The frame of the rest point the bookmark holds. */
+  readonly frame: number;
+  /** The ui key of the picked element, else its name. */
+  readonly key: string;
+  /** Date.now() when it was taken. */
+  readonly at: number;
+  readonly value: Json;
+};
+
+/**
+ * What the last completed pick added to the reference block of its element: the bookmark id,
+ * the crop and the full frame, and the tainted flag of the bookmark run.
+ */
+export type LastPick = {
+  /** The scene node id of the picked element. */
+  readonly nodeId: string;
+  /** The frame the pick shows (the shot's, else the bookmark's, else the scene's). */
+  readonly frame: number;
+  readonly bookmark: string | undefined;
+  readonly crop: string | undefined;
+  readonly full: string | undefined;
+  readonly tainted: boolean | undefined;
+};
+
+/**
+ * Where the style block of a ui key was found: its file and the 1-based line of the block.
+ */
+export type BlockAt = { readonly path: string; readonly line: number };
 
 /**
  * A saved screenshot.
@@ -330,8 +381,16 @@ export type GameViewState = {
   calibrationRun: CalibrationRun;
   /** The last source search result per ui key (proxies and Copy reference read it). */
   found: Map<string, StyleSource>;
+  /** The source search in flight per ui key: a second ask waits for the same search. */
+  searches: Map<string, Promise<StyleSource | undefined>>;
+  /** The style block found per ui key (the reference block's `style:` and the proxies). */
+  blocks: Map<string, BlockAt>;
   /** Reference mode: the proxy layer in the frame overlay. */
   reference: ReferenceState;
+  /** The bookmarks of the completed picks, newest first, at most 20. */
+  bookmarks: PickBookmark[];
+  /** The last completed pick, for the reference block of its element. */
+  pick: LastPick | undefined;
 };
 
 /**
@@ -345,7 +404,9 @@ export type GameViewState = {
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
-   * workspace, the Element tab and the hint pill; off clears the hover box.
+   * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
+   * element bookmarks the game, saves the crop and the full frame under `capturesDir` and puts
+   * the reference block on the clipboard (see `copyReference`).
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -455,8 +516,8 @@ export type GameViewApi = {
 
   /**
    * One screenshot: runs `editor.capture` through panels (R9), writes the PNG under
-   * `capturesDir`, toasts, shows the capture card and the shutter flash. Never captures on its
-   * own: only a user action or this call does.
+   * `capturesDir`, puts `shot: <path>` on the clipboard, toasts, shows the capture card and the
+   * shutter flash. Never captures on its own: only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
@@ -470,8 +531,8 @@ export type GameViewApi = {
 
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
-   * new `series-<stamp>/` folder, then opens the contact sheet. Shows Game first. Refuses while
-   * another series runs.
+   * new `series-<stamp>/` folder, puts `series: <folder> (<n> frames)` on the clipboard, then
+   * opens the contact sheet. Shows Game first. Refuses while another series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -517,6 +578,53 @@ export type GameViewApi = {
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
+
+  /**
+   * Builds the reference block of the selected element, writes it to the clipboard and returns
+   * it. The block names the element for the chat, one fact per line, in a fixed order: `@moku`
+   * head, `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a
+   * pick of this element `restore` and `shot`. A line or a field that is not known is left out. A
+   * clipboard that refuses is toasted; the block is returned all the same.
+   *
+   * @returns The block, undefined when nothing is selected or the selection is not in the scene.
+   * @example
+   * ```ts
+   * // The developer picked the settings board and asks Claude to move it.
+   * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
+   * const block = await app.gameView.copyReference();
+   * block?.split("\n")[0]; // "@moku settingsBoard · panel · settingsPopup/open · f1841"
+   * ```
+   */
+  copyReference(): Promise<string | undefined>;
+
+  /**
+   * Folds or unfolds a foldable preset (its `fold` screens): the frame switches between the cover
+   * and the inner screen live, the game sees a resize and the picker calibrates again. Without an
+   * argument it toggles. Does nothing for a preset without `fold`.
+   *
+   * @param inner - true for the inner (unfolded) screen, false for the cover; omitted toggles.
+   * @example
+   * ```ts
+   * // Check the board on the open Galaxy Z Fold 6.
+   * app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
+   * app.gameView.fold(true); // app.workspace.device().preset.w === 707
+   * ```
+   */
+  fold(inner?: boolean): void;
+
+  /**
+   * The bookmarks of the completed picks, newest first, at most 20. `game.restore` takes a
+   * `value` back to the state of its pick.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // The block said "restore: bookmark settingsBoard-f1841": go back there.
+   * const bookmark = app.gameView.bookmarks().find(entry => entry.id === "settingsBoard-f1841");
+   * if (bookmark) await app.panels.run("game.restore", { bookmark: bookmark.value });
+   * ```
+   */
+  bookmarks(): readonly PickBookmark[];
 };
 
 /**

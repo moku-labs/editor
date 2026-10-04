@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
-import { createCtx, type TestCtx } from "../helpers";
+import { createCtx, type TestCtx, templateOf } from "../helpers";
 import { boardScene, button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
@@ -194,18 +194,45 @@ describe("ElementTab", () => {
     });
   });
 
-  it("Copy reference puts one line for the chat on the clipboard", async () => {
+  it("shows the reference block read-only; Copy puts it on the clipboard", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await settle();
+    const pre = find(view.root, "pre[data-part='reference']");
+    const lines = (pre.textContent ?? "").split("\n");
+    expect(lines.slice(0, 3)).toEqual([
+      "@moku coinPill · row · f1841",
+      "path: boardScreen/hudRow/coinPill",
+      "source: src/hud/Hud.tsx:2 · style: coinPill src/hud/styles.ts:1 · texture: ui.hud-pill"
+    ]);
+    expect(lines).toContain(
+      "layout: hudRow (row, padding 0/40/0/40, margin 40/0/0/0) < boardScreen (column, padding 0/0/0/0)"
+    );
+    expect(pre.getAttribute("aria-busy")).toBe("false");
+
     const copy = find(view.root, "button[data-action='copy-reference']");
-    expect(copy.textContent).toBe("Copy reference");
+    expect(copy.textContent).toBe("Copy");
     click(copy);
     await settle();
-    expect(writeText).toHaveBeenCalledWith(
-      "@moku coinPill · row · src/hud/Hud.tsx:2 · 235,74 290×76"
-    );
+    expect(writeText).toHaveBeenCalledWith(pre.textContent);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
     vi.unstubAllGlobals();
+  });
+
+  it("marks a key built in a loop: Defined at file:line (loop)", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", `const id = ${templateOf("coinPill", "slot")};`);
+    const scene = boardScene();
+    const nodes = new Map(scene.nodes);
+    const coin = nodes.get("ui:boardScreen/hudRow/coinPill");
+    if (coin === undefined) throw new Error("fixture");
+    nodes.set(coin.id, { ...coin, key: "coinPill3", name: "coinPill3" });
+    act(() => {
+      ctx.state.scene = { ...scene, nodes };
+    });
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    const defined = find(view.root, "[data-part='defined']");
+    expect(defined.textContent).toContain("Defined at src/hud/Hud.tsx:1 (loop)");
   });
 
   it("says searching while the sources are read", () => {

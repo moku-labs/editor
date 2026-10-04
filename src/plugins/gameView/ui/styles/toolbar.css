@@ -1,4 +1,4 @@
-/* gameView · toolbar (A2). 44 px row: picker, device, orientation, zoom, safe area, reload, camera, series, overlay; in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload, camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="toolbar"]) {
   :scope {
     display: flex;
@@ -58,14 +58,6 @@
     background: var(--status-error);
     color: var(--surface-panel);
     font-family: var(--font-mono);
-  }
-
-  [data-part="overlay"] [data-part="state"] {
-    color: var(--text-muted);
-  }
-
-  [data-part="overlay"][aria-checked="true"] [data-part="state"] {
-    color: var(--accent-ink);
   }
 
   @media (max-width: 1180px) {

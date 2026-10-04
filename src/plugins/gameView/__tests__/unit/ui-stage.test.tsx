@@ -93,6 +93,23 @@ describe("Stage", () => {
     const k = (800 - 56 - 26) / 852;
     expect(Number.parseFloat(slot.style.width)).toBeCloseTo(393 * k, 3);
     expect(Number.parseFloat(slot.style.height)).toBeCloseTo(852 * k, 3);
+    // The screen corners: the preset radius at the same scale (round 2 R3).
+    const bezel = find(mounted.root, "[data-part='bezel']");
+    expect(Number.parseFloat(bezel.style.getPropertyValue("--screen-radius"))).toBeCloseTo(
+      55 * k,
+      3
+    );
+  });
+
+  it("rounds the screen with the preset radius at 100 %; the desktop is square", () => {
+    ctx.state.zoom = "100";
+    expect(
+      find(stage().root, "[data-part='bezel']").style.getPropertyValue("--screen-radius")
+    ).toBe("55px");
+    ctx.workspace.device = { preset: "desktop", orientation: "portrait" };
+    expect(
+      find(stage().root, "[data-part='bezel']").style.getPropertyValue("--screen-radius")
+    ).toBe("0px");
   });
 
   it("uses the device size at 100 %", () => {

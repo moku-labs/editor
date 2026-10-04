@@ -38,6 +38,14 @@ describe("createGameViewState", () => {
     expect(state.listeners.size).toBe(0);
   });
 
+  it("starts without pick bookmarks, a last pick, searches or found style blocks", () => {
+    const state = createGameViewState();
+    expect(state.bookmarks).toEqual([]);
+    expect(state.pick).toBeUndefined();
+    expect(state.searches.size).toBe(0);
+    expect(state.blocks.size).toBe(0);
+  });
+
   it("gives every app its own state", () => {
     expect(createGameViewState().watching).not.toBe(createGameViewState().watching);
   });

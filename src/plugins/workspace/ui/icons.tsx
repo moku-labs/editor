@@ -35,7 +35,8 @@ export type IconName =
   | "history"
   | "code"
   | "styles"
-  | "target";
+  | "target"
+  | "more";
 
 /**
  * Props of `Icon`.
@@ -76,7 +77,8 @@ const PATHS: Readonly<Record<IconName, string>> = {
   styles: "M3 13l1-3.5L10.5 3 13 5.5 6.5 12zM9 4.5l2.5 2.5",
   history: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2 1.3",
   target:
-    "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM8 1v2M8 13v2M1 8h2M13 8h2"
+    "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM8 1v2M8 13v2M1 8h2M13 8h2",
+  more: "M3 7.25a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM8 7.25a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM13 7.25a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"
 };
 
 /**

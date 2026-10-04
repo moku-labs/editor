@@ -40,6 +40,11 @@ export type SceneNode = {
   readonly children: readonly string[];
   /** undefined: could not be placed. */
   readonly rect: PageRect | undefined;
+  /**
+   * The same rect in reference units (root units of the game's layout), before the calibration
+   * maps it to page px; equal to `rect` in a scene without a calibration. undefined: not placed.
+   */
+  readonly refRect: PageRect | undefined;
   readonly texture: string | undefined;
   readonly key: string | undefined;
   readonly style: Readonly<Record<string, Json>> | undefined;

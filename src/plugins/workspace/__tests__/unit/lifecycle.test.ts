@@ -49,6 +49,8 @@ describe("validateConfig", () => {
     [{ defaultWorkspace: "nope" }, "defaultWorkspace"],
     [{ storageKey: "" }, "storageKey"],
     [{ reloadTimeoutMs: 0 }, "reloadTimeoutMs"],
+    [{ hotReloadWaitMs: 0 }, "hotReloadWaitMs"],
+    [{ hotReloadWaitMs: Number.POSITIVE_INFINITY }, "hotReloadWaitMs"],
     [{ toastMs: -1 }, "toastMs"],
     [{ toastMs: Number.NaN }, "toastMs"]
   ])("rejects %o naming workspace.%s", (patch, field) => {
@@ -106,6 +108,7 @@ describe("initWorkspace", () => {
     initWorkspace(ctx);
     expect(ctx.state.keys.bindings.length).toBeGreaterThanOrEqual(10);
     expect(ctx.state.keys.escape.map(entry => entry.layer).toSorted()).toEqual([
+      "contextMenu",
       "contextMenu",
       "palette",
       "reference",
@@ -225,6 +228,19 @@ describe("startWorkspace — keys", () => {
     ctx.state.popover = "session";
     press("Escape");
     expect(ctx.state.popover).toBeUndefined();
+    ctx.state.popover = "more";
+    press("Escape");
+    expect(ctx.state.popover).toBeUndefined();
+  });
+
+  it("H asks the bin to switch hot reload; a refusal toasts how to change it", async () => {
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+    press("h");
+    await flush();
+    expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
+    expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
+      "Start the bin with --no-hmr to turn hot reload off"
+    ]);
   });
 });
 
@@ -240,9 +256,12 @@ describe("startWorkspace — listeners", () => {
     const added = add.mock.calls.map(call => call[0]);
     expect(added).toEqual(expect.arrayContaining(["keydown", "resize"]));
     expect(addDocument.mock.calls.map(call => call[0])).toContain("scroll");
-    expect(ctx.link.manifestListeners.size).toBe(1);
+    expect(ctx.link.manifestListeners.size).toBe(2);
+    expect(ctx.link.onHotReload).toHaveBeenCalledTimes(1);
+    const offHotReload = ctx.link.onHotReload.mock.results[0]?.value;
 
     stopWorkspace(ctx);
+    expect(offHotReload).toHaveBeenCalledTimes(1);
     expect(remove.mock.calls.map(call => call[0])).toEqual(expect.arrayContaining(added));
     expect(removeDocument.mock.calls.map(call => call[0])).toContain("scroll");
     expect(ctx.link.manifestListeners.size).toBe(0);
@@ -265,6 +284,17 @@ describe("startWorkspace — listeners", () => {
     stopWorkspace(ctx);
     expect(ctx.link.tapListeners.size).toBe(0);
     expect(ctx.state.taps).toEqual([]);
+  });
+
+  it("a new session that restored its state across Bun's reload toasts it once", () => {
+    initWorkspace(ctx);
+    startWorkspace(ctx);
+    const restored = { bookmark: "{}", frame: 12 };
+    ctx.link.attach({ ...manifestOf(), restored });
+    ctx.link.attach({ ...manifestOf(), restored });
+    expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
+      "Game reloaded · state restored"
+    ]);
   });
 
   it("resize re-evaluates the auto density and emits workspace:density on a change", () => {

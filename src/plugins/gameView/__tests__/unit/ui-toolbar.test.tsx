@@ -8,6 +8,16 @@ import { button, click, find, findAll, type Mounted, mount, settle } from "../ui
 let ctx: TestCtx;
 let view: Mounted;
 
+/**
+ * The option of a preset in the device select.
+ *
+ * @param id - The preset id.
+ * @returns The option.
+ */
+function option(id: string): HTMLOptionElement {
+  return find<HTMLOptionElement>(view.root, `option[value='${id}']`);
+}
+
 beforeEach(() => {
   ctx = createCtx();
   ctx.panels.answers.set("editor.capture", {
@@ -39,14 +49,7 @@ describe("DeviceToolbar", () => {
 
   it("chooses the device and shows its size; the orientation swaps it", () => {
     const select = find<HTMLSelectElement>(view.root, "select[data-part='device']");
-    expect(findAll(select, "option").map(option => option.textContent)).toEqual([
-      "iPhone SE",
-      "iPhone 15",
-      "iPhone 15 Pro Max",
-      "Pixel 8",
-      "iPad mini",
-      "Desktop"
-    ]);
+    expect(findAll(select, "option")).toHaveLength(16);
     expect(select.value).toBe("iphone-15");
     expect(find(view.root, "[data-part='size']").textContent).toBe("393 × 852");
 
@@ -56,6 +59,56 @@ describe("DeviceToolbar", () => {
 
     click(button(view.root, "Landscape"));
     expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({ orientation: "landscape" });
+  });
+
+  it("groups the presets: iPhone, Android, Foldable, Tablet, Desktop", () => {
+    const select = find<HTMLSelectElement>(view.root, "select[data-part='device']");
+    const groups = findAll<HTMLOptGroupElement>(select, "optgroup");
+    expect(groups.map(group => group.label)).toEqual([
+      "iPhone",
+      "Android",
+      "Foldable",
+      "Tablet",
+      "Desktop"
+    ]);
+    expect(findAll(groups[0] ?? select, "option").map(option => option.textContent)).toEqual([
+      "iPhone SE 3",
+      "iPhone 15",
+      "iPhone 15 Pro Max",
+      "iPhone 16 Pro",
+      "iPhone 16 Pro Max"
+    ]);
+    expect(
+      findAll<HTMLOptionElement>(groups[2] ?? select, "option").map(option => option.value)
+    ).toEqual(["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold"]);
+  });
+
+  it("marks the approximate presets in the option title", () => {
+    expect(option("redmi-note-13").title).toBe("393×873 · dpr 2.75 · approx: estimated values");
+    expect(option("pixel-8").title).toBe("412×915 · dpr 2.625");
+  });
+
+  it("shows Fold / Unfold only for a foldable; it switches the screen through workspace", () => {
+    expect(view.root.querySelector("[data-action='fold']")).toBeNull();
+
+    view.unmount();
+    ctx.workspace.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    const fold = find(view.root, "[data-action='fold']");
+    expect(fold.textContent).toBe("Unfold");
+    expect(fold.getAttribute("title")).toBe("Unfold to the inner screen");
+    click(fold);
+    expect(ctx.workspace.api.setDevice).toHaveBeenCalledWith({ folded: false });
+
+    view.unmount();
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    expect(find(view.root, "[data-part='size']").textContent).toBe("707 × 823");
+    expect(find(view.root, "[data-action='fold']").textContent).toBe("Fold");
+  });
+
+  it("has no overlay switch: the top bar keeps it (round 2 R1)", () => {
+    expect(view.root.querySelector("[data-part='overlay']")).toBeNull();
+    expect(view.root.textContent).not.toContain("Overlay in game");
   });
 
   it("switches the zoom between Fit and 100 % (radio group)", () => {
@@ -109,9 +162,6 @@ describe("DeviceToolbar", () => {
     await flush();
     expect(ctx.panels.run).not.toHaveBeenCalled();
     expect(ctx.state.series.popover).toBe(false);
-    expect(find(view.root, "[data-part='overlay']").getAttribute("title")).toBe(
-      "The game did not add the overlay"
-    );
   });
 
   it("the Series button opens the popover; while recording it is red with the time", () => {
@@ -136,14 +186,5 @@ describe("DeviceToolbar", () => {
     const recording = find(view.root, "[data-part='series']");
     expect(recording.dataset.recording).toBe("");
     expect(recording.textContent).toMatch(/^● 0\.9 s$/);
-  });
-
-  it("the overlay switch shows workspace's flag and flips it", () => {
-    const overlay = find(view.root, "[data-part='overlay']");
-    expect(overlay.getAttribute("role")).toBe("switch");
-    expect(overlay.getAttribute("aria-checked")).toBe("false");
-    expect(overlay.textContent).toContain("Off");
-    click(overlay);
-    expect(ctx.workspace.setOverlayInGame).toHaveBeenCalledWith(true);
   });
 });

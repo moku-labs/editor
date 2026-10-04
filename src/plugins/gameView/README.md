@@ -1,6 +1,6 @@
 # gameView
 
-> Complex plugin of the **tools** core (`createToolsPlugin`). The Game workspace (design A2): device toolbar, dotted stage with the one game frame, element picker, the Element panel with the Element and Device tabs, screenshots, series, the contact sheet and the Reference mode proxies.
+> Complex plugin of the **tools** core (`createToolsPlugin`). The Game workspace (design A2): device toolbar, dotted stage with the one game frame, element picker, the Element panel with the Element and Device tabs, screenshots, series, the contact sheet, the Reference mode proxies and the reference block a pick puts on the clipboard for the chat.
 
 What it does:
 
@@ -8,13 +8,13 @@ What it does:
 - It draws over the game only inside its own root in `gameFrame().overlay()`.
 - It watches `game.ui`, `game.entities` and `game.projections` while Game is shown (R6) or Reference mode is on (D-27). No timer reads a frame source.
 - It runs every command through `ctx.require(panelsPlugin).run(id, input)` (R9). There is no `link.run` in gameView.
-- It never captures on its own. Only a user action or an api call takes a screenshot or a series.
+- It never captures on its own. Only a user action or an api call takes a screenshot, a series or a pick.
 
 ## Configuration
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| `capturesDir` | `string` | `".moku/captures"` | Folder of screenshots and series. |
+| `capturesDir` | `string` | `".moku/captures"` | Folder of screenshots, series and pick shots. `.moku/captures` or a folder under it: the files sandbox writes there. |
 | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Where the asset manifest may live, tried in order. |
 | `captureCardMs` | `number` | `10_000` | The capture card hides after this, unless hovered or focused. Then it checks again every 2 s. |
 | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10_000, 20_000]` | Duration chips of the series popover. |
@@ -23,6 +23,13 @@ What it does:
 | `sourceSearch` | `{ maxFiles: number; skip: readonly string[] }` | `{ maxFiles: 1500, skip: ["node_modules", "dist", ".git", ".moku"] }` | Search for the source and the style block of a picked element: the folder of the game page entry first, then the root. |
 
 `sourceSearch` is replaced as a whole: config merges shallowly. Pass both fields when you override it.
+
+Any other `capturesDir` stops the app in `onInit`:
+
+```text
+[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.
+  Set pluginConfigs.gameView.capturesDir to ".moku/captures/<sub>".
+```
 
 ```ts
 createApp({
@@ -36,7 +43,7 @@ createApp({
 
 | Member | Signature | What |
 |---|---|---|
-| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill. Off clears the hover box. |
+| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill. Off clears the hover box. A click that picks an element completes the pick (see "Pick for the chat"). |
 | `selected` | `() => ElementRef \| undefined` | The picked element. |
 | `select` | `(ref: ElementRef \| undefined) => void` | Selects without the picker, or clears the selection. Clears the style card. |
 | `inspect` | `(ref: ElementRef) => void` | `select(ref)`, Element tab, shows Game. The `workspace:inspect` hook calls it. |
@@ -44,10 +51,13 @@ createApp({
 | `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | The pink box over the game frame. `undefined` clears it. A newer call drops an older one still waiting for the scene. |
 | `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the first readable `manifestPaths` entry. Cached per session. |
-| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd-hhmm>-<flow>.png`. `undefined` when there is no game, no `editor.capture`, or it failed. |
-| `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `series-<stamp>/NNN.png` and `index.json`, then opens the contact sheet. Refuses while another series runs. |
+| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd-hhmm>-<flow>.png`. Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
+| `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `series-<stamp>/NNN.png` and `index.json`, puts `series: <folder> (<n> frames)` on the clipboard, then opens the contact sheet. Refuses while another series runs. |
 | `stopSeries` | `() => void` | Runs `editor.seriesStop`. The pending series resolves with the shots taken so far. Its index gets `stoppedEarly`. |
 | `openSheet` | `(indexPath: string) => Promise<void>` | Opens a saved series. Reads `index.json`, then every PNG with `readBinary`. |
+| `copyReference` | `() => Promise<string \| undefined>` | The reference block of the selection on the clipboard, toast "✓ Reference copied". Returns the block, also when the clipboard refuses. `undefined` without a selection in the scene. |
+| `fold` | `(inner?: boolean) => void` | Foldable presets: the cover or the inner screen, toggled without an argument (`workspace.setDevice({ folded })`). No-op for a preset without `fold`. |
+| `bookmarks` | `() => readonly PickBookmark[]` | The bookmarks of the picks, newest first, at most 20: `{ id, frame, key, at, value }`. `game.restore { bookmark: value }` goes back to one. |
 
 ```ts
 app.gameView.pick(true); // Game shown, picker on
@@ -62,9 +72,25 @@ await app.gameView.capture();
 
 await app.gameView.series({ durationMs: 2000, intervalMs: 100 });
 // { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
+
+app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
+(await app.gameView.copyReference())?.split("\n")[0]; // "@moku settingsBoard · panel · settingsPopup/open · f1841"
+
+app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
+app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w === 707
+
+const [last] = app.gameView.bookmarks();
+if (last) await app.panels.run("game.restore", { bookmark: last.value });
 ```
 
 Breaking (pre-1.0, Claude-pane round): `attach`, `notes` and the `notesDir` option are gone with the notes feature (D-24).
+
+Breaking (pre-1.0, round 2):
+
+- The device toolbar has no "Overlay in game" switch. The top bar and its `⋯` menu keep it.
+- "Copy reference" writes the multi-line reference block, not one line. `copyReference()` returns it.
+- A pick writes `<key>-f<frame>.png` and `f<frame>.png` into `capturesDir`, with `-2`, `-3` … when taken.
+- `capturesDir` must be `.moku/captures` or a folder under it.
 
 Failures never throw out of `capture`, `series` or `openSheet`.
 They show a toast with the bare message (`bareMessage`, R7) and log the full one with its code.
@@ -84,15 +110,15 @@ gameView declares no events. It uses the global tools events (R4).
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
 | Hooks | `workspace:reference` | `{ on }` | Reference mode on or off: the proxy layer in the frame overlay (D-27). |
 
-Log events (warn): `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`.
+Log events (warn): `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: reference block failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. Debug: `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`.
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest`, `status()` |
-| `workspacePlugin` | `gameFrame()` (`dock`, `overlay`, `box`), `show`, `active`, `device`, `devices`, `setDevice`, `onPrefs`, `overlayInGame`, `reference`, `toast`, `palette.add`, `keys.bind`, `keys.escape` |
-| `panelsPlugin` | `register` the Game panel, `run` the `editor.*` commands |
+| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`, and for the reference block `game.position`, `game.history { last: 1 }`, `game.tainted`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest`, `status()`, `session()` |
+| `workspacePlugin` | `gameFrame()` (`dock`, `overlay`, `box`), `show`, `active`, `device`, `devices`, `setDevice` (preset, orientation, `folded`), `onPrefs`, `overlayInGame`, `reference`, `toast`, `palette.add`, `keys.bind`, `keys.escape` |
+| `panelsPlugin` | `register` the Game panel, `run` the `editor.*` commands and `game.bookmark` |
 
 Shared modules of `panels/shared/` (R8): the scene mapping (`elementAt`, `isLayoutOnly`, `pageFromClient`, calibration, texture catalogue, the wire readers), the style edit, the `SidePanel` and the token names. gameView keeps no copy of them: the Reference proxies import `isLayoutOnly` from `panels/shared/scene` to put layout-only nodes under the drawing ones.
 
@@ -102,9 +128,11 @@ gameView depends on no view, and no view depends on it (R4, D-13).
 
 | Phase | What |
 |---|---|
-| `onInit` | Registers the Game panel (source `game.position`). Adds the palette items: Select element, Take a screenshot, Record a series…, Overlay in game, Show Element panel, and one `Device: <name>` per device. Binds the keys and the Esc layers. Listens to device changes. Sync, no I/O. |
+| `onInit` | Checks `capturesDir`. Registers the Game panel (source `game.position`). Adds the palette items: Select element, Take a screenshot, Record a series…, Overlay in game, Show Element panel, and one `Device: <name>` per device. Binds the keys and the Esc layers. Listens to device changes. Sync, no I/O. |
 | `onStart` | Starts the scene watches when Game is already active (a restored `#game` hash). Turns Reference mode on when workspace has it on. |
 | `onStop` | Runs the disposers, every unwatch and the `game.position` watch. Clears the timers. Stops a running recording. |
+
+A device change re-calibrates the picker: another preset, orientation or a fold (`folded` is part of the device identity).
 
 | Keys (workspace keymap) | What |
 |---|---|
@@ -119,7 +147,7 @@ Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard
 
 ```ts
 const app = createApp({
-  pluginConfigs: { gameView: { capturesDir: ".moku/shots", seriesWarnShots: 100 } }
+  pluginConfigs: { gameView: { capturesDir: ".moku/captures/shots", seriesWarnShots: 100 } }
 });
 await app.start();
 const shot = await app.gameView.capture();
@@ -136,7 +164,8 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 - **renderView** emits `workspace:inspect` ("Inspect in Game") and hooks `workspace:reveal`.
 - **filesView** emits `workspace:open-sheet` ("Open contact sheet") and hooks `workspace:open-file`. It previews the series `index.json` gameView writes.
-- **workspace** owns the overlay-in-game flag and runs `editor.overlay`. The palette item flips it.
+- **workspace** owns the overlay-in-game flag and runs `editor.overlay`. Its top bar and the palette item flip it.
+- **workspace** owns the device presets (`devices.ts`: groups, `dpr`, `radius`, `approx`, `fold`) and the docked frame's rounded clip.
 - **workspace** owns Reference mode (`R`, the top-bar button, Esc). While it is on, the frame overlay takes the pointer and gameView draws the proxies.
 
 ### Scene and picker
@@ -154,6 +183,13 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - Hover uses the watched scene. A click reads `game.ui`, `game.entities` and `game.projections` once more and waits for the calibration first. The bridge sends a watched frame source at most once per heartbeat (R6), so after a screen change the watched scene can still show the screen before. The click picks from the screen the game shows now.
 - A click whose read fails picks from the scene there is. A click is dropped when the picker went off while it read.
 
+### Device toolbar and stage
+
+- The device select has one `<optgroup>` per preset group: iPhone, Android, Foldable, Tablet, Desktop (`DEVICE_GROUPS` of workspace).
+- Each option's title has the size and dpr. An estimated preset adds "approx: estimated values".
+- A foldable preset (`fold`) shows Fold / Unfold (`data-action="fold"`): "Unfold" on the cover, "Fold" on the inner screen. It calls `workspace.setDevice({ folded })`. No reload: the game sees a resize, and the picker calibrates again after the next `game.ui` snapshot.
+- The bezel has a 1 px `var(--border-strong)` outline. Its inner radius is the preset's `radius` at the stage scale (`--screen-radius` on the bezel), so it matches workspace's rounded frame clip.
+
 ### Style card
 
 1. The search lists `.ts`/`.tsx` files breadth-first: the folder of the game page entry (from the manifest's page URL) first, then the root. It reads at most `maxFiles` files.
@@ -162,9 +198,10 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 4. `style={ident}`: the block is the `StyleBlockRef` `{ kind: "const", name: ident }`. The shared style edit looks for it in that file first. If the ident is imported from a relative module, it then looks in that module (`.ts`, `.tsx`, `/index.ts`). This is how merge-game keeps its styles.
 5. `style={call(...)}`: a read-only card with the call, its `file:line` and "Open in Files".
 6. No style in any file: "Defined at file:line" and "Open in Files", from the first file that names the key. "Source not found" only when no file names it.
-7. Steppers exist only for fields with a `fieldRule`.
-8. A burst writes once with `writeNumber`. A success toasts "✓ Saved" and reloads the game with restore (D-07).
-9. Every search result is kept per key. The proxies and "Copy reference" read it.
+7. No file names the key literally, and the key ends in digits: the search looks for the template literal of its stem. `card0` finds `` `card${slot}` `` (merge-game `features/orders/strip.tsx:157`). It shows "Defined at file:line (loop)".
+8. Steppers exist only for fields with a `fieldRule`.
+9. A burst writes once with `writeNumber`. A success toasts "✓ Saved" and reloads the game with restore (D-07).
+10. Every search result is kept per key, and so is the place of a found style block. The proxies and the reference block read them. One search per key runs at a time: a second ask waits for it.
 
 The Styles list shows an object value as `key value` pairs (`top 266 · right 72 · bottom 64 · left 72`) and an array joined with `, `.
 
@@ -180,17 +217,63 @@ Game elements become referenceable from the chat (finding 17, D-27). workspace o
 - gameView's overlay root renders `<div data-moku-proxies>` with one invisible `<div data-moku-proxy role="img">` per placed visible scene node (ui and entity), at its rect in device px. The overlay carries the frame box transform.
 - Paint order is kept, a later proxy is on top. Layout-only nodes come first, under every drawing node.
 - Proxies are keyed by node id, so a scene change updates them in place.
-- Attributes: `aria-label="<name>"`, `title="<name> · <type>"`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path` (ui path or `entity:<id>`), `data-moku-node` (`flow/node`), `data-moku-source` (`file:line` when a search found it), `data-moku-style` (the style identifier or call, else the nine-slice texture), `data-moku-bounds` (`x y w h`, rounded like the Element tab).
+- Attributes: `aria-label="<name>"`, `title="<name> · <type>"`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path` (ui path or `entity:<id>`), `data-moku-node` (`flow/node`), `data-moku-source` (`file:line` when a search found it, ` (loop)` for a key built in a loop), `data-moku-style` (the style identifier or call, else the nine-slice texture), `data-moku-style-source` (`file:line` of the style block or the call), `data-moku-bounds` (`x y w h`, rounded like the Element tab), `data-moku-ref-bounds` (`x y w h` in reference units), `data-moku-frame` (the scene frame).
 - A hover draws the picker box with its label.
+- A click (`pointerup`) picks the proxy's node (see below), in any workspace.
 - Off removes the layer, and the scene watch unless Game is shown.
 
-The Element tab's "Copy reference" (`data-action="copy-reference"`) puts one line on the clipboard and toasts "✓ Reference copied":
+### Pick for the chat
+
+A completed pick (a picker click, or a click on a Reference proxy) does, in order:
+
+1. `game.bookmark` through `panels.run`. The bookmark is kept: `bookmarks()`, newest first, at most 20. Its id is `<key>-f<frame>`, with `-2` … when a kept one has it.
+2. `editor.capture` through `panels.run` (the capture plugin accepts both `game.capture` answers: a string, or `{ png }`).
+3. The crop: the element's rect plus 8 px, cut from the picture with a canvas in the tools page. The box is scaled by picture width / device width, the shot's real pixel ratio. Only a calibrated scene is cropped.
+4. Both files through `files.writeBinary` into `capturesDir`: `<key>-f<frame>.png` (crop) and `f<frame>.png` (full frame). An entity uses its node name for `<key>`.
+5. The reference block on the clipboard, toast "Reference, shot and bookmark copied".
+
+A game without `game.bookmark` or `editor.capture`, or a step that fails, leaves its lines out. The toast then names only what was copied: "Reference and shot copied", "Reference and bookmark copied", "Reference copied".
+
+The reference block, fixed order. A line or a field that is not known is left out:
 
 ```text
-@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76
+@moku <name> · <type> · <flow/node> · f<frame>
+path: <ui path> | entity #<id> (<components, max 5>)
+source: <file:line> · style: <identifier> <file:line> · texture: <nineSlice/texture>
+layout: <parent chain, nearest first, max 3: key (direction, padding, margin, gap)>
+bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>
+state: <visible|hidden>, <is-flags> · value "<text>" · alpha <a>
+flow: <position stack joined by " > "> · last: <from> → <outcome> (f<frame>)
+game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <paused|live> · <tainted|clean>
+device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>
+restore: bookmark <id>
+shot: <crop path> · frame: <full path>
 ```
 
-A part that is not known is left out.
+- `ref` is `SceneNode.refRect`: the rect in the game's reference units.
+- `layout` reads the styles of the ui parents. Padding and margin print as `t/r/b/l`. The parents are joined with ` < `.
+- `state` flags are `pressed`, `disabled`, `selected` when true, from the style or the node's `state` in `game.ui`.
+- `value` and `text:` wait for the game to report them (brief §2).
+- `last` is the newest `game.history` entry. Its frame only when the game reports one.
+- `restore` and `shot` belong to the last pick of this element.
+
+On merge-game, the settings board after a pick:
+
+```text
+@moku settingsBoard · panel · settingsPopup/open · f25
+path: settingsScreen/settingsBoard
+source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+layout: settingsScreen (column, padding 0/0/0/0)
+bounds: 65,190 950×1060 px · ref 65,190 950×1060
+state: visible
+flow: board > settings > open · last: board/settings/enter → done
+game: merge-game 0.0.0 · s-7e63 · f25 · 17:16:39 · live · clean
+device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
+restore: bookmark settingsBoard-f25
+shot: .moku/captures/settingsBoard-f25.png · frame: .moku/captures/f25.png
+```
+
+The Element tab shows the same block in a read-only `<pre data-part="reference">`. Its Copy button (`data-action="copy-reference"`) runs `copyReference()`. The block is gathered again when the element, its source, its style block, its bounds, the flow node or the last pick changes.
 
 ### Captures
 
@@ -199,13 +282,15 @@ A part that is not known is left out.
 
 ## Files
 
-`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload), `capture/` (naming, shot, series, sheet), `element/` (source, styles, select), `reference/` (mode, proxies), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
+`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload, fold), `capture/` (naming, shot, series, sheet, crop), `element/` (source, styles, select), `reference/` (mode, proxies, block, facts, pick), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `clipboard.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
 
 ## Tests
 
 - `__tests__/unit/`: one file per module and per component. The components run under happy-dom.
 - `__tests__/integration/game-view.test.ts`: the real link, workspace, panels and gameView over an in-process hub.
 - `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where the pinned game checkout exists (`tests/fixtures/game-dir.ts`).
+- `__tests__/unit/source.test.ts` also reads the merge-game files when the checkout exists: `settingsBoard` and the loop key `card0`.
+- `tests/integration/pick-reference.test.ts` (root): a proxy pick on the merge-game settings popup writes both PNGs, copies every line of the block, and its bookmark restores the popup. Local only, like the merge journeys.
 
 ## Limits and game follow-ups
 

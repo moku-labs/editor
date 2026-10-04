@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line. In a half-screen window the row stays one line: the controls keep their size, the game name and the search shrink, and under 1180 px the ghost buttons, then under 820 px the switches and the search, drop their visible label (the label stays as the accessible name and the tooltip names the action); the game name drops its version. Under 560 px (a third of the screen) the bar keeps the logo and the controls only: no game name, no session chip, an icon-only search and no counts. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar; under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: logo, game name, link pill, Pause, Step, a 28 px search icon and the ⋯ button; under 560 px (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -31,7 +31,7 @@
     flex-shrink: 1;
     align-items: baseline;
     gap: 0.3em;
-    min-width: 48px;
+    min-width: 32px;
     max-width: 180px;
     overflow: hidden;
     font-size: var(--font-size-12-5);
@@ -53,16 +53,18 @@
     font-weight: 400;
   }
 
+  /* The wide search box: grows to 380 px; it shrinks before the game name does (factor 8), down to 88 px, and clips its content there. */
   [data-search] {
     display: flex;
-    flex: 1;
+    flex: 1 8 auto;
     align-items: center;
     gap: 8px;
+    min-width: 88px;
     max-width: 380px;
     height: 28px;
-    min-width: 0;
     margin: 0 auto;
     padding: 0 6px 0 10px;
+    overflow: hidden;
     border: 1px solid var(--line-1);
     border-radius: var(--radius-7);
     background: var(--surface-panel-2);
@@ -72,50 +74,72 @@
 
   [data-search] > span {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-align: start;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  [data-counts] {
-    color: var(--text-muted);
-    font-size: var(--font-size-11-5);
+  [data-search] > kbd {
+    flex: none;
   }
 
   [data-action="theme"],
-  [data-action="reference"] {
+  [data-action="reference"],
+  [data-action="registry"],
+  [data-action="more"] {
     padding: 0 6px;
   }
 
-  [data-action="reference"][aria-pressed="true"] {
+  [data-action="reference"][aria-pressed="true"],
+  [data-action="more"][aria-expanded="true"] {
     background: var(--accent-soft);
     color: var(--accent-ink);
   }
 
-  /* Half-screen windows: labels become the accessible name only (same box as [data-sr-only]). */
+  /* Compact bar: the search is a fixed icon button that pushes itself and ⋯ to the end; Pause and Step show their icons only. */
+  :scope[data-layout="compact"] [data-search] {
+    flex: none;
+    justify-content: center;
+    width: 28px;
+    min-width: 28px;
+    margin: 0 0 0 auto;
+    padding: 0;
+  }
+
+  :scope[data-layout="compact"] > [data-variant="ghost"] {
+    padding: 0 7px;
+  }
+
+  :scope[data-layout="compact"] > [data-variant="ghost"] > span:not([data-sr-only]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  :scope[data-layout="compact"] [data-game-name] {
+    max-width: 120px;
+  }
+
+  :scope[data-layout="compact"] [data-game-name] [data-part="version"] {
+    display: none;
+  }
+
+  /* Wide bar under 1180 px: the ghost buttons become icons (the label stays the accessible name); the switches keep their labels in a tighter box. */
   @media (max-width: 1180px) {
-    :scope > [data-variant="ghost"] {
+    :scope[data-layout="wide"] {
+      gap: 4px;
+    }
+
+    :scope[data-layout="wide"] > [data-variant="ghost"] {
       padding: 0 7px;
     }
 
-    :scope > [data-variant="ghost"] > span:not([data-counts], [data-sr-only]) {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-  }
-
-  @media (max-width: 820px) {
-    :scope > [data-switch] {
-      padding: 0 5px;
-    }
-
-    :scope > [data-switch] > span:not([data-track]),
-    [data-search] > span {
+    :scope[data-layout="wide"] > [data-variant="ghost"] > span:not([data-sr-only]) {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -124,46 +148,33 @@
       white-space: nowrap;
     }
 
-    [data-search] > kbd {
-      margin-left: auto;
+    :scope[data-layout="wide"] > [data-switch] {
+      gap: 6px;
+      padding: 0 6px;
     }
 
-    [data-game-name] {
-      max-width: 96px;
+    :scope[data-layout="wide"] [data-game-name] {
+      max-width: 120px;
     }
 
-    [data-game-name] [data-part="version"] {
+    :scope[data-layout="wide"] [data-game-name] [data-part="version"] {
       display: none;
     }
   }
 
+  /* A third of the screen: the logo and the controls only. */
   @media (max-width: 560px) {
     :scope {
       gap: var(--space-1);
       padding: 0 var(--space-2);
     }
 
-    [data-game-name],
-    [data-search] > kbd,
-    [data-counts] {
+    :scope[data-layout="compact"] [data-game-name] {
       display: none;
     }
 
-    :scope > [data-ui="session-chip"] {
-      display: none;
-    }
-
-    :scope > [data-variant="ghost"],
-    :scope > [data-switch] {
+    :scope[data-layout="compact"] > [data-variant="ghost"] {
       padding: 0 var(--space-2);
-    }
-
-    [data-search] {
-      flex: none;
-      justify-content: center;
-      width: 28px;
-      margin: 0 auto;
-      padding: 0;
     }
   }
 }

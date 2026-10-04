@@ -80,6 +80,14 @@ describe("recordSeries", () => {
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ 4 shots saved", FOLDER);
   });
 
+  it("puts series: <folder> (<n> frames) on the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
+    vi.unstubAllGlobals();
+    expect(writeText).toHaveBeenCalledWith(`series: ${FOLDER} (4 frames)`);
+  });
+
   it("opens the contact sheet with the in-memory images", async () => {
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50, label: "merge refused shake" });
 

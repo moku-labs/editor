@@ -1,7 +1,8 @@
 /**
- * @file gameView plugin — onInit (panel, palette, key bindings, Esc layers, device listener; sync,
- * no I/O), onStart (scene watches when Game is already active, Reference mode when already on)
- * and onStop (disposers, watches, the game.position watch, timers, a running recording).
+ * @file gameView plugin — onInit (the capturesDir check, panel, palette, key bindings, Esc layers,
+ * device listener; sync, no I/O), onStart (scene watches when Game is already active, Reference
+ * mode when already on) and onStop (disposers, watches, the game.position watch, timers, a running
+ * recording).
  */
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
@@ -16,22 +17,42 @@ import type { GameViewCtx, GameViewState } from "./types";
 import { createGamePanel } from "./ui/panel";
 
 /**
- * The identity of a device choice.
+ * The identity of a device choice: preset, orientation and, for a foldable, the screen shown.
  *
- * @param choice - Preset and orientation.
- * @returns "iphone-15:portrait".
+ * @param choice - Preset, orientation and the folded flag.
+ * @returns "iphone-15:portrait:folded".
  * @example
  * ```ts
- * deviceKey({ preset: DEVICES[1]!, orientation: "portrait" }); // "iphone-15:portrait"
+ * deviceKey({ preset: presetOf("galaxy-z-fold-6"), orientation: "portrait", folded: false }); // "galaxy-z-fold-6:portrait:unfolded"
  * ```
  */
 function deviceKey(choice: DeviceChoice): string {
-  return `${choice.preset.id}:${choice.orientation}`;
+  return `${choice.preset.id}:${choice.orientation}:${choice.folded ? "folded" : "unfolded"}`;
 }
 
 /**
- * Listens to workspace preferences: a device change re-calibrates the scene (after the next ui
- * snapshot while watching) and re-renders the overlay; theme and preview changes do nothing here.
+ * The folder captures go to: `.moku/captures` or a folder under it (the files sandbox allows
+ * writes there).
+ */
+const CAPTURES_ROOT = ".moku/captures";
+
+/**
+ * Refuses a `capturesDir` outside `.moku/captures` (round 2 breaking change).
+ *
+ * @param dir - The configured folder.
+ * @throws {Error} `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.`
+ */
+function checkCapturesDir(dir: string): void {
+  if (dir === CAPTURES_ROOT || dir.startsWith(`${CAPTURES_ROOT}/`)) return;
+  throw new Error(
+    '[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.\n  Set pluginConfigs.gameView.capturesDir to ".moku/captures/<sub>".'
+  );
+}
+
+/**
+ * Listens to workspace preferences: a device change (a fold too) re-calibrates the scene (after
+ * the next ui snapshot while watching) and re-renders the overlay; theme and preview changes do
+ * nothing here.
  *
  * @param ctx - Domain context of gameView.
  * @returns Removes the listener.
@@ -49,12 +70,15 @@ function watchDevice(ctx: GameViewCtx): () => void {
 }
 
 /**
- * onInit: registers the Game panel, adds the palette items, binds the keys and the Esc layers and
- * listens to device changes. Every remover goes into `state.disposers`. Sync, no I/O.
+ * onInit: checks `capturesDir`, registers the Game panel, adds the palette items, binds the keys
+ * and the Esc layers and listens to device changes. Every remover goes into `state.disposers`.
+ * Sync, no I/O.
  *
  * @param ctx - Domain context of gameView.
+ * @throws {Error} When `capturesDir` is not `.moku/captures` or a folder under it.
  */
 export function initGameView(ctx: GameViewCtx): void {
+  checkCapturesDir(ctx.config.capturesDir);
   const { disposers } = ctx.state;
   const workspace = ctx.require(workspacePlugin);
   ctx.require(panelsPlugin).register(createGamePanel(ctx));

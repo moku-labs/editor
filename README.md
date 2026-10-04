@@ -75,6 +75,8 @@ Tools  http://127.0.0.1:3000/__editor/
 Root   /Users/alex/game
 ```
 
+Hot reload is on: Bun reloads the game page after a save. To turn it off, start with `--no-hmr`. `bunx moku-editor --help` lists every flag.
+
 Or wrap the game's own `Bun.serve` with the server core:
 
 ```ts

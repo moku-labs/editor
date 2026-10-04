@@ -484,8 +484,9 @@ export type HotReload = {
 export type FoldScreen = { readonly w: number; readonly h: number; readonly radius: number };
 
 /**
- * A device preset of the tools page (R1, R4). `dpr`, `radius` and `group` are optional in this
- * wave; wave 2a makes them required after it fills the 17 presets.
+ * A device preset of the tools page (R1, R4): the screen in CSS px, its pixel ratio, safe insets,
+ * corner radius and the `<optgroup>` it is listed under. A foldable adds its two screens; its
+ * top-level size is the cover screen.
  *
  * @example
  * ```ts
@@ -504,11 +505,11 @@ export type DeviceSpec = {
   readonly safeBottom: number;
   readonly kind: "phone" | "tablet" | "desktop";
   /** Device pixel ratio of the screen. */
-  readonly dpr?: number;
+  readonly dpr: number;
   /** Corner radius of the screen in CSS px (0 for a desktop). */
-  readonly radius?: number;
+  readonly radius: number;
   /** The `<optgroup>` the preset is listed under. */
-  readonly group?: "iphone" | "android" | "foldable" | "tablet" | "desktop";
+  readonly group: "iphone" | "android" | "foldable" | "tablet" | "desktop";
   /** Set when a value of the preset is an estimate, not a published figure. */
   readonly approx?: true;
   /** The two screens of a foldable: folded (cover) and unfolded (inner). */

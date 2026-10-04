@@ -2,16 +2,18 @@
 
 > Complex plugin, tools core (`@moku-labs/editor/tools`). The tools shell and the one game frame.
 
-The shell of the tools page: top bar (B1), rail with badges (B2), pinned game preview (B3), step
-and registry popovers (D1, D2), link pill note (D7), command palette (E1), toasts (F1), stale bar
-(F3) and the connecting and no-game cards (F4). It owns the single game iframe, the per-viewer
-preferences (theme, density, preview per workspace, device, Show taps), the key map with the Esc
-unwinding, the overlay-in-game switch, Reference mode, the tap ripples and the D-07 reload. It
-also ships the shared CSS layer every view uses (`styles/`).
+The shell of the tools page: top bar (B1) with its ⋯ menu, rail with badges (B2), pinned game
+preview (B3), step and registry popovers (D1, D2), link pill note (D7), command palette (E1),
+toasts (F1), stale bar (F3) and the connecting and no-game cards (F4). It owns the single game
+iframe, the device presets, the per-viewer preferences (theme, density, preview per workspace,
+device and fold, Show taps), the key map with the Esc unwinding, the overlay-in-game switch,
+Reference mode, the Hot reload switch, the tap ripples and the D-07 reload. It also ships the
+shared CSS layer every view uses (`styles/`).
 
 The shell is built narrow first: it runs in a browser pane at a third (480 px) or half (720 px)
-of the screen. Under 560 px the top bar keeps the logo and the controls only, and the rail is 44 px
-of icons. No workspace scrolls the page sideways.
+of the screen. Below 900 px the top bar is compact and moves the switches into a ⋯ menu; under
+560 px it also hides the game name, and the rail is 44 px of icons. No workspace scrolls the page
+sideways.
 
 ## Configuration
 
@@ -20,6 +22,7 @@ of icons. No workspace scrolls the page sideways.
 | `defaultWorkspace` | `WorkspaceId` | `"game"` | Workspace shown at start when the URL hash names none. |
 | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
+| `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload()` waits for the page Bun reloads before it reloads the frame itself. |
 | `toastMs` | `number` | `2600` | How long one toast stays. Hover or focus pauses it. |
 
 `onInit` throws `[moku-editor] workspace.<field> is invalid.\n  <fix>.` for a bad value. The game
@@ -39,9 +42,9 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `setDensity` | `(value: DensityChoice) => void` | `auto`, `compact` or `comfortable`. Persists, sets `data-density` on `<html>`, emits `workspace:density` when the applied value changes. |
 | `preview` | `(ws: PreviewWorkspace) => PreviewState` | Preview of a non-Game workspace: `visible`, `size`, `corner`, plus `width` and `height` in px. |
 | `setPreview` | `(ws, patch) => void` | Patches the preview. A visibility change toasts "Game preview hidden in Flow · remembered for this workspace". |
-| `device` | `() => DeviceChoice` | `{ preset: DeviceSpec, orientation }`. Default `iphone-15`, portrait. |
-| `setDevice` | `(patch) => void` | Changes preset or orientation. The frame resizes. |
-| `devices` | `() => readonly DeviceSpec[]` | The six presets: iPhone SE, iPhone 15, iPhone 15 Pro Max, Pixel 8, iPad mini, Desktop. |
+| `device` | `() => DeviceChoice` | `{ preset, orientation, folded }`. `preset` is the screen in use: an unfolded foldable carries its inner screen's `w`, `h` and `radius`. Default `iphone-15`, portrait, folded. |
+| `setDevice` | `(patch: { preset?, orientation?, folded? }) => void` | Changes preset, orientation or fold. The frame resizes live: the game sees a window resize, no reload. A new preset starts folded unless the patch sets `folded`. |
+| `devices` | `() => readonly DeviceSpec[]` | The sixteen presets in display order (see Devices). |
 | `gameFrame` | `() => GameFrame` | `{ url, reload(opts?), dock(slot, { fit, clip? }), overlay(), box() }`. |
 | `palette.add` | `(item \| items) => () => void` | Adds palette items. A known id is replaced. The remover keeps newer items. |
 | `palette.open` | `(query?) => void` | Opens the palette. |
@@ -56,6 +59,8 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `setOverlayInGame` | `(on) => Promise<void>` | Runs `editor.overlay`, toasts, re-applies on every new session. A failure puts the flag back. |
 | `reference` | `() => boolean` | Reference mode. Always `false` at load. Never persisted. |
 | `setReference` | `(on) => void` | Turns Reference mode on or off. Emits `workspace:reference` on a change. |
+| `hotReload` | `() => HotReload \| undefined` | link's `{ hmr, owner }`: whether Bun reloads the game after a save, and who owns the server. `undefined` until the hub reported it. |
+| `setHotReload` | `(on) => Promise<boolean>` | Asks the server through `link.setHotReload`. A refusal toasts how to change it and keeps that hint in the switch tooltip. Never rejects. |
 | `onPrefs` | `(fn) => () => void` | Called after every theme, preview or device change. |
 
 ```ts
@@ -67,6 +72,9 @@ workspace.preview("flow").size; // "S"
 workspace.setPreview("render", { visible: false });
 workspace.device().preset.w; // 393
 workspace.setDevice({ orientation: "landscape" });
+workspace.setDevice({ preset: "galaxy-z-fold-6", folded: false }); // the inner screen, 707 × 823
+workspace.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
+await workspace.setHotReload(false); // false: "Start the bin with --no-hmr to turn hot reload off"
 await workspace.gameFrame().reload({ restore: true });
 const remove = workspace.palette.add({ id: "cmd:capture", group: "Commands", label: "Take a screenshot", run });
 workspace.toast("Saved", "src/styles.ts");
@@ -78,11 +86,69 @@ await workspace.setOverlayInGame(true);
 const off = workspace.onPrefs(prefs => rerender(prefs));
 ```
 
+### The top bar
+
+The bar picks its layout from the window width and writes it as `data-layout` on
+`[data-ui="top-bar"]`. A window resize re-renders it.
+
+- **900 px and wider (`wide`)**: logo, game name, session chip, link pill, Pause, Step, the search
+  box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference
+  mode, Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
+  theme. Under 1180 px Pause and Step show their icons only.
+- **Below 900 px (`compact`)**: logo, game name (hidden under 560 px), link pill, Pause, Step, a
+  search icon and the ⋯ button (`data-action="more"`). The session chip is gone: the pill's
+  tooltip names the session ("… · session s-7f3a · connected 22:41:07"), and with more than one
+  session the pill opens the session menu.
+- **The ⋯ menu** is a top-layer `role="menu"` popover. Rows: Game preview (G), Overlay in game
+  (O), Reference mode (R), Hot reload (H), each with its state and key; then Registry (counts),
+  Density (cycles auto → compact → comfortable) and Theme. A toggle row keeps the menu open;
+  Registry opens the registry popover under the ⋯ button. A second ⋯ click, Esc or a press
+  outside closes it. ↑/↓ move through the rows; opening it from the keyboard focuses the first
+  row. Rows keep the `data-action` names of the wide controls (`game`, `overlay`, `reference`,
+  `hot-reload`, `registry`, `theme`) plus `density`.
+
+Every control keeps its size; only the game name and the wide search box shrink, and the search
+box clips its own content, so no control runs over another.
+
+### Devices
+
+Sixteen presets from `.planning/build/research-devices.md`, in display order, each with `group`
+(the `<optgroup>`), `dpr`, safe insets and the screen corner `radius`. Sizes are the full-screen
+portrait viewport in CSS px. `DEVICE_GROUPS` (in `devices.ts`) names the groups.
+
+| Group | Preset (`id`) | Viewport | DPR | Safe top/bottom | Radius |
+|---|---|---|---|---|---|
+| iPhone | iPhone SE 3 (`iphone-se`) | 375 × 667 | 2 | 20 / 0 | 0 |
+| iPhone | iPhone 15 (`iphone-15`) | 393 × 852 | 3 | 59 / 34 | 55 |
+| iPhone | iPhone 15 Pro Max (`iphone-15-pro-max`) | 430 × 932 | 3 | 59 / 34 | 55 |
+| iPhone | iPhone 16 Pro (`iphone-16-pro`) | 402 × 874 | 3 | 62 / 34 | 62 |
+| iPhone | iPhone 16 Pro Max (`iphone-16-pro-max`) | 440 × 956 | 3 | 62 / 34 | 62 |
+| Android | Galaxy S24 (`galaxy-s24`) | 360 × 780 | 3 | 0 / 0 | 40 |
+| Android | Galaxy A55 (`galaxy-a55`) | 412 × 892 | 2.625 | 0 / 0 | 35 |
+| Android | Redmi Note 13 (`redmi-note-13`) — approx | 393 × 873 | 2.75 | 0 / 0 | 35 |
+| Android | Pixel 8 (`pixel-8`) | 412 × 915 | 2.625 | 0 / 0 | 35 |
+| Android | Xperia 1 V 21:9 (`xperia-1-v`) | 411 × 960 | 4 | 0 / 0 | 0 |
+| Foldable | Galaxy Z Fold 6 (`galaxy-z-fold-6`) — approx | cover 369 × 905, inner 707 × 823 | 2.625 | 0 / 0 | 30 |
+| Foldable | Galaxy Z Flip 6 (`galaxy-z-flip-6`) | 412 × 1005 | 2.625 | 0 / 0 | 30 |
+| Foldable | Pixel 9 Pro Fold (`pixel-9-pro-fold`) — approx | cover 411 × 923, inner 791 × 820 | 2.625 | 0 / 0 | 30 |
+| Tablet | iPad mini 7 (`ipad-mini`) | 744 × 1133 | 2 | 0 / 0 | 18 |
+| Tablet | iPad Air 11" (`ipad-air-11`) | 820 × 1180 | 2 | 0 / 0 | 18 |
+| Desktop | Desktop (`desktop`) | 1440 × 900 | 1 | 0 / 0 | 0 |
+
+- **approx** (`approx: true`): the size is computed from the panel, not published (low confidence).
+- Every corner radius is an estimate from device photos; Android insets and radii still need a
+  real-device check.
+- A foldable has `fold: { cover, inner }`. Its top-level size is the cover screen. `folded`
+  (default `true`) picks the screen; `screenOf(preset, folded)` gives the DeviceSpec in use.
+
 ### The game frame (D-14)
 
 One `<iframe data-game-frame>` for the page's life, inside `<div data-frame-layer>` (fixed, above
 the content) → `<div data-frame-box>` (device size, `transform: translate() scale()`). It never
-moves in the DOM. Docking writes a transform and a `clip-path`.
+moves in the DOM. Docking writes a transform and a `clip-path`: the clip insets plus the screen's
+round corners, `inset(… round <radius>px)`. Both are in the box's local px, so the transform shows
+the corner as `radius × scale` on screen, on the Game stage and in the pinned preview alike. A
+corner on a side the clip cuts stays square: only the device's own corners are round.
 
 | Where | Frame |
 |---|---|
@@ -144,6 +210,32 @@ restored from the last checkpoint". A failed `game.pause` is the warn `workspace
 result stays `{ restored: true }`. Concurrent calls share one run and schedule one more after it.
 Bookmark, restore and pause are not user runs: no `workspace:ran`.
 
+`gameFrame().reload()` is the reload after a save (flowView calls it after writing a file). With
+Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
+
+1. The run listens for this tab's new session first, then takes the bookmark.
+2. A new session within `hotReloadWaitMs` (1500 ms) ends the wait: no second reload.
+3. Its hello carries `manifest.restored` (the bridge restored its checkpoint): toast "Game reloaded
+   · state restored", result `{ restored: true }`, no second restore and no second pause.
+4. Without `restored`, workspace restores its own bookmark as above (the D-07 fallback).
+5. No new session within `hotReloadWaitMs`: the frame reloads itself as above.
+
+A bookmark that fails because Bun's reload already took the page is warned only when the run
+needs it (steps 4 and 5). The palette's "Reload game" items never wait for Bun. A session that
+ends the D-07 wait with `restored` is not restored again either.
+
+### Hot reload (round 2 R6)
+
+The switch shows link's state: `hotReload()` is `{ hmr, owner }` from the hub. Only the bin owns
+it (`owner: "bin"`). Bun 1.3.14 cannot switch HMR on a running server (pages README, spike), so a
+change is refused and the switch says how to change it: the toast "Start the bin with --no-hmr to
+turn hot reload off" (or "…without --no-hmr to turn hot reload on"), and the same hint in its
+tooltip until the state changes. For a game's own server (`owner: "server"`) and before the hub
+reported the state, the switch is inert with its reason in the tooltip; key H toasts the reason.
+
+A session that comes back with `manifest.restored` after an outside edit (an agent writing a file)
+toasts "Game reloaded · state restored" once per restore; workspace does not restore or pause it.
+
 | `reason` | When |
 |---|---|
 | `not_mounted` | No `mount` yet. |
@@ -164,6 +256,7 @@ Bookmark, restore and pause are not user runs: no `workspace:ran`.
 | O | Overlay in game on / off |
 | G | Show / hide the preview of the current workspace |
 | R | Reference mode on / off |
+| H | Hot reload on / off (asks the server). In Flow, flowView's H (History) wins. |
 | Esc | Closes one thing, in this order: palette → contactSheet → contextMenu → registry → seriesPopover → captureCard → picker → fileEdit → codeEdit → stepPopover → reference → selection |
 
 - `mod` is ⌘ on Apple platforms, Ctrl elsewhere.
@@ -172,7 +265,7 @@ Bookmark, restore and pause are not user runs: no `workspace:ran`.
 - Bindings of the active workspace win over global ones.
 - `keys.bind` throws `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash where neither binding has `when`.
 - Within one Esc layer, the latest registration is asked first.
-- workspace registers the Esc layers `palette`, `contextMenu` (the session menu), `registry`, `stepPopover` and `reference`. The views register the rest.
+- workspace registers the Esc layers `palette`, `contextMenu` (the session menu and the ⋯ menu), `registry`, `stepPopover` and `reference`. The views register the rest.
 
 ## Events
 
@@ -192,7 +285,7 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 
 | Kind | What |
 |---|---|
-| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`. |
+| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`. |
 | Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`. |
 | Packages | `preact`, `preact/hooks`. Dev: `happy-dom` for the component tests. |
 
@@ -220,7 +313,7 @@ workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "fl
 | Phase | Does |
 |---|---|
 | `onInit` | Validates config, loads prefs, reads the OS theme, the density and the hash, registers built-in keys, Esc layers and palette Commands. No DOM writes. |
-| `onStart` | Adds window listeners (keys, resize with the auto density, scroll), the `link.onManifest` listener (palette, reload restore, overlay re-apply) and the `link.onTap` listener (ripples). No mount. |
+| `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples) and the `link.onHotReload` listener (the switch). No mount. |
 | `mount(el)` | Renders the shell, sets `data-theme` and `data-density` on `<html>`, attaches hosts, creates the frame layer once. |
 | `onStop` | Runs every cleanup, clears toast, ticker, reload and ripple timers, unrenders, removes the frame layer and the hosts. |
 
@@ -245,6 +338,19 @@ in `styles/tokens.css`. TypeScript names for them are in `../panels/shared/token
 - The browser may keep ⌘1–⌘6. Bare 1–6, the rail and the palette are the fallback.
 - A hidden iframe can be throttled by the browser. The link pill shows the frame number stop.
 - localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density and Show taps loads them as their defaults.
+
+## Breaking changes (round 2)
+
+- `DeviceSpec.dpr`, `radius` and `group` are required. Ten presets are new; the six ids stay.
+  iPhone SE is "iPhone SE 3", iPad mini is "iPad mini 7". Pixel 8 and iPad mini report no safe
+  insets (research table), so they have no safe bands.
+- `DeviceChoice` gains `folded`; `setDevice` takes `folded`.
+- Below 900 px the top bar is compact: Preview, Overlay, Reference mode, Hot reload, Registry,
+  Density and Theme move into the ⋯ menu, and the session chip into the link pill.
+- The wide bar's switches read "Preview" and "Overlay" (were "Game" and "Overlay in game"); the
+  Registry button shows its icon only.
+- The dark theme's bezel is `#2c2c34` (was `#1b1b20`). The primitive `--color-bezel` is now
+  `--color-light-bezel` and `--color-dark-bezel`; views keep using `--bezel`.
 
 ## Breaking changes (Claude-pane round)
 

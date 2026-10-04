@@ -14,6 +14,7 @@
  * | workspace | defaultWorkspace | "game" |
  * | workspace | storageKey | "moku-editor" |
  * | workspace | reloadTimeoutMs | 15000 |
+ * | workspace | hotReloadWaitMs | 1500 |
  * | workspace | toastMs | 2600 |
  * | flowView | historyLast, trailLength, stylesFile, layoutWorker … | see src/plugins/flowView/README.md |
  * | gameView | capturesDir, manifestPaths, sourceSearch … | see src/plugins/gameView/README.md |

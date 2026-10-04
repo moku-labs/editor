@@ -50,7 +50,7 @@ describe("initGameView", () => {
     });
   });
 
-  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and the six devices", () => {
+  it("adds palette items for the picker, screenshot, series, overlay, the Element panel and the sixteen devices", () => {
     initGameView(ctx);
     expect(ctx.workspace.items.map(entry => entry.label)).toEqual([
       "Select element",
@@ -58,11 +58,21 @@ describe("initGameView", () => {
       "Record a series…",
       "Overlay in game",
       "Show Element panel",
-      "Device: iPhone SE",
+      "Device: iPhone SE 3",
       "Device: iPhone 15",
       "Device: iPhone 15 Pro Max",
+      "Device: iPhone 16 Pro",
+      "Device: iPhone 16 Pro Max",
+      "Device: Galaxy S24",
+      "Device: Galaxy A55",
+      "Device: Redmi Note 13",
       "Device: Pixel 8",
-      "Device: iPad mini",
+      "Device: Xperia 1 V 21:9",
+      "Device: Galaxy Z Fold 6",
+      "Device: Galaxy Z Flip 6",
+      "Device: Pixel 9 Pro Fold",
+      "Device: iPad mini 7",
+      'Device: iPad Air 11"',
       "Device: Desktop"
     ]);
     expect(item("Select element").shortcut).toBe("⇧⌘C");
@@ -135,6 +145,41 @@ describe("initGameView", () => {
 
     ctx.workspace.changeDevice("pixel-8", "portrait");
     expect(ctx.state.calibrationRead).toBe(false);
+  });
+
+  it("re-calibrates after a fold: the same preset on its other screen", () => {
+    ctx.workspace.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    initGameView(ctx);
+    startGameView(ctx);
+    ctx.state.calibrationRead = true;
+
+    ctx.workspace.changeDevice("galaxy-z-fold-6", "portrait", true);
+    expect(ctx.state.calibrationRead).toBe(true);
+
+    ctx.workspace.changeDevice("galaxy-z-fold-6", "portrait", false);
+    expect(ctx.state.calibrationRead).toBe(false);
+  });
+
+  it.each([
+    ".moku/captures",
+    ".moku/captures/picks",
+    ".moku/captures/a/b"
+  ])("accepts capturesDir %s", capturesDir => {
+    expect(() => initGameView({ ...ctx, config: { ...ctx.config, capturesDir } })).not.toThrow();
+    stopGameView(ctx);
+  });
+
+  it.each([
+    "captures",
+    ".moku/capturesX",
+    ".moku",
+    "/srv/captures",
+    "../.moku/captures"
+  ])("refuses capturesDir %s with the startup error", capturesDir => {
+    expect(() => initGameView({ ...ctx, config: { ...ctx.config, capturesDir } })).toThrow(
+      '[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.\n  Set pluginConfigs.gameView.capturesDir to ".moku/captures/<sub>".'
+    );
+    expect(ctx.panels.registered).toEqual([]);
   });
 });
 

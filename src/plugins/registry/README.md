@@ -203,7 +203,7 @@ Shapes added in round 2 (R4, R6):
 |---|---|
 | `Manifest.restored?` | `{ bookmark: string, frame: number }`: the bridge's first hello after it restored its checkpoint across Bun's full reload. `bookmark` is the JSON text of the restored bookmark, `frame` the frame of the page that took it. |
 | `HotReload` | `{ hmr: boolean, owner: "bin" \| "server" }`: the hub's editor-channel notification `hotReload`. |
-| `DeviceSpec` | Gains `dpr?`, `radius?`, `group?` (`iphone`, `android`, `foldable`, `tablet`, `desktop`), `approx?: true`, `fold?: { cover, inner }` of `FoldScreen { w, h, radius }`. Optional in wave 1; wave 2a makes `dpr`, `radius` and `group` required after it fills the 17 presets. |
+| `DeviceSpec` | Gains `dpr`, `radius`, `group` (`iphone`, `android`, `foldable`, `tablet`, `desktop`), `approx?: true`, `fold?: { cover, inner }` of `FoldScreen { w, h, radius }`. `dpr`, `radius` and `group` are required: workspace fills them for its 16 presets. |
 
 Game-channel notifications of the agent and their params:
 

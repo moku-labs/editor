@@ -1,19 +1,26 @@
 /**
  * @file workspace plugin — the link pill of the top bar: one look per link status (connecting,
  * live, paused, silent with the seconds since the last heartbeat, lost with "Retry now", empty)
- * and the D7 status note as its tooltip and description.
+ * and the D7 status note as its tooltip and description. In the compact bar (below 900 px) it
+ * also stands in for the session chip: the session id goes into its tooltip and its status opens
+ * the session menu when there is more than one session.
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
 import type { LinkStatus } from "../../registry/protocol";
 import type { WorkspaceCtx } from "../types";
+import { type SessionsView, sessionsView, toggleSessionMenu } from "./SessionChip";
 import { useWorkspace } from "./store";
-import { capitalize, lostReason, secondsOf, secondsSince } from "./text";
+import { capitalize, clockTime, lostReason, secondsOf, secondsSince } from "./text";
 
 /**
  * Props of `LinkPill`.
  */
-export type LinkPillProps = { readonly ctx: WorkspaceCtx };
+export type LinkPillProps = {
+  readonly ctx: WorkspaceCtx;
+  /** Compact bar: the pill names the session and opens the session menu. */
+  readonly session?: boolean;
+};
 
 /**
  * Id of the D7 note element.
@@ -66,20 +73,64 @@ export function pillText(status: LinkStatus, now: number): { text: string; note:
 }
 
 /**
+ * The D7 note with the session, for the compact bar's tooltip.
+ *
+ * @param note - The D7 note.
+ * @param view - The sessions.
+ * @returns E.g. "Game connected · frame 12 · session s-7f3a · connected 22:41:07".
+ * @example
+ * ```ts
+ * sessionNote("Game connected · frame 12", { sessions: [], current: undefined, info: undefined, many: false });
+ * // "Game connected · frame 12 · no session"
+ * ```
+ */
+function sessionNote(note: string, view: SessionsView): string {
+  if (view.current === undefined) return `${note} · no session`;
+  const connected =
+    view.info === undefined ? "" : ` · connected ${clockTime(view.info.connectedAt)}`;
+  return `${note} · session ${view.current}${connected}`;
+}
+
+/**
  * The link pill.
  *
- * @param props - The workspace domain context.
+ * @param props - The workspace domain context and the compact-bar flag.
  * @returns The pill.
  */
 export function LinkPill(props: LinkPillProps): VNode {
   const { ctx } = props;
   const status = useWorkspace(ctx.state.ui, () => ctx.state.link);
   const { text, note } = pillText(status, Date.now());
-
-  return (
-    <span data-ui="link-pill" data-kind={status.kind} title={note} aria-describedby={NOTE_ID}>
+  const view = props.session === true ? sessionsView(ctx) : undefined;
+  const open = view?.many === true && ctx.state.popover === "session";
+  const content = (
+    <>
       <span data-dot aria-hidden="true" />
       <span data-text>{text}</span>
+    </>
+  );
+
+  return (
+    <span
+      data-ui="link-pill"
+      data-kind={status.kind}
+      title={view === undefined ? note : sessionNote(note, view)}
+      aria-describedby={NOTE_ID}
+    >
+      {view === undefined ? (
+        content
+      ) : (
+        <button
+          type="button"
+          data-part="status"
+          data-popover-anchor="session"
+          aria-haspopup={view.many ? "menu" : undefined}
+          aria-expanded={view.many ? open : undefined}
+          onClick={() => toggleSessionMenu(ctx, view.many)}
+        >
+          {content}
+        </button>
+      )}
       <span id={NOTE_ID} hidden>
         {note}
       </span>

@@ -3,7 +3,7 @@ import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
 import type { StyleEditCode } from "../../../panels/shared/style-edit";
 import { openStyleCard, saveStyle, stepStyle, styleErrorText } from "../../element/styles";
 import type { ElementRef } from "../../types";
-import { createCtx, flush, sceneCapture, type TestCtx } from "../helpers";
+import { createCtx, flush, sceneCapture, type TestCtx, templateOf } from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
 const COIN: ElementRef = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
@@ -32,6 +32,22 @@ function boardScene(): SceneSnapshot {
   return scene;
 }
 
+/**
+ * The scene with another key on one ui node.
+ *
+ * @param scene - The scene.
+ * @param path - The ui path of the node.
+ * @param key - Its new key.
+ * @returns A copy of the scene.
+ */
+function withKey(scene: SceneSnapshot, path: string, key: string): SceneSnapshot {
+  const nodes = new Map(scene.nodes);
+  const node = nodes.get(`ui:${path}`);
+  if (node === undefined) throw new Error("fixture");
+  nodes.set(node.id, { ...node, key, name: key });
+  return { ...scene, nodes };
+}
+
 let ctx: TestCtx;
 
 beforeEach(() => {
@@ -56,6 +72,27 @@ describe("openStyleCard", () => {
       block: { line: 3, endLine: 8 },
       pending: undefined,
       error: undefined
+    });
+    expect(ctx.state.blocks.get("coinPill")).toEqual({ path: "src/hud/styles.ts", line: 3 });
+  });
+
+  it("keeps the block of a key even when the selection moved on meanwhile", async () => {
+    const pending = openStyleCard(ctx, COIN);
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow" };
+    await pending;
+    expect(ctx.state.blocks.get("coinPill")).toEqual({ path: "src/hud/styles.ts", line: 3 });
+  });
+
+  it("says a key built in a loop is defined at the template literal (loop)", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", `const id = ${templateOf("orderCard", "slot")};`);
+    ctx.state.scene = withKey(boardScene(), "boardScreen/hudRow/coinPill", "orderCard0");
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toEqual({
+      key: "orderCard0",
+      status: "defined",
+      path: "src/hud/Hud.tsx",
+      line: 1,
+      loop: true
     });
   });
 

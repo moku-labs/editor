@@ -2,12 +2,13 @@
  * @file workspace plugin — the single game frame (R4, D-14). The first mount creates one fixed
  * layer in `document.body` holding the frame box with the iframe and the overlay element; it is
  * never re-parented, because moving an iframe reloads its document. Docking is geometry only:
- * `syncFrame` reads the target rects once and writes one transform and one clip. The docked iframe
- * takes the pointer and the keyboard in the preview and on the Game stage; Reference mode marks
- * the box so its overlay takes the pointer instead.
+ * `syncFrame` reads the target rects once and writes one transform and one clip; the clip rounds
+ * the screen corners by the preset radius. The docked iframe takes the pointer and the keyboard
+ * in the preview and on the Game stage; Reference mode marks the box so its overlay takes the
+ * pointer instead.
  */
 import { linkPlugin } from "../../link";
-import { presetOf, resolveDevice } from "../devices";
+import { deviceChoiceOf, resolveDevice } from "../devices";
 import { hostOf } from "../hosts";
 import { trackCleanup } from "../state";
 import type {
@@ -20,7 +21,7 @@ import type {
   WorkspaceCtx,
   WorkspaceState
 } from "../types";
-import { centreBox, clipInsets, fitScale } from "./dock";
+import { centreBox, clipInsets, clipPathOf, fitScale } from "./dock";
 import { reloadFrame } from "./reload";
 
 /**
@@ -139,13 +140,15 @@ export function removeFrameLayer(state: WorkspaceState): void {
 }
 
 /**
- * The device size of the current preset and orientation.
+ * The size and the corner radius of the screen in use: the preset, its orientation and, for a
+ * foldable, the cover or the inner screen.
  *
  * @param state - Workspace state.
- * @returns Size in game CSS px.
+ * @returns Size in game CSS px and the corner radius.
  */
-function deviceSize(state: WorkspaceState): DeviceSize {
-  return resolveDevice(presetOf(state.device.preset), state.device.orientation);
+function screenSize(state: WorkspaceState): DeviceSize & { readonly radius: number } {
+  const { preset, orientation } = deviceChoiceOf(state.device);
+  return { ...resolveDevice(preset, orientation), radius: preset.radius };
 }
 
 /**
@@ -228,7 +231,7 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
   if (iframe === undefined || element === null || element === undefined) return;
 
   // The frame element keeps the device size; only its transform scales it.
-  const size = deviceSize(state);
+  const size = screenSize(state);
   element.style.width = `${size.w}px`;
   element.style.height = `${size.h}px`;
   markReference(element, state.reference);
@@ -239,12 +242,13 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
     return;
   }
 
-  // Place and clip it over the target; the docked game takes the pointer and the keyboard.
+  // Place and clip it over the target with the screen's round corners; the docked game takes
+  // the pointer and the keyboard.
   const box = frameBoxOf(target, size);
   const clip = clipInsets(box, target.clip.getBoundingClientRect());
   state.frame.box = box;
   element.style.transform = `translate(${box.left}px, ${box.top}px) scale(${box.scale})`;
-  element.style.clipPath = `inset(${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px)`;
+  element.style.clipPath = clipPathOf(clip, size.radius);
   element.style.setProperty("--frame-scale", String(box.scale));
   element.style.visibility = "visible";
   element.dataset.docked = target.docked;
@@ -377,7 +381,7 @@ export function createGameFrame(ctx: WorkspaceCtx): GameFrame {
       return gameUrl(ctx);
     },
 
-    reload: opts => reloadFrame(ctx, opts ?? {}),
+    reload: opts => reloadFrame(ctx, { ...opts, afterSave: true }),
 
     dock: (slot, opts) => dockFrame(ctx, slot, opts),
 

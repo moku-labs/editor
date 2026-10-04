@@ -144,10 +144,46 @@ describe("preview / setPreview", () => {
 });
 
 describe("device / setDevice / devices", () => {
-  it("device() returns the DeviceSpec and the orientation", () => {
-    expect(api.device()).toEqual({ preset: DEVICES[1], orientation: "portrait" });
+  it("device() returns the DeviceSpec, the orientation and folded", () => {
+    expect(api.device()).toEqual({ preset: DEVICES[1], orientation: "portrait", folded: true });
     expect(api.device().preset.w).toBe(393);
     expect(api.devices()).toBe(DEVICES);
+  });
+
+  it("setDevice({ folded }) switches a foldable between cover and inner screen live", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    api.setDevice({ preset: "galaxy-z-fold-6" });
+    expect(api.device()).toMatchObject({ folded: true, preset: { w: 369, h: 905 } });
+
+    api.setDevice({ folded: false });
+    expect(api.device()).toMatchObject({
+      folded: false,
+      preset: { id: "galaxy-z-fold-6", w: 707, h: 823, radius: 30 }
+    });
+    expect(listener.mock.calls.at(-1)?.[0].device).toMatchObject({
+      folded: false,
+      preset: { w: 707 }
+    });
+    const stored = JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}");
+    expect(stored.device).toEqual({
+      preset: "galaxy-z-fold-6",
+      orientation: "portrait",
+      folded: false
+    });
+  });
+
+  it("a new preset starts folded unless the patch says otherwise", () => {
+    api.setDevice({ preset: "pixel-9-pro-fold", folded: false });
+    expect(api.device().preset.w).toBe(791);
+    api.setDevice({ preset: "galaxy-z-fold-6" });
+    expect(api.device()).toMatchObject({ folded: true, preset: { w: 369 } });
+    expect(ctx.state.device).toEqual({ preset: "galaxy-z-fold-6", orientation: "portrait" });
+  });
+
+  it("folded on a preset without a fold changes nothing but the flag", () => {
+    api.setDevice({ folded: false });
+    expect(api.device()).toEqual({ preset: DEVICES[1], orientation: "portrait", folded: false });
   });
 
   it("setDevice patches, persists and notifies onPrefs", () => {
@@ -155,7 +191,11 @@ describe("device / setDevice / devices", () => {
     const off = api.onPrefs(listener);
     api.setDevice({ orientation: "landscape" });
     api.setDevice({ preset: "ipad-mini" });
-    expect(api.device()).toEqual({ preset: DEVICES[4], orientation: "landscape" });
+    expect(api.device()).toEqual({
+      preset: DEVICES[13],
+      orientation: "landscape",
+      folded: true
+    });
     expect(listener).toHaveBeenCalledTimes(2);
     expect(listener.mock.calls[1]?.[0].device.preset.id).toBe("ipad-mini");
     const stored = JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}");
@@ -184,6 +224,29 @@ describe("device / setDevice / devices", () => {
       {},
       new Error("bad listener")
     );
+  });
+});
+
+describe("hot reload", () => {
+  it("hotReload() mirrors link", () => {
+    expect(api.hotReload()).toBeUndefined();
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+    expect(api.hotReload()).toEqual({ hmr: true, owner: "bin" });
+  });
+
+  it("setHotReload asks link; a refusal toasts how to change it and resolves false", async () => {
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+    await expect(api.setHotReload(false)).resolves.toBe(false);
+    expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
+    expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
+      "Start the bin with --no-hmr to turn hot reload off"
+    ]);
+  });
+
+  it("an accepted change resolves true and toasts the new state", async () => {
+    ctx.link.setHotReload.mockResolvedValue(true);
+    await expect(api.setHotReload(true)).resolves.toBe(true);
+    expect(ctx.state.toasts.map(toast => toast.message)).toEqual(["Hot reload on"]);
   });
 });
 

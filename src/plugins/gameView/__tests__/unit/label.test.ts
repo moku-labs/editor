@@ -58,6 +58,7 @@ describe("labelText", () => {
     parent: "ui:boardScreen/hudRow",
     children: [],
     rect: { x: 235.4, y: 74, w: 290.4, h: 75.6 },
+    refRect: { x: 235.4, y: 74, w: 290.4, h: 75.6 },
     texture: undefined,
     key: "coinPill",
     style: undefined,

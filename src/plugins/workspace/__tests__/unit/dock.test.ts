@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   centreBox,
   clipInsets,
+  clipPathOf,
   fitScale,
   floatRect,
   nearestCorner,
@@ -87,6 +88,30 @@ describe("clipInsets", () => {
       bottom: 0,
       left: 0
     });
+  });
+});
+
+describe("clipPathOf", () => {
+  const none = { top: 0, right: 0, bottom: 0, left: 0 };
+
+  it("rounds every corner by the screen radius in local px when nothing is cut", () => {
+    expect(clipPathOf(none, 55)).toBe("inset(0px 0px 0px 0px round 55px 55px 55px 55px)");
+  });
+
+  it("a cut side keeps its two corners square: only the device's own corners are round", () => {
+    // the top is cut by the clip: top-left and top-right are square, the bottom corners stay round
+    expect(clipPathOf({ top: 40, right: 0, bottom: 0, left: 0 }, 30)).toBe(
+      "inset(40px 0px 0px 0px round 0px 0px 30px 30px)"
+    );
+    // the left is cut: top-left and bottom-left are square
+    expect(clipPathOf({ top: 0, right: 0, bottom: 0, left: 12 }, 30)).toBe(
+      "inset(0px 0px 0px 12px round 0px 30px 30px 0px)"
+    );
+  });
+
+  it("no radius, or every corner cut, writes a plain inset", () => {
+    expect(clipPathOf(none, 0)).toBe("inset(0px 0px 0px 0px)");
+    expect(clipPathOf({ top: 1, right: 2, bottom: 3, left: 4 }, 55)).toBe("inset(1px 2px 3px 4px)");
   });
 });
 

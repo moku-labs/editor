@@ -1,6 +1,6 @@
 /**
- * @file gameView plugin — the dotted stage (A2): the bezel around the screen slot sized W·k × H·k,
- * the dock of the one game frame over the slot (`gameFrame().dock`, the iframe never moves, R4,
+ * @file gameView plugin — the dotted stage (A2): the bezel around the screen slot sized W·k × H·k
+ * with the preset's screen radius at the same scale (`--screen-radius`, round 2 R3), the dock of the one game frame over the slot (`gameFrame().dock`, the iframe never moves, R4,
  * D-14) clipped to the stage less the open Element panel drawer, the badges (F12) and the picker
  * hint pill. Everything drawn over the game screen lives in gameView's overlay root
  * (ensureOverlayRoot), not here.
@@ -183,7 +183,8 @@ export function Stage(props: StageProps): VNode {
   const size = resolveDevice(choice.preset, choice.orientation);
   const desktop = choice.preset.kind === "desktop";
   const fitted = measured.w > 0 ? fitScale(measured, size, desktop) : 1;
-  const slotPx = slotSize(size, zoom === "fit" ? fitted : 1);
+  const scale = zoom === "fit" ? fitted : 1;
+  const slotPx = slotSize(size, scale);
   const hint = pickerHint(state, ctx.require(linkPlugin).manifest());
 
   return (
@@ -194,7 +195,12 @@ export function Stage(props: StageProps): VNode {
       data-stale={silent ? status.kind : undefined}
     >
       <div data-part="viewport" ref={viewport}>
-        <div data-part="bezel" data-kind={choice.preset.kind} data-orientation={choice.orientation}>
+        <div
+          data-part="bezel"
+          data-kind={choice.preset.kind}
+          data-orientation={choice.orientation}
+          style={{ "--screen-radius": `${choice.preset.radius * scale}px` }}
+        >
           <div
             data-part="slot"
             ref={slot}

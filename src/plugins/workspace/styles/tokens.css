@@ -22,6 +22,7 @@
   --color-light-teal: #257889;
   --color-light-edge: #b5b5c0;
   --color-light-dot: #d3d3da;
+  --color-light-bezel: #1b1b20;
 
   /* ─── Primitives: colour, dark set ─── */
   --color-dark-ground: #16161a;
@@ -43,6 +44,8 @@
   --color-dark-teal: #4db3c6;
   --color-dark-edge: #4c4c57;
   --color-dark-dot: #2a2a32;
+  /* Lighter than the dark panels and the canvas, so the device frame reads in the dark theme. */
+  --color-dark-bezel: #2c2c34;
 
   /* ─── Primitives: fixed colours (both themes) ─── */
   --color-phase-1: #a5a5f0;
@@ -52,7 +55,6 @@
   --color-phase-5: #c9c9d6;
   --color-pick-blue: #3d7bf0;
   --color-pick-pink: #e2477e;
-  --color-bezel: #1b1b20;
   --color-device-black: #000000;
 
   /* ─── Primitives: type ─── */
@@ -177,7 +179,9 @@
   --teal: light-dark(var(--color-light-teal), var(--color-dark-teal));
   --edge: light-dark(var(--color-light-edge), var(--color-dark-edge));
   --canvas-dot: light-dark(var(--color-light-dot), var(--color-dark-dot));
-  --bezel: var(--color-bezel);
+  /* A line that must read against strong surfaces, like the 1 px outline of the device bezel. */
+  --border-strong: light-dark(var(--color-light-edge), var(--color-dark-edge));
+  --bezel: light-dark(var(--color-light-bezel), var(--color-dark-bezel));
   --device-black: var(--color-device-black);
   --pick-hover: var(--color-pick-blue);
   --pick-tree: var(--color-pick-pink);

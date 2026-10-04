@@ -26,7 +26,7 @@ import { workspacePlugin } from "../../workspace";
 import { messageOf, reportFailure } from "../report";
 import { reloadGame } from "../stage/reload";
 import { notify } from "../state";
-import type { GameViewCtx, GameViewState, StyleLookup, StyleSource } from "../types";
+import type { BlockAt, GameViewCtx, GameViewState, StyleLookup, StyleSource } from "../types";
 import { findStyleSource } from "./source";
 
 /**
@@ -37,7 +37,7 @@ const STYLE_SAVE_MS = 400;
 /**
  * A source search result with `style={ident}`: the block lives in one of its files.
  */
-type IdentSource = Extract<StyleSource, { readonly kind: "ident" }>;
+export type IdentSource = Extract<StyleSource, { readonly kind: "ident" }>;
 
 /**
  * A block found in one of the candidate files, or the refusal to show.
@@ -78,7 +78,8 @@ async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<BlockRe
 }
 
 /**
- * Shows the found block, or the refusal, unless the selection changed meanwhile.
+ * Remembers where the block of the key is (the reference block and the proxies read it), then
+ * shows the found block, or the refusal, unless the selection changed meanwhile.
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element.
@@ -87,6 +88,7 @@ async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<BlockRe
  */
 function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: BlockResult): void {
   const { state } = ctx;
+  if (!("error" in result)) state.blocks.set(key, { path: result.path, line: result.block.line });
   if (!isSelected(state, ref)) return;
   if ("error" in result) {
     state.lookup = { key, status: "failed", path: result.path, error: result.error };
@@ -106,8 +108,32 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
 }
 
 /**
+ * Where the style block of an identifier source is: remembered from an earlier load, else loaded
+ * from its candidate files now (and remembered).
+ *
+ * @param ctx - Domain context of gameView.
+ * @param key - The ui key.
+ * @param source - The source search result with `style={ident}`.
+ * @returns The file and line of the block, undefined when no candidate file has it.
+ */
+export async function blockOf(
+  ctx: GameViewCtx,
+  key: string,
+  source: IdentSource
+): Promise<BlockAt | undefined> {
+  const known = ctx.state.blocks.get(key);
+  if (known !== undefined) return known;
+
+  const result = await loadBlock(ctx, source);
+  if ("error" in result) return undefined;
+  const at = { path: result.path, line: result.block.line };
+  ctx.state.blocks.set(key, at);
+  return at;
+}
+
+/**
  * What the style section says for a source without an editable block: the call (read-only, at
- * the line of the call), the line that defines the key, or nothing found.
+ * the line of the call), the line that defines the key (or builds it in a loop), or nothing found.
  *
  * @param key - The ui key.
  * @param source - The search result, undefined when no file names the key.
@@ -122,7 +148,8 @@ function lookupOf(key: string, source: Exclude<StyleSource, IdentSource> | undef
   if (source.kind === "call") {
     return { key, status: "call", path: source.path, line: source.callLine, call: source.call };
   }
-  return { key, status: "defined", path: source.path, line: source.line };
+  const defined = { key, status: "defined", path: source.path, line: source.line } as const;
+  return source.loop === true ? { ...defined, loop: true } : defined;
 }
 
 /**

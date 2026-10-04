@@ -1,22 +1,25 @@
 /**
- * @file gameView plugin — the device toolbar (A2): picker, device select with W × H, Portrait /
- * Landscape, Fit / 100 %, safe-area switch, Reload, camera, Series (red with the time while
- * recording), the overlay-in-game switch (workspace owns the flag, R4) and, while the Element
- * panel is closed, its reopen button. Camera, Series and the overlay switch are dimmed with a
- * tooltip when the game lacks their command.
+ * @file gameView plugin — the device toolbar (A2): picker, device select grouped by kind (iPhone,
+ * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
+ * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, Reload, camera,
+ * Series (red with the time while recording) and, while the Element panel is closed, its reopen
+ * button. Camera and Series are dimmed with a tooltip when the game lacks their command. The
+ * overlay-in-game switch lives in the top bar (round 2 R1).
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
 import { useSidePanel } from "../../panels/shared/side-panel";
+import type { DeviceSpec } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
-import { isDevicePresetId, resolveDevice } from "../../workspace/devices";
+import { DEVICE_GROUPS, isDevicePresetId, resolveDevice } from "../../workspace/devices";
 import { setPopover } from "../capture/series";
 import { takeScreenshot } from "../capture/shot";
-import { GAME_COMMANDS, NO_CAPTURE_TEXT, NO_OVERLAY_TEXT, OVERLAY_COMMAND } from "../commands";
+import { GAME_COMMANDS, NO_CAPTURE_TEXT } from "../commands";
 import { setPicker } from "../element/select";
-import { missingCommand, toggleOverlay } from "../palette";
+import { missingCommand } from "../palette";
 import { SIDE_PANEL, SIDE_TITLE } from "../side";
+import { foldDevice } from "../stage/fold";
 import { reloadGame } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
@@ -69,36 +72,104 @@ function Segmented<T extends string>(props: SegmentedProps<T>): VNode {
 }
 
 /**
- * Device select, W × H and the orientation segment.
+ * The title of a preset's option: its size and dpr, and a note when its values are estimates.
+ *
+ * @param device - The preset.
+ * @returns "412×915 · dpr 2.625", "… · approx: estimated values".
+ * @example
+ * ```ts
+ * optionTitle(presetOf("redmi-note-13")); // "393×873 · dpr 2.75 · approx: estimated values"
+ * ```
+ */
+function optionTitle(device: DeviceSpec): string {
+  const title = `${device.w}×${device.h} · dpr ${device.dpr}`;
+  return device.approx === true ? `${title} · approx: estimated values` : title;
+}
+
+/**
+ * The device select: one `<optgroup>` per preset group, in display order.
+ *
+ * @param props - The presets and the chosen id.
+ * @param props.devices - Every preset.
+ * @param props.value - The chosen preset id.
+ * @param props.onChoose - Takes a chosen preset id.
+ * @returns The select.
+ */
+function DeviceSelect(props: {
+  readonly devices: readonly DeviceSpec[];
+  readonly value: string;
+  readonly onChoose: (id: string) => void;
+}): VNode {
+  const { devices, value, onChoose } = props;
+  return (
+    <select
+      data-part="device"
+      aria-label="Device"
+      value={value}
+      onChange={event => onChoose(event.currentTarget.value)}
+    >
+      {DEVICE_GROUPS.map(group => (
+        <optgroup key={group.id} label={group.label}>
+          {devices
+            .filter(device => device.group === group.id)
+            .map(device => (
+              <option key={device.id} value={device.id} title={optionTitle(device)}>
+                {device.name}
+              </option>
+            ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Fold / Unfold of a foldable preset: the cover shows "Unfold", the inner screen "Fold".
+ *
+ * @param props - The gameView domain context and the folded flag.
+ * @param props.ctx - Domain context of gameView.
+ * @param props.folded - True while the cover screen shows.
+ * @returns The button.
+ */
+function FoldButton(props: { readonly ctx: GameViewCtx; readonly folded: boolean }): VNode {
+  const { ctx, folded } = props;
+  return (
+    <button
+      type="button"
+      data-action="fold"
+      title={folded ? "Unfold to the inner screen" : "Fold to the cover screen"}
+      onClick={() => foldDevice(ctx)}
+    >
+      {folded ? "Unfold" : "Fold"}
+    </button>
+  );
+}
+
+/**
+ * Device select, W × H, Fold / Unfold for a foldable and the orientation segment.
  *
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
  * @returns The device controls.
  */
 function DeviceControls(props: { readonly ctx: GameViewCtx }): VNode {
-  const workspace = props.ctx.require(workspacePlugin);
+  const { ctx } = props;
+  const workspace = ctx.require(workspacePlugin);
   const choice = workspace.device();
   const size = resolveDevice(choice.preset, choice.orientation);
   return (
     <>
-      <select
-        data-part="device"
-        aria-label="Device"
+      <DeviceSelect
+        devices={workspace.devices()}
         value={choice.preset.id}
-        onChange={event => {
-          const id = event.currentTarget.value;
+        onChoose={id => {
           if (isDevicePresetId(id)) workspace.setDevice({ preset: id });
         }}
-      >
-        {workspace.devices().map(device => (
-          <option key={device.id} value={device.id}>
-            {device.name}
-          </option>
-        ))}
-      </select>
+      />
       <span data-part="size">
         {size.w} × {size.h}
       </span>
+      {choice.preset.fold !== undefined && <FoldButton ctx={ctx} folded={choice.folded} />}
       <Segmented
         label="Orientation"
         options={[
@@ -233,33 +304,6 @@ function SeriesButton(props: { readonly ctx: GameViewCtx }): VNode {
 }
 
 /**
- * The overlay-in-game switch (workspace's flag).
- *
- * @param props - The gameView domain context.
- * @param props.ctx - Domain context of gameView.
- * @returns The switch.
- */
-function OverlaySwitch(props: { readonly ctx: GameViewCtx }): VNode {
-  const { ctx } = props;
-  const off = missingCommand(ctx, OVERLAY_COMMAND, NO_OVERLAY_TEXT);
-  const on = ctx.require(workspacePlugin).overlayInGame();
-  return (
-    <button
-      type="button"
-      role="switch"
-      data-switch=""
-      data-part="overlay"
-      aria-checked={on}
-      {...dimmed(off, "Overlay in game")}
-      onClick={off ? undefined : () => toggleOverlay(ctx)}
-    >
-      <span data-track="" />
-      Overlay in game <span data-part="state">{on ? "On" : "Off"}</span>
-    </button>
-  );
-}
-
-/**
  * The reopen button of the Element panel, only while the panel is closed.
  *
  * @returns The button, undefined while the panel shows.
@@ -310,7 +354,6 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
       <ViewControls ctx={ctx} />
       <CameraButton ctx={ctx} />
       <SeriesButton ctx={ctx} />
-      <OverlaySwitch ctx={ctx} />
       <ReopenSide />
     </div>
   );

@@ -144,6 +144,51 @@ describe("loadPrefs / savePrefs", () => {
     });
   });
 
+  it("keeps the folded flag of a foldable; a record without it loads folded (absent)", () => {
+    const log = createLog();
+    const prefs: StoredPrefs = {
+      ...defaultStoredPrefs(),
+      device: { preset: "galaxy-z-fold-6", orientation: "portrait", folded: false }
+    };
+    savePrefs(KEY, prefs, log);
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "galaxy-z-fold-6",
+      orientation: "portrait",
+      folded: false
+    });
+
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "pixel-9-pro-fold", orientation: "portrait" }
+      })
+    );
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "pixel-9-pro-fold",
+      orientation: "portrait"
+    });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a folded flag that is not a boolean is dropped with a warn", () => {
+    const log = createLog();
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "galaxy-z-fold-6", orientation: "portrait", folded: "no" }
+      })
+    );
+    expect(loadPrefs(KEY, log).device).toEqual({
+      preset: "galaxy-z-fold-6",
+      orientation: "portrait"
+    });
+    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", { invalid: ["device.folded"] });
+  });
+
   it("a bad orientation and missing previews fall back too", () => {
     const log = createLog();
     localStorage.setItem(KEY, JSON.stringify({ v: 1, device: { orientation: "upside" } }));

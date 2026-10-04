@@ -114,10 +114,17 @@ export type PagesApi = {
 };
 
 /**
- * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--help]`.
+ * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`.
  */
 export type BinArgs =
-  | { readonly kind: "run"; readonly html: string; readonly port: number; readonly root: string }
+  | {
+      readonly kind: "run";
+      readonly html: string;
+      readonly port: number;
+      readonly root: string;
+      /** False with `--no-hmr`: Bun serves the game without hot reload. */
+      readonly hmr: boolean;
+    }
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 

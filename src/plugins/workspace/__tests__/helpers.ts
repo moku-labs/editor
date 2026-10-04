@@ -48,6 +48,7 @@ export const CONFIG: WorkspaceConfig = {
   defaultWorkspace: "game",
   storageKey: "moku-editor-test",
   reloadTimeoutMs: 15_000,
+  hotReloadWaitMs: 1500,
   toastMs: 2600
 };
 

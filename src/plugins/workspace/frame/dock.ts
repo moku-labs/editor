@@ -144,6 +144,41 @@ export function clipInsets(box: FrameBox, clip: RectBox): FullInsets {
 }
 
 /**
+ * A clip side this deep (local px) cuts the screen: the corners on it are not the device's own.
+ */
+const CUT = 0.5;
+
+/**
+ * The `clip-path` of the docked frame: the clip insets, and the screen's rounded corners (round
+ * DeviceSpec.radius). Both are in the frame's local px, so the transform shows the radius as
+ * `radius × scale` on screen. A corner on a cut side stays square: only the device's own corners
+ * are round.
+ *
+ * @param clip - The clip insets in local px (`clipInsets`).
+ * @param radius - The screen corner radius in device CSS px.
+ * @returns The `inset(…)` value.
+ * @example
+ * ```ts
+ * clipPathOf({ top: 0, right: 0, bottom: 0, left: 0 }, 55); // "inset(0px 0px 0px 0px round 55px 55px 55px 55px)"
+ * clipPathOf({ top: 40, right: 0, bottom: 0, left: 0 }, 30); // "inset(40px 0px 0px 0px round 0px 0px 30px 30px)"
+ * ```
+ */
+export function clipPathOf(clip: FullInsets, radius: number): string {
+  const sides = `${clip.top}px ${clip.right}px ${clip.bottom}px ${clip.left}px`;
+  const round = (a: number, b: number): number => (a < CUT && b < CUT ? radius : 0);
+  const corners = [
+    round(clip.top, clip.left),
+    round(clip.top, clip.right),
+    round(clip.bottom, clip.right),
+    round(clip.bottom, clip.left)
+  ];
+  if (corners.every(corner => corner <= 0)) return `inset(${sides})`;
+
+  const radii = corners.map(corner => `${corner}px`).join(" ");
+  return `inset(${sides} round ${radii})`;
+}
+
+/**
  * The zone corner nearest to a point (the quadrant it falls in).
  *
  * @param point - A point in tools-page px (the centre of the dropped float).

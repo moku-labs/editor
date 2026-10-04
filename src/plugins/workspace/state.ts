@@ -67,6 +67,8 @@ export function createWorkspaceState(ctx: {
     palette: { open: false, query: "", index: 0, items: new Map() },
     keys: { bindings: [], escape: [] },
     popover: undefined,
+    hotReloadNote: undefined,
+    lastRestore: undefined,
     step: undefined,
     frame: {
       iframe: undefined,

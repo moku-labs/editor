@@ -30,9 +30,12 @@ afterEach(() => {
 });
 
 describe("createGameViewApi", () => {
-  it("has the twelve members of GameViewApi", () => {
+  it("has the fifteen members of GameViewApi", () => {
     expect(Object.keys(createGameViewApi(ctx)).toSorted()).toEqual([
+      "bookmarks",
       "capture",
+      "copyReference",
+      "fold",
       "highlight",
       "inspect",
       "locate",
@@ -97,6 +100,35 @@ describe("createGameViewApi", () => {
     ctx.state.series.sheet = undefined;
     await api.openSheet(result?.indexPath ?? "");
     expect(ctx.state.series.sheet).toMatchObject({ images: [PNG] });
+  });
+});
+
+describe("copyReference, bookmarks and fold", () => {
+  it("copyReference builds the block of the selection; bookmarks lists the pick bookmarks", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(() => Promise.resolve()) } });
+    const api = createGameViewApi(ctx);
+    expect(await api.copyReference()).toBeUndefined();
+
+    api.select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    const block = await api.copyReference();
+    expect(block?.split("\n")[0]).toBe("@moku coinPill · row · board/awaitIntent · f1841");
+    expect(api.bookmarks()).toEqual([]);
+  });
+
+  it("fold switches a foldable between its cover and its inner screen; other presets stay", () => {
+    const api = createGameViewApi(ctx);
+    api.fold(true);
+    expect(ctx.workspace.api.setDevice).not.toHaveBeenCalled();
+
+    ctx.workspace.device = { preset: "galaxy-z-fold-6", orientation: "portrait" };
+    api.fold();
+    expect(ctx.workspace.api.setDevice).toHaveBeenLastCalledWith({ folded: false });
+    expect(ctx.workspace.api.device().preset.w).toBe(707);
+    api.fold(true);
+    expect(ctx.workspace.api.setDevice).toHaveBeenCalledTimes(1);
+    api.fold(false);
+    expect(ctx.workspace.api.setDevice).toHaveBeenLastCalledWith({ folded: true });
+    expect(ctx.workspace.api.device().preset.w).toBe(369);
   });
 });
 

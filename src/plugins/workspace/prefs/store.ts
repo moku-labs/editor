@@ -1,9 +1,9 @@
 /**
  * @file workspace plugin — the per-viewer preferences record in localStorage:
- * `{ v: 1, theme?, previews, device, density, showTaps }`. Invalid JSON, another version or a
- * throwing storage → the defaults; an unknown value → the default of that value; one
- * `workspace:prefs` warn either way. A field added after the first records (density, showTaps)
- * that is missing takes its default silently. Writes are wrapped in try/catch (quota). Nothing
+ * `{ v: 1, theme?, previews, device: { preset, orientation, folded? }, density, showTaps }`.
+ * Invalid JSON, another version or a throwing storage → the defaults; an unknown value → the
+ * default of that value; one `workspace:prefs` warn either way. A field added after the first
+ * records (density, showTaps, device.folded) that is missing takes its default silently. Writes are wrapped in try/catch (quota). Nothing
  * essential is stored here.
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -194,6 +194,8 @@ function readRecord(record: JsonObject, invalid: string[]): StoredPrefs {
   else invalid.push("device.preset");
   if (isOrientation(stored.orientation)) prefs.device.orientation = stored.orientation;
   else invalid.push("device.orientation");
+  if (typeof stored.folded === "boolean") prefs.device.folded = stored.folded;
+  else if (stored.folded !== undefined) invalid.push("device.folded");
 
   // Added after the first records: a missing value is the default, silently.
   if (isDensityChoice(record.density)) prefs.density = record.density;

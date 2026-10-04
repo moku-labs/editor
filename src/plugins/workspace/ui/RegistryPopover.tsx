@@ -1,7 +1,8 @@
 /**
  * @file workspace plugin — D2, the registry popover (top layer, Esc layer `registry`): what the
  * game registered: sources (id, title, inputs, change tag) and commands (id, title, inputs,
- * effect tag; `route` in accent).
+ * effect tag; `route` in accent). It opens under the Registry button, or under the ⋯ button in
+ * the compact bar.
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
@@ -16,7 +17,11 @@ import { schemaText } from "./text";
 /**
  * Props of `RegistryPopover`.
  */
-export type RegistryPopoverProps = { readonly ctx: WorkspaceCtx };
+export type RegistryPopoverProps = {
+  readonly ctx: WorkspaceCtx;
+  /** The `data-popover-anchor` it opens under; default "registry". */
+  readonly anchor?: string;
+};
 
 /**
  * Tag tone of every command effect.
@@ -41,7 +46,7 @@ export function RegistryPopover(props: RegistryPopoverProps): VNode {
   useWorkspace(state.ui, () => state.ui.version);
   const element = useElement<HTMLElement>();
   const open = state.popover === "registry";
-  usePopover(element, open, state, "registry");
+  usePopover(element, open, state, props.anchor ?? "registry");
   const manifest = ctx.require(linkPlugin).manifest();
 
   return (

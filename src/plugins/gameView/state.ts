@@ -15,7 +15,7 @@ const DEFAULT_INTERVAL_MS = 100;
 
 /**
  * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read,
- * Reference mode off.
+ * Reference mode off, no pick bookmarks.
  *
  * @returns A fresh state for one app.
  */
@@ -59,7 +59,11 @@ export function createGameViewState(): GameViewState {
       waiting: false
     },
     found: new Map(),
-    reference: { on: false, hover: undefined, node: undefined, unwatch: undefined }
+    searches: new Map(),
+    blocks: new Map(),
+    reference: { on: false, hover: undefined, node: undefined, unwatch: undefined },
+    bookmarks: [],
+    pick: undefined
   };
 }
 

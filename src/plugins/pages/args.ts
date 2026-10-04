@@ -1,6 +1,6 @@
 /**
  * @file pages plugin — the arguments of `moku-editor <game-html> [--port 3000] [--root .]
- * [--help]`. Pure: no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server
+ * [--no-hmr] [--help]`. Pure: no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server
  * always binds 127.0.0.1.
  */
 import { parseArgs } from "node:util";
@@ -17,7 +17,7 @@ const DEFAULT_PORT = 3000;
 const PORT_MAX = 65_535;
 
 /**
- * Parses argv strictly with the three flags of the bin.
+ * Parses argv strictly with the four flags of the bin.
  *
  * @param argv - Arguments after the script name.
  * @returns The positionals and flag values.
@@ -35,6 +35,7 @@ function parse(argv: readonly string[]) {
     options: {
       port: { type: "string", short: "p" },
       root: { type: "string", short: "r" },
+      "no-hmr": { type: "boolean" },
       help: { type: "boolean", short: "h" }
     }
   });
@@ -94,10 +95,10 @@ function portOf(value: string | undefined): number | undefined {
  * Parses the bin arguments.
  *
  * @param argv - Arguments after the script name.
- * @returns `run` with html, port and root; `help`; or `error` with a message.
+ * @returns `run` with html, port, root and hmr; `help`; or `error` with a message.
  * @example
  * ```ts
- * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: "." }
+ * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true }
  * ```
  */
 export function parseBinArgs(argv: readonly string[]): BinArgs {
@@ -119,5 +120,5 @@ export function parseBinArgs(argv: readonly string[]): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
-  return { kind: "run", html, port, root };
+  return { kind: "run", html, port, root, hmr: values["no-hmr"] !== true };
 }

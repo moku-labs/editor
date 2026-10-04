@@ -1,4 +1,4 @@
-/* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4), the clip of the docked frame, the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · workspace layout and stage (A2, F12). The body: the stage and the Element panel (the shared SidePanel sizes itself; the body is its drawer's containing block). The dotted stage, the bezel around the screen slot the game frame docks over (the iframe never moves, R4) with the preset's screen radius, the clip of the docked frame, the badges and the hint pill. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="workspace"]) {
   :scope {
     display: grid;
@@ -55,30 +55,24 @@
     pointer-events: none;
   }
 
+  /* The bezel: its inner radius is the preset's screen radius at the stage scale (`--screen-radius`, set inline, round 2 R3), so it matches the docked frame's rounded clip; a 1 px outline keeps it visible on the dark canvas. */
   [data-part="bezel"] {
     padding: 10px;
-    border-radius: var(--radius-34);
+    border-radius: calc(var(--screen-radius, 0px) + 10px);
     background: var(--bezel);
-  }
-
-  [data-part="bezel"][data-kind="tablet"] {
-    border-radius: var(--radius-12);
+    outline: 1px solid var(--border-strong);
   }
 
   [data-part="bezel"][data-kind="desktop"] {
     padding: 0;
-    border-radius: var(--radius-4);
+    border-radius: var(--screen-radius, 0px);
     background: none;
     outline: 1px solid var(--line-2);
   }
 
   [data-part="slot"] {
-    border-radius: 24px;
+    border-radius: var(--screen-radius, 0px);
     background: var(--surface-ground);
-  }
-
-  [data-part="bezel"]:is([data-kind="tablet"], [data-kind="desktop"]) [data-part="slot"] {
-    border-radius: var(--radius-4);
   }
 
   [data-part="badges"] {

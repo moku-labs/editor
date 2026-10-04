@@ -1,6 +1,6 @@
 /**
  * @file pages plugin — the moku-editor bin program: parse arguments, import the game HTML at run
- * time, start the server core, Bun.serve(hub.serve(...)) with Bun HMR on, attach the server to
+ * time, start the server core, Bun.serve(hub.serve(...)) with Bun HMR on (off with `--no-hmr`), attach the server to
  * pages (hot reload), print the URLs through the branded console (MC1). The token is never
  * printed.
  */
@@ -17,9 +17,10 @@ import { createStaticFetch } from "./static";
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
-  "Usage: moku-editor <game-html> [--port 3000] [--root .] [--help]",
+  "Usage: moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
-  "  --root, -r  project root the editor reads and writes (default .)"
+  "  --root, -r  project root the editor reads and writes (default .)",
+  "  --no-hmr    serve the game without hot reload (default: hot reload on)"
 ];
 
 /**
@@ -233,9 +234,9 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
   try {
     options = editor.hub.serve({
       port: args.port,
-      // Bun HMR reloads the game page on a save (D-23); `console: true` forwards the browser
-      // console, which Bun sends over the HMR socket.
-      development: { hmr: true, console: true },
+      // Bun HMR reloads the game page on a save (D-23), unless `--no-hmr`; `console: true`
+      // forwards the browser console.
+      development: { hmr: args.hmr, console: true },
       routes: { "/": bundle },
       fetch: createStaticFetch(rootPath, editor.hub.guard)
     });
