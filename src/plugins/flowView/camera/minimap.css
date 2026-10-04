@@ -1,4 +1,4 @@
-/* flowView · minimap (B7), 200×128 bottom-right 12 px: item rects (accent current, note yellow notes, frames outlined) and the viewport rect; lifts with the strip. No @layer wrapper (R7). */
+/* flowView · minimap (B7), 200×128 bottom-right 12 px: item rects (accent current, note yellow notes, frames outlined) and the viewport rect; lifts with the strip; on a canvas under 480 px it sits above the zoom bar row so the two never overlap. No @layer wrapper (R7). */
 
 @scope ([data-flow="minimap"]) {
   :scope {
@@ -13,6 +13,16 @@
 
   :scope[data-lift] {
     bottom: calc(12px + var(--flow-strip-h));
+  }
+
+  @container flow-canvas (max-width: 480px) {
+    :scope {
+      bottom: 56px;
+    }
+
+    :scope[data-lift] {
+      bottom: calc(56px + var(--flow-strip-h));
+    }
   }
 
   @media (prefers-reduced-motion: no-preference) {

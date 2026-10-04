@@ -2,7 +2,8 @@
  * @file Layout regressions found in a real browser (commit 21442b5): the workspace host and its
  * panel fill the main area on desktop and on a phone; the Flow edges SVG keeps a size and draws
  * edges; the preview's Open and Hide icons keep their size in the S float; the Render view
- * scrolls inside its panel while the page itself never scrolls (desktop).
+ * scrolls inside its panel while the page itself never scrolls (desktop and both half-screen
+ * windows).
  */
 import type { Locator } from "@playwright/test";
 import { expect, test, WORKSPACES } from "./fixtures";
@@ -129,8 +130,8 @@ test.describe("layout", () => {
     }
   });
 
-  test("desktop: the page never scrolls (fixed desktop window)", async ({ tools }, testInfo) => {
-    test.skip(testInfo.project.name !== "chromium-desktop", "the editor has no mobile layout");
+  test("the page never scrolls (desktop and half-screen windows)", async ({ tools }, testInfo) => {
+    test.skip(testInfo.project.name === "chromium-mobile", "the editor has no mobile layout");
     for (const { id } of WORKSPACES) {
       await tools.show(id);
       const overflow = await tools.page.evaluate(() => ({

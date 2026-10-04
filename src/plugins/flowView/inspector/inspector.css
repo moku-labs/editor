@@ -11,8 +11,9 @@
     background: var(--surface-panel);
   }
 
+  /* Never narrower than the plain Inspector (34 vw is under it in a half-screen window). */
   :scope[data-wide] {
-    width: min(440px, 34vw);
+    width: max(var(--inspector-w), min(440px, 34vw));
   }
 
   @media (prefers-reduced-motion: no-preference) {

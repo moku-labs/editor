@@ -3,8 +3,17 @@
   :scope {
     display: grid;
     grid-template-rows: 44px minmax(0, 1fr);
+    /* One column no wider than the host: the toolbar's nowrap row never widens the body. */
+    grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
+  }
+
+  /* Half-screen windows: the toolbar wraps to a second row, so its row sizes to it. */
+  @media (max-width: 1180px) {
+    :scope {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
   }
 
   [data-part="body"] {

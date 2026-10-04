@@ -1,4 +1,4 @@
-/* flowView · canvas toolbar (B5), top-right: Note, Follow the game (pressed state), Reset layout (disabled state). No @layer wrapper (R7). */
+/* flowView · canvas toolbar (B5), top-right: Note, Follow the game (pressed state), Reset layout (disabled state); on a canvas under 540 px it drops below the breadcrumb so the two never overlap. No @layer wrapper (R7). */
 
 @scope ([data-flow="canvas-toolbar"]) {
   :scope {
@@ -30,5 +30,11 @@
   [aria-disabled="true"] {
     color: var(--text-muted);
     cursor: not-allowed;
+  }
+
+  @container flow-canvas (max-width: 540px) {
+    :scope {
+      top: 48px;
+    }
   }
 }

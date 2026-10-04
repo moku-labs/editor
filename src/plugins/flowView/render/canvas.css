@@ -26,6 +26,8 @@
     touch-action: none;
     cursor: default;
     outline: none;
+    /* The chrome (toolbar, minimap) re-places itself when the canvas is narrow. */
+    container: flow-canvas / inline-size;
   }
 
   [data-flow="world"] {
