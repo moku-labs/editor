@@ -62,11 +62,12 @@ function firstEditorMessage(url: string): Promise<string> {
 }
 
 describe("pages integration", () => {
-  it("registers the four routes with the hub", () => {
+  it("registers the five routes with the hub", () => {
     expect(Object.keys(app.pages.routes())).toEqual([
       "/__editor",
       "/__editor/",
       "/__editor/hello",
+      "/__editor/hmr",
       "/__editor/assets/*"
     ]);
   });
@@ -136,6 +137,51 @@ describe("pages integration", () => {
     expect(response.headers.get("content-type")).toBe("text/css; charset=utf-8");
     expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("hot reload: owner server until attachServer, then the bin's state on GET, POST and the socket", async () => {
+    await expect(fetch(`${origin}/__editor/hmr`).then(r => r.json())).resolves.toEqual({
+      hmr: false,
+      owner: "server"
+    });
+
+    app.pages.attachServer(server, { development: { hmr: true, console: true } } as never);
+    const html = await fetch(`${origin}/__editor/`).then(response => response.text());
+    const boot: ToolsBoot = JSON.parse(bootJsonOf(html) ?? "{}");
+    const url = `${boot.ws}?token=${boot.token}&kind=tools`;
+    const socket: WebSocket = Reflect.construct(WebSocket, [url, { headers: { origin } }]);
+    const methods = await new Promise<string[]>((resolve, reject) => {
+      const seen: string[] = [];
+      const timer = setTimeout(() => reject(new Error(`only ${seen.join(",")}`)), 3000);
+      socket.addEventListener("message", event => {
+        seen.push(JSON.parse(String(event.data)).method);
+        if (seen.length < 2) return;
+        clearTimeout(timer);
+        socket.close();
+        resolve(seen);
+      });
+    });
+    expect(methods).toEqual(["sessions", "hotReload"]);
+
+    /**
+     * POSTs a hot reload change.
+     *
+     * @param hmr - The asked value.
+     * @param token - The Bearer token, or undefined for none.
+     * @returns The response.
+     */
+    const post = (hmr: boolean, token?: string) =>
+      fetch(`${origin}/__editor/hmr`, {
+        method: "POST",
+        headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ hmr })
+      });
+    await expect(post(true)).resolves.toHaveProperty("status", 401);
+    const same = await post(true, boot.token);
+    expect(same.status).toBe(200);
+    expect(await same.json()).toEqual({ hmr: true, owner: "bin" });
+    await expect(post(false, boot.token)).resolves.toHaveProperty("status", 409);
+    expect(app.pages.hotReload()).toEqual({ hmr: true, owner: "bin" });
   });
 
   it("P13: no log entry contains the token", () => {

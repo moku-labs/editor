@@ -1,4 +1,4 @@
-/* flowView · edges (G): orthogonal paths with rounded corners; trail (the last three 2 px at full strength, older ones fading by rank through the style prop), rejected, related, selected and return edges; mono label chips with an opaque background. A dimmed edge or label fades; the dimming wins over the trail. No @layer wrapper (R7). */
+/* flowView · edges (G): orthogonal paths with rounded corners; trail (the last three and the one into the item holding the current node 2 px at full strength, older ones fading by rank through the style prop), rejected, related, selected and return edges; mono label chips with an opaque background. A dimmed edge or label fades; the dimming wins over the trail. No @layer wrapper (R7). */
 
 @scope ([data-flow="edges"]) {
   /* The reset caps svg at max-width 100 %; the world layer has no width, so the cap would scale the viewBox to nothing. */
@@ -23,7 +23,8 @@
     stroke-width: 1.35px;
   }
 
-  path[data-trail][data-recent] {
+  path[data-trail][data-recent],
+  path[data-trail][data-here] {
     stroke-width: 2px;
   }
 

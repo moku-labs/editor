@@ -41,6 +41,7 @@ const view: CardView = {
   kindLine: "sub-flow · settingsPopup",
   selected: true,
   current: false,
+  holdsCurrent: false,
   dimmed: false,
   pulse: false,
   trail: true,
@@ -151,7 +152,8 @@ describe("Hub, Lane, Frame, Stub, Edges (G, F8)", () => {
           head: "# board · sub-flow of main/board · 10 nodes · on the stack",
           onStack: true,
           root: false,
-          dimmed: false
+          dimmed: false,
+          holdsCurrent: false
         }
       })
     );
@@ -203,7 +205,15 @@ describe("Hub, Lane, Frame, Stub, Edges (G, F8)", () => {
     const views = new Map([
       [
         "m|rejected|edge",
-        { rank: 4, recent: false, rejected: true, related: false, dimmed: false, selected: false }
+        {
+          rank: 4,
+          recent: false,
+          rejected: true,
+          related: false,
+          here: false,
+          dimmed: false,
+          selected: false
+        }
       ]
     ]);
     const { host, unmount } = mount(
@@ -231,11 +241,27 @@ describe("Hub, Lane, Frame, Stub, Edges (G, F8)", () => {
     const views = new Map([
       [
         "a|x|edge",
-        { rank: 0, recent: true, rejected: false, related: false, dimmed: false, selected: false }
+        {
+          rank: 0,
+          recent: true,
+          rejected: false,
+          related: false,
+          here: false,
+          dimmed: false,
+          selected: false
+        }
       ],
       [
         "b|y|edge",
-        { rank: 3, recent: false, rejected: false, related: false, dimmed: true, selected: false }
+        {
+          rank: 3,
+          recent: false,
+          rejected: false,
+          related: false,
+          here: false,
+          dimmed: true,
+          selected: false
+        }
       ]
     ]);
     const { host, unmount } = mount(

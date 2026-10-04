@@ -139,6 +139,9 @@ export function createLinkMock(): LinkMock {
       isOtherTab: () => false,
       onTap: () => stopNothing,
       heap: () => undefined,
+      hotReload: () => undefined,
+      onHotReload: () => stopNothing,
+      setHotReload: () => Promise.resolve(false),
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),

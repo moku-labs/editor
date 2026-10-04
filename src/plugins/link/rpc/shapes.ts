@@ -1,6 +1,6 @@
 /**
  * @file link plugin — reads the wire shapes link receives (sessions, manifest, run results, file
- * results, boot and hello JSON) from Json into fresh typed objects. No casts: every field is
+ * results, boot, hello and hot reload JSON) from Json into fresh typed objects. No casts: every field is
  * checked, unknown keys are dropped, a bad shape reads as undefined.
  */
 
@@ -12,6 +12,7 @@ import type {
   FileEntry,
   FileText,
   HelloBody,
+  HotReload,
   InputKind,
   InputSchema,
   Json,
@@ -287,7 +288,26 @@ function readPanel(value: Json): { id: string; module: string } | undefined {
 }
 
 /**
- * Reads a manifest (the hub validated it on hello; link checks it again before typing it).
+ * Reads the `restored` entry of a manifest: a string bookmark and a number frame (R6).
+ *
+ * @param value - The `restored` member.
+ * @returns `{ bookmark, frame }`, or undefined when absent or malformed.
+ * @example
+ * ```ts
+ * readRestored({ bookmark: '{"path":"home"}', frame: 1840 }); // { bookmark: '{"path":"home"}', frame: 1840 }
+ * readRestored({ bookmark: 1, frame: 1840 }); // undefined
+ * ```
+ */
+function readRestored(value: Json | undefined): Manifest["restored"] {
+  const object = objectOf(value);
+  const bookmark = object && textOf(object, "bookmark");
+  const frame = object && numberOf(object, "frame");
+  return bookmark === undefined || frame === undefined ? undefined : { bookmark, frame };
+}
+
+/**
+ * Reads a manifest (the hub validated it on hello; link checks it again before typing it). A
+ * malformed `restored` entry is dropped; the manifest stays.
  *
  * @param value - The `manifest` result.
  * @returns The manifest, or undefined.
@@ -304,11 +324,31 @@ export function readManifest(value: Json): Manifest | undefined {
   if (game === undefined || page === undefined || embedded === undefined) return undefined;
   if (sources === undefined || commands === undefined) return undefined;
 
-  const manifest = { game, page, embedded, sources, commands };
+  const restored = readRestored(object.restored);
+  const manifest = { game, page, embedded, sources, commands, ...(restored && { restored }) };
   if (object.panels === undefined) return manifest;
 
   const panels = listOf(object.panels, readPanel);
   return panels === undefined ? undefined : { ...manifest, panels };
+}
+
+/**
+ * Reads the params of an `editor.hotReload` notification or the answer of `{path}/hmr`.
+ *
+ * @param value - The params or the parsed answer.
+ * @returns A fresh `{ hmr, owner }`, or undefined for any other shape.
+ * @example
+ * ```ts
+ * readHotReload({ hmr: true, owner: "bin" }); // { hmr: true, owner: "bin" }
+ * readHotReload({ hmr: true, owner: "cloud" }); // undefined
+ * ```
+ */
+export function readHotReload(value: Json | undefined): HotReload | undefined {
+  const object = objectOf(value);
+  const hmr = object && flagOf(object, "hmr");
+  const owner = object && textOf(object, "owner");
+  if (hmr === undefined) return undefined;
+  return owner === "bin" || owner === "server" ? { hmr, owner } : undefined;
 }
 
 /**

@@ -103,6 +103,15 @@ describe("isManifest", () => {
     expect(isManifest(manifestWith({ panels: [{ id: "p", module: "/p.js" }] }))).toBe(true);
   });
 
+  it("accepts a well-formed restored entry and rejects a malformed one (R6)", () => {
+    expect(isManifest(manifestWith({ restored: { bookmark: '{"path":"home"}', frame: 12 } }))).toBe(
+      true
+    );
+    expect(isManifest(manifestWith({ restored: { bookmark: 1, frame: 12 } }))).toBe(false);
+    expect(isManifest(manifestWith({ restored: { bookmark: "{}", frame: "12" } }))).toBe(false);
+    expect(isManifest(manifestWith({ restored: "yes" }))).toBe(false);
+  });
+
   it("rejects non-objects", () => {
     expect(isManifest(null)).toBe(false);
     expect(isManifest([])).toBe(false);

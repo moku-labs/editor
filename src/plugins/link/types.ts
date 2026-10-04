@@ -1,6 +1,6 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
- * taps and the page heap), the files client, state and the domain context. Wire shapes come from the protocol (R1).
+ * taps, the page heap and hot reload), the files client, state and the domain context. Wire shapes come from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -10,6 +10,7 @@ import type {
   FileBinary,
   FileEntry,
   FileText,
+  HotReload,
   Json,
   LinkStatus,
   Manifest,
@@ -328,6 +329,48 @@ export type LinkApi = EditorChannel & {
   heap(): { usedMb: number; limitMb: number } | undefined;
 
   /**
+   * The hot reload state of the game server (R6): whether Bun reloads the game page on a source
+   * change, and who owns the server. The hub sends it after the socket opens and on each change.
+   *
+   * @returns A copy of `{ hmr, owner }`; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // The moku-editor bin serves the game with Bun HMR on.
+   * ctx.require(linkPlugin).hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  hotReload(): HotReload | undefined;
+  /**
+   * Listens to the hot reload state: called at once when it is known, then on each change. Each
+   * listener gets the same frozen state; a throwing listener is logged and does not stop the
+   * others.
+   *
+   * @param listener - Called with each state.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace shows the Hot reload switch as read-only for a game's own server.
+   * const stop = ctx.require(linkPlugin).onHotReload(state => show(state.hmr, state.owner === "bin"));
+   * stop();
+   * ```
+   */
+  onHotReload(listener: (state: HotReload) => void): () => void;
+  /**
+   * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
+   * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
+   * so a change answers false and the state stays; asking for the current value answers true.
+   * Never rejects: no boot, a refusal or a network failure answer false.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is `on` afterwards.
+   * @example
+   * ```ts
+   * // The bin serves with HMR on; the user flips the switch off.
+   * await ctx.require(linkPlugin).setHotReload(false); // false: restart the bin to change it
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
+  /**
    * The files channel client.
    *
    * @example
@@ -395,6 +438,10 @@ export type LinkState = {
   manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** onTap listeners (wrappers: the same function added twice is two entries). */
   tapListeners: Set<(tap: Tap) => void>;
+  /** The last hot reload state the hub sent or the route answered (R6). */
+  hotReload: HotReload | undefined;
+  /** onHotReload listeners (wrappers, like tapListeners). */
+  hotReloadListeners: Set<(state: HotReload) => void>;
   subs: Map<number, Subscription>;
   wire: Map<SubId, Subscription>;
   /** Only grows: a sub number is never reused, so late values of an old sub are dropped. */

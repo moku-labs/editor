@@ -1,7 +1,7 @@
 /**
  * @file flowView render module — a flow frame (G sub-flow frame): the head "# board · sub-flow of
  * main/board · 10 nodes · on the stack" with Collapse and Enter, an accent border while on the
- * stack. The frame background is empty canvas for clicks (M2).
+ * stack, and the accent ring with a "here" marker while the current node is inside. The frame background is empty canvas for clicks (M2).
  */
 import type { VNode } from "preact";
 import type { FlowActions, FlowCtx, Item } from "../types";
@@ -32,6 +32,7 @@ export function Frame(props: FrameProps): VNode {
       data-key={item.key}
       data-root={view.root ? "" : undefined}
       data-on-stack={view.onStack ? "" : undefined}
+      data-holds-current={view.holdsCurrent ? "" : undefined}
       data-dimmed={view.dimmed ? "" : undefined}
       style={{
         left: `${item.x}px`,
@@ -42,6 +43,7 @@ export function Frame(props: FrameProps): VNode {
     >
       <div data-part="head" data-hit="frame-head" data-key={item.key}>
         <span data-part="title">{view.head}</span>
+        {view.holdsCurrent && <span data-tag="here">here</span>}
         {!view.root && (
           <>
             <button

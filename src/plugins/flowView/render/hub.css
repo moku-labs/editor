@@ -1,4 +1,4 @@
-/* flowView · hub (G): 200 px wide, head with name, You are here, kind and waiting count; one 22 px port row per outcome with a right-aligned label and a dot. A dimmed hub stays opaque (only its content fades); a pulse plays one 600 ms ring. No @layer wrapper (R7). */
+/* flowView · hub (G): 200 px wide, head with name, You are here (or here while the current node is inside), kind and waiting count; one 22 px port row per outcome with a right-aligned label and a dot. A dimmed hub stays opaque (only its content fades); a pulse plays one 600 ms ring. No @layer wrapper (R7). */
 
 @scope ([data-flow="hub"]) {
   :scope {
@@ -8,7 +8,9 @@
     cursor: grab;
   }
 
-  :scope[data-current] {
+  /* The current node, and a hub with it inside (finding 7). */
+  :scope[data-current],
+  :scope[data-holds-current] {
     border: 1.5px solid var(--accent);
     box-shadow: 0 0 0 4px var(--accent-soft);
   }
@@ -67,7 +69,8 @@
     font: max(var(--flow-label-min), var(--font-size-11)) / 1.3 var(--font-mono);
   }
 
-  [data-tag="current"] {
+  [data-tag="current"],
+  [data-tag="here"] {
     justify-self: start;
     padding: 0 6px;
     border-radius: var(--radius-4);

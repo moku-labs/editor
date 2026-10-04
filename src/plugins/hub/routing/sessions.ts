@@ -160,9 +160,30 @@ function isPanel(value: unknown): boolean {
 }
 
 /**
+ * True for the `restored` entry of a manifest: a string bookmark and a finite frame.
+ *
+ * @param value - Anything.
+ * @returns Whether it is `{ bookmark, frame }`.
+ * @example
+ * ```ts
+ * isRestored({ bookmark: '{"path":"home"}', frame: 1840 }); // true
+ * isRestored({ bookmark: 1, frame: 1840 }); // false
+ * ```
+ */
+function isRestored(value: unknown): boolean {
+  const fields = fieldsOf(value);
+  const frame = fields?.get("frame");
+  return (
+    typeof fields?.get("bookmark") === "string" &&
+    typeof frame === "number" &&
+    Number.isFinite(frame)
+  );
+}
+
+/**
  * Checks the manifest of an agent's hello: game and page (≤ 2048 characters), embedded,
- * sources and commands (≤ 1000 each, ids ≤ 128), known input kinds, changes and effects, and
- * panels absent or a list.
+ * sources and commands (≤ 1000 each, ids ≤ 128), known input kinds, changes and effects,
+ * panels absent or a list, and `restored` absent or `{ bookmark, frame }`.
  *
  * @param value - The decoded `manifest` member.
  * @returns Whether it is a Manifest.
@@ -176,13 +197,15 @@ export function isManifest(value: unknown): value is Manifest {
   if (fields === undefined) return false;
 
   const panels = fields.get("panels");
+  const restored = fields.get("restored");
   return (
     isText(fields.get("game"), MAX_TEXT) &&
     isText(fields.get("page"), MAX_TEXT) &&
     typeof fields.get("embedded") === "boolean" &&
     isList(fields.get("sources"), item => isDescriptor(item, "changes", CHANGES)) &&
     isList(fields.get("commands"), item => isDescriptor(item, "effect", EFFECTS)) &&
-    (panels === undefined || isList(panels, isPanel))
+    (panels === undefined || isList(panels, isPanel)) &&
+    (restored === undefined || isRestored(restored))
   );
 }
 

@@ -1,6 +1,6 @@
 /**
  * @file bridge plugin — type definitions: config, constants, state, api, the structural net,
- * socket and tap window seams, the domain deps and the plugin context. No bun or DOM namespace type in an
+ * socket, tap window and reload seams, the domain deps and the plugin context. No bun or DOM namespace type in an
  * exported shape (skeleton-conventions §3).
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -144,6 +144,47 @@ export type BridgeNet = {
 };
 
 /**
+ * The sessionStorage of the game page as the checkpoint uses it (a browser `Storage` is one).
+ */
+export type CheckpointStorage = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+};
+
+/**
+ * The page seam of the checkpoint across Bun's full reload (R6), injectable for tests.
+ * `defaultReload()` is the real one.
+ *
+ * @example
+ * ```ts
+ * // A unit test fires bun:beforeFullReload itself and reads a Map-backed storage.
+ * const reload: ReloadSeam = { storage, doc: 5000, onBeforeFullReload: listener => listeners.add(listener) };
+ * ```
+ */
+export type ReloadSeam = {
+  /** The page's sessionStorage; undefined outside a browser or when the page refuses it. */
+  readonly storage: CheckpointStorage | undefined;
+  /** `performance.timeOrigin`: tells this document from the one that stored a checkpoint. */
+  readonly doc: number;
+  /**
+   * Listens to Bun's `bun:beforeFullReload` (`import.meta.hot.on`); a no-op without Bun HMR.
+   *
+   * @returns The remover.
+   */
+  onBeforeFullReload(listener: () => void): () => void;
+};
+
+/**
+ * A checkpoint read back from sessionStorage: the bookmark, its frame and the pause flag.
+ */
+export type TakenCheckpoint = {
+  readonly frame: number;
+  readonly paused: boolean;
+  readonly bookmark: Json;
+};
+
+/**
  * Bridge state.
  */
 export type BridgeState = {
@@ -163,8 +204,10 @@ export type BridgeState = {
   pending: Map<SubId, Json>;
   /** Request id → deadline timer. */
   inflight: Map<number, ReturnType<typeof setTimeout>>;
-  /** Heartbeat listener and page listeners (visibility, taps), removed on stop. */
+  /** Heartbeat listener and page listeners (visibility, taps, reload), removed on stop. */
   off: (() => void)[];
+  /** The checkpoint restored at start, sent once in the next hello (R6). */
+  restored: { readonly bookmark: string; readonly frame: number } | undefined;
 };
 
 /**
@@ -233,9 +276,11 @@ export type BridgeDeps = {
   readonly log: Log.LogApi;
   /** ctx.emit("bridge:status", payload). */
   readonly emit: (payload: AgentEvents["bridge:status"]) => void;
-  readonly registry: Pick<RegistryApi, "manifest" | "source">;
+  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock">;
   readonly channel: Pick<ChannelApi, "read" | "watch" | "run" | "heartbeat" | "onHeartbeat">;
   readonly net: BridgeNet;
+  /** sessionStorage, the document id and Bun's beforeFullReload (R6). */
+  readonly reload: ReloadSeam;
   readonly page: {
     readonly href: string | undefined;
     readonly document: (EventTarget & { readonly visibilityState?: string }) | undefined;

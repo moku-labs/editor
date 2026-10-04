@@ -1,7 +1,8 @@
 /**
  * @file hub plugin — api factory: assembles serve, token, sessions, fetch, websocket, addRoutes,
- * guard and path from the modules. No logic of its own.
+ * guard, publish and path from the modules. No logic of its own.
  */
+import { publish } from "./routing/publish";
 import { sessionList } from "./routing/sessions";
 import { guard as checkRequest } from "./security/guard";
 import { currentToken } from "./security/token";
@@ -29,6 +30,9 @@ export function createHubApi(ctx: HubCtx): HubApi {
       registerRoutes(ctx, routes);
     },
     guard: (req, server, mode) => checkRequest(req, server, mode, ctx.state.origins),
+    publish: (method, params) => {
+      publish(ctx, method, params);
+    },
     path: () => ctx.config.path
   };
 }

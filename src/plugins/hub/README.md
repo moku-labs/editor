@@ -32,6 +32,7 @@ Set through `pluginConfigs.hub`. Checked in `onInit`; a bad value makes `createA
 | `websocket` | `HubWebSocketHandler` | The one websocket handler. 32 MiB frames, 60 s idle, no deflate. |
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
+| `publish` | `(method: "hotReload", params: HotReload) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. A tools page that connects later gets it right after `sessions {list}`. |
 | `path` | `() => string` | `config.path`. |
 
 ### `serve(options)`
@@ -95,7 +96,8 @@ never the token).
 
 ### `websocket`
 
-`open` registers the connection. A tools connection gets `sessions {list}` at once. A socket
+`open` registers the connection. A tools connection gets `sessions {list}` at once, then every
+published value. A socket
 that opens after stop is closed with 1001. `message` closes on a binary frame (1003) and decodes
 text. `close` ends the agent's session or the tools subscriptions. `drain` flushes the tools
 backlog.
@@ -127,6 +129,17 @@ Allowed hosts: `127.0.0.1:<port>` and `localhost:<port>`, plus the bare names on
 Compared lowercased and exact. Allowed origins: `http://` plus each allowed host, plus
 `config.allow`. The origin `null` never matches. A server without a port is refused.
 
+### `publish(method, params)`
+
+```ts
+editor.hub.publish("hotReload", { hmr: true, owner: "bin" });
+// every tools socket: {"jsonrpc":"2.0","channel":"editor","method":"hotReload","params":{"hmr":true,"owner":"bin"}}
+```
+
+pages calls it from `attachServer` and after `setHotReload` (R6). The value is stored as a plain
+copy in `state.published`, also before start. It is a state notification: sent while a tools
+connection is congested too, never dropped. One method today: `hotReload`.
+
 ### `path()`
 
 ```ts
@@ -143,7 +156,7 @@ Agent connection:
 | Incoming | Result |
 |---|---|
 | Anything before `hello` | close 1008 `hello first` |
-| `hello {manifest}`, manifest valid | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true}`. Tools get `session` and `sessions {list}`. `hub:session` is emitted. |
+| `hello {manifest}`, manifest valid (`restored` absent or `{ bookmark: string, frame: number }`) | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true}`. Tools get `session` and `sessions {list}`. `hub:session` is emitted. |
 | `hello` with a bad manifest | close 1008 `bad manifest` |
 | `hello` a second time | close 1008 `hello twice` |
 | `heartbeat {frame, paused, at, heap?}` | stored, a silent session comes back, forwarded to every tools connection. `heap {usedMb, limitMb}` is kept when both are finite numbers. A malformed `heap` is dropped and the beat still goes through. |
@@ -173,6 +186,10 @@ Tools connection:
 Notifications and responses from tools are ignored. Before a game call is forwarded, the hub
 checks the session choice, the id in the manifest and the input.
 
+What a tools connection gets on channel `editor`: `sessions {list}` at open, then every published
+value (`hotReload {hmr, owner}`); `session {…}` and `sessions {list}` on each session change;
+`hotReload` again on each `publish`.
+
 Errors the hub builds (message prefix `[moku-editor]`):
 
 | Code | Reason | Retryable | When |
@@ -201,8 +218,8 @@ Fan-out: one agent-side watch per `(session, source, input)`. The key sorts obje
 last unwatch sends one `unwatch` to the agent.
 
 Backpressure: when `send` returns -1 a tools connection is congested. Values coalesce to the
-latest per `sub`, heartbeats and taps are dropped, responses and session notifications are still
-sent.
+latest per `sub`, heartbeats and taps are dropped, responses, session and published
+notifications are still sent.
 `drain` flushes the backlog in order.
 
 ## Events

@@ -11,6 +11,11 @@ current node.
 Clicking a node focuses it:
 
 - the camera moves and the rest dims; the current node never dims;
+- an item holding the current node never dims either: a collapsed sub-flow, slot or hub with the
+  current node inside (its key prefixes the current key, `main/board` for `main/board>board/…`),
+  an expanded frame around it, or a node on the position stack. It gets the accent ring
+  (`data-holds-current`) and a "here" tag, and the trail edge into it is drawn 2 px accent at full
+  strength (`data-here`);
 - the Inspector (C1–C4) shows the node, in the `flow.inspector` side panel.
 
 The Info tab is the one place for the neighbours of a node (D-25). A click on a *Comes from* or

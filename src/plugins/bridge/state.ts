@@ -4,7 +4,7 @@
 import type { BridgeConfig, BridgeState } from "./types";
 
 /**
- * Creates the initial bridge state: phase idle, status connecting, empty maps.
+ * Creates the initial bridge state: phase idle, status connecting, empty maps, nothing restored.
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
@@ -23,6 +23,7 @@ export function createBridgeState(_ctx: { readonly config: Readonly<BridgeConfig
     subs: new Map(),
     pending: new Map(),
     inflight: new Map(),
-    off: []
+    off: [],
+    restored: undefined
   };
 }

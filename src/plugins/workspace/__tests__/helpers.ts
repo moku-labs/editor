@@ -200,6 +200,9 @@ export function createLinkMock(): LinkMock {
       };
     }),
     heap: vi.fn<LinkApi["heap"]>(() => undefined),
+    hotReload: vi.fn<LinkApi["hotReload"]>(() => undefined),
+    onHotReload: vi.fn<LinkApi["onHotReload"]>(() => vi.fn()),
+    setHotReload: vi.fn<LinkApi["setHotReload"]>(() => Promise.resolve(false)),
     tapListeners,
     tap(tap) {
       for (const listener of tapListeners) listener(tap);

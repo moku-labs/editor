@@ -263,7 +263,8 @@ describe("core boot", () => {
       "/__dev",
       "/__dev/",
       "/__dev/assets/*",
-      "/__dev/hello"
+      "/__dev/hello",
+      "/__dev/hmr"
     ]);
     expect(workspace.gameFrame().url.endsWith("/game.html")).toBe(true);
     expect(workspace.devices()).toHaveLength(6);

@@ -5,7 +5,8 @@
 import type { Log } from "@moku-labs/common/browser";
 import type { Require } from "../../config";
 import type { FilesApi } from "../files/types";
-import type { EditorRoutes, HubApi } from "../hub/types";
+import type { BunServeOptions, EditorRoutes, HubApi } from "../hub/types";
+import type { HotReload } from "../registry/protocol";
 
 /**
  * Pages configuration.
@@ -36,14 +37,21 @@ export type PagesState = {
   template: string | undefined;
   /** The routes registered with hub (returned by routes()). */
   routes: EditorRoutes;
+  /** Hot reload: owner "server" with HMR off until the bin attaches its server (R6). */
+  hot: HotReload;
 };
+
+/**
+ * The server the bin attaches: Bun's Server is one.
+ */
+export type AttachedServer = { reload(options: BunServeOptions): void };
 
 /**
  * The pages api (`app.pages`).
  *
  * @example
  * ```ts
- * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+ * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]
  * ```
  */
 export type PagesApi = {
@@ -51,14 +59,58 @@ export type PagesApi = {
    * A copy of the routes this plugin registered with the hub in onInit, keyed by URL path under
    * the hub path.
    *
-   * @returns The four routes `P`, `P/`, `P/hello` and `P/assets/*`.
+   * @returns The five routes `P`, `P/`, `P/hello`, `P/hmr` and `P/assets/*`.
    * @example
    * ```ts
    * // Check which editor URLs the server answers.
-   * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+   * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]
    * ```
    */
   routes(): EditorRoutes;
+  /**
+   * Tells pages that the moku-editor bin serves the game with these options: the bin owns hot
+   * reload from now on, HMR is read from `options.development`, and the state goes to every tools
+   * page through `hub.publish("hotReload", …)`. The bin calls it right after `Bun.serve`.
+   *
+   * @param server - The running server (Bun's Server).
+   * @param options - The options it was started with (the result of `hub.serve`).
+   * @example
+   * ```ts
+   * // The bin, after it started the game server.
+   * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
+   * const server = Bun.serve(options);
+   * editor.pages.attachServer(server, options);
+   * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  attachServer(server: AttachedServer, options: BunServeOptions): void;
+  /**
+   * The hot reload state: whether Bun reloads the game page on a source change, and who owns the
+   * server. A game's own `Bun.serve` (no `attachServer` call) is owner "server" with HMR off.
+   *
+   * @returns A fresh `{ hmr, owner }`.
+   * @example
+   * ```ts
+   * // A game's own dev server that never attached it.
+   * app.pages.hotReload(); // { hmr: false, owner: "server" }
+   * ```
+   */
+  hotReload(): HotReload;
+  /**
+   * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
+   * running server, so the switch is read-only: a game's own server always answers false, the
+   * bin answers true only when HMR already is `on`. Restart the bin to change hot reload.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is `on` afterwards.
+   * @example
+   * ```ts
+   * // The bin serves with HMR on.
+   * await editor.pages.setHotReload(true); // true: already on
+   * await editor.pages.setHotReload(false); // false: Bun keeps HMR on until the bin restarts
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
 };
 
 /**

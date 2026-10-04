@@ -205,6 +205,9 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       isOtherTab: () => false,
       onTap: vi.fn(() => noop),
       heap: vi.fn(() => undefined),
+      hotReload: vi.fn(() => undefined),
+      onHotReload: vi.fn(() => noop),
+      setHotReload: vi.fn(() => Promise.resolve(false)),
       files: store
     },
     send(id, value) {

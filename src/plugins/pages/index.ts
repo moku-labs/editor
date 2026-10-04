@@ -1,6 +1,7 @@
 /**
- * Standard tier — serves the tools page (boot JSON injected), its assets and the hello route,
- * registered with the hub in onInit. The moku-editor bin lives next to it (bin.ts). Emits no events.
+ * Standard tier — serves the tools page (boot JSON injected), its assets, the hello route and the
+ * hot reload route, registered with the hub in onInit; publishes the hot reload state through the
+ * hub. The moku-editor bin lives next to it (bin.ts). Emits no events.
  *
  * @see README.md
  */
@@ -20,7 +21,7 @@ const defaultConfig: PagesConfig = {
 };
 
 /**
- * Pages plugin — the tools page, its assets and /__editor/hello.
+ * Pages plugin — the tools page, its assets, /__editor/hello and /__editor/hmr.
  *
  * @example
  * ```ts
