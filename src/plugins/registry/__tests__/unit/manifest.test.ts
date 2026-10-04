@@ -59,8 +59,8 @@ describe("buildManifest", () => {
     expect(manifest.game).toBe("merge-game 0.0.0");
     expect(manifest.sources.map(source => source.id)).toEqual([...ctx.state.sources.keys()]);
     expect(manifest.commands.map(command => command.id)).toEqual([...ctx.state.commands.keys()]);
-    expect(manifest.sources).toHaveLength(15);
-    expect(manifest.commands).toHaveLength(14);
+    expect(manifest.sources).toHaveLength(19);
+    expect(manifest.commands).toHaveLength(16);
     expect("panels" in manifest).toBe(false);
   });
 

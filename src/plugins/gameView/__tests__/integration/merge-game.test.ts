@@ -68,6 +68,8 @@ beforeEach(async () => {
   await agent.start();
 
   ctx = createCtx();
+  // The agent's own manifest: it lists game.locate (game 0.4) or game.rect (game 0.1).
+  ctx.link.manifestValue = agent.registry.manifest();
   ctx.link.read.mockImplementation((id, input) => agent.channel.read(id, input));
   ctx.link.watch.mockImplementation((id, input, onValue) =>
     agent.channel.watch(id, input, onValue)
@@ -94,7 +96,7 @@ function boardItems(nodes: Iterable<SceneNode>): SceneNode[] {
 }
 
 describe("gameView on merge-game", () => {
-  it("scene() lists boardSlot and the board items with rects, calibrated from game.rect", async () => {
+  it("scene() lists boardSlot and the board items with rects, calibrated from the rect source", async () => {
     const scene = await readScene(ctx);
 
     expect(scene.calibrated).toBe(true);

@@ -759,9 +759,8 @@ export type WorkspaceApi = {
    * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
    *
    * @param on - The asked value.
-   * @returns True when the server answers with its HMR equal to `on`: the bin does only when its
-   * HMR already equals `on`. False when Bun cannot make the change, on a 401, without a boot or
-   * on a network failure. Never rejects.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * Never rejects.
    * @example
    * ```ts
    * // Bun cannot switch HMR on a running bin.

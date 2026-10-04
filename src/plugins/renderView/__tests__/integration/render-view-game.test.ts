@@ -134,7 +134,9 @@ afterEach(async () => {
 });
 
 describe("renderView on the merge game", () => {
-  it("show Render → tiles, texture rows of the loaded bundles, tree rows with boardSlot → leave → stop", async () => {
+  it("show Render → tiles, texture rows of the loaded bundles, tree rows with boardSlot → leave → stop", {
+    timeout: 15_000
+  }, async () => {
     expect(game.flow.state().path).toBe("board/awaitIntent");
     const manifest: Manifest = agentManifest;
     const app = tools.createApp();

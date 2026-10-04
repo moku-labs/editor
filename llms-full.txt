@@ -205,9 +205,7 @@ export type Require = <
 export type CorePlugins = [typeof logPlugin, typeof envPlugin];
 
 const agentConfig: AgentConfig = {};
-
 const serverConfig: ServerConfig = {};
-
 const toolsConfig: ToolsConfig = {};
 
 /**
@@ -289,7 +287,7 @@ Each core registers `logPlugin` and `envPlugin` from `@moku-labs/common/browser`
 
 ## 3. Wire protocol types (`src/plugins/registry/protocol/`, verbatim)
 
-The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`).
+The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`). `devices.ts` holds the device presets and their helpers (`DeviceSpec`, `DevicePresetId`, `Orientation`, `DeviceSize` are below); `overlay-host.ts` holds `HOST_ATTRIBUTE`, the DOM marker of the in-game overlay host.
 
 ~~~ts
 /**
@@ -667,6 +665,46 @@ export type DeviceSpec = {
 };
 
 /**
+ * The twenty-one device presets (round 2 R4, round 2b R10), in display order.
+ */
+export type DevicePresetId =
+  | "iphone-se"
+  | "iphone-15"
+  | "iphone-17e"
+  | "iphone-air"
+  | "iphone-18-pro"
+  | "iphone-18-pro-max"
+  | "iphone-15-pro-max"
+  | "iphone-16-pro"
+  | "iphone-16-pro-max"
+  | "galaxy-s24"
+  | "galaxy-a55"
+  | "redmi-note-13"
+  | "pixel-8"
+  | "xperia-1-v"
+  | "galaxy-z-fold-6"
+  | "galaxy-z-flip-6"
+  | "pixel-9-pro-fold"
+  | "iphone-duo"
+  | "ipad-mini"
+  | "ipad-air-11"
+  | "desktop";
+
+/**
+ * Device orientation.
+ */
+export type Orientation = "portrait" | "landscape";
+
+/**
+ * Size and safe insets of a preset in an orientation (resolveDevice, R8).
+ */
+export type DeviceSize = {
+  w: number;
+  h: number;
+  safe: { top: number; right: number; bottom: number; left: number };
+};
+
+/**
  * The prefix of every error message the editor throws or returns (R1, R7).
  */
 export const ERROR_PREFIX = "[moku-editor] ";
@@ -934,7 +972,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | files | `allow` | `readonly string[]` | `["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"]` | Globs a file must match to be read or written. Case-sensitive. Not empty. |
 | files | `deny` | `readonly string[]` | `["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]` | Globs never listed, read or written. Case-insensitive. |
 | hub | `path` | `string` | `"/__editor"` | URL prefix of every editor route. Starts with `/`; letters, digits, `_`, `-`, `/`; no trailing or double slash. |
-| hub | `allow` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and call same-origin routes. No path, no trailing slash. |
+| hub | `allowOrigins` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and call same-origin routes. No path, no trailing slash. |
 | hub | `callTimeoutMs` | `number` | `5000` | Deadline of a forwarded call before -32002. Integer ≥ 100. |
 | hub | `silentAfterMs` | `number` | `6000` | No heartbeat this long → silent. 65 s after a `paused: true` beat. Integer ≥ 100. |
 | pages | `title` | `string` | `"moku editor"` | Tools page `<title>` and `ToolsBoot.title`. 1–120 characters. |
@@ -957,16 +995,16 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `historyLast` | `number` | `20` | Entries of `game.history` the panel watches. |
 | flowView | `trailLength` | `number` | `6` | Edges drawn as the trail. |
 | flowView | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| flowView | `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
-| flowView | `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
-| flowView | `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | flowView | `stylesFile` | `string \| undefined` | `undefined` | Text styles the Styles tab edits. Unset: the first project file that calls `defineTextStyles(`, found once per session. |
-| flowView | `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
-| flowView | `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
 | flowView | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
-| flowView | `minZoom` | `number` | `0.08` | Lowest zoom. |
-| flowView | `maxZoom` | `number` | `3` | Highest zoom. |
-| flowView | `defaultMinZoom` | `number` | `0.8` | Floor of the default camera. |
+| flowView | `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
+| flowView | `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
+| flowView | `layout.saveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
+| flowView | `zoom.min` | `number` | `0.08` | Lowest zoom. |
+| flowView | `zoom.max` | `number` | `3` | Highest zoom. |
+| flowView | `zoom.defaultMin` | `number` | `0.8` | Floor of the default camera. |
+| flowView | `hub.minOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
+| flowView | `hub.minReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
 | gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two PNGs of a pick. `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
 | gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
@@ -1245,6 +1283,7 @@ export type ChannelApi = EditorChannel & {
 
 - depends: `[registryPlugin, channelPlugin]`; presence check `ctx.has("bridge")` for the link dot. Lifecycle: `onInit` (adds `editor.overlay`), `onStart` (host, shadow root, styles), `onStop` (unmount).
 - Registry command: `editor.overlay`, title `Overlay in game`, input `{ on: "boolean" }`, effect `cosmetic`, value `{ on: boolean }`.
+- The host marker `HOST_ATTRIBUTE` (`"data-moku-editor-overlay"`) lives in `registry/protocol/overlay-host.ts`, so the bridge's tap watch reads the same marker; `overlay/types.ts` re-exports it for `Overlay.*`.
 - Events: hooks `bridge:status`. Logs: `overlay:render-unavailable`, `overlay:cheat-failed`, `overlay:mount-missing`, `overlay:no-dom`.
 
 ~~~ts
@@ -1269,9 +1308,10 @@ export const ERROR_MS = 3000;
 export const Z_INDEX = 2_147_483_000;
 
 /**
- * The attribute that marks the host element.
+ * The attribute that marks the host element. It lives in the protocol, so the bridge's tap watch
+ * reads the same marker; re-exported here for `Overlay.*`.
  */
-export const HOST_ATTRIBUTE = "data-moku-editor-overlay";
+export { HOST_ATTRIBUTE } from "../registry/protocol";
 
 /**
  * The corner of the game page the card sits in.
@@ -1660,14 +1700,14 @@ export type FilesApi = {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
+ * createApp({ pluginConfigs: { hub: { allowOrigins: ["http://192.168.1.4:3000"] } } });
  * ```
  */
 export type HubConfig = {
   /** URL prefix of every editor route. Starts with "/", no trailing slash. */
   path: string;
   /** Extra exact origins allowed to upgrade and to call same-origin routes. */
-  allow: readonly string[];
+  allowOrigins: readonly string[];
   /** Deadline of a forwarded call before it fails with -32002 (retryable). */
   callTimeoutMs: number;
   /** A session with no heartbeat for this long is marked silent (65 s after a paused beat, R6). */
@@ -1947,10 +1987,11 @@ export type PagesApi = {
   /**
    * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
    * running server, so the switch is read-only: a game's own server always answers false, the
-   * bin answers true only when HMR already is `on`. Restart the bin to change hot reload.
+   * bin answers true only when its HMR already equals `on`. Restart the bin to change hot reload.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is `on` afterwards.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise
+   * (a game's own server always answers false).
    * @example
    * ```ts
    * // The bin serves with HMR on.
@@ -1988,7 +2029,7 @@ export type AttachedServer = { reload(options: BunServeOptions): void };
 - Session choice: sticky choice, then this page's own game frame (its `__editorFrame` id, `frameUrl`), then newest embedded, then newest. An embedded session of another tools tab is never picked on its own. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
 - A watch the session refuses with -32008 `not_installed` (the game does not have the source; the manifest lists it with `available: false`) is logged only at debug (`link:source-unavailable`) and never sent to that session again; a new session gets it again.
 - Taps: every `tap { x, y, at }` notification of the chosen session goes to the `onTap` listeners (frozen, at most one per 50 ms from the bridge). `heap()` is the `heap` of the chosen session's last heartbeat (Chromium only).
-- Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.hmr === on`: true only when the server took it; a refusal is a 200 with the old state, so the page logs nothing (round 2b R16).
+- Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.owner === "bin" && state.hmr === on`: true only when the bin owns the server and its HMR already equals `on`, so a game's own server always answers false (as `pages.setHotReload`); a refusal is a 200 with the old state, so the page logs nothing (round 2b R16).
 - A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
 - Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
@@ -2330,11 +2371,11 @@ export type LinkApi = EditorChannel & {
   /**
    * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
    * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
-   * so a change answers false and the state stays; asking for the current value answers true.
-   * Never rejects: no boot, a refusal or a network failure answer false.
+   * so a change answers false and the state stays; asking the bin for its current value answers
+   * true. Never rejects: no boot, a refusal or a network failure answer false.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is `on` afterwards.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
    * @example
    * ```ts
    * // The bin serves with HMR on; the user flips the switch off.
@@ -2367,7 +2408,7 @@ export type LinkApi = EditorChannel & {
 - Reference mode (D-27): key R, the top-bar target button, the palette or `setReference`. The frame takes no game input while it is on; gameView draws `data-moku-*` proxies at the element bounds. Never persisted; Esc turns it off.
 - Pinned preview: the header drags it (snaps to a corner); the body plays the game (taps and keys reach it); the size changes only through S/M/L.
 - Tap ripples: `link.onTap` draws a ring at the tap point over the docked frame while "Show taps in the game" is on.
-- Devices (round 2 R4, round 2b R9 R10, `devices()`): twenty-one presets in `<optgroup>` groups. iPhone: SE 3 · small, 2022 (`iphone-se`, 375×667, safe 20/0, `frame: "home-button"`), 15 (`iphone-15`, 393×852, 59/34), 17e (`iphone-17e`, 390×844, 47/34, approx), Air (`iphone-air`, 420×912, 68/34, approx), 18 Pro (`iphone-18-pro`, default, 402×874, 62/34, approx), 18 Pro Max (`iphone-18-pro-max`, 440×956, 62/34, approx), then 15 Pro Max (430×932, 59/34), 16 Pro (402×874, 62/34), 16 Pro Max (440×956, 62/34) at the end so a stored choice keeps working. Android (no insets): Galaxy S24 (360×780), Galaxy A55 (412×892), Redmi Note 13 (393×873, approx), Pixel 8 (412×915), Xperia 1 V 21:9 (411×960). Foldable: Galaxy Z Fold 6 (cover 369×905 ⇄ inner 707×823, approx), Galaxy Z Flip 6 (412×1005), Pixel 9 Pro Fold (cover 411×923 ⇄ inner 791×820, approx), iPhone Duo (`iphone-duo`, cover 466×678 ⇄ inner 890×626, a book that opens landscape-wide; Apple's pixels divided by 3, approx). Tablet: iPad mini 7 (744×1133), iPad Air 11" (820×1180). Desktop (1440×900). Each has `dpr`, `radius`, `group` and `frame` (`"modern"` | `"home-button"`); `approx: true` marks estimated sizes or insets. `setDevice({ folded })` switches a foldable live (the game sees a resize); a new preset starts folded. An unknown stored id falls back to the iPhone 18 Pro.
+- Devices (round 2 R4, round 2b R9 R10, `devices()`): the presets live in `registry/protocol/devices.ts` (`DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `resolveDevice`, `screenOf`, `deviceById`, `presetOf`, `isDevicePresetId`); workspace and gameView both read them there. Twenty-one presets in `<optgroup>` groups. iPhone: SE 3 · small, 2022 (`iphone-se`, 375×667, safe 20/0, `frame: "home-button"`), 15 (`iphone-15`, 393×852, 59/34), 17e (`iphone-17e`, 390×844, 47/34, approx), Air (`iphone-air`, 420×912, 68/34, approx), 18 Pro (`iphone-18-pro`, default, 402×874, 62/34, approx), 18 Pro Max (`iphone-18-pro-max`, 440×956, 62/34, approx), then 15 Pro Max (430×932, 59/34), 16 Pro (402×874, 62/34), 16 Pro Max (440×956, 62/34) at the end so a stored choice keeps working. Android (no insets): Galaxy S24 (360×780), Galaxy A55 (412×892), Redmi Note 13 (393×873, approx), Pixel 8 (412×915), Xperia 1 V 21:9 (411×960). Foldable: Galaxy Z Fold 6 (cover 369×905 ⇄ inner 707×823, approx), Galaxy Z Flip 6 (412×1005), Pixel 9 Pro Fold (cover 411×923 ⇄ inner 791×820, approx), iPhone Duo (`iphone-duo`, cover 466×678 ⇄ inner 890×626, a book that opens landscape-wide; Apple's pixels divided by 3, approx). Tablet: iPad mini 7 (744×1133), iPad Air 11" (820×1180). Desktop (1440×900). Each has `dpr`, `radius`, `group` and `frame` (`"modern"` | `"home-button"`); `approx: true` marks estimated sizes or insets. `setDevice({ folded })` switches a foldable live (the game sees a resize); a new preset starts folded. An unknown stored id falls back to the iPhone 18 Pro.
 - Sound flag (round 2b R11): `muted()` and `setMuted(on)` keep it in the prefs record (`muted`, default false; `onPrefs` gets it). workspace never touches the game: gameView sends `game.mute`.
 - Dark theme bezel `--color-bezel: #2c2c34` with a 1 px `--border-strong` outline; the docked frame's clip-path is `inset(… round <radius>px)` in the frame's own px, on the stage and in the pinned preview.
 - D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`. With Bun hot reload on, `gameFrame().reload()` after a save first waits up to `hotReloadWaitMs` (1500) for the page Bun reloads: its hello with `manifest.restored` ends the run with the toast "Game reloaded · state restored" (no second reload, restore or pause); without `restored` workspace restores its bookmark; no new session in time → the frame reloads itself. A session with `restored` after an outside edit (an agent writing a file) toasts "Game reloaded · state restored" once.
@@ -2427,6 +2468,12 @@ export type PreviewWorkspace = Exclude<WorkspaceId, "game">;
  * Preview preferences plus the float size in px.
  */
 export type PreviewState = PreviewPrefs & { width: number; height: number };
+
+/**
+ * The preset id, the orientation and the resolved size live in the protocol with DeviceSpec and
+ * the presets (registry/protocol/devices.ts); re-exported here for `Workspace.*`.
+ */
+export type { DevicePresetId, DeviceSize, Orientation } from "../registry/protocol";
 
 /**
  * What device() returns (R4): the preset as it shows now (an unfolded foldable carries its inner
@@ -2489,7 +2536,7 @@ export type RanEvent = {
 export type GameFrame = {
   /**
    * Absolute URL of the game page: `link.boot()?.gameUrl` resolved against the page, "/" without
-   * a boot.
+   * a boot. Read again on every access, so a refreshed boot is seen.
    *
    * @example
    * ```ts
@@ -2996,7 +3043,8 @@ export type WorkspaceApi = {
    * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is the asked value afterwards; never rejects.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * Never rejects.
    * @example
    * ```ts
    * // Bun cannot switch HMR on a running bin.
@@ -3049,37 +3097,6 @@ export type WorkspaceApi = {
    */
   onPrefs(fn: (prefs: Prefs) => void): () => void;
 };
-
-/**
- * The twenty-one device presets (round 2 R4, round 2b R10), in display order.
- */
-export type DevicePresetId =
-  | "iphone-se"
-  | "iphone-15"
-  | "iphone-17e"
-  | "iphone-air"
-  | "iphone-18-pro"
-  | "iphone-18-pro-max"
-  | "iphone-15-pro-max"
-  | "iphone-16-pro"
-  | "iphone-16-pro-max"
-  | "galaxy-s24"
-  | "galaxy-a55"
-  | "redmi-note-13"
-  | "pixel-8"
-  | "xperia-1-v"
-  | "galaxy-z-fold-6"
-  | "galaxy-z-flip-6"
-  | "pixel-9-pro-fold"
-  | "iphone-duo"
-  | "ipad-mini"
-  | "ipad-air-11"
-  | "desktop";
-
-/**
- * Device orientation.
- */
-export type Orientation = "portrait" | "landscape";
 ~~~
 
 ### 7.11 panels — tools, Standard
@@ -3087,7 +3104,7 @@ export type Orientation = "portrait" | "landscape";
 - depends: `[linkPlugin, workspacePlugin]`. Lifecycle: `onStart` (mount the active workspace, one palette item per panel, `link.onManifest` → recheck), `onStop` (unmount, unwatch).
 - Mount states (`data-panel-state`): `missing`, `no-game`, `waiting`, `ready`, `error`. Stale marking (`data-stale`): `silent`, `lost`, `resync`.
 - `definePanel` (root export) validates id `/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)*$/`, workspace, source refs, command ids, `view`, `compact`.
-- `shared/` modules (not exported from the root; views import them by relative path): `style-edit.ts`, `highlight.ts`, `tokens.ts`, `scene/`, `editor-url.ts`, `side-panel/`.
+- `shared/` modules (not exported from the root; views import them by relative path): `style-edit.ts`, `highlight.ts`, `tokens.ts`, `scene/`, `editor-url.ts`, `side-panel/`, `icons.tsx` (the `Icon` component of the top bar and views), `workspaces.ts` (`WORKSPACE_IDS` in rail order, `WORKSPACE_LABELS`), `manifest-paths.ts`, `styles-file.ts`.
 - `side-panel/` is the one SidePanel of every view's side panel (flowView Inspector, gameView, filesView): `SidePanel` (Preact; props `id`, `side: "start" | "end"`, `title`, `defaultWidth`, `minWidth`, `maxWidth`, `overlayBelow?`, `open?`, `onOpenChange?`), `useSidePanel(id)` → `{ closed, expanded, show, toggle }`, `sidePanelState(id)` → `{ width, collapsed, closed, overlay, drawer }`, `showSidePanel(id)`, `toggleSidePanel(id)` (views bind `\`). Resize by a 6 px handle (←/→ step 16 px, double-click resets), collapse to a 32 px rail, close and reopen (toolbar `reopen-<id>` button, palette "Show <title>"), overlay drawer below `overlayBelow` px of container width. Persisted per id in localStorage `moku-editor:panel:<id>` (`{ width, collapsed, closed }`).
 - Events: emits `workspace:ran`; hooks `link:status`, `workspace:changed`.
 
@@ -3254,7 +3271,67 @@ export type PanelsApi = {
 
 ~~~ts
 /**
- * flowView configuration (flat, spec/11 §2.6).
+ * Where the layout is saved and how ELK runs (`flowView.layout`). Replaced as a whole: an override
+ * gives every field.
+ *
+ * @example
+ * ```ts
+ * createApp({
+ *   pluginConfigs: {
+ *     flowView: { layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400 } }
+ *   }
+ * }); // ELK runs inline, positions save to .moku/editor/layout.json
+ * ```
+ */
+export type FlowLayoutConfig = {
+  /** Saved positions. Default ".moku/editor/layout.json". */
+  readonly file: string;
+  /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
+  readonly worker: boolean;
+  /** Debounce before the layout file is written after a drop. Default 400. */
+  readonly saveDelayMs: number;
+};
+
+/**
+ * The zoom range of the camera (`flowView.zoom`). Replaced as a whole: an override gives every
+ * field.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { flowView: { zoom: { min: 0.08, max: 2, defaultMin: 0.8 } } } });
+ * // zoomTo(3) stops at 200 %
+ * ```
+ */
+export type FlowZoomConfig = {
+  /** Lowest zoom (design §4: 8 %). Default 0.08. */
+  readonly min: number;
+  /** Highest zoom (design §4: 300 %). Default 3. */
+  readonly max: number;
+  /** Floor of the default camera (M11). Default 0.8. */
+  readonly defaultMin: number;
+};
+
+/**
+ * The hub rule (`flowView.hub`, design §7.1): the rest node drawn as a hub with one lane per
+ * outcome. Replaced as a whole: an override gives every field.
+ *
+ * @example
+ * ```ts
+ * createApp({ pluginConfigs: { flowView: { hub: { minOutcomes: 8, minReturns: 4 } } } });
+ * // a rest node with 6 outcomes is laid out by ELK, not as a hub
+ * ```
+ */
+export type FlowHubConfig = {
+  /** A hub has at least this many outcomes. Default 6. */
+  readonly minOutcomes: number;
+  /** A hub has at least this many distinct returning nodes. Default 4. */
+  readonly minReturns: number;
+};
+
+/**
+ * flowView configuration (spec/11 §2.6): flat fields plus the one-level objects `layout`, `zoom`
+ * and `hub`. The kernel merges shallowly, so an object given in `pluginConfigs` replaces the
+ * default object as a whole.
  *
  * @example
  * ```ts
@@ -3268,29 +3345,19 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /** Hub rule: a hub has at least this many outcomes (design §7.1). Default 6. */
-  hubMinOutcomes: number;
-  /** Hub rule: a hub has at least this many distinct returning nodes (design §7.1). Default 4. */
-  hubMinReturns: number;
-  /** Saved positions. Default ".moku/editor/layout.json". */
-  layoutFile: string;
   /**
    * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
    * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
    */
   stylesFile: string | undefined;
-  /** Run ELK in a Web Worker; false = inline (tests, strict CSP). Default true. */
-  layoutWorker: boolean;
-  /** Debounce before layout.json is written after a drop. Default 400. */
-  layoutSaveDelayMs: number;
   /** Debounce before a style stepper burst is written. Default 600. */
   styleSaveDelayMs: number;
-  /** Lowest zoom (design §4: 8 %). Default 0.08. */
-  minZoom: number;
-  /** Highest zoom (design §4: 300 %). Default 3. */
-  maxZoom: number;
-  /** Floor of the default camera (M11). Default 0.8. */
-  defaultMinZoom: number;
+  /** The layout file and the ELK engine. */
+  layout: FlowLayoutConfig;
+  /** The zoom range of the camera. */
+  zoom: FlowZoomConfig;
+  /** The hub rule. */
+  hub: FlowHubConfig;
 };
 
 /**
@@ -5032,7 +5099,7 @@ import index from "./index.html";
 const editor = createApp({
   pluginConfigs: {
     files: { root: `${import.meta.dir}/..` },
-    hub: { allow: ["http://192.168.1.4:3000"] },
+    hub: { allowOrigins: ["http://192.168.1.4:3000"] },
     pages: { editorUrl: "cursor://file/{path}:{line}" }
   }
 });

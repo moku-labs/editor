@@ -107,11 +107,11 @@ describe("the probe when the manifest is built", () => {
     });
   });
 
-  it("does not probe a source with a required input (game.rect)", () => {
+  it("does not probe a source with a required input (game.at)", () => {
     ctx = catalogueOf(game.app);
 
-    expect(described("game.rect")).not.toHaveProperty("available");
-    expect(thrownBy(() => entryOf("game.rect").read({ key: "x" }))).toMatchObject({
+    expect(described("game.at")).not.toHaveProperty("available");
+    expect(thrownBy(() => entryOf("game.at").read({ x: 0, y: 0 }))).toMatchObject({
       code: -32_000
     });
   });

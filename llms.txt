@@ -333,10 +333,10 @@ src/
   tools.ts           @moku-labs/editor/tools
   plugins/
     index.ts         barrel of all 17 instances and type namespaces (imported by no entry)
-    registry/        + protocol/ (types, errors, check, wire-value, messages, source-files)
+    registry/        + protocol/ (types, errors, check, wire-value, messages, source-files, devices, overlay-host)
     channel/ overlay/ bridge/ capture/
     files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor)
-    link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules)
+    link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules, icons, workspaces)
     flowView/ gameView/ renderView/ stateView/ filesView/ consoleView/
     <name>/__tests__/unit, __tests__/integration
 tests/

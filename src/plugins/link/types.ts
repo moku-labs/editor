@@ -358,11 +358,11 @@ export type LinkApi = EditorChannel & {
   /**
    * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
    * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
-   * so a change answers false and the state stays; asking for the current value answers true.
-   * Never rejects: no boot, a refusal or a network failure answer false.
+   * so a change answers false and the state stays; asking the bin for its current value answers
+   * true. Never rejects: no boot, a refusal or a network failure answer false.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is `on` afterwards.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
    * @example
    * ```ts
    * // The bin serves with HMR on; the user flips the switch off.

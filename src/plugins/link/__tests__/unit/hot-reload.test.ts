@@ -160,6 +160,14 @@ describe("setHotReload", () => {
     expect(listener).toHaveBeenCalledWith({ hmr: true, owner: "bin" });
   });
 
+  it("answers false for a game's own server, even when its HMR equals the asked value", async () => {
+    stubFetch(Response.json({ hmr: false, owner: "server" }));
+
+    await expect(requestHotReload(ctx, false)).resolves.toBe(false);
+
+    expect(createLinkApi(ctx).hotReload()).toEqual({ hmr: false, owner: "server" });
+  });
+
   it("answers false on a non-ok answer, even when its state matches", async () => {
     stubFetch(Response.json({ hmr: false, owner: "bin" }, { status: 401 }));
     await expect(requestHotReload(ctx, false)).resolves.toBe(false);

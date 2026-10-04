@@ -41,26 +41,30 @@ import {
 /** Every journey gets 30 s: three cores and a real game start for each one. */
 const TIMEOUT_MS = 30_000;
 
-/** The 15 game sources of the merge game's manifest, sorted. */
+/** The 19 game sources of the merge game's manifest (game 0.4), sorted. */
 const GAME_SOURCES = [
   "game.assets",
+  "game.at",
   "game.cheats",
+  "game.diff",
   "game.effects",
   "game.entities",
+  "game.explain",
   "game.graph",
   "game.history",
+  "game.locate",
   "game.log",
   "game.model",
   "game.position",
   "game.projections",
-  "game.rect",
   "game.render",
+  "game.schema",
   "game.sounds",
   "game.tainted",
   "game.ui"
 ];
 
-/** The 14 game commands of the merge game's manifest, sorted. */
+/** The 16 game commands of the merge game's manifest (game 0.4), sorted. */
 const GAME_COMMANDS = [
   "game.answer",
   "game.bookmark",
@@ -75,6 +79,8 @@ const GAME_COMMANDS = [
   "game.resume",
   "game.step",
   "game.tap",
+  "game.timeScale",
+  "game.trace",
   "game.walk"
 ];
 
@@ -500,7 +506,7 @@ describe("journey-merge: open the editor on merge-game", () => {
       const { tools, game, root } = live;
       const { link, workspace, flowView, filesView } = tools.app;
 
-      // The real manifest: 15 game sources, 14 game commands plus the editor commands.
+      // The real manifest: 19 game sources, 16 game commands (game 0.4) plus the editor commands.
       const manifest: Manifest | undefined = link.manifest();
       expect(idsOf(manifest?.sources, "game.")).toEqual(GAME_SOURCES);
       expect(idsOf(manifest?.commands, "game.")).toEqual(GAME_COMMANDS);
