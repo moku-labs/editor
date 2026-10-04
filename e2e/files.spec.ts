@@ -989,9 +989,11 @@ test.describe("files · edit and save", () => {
       await recordToasts(page);
       await page.keyboard.press("ControlOrMeta+s");
       await expect.poll(() => readGameFile(rel)).toBe(`${original}// e2e save\n`);
+      // Bun hot reload reloads the page and the bridge restores its checkpoint (D-23): one
+      // reload, one toast, and the editor does not restore a second time.
       await expect
         .poll(() => toastHistory(page), { timeout: 30_000 })
-        .toEqual([`✓ Saved · ${rel}`, "Game reloaded · state restored from the last checkpoint"]);
+        .toEqual([`✓ Saved · ${rel}`, "Game reloaded · state restored"]);
       await expect.poll(() => reloadState(page), { timeout: 30_000 }).toBe("reloaded");
       await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
         timeout: 30_000

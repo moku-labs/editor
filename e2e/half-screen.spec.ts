@@ -1,8 +1,10 @@
 /**
  * @file Narrow-window usability (D-21, the Claude pane): in the 480×900 (a third of the screen),
  * 720×900 and 960×1080 windows every workspace fits. The page never scrolls sideways; the top bar
- * keeps every control on screen, unsqueezed and unoverlapped (labels collapse to accessible names;
- * under 560 px the game name, the session chip and the counts go); the rail is reachable; the
+ * keeps every control on screen, unsqueezed and unoverlapped (below 900 px it is compact: the
+ * switches, Reference mode, Registry and theme move into the ⋯ menu and the session into the link
+ * pill's tooltip; under 560 px the game name goes too; labels collapse to accessible names; the
+ * full width loop is e2e/top-bar.spec.ts); the rail is reachable; the
  * pinned preview stays inside main; nothing in a workspace is cut off by a box that does not
  * scroll (wide content scrolls inside its panel); the Game toolbar wraps and its Element panel
  * stays in view (a drawer below 600 px); the Flow chrome never overlaps; the State columns stack
@@ -12,6 +14,7 @@
  */
 import type { Page } from "@playwright/test";
 import { expect, type Tools, test, WORKSPACES } from "./fixtures";
+import { clickBarControl, closeMore, isCompact, moreMenu, openMore } from "./top-bar";
 
 /** A plain rect. */
 type Box = { left: number; top: number; right: number; bottom: number; width: number };
@@ -378,21 +381,45 @@ test.describe("half-screen", () => {
   }
 
   test("top bar: collapsed labels stay the accessible names", async ({ tools }, testInfo) => {
-    const bar = tools.page.locator("[data-ui=top-bar]");
-    // Under 560 px the counts, the game name and the session chip leave the bar.
+    const page = tools.page;
+    const bar = page.locator("[data-ui=top-bar]");
     const third = testInfo.project.name === THIRD;
-    const registry = third ? "Registry" : "Registry 15 · 18";
-    for (const name of ["Pause", "Step 1 frame", "Reference mode", registry]) {
+    for (const name of ["Pause", "Step 1 frame"]) {
       await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
     }
-    for (const name of ["Game", "Overlay in game"]) {
-      await expect(bar.getByRole("switch", { name, exact: true })).toBeVisible();
-    }
     await expect(bar.locator("[data-logo]")).toBeVisible();
+    await expect(bar.locator("[data-counts]")).toHaveCount(0);
+
+    if (await isCompact(page)) {
+      // Below 900 px: the search icon and ⋯ keep names; the ⋯ rows name every moved control.
+      await expect(bar.locator("[data-ui=session-chip]")).toHaveCount(0);
+      await expect(
+        bar.getByRole("button", { name: "Jump to node, file, style, texture (⌘K)" })
+      ).toBeVisible();
+      await expect(bar.getByRole("button", { name: "More", exact: true })).toBeVisible();
+      await openMore(page);
+      for (const name of ["Game preview", "Overlay in game", "Reference mode", "Hot reload"]) {
+        await expect(
+          moreMenu(page).getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) })
+        ).toBeVisible();
+      }
+      for (const name of ["Registry", "Density", "Theme"]) {
+        await expect(
+          moreMenu(page).getByRole("menuitem", { name: new RegExp(`^${name}`) })
+        ).toBeVisible();
+      }
+      await closeMore(page);
+    } else {
+      for (const name of ["Reference mode", "Registry"]) {
+        await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
+      }
+      for (const name of ["Preview", "Overlay", "Hot reload"]) {
+        await expect(bar.getByRole("switch", { name, exact: true })).toBeVisible();
+      }
+    }
+    // Under 560 px the game name leaves the bar too.
     if (third) {
       await expect(bar.locator("[data-game-name]")).toBeHidden();
-      await expect(bar.locator("[data-ui=session-chip]")).toBeHidden();
-      await expect(bar.locator("[data-counts]")).toBeHidden();
       return;
     }
     const gameName = await bar.locator("[data-game-name]").boundingBox();
@@ -592,7 +619,8 @@ test.describe("half-screen and desktop", () => {
     await page.keyboard.press("Escape");
     await expect(palette).toBeHidden();
 
-    await page.locator("[data-ui=top-bar] [data-action=registry]").click();
+    // The Registry button of the wide bar, or the Registry row of the ⋯ menu below 900 px.
+    await clickBarControl(page, "registry");
     const popover = page.locator("[data-ui=registry-popover]");
     await expect(popover).toBeVisible();
     const popoverBox = await rectOf(page, "[data-ui=registry-popover]");
@@ -610,9 +638,14 @@ test.describe("half-screen and desktop", () => {
     test.skip(testInfo.project.name !== "chromium-desktop", "the desktop window only");
     const page = tools.page;
     const bar = page.locator("[data-ui=top-bar]");
-    for (const text of ["Pause", "Step 1 frame", "Registry", "Game", "Overlay in game"]) {
+    for (const text of ["Pause", "Step 1 frame", "Preview", "Overlay", "Hot reload"]) {
       await expect(bar.getByText(text, { exact: true })).toBeVisible();
     }
+    // Registry is an icon; its counts are in the title.
+    await expect(bar.getByRole("button", { name: "Registry", exact: true })).toHaveAttribute(
+      "title",
+      "Registry · 15 sources · 18 commands"
+    );
     const gameName = await bar.locator("[data-game-name]").boundingBox();
     expect(gameName?.width ?? 0).toBeGreaterThan(100);
     await tools.show("game");

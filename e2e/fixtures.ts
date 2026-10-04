@@ -30,12 +30,14 @@ export const TOOLS_PATH = "/__editor/";
 
 /**
  * Warnings of the game frame that are not defects of the editor: pixi probes WebGPU first and
- * logs that headless chromium has no adapter, and the GL driver reports the ReadPixels stall of
- * the capture plugin's frame read.
+ * logs that headless chromium has no adapter, the GL driver reports the ReadPixels stall of the
+ * capture plugin's frame read, and Bun's HMR client (the bin serves with hot reload on, D-23)
+ * says the game accepts no hot update before it reloads the page after a save of a game source.
  */
 const GAME_ALLOWED: readonly RegExp[] = [
   /^No available adapters\.$/,
-  /GPU stall due to ReadPixels/
+  /GPU stall due to ReadPixels/,
+  /^\[Bun\] Hot update was not accepted because it or its importers do not call/
 ];
 
 /** Where an entry came from. */

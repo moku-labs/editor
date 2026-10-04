@@ -1,14 +1,17 @@
 /**
  * @file The Game workspace (spec 13-gameView) in a real browser, on the frozen merge-game: the
- * device toolbar (presets, orientation, Fit and 100 %, safe-area bands, Reload), the Shot with its
- * PNG on disk and the capture card, the Series popover, the recording view, Stop, the files of a
- * series and the contact sheet with stepping and Mark as bug, the element picker on the game's
- * real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device tab, the
- * style stepper that writes the source and reloads with state restored (D-07), the Overlay in
- * game switch, and driving the game itself: pause, step, resume, palette commands and real taps on
- * the game canvas whose effect shows in State. The Element and Device tabs live in the Element
- * panel, a side panel that floats as a drawer below 600 px and starts collapsed there: a test
- * opens it before it looks at or works in a tab.
+ * device toolbar (the sixteen presets in their groups, Fold / Unfold of a foldable, orientation,
+ * Fit and 100 %, safe-area bands, Reload), the dark-theme bezel and the rounded screen, the Shot
+ * with its PNG on disk and the capture card, the Series popover, the recording view, Stop, the
+ * files of a series and the contact sheet with stepping and Mark as bug, the element picker on the
+ * game's real geometry (hover ring, click, Element tab, Show in render tree, Esc), the Device tab,
+ * the style stepper that writes the source and reloads with state restored (D-07, through Bun hot
+ * reload), the Overlay in game switch of the top bar (round 2 R1: the toolbar lost its own), and
+ * driving the game itself: pause, step, resume, palette commands and real taps on the game canvas
+ * whose effect shows in State. The Element and Device tabs live in the Element panel, a side
+ * panel that floats as a drawer below 600 px and starts collapsed there: a test opens it before it
+ * looks at or works in a tab. A pick also bookmarks the game, saves two PNGs and copies the
+ * reference block (round 2 R2): e2e/pick.spec.ts covers that.
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
  * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
@@ -20,6 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
+import { barChecked, flipBarToggle, showPreview } from "./top-bar";
 
 /** The project root the bin serves. */
 const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
@@ -47,23 +51,192 @@ const PIXI_RESIZE = /PixiJS Warning: +\[BindGroup\] a 'texture(Source|Sampler)' 
 /** A rect in px. */
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
-/** The device presets of design §8: id, name, W × H, safe top and bottom, kind. */
-const PRESETS = [
-  { id: "iphone-se", name: "iPhone SE", w: 375, h: 667, top: 20, bottom: 0, kind: "phone" },
-  { id: "iphone-15", name: "iPhone 15", w: 393, h: 852, top: 59, bottom: 34, kind: "phone" },
+/** One device preset as the toolbar and the Device tab show it. */
+type Preset = {
+  readonly id: string;
+  readonly name: string;
+  readonly group: string;
+  readonly w: number;
+  readonly h: number;
+  readonly top: number;
+  readonly bottom: number;
+  readonly kind: "phone" | "tablet" | "desktop";
+  readonly approx?: true;
+};
+
+/**
+ * The sixteen device presets (round 2 R4) in display order: id, name, `<optgroup>`, portrait W × H
+ * (a foldable's cover screen), safe top and bottom, kind. Android, foldable and tablet browsers
+ * report no safe insets.
+ */
+const PRESETS: readonly Preset[] = [
+  {
+    id: "iphone-se",
+    name: "iPhone SE 3",
+    group: "iPhone",
+    w: 375,
+    h: 667,
+    top: 20,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "iphone-15",
+    name: "iPhone 15",
+    group: "iPhone",
+    w: 393,
+    h: 852,
+    top: 59,
+    bottom: 34,
+    kind: "phone"
+  },
   {
     id: "iphone-15-pro-max",
     name: "iPhone 15 Pro Max",
+    group: "iPhone",
     w: 430,
     h: 932,
     top: 59,
     bottom: 34,
     kind: "phone"
   },
-  { id: "pixel-8", name: "Pixel 8", w: 412, h: 915, top: 24, bottom: 16, kind: "phone" },
-  { id: "ipad-mini", name: "iPad mini", w: 744, h: 1133, top: 24, bottom: 20, kind: "tablet" },
-  { id: "desktop", name: "Desktop", w: 1440, h: 900, top: 0, bottom: 0, kind: "desktop" }
-] as const;
+  {
+    id: "iphone-16-pro",
+    name: "iPhone 16 Pro",
+    group: "iPhone",
+    w: 402,
+    h: 874,
+    top: 62,
+    bottom: 34,
+    kind: "phone"
+  },
+  {
+    id: "iphone-16-pro-max",
+    name: "iPhone 16 Pro Max",
+    group: "iPhone",
+    w: 440,
+    h: 956,
+    top: 62,
+    bottom: 34,
+    kind: "phone"
+  },
+  {
+    id: "galaxy-s24",
+    name: "Galaxy S24",
+    group: "Android",
+    w: 360,
+    h: 780,
+    top: 0,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "galaxy-a55",
+    name: "Galaxy A55",
+    group: "Android",
+    w: 412,
+    h: 892,
+    top: 0,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "redmi-note-13",
+    name: "Redmi Note 13",
+    group: "Android",
+    w: 393,
+    h: 873,
+    top: 0,
+    bottom: 0,
+    kind: "phone",
+    approx: true
+  },
+  {
+    id: "pixel-8",
+    name: "Pixel 8",
+    group: "Android",
+    w: 412,
+    h: 915,
+    top: 0,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "xperia-1-v",
+    name: "Xperia 1 V 21:9",
+    group: "Android",
+    w: 411,
+    h: 960,
+    top: 0,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "galaxy-z-fold-6",
+    name: "Galaxy Z Fold 6",
+    group: "Foldable",
+    w: 369,
+    h: 905,
+    top: 0,
+    bottom: 0,
+    kind: "phone",
+    approx: true
+  },
+  {
+    id: "galaxy-z-flip-6",
+    name: "Galaxy Z Flip 6",
+    group: "Foldable",
+    w: 412,
+    h: 1005,
+    top: 0,
+    bottom: 0,
+    kind: "phone"
+  },
+  {
+    id: "pixel-9-pro-fold",
+    name: "Pixel 9 Pro Fold",
+    group: "Foldable",
+    w: 411,
+    h: 923,
+    top: 0,
+    bottom: 0,
+    kind: "phone",
+    approx: true
+  },
+  {
+    id: "ipad-mini",
+    name: "iPad mini 7",
+    group: "Tablet",
+    w: 744,
+    h: 1133,
+    top: 0,
+    bottom: 0,
+    kind: "tablet"
+  },
+  {
+    id: "ipad-air-11",
+    name: 'iPad Air 11"',
+    group: "Tablet",
+    w: 820,
+    h: 1180,
+    top: 0,
+    bottom: 0,
+    kind: "tablet"
+  },
+  {
+    id: "desktop",
+    name: "Desktop",
+    group: "Desktop",
+    w: 1440,
+    h: 900,
+    top: 0,
+    bottom: 0,
+    kind: "desktop"
+  }
+];
+
+/** The `<optgroup>` labels of the device select, in display order. */
+const GROUPS = ["iPhone", "Android", "Foldable", "Tablet", "Desktop"] as const;
 
 /**
  * The Game workspace host.
@@ -363,7 +536,8 @@ async function pngSize(file: string): Promise<{ w: number; h: number }> {
 async function recordToasts(page: Page): Promise<void> {
   await page.evaluate(() => {
     const start = performance.now();
-    const seen = new WeakSet<Element>();
+    // Toasts already shown (a pick's) are not part of the history.
+    const seen = new WeakSet<Element>(document.querySelectorAll("[data-ui=toasts] [data-toast]"));
     const history: string[] = [];
     Reflect.set(globalThis, "__e2eToasts", history);
     const scan = (): void => {
@@ -539,6 +713,23 @@ test.describe("game · device toolbar", () => {
     const select = bar(page, "device");
     await expect(select).toHaveValue("iphone-15");
     await expect(select.locator("option")).toHaveText(PRESETS.map(preset => preset.name));
+    // One <optgroup> per group, each holding its presets; an estimated preset says so.
+    expect(
+      await select
+        .locator("optgroup")
+        .evaluateAll(groups => groups.map(group => group.getAttribute("label")))
+    ).toEqual([...GROUPS]);
+    for (const group of GROUPS) {
+      await expect(select.locator(`optgroup[label="${group}"] option`)).toHaveText(
+        PRESETS.filter(preset => preset.group === group).map(preset => preset.name)
+      );
+    }
+    for (const preset of PRESETS) {
+      await expect(select.locator(`option[value="${preset.id}"]`)).toHaveAttribute(
+        "title",
+        preset.approx === true ? /· approx: estimated values$/ : /^\d+×\d+ · dpr [\d.]+$/
+      );
+    }
 
     for (const preset of PRESETS) {
       await select.selectOption(preset.id);
@@ -576,10 +767,13 @@ test.describe("game · device toolbar", () => {
         `safe top ${preset.top} · bottom ${preset.bottom}`
       );
     }
-    await devices.filter({ hasText: "iPad mini" }).click();
+    await devices.filter({ hasText: "iPad mini 7" }).click();
     await expect(select).toHaveValue("ipad-mini");
     await expect(bar(page, "size")).toHaveText("744 × 1133");
-    await expect(devices.filter({ hasText: "iPad mini" })).toHaveAttribute("aria-pressed", "true");
+    await expect(devices.filter({ hasText: "iPad mini 7" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(744);
   });
 
@@ -665,15 +859,14 @@ test.describe("game · device toolbar", () => {
     await expect.poll(() => heightOf(game(page).locator("[data-part=slot]"))).toBeCloseTo(1133, 0);
     // The game still sees its device size, and the overlay scales with the frame.
     expect(await gameFrame(page).evaluate(() => innerWidth)).toBe(744);
-    const band = await overlay(page).locator("[data-side=top]").boundingBox();
-    expect(band?.height ?? 0).toBeCloseTo(24, 0);
+    await expect.poll(() => widthOf(overlay(page))).toBeCloseTo(744, 0);
 
     await zoom.getByRole("radio", { name: "Fit" }).click();
     await expect(game(page).locator("[data-game=stage]")).toHaveAttribute("data-zoom", "fit");
     await expect.poll(() => widthOf(iframe(page))).toBeCloseTo(fitted.width, 0);
   });
 
-  test("Safe area toggles the bands; small phones, the iPad and Desktop draw what their insets say", async ({
+  test("Safe area toggles the bands; small phones, Android, the iPad and Desktop draw what their insets say", async ({
     tools,
     errors
   }) => {
@@ -698,12 +891,22 @@ test.describe("game · device toolbar", () => {
     await expect(guides.locator("[data-part=island]")).toHaveCount(0);
     await expect(guides.locator("[data-part=home]")).toHaveCount(0);
 
-    // iPad mini: bands, but no island and no home bar (not a phone).
-    await bar(page, "device").selectOption("ipad-mini");
-    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 24px/);
-    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 20px/);
-    await expect(guides.locator("[data-part=island]")).toHaveCount(0);
-    await expect(guides.locator("[data-part=home]")).toHaveCount(0);
+    // iPhone 16 Pro: 62 / 34 with the island and the home bar.
+    await bar(page, "device").selectOption("iphone-16-pro");
+    await expect(guides.locator("[data-side=top]")).toHaveAttribute("style", /--band: 62px/);
+    await expect(guides.locator("[data-side=bottom]")).toHaveAttribute("style", /--band: 34px/);
+    await expect(guides.locator("[data-part=island]")).toHaveCount(1);
+    await expect(guides.locator("[data-part=home]")).toHaveCount(1);
+
+    // Pixel 8 and the iPad mini 7: their browsers report no insets, so no band, island or home bar.
+    for (const id of ["pixel-8", "ipad-mini"]) {
+      await bar(page, "device").selectOption(id);
+      await expect(bar(page, "size")).toHaveText(id === "pixel-8" ? "412 × 915" : "744 × 1133");
+      await expect(guides).toBeAttached();
+      await expect(guides.locator("[data-part=band]")).toHaveCount(0);
+      await expect(guides.locator("[data-part=island]")).toHaveCount(0);
+      await expect(guides.locator("[data-part=home]")).toHaveCount(0);
+    }
 
     // Desktop: no guides, the switch is off and disabled.
     await bar(page, "device").selectOption("desktop");
@@ -739,6 +942,134 @@ test.describe("game · device toolbar", () => {
         return slot !== null && frame !== null && Math.abs(slot.width - frame.width) < 1;
       })
       .toBe(true);
+  });
+
+  test("Fold / Unfold on the Galaxy Z Fold 6 resizes the frame live; the picker matches game.rect after a fold", async ({
+    tools,
+    errors
+  }) => {
+    errors.allow(PIXI_RESIZE);
+    const page = tools.page;
+    await showGame(tools);
+    const fold = game(page).locator("[data-game=toolbar] [data-action=fold]");
+    await expect(fold).toHaveCount(0);
+    await bar(page, "device").selectOption("galaxy-z-fold-6");
+    await expect(bar(page, "size")).toHaveText("369 × 905");
+    await expect(fold).toHaveText("Unfold");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(369);
+    await markGame(page);
+
+    // Unfold: the inner screen, live — the game sees a resize, not a reload.
+    await fold.click();
+    await expect(fold).toHaveText("Fold");
+    await expect(fold).toHaveAttribute("title", "Fold to the cover screen");
+    await expect(bar(page, "size")).toHaveText("707 × 823");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(707);
+    await expect.poll(() => gameFrame(page).evaluate(() => innerHeight)).toBe(823);
+    await expect
+      .poll(async () => {
+        const slot = await game(page).locator("[data-part=slot]").boundingBox();
+        const frame = await iframe(page).boundingBox();
+        if (slot === null || frame === null) return false;
+        const aspect = Math.round((slot.width / slot.height) * 100);
+        return aspect === Math.round((707 / 823) * 100) && Math.abs(slot.x - frame.x) < 1;
+      })
+      .toBe(true);
+    expect(await reloadState(page)).toBe("marked");
+
+    // The picker calibrates on the unfolded screen: its ring is the game's own rect of Play, read
+    // once the game has laid the screen out again (two reads 200 ms apart agree).
+    let laidOut = "";
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify(await gameRect(page, "play"));
+        const still = now === laidOut;
+        laidOut = now;
+        if (!still) await page.waitForTimeout(200);
+        return still;
+      })
+      .toBe(true);
+    await pickerOn(page);
+    const client = await toClient(page, await gameRect(page, "play"));
+    // The scene the picker draws from follows the resize within a few heartbeats: poll until the
+    // ring under the pointer is Play at its game rect.
+    await expect
+      .poll(
+        async () => {
+          const at = await hoverFind(page, client, /^play · button · \d+×\d+$/);
+          await page.mouse.move(at.x, at.y);
+          const box = await overlay(page).locator("[data-box=hover]").boundingBox();
+          if (box === null) return false;
+          return [
+            box.x - client.x,
+            box.y - client.y,
+            box.width - client.w,
+            box.height - client.h
+          ].every(delta => Math.abs(delta) < 1.5);
+        },
+        { timeout: 15_000 }
+      )
+      .toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+
+    // Fold: back to the cover screen.
+    await fold.click();
+    await expect(fold).toHaveText("Unfold");
+    await expect(bar(page, "size")).toHaveText("369 × 905");
+    await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(369);
+    expect(await reloadState(page)).toBe("marked");
+
+    // A preset without a second screen has no Fold button.
+    await bar(page, "device").selectOption("pixel-8");
+    await expect(fold).toHaveCount(0);
+  });
+
+  test("dark theme: the bezel shows on the canvas and the screen is rounded on the stage and in the preview", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    const bezel = game(page).locator("[data-part=bezel]");
+    const look = await bezel.evaluate(element => {
+      const style = getComputedStyle(element);
+      const stage = element.closest("[data-game=stage]");
+      const slot = element.querySelector("[data-part=slot]");
+      return {
+        background: style.backgroundColor,
+        outlineStyle: style.outlineStyle,
+        outlineWidth: style.outlineWidth,
+        outlineColor: style.outlineColor,
+        radius: Number.parseFloat(style.borderTopLeftRadius),
+        slotRadius:
+          slot === null ? 0 : Number.parseFloat(getComputedStyle(slot).borderTopLeftRadius),
+        stage: stage === null ? "" : getComputedStyle(stage).backgroundColor
+      };
+    });
+    // The dark bezel colour #2c2c34 with a 1 px outline, both apart from the canvas.
+    expect(look.background).toBe("rgb(44, 44, 52)");
+    expect(look.outlineStyle).toBe("solid");
+    expect(look.outlineWidth).toBe("1px");
+    expect(look.outlineColor).not.toBe(look.stage);
+    expect(look.background).not.toBe(look.stage);
+    // iPhone 15: a 55 px screen radius at the stage scale; the bezel adds its 10 px padding.
+    const box = await iframe(page).boundingBox();
+    const scale = (box?.width ?? 0) / 393;
+    expect(look.slotRadius).toBeCloseTo(55 * scale, 0);
+    expect(look.radius).toBeCloseTo(55 * scale + 10, 0);
+    // The docked frame is clipped with the same round corners, in the frame's own px.
+    const frameBox = page.locator("[data-frame-box]");
+    await expect
+      .poll(() => frameBox.evaluate(element => getComputedStyle(element).clipPath))
+      .toMatch(/round 55px/);
+
+    // The pinned preview docks the same frame, rounded too.
+    await tools.show("render");
+    await showPreview(page);
+    await expect(frameBox).toHaveAttribute("data-docked", "preview");
+    await expect
+      .poll(() => frameBox.evaluate(element => getComputedStyle(element).clipPath))
+      .toMatch(/round 55px/);
   });
 });
 
@@ -1172,7 +1503,7 @@ test.describe("game · element picker", () => {
     expect(await gamePath(page)).toBe("board/awaitIntent");
   });
 
-  test("the style stepper writes one number, reloads the game and restores its state (D-07)", async ({
+  test("the style stepper writes one number; Bun reloads the game and its state is restored (D-07)", async ({
     tools,
     errors
   }) => {
@@ -1184,6 +1515,8 @@ test.describe("game · element picker", () => {
     const client = await toClient(page, before);
     const at = await hoverFind(page, client, /^play · button/);
     await page.mouse.click(at.x, at.y);
+    // The pick copies its reference block first (round 2 R2); its toast comes before the save's.
+    await expect(toast(page)).toHaveText("Reference, shot and bookmark copied");
     const card = elementTab(page).locator("[data-part=style-card]");
     await openSide(page);
     await expect(card.locator("[data-part=where]")).toBeVisible();
@@ -1201,10 +1534,11 @@ test.describe("game · element picker", () => {
       await recordToasts(page);
       await up.click();
       await expect.poll(async () => Number(await value.textContent())).toBeGreaterThan(start);
-      // The write toasts "✓ Saved", then the reload with restore toasts its own line.
+      // The write toasts "✓ Saved". Bun hot reload reloads the page and the bridge restores its
+      // checkpoint (D-23): one reload, one toast, no second restore by the editor.
       await expect
         .poll(() => toastHistory(page), { timeout: 30_000 })
-        .toEqual([`✓ Saved · ${file}`, "Game reloaded · state restored from the last checkpoint"]);
+        .toEqual([`✓ Saved · ${file}`, "Game reloaded · state restored"]);
       await expect.poll(() => readGameFile(file)).not.toBe(original);
       const after = (await readGameFile(file)) ?? "";
       const changed = after
@@ -1224,19 +1558,19 @@ test.describe("game · element picker", () => {
 });
 
 test.describe("game · overlay in game and driving the game", () => {
-  test("Overlay in game shows the render card inside the game page; the Device tab mirrors it", async ({
+  test("Overlay in game, from the top bar, shows the render card inside the game page; the Device tab mirrors it", async ({
     tools
   }) => {
     const page = tools.page;
     await showGame(tools);
     const card = gameFrame(page).locator("[data-moku-editor-overlay]");
     await expect(card).toBeHidden();
-    const toggle = bar(page, "overlay");
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
-    await expect(toggle.locator("[data-part=state]")).toHaveText("Off");
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-checked", "true");
-    await expect(toggle.locator("[data-part=state]")).toHaveText("On");
+    // Round 2 R1: the toolbar has no overlay switch; the top bar (the ⋯ menu below 900 px) does.
+    await expect(game(page).locator("[data-game=toolbar]")).toBeVisible();
+    await expect(bar(page, "overlay")).toHaveCount(0);
+    expect(await barChecked(page, "overlay")).toBe(false);
+    await flipBarToggle(page, "overlay");
+    await expect.poll(() => barChecked(page, "overlay")).toBe(true);
     await expect(toast(page)).toContainText("Overlay in game on");
     await expect(card).toBeVisible();
     await expect(card).toContainText(/fps \d+/);
@@ -1263,9 +1597,9 @@ test.describe("game · overlay in game and driving the game", () => {
     );
     await box.getByRole("switch", { name: "Overlay in game" }).click();
     await expect(box.locator("header [data-tag]")).toHaveText("Off");
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(toast(page)).toContainText("Overlay in game off");
     await expect(card).toBeHidden();
+    await expect.poll(() => barChecked(page, "overlay")).toBe(false);
   });
 
   test("pause, step one frame, resume from the top bar: the stage badge and the frame follow", async ({

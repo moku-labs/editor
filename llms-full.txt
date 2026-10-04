@@ -29,7 +29,7 @@ Contents:
 - Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 71.3 KB minified (24.8 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
 - Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
 - Engines: node >= 24, bun >= 1.3.14. The server core and the bin need Bun (`Bun.serve`, HTML imports).
-- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`).
+- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`). It serves with Bun hot reload on (D-23); `--no-hmr` turns it off.
 
 | Import | File | Exports |
 |---|---|---|
@@ -205,32 +205,37 @@ export type Require = <
 export type CorePlugins = [typeof logPlugin, typeof envPlugin];
 
 const agentConfig: AgentConfig = {};
+
 const serverConfig: ServerConfig = {};
+
 const toolsConfig: ToolsConfig = {};
 
 /**
  * Core config of the agent core (the game page).
  */
-export const agentCoreConfig = createCoreConfig<AgentConfig, AgentEvents, CorePlugins>(
-  "editor-agent",
-  { config: agentConfig, plugins: [logPlugin, envPlugin] }
-);
+export const agentCoreConfig = /* @__PURE__ */ createCoreConfig<
+  AgentConfig,
+  AgentEvents,
+  CorePlugins
+>("editor-agent", { config: agentConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Core config of the server core (Bun).
  */
-export const serverCoreConfig = createCoreConfig<ServerConfig, ServerEvents, CorePlugins>(
-  "editor-server",
-  { config: serverConfig, plugins: [logPlugin, envPlugin] }
-);
+export const serverCoreConfig = /* @__PURE__ */ createCoreConfig<
+  ServerConfig,
+  ServerEvents,
+  CorePlugins
+>("editor-server", { config: serverConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Core config of the tools core (the tools page).
  */
-export const toolsCoreConfig = createCoreConfig<ToolsConfig, ToolsEvents, CorePlugins>(
-  "editor-tools",
-  { config: toolsConfig, plugins: [logPlugin, envPlugin] }
-);
+export const toolsCoreConfig = /* @__PURE__ */ createCoreConfig<
+  ToolsConfig,
+  ToolsEvents,
+  CorePlugins
+>("editor-tools", { config: toolsConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Creates an agent plugin bound to the agent core's Config and Events. Types infer from the spec.
@@ -369,6 +374,12 @@ export type Manifest = {
   readonly commands: readonly CommandDescriptor[];
   /** Reserved for code-loaded game panels; unused this change. */
   readonly panels?: readonly { readonly id: string; readonly module: string }[];
+  /**
+   * Set by the bridge in its hello when it restored the checkpoint it stored before Bun's full
+   * reload (R6): `bookmark` is the JSON text of the restored `game.bookmark` value, `frame` the
+   * frame of the page that took it. Absent on every other hello.
+   */
+  readonly restored?: { readonly bookmark: string; readonly frame: number };
 };
 
 /**
@@ -427,18 +438,64 @@ export type LinkStatus =
   | { kind: "empty" };
 
 /**
- * The channel every panel reads through: in process (agent channel) or remote (tools link).
- *
- * @example
- * ```ts
- * const stop = channel.watch("game.position", undefined, position => show(position));
- * ```
+ * The channel every panel reads through: in process (`app.channel`, the agent channel of the game
+ * page) or remote (`app.link`, the tools link to the editor server). The base of `ChannelApi` and
+ * `LinkApi`. Errors reject as wire errors: -32601 `unknown_id`, -32602 `invalid_input`, the
+ * command's own error; the remote link adds its transport reasons (`timeout`, `link_closed` …).
  */
 export type EditorChannel = {
+  /**
+   * Reads a source now.
+   *
+   * @param id - The source id, e.g. "game.position".
+   * @param input - The source input; omit it for a source without input.
+   * @returns A promise of the wire value. It never throws synchronously.
+   * @example
+   * ```ts
+   * // A panel shows where the game stands.
+   * await app.channel.read("game.position"); // { path: "home", … }
+   * await app.channel.read("game.history", { last: 1 }); // [{ path: "home", outcome: "play", … }]
+   * ```
+   */
   read(id: string, input?: Json): Promise<Json>;
-  /** Delivers the current value first, then every change. */
+  /**
+   * Follows a source: delivers the current value first, then every change.
+   *
+   * @param id - The source id.
+   * @param input - The source input; `undefined` means none, but the argument is required.
+   * @param onValue - Called with each value.
+   * @returns An idempotent stop.
+   * @example
+   * ```ts
+   * // The state view follows the position until the view closes.
+   * const stop = app.channel.watch("game.position", undefined, position => show(position));
+   * stop();
+   * ```
+   */
   watch(id: string, input: Json | undefined, onValue: (value: Json) => void): () => void;
+  /**
+   * Runs a command. The in-process channel runs it in a microtask, off the game's frame loop.
+   *
+   * @param id - The command id, e.g. "game.step".
+   * @param input - The command input; omit it for a command without input.
+   * @returns A promise of the command's value and where the game stands after it.
+   * @example
+   * ```ts
+   * // The flow view steps one frame.
+   * (await app.channel.run("game.step", { frames: 1 })).state; // { path: "home", frame: 1841, tainted: false }
+   * ```
+   */
   run(id: string, input?: Json): Promise<RunResult>;
+  /**
+   * The link state now. The in-process channel answers live or paused only.
+   *
+   * @returns A fresh LinkStatus.
+   * @example
+   * ```ts
+   * app.channel.status(); // { kind: "live", frame: 1840 }
+   * ctx.require(linkPlugin).status(); // { kind: "silent", since: 1790000000000, lastFrame: 1840 }
+   * ```
+   */
   status(): LinkStatus;
 };
 
@@ -571,7 +628,17 @@ export type ToolsBoot = {
 };
 
 /**
- * A device preset of the tools page (R1).
+ * A device preset of the tools page (R1, R4): the screen in CSS px, its pixel ratio, safe insets,
+ * corner radius and the `<optgroup>` it is listed under. A foldable adds its two screens; its
+ * top-level size is the cover screen.
+ *
+ * @example
+ * ```ts
+ * const iphone15: DeviceSpec = {
+ *   id: "iphone-15", name: "iPhone 15", w: 393, h: 852, safeTop: 59, safeBottom: 34, kind: "phone",
+ *   dpr: 3, radius: 55, group: "iphone"
+ * };
+ * ```
  */
 export type DeviceSpec = {
   readonly id: string;
@@ -581,6 +648,16 @@ export type DeviceSpec = {
   readonly safeTop: number;
   readonly safeBottom: number;
   readonly kind: "phone" | "tablet" | "desktop";
+  /** Device pixel ratio of the screen. */
+  readonly dpr: number;
+  /** Corner radius of the screen in CSS px (0 for a desktop). */
+  readonly radius: number;
+  /** The `<optgroup>` the preset is listed under. */
+  readonly group: "iphone" | "android" | "foldable" | "tablet" | "desktop";
+  /** Set when a value of the preset is an estimate, not a published figure. */
+  readonly approx?: true;
+  /** The two screens of a foldable: folded (cover) and unfolded (inner). */
+  readonly fold?: { readonly cover: FoldScreen; readonly inner: FoldScreen };
 };
 
 /**
@@ -605,6 +682,7 @@ export const errorCode = {
   unauthorized: -32_007,
   notInstalled: -32_008
 } as const;
+
 /**
  * Any wire message.
  */
@@ -728,6 +806,28 @@ export type PageRect = {
   readonly w: number;
   readonly h: number;
 };
+
+/**
+ * The size and corner radius of one screen of a foldable device, in CSS px.
+ */
+export type FoldScreen = { readonly w: number; readonly h: number; readonly radius: number };
+
+/**
+ * The hot reload state of the game server (R6): Bun HMR on or off, and who owns the server. The
+ * hub sends it to every tools page as the editor-channel notification `hotReload`, and again
+ * after each tools connection opens.
+ *
+ * @example
+ * ```ts
+ * const state: HotReload = { hmr: true, owner: "bin" };
+ * ```
+ */
+export type HotReload = {
+  /** True when Bun reloads the game page on a source change. */
+  readonly hmr: boolean;
+  /** "bin" when the moku-editor bin serves the game, "server" for a game's own Bun.serve. */
+  readonly owner: "bin" | "server";
+};
 ~~~
 
 ---
@@ -845,6 +945,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | workspace | `defaultWorkspace` | `WorkspaceId` | `"game"` | Shown at start when the URL hash names none. |
 | workspace | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | workspace | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
+| workspace | `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload()` waits for the page Bun reloads before it reloads the frame itself. Positive. |
 | workspace | `toastMs` | `number` | `2600` | How long one toast stays; hover or focus pauses it. |
 | panels | — | `Record<string, never>` | `{}` | No options. |
 | flowView | `historyLast` | `number` | `20` | Entries of `game.history` the panel watches. |
@@ -860,7 +961,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `minZoom` | `number` | `0.08` | Lowest zoom. |
 | flowView | `maxZoom` | `number` | `3` | Highest zoom. |
 | flowView | `defaultMinZoom` | `number` | `0.8` | Floor of the default camera. |
-| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots and series. |
+| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two PNGs of a pick. `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
 | gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
 | gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
@@ -884,13 +985,16 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 
 ### Bin
 
-`moku-editor <game-html> [--port 3000] [--root .] [--help]`
+`moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`
 
 | Flag | Short | Default | Rule |
 |---|---|---|---|
 | `--port` | `-p` | `3000` | Digits, 0–65535. `0` picks a free port. |
 | `--root` | `-r` | `.` | Project root the editor reads and writes. Not empty. |
+| `--no-hmr` | | hot reload on | Serves with `development: { hmr: false, console: true }`; `hotReload()` reports `{ hmr: false, owner: "bin" }`. |
 | `--help` | `-h` | | Prints usage, exit 0. |
+
+Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(server, options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so `setHotReload` is refused (409 on `POST {P}/hmr`): restart the bin with or without `--no-hmr`.
 
 Exit codes: 0 help or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
 
@@ -974,25 +1078,94 @@ export type CommandEntry = {
 export type Clock = { readonly frame: number; readonly paused: boolean };
 
 /**
- * The registry api (`app.registry`, `ctx.require(registryPlugin)`).
- *
- * @example
- * ```ts
- * await registry.command("game.step")?.run({ frames: 1 });
- * ```
+ * The registry api (`app.registry`, `ctx.require(registryPlugin)`): the catalogue of every source
+ * and command the editor can read, watch or run.
  */
 export type RegistryApi = {
-  /** The frozen manifest: descriptors only, no functions; unavailable door sources carry `available: false`. */
+  /**
+   * The frozen manifest: descriptors only, no functions. Cached until the next `add`; `game`,
+   * `page` and `embedded` are computed at call time. `panels` is omitted (reserved). Each build
+   * probes the door sources first: one the game does not have is listed with `available: false`
+   * and its `reason`.
+   *
+   * @returns The manifest the bridge sends in `hello`.
+   * @example
+   * ```ts
+   * // The merge game without dev modules: its door catalogue only.
+   * app.registry.manifest().sources.length; // 15
+   * app.registry.manifest().commands.length; // 14
+   * // A game without the effects plugin:
+   * app.registry.manifest().sources.find(source => source.id === "game.effects")?.available; // false
+   * ```
+   */
   manifest(): Manifest;
-  /** A source entry, or undefined for an unknown id. */
+  /**
+   * Looks up a source entry. Callers map `undefined` to the -32601 `unknown_id` error.
+   *
+   * @param id - The source id, e.g. "game.position".
+   * @returns The entry, or undefined for an unknown id or a command id.
+   * @example
+   * ```ts
+   * // null is the wire value of "no input".
+   * app.registry.source("game.position")?.read(null); // { path: "home", … }
+   * app.registry.source("game.step"); // undefined: a command, not a source
+   * ```
+   */
   source(id: string): SourceEntry | undefined;
-  /** A command entry (door, module or editor), or undefined. */
+  /**
+   * Looks up a command entry: door, module or editor.
+   *
+   * @param id - The command id, e.g. "game.step".
+   * @returns The entry, or undefined for an unknown id or a source id.
+   * @example
+   * ```ts
+   * // Step two frames; the result carries where the game stands after the run.
+   * (await app.registry.command("game.step")?.run({ frames: 2 }))?.state; // { path: "home", frame: 1842, tainted: false }
+   * ```
+   */
   command(id: string): CommandEntry | undefined;
-  /** Adds an editor-owned command (call it in onInit). */
+  /**
+   * Adds an editor-owned command. Call it in `onInit`: the tools page sees a later add only on
+   * the next bridge hello. Drops the manifest cache.
+   *
+   * @param entry - The editor command: its descriptor and its run.
+   * @throws {Error} For an invalid or used id, an unknown input kind, or a `cheat` or `raw` effect
+   *   (editor commands bypass the game's journal).
+   * @example
+   * ```ts
+   * // An editor plugin registers its command from its own onInit.
+   * const registry = ctx.require(registryPlugin);
+   * registry.add({
+   *   descriptor: { id: "editor.ping", title: "Ping", input: {}, effect: "read" },
+   *   run: async () => ({ value: "pong", state: registry.envelope() })
+   * });
+   * ```
+   */
   add(entry: CommandEntry): void;
-  /** Where the game stands now, for editor commands that run no door (R2, R6). */
+  /**
+   * Where the game stands now, for editor commands that run no door (R2, R6).
+   *
+   * @returns `{ path, frame, tainted }` from game.position, the clock and game.tainted.
+   * @throws {Error} `[moku-editor] registry.game is missing.` when no game is configured.
+   * @example
+   * ```ts
+   * app.registry.envelope(); // { path: "home", frame: 1840, tainted: false }
+   * await app.registry.command("merge.addCoins")?.run({ amount: 1 });
+   * app.registry.envelope().tainted; // true: a cheat ran
+   * ```
+   */
   envelope(): RunState;
-  /** The frame and the pause flag of the game clock (R6). */
+  /**
+   * The frame and the pause flag of the game clock (R6). The channel heartbeat reads it.
+   *
+   * @returns `{ frame, paused }`.
+   * @throws {Error} `[moku-editor] registry.game is missing.` when no game is configured.
+   * @example
+   * ```ts
+   * // The channel builds each heartbeat from the clock.
+   * ctx.require(registryPlugin).clock(); // { frame: 1840, paused: false }
+   * ```
+   */
   clock(): Clock;
 };
 ~~~
@@ -1024,17 +1197,40 @@ export type ChannelConfig = {
 export type HeartbeatListener = (beat: Heartbeat) => void;
 
 /**
- * The channel api: the in-process EditorChannel plus the heartbeat.
- *
- * @example
- * ```ts
- * const stop = editor.channel.watch("game.position", undefined, position => show(position));
- * ```
+ * The channel api (`app.channel`, `ctx.require(channelPlugin)`): the in-process EditorChannel of
+ * the game page plus the heartbeat. `read`, `watch`, `run` and `status` are documented on
+ * EditorChannel. Here `watch` delivers the current value before it returns, and an unknown id, an
+ * invalid input or a throwing first `onValue` throws synchronously and opens no watch.
  */
 export type ChannelApi = EditorChannel & {
-  /** A fresh frozen beat now. */
+  /**
+   * A fresh frozen beat now, from the registry clock. In Chromium it also carries the page heap
+   * from `performance.memory`, in MB rounded to 0.1; elsewhere `heap` is absent.
+   *
+   * @returns `{ frame, paused, at }` plus `heap` when present, `at` in epoch ms.
+   * @example
+   * ```ts
+   * // The bridge sends a beat right after the socket opens.
+   * ctx.require(channelPlugin).heartbeat(); // { frame: 1840, paused: false, at: 1790000000000 } in Bun
+   * // In Chromium: { frame: 1840, paused: false, at: 1790000000000, heap: { usedMb: 12.8, limitMb: 4095.8 } }
+   * ```
+   */
   heartbeat(): Heartbeat;
-  /** Adds a listener called on every interval tick; returns an idempotent remover. */
+  /**
+   * Adds a listener called on every interval tick (`heartbeatMs`), in subscription order. A
+   * throwing listener is logged at warn and the others still run. No beat is sent at start.
+   *
+   * @param fn - The listener.
+   * @returns An idempotent remover.
+   * @example
+   * ```ts
+   * // The bridge pushes every beat to the editor server until it stops.
+   * const off = ctx.require(channelPlugin).onHeartbeat(beat => {
+   *   socket.send(encode(notification("game", "heartbeat", beat)));
+   * });
+   * off();
+   * ```
+   */
   onHeartbeat(fn: HeartbeatListener): () => void;
 };
 ~~~
@@ -1094,17 +1290,42 @@ export type Config = {
 };
 
 /**
- * The overlay api (`app.overlay`).
- *
- * @example
- * ```ts
- * editor.overlay.open();
- * editor.overlay.isOpen(); // true
- * ```
+ * The overlay api (`app.overlay`): switches the in-game card on and off. The `editor.overlay`
+ * command does the same from the tools page.
  */
 export type OverlayApi = {
+  /**
+   * Shows the card: render numbers and the game's one-click cheats. Before start it only sets
+   * the flag, and onStart honours it. Idempotent.
+   *
+   * @example
+   * ```ts
+   * // A QA shortcut switches the card on.
+   * app.overlay.open(); // the card appears in the top-right corner of the game page
+   * app.overlay.isOpen(); // true
+   * ```
+   */
   open(): void;
+  /**
+   * Hides the card and stops the render watch and the repaint interval. Idempotent.
+   *
+   * @example
+   * ```ts
+   * // Hide the card before a screenshot.
+   * app.overlay.close();
+   * app.overlay.isOpen(); // false
+   * ```
+   */
   close(): void;
+  /**
+   * Whether the overlay is switched on.
+   *
+   * @returns The flag; false by default, true with `pluginConfigs.overlay.open`.
+   * @example
+   * ```ts
+   * app.overlay.isOpen(); // false: the overlay is off by default
+   * ```
+   */
   isOpen(): boolean;
 };
 ~~~
@@ -1115,6 +1336,7 @@ export type OverlayApi = {
 - Backoff with defaults and `random() = 0.5`: 1000, 2000, 4000, 8000, 16000, 30000, 30000.
 - Lost reasons: `no WebSocket in this runtime` (no retry), `no page URL for <hello>` (no retry), `hello unreachable`, `hello <status>`, `hello answered without ws and token`, `hello answered a bad ws URL`, `socket failed`, `socket closed (<code>)[: <reason>]`, `stopped` (no retry).
 - Taps: a `pointerdown` on the page window sends the `tap { x, y, at }` notification (page CSS px, `at` = `performance.now()`), at most one per 50 ms, passive, never for events inside the overlay host. The tools page draws a ripple at the tap point.
+- Checkpoint across Bun's reload (round 2 R6): on `import.meta.hot.on("bun:beforeFullReload")` the bridge runs `game.bookmark` synchronously through the registry door and stores `{ v: 1, doc, at, frame, paused, bookmark }` in `sessionStorage["moku-editor:checkpoint"]`. On start it restores a stored checkpoint (`game.restore`, then `game.pause` when it was paused), removes it, and only then connects: its first hello carries `manifest.restored = { bookmark, frame }`. A checkpoint older than 30 s or malformed is dropped; a failed restore logs `bridge:restore-failed` and workspace's D-07 restore is the fallback.
 - Events: emits `bridge:status`. Logs: `bridge:connected` (info), `bridge:lost` (warn then debug), `bridge:disabled` (error), `bridge:connect-crashed`, `bridge:request-crashed` (error), others at debug.
 
 ~~~ts
@@ -1166,15 +1388,33 @@ export type BridgeConfig = {
 };
 
 /**
- * The bridge api (`app.bridge`).
- *
- * @example
- * ```ts
- * editor.bridge.status(); // { kind: "live", frame: 1840 }
- * ```
+ * The bridge api (`app.bridge`): the state of the dev link from the game page to the editor
+ * server. Both methods read state only.
  */
 export type BridgeApi = {
+  /**
+   * The link status: connecting before the socket opens, live or paused from the channel
+   * heartbeat while open, lost with the reason and the retry delay after a failure, lost
+   * "stopped" after stop. Never `silent` or `empty`: those are tools-side kinds.
+   *
+   * @returns A fresh LinkStatus.
+   * @example
+   * ```ts
+   * // A dev entry shows the editor link next to the fps counter.
+   * app.bridge.status(); // { kind: "connecting" } right after start, then { kind: "live", frame: 12 }
+   * ```
+   */
   status(): LinkStatus;
+  /**
+   * The session id the hub gave this page after its hello (R6).
+   *
+   * @returns The id, or undefined before it arrives and after the socket closes.
+   * @example
+   * ```ts
+   * // Wait for the editor server to accept the page.
+   * app.bridge.session(); // "s-7f3a" once the hub answered; undefined before and after stop
+   * ```
+   */
   session(): string | undefined;
 };
 ~~~
@@ -1287,19 +1527,113 @@ export type FilesWritten = {
  * ```
  */
 export type FilesApi = {
-  /** Direct children of a folder: folders first, then allowed files. */
+  /**
+   * Lists the direct children of a folder inside the project root.
+   *
+   * @param dir - Relative folder path; `""` or `"."` for the root.
+   * @returns Folders first, then allowed files, each sorted by path. `size` is 0 for folders.
+   * @throws {Error} -32004 `forbidden_path` when a sandbox rule refuses the path, -32601
+   * `unknown_id` when the folder is missing.
+   * @example
+   * ```ts
+   * // The files panel opens the `src/nodes` folder of the tree.
+   * await app.files.list("src/nodes"); // [{ path: "src/nodes/await-intent.ts", kind: "file", size: 812 }, …]
+   * ```
+   */
   list(dir: string): Promise<FileEntry[]>;
-  /** A UTF-8 text file and its sha1 version. */
+
+  /**
+   * Reads a regular file as UTF-8 (invalid bytes become U+FFFD) with its version: the lowercase
+   * hex sha1 of the bytes. Max 2 MiB.
+   *
+   * @param path - Relative file path.
+   * @returns `{ text, version }`.
+   * @throws {Error} -32004 `forbidden_path`, -32601 `unknown_id` when missing, -32000 over 2 MiB.
+   * @example
+   * ```ts
+   * // Load a style file before editing it; keep the version for the save.
+   * const { text, version } = await app.files.read("features/ui/styles.ts");
+   * ```
+   */
   read(path: string): Promise<FileText>;
-  /** Atomic text write with optional optimistic concurrency. */
+
+  /**
+   * Atomic text write. Missing parent folders are created inside the root. Emits `files:written`
+   * after the rename. Max 2 MiB.
+   *
+   * @param path - Relative file path.
+   * @param text - The new content.
+   * @param version - Optional version from the last read; a stale one fails with -32005.
+   * @returns `{ path, bytes, version }` of the written file.
+   * @throws {Error} -32004 `forbidden_path`, -32005 `version_conflict` when the file changed
+   * meanwhile, -32602 `invalid_input` (`field: "text"`) over 2 MiB.
+   * @example
+   * ```ts
+   * // Save the edited text only if nobody changed the file since it was read.
+   * const { version } = await app.files.read("features/ui/styles.ts");
+   * await app.files.write("features/ui/styles.ts", edited, version); // { path, bytes, version }
+   * ```
+   */
   write(path: string, text: string, version?: string): Promise<WriteResult>;
-  /** Atomic image write under `.moku/captures/`. */
+
+  /**
+   * Atomic image write, only under `.moku/captures/` and only for png, jpg, jpeg, webp and gif.
+   * Missing parent folders are created. Emits `files:written` with `kind: "capture"`. Max 16 MiB.
+   *
+   * @param path - Relative capture path.
+   * @param bytes - The image bytes (hub decodes them with `decodeDataUrl`).
+   * @returns `{ path, bytes, version }` of the written image.
+   * @throws {Error} -32004 `forbidden_path` outside `.moku/captures/` or without an image
+   * extension, -32602 `invalid_input` (`field: "data"`) over 16 MiB.
+   * @example
+   * ```ts
+   * // Store a board screenshot the capture panel took.
+   * await app.files.writeBinary(".moku/captures/2026-09-24-1012-board.png", bytes);
+   * ```
+   */
   writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
-  /** An image as a data URL with its version (R3). */
+
+  /**
+   * Reads an image back as a data URL with its version (R3). Emits nothing. Max 16 MiB.
+   *
+   * @param path - Relative image path.
+   * @returns `{ dataUrl, version }`.
+   * @throws {Error} -32004 `forbidden_path` without an image extension, -32601 `unknown_id` when
+   * missing, -32000 over 16 MiB.
+   * @example
+   * ```ts
+   * // Show a stored capture again.
+   * const { dataUrl } = await app.files.readBinary(".moku/captures/2026-09-24-1012-board.png");
+   * // dataUrl: "data:image/png;base64,…"
+   * ```
+   */
   readBinary(path: string): Promise<FileBinary>;
-  /** Full synchronous check; the absolute real path. */
+
+  /**
+   * Synchronous full sandbox check, as for a write. A missing file gives the path it would have.
+   *
+   * @param path - Relative file path.
+   * @returns The real absolute path.
+   * @throws {Error} -32004 `forbidden_path` when a sandbox rule refuses the path.
+   * @example
+   * ```ts
+   * // Turn a project path into the absolute path an "Open in editor" link needs.
+   * app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
+   * ```
+   */
   resolve(path: string): string;
-  /** The real project root (R3). */
+
+  /**
+   * The real, symlink-resolved project root (R3), for "Open in editor" links.
+   *
+   * @returns The absolute root.
+   * @example
+   * ```ts
+   * // pages puts the root into the tools boot JSON.
+   * const files = ctx.require(filesPlugin);
+   * const boot = { root: files.root() }; // { root: "/Users/alex/game" }
+   * ```
+   */
   root(): string;
 };
 ~~~
@@ -1311,6 +1645,7 @@ export type FilesApi = {
 - Guard modes: `upgrade` (Origin required), `same-origin` (Origin and Sec-Fetch-Site checked when present), `navigate`.
 - Session choice for a game request without `session`: one open session wins; with several, the only embedded one wins; else -32003.
 - Heartbeats (with a well-formed `heap` kept) and `tap { x, y, at }` notifications are forwarded to every tools connection with `session`. A malformed heartbeat, value or tap is one strike; ten strikes close with 1008.
+- `publish("hotReload", state)` (round 2 R6): sends the `editor` notification `hotReload` to every tools connection now, keeps the last value per method and replays it right after each tools hello. pages publishes from `attachServer` and after each `setHotReload`.
 - Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
 
 ~~~ts
@@ -1372,36 +1707,166 @@ export type EditorRoutes = Readonly<Record<string, Response | RouteHandler>>;
  *
  * @example
  * ```ts
- * Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+ * Bun.serve(app.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
  * ```
  */
 export type HubApi = {
-  /** Wraps Bun.serve options: 127.0.0.1 forced, editor routes and the websocket handler added. */
+  /**
+   * Wraps the game's `Bun.serve` options: `127.0.0.1` forced, then the game's routes, the routes
+   * from `addRoutes` and `{path}/ws` merged, and the websocket handler added. Without a game
+   * `fetch` the fallback answers 404. Unknown option keys pass through to Bun.
+   *
+   * @param options - The game's serve options.
+   * @returns Options ready for `Bun.serve`.
+   * @throws {Error} `[moku-editor] …` before start, on a second call, with a `websocket`, `unix` or
+   * `tls` option, with a hostname other than `127.0.0.1` / `localhost`, and with a game route
+   * under the editor path.
+   * @example
+   * ```ts
+   * // The game's dev server: one Bun.serve for the game and the editor, after await app.start().
+   * Bun.serve(app.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAsset }));
+   * ```
+   */
   serve(options: ServeOptions): BunServeOptions;
-  /** The token of this start. Throws before start and after stop. */
+
+  /**
+   * The token of this start: 32 random bytes, base64url, 43 characters. A new one on every
+   * start. Never logged.
+   *
+   * @returns The token.
+   * @throws {Error} `[moku-editor] hub.token() needs a started app.` before start and after stop.
+   * @example
+   * ```ts
+   * // pages puts the token into the tools boot JSON on every page request.
+   * const hub = ctx.require(hubPlugin);
+   * const token = hub.token(); // 43 characters, e.g. "Hk3…"
+   * ```
+   */
   token(): string;
-  /** Fresh SessionInfo list ordered by connectedAt. */
+
+  /**
+   * A fresh list of the open game sessions ordered by `connectedAt`. Heartbeat and the silent
+   * flag stay private; mutating the result does not change the next call.
+   *
+   * @returns The open sessions.
+   * @example
+   * ```ts
+   * // After the game page connected its bridge.
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+   * ```
+   */
   sessions(): SessionInfo[];
-  /** The `{path}/ws` upgrade handler. */
+
+  /**
+   * The `{path}/ws` upgrade handler; `serve` already mounts it. Checks the path (404), the start
+   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401) and the kind
+   * (400), then upgrades.
+   *
+   * @param req - The request.
+   * @param server - The Bun server.
+   * @returns `undefined` after an upgrade, else the plain-text refusal.
+   * @example
+   * ```ts
+   * // A game with its own Bun.serve mounts the upgrade itself.
+   * Bun.serve({
+   *   fetch: (req, server) => app.hub.fetch(req, server) ?? new Response("upgraded"),
+   *   websocket: app.hub.websocket
+   * });
+   * ```
+   */
   fetch(req: Request, server: HubServer): Response | undefined;
-  /** The one websocket handler. */
+
+  /**
+   * The one websocket handler of the server: 32 MiB frames, 60 s idle, no deflate.
+   *
+   * @example
+   * ```ts
+   * // A game's own Bun.serve passes the editor's handler on.
+   * Bun.serve({
+   *   fetch: (req, server) => app.hub.fetch(req, server) ?? new Response("upgraded"),
+   *   websocket: app.hub.websocket
+   * });
+   * ```
+   */
   readonly websocket: HubWebSocketHandler;
-  /** Registers editor routes (pages, in onInit), merged by serve (R3). */
+
+  /**
+   * Registers editor routes, merged by `serve` (R3). Call it in `onInit`. Keys are checked first,
+   * so a refused batch registers nothing.
+   *
+   * @param routes - Routes keyed by `path` or under `path + "/"`.
+   * @throws {Error} `[moku-editor] …` after `serve`, on a key registered before, on `{path}/ws`,
+   * and on a key outside the editor path.
+   * @example
+   * ```ts
+   * // pages registers its routes in onInit, before hub.serve() freezes them.
+   * const hub = ctx.require(hubPlugin);
+   * hub.addRoutes({ [`${hub.path()}/hello`]: helloRoute });
+   * ```
+   */
   addRoutes(routes: EditorRoutes): void;
-  /** The shared Host / Origin / Sec-Fetch-Site check (R3). */
+
+  /**
+   * The shared Host / Origin / Sec-Fetch-Site check (R3). `upgrade` requires an allowed Origin;
+   * `same-origin` and `navigate` check it when present; `same-origin` also wants Sec-Fetch-Site
+   * `same-origin` or `none` when present. The origin `null` never matches.
+   *
+   * @param req - The request.
+   * @param server - The Bun server (its port).
+   * @param mode - Which rules apply.
+   * @returns A 403 response, or `undefined` when allowed.
+   * @example
+   * ```ts
+   * // A pages route refuses a cross-site request before it answers.
+   * const refused = ctx.require(hubPlugin).guard(req, server, "same-origin");
+   * if (refused) return refused; // 403 "forbidden"
+   * ```
+   */
   guard(req: Request, server: HubServer, mode: GuardMode): Response | undefined;
-  /** config.path (R3). */
+
+  /**
+   * Sends server state to every tools page as the editor-channel notification `<method>` and
+   * keeps it: a tools page that connects later gets the last value right after its
+   * `sessions {list}`. Works before start too; the value waits for the first tools page.
+   *
+   * @param method - The state: `"hotReload"`.
+   * @param params - Its value.
+   * @example
+   * ```ts
+   * // pages tells every tools page whether Bun reloads the game page on a save.
+   * ctx.require(hubPlugin).publish("hotReload", { hmr: true, owner: "bin" });
+   * // each tools socket gets {"jsonrpc":"2.0","channel":"editor","method":"hotReload","params":{"hmr":true,"owner":"bin"}}
+   * ```
+   */
+  publish(method: PublishMethod, params: HotReload): void;
+
+  /**
+   * The editor path, `config.path` (R3).
+   *
+   * @returns The URL prefix of every editor route.
+   * @example
+   * ```ts
+   * // pages keys its routes under the hub path.
+   * ctx.require(hubPlugin).path(); // "/__editor"
+   * ```
+   */
   path(): string;
 };
+
+/**
+ * A method `publish` sends to the tools pages (R6).
+ */
+export type PublishMethod = "hotReload";
 ~~~
 
 ### 7.8 pages — server, Standard
 
 - depends: `[filesPlugin, hubPlugin]`. Lifecycle: `onInit` only (`initPages`: check config, find the built page, `hub.addRoutes`).
-- Routes (`P = hub.path()`): `P` → 308 to `P/`; `P/` → tools page with the boot tag (503 when not built or before start); `P/hello` → `HelloBody` JSON (same-origin); `P/assets/*` → hashed assets, immutable cache.
+- Routes (`P = hub.path()`): `P` → 308 to `P/`; `P/` → tools page with the boot tag (503 when not built or before start); `P/hello` → `HelloBody` JSON (same-origin); `P/hmr` → `HotReload` JSON on GET, a change on POST `{ hmr: boolean }` with `Authorization: Bearer <boot.token>` (200 when the state is the asked one afterwards, 409 otherwise, 401 without the token); `P/assets/*` → hashed assets, immutable cache.
+- Hot reload (D-23, round 2 R6): the bin serves with `development: { hmr: true, console: true }` (`--no-hmr`: `hmr: false`) and calls `attachServer(server, options)` right after `Bun.serve`. `hotReload()` is `{ hmr, owner }`, owner `"server"` with `hmr: false` until `attachServer`. Bun 1.3.14 cannot apply `development.hmr` on `server.reload` (spike in the pages README), so `setHotReload(on)` answers false unless `on` already is the state; restart the bin to change it.
 - Boot tag: `<script type="application/json" id="moku-editor-boot">` with `ToolsBoot` `{ v: 1, ws, token, path, title, editorUrl, gameUrl, root }`.
 - `PAGE_CSP` (exported from `routes.ts`): `default-src 'self'; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
-- Events: none. Log: `pages:not-built` (warn at init, error at first request).
+- Events: none. Logs: `pages:not-built` (warn at init, error at first request), `pages:hot-reload` (info, `attachServer`), `pages:hot-reload-read-only` (info, a refused change).
 
 ~~~ts
 /**
@@ -1428,21 +1893,87 @@ export type PagesConfig = {
  *
  * @example
  * ```ts
- * Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/assets/*"]
+ * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]
  * ```
  */
 export type PagesApi = {
-  /** The routes this plugin registered with the hub in onInit (the same frozen object). */
+  /**
+   * A copy of the routes this plugin registered with the hub in onInit, keyed by URL path under
+   * the hub path.
+   *
+   * @returns The five routes `P`, `P/`, `P/hello`, `P/hmr` and `P/assets/*`.
+   * @example
+   * ```ts
+   * // Check which editor URLs the server answers.
+   * Object.keys(app.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]
+   * ```
+   */
   routes(): EditorRoutes;
+  /**
+   * Tells pages that the moku-editor bin serves the game with these options: the bin owns hot
+   * reload from now on, HMR is read from `options.development`, and the state goes to every tools
+   * page through `hub.publish("hotReload", …)`. The bin calls it right after `Bun.serve`.
+   *
+   * @param server - The running server (Bun's Server).
+   * @param options - The options it was started with (the result of `hub.serve`).
+   * @example
+   * ```ts
+   * // The bin, after it started the game server.
+   * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
+   * const server = Bun.serve(options);
+   * editor.pages.attachServer(server, options);
+   * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  attachServer(server: AttachedServer, options: BunServeOptions): void;
+  /**
+   * The hot reload state: whether Bun reloads the game page on a source change, and who owns the
+   * server. A game's own `Bun.serve` (no `attachServer` call) is owner "server" with HMR off.
+   *
+   * @returns A fresh `{ hmr, owner }`.
+   * @example
+   * ```ts
+   * // A game's own dev server that never attached it.
+   * app.pages.hotReload(); // { hmr: false, owner: "server" }
+   * ```
+   */
+  hotReload(): HotReload;
+  /**
+   * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
+   * running server, so the switch is read-only: a game's own server always answers false, the
+   * bin answers true only when HMR already is `on`. Restart the bin to change hot reload.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is `on` afterwards.
+   * @example
+   * ```ts
+   * // The bin serves with HMR on.
+   * await editor.pages.setHotReload(true); // true: already on
+   * await editor.pages.setHotReload(false); // false: Bun keeps HMR on until the bin restarts
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
 };
 
 /**
- * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--help]`.
+ * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`.
  */
 export type BinArgs =
-  | { readonly kind: "run"; readonly html: string; readonly port: number; readonly root: string }
+  | {
+      readonly kind: "run";
+      readonly html: string;
+      readonly port: number;
+      readonly root: string;
+      /** False with `--no-hmr`: Bun serves the game without hot reload. */
+      readonly hmr: boolean;
+    }
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The server the bin attaches: Bun's Server is one.
+ */
+export type AttachedServer = { reload(options: BunServeOptions): void };
 ~~~
 
 ### 7.9 link — tools, Complex
@@ -1451,6 +1982,8 @@ export type BinArgs =
 - Session choice: sticky choice, then this page's own game frame (its `__editorFrame` id, `frameUrl`), then newest embedded, then newest. An embedded session of another tools tab is never picked on its own. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
 - A watch the session refuses with -32008 `not_installed` (the game does not have the source; the manifest lists it with `available: false`) is logged only at debug (`link:source-unavailable`) and never sent to that session again; a new session gets it again.
 - Taps: every `tap { x, y, at }` notification of the chosen session goes to the `onTap` listeners (frozen, at most one per 50 ms from the bridge). `heap()` is the `heap` of the chosen session's last heartbeat (Chromium only).
+- Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves true only when the server took it.
+- A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
 - Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
 ~~~ts
@@ -1505,7 +2038,9 @@ export type Config = {
 };
 
 /**
- * The files channel as the tools views use it (R1, R4).
+ * The files channel as the tools views use it (R1, R4). No session: it works without a game. Each
+ * method sends one files-channel request and checks the result shape. A bad shape rejects -32600;
+ * server errors (`version_conflict`, `forbidden_path` …) reject as wire errors.
  *
  * @example
  * ```ts
@@ -1514,37 +2049,302 @@ export type Config = {
  * ```
  */
 export type FilesClient = {
+  /**
+   * Lists a folder.
+   *
+   * @param dir - Folder path relative to the root ("" for the root).
+   * @returns The entries.
+   * @example
+   * ```ts
+   * // gameView lists the captures folder before it names a new capture.
+   * await app.link.files.list(".moku/captures");
+   * // [{ path: ".moku/captures/a.png", kind: "file", size: 3, version: "v" }]
+   * ```
+   */
   list(dir: string): Promise<readonly FileEntry[]>;
+
+  /**
+   * Reads a text file.
+   *
+   * @param path - File path relative to the root.
+   * @returns `{ text, version }`.
+   * @example
+   * ```ts
+   * // The files view opens a source tab.
+   * await app.link.files.read("src/a.ts"); // { text: "x", version: "v1" }
+   * ```
+   */
   read(path: string): Promise<FileText>;
+
+  /**
+   * Writes a text file. With `version`, the write is checked against the version the edit started
+   * from.
+   *
+   * @param path - File path relative to the root.
+   * @param text - The new content.
+   * @param version - The version the edit started from; omit to overwrite.
+   * @returns `{ path, bytes, version }`.
+   * @throws {Error} Rejects -32005 `version_conflict` when the file changed since `version`.
+   * @example
+   * ```ts
+   * // The files view saves a tab it read at version "v1".
+   * await app.link.files.write("a.md", "hi", "v1"); // { path: "a.md", bytes: 2, version: "v3" }
+   * ```
+   */
   write(path: string, text: string, version?: string): Promise<WriteResult>;
+
+  /**
+   * Writes an image from a data URL (R1).
+   *
+   * @param path - Image path relative to the root.
+   * @param dataUrl - `data:image/png;base64,…`.
+   * @returns `{ path, bytes, version }`.
+   * @example
+   * ```ts
+   * // gameView saves a capture of the game frame.
+   * await app.link.files.writeBinary(".moku/captures/a.png", "data:image/png;base64,iVBORw0KGgo=");
+   * // { path: ".moku/captures/a.png", bytes: 8, version: "v" }
+   * ```
+   */
   writeBinary(path: string, dataUrl: string): Promise<WriteResult>;
+
+  /**
+   * Reads an image back as a data URL (R1).
+   *
+   * @param path - Image path relative to the root.
+   * @returns `{ dataUrl, version }`.
+   * @example
+   * ```ts
+   * // The contact sheet shows a saved capture.
+   * await app.link.files.readBinary(".moku/captures/a.png");
+   * // { dataUrl: "data:image/png;base64,iVBORw0KGgo=", version: "v" }
+   * ```
+   */
   readBinary(path: string): Promise<FileBinary>;
 };
 
 /**
- * The link api: the remote EditorChannel plus sessions, manifest, boot and the files client.
+ * The link api (`app.link`): the remote EditorChannel plus sessions, manifest, boot and the files
+ * client. On link the channel members behave so:
+ *
+ * - `read` and `run` reject -32003 `no_session` (not retryable) at once when no game is connected.
+ * - `watch` is accepted in every state, also while disconnected, and is sent again after every
+ * reconnect or session change. The first value is the agent's immediate read.
+ * - `run` checks the RunResult shape; `editor.series` waits its `durationMs` on top of the call
+ * timeout (R1).
+ * - `status` returns a copy.
  *
  * @example
  * ```ts
+ * // Step the attached game by one frame.
  * const ran = await app.link.run("game.step", { frames: 1 }); // ran.state.frame === 1841
  * ```
  */
 export type LinkApi = EditorChannel & {
+  /**
+   * The cached manifest of the chosen session.
+   *
+   * @returns The manifest, undefined before one is attached.
+   * @example
+   * ```ts
+   * // Which game is attached?
+   * app.link.manifest()?.game; // "merge-game 0.0.0"
+   * ```
+   */
   manifest(): Manifest | undefined;
+
+  /**
+   * Listens to the manifest: called at once when one exists, then on every attach, and with
+   * undefined when the session is lost. A throwing listener is logged and does not stop the others.
+   *
+   * @param fn - The listener.
+   * @returns Unsubscribe.
+   * @example
+   * ```ts
+   * // Count the sources of whichever game is attached.
+   * const stop = app.link.onManifest(manifest => console.log(manifest?.sources.length)); // logs 2
+   * stop();
+   * ```
+   */
   onManifest(fn: (manifest: Manifest | undefined) => void): () => void;
+
+  /**
+   * The last session list from the hub (empty while disconnected).
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // The session chip lists the open games.
+   * app.link.sessions().map(session => session.id); // ["s-1"]
+   * ```
+   */
   sessions(): readonly SessionInfo[];
+
+  /**
+   * The chosen session id.
+   *
+   * @returns The id, undefined when none is chosen.
+   * @example
+   * ```ts
+   * app.link.session(); // "s-1"
+   * ```
+   */
   session(): string | undefined;
+
+  /**
+   * Makes a session the sticky choice and attaches it. Choosing the attached session only makes
+   * it sticky.
+   *
+   * @param session - An id from `sessions()`.
+   * @returns The manifest of the session.
+   * @throws {Error} Rejects -32003 `choose_session` (not retryable) for an id that is not open.
+   * @example
+   * ```ts
+   * // The user picks the second open game in the session chip.
+   * await app.link.choose("s-2"); // its manifest; app.link.session() is now "s-2"
+   * ```
+   */
   choose(session: string): Promise<Manifest>;
+
+  /**
+   * "Retry now": reconnects at once, re-picks a session when only the session was lost, or re-reads
+   * the boot tag after `no_boot`. A no-op unless lost, and after stop.
+   *
+   * @example
+   * ```ts
+   * // The status card shows "Lost · retry in 8s"; the user clicks Retry now.
+   * app.link.retry(); // reconnects without waiting for the backoff timer
+   * ```
+   */
   retry(): void;
+
+  /**
+   * The boot data of the tools page; its token is never to be logged.
+   *
+   * @returns The ToolsBoot, undefined when the tag was missing or invalid.
+   * @example
+   * ```ts
+   * // The game frame loads the game page from the boot data.
+   * app.link.boot()?.gameUrl; // "/"
+   * ```
+   */
   boot(): ToolsBoot | undefined;
-  /** The game URL tagged with this tools page's frame id (`__editorFrame`): each tab follows its own game. */
+
+  /**
+   * Tags a game page URL with the frame id of this tools page (the `__editorFrame` query
+   * parameter; one random id per tools page). workspace loads its game frame from the tagged URL,
+   * so the session of that frame is this page's own: the session choice prefers it and never
+   * picks the game frame of another tools tab on its own.
+   *
+   * @param url - The game page URL, absolute or relative to the tools page.
+   * @returns The absolute tagged URL; the URL unchanged when it does not parse.
+   * @example
+   * ```ts
+   * // workspace loads its game frame from the boot's game URL.
+   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/");
+   * // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
+   * ```
+   */
   frameUrl(url: string): string;
-  /** True when a page URL is the game frame of another tools tab (another frame id). */
+
+  /**
+   * True when a page URL (`Manifest.page`, `SessionInfo.page`) is the game frame of another tools
+   * tab: it carries a frame id that is not this page's. A page without a frame id is not.
+   *
+   * @param page - A page URL.
+   * @returns Whether the page belongs to another tools tab.
+   * @example
+   * ```ts
+   * // workspace's D-07 reload skips the manifest of a second tools tab's game.
+   * const link = ctx.require(linkPlugin);
+   * link.isOtherTab("http://127.0.0.1:3000/?__editorFrame=aaaaaaaaaaaa"); // true
+   * link.isOtherTab(link.frameUrl("http://127.0.0.1:3000/")); // false: this page's own frame
+   * ```
+   */
   isOtherTab(page: string): boolean;
-  /** Called with every tap of the chosen session; returns an idempotent unsubscribe. */
+
+  /**
+   * Listens to the taps of the attached game: every `pointerdown` on the game page, in page CSS
+   * px of the game document (device px of the frame) and the page's `performance.now()`. Taps of
+   * other sessions are dropped. The game page sends at most one tap per 50 ms. Each listener gets
+   * the same frozen tap; a throwing listener is logged and does not stop the others.
+   *
+   * @param listener - Called with each tap.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace draws a ripple where a click lands in the docked game frame.
+   * const stop = ctx.require(linkPlugin).onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
+   * stop();
+   * ```
+   */
   onTap(listener: (tap: Tap) => void): () => void;
-  /** The page heap of the chosen session's last heartbeat; undefined where it is not reported. */
+
+  /**
+   * The JS heap of the attached game page from its last heartbeat, in MB rounded to 0.1. Only
+   * Chromium reports it.
+   *
+   * @returns A copy of `{ usedMb, limitMb }`; undefined until the page reports one, when its last
+   * beat had none, and after a session change.
+   * @example
+   * ```ts
+   * // The Render view shows the heap tile on each game.render change.
+   * ctx.require(linkPlugin).heap(); // { usedMb: 12.8, limitMb: 4095.8 } in Chromium, undefined elsewhere
+   * ```
+   */
   heap(): { usedMb: number; limitMb: number } | undefined;
+
+  /**
+   * The hot reload state of the game server (R6): whether Bun reloads the game page on a source
+   * change, and who owns the server. The hub sends it after the socket opens and on each change.
+   *
+   * @returns A copy of `{ hmr, owner }`; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // The moku-editor bin serves the game with Bun HMR on.
+   * ctx.require(linkPlugin).hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  hotReload(): HotReload | undefined;
+  /**
+   * Listens to the hot reload state: called at once when it is known, then on each change. Each
+   * listener gets the same frozen state; a throwing listener is logged and does not stop the
+   * others.
+   *
+   * @param listener - Called with each state.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace shows the Hot reload switch as read-only for a game's own server.
+   * const stop = ctx.require(linkPlugin).onHotReload(state => show(state.hmr, state.owner === "bin"));
+   * stop();
+   * ```
+   */
+  onHotReload(listener: (state: HotReload) => void): () => void;
+  /**
+   * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
+   * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
+   * so a change answers false and the state stays; asking for the current value answers true.
+   * Never rejects: no boot, a refusal or a network failure answer false.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is `on` afterwards.
+   * @example
+   * ```ts
+   * // The bin serves with HMR on; the user flips the switch off.
+   * await ctx.require(linkPlugin).setHotReload(false); // false: restart the bin to change it
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
+  /**
+   * The files channel client.
+   *
+   * @example
+   * ```ts
+   * // Another plugin saves a file through link.
+   * await ctx.require(linkPlugin).files.read("src/a.ts"); // { text: "x", version: "v1" }
+   * ```
+   */
   files: FilesClient;
 };
 ~~~
@@ -1553,14 +2353,17 @@ export type LinkApi = EditorChannel & {
 
 - depends: `[linkPlugin]`. Lifecycle: `onInit` (config, prefs, theme, hash, keys, Esc layers, palette), `onStart` (window listeners, `link.onManifest`), `mount(el)` (renders the shell, creates the frame layer once), `onStop`.
 - Workspaces in rail order: Game (the default, ⌘1), Flow (⌘2), Render, State, Files, Console.
-- Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; Esc unwinds layers in `EscLayer` order.
+- Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; H hot reload; Esc unwinds layers in `EscLayer` order.
+- Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) logo, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference mode, Registry (icon only; counts in its title "Registry · 15 sources · 18 commands"), theme. Below 900 px (`compact`) logo, game name (hidden under 560 px), link pill (session id in its title; it opens the session menu), Pause, Step, a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Reference mode, Hot reload (each with its state and key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls. No two controls overlap at 480–1440 px (e2e/top-bar.spec.ts).
+- Hot reload switch: mirrors `link.hotReload()`. Owner `"bin"`: a click asks `setHotReload`; Bun cannot switch, so it toasts "Start the bin with --no-hmr to turn hot reload off" (or "…without --no-hmr to turn hot reload on") and keeps that hint in the title. Owner `"server"` or unknown: inert, the reason in the title.
 - Narrow first: built for Claude's browser pane at 1/3 (480 px) and 1/2 (720 px) of the screen; every workspace works at 480 px without horizontal page scroll.
 - Density: `auto` (default; compact below 820 px of window width, comfortable from there), `compact` or `comfortable`. Palette items "Density: …"; saved with the theme; `data-density` on `<html>`; `workspace:density` when the applied value changes.
 - Reference mode (D-27): key R, the top-bar target button, the palette or `setReference`. The frame takes no game input while it is on; gameView draws `data-moku-*` proxies at the element bounds. Never persisted; Esc turns it off.
 - Pinned preview: the header drags it (snaps to a corner); the body plays the game (taps and keys reach it); the size changes only through S/M/L.
 - Tap ripples: `link.onTap` draws a ring at the tap point over the docked frame while "Show taps in the game" is on.
-- Devices: iPhone SE, iPhone 15 (default, portrait), iPhone 15 Pro Max, Pixel 8, iPad mini, Desktop.
-- D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`.
+- Devices (round 2 R4, `devices()`): sixteen presets in `<optgroup>` groups. iPhone: SE 3 (`iphone-se`, 375×667, safe 20/0), 15 (`iphone-15`, default, 393×852, 59/34), 15 Pro Max (430×932, 59/34), 16 Pro (402×874, 62/34), 16 Pro Max (440×956, 62/34). Android (no insets): Galaxy S24 (360×780), Galaxy A55 (412×892), Redmi Note 13 (393×873, approx), Pixel 8 (412×915), Xperia 1 V 21:9 (411×960). Foldable: Galaxy Z Fold 6 (cover 369×905 ⇄ inner 707×823, approx), Galaxy Z Flip 6 (412×1005), Pixel 9 Pro Fold (cover 411×923 ⇄ inner 791×820, approx). Tablet: iPad mini 7 (744×1133), iPad Air 11" (820×1180). Desktop (1440×900). Each has `dpr`, `radius`, `group`; `approx: true` marks a computed size. `setDevice({ folded })` switches a foldable live (the game sees a resize); a new preset starts folded.
+- Dark theme bezel `--color-bezel: #2c2c34` with a 1 px `--border-strong` outline; the docked frame's clip-path is `inset(… round <radius>px)` in the frame's own px, on the stage and in the pinned preview.
+- D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`. With Bun hot reload on, `gameFrame().reload()` after a save first waits up to `hotReloadWaitMs` (1500) for the page Bun reloads: its hello with `manifest.restored` ends the run with the toast "Game reloaded · state restored" (no second reload, restore or pause); without `restored` workspace restores its bookmark; no new session in time → the frame reloads itself. A session with `restored` after an outside edit (an agent writing a file) toasts "Game reloaded · state restored" once.
 - Events: emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`.
 
 ~~~ts
@@ -1584,6 +2387,11 @@ export type WorkspaceConfig = {
   storageKey: string;
   /** How long reload() waits for the new session before giving up. */
   reloadTimeoutMs: number;
+  /**
+   * After a save with Bun hot reload on, how long `gameFrame().reload()` waits for the page Bun
+   * reloads before it reloads the frame itself.
+   */
+  hotReloadWaitMs: number;
   /** How long one toast stays (hover or focus pauses it). */
   toastMs: number;
 };
@@ -1594,7 +2402,7 @@ export type WorkspaceConfig = {
 export type Theme = "light" | "dark";
 
 /**
- * The applied density of the tools page.
+ * The applied density: compact (tighter spacing, smaller UI text) or comfortable.
  */
 export type Density = "compact" | "comfortable";
 
@@ -1614,9 +2422,10 @@ export type PreviewWorkspace = Exclude<WorkspaceId, "game">;
 export type PreviewState = PreviewPrefs & { width: number; height: number };
 
 /**
- * What device() returns (R4).
+ * What device() returns (R4): the preset as it shows now (an unfolded foldable carries its inner
+ * screen's size and radius), the orientation, and whether a foldable is folded (true = cover).
  */
-export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation };
+export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation; folded: boolean };
 
 /**
  * A rail badge.
@@ -1663,17 +2472,84 @@ export type RanEvent = {
 
 /**
  * The one game frame of the tools page (R4, D-14): it never moves in the DOM.
+ *
+ * @example
+ * ```ts
+ * // Reload the game page and put it back where it was.
+ * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+ * ```
  */
 export type GameFrame = {
-  /** Absolute URL of the game page (link.boot()?.gameUrl, else "/"). */
+  /**
+   * Absolute URL of the game page: `link.boot()?.gameUrl` resolved against the page, "/" without
+   * a boot.
+   *
+   * @example
+   * ```ts
+   * // On the tools page http://127.0.0.1:3000/__editor with the boot gameUrl "/".
+   * app.workspace.gameFrame().url; // "http://127.0.0.1:3000/"
+   * ```
+   */
   readonly url: string;
-  /** D-07 reload; concurrent calls share one run. */
+
+  /**
+   * The D-07 reload after a save: bookmark, reload in place, restore on the new session, toast.
+   * With Bun hot reload on, Bun reloads the page itself: the run waits up to `hotReloadWaitMs` for
+   * that session and reloads the frame only when none came; a session the bridge already restored
+   * (`manifest.restored`) is not restored or paused again. Concurrent calls share one run.
+   *
+   * @param opts - `restore: true` bookmarks first and restores after.
+   * @param opts.restore - Whether to bookmark and restore the game state.
+   * @returns The result; `{ restored: false, reason: "not_mounted" }` before the first mount.
+   * @example
+   * ```ts
+   * // The game code changed; reload it and keep the board.
+   * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+   * ```
+   */
   reload(opts?: { restore?: boolean }): Promise<ReloadResult>;
-  /** Docks the frame over a stage slot (geometry only); returns the release function. */
+
+  /**
+   * Docks the frame over a stage slot (geometry only).
+   *
+   * @param slot - The stage slot.
+   * @param opts - `fit` and an optional clip element.
+   * @param opts.fit - How the device fits the slot.
+   * @param opts.clip - The element that clips the frame.
+   * @returns The release function.
+   * @example
+   * ```ts
+   * // The Game workspace shows the game in its stage.
+   * const release = app.workspace.gameFrame().dock(stage, { fit: "fit" });
+   * app.workspace.gameFrame().box()?.docked; // "stage"
+   * release(); // box()?.docked is "hidden"
+   * ```
+   */
   dock(slot: HTMLElement, opts: { fit: FrameFit; clip?: HTMLElement }): () => void;
-  /** Element above the iframe in device space (game CSS px). */
+
+  /**
+   * The element above the iframe in device space (game CSS px, scaled with the frame). Its
+   * pointer-events are none by default.
+   *
+   * @returns The overlay element.
+   * @example
+   * ```ts
+   * // renderView draws its highlight boxes in game CSS px, wherever the frame is docked.
+   * ctx.require(workspacePlugin).gameFrame().overlay().append(document.createElement("div"));
+   * ```
+   */
   overlay(): HTMLElement;
-  /** Current frame box, undefined before the first mount. */
+
+  /**
+   * The current frame box in tools-page px.
+   *
+   * @returns A copy, undefined before the first mount.
+   * @example
+   * ```ts
+   * // The frame floats in a preview at half size.
+   * app.workspace.gameFrame().box()?.scale; // 0.5
+   * ```
+   */
   box(): FrameBox | undefined;
 };
 
@@ -1732,47 +2608,435 @@ export type EscLayer =
  *
  * @example
  * ```ts
+ * // Save a style, then show the game.
+ * app.workspace.toast("Saved", "src/styles.ts");
  * app.workspace.show("game");
- * app.workspace.setDensity("compact");
- * app.workspace.setReference(true); // the game gets no input; gameView draws its proxies
  * ```
  */
 export type WorkspaceApi = {
+  /**
+   * The shown workspace.
+   *
+   * @returns Its id.
+   * @example
+   * ```ts
+   * app.workspace.active(); // "game" with the default config
+   * ```
+   */
   active(): WorkspaceId;
+
+  /**
+   * Shows a workspace. Emits `workspace:changed` only when it changes, and writes `#<ws>` into the
+   * URL.
+   *
+   * @param ws - The workspace.
+   * @throws {Error} `[moku-editor] Unknown workspace "<ws>".` for another id.
+   * @example
+   * ```ts
+   * app.workspace.show("game"); // emits workspace:changed { ws: "game" }; location.hash is "#game"
+   * ```
+   */
   show(ws: WorkspaceId): void;
+
+  /**
+   * The effective theme: the chosen one, else the OS one.
+   *
+   * @returns light or dark.
+   * @example
+   * ```ts
+   * app.workspace.theme(); // "light" on a light OS with no choice made
+   * ```
+   */
   theme(): Theme;
+
+  /**
+   * Sets the theme, or toggles it when omitted; persists the choice and sets `data-theme`.
+   *
+   * @param theme - The theme, omitted to toggle.
+   * @example
+   * ```ts
+   * app.workspace.setTheme(); // light → dark
+   * app.workspace.theme(); // "dark"
+   * ```
+   */
   setTheme(theme?: Theme): void;
+
+  /**
+   * The applied density: `auto` resolves to compact below 820 px of window width.
+   *
+   * @returns compact or comfortable.
+   * @example
+   * ```ts
+   * // flowView spaces its layout by the density the shell shows.
+   * ctx.require(workspacePlugin).density(); // "compact" in a 720 px window with the default "auto"
+   * ```
+   */
   density(): Density;
+
+  /**
+   * Chooses the density, persists the choice and sets `data-density` on `<html>`. Emits
+   * `workspace:density` when the applied value changes.
+   *
+   * @param value - auto, compact or comfortable.
+   * @example
+   * ```ts
+   * app.workspace.setDensity("compact"); // emits workspace:density { density: "compact" } in a wide window
+   * app.workspace.density(); // "compact"
+   * ```
+   */
   setDensity(value: DensityChoice): void;
+
+  /**
+   * The preview state of a non-Game workspace.
+   *
+   * @param ws - The workspace.
+   * @returns The prefs plus the float size in px.
+   * @example
+   * ```ts
+   * app.workspace.preview("flow");
+   * // { visible: true, size: "S", corner: "bottom-right", width: 150, height: 280 }
+   * ```
+   */
   preview(ws: PreviewWorkspace): PreviewState;
+
+  /**
+   * Patches the preview prefs and persists them. A visibility change shows a toast.
+   *
+   * @param ws - The workspace.
+   * @param patch - visible, size and/or corner.
+   * @example
+   * ```ts
+   * app.workspace.setPreview("render", { visible: false });
+   * // toast: "Game preview hidden in Render · remembered for this workspace"
+   * ```
+   */
   setPreview(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>): void;
+
+  /**
+   * The current device: the preset as it shows now (an unfolded foldable carries its inner
+   * screen), the orientation and the folded flag.
+   *
+   * @returns The device choice.
+   * @example
+   * ```ts
+   * app.workspace.device(); // { preset: { id: "iphone-15", w: 393, h: 852, … }, orientation: "portrait", folded: true }
+   * ```
+   */
   device(): DeviceChoice;
-  setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation }): void;
+
+  /**
+   * Changes the preset, the orientation and/or the fold; the frame resizes live (the game sees a
+   * window resize, no reload); the choice persists and `onPrefs` listeners run. A new preset
+   * starts folded unless the patch says otherwise.
+   *
+   * @param patch - The preset, the orientation and/or the fold.
+   * @param patch.preset - A preset id.
+   * @param patch.orientation - portrait or landscape.
+   * @param patch.folded - true for the cover screen of a foldable, false for the inner one.
+   * @throws {Error} `[moku-editor] Unknown device "<id>".` for an unknown preset.
+   * @example
+   * ```ts
+   * // gameView's Fold button opens the Galaxy Z Fold 6.
+   * app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
+   * app.workspace.setDevice({ folded: false });
+   * app.workspace.device().preset.w; // 707: the inner screen
+   * ```
+   */
+  setDevice(patch: { preset?: DevicePresetId; orientation?: Orientation; folded?: boolean }): void;
+
+  /**
+   * The sixteen presets in display order: iPhone, Android, Foldable, Tablet, Desktop.
+   *
+   * @returns The DeviceSpec list.
+   * @example
+   * ```ts
+   * // gameView lists the presets of each group under its own <optgroup>.
+   * app.workspace.devices().filter(device => device.group === "foldable").map(device => device.id);
+   * // ["galaxy-z-fold-6", "galaxy-z-flip-6", "pixel-9-pro-fold"]
+   * ```
+   */
   devices(): readonly DeviceSpec[];
+
+  /**
+   * The single game frame.
+   *
+   * @returns The GameFrame api: one object for the app's life.
+   * @example
+   * ```ts
+   * app.workspace.gameFrame() === app.workspace.gameFrame(); // true
+   * ```
+   */
   gameFrame(): GameFrame;
+
+  /**
+   * The command palette.
+   *
+   * @example
+   * ```ts
+   * // A view adds its own command and opens the palette on it.
+   * app.workspace.palette.add({ id: "cmd:capture", group: "Commands", label: "Capture", run: () => {} });
+   * app.workspace.palette.open("capture");
+   * ```
+   */
   palette: {
+    /**
+     * Adds palette items; an existing id is replaced.
+     *
+     * @param item - One item or many.
+     * @returns Removes them.
+     * @example
+     * ```ts
+     * // flowView lists every node of the flow graph.
+     * const remove = app.workspace.palette.add({ id: "node:a", group: "Nodes", label: "a", run: () => {} });
+     * remove(); // the item leaves the palette
+     * ```
+     */
     add(item: PaletteItem | readonly PaletteItem[]): () => void;
+
+    /**
+     * Opens the palette.
+     *
+     * @param query - The initial query.
+     * @example
+     * ```ts
+     * app.workspace.palette.open("merge"); // the palette shows the matches of "merge"
+     * ```
+     */
     open(query?: string): void;
   };
+
+  /**
+   * Shows a toast; `file` renders in mono after a middle dot.
+   *
+   * @param message - One line.
+   * @param file - A file to name.
+   * @example
+   * ```ts
+   * app.workspace.toast("Saved", "src/styles.ts");
+   * ```
+   */
   toast(message: string, file?: string): void;
+
+  /**
+   * Mounts the shell. The first call also creates the frame layer and the iframe.
+   *
+   * @param element - The mount element.
+   * @example
+   * ```ts
+   * // The tools page entry mounts the shell after start.
+   * await app.start();
+   * app.workspace.mount(document.body);
+   * ```
+   */
   mount(element: HTMLElement): void;
+
+  /**
+   * The host element of a workspace: created on the first call, also before mount, and kept
+   * after it.
+   *
+   * @param ws - The workspace.
+   * @returns The host.
+   * @example
+   * ```ts
+   * // panels mounts the Flow panels into the Flow host.
+   * const unmount = app.panels.mountInto("flow", app.workspace.host("flow"));
+   * ```
+   */
   host(ws: WorkspaceId): HTMLElement;
+
+  /**
+   * Sets or clears the rail badge of a workspace.
+   *
+   * @param ws - The workspace.
+   * @param badge - The badge, undefined to clear.
+   * @example
+   * ```ts
+   * // The console counts 2 warnings and 1 error.
+   * app.workspace.badge("console", { count: 3, tone: "error", label: "2 warn · 1 error" });
+   * app.workspace.badge("console", undefined); // clears it
+   * ```
+   */
   badge(ws: WorkspaceId, badge: Badge | undefined): void;
+
+  /**
+   * Where the preview floats in a workspace. The remover drops the zone unless a newer zone
+   * replaced it.
+   *
+   * @param ws - The workspace.
+   * @param element - The zone element.
+   * @param insets - Insets in px, or a function that reads them.
+   * @returns Removes the zone.
+   * @example
+   * ```ts
+   * // The flow panel keeps the preview inside its canvas, clear of the 56 px bars.
+   * const remove = app.workspace.previewZone("flow", canvas, { top: 56, bottom: 56 });
+   * ```
+   */
   previewZone(
     ws: PreviewWorkspace,
     element: HTMLElement,
     insets?: Insets | (() => Insets)
   ): () => void;
+
+  /**
+   * The keyboard: bindings and Esc layers.
+   *
+   * @example
+   * ```ts
+   * // flowView binds "c" in Flow and closes its context menu on Esc.
+   * app.workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "flow", run: () => {} });
+   * app.workspace.keys.escape("contextMenu", () => true);
+   * ```
+   */
   keys: {
+    /**
+     * Adds a key binding. Two bindings of one scope may share a combo only when one of them has a
+     * `when` condition.
+     *
+     * @param binding - The binding.
+     * @returns Removes it.
+     * @throws {Error} `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash.
+     * @example
+     * ```ts
+     * // flowView: "c" shows where the game is while Flow is shown.
+     * const off = app.workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "flow", run: () => {} });
+     * off();
+     * ```
+     */
     bind(binding: KeyBinding): () => void;
+
+    /**
+     * Adds an Esc closer on a layer. Esc unwinds the open layers in rank order.
+     *
+     * @param layer - The layer.
+     * @param close - Returns true when it closed something.
+     * @returns Removes it.
+     * @example
+     * ```ts
+     * // The context menu closes on Esc before the registry popover does.
+     * const off = app.workspace.keys.escape("contextMenu", () => true);
+     * off();
+     * ```
+     */
     escape(layer: EscLayer, close: () => boolean): () => void;
   };
+
+  /**
+   * The overlay-in-game flag. Always false at load; never persisted.
+   *
+   * @returns Whether it is on.
+   * @example
+   * ```ts
+   * app.workspace.overlayInGame(); // false
+   * ```
+   */
   overlayInGame(): boolean;
+
+  /**
+   * Sets the overlay-in-game flag: runs `editor.overlay` with origin `panel`.
+   *
+   * @param on - The new flag.
+   * @returns Resolves when the run settled.
+   * @example
+   * ```ts
+   * await app.workspace.setOverlayInGame(true); // emits workspace:ran { id: "editor.overlay", … }
+   * app.workspace.overlayInGame(); // true
+   * ```
+   */
   setOverlayInGame(on: boolean): Promise<void>;
+
+  /**
+   * The Reference mode flag: while on, the frame overlay takes the pointer, so the game gets no
+   * input. Always false at load; never persisted.
+   *
+   * @returns Whether it is on.
+   * @example
+   * ```ts
+   * app.workspace.reference(); // false
+   * ```
+   */
   reference(): boolean;
+
+  /**
+   * Turns Reference mode on or off; emits `workspace:reference` when it changes. Esc turns it off.
+   *
+   * @param on - The new flag.
+   * @example
+   * ```ts
+   * app.workspace.setReference(true); // emits workspace:reference { on: true }
+   * app.workspace.reference(); // true
+   * ```
+   */
   setReference(on: boolean): void;
+
+  /**
+   * The hot reload state of the game server, as link reports it: whether Bun reloads the game
+   * page after a save, and who owns the server.
+   *
+   * @returns A copy of `{ hmr, owner }`; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // Under the moku-editor bin.
+   * app.workspace.hotReload(); // { hmr: true, owner: "bin" }
+   * ```
+   */
+  hotReload(): HotReload | undefined;
+
+  /**
+   * Asks the server for hot reload on or off (`link.setHotReload`). A refusal toasts how to
+   * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
+   *
+   * @param on - The asked value.
+   * @returns Whether hot reload is the asked value afterwards; never rejects.
+   * @example
+   * ```ts
+   * // Bun cannot switch HMR on a running bin.
+   * await app.workspace.setHotReload(false); // false; toast "Start the bin with --no-hmr to turn hot reload off"
+   * ```
+   */
+  setHotReload(on: boolean): Promise<boolean>;
+
+  /**
+   * Listens to preference changes (theme, preview, device). A throwing listener is logged and
+   * does not stop the others.
+   *
+   * @param fn - The listener.
+   * @returns Removes it.
+   * @example
+   * ```ts
+   * const off = app.workspace.onPrefs(prefs => console.log(prefs.theme));
+   * app.workspace.setTheme("dark"); // logs "dark"
+   * off();
+   * ```
+   */
   onPrefs(fn: (prefs: Prefs) => void): () => void;
 };
+
+/**
+ * The sixteen device presets (round 2 R4), in display order.
+ */
+export type DevicePresetId =
+  | "iphone-se"
+  | "iphone-15"
+  | "iphone-15-pro-max"
+  | "iphone-16-pro"
+  | "iphone-16-pro-max"
+  | "galaxy-s24"
+  | "galaxy-a55"
+  | "redmi-note-13"
+  | "pixel-8"
+  | "xperia-1-v"
+  | "galaxy-z-fold-6"
+  | "galaxy-z-flip-6"
+  | "pixel-9-pro-fold"
+  | "ipad-mini"
+  | "ipad-air-11"
+  | "desktop";
+
+/**
+ * Device orientation.
+ */
+export type Orientation = "portrait" | "landscape";
 ~~~
 
 ### 7.11 panels — tools, Standard
@@ -1802,7 +3066,7 @@ export type PanelTools<C> = {
   run: { readonly [K in keyof C]: (...input: CommandArgs<C[K]>) => Promise<RunResult> };
   /** Snapshot at this render; the view re-renders on change. */
   status: LinkStatus;
-  /** link's remote channel, for ad hoc reads. */
+  /** link's remote channel, for ad hoc reads; its `run` is reported as `workspace:ran` (origin panel). */
   channel: EditorChannel;
   /** link.files (R4). */
   files: FilesClient;
@@ -1867,18 +3131,67 @@ export type PanelRunOrigin = "panel" | "key" | "palette";
  *
  * @example
  * ```ts
- * panels.register(flowPanel);
- * await panels.run("game.step", { frames: 1 });
+ * // A view registers its panel at init, then runs commands from its handlers.
+ * ctx.require(panelsPlugin).register(createFlowPanel(ctx));
+ * await ctx.require(panelsPlugin).run("game.step", { frames: 1 });
  * ```
  */
 export type PanelsApi = {
-  /** Registers a panel built with definePanel; throws on a duplicate id. */
+  /**
+   * Registers a panel built with definePanel. After start, a panel of an already mounted
+   * workspace is mounted at once and gets a palette item (group Panels).
+   *
+   * @param panel - The PanelSpec.
+   * @throws {Error} `[moku-editor] Panel "<id>" is already registered.` for a duplicate id.
+   * @example
+   * ```ts
+   * // flowView registers its panel when it starts.
+   * ctx.require(panelsPlugin).register(createFlowPanel(ctx));
+   * ```
+   */
   register(panel: PanelSpec): void;
-  /** Runs a command outside any render: link.run, then workspace:ran with the origin (R9). */
+
+  /**
+   * Runs a registry command outside any render (R9): link.run, then the global `workspace:ran`
+   * with the origin. A rejection emits `workspace:ran` with `ok: false` and still rejects.
+   *
+   * @param id - Command id.
+   * @param input - Command input.
+   * @param origin - Where the run started; default "panel".
+   * @returns The RunResult; rejects like link.run.
+   * @example
+   * ```ts
+   * await app.panels.run("game.step", { frames: 1 });
+   * // { value: null, state: { path: "board/awaitIntent", frame: 1841, tainted: false } }
+   * ```
+   */
   run(id: string, input?: Json, origin?: PanelRunOrigin): Promise<RunResult>;
-  /** Every registered panel, in registration order. */
+
+  /**
+   * Every registered panel, in registration order.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // After flowView and stateView registered their panels.
+   * app.panels.list().map(panel => panel.id); // ["flow", "state"]
+   * ```
+   */
   list(): readonly PanelSpec[];
-  /** Mounts every panel of a workspace into an element; returns the unmount function. */
+
+  /**
+   * Mounts every panel of a workspace into an element, one `<section data-panel>` each, in
+   * registration order. Idempotent for the same element; another element moves the mount.
+   *
+   * @param ws - The workspace.
+   * @param element - The element, usually `workspace.host(ws)`.
+   * @returns The unmount function: removes every section and unwatches.
+   * @example
+   * ```ts
+   * const unmount = app.panels.mountInto("flow", app.workspace.host("flow"));
+   * unmount(); // the sections are gone
+   * ```
+   */
   mountInto(ws: WorkspaceId, element: HTMLElement): () => void;
 };
 ~~~
@@ -1889,6 +3202,7 @@ export type PanelsApi = {
 - Runs commands only through `panels.run`; never `link.run`.
 - The Info tab is the one place for a node's neighbours (D-25; the neighbours strip is gone). A click on a *Comes from* or *Outcomes* row follows its edge (`focus.followEdge`): the other end is selected, the camera frames both ends, a 600 ms pulse plays on the reached node, Back (Alt+←) returns. The current node is never dimmed.
 - Find current (key `c`, the toolbar button): the camera moves onto the current node with a pulse; a chevron points to it while it is out of view.
+- Items holding the current node (round 2 R5): a collapsed sub-flow, slot or hub with the current node inside, an expanded frame around it, or a node on the position stack is never dimmed; it gets `data-holds-current` (the accent ring) and a "here" tag; the trail edge into it is drawn 2 px accent (`data-here`).
 - Density: ELK spacing follows `workspace:density` (comfortable 120 / 20, compact 96 / 14), edge labels take their own layer so they never overlap.
 - A `workspace:select-node` that shows Flow for the first time is framed by the first canvas measure, not the current node.
 - Notes are gone: no `notes` namespace, no `notesDir`, no `workspace:new-note`.
@@ -2260,7 +3574,10 @@ export type LayoutApi = {
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active; Reference mode on when workspace has it on), `onStop`.
 - Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown or Reference mode is on. Runs `editor.*` commands through `panels.run`. Never captures on its own.
 - Calibration: reads `{ key }` of one keyed ui node from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1). A manifest with neither: no read, no warn, and the picker hint says "This game reports no element rects".
-- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-bounds`. The Element tab's "Copy reference" copies one line, e.g. `@moku coinPill · row · board/awaitIntent · src/hud/Hud.tsx:2 · 235,74 290×76`.
+- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. A click (`pointerup`) on a proxy is a pick.
+- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<capturesDir>/<key>-f<frame>.png` and `<capturesDir>/f<frame>.png`, then the reference block on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out). Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
+- The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. The Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) copies it. A key built in a loop (`card${slot}` for `card0`) resolves to its template literal line with ` (loop)`.
+- Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1).
 - The Element panel is a `SidePanel` (panels/shared/side-panel). Notes and the attach api are gone (no `attach`, `notes`, `notesDir`, `workspace:new-note`).
 - Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
 
@@ -2342,7 +3659,9 @@ export type SeriesResult = {
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
-   * workspace, the Element tab and the hint pill; off clears the hover box.
+   * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
+   * element bookmarks the game, saves the crop and the full frame under `capturesDir` and puts
+   * the reference block on the clipboard (see `copyReference`).
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -2452,8 +3771,8 @@ export type GameViewApi = {
 
   /**
    * One screenshot: runs `editor.capture` through panels (R9), writes the PNG under
-   * `capturesDir`, toasts, shows the capture card and the shutter flash. Never captures on its
-   * own: only a user action or this call does.
+   * `capturesDir`, puts `shot: <path>` on the clipboard, toasts, shows the capture card and the
+   * shutter flash. Never captures on its own: only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
@@ -2467,8 +3786,8 @@ export type GameViewApi = {
 
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
-   * new `series-<stamp>/` folder, then opens the contact sheet. Shows Game first. Refuses while
-   * another series runs.
+   * new `series-<stamp>/` folder, puts `series: <folder> (<n> frames)` on the clipboard, then
+   * opens the contact sheet. Shows Game first. Refuses while another series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -2514,6 +3833,74 @@ export type GameViewApi = {
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
+
+  /**
+   * Builds the reference block of the selected element, writes it to the clipboard and returns
+   * it. The block names the element for the chat, one fact per line, in a fixed order: `@moku`
+   * head, `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a
+   * pick of this element `restore` and `shot`. A line or a field that is not known is left out. A
+   * clipboard that refuses is toasted; the block is returned all the same.
+   *
+   * @returns The block, undefined when nothing is selected or the selection is not in the scene.
+   * @example
+   * ```ts
+   * // The developer picked the settings board and asks Claude to move it.
+   * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
+   * const block = await app.gameView.copyReference();
+   * block?.split("\n")[0]; // "@moku settingsBoard · panel · settingsPopup/open · f1841"
+   * ```
+   */
+  copyReference(): Promise<string | undefined>;
+
+  /**
+   * Folds or unfolds a foldable preset (its `fold` screens): the frame switches between the cover
+   * and the inner screen live, the game sees a resize and the picker calibrates again. Without an
+   * argument it toggles. Does nothing for a preset without `fold`.
+   *
+   * @param inner - true for the inner (unfolded) screen, false for the cover; omitted toggles.
+   * @example
+   * ```ts
+   * // Check the board on the open Galaxy Z Fold 6.
+   * app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
+   * app.gameView.fold(true); // app.workspace.device().preset.w === 707
+   * ```
+   */
+  fold(inner?: boolean): void;
+
+  /**
+   * The bookmarks of the completed picks, newest first, at most 20. `game.restore` takes a
+   * `value` back to the state of its pick.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // The block said "restore: bookmark settingsBoard-f1841": go back there.
+   * const bookmark = app.gameView.bookmarks().find(entry => entry.id === "settingsBoard-f1841");
+   * if (bookmark) await app.panels.run("game.restore", { bookmark: bookmark.value });
+   * ```
+   */
+  bookmarks(): readonly PickBookmark[];
+};
+
+/**
+ * The bookmark a completed pick took (`game.bookmark`), kept in gameView state, newest first, at
+ * most 20. `value` is what `game.restore { bookmark }` takes back.
+ *
+ * @example
+ * ```ts
+ * const bookmark: PickBookmark = { id: "settingsBoard-f1841", frame: 1841, key: "settingsBoard", at: 1_790_000_000_000, value: { path: "settingsPopup/open" } };
+ * ```
+ */
+export type PickBookmark = {
+  /** `<key>-f<frame>`, with `-2`, `-3` … when taken; the `restore:` line prints it. */
+  readonly id: string;
+  /** The frame of the rest point the bookmark holds. */
+  readonly frame: number;
+  /** The ui key of the picked element, else its name. */
+  readonly key: string;
+  /** Date.now() when it was taken. */
+  readonly at: number;
+  readonly value: Json;
 };
 ~~~
 
@@ -3750,6 +5137,7 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
 | hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
+| hub → tools | editor | notification | `hotReload` | `HotReload` (`{ hmr, owner }`; replayed after each tools hello) | — |
 | hub → tools | game | notification | `heartbeat`, `value`, `tap` | forwarded, with `session` | — |
 
 A `read` or `watch` of a source listed with `available: false` answers -32008 `not_installed`. Fan-out: one agent-side watch per `(session, source, input)` (object keys sorted). Backpressure: congested tools connections coalesce values to the latest per `sub` and drop heartbeats and taps; the bridge backlogs values above 1 MiB buffered and flushes below 256 KiB.

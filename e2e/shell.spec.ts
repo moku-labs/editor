@@ -1,10 +1,23 @@
 /**
  * @file The shell of the tools page: top bar, rail and URL hash (Game first and the default,
  * ⌘1), command palette, toasts, status card, the pinned preview dock (corners, drag, sizes S/M/L)
- * and the theme, persisted across a reload.
+ * and the theme, persisted across a reload. The top bar has two layouts (round 2 R1): from 900 px
+ * its switches and buttons show, below 900 px they are rows of the ⋯ menu; the helpers of
+ * e2e/top-bar.ts find a control in either place. The link pill turns Live again after the game
+ * resumes itself (R8).
  */
-import type { Page } from "@playwright/test";
+import type { Frame, Page } from "@playwright/test";
 import { expect, GAME_NAME, openTools, TOOLS_PATH, test, WORKSPACES, waitLive } from "./fixtures";
+import {
+  barChecked,
+  barControl,
+  closeMore,
+  flipBarToggle,
+  isCompact,
+  moreMenu,
+  showPreview,
+  topBar
+} from "./top-bar";
 
 /**
  * Holds the game page request until `release()`, so the tools page boots with no game.
@@ -36,18 +49,43 @@ async function pillFrame(page: Page): Promise<number> {
   return match === null ? -1 : Number(match[1]);
 }
 
+/**
+ * The game page frame.
+ *
+ * @param page - The test page.
+ * @returns The frame.
+ */
+function gameFrame(page: Page): Frame {
+  const frame = page.frames().find(f => f !== page.mainFrame() && !f.url().includes("/__editor/"));
+  if (frame === undefined) throw new Error("no game frame");
+  return frame;
+}
+
 test.describe("top bar", () => {
   test("shows the game, the session, a live link and the registry counts", async ({ tools }) => {
-    const bar = tools.page.locator("[data-ui=top-bar]");
+    const page = tools.page;
+    const bar = topBar(page);
     await expect(bar.locator("[data-game-name]")).toHaveText(GAME_NAME);
-    await expect(bar.locator("[data-ui=session-chip] button")).toHaveText(/^s-[0-9a-f]{4}$/);
     await expect(bar.locator("[data-ui=link-pill] [data-text]")).toHaveText(/^Live · f\d+$/);
-    await expect(bar.locator("[data-action=registry] [data-counts]")).toHaveText("15 · 18");
     await expect(bar.locator("[data-action=step]")).toHaveAttribute("aria-disabled", "true");
-    await expect(bar.getByRole("switch", { name: "Game", exact: true })).toHaveAttribute(
-      "aria-checked",
-      "true"
-    );
+    if (await isCompact(page)) {
+      // Compact: the session is in the pill's tooltip, the counts in the ⋯ menu's Registry row.
+      await expect(bar.locator("[data-ui=session-chip]")).toHaveCount(0);
+      await expect(bar.locator("[data-ui=link-pill]")).toHaveAttribute(
+        "title",
+        /session s-[0-9a-f]{4}/
+      );
+      const registry = await barControl(page, "registry");
+      await expect(registry.locator("[data-part=state]")).toHaveText("15 · 18");
+      await closeMore(page);
+    } else {
+      await expect(bar.locator("[data-ui=session-chip] button")).toHaveText(/^s-[0-9a-f]{4}$/);
+      await expect(bar.locator("[data-action=registry]")).toHaveAttribute(
+        "title",
+        "Registry · 15 sources · 18 commands"
+      );
+    }
+    expect(await barChecked(page, "game")).toBe(true);
   });
 
   test("pause, step one frame, resume", async ({ tools }) => {
@@ -69,29 +107,64 @@ test.describe("top bar", () => {
   });
 
   test("registry popover opens and closes", async ({ tools }) => {
-    const button = tools.page.locator("[data-ui=top-bar] [data-action=registry]");
-    const popover = tools.page.locator("[data-ui=registry-popover]");
-    await button.click();
+    const page = tools.page;
+    const popover = page.locator("[data-ui=registry-popover]");
+    const compact = await isCompact(page);
+    const registry = await barControl(page, "registry");
+    await registry.click();
     await expect(popover).toBeVisible();
     await expect(popover).not.toBeEmpty();
-    await button.click();
+    if (compact) {
+      // Opened from the ⋯ menu: Esc closes it.
+      await expect(moreMenu(page)).toBeHidden();
+      await page.keyboard.press("Escape");
+    } else {
+      await topBar(page).locator("[data-action=registry]").click();
+    }
     await expect(popover).toBeHidden();
   });
 
   test("overlay in game switch toggles and tells it in a toast", async ({ tools }) => {
     const page = tools.page;
-    const overlay = page.getByRole("switch", { name: "Overlay in game" }).first();
-    await expect(overlay).toHaveAttribute("aria-disabled", "false");
-    await overlay.click();
-    await expect(overlay).toHaveAttribute("aria-checked", "true");
+    const control = await barControl(page, "overlay");
+    await expect(control).toHaveAttribute("aria-disabled", "false");
+    await closeMore(page);
+    await flipBarToggle(page, "overlay");
+    await expect.poll(() => barChecked(page, "overlay")).toBe(true);
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toContainText(
       "Overlay in game on"
     );
-    await overlay.click();
-    await expect(overlay).toHaveAttribute("aria-checked", "false");
+    await flipBarToggle(page, "overlay");
+    await expect.poll(() => barChecked(page, "overlay")).toBe(false);
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toContainText(
       "Overlay in game off"
     );
+  });
+
+  test("the link pill turns Live within one heartbeat after the game resumes itself (R8)", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    const pill = page.locator("[data-ui=link-pill]");
+    await topBar(page).locator("[data-action=pause]").click();
+    await expect(pill).toHaveAttribute("data-kind", "paused");
+    await expect(pill.locator("[data-text]")).toHaveText(/^Paused · f\d+$/);
+    const before = await pillFrame(page);
+
+    // The game page resumes through its own door (game.resume of its registry), not the editor.
+    await gameFrame(page).evaluate(async () => {
+      const registry = (
+        Reflect.get(globalThis, "editor") as {
+          registry: { command(id: string): { run(input: object): Promise<unknown> } };
+        }
+      ).registry;
+      await registry.command("game.resume").run({});
+    });
+    // One heartbeat is 1000 ms (channel.heartbeatMs).
+    await expect(pill).toHaveAttribute("data-kind", "live", { timeout: 1500 });
+    await expect(pill.locator("[data-text]")).toHaveText(/^Live · f\d+$/);
+    await expect.poll(() => pillFrame(page)).toBeGreaterThan(before);
+    await expect(topBar(page).locator("[data-action=pause]")).toHaveText("Pause");
   });
 });
 
@@ -231,11 +304,10 @@ test.describe("preview dock", () => {
     const page = tools.page;
     const preview = page.locator("[data-ui=preview]");
     const toasts = page.locator("[data-ui=toasts] [data-toast]");
-    const gameSwitch = page.getByRole("switch", { name: "Game", exact: true });
 
     await preview.getByRole("button", { name: "Hide the game preview" }).click();
     await expect(preview).toBeHidden();
-    await expect(gameSwitch).toHaveAttribute("aria-checked", "false");
+    expect(await barChecked(page, "game")).toBe(false);
     await expect(toasts.last()).toHaveText(
       "Game preview hidden in Console · remembered for this workspace"
     );
@@ -245,7 +317,7 @@ test.describe("preview dock", () => {
     await tools.show("console");
     await expect(preview).toBeHidden();
 
-    await gameSwitch.click();
+    await flipBarToggle(page, "game");
     await expect(preview).toBeVisible();
     await expect(toasts.last()).toHaveText(
       "Game preview shown in Console · remembered for this workspace"
@@ -366,12 +438,14 @@ test.describe("theme", () => {
   test("the toggle switches the theme and a reload keeps it", async ({ tools }) => {
     const page = tools.page;
     const root = page.locator("html");
-    const button = page.locator("[data-ui=top-bar] [data-action=theme]");
-    await expect(button).toHaveAttribute("title", "Theme: light");
+    // The theme button of the wide bar, or the Theme row of the ⋯ menu below 900 px.
+    const theme = await barControl(page, "theme");
+    await expect(theme).toHaveAttribute("title", "Theme: light");
 
-    await button.click();
+    await theme.click();
     await expect(root).toHaveAttribute("data-theme", "light");
-    await expect(button).toHaveAttribute("title", "Theme: dark");
+    await expect(await barControl(page, "theme")).toHaveAttribute("title", "Theme: dark");
+    await closeMore(page);
     const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -381,8 +455,10 @@ test.describe("theme", () => {
       background
     );
 
-    await page.locator("[data-ui=top-bar] [data-action=theme]").click();
+    const again = await barControl(page, "theme");
+    await again.click();
     await expect(root).toHaveAttribute("data-theme", "dark");
+    await closeMore(page);
   });
 });
 
@@ -397,9 +473,7 @@ test("the tools page title and a fresh load land on Game, ⌘1 in the rail", asy
   // The preview's Open button (Render shows the preview) names the key of Game.
   await page.locator("[data-ui=rail] button[data-workspace=render]").click();
   await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
-  if (await page.locator("[data-ui=preview]").isHidden()) {
-    await page.getByRole("switch", { name: "Game", exact: true }).click();
-  }
+  await showPreview(page);
   await expect(page.locator('[data-ui=preview] button[aria-label="Open in Game"]')).toHaveAttribute(
     "title",
     "Open in Game (⌘1)"
