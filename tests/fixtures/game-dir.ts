@@ -5,14 +5,15 @@
  * - `MOKU_GAME_DIR` when it is set: an absolute path, or a path relative to the repository root;
  * - otherwise `<repo root>/../game-fixture`.
  *
- * `../game-fixture` is a detached worktree of the game repository, pinned to `v0.1.0`. Its
- * `@moku-labs/game` imports resolve to the dev dependency in package.json (now 0.4.3, through the
- * aliases of vitest.config.ts), so the v0.1.0 merge game runs on the 0.4 engine. The live sibling
- * `../game` may hold work in progress that breaks the fixture, so the tests never read it. Create
- * the worktree once, with its dependencies (the bin test bundles the fixture page with Bun):
+ * `../game-fixture` is a detached worktree of the game repository, pinned to `v0.4.3`: the tag of
+ * the `@moku-labs/game` dev dependency in package.json. Its `@moku-labs/game` imports resolve to
+ * that dev dependency (through the aliases of vitest.config.ts), so the merge game runs on the
+ * engine it was released with. The live sibling `../game` may hold work in progress that breaks
+ * the fixture, so the tests never read it. Create the worktree once, with its dependencies (the
+ * bin test bundles the fixture page with Bun):
  *
  * ```sh
- * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.1.0
+ * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.3
  * bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
  * ```
  *

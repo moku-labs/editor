@@ -84,7 +84,7 @@ describe("ElementTab", () => {
     );
     expect(
       findAll(view.root, "[data-part='children'] button").map(chip => chip.textContent)
-    ).toEqual(["coinPillIcon", "coins"]);
+    ).toEqual(["coinPillIcon", "coinPillText"]);
 
     click(button(view.root, "Show in render tree"));
     expect(ctx.emit).toHaveBeenCalledWith("workspace:reveal", {

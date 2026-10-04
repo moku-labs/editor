@@ -464,12 +464,10 @@ describe("scene on the live board (board/awaitIntent)", () => {
   it("lists unplaced entities with rect undefined: the hud root, Text-only entities", () => {
     const scene = sceneOf(board);
     const hud = entityNode(scene, board, "hud", "hud");
-    const coins = entityNode(scene, board, "hud.coins", "coins");
     const count = entityNode(scene, board, "board.badges", "sawmill.count");
 
     expect(scene.roots).toEqual(["ui:boardScreen", hud.id]);
     expect(hud).toMatchObject({ type: "Container", parent: undefined, rect: undefined });
-    expect(coins).toMatchObject({ parent: "ui:boardScreen/hudRow/coinPill", rect: undefined });
     expect(count.rect).toBeUndefined();
     expect(count.entity?.components).toContain("Text");
   });

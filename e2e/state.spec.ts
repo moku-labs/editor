@@ -134,9 +134,9 @@ async function gamePath(page: Page): Promise<string> {
  */
 async function tapGame(page: Page, key: string, fx = 0.5, fy = 0.5): Promise<void> {
   await expect
-    .poll(async () => (await readSource<Rect | null>(page, "game.rect", { key })) !== null)
+    .poll(async () => (await readSource<Rect | null>(page, "game.locate", { key })) !== null)
     .toBe(true);
-  const rect = await readSource<Rect>(page, "game.rect", { key });
+  const rect = await readSource<Rect>(page, "game.locate", { key });
   const box = await page.locator("iframe").first().boundingBox();
   if (box === null) throw new Error("no iframe box");
   const scale = box.width / (await gameFrame(page).evaluate(() => innerWidth));

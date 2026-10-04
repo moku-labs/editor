@@ -29,7 +29,7 @@ const MANIFEST_AWAY = path.join(GAME_ROOT, "manifest.e2e-away.json");
 /** A rect in px. */
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
-/** `game.render` of game 0.1.0 in a dev build. */
+/** `game.render` of game 0.4.3 in a dev build. */
 type RenderStats = {
   readonly fps: number;
   readonly frameMs: number;
@@ -481,7 +481,7 @@ test.describe("render · tiles", () => {
       })
       .toBe("ok");
 
-    // Scene: the display objects and pools of game.render, effects from game.effects (game 0.1.0).
+    // Scene: the display objects and pools of game.render, effects from game.effects (game 0.4.3).
     await expect
       .poll(async () => {
         const stats = await readSource<RenderStats>(page, "game.render");
@@ -607,7 +607,7 @@ test.describe("render · tree", () => {
     await expect(row).toHaveAttribute("aria-selected", "true");
 
     const detail = row.locator("[data-detail]");
-    const rect = await readSource<Rect>(page, "game.rect", { key });
+    const rect = await readSource<Rect>(page, "game.locate", { key });
     await expect(detail.locator("dt", { hasText: "Path" }).locator("+ dd")).toHaveText(
       new RegExp(`(^|/)${key}$`)
     );
@@ -637,7 +637,7 @@ test.describe("render · tree", () => {
     await expect
       .poll(async () => {
         const box = await pinkBox(page).boundingBox();
-        const expected = await toClient(page, await readSource<Rect>(page, "game.rect", { key }));
+        const expected = await toClient(page, await readSource<Rect>(page, "game.locate", { key }));
         return box === null ? 99 : offBy(box, expected);
       })
       .toBeLessThan(1.5);
@@ -768,7 +768,7 @@ test.describe("render · textures, bundles, pools, release log", () => {
     await expect
       .poll(async () => {
         const box = await pinkBox(page).boundingBox();
-        const expected = await toClient(page, await readSource<Rect>(page, "game.rect", { key }));
+        const expected = await toClient(page, await readSource<Rect>(page, "game.locate", { key }));
         return box === null ? 99 : offBy(box, expected);
       })
       .toBeLessThan(1.5);

@@ -175,7 +175,7 @@ async function settledRect(page: Page, key: string): Promise<Rect> {
   let last = "";
   await expect
     .poll(async () => {
-      const now = JSON.stringify(await readSource<Rect | null>(page, "game.rect", { key }));
+      const now = JSON.stringify(await readSource<Rect | null>(page, "game.locate", { key }));
       const still = now === last && now !== "null";
       last = now;
       return still;

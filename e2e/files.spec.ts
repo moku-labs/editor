@@ -460,7 +460,7 @@ async function tapGame(page: Page, key: string): Promise<void> {
           };
         }
       ).registry;
-      return registry.source("game.rect").read({ key: uiKey });
+      return registry.source("game.locate").read({ key: uiKey });
     }, key);
   await expect.poll(async () => (await readRect()) !== null).toBe(true);
   const rect = await readRect();

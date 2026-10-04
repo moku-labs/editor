@@ -265,7 +265,7 @@ describe("buildScene: ui nodes", () => {
     expect(scene.frame).toBe(1841);
     expect(scene.calibrated).toBe(false);
     expect(scene.entityCount).toBe(104);
-    expect([...scene.nodes.values()].filter(node => node.ref.kind === "ui")).toHaveLength(71);
+    expect([...scene.nodes.values()].filter(node => node.ref.kind === "ui")).toHaveLength(72);
     expect(pill.ref).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     expect(pill.name).toBe("coinPill");
     expect(pill.type).toBe("row");
@@ -279,7 +279,7 @@ describe("buildScene: ui nodes", () => {
     );
     expect(pill.children).toEqual([
       "ui:boardScreen/hudRow/coinPill/coinPillIcon",
-      "entity:1048641"
+      "ui:boardScreen/hudRow/coinPill/coinPillText"
     ]);
   });
 
@@ -401,8 +401,10 @@ describe("buildScene: projection entities", () => {
     const scene = sceneOf();
     const entities = [...scene.nodes.values()].filter(node => node.ref.kind === "entity");
 
-    expect(entities).toHaveLength(33);
+    expect(entities).toHaveLength(32);
     expect(scene.nodes.has("entity:1048703")).toBe(false);
+    // The coin counter is the text of the coin pill: an entity the ui plugin owns.
+    expect(scene.nodes.has("entity:1048641")).toBe(false);
     expect(fitScene().nodes.has("entity:40")).toBe(false);
   });
 
@@ -462,7 +464,6 @@ describe("buildScene: projection entities", () => {
   it("leaves the projection roots and Text-only entities unplaced (merge-game hud)", () => {
     const scene = sceneOf();
     const hud = nodeOf(scene, "entity:1048640");
-    const coins = nodeOf(scene, "entity:1048641");
     const count = nodeOf(scene, "entity:1048636");
 
     expect(hud).toEqual(
@@ -471,14 +472,6 @@ describe("buildScene: projection entities", () => {
     expect(hud.rect).toBeUndefined();
     expect(hud.entity?.components).toEqual(["Layer", "Tree"]);
     expect(scene.roots).toEqual(["ui:boardScreen", "entity:1048640"]);
-    expect(coins).toEqual(
-      expect.objectContaining({
-        name: "coins",
-        type: "Container",
-        parent: "ui:boardScreen/hudRow/coinPill"
-      })
-    );
-    expect(coins.rect).toBeUndefined();
     expect(count.rect).toBeUndefined();
     expect(count.entity?.components).toContain("Text");
   });
@@ -1014,8 +1007,7 @@ describe("the build spike on merge-game (rules 2–4)", () => {
         "board.generators",
         "board.badges",
         "board.steam",
-        "hud",
-        "hud.coins"
+        "hud"
       ])
     );
   });

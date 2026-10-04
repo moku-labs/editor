@@ -46,7 +46,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `clock()` | `Clock` | `{ frame, paused }` from the game clock. Read by the channel heartbeat. |
 
 ```ts
-registry.manifest().commands.length; // 14 door commands + module + editor commands
+registry.manifest().commands.length; // 16 door commands + module + editor commands
 registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
 await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
 registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }
@@ -156,7 +156,7 @@ import { createApp } from "@moku-labs/editor/agent";
 const editor = createApp({
   pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
 });
-editor.registry.manifest().sources.length; // 15 door sources + the module's sources
+editor.registry.manifest().sources.length; // 19 door sources + the module's sources
 ```
 
 From another agent plugin:

@@ -119,7 +119,7 @@ controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.
 
 | Width | The bar shows |
 |---|---|
-| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 15 sources · 18 commands"), theme. |
+| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 19 sources · 20 commands"), theme. |
 | Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Reference mode** icon (target, R), the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
 | 560 px and narrower | As below 900 px, without the game name and the Hot reload icon. |
 
@@ -195,7 +195,7 @@ Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
 - **Sound** (key M in Game, round 2b): a switch in the Game toolbar. It runs `game.mute { muted }`
   when the game's manifest lists `game.mute`, and keeps the flag with the viewer's preferences. A
   game that connects while the sound is off is muted again, so the flag survives a hot reload.
-  A game without `game.mute` (merge-game on @moku-labs/game 0.1.0) dims the switch, title "Needs
+  A game without `game.mute` (merge-game on @moku-labs/game 0.4.3) dims the switch, title "Needs
   @moku-labs/game with game.mute".
 - **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
   to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
@@ -625,7 +625,7 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 **Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.1.0
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.3
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 

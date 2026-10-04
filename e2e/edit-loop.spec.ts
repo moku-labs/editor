@@ -10,12 +10,12 @@
  * game page shows the new value with its state restored:
  *
  * 1. move homeCoins 20 px: the padding of its parent row (`layout`), scaled px → reference units
- *    with the `bounds` line; `game.rect` x moves by 20 px;
+ *    with the `bounds` line; `game.locate` x moves by 20 px;
  * 2. resize the Play button: the width and height of its style block (`style`) set 10 % over its
- *    reference size (`bounds … ref`); `game.rect` w and h follow;
+ *    reference size (`bounds … ref`); `game.locate` w and h follow;
  * 3. recolour a text style: the `fill` of the text style the label's source line names; the
  *    label's pixels in a `game.capture` frame turn the new colour;
- * 4. change a text style size: the `size` of that text style; `game.rect` of the label scales;
+ * 4. change a text style size: the `size` of that text style; `game.locate` of the label scales;
  * 5. swap a texture: the button's nine-slice (`texture`) for another one of its bundle in its
  *    style block; the button's style in `game.ui` and a `NineSlice` in `game.entities` name it.
  *
@@ -183,7 +183,7 @@ async function readFacts(page: Page, key: string, texture: string): Promise<Fact
       const find = (node: UiNode): UiNode | undefined =>
         node.key === uiKey ? node : node.children?.map(child => find(child)).find(Boolean);
 
-      const rect = (await read("game.rect", { key: uiKey })) as Rect | null;
+      const rect = (await read("game.locate", { key: uiKey })) as Rect | null;
       const model = (await read("game.model")) as { session: { taps: number } };
       const position = (await read("game.position")) as { path: string };
       if (wanted === "") {

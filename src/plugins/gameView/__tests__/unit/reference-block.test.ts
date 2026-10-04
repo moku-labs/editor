@@ -143,11 +143,11 @@ describe("referenceBlock", () => {
   });
 
   it("leaves out every line and field that is not known", () => {
-    const coins = nodeOf(boardScene(), "entity:1048641");
-    expect(referenceBlock(bare(coins))).toBe(
+    const hud = nodeOf(boardScene(), "entity:1048640");
+    expect(referenceBlock(bare(hud))).toBe(
       [
-        "@moku coins · Container · f12",
-        `path: entity #1048641 (${componentsOf(coins)})`,
+        "@moku hud · Container · f12",
+        `path: entity #1048640 (${componentsOf(hud)})`,
         "state: visible"
       ].join("\n")
     );
