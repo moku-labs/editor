@@ -122,9 +122,17 @@ Measured with `Bun.build` (browser, minified, the game itself external) in
 | `false` | None: no `/__editor/hello`, no `editor.capture`, no `bridge:` log line | 0 B (the whole entry is 73 B, the game's own lines) |
 | `true` | Agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 71.3 KB minified, 24.8 KB gzip |
 
-The package is `"sideEffects": false` and the agent core is created `/* @__PURE__ */`, so a static
-import used only inside `if (__MOKU_GAME_DEV__)` drops out too. An agent export used outside that
-branch (even one plugin instance) keeps the whole agent.
+The package is `"sideEffects": false`. The agent core, each agent plugin and each core config are
+created `/* @__PURE__ */`. So a static import used only inside `if (__MOKU_GAME_DEV__)` drops out
+too, and so does a type-only import of a plugin.
+
+An agent export used outside that branch keeps what it references. A game entry that logs
+`bridgePlugin.name` outside the branch, with `__MOKU_GAME_DEV__` `false`:
+
+| Plugins created | Editor code in the bundle | Size |
+|---|---|---|
+| Without `/* @__PURE__ */` | The whole agent, capture included | 69,947 B minified, 24,068 B gzip |
+| With `/* @__PURE__ */` | Bridge, registry, channel, overlay and the agent core. Capture drops out | 66,026 B minified, 22,830 B gzip |
 
 ## How it works
 

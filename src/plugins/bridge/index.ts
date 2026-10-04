@@ -30,7 +30,7 @@ const defaultConfig: BridgeConfig = {
  * editor.bridge.status(); // { kind: "connecting" } → { kind: "live", frame: 12 }
  * ```
  */
-export const bridgePlugin = createAgentPlugin("bridge", {
+export const bridgePlugin = /* @__PURE__ */ createAgentPlugin("bridge", {
   depends: [registryPlugin, channelPlugin],
   config: defaultConfig,
   createState: createBridgeState,

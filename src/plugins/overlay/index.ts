@@ -26,7 +26,7 @@ const defaultConfig: Config = { open: false, corner: "top-right", mount: undefin
  * await editor.start(); // QA build: the card shows fps and the cheats
  * ```
  */
-export const overlayPlugin = createAgentPlugin("overlay", {
+export const overlayPlugin = /* @__PURE__ */ createAgentPlugin("overlay", {
   depends: [registryPlugin, channelPlugin],
   config: defaultConfig,
   createState: createOverlayState,

@@ -10,8 +10,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // entry imports `@moku-labs/editor/agent` the way the README's "Production
 // builds" section recommends, and Bun.build bundles it against the built
 // package (dist, resolved through package.json, so `sideEffects: false` and the
-// `/* @__PURE__ */` agent core apply). With `__MOKU_GAME_DEV__` false nothing of
-// the agent is left; with true the bridge and capture are there.
+// `/* @__PURE__ */` agent core, plugins and core configs apply). With
+// `__MOKU_GAME_DEV__` false nothing of the agent is left; with true the bridge
+// and capture are there. An agent export used outside the dev branch keeps what
+// it references and drops the rest (here: capture).
 // Needs `bun run build` first: without dist/agent.mjs the suite is skipped.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -21,8 +23,14 @@ const REPO = fileURLToPath(new URL("../../", import.meta.url));
 /** The built agent entry. */
 const AGENT = path.join(REPO, "dist", "agent.mjs");
 
-/** Strings only the agent carries: the bridge hello route, a capture command id, bridge log events. */
-const AGENT_MARKS = ["/__editor/hello", "editor.capture", "bridge:"] as const;
+/**
+ * Strings only the agent carries: the bridge hello route, a capture command id, bridge log events,
+ * the editor's error prefix.
+ */
+const AGENT_MARKS = ["/__editor/hello", "editor.capture", "bridge:", "moku-editor"] as const;
+
+/** A string only the capture plugin carries: its large-series warning. */
+const CAPTURE_MARK = "capture:series-large";
 
 /** The recommended dev entry: the agent is imported only behind the engine's dev flag. */
 const DYNAMIC_ENTRY = `import { createApp as createGame } from "@moku-labs/game";
@@ -44,6 +52,33 @@ if (__MOKU_GAME_DEV__) {
 }
 `;
 
+/** One static import, `createApp`, used only inside the dev branch. */
+const STATIC_ONE_ENTRY = `import { createApp as createGame } from "@moku-labs/game";
+import { createApp } from "@moku-labs/editor/agent";
+const app = createGame({});
+await app.start();
+if (__MOKU_GAME_DEV__) {
+  await createApp({ pluginConfigs: { registry: { game: app } } }).start();
+}
+`;
+
+/** A plugin imported type-only: types are erased, nothing of the agent is bundled. */
+const TYPE_ONLY_ENTRY = `import { createApp as createGame } from "@moku-labs/game";
+import type { bridgePlugin } from "@moku-labs/editor/agent";
+const app = createGame({});
+const devPlugins: (typeof bridgePlugin)[] = [];
+await app.start();
+console.info(devPlugins.length);
+`;
+
+/** A static import used outside the dev branch: the bridge stays, unreferenced plugins drop. */
+const OUTSIDE_ENTRY = `import { createApp as createGame } from "@moku-labs/game";
+import { bridgePlugin } from "@moku-labs/editor/agent";
+const app = createGame({});
+await app.start();
+console.info("editor plugin", bridgePlugin.name);
+`;
+
 /** What one bundle produced: its text and its sizes. */
 type Bundle = { readonly text: string; readonly bytes: number; readonly gzip: number };
 
@@ -59,6 +94,9 @@ beforeAll(async () => {
   await symlink(REPO, path.join(dir, "node_modules", "@moku-labs", "editor"), "dir");
   await writeFile(path.join(dir, "dynamic.ts"), DYNAMIC_ENTRY);
   await writeFile(path.join(dir, "static.ts"), STATIC_ENTRY);
+  await writeFile(path.join(dir, "static-one.ts"), STATIC_ONE_ENTRY);
+  await writeFile(path.join(dir, "type-only.ts"), TYPE_ONLY_ENTRY);
+  await writeFile(path.join(dir, "outside.ts"), OUTSIDE_ENTRY);
 });
 
 afterAll(async () => {
@@ -118,9 +156,35 @@ describe.skipIf(!existsSync(AGENT))("the agent in a game bundle", () => {
     expect(marksIn(await bundle("static.ts", "true"))).toEqual([...AGENT_MARKS]);
   });
 
-  it("keeps the pure annotation on the agent core in dist/agent.mjs", async () => {
+  it("drops one static import used only in the dev branch and a type-only plugin import", async () => {
+    const staticOne = await bundle("static-one.ts", "false");
+    const typeOnly = await bundle("type-only.ts", "false");
+
+    expect(marksIn(staticOne)).toEqual([]);
+    expect(staticOne.bytes).toBeLessThan(1024);
+    expect(marksIn(typeOnly)).toEqual([]);
+    expect(typeOnly.bytes).toBeLessThan(1024);
+  });
+
+  it("keeps only what an export used outside the dev branch references", async () => {
+    const outside = await bundle("outside.ts", "false");
+    const dev = await bundle("dynamic.ts", "true");
+
+    expect(outside.text).toContain("bridge:");
+    expect(outside.text).not.toContain(CAPTURE_MARK);
+    expect(dev.text).toContain(CAPTURE_MARK);
+    expect(outside.bytes).toBeLessThan(dev.bytes);
+    console.info(
+      `agent-bundle: export outside the dev branch ${outside.bytes} B (${outside.gzip} B gzip)`
+    );
+  });
+
+  it("keeps the pure annotations on the agent core and plugins in dist/agent.mjs", async () => {
     const built = await Bun.file(AGENT).text();
 
     expect(built).toContain("/* @__PURE__ */ createAgentCore(");
+    for (const name of ["registry", "channel", "overlay", "bridge", "capture"]) {
+      expect(built).toContain(`/* @__PURE__ */ createAgentPlugin("${name}"`);
+    }
   });
 });

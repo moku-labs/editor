@@ -23,7 +23,7 @@ const defaultConfig: RegistryConfig = { game: undefined, modules: [], name: unde
  * editor.registry.manifest().sources.length; // 15 + the module's sources
  * ```
  */
-export const registryPlugin = createAgentPlugin("registry", {
+export const registryPlugin = /* @__PURE__ */ createAgentPlugin("registry", {
   config: defaultConfig,
   createState: createRegistryState,
   api: createRegistryApi,

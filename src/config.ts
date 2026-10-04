@@ -143,26 +143,29 @@ const toolsConfig: ToolsConfig = {};
 /**
  * Core config of the agent core (the game page).
  */
-export const agentCoreConfig = createCoreConfig<AgentConfig, AgentEvents, CorePlugins>(
-  "editor-agent",
-  { config: agentConfig, plugins: [logPlugin, envPlugin] }
-);
+export const agentCoreConfig = /* @__PURE__ */ createCoreConfig<
+  AgentConfig,
+  AgentEvents,
+  CorePlugins
+>("editor-agent", { config: agentConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Core config of the server core (Bun).
  */
-export const serverCoreConfig = createCoreConfig<ServerConfig, ServerEvents, CorePlugins>(
-  "editor-server",
-  { config: serverConfig, plugins: [logPlugin, envPlugin] }
-);
+export const serverCoreConfig = /* @__PURE__ */ createCoreConfig<
+  ServerConfig,
+  ServerEvents,
+  CorePlugins
+>("editor-server", { config: serverConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Core config of the tools core (the tools page).
  */
-export const toolsCoreConfig = createCoreConfig<ToolsConfig, ToolsEvents, CorePlugins>(
-  "editor-tools",
-  { config: toolsConfig, plugins: [logPlugin, envPlugin] }
-);
+export const toolsCoreConfig = /* @__PURE__ */ createCoreConfig<
+  ToolsConfig,
+  ToolsEvents,
+  CorePlugins
+>("editor-tools", { config: toolsConfig, plugins: [logPlugin, envPlugin] });
 
 /**
  * Creates an agent plugin bound to the agent core's Config and Events. Types infer from the spec.

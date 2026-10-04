@@ -22,7 +22,7 @@ const defaultConfig: ChannelConfig = { heartbeatMs: 1000 };
  * await editor.channel.run("game.step", { frames: 1 });
  * ```
  */
-export const channelPlugin = createAgentPlugin("channel", {
+export const channelPlugin = /* @__PURE__ */ createAgentPlugin("channel", {
   depends: [registryPlugin],
   config: defaultConfig,
   createState: createChannelState,
