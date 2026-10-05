@@ -123,7 +123,7 @@ export type FilesApi = {
    * Missing parent folders are created. Emits `files:written` with `kind: "capture"`. Max 16 MiB.
    *
    * @param path - Relative capture path.
-   * @param bytes - The image bytes (hub decodes them with `decodeDataUrl`).
+   * @param bytes - The image bytes.
    * @returns `{ path, bytes, version }` of the written image.
    * @throws {Error} -32004 `forbidden_path` outside `.moku/captures/` or without an image
    * extension, -32602 `invalid_input` (`field: "data"`) over 16 MiB.
@@ -134,6 +134,27 @@ export type FilesApi = {
    * ```
    */
   writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
+
+  /**
+   * Decodes a `data:image/(png|jpeg|webp|gif);base64,…` URL and writes the image with
+   * `writeBinary`. The mime must match the extension of `path`. Same limits, errors and event as
+   * `writeBinary`.
+   *
+   * @param path - Relative capture path; its extension must match the mime of the data URL.
+   * @param dataUrl - The image as a base64 data URL.
+   * @returns `{ path, bytes, version }` of the written image.
+   * @throws {Error} -32004 `forbidden_path` for a path that is not an image, outside
+   * `.moku/captures/`; -32602 `invalid_input` (`field: "data"`) for a data URL that is not a
+   * base64 image, a mime that does not match the path, or over 16 MiB.
+   * @example
+   * ```ts
+   * // hub serves the files-channel `writeBinary { path, data }` of a tools page.
+   * const files = ctx.require(filesPlugin);
+   * await files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+   * // { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
+   * ```
+   */
+  writeDataUrl(path: string, dataUrl: string): Promise<WriteResult>;
 
   /**
    * Reads an image back as a data URL with its version (R3). Emits nothing. Max 16 MiB.

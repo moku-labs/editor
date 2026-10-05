@@ -3,15 +3,19 @@
  * (R4, design §4): ⇧⌘C and I toggle the picker (global, shows Game); \ collapses or expands the
  * Element panel in Game; M switches the game's sound in Game when the game has `game.mute` (round
  * 2b R11); ← → step and B marks a bug in Game while the contact sheet is open; Esc
- * layers contactSheet, seriesPopover, captureCard, picker, each `false` when gameView has nothing
- * open there.
+ * layers contactSheet, seriesPopover, captureCard, picker (an area drag of Reference mode too),
+ * selection (U10: last, clears the element or area selection in Game), each `false` when gameView
+ * has nothing open there.
  */
+import { isEditableTarget } from "../panels/shared/editable";
 import { toggleSidePanel } from "../panels/shared/side-panel";
+import { workspacePlugin } from "../workspace";
 import type { EscLayer, KeyBinding } from "../workspace/types";
 import { setPopover } from "./capture/series";
 import { closeSheetLayer, stepSheet, toggleBug } from "./capture/sheet";
 import { hideCard } from "./capture/shot";
-import { setPicker } from "./element/select";
+import { selectElement, setPicker } from "./element/select";
+import { cancelArea } from "./reference/gesture";
 import { SIDE_PANEL, SIDE_TITLE } from "./side";
 import { canMute, setSound } from "./sound";
 import type { GameViewCtx } from "./types";
@@ -62,14 +66,33 @@ function markShownShot(ctx: GameViewCtx): void {
 }
 
 /**
- * Esc on the picker layer: turns the picker off.
+ * Esc on the picker layer: cancels a Reference mode area drag (U9), else turns the picker off.
  *
  * @param ctx - Domain context of gameView.
- * @returns True when the picker was on.
+ * @returns True when a drag was cancelled or the picker was on.
  */
 function closePicker(ctx: GameViewCtx): boolean {
+  if (cancelArea(ctx)) return true;
   if (!ctx.state.picker.on) return false;
   setPicker(ctx, false);
+  return true;
+}
+
+/**
+ * Esc on the selection layer (U10): clears the element or area selection and publishes null.
+ * Only in the Game workspace, and never while focus is in a text field.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns True when a selection was cleared.
+ */
+function clearSelection(ctx: GameViewCtx): boolean {
+  const { selected, selection } = ctx.state;
+  if (selected === undefined && selection === undefined) return false;
+  if (ctx.require(workspacePlugin).active() !== "game") return false;
+  if (globalThis.document !== undefined && isEditableTarget(document.activeElement)) return false;
+
+  // eslint-disable-next-line unicorn/no-useless-undefined -- selectElement takes the ref explicitly
+  selectElement(ctx, undefined);
   return true;
 }
 
@@ -124,7 +147,7 @@ export function keyBindings(ctx: GameViewCtx): readonly KeyBinding[] {
  * gameView's Esc closers for `workspace.keys.escape`, in the workspace rank (design §4).
  *
  * @param ctx - Domain context of gameView.
- * @returns The four layers and their closers.
+ * @returns The five layers and their closers.
  */
 export function escapeClosers(
   ctx: GameViewCtx
@@ -133,6 +156,7 @@ export function escapeClosers(
     { layer: "contactSheet", close: closeSheetLayer.bind(undefined, ctx) },
     { layer: "seriesPopover", close: setPopover.bind(undefined, ctx, false) },
     { layer: "captureCard", close: hideCard.bind(undefined, ctx) },
-    { layer: "picker", close: closePicker.bind(undefined, ctx) }
+    { layer: "picker", close: closePicker.bind(undefined, ctx) },
+    { layer: "selection", close: clearSelection.bind(undefined, ctx) }
   ];
 }

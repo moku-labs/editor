@@ -3,6 +3,8 @@
  * Apple platforms, Ctrl elsewhere; a digit with shift matches `event.code`), the bind registry
  * with its duplicate check, and the dispatcher behind the one window `keydown` listener.
  */
+
+import { isEditableTarget } from "../../panels/shared/editable";
 import { ERROR_PREFIX } from "../../registry/protocol";
 import type { KeyBinding, KeyBindingEntry, ParsedCombo, WorkspaceCtx } from "../types";
 import { unwind } from "./escape";
@@ -28,11 +30,6 @@ const KEY_NAMES: Readonly<Record<string, string>> = {
   arrowdown: "↓",
   enter: "↵"
 };
-
-/**
- * Elements in which single keys type text.
- */
-const EDITABLE = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 
 /**
  * Parses a combo like "shift+mod+c", "+" or "mod++" (lower-cased).
@@ -238,17 +235,6 @@ export function bindKey(ctx: Pick<WorkspaceCtx, "state">, binding: KeyBinding): 
     const index = bindings.indexOf(entry);
     if (index !== -1) bindings.splice(index, 1);
   };
-}
-
-/**
- * True when the event target types text (an input, a textarea, a select, contenteditable).
- *
- * @param target - The event target.
- * @returns Whether single keys belong to the field.
- */
-export function isEditableTarget(target: EventTarget | null): boolean {
-  if (globalThis.Element === undefined || !(target instanceof Element)) return false;
-  return target.closest(EDITABLE) !== null;
 }
 
 /**

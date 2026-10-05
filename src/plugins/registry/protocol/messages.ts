@@ -40,7 +40,9 @@ const REASONS: Readonly<Record<ErrorReason, true>> = {
   version_conflict: true,
   unauthorized: true,
   not_installed: true,
-  link_closed: true
+  link_closed: true,
+  no_editor_page: true,
+  page_closed: true
 };
 
 /**

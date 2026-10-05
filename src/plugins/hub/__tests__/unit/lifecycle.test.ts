@@ -91,6 +91,32 @@ describe("stopHub", () => {
     expect(entry?.silent).toBe(false);
   });
 
+  it("forgets the selection's page and keeps the selection as null: no page is left (A7)", () => {
+    const harness = createHarness();
+    startHub(harness.ctx);
+    const page = harness.page();
+    harness.send(page, {
+      jsonrpc: "2.0",
+      channel: "editor",
+      method: "selection",
+      params: { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1 }
+    });
+
+    stopHub(harness.ctx);
+
+    expect(harness.ctx.state.selectionConn).toBeUndefined();
+    expect(harness.ctx.state.published.get("selection")).toBeNull();
+  });
+
+  it("keeps no selection when none was published", () => {
+    const harness = createHarness();
+    startHub(harness.ctx);
+
+    stopHub(harness.ctx);
+
+    expect(harness.ctx.state.published.has("selection")).toBe(false);
+  });
+
   it("runs with the teardown context only and twice in a row", () => {
     const ctx = createCtx();
     startHub(ctx);

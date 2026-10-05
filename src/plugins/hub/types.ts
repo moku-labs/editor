@@ -9,9 +9,10 @@ import type { EmitFn } from "@moku-labs/core";
 import type { Require, ServerEvents } from "../../config";
 import type {
   Heartbeat,
-  HotReload,
   Json,
   Manifest,
+  PublishMethod,
+  PublishParams,
   SessionInfo,
   SubId
 } from "../registry/protocol";
@@ -51,9 +52,14 @@ export type HubSession = {
 export type ConnKind = "agent" | "tools";
 
 /**
- * Data attached to a socket at upgrade.
+ * Data attached to a socket at upgrade. `page` is set for a tools upgrade with `role=page`: the
+ * editor page, which publishes the selection and answers `editor.select` (A11).
  */
-export type HubSocketData = { readonly kind: ConnKind; readonly conn: number };
+export type HubSocketData = {
+  readonly kind: ConnKind;
+  readonly conn: number;
+  readonly page?: true;
+};
 
 /**
  * Structural view of Bun's ServerWebSocket that the hub uses.
@@ -190,12 +196,14 @@ export type AgentConn = {
 };
 
 /**
- * A tools page connection.
+ * A tools page connection. `page` is true for the editor page (`role=page`); a plain tools client
+ * (the MCP bridge) has false.
  */
 export type ToolsConn = {
   kind: "tools";
   conn: number;
   socket: HubSocket;
+  page: boolean;
   subs: Map<SubId, string>;
   pending: number;
   congested: boolean;
@@ -232,11 +240,19 @@ export type Reply =
   | { kind: "discard" };
 
 /**
+ * Who answers a forwarded call: the agent of a session (game calls) or one editor page connection
+ * (`editor.select`, A3). Only that side may settle it.
+ */
+export type CallTarget =
+  | { readonly kind: "agent"; readonly session: string }
+  | { readonly kind: "page"; readonly conn: number };
+
+/**
  * A forwarded call in flight.
  */
 export type PendingCall = {
   id: number;
-  session: string;
+  target: CallTarget;
   timer: ReturnType<typeof setTimeout>;
   reply: Reply;
 };
@@ -257,9 +273,10 @@ export type SharedSub = {
 };
 
 /**
- * A method `publish` sends to the tools pages (R6).
+ * A method `publish` sends to the tools pages (R6, A5): `"hotReload"` or `"selection"`, the keys of
+ * the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
  */
-export type PublishMethod = "hotReload";
+export type { PublishMethod } from "../registry/protocol";
 
 /**
  * Hub state (the api returns closures and copies, never these maps).
@@ -281,6 +298,10 @@ export type HubState = {
   silentTimer: ReturnType<typeof setInterval> | undefined;
   /** The last value of each published method, replayed to every tools connection that opens. */
   published: Map<PublishMethod, Json>;
+  /** The page connection that published the kept selection: `editor.select` goes there (A7). */
+  selectionConn: number | undefined;
+  /** The server port of the last accepted upgrade, for the editor page URL of `no_editor_page`. */
+  editorPort: number | undefined;
 };
 
 /**
@@ -341,8 +362,8 @@ export type HubApi = {
 
   /**
    * The `{path}/ws` upgrade handler; `serve` already mounts it. Checks the path (404), the start
-   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401) and the kind
-   * (400), then upgrades.
+   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401), the kind and
+   * the role (400: `role=page` only with `kind=tools`), then upgrades.
    *
    * @param req - The request.
    * @param server - The Bun server.
@@ -409,10 +430,12 @@ export type HubApi = {
   /**
    * Sends server state to every tools page as the editor-channel notification `<method>` and
    * keeps it: a tools page that connects later gets the last value right after its
-   * `sessions {list}`. Works before start too; the value waits for the first tools page.
+   * `sessions {list}`. Works before start too; the value waits for the first tools page. The value
+   * is stored through `toWireValue`. A `null` selection goes out as a `selection` notification
+   * without params (the wire refuses null params).
    *
-   * @param method - The state: `"hotReload"`.
-   * @param params - Its value.
+   * @param method - The state: `"hotReload"` or `"selection"`.
+   * @param params - Its value: a HotReload, or a SelectionInfo or null for the selection.
    * @example
    * ```ts
    * // pages tells every tools page whether Bun reloads the game page on a save.
@@ -420,7 +443,23 @@ export type HubApi = {
    * // each tools socket gets {"jsonrpc":"2.0","channel":"editor","method":"hotReload","params":{"hmr":true,"owner":"bin"}}
    * ```
    */
-  publish(method: PublishMethod, params: HotReload): void;
+  publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void;
+
+  /**
+   * Closes every open socket, agent and tools, with one code and reason. The hub keeps running:
+   * the token stays, and each connection is forgotten when Bun reports its close, so its session
+   * or subscriptions end as on any close. Clients reconnect on their own.
+   *
+   * @param code - The close code: 1012 (service restart) for the bin's restart.
+   * @param reason - The close reason the clients see.
+   * @example
+   * ```ts
+   * // The bin, right before Bun's stop on a Hot reload switch (pages serve.ts).
+   * editor.hub.closeAll(1012, "editor restarting");
+   * // the bridge and every tools page see close 1012 "editor restarting", log it at info and reconnect
+   * ```
+   */
+  closeAll(code: number, reason: string): void;
 
   /**
    * The editor path, `config.path` (R3).

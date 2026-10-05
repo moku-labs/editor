@@ -503,7 +503,9 @@ export type EditorChannel = {
 export type Channel = "game" | "files" | "editor";
 
 /**
- * Why a call failed (R1 adds `link_closed`).
+ * Why a call failed (R1 adds `link_closed`). The selection relay adds `no_editor_page` (-32003: no
+ * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
+ * it answered).
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -518,7 +520,9 @@ export type ErrorReason =
   | "version_conflict"
   | "unauthorized"
   | "not_installed"
-  | "link_closed";
+  | "link_closed"
+  | "no_editor_page"
+  | "page_closed";
 
 /**
  * A JSON-RPC error object with the editor's data fields.
@@ -733,7 +737,9 @@ export type DeviceSize = {
 export const ERROR_PREFIX = "[moku-editor] ";
 
 /**
- * JSON-RPC error codes of the editor (contracts §2, R6).
+ * JSON-RPC error codes of the editor (contracts §2, R6). The selection relay reuses two codes
+ * under its own names: `noEditorPage` (-32003, reason `no_editor_page`) and `pageClosed` (-32001,
+ * reason `page_closed`, retryable).
  */
 export const errorCode = {
   invalidRequest: -32_600,
@@ -747,7 +753,9 @@ export const errorCode = {
   versionConflict: -32_005,
   notJson: -32_006,
   unauthorized: -32_007,
-  notInstalled: -32_008
+  notInstalled: -32_008,
+  noEditorPage: -32_003,
+  pageClosed: -32_001
 } as const;
 
 /**
@@ -895,6 +903,209 @@ export type HotReload = {
   /** "bin" when the moku-editor bin serves the game, "server" for a game's own Bun.serve. */
   readonly owner: "bin" | "server";
 };
+
+/**
+ * A selected element: a ui element by its path, or a world entity by id. The same shape as the
+ * scene's `ElementRef` (panels/shared/scene), declared here so the wire module imports nothing.
+ *
+ * @example
+ * ```ts
+ * const ref: SelectionRef = { kind: "ui", path: "column#0/hudRow/coins" };
+ * ```
+ */
+export type SelectionRef =
+  | { readonly kind: "ui"; readonly path: string }
+  | { readonly kind: "entity"; readonly id: number };
+
+/**
+ * A rect in CSS px of the game page (the iframe viewport). The same shape as the scene's `PageRect`.
+ *
+ * @example
+ * ```ts
+ * const rect: SelectionRect = { x: 12, y: 40, w: 96, h: 24 };
+ * ```
+ */
+export type SelectionRect = {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+};
+
+/**
+ * One element of an area selection (U9): the group roots that lie in the area, in page order.
+ *
+ * @example
+ * ```ts
+ * const item: SelectionItem = {
+ *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+ *   key: "coins",
+ *   name: "coins",
+ *   type: "text",
+ *   rect: { x: 12, y: 40, w: 96, h: 24 },
+ *   source: { path: "src/ui/hud.ts", line: 42 }
+ * };
+ * ```
+ */
+export type SelectionItem = {
+  readonly ref: SelectionRef;
+  /** The ui node's `key`, when it has one. */
+  readonly key?: string;
+  readonly name: string;
+  readonly type: string;
+  /** Where it is drawn, in page CSS px. Absent: not placed. */
+  readonly rect?: SelectionRect;
+  /** The style source line of the element, once found. */
+  readonly source?: { readonly path: string; readonly line: number };
+};
+
+/**
+ * The element selected in the editor page, as the page publishes it (editor-channel notification
+ * `selection`) and as the hub answers `editor.selection` and `editor.select`. Check a received
+ * value with `parseSelectionInfo`. Its readonly `items` make it not assignable to the mutable
+ * Json: senders pass it through `toWireValue`, like a Manifest.
+ *
+ * @example
+ * ```ts
+ * // The picker landed on the coins label; the card and the crop are written.
+ * const info: SelectionInfo = {
+ *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+ *   key: "coins",
+ *   projection: "hud",
+ *   name: "coins",
+ *   type: "text",
+ *   rect: { x: 12, y: 40, w: 96, h: 24 },
+ *   source: { path: "src/ui/hud.ts", line: 42 },
+ *   card: ".moku/editor/captures/coins-1840.md",
+ *   crop: ".moku/editor/captures/coins-1840-crop.jpg",
+ *   line: "@moku ui:column#0/hudRow/coins hud.ts:42",
+ *   session: "s-7f3a",
+ *   frame: 1840,
+ *   at: 1790000000000
+ * };
+ * ```
+ */
+export type SelectionInfo = {
+  readonly ref: SelectionRef;
+  /** The ui node's `key`, when it has one. */
+  readonly key?: string;
+  /** The projection the element belongs to, e.g. "hud". */
+  readonly projection?: string;
+  readonly name: string;
+  readonly type: string;
+  /** Where it is drawn, in page CSS px (as `SceneNode.rect`). Absent: not placed. */
+  readonly rect?: SelectionRect;
+  /** The style source line of the element, once found. */
+  readonly source?: { readonly path: string; readonly line: number };
+  /** The capture card, project-relative under `capturesDir`. Set after a pick. */
+  readonly card?: string;
+  /** The element crop picture, project-relative under `capturesDir`. Set after a pick. */
+  readonly crop?: string;
+  /** The one-line `@moku …` reference of the element. */
+  readonly line?: string;
+  /** The game session the element belongs to. */
+  readonly session?: string;
+  /** The scene frame; after a pick the frame of the pick. */
+  readonly frame?: number;
+  /**
+   * The area of an area selection (U9), in page CSS px. An area selection has `type: "area"`,
+   * `name: "area"`, `rect` = the area and `ref` = the first item's ref (`{ kind: "ui", path: "" }`
+   * when no element is inside).
+   */
+  readonly area?: SelectionRect;
+  /** The elements of an area selection, top to bottom then left to right; at most 40. */
+  readonly items?: readonly SelectionItem[];
+  /** Epoch ms of the publish (`Date.now()`). */
+  readonly at: number;
+};
+
+/**
+ * The value of each method `publish` sends to the tools pages (A5): the hub keeps the last one
+ * per method and replays it to every tools connection that opens.
+ *
+ * @example
+ * ```ts
+ * const kept: PublishParams = { hotReload: { hmr: true, owner: "bin" }, selection: null };
+ * ```
+ */
+export type PublishParams = {
+  readonly hotReload: HotReload;
+  /** `null`: nothing is selected. */
+  readonly selection: SelectionInfo | null;
+};
+
+/**
+ * A method `publish` sends to the tools pages (R6): `"hotReload"` or `"selection"`.
+ */
+export type PublishMethod = keyof PublishParams;
+
+/**
+ * The format a picture travels in on the wire (editor.capture, editor.sheet, a crop): `"jpeg"`
+ * (the default, D-34) or `"png"` (lossless).
+ */
+export type PictureFormat = "jpeg" | "png";
+
+/**
+ * Params of the editor-channel request `select`: an area by `rect`, the element by `key` (a ui
+ * node key, projection-qualified like `"hud/infoBar"` allowed) or by `ref`. `rect` wins over `key`
+ * and `ref`. `card` (the page treats absent
+ * as true) asks for the capture card and the crop as after a picker click.
+ *
+ * @example
+ * ```ts
+ * const params: SelectParams = { key: "hud/infoBar", card: true };
+ * const areaParams: SelectParams = { rect: { x: 0, y: 30, w: 200, h: 60 } }; // every element inside
+ * ```
+ */
+export type SelectParams = {
+  readonly key?: string;
+  readonly ref?: SelectionRef;
+  /** An area in page CSS px, picked like a Reference-mode drag (U9). It wins over key and ref. */
+  readonly rect?: SelectionRect;
+  readonly card?: boolean;
+};
+
+/**
+ * The editor-channel notifications by method, with their params. `session` goes to agents and
+ * tools, the rest to tools connections. `selection` is also sent by the editor page (a tools
+ * connection with `role=page`) to the hub.
+ *
+ * @example
+ * ```ts
+ * const note: EditorNotifications["selection"] = null; // nothing is selected
+ * ```
+ */
+export type EditorNotifications = {
+  readonly session: SessionParams;
+  readonly sessions: SessionsParams;
+} & PublishParams;
+
+/**
+ * The name of an editor-channel notification.
+ */
+export type EditorNotificationMethod = keyof EditorNotifications;
+
+/**
+ * The editor-channel requests by method: `selection` (answered by the hub with the last published
+ * selection) and `select` (relayed by the hub to the editor page, which answers the selection).
+ *
+ * @example
+ * ```ts
+ * const answer: EditorRequests["select"]["result"] = info; // the element after the select
+ * ```
+ */
+export type EditorRequests = {
+  readonly selection: {
+    readonly params: Readonly<Record<string, never>>;
+    readonly result: SelectionInfo | null;
+  };
+  readonly select: { readonly params: SelectParams; readonly result: SelectionInfo };
+};
+
+/**
+ * The name of an editor-channel request.
+ */
+export type EditorRequestMethod = keyof EditorRequests;
 ~~~
 
 ---
@@ -910,10 +1121,12 @@ All errors are JSON-RPC error objects (`WireError`). Messages start with `[moku-
 | -32602 | `invalidInput` | `invalid_input` (`data.field`) | no | registry, capture, hub, files | input fails `checkInput`; bad `sub`; text over 2 MiB or binary over 16 MiB on write; bad data URL |
 | -32000 | `commandFailed` | `command_failed` | no | registry, capture, hub, files | a door threw; `game.capture` gave no picture; a series is already recording; IO error; file too large on read |
 | -32001 | `gameReloaded` | `game_reloaded` | yes | hub | the agent closed while a call was pending |
+| -32001 | `pageClosed` | `page_closed` | yes | hub | the editor page closed before it answered a relayed `editor.select` |
 | -32002 | `timeout` | `timeout` | yes | bridge, hub, link | the call passed its deadline (the command is not cancelled) |
 | -32002 | `timeout` | `link_closed` | yes | link | socket not open, socket closed, or `app.stop()` |
 | -32003 | `noSession` | `no_session` | no | hub, link | no game connected, or the named session is not open |
 | -32003 | `noSession` | `choose_session` | no | hub, link | several sessions and not exactly one embedded; `link.choose` with an id that is not open |
+| -32003 | `noEditorPage` | `no_editor_page` | no | hub | `editor.select` and no tools connection with `role=page` is open ("Open the editor page: <url>") |
 | -32004 | `forbiddenPath` | `forbidden_path` | no | files | a path fails a sandbox rule |
 | -32005 | `versionConflict` | `version_conflict` | no | files | stale `version`, or a `version` for a missing file |
 | -32006 | `notJson` | `not_json` | no | registry (`toWireValue`) | a value is not JSON (function, symbol, bigint, cycle, depth over 64) |
@@ -1028,7 +1241,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `zoom.defaultMin` | `number` | `0.8` | Floor of the default camera. |
 | flowView | `hub.minOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | flowView | `hub.minReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
-| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two PNGs of a pick. `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
+| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two pictures of a pick (`<key>-f<frame>-crop.jpg`, `f<frame>-full.jpg`). `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
 | gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
 | gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
@@ -1065,7 +1278,7 @@ moku-editor mcp-config [<game-html>] [--port N]
 | `--no-hmr` | | hot reload on | Serves with `development: { hmr: false, console: true }`; `hotReload()` reports `{ hmr: false, owner: "bin" }`. |
 | `--help` | `-h` | | Prints usage, exit 0. |
 
-Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(server, options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so `setHotReload` is refused: `POST {P}/hmr` answers 200 with the unchanged state (round 2b R16; no console error on the page), and the caller compares it with what it asked. Restart the bin with or without `--no-hmr`.
+Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so the bin gives `attachServer` its restart and the Hot reload switch restarts the server with HMR flipped on the same port (D-32): `POST {P}/hmr` answers 200 with the asked state, then the server restarts (A1); the token, the sessions table and `.moku/editor.json` stay, every socket drops for about a second, and the tools page reloads the game frame with its checkpoint so the page gains or drops `/_bun/client`. While HMR is off a save on disk does not reload the game. A failed restart publishes the old state and serves the old options again.
 
 Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
 
@@ -1093,7 +1306,7 @@ MCP bridge (`moku-editor mcp`, `src/plugins/pages/mcp/`, D-31): a separate proce
 - Claude Code 2.1.280 (recorded in `src/plugins/pages/__tests__/fixtures/claude-*.json`): it sends `server/discover` (draft protocol 2026-07-28) first, gets -32601, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized` and `tools/list`.
 - Which bin: a live `.moku/editor.json` under `--root` (default the working directory) wins. Without one the bridge starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached (output in `.moku/editor.log`, 0600), when it knows a game html (argv, else the last discovery file it saw); port `--port`, else the last port, else 3000; it waits at most 15 s for the discovery file and owns that bin. Without an html, tools answer `isError` "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." A closed hub socket is re-read and reconnected once.
 - Teardown on stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes, an owned bin gets SIGTERM, then SIGKILL after 2 s; a bin the bridge did not start keeps running. After a signal it lets go of stdin, so the process exits 0 while the client keeps the pipe open.
-- Tools (15, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`editor.capture { maxWidth }`, default 1080; above 300 KB taken once more at half width), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080 }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a `.moku/captures/*.md` card and its crop), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
+- Tools (17, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a `.moku/captures/*.md` card and its crop), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, card? }`, exactly one of `key` or `rect`; hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
 - Liveness (M7): screenshot and series read the session heartbeat first; paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume". Pictures need a visible game page.
 
 ---
@@ -1534,7 +1747,7 @@ export type BridgeApi = {
 ### 7.5 capture — agent, Standard, opt-in
 
 - depends: `[registryPlugin]`. Lifecycle: `createState`, `onInit` (adds four commands), `onStop` (ends a running series). No app api.
-- Commands: `editor.capture` (`{ maxWidth: "number?" }`, effect `read`, value `Shot`), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`), `editor.sheet` (`{ frames: "number", everyMs: "number", maxWidth: "number?" }`, effect `read`, value `Sheet`).
+- Commands: `editor.capture` (`{ maxWidth: "number?", key: "string?", rect: "json?", format: "string?", quality: "number?" }`, effect `read`, value `Shot`; JPEG 0.8 by default, `key` (through `game.locate`/`game.rect`) or `rect` crops plus 8 px, unknown key -32602; `png` keeps the lossless path; a picture that fails to decode stays PNG), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`), `editor.sheet` (`{ frames: "number", everyMs: "number", maxWidth: "number?", format: "string?", quality: "number?" }`, effect `read`, value `Sheet`, JPEG by default).
 - Every shot runs the door command `game.capture` (needs `__MOKU_GAME_DEV__`). The picture is the PNG data URL the door answers (game 0.1) or the string `png` of `{ png, legend? }` (game 0.4); anything else is -32000 "gave no picture". A series plans `max(1, floor(durationMs / intervalMs))` shots, never overlapping, one series at a time.
 - `maxWidth` (a whole number 64–4096, else -32602 field `maxWidth`): a wider picture is shrunk in the page to `maxWidth` pixels wide, aspect kept (`createImageBitmap`, then an `OffscreenCanvas` or a canvas element, PNG data URL). A page that cannot do it answers the full picture and logs `capture:downscale-failed`.
 - `editor.sheet` runs `game.capture { sheet: { frames, everyMs } }` once (game ≥ 0.4: the game lays the frames out in `ceil(sqrt(frames))` columns) and shrinks the sheet to `maxWidth`. `frames` is a whole number 2–12, `everyMs` a number 1–5000, else -32602 naming the field. `frame` is the frame after the last picture. MCP `moku_series` sends `maxWidth: 1080`.
@@ -1642,7 +1855,7 @@ export type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly devi
 - depends: none (first server plugin). Lifecycle: `onInit` only (`validateFilesConfig`).
 - Node built-ins only; no `Bun.*`. Limits (`io.ts`): `MAX_TEXT_BYTES` 2 MiB, `MAX_BINARY_BYTES` 16 MiB, `MAX_PATH_LENGTH` 1024. Image extensions: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`.
 - Sandbox order: lexical → deny → allow (files only; image and `.moku/captures/` rules for binaries) → real path under the real root → kind.
-- Helper `decodeDataUrl(text, path)` exported from `src/plugins/files/index.ts` for `hub`.
+- `writeDataUrl(path, dataUrl)` decodes the files-channel data URL (`decodeDataUrl` in `binary.ts`, not exported from the plugin) for `hub`.
 - Events: emits `files:written`. Log: `files:emit-failed`.
 
 ~~~ts
@@ -1741,7 +1954,7 @@ export type FilesApi = {
    * Missing parent folders are created. Emits `files:written` with `kind: "capture"`. Max 16 MiB.
    *
    * @param path - Relative capture path.
-   * @param bytes - The image bytes (hub decodes them with `decodeDataUrl`).
+   * @param bytes - The image bytes.
    * @returns `{ path, bytes, version }` of the written image.
    * @throws {Error} -32004 `forbidden_path` outside `.moku/captures/` or without an image
    * extension, -32602 `invalid_input` (`field: "data"`) over 16 MiB.
@@ -1752,6 +1965,26 @@ export type FilesApi = {
    * ```
    */
   writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
+
+  /**
+   * Decodes a `data:image/(png|jpeg|webp|gif);base64,…` URL and writes the image with
+   * `writeBinary`. The mime must match the extension of `path`. Same limits, errors and event as
+   * `writeBinary`.
+   *
+   * @param path - Relative capture path; its extension must match the mime of the data URL.
+   * @param dataUrl - The image as a base64 data URL.
+   * @returns `{ path, bytes, version }` of the written image.
+   * @throws {Error} -32004 `forbidden_path` for a path that is not an image, outside
+   * `.moku/captures/`; -32602 `invalid_input` (`field: "data"`) for a data URL that is not a
+   * base64 image, a mime that does not match the path, or over 16 MiB.
+   * @example
+   * ```ts
+   * // hub serves the files-channel `writeBinary { path, data }` of a tools page.
+   * const files = ctx.require(filesPlugin);
+   * await files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+   * // { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
+   * ```
+   */
 
   /**
    * Reads an image back as a data URL with its version (R3). Emits nothing. Max 16 MiB.
@@ -1990,10 +2223,12 @@ export type HubApi = {
   /**
    * Sends server state to every tools page as the editor-channel notification `<method>` and
    * keeps it: a tools page that connects later gets the last value right after its
-   * `sessions {list}`. Works before start too; the value waits for the first tools page.
+   * `sessions {list}`. Works before start too; the value waits for the first tools page. The value
+   * is stored through `toWireValue`. A `null` selection goes out as a `selection` notification
+   * without params (the wire refuses null params).
    *
-   * @param method - The state: `"hotReload"`.
-   * @param params - Its value.
+   * @param method - The state: `"hotReload"` or `"selection"`.
+   * @param params - Its value: a HotReload, or a SelectionInfo or null for the selection.
    * @example
    * ```ts
    * // pages tells every tools page whether Bun reloads the game page on a save.
@@ -2001,7 +2236,7 @@ export type HubApi = {
    * // each tools socket gets {"jsonrpc":"2.0","channel":"editor","method":"hotReload","params":{"hmr":true,"owner":"bin"}}
    * ```
    */
-  publish(method: PublishMethod, params: HotReload): void;
+  publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void;
 
   /**
    * The editor path, `config.path` (R3).
@@ -2017,16 +2252,17 @@ export type HubApi = {
 };
 
 /**
- * A method `publish` sends to the tools pages (R6).
+ * A method `publish` sends to the tools pages (R6, A5): `"hotReload"` or `"selection"`, the keys of
+ * the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
  */
-export type PublishMethod = "hotReload";
+export type { PublishMethod };
 ~~~
 
 ### 7.8 pages — server, Standard
 
 - depends: `[filesPlugin, hubPlugin]`. Lifecycle: `onInit` only (`initPages`: check config, find the built page, `hub.addRoutes`).
-- Routes (`P = hub.path()`): `P` → 308 to `P/`; `P/` → tools page with the boot tag (503 when not built or before start); `P/hello` → `HelloBody` JSON (same-origin); `P/hmr` → `HotReload` JSON on GET, a change on POST `{ hmr: boolean }` with `Authorization: Bearer <boot.token>` (200 with the state afterwards, a refused change included: the caller compares `hmr` with what it asked, round 2b R16; 400 for a bad body; 401 without the token); `P/assets/*` → hashed assets, immutable cache.
-- Hot reload (D-23, round 2 R6): the bin serves with `development: { hmr: true, console: true }` (`--no-hmr`: `hmr: false`) and calls `attachServer(server, options)` right after `Bun.serve`. `hotReload()` is `{ hmr, owner }`, owner `"server"` with `hmr: false` until `attachServer`. Bun 1.3.14 cannot apply `development.hmr` on `server.reload` (spike in the pages README), so `setHotReload(on)` answers false unless `on` already is the state; restart the bin to change it.
+- Routes (`P = hub.path()`): `P` → 308 to `P/`; `P/` → tools page with the boot tag (503 when not built or before start); `P/hello` → `HelloBody` JSON (same-origin); `P/hmr` → `HotReload` JSON on GET, a change on POST `{ hmr: boolean }` with `Authorization: Bearer <boot.token>` (200 with the state afterwards: the asked state when the bin switches, the unchanged one for a refused change, which the caller compares with what it asked, round 2b R16; 400 for a bad body; 401 without the token); `P/assets/*` → hashed assets, immutable cache.
+- Hot reload (D-23, round 2 R6): the bin serves with `development: { hmr: true, console: true }` (`--no-hmr`: `hmr: false`) and calls `attachServer(options)` right after `Bun.serve`. `hotReload()` is `{ hmr, owner }`, owner `"server"` with `hmr: false` until `attachServer`. Bun 1.3.14 cannot apply `development.hmr` on `server.reload` (spike in the pages README), so the bin passes `attachServer(options, restart)` and `setHotReload(on)` restarts its server with HMR flipped on the same port (D-32, `serve.ts`: stop bounded to 500 ms, then `Bun.serve`); it answers true, sets and publishes the asked state at once and restarts after the answer went out (A1); a failure logs `pages:hot-reload-restart-failed`, publishes the old state and serves the old options again. A game's own server answers false.
 - Boot tag: `<script type="application/json" id="moku-editor-boot">` with `ToolsBoot` `{ v: 1, ws, token, path, title, editorUrl, gameUrl, root }`.
 - `PAGE_CSP` (exported from `routes.ts`): `default-src 'self'; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
 - Home of the `moku-editor` bin, its `mcp` and `mcp-config` subcommands, the `.moku/editor.json` discovery file and the stdio MCP bridge in `mcp/` (see "Bin" in section 6).
@@ -2076,20 +2312,21 @@ export type PagesApi = {
   /**
    * Tells pages that the moku-editor bin serves the game with these options: the bin owns hot
    * reload from now on, HMR is read from `options.development`, and the state goes to every tools
-   * page through `hub.publish("hotReload", …)`. The bin calls it right after `Bun.serve`.
+   * page through `hub.publish("hotReload", …)`. With `restart`, `setHotReload` can switch HMR by
+   * restarting the server (D-32). The bin calls it right after its first `Bun.serve`.
    *
-   * @param server - The running server (Bun's Server).
    * @param options - The options it was started with (the result of `hub.serve`).
+   * @param restart - Stops the bin's current server and serves new options on the same port.
    * @example
    * ```ts
    * // The bin, after it started the game server.
    * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
-   * const server = Bun.serve(options);
-   * editor.pages.attachServer(server, options);
+   * const game = createGameServer(options);
+   * editor.pages.attachServer(options, next => game.restart(next));
    * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
    * ```
    */
-  attachServer(server: AttachedServer, options: BunServeOptions): void;
+  attachServer(options: BunServeOptions, restart?: RestartServer): void;
   /**
    * The hot reload state: whether Bun reloads the game page on a source change, and who owns the
    * server. A game's own `Bun.serve` (no `attachServer` call) is owner "server" with HMR off.
@@ -2103,18 +2340,21 @@ export type PagesApi = {
    */
   hotReload(): HotReload;
   /**
-   * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
-   * running server, so the switch is read-only: a game's own server always answers false, the
-   * bin answers true only when its HMR already equals `on`. Restart the bin to change hot reload.
+   * Asks for Bun HMR on or off, and publishes the state. Bun cannot switch HMR on a running
+   * server, so the bin's server restarts with HMR flipped on the same port (D-32): the asked state
+   * is set and published at once, and the restart runs after the answer went out (A1). A failed
+   * restart is logged, the old state is published again and the old options are served again. A
+   * game's own server always answers false; a bin attached without a restart answers true only
+   * when its HMR already equals `on`.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise
-   * (a game's own server always answers false).
+   * @returns True when the bin owns the server and its HMR equals `on` or is switching to it; false
+   * otherwise (a game's own server always answers false).
    * @example
    * ```ts
-   * // The bin serves with HMR on.
-   * await editor.pages.setHotReload(true); // true: already on
-   * await editor.pages.setHotReload(false); // false: Bun keeps HMR on until the bin restarts
+   * // The bin serves with HMR on; the tools page asks for it off.
+   * await editor.pages.setHotReload(false); // true: the server restarts without HMR
+   * editor.pages.hotReload(); // { hmr: false, owner: "bin" }
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
@@ -2208,7 +2448,8 @@ export type AttachedServer = { reload(options: BunServeOptions): void };
 - Session choice: sticky choice, then this page's own game frame (its `__editorFrame` id, `frameUrl`), then newest embedded, then newest. An embedded session of another tools tab is never picked on its own. Watches survive disconnects and are re-sent with new numeric subs after every reconnect or session change.
 - A watch the session refuses with -32008 `not_installed` (the game does not have the source; the manifest lists it with `available: false`) is logged only at debug (`link:source-unavailable`) and never sent to that session again; a new session gets it again.
 - Taps: every `tap { x, y, at }` notification of the chosen session goes to the `onTap` listeners (frozen, at most one per 50 ms from the bridge). `heap()` is the `heap` of the chosen session's last heartbeat (Chromium only).
-- Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.owner === "bin" && state.hmr === on`: true only when the bin owns the server and its HMR already equals `on`, so a game's own server always answers false (as `pages.setHotReload`); a refusal is a 200 with the old state, so the page logs nothing (round 2b R16).
+- Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.owner === "bin" && state.hmr === on`: true when the bin owns the server and switched (D-32), false for a game's own server (as `pages.setHotReload`); a refusal is a 200 with the old state, so the page logs nothing (round 2b R16). The restart can cut the answer off: after a network failure the call waits up to 10 s for the reconnect to deliver `hotReload` and answers whether its `hmr` equals `on` (A1).
+- Editor page role (D-33, A12): config `role: "page"` (default) adds `&role=page` to the socket URL; a headless client passes `"tools"`. `notify("selection", info | null)` publishes the selection (dropped while closed, the last value sent again on each open); `handle("select", handler)` answers the `select` requests the hub relays (params checked with `parseSelectParams`, no handler -32601); `selection()` is the last `editor.selection` notification.
 - A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
 - Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
@@ -2550,19 +2791,74 @@ export type LinkApi = EditorChannel & {
   onHotReload(listener: (state: HotReload) => void): () => void;
   /**
    * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
-   * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
-   * so a change answers false and the state stays; asking the bin for its current value answers
-   * true. Never rejects: no boot, a refusal or a network failure answer false.
+   * token. Takes the state the server answers. The bin accepts a change and restarts its server
+   * (D-32); a game's own server refuses it. The restart can cut the answer off: after a network
+   * failure the call waits up to 10 s for the reconnect to deliver the hot reload state and
+   * answers whether its `hmr` equals `on` (A1). Never rejects: no boot, a refusal, a failed restart
+   * or no reconnect in time answer false.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * @returns True when the bin owns the server and its HMR now equals `on`; false otherwise.
    * @example
    * ```ts
-   * // The bin serves with HMR on; the user flips the switch off.
-   * await ctx.require(linkPlugin).setHotReload(false); // false: restart the bin to change it
+   * // The bin serves with HMR on; the user flips the switch off in workspace.
+   * await ctx.require(linkPlugin).setHotReload(false); // true: the bin restarted without HMR
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
+
+  /**
+   * The selection of the editor, as the hub last sent it (`editor.selection`): this page's own
+   * publish echoed back, or the one of another editor page tab.
+   *
+   * @returns A fresh copy; undefined when nothing is selected or the hub sent none yet.
+   * @example
+   * ```ts
+   * // The hub echoed the coins label the picker landed on.
+   * ctx.require(linkPlugin).selection()?.key; // "coins"
+   * ```
+   */
+  selection(): SelectionInfo | undefined;
+
+  /**
+   * Sends an editor-channel notification to the hub: `selection` publishes what the editor page
+   * selected (`null`: nothing). The hub takes it only from a `role: "page"` link. Dropped while
+   * the socket is closed; the last value is sent again each time the socket opens.
+   *
+   * @param method - "selection".
+   * @param params - The selection, or null when nothing is selected.
+   * @example
+   * ```ts
+   * // gameView publishes the element the picker landed on.
+   * ctx.require(linkPlugin).notify("selection", {
+   *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+   *   key: "coins",
+   *   name: "coins",
+   *   type: "text",
+   *   at: Date.now()
+   * }); // MCP moku_selection now answers the coins label
+   * ```
+   */
+  notify(method: NotifyMethod, params: PublishParams["selection"]): void;
+
+  /**
+   * Handles an editor-channel request the hub relays to this page: `select` (MCP `moku_select`).
+   * The params are checked first (-32602 `invalid_input`); the handler's result is the answer, a
+   * thrown error the failure. Without a handler the hub gets -32601. A later handler replaces an
+   * earlier one.
+   *
+   * @param method - "select".
+   * @param handler - Gets the checked SelectParams; resolves the selection after the select.
+   * @returns An idempotent remover; it removes only this handler.
+   * @example
+   * ```ts
+   * // gameView selects the element MCP asks for and answers its selection.
+   * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
+   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/editor/captures/coins-1840.md", … }
+   * remove();
+   * ```
+   */
+  handle(method: "select", handler: SelectHandler): () => void;
   /**
    * The files channel client.
    *
@@ -2582,7 +2878,7 @@ export type LinkApi = EditorChannel & {
 - Workspaces in rail order: Game (the default, ⌘1), Flow (⌘2), Render, State, Files, Console.
 - Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; H hot reload; Esc unwinds layers in `EscLayer` order.
 - Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) logo, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference mode, Registry (icon only; counts in its title "Registry · 20 sources · 23 commands"), theme. Below 900 px (`compact`) logo, game name (hidden at 560 px and narrower), link pill (session id in its title; it opens the session menu), Pause and Step as icons (the labels are their accessible names, round 2b R15), the icon toggles Reference mode (`data-action="reference"`, target, `aria-pressed`) and Hot reload (`data-action="hot-reload"`, flame with a dot while on; only above 560 px; inert with its reason in the title when the editor cannot change it), a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Reference mode, Hot reload (each with its state and key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls; Reference mode and Hot reload stay in the menu while their icons show. No two controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (e2e/top-bar.spec.ts).
-- Hot reload switch: mirrors `link.hotReload()`. Owner `"bin"`: a click asks `setHotReload`; Bun cannot switch, so it toasts "Start the bin with --no-hmr to turn hot reload off" (or "…without --no-hmr to turn hot reload on") and keeps that hint in the title. Owner `"server"` or unknown: inert, the reason in the title.
+- Hot reload switch (D-32): mirrors `link.hotReload()`. Owner `"bin"`: a click (the switch, the ⋯ row or key H) bookmarks the game, asks `setHotReload`, toasts "Hot reload off" or "Hot reload on", waits for this tab's game on the restarted server and reloads the frame with the bookmark ("Game reloaded · state restored from the last checkpoint"), so the page gains or drops Bun's HMR client. A failed switch toasts "Could not switch · start the bin with --no-hmr to turn hot reload off" (or "…without --no-hmr to turn hot reload on") and keeps that hint in the title. Owner `"server"`: "The game's own server sets hot reload"; owner unknown: inert, the reason in the title.
 - Narrow first: built for Claude's browser pane at 1/3 (480 px) and 1/2 (720 px) of the screen; every workspace works at 480 px without horizontal page scroll.
 - Density: `auto` (default; compact below 820 px of window width, comfortable from there), `compact` or `comfortable`. Palette items "Density: …"; saved with the theme; `data-density` on `<html>`; `workspace:density` when the applied value changes.
 - Reference mode (D-27): key R, the top-bar target button, the palette or `setReference`. The frame takes no game input while it is on; gameView draws `data-moku-*` proxies at the element bounds. Never persisted; Esc turns it off.
@@ -3219,16 +3515,19 @@ export type WorkspaceApi = {
   hotReload(): HotReload | undefined;
 
   /**
-   * Asks the server for hot reload on or off (`link.setHotReload`). A refusal toasts how to
-   * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
+   * Asks the server for hot reload on or off (`link.setHotReload`). The bin switches by restarting
+   * its server (D-32): workspace bookmarks the game first, toasts the new state, waits for this
+   * tab's game on the restarted server and reloads the game frame with that bookmark, so the page
+   * gains or drops Bun's HMR client. A refusal (a game's own server) or a failed switch toasts how
+   * to change hot reload and keeps that hint in the switch's tooltip.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * @returns True when the bin owns the server and its HMR now equals `on`; false otherwise.
    * Never rejects.
    * @example
    * ```ts
-   * // Bun cannot switch HMR on a running bin.
-   * await app.workspace.setHotReload(false); // false; toast "Start the bin with --no-hmr to turn hot reload off"
+   * // The bin serves with HMR on.
+   * await app.workspace.setHotReload(false); // true; toast "Hot reload off", then the game reloads with its state
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
@@ -3865,10 +4164,11 @@ export type LayoutApi = {
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active; Reference mode on when workspace has it on), `onStop`.
 - Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown or Reference mode is on. Runs `editor.*` commands through `panels.run`. Never captures on its own.
 - Calibration: reads `{ key }` of one keyed ui node from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1). A manifest with neither: no read, no warn, and the picker hint says "This game reports no element rects".
-- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. A click (`pointerup`) on a proxy is a pick.
-- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<capturesDir>/<key>-f<frame>.png` and `<capturesDir>/f<frame>.png`, then the card file `<capturesDir>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
+- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. The cursor over the layer and every proxy is a crosshair. A click (`pointerup`) on a proxy is a pick. A press that moves 4 client px or more drags an area (U9): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`.
+- Selection over MCP (U4, D-33): every change of the selection (a pick, an area, select, Esc) is published through `link.notify("selection", …)` (first without the style source, then again with it; after a pick with `card`, `crop`, `line`). `link.handle("select", …)` answers MCP `moku_select`: `rect` picks an area; `key` (first ui node with it, `"hud/infoBar"` allowed) or `ref` is inspected in the Game workspace and, unless `card: false`, picked without the clipboard; an unknown key is -32602 "No element with key <key>".
+- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<capturesDir>/<key>-f<frame>-crop.jpg` and `<capturesDir>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<capturesDir>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
 - The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md`. `<file:line>` is the key's source (` (loop)` for a loop key), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
-- The card file, Markdown: `# @moku <name> <type>`; the full reference block in a `text` fence (a fence one backtick longer than any run inside); `## JSX · <file:line>` and `## Style · <name> · <file:line>` with fenced snippets (language from the extension); an entity: `## Spawned by <projection> · <file:line>` and `- <component>: <short value>` rows; then `![element](<key>-f<frame>.png)` `![frame](f<frame>.png)`. "Copy reference" writes the card of the same node and frame again (one file), or a new one.
+- The card file, Markdown: `# @moku <name> <type>`; the full reference block in a `text` fence (a fence one backtick longer than any run inside); `## JSX · <file:line>` and `## Style · <name> · <file:line>` with fenced snippets (language from the extension); an entity: `## Spawned by <projection> · <file:line>` and `- <component>: <short value>` rows; then `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`. "Copy reference" writes the card of the same node and frame again (one file), or a new one.
 - The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) writes the card and copies the one line. A key built in a loop (`card${slot}` for `card0`) resolves to its template literal line with ` (loop)`.
 - Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title, "… · approx: estimated values"); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1). The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run` when the manifest lists it and keeps the flag with `workspace.setMuted`; a game that connects while muted is muted again (a hot reload connects a new page); without `game.mute` it is `aria-disabled` with the title "Needs @moku-labs/game with game.mute"; a refusal toasts "Sound switch failed · <message>".
 - Stage (round 2b R9): Fit is one scale per device kind, the scale that fits the tallest preset of the kind with its bezel (phones include foldables; tablets and the desktop have their own), and the screen shown always fits; 100 % is 1 CSS px per px. The bezel (`data-frame` on `[data-part="bezel"]`) follows `DeviceSpec.frame`: `modern` 10 px all round with the island and home bar guides; `home-button` 64 px above and below, 10 px at the sides, a square screen (`--screen-radius: 0px`) and a 44 px round `[data-part="home-button"]` in the bottom bezel (the right one in landscape), no island and no home bar.
@@ -3919,7 +4219,7 @@ export type GameViewConfig = {
  *
  * @example
  * ```ts
- * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" };
+ * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
  * ```
  */
 export type CaptureFile = {
@@ -3949,7 +4249,7 @@ export type SeriesResult = {
  *
  * @example
  * ```ts
- * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", … }
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
  * ```
  */
 export type GameViewApi = {
@@ -4067,16 +4367,17 @@ export type GameViewApi = {
   manifest(): Promise<TextureCatalogue | undefined>;
 
   /**
-   * One screenshot: runs `editor.capture` through panels (R9), writes the PNG under
-   * `capturesDir`, puts `shot: <path>` on the clipboard, toasts, shows the capture card and the
-   * shutter flash. Never captures on its own: only a user action or this call does.
+   * One screenshot: runs `editor.capture` through panels (R9), writes the picture under
+   * `capturesDir` named after its type (`.jpg` for the JPEG editor.capture answers by default,
+   * D-34), puts `shot: <path>` on the clipboard, toasts, shows the capture card and the shutter
+   * flash. Never captures on its own: only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
    * @example
    * ```ts
    * // The developer saw a glitch on the board and keeps a picture of it.
-   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" }
+   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
    * ```
    */
   capture(): Promise<CaptureFile | undefined>;
@@ -5438,6 +5739,11 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` (each with `heartbeat { frame, paused, silent }` once known; re-sent when paused or silent flips) | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
 | hub → tools | editor | notification | `hotReload` | `HotReload` (`{ hmr, owner }`; replayed after each tools hello) | — |
+| hub → tools | editor | notification | `selection` | `SelectionInfo`, or no params for nothing selected (kept, replayed after each tools hello; `null` when the last editor page closes) | — |
+| editor page → hub | editor | notification | `selection` | `SelectionInfo`, or no params (only from a `role=page` connection; checked with `parseSelectionInfo`) | — |
+| tools → hub | editor | request | `selection` | `{}` | the kept `SelectionInfo`, or `null` |
+| tools → hub | editor | request | `select` | `SelectParams` `{ key?, ref?, rect?, card? }` | `SelectionInfo`, relayed to the editor page (the one that published the kept selection, else the newest) |
+| hub → editor page | editor | request | `select` | `SelectParams` (the hub's own id; a card waits `4 × callTimeoutMs`, at most 60 s) | `SelectionInfo` |
 | hub → tools | game | notification | `heartbeat`, `value`, `tap` | forwarded, with `session` | — |
 
 A `read` or `watch` of a source listed with `available: false` answers -32008 `not_installed`. Fan-out: one agent-side watch per `(session, source, input)` (object keys sorted). Backpressure: congested tools connections coalesce values to the latest per `sub` and drop heartbeats and taps; the bridge backlogs values above 1 MiB buffered and flushes below 256 KiB.

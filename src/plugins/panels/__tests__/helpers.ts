@@ -142,6 +142,9 @@ export function createLinkMock(): LinkMock {
       hotReload: () => undefined,
       onHotReload: () => stopNothing,
       setHotReload: () => Promise.resolve(false),
+      selection: vi.fn(() => undefined),
+      notify: vi.fn(),
+      handle: vi.fn(() => vi.fn()),
       files: {
         list: vi.fn(() => Promise.resolve([])),
         read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),

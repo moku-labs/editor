@@ -145,7 +145,7 @@ describe("pages integration", () => {
       owner: "server"
     });
 
-    app.pages.attachServer(server, { development: { hmr: true, console: true } } as never);
+    app.pages.attachServer({ development: { hmr: true, console: true } } as never);
     const html = await fetch(`${origin}/__editor/`).then(response => response.text());
     const boot: ToolsBoot = JSON.parse(bootJsonOf(html) ?? "{}");
     const url = `${boot.ws}?token=${boot.token}&kind=tools`;

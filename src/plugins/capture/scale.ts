@@ -1,11 +1,11 @@
 /**
- * @file capture plugin — the `maxWidth` of editor.capture and editor.sheet: the range check, the
- * scaled size and the downscale over the injected picture decoder. A page that cannot downscale
- * answers the full picture.
+ * @file capture plugin — the size math of editor.capture and editor.sheet: the `maxWidth` range
+ * check, the scaled size and the crop of a page rect in picture pixels. Pure.
  */
+import type { SelectionRect } from "../registry/protocol";
 import { errorCode, wireError } from "../registry/protocol";
-import type { CaptureDeps, DecodedPicture, PictureDecoder } from "./types";
-import { MAX_MAX_WIDTH, MIN_MAX_WIDTH, SHOT_ID } from "./types";
+import type { PictureSize, PixelRect } from "./types";
+import { CROP_PADDING, MAX_MAX_WIDTH, MIN_MAX_WIDTH, SHOT_ID } from "./types";
 
 /**
  * Checks the optional `maxWidth` of editor.capture or editor.sheet: a whole number from 64 to 4096.
@@ -53,72 +53,51 @@ export function scaledSize(
   width: number,
   height: number,
   maxWidth: number
-): { readonly width: number; readonly height: number } | undefined {
+): PictureSize | undefined {
   if (width <= maxWidth) return undefined;
 
   return { width: maxWidth, height: Math.max(1, Math.round((height * maxWidth) / width)) };
 }
 
 /**
- * Draws a decoded picture at its scaled size; a narrow picture is answered as it is.
+ * Clamps a number to the range from 0 to `max`.
  *
- * @param image - The original data URL.
- * @param picture - The decoded picture.
- * @param maxWidth - The widest picture wanted.
- * @returns The data URL to answer.
+ * @param value - The number.
+ * @param max - The largest value.
+ * @returns The clamped number.
  */
-async function drawScaled(
-  image: string,
-  picture: DecodedPicture,
-  maxWidth: number
-): Promise<string> {
-  const size = scaledSize(picture.width, picture.height, maxWidth);
-
-  return size === undefined ? image : picture.toPng(size.width, size.height);
+function clampTo(value: number, max: number): number {
+  return Math.min(max, Math.max(0, value));
 }
 
 /**
- * Decodes a picture, draws it scaled and frees it, whatever happens.
+ * The crop of a page rect in picture pixels: the rect scaled by `picture.width / deviceWidth`,
+ * padded by 8 × scale on every side, widened to whole pixels and clamped to the picture.
  *
- * @param image - The original data URL.
- * @param maxWidth - The widest picture wanted.
- * @param decode - The picture decoder.
- * @returns The data URL to answer.
- */
-async function downscale(image: string, maxWidth: number, decode: PictureDecoder): Promise<string> {
-  const picture = await decode(image);
-
-  try {
-    return await drawScaled(image, picture, maxWidth);
-  } finally {
-    picture.close();
-  }
-}
-
-/**
- * Shrinks a shot or a sheet to `maxWidth` in the page (aspect kept, PNG data URL). A picture that is not wider
- * is answered unchanged. A page that cannot decode or draw it answers the full picture and logs
- * `capture:downscale-failed`, so the screenshot still works.
- *
- * @param image - The PNG data URL of the shot.
- * @param maxWidth - The checked `maxWidth`.
- * @param deps - The picture decoder and the log.
- * @returns The data URL to answer.
+ * @param page - The rect in page CSS px (`game.locate`, `game.rect` or the input `rect`).
+ * @param picture - The size of the decoded picture.
+ * @param deviceWidth - The game page width in CSS px; 0 (headless) counts as scale 1.
+ * @returns The crop, or undefined when nothing of the rect lies inside the picture.
  * @example
  * ```ts
- * const image = await fitWidth(shot.image, 540, deps); // a 1080 × 1920 shot comes back 540 × 960
+ * cropRect({ x: 10, y: 20, w: 100, h: 50 }, { width: 1080, height: 1920 }, 540);
+ * // { x: 4, y: 24, width: 232, height: 132 }: scale 2, 16 px padding
  * ```
  */
-export async function fitWidth(
-  image: string,
-  maxWidth: number,
-  deps: Pick<CaptureDeps, "decode" | "log">
-): Promise<string> {
-  try {
-    return await downscale(image, maxWidth, deps.decode);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    deps.log.warn("capture:downscale-failed", { message });
-    return image;
-  }
+export function cropRect(
+  page: SelectionRect,
+  picture: PictureSize,
+  deviceWidth: number
+): PixelRect | undefined {
+  const scale = deviceWidth > 0 ? picture.width / deviceWidth : 1;
+  const padding = CROP_PADDING * scale;
+
+  const left = clampTo(Math.floor(page.x * scale - padding), picture.width);
+  const top = clampTo(Math.floor(page.y * scale - padding), picture.height);
+  const right = clampTo(Math.ceil((page.x + page.w) * scale + padding), picture.width);
+  const bottom = clampTo(Math.ceil((page.y + page.h) * scale + padding), picture.height);
+
+  if (right <= left || bottom <= top) return undefined;
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }

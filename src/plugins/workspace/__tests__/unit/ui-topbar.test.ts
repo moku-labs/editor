@@ -431,10 +431,10 @@ describe("TopBar at 900 px and wider", () => {
     });
     expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
     expect(control("hot-reload").title).toBe(
-      "Hot reload (H): on · Bun reloads the game after a save and keeps its state · Start the bin with --no-hmr to turn hot reload off"
+      "Hot reload (H): on · Bun reloads the game after a save and keeps its state · Could not switch · start the bin with --no-hmr to turn hot reload off"
     );
     expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
-      "Start the bin with --no-hmr to turn hot reload off"
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
     ]);
   });
 

@@ -890,7 +890,7 @@ test.describe("pane · reference mode", () => {
     expect(flowLine, block).toMatch(/^flow: board > settings > open( · last: .+)?$/);
     expect(lines[9], block).toMatch(/^restore: bookmark settingsBoard-f\d+$/);
     expect(lines[10], block).toMatch(
-      /^shot: \.moku\/captures\/settingsBoard-f\d+\.png · frame: \.moku\/captures\/f\d+\.png$/
+      /^shot: \.moku\/captures\/settingsBoard-f\d+-crop\.jpg · frame: \.moku\/captures\/f\d+-full\.jpg$/
     );
     // Copy reference and the pick give the same facts (only the clock may differ): the card's
     // block is the one the Element tab shows.

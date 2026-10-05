@@ -1,6 +1,7 @@
 /**
- * @file gameView plugin — capture names (pure): the local minute stamp, screenshot paths, the two
- * files, the card file (round 2b R13) and the bookmark id of a pick, and series folders with `-2`, `-3` … on a collision,
+ * @file gameView plugin — capture names (pure): the local minute stamp, the extension of a picture
+ * (D-34), screenshot paths, the two files, the card file (round 2b R13) and the bookmark id of a
+ * pick, and series folders with `-2`, `-3` … on a collision,
  * zero-padded shot names, and small readers of the values a capture needs (game.position, folder
  * of a path).
  */
@@ -16,9 +17,19 @@ export type PositionInfo = {
 };
 
 /**
+ * The file extensions of a pick's two pictures (A19): the crop and the full frame.
+ */
+export type PickExtensions = { readonly crop: string; readonly full: string };
+
+/**
  * Characters a file name keeps; every other run becomes "-".
  */
 const UNSAFE_NAME = /[^\w-]+/g;
+
+/**
+ * The media subtype of an image data URL: `jpeg` of `data:image/jpeg;base64,…`.
+ */
+const IMAGE_TYPE = /^data:image\/([\w.+-]+)[;,]/;
 
 /**
  * Pads a number to two digits.
@@ -53,7 +64,7 @@ export function stamp(date: Date): string {
  * The first free name of `base`, `base-2`, `base-3` … with a suffix.
  *
  * @param base - The name without suffix.
- * @param suffix - ".png" or "".
+ * @param suffix - ".png", "-crop.jpg" or "".
  * @param taken - Paths already present.
  * @returns The free name.
  * @example
@@ -70,50 +81,76 @@ function firstFree(base: string, suffix: string, taken: ReadonlySet<string>): st
 }
 
 /**
- * The screenshot path `<dir>/<stamp>-<node>.png`, with `-2`, `-3` … when taken.
+ * The file extension of a picture, so its bytes and its name match (D-34): `jpg` for a JPEG data
+ * URL, the subtype for another image, `png` for anything else.
+ *
+ * @param image - The data URL of the picture.
+ * @returns "jpg", "png", "webp" …
+ * @example
+ * ```ts
+ * imageExtension("data:image/jpeg;base64,/9j/"); // "jpg"
+ * ```
+ */
+export function imageExtension(image: string): string {
+  const subtype = IMAGE_TYPE.exec(image)?.[1];
+  if (subtype === undefined) return "png";
+  return subtype === "jpeg" ? "jpg" : subtype;
+}
+
+/**
+ * The screenshot path `<dir>/<stamp>-<node>.<extension>`, with `-2`, `-3` … when taken.
  *
  * @param capturesDir - The captures folder.
  * @param minute - The stamp.
  * @param node - The node name (unsafe characters become "-").
  * @param taken - Paths already in the folder.
+ * @param extension - The extension of the picture (`imageExtension`); "png" by default.
  * @returns The path.
  * @example
  * ```ts
- * capturePath(".moku/captures", "2026-09-24-1012", "board", new Set()); // ".moku/captures/2026-09-24-1012-board.png"
+ * capturePath(".moku/captures", "2026-09-24-1012", "board", new Set(), "jpg"); // ".moku/captures/2026-09-24-1012-board.jpg"
  * ```
  */
 export function capturePath(
   capturesDir: string,
   minute: string,
   node: string,
-  taken: ReadonlySet<string>
+  taken: ReadonlySet<string>,
+  extension = "png"
 ): string {
-  return firstFree(`${capturesDir}/${minute}-${safeName(node)}`, ".png", taken);
+  return firstFree(`${capturesDir}/${minute}-${safeName(node)}`, `.${extension}`, taken);
 }
 
 /**
- * The two files of a pick: the crop `<dir>/<name>-f<frame>.png` and the full frame
- * `<dir>/f<frame>.png`, each with `-2`, `-3` … when taken.
+ * The two files of a pick (A19): the crop `<dir>/<name>-f<frame>-crop.<ext>` and the full frame
+ * `<dir>/f<frame>-full.<ext>`, each with `-2`, `-3` … before the suffix when taken.
  *
  * @param capturesDir - The captures folder.
- * @param name - The ui key or name of the picked element (unsafe characters become "-").
+ * @param name - The ui key or name of the picked element, "area" for an area (unsafe characters become "-").
  * @param frame - The frame of the shot.
  * @param taken - Paths already in the folder.
+ * @param extensions - The extension of each picture (`imageExtension`).
  * @returns The crop and the full frame paths.
  * @example
  * ```ts
- * pickPaths(".moku/captures", "settingsBoard", 1841, new Set()); // { crop: ".moku/captures/settingsBoard-f1841.png", full: ".moku/captures/f1841.png" }
+ * pickPaths(".moku/captures", "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" });
+ * // { crop: ".moku/captures/settingsBoard-f1841-crop.jpg", full: ".moku/captures/f1841-full.jpg" }
  * ```
  */
 export function pickPaths(
   capturesDir: string,
   name: string,
   frame: number,
-  taken: ReadonlySet<string>
+  taken: ReadonlySet<string>,
+  extensions: PickExtensions
 ): { readonly crop: string; readonly full: string } {
   return {
-    crop: firstFree(`${capturesDir}/${safeName(name)}-f${frame}`, ".png", taken),
-    full: firstFree(`${capturesDir}/f${frame}`, ".png", taken)
+    crop: firstFree(
+      `${capturesDir}/${safeName(name)}-f${frame}`,
+      `-crop.${extensions.crop}`,
+      taken
+    ),
+    full: firstFree(`${capturesDir}/f${frame}`, `-full.${extensions.full}`, taken)
   };
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
-import type { Json } from "../../../registry/protocol";
+import { errorCode, type Json, wireError } from "../../../registry/protocol";
 import { hideCard, showCard } from "../../capture/shot";
 import {
   highlightElement,
@@ -68,7 +68,13 @@ describe("setPicker", () => {
     setPicker(ctx, true);
     expect(ctx.state.card).toBeUndefined();
     expect(ctx.state.timers.card).toBeUndefined();
-    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([false, false, false, true]);
+    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false
+    ]);
     expect(ctx.state.picker.on).toBe(false);
   });
 
@@ -128,6 +134,21 @@ describe("highlightElement", () => {
     highlightElement(ctx, undefined);
     await flush();
     expect(ctx.state.treeHover).toBeUndefined();
+  });
+
+  it("logs a scene read that failed because the game reloaded at debug, not warn (U11)", async () => {
+    ctx.link.values.set("game.ui", () => {
+      throw wireError(errorCode.timeout, "The game page reloaded.", {
+        reason: "game_reloaded",
+        retryable: true
+      });
+    });
+    highlightElement(ctx, COIN);
+    await flush();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: highlight failed", {
+      message: "[moku-editor] The game page reloaded."
+    });
   });
 
   it("logs when the scene cannot be read", async () => {

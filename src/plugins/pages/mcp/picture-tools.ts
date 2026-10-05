@@ -1,23 +1,24 @@
 /**
- * @file pages/mcp — the picture tools (M5, M7): moku_screenshot (`editor.capture { maxWidth }`),
- * moku_series (`editor.sheet { frames, everyMs, maxWidth }`, or `game.capture { sheet }` when the
- * agent has no editor.sheet; game ≥ 0.4) and moku_reference (a reference card of `.moku/captures`
- * with its crop). Screenshot and series check liveness first: a paused or hidden game gets a
- * message, not a timeout.
+ * @file pages/mcp — the picture tools (M5, M7, D-34): moku_screenshot (`editor.capture { maxWidth,
+ * format, key? }`, JPEG by default, cropped to an element by key), moku_series (`editor.sheet {
+ * frames, everyMs, maxWidth, format: "jpeg" }`, or `game.capture { sheet }` when the agent has no
+ * editor.sheet; game ≥ 0.4) and moku_reference (a reference card of `.moku/captures` with its
+ * crop). Screenshot and series check liveness first: a paused or hidden game gets a message, not a
+ * timeout. Every image item takes its mimeType from the data URL: a page that cannot encode a
+ * JPEG answers the game's PNG.
  */
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path/posix";
-import type { FileEntry, Json } from "../../registry/protocol";
-import { isPrivatePath } from "./file-tools";
+import type { FileEntry, Json, PictureFormat } from "../../registry/protocol";
+import { readPicture } from "./file-tools";
 import { withProgress } from "./progress";
 import { errorResult, imageItem, imageKb, isTooLarge, pictureResult, textItem } from "./results";
 import { numberArgument, READ_ONLY, SESSION_PROPERTY, textArgument } from "./schema";
 import { livenessProblem } from "./sessions";
 import {
   commandOf,
-  dataUrlOf,
   pictureOf,
-  pngWidth,
+  pictureSize,
   readFileEntries,
   readFileText,
   readRunResult,
@@ -51,9 +52,24 @@ const MAX_WIDTH = 4096;
 const CROP_LINK = /!\[element\]\(([^)\s]+)\)/;
 
 /**
+ * The picture formats editor.capture and editor.sheet encode; JPEG is the default (D-34).
+ */
+const FORMATS: readonly PictureFormat[] = ["jpeg", "png"];
+
+/**
+ * The format moku_screenshot asks for when none is given, and the one moku_series always asks.
+ */
+const DEFAULT_FORMAT: PictureFormat = "jpeg";
+
+/**
  * One editor.capture shot.
  */
 type Shot = { readonly image: string; readonly frame: number; readonly device: Json };
+
+/**
+ * What moku_screenshot asks editor.capture for, besides `maxWidth`: the format and the element key.
+ */
+type ShotRequest = { readonly format: PictureFormat; readonly key?: string };
 
 /**
  * The sheet option of a contact sheet: how many pictures, how far apart in game time.
@@ -77,6 +93,7 @@ const NO_SHEET =
  *
  * @param hub - The hub connection.
  * @param maxWidth - The widest picture wanted.
+ * @param request - The format and the element key.
  * @param session - The session, if asked for.
  * @returns The shot.
  * @throws {Error} When the answer carries no picture.
@@ -84,9 +101,10 @@ const NO_SHEET =
 async function captureShot(
   hub: HubClient,
   maxWidth: number,
+  request: ShotRequest,
   session: string | undefined
 ): Promise<Shot> {
-  const input = { maxWidth };
+  const input = { maxWidth, ...request };
   const ran = await hub.request("game", "run", { id: "editor.capture", input }, session);
   const shot = readShot(readRunResult(ran)?.value ?? ran);
   if (shot === undefined) throw new Error("[moku-editor] editor.capture answered no picture.");
@@ -111,12 +129,31 @@ function sizeNote(image: string): { note?: string } {
 }
 
 /**
- * moku_screenshot: liveness, then editor.capture at `maxWidth`; a picture above about 300 KB is
- * taken once more at half its width (half of `maxWidth`, or of the picture when it is narrower).
+ * The format and key arguments of moku_screenshot.
  *
- * @param call - The call: maxWidth, session.
+ * @param call - The call.
+ * @returns `{ format, key? }`, the format "jpeg" when absent.
+ * @example
+ * ```ts
+ * shotRequestOf(call); // { format: "jpeg", key: "hud/coins" }
+ * ```
+ */
+function shotRequestOf(call: ToolCall): ShotRequest {
+  const asked = textArgument(call.args, "format");
+  const format = FORMATS.find(entry => entry === asked) ?? DEFAULT_FORMAT;
+  const key = textArgument(call.args, "key");
+  return key === undefined ? { format } : { format, key };
+}
+
+/**
+ * moku_screenshot: liveness, then editor.capture at `maxWidth` in the asked format, cropped to the
+ * element `key` names; a picture above about 300 KB is taken once more at half its width (half of
+ * `maxWidth`, or of the picture when it is narrower; the width is read from the PNG or JPEG
+ * header).
+ *
+ * @param call - The call: maxWidth, key, format, session.
  * @param context - The tool context.
- * @returns A text item (frame, device, width, KB) and the image.
+ * @returns A text item (frame, device, key, width, KB) and the image.
  */
 async function screenshot(call: ToolCall, context: ToolContext): Promise<ToolResult> {
   const hub = await context.editor.hub();
@@ -124,24 +161,26 @@ async function screenshot(call: ToolCall, context: ToolContext): Promise<ToolRes
   const problem = livenessProblem(hub.sessions(), session);
   if (problem !== undefined) return errorResult(problem);
 
+  const request = shotRequestOf(call);
   const asked = numberArgument(call.args, "maxWidth", DEFAULT_MAX_WIDTH);
   let maxWidth = asked;
-  let shot = await captureShot(hub, maxWidth, session);
+  let shot = await captureShot(hub, maxWidth, request, session);
   // Half of what came back: a picture narrower than maxWidth is halved from its own width.
-  const width = Math.min(asked, pngWidth(shot.image) ?? asked);
+  const width = Math.min(asked, pictureSize(shot.image)?.width ?? asked);
   const half = Math.max(MIN_WIDTH, Math.floor(width / 2));
   if (isTooLarge(shot.image) && half < width) {
     maxWidth = half;
-    shot = await captureShot(hub, maxWidth, session);
+    shot = await captureShot(hub, maxWidth, request, session);
   }
 
-  const facts = { frame: shot.frame, device: shot.device, maxWidth, kb: imageKb(shot.image) };
-  return pictureResult({ ...facts, ...sizeNote(shot.image) }, shot.image);
+  const key = request.key === undefined ? {} : { key: request.key };
+  const facts = { frame: shot.frame, device: shot.device, ...key, maxWidth };
+  return pictureResult({ ...facts, kb: imageKb(shot.image), ...sizeNote(shot.image) }, shot.image);
 }
 
 /**
- * Runs editor.sheet once: the agent takes the sheet and shrinks it to DEFAULT_MAX_WIDTH in the
- * page, so it travels small.
+ * Runs editor.sheet once: the agent takes the sheet, shrinks it to DEFAULT_MAX_WIDTH in the page
+ * and encodes it as a JPEG, so it travels small.
  *
  * @param hub - The hub connection.
  * @param sheet - Frames and everyMs.
@@ -153,7 +192,7 @@ async function editorSheet(
   sheet: SheetOption,
   session: string | undefined
 ): Promise<TakenSheet | undefined> {
-  const input = { ...sheet, maxWidth: DEFAULT_MAX_WIDTH };
+  const input = { ...sheet, maxWidth: DEFAULT_MAX_WIDTH, format: DEFAULT_FORMAT };
   const ran = await hub.request("game", "run", { id: "editor.sheet", input }, session);
   const shot = readShot(readRunResult(ran)?.value ?? ran);
   return shot === undefined
@@ -291,13 +330,7 @@ function cardOf(cards: readonly FileEntry[], id: string, root: string): FileEntr
  */
 async function cropOf(hub: HubClient, card: string, text: string): Promise<string | undefined> {
   const name = CROP_LINK.exec(text)?.[1];
-  const path = name === undefined ? undefined : `${dirname(card)}/${name}`;
-  if (path === undefined || isPrivatePath(path)) return undefined;
-  try {
-    return dataUrlOf(await hub.request("files", "readBinary", { path }));
-  } catch {
-    return undefined;
-  }
+  return name === undefined ? undefined : readPicture(hub, `${dirname(card)}/${name}`);
 }
 
 /**
@@ -337,7 +370,7 @@ export const screenshotTool: Tool = {
   name: "moku_screenshot",
   title: "Screenshot",
   description:
-    "A PNG of the game as it is now, at most maxWidth pixels wide, with its frame and device. The game page must be visible: a paused or hidden game answers a message instead.",
+    "A picture of the game as it is now (JPEG by default), at most maxWidth pixels wide, with its frame and device. key crops it to one ui element. The game page must be visible: a paused or hidden game answers a message instead.",
   inputSchema: {
     type: "object",
     properties: {
@@ -347,6 +380,18 @@ export const screenshotTool: Tool = {
         maximum: MAX_WIDTH,
         default: DEFAULT_MAX_WIDTH,
         description: "The widest picture in pixels; a wider game picture is scaled down."
+      },
+      key: {
+        type: "string",
+        minLength: 1,
+        description:
+          'A ui element key, projection-qualified like "hud/infoBar" allowed: the picture is cropped to that element plus 8 px.'
+      },
+      format: {
+        type: "string",
+        enum: FORMATS,
+        default: DEFAULT_FORMAT,
+        description: "jpeg (small, the default) or png (lossless)."
       },
       session: SESSION_PROPERTY
     },
@@ -363,7 +408,7 @@ export const seriesTool: Tool = {
   name: "moku_series",
   title: "Contact sheet",
   description:
-    "Takes frames pictures everyMs ms of game time apart and answers them laid out on one PNG (ceil(sqrt(frames)) columns): a motion at a glance. Needs @moku-labs/game 0.4 or newer and a visible game page.",
+    "Takes frames pictures everyMs ms of game time apart and answers them laid out on one picture (ceil(sqrt(frames)) columns, a JPEG when the editor encodes it): a motion at a glance. Needs @moku-labs/game 0.4 or newer and a visible game page.",
   inputSchema: {
     type: "object",
     properties: {

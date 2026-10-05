@@ -19,6 +19,9 @@ afterEach(async () => {
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 
+const url = (type: string): string =>
+  `data:image/${type};base64,${Buffer.from(PNG_BYTES).toString("base64")}`;
+
 describe("files api: list", () => {
   it("lists the root for '' and '.' alike", async () => {
     await fx.put("a.ts", "abc");
@@ -216,6 +219,34 @@ describe("files api: writeBinary and readBinary", () => {
   });
 });
 
+describe("files api: writeDataUrl", () => {
+  it("decodes the data URL and writes the image like writeBinary", async () => {
+    const path = ".moku/captures/series-x/001.png";
+    const saved = await fx.api.writeDataUrl(path, url("png"));
+    expect(saved).toEqual({ path, bytes: PNG_BYTES.length, version: sha1(PNG_BYTES) });
+    expect([...(await readFile(join(fx.root, path)))]).toEqual([...PNG_BYTES]);
+    expect(fx.ctx.emit).toHaveBeenCalledWith("files:written", {
+      path,
+      bytes: PNG_BYTES.length,
+      kind: "capture"
+    });
+  });
+
+  it("rejects a mime that does not match the path with -32602 field data, writing nothing", async () => {
+    await expect(fx.api.writeDataUrl(".moku/captures/a.jpg", url("png"))).rejects.toMatchObject({
+      code: -32_602,
+      data: { field: "data" }
+    });
+    expect(fx.ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects instead of throwing: -32602 for a bad URL, -32004 for a non-image path", async () => {
+    expect(await outcome(fx.api.writeDataUrl(".moku/captures/a.png", "png"))).toBe(-32_602);
+    expect(await outcome(fx.api.writeDataUrl("src/a.ts", url("png")))).toBe(-32_004);
+    expect(await outcome(fx.api.writeDataUrl("src/a.png", url("png")))).toBe(-32_004);
+  });
+});
+
 describe("files api: resolve and root", () => {
   it("returns the real root", () => {
     expect(fx.api.root()).toBe(fx.rootReal);
@@ -252,6 +283,8 @@ describe("files api: types", () => {
     expectTypeOf<FilesApi["list"]>().returns.toEqualTypeOf<Promise<FileEntry[]>>();
     expectTypeOf<FilesApi["write"]>().returns.toEqualTypeOf<Promise<WriteResult>>();
     expectTypeOf<FilesApi["writeBinary"]>().parameter(1).toEqualTypeOf<Uint8Array>();
+    expectTypeOf<FilesApi["writeDataUrl"]>().parameter(1).toEqualTypeOf<string>();
+    expectTypeOf<FilesApi["writeDataUrl"]>().returns.toEqualTypeOf<Promise<WriteResult>>();
     expectTypeOf<FilesApi["resolve"]>().returns.toEqualTypeOf<string>();
     expectTypeOf<FilesApi["root"]>().returns.toEqualTypeOf<string>();
   });

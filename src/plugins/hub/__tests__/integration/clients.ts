@@ -62,6 +62,8 @@ export type Client = {
 export type ClientOptions = {
   readonly token: string;
   readonly kind: "agent" | "tools";
+  /** The `role` query, e.g. "page" for the editor page; absent by default. */
+  readonly role?: string;
   readonly origin?: string;
   readonly path?: string;
 };
@@ -97,12 +99,13 @@ function firstMatch(
  * Connects a client and waits for the socket to open.
  *
  * @param port - Server port.
- * @param options - Token, kind, origin and path.
+ * @param options - Token, kind, role, origin and path.
  * @returns The open client.
  */
 export async function connectClient(port: number, options: ClientOptions): Promise<Client> {
   const path = options.path ?? "/__editor";
-  const url = `ws://127.0.0.1:${port}${path}/ws?token=${options.token}&kind=${options.kind}`;
+  const role = options.role === undefined ? "" : `&role=${options.role}`;
+  const url = `ws://127.0.0.1:${port}${path}/ws?token=${options.token}&kind=${options.kind}${role}`;
   const socket = openSocket(url, { origin: options.origin ?? `http://127.0.0.1:${port}` });
   const messages: Message[] = [];
   const waiters = new Set<() => void>();
@@ -227,6 +230,7 @@ export function paramsOf(message: Message | undefined): { [key: string]: Json } 
 export type UpgradeAsk = {
   readonly token?: string | undefined;
   readonly kind?: string | undefined;
+  readonly role?: string;
   readonly origin?: string | undefined;
   readonly host?: string | undefined;
   readonly upgrade?: string | undefined;
@@ -245,6 +249,7 @@ export async function upgradeStatus(port: number, ask: UpgradeAsk): Promise<numb
   if (ask.token !== undefined) url.searchParams.set("token", ask.token);
   const kind = "kind" in ask ? ask.kind : "tools";
   if (kind !== undefined) url.searchParams.set("kind", kind);
+  if (ask.role !== undefined) url.searchParams.set("role", ask.role);
 
   const defaults: Record<string, string | undefined> = {
     origin: `http://127.0.0.1:${port}`,

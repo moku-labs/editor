@@ -4,7 +4,8 @@ import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vitest";
 import { createServerCore, createServerPlugin, serverCoreConfig } from "../../../../config";
 import type { FileBinary, FileText } from "../../../registry/protocol";
-import { decodeDataUrl, filesPlugin } from "../..";
+import { filesPlugin } from "../..";
+import { decodeDataUrl } from "../../binary";
 import type { FilesWritten } from "../../types";
 import { PNG_BYTES } from "../helpers";
 
@@ -91,7 +92,7 @@ describe("files integration", () => {
 
     const path = ".moku/captures/series-x/001.png";
     const url = `data:image/png;base64,${Buffer.from(PNG_BYTES).toString("base64")}`;
-    const saved = await app.files.writeBinary(path, decodeDataUrl(url, path));
+    const saved = await app.files.writeDataUrl(path, url);
     const back = await app.files.readBinary(path);
     expect(back).toEqual({ dataUrl: url, version: saved.version });
     expect([...decodeDataUrl(back.dataUrl, path)]).toEqual([...PNG_BYTES]);

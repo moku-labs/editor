@@ -6,6 +6,8 @@ import type {
   LinkStatus,
   Manifest,
   RunResult,
+  SelectionInfo,
+  SelectParams,
   SessionInfo,
   Tap,
   ToolsBoot,
@@ -49,6 +51,26 @@ describe("link types", () => {
       { usedMb: number; limitMb: number } | undefined
     >();
     expect(app.link.heap()).toBeUndefined();
+  });
+
+  it("app.link carries the editor page: selection, notify and handle", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.selection).returns.toEqualTypeOf<SelectionInfo | undefined>();
+    expectTypeOf(app.link.notify).parameter(0).toEqualTypeOf<"selection">();
+    expectTypeOf(app.link.notify).parameter(1).toEqualTypeOf<SelectionInfo | null>();
+    expectTypeOf(app.link.handle)
+      .parameter(1)
+      .toEqualTypeOf<(params: SelectParams) => Promise<SelectionInfo>>();
+    expectTypeOf(app.link.handle).returns.toEqualTypeOf<() => void>();
+    expect(app.link.selection()).toBeUndefined();
+  });
+
+  it("rejects an unknown notify or handle method", () => {
+    const app = framework.createApp({});
+    // @ts-expect-error — the page notifies only its selection
+    expect(() => app.link.notify("hotReload", { hmr: true, owner: "bin" })).not.toThrow();
+    // @ts-expect-error — the page handles only select
+    expect(typeof app.link.handle("selection", async () => ({}))).toBe("function");
   });
 
   it("rejects a watch without its arguments and a link:status without frame", () => {

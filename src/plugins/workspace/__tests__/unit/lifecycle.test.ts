@@ -235,13 +235,13 @@ describe("startWorkspace — keys", () => {
     expect(ctx.state.popover).toBeUndefined();
   });
 
-  it("H asks the bin to switch hot reload; a refusal toasts how to change it", async () => {
+  it("H asks the bin to switch hot reload; a failed switch toasts how to change it", async () => {
     ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
     press("h");
     await flush();
     expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
     expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
-      "Start the bin with --no-hmr to turn hot reload off"
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
     ]);
   });
 });

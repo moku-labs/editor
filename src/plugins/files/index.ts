@@ -31,5 +31,3 @@ export const filesPlugin = createServerPlugin("files", {
   api: createFilesApi,
   onInit: validateFilesConfig
 });
-
-export { decodeDataUrl } from "./binary";

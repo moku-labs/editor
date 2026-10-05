@@ -53,6 +53,9 @@ export const CONFIG: GameViewConfig = {
 export const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
+/** A JPEG data URL: what editor.capture answers by default (D-34). */
+export const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
+
 /** The opening of a template placeholder as text, built so no string literal holds one. */
 const PLACEHOLDER = ["$", "{"].join("");
 
@@ -158,6 +161,10 @@ export type LinkMock = {
   readonly watch: Mock<LinkApi["watch"]>;
   readonly read: Mock<LinkApi["read"]>;
   readonly run: Mock<LinkApi["run"]>;
+  /** The editor-channel notifications gameView sent (`notify("selection", …)`). */
+  readonly notify: Mock<LinkApi["notify"]>;
+  /** The editor-channel request handlers gameView added (`handle("select", …)`). */
+  readonly handle: Mock<LinkApi["handle"]>;
   readonly watches: WatchRecord[];
   /** Answers of read by source id. */
   readonly values: Map<string, Json | ((input: Json | undefined) => Json)>;
@@ -192,11 +199,15 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
     return Promise.resolve(typeof value === "function" ? value(input) : value);
   });
   const run = vi.fn<LinkApi["run"]>(() => Promise.reject(new Error("link.run is not for views")));
+  const notify = vi.fn<LinkApi["notify"]>();
+  const handle = vi.fn<LinkApi["handle"]>(() => vi.fn());
   const link: LinkMock = {
     files: store,
     watch,
     read,
     run,
+    notify,
+    handle,
     watches,
     values,
     current: { kind: "live", frame: 1841 },
@@ -223,6 +234,9 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       hotReload: vi.fn(() => undefined),
       onHotReload: vi.fn(() => noop),
       setHotReload: vi.fn(() => Promise.resolve(false)),
+      selection: vi.fn(() => undefined),
+      notify,
+      handle,
       files: store
     },
     send(id, value) {

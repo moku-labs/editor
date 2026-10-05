@@ -381,9 +381,16 @@ describe("moku-editor mcp over stdio", () => {
 
     const list = await bridge.request("tools/list");
     const names = (list.result as { tools: { name: string }[] }).tools.map(tool => tool.name);
-    expect(names).toHaveLength(15);
+    expect(names).toHaveLength(17);
     expect(names).toEqual(
-      expect.arrayContaining(["moku_read", "moku_run", "moku_screenshot", "moku_files_read"])
+      expect.arrayContaining([
+        "moku_read",
+        "moku_run",
+        "moku_screenshot",
+        "moku_files_read",
+        "moku_selection",
+        "moku_select"
+      ])
     );
 
     await until(
@@ -410,6 +417,14 @@ describe("moku-editor mcp over stdio", () => {
     const sheet = await bridge.call("moku_series", { frames: 2, everyMs: 16 });
     expect(sheet.isError).toBe(true);
     expect(textOf(sheet)).toMatch(/game\.capture|paused or hidden/);
+
+    // No editor page is open: nothing is selected, and a select names the page to open.
+    const selection = await bridge.call("moku_selection");
+    expect(selection.isError).toBeUndefined();
+    expect(textOf(selection)).toBe("Nothing is selected in the editor.");
+    const select = await bridge.call("moku_select", { key: "coins" });
+    expect(select.isError).toBe(true);
+    expect(textOf(select)).toMatch(/Open the editor page: http:\/\/127\.0\.0\.1:\d+/);
 
     const note = await bridge.call("moku_files_read", { path: FIRST_NOTE });
     expect(note.isError).toBeUndefined();

@@ -10,7 +10,9 @@ import type { WireError, WireErrorData } from "./types";
 export const ERROR_PREFIX = "[moku-editor] ";
 
 /**
- * JSON-RPC error codes of the editor (contracts §2, R6).
+ * JSON-RPC error codes of the editor (contracts §2, R6). The selection relay reuses two codes
+ * under its own names: `noEditorPage` (-32003, reason `no_editor_page`) and `pageClosed` (-32001,
+ * reason `page_closed`, retryable).
  */
 export const errorCode = {
   invalidRequest: -32_600,
@@ -24,7 +26,9 @@ export const errorCode = {
   versionConflict: -32_005,
   notJson: -32_006,
   unauthorized: -32_007,
-  notInstalled: -32_008
+  notInstalled: -32_008,
+  noEditorPage: -32_003,
+  pageClosed: -32_001
 } as const;
 
 /**

@@ -91,6 +91,7 @@ export function createHub(): FakeHub {
     addRoutes: vi.fn(),
     guard: (req, server, mode) => guard(req, server, mode, new Set()),
     publish: vi.fn<HubApi["publish"]>(),
+    closeAll: vi.fn<HubApi["closeAll"]>(),
     path: () => "/__editor"
   };
   return hub;
@@ -108,6 +109,7 @@ export function createFiles(root = "/projects/merge-game"): FilesApi {
     read: vi.fn(),
     write: vi.fn(),
     writeBinary: vi.fn(),
+    writeDataUrl: vi.fn(),
     readBinary: vi.fn(),
     resolve: vi.fn(),
     root: () => root

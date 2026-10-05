@@ -154,6 +154,46 @@ describe("startBin dev server (D-23)", () => {
   });
 });
 
+describe("startBin hot reload switch (D-32)", () => {
+  it("restarts the server on the same port with HMR flipped; the token stays; stop stops the new server", async () => {
+    const serve = vi.spyOn(Bun, "serve");
+    const { deps, lines } = createDeps();
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
+    const port = Number(/127\.0\.0\.1:(\d+)\//.exec(lines.join("\n"))?.[1]);
+    const origin = `http://127.0.0.1:${port}`;
+    let token = "";
+    try {
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      token = ((await hello.json()) as { token: string }).token;
+
+      const answer = await fetch(`${origin}/__editor/hmr`, {
+        method: "POST",
+        headers: { origin, authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ hmr: false })
+      });
+      expect(answer.status).toBe(200);
+      expect(await answer.json()).toEqual({ hmr: false, owner: "bin" });
+
+      await vi.waitFor(() => expect(serve).toHaveBeenCalledTimes(2), { timeout: 5000 });
+      const options: { port?: unknown; development?: unknown } | undefined =
+        serve.mock.calls[1]?.[0];
+      expect(options?.port).toBe(port);
+      expect(options?.development).toEqual({ hmr: false, console: true });
+
+      const again = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      expect(((await again.json()) as { token: string }).token).toBe(token);
+      await expect(fetch(`${origin}/__editor/hmr`).then(r => r.json())).resolves.toEqual({
+        hmr: false,
+        owner: "bin"
+      });
+    } finally {
+      serve.mockRestore();
+      await started.stop?.();
+    }
+    await expect(fetch(`${origin}/`)).rejects.toThrow();
+  });
+});
+
 describe("startBin --no-hmr (R6)", () => {
   it("serves with Bun HMR off and console forwarding kept", async () => {
     const serve = vi.spyOn(Bun, "serve");

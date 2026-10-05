@@ -88,11 +88,19 @@ describe("capture integration", () => {
       ["editor.seriesStop", "read"],
       ["editor.sheet", "read"]
     ]);
-    expect(commands[0]?.input).toEqual({ maxWidth: "number?" });
+    expect(commands[0]?.input).toEqual({
+      maxWidth: "number?",
+      key: "string?",
+      rect: "json?",
+      format: "string?",
+      quality: "number?"
+    });
     expect(commands[3]?.input).toEqual({
       frames: "number",
       everyMs: "number",
-      maxWidth: "number?"
+      maxWidth: "number?",
+      format: "string?",
+      quality: "number?"
     });
 
     await app.stop();
@@ -108,6 +116,33 @@ describe("capture integration", () => {
       code: -32_602,
       data: { field: "maxWidth" }
     });
+
+    await app.stop();
+  });
+
+  it("editor.capture answers the door's PNG where the page cannot encode a JPEG", async () => {
+    const app = await startEditor();
+
+    const ran = await app.channel.run("editor.capture", { rect: { x: 0, y: 0, w: 50, h: 50 } });
+
+    expect(ran.value).toMatchObject({ image: PNG, frame: ran.state.frame });
+    await expect(app.channel.run("editor.capture", { format: "webp" })).rejects.toMatchObject({
+      code: -32_602,
+      data: { field: "format" }
+    });
+
+    await app.stop();
+  });
+
+  it("editor.capture { key } reads game.locate before the door; its error passes through", async () => {
+    const app = await startEditor();
+
+    // The merge game has no ui plugin, so game.locate itself throws.
+    await expect(app.channel.run("editor.capture", { key: "hud" })).rejects.toMatchObject({
+      message: expect.stringContaining("[moku-editor] game.locate:"),
+      data: { id: "game.locate" }
+    });
+    expect(renderer.capture).not.toHaveBeenCalled();
 
     await app.stop();
   });

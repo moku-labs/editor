@@ -1,6 +1,7 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
- * taps, the page heap and hot reload), the files client, state and the domain context. Wire shapes come from the protocol (R1).
+ * taps, the page heap, hot reload and the editor page's selection and select handler), the files
+ * client, state and the domain context. Wire shapes come from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -14,6 +15,9 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  PublishParams,
+  SelectionInfo,
+  SelectParams,
   SessionInfo,
   SubId,
   Tap,
@@ -58,11 +62,18 @@ export const CALL_TIMEOUT_MS = 10_000;
 export const LONG_CALL_CAP_MS = 60_000;
 
 /**
+ * How long `setHotReload` waits, after its POST failed on the network, for the reconnect to deliver
+ * the hot reload state (A1): the bin restarts the server, so the socket drops and comes back.
+ */
+export const HOT_RELOAD_CONFIRM_MS = 10_000;
+
+/**
  * Link configuration.
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { link: { retryMs: 500 } } });
+ * // A headless e2e client connects as a plain tools client, not as the editor page.
+ * createApp({ pluginConfigs: { link: { retryMs: 500, role: "tools" } } });
  * ```
  */
 export type Config = {
@@ -70,6 +81,33 @@ export type Config = {
   retryMs: number;
   /** CSS selector of the JSON script tag pages injects. Default "#moku-editor-boot". */
   boot: string;
+  /**
+   * "page": the editor page (`&role=page` on the upgrade, D-33): the hub takes its selection and
+   * relays `editor.select` to it. "tools": a plain tools client (no role sent). Default "page".
+   */
+  role: "page" | "tools";
+};
+
+/**
+ * An editor-channel notification the editor page sends to the hub.
+ */
+export type NotifyMethod = "selection";
+
+/**
+ * The handler of the editor-channel request `select` the hub relays to the editor page.
+ */
+export type SelectHandler = (params: SelectParams) => Promise<SelectionInfo>;
+
+/**
+ * A `setHotReload` call whose POST may fail while the bin restarts the server (A1). `before` is the
+ * socket at the call; a hot reload state delivered on another socket (the reconnect) confirms it.
+ */
+export type HotReloadWaiter = {
+  readonly before: WebSocket | undefined;
+  /** Set once a reconnect delivered the hot reload state. */
+  delivered: boolean;
+  /** Ends the bounded wait; set only while the call waits. */
+  settle: ((delivered: boolean) => void) | undefined;
 };
 
 /**
@@ -358,19 +396,71 @@ export type LinkApi = EditorChannel & {
   onHotReload(listener: (state: HotReload) => void): () => void;
   /**
    * Asks the server for hot reload on or off: `POST {path}/hmr` on the page origin with the boot
-   * token. Takes the state the server answers. Bun 1.3.14 cannot switch HMR on a running server,
-   * so a change answers false and the state stays; asking the bin for its current value answers
-   * true. Never rejects: no boot, a refusal or a network failure answer false.
+   * token. Takes the state the server answers. The bin accepts a change and restarts its server
+   * (D-32); a game's own server refuses it. The restart can cut the answer off: after a network
+   * failure the call waits up to 10 s for the reconnect to deliver the hot reload state and
+   * answers whether its `hmr` equals `on` (A1). Never rejects: no boot, a refusal, a failed restart
+   * or no reconnect in time answer false.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * @returns True when the bin owns the server and its HMR now equals `on`; false otherwise.
    * @example
    * ```ts
-   * // The bin serves with HMR on; the user flips the switch off.
-   * await ctx.require(linkPlugin).setHotReload(false); // false: restart the bin to change it
+   * // The bin serves with HMR on; the user flips the switch off in workspace.
+   * await ctx.require(linkPlugin).setHotReload(false); // true: the bin restarted without HMR
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
+  /**
+   * The selection of the editor, as the hub last sent it (`editor.selection`): this page's own
+   * publish echoed back, or the one of another editor page tab.
+   *
+   * @returns A fresh copy; undefined when nothing is selected or the hub sent none yet.
+   * @example
+   * ```ts
+   * // The hub echoed the coins label the picker landed on.
+   * ctx.require(linkPlugin).selection()?.key; // "coins"
+   * ```
+   */
+  selection(): SelectionInfo | undefined;
+  /**
+   * Sends an editor-channel notification to the hub: `selection` publishes what the editor page
+   * selected (`null`: nothing). The hub takes it only from a `role: "page"` link. Dropped while
+   * the socket is closed; the last value is sent again each time the socket opens.
+   *
+   * @param method - "selection".
+   * @param params - The selection, or null when nothing is selected.
+   * @example
+   * ```ts
+   * // gameView publishes the element the picker landed on.
+   * ctx.require(linkPlugin).notify("selection", {
+   *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+   *   key: "coins",
+   *   name: "coins",
+   *   type: "text",
+   *   at: Date.now()
+   * }); // MCP moku_selection now answers the coins label
+   * ```
+   */
+  notify(method: NotifyMethod, params: PublishParams["selection"]): void;
+  /**
+   * Handles an editor-channel request the hub relays to this page: `select` (MCP `moku_select`).
+   * The params are checked first (-32602 `invalid_input`); the handler's result is the answer, a
+   * thrown error the failure. Without a handler the hub gets -32601. A later handler replaces an
+   * earlier one.
+   *
+   * @param method - "select".
+   * @param handler - Gets the checked SelectParams; resolves the selection after the select.
+   * @returns An idempotent remover; it removes only this handler.
+   * @example
+   * ```ts
+   * // gameView selects the element MCP asks for and answers its selection.
+   * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
+   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/editor/captures/coins-1840.md", … }
+   * remove();
+   * ```
+   */
+  handle(method: "select", handler: SelectHandler): () => void;
   /**
    * The files channel client.
    *
@@ -443,6 +533,14 @@ export type LinkState = {
   hotReload: HotReload | undefined;
   /** onHotReload listeners (wrappers, like tapListeners). */
   hotReloadListeners: Set<(state: HotReload) => void>;
+  /** setHotReload calls that wait for the reconnect to confirm them (A1). */
+  hotReloadWaiters: Set<HotReloadWaiter>;
+  /** The selection the hub last sent (`editor.selection`); undefined for none or null. */
+  selection: SelectionInfo | undefined;
+  /** The last wire value this page notified, per method; sent again on every socket open. */
+  notified: Map<NotifyMethod, Json>;
+  /** The handler of each editor-channel request the hub relays to this page. */
+  handlers: Map<"select", SelectHandler>;
   subs: Map<number, Subscription>;
   wire: Map<SubId, Subscription>;
   /** Only grows: a sub number is never reused, so late values of an old sub are dropped. */

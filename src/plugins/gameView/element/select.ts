@@ -1,8 +1,9 @@
 /**
- * @file gameView plugin — selection and the picker (F11): pick on/off, select, inspect, the pink
- * highlight box, hover and click through the frame box (`pageFromClient`, `elementAt` of the
- * shared scene, R8), the click on a Reference mode proxy (both complete the pick, round 2 R2), and
- * the two cross-view intents of the Element tab (`workspace:reveal`, `workspace:open-file`, R4).
+ * @file gameView plugin — selection and the picker (F11): pick on/off, select (every change
+ * publishes the selection, U4), inspect, the pink highlight box, hover and click through the
+ * frame box (`pageFromClient`, `elementAt` of the shared scene, R8), the click on a Reference mode
+ * proxy (both complete the pick, round 2 R2), and the two cross-view intents of the Element tab
+ * (`workspace:reveal`, `workspace:open-file`, R4).
  */
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
@@ -10,17 +11,13 @@ import { workspacePlugin } from "../../workspace";
 import type { FrameBox } from "../../workspace/types";
 import { hideCard } from "../capture/shot";
 import { completePick } from "../reference/pick";
-import { messageOf } from "../report";
+import { logReadFailure, messageOf } from "../report";
 import { readFreshScene, readScene } from "../scene/read";
 import { notify } from "../state";
-import type { GameViewCtx } from "../types";
+import type { ClientPoint, GameViewCtx } from "../types";
 import { ensureOverlayRoot } from "../ui/OverlayRoot";
+import { publishSelected } from "./publish";
 import { saveStyle } from "./styles";
-
-/**
- * A point in client px.
- */
-export type ClientPoint = { readonly x: number; readonly y: number };
 
 /**
  * Turns the picker on (shows Game and the Element tab, hides the capture card so the first Esc
@@ -53,18 +50,31 @@ export function selectedElement(ctx: Pick<GameViewCtx, "state">): ElementRef | u
 }
 
 /**
- * Selects an element (or none) and clears the style card; a pending style edit is saved first.
+ * Sets the selected element (or none) without publishing it, and clears the style card; a pending
+ * style edit is saved first. An area pick publishes its own selection after it (U9).
  *
  * @param ctx - Domain context of gameView.
- * @param ref - The element, undefined to clear.
+ * @param ref - The element; omitted to clear.
  */
-export function selectElement(ctx: GameViewCtx, ref: ElementRef | undefined): void {
+export function applySelection(ctx: GameViewCtx, ref?: ElementRef): void {
   const { state } = ctx;
   if (state.styles?.pending !== undefined) void saveStyle(ctx);
   state.selected = ref;
   state.styles = undefined;
   state.lookup = undefined;
   notify(state);
+}
+
+/**
+ * Selects an element (or none), clears the style card and publishes the selection to the hub
+ * (`link.notify("selection")`, U4); a pending style edit is saved first.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param ref - The element, undefined to clear.
+ */
+export function selectElement(ctx: GameViewCtx, ref: ElementRef | undefined): void {
+  applySelection(ctx, ref);
+  publishSelected(ctx);
 }
 
 /**
@@ -107,7 +117,7 @@ export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
     },
     (error: unknown) => {
       if (request === state.highlightSeq) {
-        ctx.log.warn("gameView: highlight failed", { message: messageOf(error) });
+        logReadFailure(ctx, "gameView: highlight failed", error);
       }
     }
   );

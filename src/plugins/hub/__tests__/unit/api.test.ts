@@ -1,13 +1,25 @@
-/* eslint-disable sonarjs/no-clear-text-protocols, unicorn/consistent-function-scoping -- local http URLs; compile-only arrows stay next to their type assertion */
+/* eslint-disable sonarjs/no-clear-text-protocols, unicorn/consistent-function-scoping, unicorn/no-null -- local http URLs; compile-only arrows stay next to their type assertion; null is the published "nothing selected" */
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { createServerCore, serverCoreConfig } from "../../../../config";
 import { filesPlugin } from "../../../files";
-import type { SessionInfo } from "../../../registry/protocol";
+import type {
+  HotReload,
+  PublishMethod,
+  PublishParams,
+  SelectionInfo,
+  SessionInfo
+} from "../../../registry/protocol";
 import { hubPlugin } from "../..";
 import { createHubApi } from "../../api";
 import { validateHubConfig } from "../../init";
 import { startHub, stopHub } from "../../lifecycle";
-import type { BunServeOptions, HubCtx, HubSession } from "../../types";
+import type {
+  BunServeOptions,
+  HubApi,
+  HubCtx,
+  PublishMethod as HubPublishMethod,
+  HubSession
+} from "../../types";
 import { createCtx, fakeServer, field, helloOf, keysOf, MANIFEST } from "../helpers";
 
 /**
@@ -155,6 +167,38 @@ describe("hub types", () => {
       // @ts-expect-error — state stays private
       app.hub.state;
     expectTypeOf(peek).toBeFunction();
+  });
+
+  it("publish takes the params of its method: a wrong pair is a type error", () => {
+    expectTypeOf<HubPublishMethod>().toEqualTypeOf<PublishMethod>();
+    expectTypeOf<Parameters<HubApi["publish"]>>().toEqualTypeOf<
+      [method: PublishMethod, params: PublishParams[PublishMethod]]
+    >();
+    const hotReload = () => app.hub.publish("hotReload", { hmr: true, owner: "bin" });
+    const cleared = () => app.hub.publish("selection", null);
+    const wrongPair = (info: SelectionInfo) =>
+      // @ts-expect-error — hotReload takes a HotReload, not a SelectionInfo
+      app.hub.publish("hotReload", info);
+    const wrongState = (state: HotReload) =>
+      // @ts-expect-error — selection takes a SelectionInfo or null, not a HotReload
+      app.hub.publish("selection", state);
+    const unknownMethod = () =>
+      // @ts-expect-error — only hotReload and selection are published
+      app.hub.publish("sessions", null);
+    expectTypeOf(hotReload).toBeFunction();
+    expectTypeOf(cleared).toBeFunction();
+    expectTypeOf(wrongPair).toBeFunction();
+    expectTypeOf(wrongState).toBeFunction();
+    expectTypeOf(unknownMethod).toBeFunction();
+  });
+
+  it("closeAll takes a close code and a reason", () => {
+    expectTypeOf<HubApi["closeAll"]>().parameters.toEqualTypeOf<[code: number, reason: string]>();
+    expectTypeOf<HubApi["closeAll"]>().returns.toBeVoid();
+    const noReason = () =>
+      // @ts-expect-error — the reason is required
+      app.hub.closeAll(1012);
+    expectTypeOf(noReason).toBeFunction();
   });
 
   it("exposes the api surface", () => {

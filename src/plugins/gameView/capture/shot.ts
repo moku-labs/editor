@@ -1,8 +1,8 @@
 /**
- * @file gameView plugin — one screenshot: `editor.capture` through panels.run (R9), the PNG
- * through link.files.writeBinary, the toast, `shot: <path>` on the clipboard (round 2 R2), the
- * capture card (F2) and its hide timer. Only a user action or an api call starts it; nothing here
- * runs on a timer, an error or a reload.
+ * @file gameView plugin — one screenshot: `editor.capture` through panels.run (R9), the picture
+ * (JPEG by default, D-34, named after its type) through link.files.writeBinary, the toast,
+ * `shot: <path>` on the clipboard (round 2 R2), the capture card (F2) and its hide timer. Only a
+ * user action or an api call starts it; nothing here runs on a timer, an error or a reload.
  */
 import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
@@ -16,6 +16,7 @@ import type { CaptureCardInfo, CaptureFile, GameViewCtx } from "../types";
 import {
   capturePath,
   deviceLabel,
+  imageExtension,
   nodeOf,
   type PositionInfo,
   positionOf,
@@ -168,8 +169,9 @@ export function showCard(ctx: GameViewCtx, card: CaptureCardInfo): void {
 }
 
 /**
- * Takes one screenshot through panels.run, saves it under `capturesDir` and puts `shot: <path>`
- * on the clipboard (a refusal is only logged).
+ * Takes one screenshot through panels.run, saves it under `capturesDir` with the extension of its
+ * picture (`.jpg` for the JPEG editor.capture answers by default) and puts `shot: <path>` on the
+ * clipboard (a refusal is only logged).
  *
  * @param ctx - Domain context of gameView.
  * @returns The saved capture, undefined without a game or on a failure (toasted).
@@ -193,7 +195,8 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
     }
     const { capturesDir } = ctx.config;
     const taken = await listTaken(ctx, capturesDir);
-    const path = capturePath(capturesDir, stamp(new Date()), nodeOf(position), taken);
+    const extension = imageExtension(shot.image);
+    const path = capturePath(capturesDir, stamp(new Date()), nodeOf(position), taken, extension);
     await link.files.writeBinary(path, shot.image);
 
     const preset = workspace.device().preset;

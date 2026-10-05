@@ -258,7 +258,9 @@ export type EditorChannel = {
 export type Channel = "game" | "files" | "editor";
 
 /**
- * Why a call failed (R1 adds `link_closed`).
+ * Why a call failed (R1 adds `link_closed`). The selection relay adds `no_editor_page` (-32003: no
+ * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
+ * it answered).
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -273,7 +275,9 @@ export type ErrorReason =
   | "version_conflict"
   | "unauthorized"
   | "not_installed"
-  | "link_closed";
+  | "link_closed"
+  | "no_editor_page"
+  | "page_closed";
 
 /**
  * A JSON-RPC error object with the editor's data fields.
@@ -500,6 +504,214 @@ export type HotReload = {
   /** "bin" when the moku-editor bin serves the game, "server" for a game's own Bun.serve. */
   readonly owner: "bin" | "server";
 };
+
+/**
+ * A selected element: a ui element by its path, or a world entity by id. The same shape as the
+ * scene's `ElementRef` (panels/shared/scene), declared here so the wire module imports nothing.
+ *
+ * @example
+ * ```ts
+ * const ref: SelectionRef = { kind: "ui", path: "column#0/hudRow/coins" };
+ * ```
+ */
+export type SelectionRef =
+  | { readonly kind: "ui"; readonly path: string }
+  | { readonly kind: "entity"; readonly id: number };
+
+/**
+ * A rect in CSS px of the game page (the iframe viewport). The same shape as the scene's `PageRect`.
+ *
+ * @example
+ * ```ts
+ * const rect: SelectionRect = { x: 12, y: 40, w: 96, h: 24 };
+ * ```
+ */
+export type SelectionRect = {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+};
+
+/**
+ * One element of an area selection (U9): the group roots that lie in the area, in page order.
+ *
+ * @example
+ * ```ts
+ * const item: SelectionItem = {
+ *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+ *   key: "coins",
+ *   name: "coins",
+ *   type: "text",
+ *   rect: { x: 12, y: 40, w: 96, h: 24 },
+ *   source: { path: "src/ui/hud.ts", line: 42 }
+ * };
+ * ```
+ */
+export type SelectionItem = {
+  readonly ref: SelectionRef;
+  /** The ui node's `key`, when it has one. */
+  readonly key?: string;
+  readonly name: string;
+  readonly type: string;
+  /** Where it is drawn, in page CSS px. Absent: not placed. */
+  readonly rect?: SelectionRect;
+  /** The style source line of the element, once found. */
+  readonly source?: { readonly path: string; readonly line: number };
+};
+
+/**
+ * The element selected in the editor page, as the page publishes it (editor-channel notification
+ * `selection`) and as the hub answers `editor.selection` and `editor.select`. Check a received
+ * value with `parseSelectionInfo`. Its readonly `items` make it not assignable to the mutable
+ * Json: senders pass it through `toWireValue`, like a Manifest.
+ *
+ * @example
+ * ```ts
+ * // The picker landed on the coins label; the card and the crop are written.
+ * const info: SelectionInfo = {
+ *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+ *   key: "coins",
+ *   projection: "hud",
+ *   name: "coins",
+ *   type: "text",
+ *   rect: { x: 12, y: 40, w: 96, h: 24 },
+ *   source: { path: "src/ui/hud.ts", line: 42 },
+ *   card: ".moku/editor/captures/coins-1840.md",
+ *   crop: ".moku/editor/captures/coins-1840-crop.jpg",
+ *   line: "@moku ui:column#0/hudRow/coins hud.ts:42",
+ *   session: "s-7f3a",
+ *   frame: 1840,
+ *   at: 1790000000000
+ * };
+ * ```
+ */
+export type SelectionInfo = {
+  readonly ref: SelectionRef;
+  /** The ui node's `key`, when it has one. */
+  readonly key?: string;
+  /** The projection the element belongs to, e.g. "hud". */
+  readonly projection?: string;
+  readonly name: string;
+  readonly type: string;
+  /** Where it is drawn, in page CSS px (as `SceneNode.rect`). Absent: not placed. */
+  readonly rect?: SelectionRect;
+  /** The style source line of the element, once found. */
+  readonly source?: { readonly path: string; readonly line: number };
+  /** The capture card, project-relative under `capturesDir`. Set after a pick. */
+  readonly card?: string;
+  /** The element crop picture, project-relative under `capturesDir`. Set after a pick. */
+  readonly crop?: string;
+  /** The one-line `@moku …` reference of the element. */
+  readonly line?: string;
+  /** The game session the element belongs to. */
+  readonly session?: string;
+  /** The scene frame; after a pick the frame of the pick. */
+  readonly frame?: number;
+  /**
+   * The area of an area selection (U9), in page CSS px. An area selection has `type: "area"`,
+   * `name: "area"`, `rect` = the area and `ref` = the first item's ref (`{ kind: "ui", path: "" }`
+   * when no element is inside).
+   */
+  readonly area?: SelectionRect;
+  /** The elements of an area selection, top to bottom then left to right; at most 40. */
+  readonly items?: readonly SelectionItem[];
+  /** Epoch ms of the publish (`Date.now()`). */
+  readonly at: number;
+};
+
+/**
+ * The value of each method `publish` sends to the tools pages (A5): the hub keeps the last one
+ * per method and replays it to every tools connection that opens.
+ *
+ * @example
+ * ```ts
+ * const kept: PublishParams = { hotReload: { hmr: true, owner: "bin" }, selection: null };
+ * ```
+ */
+export type PublishParams = {
+  readonly hotReload: HotReload;
+  /** `null`: nothing is selected. */
+  readonly selection: SelectionInfo | null;
+};
+
+/**
+ * A method `publish` sends to the tools pages (R6): `"hotReload"` or `"selection"`.
+ */
+export type PublishMethod = keyof PublishParams;
+
+/**
+ * The format a picture travels in on the wire (editor.capture, editor.sheet, a crop): `"jpeg"`
+ * (the default, D-34) or `"png"` (lossless).
+ *
+ * @example
+ * ```ts
+ * const format: PictureFormat = "jpeg";
+ * ```
+ */
+export type PictureFormat = "jpeg" | "png";
+
+/**
+ * Params of the editor-channel request `select`: an area by `rect`, the element by `key` (a ui
+ * node key, projection-qualified like `"hud/infoBar"` allowed) or by `ref`. `rect` wins over `key`
+ * and `ref`. `card` (the page treats absent
+ * as true) asks for the capture card and the crop as after a picker click.
+ *
+ * @example
+ * ```ts
+ * const params: SelectParams = { key: "hud/infoBar", card: true };
+ * const areaParams: SelectParams = { rect: { x: 0, y: 30, w: 200, h: 60 } }; // every element inside
+ * ```
+ */
+export type SelectParams = {
+  readonly key?: string;
+  readonly ref?: SelectionRef;
+  /** An area in page CSS px, picked like a Reference-mode drag (U9). It wins over key and ref. */
+  readonly rect?: SelectionRect;
+  readonly card?: boolean;
+};
+
+/**
+ * The editor-channel notifications by method, with their params. `session` goes to agents and
+ * tools, the rest to tools connections. `selection` is also sent by the editor page (a tools
+ * connection with `role=page`) to the hub.
+ *
+ * @example
+ * ```ts
+ * const note: EditorNotifications["selection"] = null; // nothing is selected
+ * ```
+ */
+export type EditorNotifications = {
+  readonly session: SessionParams;
+  readonly sessions: SessionsParams;
+} & PublishParams;
+
+/**
+ * The name of an editor-channel notification.
+ */
+export type EditorNotificationMethod = keyof EditorNotifications;
+
+/**
+ * The editor-channel requests by method: `selection` (answered by the hub with the last published
+ * selection) and `select` (relayed by the hub to the editor page, which answers the selection).
+ *
+ * @example
+ * ```ts
+ * const answer: EditorRequests["select"]["result"] = info; // the element after the select
+ * ```
+ */
+export type EditorRequests = {
+  readonly selection: {
+    readonly params: Readonly<Record<string, never>>;
+    readonly result: SelectionInfo | null;
+  };
+  readonly select: { readonly params: SelectParams; readonly result: SelectionInfo };
+};
+
+/**
+ * The name of an editor-channel request.
+ */
+export type EditorRequestMethod = keyof EditorRequests;
 
 /**
  * The size and corner radius of one screen of a foldable device, in CSS px.

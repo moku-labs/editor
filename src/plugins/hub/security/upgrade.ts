@@ -1,9 +1,10 @@
 /**
- * @file hub plugin — the `{path}/ws` route: path, started, upgrade header, Host and Origin, token
- * and kind are checked in that order before Bun upgrades the request. Every refusal is logged
- * once, without the URL and without the token.
+ * @file hub plugin — the `{path}/ws` route: path, started, upgrade header, Host and Origin, token,
+ * kind and role are checked in that order before Bun upgrades the request. `role=page` with
+ * `kind=tools` marks the editor page (A11). Every refusal is logged once, without the URL and
+ * without the token.
  */
-import type { ConnKind, HubCtx, HubServer } from "../types";
+import type { ConnKind, HubCtx, HubServer, HubSocketData } from "../types";
 import { refusalOf, refuse } from "./guard";
 import { sameToken } from "./token";
 
@@ -20,6 +21,7 @@ const REFUSALS = {
   "fetch-site": [403, "forbidden"],
   token: [401, "unauthorized"],
   kind: [400, "invalid"],
+  role: [400, "invalid"],
   failed: [400, "invalid"]
 } satisfies Record<string, readonly [number, string]>;
 
@@ -40,6 +42,30 @@ type UpgradeCheck = keyof typeof REFUSALS;
  */
 function kindOf(value: string | null): ConnKind | undefined {
   return value === "agent" || value === "tools" ? value : undefined;
+}
+
+/**
+ * The `role` query value of the editor page.
+ */
+const PAGE_ROLE = "page";
+
+/**
+ * Whether an upgrade is the editor page (A11): no `role` is a plain connection, `role=page` with
+ * `kind=tools` is the page, and anything else is refused.
+ *
+ * @param role - The `role` query value, null when absent.
+ * @param kind - The connection kind.
+ * @returns true for the page, false for a plain connection, undefined to refuse.
+ * @example
+ * ```ts
+ * pageOf("page", "tools"); // true
+ * pageOf("page", "agent"); // undefined
+ * ```
+ */
+function pageOf(role: string | null, kind: ConnKind): boolean | undefined {
+  if (role === null) return false;
+
+  return role === PAGE_ROLE && kind === "tools" ? true : undefined;
 }
 
 /**
@@ -88,8 +114,8 @@ function precheck(
 
 /**
  * The `{path}/ws` handler: undefined after a successful upgrade (Bun contract), else a refusal
- * (404 path, 503 not started, 426 not an upgrade, 403 Host/Origin, 401 token, 400 kind or a
- * failed upgrade).
+ * (404 path, 503 not started, 426 not an upgrade, 403 Host/Origin, 401 token, 400 kind, role or a
+ * failed upgrade). An accepted upgrade keeps the server port for the editor page URL.
  *
  * @param ctx - Domain context of the hub.
  * @param req - The request.
@@ -111,8 +137,13 @@ export function handleUpgrade(ctx: HubCtx, req: Request, server: HubServer): Res
   const kind = kindOf(url.searchParams.get("kind"));
   if (kind === undefined) return refused(ctx, req, "kind");
 
+  const page = pageOf(url.searchParams.get("role"), kind);
+  if (page === undefined) return refused(ctx, req, "role");
+
   const conn = state.nextConn;
   state.nextConn += 1;
+  state.editorPort = server.port;
 
-  return server.upgrade(req, { data: { kind, conn } }) ? undefined : refused(ctx, req, "failed");
+  const data: HubSocketData = page ? { kind, conn, page } : { kind, conn };
+  return server.upgrade(req, { data }) ? undefined : refused(ctx, req, "failed");
 }

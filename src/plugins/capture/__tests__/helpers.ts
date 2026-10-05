@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { Json, RunResult, RunState } from "../../registry/protocol";
-import type { CommandEntry } from "../../registry/types";
+import type { CommandEntry, SourceEntry } from "../../registry/types";
 import { createCaptureState } from "../state";
 import type {
   CaptureClock,
@@ -8,12 +8,15 @@ import type {
   CaptureRegistry,
   Config,
   DecodedPicture,
-  PictureDecoder
+  EncodeOptions,
+  PictureDecoder,
+  PictureFormat
 } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fakes of the capture unit tests: a log mock, a fake registry whose
-// game.capture answers what the test asks, a fake clock and the domain deps.
+// game.capture answers what the test asks (and whose rect sources answer what
+// the test gives), a fake clock and the domain deps.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A PNG data URL as the door answers it. */
@@ -50,33 +53,70 @@ export type LogMock = ReturnType<typeof createLog>;
 /** What the fake game.capture answers for one call: a value, or an error to throw. */
 export type CaptureAnswer = { readonly value: Json } | { readonly error: Error };
 
+/** A read of a fake source: raw input in, value out. */
+export type SourceRead = ReturnType<typeof vi.fn<(raw: Json) => Json>>;
+
 /** A fake registry slice with its game.capture door. */
 export type FakeRegistry = CaptureRegistry & {
   /** The entries added with `add`, by id. */
   readonly added: Map<string, CommandEntry>;
   /** The game.capture entry (absent when the registry has none). */
   readonly capture: ReturnType<typeof vi.fn<(raw: Json) => Promise<RunResult>>>;
+  /** The reads of the sources the test gave, by id. */
+  readonly reads: Map<string, SourceRead>;
   /** The frame the next game.capture call reports. */
   frame: number;
 };
+
+/** Options of the fake registry. */
+export type FakeRegistryOptions = {
+  /** Whether the registry holds game.capture (default true). */
+  readonly withCapture?: boolean;
+  /** Runs before each answer (the test moves its clock here). */
+  readonly onRun?: () => void;
+  /** Sources the registry holds, by id: what each read answers. */
+  readonly sources?: Readonly<Record<string, (raw: Json) => Json>>;
+};
+
+/**
+ * The stop of a fake watch: does nothing.
+ */
+const unwatch = (): void => undefined;
+
+/**
+ * Builds a source entry around a read mock.
+ *
+ * @param id - The source id.
+ * @param read - The read mock.
+ * @returns The entry.
+ */
+function sourceEntry(id: string, read: SourceRead): SourceEntry {
+  return {
+    descriptor: { id, title: id, input: { key: "string?" }, changes: "frame" },
+    read,
+    watch: () => unwatch
+  };
+}
 
 /**
  * Builds a fake registry whose game.capture answers `answer(call)`; the frame grows per call.
  *
  * @param answer - The answer of each call (0-based call index), a data URL by default.
- * @param options - `withCapture: false` leaves game.capture out of the registry.
- * @param options.withCapture - Whether the registry holds game.capture.
- * @param options.onRun - Runs before each answer (the test moves its clock here).
+ * @param options - `withCapture: false` leaves game.capture out; `sources` adds sources.
  * @returns The fake registry.
  */
 export function fakeRegistry(
   answer: (call: number) => CaptureAnswer = () => ({ value: PNG }),
-  options: { readonly withCapture?: boolean; readonly onRun?: () => void } = {}
+  options: FakeRegistryOptions = {}
 ): FakeRegistry {
   const added = new Map<string, CommandEntry>();
+  const reads = new Map<string, SourceRead>(
+    Object.entries(options.sources ?? {}).map(([id, read]) => [id, vi.fn(read)])
+  );
   let calls = 0;
   const registry: FakeRegistry = {
     added,
+    reads,
     frame: 1777,
     capture: vi.fn(async (_raw: Json): Promise<RunResult> => {
       const reply = answer(calls);
@@ -94,6 +134,10 @@ export function fakeRegistry(
         };
       }
       return added.get(id);
+    },
+    source: id => {
+      const read = reads.get(id);
+      return read === undefined ? undefined : sourceEntry(id, read);
     },
     add: entry => {
       added.set(entry.descriptor.id, entry);
@@ -122,9 +166,9 @@ export function fakeClock(): FakeClock {
   return clock;
 }
 
-/** A decoded picture whose drawing and freeing are mocks. */
+/** A decoded picture whose encoding and freeing are mocks. */
 export type FakePicture = DecodedPicture & {
-  readonly toPng: ReturnType<typeof vi.fn<(width: number, height: number) => Promise<string>>>;
+  readonly encode: ReturnType<typeof vi.fn<(options: EncodeOptions) => Promise<string>>>;
   readonly close: ReturnType<typeof vi.fn<() => void>>;
 };
 
@@ -135,18 +179,42 @@ export type FakeDecoder = ReturnType<typeof vi.fn<PictureDecoder>> & {
 };
 
 /**
- * The data URL the fake picture draws at a size.
+ * The data URL the fake picture encodes at a size in a format.
+ *
+ * @param format - The encoded format.
+ * @param width - Encoded width in pixels.
+ * @param height - Encoded height in pixels.
+ * @returns A fake data URL naming the format and the size.
+ */
+export function encodedAs(format: PictureFormat, width: number, height: number): string {
+  return `data:image/${format};base64,${String(width)}x${String(height)}`;
+}
+
+/**
+ * The data URL the fake picture draws at a size as a PNG.
  *
  * @param width - Drawn width in pixels.
  * @param height - Drawn height in pixels.
  * @returns A fake PNG data URL naming the size.
  */
 export function smallPng(width: number, height: number): string {
-  return `data:image/png;base64,${String(width)}x${String(height)}`;
+  return encodedAs("png", width, height);
 }
 
 /**
- * Builds a decoder whose pictures are `width` × `height` pixels and draw `smallPng(w, h)`.
+ * The data URL the fake picture draws at a size as a JPEG.
+ *
+ * @param width - Drawn width in pixels.
+ * @param height - Drawn height in pixels.
+ * @returns A fake JPEG data URL naming the size.
+ */
+export function smallJpeg(width: number, height: number): string {
+  return encodedAs("jpeg", width, height);
+}
+
+/**
+ * Builds a decoder whose pictures are `width` × `height` pixels and encode
+ * `encodedAs(format, size.width, size.height)`.
  *
  * @param width - Picture width in pixels.
  * @param height - Picture height in pixels.
@@ -158,7 +226,9 @@ export function fakeDecoder(width = 1080, height = 1920): FakeDecoder {
     const picture: FakePicture = {
       width,
       height,
-      toPng: vi.fn(async (w: number, h: number) => smallPng(w, h)),
+      encode: vi.fn(async (options: EncodeOptions) =>
+        encodedAs(options.format, options.size.width, options.size.height)
+      ),
       close: vi.fn()
     };
     pictures.push(picture);

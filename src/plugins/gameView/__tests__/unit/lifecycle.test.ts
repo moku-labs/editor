@@ -100,16 +100,17 @@ describe("initGameView", () => {
     expect(item("Overlay in game").disabled?.()).toBe("The game did not add the overlay");
   });
 
-  it("binds the keys and the four Esc layers; every remover goes into the disposers", () => {
+  it("binds the keys and the five Esc layers; every remover goes into the disposers", () => {
     initGameView(ctx);
     expect(ctx.workspace.bindings).toHaveLength(6);
     expect(ctx.workspace.escapes.map(entry => entry.layer)).toEqual([
       "contactSheet",
       "seriesPopover",
       "captureCard",
-      "picker"
+      "picker",
+      "selection"
     ]);
-    expect(ctx.state.disposers.length).toBeGreaterThanOrEqual(10);
+    expect(ctx.state.disposers.length).toBeGreaterThanOrEqual(11);
   });
 
   it("does no I/O", () => {

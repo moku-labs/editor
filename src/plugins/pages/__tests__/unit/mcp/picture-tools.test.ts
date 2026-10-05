@@ -3,11 +3,12 @@ import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path/posix";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Json } from "../../../../registry/protocol";
+import { wireError } from "../../../../registry/protocol";
 import { referenceTool, screenshotTool, seriesTool } from "../../../mcp/picture-tools";
 import { MAX_IMAGE_CHARS } from "../../../mcp/results";
 import { session } from "../../fake-hub";
 import type { ToolSetup } from "../../mcp-tools";
-import { jsonOf, png, pngOf, textAt, toolSetup } from "../../mcp-tools";
+import { jpegOf, jsonOf, png, pngOf, textAt, toolSetup } from "../../mcp-tools";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages/mcp picture tools (M5, M7): the liveness check, editor.capture with
@@ -43,7 +44,13 @@ const LIVE = session("s-1", { heartbeat: { frame: 1840, paused: false, silent: f
 const SHEET_COMMAND = {
   id: "editor.sheet",
   title: "Contact sheet",
-  input: { frames: "number", everyMs: "number", maxWidth: "number?" },
+  input: {
+    frames: "number",
+    everyMs: "number",
+    maxWidth: "number?",
+    format: "string?",
+    quality: "number?"
+  },
   effect: "read"
 };
 
@@ -110,13 +117,13 @@ describe("liveness (M7)", () => {
 });
 
 describe("moku_screenshot", () => {
-  it("runs editor.capture with maxWidth 1080 and answers the facts and the image", async () => {
+  it("runs editor.capture with maxWidth 1080 as JPEG and answers the facts and the image", async () => {
     const { run, hub } = await ready({ sessions: [LIVE] });
     hub.handle("game.run", () => ran({ image: png(8), frame: 1841, device: DEVICE }));
     const { result } = await run(screenshotTool);
     expect(hub.requests[0]).toMatchObject({
       method: "run",
-      params: { id: "editor.capture", input: { maxWidth: 1080 } }
+      params: { id: "editor.capture", input: { maxWidth: 1080, format: "jpeg" } }
     });
     expect(jsonOf(result)).toEqual({ frame: 1841, device: DEVICE, maxWidth: 1080, kb: 0 });
     expect(result.content[1]).toEqual({
@@ -132,8 +139,8 @@ describe("moku_screenshot", () => {
     hub.handle("game.run", () => ran({ image: png(sizes.shift() ?? 1), frame: 2, device: DEVICE }));
     const { result } = await run(screenshotTool, { maxWidth: 800, session: "s-1" });
     expect(hub.requests.map(entry => entry.params)).toEqual([
-      { id: "editor.capture", input: { maxWidth: 800 } },
-      { id: "editor.capture", input: { maxWidth: 400 } }
+      { id: "editor.capture", input: { maxWidth: 800, format: "jpeg" } },
+      { id: "editor.capture", input: { maxWidth: 400, format: "jpeg" } }
     ]);
     expect(jsonOf(result)).toEqual({ frame: 2, device: DEVICE, maxWidth: 400, kb: 1 });
   });
@@ -159,10 +166,59 @@ describe("moku_screenshot", () => {
     hub.handle("game.run", () => ran({ image: images.shift() ?? "", frame: 4, device: DEVICE }));
     const { result } = await run(screenshotTool);
     expect(hub.requests.map(entry => entry.params)).toEqual([
-      { id: "editor.capture", input: { maxWidth: 1080 } },
-      { id: "editor.capture", input: { maxWidth: 196 } }
+      { id: "editor.capture", input: { maxWidth: 1080, format: "jpeg" } },
+      { id: "editor.capture", input: { maxWidth: 196, format: "jpeg" } }
     ]);
     expect(jsonOf(result)).toEqual({ frame: 4, device: DEVICE, maxWidth: 196, kb: 2 });
+  });
+
+  it("reads the width of a JPEG to halve it, and answers it as image/jpeg", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    const images = [jpegOf(393, MAX_IMAGE_CHARS + 1), jpegOf(196, 2048, 0xc2)];
+    hub.handle("game.run", () => ran({ image: images.shift() ?? "", frame: 5, device: DEVICE }));
+    const { result } = await run(screenshotTool);
+    expect(hub.requests.map(entry => entry.params)).toEqual([
+      { id: "editor.capture", input: { maxWidth: 1080, format: "jpeg" } },
+      { id: "editor.capture", input: { maxWidth: 196, format: "jpeg" } }
+    ]);
+    expect(result.content[1]).toMatchObject({ type: "image", mimeType: "image/jpeg" });
+  });
+
+  it("crops to an element key and takes a PNG when asked", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    hub.handle("game.run", () => ran({ image: png(8), frame: 6, device: DEVICE }));
+    const { result } = await run(screenshotTool, {
+      key: "hud/coins",
+      format: "png",
+      maxWidth: 540
+    });
+    expect(hub.requests[0]?.params).toEqual({
+      id: "editor.capture",
+      input: { maxWidth: 540, format: "png", key: "hud/coins" }
+    });
+    expect(jsonOf(result)).toEqual({
+      frame: 6,
+      device: DEVICE,
+      key: "hud/coins",
+      maxWidth: 540,
+      kb: 0
+    });
+    expect(result.content[1]).toMatchObject({ mimeType: "image/png" });
+  });
+
+  it("passes the agent's error for an unknown key through", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    hub.handle("game.run", () => {
+      throw wireError(-32_602, "[moku-editor] editor.capture: no element with key nope", {
+        reason: "invalid_input",
+        field: "key"
+      });
+    });
+    const { result } = await run(screenshotTool, { key: "nope" });
+    expect(result).toEqual({
+      content: [{ type: "text", text: "editor.capture: no element with key nope" }],
+      isError: true
+    });
   });
 
   it("does not retry below the narrowest width", async () => {
@@ -186,14 +242,17 @@ describe("moku_screenshot", () => {
 });
 
 describe("moku_series", () => {
-  it("runs editor.sheet at maxWidth 1080 when the agent has it, and answers the sheet", async () => {
+  it("runs editor.sheet as JPEG at maxWidth 1080 when the agent has it, and answers the sheet", async () => {
     const { run, hub } = await ready({ sessions: [LIVE] });
     hub.handle("game.manifest", () => manifest({ sheet: "json?" }, [SHEET_COMMAND]));
     hub.handle("game.run", () => ran({ image: png(6), frame: 1902, device: DEVICE }, 1902));
     const { result, progress } = await run(seriesTool, { frames: 4, everyMs: 100 });
     expect(hub.requests[1]).toMatchObject({
       method: "run",
-      params: { id: "editor.sheet", input: { frames: 4, everyMs: 100, maxWidth: 1080 } }
+      params: {
+        id: "editor.sheet",
+        input: { frames: 4, everyMs: 100, maxWidth: 1080, format: "jpeg" }
+      }
     });
     expect(hub.requests).toHaveLength(2);
     expect(jsonOf(result)).toEqual({

@@ -1,7 +1,7 @@
 /**
  * Complex tier — the tools page's link to the editor server: boot JSON, websocket, sessions,
- * manifest cache, the remote EditorChannel, the hot reload state and the files client. Emits the
- * global `link:status`.
+ * manifest cache, the remote EditorChannel, the hot reload state, the editor page's selection and
+ * select handler, and the files client. Emits the global `link:status`.
  *
  * @see README.md
  */
@@ -11,7 +11,7 @@ import { startLink, stopLink } from "./lifecycle";
 import { createLinkState } from "./state";
 import type { Config } from "./types";
 
-const defaultConfig: Config = { retryMs: 1000, boot: "#moku-editor-boot" };
+const defaultConfig: Config = { retryMs: 1000, boot: "#moku-editor-boot", role: "page" };
 
 /**
  * The link plugin: one websocket to the hub and the remote EditorChannel every panel reads.

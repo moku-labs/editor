@@ -1,11 +1,47 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sidePanelState } from "../../../panels/shared/side-panel";
-import type { KeyBinding } from "../../../workspace/types";
+import type { SelectionInfo } from "../../../registry/protocol";
+import { addEscapeLayer, unwind } from "../../../workspace/keys/escape";
+import type { EscEntry, KeyBinding, WorkspaceCtx } from "../../../workspace/types";
 import { escapeClosers, keyBindings } from "../../keys";
 import { createCtx, flush, manifestOf, PNG, type TestCtx } from "../helpers";
 
+const COIN = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
+const AREA: SelectionInfo = {
+  ref: COIN,
+  name: "area",
+  type: "area",
+  rect: { x: 0, y: 0, w: 40, h: 40 },
+  area: { x: 0, y: 0, w: 40, h: 40 },
+  items: [],
+  at: 1
+};
+
+// eslint-disable-next-line unicorn/no-null -- null is the wire's "nothing selected"
+const NOTHING = null;
+
 let ctx: TestCtx;
+
+/**
+ * The last `link.notify` call gameView made.
+ *
+ * @returns Its method and params, undefined before any.
+ */
+function lastPublished(): unknown[] | undefined {
+  return ctx.link.notify.mock.lastCall;
+}
+
+/**
+ * The closer of the selection layer.
+ *
+ * @returns The closer.
+ */
+function selectionCloser(): { readonly close: () => boolean } {
+  const found = escapeClosers(ctx).find(closer => closer.layer === "selection");
+  if (found === undefined) throw new Error("no selection layer");
+  return found;
+}
 
 /**
  * The binding of a key.
@@ -107,29 +143,123 @@ describe("keyBindings", () => {
 });
 
 describe("escapeClosers", () => {
-  it("hands the layers in rank order: contactSheet, seriesPopover, captureCard, picker", () => {
+  it("hands the layers in rank order: contactSheet, seriesPopover, captureCard, picker, selection", () => {
     expect(escapeClosers(ctx).map(closer => closer.layer)).toEqual([
       "contactSheet",
       "seriesPopover",
       "captureCard",
-      "picker"
+      "picker",
+      "selection"
     ]);
   });
 
   it("every closer returns false when gameView has nothing open there", () => {
-    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([false, false, false, false]);
+    ctx.workspace.activeValue = "game";
+    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false
+    ]);
   });
 
   it("every closer closes its layer and returns true", () => {
+    ctx.workspace.activeValue = "game";
     openSheetState();
     ctx.state.series.popover = true;
     ctx.state.card = { path: "a.png", frame: 1, device: "iPhone 15 portrait", image: PNG };
     ctx.state.picker.on = true;
+    ctx.state.selected = COIN;
 
-    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([true, true, true, true]);
+    expect(escapeClosers(ctx).map(closer => closer.close())).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true
+    ]);
     expect(ctx.state.series.sheet).toBeUndefined();
     expect(ctx.state.series.popover).toBe(false);
     expect(ctx.state.card).toBeUndefined();
     expect(ctx.state.picker.on).toBe(false);
+    expect(ctx.state.selected).toBeUndefined();
+  });
+});
+
+describe("Esc on the selection layer (U10)", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("clears the selected element in Game and publishes null", () => {
+    ctx.workspace.activeValue = "game";
+    ctx.state.selected = COIN;
+
+    expect(selectionCloser().close()).toBe(true);
+    expect(ctx.state.selected).toBeUndefined();
+    expect(ctx.state.selection).toBeUndefined();
+    expect(lastPublished()).toEqual(["selection", NOTHING]);
+  });
+
+  it("clears a published area selection", () => {
+    ctx.workspace.activeValue = "game";
+    ctx.state.selection = AREA;
+
+    expect(selectionCloser().close()).toBe(true);
+    expect(ctx.state.selection).toBeUndefined();
+    expect(lastPublished()).toEqual(["selection", NOTHING]);
+  });
+
+  it("returns false and publishes nothing when nothing is selected", () => {
+    ctx.workspace.activeValue = "game";
+    expect(selectionCloser().close()).toBe(false);
+    expect(ctx.link.notify).not.toHaveBeenCalled();
+  });
+
+  it("returns false outside the Game workspace and keeps the selection", () => {
+    ctx.workspace.activeValue = "flow";
+    ctx.state.selected = COIN;
+
+    expect(selectionCloser().close()).toBe(false);
+    expect(ctx.state.selected).toEqual(COIN);
+    expect(ctx.link.notify).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["an input", "<input>"],
+    ["a textarea", "<textarea></textarea>"],
+    ["contenteditable", "<div contenteditable='true' tabindex='0'></div>"]
+  ])("returns false while focus is in %s", (_, html) => {
+    ctx.workspace.activeValue = "game";
+    ctx.state.selected = COIN;
+    document.body.innerHTML = html;
+    (document.body.firstElementChild as HTMLElement).focus();
+
+    expect(selectionCloser().close()).toBe(false);
+    expect(ctx.state.selected).toEqual(COIN);
+  });
+
+  it("comes last: an open popover closes on the first Esc, the next Esc clears", () => {
+    ctx.workspace.activeValue = "game";
+    ctx.state.series.popover = true;
+    ctx.state.selected = COIN;
+    const closers: EscEntry[] = [];
+    const workspace = { state: { keys: { escape: closers } } } as unknown as Pick<
+      WorkspaceCtx,
+      "state"
+    >;
+    for (const { layer, close } of escapeClosers(ctx)) {
+      addEscapeLayer(workspace, layer, close);
+    }
+
+    expect(unwind(workspace)).toBe(true);
+    expect(ctx.state.series.popover).toBe(false);
+    expect(ctx.state.selected).toEqual(COIN);
+
+    expect(unwind(workspace)).toBe(true);
+    expect(ctx.state.selected).toBeUndefined();
+    expect(lastPublished()).toEqual(["selection", NOTHING]);
+    expect(unwind(workspace)).toBe(false);
   });
 });

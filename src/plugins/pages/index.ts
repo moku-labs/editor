@@ -1,5 +1,5 @@
 /**
- * Standard tier — serves the tools page (boot JSON injected), its assets, the hello route and the
+ * Complex tier — serves the tools page (boot JSON injected), its assets, the hello route and the
  * hot reload route, registered with the hub in onInit; publishes the hot reload state through the
  * hub. The moku-editor bin lives next to it (bin.ts). Emits no events.
  *

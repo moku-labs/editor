@@ -99,13 +99,14 @@ export type FakeSocket = HubSocket & {
  *
  * @param kind - Agent or tools.
  * @param conn - Connection number.
+ * @param page - A tools socket upgraded with `role=page` (the editor page).
  * @returns The fake socket.
  */
-export function fakeSocket(kind: ConnKind, conn: number): FakeSocket {
+export function fakeSocket(kind: ConnKind, conn: number, page = false): FakeSocket {
   const sent: string[] = [];
   const closes: { code: number | undefined; reason: string | undefined }[] = [];
   const socket: FakeSocket = {
-    data: { kind, conn },
+    data: page ? { kind, conn, page: true } : { kind, conn },
     sent,
     closes,
     result: 1,
@@ -183,6 +184,11 @@ export function fakeFiles(): FakeFiles {
       bytes: bytes.length,
       version: "v3"
     })),
+    writeDataUrl: vi.fn<FilesApi["writeDataUrl"]>(async path => ({
+      path,
+      bytes: 8,
+      version: "v3"
+    })),
     readBinary: vi.fn<FilesApi["readBinary"]>(async () => ({
       dataUrl: "data:image/png;base64,AA==",
       version: "v4"
@@ -226,6 +232,8 @@ export type Harness = {
   readonly handler: HubWebSocketHandler;
   /** Opens a connection of a kind (handler.open). */
   connect(kind: ConnKind): FakeSocket;
+  /** Opens a tools connection with the page role (an editor page, `role=page`). */
+  page(): FakeSocket;
   /** Sends a message on a socket (handler.message with the encoded text). */
   send(socket: FakeSocket, message: Message): void;
   /** Closes a socket (handler.close). */
@@ -264,6 +272,11 @@ export function createHarness(overrides: Partial<HubConfig> = {}): Harness {
     handler,
     connect(kind) {
       const socket = fakeSocket(kind, ctx.state.nextConn++);
+      handler.open(socket);
+      return socket;
+    },
+    page() {
+      const socket = fakeSocket("tools", ctx.state.nextConn++, true);
       handler.open(socket);
       return socket;
     },

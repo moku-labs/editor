@@ -91,9 +91,7 @@ describe("hot reload from pages to the tools link (R6)", () => {
     const seen: unknown[] = [];
     tools.app.link.onHotReload(state => seen.push(state));
 
-    server.app.pages.attachServer(server.server, {
-      development: { hmr: true, console: true }
-    } as never);
+    server.app.pages.attachServer({ development: { hmr: true, console: true } } as never);
     await until(() => tools.app.link.hotReload() !== undefined, "the hotReload notification");
 
     expect(tools.app.link.hotReload()).toEqual({ hmr: true, owner: "bin" });

@@ -151,7 +151,7 @@ Lost reasons:
 | `hello answered without ws and token` | yes |
 | `hello answered a bad ws URL` | yes |
 | `socket failed` | yes |
-| `socket closed (<code>)`, plus `: <reason>` when the hub gave one (1008 `hello first`, 1001 `editor stopping`) | yes |
+| `socket closed (<code>)`, plus `: <reason>` when the hub gave one (1008 `hello first`, 1001 `editor stopping`, 1012 `editor restarting`) | yes |
 | `stopped` | no |
 
 ## Events
@@ -224,7 +224,7 @@ Log events:
 | Event | Level | When |
 |---|---|---|
 | `bridge:connected` | info | Socket open. `{ url }` is the hello origin and path. |
-| `bridge:lost` | warn, then debug | First failure of a streak at warn, the rest at debug. `{ reason, retryInMs }`. |
+| `bridge:lost` | warn, then debug | First failure of a streak at warn, the rest at debug. A close 1012 `editor restarting` (the bin's Hot reload restart) opens the streak at info instead; the reconnect is the same. `{ reason, retryInMs }`. |
 | `bridge:disabled` | error | A failure without retry. `{ reason }`. |
 | `bridge:connect-crashed`, `bridge:request-crashed` | error | An unexpected throw in the connect loop or in a request. |
 | `bridge:restored` | info | A checkpoint was restored at start. `{ frame }`. |

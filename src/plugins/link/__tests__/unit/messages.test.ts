@@ -127,7 +127,7 @@ describe("onSocketMessage", () => {
   it("unknown notifications and requests are logged at debug", () => {
     socket.notify("game", "bye", undefined, "s-1");
     expect(ctx.log.debug).toHaveBeenCalledWith("link:unknown-notification", { method: "bye" });
-    socket.receive({ jsonrpc: "2.0", id: 5, channel: "editor", method: "ping" });
+    socket.receive({ jsonrpc: "2.0", id: 5, channel: "game", method: "ping" });
     expect(ctx.log.debug).toHaveBeenCalledWith("link:unexpected-request", { method: "ping" });
   });
 

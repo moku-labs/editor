@@ -197,6 +197,9 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       hotReload: vi.fn(() => undefined),
       onHotReload: vi.fn(() => unwatch),
       setHotReload: vi.fn(() => Promise.resolve(false)),
+      selection: vi.fn(() => undefined),
+      notify: vi.fn(),
+      handle: vi.fn(() => vi.fn()),
       files: files.client
     },
     attach(manifest) {

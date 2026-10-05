@@ -51,6 +51,7 @@ Paths are relative posix paths from the root, for example `src/nodes/merge.ts`. 
 | `read(path: string)` | `Promise<FileText>` | UTF-8 (invalid bytes become U+FFFD). `version` is the lowercase hex sha1 of the bytes. Max 2 MiB. |
 | `write(path: string, text: string, version?: string)` | `Promise<WriteResult>` | Atomic. Creates missing parent folders inside the root. A stale `version` fails with -32005. Max 2 MiB. Emits `files:written`. |
 | `writeBinary(path: string, bytes: Uint8Array)` | `Promise<WriteResult>` | Only under `.moku/captures/`, image extensions only. Creates missing parent folders. Max 16 MiB. Emits `files:written` with `kind: "capture"`. |
+| `writeDataUrl(path: string, dataUrl: string)` | `Promise<WriteResult>` | Decodes a base64 png, jpeg, webp or gif data URL, then `writeBinary`. The mime must match the extension of `path`. Same limits, errors and event as `writeBinary`. |
 | `readBinary(path: string)` | `Promise<FileBinary>` | Image extensions only. `{ dataUrl, version }`. Max 16 MiB. Emits nothing. |
 | `resolve(path: string)` | `string` | Synchronous full check, as for a write. The absolute real path. A missing file gives the path it would have. |
 | `root()` | `string` | The real, symlink-resolved root. |
@@ -81,21 +82,22 @@ app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
 app.files.root(); // "/Users/alex/game"
 ```
 
-### Helper: `decodeDataUrl(text, path)`
+### `writeDataUrl(path, dataUrl)`
 
-Exported from `src/plugins/files/index.ts` next to the plugin, for `hub`. It decodes the files-channel
-`writeBinary {path, data}`. It accepts only `data:image/(png|jpeg|webp|gif);base64,<payload>`.
+`hub` calls it for the files-channel `writeBinary {path, data}`. It decodes `data` with
+`decodeDataUrl` (in `binary.ts`, not exported from the plugin) and writes the bytes with `writeBinary`.
+It accepts only `data:image/(png|jpeg|webp|gif);base64,<payload>`.
 
 | Input | Result |
 |---|---|
-| Valid data URL, mime matches the extension of `path` | `Uint8Array` of the bytes |
+| Valid data URL, mime matches the extension of `path` | `{ path, bytes, version }`, like `writeBinary` |
 | `path` without an image extension | -32004 `forbidden_path` |
 | Not a base64 png, jpeg, webp or gif data URL | -32602 `field: "data"` |
 | Mime does not match the extension of `path` | -32602 `field: "data"` |
 
 ```ts
-const path = ".moku/captures/2026-09-24-1012-board.png";
-await app.files.writeBinary(path, decodeDataUrl(data, path));
+await app.files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+// { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
 ```
 
 ### Errors
@@ -198,7 +200,7 @@ const auditPlugin = createPlugin("audit", {
 
 | Plugin | How it uses `files` |
 |---|---|
-| `hub` | `depends: [filesPlugin]`. `dispatchFiles(ctx.require(filesPlugin), method, params)` serves the files channel of `tools` connections: `list {dir}`, `read {path}`, `write {path, text, version?}`, `writeBinary {path, data}`, `readBinary {path}`. Params pass `checkInput` first. `writeBinary` decodes `data` with `decodeDataUrl(data, path)`. |
+| `hub` | `depends: [filesPlugin]`. `dispatchFiles(ctx.require(filesPlugin), method, params)` serves the files channel of `tools` connections: `list {dir}`, `read {path}`, `write {path, text, version?}`, `writeBinary {path, data}`, `readBinary {path}`. Params pass `checkInput` first. `writeBinary` calls `files.writeDataUrl(path, data)`. |
 | `pages` | `depends: [filesPlugin, hubPlugin]`. `ctx.require(filesPlugin)` in `onInit`. The tools boot JSON puts `files.root()` in `root`, for "Open in editor" links. |
 | `link` (tools core) | `link.files` mirrors the files-channel methods for the tools views. It reaches `files` only through `hub`. |
 
@@ -208,5 +210,5 @@ const auditPlugin = createPlugin("audit", {
   To narrow that window, the write checks the real path of the parent folder again right before the rename.
 - `list` is not recursive and sets no `version`. Hashing a whole folder is too costly.
 - Text is capped at 2 MiB, images at 16 MiB. Larger files fail.
-- `writeBinary` takes bytes. The data URL of the wire is decoded by `hub`, not by the api.
+- `writeBinary` takes bytes. `writeDataUrl` takes the data URL of the wire and decodes it.
 - `files:written` is there for a later MCP layer to react to writes. No plugin in this package hooks it yet.

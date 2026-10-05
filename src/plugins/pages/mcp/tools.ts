@@ -1,5 +1,5 @@
 /**
- * @file pages/mcp — the tool table of the bridge (M5): fifteen `moku_*` tools with fixed input
+ * @file pages/mcp — the tool table of the bridge (M5): seventeen `moku_*` tools with fixed input
  * schemas (`additionalProperties: false`) and static annotations (M6), and the runner that turns
  * any failure into an `isError` result.
  */
@@ -8,6 +8,7 @@ import { filesListTool, filesReadTool, filesWriteTool } from "./file-tools";
 import { manifestTool, readTool, runTool, sessionsTool, statusTool, waitTool } from "./game-tools";
 import { referenceTool, screenshotTool, seriesTool } from "./picture-tools";
 import { failureResult } from "./results";
+import { selectionTool, selectTool } from "./selection-tools";
 import type { Tool, ToolCall, ToolContext, ToolDefinition, ToolResult } from "./types";
 
 /**
@@ -23,6 +24,8 @@ export const TOOLS: readonly Tool[] = [
   screenshotTool,
   seriesTool,
   referenceTool,
+  selectionTool,
+  selectTool,
   filesListTool,
   filesReadTool,
   filesWriteTool,

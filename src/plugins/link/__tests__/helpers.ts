@@ -75,7 +75,7 @@ export const BOOT: ToolsBoot = {
  * @returns The ctx.
  */
 export function createCtx(config: Partial<Config> = {}): TestCtx {
-  const resolved: Config = { retryMs: 1000, boot: "#moku-editor-boot", ...config };
+  const resolved: Config = { retryMs: 1000, boot: "#moku-editor-boot", role: "page", ...config };
 
   return {
     config: resolved,

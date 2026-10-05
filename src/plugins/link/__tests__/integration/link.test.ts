@@ -5,10 +5,12 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  SelectionInfo,
   SessionInfo,
   Tap,
   ToolsBoot
 } from "../../../registry/protocol";
+import { toWireValue } from "../../../registry/protocol";
 import { linkPlugin } from "../..";
 import { type FakeHub, startFakeHub } from "./fake-hub";
 
@@ -314,6 +316,32 @@ describe("link integration", () => {
       version: saved.version
     });
     expect(hub.requests("writeBinary")[0]?.session).toBeUndefined();
+    await app.stop();
+  });
+
+  it("the editor page: role=page upgrade, notify reaches the hub, a hub select is answered", async () => {
+    const app = createApp();
+    const info: SelectionInfo = {
+      ref: { kind: "ui", path: "column#0/hudRow/coins" },
+      key: "coins",
+      name: "coins",
+      type: "text",
+      at: 1_000_000
+    };
+    app.link.notify("selection", info);
+    app.link.handle("select", async params => ({ ...info, key: params.key ?? "none" }));
+    await app.start();
+
+    await until(() => hub.notes.length === 1, "the selection sent on open");
+    expect(hub.roles).toEqual(["page"]);
+    expect(hub.notes[0]).toMatchObject({ channel: "editor", method: "selection", params: info });
+
+    const answer = await hub.ask("select", { key: "hud/coins", card: false });
+    expect(answer).toMatchObject({ result: { key: "hud/coins", name: "coins" } });
+
+    hub.notify("editor", "selection", toWireValue(info));
+    await until(() => app.link.selection() !== undefined, "the hub's selection");
+    expect(app.link.selection()).toEqual(info);
     await app.stop();
   });
 

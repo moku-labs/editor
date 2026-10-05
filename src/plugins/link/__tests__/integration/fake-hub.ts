@@ -3,7 +3,9 @@ import type { Server, ServerWebSocket } from "bun";
 import type {
   Json,
   Manifest,
+  Notification,
   Request as RpcRequest,
+  Response as RpcResponse,
   SessionInfo,
   WireError
 } from "../../../registry/protocol";
@@ -12,7 +14,9 @@ import {
   encode,
   failure,
   isRequest,
+  isResponse,
   notification,
+  request as rpcRequest,
   success,
   toWireValue
 } from "../../../registry/protocol";
@@ -41,6 +45,10 @@ export type FakeHub = {
   helloHits: number;
   /** Tokens of accepted upgrades. */
   readonly upgrades: string[];
+  /** The `role` query of each accepted upgrade; null without one. */
+  readonly roles: (string | null)[];
+  /** Every notification a tools socket sent. */
+  readonly notes: Notification[];
   /** Every request a tools socket sent. */
   readonly received: RpcRequest[];
   /** Close codes of tools sockets. */
@@ -65,6 +73,8 @@ export type FakeHub = {
   heartbeat(session: string, frame: number, paused: boolean): void;
   /** Requests of one method. */
   requests(method: string): RpcRequest[];
+  /** Sends an editor-channel request to every tools socket; resolves with the first answer. */
+  ask(method: string, params?: Json): Promise<RpcResponse>;
   stop(): Promise<void>;
 };
 
@@ -172,6 +182,8 @@ export function startFakeHub(token: string): FakeHub {
   const broadcast = (text: string): void => {
     for (const socket of sockets) socket.send(text);
   };
+  const asks = new Map<number, (response: RpcResponse) => void>();
+  let nextAsk = 9000;
 
   const hub: FakeHub = {
     get port() {
@@ -186,6 +198,8 @@ export function startFakeHub(token: string): FakeHub {
     token,
     helloHits: 0,
     upgrades: [],
+    roles: [],
+    notes: [],
     received: [],
     closes: [],
     sockets,
@@ -214,6 +228,15 @@ export function startFakeHub(token: string): FakeHub {
     requests(method) {
       return hub.received.filter(request => request.method === method);
     },
+    ask(method, params) {
+      nextAsk += 1;
+      const id = nextAsk;
+      const answered = new Promise<RpcResponse>(resolve => {
+        asks.set(id, resolve);
+      });
+      broadcast(encode(rpcRequest(id, "editor", method, params)));
+      return answered;
+    },
     async stop() {
       for (const socket of sockets) socket.close(1001, "hub stop");
       // Bun 1.3.14: stop(true) never settles while a client close is still in flight.
@@ -238,6 +261,7 @@ export function startFakeHub(token: string): FakeHub {
       const given = url.searchParams.get("token") ?? "";
       if (given !== hub.token) return new Response("token", { status: 401 });
       hub.upgrades.push(given);
+      hub.roles.push(url.searchParams.get("role"));
       return bunServer.upgrade(request, { data: { token: given } })
         ? undefined
         : new Response("upgrade failed", { status: 500 });
@@ -251,7 +275,15 @@ export function startFakeHub(token: string): FakeHub {
       },
       message(socket, message) {
         const decoded = decode(String(message));
-        if (!isRequest(decoded)) return;
+        if (isResponse(decoded)) {
+          asks.get(decoded.id)?.(decoded);
+          asks.delete(decoded.id);
+          return;
+        }
+        if (!isRequest(decoded)) {
+          hub.notes.push(decoded);
+          return;
+        }
         hub.received.push(decoded);
         const response = answer(hub, decoded, text => socket.send(text));
         if (response === undefined) return;

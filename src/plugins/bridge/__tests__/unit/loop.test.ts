@@ -366,6 +366,55 @@ describe("onClose and fail", () => {
     expect(deps.state.status).toMatchObject({ reason: "socket closed (1008): hello first" });
   });
 
+  it("logs a 1012 restart close at info, not warn, and reconnects as after any close (U11)", async () => {
+    const deps = createDeps();
+    await connect(deps);
+    socketAt(deps).open();
+
+    socketAt(deps).emit("close", { code: 1012, reason: "editor restarting" });
+
+    expect(deps.log.info).toHaveBeenCalledWith("bridge:lost", {
+      reason: "socket closed (1012): editor restarting",
+      retryInMs: 1000
+    });
+    expect(deps.log.warn).not.toHaveBeenCalled();
+    expect(deps.state.status).toMatchObject({
+      kind: "lost",
+      reason: "socket closed (1012): editor restarting",
+      retryInMs: 1000
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(deps.net.fetches).toHaveLength(2);
+    expect(deps.net.sockets).toHaveLength(2);
+  });
+
+  it("logs the failures after a 1012 close at debug: the restart opened the streak", async () => {
+    const deps = createDeps();
+    await connect(deps);
+    socketAt(deps).open();
+    deps.net.answers.push(helloStatus(503));
+
+    socketAt(deps).emit("close", { code: 1012, reason: "editor restarting" });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(deps.log.warn).not.toHaveBeenCalled();
+    expect(deps.log.debug).toHaveBeenCalledWith("bridge:lost", {
+      reason: "hello 503",
+      retryInMs: 2000
+    });
+  });
+
+  it("still warns on any other close", () => {
+    const { deps } = openDeps();
+
+    onClose(deps, 1001, "editor stopping");
+
+    expect(deps.log.warn).toHaveBeenCalledWith("bridge:lost", {
+      reason: "socket closed (1001): editor stopping",
+      retryInMs: expect.any(Number)
+    });
+  });
+
   it("does nothing more once stopped", () => {
     const { deps } = openDeps();
     deps.state.phase = "stopped";

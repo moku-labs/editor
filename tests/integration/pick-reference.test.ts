@@ -274,8 +274,8 @@ describe("a pick for the chat on merge-game (round 2 R2, 2b R13)", () => {
       expect(lines[9]).toBe(`restore: bookmark ${bookmark.id}`);
       const shot = /^shot: (\S+) · frame: (\S+)$/.exec(lines[10] ?? "");
       const [, crop = "", full = ""] = shot ?? [];
-      expect(crop).toMatch(/^\.moku\/captures\/settingsBoard-f\d+\.png$/);
-      expect(full).toMatch(/^\.moku\/captures\/f\d+\.png$/);
+      expect(crop).toMatch(/^\.moku\/captures\/settingsBoard-f\d+-crop\.png$/);
+      expect(full).toMatch(/^\.moku\/captures\/f\d+-full\.png$/);
       expect(await pngOf(root, crop)).toBe(CROP_PNG);
       expect(await pngOf(root, full)).toBe(PNG_1X1);
       expect(text).toContain(`![element](${path.basename(crop)})`);

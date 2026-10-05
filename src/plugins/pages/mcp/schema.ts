@@ -1,11 +1,80 @@
 /**
  * @file pages/mcp — checks the arguments of a tool call against its input schema (the JSON Schema
- * subset of `PropertySchema`: string, integer with a range, boolean, any JSON) and reads the
- * checked values. A problem is a message for an `isError` result, so the model can fix the call.
+ * subset of `PropertySchema`: string with an optional enum, integer with a range, boolean, a
+ * closed object of numbers such as a rect, any JSON) and reads the checked values. A problem is a
+ * message for an `isError` result, so the model can fix the call.
  */
-import type { Json } from "../../registry/protocol";
+import type { Json, SelectionRect } from "../../registry/protocol";
 import { isObject } from "./rpc";
 import type { JsonObject, PropertySchema, ToolAnnotations, ToolInputSchema } from "./types";
+
+/**
+ * An object property schema: a closed object of number fields.
+ */
+type ObjectSchema = Extract<PropertySchema, { readonly type: "object" }>;
+
+/**
+ * Why a present string does not fit its property, or undefined when it fits.
+ *
+ * @param name - The argument name.
+ * @param schema - Its string schema.
+ * @param value - The present value.
+ * @returns The problem, or undefined.
+ * @example
+ * ```ts
+ * stringProblem("format", { type: "string", enum: ["jpeg", "png"], description: "" }, "gif"); // "format must be one of jpeg, png"
+ * ```
+ */
+function stringProblem(
+  name: string,
+  schema: Extract<PropertySchema, { readonly type: "string" }>,
+  value: Json
+): string | undefined {
+  if (typeof value !== "string") return `${name} must be a string`;
+  if (schema.minLength !== undefined && value.length < schema.minLength) {
+    return `${name} must not be empty`;
+  }
+  if (schema.enum !== undefined && !schema.enum.includes(value)) {
+    return `${name} must be one of ${schema.enum.join(", ")}`;
+  }
+  return undefined;
+}
+
+/**
+ * Why a present object does not fit its property: not an object, an unknown or missing field, or
+ * a field that is not a number at least its minimum.
+ *
+ * @param name - The argument name.
+ * @param schema - Its object schema.
+ * @param value - The present value.
+ * @returns The problem, or undefined.
+ * @example
+ * ```ts
+ * objectProblem("rect", RECT_PROPERTY, { x: 0, y: 0, w: 0, h: 1 }); // "rect.w must be at least 1"
+ * ```
+ */
+function objectProblem(name: string, schema: ObjectSchema, value: Json): string | undefined {
+  if (!isObject(value)) return `${name} must be an object`;
+
+  for (const field of Object.keys(value)) {
+    if (!Object.hasOwn(schema.properties, field))
+      return `${name}.${field} is not a field of ${name}`;
+  }
+  for (const field of schema.required) {
+    if (value[field] === undefined) return `${name}.${field} is required`;
+  }
+  for (const [field, property] of Object.entries(schema.properties)) {
+    const member = value[field];
+    if (member === undefined) continue;
+    if (typeof member !== "number" || !Number.isFinite(member)) {
+      return `${name}.${field} must be a number`;
+    }
+    if (property.minimum !== undefined && member < property.minimum) {
+      return `${name}.${field} must be at least ${String(property.minimum)}`;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Why a present value does not fit its property, or undefined when it fits.
@@ -23,9 +92,10 @@ function valueProblem(name: string, schema: PropertySchema, value: Json): string
   if (!("type" in schema)) return undefined;
   switch (schema.type) {
     case "string": {
-      if (typeof value !== "string") return `${name} must be a string`;
-      const tooShort = schema.minLength !== undefined && value.length < schema.minLength;
-      return tooShort ? `${name} must not be empty` : undefined;
+      return stringProblem(name, schema, value);
+    }
+    case "object": {
+      return objectProblem(name, schema, value);
     }
     case "integer": {
       if (typeof value !== "number" || !Number.isInteger(value)) {
@@ -141,6 +211,44 @@ export function flagArgument(args: JsonObject, name: string, fallback: boolean):
   const value = args[name];
   return typeof value === "boolean" ? value : fallback;
 }
+
+/**
+ * A checked rect argument (`{ x, y, w, h }`), or undefined when absent.
+ *
+ * @param args - The checked arguments.
+ * @param name - The argument.
+ * @returns The rect.
+ * @example
+ * ```ts
+ * rectArgument({ rect: { x: 0, y: 30, w: 200, h: 60 } }, "rect"); // { x: 0, y: 30, w: 200, h: 60 }
+ * ```
+ */
+export function rectArgument(args: JsonObject, name: string): SelectionRect | undefined {
+  const value = args[name];
+  if (!isObject(value)) return undefined;
+
+  const { x, y, w, h } = value;
+  if (typeof x !== "number" || typeof y !== "number") return undefined;
+  if (typeof w !== "number" || typeof h !== "number") return undefined;
+  return { x, y, w, h };
+}
+
+/**
+ * An area of the game page in CSS px (the iframe viewport): `{ x, y, w, h }`.
+ */
+export const RECT_PROPERTY: PropertySchema = {
+  type: "object",
+  description:
+    "An area of the game page in CSS px, the way the Reference picker drag draws it: { x, y, w, h }.",
+  properties: {
+    x: { type: "number", minimum: 0, description: "Left edge, CSS px." },
+    y: { type: "number", minimum: 0, description: "Top edge, CSS px." },
+    w: { type: "number", minimum: 1, description: "Width, CSS px." },
+    h: { type: "number", minimum: 1, description: "Height, CSS px." }
+  },
+  required: ["x", "y", "w", "h"],
+  additionalProperties: false
+};
 
 /**
  * The optional `session` argument of every game tool.

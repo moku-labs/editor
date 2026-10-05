@@ -17,7 +17,7 @@ import {
 import { isShapePath, readUi, uiRoots, uiVisits } from "../../panels/shared/scene/wire";
 import type { Json } from "../../registry/protocol";
 import { isObject } from "../capture/shot";
-import { messageOf } from "../report";
+import { logReadFailure } from "../report";
 import { notify } from "../state";
 import type { CalibrationTarget, GameViewCtx, GameViewState } from "../types";
 import { frameOf, rebuildScene } from "./rebuild";
@@ -207,7 +207,7 @@ async function readCalibration(ctx: GameViewCtx, retries: number): Promise<void>
   try {
     page = pageRectOf(await link.read(source, { key: target.key }));
   } catch (error) {
-    ctx.log.warn("gameView: calibration failed", { key: target.key, message: messageOf(error) });
+    logReadFailure(ctx, "gameView: calibration failed", error, { key: target.key });
   } finally {
     run.reading = false;
   }

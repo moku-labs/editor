@@ -250,6 +250,25 @@ describe("sessions flow", () => {
     expect(socket.requests("manifest")).toHaveLength(2);
   });
 
+  it("a retryable manifest failure logs at debug and retries the session later", async () => {
+    const socket = await connected(ctx, []);
+    sendSessions(socket, [sessionOf("s-1")]);
+    socket.reject(socket.last("manifest"), {
+      code: -32_002,
+      message: "[moku-editor] timeout",
+      data: { reason: "timeout", retryable: true }
+    });
+    await flush();
+
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:manifest-failed", {
+      session: "s-1",
+      code: -32_002,
+      reason: "timeout"
+    });
+    expect(ctx.log.error).not.toHaveBeenCalledWith("link:manifest-failed", expect.anything());
+    expect(ctx.state.retryTimer).toBeDefined();
+  });
+
   it("a bad manifest shape rejects attach", async () => {
     const socket = await connected(ctx, []);
     ctx.state.sessions = [sessionOf("s-1")];

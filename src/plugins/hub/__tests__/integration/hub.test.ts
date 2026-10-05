@@ -17,7 +17,8 @@ import {
   isResponseTo,
   nextRequest,
   paramsOf,
-  shutdown
+  shutdown,
+  upgradeStatus
 } from "./clients";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,6 +100,22 @@ async function serveEditor(): Promise<Running> {
 async function tools(kind: "tools" | "agent" = "tools"): Promise<Client> {
   if (running === undefined) throw new Error("not running");
   const client = await connectClient(running.port, { token: running.token, kind });
+  clients.push(client);
+  return client;
+}
+
+/**
+ * Connects the editor page (a tools client with `role=page`) and remembers it for cleanup.
+ *
+ * @returns The page client.
+ */
+async function editorPage(): Promise<Client> {
+  if (running === undefined) throw new Error("not running");
+  const client = await connectClient(running.port, {
+    token: running.token,
+    kind: "tools",
+    role: "page"
+  });
   clients.push(client);
   return client;
 }
@@ -370,5 +387,50 @@ describe("hub over real websockets", () => {
     expect([1000, 1001]).toContain(gameClosed.code);
     await expect(connectClient(port, { token, kind: "tools" })).rejects.toThrow();
     expect(() => app.hub.token()).toThrow(/^\[moku-editor] /);
+  });
+
+  it("relays editor.select to the editor page, keeps its selection, clears it when the page closes", async () => {
+    const { port } = await serveEditor();
+    const page = await editorPage();
+    const mcp = await tools();
+    await mcp.next(isNote("editor", "sessions"));
+    const info = {
+      ref: { kind: "ui", path: "column#0/hudRow/coins" },
+      key: "coins",
+      name: "coins",
+      type: "text",
+      at: 1_790_000_000_000
+    };
+
+    mcp.send(request(1, "editor", "select", { key: "coins" }));
+    const relayed = await nextRequest(page, "select");
+    expect(relayed).toMatchObject({ channel: "editor", params: { key: "coins" } });
+    page.send(success(relayed.id, info));
+    expect(await mcp.next(isResponseTo(1))).toEqual({ jsonrpc: "2.0", id: 1, result: info });
+
+    page.send(notification("editor", "selection", info));
+    expect(paramsOf(await mcp.next(isNote("editor", "selection")))).toEqual(info);
+    mcp.send(request(2, "editor", "selection", {}));
+    expect(await mcp.next(isResponseTo(2))).toEqual({ jsonrpc: "2.0", id: 2, result: info });
+
+    page.close();
+    await mcp.next(message => isNote("editor", "selection")(message) && !("params" in message));
+    mcp.send(request(3, "editor", "select", { key: "coins" }));
+    expect(await mcp.next(isResponseTo(3))).toEqual({
+      jsonrpc: "2.0",
+      id: 3,
+      error: {
+        code: -32_003,
+        message: `[moku-editor] no editor page is open. Open the editor page: http://127.0.0.1:${port}/__editor/`,
+        data: { reason: "no_editor_page", retryable: false }
+      }
+    });
+  });
+
+  it("refuses role=page on an agent and any other role with 400", async () => {
+    const { port, token } = await serveEditor();
+
+    expect(await upgradeStatus(port, { token, kind: "agent", role: "page" })).toBe(400);
+    expect(await upgradeStatus(port, { token, role: "admin" })).toBe(400);
   });
 });

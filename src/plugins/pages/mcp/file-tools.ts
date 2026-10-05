@@ -10,8 +10,16 @@ import { DISCOVERY_FILE } from "../discovery";
 import { LOG_FILE } from "./launcher";
 import { errorResult, jsonResult, jsonText, textItem } from "./results";
 import { READ_ONLY, textArgument } from "./schema";
-import { readFileEntries, readFileText } from "./shapes";
-import type { JsonObject, PropertySchema, Tool, ToolCall, ToolContext, ToolResult } from "./types";
+import { dataUrlOf, readFileEntries, readFileText } from "./shapes";
+import type {
+  HubClient,
+  JsonObject,
+  PropertySchema,
+  Tool,
+  ToolCall,
+  ToolContext,
+  ToolResult
+} from "./types";
 
 /**
  * The files of the running bin that MCP never shows: the discovery file and the bin log.
@@ -42,6 +50,28 @@ const PATH_PROPERTY: PropertySchema = {
 export function isPrivatePath(path: string): boolean {
   const plain = normalize(path.trim()).toLowerCase();
   return PRIVATE_FILES.some(file => plain === file || plain.startsWith(`${file}.`));
+}
+
+/**
+ * A picture the editor wrote, such as the crop of a reference card, read through the hub's
+ * `files.readBinary`. A private path is never read; a file that cannot be read gives none, so the
+ * result keeps its text.
+ *
+ * @param hub - The hub connection.
+ * @param path - The project-relative path.
+ * @returns The data URL, or undefined.
+ * @example
+ * ```ts
+ * await readPicture(hub, ".moku/captures/coins-f1840-crop.jpg"); // "data:image/jpeg;base64,/9j/…"
+ * ```
+ */
+export async function readPicture(hub: HubClient, path: string): Promise<string | undefined> {
+  if (isPrivatePath(path)) return undefined;
+  try {
+    return dataUrlOf(await hub.request("files", "readBinary", { path }));
+  } catch {
+    return undefined;
+  }
 }
 
 /**

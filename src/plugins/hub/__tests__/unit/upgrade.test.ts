@@ -11,6 +11,7 @@ type Ask = {
   path?: string;
   token?: string | undefined;
   kind?: string | undefined;
+  role?: string;
   method?: string;
   headers?: Record<string, string | undefined>;
 };
@@ -27,6 +28,7 @@ function upgradeRequest(ask: Ask = {}): Request {
   const kind = "kind" in ask ? ask.kind : "tools";
   if (token !== undefined) url.searchParams.set("token", token);
   if (kind !== undefined) url.searchParams.set("kind", kind);
+  if (ask.role !== undefined) url.searchParams.set("role", ask.role);
 
   const merged: Record<string, string | undefined> = {
     host: `127.0.0.1:${P}`,
@@ -125,6 +127,48 @@ describe("handleUpgrade checks, in order", () => {
       data: { kind: "tools", conn: first + 1 }
     });
     expect(ctx.state.nextConn).toBe(first + 2);
+  });
+});
+
+describe("handleUpgrade role (A11)", () => {
+  it("marks a tools upgrade with role=page as the editor page", () => {
+    const { ctx, server } = started();
+    const conn = ctx.state.nextConn;
+    const pageRequest = upgradeRequest({ role: "page" });
+
+    expect(handleUpgrade(ctx, pageRequest, server)).toBeUndefined();
+
+    expect(server.upgrade).toHaveBeenCalledWith(pageRequest, {
+      data: { kind: "tools", conn, page: true }
+    });
+  });
+
+  it("answers 400 for role=page on an agent and for any other role value", () => {
+    expect(statusOf({ kind: "agent", role: "page" })).toBe(400);
+    expect(statusOf({ role: "admin" })).toBe(400);
+    expect(statusOf({ role: "tools" })).toBe(400);
+    expect(statusOf({ role: "" })).toBe(400);
+  });
+
+  it("logs the refused role as the check role", () => {
+    const { ctx, server } = started();
+
+    handleUpgrade(ctx, upgradeRequest({ role: "admin" }), server);
+
+    expect(ctx.log.warn).toHaveBeenCalledWith(
+      "hub:refused",
+      expect.objectContaining({ status: 400, check: "role" })
+    );
+    expect(server.upgrade).not.toHaveBeenCalled();
+  });
+
+  it("keeps the server port of an accepted upgrade for the editor page url", () => {
+    const { ctx, server } = started();
+    expect(ctx.state.editorPort).toBeUndefined();
+
+    handleUpgrade(ctx, upgradeRequest({ kind: "agent" }), server);
+
+    expect(ctx.state.editorPort).toBe(P);
   });
 });
 

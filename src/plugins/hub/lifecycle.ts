@@ -1,9 +1,11 @@
 /**
  * @file hub plugin — onStart (new token, silent interval) and onStop (clear timers, close every
- * socket with 1001, forget sessions, token undefined). The Bun server itself belongs to the game.
+ * socket with 1001, forget sessions, no selection, token undefined). The Bun server itself belongs
+ * to the game.
  */
 import { tickSilent } from "./routing/sessions";
 import { newToken } from "./security/token";
+import { JSON_NULL } from "./sockets/send";
 import type { HubCtx, HubState } from "./types";
 
 /**
@@ -49,7 +51,8 @@ export function startHub(ctx: HubCtx): void {
 /**
  * onStop: clears the timers, forgets every connection, session, call and watch, then closes every
  * socket with 1001 "editor stopping" (the maps are cleared first, so the close handler finds
- * nothing to announce). Later upgrades get 503.
+ * nothing to announce). No editor page is left, so a kept selection becomes `null` (A7). Later
+ * upgrades get 503.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -66,6 +69,8 @@ export function stopHub(ctx: { readonly state: HubState }): void {
   state.pending.clear();
   state.shared.clear();
   state.token = undefined;
+  state.selectionConn = undefined;
+  if (state.published.has("selection")) state.published.set("selection", JSON_NULL);
 
   for (const socket of sockets) socket.close(GOING_AWAY, "editor stopping");
 }

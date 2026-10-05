@@ -154,7 +154,7 @@ describe("requests and notifications", () => {
 });
 
 describe("tools/list", () => {
-  it("lists the fifteen moku tools with closed object schemas", async () => {
+  it("lists the seventeen moku tools with closed object schemas", async () => {
     const { server, frames, send } = serve();
     send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     await server.idle();
@@ -171,6 +171,8 @@ describe("tools/list", () => {
       "moku_screenshot",
       "moku_series",
       "moku_reference",
+      "moku_selection",
+      "moku_select",
       "moku_files_list",
       "moku_files_read",
       "moku_files_write",
@@ -202,6 +204,13 @@ describe("tools/list", () => {
       moku_screenshot: readOnly,
       moku_series: readOnly,
       moku_reference: readOnly,
+      moku_selection: readOnly,
+      moku_select: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      },
       moku_files_list: readOnly,
       moku_files_read: readOnly,
       moku_files_write: {

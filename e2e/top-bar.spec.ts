@@ -7,13 +7,57 @@
  * counts in the title, theme). The test loops `page.setViewportSize` itself, so it runs once, in
  * the desktop project. At each width no two controls of the bar overlap (bounding boxes), every
  * control is on screen and takes the pointer at its centre, and every action works: from the bar
- * icons and the ⋯ menu below 900 px, from the bar from 900 px. A refused Hot reload change logs
- * nothing (round 2b R16): the bin answers 200 with its state. The Game toolbar has no overlay
+ * icons and the ⋯ menu below 900 px, from the bar from 900 px. The Game toolbar has no overlay
  * switch of its own any more; its switches are Safe area and Sound.
+ *
+ * Hot reload is a real switch (D-32): the bin restarts its server with Bun HMR flipped on the same
+ * port, and the tools page reloads the game frame with the checkpoint it took first. Off: the page
+ * `/` carries no `/_bun/client` script and a save on disk reloads nothing. On: the script is back
+ * and a save reloads the game again. Every test that switches it leaves it on, as the bin started.
  */
-import type { Page } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
 import { closeMore, isCompact, moreMenu, openMore, topBar } from "./top-bar";
+
+/** The project root the bin serves. */
+const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
+
+/** A game source the save checks touch: an appended comment changes nothing the game shows. */
+const SAVED_SOURCE = "features/home/styles.ts";
+
+/** The script Bun's HMR client adds to the HTML of a page served with HMR on. */
+const HMR_CLIENT = "/_bun/client";
+
+/** The tooltip of the Hot reload control while the bin serves with HMR on. */
+const HOT_ON_TITLE = "Hot reload (H): on · Bun reloads the game after a save and keeps its state";
+
+/** The tooltip of the Hot reload control while the bin serves with HMR off. */
+const HOT_OFF_TITLE = "Hot reload (H): off · a save does not reload the game";
+
+/** The toast of the frame reload that follows an accepted switch. */
+const RESTORED = "Game reloaded · state restored from the last checkpoint";
+
+/**
+ * What a switch provokes on purpose. The bin restarts its server (D-32): the hub closes every
+ * editor socket with 1012 first, and the bridge and link log that at info (U11). Only Bun's HMR
+ * client is out of our hands: on the page served with HMR on it reports its socket gone and retries
+ * it (404 once HMR is off) until the frame reload replaces the page. A scene read the tools page
+ * had in flight still fails until gameView logs those at debug.
+ */
+const SWITCH_WARNINGS: readonly RegExp[] = [
+  /WebSocket connection to 'ws:\/\/127\.0\.0\.1:\d+\/_bun\/hmr' failed/,
+  /^\[Bun\] Hot-module-reloading socket disconnected, reconnecting\.\.\.$/,
+  // The game's own asset warnings after the frame reload (game-release-brief item 6).
+  /event: assets: texture is not loaded yet/,
+  /event: renderer: no texture for asset key/,
+  /event: assets: the node waited for a bundle/
+];
+
+/** How long one switch may take: the restart, both reconnects and the frame reload. */
+const SWITCH_MS = 30_000;
 
 /** The window widths of the spec, in px; the height stays 900. */
 const WIDTHS = [480, 600, 640, 720, 899, 960, 1440] as const;
@@ -145,10 +189,162 @@ function lastToast(page: Page) {
  * @param page - The tools page.
  * @returns The frame.
  */
-function gameFrame(page: Page) {
+function gameFrame(page: Page): Frame {
   const frame = page.frames().find(f => f !== page.mainFrame() && !f.url().includes("/__editor/"));
   if (frame === undefined) throw new Error("no game frame");
   return frame;
+}
+
+/**
+ * The game position path, "pending" while the page reloads.
+ *
+ * @param page - The tools page.
+ * @returns The path.
+ */
+async function gamePath(page: Page): Promise<string> {
+  try {
+    return await gameFrame(page).evaluate(async () => {
+      const registry = (
+        Reflect.get(globalThis, "editor") as {
+          registry: { source(id: string): { read(input: object): Promise<{ path: string }> } };
+        }
+      ).registry;
+      const position = await registry.source("game.position").read({});
+      return position.path;
+    });
+  } catch {
+    return "pending";
+  }
+}
+
+/**
+ * Answers the flow gate of the game, as a tap on a control would.
+ *
+ * @param page - The tools page.
+ * @param intent - The intent.
+ */
+async function answer(page: Page, intent: string): Promise<void> {
+  const took = await gameFrame(page).evaluate(
+    value =>
+      (
+        Reflect.get(globalThis, "game") as {
+          flow: { gate: { answer(a: { intent: string }): boolean } };
+        }
+      ).flow.gate.answer({ intent: value }),
+    intent
+  );
+  expect(took, `the gate took ${intent}`).toBe(true);
+}
+
+/**
+ * Marks the game page, so a reload shows as the mark being gone.
+ *
+ * @param page - The tools page.
+ */
+async function markGame(page: Page): Promise<void> {
+  await gameFrame(page).evaluate(() => Reflect.set(globalThis, "__e2eMark", 1));
+}
+
+/**
+ * Tells whether the game page was reloaded since `markGame`.
+ *
+ * @param page - The tools page.
+ * @returns "reloaded", "marked" or "pending" (no page to ask, mid reload).
+ */
+async function reloadState(page: Page): Promise<string> {
+  try {
+    const marked = await gameFrame(page).evaluate(() => Reflect.get(globalThis, "__e2eMark") === 1);
+    return marked ? "marked" : "reloaded";
+  } catch {
+    return "pending";
+  }
+}
+
+/**
+ * Starts recording every toast the tools page shows, in order: a switch toasts its state and the
+ * frame reload toasts right after it, faster than a locator poll.
+ *
+ * @param page - The tools page.
+ */
+async function recordToasts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen = new WeakSet<Element>(document.querySelectorAll("[data-ui=toasts] [data-toast]"));
+    const history: string[] = [];
+    Reflect.set(globalThis, "__e2eToasts", history);
+    const scan = (): void => {
+      for (const toast of document.querySelectorAll("[data-ui=toasts] [data-toast]")) {
+        if (seen.has(toast)) continue;
+        seen.add(toast);
+        history.push(toast.textContent ?? "");
+      }
+    };
+    new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  });
+}
+
+/**
+ * The toasts shown since `recordToasts`, oldest first.
+ *
+ * @param page - The tools page.
+ * @returns The toast texts.
+ */
+async function toastHistory(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...(Reflect.get(globalThis, "__e2eToasts") ?? [])].map(String));
+}
+
+/**
+ * Whether the page `/` the bin serves carries Bun's HMR client script.
+ *
+ * @param page - The tools page (its request context and base URL).
+ * @returns True with HMR on.
+ */
+async function servesHmrClient(page: Page): Promise<boolean> {
+  const response = await page.request.get("/");
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  return html.includes(HMR_CLIENT);
+}
+
+/**
+ * Flips Hot reload with a click on a control and waits for the whole switch: the toast of the new
+ * state, the frame reloaded with the checkpoint (the game stands where it stood, which a fresh
+ * start would not), a live link and the page `/` with or without Bun's HMR client.
+ *
+ * @param page - The tools page.
+ * @param control - The switch, the bar icon or the ⋯ menu row.
+ * @param on - The state the click asks for.
+ */
+async function switchHotReload(page: Page, control: Locator, on: boolean): Promise<void> {
+  const before = await gamePath(page);
+  expect(before).not.toBe("home");
+  await markGame(page);
+  await recordToasts(page);
+  await control.click();
+
+  const state = on ? "on" : "off";
+  await expect.poll(() => toastHistory(page), { timeout: SWITCH_MS }).toContain(RESTORED);
+  const toasts = await toastHistory(page);
+  expect(toasts.indexOf(`Hot reload ${state}`), toasts.join(" | ")).toBe(0);
+  expect(toasts.indexOf(RESTORED), toasts.join(" | ")).toBeGreaterThan(0);
+  expect(await reloadState(page)).toBe("reloaded");
+  await expect.poll(() => gamePath(page)).toBe(before);
+  await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
+    timeout: SWITCH_MS
+  });
+  expect(await servesHmrClient(page), `/ with hot reload ${state}`).toBe(on);
+}
+
+/**
+ * Appends a comment to a game source on disk (an outside save, as an agent makes one) and
+ * returns the way to put the file back.
+ *
+ * @returns Writes the original text again.
+ */
+async function saveSource(): Promise<() => Promise<void>> {
+  const file = path.join(GAME_ROOT, SAVED_SOURCE);
+  const original = await readFile(file, "utf8");
+  await writeFile(file, `${original}\n// e2e save ${Date.now()}\n`);
+  return () => writeFile(file, original);
 }
 
 /**
@@ -290,21 +486,34 @@ test.describe("top bar · round 2", () => {
         await expect(hot).toBeVisible();
         await expect(hot).toHaveAccessibleName("Hot reload");
         await expect(hot).toHaveAttribute("aria-pressed", "true");
+        await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
         await expect(hot.locator("[data-part=dot]")).toHaveCount(1);
-        // A click asks the bin, which keeps hot reload on and says how to change it; nothing is
-        // logged (R16: the refusal answers 200 with the state).
-        await hot.click();
-        await expect(lastToast(page)).toHaveText(
-          "Start the bin with --no-hmr to turn hot reload off"
-        );
-        await expect(hot).toHaveAttribute("aria-pressed", "true");
-        await expect(hot).toHaveAttribute("title", /--no-hmr/);
       }
       await openMore(page);
       await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
       await closeMore(page);
     }
-    expect(errors.unexpected(), "no console error from the refused change").toEqual([]);
+
+    // The icon switches hot reload off, the ⋯ row on again; each switch reloads the game frame
+    // with its state (D-32). Once, at 600 px: a switch restarts the bin's server.
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    await resize(tools, 600);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    await answer(page, "play");
+    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    const hot = topBar(page).locator(":scope > [data-action=hot-reload]");
+    await switchHotReload(page, hot, false);
+    await expect(hot).toHaveAttribute("aria-pressed", "false");
+    await expect(hot).toHaveAttribute("title", HOT_OFF_TITLE);
+    await expect(hot.locator("[data-part=dot]")).toHaveCount(0);
+    await openMore(page);
+    await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "false");
+    await switchHotReload(page, menuRow(page, "hot-reload"), true);
+    await openMore(page);
+    await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
+    await closeMore(page);
+    await expect(hot).toHaveAttribute("aria-pressed", "true");
+    await expect(hot.locator("[data-part=dot]")).toHaveCount(1);
   });
 
   test("below 900 px the ⋯ menu holds every action, and each one works", async ({
@@ -363,15 +572,10 @@ test.describe("top bar · round 2", () => {
       await expect(menuRow(page, "reference")).toHaveAttribute("aria-checked", "false");
       await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
 
-      // Hot reload: the bin serves with Bun HMR on; a click is refused with how to change it.
+      // Hot reload: the bin serves with Bun HMR on (the row switches it: the icon test above).
       await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
       await expect(menuRow(page, "hot-reload").locator("[data-part=state]")).toHaveText("on");
-      await menuRow(page, "hot-reload").click();
-      await expect(lastToast(page)).toHaveText(
-        "Start the bin with --no-hmr to turn hot reload off"
-      );
-      await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
-      await expect(menuRow(page, "hot-reload")).toHaveAttribute("title", /--no-hmr/);
+      await expect(menuRow(page, "hot-reload")).toHaveAttribute("title", HOT_ON_TITLE);
 
       // Density cycles auto → compact → comfortable → auto.
       await expect(menuRow(page, "density").locator("[data-part=state]")).toHaveText("auto");
@@ -466,7 +670,7 @@ test.describe("top bar · round 2", () => {
         /session s-[0-9a-f]{4}/
       );
     }
-    expect(errors.unexpected(), "no console error from the refused hot reload change").toEqual([]);
+    expect(errors.unexpected(), "no console error from any action").toEqual([]);
   });
 
   test("from 900 px the bar shows the labelled switches, Registry as an icon, and every action works", async ({
@@ -506,13 +710,10 @@ test.describe("top bar · round 2", () => {
       await reference.click();
       await expect(reference).toHaveAttribute("aria-pressed", "false");
 
+      // Hot reload is on (the switch acts: the Hot reload test below).
       const hot = bar.getByRole("switch", { name: "Hot reload", exact: true });
       await expect(hot).toHaveAttribute("aria-checked", "true");
-      await hot.click();
-      await expect(lastToast(page)).toHaveText(
-        "Start the bin with --no-hmr to turn hot reload off"
-      );
-      await expect(hot).toHaveAttribute("aria-checked", "true");
+      await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
 
       await registryButton.click();
       await expect(page.locator("[data-ui=registry-popover]")).toBeVisible();
@@ -536,7 +737,65 @@ test.describe("top bar · round 2", () => {
       await preview.click();
       await expect(preview).toHaveAttribute("aria-checked", String(shown));
     }
-    expect(errors.unexpected(), "no console error from the refused hot reload change").toEqual([]);
+    expect(errors.unexpected(), "no console error from any action").toEqual([]);
+  });
+
+  test("Hot reload: the switch turns Bun HMR off and on, the game reloads with its state each time, and a save reloads it only while on", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    await resize(tools, 1440);
+    await tools.show("game");
+    const hot = topBar(page).getByRole("switch", { name: "Hot reload", exact: true });
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+    expect(await servesHmrClient(page), "/ with hot reload on").toBe(true);
+
+    // A state a fresh start would lose: the board.
+    await expect.poll(() => gamePath(page)).toBe("home");
+    await answer(page, "play");
+    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+
+    // Off: the bin serves without HMR; the frame reloads with the board.
+    await switchHotReload(page, hot, false);
+    await expect(hot).toHaveAttribute("aria-checked", "false");
+    await expect(hot).toHaveAttribute("title", HOT_OFF_TITLE);
+
+    // A save on disk reloads nothing while it is off.
+    await markGame(page);
+    const putBack = await saveSource();
+    try {
+      await page.waitForTimeout(3000);
+      expect(await reloadState(page), "the game after a save with hot reload off").toBe("marked");
+    } finally {
+      await putBack();
+    }
+    await page.waitForTimeout(1000);
+    expect(await reloadState(page)).toBe("marked");
+
+    // On: the bin serves with HMR again; the frame reloads with the board.
+    await switchHotReload(page, hot, true);
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+    await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
+
+    // A save reloads the game again, and the bridge restores the board; so does putting the file
+    // back.
+    await markGame(page);
+    const putBackAgain = await saveSource();
+    try {
+      await expect.poll(() => reloadState(page), { timeout: SWITCH_MS }).toBe("reloaded");
+      await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("board/awaitIntent");
+      await markGame(page);
+    } finally {
+      await putBackAgain();
+    }
+    await expect.poll(() => reloadState(page), { timeout: SWITCH_MS }).toBe("reloaded");
+    await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("board/awaitIntent");
+    await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
+      timeout: SWITCH_MS
+    });
+    expect(errors.unexpected(), "no console error from the switches").toEqual([]);
   });
 
   test("the compact bar icons look right at 720 and 480 px (golden)", async ({ tools }) => {

@@ -86,12 +86,14 @@ describe("bootOrigin", () => {
 });
 
 describe("openSocket", () => {
-  it("opens {ws}?token=…&kind=tools with the boot page origin outside a browser", () => {
+  it("opens {ws}?token=…&kind=tools&role=page with the boot page origin outside a browser", () => {
     ctx.state.boot = BOOT;
     openSocket(ctx);
 
     const socket = latestSocket();
-    expect(socket.url).toBe("ws://127.0.0.1:3000/__editor/ws?token=secret-token-1&kind=tools");
+    expect(socket.url).toBe(
+      "ws://127.0.0.1:3000/__editor/ws?token=secret-token-1&kind=tools&role=page"
+    );
     expect(socket.extra).toEqual([{ headers: { origin: "http://127.0.0.1:3000" } }]);
     expect(ctx.state.socket).toBe(socket);
   });
@@ -283,6 +285,25 @@ describe("onSocketClose", () => {
     onSocketClose(ctx, { code: 1006, reason: "" });
     expect(ctx.log.info).toHaveBeenCalledWith("link:closed", { code: 1006, reason: "" });
     expect(logText()).not.toContain(BOOT.token);
+  });
+});
+
+describe("the bin's restart (U11)", () => {
+  it("logs a 1012 close at info, warns nothing, and reconnects without a hello refresh", async () => {
+    ctx.state.boot = BOOT;
+    openSocket(ctx);
+    latestSocket().open();
+
+    onSocketClose(ctx, { code: 1012, reason: "editor restarting" });
+
+    expect(ctx.log.info).toHaveBeenCalledWith("link:closed", {
+      code: 1012,
+      reason: "editor restarting"
+    });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.state.status).toMatchObject({ kind: "lost", retryInMs: 1000 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
   });
 });
 

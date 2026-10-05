@@ -2,13 +2,16 @@
  * @file link plugin — the tools socket: boot → upgrade URL (R1) with the Origin header outside a
  * browser (R8), open, close, the reconnect backoff with the hello refresh, and `retry()`.
  */
+
+import type { ToolsBoot } from "../../registry/protocol";
 import { pageHref, readBoot, refreshBoot } from "../boot/read";
+import { resendNotified } from "../page/selection";
 import { failAll, linkClosedError } from "../rpc/calls";
 import { retrySession } from "../sessions/choose";
 import { clearRetry } from "../state";
 import { applyStatus } from "../status/machine";
 import { detachAll } from "../subscriptions/watch";
-import type { LinkCtx } from "../types";
+import type { Config, LinkCtx } from "../types";
 import { backoffDelay } from "./backoff";
 import { onSocketMessage } from "./messages";
 
@@ -80,6 +83,24 @@ export function socketOrigin(
 }
 
 /**
+ * The upgrade URL of the tools socket: the token, `kind=tools` and, for the editor page,
+ * `role=page` (D-33).
+ *
+ * @param boot - The boot data.
+ * @param role - The configured role.
+ * @returns The URL with its query.
+ * @example
+ * ```ts
+ * upgradeUrl(boot, "page"); // "ws://127.0.0.1:3000/__editor/ws?token=…&kind=tools&role=page"
+ * upgradeUrl(boot, "tools"); // "ws://127.0.0.1:3000/__editor/ws?token=…&kind=tools"
+ * ```
+ */
+export function upgradeUrl(boot: ToolsBoot, role: Config["role"]): string {
+  const url = `${boot.ws}?token=${encodeURIComponent(boot.token)}&kind=tools`;
+  return role === "page" ? `${url}&role=page` : url;
+}
+
+/**
  * Marks the link lost after a failed connect and schedules the next one.
  *
  * @param ctx - Domain context of link.
@@ -104,7 +125,7 @@ export function openSocket(ctx: LinkCtx): void {
   const { boot } = state;
   if (boot === undefined) return;
 
-  const url = `${boot.ws}?token=${encodeURIComponent(boot.token)}&kind=tools`;
+  const url = upgradeUrl(boot, ctx.config.role);
   log.info("link:connect", { ws: boot.ws });
 
   let socket: WebSocket;
@@ -141,7 +162,8 @@ export function openSocket(ctx: LinkCtx): void {
 }
 
 /**
- * The socket opened: the hub's first `sessions` notification drives the attach.
+ * The socket opened: the hub's first `sessions` notification drives the attach; the page's last
+ * notified selection goes out again.
  *
  * @param ctx - Domain context of link.
  */
@@ -151,6 +173,7 @@ export function onSocketOpen(ctx: LinkCtx): void {
   state.open = true;
   state.attempt = 0;
   applyStatus(ctx, { type: "socket-open" });
+  resendNotified(ctx);
 }
 
 /**

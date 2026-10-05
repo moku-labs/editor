@@ -1,10 +1,10 @@
 /**
  * @file pages/mcp — the bridge's hub tools connection (M2): `${ws}?token=…&kind=tools` with the
  * Origin header `http://127.0.0.1:<port>` so the hub guard passes, JSON-RPC ids, the `sessions`
- * list with the live heartbeats, `editor.hotReload`, and `watch`/`value`/`unwatch`. The token is
- * never logged, and neither is the URL that carries it.
+ * list with the live heartbeats, `editor.hotReload`, game, files and editor requests, and
+ * `watch`/`value`/`unwatch`. The token is never logged, and neither is the URL that carries it.
  */
-import type { Json, Message, Notification, SessionInfo } from "../../registry/protocol";
+import type { Channel, Json, Message, Notification, SessionInfo } from "../../registry/protocol";
 import {
   decode,
   encode,
@@ -256,14 +256,14 @@ function clientOf(
   /**
    * Sends one request and waits for its response.
    *
-   * @param channel - "game" or "files".
+   * @param channel - "game", "files" or "editor".
    * @param method - The method.
    * @param params - The params.
    * @param session - The session id, when one was asked for.
    * @returns The result.
    */
   function request(
-    channel: "game" | "files",
+    channel: Channel,
     method: string,
     params?: Json,
     session?: string

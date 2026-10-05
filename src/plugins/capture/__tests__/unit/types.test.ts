@@ -1,8 +1,16 @@
 import { describe, expectTypeOf, it } from "vitest";
 import type { RunState } from "../../../registry/protocol";
-import type { CommandEntry } from "../../../registry/types";
+import type { CommandEntry, SourceEntry } from "../../../registry/types";
 import { registerCaptureCommands } from "../../commands";
-import type { CaptureRegistry, Config, Device, SeriesShot, SeriesValue, Shot } from "../../types";
+import type {
+  CaptureRegistry,
+  Config,
+  Device,
+  PictureFormat,
+  SeriesShot,
+  SeriesValue,
+  Shot
+} from "../../types";
 import { createDeps, fakeClock } from "../helpers";
 
 /**
@@ -12,6 +20,14 @@ import { createDeps, fakeClock } from "../helpers";
  * @returns Always undefined.
  */
 const command = (_id: string): CommandEntry | undefined => undefined;
+
+/**
+ * A registry source lookup that finds nothing.
+ *
+ * @param _id - The id.
+ * @returns Always undefined.
+ */
+const source = (_id: string): SourceEntry | undefined => undefined;
 
 /**
  * A registry add that keeps nothing.
@@ -54,14 +70,23 @@ describe("capture types", () => {
     expectTypeOf(config).toEqualTypeOf<Config>();
   });
 
-  it("rejects a registry without add or envelope", () => {
+  it("rejects a registry without add, envelope or source", () => {
     const deps = createDeps(fakeClock());
 
     expectTypeOf(registerCaptureCommands).parameter(0).toEqualTypeOf<CaptureRegistry>();
     // @ts-expect-error — the registry needs add
-    expectTypeOf(registerCaptureCommands).toBeCallableWith({ command, envelope }, deps);
+    expectTypeOf(registerCaptureCommands).toBeCallableWith({ command, source, envelope }, deps);
     // @ts-expect-error — the registry needs envelope
-    expectTypeOf(registerCaptureCommands).toBeCallableWith({ command, add }, deps);
+    expectTypeOf(registerCaptureCommands).toBeCallableWith({ command, source, add }, deps);
+    // @ts-expect-error — the registry needs source (the rect of a key)
     expectTypeOf(registerCaptureCommands).toBeCallableWith({ command, add, envelope }, deps);
+    expectTypeOf(registerCaptureCommands).toBeCallableWith(
+      { command, source, add, envelope },
+      deps
+    );
+  });
+
+  it("takes a format of jpeg or png", () => {
+    expectTypeOf<PictureFormat>().toEqualTypeOf<"jpeg" | "png">();
   });
 });

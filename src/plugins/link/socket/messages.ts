@@ -1,11 +1,15 @@
 /**
- * @file link plugin — routes what the hub sends: responses settle calls; `editor` notifications
- * (`sessions`, `session`) drive the session choice, `hotReload` the hot reload state; `game` notifications of the chosen session
- * (`heartbeat`, `value`, `tap`) drive the status, the heap, the watches and the tap listeners (R1).
+ * @file link plugin — routes what the hub sends: responses settle calls; `editor` requests go to
+ * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice,
+ * `hotReload` the hot reload state, `selection` the editor selection; `game` notifications of the
+ * chosen session (`heartbeat`, `value`, `tap`) drive the status, the heap, the watches and the tap
+ * listeners (R1).
  */
 
 import type { Json, Message, Notification } from "../../registry/protocol";
 import { decode, isRequest, isResponse } from "../../registry/protocol";
+import { onEditorRequest } from "../page/requests";
+import { onSelectionNote } from "../page/selection";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
 import { onHotReloadNote } from "../server/hot-reload";
@@ -65,6 +69,16 @@ function onSession(ctx: LinkCtx, note: Notification): void {
  */
 function onHotReload(ctx: LinkCtx, note: Notification): void {
   onHotReloadNote(ctx, note.params);
+}
+
+/**
+ * `editor` · `selection {SelectionInfo | null}`: the editor selection the hub keeps (D-33).
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onSelection(ctx: LinkCtx, note: Notification): void {
+  onSelectionNote(ctx, note.params);
 }
 
 /**
@@ -147,6 +161,7 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.sessions", onSessions],
   ["editor.session", onSession],
   ["editor.hotReload", onHotReload],
+  ["editor.selection", onSelection],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]
@@ -171,6 +186,10 @@ export function onSocketMessage(ctx: LinkCtx, text: string): void {
 
   if (isResponse(message)) {
     settle(ctx, message);
+    return;
+  }
+  if (isRequest(message) && message.channel === "editor") {
+    void onEditorRequest(ctx, message);
     return;
   }
   if (isRequest(message)) {
