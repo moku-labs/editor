@@ -1,6 +1,6 @@
 /**
  * @file Protocol barrel — the only barrel of the protocol module. Runtime-free: re-exports every
- * wire type and pure helper, the device presets and the overlay host marker. Imported by hub,
+ * wire type and pure helper (commandsHash included), the device presets and the overlay host marker. Imported by hub,
  * files, pages, link, workspace, panels, the views, the agent plugins and src/index.ts by relative
  * path (D-02).
  */
@@ -27,6 +27,7 @@ export {
   toWireError,
   wireError
 } from "./errors";
+export { commandsHash } from "./hash";
 export {
   decode,
   encode,

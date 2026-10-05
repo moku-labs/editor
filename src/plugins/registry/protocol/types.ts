@@ -404,8 +404,9 @@ export type WriteParams = { path: string; text: string; version?: string };
 export type WriteBinaryParams = { path: string; data: string };
 
 /**
- * One game session the way a tools client sees it: the five R1 fields and, once the game has sent
- * a heartbeat, the hub's liveness readout (M4). Old clients ignore `heartbeat`.
+ * One game session the way a tools client sees it: the five R1 fields, the hub's liveness readout
+ * once the game has sent a heartbeat (M4), and the hash of the session's command doors (D-37).
+ * Old clients ignore `heartbeat` and `manifestHash`.
  *
  * @example
  * ```ts
@@ -416,7 +417,8 @@ export type WriteBinaryParams = { path: string; data: string };
  *   page: "http://127.0.0.1:3000/",
  *   embedded: true,
  *   connectedAt: 1790000000000,
- *   heartbeat: { frame: 1840, paused: true, silent: false }
+ *   heartbeat: { frame: 1840, paused: true, silent: false },
+ *   manifestHash: "4f528e73"
  * };
  * ```
  */
@@ -436,6 +438,11 @@ export type SessionInfo = {
     readonly paused: boolean;
     readonly silent: boolean;
   };
+  /**
+   * `commandsHash` of the session's manifest, set by the hub on hello. The MCP bridge compares it
+   * to rebuild its door tools only when the commands change. Absent from an old hub.
+   */
+  readonly manifestHash?: string;
 };
 
 /**
