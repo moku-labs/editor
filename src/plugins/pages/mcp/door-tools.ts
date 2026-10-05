@@ -28,8 +28,11 @@ import type {
 /**
  * The doors the generic tools cover. Their answers are data URLs (text a result does not cap), or
  * the run ends with the `game_reloaded` that only moku_reload tolerates (editor-tools.ts:105-110).
+ * `game.capture` is the engine's raw picture door: screenshots go only through moku_screenshot,
+ * which answers a JPEG image by default, capped at about 300 KB.
  */
 export const COVERED_DOORS: readonly string[] = [
+  "game.capture",
   "editor.capture",
   "editor.sheet",
   "editor.series",

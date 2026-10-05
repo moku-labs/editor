@@ -73,6 +73,7 @@ describe("doorToolName", () => {
 
   it("gives no name to the doors the generic tools cover", () => {
     expect(COVERED_DOORS).toEqual([
+      "game.capture",
       "editor.capture",
       "editor.sheet",
       "editor.series",
@@ -80,6 +81,17 @@ describe("doorToolName", () => {
       "editor.reload"
     ]);
     for (const id of COVERED_DOORS) expect(doorToolName(door(id, "read"))).toBeUndefined();
+  });
+
+  it("gives no game_capture door: screenshots go only through moku_screenshot", () => {
+    const { tools, skipped } = doorTools({
+      game: "g",
+      commands: [door("game.capture", "read"), door("game.pause", "cosmetic")]
+    });
+    expect(tools.map(tool => tool.name)).toEqual(["game_pause"]);
+    expect(skipped).toEqual([
+      "game.capture: covered by moku_screenshot / moku_series / moku_reload"
+    ]);
   });
 });
 

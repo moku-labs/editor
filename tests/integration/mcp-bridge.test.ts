@@ -404,6 +404,7 @@ describe("moku-editor mcp over stdio", () => {
     const doors = names.slice(17);
     expect(doors).toEqual(expect.arrayContaining(["game_pause", "game_resume", "game_tap"]));
     expect(doors).not.toContain("editor_capture");
+    expect(doors).not.toContain("game_capture");
     const doorPause = await bridge.call("game_pause");
     expect(textOf(doorPause)).toMatch(/^effect: cosmetic\n/);
     await bridge.call("game_resume");
