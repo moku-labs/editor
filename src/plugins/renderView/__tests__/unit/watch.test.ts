@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { linkPlugin } from "../../../link";
 import type { Manifest } from "../../../registry/protocol";
 import { createHandlers } from "../../handlers";
 import { startRenderView, stopRenderView } from "../../lifecycle";
@@ -35,6 +36,16 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
+
+/**
+ * How often the ctx resolved the link plugin so far.
+ *
+ * @param target - The test ctx.
+ * @returns The count of `require(linkPlugin)` calls.
+ */
+function linkRequires(target: TestCtx): number {
+  return vi.mocked(target.require).mock.calls.filter(([plugin]) => plugin === linkPlugin).length;
+}
 let frames: FrameQueue;
 
 /** A game.assets value with bundles of 1.5 MB. */
@@ -156,6 +167,18 @@ describe("tracker", () => {
       { frame: 1900, bundle: "c", tier: "scene", mb: 1.5 }
     ]);
     expect([...ctx.state.loaded.keys()]).toEqual(["d"]);
+  });
+
+  it("resolves link once for the tracker, not per delivered value or manifest", async () => {
+    startTracker(ctx);
+    const calls = linkRequires(ctx);
+
+    ctx.link.send("game.render", RENDER);
+    ctx.link.send("game.assets", ASSETS);
+    await attach(manifestOf(["game.render", "game.assets", "game.effects"]));
+    ctx.link.send("game.effects", EFFECTS);
+
+    expect(linkRequires(ctx)).toBe(calls);
   });
 
   it("uses the link frame for a release before any game.render", () => {
@@ -394,6 +417,16 @@ describe("scene watches", () => {
     expect(ctx.state.scene?.frame).toBe(1841);
     expect(ctx.state.tree.open).toEqual(new Set(["ui:boardScreen", "entity:1048640"]));
     expect(ctx.state.seen.get("board.cell")).toEqual({ lastSeen: 1841, unusedSince: undefined });
+  });
+
+  it("resolves link once for the scene watches, not per value, build or calibration", async () => {
+    startScene(ctx);
+    const calls = linkRequires(ctx);
+
+    await deliverBoard(ctx, frames);
+
+    expect(ctx.state.scene?.nodes.size).toBe(104);
+    expect(linkRequires(ctx)).toBe(calls);
   });
 
   it("drops a build queued before the scene watches stopped", async () => {

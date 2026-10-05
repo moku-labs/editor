@@ -37,8 +37,8 @@ const unmount = panels.mountInto("flow", workspace.host("flow"));
 
 ### definePanel
 
-`definePanel(input)` is runtime-free and exported from `"."`. It returns a frozen, closure-erased
-`PanelSpec`.
+`definePanel(input)` is runtime-free and exported from `"."`. It lives in `shared/define.ts`; the
+views import it from `../panels/shared/define`. It returns a frozen, closure-erased `PanelSpec`.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -176,10 +176,11 @@ Rules for all of them:
 
 - No plugin, no `ctx`, no timers, no logging.
 - No state, except `side-panel/`: it keeps the state of each side panel (D-29), in memory and in localStorage.
-- Bad input never throws. Functions return a typed error value; the view writes its own text.
+- Bad input never throws. Functions return a typed error value; the view writes its own text. The
+  one exception is `definePanel`: a malformed panel throws at startup.
 - Only `loadStyleFile`, `writeNumber` and `findStylesFile` are async. They do I/O through the files client they get.
-- Not exported from `"."` and not a plugin api. Views and workspace import them by relative path, e.g. `../panels/shared/style-edit`.
-- Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `workspaces.ts` takes the `WorkspaceId` type from workspace.
+- Not exported from `"."` and not a plugin api, except `definePanel`. Views and workspace import them by relative path, e.g. `../panels/shared/style-edit`.
+- Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `define.ts` imports only `workspaces.ts` at runtime; `workspaces.ts` takes the `WorkspaceId` type from workspace.
 
 | Module | Imported by | Holds |
 |---|---|---|
@@ -191,6 +192,7 @@ Rules for all of them:
 | `editor-url.ts` | flowView, filesView | The "Open in editor" link. |
 | `side-panel/` | flowView, gameView, filesView | The one SidePanel of every view's side panel: resize, collapse, close and reopen, overlay. |
 | `icons.tsx` | workspace, flowView | `Icon` and `IconName`: the 16 px stroke icons of the shell and the views, `aria-hidden`. |
+| `define.ts` | the six views, `"."` | `definePanel`: validates and freezes a panel. |
 | `workspaces.ts` | workspace, panels | `WORKSPACE_IDS` in rail order (Game first) and `WORKSPACE_LABELS`. |
 | `editable.ts` | workspace, gameView | `isEditableTarget`: whether a target types text (input, textarea, select, contenteditable). |
 

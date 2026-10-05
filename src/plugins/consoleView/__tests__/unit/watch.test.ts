@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { linkPlugin } from "../../../link";
 import { readOnce, startLogWatch } from "../../watch";
 import { createCtx, flush, type TestCtx, TRACE, traceValue } from "../helpers";
 
 let ctx: TestCtx;
+
+/**
+ * How often the ctx resolved the link plugin so far.
+ *
+ * @param target - The test ctx.
+ * @returns The count of `require(linkPlugin)` calls.
+ */
+function linkRequires(target: TestCtx): number {
+  return vi.mocked(target.require).mock.calls.filter(([plugin]) => plugin === linkPlugin).length;
+}
 
 beforeEach(() => {
   ctx = createCtx();
@@ -71,6 +82,16 @@ describe("startLogWatch", () => {
     ctx.link.send("game.log", { not: "a trace" });
     expect(ctx.log.warn).toHaveBeenCalledWith("consoleView:unexpected-log", { type: "object" });
     expect(ctx.state.lines).toHaveLength(8);
+  });
+
+  it("resolves link once for the watch, not per delivered value", () => {
+    startLogWatch(ctx);
+    const calls = linkRequires(ctx);
+
+    ctx.link.send("game.log", traceValue());
+    ctx.link.send("game.log", traceValue());
+
+    expect(linkRequires(ctx)).toBe(calls);
   });
 
   it("starts no timer and makes no link.read", () => {

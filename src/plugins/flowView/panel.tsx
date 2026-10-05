@@ -5,7 +5,7 @@
  */
 import type { VNode } from "preact";
 import { useEffect, useLayoutEffect } from "preact/hooks";
-import { definePanel } from "../panels/define";
+import { definePanel } from "../panels/shared/define";
 import { SidePanel } from "../panels/shared/side-panel";
 import type { PanelSpec, PanelTools } from "../panels/types";
 import { actionsOf } from "./actions";

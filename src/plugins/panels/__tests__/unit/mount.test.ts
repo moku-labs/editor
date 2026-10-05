@@ -3,8 +3,8 @@
 import { h } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, LinkStatus } from "../../../registry/protocol";
-import { definePanel } from "../../define";
 import { mountPanel, runFromPanel, scheduleFrame } from "../../mount";
+import { definePanel } from "../../shared/define";
 import type { PanelElement, PanelSpec, PanelTools } from "../../types";
 import { createDeps, flush, manifestOf, resultOf, type TestDeps } from "../helpers";
 

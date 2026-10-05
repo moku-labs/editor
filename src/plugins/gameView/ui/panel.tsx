@@ -6,7 +6,7 @@
  */
 import type { VNode } from "preact";
 import { h } from "preact";
-import { definePanel } from "../../panels/define";
+import { definePanel } from "../../panels/shared/define";
 import { SidePanel } from "../../panels/shared/side-panel";
 import type { PanelSpec, PanelTools } from "../../panels/types";
 import type { Json } from "../../registry/protocol";

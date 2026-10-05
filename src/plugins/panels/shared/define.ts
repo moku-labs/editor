@@ -1,12 +1,13 @@
 /**
- * @file panels plugin — definePanel: a panel is plain data, the host owns subscriptions.
- * Runtime-free (type-only imports, no runtime module), exported from "." (D-01). The one boundary
+ * @file Shared view module — definePanel: a panel is plain data, the host owns subscriptions.
+ * Runtime-free: no plugin, no core; its one runtime import is the shared workspace list. Exported
+ * from "." (D-01). The one boundary
  * cast of panels (typed view → erased view) lives in `erase`, like registry's one cast in
  * checkInput (contracts §3).
  */
-import type { Json } from "../registry/protocol";
-import type { WorkspaceId } from "../workspace/types";
-import type { PanelElement, PanelInput, PanelSpec, SourceRef } from "./types";
+import type { Json } from "../../registry/protocol";
+import type { PanelElement, PanelInput, PanelSpec, SourceRef } from "../types";
+import { WORKSPACE_IDS } from "./workspaces";
 
 /**
  * A panel id: camelCase words joined by dots, one word allowed ("flow", "flow.inspector").
@@ -15,21 +16,14 @@ const PANEL_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)*$/;
 
 /**
  * A source or command id: at least two camelCase words joined by dots ("game.position"), the
- * registry's ID_PATTERN (repeated here: define.ts imports no runtime module).
+ * registry's ID_PATTERN (repeated here: define.ts imports no registry runtime).
  */
 const DOTTED_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
 
 /**
- * The six workspaces (repeated from shared/workspaces.ts: define.ts imports no runtime module).
+ * The six workspaces, from the shared workspace list.
  */
-const WORKSPACES: ReadonlySet<string> = new Set<WorkspaceId>([
-  "flow",
-  "game",
-  "render",
-  "state",
-  "files",
-  "console"
-]);
+const WORKSPACES: ReadonlySet<string> = new Set(WORKSPACE_IDS);
 
 /**
  * The deepest nesting a tuple-ref input may have.
@@ -173,10 +167,6 @@ function checkCommands(label: string, commands: unknown): Readonly<Record<string
  *
  * @param view - The typed view.
  * @returns The same function, erased.
- * @example
- * ```ts
- * const erased = erase<PanelTools<Readonly<Record<string, string>>>>(input.view);
- * ```
  */
 function erase<Tools>(view: (...args: never[]) => PanelElement): ErasedView<Tools> {
   return view as ErasedView<Tools>;
@@ -202,6 +192,7 @@ export function definePanel<
   const S extends Readonly<Record<string, SourceRef>>,
   const C extends Readonly<Record<string, string>> = Readonly<Record<never, string>>
 >(input: PanelInput<S, C>): PanelSpec {
+  // Validate identity: the id and the workspace it lives in.
   const { id, title, workspace, view, compact } = input;
   if (typeof id !== "string" || !PANEL_ID.test(id)) {
     throw invalid(
@@ -217,6 +208,8 @@ export function definePanel<
       "Use flow, game, render, state, files or console"
     );
   }
+
+  // Validate the declared shape: sources, commands and the view functions.
   const sources = checkSources(label, input.sources);
   const commands = checkCommands(label, input.commands);
   if (typeof view !== "function") {
@@ -229,6 +222,7 @@ export function definePanel<
     );
   }
 
+  // Assemble the frozen spec with the views erased for the host.
   return Object.freeze({
     id,
     title,

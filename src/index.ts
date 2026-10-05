@@ -122,7 +122,7 @@ export {
 } from "./plugins/registry/protocol";
 
 // ─── Panels ───────────────────────────────────────────────────
-export { definePanel } from "./plugins/panels/define";
+export { definePanel } from "./plugins/panels/shared/define";
 export type { SourceValue } from "./plugins/panels/catalogue";
 export type {
   CompactTools,

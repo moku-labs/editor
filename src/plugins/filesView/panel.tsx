@@ -2,7 +2,7 @@
  * @file filesView plugin — the Files panel: no game sources (files come from the files channel,
  * not from game sources); the view renders the whole Files workspace.
  */
-import { definePanel } from "../panels/define";
+import { definePanel } from "../panels/shared/define";
 import type { PanelSpec } from "../panels/types";
 import { createFilesViewApi } from "./api";
 import type { FilesViewCtx } from "./types";

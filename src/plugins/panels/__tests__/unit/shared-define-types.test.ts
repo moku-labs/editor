@@ -3,7 +3,7 @@ import { h } from "preact";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { Json, RunResult } from "../../../registry/protocol";
 import type { CommandArgs, SourceValue, Wire } from "../../catalogue";
-import { definePanel } from "../../define";
+import { definePanel } from "../../shared/define";
 import type { PanelTools, PanelValues } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

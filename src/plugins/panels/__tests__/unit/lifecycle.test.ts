@@ -3,8 +3,8 @@
 import { h } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPanelsApi } from "../../api";
-import { definePanel } from "../../define";
 import { startPanels, stopPanels } from "../../lifecycle";
+import { definePanel } from "../../shared/define";
 import { createCtx, manifestOf } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
