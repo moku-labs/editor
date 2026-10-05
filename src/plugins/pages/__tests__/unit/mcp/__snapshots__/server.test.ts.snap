@@ -239,12 +239,12 @@ exports[`tools/list > lists the seventeen moku tools with closed object schemas 
         "openWorldHint": false,
         "readOnlyHint": true,
       },
-      "description": "A reference card the tools page wrote when an element was picked (.moku/captures/*.md): the element, its flow node, its source lines and its crop as an image. "latest" (the default) is the newest card.",
+      "description": "A reference card the tools page wrote when an element or an area was picked (.moku/captures/<YYYY-MM-DD>/*.md, older cards .moku/captures/*.md): the element, its flow node, its source lines and its crop as an image. "latest" (the default) is the newest card of all; a name answers the newest card with that name.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "The card: "latest", its file name (with or without .md) or its path.",
+            "description": "The card: "latest", its file name (with or without .md; the newest card of that name) or its path.",
             "minLength": 1,
             "type": "string",
           },

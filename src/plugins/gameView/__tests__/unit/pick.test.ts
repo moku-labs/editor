@@ -5,7 +5,7 @@ import type { Json, RunResult } from "../../../registry/protocol";
 import { pickAt, pickProxy } from "../../element/select";
 import { completePick, listBookmarks, pickToast } from "../../reference/pick";
 import { CROP_JPEG, stubCanvas } from "../canvas";
-import { createCtx, JPEG, manifestOf, PNG, type TestCtx, useScene } from "../helpers";
+import { createCtx, DAY, JPEG, manifestOf, PNG, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +54,7 @@ function coinPill(): SceneNode {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   ctx = createCtx();
   useScene(ctx);
   ctx.state.scene = boardScene();
@@ -72,6 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -84,19 +86,19 @@ describe("completePick", () => {
       "game.bookmark",
       "editor.capture"
     ]);
-    expect(ctx.link.files.dataUrl(".moku/captures/coinPill-f1842-crop.jpg")).toBe(CROP_JPEG);
-    expect(ctx.link.files.dataUrl(".moku/captures/f1842-full.jpg")).toBe(JPEG);
-    const card = ctx.link.files.text(".moku/captures/coinPill-f1842.md");
+    expect(ctx.link.files.dataUrl(`${DAY}/coinPill-f1842-crop.jpg`)).toBe(CROP_JPEG);
+    expect(ctx.link.files.dataUrl(`${DAY}/f1842-full.jpg`)).toBe(JPEG);
+    const card = ctx.link.files.text(`${DAY}/coinPill-f1842.md`);
     expect(card).toContain(`\`\`\`text\n${text}\n\`\`\``);
     expect(card).toContain("![element](coinPill-f1842-crop.jpg)\n![frame](f1842-full.jpg)\n");
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
-      /^@moku coinPill row · board\/awaitIntent · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/coinPill-f1842\.md$/
+      /^@moku coinPill row · board\/awaitIntent · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/coinPill-f1842\.md$/
     );
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
     // The capture card of the pick (round 2b R14): the crop, and its Reference line.
     expect(ctx.state.card).toMatchObject({
-      path: ".moku/captures/coinPill-f1842-crop.jpg",
+      path: `${DAY}/coinPill-f1842-crop.jpg`,
       frame: 1842,
       device: "iPhone 15 portrait",
       image: CROP_JPEG,
@@ -107,9 +109,7 @@ describe("completePick", () => {
     expect(lines[0]).toBe("@moku coinPill · row · board/awaitIntent · f1842");
     expect(lines).toContain("flow: board > awaitIntent · last: board/merge → merged (f1830)");
     expect(lines).toContain("restore: bookmark coinPill-f1841");
-    expect(lines).toContain(
-      "shot: .moku/captures/coinPill-f1842-crop.jpg · frame: .moku/captures/f1842-full.jpg"
-    );
+    expect(lines).toContain(`shot: ${DAY}/coinPill-f1842-crop.jpg · frame: ${DAY}/f1842-full.jpg`);
     expect(lines.find(entry => entry.startsWith("game: "))).toMatch(
       /^game: merge-game 0\.0\.0 · s-1 · f1842 · \d\d:\d\d:\d\d · live · tainted$/
     );
@@ -144,15 +144,15 @@ describe("completePick", () => {
     expect(
       ctx.link.files
         .paths()
-        .filter(path => path.startsWith(".moku/captures/"))
+        .filter(path => path.startsWith(`${DAY}/`))
         .toSorted()
     ).toEqual([
-      ".moku/captures/coinPill-f1842-2-crop.jpg",
-      ".moku/captures/coinPill-f1842-2.md",
-      ".moku/captures/coinPill-f1842-crop.jpg",
-      ".moku/captures/coinPill-f1842.md",
-      ".moku/captures/f1842-2-full.jpg",
-      ".moku/captures/f1842-full.jpg"
+      `${DAY}/coinPill-f1842-2-crop.jpg`,
+      `${DAY}/coinPill-f1842-2.md`,
+      `${DAY}/coinPill-f1842-crop.jpg`,
+      `${DAY}/coinPill-f1842.md`,
+      `${DAY}/f1842-2-full.jpg`,
+      `${DAY}/f1842-full.jpg`
     ]);
   });
 
@@ -175,8 +175,8 @@ describe("completePick", () => {
     ctx.link.manifestValue = manifestOf(COMMANDS.filter(([id]) => id !== "editor.capture"));
     const { block: text } = await completePick(ctx, coinPill(), boardScene());
     expect(ctx.state.card).toBeUndefined();
-    expect(ctx.link.files.paths()).toEqual([".moku/captures/coinPill-f1841.md"]);
-    expect(ctx.link.files.text(".moku/captures/coinPill-f1841.md")).not.toContain("![");
+    expect(ctx.link.files.paths()).toEqual([`${DAY}/coinPill-f1841.md`]);
+    expect(ctx.link.files.text(`${DAY}/coinPill-f1841.md`)).not.toContain("![");
     expect(text).not.toContain("shot:");
     expect(text.split("\n")[0]).toBe("@moku coinPill · row · board/awaitIntent · f1841");
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference and bookmark copied");
@@ -203,9 +203,9 @@ describe("completePick", () => {
     expect(ctx.log.warn).toHaveBeenCalledWith("gameView: pick crop failed", {
       message: "broken image"
     });
-    expect(text.split("\n").at(-1)).toBe("frame: .moku/captures/f1842-full.jpg");
+    expect(text.split("\n").at(-1)).toBe(`frame: ${DAY}/f1842-full.jpg`);
     const pictures = (): string[] => ctx.link.files.paths().filter(path => path.endsWith(".jpg"));
-    expect(pictures()).toEqual([".moku/captures/f1842-full.jpg"]);
+    expect(pictures()).toEqual([`${DAY}/f1842-full.jpg`]);
 
     const uncalibrated = { ...boardScene(), calibrated: false };
     await completePick(ctx, coinPill(), uncalibrated);
@@ -220,8 +220,8 @@ describe("completePick", () => {
       nodeId: "ui:boardScreen/hudRow/coinPill",
       frame: 1842,
       bookmark: "coinPill-f1841",
-      crop: ".moku/captures/coinPill-f1842-crop.jpg",
-      full: ".moku/captures/f1842-full.jpg",
+      crop: `${DAY}/coinPill-f1842-crop.jpg`,
+      full: `${DAY}/f1842-full.jpg`,
       tainted: true
     });
   });
@@ -232,9 +232,9 @@ describe("completePick contract (A8, A19)", () => {
     const result = await completePick(ctx, coinPill(), boardScene());
     expect(result).toMatchObject({
       line: String(writeText.mock.calls[0]?.at(0)),
-      card: ".moku/captures/coinPill-f1842.md",
-      crop: ".moku/captures/coinPill-f1842-crop.jpg",
-      full: ".moku/captures/f1842-full.jpg",
+      card: `${DAY}/coinPill-f1842.md`,
+      crop: `${DAY}/coinPill-f1842-crop.jpg`,
+      full: `${DAY}/f1842-full.jpg`,
       frame: 1842
     });
     expect(result.block.split("\n")[0]).toBe("@moku coinPill · row · board/awaitIntent · f1842");
@@ -243,8 +243,8 @@ describe("completePick contract (A8, A19)", () => {
       key: "coinPill",
       name: "coinPill",
       type: "row",
-      card: ".moku/captures/coinPill-f1842.md",
-      crop: ".moku/captures/coinPill-f1842-crop.jpg",
+      card: `${DAY}/coinPill-f1842.md`,
+      crop: `${DAY}/coinPill-f1842-crop.jpg`,
       line: result.line,
       session: "s-1",
       frame: 1842
@@ -263,16 +263,16 @@ describe("completePick contract (A8, A19)", () => {
       ran({ image: PNG, frame: 1842, device: { w: 393, h: 852, orientation: "portrait" } }, 1842)
     );
     const result = await completePick(ctx, coinPill(), boardScene());
-    expect(result.full).toBe(".moku/captures/f1842-full.png");
-    expect(ctx.link.files.dataUrl(".moku/captures/f1842-full.png")).toBe(PNG);
-    expect(result.crop).toBe(".moku/captures/coinPill-f1842-crop.jpg");
+    expect(result.full).toBe(`${DAY}/f1842-full.png`);
+    expect(ctx.link.files.dataUrl(`${DAY}/f1842-full.png`)).toBe(PNG);
+    expect(result.crop).toBe(`${DAY}/coinPill-f1842-crop.jpg`);
   });
 });
 
 describe("the card file of a pick (round 2b R13)", () => {
   it("copies the line without a card path when the card cannot be written", async () => {
     ctx.link.files.failWrites(
-      ".moku/captures/coinPill-f1842.md",
+      `${DAY}/coinPill-f1842.md`,
       Object.assign(new Error("[moku-editor] disk full"), { code: -32_000 })
     );
     await completePick(ctx, coinPill(), boardScene());

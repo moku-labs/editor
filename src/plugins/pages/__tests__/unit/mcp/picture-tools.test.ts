@@ -1,6 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the value an inert renderer answers */
 import { mkdir, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path/posix";
+import { dirname, join } from "node:path/posix";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Json } from "../../../../registry/protocol";
 import { wireError } from "../../../../registry/protocol";
@@ -66,28 +66,59 @@ function manifest(input: Json, editor: Json[] = []): Json {
 }
 
 /**
- * Writes the cards on disk (for their times) and answers them from the fake hub.
+ * A string parameter of a request, or "" when it is missing.
+ *
+ * @param params - The request params.
+ * @param key - The parameter name.
+ * @returns The value.
+ */
+function paramOf(params: Json | undefined, key: string): string {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) return "";
+  const value = params[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * The files.list answer for one folder of a set of file paths: its files and its sub-folders,
+ * sorted by path like the files plugin answers.
+ *
+ * @param paths - Every file path.
+ * @param dir - The folder listed.
+ * @returns The entries.
+ */
+function entriesIn(paths: readonly string[], dir: string): Json[] {
+  const children = new Map<string, "file" | "dir">();
+  for (const path of paths) {
+    if (!path.startsWith(`${dir}/`)) continue;
+    const [first = "", ...rest] = path.slice(dir.length + 1).split("/");
+    children.set(`${dir}/${first}`, rest.length > 0 ? "dir" : "file");
+  }
+  const sorted = [...children].toSorted(([left], [right]) => left.localeCompare(right));
+  return sorted.map(([path, kind]) => ({ path, kind, size: kind === "dir" ? 0 : 1 }));
+}
+
+/**
+ * Writes the cards on disk (for their times) and answers them from the fake hub. A name may hold a
+ * folder, such as a day folder: `2026-10-05/play-f9.md`.
  *
  * @param current - The setup.
- * @param cards - Name, text and modification time (s) of each card.
+ * @param cards - Name (under .moku/captures), text and modification time (s) of each card.
  */
 async function serveCards(
   current: ToolSetup,
   cards: { name: string; text: string; at: number }[]
 ): Promise<void> {
   const dir = join(current.root, ".moku", "captures");
-  await mkdir(dir, { recursive: true });
   for (const card of cards) {
-    await writeFile(join(dir, card.name), card.text);
-    await utimes(join(dir, card.name), card.at, card.at);
+    const file = join(dir, card.name);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, card.text);
+    await utimes(file, card.at, card.at);
   }
-  current.hub.handle("files.list", () => [
-    { path: ".moku/captures/f25.png", kind: "file", size: 9 },
-    ...cards.map(card => ({ path: `.moku/captures/${card.name}`, kind: "file", size: 1 }))
-  ]);
+  const paths = [".moku/captures/f25.png", ...cards.map(card => `.moku/captures/${card.name}`)];
+  current.hub.handle("files.list", params => entriesIn(paths, paramOf(params, "dir")));
   current.hub.handle("files.read", params => {
-    const path =
-      typeof params === "object" && params !== null && "path" in params ? params.path : "";
+    const path = paramOf(params, "path");
     const card = cards.find(entry => `.moku/captures/${entry.name}` === path);
     return { text: card?.text ?? "", version: "v1" };
   });
@@ -389,6 +420,115 @@ describe("moku_reference", () => {
     const unknown = await current.run(referenceTool, { id: "b" });
     expect(textAt(unknown.result)).toBe(
       "no reference card b in .moku/captures; the cards are: .moku/captures/a.md"
+    );
+  });
+});
+
+describe("moku_reference in day folders", () => {
+  /** Two days of cards and an old flat card from before the day folders. */
+  const DAYS = [
+    { name: "claim-f25.md", text: "# flat", at: 500 },
+    { name: "2026-10-04/play-f9.md", text: "# day 4\n![element](play-f9-crop.jpg)", at: 1000 },
+    { name: "2026-10-05/play-f9.md", text: "# day 5\n![element](play-f9-crop.jpg)", at: 2000 },
+    { name: "2026-10-05/area-f812.md", text: "# area", at: 1500 }
+  ];
+
+  it("answers the newest card of the newest day, with its crop from that day folder", async () => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const { result } = await current.run(referenceTool);
+    expect(textAt(result)).toBe(
+      ".moku/captures/2026-10-05/play-f9.md\n\n# day 5\n![element](play-f9-crop.jpg)"
+    );
+    expect(current.hub.requests.at(-1)).toMatchObject({
+      method: "readBinary",
+      params: { path: ".moku/captures/2026-10-05/play-f9-crop.jpg" }
+    });
+  });
+
+  it("lists the day folders newest first and skips folders that are not days", async () => {
+    const current = await ready();
+    await serveCards(current, [
+      ...DAYS,
+      { name: "notes/newer.md", text: "# not a day", at: 9000 },
+      { name: "2026-1-05/newer.md", text: "# not a day", at: 9000 }
+    ]);
+    const { result } = await current.run(referenceTool);
+    expect(textAt(result)).toContain(".moku/captures/2026-10-05/play-f9.md");
+    const listed = current.hub.requests
+      .filter(entry => entry.method === "list")
+      .map(entry => paramOf(entry.params, "dir"));
+    expect(listed).toEqual([
+      ".moku/captures",
+      ".moku/captures/2026-10-05",
+      ".moku/captures/2026-10-04"
+    ]);
+  });
+
+  it("answers an old flat card when it is the newest", async () => {
+    const current = await ready();
+    await serveCards(current, [...DAYS, { name: "late-f1.md", text: "# late flat", at: 3000 }]);
+    const { result } = await current.run(referenceTool);
+    expect(textAt(result)).toBe(".moku/captures/late-f1.md\n\n# late flat");
+  });
+
+  it.each(["play-f9", "play-f9.md"])("finds the newest card named %s", async id => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const { result } = await current.run(referenceTool, { id });
+    expect(textAt(result)).toContain(".moku/captures/2026-10-05/play-f9.md\n\n# day 5");
+  });
+
+  it("finds a flat card and a day card by name", async () => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const flat = await current.run(referenceTool, { id: "claim-f25" });
+    expect(textAt(flat.result)).toBe(".moku/captures/claim-f25.md\n\n# flat");
+    const area = await current.run(referenceTool, { id: "area-f812.md" });
+    expect(textAt(area.result)).toBe(".moku/captures/2026-10-05/area-f812.md\n\n# area");
+  });
+
+  it.each([
+    ".moku/captures/2026-10-04/play-f9.md",
+    "./.moku/captures/2026-10-04/play-f9.md"
+  ])("answers the card a path names: %s", async id => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const { result } = await current.run(referenceTool, { id });
+    expect(textAt(result)).toContain(".moku/captures/2026-10-04/play-f9.md\n\n# day 4");
+  });
+
+  it("never reads a crop link of a day card that points at the bin's private files", async () => {
+    const current = await ready();
+    await serveCards(current, [
+      { name: "2026-10-05/a.md", text: "![element](../../editor.json)", at: 1 }
+    ]);
+    const { result } = await current.run(referenceTool);
+    expect(result.content).toHaveLength(1);
+    expect(current.hub.requests.some(entry => entry.method === "readBinary")).toBe(false);
+  });
+
+  it("keeps the cards of the other folders when one day folder cannot be listed", async () => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    current.hub.handle("files.list", params => {
+      const dir = paramOf(params, "dir");
+      if (dir === ".moku/captures/2026-10-05") throw new Error("gone");
+      return entriesIn(
+        DAYS.map(card => `.moku/captures/${card.name}`),
+        dir
+      );
+    });
+    const { result } = await current.run(referenceTool);
+    expect(textAt(result)).toContain(".moku/captures/2026-10-04/play-f9.md");
+  });
+
+  it("lists every card, day folders first, for an unknown id", async () => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const { result } = await current.run(referenceTool, { id: "nope" });
+    expect(textAt(result)).toBe(
+      "no reference card nope in .moku/captures; the cards are: .moku/captures/2026-10-05/area-f812.md, .moku/captures/2026-10-05/play-f9.md, .moku/captures/2026-10-04/play-f9.md, .moku/captures/claim-f25.md"
     );
   });
 });

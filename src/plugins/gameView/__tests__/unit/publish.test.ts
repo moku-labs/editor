@@ -4,7 +4,7 @@ import type { SelectionInfo } from "../../../registry/protocol";
 import { pickAt, pickProxy, selectElement } from "../../element/select";
 import { completePick } from "../../reference/pick";
 import { stubCanvas } from "../canvas";
-import { createCtx, flush, JPEG, manifestOf, type TestCtx, useScene } from "../helpers";
+import { createCtx, DAY, flush, JPEG, manifestOf, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ function published(): (SelectionInfo | null)[] {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   ctx = createCtx(HUD);
   useScene(ctx);
   ctx.state.scene = boardScene();
@@ -38,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -151,8 +153,8 @@ describe("a pick publishes its card, crop and line", () => {
     expect(last).toMatchObject({
       ref: COIN,
       source: { path: "src/hud/Hud.tsx", line: 1 },
-      card: ".moku/captures/coinPill-f1842.md",
-      crop: ".moku/captures/coinPill-f1842-crop.jpg",
+      card: `${DAY}/coinPill-f1842.md`,
+      crop: `${DAY}/coinPill-f1842-crop.jpg`,
       line: expect.stringMatching(/^@moku coinPill row · /),
       frame: 1842
     });
@@ -165,7 +167,7 @@ describe("a pick publishes its card, crop and line", () => {
     await pickAt(ctx, { x: 540, y: 990 });
     expect(published().at(-1)).toMatchObject({
       ref: { kind: "entity", id: 1_048_628 },
-      card: ".moku/captures/i1-f1842.md",
+      card: `${DAY}/i1-f1842.md`,
       frame: 1842
     });
   });
@@ -178,6 +180,6 @@ describe("a pick publishes its card, crop and line", () => {
     if (node === undefined || ctx.state.scene === undefined) throw new Error("fixture");
     const result = await completePick(ctx, node, ctx.state.scene);
     expect(published()).toHaveLength(before);
-    expect(result.info.card).toBe(".moku/captures/coinPill-f1842.md");
+    expect(result.info.card).toBe(`${DAY}/coinPill-f1842.md`);
   });
 });

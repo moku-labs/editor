@@ -577,9 +577,9 @@ export type SelectionItem = {
  *   type: "text",
  *   rect: { x: 12, y: 40, w: 96, h: 24 },
  *   source: { path: "src/ui/hud.ts", line: 42 },
- *   card: ".moku/editor/captures/coins-1840.md",
- *   crop: ".moku/editor/captures/coins-1840-crop.jpg",
- *   line: "@moku ui:column#0/hudRow/coins hud.ts:42",
+ *   card: ".moku/captures/2026-10-05/coins-f1840.md",
+ *   crop: ".moku/captures/2026-10-05/coins-f1840-crop.jpg",
+ *   line: "@moku coins text · src/ui/hud.ts:42 · .moku/captures/2026-10-05/coins-f1840.md",
  *   session: "s-7f3a",
  *   frame: 1840,
  *   at: 1790000000000

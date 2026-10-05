@@ -15,6 +15,7 @@ import { notify } from "../state";
 import type { CaptureCardInfo, CaptureFile, GameViewCtx } from "../types";
 import {
   capturePath,
+  dayFolder,
   deviceLabel,
   imageExtension,
   nodeOf,
@@ -169,8 +170,8 @@ export function showCard(ctx: GameViewCtx, card: CaptureCardInfo): void {
 }
 
 /**
- * Takes one screenshot through panels.run, saves it under `capturesDir` with the extension of its
- * picture (`.jpg` for the JPEG editor.capture answers by default) and puts `shot: <path>` on the
+ * Takes one screenshot through panels.run, saves it in today's folder under `capturesDir`
+ * (`<yyyy-mm-dd>/<hhmm>-<flow>.jpg`) with the extension of its picture (`.jpg` for the JPEG editor.capture answers by default) and puts `shot: <path>` on the
  * clipboard (a refusal is only logged).
  *
  * @param ctx - Domain context of gameView.
@@ -193,10 +194,11 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
         "[moku-editor] editor.capture returned no image.\n  Update the game's capturePlugin."
       );
     }
-    const { capturesDir } = ctx.config;
-    const taken = await listTaken(ctx, capturesDir);
+    const now = new Date();
+    const folder = dayFolder(ctx.config.capturesDir, now);
+    const taken = await listTaken(ctx, folder);
     const extension = imageExtension(shot.image);
-    const path = capturePath(capturesDir, stamp(new Date()), nodeOf(position), taken, extension);
+    const path = capturePath(folder, stamp(now), nodeOf(position), taken, extension);
     await link.files.writeBinary(path, shot.image);
 
     const preset = workspace.device().preset;

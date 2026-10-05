@@ -976,9 +976,9 @@ export type SelectionItem = {
  *   type: "text",
  *   rect: { x: 12, y: 40, w: 96, h: 24 },
  *   source: { path: "src/ui/hud.ts", line: 42 },
- *   card: ".moku/editor/captures/coins-1840.md",
- *   crop: ".moku/editor/captures/coins-1840-crop.jpg",
- *   line: "@moku ui:column#0/hudRow/coins hud.ts:42",
+ *   card: ".moku/captures/2026-10-05/coins-f1840.md",
+ *   crop: ".moku/captures/2026-10-05/coins-f1840-crop.jpg",
+ *   line: "@moku coins text · src/ui/hud.ts:42 · .moku/captures/2026-10-05/coins-f1840.md",
  *   session: "s-7f3a",
  *   frame: 1840,
  *   at: 1790000000000
@@ -1241,7 +1241,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `zoom.defaultMin` | `number` | `0.8` | Floor of the default camera. |
 | flowView | `hub.minOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | flowView | `hub.minReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
-| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two pictures of a pick (`<key>-f<frame>-crop.jpg`, `f<frame>-full.jpg`). `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
+| gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two pictures of a pick (`<key>-f<frame>-crop.jpg`, `f<frame>-full.jpg`), each in a day folder `<yyyy-mm-dd>/` (local date; a Shot is `<hhmm>-<flow>.jpg`, a series `series-<hhmm>/`). `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
 | gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
 | gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
@@ -1306,7 +1306,7 @@ MCP bridge (`moku-editor mcp`, `src/plugins/pages/mcp/`, D-31): a separate proce
 - Claude Code 2.1.280 (recorded in `src/plugins/pages/__tests__/fixtures/claude-*.json`): it sends `server/discover` (draft protocol 2026-07-28) first, gets -32601, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized` and `tools/list`.
 - Which bin: a live `.moku/editor.json` under `--root` (default the working directory) wins. Without one the bridge starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached (output in `.moku/editor.log`, 0600), when it knows a game html (argv, else the last discovery file it saw); port `--port`, else the last port, else 3000; it waits at most 15 s for the discovery file and owns that bin. Without an html, tools answer `isError` "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." A closed hub socket is re-read and reconnected once.
 - Teardown on stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes, an owned bin gets SIGTERM, then SIGKILL after 2 s; a bin the bridge did not start keeps running. After a signal it lets go of stdin, so the process exits 0 while the client keeps the pipe open.
-- Tools (17, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a `.moku/captures/*.md` card and its crop), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, card? }`, exactly one of `key` or `rect`; hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
+- Tools (17, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a card and its crop: `"latest"` is the newest card of `.moku/captures/<yyyy-mm-dd>/*.md` (only `YYYY-MM-DD` folder names, newest day first) and the older flat `.moku/captures/*.md`; a name is the newest card with that name; a path is that card), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, card? }`, exactly one of `key` or `rect`; hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
 - Liveness (M7): screenshot and series read the session heartbeat first; paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume". Pictures need a visible game page.
 
 ---
@@ -1961,7 +1961,7 @@ export type FilesApi = {
    * @example
    * ```ts
    * // Store a board screenshot the capture panel took.
-   * await app.files.writeBinary(".moku/captures/2026-09-24-1012-board.png", bytes);
+   * await app.files.writeBinary(".moku/captures/2026-10-05/0846-board.png", bytes);
    * ```
    */
   writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
@@ -1981,8 +1981,8 @@ export type FilesApi = {
    * ```ts
    * // hub serves the files-channel `writeBinary { path, data }` of a tools page.
    * const files = ctx.require(filesPlugin);
-   * await files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
-   * // { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
+   * await files.writeDataUrl(".moku/captures/2026-10-05/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+   * // { path: ".moku/captures/2026-10-05/f12-full.jpg", bytes: 48213, version: "3f7a…" }
    * ```
    */
 
@@ -1996,7 +1996,7 @@ export type FilesApi = {
    * @example
    * ```ts
    * // Show a stored capture again.
-   * const { dataUrl } = await app.files.readBinary(".moku/captures/2026-09-24-1012-board.png");
+   * const { dataUrl } = await app.files.readBinary(".moku/captures/2026-10-05/0846-board.png");
    * // dataUrl: "data:image/png;base64,…"
    * ```
    */
@@ -2854,7 +2854,7 @@ export type LinkApi = EditorChannel & {
    * ```ts
    * // gameView selects the element MCP asks for and answers its selection.
    * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
-   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/editor/captures/coins-1840.md", … }
+   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/captures/2026-10-05/coins-f1840.md", … }
    * remove();
    * ```
    */
@@ -4164,10 +4164,10 @@ export type LayoutApi = {
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active; Reference mode on when workspace has it on), `onStop`.
 - Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown or Reference mode is on. Runs `editor.*` commands through `panels.run`. Never captures on its own.
 - Calibration: reads `{ key }` of one keyed ui node from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1). A manifest with neither: no read, no warn, and the picker hint says "This game reports no element rects".
-- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. The cursor over the layer and every proxy is a crosshair. A click (`pointerup`) on a proxy is a pick. A press that moves 4 client px or more drags an area (U9): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`.
+- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. The cursor over the layer and every proxy is a crosshair. A click (`pointerup`) on a proxy is a pick. A press that moves 4 client px or more drags an area (U9; in Select mode the picker layer does the same and turns off after the pick, U4): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`. Each element line is `- <name> <type> · key <key> · text "…" · <file:line> · x,y w×h px · ref x,y w×h` (U5; `text` when the game reports `content`, 40 characters at most), followed by its child tree (visible descendants, two spaces per level, 3 levels, 60 lines in the whole tree, then `+N more`); then one `layout: <roots> < <parent> (…) < …` line per parent chain (up to 3 parents), `partly in the area: <name> <type> x,y w×h px · …` (overlapping nodes not inside, largest overlap first, at most 8), the tail lines; the card adds `## <key> · component <Name> · <file:line>` for each component instance (within the 10 new source searches of an area, A18).
 - Selection over MCP (U4, D-33): every change of the selection (a pick, an area, select, Esc) is published through `link.notify("selection", …)` (first without the style source, then again with it; after a pick with `card`, `crop`, `line`). `link.handle("select", …)` answers MCP `moku_select`: `rect` picks an area; `key` (first ui node with it, `"hud/infoBar"` allowed) or `ref` is inspected in the Game workspace and, unless `card: false`, picked without the clipboard; an unknown key is -32602 "No element with key <key>".
-- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<capturesDir>/<key>-f<frame>-crop.jpg` and `<capturesDir>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<capturesDir>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
-- The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md`. `<file:line>` is the key's source (` (loop)` for a loop key), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
+- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<day>/<key>-f<frame>-crop.jpg` and `<day>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<day>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken that day); `<day>` is `<capturesDir>/<yyyy-mm-dd>` (local date; old flat files are not moved), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
+- The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md`. `<file:line>` is the key's source (` (loop)` for a loop key), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
 - The card file, Markdown: `# @moku <name> <type>`; the full reference block in a `text` fence (a fence one backtick longer than any run inside); `## JSX · <file:line>` and `## Style · <name> · <file:line>` with fenced snippets (language from the extension); an entity: `## Spawned by <projection> · <file:line>` and `- <component>: <short value>` rows; then `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`. "Copy reference" writes the card of the same node and frame again (one file), or a new one.
 - The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) writes the card and copies the one line. A key built in a loop (`card${slot}` for `card0`) resolves to its template literal line with ` (loop)`.
 - Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title, "… · approx: estimated values"); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1). The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run` when the manifest lists it and keeps the flag with `workspace.setMuted`; a game that connects while muted is muted again (a hot reload connects a new page); without `game.mute` it is `aria-disabled` with the title "Needs @moku-labs/game with game.mute"; a refusal toasts "Sound switch failed · <message>".
@@ -4187,7 +4187,7 @@ export type LayoutApi = {
  * ```
  */
 export type GameViewConfig = {
-  /** Folder of screenshots and series, relative to the files root. */
+  /** Folder of screenshots and series, relative to the files root; each in a `<yyyy-mm-dd>/` day folder. */
   capturesDir: string;
   /** Where the game's asset manifest may live, tried in order. */
   manifestPaths: readonly string[];
@@ -4219,7 +4219,7 @@ export type GameViewConfig = {
  *
  * @example
  * ```ts
- * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
+ * const shot: CaptureFile = { path: ".moku/captures/2026-10-05/0846-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
  * ```
  */
 export type CaptureFile = {
@@ -4235,7 +4235,7 @@ export type CaptureFile = {
  *
  * @example
  * ```ts
- * const result: SeriesResult = { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 };
+ * const result: SeriesResult = { folder: ".moku/captures/2026-10-05/series-1015/", indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 };
  * ```
  */
 export type SeriesResult = {
@@ -4249,16 +4249,18 @@ export type SeriesResult = {
  *
  * @example
  * ```ts
- * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", … }
  * ```
  */
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
    * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
-   * element bookmarks the game, saves the crop and the full frame under `capturesDir`, writes the
-   * reference card next to them, puts its one reference line on the clipboard (see
-   * `copyReference`) and shows the capture card with a Reference action.
+   * element bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full frame
+   * (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the reference
+   * card next to them, puts its one reference line on the clipboard (see `copyReference`), shows
+   * the capture card with a Reference action and publishes the selection for MCP
+   * `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -4367,25 +4369,27 @@ export type GameViewApi = {
   manifest(): Promise<TextureCatalogue | undefined>;
 
   /**
-   * One screenshot: runs `editor.capture` through panels (R9), writes the picture under
-   * `capturesDir` named after its type (`.jpg` for the JPEG editor.capture answers by default,
-   * D-34), puts `shot: <path>` on the clipboard, toasts, shows the capture card and the shutter
-   * flash. Never captures on its own: only a user action or this call does.
+   * One screenshot: runs `editor.capture` through panels (R9), writes the picture into today's
+   * folder `<capturesDir>/<yyyy-mm-dd>/` as `<hhmm>-<flow>` with the extension of its type
+   * (`.jpg` for the JPEG editor.capture answers by default, D-34), puts `shot: <path>` on the
+   * clipboard, toasts, shows the capture card and the shutter flash. Never captures on its own:
+   * only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
    * @example
    * ```ts
    * // The developer saw a glitch on the board and keeps a picture of it.
-   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
+   * await app.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
    * ```
    */
   capture(): Promise<CaptureFile | undefined>;
 
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
-   * new `series-<stamp>/` folder, puts `series: <folder> (<n> frames)` on the clipboard, then
-   * opens the contact sheet. Shows Game first. Refuses while another series runs.
+   * new `<capturesDir>/<yyyy-mm-dd>/series-<hhmm>/` folder, puts `series: <folder> (<n> frames)`
+   * on the clipboard, then opens the contact sheet. Shows Game first. Refuses while another
+   * series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -4396,7 +4400,7 @@ export type GameViewApi = {
    * @example
    * ```ts
    * // Watch the merge animation frame by frame.
-   * await app.gameView.series({ durationMs: 2000, intervalMs: 100 }); // { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
+   * await app.gameView.series({ durationMs: 2000, intervalMs: 100 }); // { folder: ".moku/captures/2026-10-05/series-1015/", indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 }
    * ```
    */
   series(options: {
@@ -4427,7 +4431,7 @@ export type GameViewApi = {
    * @example
    * ```ts
    * // filesView's "Open contact sheet" on a series folder.
-   * await app.gameView.openSheet(".moku/captures/series-2026-09-24-1015/index.json");
+   * await app.gameView.openSheet(".moku/captures/2026-10-05/series-1015/index.json");
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
@@ -4435,8 +4439,8 @@ export type GameViewApi = {
   /**
    * Writes the reference card of the selected element and puts its one line on the clipboard
    * (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
-   * The card `<capturesDir>/<key>-f<frame>.md` holds the full reference block (`@moku` head,
-   * `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a pick
+   * The card `<key>-f<frame>.md`, beside the pick's pictures in `<capturesDir>/<yyyy-mm-dd>/`,
+   * holds the full reference block (`@moku` head, `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a pick
    * `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
    * the pick's crop and full frame. The same node and frame write the same card again. A field
    * that is not known is left out; a card that cannot be written leaves its path out. A clipboard
@@ -4448,7 +4452,7 @@ export type GameViewApi = {
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
    * await app.gameView.copyReference();
-   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/settingsBoard-f25.md"
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;
@@ -5603,7 +5607,7 @@ await tools.link.run("game.step", { frames: 1 });
 tools.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
 tools.workspace.setDensity("compact");
 tools.workspace.setReference(true); // gameView draws data-moku-* proxies over the game
-const shot = await tools.gameView.capture(); // { path: ".moku/captures/…png", frame, device, image }
+const shot = await tools.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-main.jpg", frame, device, image }
 tools.renderView.snapshot().tiles.effectsInstalled; // false on a game without effectsPlugin
 await tools.filesView.open("nodes/merge.ts", { line: 12 });
 tools.consoleView.setFilter({ level: "error" });
@@ -5620,7 +5624,7 @@ ctx.emit("workspace:select-node", { id: "board/merge" });                 // flo
 ctx.emit("workspace:focus-frame", { frame: 1778 });                       // flowView focuses the edge
 ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } }); // renderView selects the row
 ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot" } }); // gameView
-ctx.emit("workspace:open-sheet", { index: ".moku/captures/series-2026-09-24-1015/index.json" });
+ctx.emit("workspace:open-sheet", { index: ".moku/captures/2026-10-05/series-1015/index.json" });
 ```
 
 ### 9.6 End to end, as the root integration tests assemble it

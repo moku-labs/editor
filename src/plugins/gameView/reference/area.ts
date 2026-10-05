@@ -3,15 +3,16 @@
  * the group of an area (visible placed nodes fully inside it, else the ones it covers by half of
  * their own area; group roots only; top to bottom, then left to right; at most 40), then the pick
  * path with the area: bookmark, full shot, crop to the area plus 8 px, the card
- * `<capturesDir>/area-f<frame>.md`, the area line on the clipboard and the capture card. The
- * selection is published first without the sources, then again with the sources (at most 10 new
- * searches, A18) and the files.
+ * `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md`, the area line on the clipboard and the capture
+ * card. The card prints the child tree, the texts, the layout lines, the nodes partly in the area
+ * and the components the area uses (captures-by-day U5). The selection is published first without
+ * the sources, then again with the sources (at most 10 new searches, A18) and the files.
  */
 import { linkPlugin } from "../../link";
 import type { Calibration, PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { ancestorsOf } from "../../panels/shared/scene";
 import type { SelectionInfo } from "../../registry/protocol";
-import { cardPath } from "../capture/naming";
+import { cardFolder, cardPath } from "../capture/naming";
 import { listTaken } from "../capture/shot";
 import { copyText } from "../clipboard";
 import { isCurrent, knownSource, publishSelection, selectionContext } from "../element/publish";
@@ -29,8 +30,17 @@ import {
   areaCardText,
   areaHead
 } from "./area-block";
+import { type AreaComponent, areaComponents, type SearchBudget } from "./area-components";
+import {
+  areaBranches,
+  inside,
+  layoutLines,
+  overlapOf,
+  partlyInArea,
+  type TextOf
+} from "./area-tree";
 import { codeOf } from "./card";
-import { tailFacts } from "./facts";
+import { contentOf, rawUiNodeAt, tailFacts } from "./facts";
 import { pickToast, saveShots, showPickCard, takeBookmark } from "./pick";
 
 /**
@@ -42,11 +52,6 @@ export const AREA_ITEMS = 40;
  * The most new source searches one area starts (A18); remembered sources are free.
  */
 const AREA_SEARCHES = 10;
-
-/**
- * The elements whose code the card shows: the first ones with a source.
- */
-const AREA_CODES = 3;
 
 /**
  * Without a node fully inside, a node joins when the area covers this share of its own area.
@@ -85,22 +90,6 @@ const DRAG_PICK: AreaOptions = { copy: true, card: true };
 type Placed = SceneNode & { readonly rect: PageRect };
 
 /**
- * True when a rect lies fully inside the area.
- *
- * @param rect - A node's rect.
- * @param area - The area.
- * @returns Whether it is inside.
- */
-function inside(rect: PageRect, area: PageRect): boolean {
-  return (
-    rect.x >= area.x &&
-    rect.y >= area.y &&
-    rect.x + rect.w <= area.x + area.w &&
-    rect.y + rect.h <= area.y + area.h
-  );
-}
-
-/**
  * True when the area covers at least half of a rect.
  *
  * @param rect - A node's rect.
@@ -108,9 +97,8 @@ function inside(rect: PageRect, area: PageRect): boolean {
  * @returns Whether half of it or more is in the area.
  */
 function halfCovered(rect: PageRect, area: PageRect): boolean {
-  const w = Math.min(rect.x + rect.w, area.x + area.w) - Math.max(rect.x, area.x);
-  const h = Math.min(rect.y + rect.h, area.y + area.h) - Math.max(rect.y, area.y);
-  return w > 0 && h > 0 && w * h >= HALF * rect.w * rect.h;
+  const covered = overlapOf(rect, area);
+  return covered > 0 && covered >= HALF * rect.w * rect.h;
 }
 
 /**
@@ -209,29 +197,42 @@ async function searchQuietly(ctx: GameViewCtx, key: string): Promise<StyleSource
 }
 
 /**
- * The group with the sources of its keys: remembered ones, then at most 10 new searches, one
- * after the other (A18).
+ * The group with the sources of its keys: remembered ones, then new searches one after the other
+ * while the budget lasts (10 per area, A18).
  *
  * @param ctx - Domain context of gameView.
  * @param nodes - The group.
+ * @param budget - The searches the area may still start.
  * @returns Each node with its source.
  */
 async function withSources(
   ctx: GameViewCtx,
-  nodes: readonly SceneNode[]
+  nodes: readonly SceneNode[],
+  budget: SearchBudget
 ): Promise<readonly AreaItem[]> {
   const items: AreaItem[] = [];
-  let searches = 0;
   for (const node of nodes) {
     const known = knownSource(ctx, node);
-    if (known !== undefined || node.key === undefined || searches >= AREA_SEARCHES) {
+    if (known !== undefined || node.key === undefined || budget.left <= 0) {
       items.push({ node, source: known });
       continue;
     }
-    searches += 1;
+    budget.left -= 1;
     items.push({ node, source: await searchQuietly(ctx, node.key) });
   }
   return items;
+}
+
+/**
+ * The text a node shows: the `content` of its raw `game.ui` node, else of its style.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The reader of a node's text.
+ */
+function textReader(ctx: GameViewCtx): TextOf {
+  const { ui } = ctx.state.sources;
+  return node =>
+    contentOf(node, node.ref.kind === "ui" ? rawUiNodeAt(ui, node.ref.path) : undefined);
 }
 
 /**
@@ -246,17 +247,18 @@ function knownItems(ctx: GameViewCtx, nodes: readonly SceneNode[]): readonly Are
 }
 
 /**
- * The code of the first elements with a source, for the card; one that fails is left out.
+ * The code of every element whose source is known, for the card; one that fails is left out.
+ * A known source is remembered in `state.found`, so no code starts a new search.
  *
  * @param ctx - Domain context of gameView.
  * @param items - The group with its sources.
- * @returns At most three codes.
+ * @returns One code per element with a source, in group order.
  */
 async function areaCodes(
   ctx: GameViewCtx,
   items: readonly AreaItem[]
 ): Promise<readonly AreaCode[]> {
-  const sourced = items.filter(item => item.source !== undefined).slice(0, AREA_CODES);
+  const sourced = items.filter(item => item.source !== undefined);
   const codes = await Promise.all(
     sourced.map(async ({ node }) => ({ node, code: await codeOf(ctx, node) }))
   );
@@ -264,24 +266,27 @@ async function areaCodes(
 }
 
 /**
- * Writes the card of an area: `<capturesDir>/area-f<frame>.md`, `-2` … when taken; its block
+ * Writes the card of an area: `area-f<frame>.md` beside its pictures (today's folder under
+ * `capturesDir` without them), `-2` … when taken; its block
  * names the card in its head.
  *
  * @param ctx - Domain context of gameView.
  * @param facts - The area facts.
- * @param codes - The code of the first elements with a source.
+ * @param codes - The code of the elements with a source.
+ * @param components - The definitions of the components the area uses.
  * @returns The card path, undefined when it could not be written (logged).
  */
 async function writeAreaCard(
   ctx: GameViewCtx,
   facts: AreaFacts,
-  codes: readonly AreaCode[]
+  codes: readonly AreaCode[],
+  components: readonly AreaComponent[]
 ): Promise<string | undefined> {
-  const { capturesDir } = ctx.config;
   try {
-    const taken = await listTaken(ctx, capturesDir);
-    const path = cardPath(capturesDir, AREA_NAME, facts.frame, taken);
-    const text = areaCardText(areaBlock(facts, path), facts, codes);
+    const folder = cardFolder(ctx.config.capturesDir, facts.pick?.full, new Date());
+    const taken = await listTaken(ctx, folder);
+    const path = cardPath(folder, AREA_NAME, facts.frame, taken);
+    const text = areaCardText(areaBlock(facts, path), facts, codes, components);
     await ctx.require(linkPlugin).files.write(path, text);
     return path;
   } catch (error) {
@@ -307,7 +312,7 @@ async function followSources(
   group: AreaGroup,
   frame: number
 ): Promise<void> {
-  const items = await withSources(ctx, group.nodes);
+  const items = await withSources(ctx, group.nodes, { left: AREA_SEARCHES });
   const known = first.items ?? [];
   const found = items.some(
     (item, index) => item.source !== undefined && known[index]?.source === undefined
@@ -337,18 +342,26 @@ async function completeArea(
 ): Promise<SelectionInfo> {
   const taken = await takeBookmark(ctx, AREA_NAME);
   const shots = await saveShots(ctx, AREA_NAME, area, scene);
-  const items = await withSources(ctx, group.nodes);
+  const budget: SearchBudget = { left: AREA_SEARCHES };
+  const items = await withSources(ctx, group.nodes, budget);
   const frame = shots?.frame ?? taken?.bookmark.frame ?? scene.frame;
   const pick = { bookmark: taken?.bookmark.id, crop: shots?.crop, full: shots?.full };
+  const branches = areaBranches(scene, group.nodes, textReader(ctx));
   const facts: AreaFacts = {
     ...(await tailFacts(ctx, frame, pick, taken?.tainted)),
     area,
     refArea: scene.calibrated ? refAreaOf(area, ctx.state.calibration) : undefined,
     items,
-    total: group.total
+    total: group.total,
+    branches,
+    layouts: layoutLines(scene, group.nodes),
+    partly: partlyInArea(scene, area, group.nodes)
   };
 
-  const card = await writeAreaCard(ctx, facts, await areaCodes(ctx, items));
+  // The code of every element with a source, then the components the roots and children are instances of.
+  const codes = await areaCodes(ctx, items);
+  const components = await areaComponents(ctx, group.nodes, branches, budget);
+  const card = await writeAreaCard(ctx, facts, codes, components);
   const line = areaHead(facts, card);
   if (copy) await copyText(ctx, line, pickToast(shots !== undefined, taken !== undefined));
   showPickCard(ctx, shots, line);

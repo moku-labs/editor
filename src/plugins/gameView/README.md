@@ -14,7 +14,7 @@ What it does:
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| `capturesDir` | `string` | `".moku/captures"` | Folder of screenshots, series and pick shots. `.moku/captures` or a folder under it: the files sandbox writes there. |
+| `capturesDir` | `string` | `".moku/captures"` | Folder of screenshots, series, pick shots and cards. Every capture goes into a day folder under it: `<capturesDir>/<yyyy-mm-dd>/` (local date). `.moku/captures` or a folder under it: the files sandbox writes there. |
 | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Where the asset manifest may live, tried in order. |
 | `captureCardMs` | `number` | `10_000` | The capture card hides after this, unless hovered or focused. Then it checks again every 2 s. |
 | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10_000, 20_000]` | Duration chips of the series popover. |
@@ -43,7 +43,7 @@ createApp({
 
 | Member | Signature | What |
 |---|---|---|
-| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill. Off clears the hover box. A click that picks an element completes the pick (see "Pick for the chat"). |
+| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill. Off clears the hover box. A click that picks an element completes the pick (see "Pick for the chat"). A drag of 4 px or more picks an area instead (see "Area pick"). |
 | `selected` | `() => ElementRef \| undefined` | The picked element. |
 | `select` | `(ref: ElementRef \| undefined) => void` | Selects without the picker, or clears the selection. Clears the style card. Publishes the selection (see "Selection for MCP"). |
 | `inspect` | `(ref: ElementRef) => void` | `select(ref)`, Element tab, shows Game. The `workspace:inspect` hook calls it. |
@@ -51,8 +51,8 @@ createApp({
 | `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | The pink box over the game frame. `undefined` clears it. A newer call drops an older one still waiting for the scene. |
 | `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the first readable `manifestPaths` entry. Cached per session. |
-| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd-hhmm>-<flow>.jpg`. The extension follows the picture: `editor.capture` answers JPEG by default (D-34), an old game PNG (`.png`). Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
-| `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `series-<stamp>/NNN.png` and `index.json`, puts `series: <folder> (<n> frames)` on the clipboard, then opens the contact sheet. Refuses while another series runs. |
+| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd>/<hhmm>-<flow>.jpg`. The extension follows the picture: `editor.capture` answers JPEG by default (D-34), an old game PNG (`.png`). Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
+| `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `<yyyy-mm-dd>/series-<hhmm>/NNN.png` and `index.json`, puts `series: <folder> (<n> frames)` on the clipboard, then opens the contact sheet. Refuses while another series runs. |
 | `stopSeries` | `() => void` | Runs `editor.seriesStop`. The pending series resolves with the shots taken so far. Its index gets `stoppedEarly`. |
 | `openSheet` | `(indexPath: string) => Promise<void>` | Opens a saved series. Reads `index.json`, then every PNG with `readBinary`. |
 | `copyReference` | `() => Promise<string \| undefined>` | Writes the reference card of the selection and puts its one line on the clipboard, toast "✓ Reference copied" (see "Pick for the chat"). Returns the line, also when the clipboard refuses. `undefined` without a selection in the scene. |
@@ -68,14 +68,14 @@ scene.nodes.get("ui:boardScreen/boardSlot")?.rect; // { x: 55, y: 801, w: 970, h
 await app.gameView.locate({ kind: "entity", id: 1_048_628 }); // { x: 428.5, y: 880.5, w: 223, h: 223 }
 
 await app.gameView.capture();
-// { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
+// { path: ".moku/captures/2026-10-05/0846-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
 
 await app.gameView.series({ durationMs: 2000, intervalMs: 100 });
-// { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
+// { folder: ".moku/captures/2026-10-05/series-1015/", indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 }
 
 app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
 await app.gameView.copyReference();
-// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/settingsBoard-f25.md"
+// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
 
 app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
 app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w === 707
@@ -83,6 +83,13 @@ app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w ==
 const [last] = app.gameView.bookmarks();
 if (last) await app.panels.run("game.restore", { bookmark: last.value });
 ```
+
+Breaking (pre-1.0, captures by day):
+
+- Every capture goes into a day folder `<capturesDir>/<yyyy-mm-dd>/` (local date): screenshots, pick pictures, cards, area cards and series.
+- Inside the day a screenshot drops the date: `0846-board.jpg` (was `2026-10-05-0846-board.jpg`). A series folder is `series-1015/` (was `series-2026-10-05-1015/`).
+- Picks and cards keep their names: `play-f1369-crop.jpg`, `f1369-full.jpg`, `play-f1369.md`, `area-f812.md`. `-2`, `-3` … count the names of that day only.
+- Old flat files stay where they are.
 
 Breaking (pre-1.0, Claude-pane round): `attach`, `notes` and the `notesDir` option are gone with the notes feature (D-24).
 
@@ -155,7 +162,7 @@ A device change re-calibrates the picker: another preset, orientation or a fold 
 | `←` / `→` | Previous / next shot, in Game while the contact sheet is open. |
 | `b` | Mark a shot as bug, same scope. |
 
-Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`, `selection`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker. On the `picker` layer, Esc during a Reference mode area drag cancels the drag first. The `selection` layer comes last (U10): in the Game workspace, with the element or an area selected, Esc clears the selection (no `[data-box="selected"]`) and publishes `selection: null`, so `editor.selection` answers null. It does nothing in another workspace or while focus is in an input, a textarea or a contenteditable.
+Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`, `selection`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker. On the `picker` layer, Esc during an area drag (Reference mode or Select) cancels the drag first; the next Esc turns the picker off. The `selection` layer comes last (U10): in the Game workspace, with the element or an area selected, Esc clears the selection (no `[data-box="selected"]`) and publishes `selection: null`, so `editor.selection` answers null. It does nothing in another workspace or while focus is in an input, a textarea or a contenteditable.
 
 ## Usage
 
@@ -170,7 +177,7 @@ const shot = await app.gameView.capture();
 Another view opens a contact sheet or inspects an element without depending on gameView:
 
 ```ts
-ctx.emit("workspace:open-sheet", { index: ".moku/captures/series-2026-09-24-1015/index.json" });
+ctx.emit("workspace:open-sheet", { index: ".moku/captures/2026-10-05/series-1015/index.json" });
 ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot" } });
 ```
 
@@ -196,6 +203,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - The picker maps the pointer through `pageFromClient(client, gameFrame().box())` and the shared `elementAt`.
 - Hover uses the watched scene. A click reads `game.ui`, `game.entities` and `game.projections` once more and waits for the calibration first. The bridge sends a watched frame source at most once per heartbeat (R6), so after a screen change the watched scene can still show the screen before. The click picks from the screen the game shows now.
 - A click whose read fails picks from the scene there is. A click is dropped when the picker went off while it read.
+- A press that moves 4 client px or more drags an area, with the gesture of Reference mode (see "Area pick"). The release picks the area and turns the picker off, like a click pick.
 
 ### Device toolbar and stage
 
@@ -257,8 +265,8 @@ A completed pick (a picker click, a click on a Reference proxy, or MCP `moku_sel
 1. `game.bookmark` through `panels.run`. The bookmark is kept: `bookmarks()`, newest first, at most 20. Its id is `<key>-f<frame>`, with `-2` … when a kept one has it.
 2. `editor.capture` through `panels.run` (the capture plugin accepts both `game.capture` answers: a string, or `{ png }`). It answers JPEG by default (D-34).
 3. The crop: the element's rect plus 8 px, cut from the picture with a canvas in the tools page and encoded JPEG 0.8 (A19). The box is scaled by picture width / device width, the shot's real pixel ratio. Only a calibrated scene is cropped.
-4. Both files through `files.writeBinary` into `capturesDir`: `<key>-f<frame>-crop.jpg` (crop) and `f<frame>-full.jpg` (full frame), `-2`, `-3` … before the suffix when taken. Each extension follows its picture: a PNG stays `.png`. An entity uses its node name for `<key>`.
-5. The card file `<key>-f<frame>.md` in `capturesDir`, `-2`, `-3` … when taken (round 2b R13): the full reference block, the JSX and style snippets fenced with their `file:line` (an entity: its projection and components), and `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`.
+4. Both files through `files.writeBinary` into today's folder `<capturesDir>/<yyyy-mm-dd>/`: `<key>-f<frame>-crop.jpg` (crop) and `f<frame>-full.jpg` (full frame), `-2`, `-3` … before the suffix when taken. Each extension follows its picture: a PNG stays `.png`. An entity uses its node name for `<key>`.
+5. The card file `<key>-f<frame>.md` beside the full frame, `-2`, `-3` … when taken (round 2b R13). Without pictures it goes into today's folder. The card links its pictures by file name, so "Copy reference" of a pick from another day writes the card into that day's folder: the full reference block, the JSX and style snippets fenced with their `file:line` (an entity: its projection and components), and `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`.
 6. One line on the clipboard, toast "Reference, shot and bookmark copied":
 
 ```text
@@ -310,18 +318,18 @@ flow: board > settings > open · last: board/settings/enter → done
 game: merge-game 0.0.0 · s-7e63 · f25 · 17:16:39 · live · clean
 device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
 restore: bookmark settingsBoard-f25
-shot: .moku/captures/settingsBoard-f25-crop.jpg · frame: .moku/captures/f25-full.jpg
+shot: .moku/captures/2026-10-05/settingsBoard-f25-crop.jpg · frame: .moku/captures/2026-10-05/f25-full.jpg
 ```
 
 The Element tab shows the full block in a read-only `<pre data-part="reference">`. Its Copy button (`data-action="copy-reference"`) runs `copyReference()`: the card, and the one line on the clipboard. The block is gathered again when the element, its source, its style block, its bounds, the flow node or the last pick changes.
 
 ### Area pick
 
-In Reference mode a press on the proxy layer that moves 4 client px or more drags an area (U9, A16):
+In Reference mode a press on the proxy layer that moves 4 client px or more drags an area (U9, A16). The Select picker layer has the same gesture: both layers spread the one `layerHandlers(ctx, onClick)` (`ui/layer-handlers.ts`).
 
-- The press takes nothing. Under 4 px the release is a click, and the proxy under it picks as before.
+- The press takes nothing. Under 4 px the release is a click: the proxy under it picks as before, or the picker picks the element at the point (`pickAt`).
 - From 4 px the layer holds the pointer (pointer capture), the hover box freezes and a dashed marquee `<div data-box="area">` follows the pointer. Its rect is `state.reference.area`, device px through `pageFromClient(client, gameFrame().box())`.
-- The release reads the scene once more and picks the area. Esc during the drag cancels it: the release then picks nothing.
+- The release reads the scene once more and picks the area (`pickDraggedArea`). In Select the picker turns off, like a click pick. Esc during the drag cancels it: the release then picks nothing.
 
 The group of the area:
 
@@ -330,19 +338,31 @@ The group of the area:
 - Top to bottom, then left to right. At most 40; the card says `+N more`.
 - An uncalibrated scene has no group: its rects are not device px.
 
-Then the pick path with the area: `game.bookmark` (`area-f<frame>`), `editor.capture`, the crop of the area plus 8 px (`area-f<frame>-crop.jpg`), the full frame, and the card `<capturesDir>/area-f<frame>.md`:
+Then the pick path with the area: `game.bookmark` (`area-f<frame>`), `editor.capture`, the crop of the area plus 8 px (`area-f<frame>-crop.jpg`), the full frame, and the card `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md`:
 
 ```text
 @moku area <w>×<h> · <flow/node> · <N> elements · ref x,y w×h · <card path>
-- <name> <type> · key <key> · <file:line> · ref x,y w×h
+- <name> <type> · key <key> · text "…" · <file:line> · x,y w×h px · ref x,y w×h
+  - <name> <type> · key <key> · text "…" · x,y w×h px
+    - …
+  +<N> more
 +<N> more
+layout: <root>, <root> < <parent> (row, gap 18) < <grandparent> …
+partly in the area: <name> <type> x,y w×h px · …
 flow: … · game: … · device: … · restore: … · shot: …
 ```
 
 - The head is the line the clipboard gets. `ref` is the area in reference units, only when the scene is calibrated. An empty area says `no elements`.
-- One line per element, then the tail lines of a single element's block (`tailLines`).
-- The card adds the JSX and style snippets of the first 3 elements with a source, each titled with its element, and `![area](…)` `![frame](…)`.
-- Sources come from the source search results; an area starts at most 10 new searches (A18).
+- One line per element. `x,y w×h px` is the bounds in game page CSS px, like a single element's `bounds:`.
+- Under each element its child tree (captures-by-day U5): the visible descendants, two spaces per level, 3 levels at most, 60 lines in the whole tree. A root the cap cut ends with `+N more`.
+- `text "…"`: the `content` the game reports for the node, trimmed, 40 characters at most. A node on the last tree level shows the first text under it, so a badge count is not lost.
+- One `layout:` line per parent chain of the elements: the elements that share it, then up to 3 parents in the form of a single element's `layout:`.
+- `partly in the area:` the nodes that overlap the area but are not inside it, largest overlap first, at most 8. A node of an element's tree and a parent a layout line names are left out. A background is named here.
+- Then the tail lines of a single element's block (`tailLines`).
+- The card adds the JSX and style snippets of every element with a source, each titled with its element. A known source line spends no new search.
+- An element or a child whose JSX line is a component instance (`<RoundButton id="homeSettings" …>`) adds `## <key> · component <Name> · <file:line>` with the component's definition, once per component. The definition is remembered in `state.found` under `<Name>`.
+- Then `![area](…)` `![frame](…)`.
+- Sources come from the source search results. An area starts at most 10 new searches (A18), shared by the element keys, the child keys and the component definitions. `SelectionInfo.items` is unchanged: the children are card text only.
 - The capture card shows like a pick. The single selection is cleared.
 
 ### Selection for MCP

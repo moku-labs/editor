@@ -3,7 +3,7 @@ import { errorCode, wireError } from "../../../registry/protocol";
 import { hideCard, takeScreenshot } from "../../capture/shot";
 import { createCtx, JPEG, manifestOf, PNG, type TestCtx, useScene } from "../helpers";
 
-const PATH = ".moku/captures/2026-09-24-1012-board.png";
+const PATH = ".moku/captures/2026-09-24/1012-board.png";
 let ctx: TestCtx;
 
 beforeEach(() => {
@@ -43,7 +43,7 @@ describe("takeScreenshot", () => {
     writeText.mockRejectedValue(new Error("Document is not focused."));
     const shot = await takeScreenshot(ctx);
     vi.unstubAllGlobals();
-    expect(shot?.path).toBe(".moku/captures/2026-09-24-1012-board-2.png");
+    expect(shot?.path).toBe(".moku/captures/2026-09-24/1012-board-2.png");
     expect(ctx.log.debug).toHaveBeenCalledWith("gameView: clipboard refused", {
       message: "Document is not focused."
     });
@@ -57,8 +57,8 @@ describe("takeScreenshot", () => {
       device: { w: 393, h: 852, orientation: "portrait" }
     });
     const shot = await takeScreenshot(ctx);
-    expect(shot?.path).toBe(".moku/captures/2026-09-24-1012-board.jpg");
-    expect(ctx.link.files.dataUrl(".moku/captures/2026-09-24-1012-board.jpg")).toBe(JPEG);
+    expect(shot?.path).toBe(".moku/captures/2026-09-24/1012-board.jpg");
+    expect(ctx.link.files.dataUrl(".moku/captures/2026-09-24/1012-board.jpg")).toBe(JPEG);
   });
 
   it("works before the Game panel's first render: nothing registered, it runs at once", async () => {
@@ -69,10 +69,18 @@ describe("takeScreenshot", () => {
 
   it("names the file game without a position and avoids a taken name", async () => {
     ctx.link.values.delete("game.position");
-    ctx.link.files.put(".moku/captures/2026-09-24-1012-game.png", "");
+    ctx.link.files.put(".moku/captures/2026-09-24/1012-game.png", "");
 
     const shot = await takeScreenshot(ctx);
-    expect(shot?.path).toBe(".moku/captures/2026-09-24-1012-game-2.png");
+    expect(shot?.path).toBe(".moku/captures/2026-09-24/1012-game-2.png");
+  });
+
+  it("writes into the day folder and counts only the names taken in that day", async () => {
+    ctx.link.files.put(".moku/captures/2026-09-23/1012-board.png", "");
+    ctx.link.files.put(".moku/captures/1012-board.png", "");
+    const shot = await takeScreenshot(ctx);
+    expect(shot?.path).toBe(PATH);
+    expect(ctx.link.files.paths()).toContain(".moku/captures/2026-09-23/1012-board.png");
   });
 
   it("names the device in the orientation of the shot", async () => {

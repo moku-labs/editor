@@ -52,7 +52,7 @@ export function extensionOf(path: string): string {
  * @returns The kind.
  * @example
  * ```ts
- * kindOf(".moku/captures/series-2026-09-24-1015/index.json"); // "series"
+ * kindOf(".moku/captures/2026-10-05/series-1015/index.json"); // "series"
  * ```
  */
 export function kindOf(path: string): FileKind {

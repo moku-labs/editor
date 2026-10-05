@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   capturePath,
+  cardFolder,
   cardPath,
+  dayFolder,
   deviceLabel,
   folderOf,
   imageExtension,
@@ -16,46 +18,69 @@ import {
   takenPaths
 } from "../../capture/naming";
 
-describe("stamp", () => {
-  it("prints the local date and minute as yyyy-mm-dd-hhmm", () => {
-    expect(stamp(new Date(2026, 8, 24, 10, 12, 59))).toBe("2026-09-24-1012");
-    expect(stamp(new Date(2026, 0, 2, 3, 4))).toBe("2026-01-02-0304");
+const DAY = ".moku/captures/2026-10-05";
+
+describe("stamp and dayFolder", () => {
+  it("stamp prints the local hour and minute as hhmm", () => {
+    expect(stamp(new Date(2026, 9, 5, 8, 46, 59))).toBe("0846");
+    expect(stamp(new Date(2026, 0, 2, 13, 4))).toBe("1304");
+  });
+
+  it("dayFolder is <capturesDir>/<yyyy-mm-dd> of the local date", () => {
+    expect(dayFolder(".moku/captures", new Date(2026, 9, 5, 8, 46))).toBe(DAY);
+    expect(dayFolder(".moku/captures/shots", new Date(2026, 0, 2, 23, 59))).toBe(
+      ".moku/captures/shots/2026-01-02"
+    );
+  });
+
+  it("dayFolder and stamp read the same local clock", () => {
+    const now = new Date(2026, 9, 5, 0, 0);
+    expect(`${dayFolder(".moku/captures", now)}/${stamp(now)}`).toBe(`${DAY}/0000`);
   });
 });
 
-describe("capturePath", () => {
-  it("names the PNG after the stamp and the node", () => {
-    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", new Set())).toBe(
-      ".moku/captures/2026-09-24-1012-board.png"
+describe("cardFolder", () => {
+  it("is the folder of the pick's full frame, so the card's links find its pictures", () => {
+    expect(
+      cardFolder(".moku/captures", ".moku/captures/2026-10-04/f12-full.jpg", new Date(2026, 9, 5))
+    ).toBe(".moku/captures/2026-10-04");
+    expect(cardFolder(".moku/captures", ".moku/captures/f12-full.jpg", new Date(2026, 9, 5))).toBe(
+      ".moku/captures"
     );
   });
 
-  it("appends -2, -3 … when the minute and node are taken", () => {
-    const taken = new Set([
-      ".moku/captures/2026-09-24-1012-board.png",
-      ".moku/captures/2026-09-24-1012-board-2.png"
-    ]);
-    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", taken)).toBe(
-      ".moku/captures/2026-09-24-1012-board-3.png"
-    );
+  it("is the day folder without a full frame", () => {
+    expect(cardFolder(".moku/captures", undefined, new Date(2026, 9, 5, 8, 46))).toBe(DAY);
+  });
+});
+
+describe("capturePath in a day folder", () => {
+  it("names the shot <hhmm>-<node> inside the day, without the date", () => {
+    expect(capturePath(DAY, "0846", "board", new Set())).toBe(`${DAY}/0846-board.png`);
+  });
+
+  it("appends -2, -3 … when the minute and node are taken in that day", () => {
+    const taken = new Set([`${DAY}/0846-board.png`, `${DAY}/0846-board-2.png`]);
+    expect(capturePath(DAY, "0846", "board", taken)).toBe(`${DAY}/0846-board-3.png`);
+  });
+
+  it("does not count a name taken in another day", () => {
+    const taken = new Set([".moku/captures/2026-10-04/0846-board.jpg"]);
+    expect(capturePath(DAY, "0846", "board", taken, "jpg")).toBe(`${DAY}/0846-board.jpg`);
   });
 
   it("keeps the name to letters, digits, - and _", () => {
-    expect(capturePath(".moku/captures", "2026-09-24-1012", "board/merge it", new Set())).toBe(
-      ".moku/captures/2026-09-24-1012-board-merge-it.png"
+    expect(capturePath(DAY, "0846", "board/merge it", new Set())).toBe(
+      `${DAY}/0846-board-merge-it.png`
     );
   });
 });
 
 describe("capturePath with the extension of the picture (D-34)", () => {
   it("names a JPEG shot .jpg and keeps the -2 rule per extension", () => {
-    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", new Set(), "jpg")).toBe(
-      ".moku/captures/2026-09-24-1012-board.jpg"
-    );
-    const taken = new Set([".moku/captures/2026-09-24-1012-board.jpg"]);
-    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", taken, "jpg")).toBe(
-      ".moku/captures/2026-09-24-1012-board-2.jpg"
-    );
+    expect(capturePath(DAY, "0846", "board", new Set(), "jpg")).toBe(`${DAY}/0846-board.jpg`);
+    const taken = new Set([`${DAY}/0846-board.jpg`]);
+    expect(capturePath(DAY, "0846", "board", taken, "jpg")).toBe(`${DAY}/0846-board-2.jpg`);
   });
 });
 
@@ -74,64 +99,45 @@ describe("imageExtension", () => {
 
 describe("pickPaths (A19)", () => {
   it("names the crop <name>-f<frame>-crop and the full frame f<frame>-full, with the picture's extension", () => {
-    expect(
-      pickPaths(".moku/captures", "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" })
-    ).toEqual({
-      crop: ".moku/captures/settingsBoard-f1841-crop.jpg",
-      full: ".moku/captures/f1841-full.jpg"
+    expect(pickPaths(DAY, "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" })).toEqual({
+      crop: `${DAY}/settingsBoard-f1841-crop.jpg`,
+      full: `${DAY}/f1841-full.jpg`
     });
-    expect(
-      pickPaths(".moku/captures", "board.items/3", 7, new Set(), { crop: "jpg", full: "png" })
-    ).toEqual({
-      crop: ".moku/captures/board-items-3-f7-crop.jpg",
-      full: ".moku/captures/f7-full.png"
+    expect(pickPaths(DAY, "board.items/3", 7, new Set(), { crop: "jpg", full: "png" })).toEqual({
+      crop: `${DAY}/board-items-3-f7-crop.jpg`,
+      full: `${DAY}/f7-full.png`
     });
   });
 
   it("appends -2 before the suffix when a file is taken", () => {
     const taken = new Set([
-      ".moku/captures/area-f25-crop.jpg",
-      ".moku/captures/f25-full.jpg",
-      ".moku/captures/f25-2-full.jpg"
+      `${DAY}/area-f25-crop.jpg`,
+      `${DAY}/f25-full.jpg`,
+      `${DAY}/f25-2-full.jpg`
     ]);
-    expect(pickPaths(".moku/captures", "area", 25, taken, { crop: "jpg", full: "jpg" })).toEqual({
-      crop: ".moku/captures/area-f25-2-crop.jpg",
-      full: ".moku/captures/f25-3-full.jpg"
+    expect(pickPaths(DAY, "area", 25, taken, { crop: "jpg", full: "jpg" })).toEqual({
+      crop: `${DAY}/area-f25-2-crop.jpg`,
+      full: `${DAY}/f25-3-full.jpg`
     });
   });
 });
 
 describe("cardPath (round 2b R13)", () => {
   it("is <dir>/<name>-f<frame>.md, -2 when taken, unsafe characters as -", () => {
-    expect(cardPath(".moku/captures", "settingsBoard", 25, new Set())).toBe(
-      ".moku/captures/settingsBoard-f25.md"
+    expect(cardPath(DAY, "settingsBoard", 25, new Set())).toBe(`${DAY}/settingsBoard-f25.md`);
+    expect(cardPath(DAY, "settingsBoard", 25, new Set([`${DAY}/settingsBoard-f25.md`]))).toBe(
+      `${DAY}/settingsBoard-f25-2.md`
     );
-    expect(
-      cardPath(
-        ".moku/captures",
-        "settingsBoard",
-        25,
-        new Set([".moku/captures/settingsBoard-f25.md"])
-      )
-    ).toBe(".moku/captures/settingsBoard-f25-2.md");
-    expect(cardPath(".moku/captures", "board.items/3", 7, new Set())).toBe(
-      ".moku/captures/board-items-3-f7.md"
-    );
+    expect(cardPath(DAY, "board.items/3", 7, new Set())).toBe(`${DAY}/board-items-3-f7.md`);
   });
 });
 
 describe("seriesFolder", () => {
-  it("is series-<stamp>/ with a trailing slash, -2 on a collision", () => {
-    expect(seriesFolder(".moku/captures", "2026-09-24-1015", new Set())).toBe(
-      ".moku/captures/series-2026-09-24-1015/"
+  it("is series-<hhmm>/ inside the day, with a trailing slash, -2 on a collision", () => {
+    expect(seriesFolder(DAY, "1015", new Set())).toBe(`${DAY}/series-1015/`);
+    expect(seriesFolder(DAY, "1015", new Set([`${DAY}/series-1015`]))).toBe(
+      `${DAY}/series-1015-2/`
     );
-    expect(
-      seriesFolder(
-        ".moku/captures",
-        "2026-09-24-1015",
-        new Set([".moku/captures/series-2026-09-24-1015"])
-      )
-    ).toBe(".moku/captures/series-2026-09-24-1015-2/");
   });
 });
 

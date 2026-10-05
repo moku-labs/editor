@@ -39,7 +39,7 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /** The one reference line of settingsBoard; group 1 is the card it names. */
 const BOARD_LINE =
-  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/settingsBoard-f\d+\.md)$/;
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
 
 /** The reference block inside a card file: its `text` fence. */
 const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
@@ -890,7 +890,7 @@ test.describe("pane · reference mode", () => {
     expect(flowLine, block).toMatch(/^flow: board > settings > open( · last: .+)?$/);
     expect(lines[9], block).toMatch(/^restore: bookmark settingsBoard-f\d+$/);
     expect(lines[10], block).toMatch(
-      /^shot: \.moku\/captures\/settingsBoard-f\d+-crop\.jpg · frame: \.moku\/captures\/f\d+-full\.jpg$/
+      /^shot: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+-crop\.jpg · frame: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/f\d+-full\.jpg$/
     );
     // Copy reference and the pick give the same facts (only the clock may differ): the card's
     // block is the one the Element tab shows.

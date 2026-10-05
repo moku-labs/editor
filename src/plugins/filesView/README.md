@@ -8,7 +8,7 @@ The Files workspace has five parts:
 - Open-file tabs with a modified dot.
 - A file bar: crumb, Open in editor, Edit here.
 - A **Used by** row of flow and node chips.
-- The file body: code with line numbers and syntax colour, an in-place editor, and previews for Markdown, JSON, images and series `index.json`.
+- The file body: code with line numbers and syntax colour, an in-place editor, and previews for Markdown, JSON, images and series `index.json` (`.moku/captures/<yyyy-mm-dd>/series-*/index.json`, and the older flat `.moku/captures/series-*/index.json`).
 
 A save with a stale version shows "The file changed on disk · Reload / Overwrite".
 A game source saved outside `.moku/` while a game is linked reloads the game frame and restores the state (D-07).

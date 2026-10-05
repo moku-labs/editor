@@ -329,7 +329,7 @@ describe("gameView integration", () => {
     const { app } = await startInGame();
     const shot = await app.gameView.capture();
 
-    expect(shot?.path).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-board\.png$/);
+    expect(shot?.path).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/\d{4}-board\.png$/);
     expect(files.dataUrl(shot?.path ?? "")).toBe(PNG);
     expect(hub.requests("run", "game").map(request => paramsOf(request).id)).toEqual([
       "editor.capture"
@@ -351,7 +351,7 @@ describe("gameView integration", () => {
       { durationMs: 200, intervalMs: 50 }
     ]);
     const folder = result?.folder ?? "?";
-    expect(folder).toMatch(/^\.moku\/captures\/series-\d{4}-\d{2}-\d{2}-\d{4}\/$/);
+    expect(folder).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/series-\d{4}\/$/);
     for (const name of ["001.png", "002.png", "003.png", "004.png"]) {
       expect(files.dataUrl(`${folder}${name}`)).toBe(PNG);
     }

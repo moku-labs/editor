@@ -213,9 +213,11 @@ test.describe("select over the hub", () => {
         .toBeLessThan(2);
 
       // The pick without the clipboard: the card and the JPEG crop exist; the line names the card.
-      expect(info.card).toMatch(/^\.moku\/captures\/play-f\d+\.md$/);
-      expect(info.crop).toMatch(/^\.moku\/captures\/play-f\d+-crop\.jpg$/);
-      expect(info.line).toMatch(/^@moku play button · .* · \.moku\/captures\/play-f\d+\.md$/);
+      expect(info.card).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/play-f\d+\.md$/);
+      expect(info.crop).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/play-f\d+-crop\.jpg$/);
+      expect(info.line).toMatch(
+        /^@moku play button · .* · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/play-f\d+\.md$/
+      );
       expect(existsSync(path.join(GAME_ROOT, info.card ?? ""))).toBe(true);
       const crop = await jpegSize(path.join(GAME_ROOT, info.crop ?? ""));
       expect(crop.w).toBeGreaterThan(0);

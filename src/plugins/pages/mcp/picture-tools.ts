@@ -2,13 +2,13 @@
  * @file pages/mcp — the picture tools (M5, M7, D-34): moku_screenshot (`editor.capture { maxWidth,
  * format, key? }`, JPEG by default, cropped to an element by key), moku_series (`editor.sheet {
  * frames, everyMs, maxWidth, format: "jpeg" }`, or `game.capture { sheet }` when the agent has no
- * editor.sheet; game ≥ 0.4) and moku_reference (a reference card of `.moku/captures` with its
- * crop). Screenshot and series check liveness first: a paused or hidden game gets a message, not a
+ * editor.sheet; game ≥ 0.4) and moku_reference (a reference card of `.moku/captures`, flat or in a
+ * `<YYYY-MM-DD>` day folder, with its crop). Screenshot and series check liveness first: a paused or hidden game gets a message, not a
  * timeout. Every image item takes its mimeType from the data URL: a page that cannot encode a
  * JPEG answers the game's PNG.
  */
 import { statSync } from "node:fs";
-import { dirname, join } from "node:path/posix";
+import { basename, dirname, join } from "node:path/posix";
 import type { FileEntry, Json, PictureFormat } from "../../registry/protocol";
 import { readPicture } from "./file-tools";
 import { withProgress } from "./progress";
@@ -50,6 +50,12 @@ const MAX_WIDTH = 4096;
  * The link to the crop in a reference card: `![element](<file>)`.
  */
 const CROP_LINK = /!\[element\]\(([^)\s]+)\)/;
+
+/**
+ * The name of a day folder in CAPTURES_DIR: `2026-10-05`. Other folders (such as `notes/`) hold no
+ * cards moku_reference looks at.
+ */
+const DAY_FOLDER = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The picture formats editor.capture and editor.sheet encode; JPEG is the default (D-34).
@@ -262,19 +268,64 @@ async function series(call: ToolCall, context: ToolContext): Promise<ToolResult>
 }
 
 /**
- * The reference cards (`*.md`) in CAPTURES_DIR; an unreadable folder has none.
+ * The entries of one folder through the hub's `files.list`; a folder that cannot be listed has
+ * none, unless the hub connection itself is gone.
+ *
+ * @param hub - The hub connection.
+ * @param dir - The folder, relative to the bin's root.
+ * @returns The entries.
+ */
+async function listFolder(hub: HubClient, dir: string): Promise<FileEntry[]> {
+  try {
+    return readFileEntries(await hub.request("files", "list", { dir }));
+  } catch (error) {
+    if (!hub.isOpen()) throw error;
+    return [];
+  }
+}
+
+/**
+ * The day folders among the entries of CAPTURES_DIR, newest first: only `YYYY-MM-DD` names count.
+ *
+ * @param entries - The entries of CAPTURES_DIR.
+ * @returns The day folder paths.
+ * @example
+ * ```ts
+ * dayFoldersOf(entries); // [".moku/captures/2026-10-05", ".moku/captures/2026-10-04"]
+ * ```
+ */
+function dayFoldersOf(entries: readonly FileEntry[]): string[] {
+  const days = entries.filter(
+    entry => entry.kind === "dir" && DAY_FOLDER.test(basename(entry.path))
+  );
+  return days.map(entry => entry.path).toSorted((left, right) => right.localeCompare(left));
+}
+
+/**
+ * True for a reference card: a `.md` file.
+ *
+ * @param entry - A folder entry.
+ * @returns Whether it is a card.
+ * @example
+ * ```ts
+ * isCard({ path: ".moku/captures/2026-10-05/play-f9.md", kind: "file", size: 812 }); // true
+ * ```
+ */
+function isCard(entry: FileEntry): boolean {
+  return entry.kind === "file" && entry.path.endsWith(".md");
+}
+
+/**
+ * The reference cards: those of the day folders (`CAPTURES_DIR/<YYYY-MM-DD>/*.md`, newest day
+ * first), then the flat ones from before the day folders (`CAPTURES_DIR/*.md`).
  *
  * @param hub - The hub connection.
  * @returns The card entries.
  */
 async function listCards(hub: HubClient): Promise<FileEntry[]> {
-  try {
-    const entries = readFileEntries(await hub.request("files", "list", { dir: CAPTURES_DIR }));
-    return entries.filter(entry => entry.kind === "file" && entry.path.endsWith(".md"));
-  } catch (error) {
-    if (!hub.isOpen()) throw error;
-    return [];
-  }
+  const top = await listFolder(hub, CAPTURES_DIR);
+  const days = await Promise.all(dayFoldersOf(top).map(day => listFolder(hub, day)));
+  return [...days.flat(), ...top].filter(entry => isCard(entry));
 }
 
 /**
@@ -297,26 +348,29 @@ function modifiedAt(root: string, path: string): number {
 }
 
 /**
- * The card a moku_reference id names: "latest" is the newest file, else the path, the name or
- * the name without `.md`.
+ * The card a moku_reference id names: "latest" is the newest card; else the newest card whose path
+ * is the id (as given or under CAPTURES_DIR, `.md` optional) or whose file name is the id (`.md`
+ * optional). Between cards of the same time, the first in the list (the newest day) wins.
  *
- * @param cards - The card entries.
+ * @param cards - The card entries, newest day first.
  * @param id - The id argument.
  * @param root - The bin's root (for the modification times).
  * @returns The card, or undefined.
  * @example
  * ```ts
- * cardOf(cards, "claim-f25", root)?.path; // ".moku/captures/claim-f25.md"
+ * cardOf(cards, "play-f9", root)?.path; // ".moku/captures/2026-10-05/play-f9.md"
  * ```
  */
 function cardOf(cards: readonly FileEntry[], id: string, root: string): FileEntry | undefined {
-  if (id === "latest") {
-    const dated = cards.map(card => ({ card, at: modifiedAt(root, card.path) }));
-    return dated.toSorted((left, right) => right.at - left.at)[0]?.card;
-  }
   const name = id.replace(/^\.\//, "");
-  const wanted = new Set([name, `${CAPTURES_DIR}/${name}`, `${CAPTURES_DIR}/${name}.md`]);
-  return cards.find(card => wanted.has(card.path));
+  const names = new Set([name, `${name}.md`]);
+  const paths = new Set([...names, `${CAPTURES_DIR}/${name}`, `${CAPTURES_DIR}/${name}.md`]);
+  const matches =
+    id === "latest"
+      ? cards
+      : cards.filter(card => paths.has(card.path) || names.has(basename(card.path)));
+  const dated = matches.map(card => ({ card, at: modifiedAt(root, card.path) }));
+  return dated.toSorted((left, right) => right.at - left.at)[0]?.card;
 }
 
 /**
@@ -334,7 +388,7 @@ async function cropOf(hub: HubClient, card: string, text: string): Promise<strin
 }
 
 /**
- * moku_reference: the newest or a named reference card and its crop.
+ * moku_reference: the newest or a named reference card, flat or in a day folder, and its crop.
  *
  * @param call - The call: id.
  * @param context - The tool context.
@@ -440,14 +494,15 @@ export const seriesTool: Tool = {
 export const referenceTool: Tool = {
   name: "moku_reference",
   title: "Reference card",
-  description: `A reference card the tools page wrote when an element was picked (${CAPTURES_DIR}/*.md): the element, its flow node, its source lines and its crop as an image. "latest" (the default) is the newest card.`,
+  description: `A reference card the tools page wrote when an element or an area was picked (${CAPTURES_DIR}/<YYYY-MM-DD>/*.md, older cards ${CAPTURES_DIR}/*.md): the element, its flow node, its source lines and its crop as an image. "latest" (the default) is the newest card of all; a name answers the newest card with that name.`,
   inputSchema: {
     type: "object",
     properties: {
       id: {
         type: "string",
         minLength: 1,
-        description: 'The card: "latest", its file name (with or without .md) or its path.'
+        description:
+          'The card: "latest", its file name (with or without .md; the newest card of that name) or its path.'
       }
     },
     additionalProperties: false

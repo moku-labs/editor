@@ -42,7 +42,7 @@ const SETTINGS_OPEN = "board/settings/open";
 
 /** The one clipboard line of the pick: name, type, flow node, source, ref bounds, card. */
 const LINE =
-  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/settingsBoard-f\d+\.md)$/;
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
 
 /** The reference block inside the card file: its `text` fence. */
 const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
@@ -250,7 +250,7 @@ describe("a pick for the chat on merge-game (round 2 R2, 2b R13)", () => {
       const [line = ""] = written;
       expect(line).toMatch(LINE);
       const { card, text, lines } = await cardOf(root, line);
-      expect(card).toMatch(/^\.moku\/captures\/settingsBoard-f\d+\.md$/);
+      expect(card).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md$/);
       expect(text.split("\n")[0]).toBe("# @moku settingsBoard panel");
       expect(lines.map(line => BLOCK_LINES.find(prefix => line.startsWith(prefix)))).toEqual(
         BLOCK_LINES
@@ -274,8 +274,8 @@ describe("a pick for the chat on merge-game (round 2 R2, 2b R13)", () => {
       expect(lines[9]).toBe(`restore: bookmark ${bookmark.id}`);
       const shot = /^shot: (\S+) · frame: (\S+)$/.exec(lines[10] ?? "");
       const [, crop = "", full = ""] = shot ?? [];
-      expect(crop).toMatch(/^\.moku\/captures\/settingsBoard-f\d+-crop\.png$/);
-      expect(full).toMatch(/^\.moku\/captures\/f\d+-full\.png$/);
+      expect(crop).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+-crop\.png$/);
+      expect(full).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/f\d+-full\.png$/);
       expect(await pngOf(root, crop)).toBe(CROP_PNG);
       expect(await pngOf(root, full)).toBe(PNG_1X1);
       expect(text).toContain(`![element](${path.basename(crop)})`);

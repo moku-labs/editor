@@ -1,15 +1,16 @@
 /**
  * @file gameView plugin — the compact reference and its card file (round 2b R13). The clipboard
  * gets one line: `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
- * The card `<capturesDir>/<key>-f<frame>.md` holds the full reference block (round 2 R2), the
- * JSX and style snippets fenced with their `file:line` (an entity: its projection and components)
- * and the links to the crop and the full frame. A pick writes a new card (`-2`, `-3` … when
- * taken); "Copy reference" writes the card of its node and frame again, or a new one. A card that
- * cannot be written leaves its path out of the line.
+ * The card `<capturesDir>/<yyyy-mm-dd>/<key>-f<frame>.md`, beside the pictures of its pick, holds
+ * the full reference block (round 2 R2), the JSX and style snippets fenced with their
+ * `file:line` (an entity: its projection and components) and the links to the crop and the full
+ * frame. A pick writes a new card (`-2`, `-3` … when taken); "Copy reference" writes the card of
+ * its node and frame again, or a new one. A card that cannot be written leaves its path out of
+ * the line.
  */
 import { linkPlugin } from "../../link";
 import type { SceneNode, SceneSnapshot } from "../../panels/shared/scene";
-import { cardPath } from "../capture/naming";
+import { cardFolder, cardPath } from "../capture/naming";
 import { listTaken } from "../capture/shot";
 import { elementCode } from "../element/code";
 import { messageOf } from "../report";
@@ -120,11 +121,15 @@ export function fenced(lines: readonly string[], lang: string): string[] {
 /**
  * One snippet of the card: its heading with `file:line`, then the fenced lines.
  *
- * @param title - "JSX", "Style · coinPill".
+ * @param title - "JSX", "Style · coinPill", "homeSettings · component RoundButton".
  * @param snippet - The lines and where they are.
  * @returns The section lines.
+ * @example
+ * ```ts
+ * snippetSection("JSX", { path: "src/hud/Hud.tsx", line: 2, lines: ["<Pill />"] })[0]; // "## JSX · src/hud/Hud.tsx:2"
+ * ```
  */
-function snippetSection(title: string, snippet: CodeSnippet): string[] {
+export function snippetSection(title: string, snippet: CodeSnippet): string[] {
   const extension = snippet.path.slice(snippet.path.lastIndexOf(".") + 1).toLowerCase();
   return [
     `## ${title} · ${snippet.path}:${snippet.line}`,
@@ -237,14 +242,14 @@ async function writeCard(
   text: string,
   fresh: boolean
 ): Promise<string | undefined> {
-  const { capturesDir } = ctx.config;
   const memo = `${facts.node.id}@${facts.frame}`;
   try {
     // "Copy reference" rewrites the card of this node and frame; a pick always takes a new name.
     let path = fresh ? undefined : ctx.state.cards.get(memo);
     if (path === undefined) {
-      const taken = await listTaken(ctx, capturesDir);
-      path = cardPath(capturesDir, nameOf(facts.node), facts.frame, taken);
+      const folder = cardFolder(ctx.config.capturesDir, facts.pick?.full, new Date());
+      const taken = await listTaken(ctx, folder);
+      path = cardPath(folder, nameOf(facts.node), facts.frame, taken);
     }
 
     // Write the card, then remember it for the next "Copy reference".

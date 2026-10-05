@@ -63,7 +63,7 @@ describe("SeriesPopover", () => {
     expect(find(popover, "[data-part='result']").textContent).toBe("20 shots · 2 s at 100 ms");
     expect(popover.querySelector("[data-part='warning']")).toBeNull();
     expect(find(popover, "[data-part='folder']").textContent).toBe(
-      "Saves to .moku/captures/series-2026-09-24-1015/ with index.json"
+      "Saves to .moku/captures/2026-09-24/series-1015/ with index.json"
     );
   });
 
@@ -98,7 +98,7 @@ describe("SeriesPopover", () => {
     open();
     act(() => {
       ctx.state.series.recording = {
-        folder: ".moku/captures/series-2026-09-24-1015/",
+        folder: ".moku/captures/2026-09-24/series-1015/",
         label: "a",
         startedAt: performance.now() - 1000,
         durationMs: 2000,
@@ -112,7 +112,7 @@ describe("SeriesPopover", () => {
     });
     const ring = find(view.root, "[role='progressbar']");
     expect(Number(ring.getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(50);
-    expect(view.root.textContent).toContain("Writing to .moku/captures/series-2026-09-24-1015/");
+    expect(view.root.textContent).toContain("Writing to .moku/captures/2026-09-24/series-1015/");
     expect(find(view.root, "[data-part='shots']").textContent).toMatch(/^≈1\d of 20$/);
     click(button(view.root, "Stop"));
     expect(ctx.panels.run).toHaveBeenCalledWith("editor.seriesStop");

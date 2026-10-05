@@ -5,7 +5,7 @@
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
-import { plannedShots, stamp } from "../capture/naming";
+import { dayFolder, plannedShots, stamp } from "../capture/naming";
 import { recordSeries, setPopover } from "../capture/series";
 import type { GameViewCtx } from "../types";
 import { setSeriesDuration, setSeriesInterval } from "../view-state";
@@ -92,7 +92,8 @@ export function SeriesPopover(props: SeriesPopoverProps): VNode | undefined {
 
   const { durationMs, intervalMs, recording } = state.series;
   const shots = plannedShots(durationMs, intervalMs);
-  const folder = `${config.capturesDir}/series-${stamp(new Date())}/`;
+  const now = new Date();
+  const folder = `${dayFolder(config.capturesDir, now)}/series-${stamp(now)}/`;
 
   return (
     <div

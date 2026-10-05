@@ -56,6 +56,16 @@ export const PNG =
 /** A JPEG data URL: what editor.capture answers by default (D-34). */
 export const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
 
+/**
+ * The moment the capture writers run at in tests: 5 Oct 2026, 08:46 local time.
+ */
+export const TODAY = new Date(2026, 9, 5, 8, 46, 30);
+
+/**
+ * The day folder of `TODAY` under the default captures folder.
+ */
+export const DAY = ".moku/captures/2026-10-05";
+
 /** The opening of a template placeholder as text, built so no string literal holds one. */
 const PLACEHOLDER = ["$", "{"].join("");
 

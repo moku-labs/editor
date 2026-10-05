@@ -217,7 +217,7 @@ ran.state.frame === ran.value.frame; // true
 | `hub` | server | Same long-call rule for forwarded `editor.series` and `editor.sheet` calls (`deadlineFor`). |
 | `link` | tools | `link.run` calls the commands. Same long-call rule (`timeoutFor`). |
 | MCP bridge | `moku-editor mcp` | The image content `mimeType` follows the data URL type (JPEG, or PNG after a fallback). `moku_screenshot` runs `editor.capture { maxWidth, key?, format }`; `moku_series` runs `editor.sheet { frames, everyMs, maxWidth: 1080 }`, or `game.capture { sheet }` when the agent has no `editor.sheet`. |
-| `gameView` | tools | Runs the three ids (`GAME_COMMANDS`). `editor.capture` answers JPEG unless it asks `format: "png"`. Saves pictures under `capturesDir` (default `.moku/captures`) with `link.files.writeBinary`. A series becomes a `series-<stamp>/` folder with numbered PNGs and `index.json`. `stopSeries()` runs `editor.seriesStop`. |
+| `gameView` | tools | Runs the three ids (`GAME_COMMANDS`). `editor.capture` answers JPEG unless it asks `format: "png"`. Saves pictures in today's folder `<capturesDir>/<yyyy-mm-dd>/` (default `capturesDir` `.moku/captures`) with `link.files.writeBinary`. A series becomes a `series-<hhmm>/` folder there with numbered PNGs and `index.json`. `stopSeries()` runs `editor.seriesStop`. |
 
 ## Limits and follow-ups
 

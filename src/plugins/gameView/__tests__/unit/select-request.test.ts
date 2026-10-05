@@ -4,7 +4,7 @@ import type { SelectParams } from "../../../registry/protocol";
 import { answerSelect } from "../../element/select-request";
 import { initGameView, stopGameView } from "../../lifecycle";
 import { stubCanvas } from "../canvas";
-import { createCtx, JPEG, manifestOf, type TestCtx, useScene } from "../helpers";
+import { createCtx, DAY, JPEG, manifestOf, type TestCtx, TODAY, useScene } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MCP moku_select reaches the editor page as the editor-channel request
@@ -28,6 +28,7 @@ function select(params: SelectParams): ReturnType<typeof answerSelect> {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   ctx = createCtx();
   useScene(ctx);
   ctx.link.manifestValue = manifestOf(
@@ -48,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   stopGameView(ctx);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -71,8 +73,8 @@ describe("answerSelect by key", () => {
       projection: "hud",
       name: "coinPill",
       type: "row",
-      card: ".moku/captures/coinPill-f1842.md",
-      crop: ".moku/captures/coinPill-f1842-crop.jpg",
+      card: `${DAY}/coinPill-f1842.md`,
+      crop: `${DAY}/coinPill-f1842-crop.jpg`,
       frame: 1842
     });
     expect(ctx.state.selection).toEqual(info);
@@ -134,8 +136,8 @@ describe("answerSelect by rect (U9)", () => {
       name: "area",
       type: "area",
       area: { x: 30, y: 45, w: 520, h: 135 },
-      card: ".moku/captures/area-f1842.md",
-      crop: ".moku/captures/area-f1842-crop.jpg"
+      card: `${DAY}/area-f1842.md`,
+      crop: `${DAY}/area-f1842-crop.jpg`
     });
     expect(info.items?.map(item => item.key)).toEqual(["home", "coinPill"]);
     expect(writeText).not.toHaveBeenCalled();

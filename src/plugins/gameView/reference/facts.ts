@@ -148,8 +148,12 @@ function flagsOf(node: SceneNode, raw: JsonObject | undefined): readonly string[
  * @param node - The scene node.
  * @param raw - Its raw ui node.
  * @returns The text, or undefined.
+ * @example
+ * ```ts
+ * contentOf(coinPillTextNode, { content: "1 250" }); // "1 250"
+ * ```
  */
-function contentOf(node: SceneNode, raw: JsonObject | undefined): string | undefined {
+export function contentOf(node: SceneNode, raw: JsonObject | undefined): string | undefined {
   const content = raw?.content ?? node.style?.content;
   return typeof content === "string" ? content : undefined;
 }

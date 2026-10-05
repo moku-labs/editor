@@ -6,9 +6,10 @@ import type { Json } from "../../registry/protocol";
 import type { SeriesIndex } from "../types";
 
 /**
- * Where gameView writes series folders.
+ * Where gameView writes series folders: in a day folder (`<yyyy-mm-dd>/series-<hhmm>/`, captures
+ * by day) or, for series taken before day folders, flat under the captures folder.
  */
-const SERIES_INDEX_PATH = /^\.moku\/captures\/series-[^/]+\/index\.json$/;
+const SERIES_INDEX_PATH = /^\.moku\/captures\/(?:\d{4}-\d{2}-\d{2}\/)?series-[^/]+\/index\.json$/;
 
 /**
  * A plain JSON object.
@@ -91,10 +92,10 @@ function optionalOf(value: JsonObject): Partial<SeriesIndex> | undefined {
  * True for the index.json of a series folder.
  *
  * @param path - A relative path.
- * @returns Whether the path is `.moku/captures/series-<name>/index.json`.
+ * @returns Whether the path is `.moku/captures/[<yyyy-mm-dd>/]series-<name>/index.json`.
  * @example
  * ```ts
- * isSeriesIndexPath(".moku/captures/series-2026-09-24-1015/index.json"); // true
+ * isSeriesIndexPath(".moku/captures/2026-10-05/series-1015/index.json"); // true
  * ```
  */
 export function isSeriesIndexPath(path: string): boolean {
