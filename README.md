@@ -9,7 +9,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 [![npm](https://img.shields.io/npm/v/@moku-labs/editor?logo=npm&color=cb3837&label=npm)](https://www.npmjs.com/package/@moku-labs/editor)
 [![types](https://img.shields.io/badge/types-included-3178c6?logo=typescript&logoColor=white)](#requirements)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](#requirements)
-[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.0.2-0b7285)](#install)
+[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.1.0-0b7285)](#install)
 [![for](https://img.shields.io/badge/for-%40moku--labs%2Fcore-1864ab)](https://github.com/moku-labs/core)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -35,7 +35,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 ```
 
 > [!NOTE]
-> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.0.2` is a **peer dependency**; `game.effects` in the Render workspace needs game `0.0.3`.
+> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.1.0` is a **peer dependency**.
 >
 > **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
 >
@@ -119,7 +119,7 @@ controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.
 
 | Width | The bar shows |
 |---|---|
-| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 19 sources · 20 commands"), theme. |
+| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 20 sources · 21 commands"), theme. |
 | Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Reference mode** icon (target, R), the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
 | 560 px and narrower | As below 900 px, without the game name and the Hot reload icon. |
 
@@ -195,7 +195,7 @@ Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
 - **Sound** (key M in Game, round 2b): a switch in the Game toolbar. It runs `game.mute { muted }`
   when the game's manifest lists `game.mute`, and keeps the flag with the viewer's preferences. A
   game that connects while the sound is off is muted again, so the flag survives a hot reload.
-  A game without `game.mute` (merge-game on @moku-labs/game 0.4.3) dims the switch, title "Needs
+  A game without `game.mute` (before @moku-labs/game 0.4.4) dims the switch, title "Needs
   @moku-labs/game with game.mute".
 - **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
   to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
@@ -625,7 +625,7 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 **Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.3
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.4
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 
@@ -635,7 +635,7 @@ When `package.json` bumps `@moku-labs/game`, move it and install again: `git -C 
 
 - **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.0.2`** — the peer the editor inspects and controls.
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.1.0`** — the peer the editor inspects and controls.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 
 ## Docs

@@ -41,10 +41,11 @@ import {
 /** Every journey gets 30 s: three cores and a real game start for each one. */
 const TIMEOUT_MS = 30_000;
 
-/** The 19 game sources of the merge game's manifest (game 0.4), sorted. */
+/** The 20 game sources of the merge game's manifest (game 0.4), sorted. */
 const GAME_SOURCES = [
   "game.assets",
   "game.at",
+  "game.audioMuted",
   "game.cheats",
   "game.diff",
   "game.effects",
@@ -64,7 +65,7 @@ const GAME_SOURCES = [
   "game.ui"
 ];
 
-/** The 16 game commands of the merge game's manifest (game 0.4), sorted. */
+/** The 17 game commands of the merge game's manifest (game 0.4), sorted. */
 const GAME_COMMANDS = [
   "game.answer",
   "game.bookmark",
@@ -73,6 +74,7 @@ const GAME_COMMANDS = [
   "game.drag",
   "game.fill",
   "game.key",
+  "game.mute",
   "game.pause",
   "game.reducedMotion",
   "game.restore",
