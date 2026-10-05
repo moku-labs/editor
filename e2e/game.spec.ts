@@ -591,7 +591,12 @@ async function openSide(page: Page): Promise<void> {
  * Removes every capture of this run.
  */
 async function clearCaptures(): Promise<void> {
-  await rm(path.join(GAME_ROOT, CAPTURES_DIR), { recursive: true, force: true });
+  await rm(path.join(GAME_ROOT, CAPTURES_DIR), {
+    recursive: true,
+    force: true,
+    maxRetries: 3,
+    retryDelay: 100
+  });
 }
 
 test.beforeEach(async () => {
