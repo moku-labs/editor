@@ -174,8 +174,10 @@ async function launchNow(
   input: { readonly html?: string; readonly port?: number }
 ): Promise<EditorStatus> {
   const { state, args, deps, root } = ctx;
+  // Already connected: nothing to start.
   if (state.client?.isOpen() === true) return statusOf(state);
 
+  // A bin that came up meanwhile is used instead of a second one.
   const found = findEditor(root, deps.isAlive);
   state.seen = found.seen ?? state.seen;
   if (found.live !== undefined) {
@@ -183,6 +185,7 @@ async function launchNow(
     return statusOf(state);
   }
 
+  // The html and port: the call's, else argv's, else the last discovery file's.
   const html = input.html ?? args.html ?? state.seen?.html;
   if (html === undefined) {
     throw new Error(
@@ -190,11 +193,14 @@ async function launchNow(
     );
   }
   const port = input.port ?? args.port ?? state.seen?.port ?? DEFAULT_PORT;
+
+  // Start the bin; shutdown can abort the start through the controller.
   const controller = new AbortController();
   state.launchAbort = controller;
   const options = { html: resolve(html), port, root, hmr: args.hmr };
   const { child, bin } = await launchEditor(options, { ...deps, signal: controller.signal });
 
+  // The bin is ours until its process exits; then connect, unless shutdown began.
   state.owned = { child, bin };
   child.exited.then(() => {
     if (state.owned?.child === child) state.owned = undefined;
@@ -226,6 +232,22 @@ function launchOnce(
 }
 
 /**
+ * Warns when `--port` names another port than the running bin's: the flag only applies to a bin
+ * the bridge starts.
+ *
+ * @param ctx - The bin side.
+ * @param port - The port the running bin listens on.
+ */
+function warnOnPortMismatch(ctx: LinkCtx, port: number): void {
+  const asked = ctx.args.port;
+  if (asked === undefined || asked === port) return;
+
+  ctx.deps.ui.warn(
+    `[moku-editor] mcp: the running moku-editor listens on port ${String(port)}; --port ${String(asked)} only applies when the bridge starts it`
+  );
+}
+
+/**
  * The startup: a live bin is connected (a different `--port` prints one line); otherwise the bin
  * is started when an html is known. Failures are remembered, never thrown.
  *
@@ -237,12 +259,7 @@ async function startup(ctx: LinkCtx): Promise<void> {
   state.seen = found.seen;
 
   if (found.live !== undefined) {
-    const { port } = found.live;
-    if (args.port !== undefined && args.port !== port) {
-      deps.ui.warn(
-        `[moku-editor] mcp: the running moku-editor listens on port ${String(port)}; --port ${String(args.port)} only applies when the bridge starts it`
-      );
-    }
+    warnOnPortMismatch(ctx, found.live.port);
     await connectTo(ctx, found.live).catch((error: unknown) => noteFailure(ctx, error));
     return;
   }
@@ -340,8 +357,8 @@ function noop(): void {
  *   root,
  *   args,
  *   deps,
- *   onConnected: client => doors.connected(client),
- *   onDisconnected: () => doors.disconnected()
+ *   onConnected: client => doors.follow(client),
+ *   onDisconnected: () => doors.unfollow()
  * });
  * void editor.start();
  * const hub = await editor.hub(); // throws "moku-editor is not running…" when no bin runs

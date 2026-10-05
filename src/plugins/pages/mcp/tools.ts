@@ -57,11 +57,6 @@ export function definitionOf(tool: Tool): ToolDefinition {
  * @param call - The checked arguments, the signal and the progress reporter.
  * @param context - The tool context.
  * @returns The tool's result, or the failure result.
- * @example
- * ```ts
- * const result = await runToolSafely(screenshotTool, { args: {}, signal, progress }, context);
- * result.content[0]; // { type: "text", text: '{ "frame": 1840, … }' }
- * ```
  */
 export async function runToolSafely(
   tool: Tool,

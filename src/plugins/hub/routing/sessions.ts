@@ -10,6 +10,7 @@ import {
   commandsHash,
   errorCode,
   notification,
+  pickSession,
   toWireValue,
   wireError
 } from "../../registry/protocol";
@@ -435,8 +436,8 @@ function noSession(message: string, reason: "no_session" | "choose_session", id?
 }
 
 /**
- * The session a game-channel request goes to: the requested one, else the only one, else the one
- * embedded session.
+ * The session a game-channel request goes to, by the one protocol rule (`pickSession`): the
+ * requested one, else the only one, else the one embedded session.
  *
  * @param ctx - Domain context of the hub.
  * @param requested - The request's `session`, if any.
@@ -444,24 +445,17 @@ function noSession(message: string, reason: "no_session" | "choose_session", id?
  * @throws {Error} -32003 `no_session` (unknown id or no game) or `choose_session` (ambiguous).
  */
 export function chooseSession(ctx: HubCtx, requested: string | undefined): Session {
-  const { sessions } = ctx.state;
+  const open = [...ctx.state.sessions.values()].map(session => ({
+    id: session.id,
+    embedded: session.manifest.embedded,
+    session
+  }));
+  const picked = pickSession(open, requested);
+  if (picked !== undefined) return picked.session;
 
-  if (requested !== undefined) {
-    const found = sessions.get(requested);
-    if (found === undefined)
-      throw noSession(`no game session ${requested}`, "no_session", requested);
-    return found;
-  }
-
-  const open = [...sessions.values()];
-  const [only] = open;
-  if (only === undefined) throw noSession("no game is connected", "no_session");
-  if (open.length === 1) return only;
-
-  const embedded = open.filter(session => session.manifest.embedded);
-  const [chosen] = embedded;
-  if (chosen !== undefined && embedded.length === 1) return chosen;
-
+  if (requested !== undefined)
+    throw noSession(`no game session ${requested}`, "no_session", requested);
+  if (open.length === 0) throw noSession("no game is connected", "no_session");
   throw noSession("several games are connected; choose a session", "choose_session");
 }
 

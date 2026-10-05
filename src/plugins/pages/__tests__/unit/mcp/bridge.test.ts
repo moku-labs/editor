@@ -14,6 +14,7 @@ import { VERSION } from "../../../mcp/version";
 import type { McpArgs } from "../../../types";
 import type { FakeHub } from "../../fake-hub";
 import { session, startFakeHub, until } from "../../fake-hub";
+import type { RpcFrame } from "../../rpc-frame";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages/mcp bridge (D-31): runBridge over fake stdio and a fake hub. stdout
@@ -157,8 +158,7 @@ function bridge(args: Partial<McpArgs> = {}) {
     for (const stop of stops) stop();
   };
   /** The parsed frames so far. */
-  const frames = (): { id?: unknown; result?: unknown; error?: unknown; method?: string }[] =>
-    writes.map(text => JSON.parse(text));
+  const frames = (): RpcFrame[] => writes.map(text => JSON.parse(text));
   /** The frame answering `id`. */
   const answer = (id: number) => frames().find(frame => frame.id === id);
   return {
@@ -177,7 +177,7 @@ function bridge(args: Partial<McpArgs> = {}) {
 }
 
 /** The first text of a tools/call answer. */
-function toolText(frame: { result?: unknown } | undefined): string {
+function toolText(frame: RpcFrame | undefined): string {
   const result = frame?.result;
   if (typeof result !== "object" || result === null || !("content" in result)) return "";
   const [first] = Array.isArray(result.content) ? result.content : [];
@@ -327,7 +327,7 @@ describe("runBridge", () => {
 });
 
 /** The tools of a tools/list answer. */
-function toolsOf(frame: { result?: unknown } | undefined): { name: string }[] {
+function toolsOf(frame: RpcFrame | undefined): { name: string }[] {
   const result = frame?.result;
   if (typeof result !== "object" || result === null || !("tools" in result)) return [];
   return Array.isArray(result.tools) ? result.tools : [];

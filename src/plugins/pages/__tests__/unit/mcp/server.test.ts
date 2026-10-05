@@ -20,8 +20,9 @@ import type {
 // pages/mcp server (M1, M5, M6): initialize negotiation and instructions, ping,
 // tools/list (read per request; the first waits for the door tools at most
 // 3 s), tools/call (a retired door answers isError), the error codes,
-// notifications that are never answered, a tools change kept until
-// initialized, cancellation and progress, and the static tool table.
+// notifications that are never answered, no tools change before the first
+// list and one kept until initialized, cancellation and progress, and the
+// static tool table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** An EditorLink that never connects. */
@@ -159,16 +160,40 @@ describe("requests and notifications", () => {
     expect(frames).toEqual([]);
   });
 
-  it("keeps a tools change from before notifications/initialized and sends it once after", () => {
+  it("sends no list_changed before the first tools/list was answered", async () => {
     const { server, frames, send } = serve();
-    server.toolsChanged();
+    send({ jsonrpc: "2.0", method: "notifications/initialized" });
     server.toolsChanged();
     expect(frames).toEqual([]);
+
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await server.idle();
+    server.toolsChanged();
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toMatchObject({ id: 1 });
+    expect(frames[1]).toEqual({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
+  });
+
+  it("drops a tools change from before the first tools/list, even across initialized", () => {
+    const { server, frames, send } = serve();
+    server.toolsChanged();
+    send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    expect(frames).toEqual([]);
+  });
+
+  it("keeps a tools change after a list but before notifications/initialized and sends it once after", async () => {
+    const { server, frames, send } = serve();
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await server.idle();
+    server.toolsChanged();
+    server.toolsChanged();
+    expect(frames).toHaveLength(1);
+
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
     const changed = { jsonrpc: "2.0", method: "notifications/tools/list_changed" };
-    expect(frames).toEqual([changed]);
+    expect(frames.slice(1)).toEqual([changed]);
     server.toolsChanged();
-    expect(frames).toEqual([changed, changed]);
+    expect(frames.slice(1)).toEqual([changed, changed]);
   });
 
   it("sends nothing on notifications/initialized without a change before it", () => {

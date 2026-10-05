@@ -111,11 +111,6 @@ export function processBridgeDeps(): BridgeDeps {
  *
  * @param deps - The bridge deps (onSignal).
  * @returns Whether one fired, the first one and the remover.
- * @example
- * ```ts
- * const stop = listenForStop(deps);
- * await stop.stopped; // "signal" after the first SIGINT or SIGTERM
- * ```
  */
 function listenForStop(deps: Pick<BridgeDeps, "onSignal">): StopListener {
   let fired = false;
@@ -187,16 +182,20 @@ export async function runBridge(
 ): Promise<number> {
   const root = resolve(args.root);
   let toolsChanged: () => void = noop;
-  // The door rebuild is the one source of tools/list_changed (a bin restart is a disconnect and a
-  // connect).
+  // The door rebuild is the one source of tools/list_changed (a bin restart is an unfollow and a
+  // follow).
   const doors = createDoorTools({ ui: deps.ui, onChange: () => toolsChanged() });
+
+  // The door set follows every hub client the link opens.
   const editor = createEditorLink({
     root,
     args,
     deps,
-    onConnected: client => doors.connected(client),
-    onDisconnected: () => doors.disconnected()
+    onConnected: client => doors.follow(client),
+    onDisconnected: () => doors.unfollow()
   });
+
+  // The server lists the generic tools, then the doors; a door change reaches it from here on.
   const server = createMcpServer({
     send: frame => deps.write(frameText(frame)),
     tools: () => [...TOOLS, ...doors.tools()],
@@ -213,10 +212,12 @@ export async function runBridge(
   editor.start().then(() => {
     if (editor.connected() === undefined) doors.noEditor();
   }, noop);
+
   // The signals stay caught until the teardown is done: a second Ctrl+C cannot orphan a bin.
   const stop = listenForStop(deps);
   const ending = await readUntilStop(deps.input, stop, line => server.handleLine(line));
 
+  // Teardown: calls in flight first, then the link and the doors, then the signals and stdin.
   server.cancelAll();
   await settleWithin(server.idle(), SETTLE_MS);
   await editor.shutdown();

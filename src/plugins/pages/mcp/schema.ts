@@ -82,13 +82,16 @@ function numberProblem(name: string, schema: NumberFieldSchema, value: Json): st
 function objectProblem(name: string, schema: ObjectSchema, value: Json): string | undefined {
   if (!isObject(value)) return `${name} must be an object`;
 
+  // No field the schema does not know.
   for (const field of Object.keys(value)) {
     if (!Object.hasOwn(schema.properties, field))
       return `${name}.${field} is not a field of ${name}`;
   }
+  // Every required field present.
   for (const field of schema.required) {
     if (value[field] === undefined) return `${name}.${field} is required`;
   }
+  // Every present field a number at least its minimum.
   for (const [field, property] of Object.entries(schema.properties)) {
     const member = value[field];
     const problem =
@@ -157,12 +160,15 @@ export function checkArguments(
   const args = raw ?? {};
   if (!isObject(args)) return "arguments must be an object";
 
+  // No argument the tool does not know.
   for (const name of Object.keys(args)) {
     if (!Object.hasOwn(schema.properties, name)) return `${name} is not an argument of this tool`;
   }
+  // Every required argument present.
   for (const name of schema.required ?? []) {
     if (args[name] === undefined) return `${name} is required`;
   }
+  // Every present argument of the right kind.
   for (const [name, property] of Object.entries(schema.properties)) {
     const value = args[name];
     const problem = value === undefined ? undefined : valueProblem(name, property, value);

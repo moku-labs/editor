@@ -162,12 +162,18 @@ export type DoorTools = {
   tools(): readonly Tool[];
   /** Names that were door tools before a change and are not now. */
   retired(): ReadonlySet<string>;
-  /** Settles once: tools built, or the grace fired with no session, or `noEditor()` was called. */
+  /**
+   * Settles once: tools built, a manifest fetch failed, the grace fired with no session, or
+   * `noEditor()` was called.
+   */
   readonly ready: Promise<void>;
-  /** A hub client is open: subscribe to its sessions and decide at once. */
-  connected(client: HubClient): void;
-  /** The client closed or the bin stopped: start the grace. */
-  disconnected(): void;
+  /**
+   * Follows an open hub client: listens to its sessions instead of the last client's and decides
+   * at once. A fetch of the last client still in flight no longer holds back the same hash.
+   */
+  follow(client: HubClient): void;
+  /** Stops following (the client closed or the bin stopped): starts the grace. */
+  unfollow(): void;
   /** No bin will come (start settled with no client): settle `ready`. */
   noEditor(): void;
   /** Stops the timer and the subscription. */
@@ -387,7 +393,12 @@ async function callDoor(
  * @returns The tool.
  * @example
  * ```ts
- * doorTool(tap, "game_tap", doorInputSchema(tap.input), "tiny-game 0.0.0").description;
+ * doorTool(
+ *   { id: "game.tap", title: "Tap a target.", input: {}, effect: "route" },
+ *   "game_tap",
+ *   { type: "object", properties: {}, additionalProperties: false },
+ *   "tiny-game 0.0.0"
+ * ).description;
  * // '[route] Tap a target. Command door game.tap of tiny-game 0.0.0. Same as moku_run { id: "game.tap" }.'
  * ```
  */
@@ -417,21 +428,30 @@ function doorTool(
  * @returns The tools and the `"<id>: <reason>"` lines of the skipped doors.
  * @example
  * ```ts
- * const { tools, skipped } = doorTools(readDoorManifest(await hub.request("game", "manifest", {}, "s-1")));
- * tools.map(tool => tool.name); // ["game_tap", "game_step", "cheat_game_fill", "raw_game_restore", …]
- * skipped; // ["editor.capture: covered by moku_screenshot / moku_series / moku_reload", …]
+ * const { tools, skipped } = doorTools({
+ *   game: "tiny-game 0.0.0",
+ *   commands: [
+ *     { id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route" },
+ *     { id: "game.fill", title: "Fill", input: {}, effect: "cheat" },
+ *     { id: "editor.capture", title: "Capture", input: {}, effect: "read" }
+ *   ]
+ * });
+ * tools.map(tool => tool.name); // ["game_tap", "cheat_game_fill"]
+ * skipped; // ["editor.capture: covered by moku_screenshot / moku_series / moku_reload"]
  * ```
  */
 export function doorTools(manifest: DoorManifest): {
   readonly tools: readonly Tool[];
   readonly skipped: readonly string[];
 } {
+  // Name every door first, and count each name: a name two doors spell belongs to neither.
   const candidates = manifest.commands.map(command => candidateOf(command));
   const uses = new Map<string, number>();
   for (const candidate of candidates) {
     if ("name" in candidate) uses.set(candidate.name, (uses.get(candidate.name) ?? 0) + 1);
   }
 
+  // Then each door gets its tool, or a skipped line with the reason.
   const tools: Tool[] = [];
   const skipped: string[] = [];
   for (const candidate of candidates) {
@@ -488,6 +508,7 @@ function take(
   built: { readonly tools: readonly Tool[]; readonly skipped: readonly string[] }
 ): void {
   const { state, options } = ctx;
+  // Retire every old name, then bring back the names the new set keeps.
   const names = new Set(built.tools.map(tool => tool.name));
   for (const tool of state.tools) state.retired.add(tool.name);
   for (const name of names) state.retired.delete(name);
@@ -495,12 +516,14 @@ function take(
   state.tools = built.tools;
   state.hash = hash;
 
+  // A door without a tool is told once per hash, not on every rebuild.
   if (hash !== undefined && !state.warned.has(hash)) {
     state.warned.add(hash);
     for (const line of built.skipped) {
       options.ui.warn(`[moku-editor] mcp: no tool for ${line}; use moku_run`);
     }
   }
+  // Only a moved hash changes the list the client sees.
   if (moved) options.onChange();
   ctx.settle();
 }
@@ -522,7 +545,8 @@ function startGrace(ctx: DoorCtx): void {
 
 /**
  * Fetches the manifest of a session and takes its doors, unless a newer decision asked for
- * another hash meanwhile. A failed fetch keeps the old set; the next push retries.
+ * another hash meanwhile. A failed fetch keeps the old set and settles `ready`, so the first
+ * `tools/list` does not wait; the next push retries.
  *
  * @param ctx - The door set.
  * @param client - The hub connection.
@@ -544,7 +568,11 @@ async function fetchDoors(
     manifest = undefined;
   }
   if (state.fetching === hash) state.fetching = undefined;
-  if (manifest !== undefined && state.wanted === hash) take(ctx, hash, doorTools(manifest));
+  if (manifest === undefined) {
+    ctx.settle();
+    return;
+  }
+  if (state.wanted === hash) take(ctx, hash, doorTools(manifest));
 }
 
 /**
@@ -578,7 +606,7 @@ function decide(ctx: DoorCtx, client: HubClient, sessions: readonly SessionView[
  * @example
  * ```ts
  * const doors = createDoorTools({ ui: deps.ui, onChange: () => server.toolsChanged() });
- * const editor = createEditorLink({ root, args, deps, onConnected: client => doors.connected(client), onDisconnected: () => doors.disconnected() });
+ * const editor = createEditorLink({ root, args, deps, onConnected: client => doors.follow(client), onDisconnected: () => doors.unfollow() });
  * ```
  */
 export function createDoorTools(options: DoorToolsOptions): DoorTools {
@@ -603,12 +631,13 @@ export function createDoorTools(options: DoorToolsOptions): DoorTools {
     tools: () => state.tools,
     retired: () => new Set(state.retired),
     ready,
-    connected: client => {
+    follow: client => {
       state.unsubscribe?.();
+      state.fetching = undefined;
       state.unsubscribe = client.onSessions(list => decide(ctx, client, list));
       decide(ctx, client, client.sessions());
     },
-    disconnected: () => {
+    unfollow: () => {
       state.unsubscribe?.();
       state.unsubscribe = undefined;
       startGrace(ctx);

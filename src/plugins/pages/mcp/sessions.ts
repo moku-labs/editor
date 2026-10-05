@@ -3,11 +3,12 @@
  * one, else the one embedded session) and its liveness check (M7): a paused or hidden game gets a
  * clear message instead of a timeout.
  */
+import { pickSession } from "../../registry/protocol";
 import type { SessionView } from "./types";
 
 /**
- * The session the hub would pick for a request: the asked id, else the only session, else the
- * only embedded one.
+ * The session the hub would pick for a request, by the one protocol rule (`pickSession`): the
+ * asked id, else the only session, else the only embedded one.
  *
  * @param sessions - The sessions now.
  * @param requested - The `session` argument, if any.
@@ -21,13 +22,7 @@ export function chooseSession(
   sessions: readonly SessionView[],
   requested?: string
 ): SessionView | undefined {
-  if (requested !== undefined) return sessions.find(session => session.id === requested);
-
-  const [only] = sessions;
-  if (sessions.length === 1) return only;
-  const embedded = sessions.filter(session => session.embedded);
-  const [chosen] = embedded;
-  return embedded.length === 1 ? chosen : undefined;
+  return pickSession(sessions, requested);
 }
 
 /**

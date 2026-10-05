@@ -28,10 +28,10 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** One frame the bridge wrote. */
+/** One frame the bridge wrote: the fields the tests read (a tools/list result's tools). */
 type Frame = {
   readonly id?: string | number | null;
-  readonly result?: Record<string, unknown>;
+  readonly result?: { readonly tools?: readonly { readonly name: string }[] };
   readonly error?: { readonly code: number; readonly message: string };
 };
 

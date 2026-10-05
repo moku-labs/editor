@@ -390,7 +390,7 @@ describe("createDoorTools", () => {
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
 
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
     expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
     expect(doors.retired()).toEqual(new Set());
@@ -402,7 +402,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.push([
@@ -418,7 +418,7 @@ describe("createDoorTools", () => {
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
     hub.answer("s-2", manifestOf([FILL]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.push([live("s-2", "h2")]);
@@ -439,7 +439,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.push([]);
@@ -457,7 +457,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.push([]);
@@ -480,7 +480,7 @@ describe("createDoorTools", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { doors, onChange } = doorSet();
     const isReady = settled(doors.ready);
-    doors.connected(fakeClient([]).client);
+    doors.follow(fakeClient([]).client);
 
     await vi.advanceTimersByTimeAsync(4999);
     expect(isReady()).toBe(false);
@@ -497,7 +497,7 @@ describe("createDoorTools", () => {
     hub.answer("s-1", manifestOf([TAP]));
     hub.answer("s-2", manifestOf([TAP]));
     const isReady = settled(doors.ready);
-    doors.connected(hub.client);
+    doors.follow(hub.client);
 
     await vi.advanceTimersByTimeAsync(5000);
     expect(isReady()).toBe(true);
@@ -509,7 +509,7 @@ describe("createDoorTools", () => {
     const { doors } = doorSet();
     const hub = fakeClient([live("s-1", "h1", false), live("s-2", "h2", true)]);
     hub.answer("s-2", manifestOf([FILL]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
     expect(doors.tools().map(tool => tool.name)).toEqual(["cheat_game_fill"]);
   });
@@ -522,15 +522,15 @@ describe("createDoorTools", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("listens to the newest client only after a second connect", async () => {
+  it("listens to the newest client only after a second follow", async () => {
     const { doors, onChange } = doorSet();
     const first = fakeClient([live("s-1", "h1")]);
     first.answer("s-1", manifestOf([TAP]));
-    doors.connected(first.client);
+    doors.follow(first.client);
     await doors.ready;
 
     const second = fakeClient([live("s-1", "h1")]);
-    doors.connected(second.client);
+    doors.follow(second.client);
     expect(first.listeners.size).toBe(0);
     expect(second.listeners.size).toBe(1);
 
@@ -550,7 +550,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.answer("s-2", new Error("[moku-editor] game reloaded"));
@@ -566,11 +566,39 @@ describe("createDoorTools", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
+  it("settles ready with no tools, without onChange, when the first manifest fetch fails", async () => {
+    const { doors, onChange } = doorSet();
+    const hub = fakeClient([live("s-1", "h1")]);
+    hub.answer("s-1", new Error("[moku-editor] game reloaded"));
+    const isReady = settled(doors.ready);
+
+    doors.follow(hub.client);
+    await flush();
+    expect(isReady()).toBe(true);
+    expect(doors.tools()).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("fetches again on a new client while the old client's fetch of the same hash is in flight", async () => {
+    const { doors, onChange } = doorSet();
+    const first = fakeClient([live("s-1", "h1")]);
+    first.answer("s-1", new Promise<Json>(() => undefined));
+    doors.follow(first.client);
+
+    const second = fakeClient([live("s-1", "h1")]);
+    second.answer("s-1", manifestOf([TAP]));
+    doors.follow(second.client);
+    await doors.ready;
+    expect(second.fetches()).toBe(1);
+    expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
+    expect(onChange).toHaveBeenCalledOnce();
+  });
+
   it("keeps the old doors when the manifest answer is not a manifest", async () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.answer("s-2", { game: 1 });
@@ -584,7 +612,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
 
     hub.push([live("s-1")]);
@@ -604,7 +632,7 @@ describe("createDoorTools", () => {
     const hub = fakeClient([live("s-1", "h1")]);
     const slow = Promise.withResolvers<Json>();
     hub.answer("s-1", slow.promise);
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     hub.push([live("s-1", "h1")]);
     expect(hub.fetches()).toBe(1);
 
@@ -617,17 +645,17 @@ describe("createDoorTools", () => {
     expect(onChange).toHaveBeenCalledOnce();
   });
 
-  it("starts the grace on disconnect and keeps the doors when the same hash reconnects", async () => {
+  it("starts the grace on unfollow and keeps the doors when the same hash is followed again", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { doors, onChange } = doorSet();
     const first = fakeClient([live("s-1", "h1")]);
     first.answer("s-1", manifestOf([TAP]));
-    doors.connected(first.client);
+    doors.follow(first.client);
     await doors.ready;
 
-    doors.disconnected();
+    doors.unfollow();
     await vi.advanceTimersByTimeAsync(3000);
-    doors.connected(fakeClient([live("s-1", "h1")]).client);
+    doors.follow(fakeClient([live("s-1", "h1")]).client);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(onChange).toHaveBeenCalledOnce();
     expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
@@ -640,7 +668,7 @@ describe("createDoorTools", () => {
     hub.answer("s-1", manifestOf(commands));
     hub.answer("s-2", manifestOf([TAP]));
     hub.answer("s-3", manifestOf(commands));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
     hub.push([live("s-2", "h2")]);
     await flush();
@@ -657,7 +685,7 @@ describe("createDoorTools", () => {
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
     hub.answer("s-1", manifestOf([TAP]));
-    doors.connected(hub.client);
+    doors.follow(hub.client);
     await doors.ready;
     hub.push([]);
 

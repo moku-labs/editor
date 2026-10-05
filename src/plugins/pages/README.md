@@ -291,7 +291,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 
 ### MCP bridge (`mcp/`)
 
-`moku-editor mcp` is the stdio MCP server Claude Code starts (D-31). It is a separate process, not a plugin: plain modules that use only `registry/protocol` and Bun built-ins. It is a hub **tools client**, like the tools page, so the hub picks the session, checks ids and inputs and keeps the files sandbox (D-09) exactly as for the page.
+`moku-editor mcp` is the stdio MCP server Claude Code starts (D-31). It is a separate process, not a plugin: plain modules that use only `registry/protocol`, `../discovery`, `../types`, `package.json`, `@moku-labs/common/cli` (stderr console) and Bun/node built-ins. It is a hub **tools client**, like the tools page, so the hub picks the session, checks ids and inputs and keeps the files sandbox (D-09) exactly as for the page.
 
 | File | Role |
 |---|---|
@@ -303,7 +303,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 | `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. |
 | `connection.ts` | The bin side: startup, reconnect once, start, stop only an owned bin. Reports each open and each lost connection (`onConnected`, `onDisconnected`). |
 | `tools.ts` and `*-tools.ts` | The generic tool table. `schema.ts` checks arguments, `results.ts` builds content, `shapes.ts` reads hub answers. |
-| `door-tools.ts` | One tool per command door of the selected session (D-35), rebuilt only when the session's `manifestHash` moves (D-37). |
+| `door-tools.ts` | One tool per command door of the selected session (D-35), rebuilt only when the session's `manifestHash` moves (D-37). `follow(client)` listens to the sessions of each hub client the link opens; `unfollow()` starts the 5 s grace. |
 
 Protocol:
 
@@ -319,7 +319,7 @@ Protocol:
 
 The handshake of the installed Claude Code (2.1.280) is recorded in `__tests__/fixtures/claude-discover-probe.json` and `claude-initialize.json` (captured from its stdin during `claude mcp list`): `server/discover`, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized`, `tools/list`. `unit/mcp/claude-code.test.ts` replays it.
 
-`serverInfo.version` is the package version, inlined from `package.json` at build time. `notifications/progress` goes out during `moku_wait` and `moku_series` when the request carries `_meta.progressToken`. `notifications/tools/list_changed` goes out only when the door tools change (below). A change before `notifications/initialized` is kept and sent once right after it.
+`serverInfo.version` is the package version, inlined from `package.json` at build time. `notifications/progress` goes out during `moku_wait` and `moku_series` when the request carries `_meta.progressToken`. `notifications/tools/list_changed` goes out only when the door tools change (below), and never before the first `tools/list` was answered: that list already reads the new tools. A change after it but before `notifications/initialized` is kept and sent once right after it.
 
 Which bin:
 
@@ -361,7 +361,7 @@ Door tools (D-35, D-36, D-37). Each command door of the selected session gets it
 | Run | Hub `run { id, input }` (`input` left out when empty) in the session; the answer reads like `moku_run`: `effect: <effect>`, then `{ value, frame, state }`. |
 | Description, annotations | `[<effect>] <title>. Command door <id> of <game>. Same as moku_run { id: "<id>" }.` `read` is read-only; `route` and `cosmetic` are not destructive; `cheat` and `raw` are destructive. Claude Code ignores annotations for permissions, so the name prefix is the guard. |
 | Selected session | The one `moku_run` uses without `session`: the only one, else the one embedded. Several without one embedded: no door tools. |
-| Change | The hub stamps `manifestHash` (the hash of the commands) on every session. The doors are rebuilt, and `list_changed` sent, only when that hash moves. Without a session the set stays 5 s, so a hot reload of the same game changes nothing. A bin without `manifestHash` is fetched once per session. A failed manifest fetch keeps the set; the next `sessions` push retries. |
+| Change | The hub stamps `manifestHash` (the hash of the commands) on every session. The doors are rebuilt, and `list_changed` sent, only when that hash moves. Without a session the set stays 5 s, so a hot reload of the same game changes nothing. A bin without `manifestHash` is fetched once per session. A failed manifest fetch keeps the set and settles the wait of the first `tools/list`; the next `sessions` push retries. |
 
 Deny the cheat and raw doors in Claude Code settings:
 

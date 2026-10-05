@@ -1,8 +1,8 @@
 /**
  * @file Protocol barrel — the only barrel of the protocol module. Runtime-free: re-exports every
- * wire type and pure helper (commandsHash included), the device presets and the overlay host marker. Imported by hub,
- * files, pages, link, workspace, panels, the views, the agent plugins and src/index.ts by relative
- * path (D-02).
+ * wire type and pure helper (commandsHash and pickSession included), the device presets and the
+ * overlay host marker. Imported by hub, files, pages, link, workspace, panels, the views, the agent
+ * plugins and src/index.ts by relative path (D-02).
  */
 export { checkInput, isJson } from "./check";
 export {
@@ -44,6 +44,7 @@ export { HOST_ATTRIBUTE } from "./overlay-host";
 export type { HotSwapEntry } from "./reload";
 export { isHotSwapEntry, isReloading } from "./reload";
 export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
+export { pickSession } from "./session-choice";
 export type { NodeRef, SourceOverrides } from "./source-files";
 export {
   flowFile,

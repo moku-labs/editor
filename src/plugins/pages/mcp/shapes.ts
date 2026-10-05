@@ -271,6 +271,37 @@ export function splitDataUrl(
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
+ * The bytes a PNG size is read from: the signature, then the IHDR chunk up to its height.
+ */
+const PNG_HEADER_BYTES = 24;
+
+/**
+ * How many base64 characters of a PNG are decoded: 24 bytes of header, rounded up to whole
+ * base64 groups.
+ */
+const PNG_HEAD_CHARS = 32;
+
+/**
+ * Where the IHDR width starts in a PNG (4 bytes, big-endian).
+ */
+const PNG_WIDTH_OFFSET = 16;
+
+/**
+ * Where the IHDR height starts in a PNG (4 bytes, big-endian).
+ */
+const PNG_HEIGHT_OFFSET = 20;
+
+/**
+ * The byte every JPEG marker starts with.
+ */
+const JPEG_MARKER_PREFIX = 0xff;
+
+/**
+ * The marker of the first two bytes of every JPEG: start of image (SOI).
+ */
+const JPEG_START_OF_IMAGE = 0xd8;
+
+/**
  * The JPEG frame headers that carry the picture size: SOF0 (baseline), SOF1 and SOF2
  * (progressive). Canvas encoders write SOF0.
  */
@@ -280,6 +311,37 @@ const JPEG_FRAME_MARKERS: ReadonlySet<number> = new Set([0xc0, 0xc1, 0xc2]);
  * The JPEG start-of-scan marker: the picture data follows, no frame header after it.
  */
 const JPEG_START_OF_SCAN = 0xda;
+
+/**
+ * The JPEG TEM marker: it has no length.
+ */
+const JPEG_TEM = 0x01;
+
+/**
+ * The first restart marker, RST0. The restart markers have no length.
+ */
+const JPEG_RESTART_FIRST = 0xd0;
+
+/**
+ * The last restart marker, RST7.
+ */
+const JPEG_RESTART_LAST = 0xd7;
+
+/**
+ * The bytes of a frame header up to its width: marker (2), length (2), precision (1), height (2)
+ * and width (2).
+ */
+const JPEG_FRAME_HEADER_BYTES = 9;
+
+/**
+ * Where the height starts in a frame header, from its marker (2 bytes, big-endian).
+ */
+const JPEG_HEIGHT_OFFSET = 5;
+
+/**
+ * Where the width starts in a frame header, from its marker (2 bytes, big-endian).
+ */
+const JPEG_WIDTH_OFFSET = 7;
 
 /**
  * How many base64 characters of a JPEG are decoded to find its frame header (48 KB of bytes):
@@ -293,6 +355,21 @@ const JPEG_HEAD_CHARS = 65_536;
 export type PictureSize = { readonly width: number; readonly height: number };
 
 /**
+ * True for a JPEG restart marker, RST0 to RST7.
+ *
+ * @param marker - The marker byte after 0xff.
+ * @returns Whether it is a restart marker.
+ * @example
+ * ```ts
+ * isRestartMarker(0xd3); // true
+ * isRestartMarker(0xd8); // false: start of image
+ * ```
+ */
+function isRestartMarker(marker: number): boolean {
+  return marker >= JPEG_RESTART_FIRST && marker <= JPEG_RESTART_LAST;
+}
+
+/**
  * True for a JPEG marker without a length: the restart markers RST0..RST7 and TEM.
  *
  * @param marker - The marker byte after 0xff.
@@ -303,7 +380,7 @@ export type PictureSize = { readonly width: number; readonly height: number };
  * ```
  */
 function isStandalone(marker: number): boolean {
-  return marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7);
+  return marker === JPEG_TEM || isRestartMarker(marker);
 }
 
 /**
@@ -312,24 +389,23 @@ function isStandalone(marker: number): boolean {
  *
  * @param bytes - The first bytes of the JPEG.
  * @returns The size, or undefined when no frame header comes before the scan.
- * @example
- * ```ts
- * jpegSize(Buffer.from(data.slice(0, JPEG_HEAD_CHARS), "base64")); // { width: 393, height: 852 }
- * ```
  */
 function jpegSize(bytes: Buffer): PictureSize | undefined {
-  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+  if (bytes[0] !== JPEG_MARKER_PREFIX || bytes[1] !== JPEG_START_OF_IMAGE) return undefined;
 
   let offset = 2;
-  while (offset + 9 <= bytes.length) {
-    if (bytes[offset] !== 0xff) return undefined;
+  while (offset + JPEG_FRAME_HEADER_BYTES <= bytes.length) {
+    if (bytes[offset] !== JPEG_MARKER_PREFIX) return undefined;
     const marker = bytes[offset + 1] ?? 0;
     if (JPEG_FRAME_MARKERS.has(marker)) {
-      return { width: bytes.readUInt16BE(offset + 7), height: bytes.readUInt16BE(offset + 5) };
+      return {
+        width: bytes.readUInt16BE(offset + JPEG_WIDTH_OFFSET),
+        height: bytes.readUInt16BE(offset + JPEG_HEIGHT_OFFSET)
+      };
     }
     if (marker === JPEG_START_OF_SCAN) return undefined;
     // A fill byte (0xff) or a standalone marker has no length.
-    const fill = marker === 0xff;
+    const fill = marker === JPEG_MARKER_PREFIX;
     offset += fill ? 1 : 2;
     if (!fill && !isStandalone(marker)) offset += bytes.readUInt16BE(offset);
   }
@@ -341,14 +417,16 @@ function jpegSize(bytes: Buffer): PictureSize | undefined {
  *
  * @param bytes - The first bytes of the PNG.
  * @returns The size, or undefined when the signature is not a PNG's.
- * @example
- * ```ts
- * pngSize(Buffer.from(data.slice(0, 32), "base64")); // { width: 393, height: 852 }
- * ```
  */
 function pngSize(bytes: Buffer): PictureSize | undefined {
-  const isPng = bytes.length >= 24 && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
-  return isPng ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) } : undefined;
+  const isPng =
+    bytes.length >= PNG_HEADER_BYTES && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
+  return isPng
+    ? {
+        width: bytes.readUInt32BE(PNG_WIDTH_OFFSET),
+        height: bytes.readUInt32BE(PNG_HEIGHT_OFFSET)
+      }
+    : undefined;
 }
 
 /**
@@ -364,7 +442,7 @@ function pngSize(bytes: Buffer): PictureSize | undefined {
 export function pictureSize(dataUrl: string): PictureSize | undefined {
   const split = splitDataUrl(dataUrl);
   if (split?.mimeType === "image/png") {
-    return pngSize(Buffer.from(split.data.slice(0, 32), "base64"));
+    return pngSize(Buffer.from(split.data.slice(0, PNG_HEAD_CHARS), "base64"));
   }
   if (split?.mimeType === "image/jpeg") {
     return jpegSize(Buffer.from(split.data.slice(0, JPEG_HEAD_CHARS), "base64"));
@@ -379,7 +457,8 @@ export function pictureSize(dataUrl: string): PictureSize | undefined {
  * @returns The entry, or undefined.
  * @example
  * ```ts
- * readFileEntry({ path: "src", kind: "dir", size: 0 });
+ * readFileEntry({ path: "src", kind: "dir", size: 0 }); // { path: "src", kind: "dir", size: 0 }
+ * readFileEntry({ path: "src", kind: "link", size: 0 }); // undefined
  * ```
  */
 function readFileEntry(value: Json): FileEntry | undefined {

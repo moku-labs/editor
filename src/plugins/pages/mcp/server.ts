@@ -2,8 +2,9 @@
  * @file pages/mcp — the MCP dispatcher (M1): `initialize` with version negotiation and the
  * instructions, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`
  * and `notifications/cancelled`. The tools are read per request (the generic tools, then the door
- * tools); the first `tools/list` waits for the door tools at most 3 s. A message without an id is
- * never answered; an unknown request is -32601, bad params -32602, a line that is not JSON -32700.
+ * tools); the first `tools/list` waits for the door tools at most 3 s, and no `list_changed` goes
+ * out before it was answered. A message without an id is never answered; an unknown request is
+ * -32601, bad params -32602, a line that is not JSON -32700.
  */
 import type { Json } from "../../registry/protocol";
 import { errorResult } from "./results";
@@ -56,6 +57,7 @@ export type McpServerOptions = {
   readonly ready: () => Promise<void>;
   /** Names that were door tools and are gone: a call answers `isError` instead of -32602. */
   readonly retired: () => ReadonlySet<string>;
+  /** What every tool runs with: the editor link and the clock. */
   readonly context: ToolContext;
   /** `serverInfo.version`: the package version. */
   readonly version: string;
@@ -68,8 +70,9 @@ export type McpServer = {
   /** Handles one stdin line. */
   handleLine(line: string): void;
   /**
-   * Sends `notifications/tools/list_changed`; before `notifications/initialized` the change is
-   * kept and sent once right after it.
+   * Sends `notifications/tools/list_changed`. Before the first `tools/list` was answered it sends
+   * nothing: that list is already the new one. After it but before `notifications/initialized`
+   * the change is kept and sent once right after it.
    */
   toolsChanged(): void;
   /** Aborts every tool call in flight (stdin end); their responses are not sent. */
@@ -203,6 +206,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   const inflight = new Map<string, AbortController>();
   const running = new Set<Promise<void>>();
   let initialized = false;
+  let listed = false;
   let pendingChange = false;
   let firstList: Promise<void> | undefined;
 
@@ -258,13 +262,14 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 
   /**
    * A `tools/list`: the first one (and any that arrive while it waits) waits for the door tools at
-   * most 3 s; later ones answer at once.
+   * most 3 s; later ones answer at once. From then on a tools change is announced.
    *
    * @returns The tool definitions.
    */
   async function listTools(): Promise<JsonShaped> {
     firstList ??= waitAtMost(options.ready(), FIRST_LIST_WAIT_MS);
     await firstList;
+    listed = true;
     return { tools: tools().map(tool => definitionOf(tool)) };
   }
 
@@ -375,6 +380,8 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       }
     },
     toolsChanged: () => {
+      // The client has no list yet: its first tools/list already reads the new tools.
+      if (!listed) return;
       if (initialized) sendListChanged();
       else pendingChange = true;
     },
