@@ -54,11 +54,6 @@ export const AREA_ITEMS = 40;
 const AREA_SEARCHES = 10;
 
 /**
- * The elements whose code the card shows: the first ones with a source.
- */
-const AREA_CODES = 3;
-
-/**
  * Without a node fully inside, a node joins when the area covers this share of its own area.
  */
 const HALF = 0.5;
@@ -252,17 +247,18 @@ function knownItems(ctx: GameViewCtx, nodes: readonly SceneNode[]): readonly Are
 }
 
 /**
- * The code of the first elements with a source, for the card; one that fails is left out.
+ * The code of every element whose source is known, for the card; one that fails is left out.
+ * A known source is remembered in `state.found`, so no code starts a new search.
  *
  * @param ctx - Domain context of gameView.
  * @param items - The group with its sources.
- * @returns At most three codes.
+ * @returns One code per element with a source, in group order.
  */
 async function areaCodes(
   ctx: GameViewCtx,
   items: readonly AreaItem[]
 ): Promise<readonly AreaCode[]> {
-  const sourced = items.filter(item => item.source !== undefined).slice(0, AREA_CODES);
+  const sourced = items.filter(item => item.source !== undefined);
   const codes = await Promise.all(
     sourced.map(async ({ node }) => ({ node, code: await codeOf(ctx, node) }))
   );
@@ -276,7 +272,7 @@ async function areaCodes(
  *
  * @param ctx - Domain context of gameView.
  * @param facts - The area facts.
- * @param codes - The code of the first elements with a source.
+ * @param codes - The code of the elements with a source.
  * @param components - The definitions of the components the area uses.
  * @returns The card path, undefined when it could not be written (logged).
  */
@@ -362,7 +358,7 @@ async function completeArea(
     partly: partlyInArea(scene, area, group.nodes)
   };
 
-  // The code of the first elements, then the components the roots and children are instances of.
+  // The code of every element with a source, then the components the roots and children are instances of.
   const codes = await areaCodes(ctx, items);
   const components = await areaComponents(ctx, group.nodes, branches, budget);
   const card = await writeAreaCard(ctx, facts, codes, components);

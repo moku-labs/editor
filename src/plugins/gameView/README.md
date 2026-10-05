@@ -359,7 +359,7 @@ flow: … · game: … · device: … · restore: … · shot: …
 - One `layout:` line per parent chain of the elements: the elements that share it, then up to 3 parents in the form of a single element's `layout:`.
 - `partly in the area:` the nodes that overlap the area but are not inside it, largest overlap first, at most 8. A node of an element's tree and a parent a layout line names are left out. A background is named here.
 - Then the tail lines of a single element's block (`tailLines`).
-- The card adds the JSX and style snippets of the first 3 elements with a source, each titled with its element.
+- The card adds the JSX and style snippets of every element with a source, each titled with its element. A known source line spends no new search.
 - An element or a child whose JSX line is a component instance (`<RoundButton id="homeSettings" …>`) adds `## <key> · component <Name> · <file:line>` with the component's definition, once per component. The definition is remembered in `state.found` under `<Name>`.
 - Then `![area](…)` `![frame](…)`.
 - Sources come from the source search results. An area starts at most 10 new searches (A18), shared by the element keys, the child keys and the component definitions. `SelectionInfo.items` is unchanged: the children are card text only.

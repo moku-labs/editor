@@ -277,8 +277,8 @@ The card's block lists one line per element (name, type, key, `text "…"` when 
 one, `file:line`, the bounds in px, `ref` rect). Under each element its child tree, two spaces per
 level, 3 levels and 60 lines at most. Then one `layout:` line per parent chain, the
 `partly in the area:` line (nodes that overlap the area but are not inside, at most 8), and the
-`flow`, `game`, `device`, `restore` and `shot` lines. The code of the first three elements with a
-source follows, then `## <key> · component <Name> · <file:line>` for each component the area uses. A press that moves less is a click and picks the element under it. Esc during the
+`flow`, `game`, `device`, `restore` and `shot` lines. The code of every element with a
+source follows (a known source line spends no new search), then `## <key> · component <Name> · <file:line>` for each component the area uses. A press that moves less is a click and picks the element under it. Esc during the
 drag cancels it.
 
 #### The selection over MCP

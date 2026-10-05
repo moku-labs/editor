@@ -4,6 +4,7 @@ import type { PageRect, SceneNode, SceneSnapshot } from "../../../panels/shared/
 import type { SelectionInfo } from "../../../registry/protocol";
 import { AREA_ITEMS, areaGroup, pickArea, pickDraggedArea } from "../../reference/area";
 import { rawUiNodeAt } from "../../reference/facts";
+import type { StyleSource } from "../../types";
 import { CROP_JPEG, stubCanvas } from "../canvas";
 import {
   createCtx,
@@ -85,6 +86,76 @@ function gridScene(count: number): SceneSnapshot {
     referencedTextures: new Set(),
     entityCount: 0
   };
+}
+
+/** The Home screen's view (dist-e2e game-view): four group roots, three of them component instances. */
+const HOME_VIEW = [
+  '<column key="homeCentre">',
+  '  <LogoSign id="homeLogo" />',
+  "</column>",
+  '<row key="homeBar">',
+  '  <HudPill id="homeCoins" />',
+  '  <RoundButton id="homeSettings" />',
+  "</row>",
+  '<column key="giftCorner">',
+  '  <stack key="giftWobble" />',
+  "</column>",
+  ""
+].join("\n");
+
+/** The area over the Home top bar, the gift and the logo sign. */
+const HOME_AREA: PageRect = { x: 0, y: 0, w: 381, h: 244 };
+
+/**
+ * The Home roots of area-f1031: settings, coins, gift corner and logo, top to bottom.
+ *
+ * @returns A calibrated scene of four keyed roots.
+ */
+function homeScene(): SceneSnapshot {
+  const rects: readonly (readonly [string, string, PageRect])[] = [
+    ["homeSettings", "button", { x: 323, y: 20, w: 38, h: 38 }],
+    ["homeCoins", "row", { x: 27, y: 27, w: 92, h: 24 }],
+    ["giftCorner", "column", { x: 321, y: 69, w: 41, h: 41 }],
+    ["homeLogo", "column", { x: 45, y: 96, w: 286, h: 140 }]
+  ];
+  const nodes = new Map<string, SceneNode>();
+  for (const [key, type, rect] of rects) {
+    nodes.set(`ui:home/${key}`, {
+      id: `ui:home/${key}`,
+      ref: { kind: "ui", path: `home/${key}` },
+      name: key,
+      type,
+      parent: undefined,
+      children: [],
+      rect,
+      refRect: rect,
+      texture: undefined,
+      key,
+      style: undefined,
+      visible: true,
+      entity: undefined
+    });
+  }
+  const ids = [...nodes.keys()];
+  return {
+    frame: 1031,
+    calibrated: true,
+    nodes,
+    roots: ids,
+    paintOrder: ids,
+    referencedTextures: new Set(),
+    entityCount: 0
+  };
+}
+
+/**
+ * A key source in the Home view.
+ *
+ * @param line - The 1-based key line.
+ * @returns The source.
+ */
+function homeLine(line: number): StyleSource {
+  return { kind: "defined", path: "features/home/view.tsx", line };
 }
 
 /**
@@ -257,6 +328,48 @@ describe("pickArea", () => {
 
     // Two keys, three children and two components (Button, Pill): 7 of the 10 searches.
     expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(7);
+  });
+
+  it("Home shape: every group root with a known line gets its JSX block (U6)", async () => {
+    ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
+    await pickArea(ctx, homeScene(), HOME_AREA);
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
+    expect(card).toContain("- homeLogo column · key homeLogo · features/home/view.tsx:2 · ");
+    for (const [key, line] of [
+      ["homeSettings", 6],
+      ["homeCoins", 5],
+      ["giftCorner", 8],
+      ["homeLogo", 2]
+    ] as const) {
+      expect(card).toContain(`## ${key} · JSX · features/home/view.tsx:${line}`);
+    }
+  });
+
+  it("Home shape: known lines spend no new search for their JSX blocks (U6)", async () => {
+    ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
+    ctx.state.found.set("homeSettings", homeLine(6));
+    ctx.state.found.set("homeCoins", homeLine(5));
+    ctx.state.found.set("giftCorner", homeLine(8));
+    ctx.state.found.set("homeLogo", homeLine(2));
+    ctx.link.files.put(
+      "features/ui/kit.tsx",
+      "export function LogoSign() {}\nexport function HudPill() {}\nexport function RoundButton() {}\n"
+    );
+    for (const [line, name] of ["LogoSign", "HudPill", "RoundButton"].entries()) {
+      ctx.state.found.set(`<${name}>`, {
+        kind: "defined",
+        path: "features/ui/kit.tsx",
+        line: line + 1
+      });
+    }
+    const list = vi.spyOn(ctx.link.files, "list");
+
+    await pickArea(ctx, homeScene(), HOME_AREA);
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
+    expect(card).toContain(
+      '## homeLogo · JSX · features/home/view.tsx:2\n\n```tsx\n  <LogoSign id="homeLogo" />\n```'
+    );
+    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(0);
   });
 
   it("publishes the area first without sources, then with them and the card (A18)", async () => {

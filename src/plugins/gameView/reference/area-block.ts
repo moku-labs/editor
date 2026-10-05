@@ -5,7 +5,7 @@
  * `file:line`, px bounds, reference rect) with its child tree indented two spaces per level,
  * "+N more" past the caps, one `layout:` line per parent chain, the `partly in the area:` line,
  * and the tail lines of a single element's block (flow, game, device, restore, shot). The card
- * adds the code of the first elements with a source, the definitions of the components the area
+ * adds the code of every element with a source, the definitions of the components the area
  * uses and the pictures.
  */
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
@@ -226,7 +226,7 @@ export function areaBlock(facts: AreaFacts, card: string | undefined): string {
  *
  * @param block - The area block.
  * @param facts - The facts it was built from (the area and the pick's files).
- * @param codes - The code of the first elements with a source.
+ * @param codes - The code of the elements with a source.
  * @param components - The component definitions, none by default.
  * @returns The markdown text, ending with a newline.
  * @example
