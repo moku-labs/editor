@@ -1227,7 +1227,7 @@ test.describe("game · round 2b devices", () => {
     expect(await reloadState(page)).toBe("marked");
   });
 
-  test("Sound needs game.mute: on game 0.4.3 the switch is dimmed with the hint, and neither a click nor M changes it", async ({
+  test("Sound runs game.mute: a click mutes the game, M gives the sound back, the flag is kept", async ({
     tools
   }) => {
     const page = tools.page;
@@ -1235,29 +1235,22 @@ test.describe("game · round 2b devices", () => {
     const sound = bar(page, "sound");
     await expect(sound).toHaveRole("switch");
     await expect(sound).toHaveText("Sound");
-    await expect(sound).toHaveAttribute("aria-disabled", "true");
-    await expect(sound).toHaveAttribute("title", "Needs @moku-labs/game with game.mute");
+    await expect(sound).not.toHaveAttribute("aria-disabled");
+    await expect(sound).toHaveAttribute("title", "Sound on or off · M");
     await expect(sound).toHaveAttribute("aria-checked", "true");
-    // The game lists no game.mute.
-    const commands = await gameFrame(page).evaluate(() => {
-      const registry = (
-        Reflect.get(globalThis, "editor") as {
-          registry: { manifest(): { commands: readonly { id: string }[] } };
-        }
-      ).registry;
-      return registry.manifest().commands.map(command => command.id);
-    });
-    expect(commands).not.toContain("game.mute");
+    expect(await readSource<boolean>(page, "game.audioMuted")).toBe(false);
 
-    const toasts = page.locator("[data-ui=toasts] [data-toast]");
-    const before = await toasts.count();
-    await sound.dispatchEvent("click");
-    await page.keyboard.press("m");
-    await page.waitForTimeout(300);
-    await expect(sound).toHaveAttribute("aria-checked", "true");
-    await expect(toasts).toHaveCount(before);
+    // A click mutes the master bus of the game.
+    await sound.click();
+    await expect(sound).toHaveAttribute("aria-checked", "false");
+    await expect.poll(() => readSource<boolean>(page, "game.audioMuted")).toBe(true);
     const stored = await page.evaluate(() => localStorage.getItem("moku-editor") ?? "{}");
-    expect(JSON.parse(stored).muted ?? false).toBe(false);
+    expect(JSON.parse(stored).muted).toBe(true);
+
+    // M in Game gives the sound back.
+    await page.keyboard.press("m");
+    await expect(sound).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => readSource<boolean>(page, "game.audioMuted")).toBe(false);
   });
 });
 
