@@ -78,6 +78,8 @@ const children: {
   readonly exited: Promise<number>;
 }[] = [];
 const apps: { stop(): Promise<void> }[] = [];
+/** The project roots a bridge ran in: a bin it started is killed even when a test fails. */
+const bridgeRoots: string[] = [];
 
 /**
  * Collects a byte stream as text in the background.
@@ -140,15 +142,18 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * A free loopback port.
+ * SIGKILLs the bin a discovery file names, if any still runs.
  *
- * @returns The port.
+ * @param root - The project root.
  */
-async function freePort(): Promise<number> {
-  const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("") });
-  const port = probe.port ?? 0;
-  await probe.stop(true);
-  return port;
+async function killDiscoveredBin(root: string): Promise<void> {
+  const discovery = await readDiscovery(root);
+  if (discovery === undefined) return;
+  try {
+    process.kill(discovery.pid, "SIGKILL");
+  } catch {
+    // Already gone.
+  }
 }
 
 /**
@@ -196,6 +201,7 @@ function startBridge(args: readonly string[], cwd: string): Bridge {
     stderr: "pipe"
   });
   children.push(child);
+  bridgeRoots.push(cwd);
   const stderr = collect(child.stderr);
   const lines: string[] = [];
   const frames: Frame[] = [];
@@ -208,8 +214,13 @@ function startBridge(args: readonly string[], cwd: string): Bridge {
       while (end !== -1) {
         const line = buffered.slice(0, end);
         buffered = buffered.slice(end + 1);
+        // The raw line stays in `lines`: a non-JSON line fails onlyFrames() instead of throwing here.
         lines.push(line);
-        frames.push(JSON.parse(line));
+        try {
+          frames.push(JSON.parse(line));
+        } catch {
+          // Not a frame.
+        }
         end = buffered.indexOf("\n");
       }
     }
@@ -344,6 +355,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.stop().catch(() => undefined);
+  for (const root of bridgeRoots.splice(0)) await killDiscoveredBin(root);
   for (const child of children.splice(0)) {
     child.kill("SIGKILL");
     await child.exited;
@@ -457,8 +469,7 @@ describe("moku-editor mcp over stdio", () => {
   it("starts the bin itself when none runs, and stops it on stdin end", async () => {
     const root = await createProject("tiny");
     const html = await writeGamePage(root);
-    const port = await freePort();
-    const bridge = startBridge([html, "--port", String(port), "--root", root], root);
+    const bridge = startBridge([html, "--port", "0", "--root", root], root);
 
     await initialize(bridge);
     await until(
@@ -466,10 +477,11 @@ describe("moku-editor mcp over stdio", () => {
       "the bin the bridge started",
       SLOW_MS
     );
-    const status = JSON.parse(textOf(await bridge.call("moku_status")));
-    expect(status).toMatchObject({ running: true, owned: true, port });
     const started = await readDiscovery(root);
     if (started === undefined) throw new Error("no discovery file");
+    expect(started.port).toBeGreaterThan(0);
+    const status = JSON.parse(textOf(await bridge.call("moku_status")));
+    expect(status).toMatchObject({ running: true, owned: true, port: started.port });
 
     expect(await bridge.close()).toBe(0);
     await until(() => !isAlive(started.pid), "the started bin to stop", 5000);
@@ -480,7 +492,7 @@ describe("moku-editor mcp over stdio", () => {
   it("on SIGTERM tears down like on stdin end: exit 0 and the bin it started stops", async () => {
     const root = await createProject("tiny");
     const html = await writeGamePage(root);
-    const bridge = startBridge([html, "--port", String(await freePort()), "--root", root], root);
+    const bridge = startBridge([html, "--port", "0", "--root", root], root);
 
     await initialize(bridge);
     await until(
