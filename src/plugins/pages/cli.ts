@@ -286,7 +286,9 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
       routes: { "/": bundle },
       fetch: createStaticFetch(rootPath, editor.hub.guard)
     });
-    game = createGameServer(options);
+    game = createGameServer(options, (code, reason) => {
+      editor.hub.closeAll(code, reason);
+    });
   } catch (error) {
     const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
     const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
@@ -295,7 +297,8 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
     return { code: 1 };
   }
 
-  // The Hot reload switch restarts the game server on the same port (D-32); the hub keeps its token.
+  // The Hot reload switch restarts the game server on the same port (D-32): the hub closes every
+  // socket with 1012 first (U11) and keeps its token.
   editor.pages.attachServer(game.current(), options, next => game.restart(next));
   const port = game.current().port ?? args.port;
   const release = writeDiscoveryFile(editor, port, { rootPath, htmlPath }, ui);

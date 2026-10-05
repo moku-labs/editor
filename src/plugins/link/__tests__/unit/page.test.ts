@@ -298,11 +298,12 @@ describe("handle('select')", () => {
         }
       }
     ]);
-    expect(ctx.log.warn).toHaveBeenCalledWith("link:request-failed", {
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:request-failed", {
       method: "select",
       code: -32_602,
       reason: "invalid_input"
     });
+    expect(ctx.log.warn).not.toHaveBeenCalledWith("link:request-failed", expect.anything());
   });
 
   it("answers a plain thrown Error as -32000 command_failed", async () => {
@@ -318,6 +319,7 @@ describe("handle('select')", () => {
       id: 44,
       error: { code: -32_000, message: "[moku-editor] scene not ready" }
     });
+    expect(ctx.log.warn).toHaveBeenCalledWith("link:request-failed", { method: "select" });
   });
 
   it("answers -32601 without a handler, and for an editor method no page handles", async () => {

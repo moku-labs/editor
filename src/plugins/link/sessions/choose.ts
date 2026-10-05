@@ -5,7 +5,7 @@
  */
 
 import type { Manifest, SessionInfo } from "../../registry/protocol";
-import { errorCode, wireError } from "../../registry/protocol";
+import { errorCode, isRetryable, wireError } from "../../registry/protocol";
 import { describeError, request } from "../rpc/calls";
 import { expectShape, readManifest } from "../rpc/shapes";
 import { backoffDelay } from "../socket/backoff";
@@ -175,7 +175,8 @@ export function closeChosen(ctx: LinkCtx, reason: string): void {
 }
 
 /**
- * Fetches the manifest of a session. A failure of the current attach is logged and retried.
+ * Fetches the manifest of a session. A failure of the current attach is logged and retried: a
+ * retryable one (a timeout, a reloading game) at debug, every other at error.
  *
  * @param ctx - Domain context of link.
  * @param sessionId - The session.
@@ -197,7 +198,9 @@ async function fetchManifest(
     );
   } catch (error) {
     if (generation === state.generation && state.open) {
-      ctx.log.error("link:manifest-failed", { session: sessionId, ...describeError(error) });
+      const details = { session: sessionId, ...describeError(error) };
+      if (isRetryable(error)) ctx.log.debug("link:manifest-failed", details);
+      else ctx.log.error("link:manifest-failed", details);
       scheduleSessionRetry(ctx);
     }
     throw error;

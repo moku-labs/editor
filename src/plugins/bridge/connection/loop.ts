@@ -16,6 +16,12 @@ import { fetchHello, helloOrigin, resolveHelloUrl, socketUrl } from "./hello";
 import { hasNetwork } from "./socket";
 
 /**
+ * Close code of the bin's restart (1012, service restart): the hub closes every socket with it
+ * before Bun's stop, so the loss is expected (U11).
+ */
+const SERVICE_RESTART = 1012;
+
+/**
  * The hello URL as log lines show it: origin and path, never a query.
  *
  * @param deps - The domain deps.
@@ -73,21 +79,23 @@ export function onOpen(deps: BridgeDeps): void {
 }
 
 /**
- * Logs a loss: the first failure of a streak at warn, the rest at debug (a game without an
- * editor server must not flood its log).
+ * Logs a loss: the first failure of a streak at warn (at info for the bin's restart), the rest at
+ * debug (a game without an editor server must not flood its log).
  *
  * @param deps - The domain deps.
  * @param reason - The status reason.
  * @param retryInMs - The scheduled delay.
+ * @param restarting - The editor closed the socket for its restart (1012).
  */
-function logLoss(deps: BridgeDeps, reason: string, retryInMs: number): void {
+function logLoss(deps: BridgeDeps, reason: string, retryInMs: number, restarting: boolean): void {
   const { state, log } = deps;
   if (state.failureLogged) {
     log.debug("bridge:lost", { reason, retryInMs });
     return;
   }
   state.failureLogged = true;
-  log.warn("bridge:lost", { reason, retryInMs });
+  if (restarting) log.info("bridge:lost", { reason, retryInMs });
+  else log.warn("bridge:lost", { reason, retryInMs });
 }
 
 /**
@@ -98,8 +106,9 @@ function logLoss(deps: BridgeDeps, reason: string, retryInMs: number): void {
  * @param deps - The domain deps.
  * @param reason - The status reason, e.g. "hello 404".
  * @param retry - Whether to reconnect.
+ * @param restarting - The editor closed the socket for its restart (1012): logged at info.
  */
-export function fail(deps: BridgeDeps, reason: string, retry: boolean): void {
+export function fail(deps: BridgeDeps, reason: string, retry: boolean, restarting = false): void {
   const { state } = deps;
   state.socket = undefined;
   state.session = undefined;
@@ -120,12 +129,13 @@ export function fail(deps: BridgeDeps, reason: string, retry: boolean): void {
   state.retryTimer = setTimeout(() => {
     connectInBackground(deps);
   }, delay);
-  logLoss(deps, reason, delay);
+  logLoss(deps, reason, delay, restarting);
 }
 
 /**
  * Socket close: a failure with retry, named after the close code and the hub's reason (1008
- * `hello first`, 1001 `editor stopping`; a rejected upgrade shows as 1006 in browsers).
+ * `hello first`, 1001 `editor stopping`, 1012 `editor restarting`; a rejected upgrade shows as
+ * 1006 in browsers). The bin's restart (1012) is logged at info, not warn.
  *
  * @param deps - The domain deps.
  * @param code - The close code.
@@ -133,7 +143,7 @@ export function fail(deps: BridgeDeps, reason: string, retry: boolean): void {
  */
 export function onClose(deps: BridgeDeps, code: number, reason: string): void {
   const base = `socket closed (${String(code)})`;
-  fail(deps, reason === "" ? base : `${base}: ${reason}`, true);
+  fail(deps, reason === "" ? base : `${base}: ${reason}`, true, code === SERVICE_RESTART);
 }
 
 /**

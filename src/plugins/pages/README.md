@@ -51,11 +51,13 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
    answers 200 with it.
 3. On the next macrotask, after the answer went out (A1), `restart(next)` runs. `next` is the
    current options with `development.hmr` flipped; the other `development` fields stay.
-4. The restart (`serve.ts`) stops the current server with its open connections, waiting at most
-   500 ms, then serves `next` on the same port. A bin started with `--port 0` keeps its port.
-5. The hub plugin is not stopped. The token, the session table and `.moku/editor.json` stay. The
-   tools page's link and the game's bridge reconnect: link retries after 1 s, the bridge fetches
-   `hello` again.
+4. The restart (`serve.ts`) first calls `hub.closeAll(1012, "editor restarting")`: every agent
+   and tools socket gets a clean close 1012 instead of a dropped socket (1006). Then it stops the
+   current server with its open connections, waiting at most 500 ms, and serves `next` on the same
+   port. A bin started with `--port 0` keeps its port.
+5. The hub plugin is not stopped. The token and `.moku/editor.json` stay. The tools page's link
+   and the game's bridge log the 1012 close at info and reconnect: link retries after 1 s, the
+   bridge fetches `hello` again.
 6. Success logs `pages:hot-reload-switched { hmr }`.
 7. A failure, such as a port taken in between, logs `pages:hot-reload-restart-failed`. The old
    state is published again and the old options are served again. A failure of that logs
@@ -341,7 +343,7 @@ What `main` (`cli.ts`) does:
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage. `mcp-config` prints the Claude Code setup and exits 0. `mcp` runs `runBridge(args)`, which catches SIGINT and SIGTERM itself, and exits with its code (0) when stdin ends or a signal arrives.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
-4. `createGameServer(editor.hub.serve(...))` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
+4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
 5. `editor.pages.attachServer(game.current(), options, next => game.restart(next))`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification, and the Hot reload switch can restart the server (see Hot reload).
 6. Writes `.moku/editor.json` (see Discovery file).
 7. Prints the Game, Tools and Root lines. The token is never printed.
@@ -376,7 +378,7 @@ What `main` (`cli.ts`) does:
 - The template is read once per app. A rebuild needs a restart.
 - `gameUrl` must be same-origin. The game's bridge fetches `hello` from this server.
 - The bin serves one game HTML file at `/` and binds 127.0.0.1 only.
-- Hot reload is switched by restarting the bin's server (D-32): every socket drops for about a second, and the game page has to load again. A game's own server cannot be switched.
+- Hot reload is switched by restarting the bin's server (D-32): every socket closes with 1012 and reconnects within about a second, and the game page has to load again. A game's own server cannot be switched.
 - MCP: screenshots and series need the game page visible (a hidden tab stops heartbeats). Frame sources reach `moku_wait` about once per second (D-15).
 - MCP: `moku_series` is one forwarded `run`. A run of `editor.sheet` waits `frames × everyMs` on top of the call deadline (capped at +60 s) in bridge, hub and link, so 12 frames every 5000 ms fit. The `game.capture { sheet }` fallback keeps the plain deadline (`callTimeoutMs`, 5 s by default): a longer sheet there answers -32002 `timeout`.
 - MCP: game pictures compress poorly. On merge-game in a 393 × 852 page a full shot is about 890 KB of base64, so the default screenshot comes back about 200 px wide. A 4-frame sheet is about 2 MB at full size; `editor.sheet` shrinks it to 1080 px wide in the page, and a sheet still above 300 KB is sent with the size note.

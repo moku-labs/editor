@@ -1,8 +1,9 @@
 /**
  * @file pages plugin — the bin's game server (D-32, A9): one mutable current Bun server. The Hot
- * reload switch restarts it with new options on the same port: Bun's stop, bounded (it does not
- * resolve while a close is in flight), then Bun.serve. Restarts and the final stop run one after
- * another and always reach the current server. The hub is not touched, so its token stays.
+ * reload switch restarts it with new options on the same port: the hub closes every socket with
+ * 1012 "editor restarting" (U11), then Bun's stop, bounded (it does not resolve while a close is in
+ * flight), then Bun.serve. Restarts and the final stop run one after another and always reach the
+ * current server. The hub keeps running, so its token stays.
  */
 import type { BunServeOptions } from "../hub/types";
 import type { AttachedServer } from "./types";
@@ -11,6 +12,22 @@ import type { AttachedServer } from "./types";
  * How long a stop waits for Bun's server stop before it gives up.
  */
 export const STOP_GRACE_MS = 500;
+
+/**
+ * Close code of every socket on a restart: 1012, service restart. Clients log it at info and
+ * reconnect.
+ */
+export const SERVICE_RESTART = 1012;
+
+/**
+ * Close reason of every socket on a restart.
+ */
+const RESTARTING = "editor restarting";
+
+/**
+ * Closes every editor socket with a code and a reason: `hub.closeAll` in the bin.
+ */
+export type CloseSockets = (code: number, reason: string) => void;
 
 /**
  * Starts a server: Bun.serve in the bin, a fake in tests. Throws when the port is taken.
@@ -22,7 +39,9 @@ export type StartServer = (options: BunServeOptions) => AttachedServer;
  *
  * @example
  * ```ts
- * const game = createGameServer(editor.hub.serve({ port: 0, routes }));
+ * const game = createGameServer(editor.hub.serve({ port: 0, routes }), (code, reason) =>
+ *   editor.hub.closeAll(code, reason)
+ * );
  * editor.pages.attachServer(game.current(), options, next => game.restart(next));
  * await game.stop(); // on SIGINT
  * ```
@@ -35,8 +54,8 @@ export type GameServer = {
    */
   current(): AttachedServer;
   /**
-   * Stops the current server, bounded, and serves `options` on its port. Runs after every earlier
-   * restart; serves nothing after stop.
+   * Closes every editor socket with 1012 "editor restarting", stops the current server, bounded,
+   * and serves `options` on its port. Runs after every earlier restart; serves nothing after stop.
    *
    * @param options - The next serve options (their port is replaced by the real one).
    * @returns Resolves once the new server runs; rejects when it cannot start (the stopped server
@@ -99,17 +118,19 @@ function onPort(options: BunServeOptions, port: number | undefined): BunServeOpt
  * Serves the options and returns the bin's game server around that server.
  *
  * @param options - The first serve options (the result of `hub.serve`).
+ * @param closeAll - Closes every editor socket before a restart's stop (`hub.closeAll`).
  * @param serve - Starts a server (default Bun.serve).
  * @returns The game server.
  * @example
  * ```ts
- * const game = createGameServer(options);
+ * const game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason));
  * await game.restart({ ...options, development: { hmr: false, console: true } });
  * game.current().port; // the same port as before
  * ```
  */
 export function createGameServer(
   options: BunServeOptions,
+  closeAll: CloseSockets,
   serve: StartServer = serveWithBun
 ): GameServer {
   let current = serve(options);
@@ -136,6 +157,7 @@ export function createGameServer(
     restart: next =>
       enqueue(async () => {
         if (stopped) return;
+        closeAll(SERVICE_RESTART, RESTARTING);
         await stopBounded(current);
         current = serve(onPort(next, port));
       }),

@@ -123,7 +123,7 @@ gameView declares no events. It uses the global tools events (R4).
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
 | Hooks | `workspace:reference` | `{ on }` | Reference mode on or off: the proxy layer in the frame overlay (D-27). |
 
-Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. Debug: `gameView: area read failed`, `gameView: area source failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
+Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: projections read failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. `gameView: calibration failed`, `gameView: projections read failed` and `gameView: highlight failed` log at debug instead when the read failed with reason `link_closed` or `game_reloaded` (a server restart or a game reload heals on its own, U11). Debug: `gameView: area read failed`, `gameView: area source failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
 
 ## Dependencies
 
@@ -155,7 +155,7 @@ A device change re-calibrates the picker: another preset, orientation or a fold 
 | `←` / `→` | Previous / next shot, in Game while the contact sheet is open. |
 | `b` | Mark a shot as bug, same scope. |
 
-Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker. On the `picker` layer, Esc during a Reference mode area drag cancels the drag first.
+Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`, `selection`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker. On the `picker` layer, Esc during a Reference mode area drag cancels the drag first. The `selection` layer comes last (U10): in the Game workspace, with the element or an area selected, Esc clears the selection (no `[data-box="selected"]`) and publishes `selection: null`, so `editor.selection` answers null. It does nothing in another workspace or while focus is in an input, a textarea or a contenteditable.
 
 ## Usage
 

@@ -6,7 +6,9 @@
  * box on it, picks it like a click but without the clipboard (bookmark, the crop
  * `<key>-f<frame>-crop.jpg`, the card `<key>-f<frame>.md`) and answers the selection.
  * `editor.selection` then answers the same element, and the hub sent it to every tools client as
- * the `selection` notification. An unknown key answers -32602.
+ * the `selection` notification. An unknown key answers -32602. Esc in the editor clears the
+ * selection (U10): the capture card of the pick closes first, the next Esc removes the selected box
+ * and `editor.selection` answers null.
  */
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -241,6 +243,42 @@ test.describe("select over the hub", () => {
       expect(missing.error?.code).toBe(-32_602);
       expect(missing.error?.message).toContain("No element with key nope");
       await expect(selected).toBeVisible();
+    } finally {
+      client.close();
+    }
+  });
+
+  test("Esc in the editor clears a selection made by key: the capture card closes first, then the selected box goes and editor.selection answers null (U10)", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await tools.show("state");
+    const client = await connectTools(page);
+    try {
+      const answer = await client.call("select", { key: "play" });
+      expect(answer.error, JSON.stringify(answer.error)).toBeUndefined();
+      const selected = page.locator('[data-game=overlay] [data-box="selected"]');
+      await expect(selected).toBeVisible();
+
+      // The pick shows its capture card; Esc closes the card first and keeps the selection.
+      const card = page.locator("[data-game=card]");
+      await expect(card).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(card).toBeHidden();
+      await expect(selected).toBeVisible();
+
+      // The next Esc clears the selection and publishes null; the hub sends that without params.
+      const notesBefore = client.notes("selection").length;
+      await page.keyboard.press("Escape");
+      await expect(selected).toHaveCount(0);
+      await expect
+        .poll(async () => {
+          const kept = await client.call("selection", {});
+          return kept.error === undefined ? kept.result : kept.error;
+        })
+        .toBeNull();
+      await expect.poll(() => client.notes("selection").length).toBeGreaterThan(notesBefore);
+      expect(client.notes("selection").at(-1)).toBeUndefined();
     } finally {
       client.close();
     }

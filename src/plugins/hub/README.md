@@ -45,6 +45,7 @@ createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
 | `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`. A tools page that connects later gets it right after `sessions {list}`. |
+| `closeAll` | `(code: number, reason: string) => void` | Closes every agent and tools socket with one code and reason. The hub keeps running and keeps its token. |
 | `path` | `() => string` | `config.path`. |
 
 ### `serve(options)`
@@ -167,6 +168,19 @@ The value is stored through `toWireValue` in `state.published`, also before star
 `SelectionInfo` with readonly `items` is not `Json`; the conversion makes it plain. `null` goes
 out as a notification without `params`: the wire refuses `"params": null`. It is a state
 notification: sent while a tools connection is congested too, never dropped.
+
+### `closeAll(code, reason)`
+
+```ts
+editor.hub.closeAll(1012, "editor restarting");
+// every agent and tools socket closes with 1012 "editor restarting"
+```
+
+The bin calls it right before Bun's stop when the Hot reload switch restarts its server
+(pages `serve.ts`). Clients see a clean 1012 instead of a dropped socket (1006). The bridge and
+link log it at info and reconnect as after any close. The hub keeps running: the token stays,
+and each connection is forgotten when Bun reports its close, so its session or subscriptions end
+as on any close. Logged at info as `hub:close-all` with the socket count.
 
 ### `path()`
 

@@ -115,6 +115,42 @@ async function gamePageWith(origin: string, hmr: boolean): Promise<string> {
   return html;
 }
 
+/** How a client socket closed. */
+type Closed = { readonly code: number; readonly reason: string };
+
+/**
+ * Opens an editor socket of a kind on a running bin (with the Origin header, as outside a browser)
+ * and waits until it is open.
+ *
+ * @param origin - The bin's origin.
+ * @param token - The boot token.
+ * @param kind - Agent or tools.
+ * @returns Resolves once open, with the promise of its close (wrapped: an async function would
+ * adopt a returned promise and wait for the close).
+ */
+async function openClient(
+  origin: string,
+  token: string,
+  kind: "agent" | "tools"
+): Promise<{ readonly closed: Promise<Closed> }> {
+  const url = `${origin.replace("http:", "ws:")}/__editor/ws?token=${token}&kind=${kind}`;
+  const socket: WebSocket = Reflect.construct(WebSocket, [url, { headers: { origin } }]);
+  const closed = new Promise<Closed>(resolve => {
+    socket.addEventListener("close", event => {
+      resolve({ code: event.code, reason: event.reason });
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener("open", () => {
+      resolve();
+    });
+    socket.addEventListener("error", () => {
+      reject(new Error(`the ${kind} socket did not open`));
+    });
+  });
+  return { closed };
+}
+
 let game: string;
 
 beforeAll(async () => {
@@ -183,13 +219,15 @@ describe("moku-editor bin", () => {
     expect(existsSync(join(game, ".moku", "editor.json"))).toBe(false);
   }, 60_000);
 
-  it("switches hot reload on the same port: each POST answers the asked hmr, / gains and loses Bun's HMR client (D-32, A14)", async () => {
+  it("switches hot reload on the same port: each POST answers the asked hmr, / gains and loses Bun's HMR client, open clients see 1012 (D-32, A14, U11)", async () => {
     const bin = await spawnBin([join(game, "index.html"), "--port", "0", "--root", game]);
     try {
       const origin = `http://127.0.0.1:${bin.port}`;
       const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
       const { token } = await hello.json();
       expect(await gamePageWith(origin, true)).toContain(HMR_CLIENT);
+      const agent = await openClient(origin, token, "agent");
+      const tools = await openClient(origin, token, "tools");
 
       for (const hmr of [false, true]) {
         const answer = await postHmr(origin, token, hmr);
@@ -199,6 +237,11 @@ describe("moku-editor bin", () => {
         expect(html).toContain('id="tiny"');
         expect(html.includes(HMR_CLIENT)).toBe(hmr);
       }
+
+      // The restart closed every client cleanly before Bun's stop (U11).
+      const restarting = { code: 1012, reason: "editor restarting" };
+      await expect(agent.closed).resolves.toEqual(restarting);
+      await expect(tools.closed).resolves.toEqual(restarting);
 
       const again = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
       const helloAgain: { token: string } = await again.json();

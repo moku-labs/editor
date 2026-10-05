@@ -288,6 +288,25 @@ describe("onSocketClose", () => {
   });
 });
 
+describe("the bin's restart (U11)", () => {
+  it("logs a 1012 close at info, warns nothing, and reconnects without a hello refresh", async () => {
+    ctx.state.boot = BOOT;
+    openSocket(ctx);
+    latestSocket().open();
+
+    onSocketClose(ctx, { code: 1012, reason: "editor restarting" });
+
+    expect(ctx.log.info).toHaveBeenCalledWith("link:closed", {
+      code: 1012,
+      reason: "editor restarting"
+    });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.state.status).toMatchObject({ kind: "lost", retryInMs: 1000 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+});
+
 describe("reconnect", () => {
   it("does nothing after stop or while a socket exists", () => {
     ctx.state.boot = BOOT;

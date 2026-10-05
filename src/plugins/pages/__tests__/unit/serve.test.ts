@@ -1,7 +1,8 @@
 import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BunServeOptions } from "../../../hub/types";
-import { createGameServer, STOP_GRACE_MS } from "../../serve";
+import type { CloseSockets } from "../../serve";
+import { createGameServer, SERVICE_RESTART, STOP_GRACE_MS } from "../../serve";
 import type { AttachedServer } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +16,9 @@ type FakeServer = AttachedServer & {
   readonly options: BunServeOptions;
   readonly stop: Mock<(closeActiveConnections?: boolean) => Promise<void>>;
 };
+
+/** A closeAll that closes nothing, for the cases about the server alone. */
+const keepSockets: CloseSockets = () => undefined;
 
 /** The real port the fake gives a server asked for port 0. */
 const REAL_PORT = 4321;
@@ -70,7 +74,7 @@ afterEach(() => {
 describe("createGameServer", () => {
   it("serves the options once; that server is the current one", () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
 
     expect(serve).toHaveBeenCalledTimes(1);
     expect(game.current()).toBe(at(served, 0));
@@ -81,14 +85,39 @@ describe("createGameServer", () => {
     const serve = vi.fn((): AttachedServer => {
       throw new Error("Failed to start server. Is port 3000 in use?");
     });
-    expect(() => createGameServer(optionsOf(3000, true), serve)).toThrow("in use");
+    expect(() => createGameServer(optionsOf(3000, true), keepSockets, serve)).toThrow("in use");
   });
 });
 
 describe("restart", () => {
+  it('closes every socket with 1012 "editor restarting" before Bun\'s stop (U11)', async () => {
+    const { serve, served } = fakeServe();
+    const closeAll = vi.fn<CloseSockets>();
+    const game = createGameServer(optionsOf(0, true), closeAll, serve);
+
+    await game.restart(optionsOf(0, false));
+
+    expect(SERVICE_RESTART).toBe(1012);
+    expect(closeAll).toHaveBeenCalledExactlyOnceWith(1012, "editor restarting");
+    expect(closeAll.mock.invocationCallOrder[0]).toBeLessThan(
+      at(served, 0).stop.mock.invocationCallOrder[0] ?? 0
+    );
+  });
+
+  it("closes no socket on the final stop nor on a restart after it", async () => {
+    const { serve } = fakeServe();
+    const closeAll = vi.fn<CloseSockets>();
+    const game = createGameServer(optionsOf(0, true), closeAll, serve);
+
+    await game.stop();
+    await game.restart(optionsOf(0, false));
+
+    expect(closeAll).not.toHaveBeenCalled();
+  });
+
   it("stops the current server with force, then serves the next options on its real port", async () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
 
     await game.restart(optionsOf(0, false));
 
@@ -107,7 +136,7 @@ describe("restart", () => {
       served.push(options);
       return { stop: () => Promise.resolve() };
     });
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
 
     await game.restart(optionsOf(0, false));
     expect(served).toEqual([optionsOf(0, true), optionsOf(0, false)]);
@@ -116,7 +145,7 @@ describe("restart", () => {
   it("gives up on a stop that does not resolve after STOP_GRACE_MS, then serves", async () => {
     vi.useFakeTimers();
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
     at(served, 0).stop.mockReturnValue(
       new Promise(() => {
         // Bun's stop while a close is in flight: never resolves.
@@ -133,7 +162,7 @@ describe("restart", () => {
 
   it("rejects when the next serve fails; the stopped server stays the current one", async () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
     serve.mockImplementationOnce(() => {
       throw new Error("port 4321 is in use");
     });
@@ -148,7 +177,7 @@ describe("restart", () => {
 
   it("runs restarts one after another: the second stops the server the first served", async () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
     const stopping = Promise.withResolvers<void>();
     at(served, 0).stop.mockReturnValue(stopping.promise);
 
@@ -172,7 +201,7 @@ describe("restart", () => {
 describe("stop", () => {
   it("stops the current server: the restarted one, not the first", async () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
     await game.restart(optionsOf(0, false));
 
     await game.stop();
@@ -183,7 +212,7 @@ describe("stop", () => {
 
   it("waits for a restart under way, then stops the server it served", async () => {
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
 
     const restarted = game.restart(optionsOf(0, false));
     await game.stop();
@@ -195,7 +224,7 @@ describe("stop", () => {
   it("is bounded by STOP_GRACE_MS", async () => {
     vi.useFakeTimers();
     const { serve, served } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
     at(served, 0).stop.mockReturnValue(
       new Promise(() => {
         // Never resolves.
@@ -210,7 +239,7 @@ describe("stop", () => {
 
   it("a restart after stop serves nothing", async () => {
     const { serve } = fakeServe();
-    const game = createGameServer(optionsOf(0, true), serve);
+    const game = createGameServer(optionsOf(0, true), keepSockets, serve);
 
     await game.stop();
     await game.restart(optionsOf(0, false));

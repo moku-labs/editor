@@ -7,7 +7,7 @@
 import { linkPlugin } from "../../link";
 import type { Json } from "../../registry/protocol";
 import { isObject } from "../capture/shot";
-import { messageOf } from "../report";
+import { logReadFailure } from "../report";
 import type { GameViewCtx, GameViewState } from "../types";
 import { calibrate, onUiSnapshot } from "./calibrate";
 import { frameOf, rebuildScene } from "./rebuild";
@@ -99,7 +99,7 @@ async function refreshProjections(ctx: GameViewCtx, session: WatchSession): Prom
     sources.projections = value;
     onSceneValue(ctx, session, "projections");
   } catch (error) {
-    ctx.log.warn("gameView: projections read failed", { message: messageOf(error) });
+    logReadFailure(ctx, "gameView: projections read failed", error);
   } finally {
     session.refreshing = false;
   }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { errorCode, wireError } from "../../../registry/protocol";
 import { recalibrate } from "../../scene/calibrate";
 import { projectionsBehind, startSceneWatches, stopSceneWatches } from "../../scene/watch";
 import { subscribe } from "../../state";
@@ -13,6 +14,18 @@ function flushFrames(): void {
   const run = frames;
   frames = [];
   for (const callback of run) callback(0);
+}
+
+/**
+ * A link that lost its game or its socket: a retryable wire error with the reason.
+ *
+ * @param reason - "link_closed" or "game_reloaded".
+ * @returns A thrower for `link.values`.
+ */
+function lost(reason: "link_closed" | "game_reloaded"): () => never {
+  return () => {
+    throw wireError(errorCode.timeout, "The link closed.", { reason, retryable: true });
+  };
 }
 
 /** Sends the three board values. */
@@ -125,6 +138,22 @@ describe("startSceneWatches", () => {
     expect(ctx.link.read).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "link_closed",
+    "game_reloaded"
+  ] as const)("logs a calibration read that failed with %s at debug, not warn (U11)", async reason => {
+    ctx.link.values.set("game.rect", lost(reason));
+    startSceneWatches(ctx);
+    sendBoard();
+    await flush();
+    expect(ctx.state.calibration).toBeUndefined();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: calibration failed", {
+      key: "boardScreen",
+      message: "[moku-editor] The link closed."
+    });
+  });
+
   it("keeps the calibration undefined and warns when game.rect fails", async () => {
     ctx.link.values.delete("game.rect");
     startSceneWatches(ctx);
@@ -231,6 +260,27 @@ describe("projections behind the entities", () => {
     expect(ctx.state.sources.projections).toEqual(BOARD.projections);
     const names = [...(ctx.state.scene?.nodes.values() ?? [])].map(node => node.name);
     expect(names).toContain("sawmill");
+  });
+
+  it.each([
+    "link_closed",
+    "game_reloaded"
+  ] as const)("logs a projections read that failed with %s at debug, not warn (U11)", async reason => {
+    ctx.link.values.set("game.projections", lost(reason));
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    ctx.link.send("game.projections", {});
+    ctx.link.send("game.entities", BOARD.entities);
+    await flush();
+
+    expect(ctx.state.sources.projections).toEqual({});
+    expect(ctx.log.warn).not.toHaveBeenCalledWith(
+      "gameView: projections read failed",
+      expect.anything()
+    );
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: projections read failed", {
+      message: "[moku-editor] The link closed."
+    });
   });
 
   it("warns and keeps the old map when the read fails", async () => {

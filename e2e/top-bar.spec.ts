@@ -41,18 +41,16 @@ const HOT_OFF_TITLE = "Hot reload (H): off · a save does not reload the game";
 const RESTORED = "Game reloaded · state restored from the last checkpoint";
 
 /**
- * What a switch provokes on purpose. The bin restarts its server (D-32), so every socket drops for
- * about a second (pages README, Limits): Bun's HMR client of the page served with HMR on reports
- * its socket gone and retries it (404 once HMR is off) until the frame reload replaces the page;
- * the bridge warns that it lost the editor (`socket closed (1006)`); a scene read the tools page
- * had in flight fails. The reloaded game page waits for its textures (see flow.spec.ts).
+ * What a switch provokes on purpose. The bin restarts its server (D-32): the hub closes every
+ * editor socket with 1012 first, and the bridge and link log that at info (U11). Only Bun's HMR
+ * client is out of our hands: on the page served with HMR on it reports its socket gone and retries
+ * it (404 once HMR is off) until the frame reload replaces the page. A scene read the tools page
+ * had in flight still fails until gameView logs those at debug.
  */
 const SWITCH_WARNINGS: readonly RegExp[] = [
   /WebSocket connection to 'ws:\/\/127\.0\.0\.1:\d+\/_bun\/hmr' failed/,
   /^\[Bun\] Hot-module-reloading socket disconnected, reconnecting\.\.\.$/,
-  /event: bridge:lost,/,
-  /event: gameView: calibration failed,/,
-  /event: gameView: projections read failed,/,
+  // The game's own asset warnings after the frame reload (game-release-brief item 6).
   /event: assets: texture is not loaded yet/,
   /event: renderer: no texture for asset key/,
   /event: assets: the node waited for a bundle/

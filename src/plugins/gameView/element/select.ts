@@ -11,7 +11,7 @@ import { workspacePlugin } from "../../workspace";
 import type { FrameBox } from "../../workspace/types";
 import { hideCard } from "../capture/shot";
 import { completePick } from "../reference/pick";
-import { messageOf } from "../report";
+import { logReadFailure, messageOf } from "../report";
 import { readFreshScene, readScene } from "../scene/read";
 import { notify } from "../state";
 import type { ClientPoint, GameViewCtx } from "../types";
@@ -117,7 +117,7 @@ export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
     },
     (error: unknown) => {
       if (request === state.highlightSeq) {
-        ctx.log.warn("gameView: highlight failed", { message: messageOf(error) });
+        logReadFailure(ctx, "gameView: highlight failed", error);
       }
     }
   );

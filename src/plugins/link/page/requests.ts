@@ -8,6 +8,7 @@ import {
   encode,
   errorCode,
   failure,
+  isWireError,
   parseSelectParams,
   success,
   toWireError,
@@ -71,8 +72,26 @@ function invalidParams(request: RpcRequest): RpcResponse {
 }
 
 /**
+ * Logs a handler failure as `link:request-failed`: at debug for invalid input (a caller asked for
+ * something the page does not have, e.g. an unknown key: the caller gets the error), at warn for
+ * every other failure.
+ *
+ * @param ctx - Domain context of link.
+ * @param method - The request method.
+ * @param error - What the handler threw.
+ */
+function logFailure(ctx: LinkCtx, method: string, error: unknown): void {
+  const details = { method, ...describeError(error) };
+  if (isWireError(error) && error.code === errorCode.invalidInput) {
+    ctx.log.debug("link:request-failed", details);
+    return;
+  }
+  ctx.log.warn("link:request-failed", details);
+}
+
+/**
  * Runs the handler of a request and builds the response. Never rejects: a thrown error is the
- * failure, logged as `link:request-failed`.
+ * failure, logged as `link:request-failed` (see logFailure).
  *
  * @param ctx - Domain context of link.
  * @param request - The editor-channel request.
@@ -88,7 +107,7 @@ async function answerOf(ctx: LinkCtx, request: RpcRequest): Promise<RpcResponse>
   try {
     return success(request.id, toWireValue(await handler(params)));
   } catch (error) {
-    ctx.log.warn("link:request-failed", { method: request.method, ...describeError(error) });
+    logFailure(ctx, request.method, error);
     return failure(request.id, toWireError(error));
   }
 }
