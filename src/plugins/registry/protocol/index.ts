@@ -39,6 +39,7 @@ export {
   success
 } from "./messages";
 export { HOST_ATTRIBUTE } from "./overlay-host";
+export { isHotSwapEntry, isReloading } from "./reload";
 export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
 export type { NodeRef, SourceOverrides } from "./source-files";
 export {
