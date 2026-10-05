@@ -2,7 +2,7 @@
  * @file consoleView plugin — the Console panel: no sources (the plugin watches game.log for the
  * whole session, so the badge and Preserve log work in every workspace).
  */
-import { definePanel } from "../panels/define";
+import { definePanel } from "../panels/shared/define";
 import type { PanelElement, PanelSpec, PanelTools, PanelValues } from "../panels/types";
 import type { ConsoleCtx } from "./types";
 import { ConsoleView } from "./view/ConsoleView";

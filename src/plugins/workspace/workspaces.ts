@@ -1,9 +1,9 @@
 /**
  * @file workspace plugin — the five workspaces with a pinned preview and the guards that check
  * unknown input (URL hash, stored prefs, api calls). The ids in rail order and their labels live
- * in panels/shared/workspaces.ts, shared with panels.
+ * in ids.ts; panels re-exports them from panels/shared/workspaces.ts.
  */
-import { WORKSPACE_IDS } from "../panels/shared/workspaces";
+import { WORKSPACE_IDS } from "./ids";
 import type { PreviewWorkspace, WorkspaceId } from "./types";
 
 /**

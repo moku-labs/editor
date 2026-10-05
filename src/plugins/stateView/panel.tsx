@@ -3,7 +3,7 @@
  * {last: 1}; the view reads the values and the tracker api. game.graph and game.tainted are no
  * panel sources: the tracker owns them for the whole session (R6).
  */
-import { definePanel } from "../panels/define";
+import { definePanel } from "../panels/shared/define";
 import type { PanelSpec } from "../panels/types";
 import { createStateViewApi } from "./api";
 import type { StateViewCtx } from "./types";

@@ -141,7 +141,7 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `types.ts` | Config, state, rows, tiles, snapshot, api, ctx, hooks. |
 | `state.ts` | State factory, `notify`, `subscribe`. |
 | `api.ts` | The api over `actions.ts`, `derive.ts`, `watch.ts`. |
-| `watch.ts` | Tracker, effects and scene watches, scene builds, calibration, catalogue, refresh. |
+| `watch.ts` | Tracker, effects and scene watches, scene builds, calibration, catalogue, refresh. Each entry point resolves link once and passes it down. |
 | `derive.ts` | Pure derivations. |
 | `format.ts` | Pure tile texts, sparkline points, tags. |
 | `guards.ts` | `asRenderStats`, `asAssetsUsage`, `asEffectsStats`. |

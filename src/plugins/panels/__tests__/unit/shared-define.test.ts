@@ -2,7 +2,7 @@
 import { h } from "preact";
 import { describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";
-import { definePanel } from "../../define";
+import { definePanel } from "../../shared/define";
 import type { PanelInput, PanelTools } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────

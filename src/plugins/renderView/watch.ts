@@ -4,9 +4,11 @@
  * Render is shown and build one scene per animation frame; the calibration reads the page rect
  * of one keyed element once per session and device (`game.locate` on game 0.4, `game.rect` on game
  * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest. No timer
- * reads a frame source.
+ * reads a frame source. Each entry point resolves link once and passes it down: no delivered value
+ * resolves it again.
  */
 import { linkPlugin } from "../link";
+import type { LinkApi } from "../link/types";
 import type { TextureCatalogue } from "../panels/shared/scene";
 import {
   buildScene,
@@ -106,10 +108,11 @@ function clearError(state: RenderViewState, id: string): void {
  * The frame of the current link status, the last game.render frame as the fallback.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  * @returns The frame.
  */
-function currentFrame(ctx: RenderViewCtx): number {
-  return frameOf(ctx.require(linkPlugin).status(), ctx.state.lastFrame ?? 0);
+function currentFrame(ctx: RenderViewCtx, link: LinkApi): number {
+  return frameOf(link.status(), ctx.state.lastFrame ?? 0);
 }
 
 /**
@@ -117,9 +120,10 @@ function currentFrame(ctx: RenderViewCtx): number {
  * link holds from the last heartbeat.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  * @param value - The value.
  */
-function onRender(ctx: RenderViewCtx, value: Json): void {
+function onRender(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
   const { state, config } = ctx;
   const stats = asRenderStats(value);
   if (stats === undefined) {
@@ -127,8 +131,8 @@ function onRender(ctx: RenderViewCtx, value: Json): void {
     return;
   }
 
-  const frame = currentFrame(ctx);
-  const heap = ctx.require(linkPlugin).heap();
+  const frame = currentFrame(ctx, link);
+  const heap = link.heap();
   clearError(state, "game.render");
   state.render = stats;
   state.lastFrame = frame;
@@ -142,9 +146,10 @@ function onRender(ctx: RenderViewCtx, value: Json): void {
  * One game.assets value: the bundles gone since the previous value enter the release log.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  * @param value - The value.
  */
-function onAssets(ctx: RenderViewCtx, value: Json): void {
+function onAssets(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
   const { state, config } = ctx;
   const usage = asAssetsUsage(value);
   if (usage === undefined) {
@@ -152,7 +157,7 @@ function onAssets(ctx: RenderViewCtx, value: Json): void {
     return;
   }
 
-  const gone = releasesOf(state.loaded, usage, state.lastFrame ?? currentFrame(ctx));
+  const gone = releasesOf(state.loaded, usage, state.lastFrame ?? currentFrame(ctx, link));
   clearError(state, "game.assets");
   state.releases = [...gone, ...state.releases].slice(0, config.releaseLogMax);
   state.loaded = new Map(
@@ -200,9 +205,14 @@ export function stopEffects(state: RenderViewState): void {
  * inside the listener once per attach, and does not re-send a source the new manifest lacks.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  * @param manifest - The manifest of the session, undefined while none is attached.
  */
-export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined): void {
+export function syncEffects(
+  ctx: RenderViewCtx,
+  link: LinkApi,
+  manifest: Manifest | undefined
+): void {
   if (manifest === undefined) return;
 
   const { state } = ctx;
@@ -212,9 +222,7 @@ export function syncEffects(ctx: RenderViewCtx, manifest: Manifest | undefined):
   state.effectsInstalled = installed;
 
   if (effects !== undefined && installed) {
-    state.effectsWatch ??= ctx
-      .require(linkPlugin)
-      .watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
+    state.effectsWatch ??= link.watch(EFFECTS_ID, undefined, value => onEffects(ctx, value));
     if (changed) notify(state);
     return;
   }
@@ -233,9 +241,9 @@ export function startTracker(ctx: RenderViewCtx): void {
 
   const link = ctx.require(linkPlugin);
   ctx.state.tracker.push(
-    link.watch("game.render", undefined, value => onRender(ctx, value)),
-    link.watch("game.assets", undefined, value => onAssets(ctx, value)),
-    link.onManifest(manifest => syncEffects(ctx, manifest))
+    link.watch("game.render", undefined, value => onRender(ctx, link, value)),
+    link.watch("game.assets", undefined, value => onAssets(ctx, link, value)),
+    link.onManifest(manifest => syncEffects(ctx, link, manifest))
   );
 }
 
@@ -244,8 +252,9 @@ export function startTracker(ctx: RenderViewCtx): void {
  * of a session, a waiting reveal, the box follows its element. A shape error keeps the last scene.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  */
-function buildNow(ctx: RenderViewCtx): void {
+function buildNow(ctx: RenderViewCtx, link: LinkApi): void {
   const { state } = ctx;
   const { ui, entities, projections } = state.sources;
   if (ui === undefined || entities === undefined || projections === undefined) return;
@@ -254,7 +263,7 @@ function buildNow(ctx: RenderViewCtx): void {
     ui,
     entities,
     projections,
-    frame: currentFrame(ctx),
+    frame: currentFrame(ctx, link),
     calibration: state.calibration
   });
   if ("error" in built) {
@@ -274,10 +283,11 @@ function buildNow(ctx: RenderViewCtx): void {
  * Runs a queued build: dropped once the scene watches stopped.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  */
-function runBuild(ctx: RenderViewCtx): void {
+function runBuild(ctx: RenderViewCtx, link: LinkApi): void {
   queued.delete(ctx.state);
-  if (ctx.state.watching.length > 0) buildNow(ctx);
+  if (ctx.state.watching.length > 0) buildNow(ctx, link);
 }
 
 /** One frame at 60 fps: the timeout that stands in for requestAnimationFrame where it does not exist. */
@@ -288,16 +298,17 @@ const FALLBACK_FRAME_MS = 16;
  * queued before the scene watches stopped is dropped.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  */
-function scheduleBuild(ctx: RenderViewCtx): void {
+function scheduleBuild(ctx: RenderViewCtx, link: LinkApi): void {
   const { state } = ctx;
   if (queued.has(state)) return;
 
   queued.add(state);
   if (typeof globalThis.requestAnimationFrame === "function") {
-    globalThis.requestAnimationFrame(() => runBuild(ctx));
+    globalThis.requestAnimationFrame(() => runBuild(ctx, link));
   } else {
-    setTimeout(() => runBuild(ctx), FALLBACK_FRAME_MS);
+    setTimeout(() => runBuild(ctx, link), FALLBACK_FRAME_MS);
   }
 }
 
@@ -317,8 +328,8 @@ export function startScene(ctx: RenderViewCtx): void {
       // A late value after stopScene is dropped.
       if (state.watching.length === 0) return;
       state.sources[key] = value;
-      if (key === "ui" && !state.calibrationAsked) void calibrate(ctx);
-      scheduleBuild(ctx);
+      if (key === "ui" && !state.calibrationAsked) void calibrate(ctx, link);
+      scheduleBuild(ctx, link);
     });
     state.watching.push(stop);
   }
@@ -345,15 +356,18 @@ export function stopScene(ctx: RenderViewCtx): void {
  * Never rejects.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API; resolved from ctx when left out.
  * @returns Resolves when the calibration is known.
  */
-export async function calibrate(ctx: RenderViewCtx): Promise<void> {
+export async function calibrate(
+  ctx: RenderViewCtx,
+  link: LinkApi = ctx.require(linkPlugin)
+): Promise<void> {
   const { state } = ctx;
   const { ui } = state.sources;
   if (ui === undefined) return;
 
   state.calibrationAsked = true;
-  const link = ctx.require(linkPlugin);
   const target = calibrationTarget(ui);
   const source = rectSourceOf(link.manifest());
   if (target === undefined || source === undefined) {
@@ -369,7 +383,7 @@ export async function calibrate(ctx: RenderViewCtx): Promise<void> {
     state.calibration = undefined;
     ctx.log.warn("renderView: calibration failed", { key: target.key, message: messageOf(error) });
   }
-  if (state.watching.length > 0) scheduleBuild(ctx);
+  if (state.watching.length > 0) scheduleBuild(ctx, link);
   notify(state);
 }
 
@@ -386,16 +400,13 @@ export function recalibrate(ctx: RenderViewCtx): void {
 /**
  * Reads one manifest candidate; a missing or unreadable file is undefined.
  *
- * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
  * @param path - A candidate path.
  * @returns The catalogue, or undefined.
  */
-async function readCandidate(
-  ctx: RenderViewCtx,
-  path: string
-): Promise<TextureCatalogue | undefined> {
+async function readCandidate(link: LinkApi, path: string): Promise<TextureCatalogue | undefined> {
   try {
-    const file = await ctx.require(linkPlugin).files.read(path);
+    const file = await link.files.read(path);
     return parseTextureManifest(file.text, path);
   } catch {
     return undefined;
@@ -407,11 +418,15 @@ async function readCandidate(
  * manifest, read through link.files.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API; resolved from ctx when left out.
  * @returns The catalogue, or null when no path holds one.
  */
-export async function readCatalogue(ctx: RenderViewCtx): Promise<TextureCatalogue | null> {
+export async function readCatalogue(
+  ctx: RenderViewCtx,
+  link: LinkApi = ctx.require(linkPlugin)
+): Promise<TextureCatalogue | null> {
   for (const path of ctx.config.manifestPaths) {
-    const catalogue = await readCandidate(ctx, path);
+    const catalogue = await readCandidate(link, path);
     if (catalogue !== undefined) return catalogue;
   }
   // eslint-disable-next-line unicorn/no-null -- null is the spec's "looked, not found" marker
@@ -426,13 +441,14 @@ export async function readCatalogue(ctx: RenderViewCtx): Promise<TextureCatalogu
  * @returns Resolves when both reads settled.
  */
 export async function refreshRenderView(ctx: RenderViewCtx): Promise<void> {
-  const { kind } = ctx.require(linkPlugin).status();
+  const link = ctx.require(linkPlugin);
+  const { kind } = link.status();
   if (kind !== "live" && kind !== "paused") return;
 
   const { state } = ctx;
-  state.catalogue = await readCatalogue(ctx);
+  state.catalogue = await readCatalogue(ctx, link);
   setTexturePalette(ctx);
   notify(state);
   state.calibrationAsked = false;
-  await calibrate(ctx);
+  await calibrate(ctx, link);
 }

@@ -4,7 +4,7 @@ import { h } from "preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceId } from "../../../workspace/types";
 import { createPanelsApi } from "../../api";
-import { definePanel } from "../../define";
+import { definePanel } from "../../shared/define";
 import type { PanelSpec } from "../../types";
 import { createCtx, flush, resultOf } from "../helpers";
 

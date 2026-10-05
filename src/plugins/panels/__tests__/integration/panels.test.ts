@@ -15,7 +15,7 @@ import {
 } from "../../../workspace/__tests__/integration/fake-hub";
 import type { RanEvent, WorkspaceId } from "../../../workspace/types";
 import { panelsPlugin } from "../..";
-import { definePanel } from "../../define";
+import { definePanel } from "../../shared/define";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A tools core with the real link, workspace and panels over the scripted hub

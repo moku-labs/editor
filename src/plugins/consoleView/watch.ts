@@ -1,9 +1,10 @@
 /**
  * @file consoleView plugin — the data path (R6): one link.watch("game.log") for the session; each
  * delivered value is ingested with the frame of link.status(). readOnce is the manual refresh.
- * No timer, no heartbeat-driven read.
+ * No timer, no heartbeat-driven read. Each entry point resolves link once and passes it down.
  */
 import { linkPlugin } from "../link";
+import type { LinkApi } from "../link/types";
 import type { Json } from "../registry/protocol";
 import { pushBadge } from "./badge";
 import { ingestTrace } from "./ingest";
@@ -17,11 +18,11 @@ import type { ConsoleCtx } from "./types";
  * lines changed, marks the console connected and notifies the view.
  *
  * @param ctx - Domain context of consoleView.
+ * @param link - The link API, resolved once by the caller.
  * @param value - The game.log value.
  */
-function accept(ctx: ConsoleCtx, value: Json): void {
+function accept(ctx: ConsoleCtx, link: LinkApi, value: Json): void {
   const { state, config } = ctx;
-  const link = ctx.require(linkPlugin);
   const result = ingestTrace(state, value, statusFrame(link.status()), config, link.session());
   if (result.invalid === true) {
     ctx.log.warn("consoleView:unexpected-log", { type: typeof value });
@@ -56,7 +57,8 @@ function codeOf(error: unknown): number | undefined {
  * @returns The unsubscribe.
  */
 export function startLogWatch(ctx: ConsoleCtx): () => void {
-  return ctx.require(linkPlugin).watch("game.log", undefined, value => accept(ctx, value));
+  const link = ctx.require(linkPlugin);
+  return link.watch("game.log", undefined, value => accept(ctx, link, value));
 }
 
 /**
@@ -68,7 +70,8 @@ export function startLogWatch(ctx: ConsoleCtx): () => void {
  */
 export async function readOnce(ctx: ConsoleCtx): Promise<void> {
   try {
-    accept(ctx, await ctx.require(linkPlugin).read("game.log"));
+    const link = ctx.require(linkPlugin);
+    accept(ctx, link, await link.read("game.log"));
   } catch (error) {
     ctx.log.debug("consoleView:read-failed", { code: codeOf(error) });
   }

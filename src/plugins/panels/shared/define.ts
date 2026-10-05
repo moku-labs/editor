@@ -1,12 +1,12 @@
 /**
- * @file panels plugin — definePanel: a panel is plain data, the host owns subscriptions.
+ * @file Shared view module — definePanel: a panel is plain data, the host owns subscriptions.
  * Runtime-free (type-only imports, no runtime module), exported from "." (D-01). The one boundary
  * cast of panels (typed view → erased view) lives in `erase`, like registry's one cast in
  * checkInput (contracts §3).
  */
-import type { Json } from "../registry/protocol";
-import type { WorkspaceId } from "../workspace/types";
-import type { PanelElement, PanelInput, PanelSpec, SourceRef } from "./types";
+import type { Json } from "../../registry/protocol";
+import type { WorkspaceId } from "../../workspace/types";
+import type { PanelElement, PanelInput, PanelSpec, SourceRef } from "../types";
 
 /**
  * A panel id: camelCase words joined by dots, one word allowed ("flow", "flow.inspector").
@@ -20,7 +20,7 @@ const PANEL_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)*$/;
 const DOTTED_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
 
 /**
- * The six workspaces (repeated from shared/workspaces.ts: define.ts imports no runtime module).
+ * The six workspaces (repeated from workspace/ids.ts: define.ts imports no runtime module).
  */
 const WORKSPACES: ReadonlySet<string> = new Set<WorkspaceId>([
   "flow",
