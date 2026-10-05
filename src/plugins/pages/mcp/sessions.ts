@@ -14,12 +14,12 @@ import type { SessionView } from "./types";
  * @returns The session, or undefined when none or several fit.
  * @example
  * ```ts
- * chooseSession([pageSession, paneSession], undefined); // paneSession, the one embedded in the tools page
+ * chooseSession([pageSession, paneSession]); // paneSession, the one embedded in the tools page
  * ```
  */
 export function chooseSession(
   sessions: readonly SessionView[],
-  requested: string | undefined
+  requested?: string
 ): SessionView | undefined {
   if (requested !== undefined) return sessions.find(session => session.id === requested);
 

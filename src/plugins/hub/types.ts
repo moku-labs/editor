@@ -218,12 +218,14 @@ export type Conn = AgentConn | ToolsConn;
 
 /**
  * One game session. lastBeatAt stays private; frame and paused of the heartbeat and the silent
- * flag reach the wire only as the SessionInfo heartbeat readout (M4).
+ * flag reach the wire only as the SessionInfo heartbeat readout (M4). manifestHash is the
+ * `commandsHash` of the manifest, computed once on hello (D-37).
  */
 export type Session = {
   id: string;
   conn: number;
   manifest: Manifest;
+  manifestHash: string;
   connectedAt: number;
   heartbeat: Heartbeat | null;
   lastBeatAt: number;
@@ -347,7 +349,8 @@ export type HubApi = {
   token(): string;
 
   /**
-   * A fresh list of the open game sessions ordered by `connectedAt`. A session that has sent a
+   * A fresh list of the open game sessions ordered by `connectedAt`. Each carries `manifestHash`,
+   * the `commandsHash` of its manifest computed on hello (D-37). A session that has sent a
    * heartbeat carries the readout `heartbeat: { frame, paused, silent }`; mutating the result does
    * not change the next call.
    *
@@ -355,7 +358,7 @@ export type HubApi = {
    * @example
    * ```ts
    * // After the game page connected its bridge and sent its first heartbeat.
-   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, manifestHash: "4f528e73", heartbeat: { frame: 1840, paused: false, silent: false } }]
    * ```
    */
   sessions(): SessionInfo[];

@@ -1,7 +1,8 @@
 /**
  * @file pages/mcp — the editor and game tools of the bridge (M5): moku_status, moku_sessions,
- * moku_manifest, moku_read, moku_run and moku_wait. Each goes through the hub exactly as the
- * tools page does: the hub picks the session, checks the id and the input.
+ * moku_manifest, moku_read, moku_run and moku_wait, and `runDoor`, the run every door tool shares
+ * with moku_run. Each goes through the hub exactly as the tools page does: the hub picks the
+ * session, checks the id and the input.
  */
 import type { Json } from "../../registry/protocol";
 import { bareMessage } from "../../registry/protocol";
@@ -106,6 +107,39 @@ async function status(_call: ToolCall, context: ToolContext): Promise<ToolResult
 }
 
 /**
+ * Runs a command door through the hub and answers the way moku_run and every door tool do: the
+ * line `effect: <effect>`, then the value with the frame and the run state.
+ *
+ * @param hub - The hub connection.
+ * @param id - The command id, such as game.tap.
+ * @param effect - The effect printed first: the door's own, or "unknown".
+ * @param input - The input, or undefined to send none.
+ * @param session - The session id, or undefined for the hub's rule.
+ * @returns `effect: <effect>` and the envelope (value, frame, state).
+ * @example
+ * ```ts
+ * // The game_tap door tool, called with { target: "play" }:
+ * const result = await runDoor(hub, "game.tap", "route", { target: "play" }, undefined);
+ * result.content[0]; // { type: "text", text: 'effect: route\n{\n  "value": true,\n  "frame": 12, … }' }
+ * ```
+ */
+export async function runDoor(
+  hub: HubClient,
+  id: string,
+  effect: string,
+  input: Json | undefined,
+  session: string | undefined
+): Promise<ToolResult> {
+  const ran = await hub.request("game", "run", callParams(id, input), session);
+  const result = readRunResult(ran);
+  const envelope =
+    result === undefined
+      ? ran
+      : { value: result.value, frame: result.state.frame, state: result.state };
+  return { content: [textItem(`effect: ${effect}\n${jsonText(envelope)}`)] };
+}
+
+/**
  * moku_run: runs a command; the text starts with its effect from the manifest.
  *
  * @param call - The call: id, input, session.
@@ -118,14 +152,7 @@ async function runCommand(call: ToolCall, context: ToolContext): Promise<ToolRes
   const session = textArgument(call.args, "session");
   const manifest = await hub.request("game", "manifest", {}, session);
   const effect = commandOf(manifest, id)?.effect ?? "unknown";
-
-  const ran = await hub.request("game", "run", callParams(id, call.args.input), session);
-  const result = readRunResult(ran);
-  const envelope =
-    result === undefined
-      ? ran
-      : { value: result.value, frame: result.state.frame, state: result.state };
-  return { content: [textItem(`effect: ${effect}\n${jsonText(envelope)}`)] };
+  return runDoor(hub, id, effect, call.args.input, session);
 }
 
 /**

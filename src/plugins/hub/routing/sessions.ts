@@ -1,11 +1,18 @@
 /**
  * @file hub plugin — game sessions: the manifest check, open and close, the session choice of a
- * tools request, the SessionInfo list (R1 plus the heartbeat readout, M4) and the silent rule (R6:
- * 6 s, or 65 s after a paused heartbeat). A flip of paused or silent re-sends the list.
+ * tools request, the SessionInfo list (R1, the manifest hash of D-37, the heartbeat readout of M4)
+ * and the silent rule (R6: 6 s, or 65 s after a paused heartbeat). A flip of paused or silent
+ * re-sends the list.
  */
 import { randomBytes } from "node:crypto";
 import type { Heartbeat, Json, Manifest, Notification, SessionInfo } from "../../registry/protocol";
-import { errorCode, notification, toWireValue, wireError } from "../../registry/protocol";
+import {
+  commandsHash,
+  errorCode,
+  notification,
+  toWireValue,
+  wireError
+} from "../../registry/protocol";
 import { JSON_NULL, sendJson, toolsConns } from "../sockets/send";
 import type { AgentConn, HubCtx, HubSession, HubState, Session } from "../types";
 import { failSession } from "./calls";
@@ -306,6 +313,7 @@ export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): S
     id: sessionIdFrom(ctx.state.sessions),
     conn: conn.conn,
     manifest,
+    manifestHash: commandsHash(manifest),
     connectedAt: now,
     heartbeat: JSON_NULL,
     lastBeatAt: now,
@@ -458,15 +466,23 @@ export function chooseSession(ctx: HubCtx, requested: string | undefined): Sessi
 }
 
 /**
- * The wire view of a session: the five R1 fields, plus the heartbeat readout (frame and paused of
- * the last beat, the silent flag) once the session has sent a heartbeat.
+ * The wire view of a session: the five R1 fields and the manifest hash kept since hello (D-37),
+ * plus the heartbeat readout (frame and paused of the last beat, the silent flag) once the session
+ * has sent a heartbeat.
  *
  * @param session - The session.
  * @returns A fresh SessionInfo.
  */
 export function toSessionInfo(session: Session): SessionInfo {
   const { game, page, embedded } = session.manifest;
-  const info = { id: session.id, game, page, embedded, connectedAt: session.connectedAt };
+  const info = {
+    id: session.id,
+    game,
+    page,
+    embedded,
+    connectedAt: session.connectedAt,
+    manifestHash: session.manifestHash
+  };
   if (session.heartbeat === null) return info;
 
   const { frame, paused } = session.heartbeat;

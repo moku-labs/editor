@@ -56,6 +56,32 @@ describe("checkArguments", () => {
   });
 });
 
+describe("plain numbers", () => {
+  /** A schema with a plain number, as a door's number field. */
+  const POINT: ToolInputSchema = {
+    type: "object",
+    properties: {
+      x: { type: "number", description: "number input of the door" },
+      w: { type: "number", minimum: 1, description: "width" }
+    },
+    additionalProperties: false
+  };
+
+  it("accepts any finite number: a fraction, a negative, zero", () => {
+    expect(checkArguments(POINT, { x: 0.5 })).toEqual({ x: 0.5 });
+    expect(checkArguments(POINT, { x: -3 })).toEqual({ x: -3 });
+    expect(checkArguments(POINT, { x: 0 })).toEqual({ x: 0 });
+  });
+
+  it("refuses a string, a boolean or null, and honours the minimum", () => {
+    expect(checkArguments(POINT, { x: "1" })).toBe("x must be a number");
+    expect(checkArguments(POINT, { x: true })).toBe("x must be a number");
+    expect(checkArguments(POINT, { x: null })).toBe("x must be a number");
+    expect(checkArguments(POINT, { w: 0.5 })).toBe("w must be at least 1");
+    expect(checkArguments(POINT, { w: 1.5 })).toEqual({ w: 1.5 });
+  });
+});
+
 describe("enum strings and the rect object", () => {
   /** A schema with an enum string and a rect. */
   const PICTURE: ToolInputSchema = {

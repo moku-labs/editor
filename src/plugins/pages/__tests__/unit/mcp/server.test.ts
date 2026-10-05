@@ -1,6 +1,11 @@
 /* eslint-disable unicorn/no-null -- JSON-RPC answers a parse error with id null */
-import { describe, expect, it, vi } from "vitest";
-import { createMcpServer, negotiateVersion, PROTOCOL_VERSIONS } from "../../../mcp/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createMcpServer,
+  INSTRUCTIONS,
+  negotiateVersion,
+  PROTOCOL_VERSIONS
+} from "../../../mcp/server";
 import { TOOLS } from "../../../mcp/tools";
 import type {
   EditorLink,
@@ -12,9 +17,11 @@ import type {
 } from "../../../mcp/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// pages/mcp server (M1, M5, M6): initialize negotiation, ping, tools/list,
-// tools/call, the error codes, notifications that are never answered,
-// cancellation and progress, and the static tool table.
+// pages/mcp server (M1, M5, M6): initialize negotiation and instructions, ping,
+// tools/list (read per request; the first waits for the door tools at most
+// 3 s), tools/call (a retired door answers isError), the error codes,
+// notifications that are never answered, a tools change kept until
+// initialized, cancellation and progress, and the static tool table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** An EditorLink that never connects. */
@@ -49,14 +56,22 @@ function stubTool(run: (call: ToolCall) => Promise<ToolResult>): Tool {
 /**
  * A server over stub tools that records its frames.
  *
- * @param tools - The tools.
+ * @param tools - The tools, or the getter of the tools now.
+ * @param doors - The door set seams: ready and the retired names (default: ready, none).
+ * @param doors.ready - What the first tools/list waits for.
+ * @param doors.retired - The names that are gone.
  */
-function serve(tools: readonly Tool[] = TOOLS) {
+function serve(
+  tools: readonly Tool[] | (() => readonly Tool[]) = TOOLS,
+  doors: { ready?: () => Promise<void>; retired?: () => ReadonlySet<string> } = {}
+) {
   const frames: OutgoingFrame[] = [];
   const context: ToolContext = { editor: idleEditor(), now: Date.now };
   const server = createMcpServer({
     send: frame => frames.push(frame),
-    tools,
+    tools: typeof tools === "function" ? tools : () => tools,
+    ready: doors.ready ?? (() => Promise.resolve()),
+    retired: doors.retired ?? (() => new Set()),
     context,
     version: "9.9.9"
   });
@@ -77,7 +92,8 @@ describe("initialize", () => {
         result: {
           protocolVersion: version,
           capabilities: { tools: { listChanged: true }, logging: {} },
-          serverInfo: { name: "moku-editor", version: "9.9.9" }
+          serverInfo: { name: "moku-editor", version: "9.9.9" },
+          instructions: INSTRUCTIONS
         }
       }
     ]);
@@ -143,18 +159,27 @@ describe("requests and notifications", () => {
     expect(frames).toEqual([]);
   });
 
-  it("sends tools/list_changed only after notifications/initialized", () => {
+  it("keeps a tools change from before notifications/initialized and sends it once after", () => {
     const { server, frames, send } = serve();
+    server.toolsChanged();
     server.toolsChanged();
     expect(frames).toEqual([]);
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    const changed = { jsonrpc: "2.0", method: "notifications/tools/list_changed" };
+    expect(frames).toEqual([changed]);
     server.toolsChanged();
-    expect(frames).toEqual([{ jsonrpc: "2.0", method: "notifications/tools/list_changed" }]);
+    expect(frames).toEqual([changed, changed]);
+  });
+
+  it("sends nothing on notifications/initialized without a change before it", () => {
+    const { frames, send } = serve();
+    send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    expect(frames).toEqual([]);
   });
 });
 
 describe("tools/list", () => {
-  it("lists the seventeen moku tools with closed object schemas", async () => {
+  it("lists the generic moku tools with closed object schemas", async () => {
     const { server, frames, send } = serve();
     send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     await server.idle();
@@ -361,5 +386,100 @@ describe("tools/call", () => {
     await server.idle();
     expect(signals.map(signal => signal.aborted)).toEqual([true, true]);
     expect(frames).toEqual([]);
+  });
+});
+
+/** A stub tool with another name. */
+function named(name: string): Tool {
+  return { ...stubTool(() => Promise.resolve({ content: [] })), name };
+}
+
+/** The names of a tools/list answer. */
+function listed(frame: OutgoingFrame | undefined): string[] {
+  const result = frame !== undefined && "result" in frame ? frame.result : undefined;
+  const tools =
+    typeof result === "object" && result !== null && "tools" in result ? result.tools : [];
+  return Array.isArray(tools) ? tools.map(tool => String(tool?.name)) : [];
+}
+
+describe("door tools in the server (D-35)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads the tools getter on every tools/list and tools/call", async () => {
+    let tools: readonly Tool[] = [named("moku_status")];
+    const { server, frames, send } = serve(() => tools);
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await server.idle();
+    tools = [named("moku_status"), named("game_tap")];
+    send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "game_tap" } });
+    await server.idle();
+    expect(listed(frames[0])).toEqual(["moku_status"]);
+    expect(listed(frames[1])).toEqual(["moku_status", "game_tap"]);
+    expect(frames[2]).toEqual({ jsonrpc: "2.0", id: 3, result: { content: [] } });
+  });
+
+  it("answers the first tools/list once ready settles", async () => {
+    const ready = Promise.withResolvers<void>();
+    let tools: readonly Tool[] = [named("moku_status")];
+    const { server, frames, send } = serve(() => tools, { ready: () => ready.promise });
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await Promise.resolve();
+    expect(frames).toEqual([]);
+    tools = [named("moku_status"), named("game_tap")];
+    ready.resolve();
+    await server.idle();
+    expect(listed(frames[0])).toEqual(["moku_status", "game_tap"]);
+  });
+
+  it("waits for ready at most 3 s on the first tools/list; later lists do not wait", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const never = new Promise<void>(() => undefined);
+    const { server, frames, send } = serve([named("moku_status")], { ready: () => never });
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(frames).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await server.idle();
+    expect(listed(frames[0])).toEqual(["moku_status"]);
+
+    send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    await server.idle();
+    expect(frames[1]).toMatchObject({ id: 2 });
+  });
+
+  it("answers a retired door tool with isError, not -32602", async () => {
+    const { server, frames, send } = serve([named("moku_status")], {
+      retired: () => new Set(["game_tap"])
+    });
+    send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "game_tap" } });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "game_nope" } });
+    await server.idle();
+    expect(frames).toContainEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        content: [
+          {
+            type: "text",
+            text: "game_tap is gone: the game changed. Call moku_manifest, or moku_run { id }."
+          }
+        ],
+        isError: true
+      }
+    });
+    expect(frames).toContainEqual({
+      jsonrpc: "2.0",
+      id: 2,
+      error: { code: -32_602, message: "unknown tool: game_nope" }
+    });
+  });
+
+  it("explains the door tools in the initialize instructions", () => {
+    expect(INSTRUCTIONS).toBe(
+      "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read."
+    );
   });
 });

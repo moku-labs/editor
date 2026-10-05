@@ -379,10 +379,18 @@ describe("moku-editor mcp over stdio", () => {
       serverInfo: { name: "moku-editor" }
     });
 
+    await until(
+      async () => textOf(await bridge.call("moku_sessions")).includes(TINY_NAME),
+      "the tiny game session in moku_sessions",
+      SLOW_MS
+    );
+
+    // The generic tools first, then one tool per command door of the game (D-35).
     const list = await bridge.request("tools/list");
     const names = (list.result as { tools: { name: string }[] }).tools.map(tool => tool.name);
-    expect(names).toHaveLength(17);
-    expect(names).toEqual(
+    const generic = names.filter(name => name.startsWith("moku_"));
+    expect(generic).toHaveLength(17);
+    expect(generic).toEqual(
       expect.arrayContaining([
         "moku_read",
         "moku_run",
@@ -392,12 +400,13 @@ describe("moku-editor mcp over stdio", () => {
         "moku_select"
       ])
     );
-
-    await until(
-      async () => textOf(await bridge.call("moku_sessions")).includes(TINY_NAME),
-      "the tiny game session in moku_sessions",
-      SLOW_MS
-    );
+    expect(names.slice(0, 17)).toEqual(generic);
+    const doors = names.slice(17);
+    expect(doors).toEqual(expect.arrayContaining(["game_pause", "game_resume", "game_tap"]));
+    expect(doors).not.toContain("editor_capture");
+    const doorPause = await bridge.call("game_pause");
+    expect(textOf(doorPause)).toMatch(/^effect: cosmetic\n/);
+    await bridge.call("game_resume");
 
     const position = await bridge.call("moku_read", { id: "game.position" });
     expect(position.isError).toBeUndefined();

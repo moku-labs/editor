@@ -17,6 +17,7 @@ import {
   pictureOf,
   pictureSize,
   readBeat,
+  readDoorManifest,
   readFileEntries,
   readFileText,
   readRunResult,
@@ -109,6 +110,46 @@ describe("shape readers", () => {
     expect(readSessionList(undefined)).toBeUndefined();
     expect(readBeat({ frame: 1 })).toBeUndefined();
     expect(readBeat(null)).toBeUndefined();
+  });
+
+  it("copies a string manifestHash into the session and drops any other value (D-37)", () => {
+    const base = { id: "s-1", game: "g", page: "p", embedded: true, connectedAt: 1 };
+    expect(readSessionList({ list: [{ ...base, manifestHash: "4f528e73" }] })).toEqual([
+      { ...base, manifestHash: "4f528e73" }
+    ]);
+    expect(readSessionList({ list: [{ ...base, manifestHash: 7 }] })).toEqual([base]);
+    const beat = { frame: 2, paused: false, silent: true };
+    expect(readSessionList({ list: [{ ...base, heartbeat: beat, manifestHash: "h" }] })).toEqual([
+      { ...base, heartbeat: beat, manifestHash: "h" }
+    ]);
+  });
+
+  it("reads the game and the command doors of a manifest, skipping malformed doors", () => {
+    const tap = {
+      id: "game.tap",
+      title: "Tap",
+      input: { target: "string", x: "number?" },
+      effect: "route"
+    };
+    expect(
+      readDoorManifest({
+        game: "g",
+        page: "p",
+        embedded: true,
+        sources: [],
+        commands: [
+          tap,
+          { id: "game.x", title: "X", input: {}, effect: "explode" },
+          { id: "game.y", title: "Y", input: { a: "date" }, effect: "read" },
+          { id: "game.z", title: "Z", input: [], effect: "read" },
+          { id: 1, title: "W", input: {}, effect: "read" },
+          "game.v"
+        ]
+      })
+    ).toEqual({ game: "g", commands: [tap] });
+    expect(readDoorManifest({ game: "g", commands: "x" })).toBeUndefined();
+    expect(readDoorManifest({ commands: [] })).toBeUndefined();
+    expect(readDoorManifest(null)).toBeUndefined();
   });
 
   it("read run results, shots and pictures", () => {

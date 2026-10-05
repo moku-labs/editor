@@ -1,12 +1,47 @@
 /**
  * @file pages/mcp — reads the hub answers and notifications the bridge acts on (sessions,
- * heartbeats, run results, shots, file results, manifest entries) from Json into typed values.
- * Every field is checked; a bad shape reads as undefined. The bridge imports only the protocol
- * module, so these readers are its own.
+ * heartbeats, run results, shots, file results, manifest entries and command doors) from Json
+ * into typed values. Every field is checked; a bad shape reads as undefined. The bridge imports
+ * only the protocol module, so these readers are its own.
  */
-import type { FileEntry, FileText, Json, RunResult, SessionInfo } from "../../registry/protocol";
+import type {
+  CommandDescriptor,
+  Effect,
+  FileEntry,
+  FileText,
+  InputKind,
+  InputSchema,
+  Json,
+  Manifest,
+  RunResult,
+  SessionInfo
+} from "../../registry/protocol";
 import { isObject } from "./rpc";
 import type { JsonObject } from "./types";
+
+/**
+ * The game name and the command doors of a manifest: what the door tools are built from.
+ */
+export type DoorManifest = Pick<Manifest, "game" | "commands">;
+
+/**
+ * Every effect a command door declares.
+ */
+const EFFECTS: ReadonlySet<string> = new Set<Effect>(["read", "route", "cosmetic", "cheat", "raw"]);
+
+/**
+ * Every kind an input field declares, required and optional.
+ */
+const FIELD_KINDS: ReadonlySet<string> = new Set<InputKind | `${InputKind}?`>([
+  "string",
+  "string?",
+  "number",
+  "number?",
+  "boolean",
+  "boolean?",
+  "json",
+  "json?"
+]);
 
 /**
  * The start of every picture a game answers (a PNG or JPEG data URL).
@@ -86,13 +121,15 @@ function readReadout(value: Json | undefined): SessionInfo["heartbeat"] {
 }
 
 /**
- * Reads one session: the five wire fields and the optional heartbeat readout.
+ * Reads one session: the five wire fields, the optional heartbeat readout and the optional
+ * `manifestHash` (D-37; a value that is not a string is dropped).
  *
  * @param value - One list item.
  * @returns The session, or undefined.
  * @example
  * ```ts
- * readSession({ id: "s-1", game: "g", page: "p", embedded: true, connectedAt: 1 });
+ * readSession({ id: "s-1", game: "g", page: "p", embedded: true, connectedAt: 1, manifestHash: "4f528e73" });
+ * // { id: "s-1", game: "g", page: "p", embedded: true, connectedAt: 1, manifestHash: "4f528e73" }
  * ```
  */
 function readSession(value: Json): SessionInfo | undefined {
@@ -106,8 +143,16 @@ function readSession(value: Json): SessionInfo | undefined {
   if (embedded === undefined || connectedAt === undefined) return undefined;
 
   const heartbeat = readReadout(value.heartbeat);
-  const info = { id, game, page, embedded, connectedAt };
-  return heartbeat === undefined ? info : { ...info, heartbeat };
+  const manifestHash = textOf(value, "manifestHash");
+  return {
+    id,
+    game,
+    page,
+    embedded,
+    connectedAt,
+    ...(heartbeat === undefined ? {} : { heartbeat }),
+    ...(manifestHash === undefined ? {} : { manifestHash })
+  };
 }
 
 /**
@@ -416,6 +461,97 @@ export function commandOf(
   if (!isObject(found)) return undefined;
   const effect = textOf(found, "effect") ?? "unknown";
   return { effect, input: isObject(found.input) ? found.input : {} };
+}
+
+/**
+ * True for a known command effect.
+ *
+ * @param value - A Json value.
+ * @returns Whether it is read, route, cosmetic, cheat or raw.
+ * @example
+ * ```ts
+ * isEffect("cheat"); // true
+ * isEffect("explode"); // false
+ * ```
+ */
+function isEffect(value: Json | undefined): value is Effect {
+  return typeof value === "string" && EFFECTS.has(value);
+}
+
+/**
+ * True for a known input field kind, required or optional.
+ *
+ * @param value - A Json value.
+ * @returns Whether it is string, number, boolean or json, with or without `?`.
+ * @example
+ * ```ts
+ * isFieldKind("number?"); // true
+ * isFieldKind("date"); // false
+ * ```
+ */
+function isFieldKind(value: Json | undefined): value is InputKind | `${InputKind}?` {
+  return typeof value === "string" && FIELD_KINDS.has(value);
+}
+
+/**
+ * Reads the input schema of a door: field name to kind.
+ *
+ * @param value - The `input` member.
+ * @returns The schema, or undefined when it is not an object of known kinds.
+ * @example
+ * ```ts
+ * readInputSchema({ target: "string", x: "number?" }); // { target: "string", x: "number?" }
+ * readInputSchema({ at: "date" }); // undefined
+ * ```
+ */
+function readInputSchema(value: Json | undefined): InputSchema | undefined {
+  if (!isObject(value)) return undefined;
+  const schema: Record<string, InputKind | `${InputKind}?`> = {};
+  for (const [field, kind] of Object.entries(value)) {
+    if (!isFieldKind(kind)) return undefined;
+    schema[field] = kind;
+  }
+  return schema;
+}
+
+/**
+ * Reads one command door of a manifest.
+ *
+ * @param value - One `commands` item.
+ * @returns The door, or undefined when a field is missing or malformed.
+ * @example
+ * ```ts
+ * readCommand({ id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route" })?.effect; // "route"
+ * ```
+ */
+function readCommand(value: Json): CommandDescriptor | undefined {
+  if (!isObject(value)) return undefined;
+  const id = textOf(value, "id");
+  const title = textOf(value, "title");
+  const { effect } = value;
+  const input = readInputSchema(value.input);
+  if (id === undefined || title === undefined || input === undefined) return undefined;
+  return isEffect(effect) ? { id, title, input, effect } : undefined;
+}
+
+/**
+ * Reads the game name and the command doors of a `manifest` answer. A malformed door is skipped
+ * (the hub checked the manifest on hello; this keeps the bridge from trusting it blindly).
+ *
+ * @param manifest - The `manifest` result.
+ * @returns `{ game, commands }`, or undefined without a game name or a command list.
+ * @example
+ * ```ts
+ * readDoorManifest(await hub.request("game", "manifest", {}, "s-1"))?.commands.map(door => door.id);
+ * // ["game.tap", "game.step", …]
+ * ```
+ */
+export function readDoorManifest(manifest: Json): DoorManifest | undefined {
+  if (!isObject(manifest)) return undefined;
+  const game = textOf(manifest, "game");
+  const { commands } = manifest;
+  if (game === undefined || !Array.isArray(commands)) return undefined;
+  return { game, commands: commands.flatMap(command => readCommand(command) ?? []) };
 }
 
 /**

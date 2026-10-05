@@ -1,7 +1,7 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, Manifest } from "../../../registry/protocol";
-import { notification, toWireValue } from "../../../registry/protocol";
+import { commandsHash, notification, toWireValue } from "../../../registry/protocol";
 import {
   chooseSession,
   isManifest,
@@ -41,6 +41,7 @@ function sessionOf(id: string, connectedAt: number, embedded = false): Session {
     id,
     conn: 1,
     manifest: { ...MANIFEST, embedded },
+    manifestHash: commandsHash(MANIFEST),
     connectedAt,
     heartbeat: null,
     lastBeatAt: connectedAt,
@@ -235,17 +236,31 @@ describe("sessionIdFrom", () => {
 });
 
 describe("toSessionInfo and sessionList", () => {
-  it("returns the five R1 keys and no heartbeat before the first beat", () => {
+  it("returns the five R1 keys and the manifest hash, no heartbeat before the first beat", () => {
     const info = toSessionInfo(sessionOf("s-1", 10, true));
 
-    expect(Object.keys(info).toSorted()).toEqual(["connectedAt", "embedded", "game", "id", "page"]);
+    expect(Object.keys(info).toSorted()).toEqual([
+      "connectedAt",
+      "embedded",
+      "game",
+      "id",
+      "manifestHash",
+      "page"
+    ]);
     expect(info).toEqual({
       id: "s-1",
       game: MANIFEST.game,
       page: MANIFEST.page,
       embedded: true,
-      connectedAt: 10
+      connectedAt: 10,
+      manifestHash: commandsHash(MANIFEST)
     });
+  });
+
+  it("carries the hash kept on the session, not a fresh one", () => {
+    const session: Session = { ...sessionOf("s-1", 10), manifestHash: "0badf00d" };
+
+    expect(toSessionInfo(session).manifestHash).toBe("0badf00d");
   });
 
   it("adds the heartbeat readout: frame and paused of the last beat, and the silent flag", () => {
@@ -263,6 +278,7 @@ describe("toSessionInfo and sessionList", () => {
       "game",
       "heartbeat",
       "id",
+      "manifestHash",
       "page"
     ]);
     expect(info.heartbeat).toEqual({ frame: 1840, paused: true, silent: true });
@@ -500,7 +516,8 @@ describe("session notifications", () => {
           game: MANIFEST.game,
           page: MANIFEST.page,
           embedded: false,
-          connectedAt: harness.ctx.state.sessions.get(session)?.connectedAt
+          connectedAt: harness.ctx.state.sessions.get(session)?.connectedAt,
+          manifestHash: commandsHash(MANIFEST)
         }
       ]
     });
@@ -512,5 +529,30 @@ describe("session notifications", () => {
     const { session } = harness.hello(manifest);
 
     expect(harness.ctx.state.sessions.get(session)?.manifest.game).toBe("other 1.0.0");
+  });
+
+  it("keeps the hash of the commands, computed once on hello", () => {
+    const harness = createHarness();
+    const { session } = harness.hello();
+
+    expect(harness.ctx.state.sessions.get(session)?.manifestHash).toBe(commandsHash(MANIFEST));
+  });
+
+  it("gives two sessions with the same commands the same hash, whatever their order", () => {
+    const harness = createHarness();
+    harness.hello();
+    harness.hello({ ...MANIFEST, game: "other 1.0.0", commands: MANIFEST.commands.toReversed() });
+
+    const hashes = sessionList(harness.ctx.state).map(info => info.manifestHash);
+    expect(hashes).toEqual([commandsHash(MANIFEST), commandsHash(MANIFEST)]);
+  });
+
+  it("gives a session with other commands another hash", () => {
+    const harness = createHarness();
+    const first = harness.hello();
+    const second = harness.hello({ ...MANIFEST, commands: [] });
+
+    const hashOf = (id: string) => harness.ctx.state.sessions.get(id)?.manifestHash;
+    expect(hashOf(second.session)).not.toBe(hashOf(first.session));
   });
 });

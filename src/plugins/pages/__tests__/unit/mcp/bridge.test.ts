@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Json } from "../../../../registry/protocol";
 import { writeDiscovery } from "../../../discovery";
 import { processBridgeDeps, runBridge } from "../../../mcp/bridge";
 import { NOT_RUNNING } from "../../../mcp/connection";
+import { SESSION_PROPERTY } from "../../../mcp/schema";
+import { TOOLS } from "../../../mcp/tools";
 import type { BridgeDeps, ChildProcess, SpawnProcess } from "../../../mcp/types";
 import { VERSION } from "../../../mcp/version";
 import type { McpArgs } from "../../../types";
@@ -21,9 +24,35 @@ import { session, startFakeHub, until } from "../../fake-hub";
 let root: string;
 let hub: FakeHub;
 
+/** The manifest of a game with the given commands. */
+function gameWith(commands: Json[]): Json {
+  return {
+    game: "tiny-game 0.0.0",
+    page: "http://127.0.0.1:3000/",
+    embedded: true,
+    sources: [],
+    commands
+  };
+}
+
+/** A game with a route door and a cheat door, and a game with a raw door only. */
+const GAME_A = gameWith([
+  {
+    id: "game.tap",
+    title: "Tap a target",
+    input: { target: "string", x: "number?" },
+    effect: "route"
+  },
+  { id: "game.fill", title: "Fill the board", input: { board: "json" }, effect: "cheat" }
+]);
+const GAME_B = gameWith([
+  { id: "game.restore", title: "Restore a bookmark", input: { bookmark: "string" }, effect: "raw" }
+]);
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "moku-mcp-bridge-"));
   hub = startFakeHub({ sessions: [session("s-1")], hotReload: { hmr: true, owner: "bin" } });
+  hub.handle("game.manifest", () => GAME_A);
 });
 
 afterEach(async () => {
@@ -293,6 +322,124 @@ describe("runBridge", () => {
       jsonrpc: "2.0",
       id: 1,
       result: { content: [{ type: "text", text: NOT_RUNNING }], isError: true }
+    });
+  });
+});
+
+/** The tools of a tools/list answer. */
+function toolsOf(frame: { result?: unknown } | undefined): { name: string }[] {
+  const result = frame?.result;
+  if (typeof result !== "object" || result === null || !("tools" in result)) return [];
+  return Array.isArray(result.tools) ? result.tools : [];
+}
+
+describe("door tools (D-35, D-36, D-37)", () => {
+  it("lists the command doors of the game with their schemas, and sends one list_changed for another command set", async () => {
+    hub.setSessions([session("s-1", { manifestHash: "aaaa0001" })]);
+    hub.handle("game.manifest", (_params, asked) => (asked === "s-2" ? GAME_B : GAME_A));
+    writeDiscovery(root, hub.discovery(root));
+    const run = bridge();
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t" } }
+    });
+    run.stdin.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    run.stdin.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    await until(() => run.answer(2) !== undefined, "the first tools/list");
+
+    const generic = TOOLS.map(tool => tool.name);
+    const first = toolsOf(run.answer(2));
+    expect(first.map(tool => tool.name)).toEqual([...generic, "game_tap", "cheat_game_fill"]);
+    expect(first.find(tool => tool.name === "game_tap")).toEqual({
+      name: "game_tap",
+      title: "Tap a target",
+      description:
+        '[route] Tap a target. Command door game.tap of tiny-game 0.0.0. Same as moku_run { id: "game.tap" }.',
+      inputSchema: {
+        type: "object",
+        properties: {
+          target: { type: "string", description: "string input of the door" },
+          x: { type: "number", description: "number input of the door" },
+          _session: SESSION_PROPERTY
+        },
+        required: ["target"],
+        additionalProperties: false
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
+    });
+    expect(first.find(tool => tool.name === "cheat_game_fill")).toMatchObject({
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
+    });
+
+    const changes = (): number =>
+      run.frames().filter(frame => frame.method === "notifications/tools/list_changed").length;
+    const before = changes();
+    hub.setSessions([session("s-2", { manifestHash: "bbbb0002" })]);
+    await until(() => changes() === before + 1, "the list change");
+    run.stdin.send({ jsonrpc: "2.0", id: 3, method: "tools/list" });
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "game_tap", arguments: { target: "play" } }
+    });
+    await until(() => run.answer(4) !== undefined, "the call of a retired door");
+    expect(toolsOf(run.answer(3)).map(tool => tool.name)).toEqual([...generic, "raw_game_restore"]);
+    expect(run.answer(4)).toMatchObject({ result: { isError: true } });
+    expect(toolText(run.answer(4))).toBe(
+      "game_tap is gone: the game changed. Call moku_manifest, or moku_run { id }."
+    );
+
+    hub.setSessions([
+      session("s-2", {
+        manifestHash: "bbbb0002",
+        heartbeat: { frame: 4, paused: true, silent: false }
+      })
+    ]);
+    await Bun.sleep(50);
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+    expect(changes()).toBe(before + 1);
+  });
+
+  it("runs a door tool through the hub like moku_run", async () => {
+    hub.handle("game.run", () => ({
+      value: true,
+      state: { path: "home", frame: 12, tainted: false }
+    }));
+    writeDiscovery(root, hub.discovery(root));
+    const run = bridge();
+    run.stdin.send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    await until(() => run.answer(1) !== undefined, "the tools");
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "game_tap", arguments: { target: "play", x: 0.5 } }
+    });
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "game_tap", arguments: { x: 0.5 } }
+    });
+    await until(() => run.answer(3) !== undefined, "the door calls");
+    run.stdin.end();
+    await run.done;
+
+    expect(toolText(run.answer(2))).toMatch(/^effect: route\n/);
+    expect(hub.requests).toContainEqual({
+      channel: "game",
+      method: "run",
+      params: { id: "game.tap", input: { target: "play", x: 0.5 } },
+      session: undefined
+    });
+    expect(run.answer(3)).toEqual({
+      jsonrpc: "2.0",
+      id: 3,
+      result: { content: [{ type: "text", text: "target is required" }], isError: true }
     });
   });
 });

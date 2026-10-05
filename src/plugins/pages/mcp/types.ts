@@ -81,7 +81,8 @@ export type Content =
 export type ToolResult = { readonly content: readonly Content[]; readonly isError?: true };
 
 /**
- * A number field of an object property, such as `x` of a rect.
+ * A plain number: any finite number, at least `minimum` when one is set. A door's number field, or
+ * a field of an object property such as `x` of a rect.
  */
 export type NumberFieldSchema = {
   readonly type: "number";
@@ -94,6 +95,7 @@ export type NumberFieldSchema = {
  * JSON value. An object property is a closed object of number fields (a rect).
  */
 export type PropertySchema =
+  | NumberFieldSchema
   | {
       readonly type: "string";
       readonly description: string;
@@ -176,7 +178,8 @@ export type Liveness = {
 };
 
 /**
- * A session the way the bridge shows it: the five wire fields and the live heartbeat, when known.
+ * A session the way the bridge shows it: the five wire fields, the live heartbeat when known, and
+ * the hub's `manifestHash` when it sent one.
  */
 export type SessionView = Omit<SessionInfo, "heartbeat"> & { readonly heartbeat?: Liveness };
 

@@ -301,24 +301,25 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 | `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, `hotReload`, game, files and editor requests, `watch`/`value`/`unwatch`. The bridge is a plain tools client, never `role=page`. |
 | `discovery.ts` | Reads `.moku/editor.json`; `process.kill(pid, 0)` tells a live bin from a stale file. |
 | `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. |
-| `connection.ts` | The bin side: startup, reconnect once, start, stop only an owned bin. |
-| `tools.ts` and `*-tools.ts` | The tool table. `schema.ts` checks arguments, `results.ts` builds content, `shapes.ts` reads hub answers. |
+| `connection.ts` | The bin side: startup, reconnect once, start, stop only an owned bin. Reports each open and each lost connection (`onConnected`, `onDisconnected`). |
+| `tools.ts` and `*-tools.ts` | The generic tool table. `schema.ts` checks arguments, `results.ts` builds content, `shapes.ts` reads hub answers. |
+| `door-tools.ts` | One tool per command door of the selected session (D-35), rebuilt only when the session's `manifestHash` moves (D-37). |
 
 Protocol:
 
 | Message | Answer |
 |---|---|
-| `initialize` | `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version } }`. Versions `2025-11-25`, `2025-06-18`, `2025-03-26`: the client's when listed, else `2025-11-25`. No `protocolVersion`: -32602. |
+| `initialize` | `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version }, instructions }`. Versions `2025-11-25`, `2025-06-18`, `2025-03-26`: the client's when listed, else `2025-11-25`. No `protocolVersion`: -32602. `instructions` says which tools are generic, which are doors, and that the list changes. |
 | `ping`, `logging/setLevel` | `{}` |
-| `tools/list` | The seventeen tools below. |
-| `tools/call` | The tool result. No `name` or an unknown tool: -32602. Bad arguments: an `isError` result naming the argument, so the model can fix the call. |
+| `tools/list` | The generic tools below, then the door tools. The first `tools/list` waits for the door tools at most 3 s; later ones answer at once. |
+| `tools/call` | The tool result. No `name` or an unknown tool: -32602. A door tool that is gone: `isError` "`<name>` is gone: the game changed. Call moku_manifest, or moku_run { id }." Bad arguments: an `isError` result naming the argument, so the model can fix the call. |
 | An unknown method | -32601. Claude Code 2.1.280 sends `server/discover` (draft protocol 2026-07-28) first and falls back to `initialize` on this answer. |
 | A line that is not JSON | -32700 with id `null` |
 | A message without id | Never answered. `notifications/cancelled {requestId}` aborts that call (a `moku_wait` unwatches) and drops its answer. Others are ignored. |
 
 The handshake of the installed Claude Code (2.1.280) is recorded in `__tests__/fixtures/claude-discover-probe.json` and `claude-initialize.json` (captured from its stdin during `claude mcp list`): `server/discover`, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized`, `tools/list`. `unit/mcp/claude-code.test.ts` replays it.
 
-`serverInfo.version` is the package version, inlined from `package.json` at build time. `notifications/progress` goes out during `moku_wait` and `moku_series` when the request carries `_meta.progressToken`. `notifications/tools/list_changed` goes out when the bridge connects to another bin than before.
+`serverInfo.version` is the package version, inlined from `package.json` at build time. `notifications/progress` goes out during `moku_wait` and `moku_series` when the request carries `_meta.progressToken`. `notifications/tools/list_changed` goes out only when the door tools change (below). A change before `notifications/initialized` is kept and sent once right after it.
 
 Which bin:
 
@@ -328,12 +329,12 @@ Which bin:
 4. When the hub socket closes, the bridge reads the discovery file again and reconnects once. Every later tool call tries one connect to a live bin; `moku_start` starts one.
 5. On stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes. An owned bin gets SIGTERM, then SIGKILL after 2 s. A bin the bridge did not start keeps running. The signal handlers stay until the teardown is done, so a second Ctrl+C cannot leave an owned bin behind. After a signal the bridge lets go of stdin, so the process exits 0 even while the client keeps the pipe open. Lines that arrive after a signal are not handled.
 
-Tools. Every name starts with `moku_`; every input schema is a closed object (`additionalProperties: false`); every game tool takes an optional `session` (the hub rule picks one otherwise; `choose_session` answers `isError` listing the sessions). Annotations are static (M6): `readOnlyHint: true, openWorldHint: false` for the read-only tools; the others below.
+Generic tools. Every name starts with `moku_`; every input schema is a closed object (`additionalProperties: false`); every game tool takes an optional `session` (the hub rule picks one otherwise; `choose_session` answers `isError` listing the sessions). Annotations are static (M6): `readOnlyHint: true, openWorldHint: false` for the read-only tools; the others below.
 
 | Tool | Input | Does | Annotations |
 |---|---|---|---|
 | `moku_status` | `{}` | running, owned, game and tools URLs, port, pid, root, html, hot reload, sessions with heartbeat | read-only |
-| `moku_sessions` | `{}` | sessions with `heartbeat { frame, paused, silent }` | read-only |
+| `moku_sessions` | `{}` | sessions with `heartbeat { frame, paused, silent }` and `manifestHash` | read-only |
 | `moku_manifest` | `{ session? }` | game, page, sources and commands | read-only |
 | `moku_read` | `{ id, input?, session? }` | hub `read` | read-only |
 | `moku_wait` | `{ id, input?, until?, changedFrom?, timeoutMs? (100–25000, 10000), session? }` | hub `watch` until the value deep-equals `until`, differs from `changedFrom`, or (neither) first changes; `{ timedOut, value, waitedMs }`; always unwatches | read-only |
@@ -349,6 +350,26 @@ Tools. Every name starts with `moku_`; every input schema is a closed object (`a
 | `moku_reload` | `{ restore? (true), session? }` | `editor.reload`, then waits at most 15 s for the game to connect again; `{ restored, frame, session, game }`. A -32001 on that run is expected. | not destructive, not idempotent |
 | `moku_start` | `{ html?, port? }` | starts the bin when none runs | not destructive, idempotent |
 | `moku_stop` | `{}` | stops an owned bin; another bin answers `isError` | destructive, idempotent |
+
+Door tools (D-35, D-36, D-37). Each command door of the selected session gets its own tool with a typed input schema, so the model does not guess `input` for `moku_run`. Sources stay behind `moku_read`.
+
+| Rule | |
+|---|---|
+| Name | The id with `.` as `_`: `game.tap` is `game_tap`, `timber.openShop` is `timber_openShop`. Cheat and raw doors carry the effect first: `cheat_game_fill`, `raw_game_restore`. |
+| No tool | A name that starts with `moku_` or is longer than 40 characters, an id outside `[A-Za-z0-9._-]`, an input field named `_session` or outside `[A-Za-z0-9_-]{1,64}`, two doors with the same name (both), and the doors the generic tools cover: `editor.capture`, `editor.sheet`, `editor.series`, `editor.seriesStop`, `editor.reload`. Each is logged once per hash on stderr; `moku_run` still runs it. |
+| Input | One property per field: `string`, `number` (any finite number), `boolean`, and `json` (any JSON). Fields without `?` are required. `_session` routes the call to another session. |
+| Run | Hub `run { id, input }` (`input` left out when empty) in the session; the answer reads like `moku_run`: `effect: <effect>`, then `{ value, frame, state }`. |
+| Description, annotations | `[<effect>] <title>. Command door <id> of <game>. Same as moku_run { id: "<id>" }.` `read` is read-only; `route` and `cosmetic` are not destructive; `cheat` and `raw` are destructive. Claude Code ignores annotations for permissions, so the name prefix is the guard. |
+| Selected session | The one `moku_run` uses without `session`: the only one, else the one embedded. Several without one embedded: no door tools. |
+| Change | The hub stamps `manifestHash` (the hash of the commands) on every session. The doors are rebuilt, and `list_changed` sent, only when that hash moves. Without a session the set stays 5 s, so a hot reload of the same game changes nothing. A bin without `manifestHash` is fetched once per session. A failed manifest fetch keeps the set; the next `sessions` push retries. |
+
+Deny the cheat and raw doors in Claude Code settings:
+
+```json
+{ "permissions": { "deny": ["mcp__moku-editor__cheat_*", "mcp__moku-editor__raw_*"] } }
+```
+
+A client that does not refresh its list after `list_changed` keeps the old door tools. A door that is gone answers `isError`; `moku_run` runs every door.
 
 Results: a text item first (pretty JSON or a message), then images as `{ type: "image", data, mimeType }`. The `mimeType` follows the data URL the editor answered: `image/jpeg` for the default JPEG pictures (D-34), `image/png` for `format: "png"`. A page that cannot decode or encode the picture (no canvas, such as a headless agent) answers the game's own PNG, and the image item says `image/png`. A screenshot above 300 KB of base64 is taken once more at half its width: half of `maxWidth`, or half of the picture when the picture is narrower (its width is read from the PNG header or the JPEG SOF0/SOF2 frame header). A picture still above 300 KB (the page could not shrink it, or a contact sheet, which is not taken twice) is answered anyway, with `note` giving its size. A contact sheet comes from `editor.sheet`, shrunk in the page to 1080 px wide; an agent without `editor.sheet` (an older capture plugin) gets `game.capture { sheet }` at full size.
 

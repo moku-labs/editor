@@ -1,12 +1,18 @@
 /**
  * @file pages/mcp — checks the arguments of a tool call against its input schema (the JSON Schema
- * subset of `PropertySchema`: string with an optional enum, integer with a range, boolean, a
- * closed object of numbers such as a rect, any JSON) and reads the checked values. A problem is a
- * message for an `isError` result, so the model can fix the call.
+ * subset of `PropertySchema`: string with an optional enum, integer with a range, plain number,
+ * boolean, a closed object of numbers such as a rect, any JSON) and reads the checked values. A
+ * problem is a message for an `isError` result, so the model can fix the call.
  */
 import type { Json, SelectionRect } from "../../registry/protocol";
 import { isObject } from "./rpc";
-import type { JsonObject, PropertySchema, ToolAnnotations, ToolInputSchema } from "./types";
+import type {
+  JsonObject,
+  NumberFieldSchema,
+  PropertySchema,
+  ToolAnnotations,
+  ToolInputSchema
+} from "./types";
 
 /**
  * An object property schema: a closed object of number fields.
@@ -41,6 +47,26 @@ function stringProblem(
 }
 
 /**
+ * Why a present value is not a plain number at least its minimum, or undefined when it is one.
+ *
+ * @param name - The argument name, such as `x` or `rect.w`.
+ * @param schema - Its number schema.
+ * @param value - The present value.
+ * @returns The problem, or undefined.
+ * @example
+ * ```ts
+ * numberProblem("x", { type: "number", description: "" }, "1"); // "x must be a number"
+ * numberProblem("rect.w", { type: "number", minimum: 1, description: "" }, 0.5); // "rect.w must be at least 1"
+ * ```
+ */
+function numberProblem(name: string, schema: NumberFieldSchema, value: Json): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return `${name} must be a number`;
+  return schema.minimum !== undefined && value < schema.minimum
+    ? `${name} must be at least ${String(schema.minimum)}`
+    : undefined;
+}
+
+/**
  * Why a present object does not fit its property: not an object, an unknown or missing field, or
  * a field that is not a number at least its minimum.
  *
@@ -65,13 +91,9 @@ function objectProblem(name: string, schema: ObjectSchema, value: Json): string 
   }
   for (const [field, property] of Object.entries(schema.properties)) {
     const member = value[field];
-    if (member === undefined) continue;
-    if (typeof member !== "number" || !Number.isFinite(member)) {
-      return `${name}.${field} must be a number`;
-    }
-    if (property.minimum !== undefined && member < property.minimum) {
-      return `${name}.${field} must be at least ${String(property.minimum)}`;
-    }
+    const problem =
+      member === undefined ? undefined : numberProblem(`${name}.${field}`, property, member);
+    if (problem !== undefined) return problem;
   }
   return undefined;
 }
@@ -96,6 +118,9 @@ function valueProblem(name: string, schema: PropertySchema, value: Json): string
     }
     case "object": {
       return objectProblem(name, schema, value);
+    }
+    case "number": {
+      return numberProblem(name, schema, value);
     }
     case "integer": {
       if (typeof value !== "number" || !Number.isInteger(value)) {

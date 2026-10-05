@@ -1,7 +1,8 @@
 /**
- * @file pages/mcp — the tool table of the bridge (M5): seventeen `moku_*` tools with fixed input
+ * @file pages/mcp — the tool table of the bridge (M5): the generic `moku_*` tools with fixed input
  * schemas (`additionalProperties: false`) and static annotations (M6), and the runner that turns
- * any failure into an `isError` result.
+ * any failure into an `isError` result. The door tools of the selected session come after them
+ * (`door-tools.ts`).
  */
 import { reloadTool, startTool, stopTool } from "./editor-tools";
 import { filesListTool, filesReadTool, filesWriteTool } from "./file-tools";
@@ -12,7 +13,7 @@ import { selectionTool, selectTool } from "./selection-tools";
 import type { Tool, ToolCall, ToolContext, ToolDefinition, ToolResult } from "./types";
 
 /**
- * Every tool, in the order `tools/list` shows them.
+ * Every generic tool, in the order `tools/list` shows them (the door tools follow).
  */
 export const TOOLS: readonly Tool[] = [
   statusTool,
