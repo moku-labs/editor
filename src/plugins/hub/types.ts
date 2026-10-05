@@ -11,6 +11,7 @@ import type {
   Heartbeat,
   Json,
   Manifest,
+  PublishMethod,
   PublishParams,
   SessionInfo,
   SubId
@@ -273,9 +274,9 @@ export type SharedSub = {
 
 /**
  * A method `publish` sends to the tools pages (R6, A5): `"hotReload"` or `"selection"`, the keys of
- * the protocol's PublishParams.
+ * the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
  */
-export type PublishMethod = keyof PublishParams;
+export type { PublishMethod } from "../registry/protocol";
 
 /**
  * Hub state (the api returns closures and copies, never these maps).

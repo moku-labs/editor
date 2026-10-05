@@ -51,6 +51,7 @@ export type {
   NodeRef,
   Notification,
   PathParams,
+  PictureFormat,
   PublishMethod,
   PublishParams,
   ReadParams,

@@ -138,6 +138,7 @@ export async function saveShots(
   const link = ctx.require(linkPlugin);
   if (!gameReady(link, GAME_COMMANDS.capture)) return undefined;
   try {
+    // Capture the frame and check that the game sent a picture.
     const ran = await ctx.require(panelsPlugin).run(GAME_COMMANDS.capture);
     const shot = shotOf(ran.value);
     if (shot === undefined) {
@@ -145,6 +146,8 @@ export async function saveShots(
         "[moku-editor] editor.capture returned no image.\n  Update the game's capturePlugin."
       );
     }
+
+    // Crop the rect and name the files, each with the extension of its picture.
     const crop = await cropOf(ctx, rect, scene, shot.image);
     const { capturesDir } = ctx.config;
     const taken = await listTaken(ctx, capturesDir);
@@ -152,8 +155,12 @@ export async function saveShots(
       crop: imageExtension(crop ?? shot.image),
       full: imageExtension(shot.image)
     });
+
+    // Write the crop (when it could be cut), then the full frame.
     if (crop !== undefined) await link.files.writeBinary(paths.crop, crop);
     await link.files.writeBinary(paths.full, shot.image);
+
+    // Describe the saved files for the capture card.
     const { preset } = ctx.require(workspacePlugin).device();
     return {
       frame: shot.frame,

@@ -130,7 +130,9 @@ async function selection(call: ToolCall, context: ToolContext): Promise<ToolResu
   if (answer === null) return { content: [textItem(NOTHING_SELECTED)] };
 
   const info = readSelection(answer, "selection");
-  if (asked !== undefined && info.session !== undefined && info.session !== asked) {
+  const isOtherSession =
+    asked !== undefined && info.session !== undefined && info.session !== asked;
+  if (isOtherSession) {
     const other = `Nothing is selected in session ${asked}; the selection belongs to session ${info.session}.`;
     return { content: [textItem(other)] };
   }
@@ -157,7 +159,9 @@ async function select(call: ToolCall, context: ToolContext): Promise<ToolResult>
 }
 
 /**
- * moku_selection.
+ * moku_selection: tells an MCP client what is selected in the editor page now (by the Reference
+ * picker or by moku_select), as SelectionInfo JSON plus its crop picture. Read-only; a session
+ * argument limits the answer to that session.
  */
 export const selectionTool: Tool = {
   name: "moku_selection",
@@ -174,7 +178,9 @@ export const selectionTool: Tool = {
 };
 
 /**
- * moku_select.
+ * moku_select: lets an MCP client select an element by ui key, or every element inside a rect,
+ * in the editor page, the way the Reference picker does. With `card` (the default) the page writes
+ * the reference card and the crop; the answer is the selection as JSON plus the crop picture.
  */
 export const selectTool: Tool = {
   name: "moku_select",

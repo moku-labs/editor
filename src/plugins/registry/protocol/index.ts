@@ -82,6 +82,7 @@ export type {
   Notification,
   Orientation,
   PathParams,
+  PictureFormat,
   PublishMethod,
   PublishParams,
   ReadParams,

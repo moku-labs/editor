@@ -5,7 +5,7 @@
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { Require } from "../../config";
-import type { RunState, SelectionRect } from "../registry/protocol";
+import type { PictureFormat, RunState, SelectionRect } from "../registry/protocol";
 import type { CommandEntry, SourceEntry } from "../registry/types";
 
 /**
@@ -168,9 +168,10 @@ export type CaptureClock = {
 };
 
 /**
- * The format a picture is encoded in: `"jpeg"` (the default, D-34) or `"png"` (the old lossless path).
+ * The format a picture is encoded in: `"jpeg"` (the default, D-34) or `"png"` (the old lossless
+ * path). The protocol's PictureFormat, re-exported under capture's name.
  */
-export type PictureFormat = "jpeg" | "png";
+export type { PictureFormat } from "../registry/protocol";
 
 /**
  * A size in picture pixels.

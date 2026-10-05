@@ -1,6 +1,6 @@
 # pages
 
-> Standard plugin (server core). It serves the tools page and its assets from the editor server. It also serves the `hello` route that the game page's bridge calls to learn the websocket URL and the token. The `moku-editor` bin lives here too, with its `mcp` and `mcp-config` subcommands and the `.moku/editor.json` discovery file.
+> Complex plugin (server core). It serves the tools page and its assets from the editor server. It also serves the `hello` route that the game page's bridge calls to learn the websocket URL and the token. The `moku-editor` bin lives here too, with its `mcp` and `mcp-config` subcommands and the `.moku/editor.json` discovery file.
 
 `onInit` checks the config, finds the built page and registers five routes with `hub.addRoutes`. There is no `onStart` and no `onStop`. After `stop` the hub has no token, so the page, `hello` and a `hmr` POST answer 503.
 
@@ -24,7 +24,7 @@ A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` wit
 | Member | Signature | Notes |
 |---|---|---|
 | `routes` | `routes(): EditorRoutes` | A copy of the routes registered with the hub in `onInit`. |
-| `attachServer` | `attachServer(server: AttachedServer, options: BunServeOptions, restart?: RestartServer): void` | The bin calls it right after its first `Bun.serve`. The bin owns hot reload from then on; HMR is read from `options.development`; the state is published with `hub.publish("hotReload", …)`. `restart(options)` stops the bin's current server and serves `options` on the same port; with it `setHotReload` can switch (see Hot reload). `server` is not used. |
+| `attachServer` | `attachServer(options: BunServeOptions, restart?: RestartServer): void` | The bin calls it right after its first `Bun.serve`. The bin owns hot reload from then on; HMR is read from `options.development`; the state is published with `hub.publish("hotReload", …)`. `restart(options)` stops the bin's current server and serves `options` on the same port; with it `setHotReload` can switch (see Hot reload). |
 | `hotReload` | `hotReload(): HotReload` | A fresh `{ hmr, owner }`. Owner `"server"` with `hmr: false` until `attachServer`. |
 | `setHotReload` | `setHotReload(on: boolean): Promise<boolean>` | The bin with a restart switches: true at once, the server restarts after the answer. The same value answers true. Owner `"server"` always answers false. Publishes the state in every case. |
 
@@ -34,7 +34,7 @@ editor.pages.hotReload(); // { hmr: true, owner: "bin" } in the bin
 await editor.pages.setHotReload(false); // true: the bin's server restarts without HMR
 ```
 
-`AttachedServer` is `{ port?, stop(closeActiveConnections?) }`; Bun's Server is one. `RestartServer` is `(options: BunServeOptions) => Promise<void>`. Both are in `types.ts`.
+`AttachedServer` is `{ port?, stop(closeActiveConnections?) }`; Bun's Server is one. `serve.ts` uses it for the bin's game server. `RestartServer` is `(options: BunServeOptions) => Promise<void>`. Both are in `types.ts`.
 
 ### Hot reload (R6, D-23, D-32)
 
@@ -71,7 +71,7 @@ reloads the game frame with its state after an accepted switch (workspace README
 | Owner `"server"` | false | Nothing. The state is published unchanged. |
 | The bin, `on` equals `hmr` | true | Nothing. The state is published. |
 | The bin with its restart, `on` differs | true | The switch above. |
-| The bin without a restart (`attachServer` with two arguments) | false | `pages:hot-reload-read-only` at info. The state stays. |
+| The bin without a restart (`attachServer` with one argument) | false | `pages:hot-reload-read-only` at info. The state stays. |
 
 History: why the switch restarts the server. **Spike, Bun 1.3.14: `server.reload` does not
 switch HMR.** Verified with a real Chromium page on a `Bun.serve` with an HTML route:
@@ -344,7 +344,7 @@ What `main` (`cli.ts`) does:
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
 4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
-5. `editor.pages.attachServer(game.current(), options, next => game.restart(next))`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification, and the Hot reload switch can restart the server (see Hot reload).
+5. `editor.pages.attachServer(options, next => game.restart(next))`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification, and the Hot reload switch can restart the server (see Hot reload).
 6. Writes `.moku/editor.json` (see Discovery file).
 7. Prints the Game, Tools and Root lines. The token is never printed.
 8. On `SIGINT` or `SIGTERM`, once: removes `.moku/editor.json`, `editor.stop()`, then stops the current game server (after a restart under way) with `stop(true)` bounded to 500 ms, prints `stopped`, exits 0.

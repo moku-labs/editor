@@ -1,10 +1,10 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { Require } from "../../../../config";
 import { createApp } from "../../../../server";
-import type { EditorRoutes } from "../../../hub/types";
+import type { BunServeOptions, EditorRoutes } from "../../../hub/types";
 import { createPagesApi } from "../../api";
 import { parseBinArgs } from "../../args";
-import type { BinArgs } from "../../types";
+import type { BinArgs, PagesApi, RestartServer } from "../../types";
 import { createHarness, createLog } from "../helpers";
 
 /**
@@ -49,8 +49,7 @@ describe("createPagesApi hot reload", () => {
 
   it("attachServer() makes the bin the owner and publishes the state through the hub", () => {
     const { api, harness } = apiWithHub();
-    const server = { port: 4000, stop: () => Promise.resolve() };
-    api.attachServer(server, { development: { hmr: true, console: true } } as never);
+    api.attachServer({ development: { hmr: true, console: true } } as never);
 
     expect(api.hotReload()).toEqual({ hmr: true, owner: "bin" });
     expect(harness.hub.publish).toHaveBeenCalledWith("hotReload", { hmr: true, owner: "bin" });
@@ -58,7 +57,7 @@ describe("createPagesApi hot reload", () => {
 
   it("setHotReload() without the bin's restart keeps Bun's value and answers whether it is the asked one", async () => {
     const { api, harness } = apiWithHub();
-    api.attachServer({ stop: () => Promise.resolve() }, { development: { hmr: true } } as never);
+    api.attachServer({ development: { hmr: true } } as never);
 
     await expect(api.setHotReload(true)).resolves.toBe(true);
     await expect(api.setHotReload(false)).resolves.toBe(false);
@@ -71,11 +70,7 @@ describe("createPagesApi hot reload switch (D-32)", () => {
   it("attachServer() keeps the bin's restart: setHotReload() switches through it", async () => {
     const { api } = apiWithHub();
     const restart = vi.fn(() => Promise.resolve());
-    api.attachServer(
-      { port: 4000, stop: () => Promise.resolve() },
-      { development: { hmr: true, console: true } } as never,
-      restart
-    );
+    api.attachServer({ development: { hmr: true, console: true } } as never, restart);
 
     await expect(api.setHotReload(false)).resolves.toBe(true);
     expect(api.hotReload()).toEqual({ hmr: false, owner: "bin" });
@@ -117,6 +112,17 @@ function rejected() {
   return app.pages.state;
 }
 
+/**
+ * Calls attachServer with the old (server, options) pair; compiled only, never run.
+ *
+ * @param api - The pages api.
+ * @param options - Serve options.
+ */
+function rejectedAttach(api: PagesApi, options: BunServeOptions): void {
+  // @ts-expect-error the server argument is gone: attachServer(options, restart?)
+  api.attachServer({ stop: () => Promise.resolve() }, options);
+}
+
 describe("type surface", () => {
   it("types app.pages.routes() as EditorRoutes and parseBinArgs as BinArgs", () => {
     expectTypeOf<
@@ -127,5 +133,15 @@ describe("type surface", () => {
 
   it("rejects a wrong config type and hides state", () => {
     expectTypeOf(rejected).toBeFunction();
+  });
+
+  it("types attachServer as (options, restart?) with no server argument", () => {
+    expectTypeOf<Parameters<PagesApi["attachServer"]>["length"]>().toEqualTypeOf<1 | 2>();
+    expectTypeOf<PagesApi["attachServer"]>().parameter(0).toEqualTypeOf<BunServeOptions>();
+    expectTypeOf<PagesApi["attachServer"]>()
+      .parameter(1)
+      .toEqualTypeOf<RestartServer | undefined>();
+    expectTypeOf<PagesApi["attachServer"]>().returns.toBeVoid();
+    expectTypeOf(rejectedAttach).toBeFunction();
   });
 });

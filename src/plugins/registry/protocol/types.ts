@@ -641,6 +641,17 @@ export type PublishParams = {
 export type PublishMethod = keyof PublishParams;
 
 /**
+ * The format a picture travels in on the wire (editor.capture, editor.sheet, a crop): `"jpeg"`
+ * (the default, D-34) or `"png"` (lossless).
+ *
+ * @example
+ * ```ts
+ * const format: PictureFormat = "jpeg";
+ * ```
+ */
+export type PictureFormat = "jpeg" | "png";
+
+/**
  * Params of the editor-channel request `select`: an area by `rect`, the element by `key` (a ui
  * node key, projection-qualified like `"hud/infoBar"` allowed) or by `ref`. `rect` wins over `key`
  * and `ref`. `card` (the page treats absent

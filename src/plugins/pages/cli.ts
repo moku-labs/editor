@@ -299,7 +299,7 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
 
   // The Hot reload switch restarts the game server on the same port (D-32): the hub closes every
   // socket with 1012 first (U11) and keeps its token.
-  editor.pages.attachServer(game.current(), options, next => game.restart(next));
+  editor.pages.attachServer(options, next => game.restart(next));
   const port = game.current().port ?? args.port;
   const release = writeDiscoveryFile(editor, port, { rootPath, htmlPath }, ui);
   printServing(ui, port, editor.hub.path(), rootPath);

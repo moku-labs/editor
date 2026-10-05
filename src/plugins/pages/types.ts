@@ -108,7 +108,6 @@ export type PagesApi = {
    * page through `hub.publish("hotReload", …)`. With `restart`, `setHotReload` can switch HMR by
    * restarting the server (D-32). The bin calls it right after its first `Bun.serve`.
    *
-   * @param server - The running server (Bun's Server).
    * @param options - The options it was started with (the result of `hub.serve`).
    * @param restart - Stops the bin's current server and serves new options on the same port.
    * @example
@@ -116,11 +115,11 @@ export type PagesApi = {
    * // The bin, after it started the game server.
    * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
    * const game = createGameServer(options);
-   * editor.pages.attachServer(game.current(), options, next => game.restart(next));
+   * editor.pages.attachServer(options, next => game.restart(next));
    * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
    * ```
    */
-  attachServer(server: AttachedServer, options: BunServeOptions, restart?: RestartServer): void;
+  attachServer(options: BunServeOptions, restart?: RestartServer): void;
   /**
    * The hot reload state: whether Bun reloads the game page on a source change, and who owns the
    * server. A game's own `Bun.serve` (no `attachServer` call) is owner "server" with HMR off.

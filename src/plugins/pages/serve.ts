@@ -42,7 +42,7 @@ export type StartServer = (options: BunServeOptions) => AttachedServer;
  * const game = createGameServer(editor.hub.serve({ port: 0, routes }), (code, reason) =>
  *   editor.hub.closeAll(code, reason)
  * );
- * editor.pages.attachServer(game.current(), options, next => game.restart(next));
+ * editor.pages.attachServer(options, next => game.restart(next));
  * await game.stop(); // on SIGINT
  * ```
  */

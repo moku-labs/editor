@@ -9,7 +9,7 @@
  */
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path/posix";
-import type { FileEntry, Json } from "../../registry/protocol";
+import type { FileEntry, Json, PictureFormat } from "../../registry/protocol";
 import { readPicture } from "./file-tools";
 import { withProgress } from "./progress";
 import { errorResult, imageItem, imageKb, isTooLarge, pictureResult, textItem } from "./results";
@@ -50,11 +50,6 @@ const MAX_WIDTH = 4096;
  * The link to the crop in a reference card: `![element](<file>)`.
  */
 const CROP_LINK = /!\[element\]\(([^)\s]+)\)/;
-
-/**
- * A picture format editor.capture and editor.sheet encode.
- */
-type PictureFormat = "jpeg" | "png";
 
 /**
  * The picture formats editor.capture and editor.sheet encode; JPEG is the default (D-34).

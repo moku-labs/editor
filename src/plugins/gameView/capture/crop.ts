@@ -7,6 +7,7 @@
  * DOM or a 2D canvas there is no crop.
  */
 import type { PageRect } from "../../panels/shared/scene";
+import type { PictureFormat } from "../../registry/protocol";
 
 /**
  * A box in picture pixels, whole numbers.
@@ -26,7 +27,7 @@ export type PixelBox = {
  * const encoding: CropEncoding = { format: "jpeg", quality: 0.8 };
  * ```
  */
-export type CropEncoding = { readonly format: "jpeg" | "png"; readonly quality: number };
+export type CropEncoding = { readonly format: PictureFormat; readonly quality: number };
 
 /**
  * The margin around the element in device CSS px.
@@ -107,19 +108,24 @@ export async function cropImage(
   device: { readonly w: number },
   encoding: CropEncoding = CROP_ENCODING
 ): Promise<string | undefined> {
+  // No DOM, no crop.
   if (globalThis.document === undefined || globalThis.Image === undefined) return undefined;
 
+  // Decode the picture and find the box in its pixels.
   const picture = await decodeImage(image);
   const size = { width: picture.naturalWidth, height: picture.naturalHeight };
   const box = cropBox(rect, device, size);
   if (box === undefined) return undefined;
 
+  // Draw the box into a canvas of its size.
   const canvas = document.createElement("canvas");
   canvas.width = box.w;
   canvas.height = box.h;
   const context = canvas.getContext("2d");
   if (context === null) return undefined;
   context.drawImage(picture, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+
+  // Encode the canvas as PNG or JPEG.
   if (encoding.format === "png") return canvas.toDataURL("image/png");
   return canvas.toDataURL("image/jpeg", encoding.quality);
 }

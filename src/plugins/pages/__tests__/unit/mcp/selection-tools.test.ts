@@ -156,6 +156,16 @@ describe("moku_selection", () => {
   it("only reads", () => {
     expect(selectionTool.annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
   });
+
+  it("takes only an optional session id", () => {
+    expect(selectionTool.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        session: { type: "string", minLength: 1, description: expect.any(String) }
+      },
+      additionalProperties: false
+    });
+  });
 });
 
 describe("moku_select", () => {
@@ -250,6 +260,29 @@ describe("moku_select", () => {
       destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false
+    });
+  });
+
+  it("takes a key or a rect and the card flag, none of them required by the schema", () => {
+    const side = (minimum: number) => ({
+      type: "number",
+      minimum,
+      description: expect.any(String)
+    });
+    expect(selectTool.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        key: { type: "string", minLength: 1, description: expect.any(String) },
+        rect: {
+          type: "object",
+          description: expect.any(String),
+          properties: { x: side(0), y: side(0), w: side(1), h: side(1) },
+          required: ["x", "y", "w", "h"],
+          additionalProperties: false
+        },
+        card: { type: "boolean", default: true, description: expect.any(String) }
+      },
+      additionalProperties: false
     });
   });
 });

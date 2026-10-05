@@ -7,9 +7,9 @@
  * selection (U10: last, clears the element or area selection in Game), each `false` when gameView
  * has nothing open there.
  */
+import { isEditableTarget } from "../panels/shared/editable";
 import { toggleSidePanel } from "../panels/shared/side-panel";
 import { workspacePlugin } from "../workspace";
-import { isEditableTarget } from "../workspace/keys/keymap";
 import type { EscLayer, KeyBinding } from "../workspace/types";
 import { setPopover } from "./capture/series";
 import { closeSheetLayer, stepSheet, toggleBug } from "./capture/sheet";

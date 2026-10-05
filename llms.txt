@@ -189,7 +189,7 @@ hub.path(): string
 hub.publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void   // "hotReload" | "selection"; to every tools socket, replayed after each tools hello
 
 pages.routes(): EditorRoutes
-pages.attachServer(server, options, restart?): void   // the bin calls it right after Bun.serve; restart lets the switch restart the server
+pages.attachServer(options, restart?): void   // the bin calls it right after Bun.serve; restart lets the switch restart the server
 pages.hotReload(): HotReload                     // { hmr, owner: "bin" | "server" }
 pages.setHotReload(on: boolean): Promise<boolean> // the bin with its restart: true, then restarts its server with HMR flipped (D-32)
 ```
@@ -290,7 +290,7 @@ One line each: core · tier · purpose · key methods · events (E = emits, H = 
 
 - files · server · Standard · project-root sandbox: list, read, atomic write with sha1 version, image captures under `.moku/captures/` · `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` · E `files:written`
 - hub · server · Complex · websocket switchboard: guard, token, sessions (with the `heartbeat { frame, paused, silent }` readout), routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure, the `hotReload` notification, the editor page's `selection` (kept, replayed) and the `editor.select` relay to the page (`role=page`, D-33); wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` · E `hub:session`
-- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*`, `/hello` and `/hmr`; home of the `moku-editor` bin (Bun hot reload on, switched by restarting its server, D-32; `--no-hmr` starts it off), the `.moku/editor.json` discovery file and the stdio MCP bridge (`mcp/`) · `routes`, `attachServer`, `hotReload`, `setHotReload` · no events
+- pages · server · Complex · serves the prebuilt tools page with the boot JSON, `/assets/*`, `/hello` and `/hmr`; home of the `moku-editor` bin (Bun hot reload on, switched by restarting its server, D-32; `--no-hmr` starts it off), the `.moku/editor.json` discovery file and the stdio MCP bridge (`mcp/`) · `routes`, `attachServer`, `hotReload`, `setHotReload` · no events
 
 ### Tools core (`editor-tools`)
 

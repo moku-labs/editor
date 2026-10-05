@@ -97,7 +97,8 @@ function invalidRequest(message: string): Error {
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * throw invalidSelectParams();
+ * invalidSelectParams().message;
+ * // "[moku-editor] editor.select params must be { key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }"
  * ```
  */
 function invalidSelectParams(): Error {
@@ -126,17 +127,19 @@ function checkSub(sub: number): SubId {
 }
 
 /**
- * The descriptor of a source (read, watch) or command (run) in the session's manifest, with its
- * input checked.
+ * Checks that the id names a source (read, watch) or a command (run) in the session's manifest,
+ * and that the input fits its descriptor.
  *
  * @param session - The chosen session.
  * @param method - "read", "watch" or "run".
  * @param id - The source or command id.
  * @param input - The request input.
+ * @returns {void} Nothing; it throws when the id is unknown or the input is wrong.
  * @throws {Error} -32601 `unknown_id` (data.id) or -32602 from checkInput.
  * @example
  * ```ts
- * checkTarget(session, "run", "game.step", { frames: 1 });
+ * checkTarget(session, "run", "game.step", { frames: 1 }); // passes
+ * checkTarget(session, "run", "game.nope", {}); // throws "[moku-editor] unknown command game.nope"
  * ```
  */
 function checkTarget(session: Session, method: string, id: string, input: Json | undefined): void {

@@ -191,6 +191,7 @@ Rules for all of them:
 | `side-panel/` | flowView, gameView, filesView | The one SidePanel of every view's side panel: resize, collapse, close and reopen, overlay. |
 | `icons.tsx` | workspace, flowView | `Icon` and `IconName`: the 16 px stroke icons of the shell and the views, `aria-hidden`. |
 | `workspaces.ts` | workspace, panels | `WORKSPACE_IDS` in rail order (Game first) and `WORKSPACE_LABELS`. |
+| `editable.ts` | workspace, gameView | `isEditableTarget`: whether a target types text (input, textarea, select, contenteditable). |
 
 ### `style-edit.ts`
 
@@ -376,4 +377,16 @@ never spawns a process.
 ```ts
 editorUrlOf("vscode://file/{path}:{line}", "/Users/alex/game", "nodes/merge.ts", 12);
 // "vscode://file/Users/alex/game/nodes/merge.ts:12"
+```
+
+### `editable.ts`
+
+`isEditableTarget(target) => boolean`. Pure. True for an input, a textarea, a select, or an
+element inside `[contenteditable]` (not `contenteditable="false"`). False for `null` and for a
+target that is no element. The workspace keymap lets single keys reach such a field; gameView
+leaves Escape to it.
+
+```ts
+isEditableTarget(document.createElement("input")); // true
+isEditableTarget(null); // false
 ```

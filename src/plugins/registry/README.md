@@ -216,6 +216,7 @@ Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10, A15):
 | `SelectionItem` | All readonly. One element of an area selection: `ref`, `name`, `type` required; `key`, `rect`, `source` optional. |
 | Area selection (U9) | `type: "area"`, `name: "area"`, `rect` = `area` = the dragged area in page CSS px, `items` = the group roots inside, top to bottom then left to right, at most 40. `ref` = the first item's ref, or `{ kind: "ui", path: "" }` when no element is inside (`items: []`). |
 | `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null }`. `PublishMethod` is its keys: `"hotReload" \| "selection"`. |
+| `PictureFormat` | `"jpeg" \| "png"`: the format of a picture on the wire (editor.capture, editor.sheet, a crop). JPEG is the default (D-34). capture, gameView and the MCP bridge use this one type. |
 | `SelectParams` | `{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }`. `rect` picks an area like a Reference-mode drag and wins over `key` and `ref`. The page treats an absent `card` as `true`. |
 | `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. |
 
