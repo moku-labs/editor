@@ -20,10 +20,12 @@ import {
 
 const reasonTable: readonly [ErrorReason, number, boolean][] = [
   ["game_reloaded", -32_001, true],
+  ["page_closed", -32_001, true],
   ["timeout", -32_002, true],
   ["link_closed", -32_002, true],
   ["no_session", -32_003, false],
   ["choose_session", -32_003, false],
+  ["no_editor_page", -32_003, false],
   ["invalid_input", -32_602, false],
   ["unknown_id", -32_601, false],
   ["command_failed", -32_000, false],
@@ -48,7 +50,9 @@ describe("errorCode", () => {
       versionConflict: -32_005,
       notJson: -32_006,
       unauthorized: -32_007,
-      notInstalled: -32_008
+      notInstalled: -32_008,
+      noEditorPage: -32_003,
+      pageClosed: -32_001
     });
   });
 

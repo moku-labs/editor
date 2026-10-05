@@ -192,6 +192,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 |---|---|
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
 | `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
+| `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values. Unknown fields are ignored by the guard and dropped by the parsers. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
@@ -206,6 +207,39 @@ Shapes added in round 2 (R4, R6):
 | `Manifest.restored?` | `{ bookmark: string, frame: number }`: the bridge's first hello after it restored its checkpoint across Bun's full reload. `bookmark` is the JSON text of the restored bookmark, `frame` the frame of the page that took it. |
 | `HotReload` | `{ hmr: boolean, owner: "bin" \| "server" }`: the hub's editor-channel notification `hotReload`. |
 | `DeviceSpec` | Gains `dpr`, `radius`, `group` (`iphone`, `android`, `foldable`, `tablet`, `desktop`), `frame` (`"modern"` \| `"home-button"`, round 2b R9: the bezel gameView draws), `approx?: true`, `fold?: { cover, inner }` of `FoldScreen { w, h, radius }`. `dpr`, `radius`, `group` and `frame` are required: `devices.ts` fills them for the 21 presets. |
+
+Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10):
+
+| Type | Fields |
+|---|---|
+| `SelectionInfo` | All readonly. `ref` (`SelectionRef`: `{ kind: "ui", path }` or `{ kind: "entity", id }`, the scene's `ElementRef`), `name`, `type`, `at` (`Date.now()` at publish) required. Optional: `key`, `projection`, `rect` (`SelectionRect` in page CSS px, as `SceneNode.rect`), `source { path, line }`, `card` and `crop` (project-relative under `capturesDir`), `line` (the `@moku …` reference), `session`, `frame` (the scene frame; after a pick, the pick frame). Assignable to `Json`. |
+| `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null }`. `PublishMethod` is its keys: `"hotReload" \| "selection"`. |
+| `SelectParams` | `{ key?: string, ref?: SelectionRef, card?: boolean }`. The page treats an absent `card` as `true`. |
+| `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. |
+
+```ts
+parseSelectionInfo({ ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1, zoom: 2 });
+// { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1 }
+parseSelectParams({ card: "yes" }); // undefined
+```
+
+Editor-channel methods:
+
+| Kind | Method | Params | Result | Between |
+|---|---|---|---|---|
+| notification | `session` | `SessionParams` | | hub to agents and tools |
+| notification | `sessions` | `SessionsParams` | | hub to tools |
+| notification | `hotReload` | `HotReload` | | hub to tools (published) |
+| notification | `selection` | `SelectionInfo \| null` | | editor page to hub, hub to tools (published) |
+| request | `selection` | `{}` | `SelectionInfo \| null` | tools to hub |
+| request | `select` | `SelectParams` | `SelectionInfo` | tools to hub, hub to the editor page |
+
+Errors of the selection relay:
+
+| Reason | Code | `errorCode` | Retryable | When |
+|---|---|---|---|---|
+| `no_editor_page` | -32003 | `noEditorPage` | no | No tools connection with `role=page` is open. |
+| `page_closed` | -32001 | `pageClosed` | yes | The page closed before it answered. |
 
 Game-channel notifications of the agent and their params:
 

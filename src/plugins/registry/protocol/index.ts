@@ -39,6 +39,7 @@ export {
   success
 } from "./messages";
 export { HOST_ATTRIBUTE } from "./overlay-host";
+export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
 export type { NodeRef, SourceOverrides } from "./source-files";
 export {
   flowFile,
@@ -56,6 +57,10 @@ export type {
   DeviceSize,
   DeviceSpec,
   EditorChannel,
+  EditorNotificationMethod,
+  EditorNotifications,
+  EditorRequestMethod,
+  EditorRequests,
   Effect,
   ErrorReason,
   FileBinary,
@@ -77,12 +82,18 @@ export type {
   Notification,
   Orientation,
   PathParams,
+  PublishMethod,
+  PublishParams,
   ReadParams,
   Request,
   Response,
   RunParams,
   RunResult,
   RunState,
+  SelectionInfo,
+  SelectionRect,
+  SelectionRef,
+  SelectParams,
   SessionInfo,
   SessionParams,
   SessionsParams,
