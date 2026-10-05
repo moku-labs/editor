@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forbidden } from "../../../files/errors";
+import { forbidden, invalid } from "../../../files/errors";
 import { request, wireError } from "../../../registry/protocol";
 import { dispatchFiles } from "../../routing/files";
 import { createHarness, errorOf, fakeFiles, resultOf } from "../helpers";
@@ -48,7 +48,7 @@ describe("dispatchFiles", () => {
     expect(files.write).toHaveBeenLastCalledWith("src/b.ts", "y", undefined);
   });
 
-  it("decodes the writeBinary data URL with its path (R1)", async () => {
+  it("hands the writeBinary data URL to writeDataUrl with its path (R1)", async () => {
     const files = fakeFiles();
 
     const result = await dispatchFiles(files, "writeBinary", {
@@ -56,20 +56,19 @@ describe("dispatchFiles", () => {
       data: PNG
     });
 
-    const [path, bytes] = files.writeBinary.mock.calls[0] ?? [];
-    expect(path).toBe(".moku/captures/a.png");
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect([...(bytes ?? [])]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect(files.writeDataUrl).toHaveBeenCalledWith(".moku/captures/a.png", PNG);
+    expect(files.writeBinary).not.toHaveBeenCalled();
     expect(result).toEqual({ path: ".moku/captures/a.png", bytes: 8, version: "v3" });
   });
 
-  it("refuses a data URL whose mime does not match the path, without calling files", async () => {
+  it("rethrows the writeDataUrl wire error of a mismatched mime unchanged", async () => {
     const files = fakeFiles();
+    const error = invalid("data", "writeBinary: data type image/png does not match a.jpg");
+    files.writeDataUrl.mockRejectedValueOnce(error);
 
     await expect(
       dispatchFiles(files, "writeBinary", { path: ".moku/captures/a.jpg", data: PNG })
-    ).rejects.toMatchObject({ code: -32_602, data: { field: "data" } });
-    expect(files.writeBinary).not.toHaveBeenCalled();
+    ).rejects.toBe(error);
   });
 
   it("answers readBinary with { dataUrl, version }", async () => {

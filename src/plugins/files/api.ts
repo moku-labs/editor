@@ -1,5 +1,6 @@
 /**
- * @file files plugin — api factory: list, read, write, writeBinary, readBinary, resolve, root.
+ * @file files plugin — api factory: list, read, write, writeBinary, writeDataUrl, readBinary,
+ * resolve, root.
  * Thin: every call goes through the sandbox (sandbox.ts) and then the file-system helpers (io.ts).
  * Any error that is not already a wire error becomes -32000 naming the relative path only.
  */
@@ -7,7 +8,7 @@ import { realpath } from "node:fs/promises";
 import { dirname } from "node:path/posix";
 import type { FileBinary, FileEntry, FileText, WriteResult } from "../registry/protocol";
 import { isWireError } from "../registry/protocol";
-import { encodeDataUrl } from "./binary";
+import { decodeDataUrl, encodeDataUrl } from "./binary";
 import { conflict, forbidden, invalid, ioFailed } from "./errors";
 import {
   atomicWrite,
@@ -240,7 +241,7 @@ async function readFile(ctx: FilesCtx, path: string): Promise<FileText> {
  * @returns The api mounted at `app.files`.
  */
 export function createFilesApi(ctx: FilesCtx): FilesApi {
-  return {
+  const api: FilesApi = {
     list: dir => guard("list", dir, () => listFolder(ctx, dir)),
     read: path => guard("read", path, () => readFile(ctx, path)),
     write: (path, text, version) =>
@@ -251,6 +252,7 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
       guard("writeBinary", path, () =>
         withLock(ctx.state, path, () => writeImage(ctx, path, bytes))
       ),
+    writeDataUrl: async (path, dataUrl) => api.writeBinary(path, decodeDataUrl(dataUrl, path)),
     readBinary: path => guard("readBinary", path, () => readImage(ctx, path)),
     resolve: path => {
       try {
@@ -261,4 +263,6 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
     },
     root: () => ctx.state.rootReal
   };
+
+  return api;
 }

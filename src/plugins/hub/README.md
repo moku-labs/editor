@@ -325,8 +325,7 @@ Log events (`ctx.log`):
 
 | Kind | Name | Use |
 |---|---|---|
-| depends | `filesPlugin` | `list`, `read`, `write`, `writeBinary`, `readBinary` for the files channel |
-| import | `decodeDataUrl` from `../files` | decodes `writeBinary` data; a mime that does not match the path is -32602, a non-image path is -32004 |
+| depends | `filesPlugin` | `list`, `read`, `write`, `writeDataUrl`, `readBinary` for the files channel. `writeBinary {path, data}` calls `writeDataUrl(path, data)`: a mime that does not match the path is -32602, a non-image path is -32004 |
 | global event | `hub:session` | emitted |
 | protocol | `../registry/protocol` | `SessionInfo`, `SelectionInfo`, `PublishParams`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
 

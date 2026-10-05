@@ -1,9 +1,8 @@
 /**
  * @file hub plugin — the files channel: params checked with checkInput, then list, read, write,
- * writeBinary (the data URL decoded with its path, R1) and readBinary of the files plugin. Files
- * errors are wire errors already and pass through unchanged.
+ * writeBinary (the data URL goes to writeDataUrl, which decodes it with its path, R1) and
+ * readBinary of the files plugin. Files errors are wire errors already and pass through unchanged.
  */
-import { decodeDataUrl } from "../../files";
 import type { FilesApi } from "../../files/types";
 import type {
   FileBinary,
@@ -68,7 +67,7 @@ async function callFiles(files: FilesApi, method: string, params: Json): Promise
     }
     case "writeBinary": {
       const { path, data } = checkInput(WRITE_BINARY, params);
-      return files.writeBinary(path, decodeDataUrl(data, path));
+      return files.writeDataUrl(path, data);
     }
     case "readBinary": {
       return files.readBinary(checkInput(PATH, params).path);

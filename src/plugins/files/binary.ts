@@ -1,6 +1,6 @@
 /**
- * @file files plugin — data URL codec for captures (hub decodes the files-channel writeBinary
- * data with decodeDataUrl) and the image extensions of readBinary / writeBinary (R7).
+ * @file files plugin — data URL codec for captures (writeDataUrl decodes the files-channel
+ * writeBinary data with decodeDataUrl) and the image extensions of readBinary / writeBinary (R7).
  */
 import { Buffer } from "node:buffer";
 import { forbidden, invalid } from "./errors";
@@ -86,8 +86,8 @@ export function imageMime(path: string): string {
  * @throws {Error} -32004 for a non-image path, -32602 `field: "data"` for any other problem.
  * @example
  * ```ts
- * const path = ".moku/captures/2026-09-24-1012-board.png";
- * await files.writeBinary(path, decodeDataUrl(shot.image, path));
+ * decodeDataUrl("data:image/png;base64,iVBORw0KGgo=", ".moku/captures/a.png");
+ * // Uint8Array [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
  * ```
  */
 export function decodeDataUrl(text: string, path: string): Uint8Array {

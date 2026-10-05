@@ -184,6 +184,11 @@ export function fakeFiles(): FakeFiles {
       bytes: bytes.length,
       version: "v3"
     })),
+    writeDataUrl: vi.fn<FilesApi["writeDataUrl"]>(async path => ({
+      path,
+      bytes: 8,
+      version: "v3"
+    })),
     readBinary: vi.fn<FilesApi["readBinary"]>(async () => ({
       dataUrl: "data:image/png;base64,AA==",
       version: "v4"
