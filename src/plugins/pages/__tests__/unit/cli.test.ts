@@ -239,6 +239,42 @@ describe("main", () => {
   });
 });
 
+describe("main in a re-spawned bin (A4)", () => {
+  it("stops gracefully and exits 0 once its parent is gone, also after a SIGKILL of the parent", async () => {
+    const { deps, lines } = createDeps();
+    const { reexec, interval, orphan, tick } = reexecDeps(0, { [REEXEC_ENV]: "1" });
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game];
+    expect(await main(argv, { ...deps, reexec })).toBe(0);
+    const discovery = join(game, ".moku", "editor.json");
+    expect(existsSync(discovery)).toBe(true);
+    expect(interval).toHaveBeenCalledWith(1000, expect.any(Function));
+
+    tick();
+    expect(deps.exit).not.toHaveBeenCalled();
+    orphan();
+    tick();
+    await vi.waitFor(() => expect(deps.exit).toHaveBeenCalledWith(0));
+    expect(lines.join("\n")).toContain("stopped");
+    expect(existsSync(discovery)).toBe(false);
+
+    // The once-handlers of the stopped bin are no-ops now; emitting removes them.
+    process.emit("SIGINT");
+    process.emit("SIGTERM");
+    expect(deps.exit).toHaveBeenCalledTimes(1);
+  });
+
+  it("a bin started by hand watches no parent", async () => {
+    const { deps } = createDeps();
+    const { reexec, interval } = reexecDeps(0);
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game];
+    expect(await main(argv, { ...deps, reexec })).toBe(0);
+    expect(interval).not.toHaveBeenCalled();
+    process.emit("SIGINT");
+    await vi.waitFor(() => expect(deps.exit).toHaveBeenCalledWith(0));
+    process.emit("SIGTERM");
+  });
+});
+
 describe("stopOnce", () => {
   it("stops once, prints stopped and exits 0", async () => {
     const { deps, lines } = createDeps();
@@ -354,24 +390,40 @@ function keepHandlers(): void {
 }
 
 /**
- * Reexec deps with a fake spawn whose child exits at once with a code.
+ * Reexec deps with a fake spawn whose child exits at once with a code, and a parent watch the
+ * test drives: `orphan()` makes the parent pid change, `tick()` runs the periodic check.
  *
  * @param code - The child's exit code.
- * @returns The deps and the spawn mock.
+ * @param env - The process environment.
+ * @returns The deps, the spawn mock and the parent watch controls.
  */
-function reexecDeps(code: number) {
+function reexecDeps(code: number, env: ReexecDeps["env"] = {}) {
   const spawn = vi.fn<ReexecDeps["spawn"]>(() => ({
     exited: Promise.resolve(code),
     kill: vi.fn()
   }));
+  let parent = 4000;
+  const ticks: (() => void)[] = [];
+  const interval = vi.fn<ReexecDeps["interval"]>((_ms, tick) => {
+    ticks.push(tick);
+    return vi.fn();
+  });
   const reexec: ReexecDeps = {
     cwd: () => tmpdir(),
-    env: {},
+    env,
     command: ["bun", "bin.ts"],
     spawn,
-    onSignal: () => keepHandlers
+    onSignal: () => keepHandlers,
+    ppid: () => parent,
+    interval
   };
-  return { reexec, spawn };
+  const orphan = (): void => {
+    parent = 1;
+  };
+  const tick = (): void => {
+    for (const check of ticks) check();
+  };
+  return { reexec, spawn, interval, orphan, tick };
 }
 
 describe("startBin re-spawn in the game root (B2)", () => {

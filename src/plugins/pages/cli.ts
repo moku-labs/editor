@@ -17,7 +17,7 @@ import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
-import { processReexec, reexecBin } from "./reexec";
+import { processReexec, reexecBin, stopWithParent } from "./reexec";
 import type { GameServer } from "./serve";
 import { createGameServer } from "./serve";
 import { createStaticFetch } from "./static";
@@ -403,7 +403,26 @@ function processDeps(): CliDeps {
 }
 
 /**
+ * Stops a serving bin once on SIGINT or SIGTERM; a re-spawned bin also once its parent is gone.
+ *
+ * @param stop - The stop function of the running bin.
+ * @param deps - The bin deps.
+ */
+function stopOnSignals(stop: () => Promise<void>, deps: CliDeps): void {
+  const onSignal = stopOnce(stop, deps);
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  if (deps.reexec === undefined) return;
+
+  stopWithParent(deps.reexec, () => {
+    void onSignal();
+  });
+}
+
+/**
  * Runs the bin; resolves with the exit code (0 help or serving, 1 runtime error, 2 bad arguments).
+ * A serving bin stops once on SIGINT or SIGTERM; a re-spawned one also when its parent is gone
+ * (A4: a parent killed by SIGKILL forwards no signal).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps (default: this process).
@@ -418,10 +437,6 @@ export async function main(
   deps: CliDeps = processDeps()
 ): Promise<number> {
   const { code, stop } = await startBin(argv, deps);
-  if (stop !== undefined) {
-    const onSignal = stopOnce(stop, deps);
-    process.once("SIGINT", onSignal);
-    process.once("SIGTERM", onSignal);
-  }
+  if (stop !== undefined) stopOnSignals(stop, deps);
   return code;
 }

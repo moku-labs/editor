@@ -6,6 +6,9 @@ import { createTestCtx, jumpCamera, type MemoryFiles, prepare } from "../ctx";
 
 const SOURCE = "import { node } from '../kit';\n\nexport const merge = node({});\n";
 
+/** The moment a save starts, epoch ms. */
+const SAVED_AT = 1_759_680_000_000;
+
 beforeEach(() => {
   jumpCamera();
 });
@@ -69,13 +72,43 @@ describe("saveCode", () => {
     ]);
     expect(fakes.workspace.toast).toHaveBeenCalledWith("Saved", "nodes/merge.ts");
     expect(fakes.reload).toHaveBeenCalledTimes(1);
-    expect(fakes.reload).toHaveBeenCalledWith({ restore: true });
+    expect(fakes.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: expect.any(Number)
+    });
     expect(ctx.state.inspector.code?.result).toEqual({
       ok: true,
       text: "✓ Saved · game reloaded · state restored from the last checkpoint"
     });
     expect(ctx.state.inspector.code?.draft).toBeUndefined();
     expect(JSON.stringify(ctx.state.inspector.code)).not.toContain("hot update");
+  });
+
+  it("hands the reload the moment taken before the write (A2)", async () => {
+    const { ctx, fakes } = await setup();
+    const write = vi.mocked(fakes.files.write).getMockImplementation();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(SAVED_AT);
+      vi.mocked(fakes.files.write).mockImplementationOnce(async (path, text, version) => {
+        // The write takes half a second: a moment taken after it would be later.
+        vi.setSystemTime(SAVED_AT + 500);
+        if (write === undefined) throw new Error("no write");
+        return write(path, text, version);
+      });
+      const inspector = actionsOf(ctx).inspector;
+      inspector.edit();
+      inspector.setDraft("changed");
+      await inspector.saveCode();
+      expect(fakes.reload).toHaveBeenCalledWith({
+        restore: true,
+        afterSave: true,
+        since: SAVED_AT
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a save the game hot swapped says game updated, without a warn (U10)", async () => {

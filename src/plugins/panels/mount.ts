@@ -375,21 +375,28 @@ function errorReporter(
 }
 
 /**
- * Sets `data-stale` from the status (11-panels "Mount behaviour" 6): silent and lost by kind,
- * empty as lost; connecting, live and paused as `resync` while a received value is not fresh. An
- * expected reload (U9) marks nothing: the last values stay until the new session's arrive.
+ * The `data-stale` value of a panel (11-panels "Mount behaviour" 6): silent and lost by kind,
+ * empty as lost; connecting, live and paused as `resync` while a received value is not fresh.
+ *
+ * @param controller - The panel controller.
+ * @returns The value, undefined when the data is fresh.
+ */
+function staleOf(controller: Pick<Controller, "panel" | "status">): string | undefined {
+  const { panel, status } = controller;
+  if (status.kind === "silent" || status.kind === "lost") return status.kind;
+  if (status.kind === "empty") return "lost";
+  return [...panel.received].some(key => !panel.fresh.has(key)) ? "resync" : undefined;
+}
+
+/**
+ * Sets `data-stale` from the status (`staleOf`). An expected reload (U9) marks nothing: the last
+ * values stay until the new session's arrive.
  *
  * @param controller - The panel controller.
  */
 function applyStale(controller: Controller): void {
-  const { panel, status } = controller;
-  const { dataset } = panel.section;
-  let stale: string | undefined;
-
-  if (status.kind === "silent" || status.kind === "lost") stale = status.kind;
-  else if (status.kind === "empty") stale = "lost";
-  else if ([...panel.received].some(key => !panel.fresh.has(key))) stale = "resync";
-  if (isReloading(status)) stale = undefined;
+  const { dataset } = controller.panel.section;
+  const stale = isReloading(controller.status) ? undefined : staleOf(controller);
 
   if (stale === undefined) delete dataset.stale;
   else dataset.stale = stale;

@@ -425,8 +425,11 @@ export type FlowServices = {
   readonly show: () => void;
   /** Whether Flow is the shown workspace (workspace.active()). */
   readonly active: () => boolean;
-  /** workspace.gameFrame().reload({ restore: true }) (D-07). */
-  readonly reload: () => Promise<ReloadResult>;
+  /**
+   * The reload after a save written at `since` (epoch ms taken before the write):
+   * workspace.gameFrame().reload({ restore: true, afterSave: true, since }) (D-07).
+   */
+  readonly reload: (since: number) => Promise<ReloadResult>;
   /** workspace.preview("flow"). */
   readonly preview: () => PreviewState;
   /** Emits the global workspace:open-file (R4). */

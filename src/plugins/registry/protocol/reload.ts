@@ -10,6 +10,22 @@ import type { Json, LinkStatus } from "./types";
 const HOT_SWAP_EVENT = "ui:hot-swap";
 
 /**
+ * One game.log entry of an applied dev hot swap, as `isHotSwapEntry` narrows it: event
+ * `ui:hot-swap`, the epoch ms it was logged at, and the saved module in `data.file`.
+ *
+ * @example
+ * ```ts
+ * const entry: HotSwapEntry = { level: "info", event: "ui:hot-swap", data: { file: "/g/features/home/styles.ts" }, ts: 1759680000000 };
+ * ```
+ */
+export type HotSwapEntry = {
+  readonly [key: string]: Json;
+  readonly event: typeof HOT_SWAP_EVENT;
+  readonly ts: number;
+  readonly data: { readonly [key: string]: Json; readonly file: string };
+};
+
+/**
  * True for an object that is neither null nor an array.
  *
  * @param value - A wire value.
@@ -42,7 +58,8 @@ export function isReloading(status: LinkStatus): boolean {
 
 /**
  * True for one game.log entry of an applied dev hot swap: event `ui:hot-swap`, a numeric `ts` and
- * `data.file`, the saved module. The game.log value is the whole trace: test its entries.
+ * `data.file`, the saved module. Narrows the entry to `HotSwapEntry`. The game.log value is the
+ * whole trace: test its entries.
  *
  * @param value - One entry of the game.log value.
  * @returns Whether the entry tells that a hot swap was applied.
@@ -53,7 +70,7 @@ export function isReloading(status: LinkStatus): boolean {
  * isHotSwapEntry({ level: "info", event: "ui:hot-refused", data: { file: "/g/a.tsx", reason: "no exports" }, ts: 1 }); // false
  * ```
  */
-export function isHotSwapEntry(value: Json): boolean {
+export function isHotSwapEntry(value: Json): value is HotSwapEntry {
   if (!isRecord(value)) return false;
 
   const { event, ts, data } = value;

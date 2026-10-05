@@ -191,7 +191,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | Module | Holds |
 |---|---|
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
-| `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
+| `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `isVersionConflict` (-32005: the file changed since it was read), `bareMessage`. |
 | `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values, `area`, `items` and the `select` `rect` included. Unknown fields are ignored by the guard and dropped by the parsers, inside the items too. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
@@ -199,7 +199,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
 | `devices.ts` | The 21 device presets and their rules, shared by workspace and gameView: `DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `deviceById`, `presetOf`, `isDevicePresetId`, `screenOf`, `resolveDevice`. Types `DevicePresetId`, `Orientation`, `DeviceSize` are in `types.ts`. |
 | `overlay-host.ts` | `HOST_ATTRIBUTE`: the marker overlay sets on its host; the bridge's tap watch skips events whose path holds it. |
-| `reload.ts` | The two reload signals (U9, U10): `isReloading(status)`, true for the neutral `lost` of an expected reload (`reloading: true`); `isHotSwapEntry(entry)`, true for the game.log entry of an applied dev hot swap (game 0.5.0: event `ui:hot-swap`, numeric `ts`, `data.file`). A refused swap logs `ui:hot-refused` and the page reloads. The game.log value is the whole trace, so a caller tests its entries. |
+| `reload.ts` | The two reload signals (U9, U10): `isReloading(status)`, true for the neutral `lost` of an expected reload (`reloading: true`); `isHotSwapEntry(entry)`, a type guard to `HotSwapEntry`, true for the game.log entry of an applied dev hot swap (game 0.5.0: event `ui:hot-swap`, numeric `ts`, `data.file`). A refused swap logs `ui:hot-refused` and the page reloads. The game.log value is the whole trace, so a caller tests its entries. |
 
 Shapes added in round 2 (R4, R6):
 

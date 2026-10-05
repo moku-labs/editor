@@ -218,8 +218,10 @@ export async function saveStyle(ctx: GameViewCtx): Promise<void> {
 
   card.pending = undefined;
   try {
+    // The moment before the write is where the reload starts to look for the game's hot swap.
     const target = { ref: card.ref, path: pending.path, raw: pending.raw };
     const files = ctx.require(linkPlugin).files;
+    const savedAt = Date.now();
     const result = await writeNumber(files, card.path, card.current, target, pending.next);
     if (isStyleEditError(result)) {
       card.error = result;
@@ -231,7 +233,7 @@ export async function saveStyle(ctx: GameViewCtx): Promise<void> {
     card.error = undefined;
     notify(state);
     ctx.require(workspacePlugin).toast("✓ Saved", card.path);
-    await reloadGame(ctx, true);
+    await reloadGame(ctx, { restore: true, afterSave: true, since: savedAt });
   } catch (error) {
     reportFailure(ctx, "Save failed", "gameView: style save failed", error);
   }

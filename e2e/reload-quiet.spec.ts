@@ -267,8 +267,8 @@ async function recordQuiet(page: Page): Promise<void> {
     quiet.start = performance.now();
 
     // Every layout shift, also those after input: the Reload click must not move the editor.
-    new PerformanceObserver(list => {
-      for (const entry of list.getEntries()) {
+    const record = (entries: PerformanceEntryList): void => {
+      for (const entry of entries) {
         const shift = entry as PerformanceEntry & {
           value: number;
           hadRecentInput: boolean;
@@ -288,7 +288,16 @@ async function recordQuiet(page: Page): Promise<void> {
           });
         quiet.shifts.push({ value: shift.value, input: shift.hadRecentInput, moved, toast });
       }
-    }).observe({ type: "layout-shift", buffered: true });
+    };
+    const shifts = new PerformanceObserver(list => {
+      record(list.getEntries());
+    });
+    shifts.observe({ type: "layout-shift", buffered: true });
+
+    // `settleQuiet` takes the shifts the observer still holds back, after two rendered frames.
+    Reflect.set(globalThis, "__e2eQuietFlush", () => {
+      record(shifts.takeRecords());
+    });
 
     // The spinner: how many show at once, and how often it comes up.
     let showing = 0;
@@ -354,6 +363,25 @@ async function startPhase(page: Page): Promise<void> {
 }
 
 /**
+ * Waits until the tools page has rendered two more frames, so every layout shift of the last
+ * change is reported, then takes the shifts the observer still holds back.
+ *
+ * @param page - The tools page.
+ */
+async function settleQuiet(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    // Two rendered frames: the last change is painted and its shifts are reported.
+    await new Promise(resolve => {
+      requestAnimationFrame(resolve);
+    });
+    await new Promise(resolve => {
+      requestAnimationFrame(resolve);
+    });
+    (Reflect.get(globalThis, "__e2eQuietFlush") as () => void)();
+  });
+}
+
+/**
  * What the quiet recorder saw since `startPhase`.
  *
  * @param page - The tools page.
@@ -373,8 +401,8 @@ async function readPhase(page: Page): Promise<Quiet> {
 
 /**
  * Runs one reload phase and judges it: the act, then the wait until the reload is over (`done`,
- * a live link, no spinner, half a second of rest), then 0 layout shift, one spinner on the frame
- * during it, none after, and no red tone.
+ * a live link, no spinner, two rendered frames and the observer's held-back shifts), then 0
+ * layout shift, one spinner on the frame during it, none after, and no red tone.
  *
  * @param page - The tools page.
  * @param name - The phase, for the messages.
@@ -395,7 +423,7 @@ async function quietPhase(
     timeout: RELOAD_MS
   });
   await expect(page.locator(SPINNER)).toHaveCount(0, { timeout: RELOAD_MS });
-  await page.waitForTimeout(500);
+  await settleQuiet(page);
 
   // Every entry counts, after input too; only the toast stack, an overlay in the top layer that
   // grows as toasts come and go, is not the editor.

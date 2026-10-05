@@ -38,8 +38,8 @@ export type WorkspaceConfig = {
   /** How long reload() waits for the new session before giving up. */
   reloadTimeoutMs: number;
   /**
-   * After a save with Bun hot reload on, how long `gameFrame().reload()` waits for the page Bun
-   * reloads before it reloads the frame itself.
+   * After a save with Bun hot reload on, how long `gameFrame().reload({ afterSave: true })` waits
+   * for the page Bun reloads before it reloads the frame itself.
    */
   hotReloadWaitMs: number;
   /** How long one toast stays (hover or focus pauses it). */
@@ -163,6 +163,32 @@ export type FrameBox = {
 };
 
 /**
+ * How a D-07 reload runs (`gameFrame().reload(opts)`): with the game state kept or not, and
+ * whether a save started it. Only a save waits for Bun's own reload: the toolbar Reload and the
+ * palette pass `restore` alone.
+ *
+ * @example
+ * ```ts
+ * // A saver takes the moment before its write, then reloads after it.
+ * const opts: ReloadOptions = { restore: true, afterSave: true, since: 1_759_680_000_000 };
+ * ```
+ */
+export type ReloadOptions = {
+  /** Bookmark the game first and restore it on the new session. */
+  readonly restore?: boolean;
+  /**
+   * A save started the reload: with Bun hot reload on, the run first waits up to
+   * `hotReloadWaitMs` for Bun's own reload or the game's hot swap. Default false.
+   */
+  readonly afterSave?: boolean;
+  /**
+   * Epoch ms the saver took before its write: a hot swap logged from then on ends the wait.
+   * Default the moment of the call.
+   */
+  readonly since?: number;
+};
+
+/**
  * Result of the D-07 reload. `hot_swap`: after a save the game swapped the module in place (dev
  * hot swap of game 0.5.0), so the frame was not reloaded and nothing was restored.
  */
@@ -230,25 +256,25 @@ export type GameFrame = {
   readonly url: string;
 
   /**
-   * The D-07 reload after a save: bookmark, reload in place, restore on the new session, toast.
-   * With Bun hot reload on, Bun reloads the page itself: the run waits up to `hotReloadWaitMs` for
-   * that session and reloads the frame only when none came; a session the bridge already restored
-   * (`manifest.restored`) is not restored or paused again. A game that hot swapped the saved
-   * module in that wait (a `ui:hot-swap` game.log entry) ends the run with `reason: "hot_swap"`
-   * and the toast "Game updated": no frame reload, no restore. Concurrent calls share one run.
+   * The D-07 reload: bookmark, reload in place, restore on the new session, toast. Concurrent
+   * calls share one run. After a save (`afterSave: true`) with Bun hot reload on, Bun reloads the
+   * page itself: the run waits up to `hotReloadWaitMs` for that session and reloads the frame only
+   * when none came; a session the bridge already restored (`manifest.restored`) is not restored or
+   * paused again. A game that hot swapped the saved module since `since` (a `ui:hot-swap` game.log
+   * entry) ends the run with `reason: "hot_swap"` and the toast "Game updated": no frame reload,
+   * no restore. Without `afterSave` the frame reloads at once.
    *
-   * @param opts - `restore: true` bookmarks first and restores after.
-   * @param opts.restore - Whether to bookmark and restore the game state.
+   * @param opts - Restore, afterSave and since (see `ReloadOptions`).
    * @returns The result; `{ restored: false, reason: "not_mounted" }` before the first mount.
    * @example
    * ```ts
-   * // The game code changed; reload it and keep the board.
+   * // No save: reload the game now and keep the board.
    * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
-   * // A saved styles module the game swapped in place, with Bun hot reload on.
-   * await app.workspace.gameFrame().reload({ restore: true }); // { restored: false, reason: "hot_swap" }
+   * // A styles module saved with Bun hot reload on, and swapped in place by the game.
+   * await app.workspace.gameFrame().reload({ restore: true, afterSave: true, since: 1_759_680_000_000 }); // { restored: false, reason: "hot_swap" }
    * ```
    */
-  reload(opts?: { restore?: boolean }): Promise<ReloadResult>;
+  reload(opts?: ReloadOptions): Promise<ReloadResult>;
 
   /**
    * Docks the frame over a stage slot (geometry only).
@@ -868,9 +894,14 @@ export type StageDock = {
 };
 
 /**
- * A reload in flight; `again` asks for one more run after it.
+ * A reload in flight; `again` asks for one more run after it, `since` is the save moment of the
+ * latest call during it that gave one (the one more run waits for that save's hot swap).
  */
-export type PendingReload = { readonly promise: Promise<ReloadResult>; again: boolean };
+export type PendingReload = {
+  readonly promise: Promise<ReloadResult>;
+  again: boolean;
+  since: number | undefined;
+};
 
 /**
  * Where the preview floats in a workspace.

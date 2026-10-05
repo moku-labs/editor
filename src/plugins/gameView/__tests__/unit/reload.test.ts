@@ -54,7 +54,7 @@ describe("reload busy state (U11)", () => {
     ctx.state.listeners.add(() => {
       notified += 1;
     });
-    const done = reloadGame(ctx, false);
+    const done = reloadGame(ctx, { restore: false });
     expect(isReloadBusy(ctx.state)).toBe(true);
     expect(notified).toBe(1);
 
@@ -66,7 +66,7 @@ describe("reload busy state (U11)", () => {
 
   it("ends the busy state when the reload fails", async () => {
     const pending = holdReload();
-    const done = reloadGame(ctx, true);
+    const done = reloadGame(ctx, { restore: true, afterSave: true, since: 1_759_680_000_000 });
     expect(isReloadBusy(ctx.state)).toBe(true);
     pending.reject(new Error("frame gone"));
     await done;
@@ -79,6 +79,7 @@ describe("reload busy state (U11)", () => {
     const first = reloadFromToolbar(ctx);
     await reloadFromToolbar(ctx);
     expect(ctx.workspace.reload).toHaveBeenCalledTimes(1);
+    // The toolbar Reload is no save: no afterSave, so no wait for Bun's reload (A1).
     expect(ctx.workspace.reload).toHaveBeenCalledWith({ restore: false });
     pending.resolve();
     await first;

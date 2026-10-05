@@ -221,7 +221,8 @@ export type ReexecChild = {
 
 /**
  * What the bin needs to re-spawn itself in the game root (`reexec.ts`): the process cwd and
- * environment, the command prefix, the spawn and the signal handlers.
+ * environment, the command prefix, the spawn and the signal handlers; and, in the re-spawned bin,
+ * the parent pid and an interval to notice a parent that died without a signal (A4).
  */
 export type ReexecDeps = {
   /** The process cwd. */
@@ -240,6 +241,10 @@ export type ReexecDeps = {
   ) => ReexecChild;
   /** Adds a signal handler; returns its removal. */
   readonly onSignal: (signal: ForwardedSignal, handler: () => void) => () => void;
+  /** The parent pid now (`process.ppid`, read again on each call). */
+  readonly ppid: () => number;
+  /** Calls `tick` every `ms` without keeping the process alive; returns the cancel. */
+  readonly interval: (ms: number, tick: () => void) => () => void;
 };
 
 /**

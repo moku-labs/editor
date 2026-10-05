@@ -415,7 +415,7 @@ export function createGameFrame(ctx: WorkspaceCtx): GameFrame {
       return gameUrl(ctx);
     },
 
-    reload: opts => reloadFrame(ctx, { ...opts, afterSave: true }),
+    reload: opts => reloadFrame(ctx, opts ?? {}),
 
     dock: (slot, opts) => dockFrame(ctx, slot, opts),
 

@@ -3,7 +3,7 @@
  * the version, then the D-07 reload/restore flow; conflicts offer "Reload file" / "Save anyway".
  * Wire errors are shown without the `[moku-editor]` prefix (R7).
  */
-import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
+import { bareMessage, isVersionConflict } from "../../registry/protocol";
 import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
@@ -124,6 +124,8 @@ async function writeCode(
 ): Promise<void> {
   if (code.draft === undefined) return;
   const draft = code.draft;
+
+  // The same text again: nothing to write, nothing to reload.
   if (!force && draft === code.text) {
     code.draft = undefined;
     code.result = { ok: true, text: "✓ No changes" };
@@ -131,7 +133,10 @@ async function writeCode(
     return;
   }
 
+  // Write with the version read (a fresh one for "Save anyway"); the moment before the write is
+  // where the reload starts to look for the game's hot swap.
   const files = env.files();
+  const savedAt = Date.now();
   try {
     const fresh = force ? await files.read(code.path) : undefined;
     const version = fresh?.version ?? code.version;
@@ -148,8 +153,9 @@ async function writeCode(
     env.toast("Saved", code.path);
     notify(ctx.state);
   } catch (error) {
+    // A file changed on disk offers "Reload file" / "Save anyway"; any other failure is warned.
     const message = error instanceof Error ? error.message : String(error);
-    const conflict = isWireError(error) && error.code === errorCode.versionConflict;
+    const conflict = isVersionConflict(error);
     if (!conflict) ctx.log.warn("flowView: save failed", { path: code.path, message });
     code.conflict = conflict;
     code.result = { ok: false, text: conflict ? CHANGED_ON_DISK : `! ${bareMessage(message)}` };
@@ -157,7 +163,8 @@ async function writeCode(
     return;
   }
 
-  code.result = savedResult(ctx, await env.reload());
+  // Written: the game reloads (or swaps the module in place) and the result line says which.
+  code.result = savedResult(ctx, await env.reload(savedAt));
   notify(ctx.state);
 }
 

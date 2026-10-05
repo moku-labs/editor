@@ -1,23 +1,22 @@
 /**
  * @file gameView plugin — the game reloads gameView starts (toolbar Reload, style save): workspace
  * runs the D-07 reload and shows its spinner on the frame (U9); gameView only logs a failure. The
- * toolbar Reload is busy while one runs or the link reports an expected reload (U11).
+ * toolbar Reload is no save, so it reloads at once; a style save waits for Bun's reload or the
+ * game's hot swap (`afterSave`, A1). The toolbar Reload is busy while one runs or the link reports
+ * an expected reload (U11).
  */
 import { workspacePlugin } from "../../workspace";
+import type { ReloadOptions } from "../../workspace/types";
 import { messageOf } from "../report";
 import { notify } from "../state";
 import type { GameViewCtx, GameViewState } from "../types";
 
 /**
- * True while a gameView reload runs or the link reports an expected reload from another trigger.
+ * True while a gameView reload runs or the link reports an expected reload from another trigger:
+ * the toolbar then shows "…" and ignores a click.
  *
  * @param state - gameView state.
  * @returns Whether the toolbar Reload is busy.
- * @example
- * ```ts
- * // A style save is reloading the game: the toolbar shows "…" and ignores a click.
- * isReloadBusy(state); // true
- * ```
  */
 export function isReloadBusy(state: GameViewState): boolean {
   return state.reloads > 0 || state.link.reloading;
@@ -28,15 +27,16 @@ export function isReloadBusy(state: GameViewState): boolean {
  * Reload is busy until the reload settles.
  *
  * @param ctx - Domain context of gameView.
- * @param restore - true after a style save (bookmark → reload → restore), false for Reload.
+ * @param opts - `{ restore: false }` for the toolbar Reload; a style save passes
+ * `{ restore: true, afterSave: true, since }` (bookmark → reload → restore, or the hot swap).
  * @returns Resolves when the reload settled (never rejects).
  */
-export async function reloadGame(ctx: GameViewCtx, restore: boolean): Promise<void> {
+export async function reloadGame(ctx: GameViewCtx, opts: ReloadOptions): Promise<void> {
   const { state } = ctx;
   state.reloads += 1;
   notify(state);
   try {
-    await ctx.require(workspacePlugin).gameFrame().reload({ restore });
+    await ctx.require(workspacePlugin).gameFrame().reload(opts);
   } catch (error) {
     ctx.log.warn("gameView: reload failed", { message: messageOf(error) });
   } finally {
@@ -53,5 +53,5 @@ export async function reloadGame(ctx: GameViewCtx, restore: boolean): Promise<vo
  */
 export async function reloadFromToolbar(ctx: GameViewCtx): Promise<void> {
   if (isReloadBusy(ctx.state)) return;
-  await reloadGame(ctx, false);
+  await reloadGame(ctx, { restore: false });
 }

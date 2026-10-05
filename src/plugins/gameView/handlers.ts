@@ -44,8 +44,10 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
   const attached = status.kind === "live" || status.kind === "paused";
   const changed =
     session !== undefined && previous.session !== undefined && session !== previous.session;
+  const isNewSession = attached && (previous.status === "lost" || changed);
 
-  if (attached && (previous.status === "lost" || changed)) {
+  // A new game page: what gameView read of the old one no longer holds.
+  if (isNewSession) {
     state.scene = undefined;
     state.calibration = undefined;
     state.calibrationRead = false;
@@ -53,11 +55,15 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
     state.calibrationRun.waiting = false;
     state.manifest = undefined;
   }
+
+  // No game at all: nothing to pick, and a running series ends early.
   if (status.kind === "empty") {
     state.picker = { on: false, hover: undefined };
     state.series.popover = false;
     if (state.series.recording !== undefined) state.series.recording.stopRequested = true;
   }
+
+  // Keep the session across statuses without one; an expected reload keeps Reload busy.
   state.link = {
     status: status.kind,
     session: session ?? previous.session,
@@ -67,7 +73,8 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
 }
 
 /**
- * The link:status hook.
+ * Keeps gameView in step with the game link: every status goes through `applyLinkStatus` (a new
+ * session drops the scene and the calibration, empty ends picking and a series).
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.

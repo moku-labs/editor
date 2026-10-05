@@ -75,6 +75,36 @@ async function runBin(args: string[]): Promise<{ code: number; output: string }>
   return { code: await child.exited, output: out + error };
 }
 
+/**
+ * Fetches a URL until it answers 200: a fresh bin may answer 503 while Bun bundles the page.
+ *
+ * @param url - The URL.
+ * @returns The first 200 response, or the last one after 20 s.
+ */
+async function firstOk(url: string): Promise<Response> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const response = await fetch(url);
+    if (response.status === 200 || Date.now() > deadline) return response;
+    await response.body?.cancel();
+    await Bun.sleep(100);
+  }
+}
+
+/**
+ * Whether a process is still running.
+ *
+ * @param pid - The process id.
+ * @returns True while it runs.
+ */
+function isAlive(pid: number): boolean {
+  try {
+    return process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+}
+
 /** The script path Bun's HMR client is served from: in the game HTML only while hot reload is on. */
 const HMR_CLIENT = "/_bun/client";
 
@@ -335,6 +365,26 @@ describe("moku-editor bin", () => {
     expect(existsSync(path)).toBe(false);
   }, 60_000);
 
+  it("a re-spawned child stops by itself when its parent dies by SIGKILL, which forwards no signal (A4)", async () => {
+    const html = join(bunfigGame, "index.html");
+    const bin = await spawnBin([html, "--port", "0", "--root", bunfigGame], true);
+    const path = join(bunfigGame, ".moku", "editor.json");
+    const { pid } = JSON.parse(await readFile(path, "utf8")) as { pid: number };
+    try {
+      expect(pid).not.toBe(bin.child.pid);
+      bin.child.kill("SIGKILL");
+      await bin.child.exited;
+
+      // The child sees its parent pid change within a second, stops and exits.
+      const deadline = Date.now() + 10_000;
+      while (isAlive(pid) && Date.now() < deadline) await Bun.sleep(100);
+      expect(isAlive(pid)).toBe(false);
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      if (isAlive(pid)) process.kill(pid, "SIGKILL");
+    }
+  }, 60_000);
+
   it("prints the Claude Code setup for mcp-config with 0 (M8)", async () => {
     const result = await runBin(["mcp-config", "web/index.html", "--port", "3000"]);
     expect(result.code).toBe(0);
@@ -356,7 +406,7 @@ describe("moku-editor bin", () => {
       ]);
       try {
         const origin = `http://127.0.0.1:${bin.port}`;
-        const page = await fetch(`${origin}/`);
+        const page = await firstOk(`${origin}/`);
         expect(page.status).toBe(200);
         expect(await page.text()).toContain('id="game"');
         await expect(fetch(`${origin}/manifest.json`)).resolves.toHaveProperty("status", 200);

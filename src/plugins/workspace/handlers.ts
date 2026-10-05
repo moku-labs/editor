@@ -12,7 +12,8 @@ import type { WorkspaceCtx, WorkspaceHooks, WorkspaceState } from "./types";
 const TICK_MS = 1000;
 
 /**
- * The workspace's hooks factory (`hooks: createHandlers`).
+ * Workspace listens to one global event: `link:status`, which drives the pill, the stale bar, the
+ * F4 cards and the frame spinner of an expected reload.
  *
  * @param ctx - Domain context of workspace.
  * @returns The hooks.

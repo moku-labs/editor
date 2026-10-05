@@ -101,7 +101,7 @@ describe("failure paths", () => {
   it("reloadGame logs a rejected reload", async () => {
     ctx = createCtx();
     ctx.workspace.reload.mockRejectedValueOnce(new Error("frame gone"));
-    await reloadGame(ctx, false);
+    await reloadGame(ctx, { restore: false });
     expect(ctx.log.warn).toHaveBeenCalledWith("gameView: reload failed", { message: "frame gone" });
   });
 

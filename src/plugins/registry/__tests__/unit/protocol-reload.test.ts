@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type { Json, LinkStatus } from "../../protocol";
 import { isHotSwapEntry, isReloading } from "../../protocol";
 
@@ -76,6 +76,15 @@ describe("isHotSwapEntry", () => {
     const entry: Json = { level: "info", event: "ui:hot-swap", data: { file: "/g/a.tsx" }, ts: 1 };
 
     expect(isHotSwapEntry(entry)).toBe(true);
+  });
+
+  it("narrows an entry to its numeric ts and data.file", () => {
+    const entry: Json = HOT_SWAP;
+    if (!isHotSwapEntry(entry)) throw new Error("not a hot swap entry");
+
+    expectTypeOf(entry.ts).toEqualTypeOf<number>();
+    expectTypeOf(entry.data.file).toEqualTypeOf<string>();
+    expect(entry.data.file).toBe("/work/merge-game/features/home/styles.ts");
   });
 
   it("is false for a refused swap: the page reloads instead", () => {

@@ -4,12 +4,15 @@ import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addSignalHandler,
+  everyUnref,
   hasServeStatic,
+  PARENT_CHECK_MS,
   processReexec,
   REEXEC_ENV,
   reexecBin,
   reexecRoot,
-  spawnInherited
+  spawnInherited,
+  stopWithParent
 } from "../../reexec";
 import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs } from "../../types";
 
@@ -86,6 +89,8 @@ function createDeps(overrides: Partial<ReexecDeps> = {}) {
         handlers.delete(signal);
       };
     },
+    ppid: () => 4000,
+    interval: () => vi.fn(),
     ...overrides
   };
   return { deps, fake, handlers, spawn };
@@ -205,6 +210,92 @@ describe("reexecBin", () => {
   });
 });
 
+/**
+ * A parent watch the test drives: `orphan()` changes the parent pid, `tick()` runs the checks.
+ *
+ * @param env - The process environment.
+ * @returns The deps, the interval mock, its cancel and the controls.
+ */
+function parentWatch(env: ReexecDeps["env"]) {
+  let parent = 4000;
+  const ticks: (() => void)[] = [];
+  const cancel = vi.fn();
+  const interval = vi.fn<ReexecDeps["interval"]>((_ms, tick) => {
+    ticks.push(tick);
+    return cancel;
+  });
+  const deps = { env, ppid: () => parent, interval };
+  const orphan = (): void => {
+    parent = 1;
+  };
+  const tick = (): void => {
+    for (const check of ticks) check();
+  };
+  return { deps, interval, cancel, orphan, tick };
+}
+
+describe("stopWithParent (A4: a parent killed by SIGKILL forwards no signal)", () => {
+  it("watches nothing in a bin started by hand", () => {
+    const watch = parentWatch({ PATH: "/bin" });
+    const stop = vi.fn();
+    expect(stopWithParent(watch.deps, stop)).toBeUndefined();
+    expect(watch.interval).not.toHaveBeenCalled();
+  });
+
+  it("checks the parent every second in a re-spawned bin and stops it once the parent is gone", () => {
+    const watch = parentWatch({ [REEXEC_ENV]: "1" });
+    const stop = vi.fn();
+    stopWithParent(watch.deps, stop);
+    expect(watch.interval).toHaveBeenCalledWith(PARENT_CHECK_MS, expect.any(Function));
+    expect(PARENT_CHECK_MS).toBe(1000);
+
+    watch.tick();
+    expect(stop).not.toHaveBeenCalled();
+
+    // The parent died: the system adopted the child, so its parent pid changed.
+    watch.orphan();
+    watch.tick();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(watch.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the cancel of the checks", () => {
+    const watch = parentWatch({ [REEXEC_ENV]: "1" });
+    const cancel = stopWithParent(watch.deps, vi.fn());
+    cancel?.();
+    expect(watch.cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("everyUnref", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ticks every period until cancelled", () => {
+    vi.useFakeTimers();
+    const tick = vi.fn();
+    const cancel = everyUnref(1000, tick);
+    vi.advanceTimersByTime(2000);
+    expect(tick).toHaveBeenCalledTimes(2);
+    cancel();
+    vi.advanceTimersByTime(2000);
+    expect(tick).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not keep the process alive", () => {
+    const interval = vi.spyOn(globalThis, "setInterval");
+    const cancel = everyUnref(1000, vi.fn());
+    try {
+      const timer = interval.mock.results[0]?.value;
+      expect(timer?.hasRef()).toBe(false);
+    } finally {
+      cancel();
+      interval.mockRestore();
+    }
+  });
+});
+
 describe("the real process deps", () => {
   it("spawns with the given cwd and environment and resolves the exit code", async () => {
     const script =
@@ -241,5 +332,7 @@ describe("the real process deps", () => {
     expect(deps.command).toEqual([process.execPath, Bun.main]);
     expect(deps.spawn).toBe(spawnInherited);
     expect(deps.onSignal).toBe(addSignalHandler);
+    expect(deps.ppid()).toBe(process.ppid);
+    expect(deps.interval).toBe(everyUnref);
   });
 });

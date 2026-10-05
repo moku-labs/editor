@@ -905,13 +905,15 @@ test.describe("game · device toolbar", () => {
     // once the game has laid the screen out again (two reads 200 ms apart agree).
     let laidOut = "";
     await expect
-      .poll(async () => {
-        const now = JSON.stringify(await gameRect(page, "play"));
-        const still = now === laidOut;
-        laidOut = now;
-        if (!still) await page.waitForTimeout(200);
-        return still;
-      })
+      .poll(
+        async () => {
+          const now = JSON.stringify(await gameRect(page, "play"));
+          const still = now === laidOut;
+          laidOut = now;
+          return still;
+        },
+        { intervals: [200] }
+      )
       .toBe(true);
     await pickerOn(page);
     const client = await toClient(page, await gameRect(page, "play"));

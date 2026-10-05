@@ -264,6 +264,23 @@ async function reloadState(page: Page): Promise<string> {
 }
 
 /**
+ * Waits until the game page's own clock has run `ms` on in the document `markGame` marked. A
+ * reload in that time drops the mark, so the wait cannot end and fails.
+ *
+ * @param page - The tools page.
+ * @param ms - How long the game must keep its page.
+ */
+async function gameKeepsPageFor(page: Page, ms: number): Promise<void> {
+  const frame = gameFrame(page);
+  const until = (await frame.evaluate(() => performance.now())) + ms;
+  await frame.waitForFunction(
+    end => Reflect.get(globalThis, "__e2eMark") === 1 && performance.now() >= end,
+    until,
+    { timeout: ms + SWITCH_MS }
+  );
+}
+
+/**
  * Starts recording every toast the tools page shows, in order: a switch toasts its state and the
  * frame reload toasts right after it, faster than a locator poll.
  *
@@ -814,12 +831,12 @@ test.describe("top bar · round 2", () => {
     await markGame(page);
     const putBack = await saveSource();
     try {
-      await page.waitForTimeout(3000);
+      await gameKeepsPageFor(page, 3000);
       expect(await reloadState(page), "the game after a save with hot reload off").toBe("marked");
     } finally {
       await putBack();
     }
-    await page.waitForTimeout(1000);
+    await gameKeepsPageFor(page, 1000);
     expect(await reloadState(page)).toBe("marked");
 
     // On: the bin serves with HMR again; the frame reloads with the board.

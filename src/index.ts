@@ -40,6 +40,7 @@ export type {
   HelloBody,
   HelloParams,
   HotReload,
+  HotSwapEntry,
   InputKind,
   InputOf,
   InputSchema,

@@ -205,10 +205,40 @@ describe("stepStyle", () => {
     expect(changed).toEqual([74]);
     expect(after[73]).toBe("    size: 64,");
     expect(fakes.reload).toHaveBeenCalledTimes(1);
+    expect(fakes.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: expect.any(Number)
+    });
     expect(fakes.workspace.toast).toHaveBeenCalledWith("Saved", STYLES);
     expect(ctx.state.inspector.styles?.result).toEqual({
       ok: true,
       text: "✓ Written to features/ui/styles.ts:74 · game reloaded · state restored"
+    });
+  });
+
+  it("hands the reload the moment taken before the write (A2)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.setSystemTime(1_759_680_000_000);
+    const { ctx, fakes } = createTestCtx({ files: { [STYLES]: fixture } });
+    const write = vi.mocked(fakes.files.write).getMockImplementation();
+    let writeStartedAt = 0;
+    vi.mocked(fakes.files.write).mockImplementationOnce(async (path, text, version) => {
+      // The write takes half a second: a moment taken after it would be later.
+      writeStartedAt = Date.now();
+      vi.setSystemTime(writeStartedAt + 500);
+      if (write === undefined) throw new Error("no write");
+      return write(path, text, version);
+    });
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles("ui.number");
+    inspector.stepStyle("size", 1, false);
+    await settle(600);
+    expect(writeStartedAt).toBeGreaterThan(0);
+    expect(fakes.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: writeStartedAt
     });
   });
 

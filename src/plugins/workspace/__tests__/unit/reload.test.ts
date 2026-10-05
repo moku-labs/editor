@@ -422,12 +422,27 @@ describe("reloadFrame after a save with Bun hot reload on (round 2 R6)", () => {
     expect(toasts()).toEqual(["Game reloaded"]);
   });
 
-  it("gameFrame().reload is the after-save reload: it waits for Bun", async () => {
-    const pending = createGameFrame(ctx).reload({ restore: true });
+  it("gameFrame().reload with afterSave (a saver) waits for Bun", async () => {
+    const pending = createGameFrame(ctx).reload({ restore: true, afterSave: true });
     await flush();
     expect(srcWrites).toEqual([]);
     ctx.link.attach({ ...manifestOf(COMMANDS), restored: RESTORE });
     await expect(pending).resolves.toEqual({ restored: true });
+  });
+
+  it("gameFrame().reload without afterSave (the toolbar Reload) reloads the frame at once and watches no game.log", async () => {
+    const toolbar = createGameFrame(ctx).reload({ restore: false });
+    await flush();
+    expect(srcWrites).toEqual([taggedGameUrl(ctx)]);
+    expect(ctx.link.watch).not.toHaveBeenCalled();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(toolbar).resolves.toEqual({ restored: false });
+
+    const bare = createGameFrame(ctx).reload();
+    await flush();
+    expect(srcWrites).toHaveLength(2);
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(bare).resolves.toEqual({ restored: false });
   });
 
   it("a palette reload (no save) and hot reload off reload the frame at once", async () => {
@@ -581,6 +596,37 @@ describe("reloadFrame after a save that the game hot swapped (U10 B1)", () => {
     expect(ctx.link.manifestListeners.size).toBe(0);
   });
 
+  it("a hot swap logged between the save's write and the reload call ends the wait (since)", async () => {
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true, since: SAVED_AT - 200 });
+    const settled = settledOf(pending);
+    await flush();
+    deliver([hotSwap(SAVED_AT - 100)]);
+    await flush();
+    expect(settled()).toBe(true);
+    await expect(pending).resolves.toEqual({ restored: false, reason: "hot_swap" });
+    expect(srcWrites).toEqual([]);
+  });
+
+  it("the one more run a save during a run asks for counts hot swaps from that save", async () => {
+    const first = reloadFrame(ctx, { restore: true, afterSave: true, since: SAVED_AT });
+    void reloadFrame(ctx, { restore: true, afterSave: true, since: SAVED_AT + 100 });
+    await flush();
+    deliver([hotSwap(SAVED_AT)]);
+    await expect(first).resolves.toEqual({ restored: false, reason: "hot_swap" });
+    await flush();
+
+    // The second run started: the first save's swap is older than its save.
+    const second = ctx.state.frame.reload?.promise;
+    expect(second).toBeDefined();
+    const settled = settledOf(second ?? Promise.resolve());
+    deliver([hotSwap(SAVED_AT)]);
+    await flush();
+    expect(settled()).toBe(false);
+
+    deliver([hotSwap(SAVED_AT), hotSwap(SAVED_AT + 150)]);
+    await expect(second).resolves.toEqual({ restored: false, reason: "hot_swap" });
+  });
+
   it("a hot swap of before the save and other entries do not end the wait", async () => {
     const pending = reloadFrame(ctx, { restore: true, afterSave: true });
     const settled = settledOf(pending);
@@ -639,6 +685,11 @@ describe("hotSwappedSince", () => {
   it("finds a hot swap logged at or after the moment in the whole trace", () => {
     expect(hotSwappedSince([{ level: "info", event: "boot", ts: 1 }, entry], 1000)).toBe(true);
     expect(hotSwappedSince([entry], 1001)).toBe(false);
+  });
+
+  it("reads the trace from the newest entry and stops at the first entry logged before the moment", () => {
+    expect(hotSwappedSince([entry, { level: "info", event: "boot", ts: 999 }], 1000)).toBe(false);
+    expect(hotSwappedSince([entry, { level: "info", event: "tick" }], 1000)).toBe(true);
   });
 
   it("is false for a value that is not a trace or holds no hot swap", () => {

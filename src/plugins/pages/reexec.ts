@@ -6,7 +6,8 @@
  * `cwd: root`, absolute html and root, and the loop marker `MOKU_EDITOR_REEXEC=1`. The parent
  * forwards SIGINT, SIGTERM and SIGHUP and exits with the child's code; the child serves and writes
  * the discovery file with its own pid. The child runs in its own process group, so a terminal
- * Ctrl+C reaches it once, through the parent.
+ * Ctrl+C reaches it once, through the parent. A parent killed by SIGKILL forwards nothing: the
+ * child checks its parent pid every second and stops itself once the parent is gone (A4).
  */
 import { readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path/posix";
@@ -16,6 +17,16 @@ import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs } from "./types"
  * The environment marker of a re-spawned bin: it never re-spawns again.
  */
 export const REEXEC_ENV = "MOKU_EDITOR_REEXEC";
+
+/**
+ * The value of `REEXEC_ENV` in a re-spawned bin.
+ */
+const REEXEC_ON = "1";
+
+/**
+ * How often a re-spawned bin checks that its parent is still there, in ms.
+ */
+export const PARENT_CHECK_MS = 1000;
 
 /**
  * The bunfig file Bun reads from the process cwd.
@@ -101,7 +112,7 @@ export function reexecRoot(
   args: RunArgs,
   deps: Pick<ReexecDeps, "cwd" | "env">
 ): string | undefined {
-  if (deps.env[REEXEC_ENV] === "1") return undefined;
+  if (deps.env[REEXEC_ENV] === REEXEC_ON) return undefined;
 
   const cwd = deps.cwd();
   const root = resolve(cwd, args.root);
@@ -140,12 +151,6 @@ function childArgv(args: RunArgs, cwd: string, root: string): string[] {
  * @param child - The re-spawned bin.
  * @param onSignal - Adds a signal handler and returns its removal.
  * @returns Removes every handler.
- * @example
- * ```ts
- * const release = forwardSignals(child, deps.onSignal);
- * await child.exited;
- * release();
- * ```
  */
 function forwardSignals(child: ReexecChild, onSignal: ReexecDeps["onSignal"]): () => void {
   const removals = FORWARDED.map(signal =>
@@ -171,8 +176,8 @@ function forwardSignals(child: ReexecChild, onSignal: ReexecDeps["onSignal"]): (
  * @returns The child's exit code, or undefined when this process serves the game itself.
  * @example
  * ```ts
- * const code = await reexecBin(args, processReexec());
- * if (code !== undefined) return { code };
+ * // Started in /work/editor for a game whose bunfig.toml has [serve.static]: the child serves it.
+ * await reexecBin({ kind: "run", html: "../game/index.html", port: 3000, root: "../game", hmr: true }, processReexec()); // 0 after Ctrl+C
  * ```
  */
 export async function reexecBin(args: RunArgs, deps: ReexecDeps): Promise<number | undefined> {
@@ -180,7 +185,7 @@ export async function reexecBin(args: RunArgs, deps: ReexecDeps): Promise<number
   if (root === undefined) return undefined;
 
   const cmd = [...deps.command, ...childArgv(args, deps.cwd(), root)];
-  const child = deps.spawn(cmd, { cwd: root, env: { ...deps.env, [REEXEC_ENV]: "1" } });
+  const child = deps.spawn(cmd, { cwd: root, env: { ...deps.env, [REEXEC_ENV]: REEXEC_ON } });
   const release = forwardSignals(child, deps.onSignal);
   try {
     return await child.exited;
@@ -240,14 +245,57 @@ export function addSignalHandler(signal: ForwardedSignal, handler: () => void): 
 }
 
 /**
- * The reexec deps of the real process: its cwd and environment, `[bun, Bun.main]`, the real spawn
- * and process signal handlers. The environment is handed on whole to the re-spawned bin.
+ * Calls `tick` every `ms` on a timer that does not keep the process alive.
  *
- * @returns The deps.
+ * @param ms - The period.
+ * @param tick - Called on each period.
+ * @returns Stops the timer.
  * @example
  * ```ts
- * const code = await reexecBin(args, processReexec());
+ * let ticks = 0;
+ * const cancel = everyUnref(1000, () => (ticks += 1)); // ticks is 3 after 3 s
+ * cancel(); // no more ticks
  * ```
+ */
+export function everyUnref(ms: number, tick: () => void): () => void {
+  const timer = setInterval(tick, ms);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+  };
+}
+
+/**
+ * In a re-spawned bin, stops it once its parent is gone: a parent killed by SIGKILL forwards no
+ * signal, and the child would serve on alone. Every `PARENT_CHECK_MS` the parent pid is read
+ * again; when it changed (the system adopted the orphan), the checks end and `stop` runs once. A
+ * bin started by hand watches nothing.
+ *
+ * @param deps - The environment, the parent pid and the interval.
+ * @param stop - The graceful stop of the bin (it exits 0 after it).
+ * @returns Cancels the checks; undefined when this is not a re-spawned bin.
+ */
+export function stopWithParent(
+  deps: Pick<ReexecDeps, "env" | "ppid" | "interval">,
+  stop: () => void
+): (() => void) | undefined {
+  if (deps.env[REEXEC_ENV] !== REEXEC_ON) return undefined;
+
+  const parent = deps.ppid();
+  const cancel = deps.interval(PARENT_CHECK_MS, () => {
+    if (deps.ppid() === parent) return;
+    cancel();
+    stop();
+  });
+  return cancel;
+}
+
+/**
+ * The reexec deps of the real process: its cwd and environment, `[bun, Bun.main]`, the real spawn,
+ * process signal handlers, the live parent pid and an unref'd interval. The environment is handed
+ * on whole to the re-spawned bin.
+ *
+ * @returns The deps.
  */
 export function processReexec(): ReexecDeps {
   return {
@@ -255,6 +303,8 @@ export function processReexec(): ReexecDeps {
     env: process.env, // @env-allow — passed through whole to the re-spawned bin
     command: [process.execPath, Bun.main],
     spawn: spawnInherited,
-    onSignal: addSignalHandler
+    onSignal: addSignalHandler,
+    ppid: () => process.ppid,
+    interval: everyUnref
   };
 }

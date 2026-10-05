@@ -23,7 +23,7 @@ sideways.
 | `defaultWorkspace` | `WorkspaceId` | `"game"` | Workspace shown at start when the URL hash names none. |
 | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
-| `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload()` waits for the page Bun reloads, or the game's hot swap, before it reloads the frame itself. |
+| `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload({ afterSave: true })` waits for the page Bun reloads, or the game's hot swap, before it reloads the frame itself. |
 | `toastMs` | `number` | `2600` | How long one toast stays. Hover or focus pauses it. |
 
 `onInit` throws `[moku-editor] workspace.<field> is invalid.\n  <fix>.` for a bad value. The game
@@ -80,7 +80,8 @@ workspace.setMuted(true); // persisted; onPrefs listeners get { …, muted: true
 workspace.muted(); // true
 workspace.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
 await workspace.setHotReload(false); // true: the bin restarts without HMR; the game reloads with its state
-await workspace.gameFrame().reload({ restore: true });
+await workspace.gameFrame().reload({ restore: true }); // no save: the frame reloads at once
+await workspace.gameFrame().reload({ restore: true, afterSave: true, since: savedAt }); // after a save written at savedAt
 const remove = workspace.palette.add({ id: "cmd:capture", group: "Commands", label: "Take a screenshot", run });
 workspace.toast("Saved", "src/styles.ts");
 workspace.badge("console", { count: 3, tone: "error", label: "2 warn · 1 error" });
@@ -269,8 +270,11 @@ flow. The pill text keeps a 19ch minimum width, so a status change never moves t
 When the game is not back within link's `reloadGraceMs` (5000 ms), link sends a plain `lost` and
 the red texts show.
 
-`gameFrame().reload()` is the reload after a save (flowView calls it after writing a file). With
-Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
+`gameFrame().reload(opts)` takes `ReloadOptions`: `restore`, `afterSave` (default false) and
+`since`. Only a save passes `afterSave: true` and `since`, the epoch ms the saver took before its
+write (flowView's inspector, filesView, gameView's style save). The toolbar Reload and the palette
+pass `restore` alone: the frame reloads at once, with no wait for Bun and no `game.log` watch.
+After a save with Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
 
 1. The run listens for this tab's new session first, then takes the bookmark.
 2. A new session within `hotReloadWaitMs` (1500 ms) ends the wait: no second reload.
@@ -280,14 +284,18 @@ Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
 5. No new session within `hotReloadWaitMs`: the frame reloads itself as above.
 
 In the same wait the run watches `game.log` (U10). The value is the whole trace, oldest first. An
-entry of event `ui:hot-swap` (`isHotSwapEntry`) logged at or after the save means the game
-swapped the module in place: the run ends with `{ restored: false, reason: "hot_swap" }` and the
-toast "Game updated". No frame reload, no restore. Whichever comes first, the session or the hot
-swap, ends the other wait.
+entry of event `ui:hot-swap` (`isHotSwapEntry`) logged at or after `since` means the game swapped
+the module in place, also when Bun swapped it before the saver called `reload`: the run ends with
+`{ restored: false, reason: "hot_swap" }` and the toast "Game updated". No frame reload, no
+restore. The trace is read from its newest entry back to the first entry older than `since`.
+Whichever comes first, the session or the hot swap, ends the other wait.
+
+A call during a run asks for one more run with the first run's options; its hot swap wait counts
+from the `since` of the latest call that gave one, else from its own start.
 
 A bookmark that fails because Bun's reload already took the page is warned only when the run
-needs it (steps 4 and 5). The palette's "Reload game" items never wait for Bun. A session that
-ends the D-07 wait with `restored` is not restored again either.
+needs it (steps 4 and 5). The palette's "Reload game" items and the toolbar Reload never wait for
+Bun. A session that ends the D-07 wait with `restored` is not restored again either.
 
 ### Hot reload (round 2 R6, D-32)
 

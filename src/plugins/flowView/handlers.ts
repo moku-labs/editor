@@ -6,12 +6,13 @@
  * before the first flow values waits for them (intents.ts).
  */
 import type { ToolsEvents } from "../../config";
+import type { LinkStatus } from "../registry/protocol";
 import { isReloading } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { actionsOf } from "./actions";
 import { requestIntent } from "./intents";
 import { notify } from "./state";
-import type { FlowCtx, FlowHooks } from "./types";
+import type { FlowCtx, FlowHooks, FlowViewState } from "./types";
 
 /**
  * Loads what a session needs once: layout.json and the style keys (errors → warn).
@@ -35,10 +36,64 @@ async function loadSession(ctx: FlowCtx): Promise<void> {
 }
 
 /**
- * link:status — stores the status; silent/lost mark the data stale (M13), except the `lost` of an
- * expected reload (U9: the graph stays as it is); live/paused clear it and, first in a session, load
- * the session files (the same pins lay out nothing again, B9); empty clears the selection, closes the menu (M4) and
- * drops an intent still waiting for the flow values.
+ * True when the session files were not loaded for the current session yet: none loaded, or the
+ * ones of another session.
+ *
+ * @param data - The data slice of flowView state.
+ * @returns Whether the session needs its files.
+ * @example
+ * ```ts
+ * isNewSession({ session: "s-2", loaded: { session: "s-1" } }); // true
+ * isNewSession({ session: "s-1", loaded: { session: "s-1" } }); // false
+ * ```
+ */
+function isNewSession(data: Pick<FlowViewState["data"], "session" | "loaded">): boolean {
+  return data.loaded === undefined || data.loaded.session !== data.session;
+}
+
+/**
+ * Applies one status to flowView: silent/lost mark the data stale (M13), except the `lost` of an
+ * expected reload (U9: the graph stays as it is); live/paused clear it and, first in a session,
+ * load the session files (the same pins lay out nothing again, B9); empty clears the selection,
+ * closes the menu (M4) and drops an intent still waiting for the flow values.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param status - The link status.
+ */
+function applyStatus(ctx: FlowCtx, status: LinkStatus): void {
+  const { data } = ctx.state;
+  switch (status.kind) {
+    case "silent":
+    case "lost": {
+      if (isReloading(status)) break;
+      data.stale = true;
+      data.staleFrame = status.lastFrame;
+      break;
+    }
+    case "live":
+    case "paused": {
+      data.stale = false;
+      data.staleFrame = undefined;
+      if (isNewSession(data)) {
+        data.loaded = { session: data.session };
+        loadSession(ctx).catch(() => {});
+      }
+      break;
+    }
+    case "empty": {
+      const actions = actionsOf(ctx);
+      actions.focus.leave();
+      actions.focus.closeMenu();
+      data.pending = undefined;
+      break;
+    }
+    // No default
+  }
+}
+
+/**
+ * The link:status hook: stores the status and its session, applies it (`applyStatus`) and
+ * re-renders.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.
@@ -48,37 +103,7 @@ export function onLinkStatus(ctx: FlowCtx): (payload: ToolsEvents["link:status"]
     const { data } = ctx.state;
     data.status = status;
     if (session !== undefined) data.session = session;
-
-    switch (status.kind) {
-      case "silent":
-      case "lost": {
-        if (isReloading(status)) break;
-        data.stale = true;
-        data.staleFrame = status.lastFrame;
-
-        break;
-      }
-      case "live":
-      case "paused": {
-        data.stale = false;
-        data.staleFrame = undefined;
-        if (data.loaded?.session !== data.session || data.loaded === undefined) {
-          data.loaded = { session: data.session };
-          loadSession(ctx).catch(() => {});
-        }
-
-        break;
-      }
-      case "empty": {
-        const actions = actionsOf(ctx);
-        actions.focus.leave();
-        actions.focus.closeMenu();
-        data.pending = undefined;
-
-        break;
-      }
-      // No default
-    }
+    applyStatus(ctx, status);
     notify(ctx.state);
   };
 }

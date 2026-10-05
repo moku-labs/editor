@@ -5,6 +5,7 @@ import { toWireValue } from "../../../registry/protocol";
 import { stopLink } from "../../lifecycle";
 import { attach } from "../../sessions/choose";
 import { addManifestListener } from "../../sessions/manifest";
+import { expectReload } from "../../status/reload";
 import { addWatch, deliver, detachAll } from "../../subscriptions/watch";
 import {
   connected,
@@ -157,6 +158,44 @@ describe("addWatch", () => {
 
     await attach(ctx, "s-1");
     expect(socket.last("watch").params).toMatchObject({ sub: 2, id: "game.position" });
+  });
+
+  it("a watch the hub fails with -32001 (its session closed) in an expected reload is deferred at debug", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    expectReload(ctx);
+    socket.reject(socket.last("watch"), {
+      code: -32_001,
+      message: "[moku-editor] game reloaded",
+      data: { reason: "game_reloaded", retryable: true }
+    });
+    await flush();
+
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:watch-deferred", {
+      id: "game.position",
+      code: -32_001,
+      reason: "game_reloaded"
+    });
+    expect(ctx.state.subs.size).toBe(1);
+    expect(ctx.state.wire.size).toBe(0);
+  });
+
+  it("the same -32001 outside an expected reload is a link:watch-failed error", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    socket.reject(socket.last("watch"), {
+      code: -32_001,
+      message: "[moku-editor] game reloaded",
+      data: { reason: "game_reloaded", retryable: true }
+    });
+    await flush();
+
+    expect(ctx.log.error).toHaveBeenCalledWith("link:watch-failed", {
+      id: "game.position",
+      code: -32_001,
+      reason: "game_reloaded"
+    });
   });
 
   it("a watch in flight at stop logs no error: the link closed it itself", async () => {

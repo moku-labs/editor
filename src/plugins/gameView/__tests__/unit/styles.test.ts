@@ -195,11 +195,35 @@ describe("stepStyle and saveStyle", () => {
     expect(write.mock.calls[0]?.[2]).toBe(version);
     expect(ctx.link.files.text("src/hud/styles.ts")).toContain("  height: 88,");
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Saved", "src/hud/styles.ts");
-    expect(ctx.workspace.reload).toHaveBeenCalledWith({ restore: true });
+    expect(ctx.workspace.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: expect.any(Number)
+    });
     expect(ctx.state.styles?.pending).toBeUndefined();
     expect(ctx.state.styles?.current.version).toBe(ctx.link.files.version("src/hud/styles.ts"));
     expect(ctx.state.styles?.block.fields.find(field => field.path === "height")).toMatchObject({
       value: 88
+    });
+  });
+
+  it("hands the reload the moment taken before the write (A2)", async () => {
+    const { files } = ctx.link;
+    const write = files.write.bind(files);
+    let writeStartedAt = 0;
+    vi.spyOn(files, "write").mockImplementationOnce((path, text, version) => {
+      // The write takes half a second: a moment taken after it would be later.
+      writeStartedAt = Date.now();
+      vi.setSystemTime(writeStartedAt + 500);
+      return write(path, text, version);
+    });
+    stepStyle(ctx, "height", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(writeStartedAt).toBeGreaterThan(0);
+    expect(ctx.workspace.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: writeStartedAt
     });
   });
 

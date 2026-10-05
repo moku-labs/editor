@@ -249,6 +249,22 @@ export function isRetryable(error: unknown): boolean {
 }
 
 /**
+ * True for a version-conflict rejection (-32005): the file changed on disk since it was read, so
+ * a versioned write was refused.
+ *
+ * @param error - A rejection of the files client.
+ * @returns Whether the file changed meanwhile.
+ * @example
+ * ```ts
+ * isVersionConflict(wireError(-32_005, "version conflict: nodes/merge.ts")); // true
+ * isVersionConflict(new Error("version conflict")); // false
+ * ```
+ */
+export function isVersionConflict(error: unknown): boolean {
+  return isWireError(error) && error.code === errorCode.versionConflict;
+}
+
+/**
  * Strips the `[moku-editor] ` prefix, for text shown in the UI (R7).
  *
  * @param message - A wire error message.

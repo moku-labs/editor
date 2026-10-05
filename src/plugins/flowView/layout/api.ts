@@ -4,9 +4,17 @@
  * sub-flows that follow the current node) and the flows namespace (expand, collapse, enter, up).
  */
 import type { FilesClient } from "../../link/types";
-import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
+import { bareMessage, errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
 import { notify } from "../state";
-import type { FlowCtx, FlowEnvironment, GraphJson, ItemKey, LayoutResult, NodeId } from "../types";
+import type {
+  FlowCtx,
+  FlowEnvironment,
+  GraphJson,
+  Item,
+  ItemKey,
+  LayoutResult,
+  NodeId
+} from "../types";
 import { childFlows, composeLayout, instanceKey, originKey } from "./compose";
 import { createInlineEngine, createLazyEngine, createWorkerEngine } from "./engine";
 import {
@@ -31,20 +39,6 @@ const CACHE_SIZE = 8;
  * The toast of an invalid layout.json.
  */
 const INVALID_PINS = "layout.json is not valid · positions are not saved until it is fixed";
-
-/**
- * True for a version-conflict rejection (-32005).
- *
- * @param error - A rejection.
- * @returns Whether the file changed meanwhile.
- * @example
- * ```ts
- * isConflict(wireError(-32_005, "version conflict")); // true
- * ```
- */
-function isConflict(error: unknown): boolean {
-  return isWireError(error) && error.code === errorCode.versionConflict;
-}
 
 /**
  * True for a missing-file rejection (-32601).
@@ -150,7 +144,27 @@ function chainTo(graph: GraphJson, root: string, flow: string): NodeId[] | undef
 }
 
 /**
- * Creates the layout actions.
+ * True for the item that shows a node itself: its card, hub or frame (a stub or a port only
+ * points at it).
+ *
+ * @param item - A laid-out item.
+ * @param id - The node id.
+ * @returns Whether the item is the node on screen.
+ * @example
+ * ```ts
+ * isVisibleItem({ key: "main/board>board/merge", id: "board/merge", kind: "node", x: 0, y: 0, w: 240, h: 96, flow: "board", pinned: false }, "board/merge"); // true
+ * isVisibleItem({ key: "stub:board/sell:done", id: "board/merge", kind: "stub", x: 0, y: 0, w: 24, h: 24, flow: "board", pinned: false }, "board/merge"); // false
+ * ```
+ */
+function isVisibleItem(item: Item, id: NodeId): boolean {
+  return item.id === id && (item.kind === "node" || item.kind === "hub" || item.kind === "frame");
+}
+
+/**
+ * The layout module over `state.layout`: lays the graph out with the lazy ELK engine (cached per
+ * input, a stale result dropped), keeps the pins of layout.json (read, debounced versioned save,
+ * a second write after a conflict), places dragged nodes, and opens the parents of a node to
+ * reveal it.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.
@@ -275,7 +289,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       markSaved(written.version, message);
       await actions.relayout();
     } catch (error) {
-      if (!isConflict(error)) throw error;
+      if (!isVersionConflict(error)) throw error;
       env.toast("layout.json changed on disk · your move was not saved");
       await actions.loadPins();
     }
@@ -295,7 +309,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       markSaved(written.version, message);
       return;
     } catch (error) {
-      if (!isConflict(error)) {
+      if (!isVersionConflict(error)) {
         ctx.log.warn("flowView: layout.json was not written", { path, message: messageOf(error) });
         env.toast(`Layout not saved · ${bareMessage(messageOf(error))}`, path);
         return;
@@ -467,15 +481,17 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
     },
 
     reveal: id => {
+      // Only a node of the graph can be revealed.
       const { graph } = ctx.state.data;
       const flow = flowOfId(id);
       const node = graph?.flows[flow]?.nodes[id.slice(flow.length + 1)];
       if (graph === undefined || node === undefined) return;
-      const visible = layout.result?.items.find(
-        item =>
-          item.id === id && (item.kind === "node" || item.kind === "hub" || item.kind === "frame")
-      );
+
+      // Already on screen: its key as it is.
+      const visible = layout.result?.items.find(item => isVisibleItem(item, id));
       if (visible !== undefined) return visible.key;
+
+      // Open every parent on the way from the root to its flow; its key is the one it will get.
       const chain = chainTo(graph, rootFlow(), flow);
       if (chain === undefined) return;
       let prefix = "";
@@ -530,7 +546,9 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
 }
 
 /**
- * Creates the flows namespace (expand, collapse, enter, up).
+ * The navigation of nested flows (`app.flowView.flows`): a sub-flow or slot opens and closes in
+ * place, or becomes the root on enter; up goes back out. Every change lays out again without
+ * waiting.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and the late-bound actions.

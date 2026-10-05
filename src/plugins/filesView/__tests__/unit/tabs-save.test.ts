@@ -99,13 +99,40 @@ describe("saveTab", () => {
     });
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Saved", "nodes/merge.ts");
     expect(ctx.workspace.reload).toHaveBeenCalledTimes(1);
-    expect(ctx.workspace.reload).toHaveBeenCalledWith({ restore: true });
+    expect(ctx.workspace.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: expect.any(Number)
+    });
     expect(findTab(ctx.state, "nodes/merge.ts")).toMatchObject({
       status: "ready",
       saved: "export const merge = 2;\n// more\n",
       version: hashOf("export const merge = 2;\n// more\n")
     });
     expect(ctx.state.index.files.get("nodes/merge.ts")?.size).toBe(32);
+  });
+
+  it("hands the reload the moment taken before the write (A2)", async () => {
+    const { client } = ctx.files;
+    const write = client.write.getMockImplementation();
+    let writeStartedAt = 0;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_759_680_000_000);
+    client.write.mockImplementationOnce(async (path, text, version) => {
+      // The write takes half a second: a moment taken after it would be later.
+      writeStartedAt = Date.now();
+      vi.setSystemTime(writeStartedAt + 500);
+      if (write === undefined) throw new Error("no write");
+      return write(path, text, version);
+    });
+    await edited("nodes/merge.ts", "export const merge = 2;\n");
+    await saveTab(ctx, "nodes/merge.ts");
+    expect(writeStartedAt).toBe(1_759_680_000_000);
+    expect(ctx.workspace.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: writeStartedAt
+    });
   });
 
   it("reloads while paused too, and logs a failed reload", async () => {

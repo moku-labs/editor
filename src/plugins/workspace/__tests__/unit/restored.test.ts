@@ -63,7 +63,11 @@ describe("watchRestores", () => {
   });
 
   it("leaves the toast to a reload that is waiting for this session", () => {
-    ctx.state.frame.reload = { promise: Promise.resolve({ restored: true }), again: false };
+    ctx.state.frame.reload = {
+      promise: Promise.resolve({ restored: true }),
+      again: false,
+      since: undefined
+    };
     watchRestores(ctx);
     ctx.link.attach({ ...manifestOf(), restored: RESTORE });
     expect(toasts()).toEqual([]);

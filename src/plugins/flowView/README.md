@@ -136,7 +136,7 @@ Log events use the prefix `flowView: ` (for example `flowView: layout failed`, `
 | Plugin | Used for |
 |---|---|
 | `linkPlugin` | `watch` of `game.graph`, `game.position` and `game.history { last: historyLast }` for the session; `status()`, `boot()` ("Open in editor"), `files.list`, `files.read`, `files.write`. No `run`. |
-| `workspacePlugin` | `active()`, `show("flow")`, `toast`, `gameFrame().reload({ restore: true })`, `preview("flow")`, `density()`, `previewZone`, `palette.add`, `keys.bind`, `keys.escape` |
+| `workspacePlugin` | `active()`, `show("flow")`, `toast`, `gameFrame().reload({ restore: true, afterSave: true, since })` (after a save; `since` taken before the write), `preview("flow")`, `density()`, `previewZone`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Flow panel; `run(id, input)` for every command |
 
 Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared/style-edit`

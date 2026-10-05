@@ -29,10 +29,11 @@ export function StaleBar(props: StaleBarProps): VNode {
   useWorkspace(state.ui, () => state.ui.version);
   const status = state.link;
 
+  // Hidden before the game was ever live, while the data is fresh, and in an expected reload.
   const isStale = status.kind === "silent" || status.kind === "lost";
-  if (!state.everLive || !isStale || isReloading(status)) {
-    return <div data-ui="stale-bar" hidden />;
-  }
+  const isHidden = !state.everLive || !isStale || isReloading(status);
+  if (isHidden) return <div data-ui="stale-bar" hidden />;
+
   if (status.kind === "silent") {
     const seconds = secondsSince(status.since, Date.now());
     return (

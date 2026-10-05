@@ -154,7 +154,7 @@ ctx.emit("workspace:open-file", { path: "nodes/merge.ts", line: 12 });
 
 - **flowView** hooks `workspace:select-node` from the Used-by chips. It emits `workspace:open-file` from the Inspector. Both views use the same node → file rule.
 - **gameView** hooks `workspace:open-sheet` and opens the contact sheet of a series. gameView writes the series `index.json` that filesView previews.
-- **workspace** serialises the D-07 reload (`gameFrame().reload({ restore: true })`). It runs only for `reloadExtensions` outside `.moku/` while the link is live or paused.
+- **workspace** serialises the D-07 reload (`gameFrame().reload({ restore: true, afterSave: true, since })`, `since` taken before the write). It runs only for `reloadExtensions` outside `.moku/` while the link is live or paused.
 - A Markdown front matter shows as one plain block (`<pre data-front-matter>`) of its raw lines, cut at the `---` fences. filesView parses no front matter.
 - A failed read during Reload / Overwrite keeps the tab and its buffer and shows the reason in the status line.
 
