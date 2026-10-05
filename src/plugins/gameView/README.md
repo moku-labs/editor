@@ -1,6 +1,6 @@
 # gameView
 
-> Complex plugin of the **tools** core (`createToolsPlugin`). The Game workspace (design A2): device toolbar with the Sound switch, dotted stage with the one game frame, element picker, the Element panel with the Element and Device tabs (the element's code too), screenshots, series, the contact sheet, the capture card, the Reference mode proxies, and the reference card and line a pick writes for the chat.
+> Complex plugin of the **tools** core (`createToolsPlugin`). The Game workspace (design A2): device toolbar with the Sound switch, dotted stage with the one game frame, element picker, the Element panel with the Element and Device tabs (the element's code too), screenshots, series, the contact sheet, the capture card, the Reference mode proxies and area pick, the reference card and line a pick writes for the chat, and the selection it publishes for MCP (`moku_selection`, `moku_select`).
 
 What it does:
 
@@ -45,13 +45,13 @@ createApp({
 |---|---|---|
 | `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill. Off clears the hover box. A click that picks an element completes the pick (see "Pick for the chat"). |
 | `selected` | `() => ElementRef \| undefined` | The picked element. |
-| `select` | `(ref: ElementRef \| undefined) => void` | Selects without the picker, or clears the selection. Clears the style card. |
+| `select` | `(ref: ElementRef \| undefined) => void` | Selects without the picker, or clears the selection. Clears the style card. Publishes the selection (see "Selection for MCP"). |
 | `inspect` | `(ref: ElementRef) => void` | `select(ref)`, Element tab, shows Game. The `workspace:inspect` hook calls it. |
 | `scene` | `() => Promise<SceneSnapshot>` | The scene from the watched sources, after a calibration in flight lands. While Game is hidden it reads the three sources once. Rejects with the link's `WireError` when no game is connected. |
 | `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | The pink box over the game frame. `undefined` clears it. A newer call drops an older one still waiting for the scene. |
 | `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the first readable `manifestPaths` entry. Cached per session. |
-| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd-hhmm>-<flow>.png`. Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
+| `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd-hhmm>-<flow>.jpg`. The extension follows the picture: `editor.capture` answers JPEG by default (D-34), an old game PNG (`.png`). Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
 | `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `series-<stamp>/NNN.png` and `index.json`, puts `series: <folder> (<n> frames)` on the clipboard, then opens the contact sheet. Refuses while another series runs. |
 | `stopSeries` | `() => void` | Runs `editor.seriesStop`. The pending series resolves with the shots taken so far. Its index gets `stoppedEarly`. |
 | `openSheet` | `(indexPath: string) => Promise<void>` | Opens a saved series. Reads `index.json`, then every PNG with `readBinary`. |
@@ -68,7 +68,7 @@ scene.nodes.get("ui:boardScreen/boardSlot")?.rect; // { x: 55, y: 801, w: 970, h
 await app.gameView.locate({ kind: "entity", id: 1_048_628 }); // { x: 428.5, y: 880.5, w: 223, h: 223 }
 
 await app.gameView.capture();
-// { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" }
+// { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
 
 await app.gameView.series({ durationMs: 2000, intervalMs: 100 });
 // { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
@@ -100,6 +100,11 @@ Breaking (pre-1.0, round 2b):
 - The capture card's meta line is `f<frame> · <device>` (was `frame <frame> · <device>`). A series shows the card too.
 - Fit is one scale per device kind, so a small phone shows smaller than a big one.
 
+Breaking (pre-1.0, selection round):
+
+- A pick writes `<key>-f<frame>-crop.jpg` and `f<frame>-full.jpg` (was `<key>-f<frame>.png` and `f<frame>.png`). The crop is JPEG 0.8 (A19). The full frame keeps the type `editor.capture` answered, and its extension says which.
+- A screenshot is named after its picture: `.jpg` for the JPEG `editor.capture` answers by default.
+
 Failures never throw out of `capture`, `series` or `openSheet`.
 They show a toast with the bare message (`bareMessage`, R7) and log the full one with its code.
 Missing commands show "No game to capture. Connect a game first.", "The game did not add capturePlugin" or "The game did not add the overlay".
@@ -118,13 +123,13 @@ gameView declares no events. It uses the global tools events (R4).
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
 | Hooks | `workspace:reference` | `{ on }` | Reference mode on or off: the proxy layer in the frame overlay (D-27). |
 
-Log events (warn): `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. Debug: `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`.
+Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. Debug: `gameView: area read failed`, `gameView: area source failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`, and for the reference block `game.position`, `game.history { last: 1 }`, `game.tainted`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest` (the toolbar, and the sound flag on connect), `status()`, `session()` |
+| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`, and for the reference block `game.position`, `game.history { last: 1 }`, `game.tainted`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest` (the toolbar, and the sound flag on connect), `status()`, `session()`; `notify("selection", …)` and `handle("select", …)` (MCP, U4) |
 | `workspacePlugin` | `gameFrame()` (`dock`, `overlay`, `box`), `show`, `active`, `device`, `devices`, `setDevice` (preset, orientation, `folded`), `onPrefs`, `overlayInGame`, `reference`, `muted`, `setMuted`, `toast`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Game panel, `run` the `editor.*` commands, `game.bookmark` and `game.mute` |
 
@@ -136,7 +141,7 @@ gameView depends on no view, and no view depends on it (R4, D-13).
 
 | Phase | What |
 |---|---|
-| `onInit` | Checks `capturesDir`. Registers the Game panel (source `game.position`). Adds the palette items: Select element, Take a screenshot, Record a series…, Overlay in game, Show Element panel, and one `Device: <name>` per device. Binds the keys and the Esc layers. Listens to device changes. Sync, no I/O. |
+| `onInit` | Checks `capturesDir`. Registers the Game panel (source `game.position`). Adds the palette items: Select element, Take a screenshot, Record a series…, Overlay in game, Show Element panel, and one `Device: <name>` per device. Binds the keys and the Esc layers. Listens to device changes. Handles the editor-channel request `select` with `link.handle` (MCP `moku_select`). Sync, no I/O. |
 | `onStart` | Starts the scene watches when Game is already active (a restored `#game` hash). Turns Reference mode on when workspace has it on. Listens to the manifest: a game that connects while the sound is off gets `game.mute { muted: true }` (a hot reload connects a new page too). |
 | `onStop` | Runs the disposers, every unwatch and the `game.position` watch. Clears the timers. Stops a running recording. |
 
@@ -150,7 +155,7 @@ A device change re-calibrates the picker: another preset, orientation or a fold 
 | `←` / `→` | Previous / next shot, in Game while the contact sheet is open. |
 | `b` | Mark a shot as bug, same scope. |
 
-Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker.
+Esc layers, in the workspace rank: `contactSheet`, `seriesPopover`, `captureCard`, `picker`. Turning the picker on hides the capture card (round 2b R17), so after "Pick another" the first Esc leaves the picker. On the `picker` layer, Esc during a Reference mode area drag cancels the drag first.
 
 ## Usage
 
@@ -242,17 +247,18 @@ Game elements become referenceable from the chat (finding 17, D-27). workspace o
 - Attributes: `aria-label="<name>"`, `title="<name> · <type>"`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path` (ui path or `entity:<id>`), `data-moku-node` (`flow/node`), `data-moku-source` (`file:line` when a search found it, ` (loop)` for a key built in a loop), `data-moku-style` (the style identifier or call, else the nine-slice texture), `data-moku-style-source` (`file:line` of the style block or the call), `data-moku-bounds` (`x y w h`, rounded like the Element tab), `data-moku-ref-bounds` (`x y w h` in reference units), `data-moku-frame` (the scene frame).
 - A hover draws the picker box with its label.
 - A click (`pointerup`) picks the proxy's node (see below), in any workspace.
+- The cursor is a crosshair over the whole layer and every proxy. The layer takes the pointer too, so a press anywhere over the game can drag an area (see "Area pick").
 - Off removes the layer, and the scene watch unless Game is shown.
 
 ### Pick for the chat
 
-A completed pick (a picker click, or a click on a Reference proxy) does, in order:
+A completed pick (a picker click, a click on a Reference proxy, or MCP `moku_select`) does, in order:
 
 1. `game.bookmark` through `panels.run`. The bookmark is kept: `bookmarks()`, newest first, at most 20. Its id is `<key>-f<frame>`, with `-2` … when a kept one has it.
-2. `editor.capture` through `panels.run` (the capture plugin accepts both `game.capture` answers: a string, or `{ png }`).
-3. The crop: the element's rect plus 8 px, cut from the picture with a canvas in the tools page. The box is scaled by picture width / device width, the shot's real pixel ratio. Only a calibrated scene is cropped.
-4. Both files through `files.writeBinary` into `capturesDir`: `<key>-f<frame>.png` (crop) and `f<frame>.png` (full frame). An entity uses its node name for `<key>`.
-5. The card file `<key>-f<frame>.md` in `capturesDir`, `-2`, `-3` … when taken (round 2b R13): the full reference block, the JSX and style snippets fenced with their `file:line` (an entity: its projection and components), and `![element](<crop>.png)` `![frame](f<frame>.png)`.
+2. `editor.capture` through `panels.run` (the capture plugin accepts both `game.capture` answers: a string, or `{ png }`). It answers JPEG by default (D-34).
+3. The crop: the element's rect plus 8 px, cut from the picture with a canvas in the tools page and encoded JPEG 0.8 (A19). The box is scaled by picture width / device width, the shot's real pixel ratio. Only a calibrated scene is cropped.
+4. Both files through `files.writeBinary` into `capturesDir`: `<key>-f<frame>-crop.jpg` (crop) and `f<frame>-full.jpg` (full frame), `-2`, `-3` … before the suffix when taken. Each extension follows its picture: a PNG stays `.png`. An entity uses its node name for `<key>`.
+5. The card file `<key>-f<frame>.md` in `capturesDir`, `-2`, `-3` … when taken (round 2b R13): the full reference block, the JSX and style snippets fenced with their `file:line` (an entity: its projection and components), and `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`.
 6. One line on the clipboard, toast "Reference, shot and bookmark copied":
 
 ```text
@@ -260,6 +266,9 @@ A completed pick (a picker click, or a click on a Reference proxy) does, in orde
 ```
 
 7. The capture card of the shot: the crop, Copy link, Open, and Reference (copies the line again).
+8. The selection is published again with its `card`, `crop`, `line` and the frame of the pick, while the node is still selected (see "Selection for MCP").
+
+`completePick(ctx, node, scene, { copy })` returns `{ block, line, card, crop, full, frame, info }` (A8). MCP `moku_select` passes `copy: false`: no clipboard, no toast, the capture card still shows.
 
 A game without `game.bookmark` or `editor.capture`, or a step that fails, leaves its lines out. The toast then names only what was copied: "Reference and shot copied", "Reference and bookmark copied", "Reference copied". A card that cannot be written leaves its path out of the line and logs `gameView: reference card failed`.
 
@@ -301,10 +310,59 @@ flow: board > settings > open · last: board/settings/enter → done
 game: merge-game 0.0.0 · s-7e63 · f25 · 17:16:39 · live · clean
 device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
 restore: bookmark settingsBoard-f25
-shot: .moku/captures/settingsBoard-f25.png · frame: .moku/captures/f25.png
+shot: .moku/captures/settingsBoard-f25-crop.jpg · frame: .moku/captures/f25-full.jpg
 ```
 
 The Element tab shows the full block in a read-only `<pre data-part="reference">`. Its Copy button (`data-action="copy-reference"`) runs `copyReference()`: the card, and the one line on the clipboard. The block is gathered again when the element, its source, its style block, its bounds, the flow node or the last pick changes.
+
+### Area pick
+
+In Reference mode a press on the proxy layer that moves 4 client px or more drags an area (U9, A16):
+
+- The press takes nothing. Under 4 px the release is a click, and the proxy under it picks as before.
+- From 4 px the layer holds the pointer (pointer capture), the hover box freezes and a dashed marquee `<div data-box="area">` follows the pointer. Its rect is `state.reference.area`, device px through `pageFromClient(client, gameFrame().box())`.
+- The release reads the scene once more and picks the area. Esc during the drag cancels it: the release then picks nothing.
+
+The group of the area:
+
+- The visible placed nodes that lie fully inside it. With none, the nodes it covers by at least half of their own area.
+- A node whose ancestor is in the group is dropped: a row inside the area travels with its pill and its icon.
+- Top to bottom, then left to right. At most 40; the card says `+N more`.
+- An uncalibrated scene has no group: its rects are not device px.
+
+Then the pick path with the area: `game.bookmark` (`area-f<frame>`), `editor.capture`, the crop of the area plus 8 px (`area-f<frame>-crop.jpg`), the full frame, and the card `<capturesDir>/area-f<frame>.md`:
+
+```text
+@moku area <w>×<h> · <flow/node> · <N> elements · ref x,y w×h · <card path>
+- <name> <type> · key <key> · <file:line> · ref x,y w×h
++<N> more
+flow: … · game: … · device: … · restore: … · shot: …
+```
+
+- The head is the line the clipboard gets. `ref` is the area in reference units, only when the scene is calibrated. An empty area says `no elements`.
+- One line per element, then the tail lines of a single element's block (`tailLines`).
+- The card adds the JSX and style snippets of the first 3 elements with a source, each titled with its element, and `![area](…)` `![frame](…)`.
+- Sources come from the source search results; an area starts at most 10 new searches (A18).
+- The capture card shows like a pick. The single selection is cleared.
+
+### Selection for MCP
+
+The editor page publishes its selection to the hub (U4, D-33) with `link.notify("selection", info)`. MCP `moku_selection` reads it.
+
+- Every change of the selection publishes: a picker click, a proxy click, `select`, `inspect`, a tree row. `select(undefined)` publishes null.
+- The info (`SelectionInfo` of the protocol): `ref`, `key`, `projection`, `name`, `type`, `rect` (page CSS px), `source` (`file:line` of the key), `session`, `frame`, `at`. Unknown fields are left out.
+- `projection`: an entity's owner. A ui node: the projection of `game.projections` that holds its key (and its root key when two hold it).
+- A key whose source search still runs is published without `source` first, then again with it. A newer selection drops the late one.
+- After a pick: `card`, `crop`, `line` and the frame of the pick. An area: `type: "area"`, `name: "area"`, `rect` and `area` the area, `items` the group, `ref` the first item's (`{ kind: "ui", path: "" }` when empty). First without sources, then with them and the files.
+
+MCP `moku_select` reaches gameView as the editor-channel request `select` (`link.handle("select", …)`, added in `onInit`):
+
+- `rect` wins over `key` and `ref`: the area pick above, without the clipboard. Game is shown.
+- `key`: the first ui node with that key on a fresh scene. `"hud/infoBar"` names the key `infoBar` in the projection `hud`.
+- `ref`: the node of that ref.
+- The element is inspected (Game workspace, Element tab), then picked like a click with `copy: false` unless `card` is false. The answer is its `SelectionInfo`.
+- Not found: -32602 `invalid_input`, "No element with key <key>" (or "… with ref <id>"). The empty ui ref of an empty area: "area selection has no element". Neither key, ref nor rect: "editor.select needs a key, a ref or a rect".
+- No game: the link's error passes.
 
 ### Captures
 
@@ -316,7 +374,7 @@ The Element tab shows the full block in a read-only `<pre data-part="reference">
 
 ## Files
 
-`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload, fold), `capture/` (naming, shot, series, sheet, crop), `element/` (source, styles, select, jsx, code, spawn), `reference/` (mode, proxies, block, facts, card, pick), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `clipboard.ts`, `sound.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
+`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload, fold), `capture/` (naming, shot, series, sheet, crop), `element/` (source, styles, select, selection, publish, select-request, jsx, code, spawn), `reference/` (mode, proxies, gesture, area, area-block, block, facts, card, pick), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `clipboard.ts`, `sound.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
 
 ## Tests
 

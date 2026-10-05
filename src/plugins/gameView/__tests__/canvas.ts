@@ -3,17 +3,23 @@ import { vi } from "vitest";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A 2D canvas for happy-dom, which decodes no image and draws nothing: the
-// picture reports the given size, the canvas records drawImage and answers a
-// fixed data URL. Restore with vi.restoreAllMocks().
+// picture reports the given size, the canvas records drawImage and every
+// encode, and answers a fixed data URL of the asked type (JPEG or PNG).
+// Restore with vi.restoreAllMocks().
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The data URL the stubbed canvas answers. */
+/** The data URL the stubbed canvas answers for a PNG. */
 export const CROP_PNG = "data:image/png;base64,Q1JPUA==";
+
+/** The data URL the stubbed canvas answers for a JPEG (the crop's default, D-34). */
+export const CROP_JPEG = "data:image/jpeg;base64,Q1JPUA==";
 
 /** What the stub records. */
 export type CanvasStub = {
   readonly drawImage: Mock<(...args: unknown[]) => void>;
   readonly sizes: { readonly width: number; readonly height: number }[];
+  /** The type and quality of every `toDataURL` call. */
+  readonly encodes: { readonly type: string | undefined; readonly quality: unknown }[];
 };
 
 /**
@@ -40,6 +46,12 @@ export function stubCanvas(picture: {
     sizes.push({ width: this.width, height: this.height });
     return context;
   } as unknown as HTMLCanvasElement["getContext"]);
-  vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(CROP_PNG);
-  return { drawImage, sizes };
+  const encodes: { type: string | undefined; quality: unknown }[] = [];
+  vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockImplementation(
+    (type?: string, quality?: unknown) => {
+      encodes.push({ type, quality });
+      return type === "image/jpeg" ? CROP_JPEG : CROP_PNG;
+    }
+  );
+  return { drawImage, sizes, encodes };
 }

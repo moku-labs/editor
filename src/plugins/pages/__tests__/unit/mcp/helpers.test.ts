@@ -15,7 +15,7 @@ import {
   commandOf,
   dataUrlOf,
   pictureOf,
-  pngWidth,
+  pictureSize,
   readBeat,
   readFileEntries,
   readFileText,
@@ -27,12 +27,17 @@ import {
 } from "../../../mcp/shapes";
 import type { SessionView } from "../../../mcp/types";
 import { jsonEqual, matcherOf } from "../../../mcp/wait";
-import { pngOf } from "../../mcp-tools";
+import { jpegOf, pngOf } from "../../mcp-tools";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages/mcp pure helpers: the session choice and liveness rule, JSON equality
 // and wait rules, the shape readers, the result builders and progress.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** A JPEG data URL of the given bytes. */
+function jpeg(bytes: number[]): string {
+  return `data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`;
+}
 
 /** A session view. */
 function view(id: string, embedded: boolean, heartbeat?: SessionView["heartbeat"]): SessionView {
@@ -117,9 +122,28 @@ describe("shape readers", () => {
     expect(pictureOf("data:image/png;base64,AA")).toBe("data:image/png;base64,AA");
     expect(pictureOf({ png: "blob:x" })).toBeUndefined();
     expect(splitDataUrl("not a data url")).toBeUndefined();
-    expect(pngWidth(pngOf(393, 64))).toBe(393);
-    expect(pngWidth("data:image/png;base64,AAAA")).toBeUndefined();
-    expect(pngWidth("data:image/jpeg;base64,/9j/")).toBeUndefined();
+    expect(pictureSize(pngOf(393, 64))).toEqual({ width: 393, height: 852 });
+    expect(pictureSize("data:image/png;base64,AAAA")).toBeUndefined();
+    expect(pictureSize("data:image/gif;base64,R0lG")).toBeUndefined();
+    expect(pictureSize("not a data url")).toBeUndefined();
+  });
+
+  it("reads the size of a JPEG from its SOF0 or SOF2 frame header", () => {
+    expect(pictureSize(jpegOf(393, 64))).toEqual({ width: 393, height: 852 });
+    expect(pictureSize(jpegOf(1080, 64, 0xc2))).toEqual({ width: 1080, height: 852 });
+    expect(pictureSize("data:image/jpeg;base64,/9j/")).toBeUndefined();
+    expect(pictureSize("data:image/jpeg;base64,AAAA")).toBeUndefined();
+  });
+
+  it("skips fill bytes and standalone markers, and stops at the scan without a frame header", () => {
+    const frame = [0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x20, 0x00, 0x40, 0x03, 0x00, 0x00];
+    expect(pictureSize(jpeg([0xff, 0xd8, 0xff, 0xff, 0xd0, ...frame]))).toEqual({
+      width: 64,
+      height: 32
+    });
+    const scan = [0xff, 0xda, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    expect(pictureSize(jpeg([0xff, 0xd8, ...scan, ...frame]))).toBeUndefined();
+    expect(pictureSize(jpeg([0xff, 0xd8, 0x00, 0x00, ...frame]))).toBeUndefined();
   });
 
   it("read file results and manifest entries", () => {

@@ -1,8 +1,9 @@
 /**
  * @file gameView plugin — gameView's root inside `workspace.gameFrame().overlay()` (device space,
  * game CSS px, scaled with the frame, above the iframe, R4): the Reference mode proxy layer, the
- * picker layer, the hover, selected and tree boxes with the hover label, the safe-area bands, the
- * dynamic island, the home bar and the shutter flash. Foreign DOM with its own Preact root,
+ * picker layer, the hover, selected and tree boxes with the hover label, the marquee of a
+ * Reference mode area drag (U9), the safe-area bands, the dynamic island, the home bar and the
+ * shutter flash. Foreign DOM with its own Preact root,
  * created once, removed on stop.
  */
 import type { VNode } from "preact";
@@ -149,6 +150,7 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
         />
       )}
       {selected?.rect && <div data-box="selected" style={rectStyle(selected.rect)} />}
+      {reference.area && <div data-box="area" style={rectStyle(reference.area)} />}
       {tree?.rect && <div data-box="tree" style={rectStyle(tree.rect)} />}
       {hover?.rect && <HoverBox node={hover} rect={hover.rect} scale={scale} device={device} />}
       {active && state.picker.on && <PickerLayer ctx={ctx} />}

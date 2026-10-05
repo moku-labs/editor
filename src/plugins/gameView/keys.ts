@@ -3,8 +3,8 @@
  * (R4, design §4): ⇧⌘C and I toggle the picker (global, shows Game); \ collapses or expands the
  * Element panel in Game; M switches the game's sound in Game when the game has `game.mute` (round
  * 2b R11); ← → step and B marks a bug in Game while the contact sheet is open; Esc
- * layers contactSheet, seriesPopover, captureCard, picker, each `false` when gameView has nothing
- * open there.
+ * layers contactSheet, seriesPopover, captureCard, picker (an area drag of Reference mode too),
+ * each `false` when gameView has nothing open there.
  */
 import { toggleSidePanel } from "../panels/shared/side-panel";
 import type { EscLayer, KeyBinding } from "../workspace/types";
@@ -12,6 +12,7 @@ import { setPopover } from "./capture/series";
 import { closeSheetLayer, stepSheet, toggleBug } from "./capture/sheet";
 import { hideCard } from "./capture/shot";
 import { setPicker } from "./element/select";
+import { cancelArea } from "./reference/gesture";
 import { SIDE_PANEL, SIDE_TITLE } from "./side";
 import { canMute, setSound } from "./sound";
 import type { GameViewCtx } from "./types";
@@ -62,12 +63,13 @@ function markShownShot(ctx: GameViewCtx): void {
 }
 
 /**
- * Esc on the picker layer: turns the picker off.
+ * Esc on the picker layer: cancels a Reference mode area drag (U9), else turns the picker off.
  *
  * @param ctx - Domain context of gameView.
- * @returns True when the picker was on.
+ * @returns True when a drag was cancelled or the picker was on.
  */
 function closePicker(ctx: GameViewCtx): boolean {
+  if (cancelArea(ctx)) return true;
   if (!ctx.state.picker.on) return false;
   setPicker(ctx, false);
   return true;

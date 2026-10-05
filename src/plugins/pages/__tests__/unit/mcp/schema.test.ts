@@ -5,6 +5,8 @@ import {
   flagArgument,
   numberArgument,
   optionalNumberArgument,
+  RECT_PROPERTY,
+  rectArgument,
   textArgument
 } from "../../../mcp/schema";
 import type { ToolInputSchema } from "../../../mcp/types";
@@ -51,6 +53,48 @@ describe("checkArguments", () => {
     expect(checkArguments(SCHEMA, { id: "x", restore: "yes" })).toBe(
       "restore must be true or false"
     );
+  });
+});
+
+describe("enum strings and the rect object", () => {
+  /** A schema with an enum string and a rect. */
+  const PICTURE: ToolInputSchema = {
+    type: "object",
+    properties: {
+      format: { type: "string", enum: ["jpeg", "png"], default: "jpeg", description: "format" },
+      rect: RECT_PROPERTY
+    },
+    additionalProperties: false
+  };
+
+  it("accepts a listed string and a rect of four numbers", () => {
+    const args = { format: "png", rect: { x: 0, y: 30.5, w: 200, h: 60 } };
+    expect(checkArguments(PICTURE, args)).toEqual(args);
+  });
+
+  it("names the problem of an unlisted string or a bad rect", () => {
+    expect(checkArguments(PICTURE, { format: "gif" })).toBe("format must be one of jpeg, png");
+    expect(checkArguments(PICTURE, { rect: [1, 2] })).toBe("rect must be an object");
+    expect(checkArguments(PICTURE, { rect: { x: 0, y: 0, w: 1 } })).toBe("rect.h is required");
+    expect(checkArguments(PICTURE, { rect: { x: 0, y: 0, w: 1, h: 1, z: 2 } })).toBe(
+      "rect.z is not a field of rect"
+    );
+    expect(checkArguments(PICTURE, { rect: { x: "0", y: 0, w: 1, h: 1 } })).toBe(
+      "rect.x must be a number"
+    );
+    expect(checkArguments(PICTURE, { rect: { x: -1, y: 0, w: 1, h: 1 } })).toBe(
+      "rect.x must be at least 0"
+    );
+    expect(checkArguments(PICTURE, { rect: { x: 0, y: 0, w: 0, h: 1 } })).toBe(
+      "rect.w must be at least 1"
+    );
+  });
+
+  it("reads a checked rect, or undefined when absent", () => {
+    const rect = { x: 1, y: 2, w: 3, h: 4 };
+    expect(rectArgument({ rect }, "rect")).toEqual(rect);
+    expect(rectArgument({}, "rect")).toBeUndefined();
+    expect(rectArgument({ rect: { x: 1 } }, "rect")).toBeUndefined();
   });
 });
 

@@ -5,7 +5,9 @@ import {
   cardPath,
   deviceLabel,
   folderOf,
+  imageExtension,
   nodeOf,
+  pickPaths,
   plannedShots,
   positionOf,
   seriesFolder,
@@ -42,6 +44,60 @@ describe("capturePath", () => {
     expect(capturePath(".moku/captures", "2026-09-24-1012", "board/merge it", new Set())).toBe(
       ".moku/captures/2026-09-24-1012-board-merge-it.png"
     );
+  });
+});
+
+describe("capturePath with the extension of the picture (D-34)", () => {
+  it("names a JPEG shot .jpg and keeps the -2 rule per extension", () => {
+    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", new Set(), "jpg")).toBe(
+      ".moku/captures/2026-09-24-1012-board.jpg"
+    );
+    const taken = new Set([".moku/captures/2026-09-24-1012-board.jpg"]);
+    expect(capturePath(".moku/captures", "2026-09-24-1012", "board", taken, "jpg")).toBe(
+      ".moku/captures/2026-09-24-1012-board-2.jpg"
+    );
+  });
+});
+
+describe("imageExtension", () => {
+  it("is jpg for a JPEG data URL and the subtype for the others", () => {
+    expect(imageExtension("data:image/jpeg;base64,/9j/")).toBe("jpg");
+    expect(imageExtension("data:image/png;base64,iVBOR")).toBe("png");
+    expect(imageExtension("data:image/webp;base64,UklG")).toBe("webp");
+  });
+
+  it("is png for anything that is no image data URL", () => {
+    expect(imageExtension("")).toBe("png");
+    expect(imageExtension("data:text/plain,hi")).toBe("png");
+  });
+});
+
+describe("pickPaths (A19)", () => {
+  it("names the crop <name>-f<frame>-crop and the full frame f<frame>-full, with the picture's extension", () => {
+    expect(
+      pickPaths(".moku/captures", "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" })
+    ).toEqual({
+      crop: ".moku/captures/settingsBoard-f1841-crop.jpg",
+      full: ".moku/captures/f1841-full.jpg"
+    });
+    expect(
+      pickPaths(".moku/captures", "board.items/3", 7, new Set(), { crop: "jpg", full: "png" })
+    ).toEqual({
+      crop: ".moku/captures/board-items-3-f7-crop.jpg",
+      full: ".moku/captures/f7-full.png"
+    });
+  });
+
+  it("appends -2 before the suffix when a file is taken", () => {
+    const taken = new Set([
+      ".moku/captures/area-f25-crop.jpg",
+      ".moku/captures/f25-full.jpg",
+      ".moku/captures/f25-2-full.jpg"
+    ]);
+    expect(pickPaths(".moku/captures", "area", 25, taken, { crop: "jpg", full: "jpg" })).toEqual({
+      crop: ".moku/captures/area-f25-2-crop.jpg",
+      full: ".moku/captures/f25-3-full.jpg"
+    });
   });
 });
 

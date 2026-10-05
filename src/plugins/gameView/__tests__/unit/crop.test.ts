@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CROP_MARGIN, cropBox, cropImage } from "../../capture/crop";
-import { CROP_PNG, stubCanvas } from "../canvas";
+import { CROP_JPEG, CROP_PNG, stubCanvas } from "../canvas";
 import { PNG } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,10 +51,11 @@ describe("cropBox", () => {
 });
 
 describe("cropImage", () => {
-  it("draws the box of the picture into a canvas of its size and answers its PNG", async () => {
+  it("draws the box of the picture into a canvas of its size and answers a JPEG 0.8 (D-34)", async () => {
     const canvas = stubCanvas({ width: 786, height: 1704 });
     const crop = await cropImage(PNG, { x: 100, y: 200, w: 50, h: 20 }, { w: 393 });
-    expect(crop).toBe(CROP_PNG);
+    expect(crop).toBe(CROP_JPEG);
+    expect(canvas.encodes).toEqual([{ type: "image/jpeg", quality: 0.8 }]);
     expect(canvas.sizes).toEqual([{ width: 132, height: 72 }]);
     expect(canvas.drawImage).toHaveBeenCalledWith(
       expect.anything(),
@@ -67,6 +68,19 @@ describe("cropImage", () => {
       132,
       72
     );
+  });
+
+  it("encodes in the asked format and quality: png stays lossless", async () => {
+    const canvas = stubCanvas({ width: 393, height: 852 });
+    const rect = { x: 10, y: 10, w: 20, h: 20 };
+    expect(await cropImage(PNG, rect, { w: 393 }, { format: "png", quality: 0.8 })).toBe(CROP_PNG);
+    expect(await cropImage(PNG, rect, { w: 393 }, { format: "jpeg", quality: 0.5 })).toBe(
+      CROP_JPEG
+    );
+    expect(canvas.encodes).toEqual([
+      { type: "image/png", quality: undefined },
+      { type: "image/jpeg", quality: 0.5 }
+    ]);
   });
 
   it("is undefined when the picture has no size or the canvas has no 2D context", async () => {

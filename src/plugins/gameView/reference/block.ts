@@ -2,7 +2,8 @@
  * @file gameView plugin — the reference block (round 2 R2), pure: what a pick or "Copy reference"
  * puts on the clipboard for the chat. One fact per line in a fixed order (`@moku` head, `path`,
  * `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, `restore`, `shot`); a line or a
- * field that is not known is left out. The facts are gathered elsewhere (reference/facts).
+ * field that is not known is left out. The last five are the tail lines an area block ends with
+ * too (`tailLines`, A17). The facts are gathered elsewhere (reference/facts).
  */
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
 import type { Json, Orientation } from "../../registry/protocol";
@@ -56,14 +57,25 @@ export type PickFacts = {
 };
 
 /**
+ * What the tail lines print (A17): the game position and its last edge, the frame, the game, the
+ * device and the files of the pick.
+ */
+export type TailFacts = {
+  readonly position: PositionInfo;
+  readonly last: LastEdge | undefined;
+  readonly frame: number;
+  readonly game: GameFacts;
+  readonly device: DeviceFacts | undefined;
+  readonly pick: PickFacts | undefined;
+};
+
+/**
  * Everything the block prints, gathered for one scene node.
  */
-export type ReferenceFacts = {
+export type ReferenceFacts = TailFacts & {
   readonly node: SceneNode;
   /** The ui ancestors, nearest first (`layout` prints three at most). */
   readonly parents: readonly SceneNode[];
-  readonly position: PositionInfo;
-  readonly last: LastEdge | undefined;
   readonly source: StyleSource | undefined;
   /** Where the style block of an identifier is. */
   readonly block: BlockAt | undefined;
@@ -71,10 +83,6 @@ export type ReferenceFacts = {
   readonly flags: readonly string[];
   /** The text the element shows, when the game reports it. */
   readonly value: string | undefined;
-  readonly frame: number;
-  readonly game: GameFacts;
-  readonly device: DeviceFacts | undefined;
-  readonly pick: PickFacts | undefined;
 };
 
 /** The parents `layout` names, nearest first. */
@@ -287,7 +295,7 @@ function stateLine(facts: ReferenceFacts): string {
  * @param facts - The facts.
  * @returns "flow: … · last: …", undefined when neither is known.
  */
-function flowLine(facts: ReferenceFacts): string | undefined {
+function flowLine(facts: TailFacts): string | undefined {
   const { position, last } = facts;
   const stack = position.path?.split("/").join(" > ");
   const frame = last?.frame === undefined ? "" : ` (f${last.frame})`;
@@ -318,7 +326,7 @@ function clockText(at: Date): string {
  * @param facts - The facts.
  * @returns "game: …", undefined when nothing but the frame is known.
  */
-function gameLine(facts: ReferenceFacts): string | undefined {
+function gameLine(facts: TailFacts): string | undefined {
   const { game } = facts;
   const tainted = taintText(game.tainted);
   const clock = game.at === undefined ? undefined : clockText(game.at);
@@ -360,6 +368,28 @@ function deviceLine(device: DeviceFacts | undefined): string | undefined {
 }
 
 /**
+ * The tail lines of a block (A17), in order: flow, game, device, restore and shot; a line that is
+ * not known is undefined.
+ *
+ * @param facts - The position, the frame, the game, the device and the pick.
+ * @returns The five lines.
+ * @example
+ * ```ts
+ * tailLines(facts); // ["flow: board > awaitIntent", "game: merge-game 0.0.0 · s-1 · f25 · …", "device: …", undefined, undefined]
+ * ```
+ */
+export function tailLines(facts: TailFacts): readonly (string | undefined)[] {
+  const { pick } = facts;
+  return [
+    flowLine(facts),
+    gameLine(facts),
+    deviceLine(facts.device),
+    labelled("restore", pick?.bookmark === undefined ? undefined : `bookmark ${pick.bookmark}`),
+    line([labelled("shot", pick?.crop), labelled("frame", pick?.full)])
+  ];
+}
+
+/**
  * The block of one element for the chat. The first line is the head, for example
  * `@moku settingsBoard · panel · settingsPopup/open · f1841`.
  *
@@ -367,7 +397,7 @@ function deviceLine(device: DeviceFacts | undefined): string | undefined {
  * @returns The block, one fact per line.
  */
 export function referenceBlock(facts: ReferenceFacts): string {
-  const { node, source, pick } = facts;
+  const { node, source } = facts;
   const layout = facts.parents.slice(0, LAYOUT_PARENTS).map(parent => layoutOf(parent));
   const lines = [
     headLine(facts),
@@ -380,11 +410,7 @@ export function referenceBlock(facts: ReferenceFacts): string {
     layout.length === 0 ? undefined : `layout: ${layout.join(" < ")}`,
     boundsLine(node),
     stateLine(facts),
-    flowLine(facts),
-    gameLine(facts),
-    deviceLine(facts.device),
-    labelled("restore", pick?.bookmark === undefined ? undefined : `bookmark ${pick.bookmark}`),
-    line([labelled("shot", pick?.crop), labelled("frame", pick?.full)])
+    ...tailLines(facts)
   ];
   return lines.filter(entry => entry !== undefined).join("\n");
 }

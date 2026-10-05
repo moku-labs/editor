@@ -74,6 +74,17 @@ describe("requests", () => {
     client.close();
   });
 
+  it("sends editor-channel requests without a session", async () => {
+    const server = fake({ sessions: [session("s-1")] });
+    server.handle("editor.selection", () => null);
+    const client = await connectHub(server.discovery("/root"));
+    await expect(client.request("editor", "selection", {})).resolves.toBeNull();
+    expect(server.requests).toEqual([
+      { channel: "editor", method: "selection", params: {}, session: undefined }
+    ]);
+    client.close();
+  });
+
   it("rejects with the hub's wire error", async () => {
     const server = fake({ sessions: [session("s-1")] });
     server.handle("game.read", () => {

@@ -135,3 +135,29 @@ export function pngOf(width: number, chars: number): string {
   const start = header.toString("base64");
   return `data:image/png;base64,${start}${"A".repeat(Math.max(0, chars - start.length))}`;
 }
+
+/**
+ * A JPEG data URL with a real start (SOI, a JFIF APP0 segment, then a SOF0 or SOF2 frame header) so
+ * its size can be read, padded with "A" to `chars` base64 characters.
+ *
+ * @param width - The width in the frame header (the height is 852).
+ * @param chars - The length of the base64 data.
+ * @param marker - The frame marker: 0xc0 (SOF0, baseline) or 0xc2 (SOF2, progressive).
+ */
+export function jpegOf(width: number, chars: number, marker = 0xc0): string {
+  const start = Buffer.from([0xff, 0xd8]);
+  const app0 = Buffer.from([
+    0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01,
+    0x00, 0x00
+  ]);
+  const frame = Buffer.alloc(19);
+  frame[0] = 0xff;
+  frame[1] = marker;
+  frame.writeUInt16BE(17, 2);
+  frame[4] = 8;
+  frame.writeUInt16BE(852, 5);
+  frame.writeUInt16BE(width, 7);
+  frame[9] = 3;
+  const head = Buffer.concat([start, app0, frame]).toString("base64");
+  return `data:image/jpeg;base64,${head}${"A".repeat(Math.max(0, chars - head.length))}`;
+}

@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`tools/list > lists the fifteen moku tools with closed object schemas 1`] = `
+exports[`tools/list > lists the seventeen moku tools with closed object schemas 1`] = `
 {
   "tools": [
     {
@@ -164,10 +164,24 @@ exports[`tools/list > lists the fifteen moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": true,
       },
-      "description": "A PNG of the game as it is now, at most maxWidth pixels wide, with its frame and device. The game page must be visible: a paused or hidden game answers a message instead.",
+      "description": "A picture of the game as it is now (JPEG by default), at most maxWidth pixels wide, with its frame and device. key crops it to one ui element. The game page must be visible: a paused or hidden game answers a message instead.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "format": {
+            "default": "jpeg",
+            "description": "jpeg (small, the default) or png (lossless).",
+            "enum": [
+              "jpeg",
+              "png",
+            ],
+            "type": "string",
+          },
+          "key": {
+            "description": "A ui element key, projection-qualified like "hud/infoBar" allowed: the picture is cropped to that element plus 8 px.",
+            "minLength": 1,
+            "type": "string",
+          },
           "maxWidth": {
             "default": 1080,
             "description": "The widest picture in pixels; a wider game picture is scaled down.",
@@ -191,7 +205,7 @@ exports[`tools/list > lists the fifteen moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": true,
       },
-      "description": "Takes frames pictures everyMs ms of game time apart and answers them laid out on one PNG (ceil(sqrt(frames)) columns): a motion at a glance. Needs @moku-labs/game 0.4 or newer and a visible game page.",
+      "description": "Takes frames pictures everyMs ms of game time apart and answers them laid out on one picture (ceil(sqrt(frames)) columns, a JPEG when the editor encodes it): a motion at a glance. Needs @moku-labs/game 0.4 or newer and a visible game page.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -239,6 +253,86 @@ exports[`tools/list > lists the fifteen moku tools with closed object schemas 1`
       },
       "name": "moku_reference",
       "title": "Reference card",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "What is selected in the editor page now (picked with the Reference picker, or by moku_select): ref, key, name, type, rect in game page CSS px, source file and line, the reference card and its one-line @moku reference, as JSON, and the element's crop picture when one was taken. An area selection lists its elements in items.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_selection",
+      "title": "Editor selection",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Pass exactly one of key or rect. Needs the tools page open: without it the answer names the URL to open.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "card": {
+            "default": true,
+            "description": "Write the reference card and the crop picture, as after a picker click.",
+            "type": "boolean",
+          },
+          "key": {
+            "description": "A ui element key, projection-qualified like "hud/infoBar" allowed: the first element with that key.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "rect": {
+            "additionalProperties": false,
+            "description": "An area of the game page in CSS px, the way the Reference picker drag draws it: { x, y, w, h }.",
+            "properties": {
+              "h": {
+                "description": "Height, CSS px.",
+                "minimum": 1,
+                "type": "number",
+              },
+              "w": {
+                "description": "Width, CSS px.",
+                "minimum": 1,
+                "type": "number",
+              },
+              "x": {
+                "description": "Left edge, CSS px.",
+                "minimum": 0,
+                "type": "number",
+              },
+              "y": {
+                "description": "Top edge, CSS px.",
+                "minimum": 0,
+                "type": "number",
+              },
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_select",
+      "title": "Select in the editor",
     },
     {
       "annotations": {

@@ -1,6 +1,6 @@
 /**
  * @file gameView plugin — onInit (the capturesDir check, panel, palette, key bindings, Esc layers,
- * device listener; sync, no I/O), onStart (scene watches when Game is already active, Reference
+ * device listener, the `select` handler of MCP `moku_select`; sync, no I/O), onStart (scene watches when Game is already active, Reference
  * mode when already on, the sound flag applied to every game that connects) and onStop
  * (disposers, watches, the game.position watch, timers, a running recording).
  */
@@ -8,6 +8,7 @@ import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
 import type { DeviceChoice } from "../workspace/types";
+import { answerSelect } from "./element/select-request";
 import { escapeClosers, keyBindings } from "./keys";
 import { paletteItems } from "./palette";
 import { dropReference, setReferenceMode } from "./reference/mode";
@@ -73,8 +74,9 @@ function watchDevice(ctx: GameViewCtx): () => void {
 
 /**
  * onInit: checks `capturesDir`, registers the Game panel, adds the palette items, binds the keys
- * and the Esc layers and listens to device changes. Every remover goes into `state.disposers`.
- * Sync, no I/O.
+ * and the Esc layers, listens to device changes and handles the editor-channel request `select`
+ * the hub relays from MCP `moku_select` (U4). Every remover goes into `state.disposers`. Sync,
+ * no I/O.
  *
  * @param ctx - Domain context of gameView.
  * @throws {Error} When `capturesDir` is not `.moku/captures` or a folder under it.
@@ -89,7 +91,10 @@ export function initGameView(ctx: GameViewCtx): void {
   for (const { layer, close } of escapeClosers(ctx)) {
     disposers.push(workspace.keys.escape(layer, close));
   }
-  disposers.push(watchDevice(ctx));
+  disposers.push(
+    watchDevice(ctx),
+    ctx.require(linkPlugin).handle("select", answerSelect.bind(undefined, ctx))
+  );
 }
 
 /**

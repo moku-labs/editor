@@ -9,7 +9,7 @@ import { isObject } from "./rpc";
 import type { JsonObject } from "./types";
 
 /**
- * The start of every picture a game answers (a PNG data URL).
+ * The start of every picture a game answers (a PNG or JPEG data URL).
  */
 const IMAGE_PREFIX = "data:image/";
 
@@ -226,22 +226,105 @@ export function splitDataUrl(
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
- * The width of a PNG data URL, read from its IHDR header (bytes 16 to 19, big-endian).
+ * The JPEG frame headers that carry the picture size: SOF0 (baseline), SOF1 and SOF2
+ * (progressive). Canvas encoders write SOF0.
+ */
+const JPEG_FRAME_MARKERS: ReadonlySet<number> = new Set([0xc0, 0xc1, 0xc2]);
+
+/**
+ * The JPEG start-of-scan marker: the picture data follows, no frame header after it.
+ */
+const JPEG_START_OF_SCAN = 0xda;
+
+/**
+ * How many base64 characters of a JPEG are decoded to find its frame header (48 KB of bytes):
+ * enough for the APP and DQT segments a canvas or a camera writes before it.
+ */
+const JPEG_HEAD_CHARS = 65_536;
+
+/**
+ * The size of a picture in pixels.
+ */
+export type PictureSize = { readonly width: number; readonly height: number };
+
+/**
+ * True for a JPEG marker without a length: the restart markers RST0..RST7 and TEM.
  *
- * @param dataUrl - The data URL.
- * @returns The width in pixels, or undefined for anything but a PNG.
+ * @param marker - The marker byte after 0xff.
+ * @returns Whether no segment length follows it.
  * @example
  * ```ts
- * pngWidth(shot.image); // 393 for a shot of a 393 px wide canvas
+ * isStandalone(0xd0); // true
  * ```
  */
-export function pngWidth(dataUrl: string): number | undefined {
-  const split = splitDataUrl(dataUrl);
-  if (split?.mimeType !== "image/png") return undefined;
+function isStandalone(marker: number): boolean {
+  return marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7);
+}
 
-  const header = Buffer.from(split.data.slice(0, 32), "base64");
-  const isPng = header.length >= 24 && PNG_SIGNATURE.every((byte, index) => header[index] === byte);
-  return isPng ? header.readUInt32BE(16) : undefined;
+/**
+ * The size of a JPEG from its frame header: the segments after the SOI are walked by their
+ * lengths until a SOF0, SOF1 or SOF2 header (height at +5, width at +7, big-endian).
+ *
+ * @param bytes - The first bytes of the JPEG.
+ * @returns The size, or undefined when no frame header comes before the scan.
+ * @example
+ * ```ts
+ * jpegSize(Buffer.from(data.slice(0, JPEG_HEAD_CHARS), "base64")); // { width: 393, height: 852 }
+ * ```
+ */
+function jpegSize(bytes: Buffer): PictureSize | undefined {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return undefined;
+
+  let offset = 2;
+  while (offset + 9 <= bytes.length) {
+    if (bytes[offset] !== 0xff) return undefined;
+    const marker = bytes[offset + 1] ?? 0;
+    if (JPEG_FRAME_MARKERS.has(marker)) {
+      return { width: bytes.readUInt16BE(offset + 7), height: bytes.readUInt16BE(offset + 5) };
+    }
+    if (marker === JPEG_START_OF_SCAN) return undefined;
+    // A fill byte (0xff) or a standalone marker has no length.
+    const fill = marker === 0xff;
+    offset += fill ? 1 : 2;
+    if (!fill && !isStandalone(marker)) offset += bytes.readUInt16BE(offset);
+  }
+  return undefined;
+}
+
+/**
+ * The size of a PNG from its IHDR header (width at bytes 16 to 19, height at 20 to 23).
+ *
+ * @param bytes - The first bytes of the PNG.
+ * @returns The size, or undefined when the signature is not a PNG's.
+ * @example
+ * ```ts
+ * pngSize(Buffer.from(data.slice(0, 32), "base64")); // { width: 393, height: 852 }
+ * ```
+ */
+function pngSize(bytes: Buffer): PictureSize | undefined {
+  const isPng = bytes.length >= 24 && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
+  return isPng ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) } : undefined;
+}
+
+/**
+ * The size of a PNG or JPEG data URL, read from its header without decoding the picture.
+ *
+ * @param dataUrl - The data URL.
+ * @returns The size in pixels, or undefined for another type or a header it cannot read.
+ * @example
+ * ```ts
+ * pictureSize(shot.image)?.width; // 393 for a shot of a 393 px wide canvas
+ * ```
+ */
+export function pictureSize(dataUrl: string): PictureSize | undefined {
+  const split = splitDataUrl(dataUrl);
+  if (split?.mimeType === "image/png") {
+    return pngSize(Buffer.from(split.data.slice(0, 32), "base64"));
+  }
+  if (split?.mimeType === "image/jpeg") {
+    return jpegSize(Buffer.from(split.data.slice(0, JPEG_HEAD_CHARS), "base64"));
+  }
+  return undefined;
 }
 
 /**

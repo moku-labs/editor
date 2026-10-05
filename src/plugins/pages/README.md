@@ -278,7 +278,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 | `bridge.ts` | `runBridge(args)`: stdin to the dispatcher until stdin ends or a SIGINT or SIGTERM arrives, then the same teardown. Exit code 0. |
 | `rpc.ts` | Newline-delimited JSON-RPC 2.0. stdout carries only protocol frames; logs go to stderr. |
 | `server.ts` | `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`, `notifications/cancelled`. |
-| `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, `hotReload`, `watch`/`value`/`unwatch`. |
+| `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, `hotReload`, game, files and editor requests, `watch`/`value`/`unwatch`. The bridge is a plain tools client, never `role=page`. |
 | `discovery.ts` | Reads `.moku/editor.json`; `process.kill(pid, 0)` tells a live bin from a stale file. |
 | `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. |
 | `connection.ts` | The bin side: startup, reconnect once, start, stop only an owned bin. |
@@ -290,7 +290,7 @@ Protocol:
 |---|---|
 | `initialize` | `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version } }`. Versions `2025-11-25`, `2025-06-18`, `2025-03-26`: the client's when listed, else `2025-11-25`. No `protocolVersion`: -32602. |
 | `ping`, `logging/setLevel` | `{}` |
-| `tools/list` | The fifteen tools below. |
+| `tools/list` | The seventeen tools below. |
 | `tools/call` | The tool result. No `name` or an unknown tool: -32602. Bad arguments: an `isError` result naming the argument, so the model can fix the call. |
 | An unknown method | -32601. Claude Code 2.1.280 sends `server/discover` (draft protocol 2026-07-28) first and falls back to `initialize` on this answer. |
 | A line that is not JSON | -32700 with id `null` |
@@ -318,9 +318,11 @@ Tools. Every name starts with `moku_`; every input schema is a closed object (`a
 | `moku_read` | `{ id, input?, session? }` | hub `read` | read-only |
 | `moku_wait` | `{ id, input?, until?, changedFrom?, timeoutMs? (100–25000, 10000), session? }` | hub `watch` until the value deep-equals `until`, differs from `changedFrom`, or (neither) first changes; `{ timedOut, value, waitedMs }`; always unwatches | read-only |
 | `moku_run` | `{ id, input?, session? }` | hub `run`; text `effect: <effect>` then `{ value, frame, state }` | destructive, not idempotent |
-| `moku_screenshot` | `{ maxWidth? (64–4096, 1080), session? }` | liveness check, `editor.capture { maxWidth }`, image and `{ frame, device, maxWidth, kb }` | read-only |
-| `moku_series` | `{ frames? (2–12, 6), everyMs? (1–5000, 500), session? }` | liveness check, game ≥ 0.4 check (`game.capture` lists `sheet`), then `editor.sheet { frames, everyMs, maxWidth: 1080 }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; one image and `{ frames, everyMs, columns, frame, maxWidth?, kb }` | read-only |
+| `moku_screenshot` | `{ maxWidth? (64–4096, 1080), key?, format? ("jpeg" \| "png", "jpeg"), session? }` | liveness check, `editor.capture { maxWidth, format, key? }` (`key` crops to that ui element plus 8 px; an unknown key answers the agent's -32602), image and `{ frame, device, key?, maxWidth, kb }` | read-only |
+| `moku_series` | `{ frames? (2–12, 6), everyMs? (1–5000, 500), session? }` | liveness check, game ≥ 0.4 check (`game.capture` lists `sheet`), then `editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; one image and `{ frames, everyMs, columns, frame, maxWidth?, kb }` | read-only |
 | `moku_reference` | `{ id? ("latest") }` | a `.moku/captures/*.md` card (newest by modification time, or by name) and its crop image | read-only |
+| `moku_selection` | `{ session? }` | hub `editor.selection`: the `SelectionInfo` the editor page published, as JSON, then its `crop` read with `files.readBinary`. `null` answers "Nothing is selected in the editor."; a selection of another session than the asked one says whose it is | read-only |
+| `moku_select` | `{ key?, rect? { x, y, w, h }, card? (true) }` | exactly one of `key` (a ui key, `"hud/infoBar"` allowed) or `rect` (an area in game page CSS px); hub `editor.select`, relayed to the editor page, which picks like the Reference picker; the `SelectionInfo` as JSON and its crop. An area with no element is a valid selection: the text starts with the line "No elements in the area.", then the JSON and the area's picture. No editor page open: the hub's -32003 `no_editor_page` with the URL to open | not destructive, not idempotent |
 | `moku_files_list` | `{ dir? ("") }` | hub `files.list` without `.moku/editor.json` and `.moku/editor.log` | read-only |
 | `moku_files_read` | `{ path }` | `{ path, version }`, then the text | read-only |
 | `moku_files_write` | `{ path, text, version? }` | hub `files.write` | destructive, not idempotent |
@@ -328,7 +330,7 @@ Tools. Every name starts with `moku_`; every input schema is a closed object (`a
 | `moku_start` | `{ html?, port? }` | starts the bin when none runs | not destructive, idempotent |
 | `moku_stop` | `{}` | stops an owned bin; another bin answers `isError` | destructive, idempotent |
 
-Results: a text item first (pretty JSON or a message), then images as `{ type: "image", data, mimeType: "image/png" }`. A screenshot above 300 KB of base64 is taken once more at half its width: half of `maxWidth`, or half of the picture when the picture is narrower (its width is read from the PNG header). A picture still above 300 KB (the page could not shrink it, or a contact sheet, which is not taken twice) is answered anyway, with `note` giving its size. A contact sheet comes from `editor.sheet`, shrunk in the page to 1080 px wide; an agent without `editor.sheet` (an older capture plugin) gets `game.capture { sheet }` at full size.
+Results: a text item first (pretty JSON or a message), then images as `{ type: "image", data, mimeType }`. The `mimeType` follows the data URL the editor answered: `image/jpeg` for the default JPEG pictures (D-34), `image/png` for `format: "png"`. A page that cannot decode or encode the picture (no canvas, such as a headless agent) answers the game's own PNG, and the image item says `image/png`. A screenshot above 300 KB of base64 is taken once more at half its width: half of `maxWidth`, or half of the picture when the picture is narrower (its width is read from the PNG header or the JPEG SOF0/SOF2 frame header). A picture still above 300 KB (the page could not shrink it, or a contact sheet, which is not taken twice) is answered anyway, with `note` giving its size. A contact sheet comes from `editor.sheet`, shrunk in the page to 1080 px wide; an agent without `editor.sheet` (an older capture plugin) gets `game.capture { sheet }` at full size.
 
 Liveness (M7): screenshot and series read the session's heartbeat first. Paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume" instead of a timeout. The heartbeat is the hub's `sessions` readout, kept current by the forwarded `game.heartbeat` notifications.
 

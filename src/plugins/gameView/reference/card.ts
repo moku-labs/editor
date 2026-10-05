@@ -103,8 +103,12 @@ export function referenceLine(
  * @param lines - The fenced lines.
  * @param lang - The fence language.
  * @returns The fence lines.
+ * @example
+ * ```ts
+ * fenced(["a"], "text"); // ["```text", "a", "```"]
+ * ```
  */
-function fenced(lines: readonly string[], lang: string): string[] {
+export function fenced(lines: readonly string[], lang: string): string[] {
   const longest = Math.max(
     2,
     ...lines.flatMap(line => [...line.matchAll(BACKTICKS)].map(run => run[0].length))
@@ -131,25 +135,31 @@ function snippetSection(title: string, snippet: CodeSnippet): string[] {
 
 /**
  * The code sections of the card: the JSX and the style, or an entity's projection and its
- * components.
+ * components. An area card names the element each section belongs to (U9).
  *
  * @param code - The element's code.
+ * @param owner - The element's name before each title, for an area card; omitted for one element.
  * @returns The sections, each a list of lines.
+ * @example
+ * ```ts
+ * codeSections(code, "coinPill")[0]?.[0]; // "## coinPill · JSX · src/hud/Hud.tsx:2"
+ * ```
  */
-function codeSections(code: ElementCode | undefined): string[][] {
+export function codeSections(code: ElementCode | undefined, owner?: string): string[][] {
   if (code === undefined) return [];
+  const prefix = owner === undefined ? "" : `${owner} · `;
   if (code.kind === "entity") {
     const { spawn } = code;
     const where = spawn === undefined ? "" : ` · ${spawn.path}:${spawn.line}`;
     const rows = code.components.map(row =>
       row.value === "" ? `- ${row.name}` : `- ${row.name}: ${row.value}`
     );
-    return [[`## Spawned by ${code.projection}${where}`, "", ...rows]];
+    return [[`## ${prefix}Spawned by ${code.projection}${where}`, "", ...rows]];
   }
   const sections: string[][] = [];
-  if (code.jsx !== undefined) sections.push(snippetSection("JSX", code.jsx));
+  if (code.jsx !== undefined) sections.push(snippetSection(`${prefix}JSX`, code.jsx));
   if (code.style !== undefined) {
-    sections.push(snippetSection(`Style · ${code.style.name}`, code.style));
+    sections.push(snippetSection(`${prefix}Style · ${code.style.name}`, code.style));
   }
   return sections;
 }
@@ -159,8 +169,12 @@ function codeSections(code: ElementCode | undefined): string[][] {
  *
  * @param path - A file path.
  * @returns Its last segment.
+ * @example
+ * ```ts
+ * fileName(".moku/captures/area-f25-crop.jpg"); // "area-f25-crop.jpg"
+ * ```
  */
-function fileName(path: string): string {
+export function fileName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
@@ -199,7 +213,7 @@ export function cardText(
  * @param node - The node.
  * @returns The code, or undefined.
  */
-async function codeOf(ctx: GameViewCtx, node: SceneNode): Promise<ElementCode | undefined> {
+export async function codeOf(ctx: GameViewCtx, node: SceneNode): Promise<ElementCode | undefined> {
   try {
     return await elementCode(ctx, node);
   } catch {

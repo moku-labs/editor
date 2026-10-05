@@ -1,10 +1,11 @@
 /**
  * @file gameView plugin — the facts of the reference block (round 2 R2), gathered for one scene
  * node: its ui ancestors from the scene, its source and style block (the source search and the
- * style module, shared with the Element tab), its flags and text from the raw `game.ui` node, one
- * read each of `game.position`, `game.history { last: 1 }` and (without a pick) `game.tainted`,
- * the link's manifest, session and status, workspace's device and the last pick of the node. A
- * read that fails leaves its fact out; nothing here throws.
+ * style module, shared with the Element tab), its flags and text from the raw `game.ui` node, and
+ * the tail facts an area block shares (A17): one read each of `game.position`,
+ * `game.history { last: 1 }` and (without a pick) `game.tainted`, the link's manifest, session and
+ * status, workspace's device and the files of the pick. A read that fails leaves its fact out;
+ * nothing here throws.
  */
 import { linkPlugin } from "../../link";
 import type { SceneNode, SceneSnapshot } from "../../panels/shared/scene";
@@ -22,7 +23,8 @@ import {
   type LastEdge,
   type PickFacts,
   type ReferenceFacts,
-  referenceBlock
+  referenceBlock,
+  type TailFacts
 } from "./block";
 
 /**
@@ -219,6 +221,45 @@ function parentsOf(scene: SceneSnapshot, node: SceneNode): readonly SceneNode[] 
 }
 
 /**
+ * The tail facts of a block read now (A17): one read each of game.position and
+ * `game.history { last: 1 }`, game.tainted unless the pick knows it, the link's manifest, session
+ * and status, and workspace's device.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param frame - The frame the block shows.
+ * @param pick - The files of the pick, undefined without one.
+ * @param tainted - The tainted flag of the pick's bookmark run, undefined to read it.
+ * @returns The tail facts.
+ */
+export async function tailFacts(
+  ctx: GameViewCtx,
+  frame: number,
+  pick: PickFacts | undefined,
+  tainted: boolean | undefined
+): Promise<TailFacts> {
+  const link = ctx.require(linkPlugin);
+  const [position, history, flag] = await Promise.all([
+    readOnce(ctx, "game.position"),
+    readOnce(ctx, "game.history", { last: 1 }),
+    tainted ?? readOnce(ctx, "game.tainted")
+  ]);
+  return {
+    position: position === undefined ? {} : positionOf(position),
+    last: lastEdgeOf(history),
+    frame,
+    game: {
+      name: link.manifest()?.game,
+      session: link.session(),
+      at: new Date(),
+      status: link.status().kind,
+      tainted: typeof flag === "boolean" ? flag : undefined
+    },
+    device: deviceFacts(ctx),
+    pick
+  };
+}
+
+/**
  * The facts of one scene node for its reference block.
  *
  * @param ctx - Domain context of gameView.
@@ -232,39 +273,25 @@ export async function referenceFacts(
   scene: SceneSnapshot
 ): Promise<ReferenceFacts> {
   const { state } = ctx;
-  const link = ctx.require(linkPlugin);
   const pick = state.pick?.nodeId === node.id ? state.pick : undefined;
-
-  // The reads and the source search, side by side.
-  const [position, history, tainted, source] = await Promise.all([
-    readOnce(ctx, "game.position"),
-    readOnce(ctx, "game.history", { last: 1 }),
-    pick?.tainted === undefined ? readOnce(ctx, "game.tainted") : pick.tainted,
-    sourceFor(ctx, node.key)
-  ]);
-  const raw = node.ref.kind === "ui" ? rawUiNodeAt(state.sources.ui, node.ref.path) : undefined;
   const picked: PickFacts | undefined =
     pick === undefined ? undefined : { bookmark: pick.bookmark, crop: pick.crop, full: pick.full };
 
+  // The reads and the source search, side by side.
+  const [tail, source] = await Promise.all([
+    tailFacts(ctx, pick?.frame ?? scene.frame, picked, pick?.tainted),
+    sourceFor(ctx, node.key)
+  ]);
+  const raw = node.ref.kind === "ui" ? rawUiNodeAt(state.sources.ui, node.ref.path) : undefined;
+
   return {
+    ...tail,
     node,
     parents: parentsOf(scene, node),
-    position: position === undefined ? {} : positionOf(position),
-    last: lastEdgeOf(history),
     source,
     block: await blockFor(ctx, node.key, source),
     flags: flagsOf(node, raw),
-    value: contentOf(node, raw),
-    frame: pick?.frame ?? scene.frame,
-    game: {
-      name: link.manifest()?.game,
-      session: link.session(),
-      at: new Date(),
-      status: link.status().kind,
-      tainted: typeof tainted === "boolean" ? tainted : undefined
-    },
-    device: deviceFacts(ctx),
-    pick: picked
+    value: contentOf(node, raw)
   };
 }
 

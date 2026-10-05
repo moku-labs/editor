@@ -19,7 +19,14 @@ import { ensureOverlayRoot } from "../ui/OverlayRoot";
  * @returns A fresh off state.
  */
 function referenceOff(): ReferenceState {
-  return { on: false, hover: undefined, node: undefined, unwatch: undefined };
+  return {
+    on: false,
+    hover: undefined,
+    node: undefined,
+    unwatch: undefined,
+    press: undefined,
+    area: undefined
+  };
 }
 
 /**
@@ -73,13 +80,15 @@ export function setReferenceMode(ctx: GameViewCtx, on: boolean): void {
 
 /**
  * The proxy under the pointer: the overlay draws the picker hover box for it; undefined clears.
+ * An area drag freezes the hover (A16).
  *
  * @param ctx - Domain context of gameView.
  * @param id - The node id of the proxy; omitted when the pointer left the layer.
  */
 export function hoverProxy(ctx: GameViewCtx, id?: string): void {
-  if (ctx.state.reference.hover === id) return;
-  ctx.state.reference.hover = id;
+  const { reference } = ctx.state;
+  if (reference.hover === id || reference.press?.dragging === true) return;
+  reference.hover = id;
   notify(ctx.state);
 }
 

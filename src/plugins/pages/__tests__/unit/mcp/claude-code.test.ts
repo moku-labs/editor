@@ -98,7 +98,7 @@ describe("the Claude Code 2.1.280 handshake", () => {
     });
     expect(frames[1]).toMatchObject({ id: 0, result: { protocolVersion: "2025-11-25" } });
     expect(frames[2]?.id).toBe(1);
-    expect(frames[2]?.result?.tools).toHaveLength(15);
+    expect(frames[2]?.result?.tools).toHaveLength(17);
     expect(frames).toHaveLength(3);
   });
 });

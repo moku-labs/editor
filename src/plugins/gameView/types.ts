@@ -14,7 +14,7 @@ import type {
   TextureCatalogue
 } from "../panels/shared/scene";
 import type { StyleBlock, StyleBlockRef, StyleEditError } from "../panels/shared/style-edit";
-import type { FileText, Json, LinkStatus } from "../registry/protocol";
+import type { FileText, Json, LinkStatus, SelectionInfo } from "../registry/protocol";
 
 export type {
   Calibration,
@@ -243,6 +243,24 @@ export type CalibrationRun = {
 };
 
 /**
+ * A point in client px (the pointer).
+ */
+export type ClientPoint = { readonly x: number; readonly y: number };
+
+/**
+ * A press on the Reference mode proxy layer (U9, A16): where it started, whether it became an area
+ * drag (the pointer moved 4 client px or more) and whether Esc cancelled that drag.
+ */
+export type AreaPress = {
+  readonly pointerId: number;
+  readonly start: ClientPoint;
+  /** The pointer moved 4 client px or more: the layer holds the pointer, the marquee follows. */
+  dragging: boolean;
+  /** Esc ended the drag: the release picks nothing. */
+  cancelled: boolean;
+};
+
+/**
  * Reference mode as gameView sees it (D-27): proxies of the scene nodes in the frame overlay.
  */
 export type ReferenceState = {
@@ -254,6 +272,10 @@ export type ReferenceState = {
   node: string | undefined;
   /** Unwatches game.position; undefined while off. */
   unwatch: (() => void) | undefined;
+  /** The press on the proxy layer until its release (U9). */
+  press: AreaPress | undefined;
+  /** The marquee of an area drag in device px; undefined while no drag runs (A16). */
+  area: PageRect | undefined;
 };
 
 /**
@@ -290,6 +312,40 @@ export type LastPick = {
   readonly crop: string | undefined;
   readonly full: string | undefined;
   readonly tainted: boolean | undefined;
+};
+
+/**
+ * How a pick ends (A8): `copy` puts the reference line on the clipboard with a toast; MCP
+ * `moku_select` passes false. The capture card shows either way.
+ */
+export type PickOptions = { readonly copy: boolean };
+
+/**
+ * What a completed pick wrote and published (A8): the full block, the one line, the card, the
+ * crop and the full frame (undefined when not written), the frame of the pick and the selection.
+ *
+ * @example
+ * ```ts
+ * const result: PickResult = {
+ *   block: "@moku coinPill · row · board/awaitIntent · f1842\n…",
+ *   line: "@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · .moku/captures/coinPill-f1842.md",
+ *   card: ".moku/captures/coinPill-f1842.md",
+ *   crop: ".moku/captures/coinPill-f1842-crop.jpg",
+ *   full: ".moku/captures/f1842-full.jpg",
+ *   frame: 1842,
+ *   info
+ * };
+ * ```
+ */
+export type PickResult = {
+  readonly block: string;
+  readonly line: string;
+  readonly card: string | undefined;
+  readonly crop: string | undefined;
+  readonly full: string | undefined;
+  readonly frame: number;
+  /** The SelectionInfo of the pick: its card, crop, line and frame (published while selected). */
+  readonly info: SelectionInfo;
 };
 
 /**
@@ -355,7 +411,7 @@ export type ElementCode =
  *
  * @example
  * ```ts
- * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" };
+ * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
  * ```
  */
 export type CaptureFile = {
@@ -473,6 +529,8 @@ export type GameViewState = {
   bookmarks: PickBookmark[];
   /** The last completed pick, for the reference block of its element. */
   pick: LastPick | undefined;
+  /** The selection published last (`link.notify("selection")`, U4); undefined after a null. */
+  selection: SelectionInfo | undefined;
 };
 
 /**
@@ -480,16 +538,17 @@ export type GameViewState = {
  *
  * @example
  * ```ts
- * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", … }
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
  * ```
  */
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
    * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
-   * element bookmarks the game, saves the crop and the full frame under `capturesDir`, writes the
-   * reference card next to them, puts its one reference line on the clipboard (see
-   * `copyReference`) and shows the capture card with a Reference action.
+   * element bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full frame
+   * (`f<frame>-full.jpg`) under `capturesDir`, writes the reference card next to them, puts its one
+   * reference line on the clipboard (see `copyReference`), shows the capture card with a Reference
+   * action and publishes the selection for MCP `moku_selection`.
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -513,7 +572,8 @@ export type GameViewApi = {
   selected(): ElementRef | undefined;
 
   /**
-   * Selects an element without the picker, or clears the selection. Clears the style card.
+   * Selects an element without the picker, or clears the selection. Clears the style card and
+   * publishes the selection to the hub (MCP `moku_selection`; null when cleared).
    *
    * @param ref - The element, undefined to clear.
    * @example
@@ -598,16 +658,17 @@ export type GameViewApi = {
   manifest(): Promise<TextureCatalogue | undefined>;
 
   /**
-   * One screenshot: runs `editor.capture` through panels (R9), writes the PNG under
-   * `capturesDir`, puts `shot: <path>` on the clipboard, toasts, shows the capture card and the
-   * shutter flash. Never captures on its own: only a user action or this call does.
+   * One screenshot: runs `editor.capture` through panels (R9), writes the picture under
+   * `capturesDir` named after its type (`.jpg` for the JPEG editor.capture answers by default,
+   * D-34), puts `shot: <path>` on the clipboard, toasts, shows the capture card and the shutter
+   * flash. Never captures on its own: only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
    * @example
    * ```ts
    * // The developer saw a glitch on the board and keeps a picture of it.
-   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", frame: 1841, device: "iPhone 15 portrait", image: "data:image/png;base64,…" }
+   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
    * ```
    */
   capture(): Promise<CaptureFile | undefined>;

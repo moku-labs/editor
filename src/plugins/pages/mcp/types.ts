@@ -4,7 +4,7 @@
  * no plugin: the bridge is a hub tools client in its own process.
  */
 import type { BrandConsole } from "@moku-labs/common/cli";
-import type { Json, SessionInfo } from "../../registry/protocol";
+import type { Channel, Json, SessionInfo } from "../../registry/protocol";
 import type { EditorDiscovery } from "../types";
 
 /**
@@ -81,11 +81,33 @@ export type Content =
 export type ToolResult = { readonly content: readonly Content[]; readonly isError?: true };
 
 /**
+ * A number field of an object property, such as `x` of a rect.
+ */
+export type NumberFieldSchema = {
+  readonly type: "number";
+  readonly description: string;
+  readonly minimum?: number;
+};
+
+/**
  * One property of a tool input schema (a JSON Schema subset). A property without `type` takes any
- * JSON value.
+ * JSON value. An object property is a closed object of number fields (a rect).
  */
 export type PropertySchema =
-  | { readonly type: "string"; readonly description: string; readonly minLength?: number }
+  | {
+      readonly type: "string";
+      readonly description: string;
+      readonly minLength?: number;
+      readonly enum?: readonly string[];
+      readonly default?: string;
+    }
+  | {
+      readonly type: "object";
+      readonly description: string;
+      readonly properties: Readonly<Record<string, NumberFieldSchema>>;
+      readonly required: readonly string[];
+      readonly additionalProperties: false;
+    }
   | {
       readonly type: "integer";
       readonly description: string;
@@ -173,13 +195,11 @@ export type WatchTarget = {
 export type HubClient = {
   /** The bin this connection talks to. */
   readonly bin: EditorDiscovery;
-  /** Sends one game or files request; resolves with its result, rejects with a ProtocolError. */
-  request(
-    channel: "game" | "files",
-    method: string,
-    params?: Json,
-    session?: string
-  ): Promise<Json>;
+  /**
+   * Sends one game, files or editor request; resolves with its result, rejects with a
+   * ProtocolError. Editor requests (`selection`, `select`) take no session.
+   */
+  request(channel: Channel, method: string, params?: Json, session?: string): Promise<Json>;
   /** Watches a source; resolves with the stop once the hub accepted the watch. */
   watch(target: WatchTarget, onValue: (value: Json) => void): Promise<() => void>;
   /** The sessions now, with their live heartbeat. */

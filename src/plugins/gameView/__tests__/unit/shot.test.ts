@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errorCode, wireError } from "../../../registry/protocol";
 import { hideCard, takeScreenshot } from "../../capture/shot";
-import { createCtx, manifestOf, PNG, type TestCtx, useScene } from "../helpers";
+import { createCtx, JPEG, manifestOf, PNG, type TestCtx, useScene } from "../helpers";
 
 const PATH = ".moku/captures/2026-09-24-1012-board.png";
 let ctx: TestCtx;
@@ -48,6 +48,17 @@ describe("takeScreenshot", () => {
       message: "Document is not focused."
     });
     expect(ctx.workspace.toast).not.toHaveBeenCalledWith(expect.stringContaining("Copy failed"));
+  });
+
+  it("names the file after the picture: editor.capture's JPEG becomes a .jpg (D-34)", async () => {
+    ctx.panels.answers.set("editor.capture", {
+      image: JPEG,
+      frame: 1841,
+      device: { w: 393, h: 852, orientation: "portrait" }
+    });
+    const shot = await takeScreenshot(ctx);
+    expect(shot?.path).toBe(".moku/captures/2026-09-24-1012-board.jpg");
+    expect(ctx.link.files.dataUrl(".moku/captures/2026-09-24-1012-board.jpg")).toBe(JPEG);
   });
 
   it("works before the Game panel's first render: nothing registered, it runs at once", async () => {
