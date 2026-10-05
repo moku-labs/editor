@@ -45,6 +45,7 @@ describe("createGameViewState", () => {
     expect(state.searches.size).toBe(0);
     expect(state.blocks.size).toBe(0);
     expect(state.spawns.size).toBe(0);
+    expect(state.missedDefinitions.size).toBe(0);
     expect(state.cards.size).toBe(0);
   });
 

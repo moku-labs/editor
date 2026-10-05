@@ -1,4 +1,4 @@
-/* workspace · StaleBar. F3: a row above the hosts, amber while silent, red while lost. No backdrop blur. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · StaleBar. F3: a row above the hosts, amber while silent, red while lost, neutral while an expected reload runs (U7). No backdrop blur. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="stale-bar"]) {
   :scope {
     display: flex;
@@ -17,6 +17,11 @@
   :scope[data-tone="warn"] {
     background: color-mix(in srgb, var(--status-warn) 12%, var(--surface-panel));
     color: var(--status-warn);
+  }
+
+  :scope[data-tone="info"] {
+    background: var(--surface-panel);
+    color: var(--text-2);
   }
 
   :scope[data-tone="error"] {

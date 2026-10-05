@@ -59,6 +59,7 @@ export function createGameViewState(): GameViewState {
       waiting: false
     },
     found: new Map(),
+    missedDefinitions: new Set(),
     searches: new Map(),
     blocks: new Map(),
     spawns: new Map(),

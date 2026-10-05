@@ -75,6 +75,17 @@ export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Messag
 }
 
 /**
+ * Says `bye` on the open socket right before the page reloads on purpose (Bun's full reload,
+ * `editor.reload`): the hub then ends the session with reason `bye`, which the tools read as an
+ * expected reload (U7). The socket stays open until the page goes. Dropped without an open socket.
+ *
+ * @param deps - The state and the log.
+ */
+export function sendBye(deps: Pick<BridgeDeps, "state" | "log">): void {
+  sendNow(deps, notification("game", "bye"));
+}
+
+/**
  * Sends a `value` notification, or keeps it in the backlog while congested (latest wins); records
  * its text as the last value of the subscription either way.
  *

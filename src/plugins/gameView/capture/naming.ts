@@ -33,6 +33,11 @@ const UNSAFE_NAME = /[^\w-]+/g;
 const IMAGE_TYPE = /^data:image\/([\w.+-]+)[;,]/;
 
 /**
+ * The fewest digits of a shot name: `001.png`.
+ */
+const MIN_SHOT_DIGITS = 3;
+
+/**
  * Pads a number to two digits.
  *
  * @param value - 0–99.
@@ -276,7 +281,7 @@ export function seriesFolder(
  * ```
  */
 export function shotName(index: number, count: number): string {
-  const width = Math.max(3, String(count).length);
+  const width = Math.max(MIN_SHOT_DIGITS, String(count).length);
   return `${String(index + 1).padStart(width, "0")}.png`;
 }
 

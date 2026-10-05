@@ -13,7 +13,7 @@ import { pageFromClient } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
 import { setPicker } from "../element/select";
 import { notify } from "../state";
-import type { ClientPoint, GameViewCtx } from "../types";
+import type { AreaPress, ClientPoint, GameViewCtx } from "../types";
 import { pickDraggedArea } from "./area";
 
 /**
@@ -68,28 +68,35 @@ export function rectBetween(a: ClientPoint, b: ClientPoint): PageRect {
 }
 
 /**
- * The marquee between the press and the pointer, in device px through the frame box.
+ * The marquee between the press and the pointer, in device px through the frame box of the press.
  *
- * @param ctx - Domain context of gameView.
- * @param start - Where the press started, client px.
+ * @param press - The press: where it started and the frame box then.
  * @param point - Where the pointer is, client px.
- * @returns The rect, undefined while the frame is not mounted.
+ * @returns The rect, undefined when the frame was not mounted at the press.
  */
-function marqueeOf(ctx: GameViewCtx, start: ClientPoint, point: ClientPoint): PageRect | undefined {
-  const box = ctx.require(workspacePlugin).gameFrame().box();
+function marqueeOf(press: AreaPress, point: ClientPoint): PageRect | undefined {
+  const { box, start } = press;
   if (box === undefined || box.scale <= 0) return undefined;
   return rectBetween(pageFromClient(start, box), pageFromClient(point, box));
 }
 
 /**
- * A press on the layer (main button): remembered, nothing taken yet.
+ * A press on the layer (main button): remembered with the frame box of the moment, nothing taken
+ * yet.
  *
  * @param ctx - Domain context of gameView.
  * @param at - The pointer and its client point.
  */
 export function pressArea(ctx: GameViewCtx, at: PointerAt): void {
   const start = { x: at.x, y: at.y };
-  ctx.state.reference.press = { pointerId: at.pointerId, start, dragging: false, cancelled: false };
+  const box = ctx.require(workspacePlugin).gameFrame().box();
+  ctx.state.reference.press = {
+    pointerId: at.pointerId,
+    start,
+    box,
+    dragging: false,
+    cancelled: false
+  };
 }
 
 /**
@@ -128,7 +135,7 @@ export function moveArea(ctx: GameViewCtx, at: PointerAt, pressed: boolean): boo
   const starts = !press.dragging;
   if (starts && !isDrag(press.start, at)) return false;
   press.dragging = true;
-  reference.area = marqueeOf(ctx, press.start, at);
+  reference.area = marqueeOf(press, at);
   notify(ctx.state);
   return starts;
 }
@@ -145,15 +152,19 @@ export function moveArea(ctx: GameViewCtx, at: PointerAt, pressed: boolean): boo
 export function releaseArea(ctx: GameViewCtx, at: PointerAt): boolean {
   const { reference } = ctx.state;
   const { press } = reference;
+  // Another pointer's release, or a click: no area to pick.
   if (press?.pointerId !== at.pointerId) return press?.dragging !== true;
   reference.press = undefined;
   if (!press.dragging) return true;
 
+  // The drag ends: the marquee goes; a cancelled or empty drag picks nothing.
   reference.area = undefined;
   notify(ctx.state);
-  const area = press.cancelled ? undefined : marqueeOf(ctx, press.start, at);
-  if (area === undefined || area.w <= 0 || area.h <= 0) return false;
+  const area = press.cancelled ? undefined : marqueeOf(press, at);
+  const isEmptyArea = area === undefined || area.w <= 0 || area.h <= 0;
+  if (isEmptyArea) return false;
 
+  // Pick the area and turn the picker off, like a click pick.
   if (ctx.state.picker.on) setPicker(ctx, false);
   void pickDraggedArea(ctx, area);
   return false;

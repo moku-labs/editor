@@ -6,7 +6,7 @@ import { defaultReload } from "../../checkpoint/hot";
 import { stopBridge } from "../../lifecycle";
 import { reloadEntry } from "../../reload";
 import { RELOAD_ID } from "../../types";
-import { commandEntry, createDeps, ENVELOPE, rejectionOf } from "../helpers";
+import { commandEntry, createDeps, ENVELOPE, FakeSocket, rejectionOf } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // editor.reload (moku_reload): stores the checkpoint the way bun:beforeFullReload
@@ -76,6 +76,22 @@ describe("reloadEntry", () => {
 
     expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
     expect(deps.state.off).toEqual([]);
+  });
+
+  it("says bye right before it reloads the page (U7)", async () => {
+    const { deps, entry } = setup();
+    const socket = new FakeSocket();
+    socket.readyState = 1;
+    deps.state.socket = socket;
+    deps.reload.reloadPage.mockImplementation(() => {
+      expect(socket.messages()).toEqual([{ jsonrpc: "2.0", channel: "game", method: "bye" }]);
+    });
+
+    await entry.run(null);
+    expect(socket.sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
   });
 
   it("restore: true is the default spelled out", async () => {

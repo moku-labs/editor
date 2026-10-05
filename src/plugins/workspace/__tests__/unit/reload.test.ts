@@ -114,6 +114,25 @@ function ranIds(): string[] {
   return ctx.link.run.mock.calls.map(call => call[0]);
 }
 
+describe("reloadFrame tells link the reload is expected (U7)", () => {
+  it("calls link.expectReload right before it reloads the frame", async () => {
+    const pending = reloadFrame(ctx, {});
+    await flush();
+    expect(ctx.link.expectReload).toHaveBeenCalledTimes(1);
+    const [order] = ctx.link.expectReload.mock.invocationCallOrder;
+    expect(srcWrites).toHaveLength(1);
+    expect(order).toBeLessThan(ctx.link.frameUrl.mock.invocationCallOrder.at(-1) ?? 0);
+    ctx.link.attach(manifestOf());
+    await pending;
+  });
+
+  it("a game outside the editor is not reloaded, so no reload is expected", async () => {
+    ctx.link.manifestValue = { ...manifestOf(), embedded: false };
+    await reloadFrame(ctx, {});
+    expect(ctx.link.expectReload).not.toHaveBeenCalled();
+  });
+});
+
 describe("reloadFrame keeps the pause", () => {
   const COMMANDS = ["game.bookmark", "game.restore", "game.pause"];
 

@@ -175,11 +175,15 @@ export type Heartbeat = {
 export type Tap = { readonly x: number; readonly y: number; readonly at: number };
 
 /**
- * The link state shown everywhere (design-context §6 B1, F3).
+ * The link state shown everywhere (design-context §6 B1, F3). A `lost` with `reloading: true` is
+ * an expected reload (U7): a server restart (close 1012), a reload the editor started, or a game
+ * that said bye before its reload. The views show it in a neutral tone until the game is back, or
+ * as a plain `lost` once link's `reloadGraceMs` ran out.
  *
  * @example
  * ```ts
  * const status: LinkStatus = { kind: "live", frame: 1840 };
+ * const reloading: LinkStatus = { kind: "lost", reason: "socket_closed", lastFrame: 1825, retryInMs: 1000, reloading: true };
  * ```
  */
 export type LinkStatus =
@@ -187,7 +191,7 @@ export type LinkStatus =
   | { kind: "live"; frame: number }
   | { kind: "paused"; frame: number }
   | { kind: "silent"; since: number; lastFrame: number }
-  | { kind: "lost"; reason: string; lastFrame: number; retryInMs: number }
+  | { kind: "lost"; reason: string; lastFrame: number; retryInMs: number; reloading?: true }
   | { kind: "empty" };
 
 /**

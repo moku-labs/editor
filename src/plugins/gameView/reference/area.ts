@@ -213,7 +213,8 @@ async function withSources(
   const items: AreaItem[] = [];
   for (const node of nodes) {
     const known = knownSource(ctx, node);
-    if (known !== undefined || node.key === undefined || budget.left <= 0) {
+    const needsNoSearch = known !== undefined || node.key === undefined || budget.left <= 0;
+    if (needsNoSearch) {
       items.push({ node, source: known });
       continue;
     }
@@ -340,8 +341,11 @@ async function completeArea(
   first: SelectionInfo,
   copy: boolean
 ): Promise<SelectionInfo> {
+  // Bookmark and shots first, so they show the frame the area was picked on.
   const taken = await takeBookmark(ctx, AREA_NAME);
   const shots = await saveShots(ctx, AREA_NAME, area, scene);
+
+  // The sources of the group, then everything the block prints.
   const budget: SearchBudget = { left: AREA_SEARCHES };
   const items = await withSources(ctx, group.nodes, budget);
   const frame = shots?.frame ?? taken?.bookmark.frame ?? scene.frame;
@@ -363,9 +367,12 @@ async function completeArea(
   const components = await areaComponents(ctx, group.nodes, branches, budget);
   const card = await writeAreaCard(ctx, facts, codes, components);
   const line = areaHead(facts, card);
+
+  // Tell the user: the line on the clipboard, the capture card.
   if (copy) await copyText(ctx, line, pickToast(shots !== undefined, taken !== undefined));
   showPickCard(ctx, shots, line);
 
+  // Publish the area with its files while it is still the selection.
   const info: SelectionInfo = {
     ...areaInfo(ctx, area, items, frame),
     ...(card === undefined ? {} : { card }),

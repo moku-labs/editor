@@ -58,6 +58,16 @@ const CROP_LINK = /!\[element\]\(([^)\s]+)\)/;
 const DAY_FOLDER = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * The default `frames` of moku_series: how many pictures the contact sheet has.
+ */
+const DEFAULT_FRAMES = 6;
+
+/**
+ * The default `everyMs` of moku_series: the game time between two pictures, in ms.
+ */
+const DEFAULT_EVERY_MS = 500;
+
+/**
  * The picture formats editor.capture and editor.sheet encode; JPEG is the default (D-34).
  */
 const FORMATS: readonly PictureFormat[] = ["jpeg", "png"];
@@ -122,10 +132,6 @@ async function captureShot(
  *
  * @param image - The data URL.
  * @returns `{ note }` when it is too large, else `{}`.
- * @example
- * ```ts
- * sizeNote(sheet); // { note: "the picture is 1981.9 KB, above the 300 KB a result should carry" }
- * ```
  */
 function sizeNote(image: string): { note?: string } {
   if (!isTooLarge(image)) return {};
@@ -139,10 +145,6 @@ function sizeNote(image: string): { note?: string } {
  *
  * @param call - The call.
  * @returns `{ format, key? }`, the format "jpeg" when absent.
- * @example
- * ```ts
- * shotRequestOf(call); // { format: "jpeg", key: "hud/coins" }
- * ```
  */
 function shotRequestOf(call: ToolCall): ShotRequest {
   const asked = textArgument(call.args, "format");
@@ -174,7 +176,9 @@ async function screenshot(call: ToolCall, context: ToolContext): Promise<ToolRes
   // Half of what came back: a picture narrower than maxWidth is halved from its own width.
   const width = Math.min(asked, pictureSize(shot.image)?.width ?? asked);
   const half = Math.max(MIN_WIDTH, Math.floor(width / 2));
-  if (isTooLarge(shot.image) && half < width) {
+  // A picture above about 300 KB is taken once more, when half its width is still narrower.
+  const tooLargeToShrink = isTooLarge(shot.image) && half < width;
+  if (tooLargeToShrink) {
     maxWidth = half;
     shot = await captureShot(hub, maxWidth, request, session);
   }
@@ -252,8 +256,8 @@ async function series(call: ToolCall, context: ToolContext): Promise<ToolResult>
     );
   }
 
-  const frames = numberArgument(call.args, "frames", 6);
-  const everyMs = numberArgument(call.args, "everyMs", 500);
+  const frames = numberArgument(call.args, "frames", DEFAULT_FRAMES);
+  const everyMs = numberArgument(call.args, "everyMs", DEFAULT_EVERY_MS);
   const take = commandOf(manifest, "editor.sheet") === undefined ? gameSheet : editorSheet;
   const taken = await withProgress(call, frames * everyMs, context.now, () =>
     take(hub, { frames, everyMs }, session)
@@ -291,7 +295,10 @@ async function listFolder(hub: HubClient, dir: string): Promise<FileEntry[]> {
  * @returns The day folder paths.
  * @example
  * ```ts
- * dayFoldersOf(entries); // [".moku/captures/2026-10-05", ".moku/captures/2026-10-04"]
+ * dayFoldersOf([
+ *   { path: ".moku/captures/2026-10-04", kind: "dir", size: 0 },
+ *   { path: ".moku/captures/2026-10-05", kind: "dir", size: 0 }
+ * ]); // [".moku/captures/2026-10-05", ".moku/captures/2026-10-04"]
  * ```
  */
 function dayFoldersOf(entries: readonly FileEntry[]): string[] {
@@ -316,16 +323,36 @@ function isCard(entry: FileEntry): boolean {
 }
 
 /**
- * The reference cards: those of the day folders (`CAPTURES_DIR/<YYYY-MM-DD>/*.md`, newest day
- * first), then the flat ones from before the day folders (`CAPTURES_DIR/*.md`).
+ * What a card search found: the card, and the cards it listed on the way.
+ */
+type CardSearch = { readonly card: FileEntry | undefined; readonly cards: readonly FileEntry[] };
+
+/**
+ * Finds the card an id names. The day folders (`CAPTURES_DIR/<YYYY-MM-DD>/*.md`) are listed one
+ * at a time, newest day first, and the walk stops at the first day that has the card: for
+ * "latest" the first day with cards, for a name the first day with a match. The flat cards from
+ * before the day folders (`CAPTURES_DIR/*.md`) are weighed with every day. Without a card every
+ * day is listed, so `cards` then holds them all, day folders first.
  *
  * @param hub - The hub connection.
- * @returns The card entries.
+ * @param id - The id argument.
+ * @returns The card, undefined when none matches, and the cards listed.
  */
-async function listCards(hub: HubClient): Promise<FileEntry[]> {
+async function findCard(hub: HubClient, id: string): Promise<CardSearch> {
   const top = await listFolder(hub, CAPTURES_DIR);
-  const days = await Promise.all(dayFoldersOf(top).map(day => listFolder(hub, day)));
-  return [...days.flat(), ...top].filter(entry => isCard(entry));
+  const flat = top.filter(entry => isCard(entry));
+  const root = hub.bin.root;
+  const listed: FileEntry[] = [];
+  for (const day of dayFoldersOf(top)) {
+    const entries = await listFolder(hub, day);
+    const cards = entries.filter(entry => isCard(entry));
+    listed.push(...cards);
+    // A day with the card ends the walk; the flat cards are weighed against it.
+    const hasCard = cardOf(cards, id, root) !== undefined;
+    if (hasCard)
+      return { card: cardOf([...cards, ...flat], id, root), cards: [...listed, ...flat] };
+  }
+  return { card: cardOf(flat, id, root), cards: [...listed, ...flat] };
 }
 
 /**
@@ -397,13 +424,12 @@ async function cropOf(hub: HubClient, card: string, text: string): Promise<strin
 async function reference(call: ToolCall, context: ToolContext): Promise<ToolResult> {
   const hub = await context.editor.hub();
   const id = textArgument(call.args, "id") ?? "latest";
-  const cards = await listCards(hub);
+  const { card, cards } = await findCard(hub, id);
   if (cards.length === 0) {
     return errorResult(
       `no reference cards in ${CAPTURES_DIR} yet: pick an element in the Game view of the tools page first`
     );
   }
-  const card = cardOf(cards, id, hub.bin.root);
   if (card === undefined) {
     const names = cards.map(entry => entry.path).join(", ");
     return errorResult(`no reference card ${id} in ${CAPTURES_DIR}; the cards are: ${names}`);
@@ -418,7 +444,8 @@ async function reference(call: ToolCall, context: ToolContext): Promise<ToolResu
 }
 
 /**
- * moku_screenshot.
+ * moku_screenshot: a picture of the game as it is now, scaled to maxWidth, cropped to one element
+ * when a key is given.
  */
 export const screenshotTool: Tool = {
   name: "moku_screenshot",
@@ -456,7 +483,7 @@ export const screenshotTool: Tool = {
 };
 
 /**
- * moku_series.
+ * moku_series: a contact sheet of frames pictures taken everyMs ms of game time apart.
  */
 export const seriesTool: Tool = {
   name: "moku_series",
@@ -470,14 +497,14 @@ export const seriesTool: Tool = {
         type: "integer",
         minimum: 2,
         maximum: 12,
-        default: 6,
+        default: DEFAULT_FRAMES,
         description: "How many pictures."
       },
       everyMs: {
         type: "integer",
         minimum: 1,
         maximum: 5000,
-        default: 500,
+        default: DEFAULT_EVERY_MS,
         description: "Game time between two pictures, in ms."
       },
       session: SESSION_PROPERTY
@@ -489,7 +516,8 @@ export const seriesTool: Tool = {
 };
 
 /**
- * moku_reference.
+ * moku_reference: a reference card the tools page wrote, the newest or the newest with a name,
+ * with its crop as an image.
  */
 export const referenceTool: Tool = {
   name: "moku_reference",

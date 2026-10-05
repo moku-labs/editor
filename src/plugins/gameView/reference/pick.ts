@@ -230,6 +230,7 @@ export async function completePick(
   scene: SceneSnapshot,
   options: PickOptions = USER_PICK
 ): Promise<PickResult> {
+  // Bookmark and shots, then the pick as the Element tab shows it.
   const taken = await takeBookmark(ctx, nameOf(node));
   const shots = await saveShots(ctx, nameOf(node), node.rect, scene);
   const frame = shots?.frame ?? taken?.bookmark.frame ?? scene.frame;
@@ -243,12 +244,14 @@ export async function completePick(
   };
   notify(ctx.state);
 
+  // The card file, then the line on the clipboard and the capture card.
   const shared = await shareReference(ctx, node, scene, true);
   if (options.copy) {
     await copyText(ctx, shared.line, pickToast(shots !== undefined, taken !== undefined));
   }
   showPickCard(ctx, shots, shared.line);
 
+  // Publish the selection with its files while the node is still selected.
   const files = { card: shared.card, crop: shots?.crop };
   const info = pickedSelection(ctx, node, { frame, ...files, line: shared.line });
   if (isSelected(ctx, node)) publishSelection(ctx, info);

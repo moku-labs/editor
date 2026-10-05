@@ -13,7 +13,8 @@ describe("linkPlugin", () => {
     expect(linkPlugin.spec.config).toEqual({
       retryMs: 1000,
       boot: "#moku-editor-boot",
-      role: "page"
+      role: "page",
+      reloadGraceMs: 5000
     });
   });
 
@@ -25,7 +26,9 @@ describe("linkPlugin", () => {
 
 describe("createLinkState", () => {
   it("starts connecting with nothing attached and ids from 1", () => {
-    const state = createLinkState({ config: { retryMs: 1000, boot: "#b", role: "page" } });
+    const state = createLinkState({
+      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 5000 }
+    });
 
     expect(state.status).toEqual({ kind: "connecting" });
     expect(state.boot).toBeUndefined();
@@ -48,6 +51,7 @@ describe("createLinkState", () => {
     expect(state.lostAt).toBeUndefined();
     expect(state.retryTimer).toBeUndefined();
     expect(state.silenceTimer).toBeUndefined();
+    expect(state.reload).toBeUndefined();
     expect(state.stopped).toBe(false);
     expect(state.selection).toBeUndefined();
     expect(state.notified.size).toBe(0);
@@ -56,12 +60,12 @@ describe("createLinkState", () => {
   });
 
   it("returns a fresh state each time", () => {
-    const config = { retryMs: 1000, boot: "#b", role: "page" as const };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 5000 };
     expect(createLinkState({ config }).pending).not.toBe(createLinkState({ config }).pending);
   });
 
   it("makes one random frame id per state", () => {
-    const config = { retryMs: 1000, boot: "#b", role: "page" as const };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 5000 };
     const state = createLinkState({ config });
     expect(state.frame).toMatch(/^[\da-f]{12}$/);
     expect(createLinkState({ config }).frame).not.toBe(state.frame);
@@ -70,7 +74,9 @@ describe("createLinkState", () => {
 
 describe("isAttached", () => {
   it("is true only with an open socket and the chosen id in the current list", () => {
-    const state = createLinkState({ config: { retryMs: 1000, boot: "#b", role: "page" } });
+    const state = createLinkState({
+      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 5000 }
+    });
     expect(isAttached(state)).toBe(false);
 
     state.open = true;

@@ -316,6 +316,28 @@ describe("LinkPill", () => {
     expect(pillText({ kind: "empty" }, now).text).toBe("No game");
   });
 
+  it("an expected reload (U7) reads Reloading · last frame N, neutral, with no Retry now", () => {
+    const status = {
+      kind: "lost",
+      reason: "game_reloaded",
+      lastFrame: 1825,
+      retryInMs: 1000,
+      reloading: true
+    } as const;
+    expect(pillText(status, 0)).toEqual({
+      text: "Reloading · last frame 1825",
+      note: "Reloading the game · last frame 1825"
+    });
+
+    ctx.state.link = status;
+    act(() => {
+      render(h(LinkPill, { ctx }), root);
+    });
+    const pill = root.querySelector<HTMLElement>("[data-ui='link-pill']");
+    expect(pill?.dataset.kind).toBe("reloading");
+    expect(pill?.querySelector("button")).toBeNull();
+  });
+
   it("lost shows Retry now, which calls link.retry()", () => {
     ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 2, retryInMs: 2000 };
     act(() => {

@@ -1,13 +1,15 @@
 /**
  * @file bridge plugin — the `editor.reload` command (moku_reload): it stores the checkpoint the
- * way `bun:beforeFullReload` does, answers `{ scheduled: true }`, then reloads the page on the next
- * macrotask, after the answer went out. The bridge of the new document restores the checkpoint and
- * sends `restored` in its first hello.
+ * way `bun:beforeFullReload` does, answers `{ scheduled: true }`, then says bye and reloads the page
+ * on the next macrotask, after the answer went out (the bye makes the tools read the reload as
+ * expected, U7). The bridge of the new document restores the checkpoint and sends `restored` in its
+ * first hello.
  */
 import type { Json, RunResult } from "../registry/protocol";
 import { checkInput } from "../registry/protocol";
 import type { CommandEntry } from "../registry/types";
 import { takeCheckpoint } from "./checkpoint/checkpoint";
+import { sendBye } from "./dispatch/send";
 import type { BridgeDeps } from "./types";
 import { RELOAD_ID } from "./types";
 
@@ -23,12 +25,12 @@ const RELOAD_INPUT: { readonly restore: "boolean?" } = { restore: "boolean?" };
 type ReloadDeps = Pick<BridgeDeps, "registry" | "reload" | "state" | "log">;
 
 /**
- * Reloads the page on the next macrotask. A stop before then cancels it: the canceller sits in
- * `state.off` until the timer fires.
+ * Reloads the page on the next macrotask, after a bye, so the tools read the reload as expected
+ * (U7). A stop before then cancels it: the canceller sits in `state.off` until the timer fires.
  *
- * @param deps - The reload seam and the state.
+ * @param deps - The reload seam, the state and the log.
  */
-function scheduleReload(deps: Pick<ReloadDeps, "reload" | "state">): void {
+function scheduleReload(deps: Pick<ReloadDeps, "reload" | "state" | "log">): void {
   const { off } = deps.state;
 
   /**
@@ -40,6 +42,7 @@ function scheduleReload(deps: Pick<ReloadDeps, "reload" | "state">): void {
   const timer = setTimeout(() => {
     const index = off.indexOf(cancel);
     if (index !== -1) off.splice(index, 1);
+    sendBye(deps);
     deps.reload.reloadPage();
   }, 0);
 

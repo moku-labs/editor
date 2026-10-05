@@ -276,6 +276,25 @@ function impliedIds(scene: SceneSnapshot, roots: readonly SceneNode[]): Set<stri
 }
 
 /**
+ * True for a node partly in the area: visible, placed, overlapping it but not inside, and not
+ * implied by the group's trees or layout lines.
+ *
+ * @param node - The node.
+ * @param area - The area in device CSS px.
+ * @param implied - The ids of the group's trees and of the parents its layout lines name.
+ * @returns Whether the node is partly in the area.
+ */
+function isPartlyIn(node: SceneNode, area: PageRect, implied: ReadonlySet<string>): node is Placed {
+  return (
+    node.visible &&
+    node.rect !== undefined &&
+    !implied.has(node.id) &&
+    overlapOf(node.rect, area) > 0 &&
+    !inside(node.rect, area)
+  );
+}
+
+/**
  * The nodes partly in the area: visible, placed, overlapping it but not inside, not in the
  * group's trees and not a parent a layout line names (a background, the screen root above the
  * chain). Largest overlap first, then top to bottom; at most 8. None in a scene without a
@@ -298,13 +317,8 @@ export function partlyInArea(
   if (!scene.calibrated) return [];
 
   const implied = impliedIds(scene, roots);
-  const partly = [...scene.nodes.values()].filter(
-    (node): node is Placed =>
-      node.visible &&
-      node.rect !== undefined &&
-      !implied.has(node.id) &&
-      overlapOf(node.rect, area) > 0 &&
-      !inside(node.rect, area)
+  const partly = [...scene.nodes.values()].filter((node): node is Placed =>
+    isPartlyIn(node, area, implied)
   );
   const ordered = partly.toSorted(
     (a, b) =>

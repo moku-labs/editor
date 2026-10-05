@@ -86,6 +86,25 @@ export type Config = {
    * relays `editor.select` to it. "tools": a plain tools client (no role sent). Default "page".
    */
   role: "page" | "tools";
+  /**
+   * How long an expected reload (U7) reads neutral: a server restart (close 1012), a reload the
+   * editor started, a game that said bye. Without a heartbeat of the game by then, the status is a
+   * plain `lost`. A positive number of ms. Default 5000.
+   */
+  reloadGraceMs: number;
+};
+
+/**
+ * An expected reload in progress (U7): until the game beats again after a loss, or the grace
+ * timer ends it, a `lost` status carries `reloading: true`.
+ */
+export type ReloadWindow = {
+  /** The frame of the last heartbeat before the reload; kept across the reconnect. */
+  lastFrame: number;
+  /** Set once a loss happened in the window: from then on a heartbeat ends it. A renewal clears it. */
+  lost: boolean;
+  /** Ends the window after `reloadGraceMs`. */
+  readonly timer: ReturnType<typeof setTimeout>;
 };
 
 /**
@@ -290,6 +309,24 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   retry(): void;
+
+  /**
+   * Tells link that the game page is about to reload on purpose (U7). Until the game beats again,
+   * or for `reloadGraceMs`, the loss that follows reads `lost` with `reloading: true`, which the
+   * views show in a neutral tone; after that it is a plain `lost`. A loss that happened before the
+   * call stays as it is. A no-op after stop.
+   *
+   * @example
+   * ```ts
+   * // workspace reloads the docked game frame from the palette.
+   * const link = ctx.require(linkPlugin);
+   * link.expectReload();
+   * iframe.src = link.frameUrl("http://127.0.0.1:3000/");
+   * // the session close that follows:
+   * link.status(); // { kind: "lost", reason: "game_reloaded", lastFrame: 1825, retryInMs: 1000, reloading: true }
+   * ```
+   */
+  expectReload(): void;
 
   /**
    * The boot data of the tools page; its token is never to be logged.
@@ -560,6 +597,8 @@ export type LinkState = {
   lostAt: number | undefined;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   silenceTimer: ReturnType<typeof setInterval> | undefined;
+  /** The expected reload in progress (U7), undefined when none. */
+  reload: ReloadWindow | undefined;
   /** Set by onStop; every callback returns early when true. */
   stopped: boolean;
   /** The frame id of this tools page, made once: its game frame URL carries it (`frameUrl`). */

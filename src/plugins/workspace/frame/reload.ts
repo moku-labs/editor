@@ -251,7 +251,8 @@ async function restore(
 }
 
 /**
- * Reloads the frame in place and waits for this tab's own new session.
+ * Reloads the frame in place and waits for this tab's own new session. link is told first, so
+ * the session close reads as an expected reload (U7).
  *
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
@@ -264,6 +265,7 @@ function reloadHere(
   iframe: HTMLIFrameElement
 ): Promise<Manifest | undefined> {
   const next = nextManifest(ctx, link, ctx.config.reloadTimeoutMs);
+  link.expectReload();
   iframe.src = taggedGameUrl(ctx);
   return next;
 }

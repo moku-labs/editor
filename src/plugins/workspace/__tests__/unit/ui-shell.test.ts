@@ -176,6 +176,23 @@ describe("Shell", () => {
     bump();
     expect(staleBar()?.hidden).toBe(true);
   });
+
+  it("F3 (U7): an expected reload shows a neutral Reloading… with no Retry now", () => {
+    ctx.state.everLive = true;
+    ctx.state.link = {
+      kind: "lost",
+      reason: "socket_closed",
+      lastFrame: 1825,
+      retryInMs: 1000,
+      reloading: true
+    };
+    bump();
+    expect(staleBar()?.hidden).toBe(false);
+    expect(staleBar()?.dataset.tone).toBe("info");
+    expect(staleBar()?.textContent).toBe("Reloading…");
+    expect(staleBar()?.querySelector("button")).toBeNull();
+    expect(root.querySelector("[data-tone='error']")).toBeNull();
+  });
 });
 
 describe("Rail", () => {

@@ -10,6 +10,7 @@ import { failAll, linkClosedError } from "../rpc/calls";
 import { retrySession } from "../sessions/choose";
 import { clearRetry } from "../state";
 import { applyStatus } from "../status/machine";
+import { expectReload } from "../status/reload";
 import { detachAll } from "../subscriptions/watch";
 import type { Config, LinkCtx } from "../types";
 import { backoffDelay } from "./backoff";
@@ -24,6 +25,11 @@ const HTTP_SCHEME: Readonly<Record<string, string>> = { "ws:": "http:", "wss:": 
  * The status reason of a socket loss.
  */
 const SOCKET_CLOSED = "socket_closed";
+
+/**
+ * Close code of a server restart: the hub closes with it before the bin restarts (D-32).
+ */
+const SERVICE_RESTART = 1012;
 
 /**
  * Creates the websocket. With an origin it uses Bun's client option `{ headers: { origin } }`
@@ -179,7 +185,8 @@ export function onSocketOpen(ctx: LinkCtx): void {
 /**
  * The socket closed: pending calls fail `link_closed`, wire subs are dropped (records kept), the
  * session list is cleared (the chosen id stays as the preference), status lost, reconnect later.
- * A socket that never opened makes the reconnect refresh the token through hello first.
+ * A close 1012 (server restart) is an expected reload: the status reads `reloading` (U7). A socket
+ * that never opened makes the reconnect refresh the token through hello first.
  *
  * @param ctx - Domain context of link.
  * @param event - The close event.
@@ -201,6 +208,7 @@ export function onSocketClose(
   detachAll(ctx);
   state.attempt = wasOpen ? 1 : state.attempt + 1;
   ctx.log.info("link:closed", { code: event.code, reason: event.reason });
+  if (event.code === SERVICE_RESTART) expectReload(ctx);
   connectFailed(ctx, !wasOpen);
 }
 

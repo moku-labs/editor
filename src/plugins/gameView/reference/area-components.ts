@@ -196,7 +196,8 @@ async function keySource(
 }
 
 /**
- * Searches the source files for the definition of a component, and remembers it.
+ * Searches the source files for the definition of a component, and remembers it; a full search
+ * that finds none is remembered too, so it runs once per session.
  *
  * @param ctx - Domain context of gameView.
  * @param name - The component name.
@@ -208,9 +209,11 @@ async function definitionSource(
   name: string,
   budget: SearchBudget
 ): Promise<StyleSource | undefined> {
+  const { found, missedDefinitions } = ctx.state;
   const memo = `<${name}>`;
-  const known = ctx.state.found.get(memo);
-  if (known !== undefined || budget.left <= 0) return known;
+  const known = found.get(memo);
+  const isSettled = known !== undefined || missedDefinitions.has(name);
+  if (isSettled || budget.left <= 0) return known;
   budget.left -= 1;
   try {
     for await (const path of sourceFiles(ctx)) {
@@ -218,13 +221,43 @@ async function definitionSource(
       const line = text === undefined ? undefined : definitionLine(text, name);
       if (line === undefined) continue;
       const source: StyleSource = { kind: "defined", path, line };
-      ctx.state.found.set(memo, source);
+      found.set(memo, source);
       return source;
     }
+    // Every file searched and none defines it: a failed search is tried again instead.
+    missedDefinitions.add(name);
   } catch (error) {
     ctx.log.debug("gameView: component search failed", { name, error });
   }
   return undefined;
+}
+
+/**
+ * The definition of a component, cut to the braces that close it. The search takes from the
+ * budget; the file is read once per area.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param texts - The texts read so far, by path.
+ * @param name - The component name.
+ * @param budget - The searches the area may still start.
+ * @returns The snippet, undefined when the definition is not found or cannot be read.
+ */
+async function definitionSnippet(
+  ctx: GameViewCtx,
+  texts: Map<string, string | undefined>,
+  name: string,
+  budget: SearchBudget
+): Promise<CodeSnippet | undefined> {
+  const definition = await definitionSource(ctx, name, budget);
+  const file = definition === undefined ? undefined : await textOnce(ctx, texts, definition.path);
+  if (definition === undefined || file === undefined) return undefined;
+  const fileLines = file.split("\n");
+  const range = definitionRange(fileLines, definition.line);
+  return {
+    path: definition.path,
+    line: range.start,
+    lines: fileLines.slice(range.start - 1, range.end)
+  };
 }
 
 /**
@@ -278,16 +311,8 @@ export async function areaComponents(
     seen.add(name);
 
     // Its definition, cut to the braces that close it.
-    const definition = await definitionSource(ctx, name, budget);
-    const file = definition === undefined ? undefined : await textOnce(ctx, texts, definition.path);
-    if (definition === undefined || file === undefined) continue;
-    const fileLines = file.split("\n");
-    const range = definitionRange(fileLines, definition.line);
-    const snippet = {
-      path: definition.path,
-      line: range.start,
-      lines: fileLines.slice(range.start - 1, range.end)
-    };
+    const snippet = await definitionSnippet(ctx, texts, name, budget);
+    if (snippet === undefined) continue;
     components.push({ key, name, snippet });
   }
   return components;

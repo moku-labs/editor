@@ -207,6 +207,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Device toolbar and stage
 
+- The stage badge shows the link: "Paused · frame N" and "No heartbeat for N s · showing frame N" (warn), "Connecting" (info, spinner), "Game page reloaded, reconnecting · retry in N s · last frame N" (error, spinner) on a real loss, and "Reloading · last frame N" (info, spinner) while link reads an expected reload (`lost` with `reloading: true`, U7).
 - The device select has one `<optgroup>` per preset group: iPhone, Android, Foldable, Tablet, Desktop (`DEVICE_GROUPS` of the protocol).
 - Each option's title has the size and dpr. An estimated preset adds "approx: estimated values".
 - A foldable preset (`fold`) shows Fold / Unfold (`data-action="fold"`): "Unfold" on the cover, "Fold" on the inner screen. It calls `workspace.setDevice({ folded })`. No reload: the game sees a resize, and the picker calibrates again after the next `game.ui` snapshot.

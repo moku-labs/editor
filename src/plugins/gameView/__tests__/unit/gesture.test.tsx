@@ -8,6 +8,7 @@ import { escapeClosers } from "../../keys";
 import { stopGameView } from "../../lifecycle";
 import { isDrag, rectBetween } from "../../reference/gesture";
 import { setReferenceMode } from "../../reference/mode";
+import { proxyList } from "../../reference/proxies";
 import { stubCanvas } from "../canvas";
 import { createCtx, DAY, JPEG, manifestOf, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene, find, fire, settle } from "../ui";
@@ -19,6 +20,11 @@ import { boardScene, find, fire, settle } from "../ui";
 // state.reference.area (device px through the frame box); the release picks
 // the area. Esc during the drag cancels it. A crosshair over the layer.
 // ─────────────────────────────────────────────────────────────────────────────
+
+vi.mock("../../reference/proxies", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../reference/proxies")>();
+  return { ...actual, proxyList: vi.fn(actual.proxyList) };
+});
 
 let ctx: TestCtx;
 let capture: Mock<(pointerId: number) => void>;
@@ -170,6 +176,35 @@ describe("a press on the proxy layer", () => {
     pointer(layer(), "pointerdown", 110, 60);
     pointer(layer(), "pointermove", 130, 90, { buttons: 1 });
     expect(ctx.state.reference.area).toEqual({ x: 20, y: 20, w: 40, h: 60 });
+  });
+
+  it("keeps the proxies while the drag runs: a move redraws only the marquee", () => {
+    pointer(layer(), "pointerdown", 130, 95);
+    pointer(layer(), "pointermove", 140, 100, { buttons: 1 });
+    const built = vi.mocked(proxyList).mock.calls.length;
+
+    pointer(layer(), "pointermove", 300, 160, { buttons: 1 });
+    pointer(layer(), "pointermove", 650, 230, { buttons: 1 });
+    expect(marquee()?.style.width).toBe("520px");
+    expect(vi.mocked(proxyList).mock.calls.length).toBe(built);
+
+    pointer(layer(), "pointerup", 650, 230);
+    expect(vi.mocked(proxyList).mock.calls.length).toBeGreaterThan(built);
+  });
+
+  it("reads the frame box once per press: a later box does not move the marquee", () => {
+    pointer(layer(), "pointerdown", 110, 60);
+    ctx.workspace.box = {
+      left: 0,
+      top: 0,
+      width: 196,
+      height: 426,
+      scale: 0.5,
+      docked: "stage"
+    };
+    pointer(layer(), "pointermove", 130, 90, { buttons: 1 });
+    expect(ctx.state.reference.press?.box?.scale).toBe(1);
+    expect(ctx.state.reference.area).toEqual({ x: 10, y: 10, w: 20, h: 30 });
   });
 
   it("Esc during the drag cancels it: the marquee goes, the release picks nothing", async () => {

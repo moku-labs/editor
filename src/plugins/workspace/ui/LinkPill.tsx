@@ -1,6 +1,7 @@
 /**
  * @file workspace plugin — the link pill of the top bar: one look per link status (connecting,
- * live, paused, silent with the seconds since the last heartbeat, lost with "Retry now", empty)
+ * live, paused, silent with the seconds since the last heartbeat, lost with "Retry now", an
+ * expected reload as a neutral "Reloading" (U7), empty)
  * and the D7 status note as its tooltip and description. In the compact bar (below 900 px) it
  * also stands in for the session chip: the session id goes into its tooltip and its status opens
  * the session menu when there is more than one session.
@@ -60,6 +61,12 @@ export function pillText(status: LinkStatus, now: number): { text: string; note:
       };
     }
     case "lost": {
+      if (status.reloading === true) {
+        return {
+          text: `Reloading · last frame ${status.lastFrame}`,
+          note: `Reloading the game · last frame ${status.lastFrame}`
+        };
+      }
       const retry = secondsOf(status.retryInMs);
       return {
         text: `Lost · retry in ${retry} s`,
@@ -101,6 +108,7 @@ export function LinkPill(props: LinkPillProps): VNode {
   const { ctx } = props;
   const status = useWorkspace(ctx.state.ui, () => ctx.state.link);
   const { text, note } = pillText(status, Date.now());
+  const reloading = status.kind === "lost" && status.reloading === true;
   const view = props.session === true ? sessionsView(ctx) : undefined;
   const open = view?.many === true && ctx.state.popover === "session";
   const content = (
@@ -113,7 +121,7 @@ export function LinkPill(props: LinkPillProps): VNode {
   return (
     <span
       data-ui="link-pill"
-      data-kind={status.kind}
+      data-kind={reloading ? "reloading" : status.kind}
       title={view === undefined ? note : sessionNote(note, view)}
       aria-describedby={NOTE_ID}
     >
@@ -134,7 +142,7 @@ export function LinkPill(props: LinkPillProps): VNode {
       <span id={NOTE_ID} hidden>
         {note}
       </span>
-      {status.kind === "lost" && (
+      {status.kind === "lost" && !reloading && (
         <button
           type="button"
           data-size="sm"

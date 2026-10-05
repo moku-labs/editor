@@ -283,11 +283,16 @@ describe("sessions flow", () => {
     addManifestListener(ctx, manifest => seen.push(manifest));
     beat(socket, "s-1", 99);
 
-    socket.notify("editor", "session", { id: "s-1", game: "g", open: false, reason: "bye" });
+    socket.notify("editor", "session", {
+      id: "s-1",
+      game: "g",
+      open: false,
+      reason: "game_reloaded"
+    });
 
     expect(ctx.state.status).toEqual({
       kind: "lost",
-      reason: "bye",
+      reason: "game_reloaded",
       lastFrame: 99,
       retryInMs: 1000
     });

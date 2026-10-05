@@ -453,8 +453,10 @@ describe("moku_reference in day folders", () => {
       { name: "notes/newer.md", text: "# not a day", at: 9000 },
       { name: "2026-1-05/newer.md", text: "# not a day", at: 9000 }
     ]);
-    const { result } = await current.run(referenceTool);
-    expect(textAt(result)).toContain(".moku/captures/2026-10-05/play-f9.md");
+    const { result } = await current.run(referenceTool, {
+      id: ".moku/captures/2026-10-04/play-f9.md"
+    });
+    expect(textAt(result)).toContain(".moku/captures/2026-10-04/play-f9.md");
     const listed = current.hub.requests
       .filter(entry => entry.method === "list")
       .map(entry => paramOf(entry.params, "dir"));
@@ -463,6 +465,20 @@ describe("moku_reference in day folders", () => {
       ".moku/captures/2026-10-05",
       ".moku/captures/2026-10-04"
     ]);
+  });
+
+  it.each([
+    ["latest", ".moku/captures/2026-10-05/play-f9.md"],
+    ["play-f9", ".moku/captures/2026-10-05/play-f9.md"]
+  ])("stops at the first day that has the card: %s lists no older day", async (id, path) => {
+    const current = await ready();
+    await serveCards(current, DAYS);
+    const { result } = await current.run(referenceTool, { id });
+    expect(textAt(result)).toContain(path);
+    const listed = current.hub.requests
+      .filter(entry => entry.method === "list")
+      .map(entry => paramOf(entry.params, "dir"));
+    expect(listed).toEqual([".moku/captures", ".moku/captures/2026-10-05"]);
   });
 
   it("answers an old flat card when it is the newest", async () => {

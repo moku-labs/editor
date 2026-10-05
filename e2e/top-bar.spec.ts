@@ -335,6 +335,51 @@ async function switchHotReload(page: Page, control: Locator, on: boolean): Promi
 }
 
 /**
+ * Starts recording, on the tools page, every element that shows `data-tone="error"`: added, or
+ * an attribute that turns to it, with its ms since the start and its text (U7).
+ *
+ * @param page - The tools page.
+ */
+async function recordErrorTones(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const start = performance.now();
+    const seen: string[] = [];
+    Reflect.set(globalThis, "__e2eErrorTones", seen);
+    const note = (element: Element): void => {
+      const ms = Math.round(performance.now() - start);
+      seen.push(`${ms} ms ${element.tagName} ${element.textContent ?? ""}`);
+    };
+    const scan = (node: Node): void => {
+      if (!(node instanceof Element)) return;
+      if (node.matches("[data-tone=error]")) note(node);
+      for (const element of node.querySelectorAll("[data-tone=error]")) note(element);
+    };
+    for (const element of document.querySelectorAll("[data-tone=error]")) note(element);
+    new MutationObserver(records => {
+      for (const record of records) {
+        if (record.type === "attributes") scan(record.target);
+        else for (const node of record.addedNodes) scan(node);
+      }
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-tone"]
+    });
+  });
+}
+
+/**
+ * The `data-tone="error"` elements seen since `recordErrorTones`.
+ *
+ * @param page - The tools page.
+ * @returns One line per element: ms, tag and text.
+ */
+async function errorTones(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...(Reflect.get(globalThis, "__e2eErrorTones") ?? [])].map(String));
+}
+
+/**
  * Appends a comment to a game source on disk (an outside save, as an agent makes one) and
  * returns the way to put the file back.
  *
@@ -795,6 +840,30 @@ test.describe("top bar · round 2", () => {
     await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
       timeout: SWITCH_MS
     });
+    expect(errors.unexpected(), "no console error from the switches").toEqual([]);
+  });
+
+  test("Hot reload: the switch is an expected reload, no red flash on the tools page (U7)", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    await resize(tools, 1440);
+    await tools.show("game");
+    const hot = topBar(page).getByRole("switch", { name: "Hot reload", exact: true });
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => gamePath(page)).toBe("home");
+    await answer(page, "play");
+    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+
+    // Off and on again: the restart (close 1012), both reconnects and the frame reloads.
+    await recordErrorTones(page);
+    await switchHotReload(page, hot, false);
+    await switchHotReload(page, hot, true);
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+
+    expect(await errorTones(page), "no data-tone=error during the switches").toEqual([]);
     expect(errors.unexpected(), "no console error from the switches").toEqual([]);
   });
 

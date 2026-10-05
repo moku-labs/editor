@@ -231,13 +231,28 @@ Before `mount` there is no iframe: `box()` is `undefined` and `reload()` resolve
 
 ### reload (D-07)
 
-`reload({ restore: true })`: `game.bookmark`, and whether the link is `paused` → `iframe.src`
-reassigned on the same element → first manifest of this tab's own embedded frame (a manifest
+`reload({ restore: true })`: `game.bookmark`, and whether the link is `paused` →
+`link.expectReload()` → `iframe.src` reassigned on the same element → first manifest of this tab's own embedded frame (a manifest
 whose page carries another tools page's frame id is skipped) → `game.restore { bookmark }` →
 `game.pause` when the game was paused and the new manifest lists it → toast "Game reloaded · state
 restored from the last checkpoint". A failed `game.pause` is the warn `workspace:pause-failed`; the
 result stays `{ restored: true }`. Concurrent calls share one run and schedule one more after it.
-Bookmark, restore and pause are not user runs: no `workspace:ran`.
+Bookmark, restore and pause are not user runs: no `workspace:ran`. `link.expectReload()` makes the
+session close of the reload an expected reload (U7): the link reads `lost` with `reloading: true`.
+
+### Expected reload (U7)
+
+A link `lost` with `reloading: true` is a reload on purpose: a server restart (close 1012), this
+reload, the Hot reload switch, or a game that said bye before Bun's full reload. Until the game is
+back, the shell shows it in a neutral tone, with no "Retry now":
+
+| Where | Real loss (`lost`) | Expected reload (`lost`, `reloading: true`) |
+|---|---|---|
+| Stale bar | `data-tone="error"`: "Stale · data from frame N · {reason}, reconnecting in N s · Retry now" | `data-tone="info"`: "Reloading…" |
+| Link pill | `data-kind="lost"`, red: "Lost · retry in N s", Retry now | `data-kind="reloading"`, spinner: "Reloading · last frame N" |
+
+When the game is not back within link's `reloadGraceMs` (5000 ms), link sends a plain `lost` and
+the red texts show.
 
 `gameFrame().reload()` is the reload after a save (flowView calls it after writing a file). With
 Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
@@ -327,7 +342,7 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 | emits | `workspace:ran` | `RanEvent` | A command the shell ran for the user settled. Origins `topbar`, `key`, `palette`. |
 | emits | `workspace:density` | `{ density: "compact" \| "comfortable" }` | The applied density changed: a choice, or `auto` crossing 820 px on a resize. |
 | emits | `workspace:reference` | `{ on: boolean }` | Reference mode turned on or off. |
-| hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards. Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
+| hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards (a `lost` with `reloading: true` in a neutral tone, U7). Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
 
 `RanEvent` = `{ id, input, origin, at }` plus `{ ok: true, result }` or `{ ok: false, error }`.
 

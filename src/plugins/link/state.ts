@@ -42,6 +42,7 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
     lostAt: undefined,
     retryTimer: undefined,
     silenceTimer: undefined,
+    reload: undefined,
     stopped: false,
     frame: createFrameId()
   };
@@ -58,6 +59,17 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
 export function isAttached(state: LinkState): boolean {
   const { chosen } = state;
   return state.open && chosen !== undefined && state.sessions.some(({ id }) => id === chosen);
+}
+
+/**
+ * Ends the expected reload window, if any, and clears its timer.
+ *
+ * @param state - Link state.
+ */
+export function clearReload(state: LinkState): void {
+  if (state.reload === undefined) return;
+  clearTimeout(state.reload.timer);
+  state.reload = undefined;
 }
 
 /**

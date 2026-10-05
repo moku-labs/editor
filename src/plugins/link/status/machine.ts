@@ -3,7 +3,8 @@
  * the store-and-emit step that publishes the global `link:status`.
  */
 import type { LinkStatus } from "../../registry/protocol";
-import type { LinkCtx, StatusInput } from "../types";
+import { clearReload } from "../state";
+import type { LinkCtx, LinkState, StatusInput } from "../types";
 
 /**
  * The frame of the last heartbeat a status carries (0 when none).
@@ -106,6 +107,31 @@ function sameStatus(left: LinkStatus, right: LinkStatus): boolean {
 }
 
 /**
+ * Applies the expected reload window (U7) to a new status. In a window a `lost` (not `no_boot`)
+ * gets `reloading: true` and the frame of before the reload when it carries none; a heartbeat
+ * after that loss ends the window. Without a window the status is unchanged.
+ *
+ * @param state - Link state (its window is updated).
+ * @param next - The new status.
+ * @returns The status to store.
+ */
+function withReload(state: LinkState, next: LinkStatus): LinkStatus {
+  const { reload } = state;
+  if (reload === undefined) return next;
+
+  if (next.kind === "live" || next.kind === "paused") {
+    if (reload.lost) clearReload(state);
+    return next;
+  }
+  if (next.kind !== "lost" || next.reason === "no_boot") return next;
+
+  const lastFrame = next.lastFrame > 0 ? next.lastFrame : reload.lastFrame;
+  reload.lastFrame = lastFrame;
+  reload.lost = true;
+  return { ...next, lastFrame, reloading: true };
+}
+
+/**
  * Emits the global `link:status` with the current status and the chosen session.
  *
  * @param ctx - Domain context of link.
@@ -116,16 +142,18 @@ export function emitStatus(ctx: LinkCtx): void {
 }
 
 /**
- * Stores a status and emits `link:status` when its kind or a field changed.
+ * Stores a status, marked `reloading` inside an expected reload window, and emits `link:status`
+ * when its kind or a field changed.
  *
  * @param ctx - Domain context of link.
  * @param next - The new status.
  * @returns Whether it changed (and was emitted).
  */
 export function setStatus(ctx: LinkCtx, next: LinkStatus): boolean {
-  if (sameStatus(ctx.state.status, next)) return false;
+  const status = withReload(ctx.state, next);
+  if (sameStatus(ctx.state.status, status)) return false;
 
-  ctx.state.status = next;
+  ctx.state.status = status;
   emitStatus(ctx);
   return true;
 }

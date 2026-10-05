@@ -1,7 +1,8 @@
 /**
  * @file workspace plugin — F3, the stale bar above the workspace hosts while the link is silent
  * (warn) or lost (error) after the game was live once: which frame the data is from and why, with
- * "Retry now" when lost. No backdrop blur; panels fade their own data areas (`data-stale`).
+ * "Retry now" when lost. An expected reload (U7, `reloading`) reads a neutral "Reloading…" with no
+ * Retry now. No backdrop blur; panels fade their own data areas (`data-stale`).
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
@@ -35,6 +36,13 @@ export function StaleBar(props: StaleBarProps): VNode {
       <div data-ui="stale-bar" data-tone="warn" role="status">
         Stale · data from frame {status.lastFrame} · no heartbeat for {seconds} s · the game tab may
         be in the background
+      </div>
+    );
+  }
+  if (status.reloading === true) {
+    return (
+      <div data-ui="stale-bar" data-tone="info" role="status">
+        Reloading…
       </div>
     );
   }

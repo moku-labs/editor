@@ -71,7 +71,9 @@ Bun HMR reloads the game page after a source save (D-23). Bun cannot be held:
    through its registry entry. The door runs at once, not a microtask later as through
    `channel.run`. When the run settles (microtasks, before the reload) it stores
    `{ v: 1, doc, at, frame, paused, bookmark }` as JSON in `sessionStorage["moku-editor:checkpoint"]`.
-   `doc` is `performance.timeOrigin` of the page.
+   `doc` is `performance.timeOrigin` of the page. Right after it starts the checkpoint it sends
+   `bye` on the open socket: the hub ends the session with `bye`, and the tools read the reload
+   as expected (U7, neutral "Reloading…" instead of a red lost).
 2. On start, the bridge of the next page takes a checkpoint stored by another document, removes
    it, runs `game.restore { bookmark }`, then `game.pause` when it was paused, and only then
    connects. Its first hello carries `manifest.restored = { bookmark, frame }`: `bookmark` is the
@@ -112,10 +114,11 @@ The bridge adds one command to the registry in `onInit` (`reload.ts`, `reloadEnt
    for the store. A checkpoint that cannot be taken logs `bridge:checkpoint-failed`; the reload
    still happens. `restore: false` stores nothing.
 3. It answers `{ scheduled: true }` with `state` = `registry.envelope()`.
-4. On the next macrotask, after the answer went out, it calls `location.reload()` (`reloadPage` of
-   the reload seam; a no-op outside a browser page). `onStop` before then cancels it.
+4. On the next macrotask, after the answer went out, it sends `bye` on the open socket and calls
+   `location.reload()` (`reloadPage` of the reload seam; a no-op outside a browser page). `onStop`
+   before then cancels it.
 5. The bridge of the new document restores the checkpoint and sends `restored` in its first hello,
-   as after Bun's full reload. The hub ends the old session with `game_reloaded`.
+   as after Bun's full reload. The hub ends the old session with `bye` (U7: an expected reload).
 
 The effect is `route`, not `raw`: the registry refuses `cheat` and `raw` for editor commands
 (they bypass the game's journal). The reload taints nothing itself; the restore in the new
@@ -272,7 +275,8 @@ same rule.
 - No cancel. A timed-out command keeps running in the game. Its result is dropped.
 - The post-run re-read runs when the `run` settles. A `run` that never settles re-reads nothing.
 - `frame` sources update once per channel heartbeat (`heartbeatMs`, default 1000), not per frame.
-- A page reload sends no `bye`. The tools page sees `game_reloaded`. This holds for `editor.reload` too.
+- A page reload the bridge does not see coming (the user's own reload, a crash) sends no `bye`. The
+  tools page sees `game_reloaded`. Bun's full reload and `editor.reload` send `bye` first (U7).
 - A hidden tab under Chrome's intensive throttling beats about once a minute. Hub and link wait
   65 s before `silent` because the last beat said `paused: true`.
 - `no WebSocket in this runtime` and `no page URL for <hello>` schedule no retry. The status stays `lost` with `retryInMs: 0`.
