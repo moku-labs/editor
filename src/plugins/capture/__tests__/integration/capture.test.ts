@@ -76,7 +76,7 @@ afterEach(async () => {
 });
 
 describe("capture integration", () => {
-  it("adds the three read commands to the manifest", async () => {
+  it("adds the four read commands to the manifest", async () => {
     const app = await startEditor();
 
     const commands = app.registry
@@ -85,9 +85,15 @@ describe("capture integration", () => {
     expect(commands.map(command => [command.id, command.effect])).toEqual([
       ["editor.capture", "read"],
       ["editor.series", "read"],
-      ["editor.seriesStop", "read"]
+      ["editor.seriesStop", "read"],
+      ["editor.sheet", "read"]
     ]);
     expect(commands[0]?.input).toEqual({ maxWidth: "number?" });
+    expect(commands[3]?.input).toEqual({
+      frames: "number",
+      everyMs: "number",
+      maxWidth: "number?"
+    });
 
     await app.stop();
   });
@@ -101,6 +107,21 @@ describe("capture integration", () => {
     await expect(app.channel.run("editor.capture", { maxWidth: 32 })).rejects.toMatchObject({
       code: -32_602,
       data: { field: "maxWidth" }
+    });
+
+    await app.stop();
+  });
+
+  it("editor.sheet runs game.capture { sheet } and answers the full sheet where the page cannot downscale", async () => {
+    const app = await startEditor();
+
+    const ran = await app.channel.run("editor.sheet", { frames: 4, everyMs: 100, maxWidth: 540 });
+
+    expect(renderer.capture).toHaveBeenCalledWith({ sheet: { frames: 4, everyMs: 100 } });
+    expect(ran.value).toEqual({
+      image: PNG,
+      frame: ran.state.frame,
+      device: { w: 393, h: 852, orientation: "portrait" }
     });
 
     await app.stop();

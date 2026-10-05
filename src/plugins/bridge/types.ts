@@ -41,14 +41,19 @@ export const HIGH_WATER = 1_048_576;
 export const LOW_WATER = 262_144;
 
 /**
- * Cap of the durationMs extension of a long call (R1: the same rule in bridge, hub and link).
+ * Cap of the extension of a long call (R1: the same rule in bridge, hub and link).
  */
 export const DEADLINE_EXTRA_CAP_MS = 60_000;
 
 /**
- * The one long call.
+ * The long call that waits its `durationMs` on top.
  */
 export const SERIES_ID = "editor.series";
+
+/**
+ * The long call that waits its `frames × everyMs` on top (the contact sheet).
+ */
+export const SHEET_ID = "editor.sheet";
 
 /**
  * The command the bridge adds to the registry: store the checkpoint and reload the page.
@@ -68,7 +73,7 @@ export type BridgeConfig = {
   hello: string;
   /** First reconnect delay in ms; doubles per failure up to MAX_RETRY_MS. Integer ≥ 100. */
   retryMs: number;
-  /** Deadline of one hub request in ms; run of editor.series gets + input.durationMs (R1). */
+  /** Deadline of one hub request in ms; a run of editor.series or editor.sheet waits longer (R1). */
   callTimeoutMs: number;
 };
 

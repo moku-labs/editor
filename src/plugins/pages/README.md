@@ -239,7 +239,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 
 | File | Role |
 |---|---|
-| `bridge.ts` | `runBridge(args)`: stdin to the dispatcher until stdin ends, then teardown. Exit code 0. |
+| `bridge.ts` | `runBridge(args)`: stdin to the dispatcher until stdin ends or a SIGINT or SIGTERM arrives, then the same teardown. Exit code 0. |
 | `rpc.ts` | Newline-delimited JSON-RPC 2.0. stdout carries only protocol frames; logs go to stderr. |
 | `server.ts` | `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`, `notifications/cancelled`. |
 | `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, `hotReload`, `watch`/`value`/`unwatch`. |
@@ -256,9 +256,11 @@ Protocol:
 | `ping`, `logging/setLevel` | `{}` |
 | `tools/list` | The fifteen tools below. |
 | `tools/call` | The tool result. No `name` or an unknown tool: -32602. Bad arguments: an `isError` result naming the argument, so the model can fix the call. |
-| An unknown method | -32601 |
+| An unknown method | -32601. Claude Code 2.1.280 sends `server/discover` (draft protocol 2026-07-28) first and falls back to `initialize` on this answer. |
 | A line that is not JSON | -32700 with id `null` |
 | A message without id | Never answered. `notifications/cancelled {requestId}` aborts that call (a `moku_wait` unwatches) and drops its answer. Others are ignored. |
+
+The handshake of the installed Claude Code (2.1.280) is recorded in `__tests__/fixtures/claude-discover-probe.json` and `claude-initialize.json` (captured from its stdin during `claude mcp list`): `server/discover`, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized`, `tools/list`. `unit/mcp/claude-code.test.ts` replays it.
 
 `serverInfo.version` is the package version, inlined from `package.json` at build time. `notifications/progress` goes out during `moku_wait` and `moku_series` when the request carries `_meta.progressToken`. `notifications/tools/list_changed` goes out when the bridge connects to another bin than before.
 
@@ -268,7 +270,7 @@ Which bin:
 2. Without one, the bridge starts the bin when it knows a game html: the argv `<html>`, else the html of the last discovery file it saw (a stale one counts). Port: `--port`, else the last port, else 3000. The bridge then owns that bin.
 3. Without an html, tools answer `isError`: "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." `moku_status` answers `running: false` with that hint instead.
 4. When the hub socket closes, the bridge reads the discovery file again and reconnects once. Every later tool call tries one connect to a live bin; `moku_start` starts one.
-5. On stdin end: pending calls are aborted, every watch is dropped, the socket closes. An owned bin gets SIGTERM, then SIGKILL after 2 s. A bin the bridge did not start keeps running.
+5. On stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes. An owned bin gets SIGTERM, then SIGKILL after 2 s. A bin the bridge did not start keeps running. The signal handlers stay until the teardown is done, so a second Ctrl+C cannot leave an owned bin behind. After a signal the bridge lets go of stdin, so the process exits 0 even while the client keeps the pipe open. Lines that arrive after a signal are not handled.
 
 Tools. Every name starts with `moku_`; every input schema is a closed object (`additionalProperties: false`); every game tool takes an optional `session` (the hub rule picks one otherwise; `choose_session` answers `isError` listing the sessions). Annotations are static (M6): `readOnlyHint: true, openWorldHint: false` for the read-only tools; the others below.
 
@@ -281,7 +283,7 @@ Tools. Every name starts with `moku_`; every input schema is a closed object (`a
 | `moku_wait` | `{ id, input?, until?, changedFrom?, timeoutMs? (100–25000, 10000), session? }` | hub `watch` until the value deep-equals `until`, differs from `changedFrom`, or (neither) first changes; `{ timedOut, value, waitedMs }`; always unwatches | read-only |
 | `moku_run` | `{ id, input?, session? }` | hub `run`; text `effect: <effect>` then `{ value, frame, state }` | destructive, not idempotent |
 | `moku_screenshot` | `{ maxWidth? (64–4096, 1080), session? }` | liveness check, `editor.capture { maxWidth }`, image and `{ frame, device, maxWidth, kb }` | read-only |
-| `moku_series` | `{ frames? (2–12, 6), everyMs? (1–5000, 500), session? }` | liveness check, `game.capture { sheet }` (game ≥ 0.4), one image | read-only |
+| `moku_series` | `{ frames? (2–12, 6), everyMs? (1–5000, 500), session? }` | liveness check, game ≥ 0.4 check (`game.capture` lists `sheet`), then `editor.sheet { frames, everyMs, maxWidth: 1080 }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; one image and `{ frames, everyMs, columns, frame, maxWidth?, kb }` | read-only |
 | `moku_reference` | `{ id? ("latest") }` | a `.moku/captures/*.md` card (newest by modification time, or by name) and its crop image | read-only |
 | `moku_files_list` | `{ dir? ("") }` | hub `files.list` without `.moku/editor.json` and `.moku/editor.log` | read-only |
 | `moku_files_read` | `{ path }` | `{ path, version }`, then the text | read-only |
@@ -290,7 +292,7 @@ Tools. Every name starts with `moku_`; every input schema is a closed object (`a
 | `moku_start` | `{ html?, port? }` | starts the bin when none runs | not destructive, idempotent |
 | `moku_stop` | `{}` | stops an owned bin; another bin answers `isError` | destructive, idempotent |
 
-Results: a text item first (pretty JSON or a message), then images as `{ type: "image", data, mimeType: "image/png" }`. A screenshot above 300 KB of base64 is taken once more at half its width: half of `maxWidth`, or half of the picture when the picture is narrower (its width is read from the PNG header). A picture still above 300 KB (the page could not shrink it, or a contact sheet, which has no width option) is answered anyway, with `note` giving its size.
+Results: a text item first (pretty JSON or a message), then images as `{ type: "image", data, mimeType: "image/png" }`. A screenshot above 300 KB of base64 is taken once more at half its width: half of `maxWidth`, or half of the picture when the picture is narrower (its width is read from the PNG header). A picture still above 300 KB (the page could not shrink it, or a contact sheet, which is not taken twice) is answered anyway, with `note` giving its size. A contact sheet comes from `editor.sheet`, shrunk in the page to 1080 px wide; an agent without `editor.sheet` (an older capture plugin) gets `game.capture { sheet }` at full size.
 
 Liveness (M7): screenshot and series read the session's heartbeat first. Paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume" instead of a timeout. The heartbeat is the hub's `sessions` readout, kept current by the forwarded `game.heartbeat` notifications.
 
@@ -298,7 +300,7 @@ Safety: `.moku/editor.json` holds the token. The bridge never prints or logs it,
 
 What `main` (`cli.ts`) does:
 
-1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage. `mcp-config` prints the Claude Code setup and exits 0. `mcp` runs `runBridge(args)` and exits with its code when stdin ends.
+1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage. `mcp-config` prints the Claude Code setup and exits 0. `mcp` runs `runBridge(args)`, which catches SIGINT and SIGTERM itself, and exits with its code (0) when stdin ends or a signal arrives.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
 4. One `Bun.serve(editor.hub.serve(...))` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket.
@@ -315,7 +317,7 @@ What `main` (`cli.ts`) does:
 
 | Exit code | When |
 |---|---|
-| 0 | Help, `mcp-config`, `mcp` after stdin ended, or serving |
+| 0 | Help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving |
 | 1 | Runtime error: missing or bad HTML file, start failed, port in use |
 | 2 | Bad arguments |
 
@@ -338,5 +340,6 @@ What `main` (`cli.ts`) does:
 - The bin serves one game HTML file at `/` and binds 127.0.0.1 only.
 - Hot reload cannot be switched while the bin runs (Bun 1.3.14, spike above). Start the bin with `--no-hmr` to serve without it.
 - MCP: screenshots and series need the game page visible (a hidden tab stops heartbeats). Frame sources reach `moku_wait` about once per second (D-15).
-- MCP: `moku_series` is one forwarded `run`, so the hub's call deadline (`callTimeoutMs`, 5 s by default) bounds it: a sheet that takes longer, such as 12 frames every 1000 ms, answers -32002 `timeout`.
-- MCP: game pictures compress poorly. On merge-game in a 393 × 852 page a full shot is about 890 KB of base64, so the default screenshot comes back about 200 px wide; a 4-frame sheet is about 2 MB and is sent as it is, with the size note.
+- MCP: `moku_series` is one forwarded `run`. A run of `editor.sheet` waits `frames × everyMs` on top of the call deadline (capped at +60 s) in bridge, hub and link, so 12 frames every 5000 ms fit. The `game.capture { sheet }` fallback keeps the plain deadline (`callTimeoutMs`, 5 s by default): a longer sheet there answers -32002 `timeout`.
+- MCP: game pictures compress poorly. On merge-game in a 393 × 852 page a full shot is about 890 KB of base64, so the default screenshot comes back about 200 px wide. A 4-frame sheet is about 2 MB at full size; `editor.sheet` shrinks it to 1080 px wide in the page, and a sheet still above 300 KB is sent with the size note.
+- MCP: a screenshot shown in Claude Code needs a browser with the game page open and visible. `claude mcp list` alone starts the bridge, which starts the bin, but no game session.

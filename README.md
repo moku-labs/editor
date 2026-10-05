@@ -15,7 +15,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 
 <br/>
 
-[Install](#install) · [Quick start](#quick-start) · [The tools page](#the-tools-page) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
+[Install](#install) · [Quick start](#quick-start) · [Use with Claude Code](#use-with-claude-code) · [The tools page](#the-tools-page) · [Production builds](#production-builds) · [How it works](#how-it-works) · [The three cores](#the-three-cores) · [Plugins](#plugins) · [Configuration](#configuration) · [Events](#events) · [Wire protocol](#wire-protocol) · [Scripts](#scripts) · [Docs](#docs)
 
 ---
 
@@ -26,7 +26,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 - **Three runtimes, three cores.** The game page, the Bun server and the tools page each get their own Moku core with their own events (`editor-agent`, `editor-server`, `editor-tools`). Bun code never reaches the browser; Preact never reaches the server.
 - **A panel is data.** `definePanel` returns a frozen spec of sources, commands and a view. The `panels` host owns every subscription, stale marking and teardown — views never poll.
 - **Edits keep the game state.** With Bun hot reload on (the bin's default), a save of a game source reloads the game page and the bridge restores the bookmark it took just before: "Game reloaded · state restored", in about a second on merge-game. Without hot reload the editor bookmarks, reloads the frame and restores it itself (D-07).
-- **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. No shell, no spawned processes.
+- **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. The server runs no shell and spawns nothing. Only the MCP bridge starts a process: the bin, when none runs, and it stops only that one.
 
 ## Install
 
@@ -37,7 +37,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 > [!NOTE]
 > **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.0.2` is a **peer dependency**; `game.effects` in the Render workspace needs game `0.0.3`.
 >
-> **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both.
+> **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both. The contact sheet `editor.sheet` (MCP `moku_series`) needs game 0.4.
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole.
 >
@@ -109,6 +109,62 @@ the card file that line names.
 > await tools.start();
 > tools.workspace.mount(document.querySelector<HTMLElement>("[data-editor-root]")!);
 > ```
+
+## Use with Claude Code
+
+`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude fifteen `moku_*` tools: read the game, wait for a value, run commands, take screenshots, edit files.
+
+**1. Register it** from the game folder:
+
+```sh
+claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000
+```
+
+Or commit a project `.mcp.json`. `bunx moku-editor mcp-config web/index.html --port 3000` prints it:
+
+```json
+{
+  "mcpServers": {
+    "moku-editor": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["moku-editor", "mcp", "web/index.html", "--port", "3000"]
+    }
+  }
+}
+```
+
+`claude mcp list` then shows `moku-editor: … ✔ Connected`.
+
+**2. Ignore the editor's files.** The bin writes `.moku/editor.json` (its port and the per-start token, mode 0600). A bin the bridge starts logs to `.moku/editor.log`. Add `.moku/` to the game's `.gitignore`.
+
+**3. Keep the game page visible.** Open the game or the tools page in a browser, or in Claude's browser pane. Screenshots and contact sheets need the page on screen: a paused game or a hidden tab answers "game paused or hidden at frame N — bring the editor pane to front or resume", not a timeout.
+
+Which editor the bridge uses:
+
+- A running bin wins. The bridge finds it through `.moku/editor.json` under `--root` (default the working directory).
+- No bin runs: the bridge starts `moku-editor <html> --port <port>` itself, with the html and port it was given.
+- Claude Code closes (stdin end, SIGINT or SIGTERM): the bridge stops the bin it started. A bin you started yourself keeps running.
+
+| Tool | What it does |
+|---|---|
+| `moku_status` | Is the editor running, did the bridge start it, URLs, hot reload, sessions. Call it first. |
+| `moku_sessions` | The connected games, each with `heartbeat { frame, paused, silent }`. |
+| `moku_manifest` | The game's sources and commands: ids, inputs, effects. |
+| `moku_read` | Reads a source, such as `game.position`. |
+| `moku_wait` | Waits until a source equals a value, leaves a value, or changes (at most 25 s). |
+| `moku_run` | Runs a command, such as `game.pause`. The answer starts with its effect. |
+| `moku_screenshot` | A PNG of the game, at most 1080 px wide by default. |
+| `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one PNG at most 1080 px wide. Game 0.4. |
+| `moku_reference` | The newest or a named reference card of `.moku/captures/` with its crop. |
+| `moku_files_list` | Lists project files. |
+| `moku_files_read` | Reads a file and its version. |
+| `moku_files_write` | Writes a file, with an optional version check. |
+| `moku_reload` | Reloads the game page and restores its state. |
+| `moku_start` | Starts the editor when it does not run. |
+| `moku_stop` | Stops the editor, only when the bridge started it. |
+
+Every game tool takes an optional `session`. The file tools stay in the files sandbox and never show or touch `.moku/editor.json` or `.moku/editor.log`. The bridge never prints the token. Detail: [pages README, MCP bridge](src/plugins/pages/README.md#mcp-bridge-mcp).
 
 ## The tools page
 
@@ -298,7 +354,7 @@ Measured with `Bun.build` (browser, minified, the game itself external) in
 | `__MOKU_GAME_DEV__` | Editor code in the bundle | Size |
 |---|---|---|
 | `false` | None: no `/__editor/hello`, no `editor.capture`, no `bridge:` log line | 0 B (the whole entry is 73 B, the game's own lines) |
-| `true` | Agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 71.3 KB minified, 24.8 KB gzip |
+| `true` | Agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 77.6 KB minified, 26.7 KB gzip |
 
 The package is `"sideEffects": false`. The agent core, each agent plugin and each core config are
 created `/* @__PURE__ */`. So a static import used only inside `if (__MOKU_GAME_DEV__)` drops out
@@ -477,11 +533,11 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`registry`](src/plugins/registry/README.md) | agent | Complex | The only place the editor touches the game's doors. Wraps doors, `.dev` modules and `editor.*` commands into entries; builds the `Manifest`; owns the runtime-free protocol. | `manifest`, `source`, `command`, `add`, `envelope`, `clock` |
 | [`channel`](src/plugins/channel/README.md) | agent | Standard | The in-process `EditorChannel`: immediate read on watch, runs off the frame loop, a timer heartbeat that beats while paused. | `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` |
 | [`overlay`](src/plugins/overlay/README.md) | agent | Standard | A small Preact card over the game: render chips and one-click cheats. Off by default. | `open`, `close`, `isOpen`; command `editor.overlay` |
-| [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect. | `status`, `session` |
-| [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop` |
+| [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect. | `status`, `session`; command `editor.reload` |
+| [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop`, `editor.sheet` |
 | [`files`](src/plugins/files/README.md) | server | Standard | The project-root sandbox: list, read, atomic write with version check, image captures. | `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` |
 | [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
-| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`). | `routes`, `attachServer`, `hotReload`, `setHotReload` |
+| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
 | [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload` |
 | [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
@@ -601,7 +657,7 @@ JSON-RPC 2.0 text frames with a `channel` (`game`, `files`, `editor`) and, for f
 | -32007 | `unauthorized` | `unauthorized` | no |
 | -32008 | `notInstalled` | `not_installed`: the game does not have the source (its game plugin is missing) | no |
 
-Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs` (capped at +60 s) on top of the deadline in bridge, hub and link alike.
+Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs`, and a run of `editor.sheet` its `frames × everyMs`, on top of the deadline (capped at +60 s) in bridge, hub and link alike. The `sessions` notification gives each `SessionInfo` a `heartbeat { frame, paused, silent }` once the game has sent one, and is sent again when `paused` or `silent` flips.
 
 ## Scripts
 
@@ -620,7 +676,7 @@ bun run validate           # publint + attw (esm-only profile)
 bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px windows; prints the edit-loop table
 ```
 
-**Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI.
+**Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.
 
 **Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
 

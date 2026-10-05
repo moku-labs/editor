@@ -52,7 +52,8 @@ export const EMPTY_AFTER_LOST_MS = 10_000;
 export const CALL_TIMEOUT_MS = 10_000;
 
 /**
- * Cap of the durationMs extension of a long call (R1).
+ * Cap of the extension of a long call (R1): durationMs of editor.series, frames × everyMs of
+ * editor.sheet.
  */
 export const LONG_CALL_CAP_MS = 60_000;
 
@@ -164,8 +165,8 @@ export type FilesClient = {
  * - `read` and `run` reject -32003 `no_session` (not retryable) at once when no game is connected.
  * - `watch` is accepted in every state, also while disconnected, and is sent again after every
  * reconnect or session change. The first value is the agent's immediate read.
- * - `run` checks the RunResult shape; `editor.series` waits its `durationMs` on top of the call
- * timeout (R1).
+ * - `run` checks the RunResult shape; `editor.series` waits its `durationMs` and `editor.sheet`
+ * its `frames × everyMs` on top of the call timeout (R1).
  * - `status` returns a copy.
  *
  * @example

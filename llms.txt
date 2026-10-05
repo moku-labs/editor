@@ -4,9 +4,9 @@
 
 - Package: `@moku-labs/editor` (MIT)
 - Peer dependency: `@moku-labs/game >= 0.0.2` (`game.effects` needs 0.0.3)
-- Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both.
+- Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both. The contact sheet (`editor.sheet`, MCP `moku_series`) needs game 0.4.
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
-- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` turns it off.
+- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` turns it off. `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` is the stdio MCP server for Claude Code; `moku-editor mcp-config [<game-html>] [--port N]` prints its `.mcp.json` snippet and `claude mcp add` line.
 - Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
 - Built for a narrow pane: Claude's browser pane at 1/3 (480 px) or 1/2 (720 px) of the screen; every workspace works at 480 px.
 
@@ -281,14 +281,14 @@ One line each: core · tier · purpose · key methods · events (E = emits, H = 
 - registry · agent · Complex · wraps game doors, `.dev` modules and `editor.*` commands into entries; builds the Manifest; probes door sources (not installed → `available: false`, -32008); owns `./protocol` · `manifest`, `source`, `command`, `add`, `envelope`, `clock` · no events
 - channel · agent · Standard · in-process EditorChannel: immediate read on watch, run in a microtask, timer heartbeat (default 1000 ms, `heap` in Chromium) · `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` · no events
 - overlay · agent · Standard · Preact card over the game: render chips and one-click cheats; off by default; adds command `editor.overlay` · `open`, `close`, `isOpen` · H `bridge:status`
-- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s, a checkpoint in sessionStorage across Bun's reload · `status`, `session` · E `bridge:status`
-- capture · agent · Standard · opt-in; adds `editor.capture`, `editor.series`, `editor.seriesStop`; never captures on its own; takes `game.capture` as a data URL (game 0.1) or `{ png }` (game 0.4) · no app api · no events
+- bridge · agent · Complex · opt-in websocket to the hub: hello, requests, throttled values, taps (≤ 1 per 50 ms), backoff 1 s → 30 s, a checkpoint in sessionStorage across Bun's reload; adds command `editor.reload { restore? }` (checkpoint, then `location.reload()`) · `status`, `session` · E `bridge:status`
+- capture · agent · Standard · opt-in; adds `editor.capture { maxWidth? }`, `editor.series`, `editor.seriesStop`, `editor.sheet { frames, everyMs, maxWidth? }` (one `game.capture { sheet }`, game ≥ 0.4); `maxWidth` (64–4096) shrinks the picture in the page; never captures on its own; takes `game.capture` as a data URL (game 0.1) or `{ png }` (game 0.4) · no app api · no events
 
 ### Server core (`editor-server`)
 
 - files · server · Standard · project-root sandbox: list, read, atomic write with sha1 version, image captures under `.moku/captures/` · `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` · E `files:written`
-- hub · server · Complex · websocket switchboard: guard, token, sessions, routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure, the `hotReload` notification; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` · E `hub:session`
-- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*`, `/hello` and `/hmr`; home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`) · `routes`, `attachServer`, `hotReload`, `setHotReload` · no events
+- hub · server · Complex · websocket switchboard: guard, token, sessions (with the `heartbeat { frame, paused, silent }` readout), routing of `game` and `files` channels, shared watches, heartbeat and tap fan-out, backpressure, the `hotReload` notification; wraps `Bun.serve` · `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` · E `hub:session`
+- pages · server · Standard · serves the prebuilt tools page with the boot JSON, `/assets/*`, `/hello` and `/hmr`; home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`), the `.moku/editor.json` discovery file and the stdio MCP bridge (`mcp/`) · `routes`, `attachServer`, `hotReload`, `setHotReload` · no events
 
 ### Tools core (`editor-tools`)
 
@@ -319,8 +319,17 @@ tools:  link → workspace → panels → flowView, gameView, renderView, stateV
 - Agent → hub: `hello { manifest }` (first, else close 1008), `heartbeat`, `value { sub, value }`, `tap { x, y, at }`, `bye`.
 - Hub → agent: requests `manifest`, `read`, `watch`, `unwatch`, `run` (channel `game`); notification `session` (channel `editor`).
 - Tools → hub: `game` channel `manifest`, `read`, `run`, `watch`, `unwatch`; `files` channel `list`, `read`, `write`, `writeBinary`, `readBinary`.
-- Hub → tools: `sessions { list }`, `session`, `hotReload { hmr, owner }` (channel `editor`), forwarded `heartbeat`, `value` and `tap`.
+- Hub → tools: `sessions { list }` (each `SessionInfo` with `heartbeat { frame, paused, silent }` once known; re-sent when paused or silent flips), `session`, `hotReload { hmr, owner }` (channel `editor`), forwarded `heartbeat`, `value` and `tap`.
+- Long calls: a `run` of `editor.series` waits `durationMs`, a `run` of `editor.sheet` `frames × everyMs`, on top of the call deadline (capped at +60 s) in bridge, hub and link.
 - Error codes: -32600 invalid request, -32601 unknown method/id, -32602 invalid input, -32000 command failed, -32001 game reloaded (retryable), -32002 timeout / link closed (retryable), -32003 no session / choose session, -32004 forbidden path, -32005 version conflict, -32006 not JSON, -32007 unauthorized, -32008 not installed (the game does not have the source). Every message starts with `[moku-editor] `.
+
+## MCP for Claude Code
+
+- Setup in the game folder: `claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000`, or a `.mcp.json` with `{ "mcpServers": { "moku-editor": { "type": "stdio", "command": "bunx", "args": ["moku-editor", "mcp", "web/index.html", "--port", "3000"] } } }` (`moku-editor mcp-config` prints it). `claude mcp list` then shows `moku-editor … ✔ Connected`. Add `.moku/` to the game's `.gitignore`.
+- The bridge (`src/plugins/pages/mcp/`) is a separate process and a hub tools client. Newline-delimited JSON-RPC 2.0 on stdio; stdout carries only protocol frames. Protocol versions `2025-11-25`, `2025-06-18`, `2025-03-26`. Claude Code 2.1.280 probes `server/discover` first (answered -32601), then sends `initialize` 2025-11-25 (fixtures in `src/plugins/pages/__tests__/fixtures/`).
+- Which editor: a live `<root>/.moku/editor.json` (`{ version, pid, port, url, ws, token, root, html, startedAt }`, 0600, written by the bin, removed on stop) wins; otherwise the bridge starts `moku-editor <html> --port <port> --root <root>` itself (log `.moku/editor.log`) and owns it. On stdin end, SIGINT or SIGTERM it aborts pending calls, closes the socket and stops only a bin it started; exit 0.
+- Tools: `moku_status`, `moku_sessions`, `moku_manifest`, `moku_read`, `moku_wait`, `moku_run`, `moku_screenshot` (`editor.capture`, max width 1080), `moku_series` (`editor.sheet` at 1080 px wide, or `game.capture { sheet }` for an agent without it; game ≥ 0.4), `moku_reference`, `moku_files_list`, `moku_files_read`, `moku_files_write`, `moku_reload`, `moku_start`, `moku_stop`. `.moku/editor.json` and `.moku/editor.log` are hidden from and refused by the file tools.
+- Pictures need the game page visible: a paused or hidden game answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume".
 
 ## File structure
 
@@ -335,14 +344,14 @@ src/
     index.ts         barrel of all 17 instances and type namespaces (imported by no entry)
     registry/        + protocol/ (types, errors, check, wire-value, messages, source-files, devices, overlay-host)
     channel/ overlay/ bridge/ capture/
-    files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor)
+    files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor, mcp/ = the stdio MCP bridge)
     link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules, icons, workspaces)
     flowView/ gameView/ renderView/ stateView/ filesView/ consoleView/
     <name>/__tests__/unit, __tests__/integration
 tests/
   unit/              framework-level unit tests
   integration/       root stack tests (helpers/stack.ts: startStack, shutdown); tiny game in CI, merge-game locally;
-                     agent-bundle.test.ts (needs `bun run build`), not-installed.test.ts
+                     agent-bundle.test.ts (needs `bun run build`), not-installed.test.ts, mcp-bridge.test.ts (bin + bridge processes)
 scripts/build-tools.ts   bundles the tools page into dist/tools
 ```
 
@@ -352,7 +361,7 @@ scripts/build-tools.ts   bundles the tools page into dist/tools
 
 ## Docs
 
-- README.md: overview, quick start, production builds, plugins, configuration, events
+- README.md: overview, quick start, use with Claude Code (MCP), production builds, plugins, configuration, events
 - llms-full.txt: verbatim Config/Api/Event types, config reference, examples, error codes, custom plugins
 - src/plugins/<name>/README.md: per-plugin detail
 - Moku Core specification: https://github.com/moku-labs/core/tree/main/specification

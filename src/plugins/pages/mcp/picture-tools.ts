@@ -1,8 +1,9 @@
 /**
  * @file pages/mcp — the picture tools (M5, M7): moku_screenshot (`editor.capture { maxWidth }`),
- * moku_series (`game.capture { sheet }`, game ≥ 0.4) and moku_reference (a reference card of
- * `.moku/captures` with its crop). Screenshot and series check liveness first: a paused or hidden
- * game gets a message, not a timeout.
+ * moku_series (`editor.sheet { frames, everyMs, maxWidth }`, or `game.capture { sheet }` when the
+ * agent has no editor.sheet; game ≥ 0.4) and moku_reference (a reference card of `.moku/captures`
+ * with its crop). Screenshot and series check liveness first: a paused or hidden game gets a
+ * message, not a timeout.
  */
 import { statSync } from "node:fs";
 import { dirname, join } from "node:path/posix";
@@ -53,6 +54,23 @@ const CROP_LINK = /!\[element\]\(([^)\s]+)\)/;
  * One editor.capture shot.
  */
 type Shot = { readonly image: string; readonly frame: number; readonly device: Json };
+
+/**
+ * The sheet option of a contact sheet: how many pictures, how far apart in game time.
+ */
+type SheetOption = { readonly frames: number; readonly everyMs: number };
+
+/**
+ * A contact sheet as moku_series shows it: the picture, the frame after the last picture and,
+ * when the agent shrank it, the width it was shrunk to.
+ */
+type TakenSheet = { readonly image: string; readonly frame: number; readonly maxWidth?: number };
+
+/**
+ * The no-picture message of moku_series.
+ */
+const NO_SHEET =
+  "game.capture gave no picture: the renderer is inert, headless or this is not a dev build";
 
 /**
  * Runs editor.capture once.
@@ -122,12 +140,58 @@ async function screenshot(call: ToolCall, context: ToolContext): Promise<ToolRes
 }
 
 /**
- * moku_series: liveness, a game ≥ 0.4 check, then one `game.capture { sheet }`: the frames laid
- * out on one picture.
+ * Runs editor.sheet once: the agent takes the sheet and shrinks it to DEFAULT_MAX_WIDTH in the
+ * page, so it travels small.
+ *
+ * @param hub - The hub connection.
+ * @param sheet - Frames and everyMs.
+ * @param session - The session, if asked for.
+ * @returns The sheet, or undefined when the answer carries no picture.
+ */
+async function editorSheet(
+  hub: HubClient,
+  sheet: SheetOption,
+  session: string | undefined
+): Promise<TakenSheet | undefined> {
+  const input = { ...sheet, maxWidth: DEFAULT_MAX_WIDTH };
+  const ran = await hub.request("game", "run", { id: "editor.sheet", input }, session);
+  const shot = readShot(readRunResult(ran)?.value ?? ran);
+  return shot === undefined
+    ? undefined
+    : { image: shot.image, frame: shot.frame, maxWidth: DEFAULT_MAX_WIDTH };
+}
+
+/**
+ * Runs `game.capture { sheet }` once, for an agent without editor.sheet: the sheet comes at full
+ * size (`{ png }` or the data URL itself, the pictureOf rule).
+ *
+ * @param hub - The hub connection.
+ * @param sheet - Frames and everyMs.
+ * @param session - The session, if asked for.
+ * @returns The sheet, or undefined when the answer carries no picture.
+ */
+async function gameSheet(
+  hub: HubClient,
+  sheet: SheetOption,
+  session: string | undefined
+): Promise<TakenSheet | undefined> {
+  const input = { sheet: { ...sheet } };
+  const result = readRunResult(
+    await hub.request("game", "run", { id: "game.capture", input }, session)
+  );
+  const picture = result === undefined ? undefined : pictureOf(result.value);
+  return result === undefined || picture === undefined
+    ? undefined
+    : { image: picture, frame: result.state.frame };
+}
+
+/**
+ * moku_series: liveness, a game ≥ 0.4 check, then one contact sheet: `editor.sheet` (shrunk to
+ * 1080 px wide by the agent) when the agent has it, else `game.capture { sheet }` at full size.
  *
  * @param call - The call: frames, everyMs, session.
  * @param context - The tool context.
- * @returns A text item (frames, everyMs, columns, frame, KB) and the sheet.
+ * @returns A text item (frames, everyMs, columns, frame, maxWidth when shrunk, KB) and the sheet.
  */
 async function series(call: ToolCall, context: ToolContext): Promise<ToolResult> {
   const hub = await context.editor.hub();
@@ -135,7 +199,8 @@ async function series(call: ToolCall, context: ToolContext): Promise<ToolResult>
   const problem = livenessProblem(hub.sessions(), session);
   if (problem !== undefined) return errorResult(problem);
 
-  const capture = commandOf(await hub.request("game", "manifest", {}, session), "game.capture");
+  const manifest = await hub.request("game", "manifest", {}, session);
+  const capture = commandOf(manifest, "game.capture");
   if (capture === undefined || !Object.hasOwn(capture.input, "sheet")) {
     return errorResult(
       "moku_series needs game.capture with a sheet option: @moku-labs/game 0.4 or newer"
@@ -144,21 +209,17 @@ async function series(call: ToolCall, context: ToolContext): Promise<ToolResult>
 
   const frames = numberArgument(call.args, "frames", 6);
   const everyMs = numberArgument(call.args, "everyMs", 500);
-  const input = { sheet: { frames, everyMs } };
-  const ran = await withProgress(call, frames * everyMs, context.now, () =>
-    hub.request("game", "run", { id: "game.capture", input }, session)
+  const take = commandOf(manifest, "editor.sheet") === undefined ? gameSheet : editorSheet;
+  const taken = await withProgress(call, frames * everyMs, context.now, () =>
+    take(hub, { frames, everyMs }, session)
   );
-  const result = readRunResult(ran);
-  const picture = result === undefined ? undefined : pictureOf(result.value);
-  if (result === undefined || picture === undefined) {
-    return errorResult(
-      "game.capture gave no picture: the renderer is inert, headless or this is not a dev build"
-    );
-  }
+  if (taken === undefined) return errorResult(NO_SHEET);
 
+  const { image, frame, maxWidth } = taken;
   const columns = Math.ceil(Math.sqrt(frames));
-  const facts = { frames, everyMs, columns, frame: result.state.frame, kb: imageKb(picture) };
-  return pictureResult({ ...facts, ...sizeNote(picture) }, picture);
+  const shrunk = maxWidth === undefined ? {} : { maxWidth };
+  const facts = { frames, everyMs, columns, frame, ...shrunk, kb: imageKb(image) };
+  return pictureResult({ ...facts, ...sizeNote(image) }, image);
 }
 
 /**

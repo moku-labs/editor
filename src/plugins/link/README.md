@@ -26,7 +26,7 @@ Fixed constants in `types.ts` (not config):
 | `MAX_RETRY_MS` | `8000` | Cap of the reconnect backoff. |
 | `EMPTY_AFTER_LOST_MS` | `10_000` | A lost session turns into `empty` when no session came back by then. |
 | `CALL_TIMEOUT_MS` | `10_000` | Local deadline of every request. |
-| `LONG_CALL_CAP_MS` | `60_000` | Cap of the `durationMs` extension for `editor.series`. |
+| `LONG_CALL_CAP_MS` | `60_000` | Cap of the long-call extension: `durationMs` of `editor.series`, `frames × everyMs` of `editor.sheet`. |
 
 ## API
 
@@ -37,7 +37,7 @@ reload and files.
 |---|---|---|
 | `read` | `(id, input?) => Promise<Json>` | Reads a source of the chosen game. Rejects -32003 `no_session` (not retryable) at once when no game is connected. |
 | `watch` | `(id, input, onValue) => () => void` | Watches a source. Accepted in every state, also while disconnected. Sent again after every reconnect or session change, with a new numeric wire sub. Returns the unsubscribe. |
-| `run` | `(id, input?) => Promise<RunResult>` | Runs a command and checks the result shape. `editor.series` waits 10 s + `durationMs` (capped at +60 s). |
+| `run` | `(id, input?) => Promise<RunResult>` | Runs a command and checks the result shape. `editor.series` waits 10 s + `durationMs`, `editor.sheet` 10 s + `frames × everyMs` (both capped at +60 s). |
 | `status` | `() => LinkStatus` | A copy of the current status. |
 | `manifest` | `() => Manifest \| undefined` | The cached manifest of the chosen session. |
 | `onManifest` | `(fn) => () => void` | Called at once when a manifest exists, then on every attach, and with `undefined` when the session is lost. |

@@ -2,7 +2,8 @@
  * @file pages/mcp — `moku-editor mcp` (D-31): the stdio MCP server Claude Code starts. It reads
  * newline-delimited JSON-RPC from stdin, answers on stdout (protocol frames only; logs go to
  * stderr), connects to the running bin's hub as a tools client or starts the bin, and on stdin
- * end aborts pending calls, closes the socket and stops a bin it started. Exit code 0.
+ * end, SIGINT or SIGTERM aborts pending calls, closes the socket and stops a bin it started.
+ * Exit code 0.
  */
 import { resolve } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
@@ -38,8 +39,48 @@ function writeStderr(line: string): void {
 }
 
 /**
+ * Why the bridge stops reading: stdin ended, or a SIGINT or SIGTERM came first.
+ */
+type Ending = "stdin" | "signal";
+
+/**
+ * The stop signals of one run: whether one fired, the promise of the first, and the remover.
+ */
+type StopListener = {
+  readonly fired: () => boolean;
+  readonly stopped: Promise<Ending>;
+  readonly remove: () => void;
+};
+
+/**
+ * Calls `stop` on every SIGINT and SIGTERM of this process.
+ *
+ * @param stop - The handler.
+ * @returns The remover.
+ * @example
+ * ```ts
+ * const remove = onProcessSignal(() => controller.abort());
+ * ```
+ */
+function onProcessSignal(stop: () => void): () => void {
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  return () => {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  };
+}
+
+/**
+ * Lets go of stdin: the pending read ends and the process can exit.
+ */
+function releaseStdin(): void {
+  process.stdin.destroy();
+}
+
+/**
  * The deps of the real process: stdin, stdout for frames only, a branded console on stderr, the
- * detached spawn of the bin and this runtime with this bin script.
+ * detached spawn of the bin, this runtime with this bin script, and SIGINT/SIGTERM.
  *
  * @returns The bridge deps.
  * @example
@@ -57,8 +98,52 @@ export function processBridgeDeps(): BridgeDeps {
     spawn: spawnDetached,
     isAlive: isProcessAlive,
     command: [process.execPath, Bun.main],
-    now: Date.now
+    now: Date.now,
+    onSignal: onProcessSignal,
+    releaseInput: releaseStdin
   };
+}
+
+/**
+ * Listens for the stop signals; a repeated signal changes nothing.
+ *
+ * @param deps - The bridge deps (onSignal).
+ * @returns Whether one fired, the first one and the remover.
+ * @example
+ * ```ts
+ * const stop = listenForStop(deps);
+ * await stop.stopped; // "signal" after the first SIGINT or SIGTERM
+ * ```
+ */
+function listenForStop(deps: Pick<BridgeDeps, "onSignal">): StopListener {
+  let fired = false;
+  const { promise, resolve } = Promise.withResolvers<Ending>();
+  const remove = deps.onSignal(() => {
+    fired = true;
+    resolve("signal");
+  });
+  return { fired: () => fired, stopped: promise, remove };
+}
+
+/**
+ * Reads stdin until it ends (or fails) or a stop signal comes first; lines after a signal are
+ * not handled.
+ *
+ * @param input - stdin.
+ * @param stop - The stop signals.
+ * @param onLine - Handles one line.
+ * @returns Why the reading stopped.
+ */
+function readUntilStop(
+  input: BridgeDeps["input"],
+  stop: StopListener,
+  onLine: (line: string) => void
+): Promise<Ending> {
+  const toStdin = (): Ending => "stdin";
+  const reading = readLines(input, line => {
+    if (!stop.fired()) onLine(line);
+  }).then(toStdin, toStdin);
+  return Promise.race([reading, stop.stopped]);
 }
 
 /**
@@ -82,10 +167,11 @@ async function settleWithin(work: Promise<void>, ms: number): Promise<void> {
 }
 
 /**
- * Runs the stdio MCP bridge until stdin ends.
+ * Runs the stdio MCP bridge until stdin ends or a SIGINT or SIGTERM arrives; both tear down the
+ * same way. After a signal stdin is let go, so the process exits.
  *
  * @param args - The `mcp` arguments: optional html and port for the launcher, root, hot reload.
- * @param deps - stdio, console and process seams (default: this process).
+ * @param deps - stdio, console, process seams and signals (default: this process).
  * @returns The exit code: 0.
  * @example
  * ```ts
@@ -111,11 +197,17 @@ export async function runBridge(
   deps.ui.info(`moku-editor mcp ${VERSION}: stdio MCP server for ${root}`);
   // The startup never rejects; shutdown waits for it (and cancels a bin start in progress).
   editor.start();
-  await readLines(deps.input, line => server.handleLine(line));
+  // The signals stay caught until the teardown is done: a second Ctrl+C cannot orphan a bin.
+  const stop = listenForStop(deps);
+  const ending = await readUntilStop(deps.input, stop, line => server.handleLine(line));
 
   server.cancelAll();
   await settleWithin(server.idle(), SETTLE_MS);
   await editor.shutdown();
-  deps.ui.info("moku-editor mcp: stdin closed");
+  stop.remove();
+  if (ending === "signal") deps.releaseInput();
+  deps.ui.info(
+    ending === "signal" ? "moku-editor mcp: stopped by a signal" : "moku-editor mcp: stdin closed"
+  );
   return 0;
 }

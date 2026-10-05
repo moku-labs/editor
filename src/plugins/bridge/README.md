@@ -37,7 +37,7 @@ The token is never logged. Log lines name the hello origin and path only.
 |---|---|---|---|
 | `hello` | `string` | `"/__editor/hello"` | Hello route of the editor server. A same-origin path or an absolute URL. Non-empty. |
 | `retryMs` | `number` | `1000` | First reconnect delay in ms. Doubles per failure up to `MAX_RETRY_MS` (30 000), ±20 % jitter. A whole number, at least 100. |
-| `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run` in ms. A `run` of `editor.series` gets `min(input.durationMs, 60 000)` on top. A whole number, at least 100. |
+| `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run` in ms. A `run` of `editor.series` gets `min(input.durationMs, 60 000)` on top, a `run` of `editor.sheet` `min(input.frames × input.everyMs, 60 000)`. A whole number, at least 100. |
 
 `onInit` checks the three options, so a bad value throws at `createApp`:
 
@@ -54,8 +54,9 @@ Constants in `types.ts`:
 | `JITTER` | `0.2` | ±20 % on every delay. |
 | `HIGH_WATER` | `1_048_576` | Buffered bytes above which values wait in the backlog (1 MiB). |
 | `LOW_WATER` | `262_144` | Buffered bytes below which the backlog is sent (256 KiB). |
-| `DEADLINE_EXTRA_CAP_MS` | `60_000` | Cap of the `durationMs` extension. |
-| `SERIES_ID` | `"editor.series"` | The one long call. |
+| `DEADLINE_EXTRA_CAP_MS` | `60_000` | Cap of the long-call extension. |
+| `SERIES_ID` | `"editor.series"` | The long call that waits its `durationMs` on top. |
+| `SHEET_ID` | `"editor.sheet"` | The long call that waits its `frames × everyMs` on top. |
 | `RELOAD_ID` | `"editor.reload"` | The command the bridge adds to the registry. |
 
 Backoff: `nextDelay(attempt, retryMs, random)`. With the defaults and `random() = 0.5`:
@@ -262,8 +263,9 @@ default of `hello`.
 **`overlay`.** It hooks `bridge:status` for its link dot and checks `ctx.has("bridge")` at start.
 In a build without the bridge the event never fires.
 
-**`capture`.** Added next to the bridge. Its `editor.series` command is the long call that gets
-`durationMs` on top of the deadline. `hub` and `link` use the same rule.
+**`capture`.** Added next to the bridge. Its `editor.series` and `editor.sheet` commands are the
+long calls: `durationMs`, or `frames × everyMs`, on top of the deadline. `hub` and `link` use the
+same rule.
 
 ## Limits
 

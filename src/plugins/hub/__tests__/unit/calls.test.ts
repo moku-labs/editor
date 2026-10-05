@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Json } from "../../../registry/protocol";
 import { failure, success } from "../../../registry/protocol";
 import { deadlineFor, failSession, forward, settle } from "../../routing/calls";
 import type { Session } from "../../types";
@@ -53,6 +54,16 @@ function call(
   });
 }
 
+/**
+ * The params of a run of editor.sheet.
+ *
+ * @param input - The sheet input.
+ * @returns The params.
+ */
+function sheet(input: Json): Json {
+  return { id: "editor.sheet", input };
+}
+
 describe("deadlineFor (R1)", () => {
   it("is callTimeoutMs for every ordinary call", () => {
     expect(deadlineFor("read", { id: "game.position" }, 5000)).toBe(5000);
@@ -70,6 +81,23 @@ describe("deadlineFor (R1)", () => {
     const params = { id: "editor.series", input: { durationMs: 90_000, intervalMs: 100 } };
 
     expect(deadlineFor("run", params, 5000)).toBe(65_000);
+  });
+
+  it("adds frames × everyMs for a run of editor.sheet, capped at 60 s", () => {
+    expect(deadlineFor("run", sheet({ frames: 6, everyMs: 500, maxWidth: 1080 }), 5000)).toBe(8000);
+    expect(deadlineFor("run", sheet({ frames: 12, everyMs: 5000 }), 5000)).toBe(65_000);
+    expect(deadlineFor("run", sheet({ frames: 13, everyMs: 5000 }), 5000)).toBe(65_000);
+  });
+
+  it("keeps callTimeoutMs for editor.sheet without good frames and everyMs, or a read of it", () => {
+    expect(deadlineFor("run", sheet({ frames: 6 }), 5000)).toBe(5000);
+    expect(deadlineFor("run", sheet({ frames: "6", everyMs: 500 }), 5000)).toBe(5000);
+    expect(deadlineFor("run", sheet({ frames: 6, everyMs: -1 }), 5000)).toBe(5000);
+    expect(deadlineFor("run", { id: "editor.sheet" }, 5000)).toBe(5000);
+    expect(deadlineFor("read", sheet({ frames: 6, everyMs: 500 }), 5000)).toBe(5000);
+    expect(
+      deadlineFor("run", { id: "game.capture", input: { frames: 6, everyMs: 500 } }, 5000)
+    ).toBe(5000);
   });
 
   it("ignores durationMs on another id, a read of editor.series, or a bad value", () => {

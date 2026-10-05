@@ -39,14 +39,22 @@ const DEVICE = { w: 393, h: 852, orientation: "portrait" };
 /** A live session (running, visible). */
 const LIVE = session("s-1", { heartbeat: { frame: 1840, paused: false, silent: false } });
 
-/** A manifest whose game.capture has the given input. */
-function manifest(input: Json): Json {
+/** The editor.sheet command of a capture plugin that has it. */
+const SHEET_COMMAND = {
+  id: "editor.sheet",
+  title: "Contact sheet",
+  input: { frames: "number", everyMs: "number", maxWidth: "number?" },
+  effect: "read"
+};
+
+/** A manifest whose game.capture has the given input, with the given editor commands. */
+function manifest(input: Json, editor: Json[] = []): Json {
   return {
     game: "g",
     page: "p",
     embedded: true,
     sources: [],
-    commands: [{ id: "game.capture", title: "Capture", input, effect: "read" }]
+    commands: [{ id: "game.capture", title: "Capture", input, effect: "read" }, ...editor]
   };
 }
 
@@ -178,7 +186,52 @@ describe("moku_screenshot", () => {
 });
 
 describe("moku_series", () => {
-  it("runs game.capture { sheet } and answers the sheet ({ png } of game 0.4)", async () => {
+  it("runs editor.sheet at maxWidth 1080 when the agent has it, and answers the sheet", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    hub.handle("game.manifest", () => manifest({ sheet: "json?" }, [SHEET_COMMAND]));
+    hub.handle("game.run", () => ran({ image: png(6), frame: 1902, device: DEVICE }, 1902));
+    const { result, progress } = await run(seriesTool, { frames: 4, everyMs: 100 });
+    expect(hub.requests[1]).toMatchObject({
+      method: "run",
+      params: { id: "editor.sheet", input: { frames: 4, everyMs: 100, maxWidth: 1080 } }
+    });
+    expect(hub.requests).toHaveLength(2);
+    expect(jsonOf(result)).toEqual({
+      frames: 4,
+      everyMs: 100,
+      columns: 2,
+      frame: 1902,
+      maxWidth: 1080,
+      kb: 0
+    });
+    expect(result.content[1]).toEqual({
+      type: "image",
+      data: "A".repeat(6),
+      mimeType: "image/png"
+    });
+    expect(progress[0]).toEqual([0, 400]);
+  });
+
+  it("answers isError when editor.sheet answers no picture", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    hub.handle("game.manifest", () => manifest({ sheet: "json?" }, [SHEET_COMMAND]));
+    hub.handle("game.run", () => ran({ nope: true }));
+    const { result } = await run(seriesTool);
+    expect(result.isError).toBe(true);
+    expect(textAt(result)).toContain("game.capture gave no picture");
+  });
+
+  it("does not run editor.sheet on a game older than 0.4", async () => {
+    const { run, hub } = await ready({ sessions: [LIVE] });
+    hub.handle("game.manifest", () => manifest({ legend: "boolean?" }, [SHEET_COMMAND]));
+    const { result } = await run(seriesTool);
+    expect(textAt(result)).toBe(
+      "moku_series needs game.capture with a sheet option: @moku-labs/game 0.4 or newer"
+    );
+    expect(hub.requests.map(entry => entry.method)).toEqual(["manifest"]);
+  });
+
+  it("falls back to game.capture { sheet } without editor.sheet ({ png } of game 0.4)", async () => {
     const { run, hub } = await ready({ sessions: [LIVE] });
     hub.handle("game.manifest", () => manifest({ legend: "boolean?", sheet: "json?" }));
     hub.handle("game.run", () => ran({ png: png(4) }, 1900));

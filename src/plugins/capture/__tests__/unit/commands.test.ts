@@ -47,7 +47,7 @@ function run(registry: FakeRegistry, id: string, input: Json = null): Promise<Ru
 }
 
 describe("registerCaptureCommands", () => {
-  it("adds the three read commands with their titles and inputs", () => {
+  it("adds the four read commands with their titles and inputs", () => {
     const { registry } = setup();
 
     expect([...registry.added.values()].map(entry => entry.descriptor)).toEqual([
@@ -63,7 +63,13 @@ describe("registerCaptureCommands", () => {
         input: { durationMs: "number", intervalMs: "number" },
         effect: "read"
       },
-      { id: "editor.seriesStop", title: "Stop the series", input: {}, effect: "read" }
+      { id: "editor.seriesStop", title: "Stop the series", input: {}, effect: "read" },
+      {
+        id: "editor.sheet",
+        title: "Contact sheet",
+        input: { frames: "number", everyMs: "number", maxWidth: "number?" },
+        effect: "read"
+      }
     ]);
   });
 
@@ -317,6 +323,124 @@ describe("editor.series", () => {
     const ran = await first;
     expect(ran.value).toMatchObject({ shots: Array.from({ length: 10 }, () => ({ image: PNG })) });
     expect(deps.state.series).toBeUndefined();
+  });
+});
+
+describe("editor.sheet", () => {
+  it("runs game.capture { sheet } once and answers the sheet, its frame and the device", async () => {
+    const { registry, deps } = setup(fakeRegistry(() => ({ value: { png: PNG } })));
+
+    const ran = await run(registry, "editor.sheet", { frames: 6, everyMs: 500 });
+
+    expect(registry.capture).toHaveBeenCalledOnce();
+    expect(registry.capture).toHaveBeenCalledWith({ sheet: { frames: 6, everyMs: 500 } });
+    expect(ran).toEqual({
+      value: { image: PNG, frame: 1778, device: { w: 0, h: 0, orientation: "portrait" } },
+      state: { ...ENVELOPE, frame: 1778 }
+    });
+    expect(deps.decode).not.toHaveBeenCalled();
+  });
+
+  it("takes the PNG data URL itself (the pictureOf rule of game 0.1)", async () => {
+    const { registry } = setup();
+
+    const ran = await run(registry, "editor.sheet", { frames: 2, everyMs: 1 });
+
+    expect(ran.value).toMatchObject({ image: PNG });
+  });
+
+  it("downscales the sheet to maxWidth with the page decoder, keeping the aspect", async () => {
+    const deps = { ...createDeps(fakeClock()), decode: fakeDecoder(3240, 3840) };
+    const { registry } = setup(
+      fakeRegistry(() => ({ value: { png: PNG } })),
+      deps
+    );
+
+    const ran = await run(registry, "editor.sheet", { frames: 6, everyMs: 100, maxWidth: 1080 });
+
+    expect(ran.value).toMatchObject({ image: smallPng(1080, 1280), frame: 1778 });
+    expect(deps.decode).toHaveBeenCalledWith(PNG);
+    expect(deps.decode.pictures[0]?.close).toHaveBeenCalledOnce();
+  });
+
+  it("answers the full sheet and warns when the page cannot downscale it", async () => {
+    const { registry, deps } = setup();
+    deps.decode.mockRejectedValueOnce(new Error("[moku-editor] no canvas"));
+
+    const ran = await run(registry, "editor.sheet", { frames: 4, everyMs: 100, maxWidth: 540 });
+
+    expect(ran.value).toMatchObject({ image: PNG });
+    expect(deps.log.warn).toHaveBeenCalledWith("capture:downscale-failed", {
+      message: "[moku-editor] no canvas"
+    });
+  });
+
+  it.each([
+    ["frames", { frames: 1, everyMs: 100 }, "frames must be a whole number from 2 to 12"],
+    ["frames", { frames: 13, everyMs: 100 }, "frames must be a whole number from 2 to 12"],
+    ["frames", { frames: 2.5, everyMs: 100 }, "frames must be a whole number from 2 to 12"],
+    ["everyMs", { frames: 6, everyMs: 0 }, "everyMs must be a number from 1 to 5000"],
+    ["everyMs", { frames: 6, everyMs: 5001 }, "everyMs must be a number from 1 to 5000"],
+    ["everyMs", { frames: 6, everyMs: -5 }, "everyMs must be a number from 1 to 5000"]
+  ])("refuses %s out of range with -32602 before the door runs (%j)", async (field, input, text) => {
+    const { registry } = setup();
+
+    const error = await rejectionOf(run(registry, "editor.sheet", input));
+
+    expect(error).toMatchObject({
+      code: -32_602,
+      message: expect.stringContaining(`[moku-editor] editor.sheet: ${text}.`),
+      data: { reason: "invalid_input", retryable: false, id: "editor.sheet", field }
+    });
+    expect(registry.capture).not.toHaveBeenCalled();
+  });
+
+  it("refuses a maxWidth out of range naming editor.sheet", async () => {
+    const { registry } = setup();
+
+    expect(
+      await rejectionOf(run(registry, "editor.sheet", { frames: 6, everyMs: 100, maxWidth: 32 }))
+    ).toMatchObject({
+      code: -32_602,
+      message:
+        "[moku-editor] editor.sheet: maxWidth must be a whole number from 64 to 4096.\n  Pass the widest picture you want, in pixels.",
+      data: { reason: "invalid_input", id: "editor.sheet", field: "maxWidth" }
+    });
+    expect(registry.capture).not.toHaveBeenCalled();
+  });
+
+  it("checks the input against its schema", async () => {
+    const { registry } = setup();
+
+    expect(await rejectionOf(run(registry, "editor.sheet", { frames: 6 }))).toMatchObject({
+      code: -32_602,
+      data: { field: "everyMs" }
+    });
+    expect(
+      await rejectionOf(run(registry, "editor.sheet", { frames: 6, everyMs: 100, legend: true }))
+    ).toMatchObject({ code: -32_602, data: { field: "legend" } });
+  });
+
+  it("rejects -32000 naming editor.sheet when the door gives no picture", async () => {
+    const { registry } = setup(fakeRegistry(() => ({ value: null })));
+
+    expect(
+      await rejectionOf(run(registry, "editor.sheet", { frames: 6, everyMs: 100 }))
+    ).toMatchObject({
+      code: -32_000,
+      message:
+        "[moku-editor] game.capture gave no picture.\n  The renderer is inert, headless or this is not a dev build.",
+      data: { reason: "command_failed", id: "editor.sheet" }
+    });
+  });
+
+  it("passes an error of the door through unchanged", async () => {
+    const refused = new Error("[game] a sheet comes with layers only.");
+    const { registry } = setup(fakeRegistry(() => ({ error: refused })));
+
+    expect(await rejectionOf(run(registry, "editor.sheet", { frames: 6, everyMs: 100 }))).toBe(
+      refused
+    );
   });
 });
 

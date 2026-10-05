@@ -90,7 +90,8 @@ const EDITOR_COMMANDS = [
   "editor.overlay",
   "editor.reload",
   "editor.series",
-  "editor.seriesStop"
+  "editor.seriesStop",
+  "editor.sheet"
 ];
 
 /** The eight outcomes board/awaitIntent waits for: one hub lane each, sorted. */

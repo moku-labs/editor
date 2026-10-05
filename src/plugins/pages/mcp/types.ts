@@ -251,7 +251,8 @@ export type ToolContext = {
 };
 
 /**
- * The deps of `runBridge`: stdio, the stderr console, the process seams and the clock.
+ * The deps of `runBridge`: stdio, the stderr console, the process seams, the clock and the
+ * signals.
  */
 export type BridgeDeps = {
   /** stdin: newline-delimited JSON-RPC. */
@@ -268,4 +269,8 @@ export type BridgeDeps = {
   readonly command: readonly string[];
   /** Epoch ms. */
   readonly now: () => number;
+  /** Calls `stop` on every SIGINT or SIGTERM until the returned remover runs. */
+  readonly onSignal: (stop: () => void) => () => void;
+  /** Lets go of stdin after a signal, so the process exits while the client keeps the pipe open. */
+  readonly releaseInput: () => void;
 };

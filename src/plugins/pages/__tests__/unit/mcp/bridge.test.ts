@@ -101,6 +101,12 @@ function bridge(args: Partial<McpArgs> = {}) {
     setTimeout(() => writeDiscovery(root, hub.discovery(root, made.child.pid)), 20);
     return made.child;
   });
+  const stops = new Set<() => void>();
+  const onSignal = vi.fn((stop: () => void) => {
+    stops.add(stop);
+    return () => stops.delete(stop);
+  });
+  const releaseInput = vi.fn();
   const deps: BridgeDeps = {
     input: stdin.input,
     write: text => writes.push(text),
@@ -112,15 +118,33 @@ function bridge(args: Partial<McpArgs> = {}) {
     spawn,
     isAlive: pid => alive.has(pid),
     command: ["bun", "bin.mjs"],
-    now: Date.now
+    now: Date.now,
+    onSignal,
+    releaseInput
   };
   const done = runBridge({ kind: "mcp", root, hmr: true, ...args }, deps);
+  /** Plays a SIGINT or SIGTERM: every stop still listening is called. */
+  const signal = (): void => {
+    for (const stop of stops) stop();
+  };
   /** The parsed frames so far. */
   const frames = (): { id?: unknown; result?: unknown; error?: unknown; method?: string }[] =>
     writes.map(text => JSON.parse(text));
   /** The frame answering `id`. */
   const answer = (id: number) => frames().find(frame => frame.id === id);
-  return { stdin, writes, stderr, spawn, children, done, frames, answer };
+  return {
+    stdin,
+    writes,
+    stderr,
+    spawn,
+    children,
+    done,
+    frames,
+    answer,
+    signal,
+    stops,
+    releaseInput
+  };
 }
 
 /** The first text of a tools/call answer. */
@@ -206,6 +230,54 @@ describe("runBridge", () => {
     expect(run.children[0]?.signals).toEqual(["SIGTERM"]);
   });
 
+  it("tears down on SIGINT or SIGTERM like on stdin end: stops the bin it started and resolves 0", async () => {
+    const run = bridge({ html: "web/index.html", port: 4601 });
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "moku_status" }
+    });
+    await until(() => run.answer(1) !== undefined, "the status");
+    expect(run.stops.size).toBe(1);
+
+    run.signal();
+    run.signal();
+    await expect(run.done).resolves.toBe(0);
+
+    expect(run.children[0]?.signals).toEqual(["SIGTERM"]);
+    expect(run.releaseInput).toHaveBeenCalledOnce();
+    expect(run.stops.size).toBe(0);
+    expect(run.stderr.join("\n")).toContain("moku-editor mcp: stopped by a signal");
+  });
+
+  it("aborts a pending moku_wait on a signal and answers no line sent after it", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const run = bridge();
+    run.stdin.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: { name: "moku_wait", arguments: { id: "game.position", timeoutMs: 20_000 } }
+    });
+    await until(() => hub.watched().length === 1, "the watch");
+    run.signal();
+    run.stdin.send({ jsonrpc: "2.0", id: 6, method: "ping" });
+    await expect(run.done).resolves.toBe(0);
+    expect(run.answer(5)).toBeUndefined();
+    expect(run.answer(6)).toBeUndefined();
+    expect(run.spawn).not.toHaveBeenCalled();
+  });
+
+  it("does not let go of stdin when stdin itself ended", async () => {
+    const run = bridge();
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+    expect(run.releaseInput).not.toHaveBeenCalled();
+    expect(run.stops.size).toBe(0);
+    expect(run.stderr.join("\n")).toContain("moku-editor mcp: stdin closed");
+  });
+
   it("answers the game tools with the not-running message when no bin runs", async () => {
     const run = bridge();
     run.stdin.send({
@@ -222,6 +294,34 @@ describe("runBridge", () => {
       id: 1,
       result: { content: [{ type: "text", text: NOT_RUNNING }], isError: true }
     });
+  });
+});
+
+describe("processBridgeDeps signals", () => {
+  it("listens to SIGINT and SIGTERM until the remover runs", () => {
+    const deps = processBridgeDeps();
+    const stop = vi.fn();
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+
+    const remove = deps.onSignal(stop);
+    expect(process.listenerCount("SIGINT")).toBe(before.int + 1);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term + 1);
+    process.listeners("SIGTERM").at(-1)?.("SIGTERM");
+    expect(stop).toHaveBeenCalledOnce();
+
+    remove();
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
+  });
+
+  it("lets go of stdin by destroying it", () => {
+    const destroy = vi.spyOn(process.stdin, "destroy").mockImplementation(() => process.stdin);
+    try {
+      processBridgeDeps().releaseInput();
+      expect(destroy).toHaveBeenCalledOnce();
+    } finally {
+      destroy.mockRestore();
+    }
   });
 });
 

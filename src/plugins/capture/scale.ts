@@ -1,15 +1,17 @@
 /**
- * @file capture plugin — the `maxWidth` of editor.capture: the range check, the scaled size and the
- * downscale over the injected picture decoder. A page that cannot downscale answers the full picture.
+ * @file capture plugin — the `maxWidth` of editor.capture and editor.sheet: the range check, the
+ * scaled size and the downscale over the injected picture decoder. A page that cannot downscale
+ * answers the full picture.
  */
 import { errorCode, wireError } from "../registry/protocol";
 import type { CaptureDeps, DecodedPicture, PictureDecoder } from "./types";
 import { MAX_MAX_WIDTH, MIN_MAX_WIDTH, SHOT_ID } from "./types";
 
 /**
- * Checks the optional `maxWidth` of editor.capture: a whole number from 64 to 4096.
+ * Checks the optional `maxWidth` of editor.capture or editor.sheet: a whole number from 64 to 4096.
  *
  * @param maxWidth - The checked number input, or undefined when absent.
+ * @param id - The command, named in the error.
  * @returns The same value.
  * @throws {Error} -32602 `invalid_input` naming `maxWidth`.
  * @example
@@ -17,7 +19,10 @@ import { MAX_MAX_WIDTH, MIN_MAX_WIDTH, SHOT_ID } from "./types";
  * const maxWidth = checkMaxWidth(input.maxWidth); // 1080, or undefined when absent
  * ```
  */
-export function checkMaxWidth(maxWidth: number | undefined): number | undefined {
+export function checkMaxWidth(
+  maxWidth: number | undefined,
+  id: string = SHOT_ID
+): number | undefined {
   if (maxWidth === undefined) return undefined;
 
   const isInRange =
@@ -26,8 +31,8 @@ export function checkMaxWidth(maxWidth: number | undefined): number | undefined 
 
   throw wireError(
     errorCode.invalidInput,
-    `[moku-editor] ${SHOT_ID}: maxWidth must be a whole number from ${String(MIN_MAX_WIDTH)} to ${String(MAX_MAX_WIDTH)}.\n  Pass the widest picture you want, in pixels.`,
-    { reason: "invalid_input", retryable: false, id: SHOT_ID, field: "maxWidth" }
+    `[moku-editor] ${id}: maxWidth must be a whole number from ${String(MIN_MAX_WIDTH)} to ${String(MAX_MAX_WIDTH)}.\n  Pass the widest picture you want, in pixels.`,
+    { reason: "invalid_input", retryable: false, id, field: "maxWidth" }
   );
 }
 
@@ -91,7 +96,7 @@ async function downscale(image: string, maxWidth: number, decode: PictureDecoder
 }
 
 /**
- * Shrinks a shot to `maxWidth` in the page (aspect kept, PNG data URL). A picture that is not wider
+ * Shrinks a shot or a sheet to `maxWidth` in the page (aspect kept, PNG data URL). A picture that is not wider
  * is answered unchanged. A page that cannot decode or draw it answers the full picture and logs
  * `capture:downscale-failed`, so the screenshot still works.
  *

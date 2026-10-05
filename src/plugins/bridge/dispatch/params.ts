@@ -4,7 +4,7 @@
  */
 import type { InputOf, InputSchema, Json } from "../../registry/protocol";
 import { checkInput, errorCode, wireError } from "../../registry/protocol";
-import { DEADLINE_EXTRA_CAP_MS, SERIES_ID } from "../types";
+import { DEADLINE_EXTRA_CAP_MS, SERIES_ID, SHEET_ID } from "../types";
 
 /**
  * The params schema of each game-channel method.
@@ -97,8 +97,48 @@ export function checkParams<M extends keyof typeof PARAMS>(
 }
 
 /**
- * The deadline of a request: callTimeoutMs, plus min(input.durationMs, 60 s) for `run` of
- * `editor.series` when durationMs is a finite number ≥ 0 (R1: the same rule in bridge, hub, link).
+ * A length in ms or a count: a finite number ≥ 0, else 0.
+ *
+ * @param value - A Json member.
+ * @returns The number, or 0.
+ * @example
+ * ```ts
+ * lengthOf(500); // 500
+ * lengthOf(-1); // 0
+ * ```
+ */
+function lengthOf(value: Json | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * The extra wait of a long run (R1): input.durationMs of `editor.series`, input.frames ×
+ * input.everyMs of `editor.sheet`; 0 for every other request or a bad value.
+ *
+ * @param method - The method.
+ * @param params - The raw params.
+ * @returns The extra wait in milliseconds, not capped.
+ * @example
+ * ```ts
+ * longCallMs("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } }); // 3000
+ * ```
+ */
+function longCallMs(method: string, params: Json | undefined): number {
+  if (method !== "run") return 0;
+
+  const id = memberOf(params, "id");
+  const input = memberOf(params, "input");
+  if (id === SERIES_ID) return lengthOf(memberOf(input, "durationMs"));
+  if (id === SHEET_ID) {
+    return lengthOf(memberOf(input, "frames")) * lengthOf(memberOf(input, "everyMs"));
+  }
+  return 0;
+}
+
+/**
+ * The deadline of a request: callTimeoutMs, plus the long-call extension capped at 60 s for `run`
+ * of `editor.series` (input.durationMs) or `editor.sheet` (input.frames × input.everyMs) (R1: the
+ * same rule in bridge, hub, link).
  *
  * @param method - The method.
  * @param params - The raw params.
@@ -107,6 +147,7 @@ export function checkParams<M extends keyof typeof PARAMS>(
  * @example
  * ```ts
  * deadlineFor("run", { id: "editor.series", input: { durationMs: 20_000 } }, 5000); // 25000
+ * deadlineFor("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } }, 5000); // 8000
  * ```
  */
 export function deadlineFor(
@@ -114,10 +155,5 @@ export function deadlineFor(
   params: Json | undefined,
   callTimeoutMs: number
 ): number {
-  if (method !== "run" || memberOf(params, "id") !== SERIES_ID) return callTimeoutMs;
-  const duration = memberOf(memberOf(params, "input"), "durationMs");
-  if (typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) {
-    return callTimeoutMs;
-  }
-  return callTimeoutMs + Math.min(duration, DEADLINE_EXTRA_CAP_MS);
+  return callTimeoutMs + Math.min(longCallMs(method, params), DEADLINE_EXTRA_CAP_MS);
 }

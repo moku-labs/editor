@@ -224,7 +224,8 @@ Session choice when a game request has no `session`: one open session wins; with
 only `embedded` one wins; otherwise -32003.
 
 Deadline of a forwarded call: `callTimeoutMs`. A `run` of `editor.series` waits its
-`input.durationMs` on top, up to 60 s more. The same rule runs in bridge and link.
+`input.durationMs` on top, and a `run` of `editor.sheet` its `input.frames × input.everyMs`, up to
+60 s more. The same rule runs in bridge and link.
 
 Fan-out: one agent-side watch per `(session, source, input)`. The key sorts object keys, so
 `{a, b}` and `{b, a}` share a watch. A late subscriber gets `null` and then the last value. The

@@ -24,12 +24,37 @@ export const CAPTURE_ID = "game.capture";
 export const SHOT_ID = "editor.capture";
 
 /**
- * The smallest `maxWidth` editor.capture accepts, in pixels.
+ * The id of the contact-sheet command, named in its errors.
+ */
+export const SHEET_ID = "editor.sheet";
+
+/**
+ * The fewest pictures a contact sheet takes (the game's own limit).
+ */
+export const MIN_SHEET_FRAMES = 2;
+
+/**
+ * The most pictures a contact sheet takes (the game's own limit).
+ */
+export const MAX_SHEET_FRAMES = 12;
+
+/**
+ * The shortest game time between two pictures of a contact sheet, in ms.
+ */
+export const MIN_SHEET_EVERY_MS = 1;
+
+/**
+ * The longest game time between two pictures of a contact sheet, in ms.
+ */
+export const MAX_SHEET_EVERY_MS = 5000;
+
+/**
+ * The smallest `maxWidth` editor.capture and editor.sheet accept, in pixels.
  */
 export const MIN_MAX_WIDTH = 64;
 
 /**
- * The largest `maxWidth` editor.capture accepts, in pixels.
+ * The largest `maxWidth` editor.capture and editor.sheet accept, in pixels.
  */
 export const MAX_MAX_WIDTH = 4096;
 
@@ -78,6 +103,12 @@ export type Device = {
  * Value of `editor.capture`.
  */
 export type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
+
+/**
+ * Value of `editor.sheet`: the contact sheet (one PNG data URL), the frame of the last picture and
+ * the device.
+ */
+export type Sheet = { readonly image: string; readonly frame: number; readonly device: Device };
 
 /**
  * One shot of a series, tagged with its real frame and real time.
@@ -149,7 +180,7 @@ export type CaptureDeps = {
   readonly state: CaptureState;
   readonly log: Log.LogApi;
   readonly clock: CaptureClock;
-  /** Decodes a shot for the `maxWidth` downscale of editor.capture. */
+  /** Decodes a shot or a sheet for the `maxWidth` downscale of editor.capture and editor.sheet. */
   readonly decode: PictureDecoder;
 };
 
