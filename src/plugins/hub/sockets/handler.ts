@@ -51,8 +51,9 @@ function tryDecode(text: string): Message | undefined {
 }
 
 /**
- * Registers a new connection; a tools page gets `sessions {list}` at once, then every published
- * value. A socket that opens after stop is closed with 1001.
+ * Registers a new connection; a tools page (an editor page with `role=page` too) gets
+ * `sessions {list}` at once, then every published value. A socket that opens after stop is closed
+ * with 1001.
  *
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
@@ -75,6 +76,7 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
     kind,
     conn,
     socket: ws,
+    page: ws.data.page === true,
     subs: new Map(),
     pending: 0,
     congested: false,

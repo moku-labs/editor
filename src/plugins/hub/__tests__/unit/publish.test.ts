@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
+import type { SelectionInfo } from "../../../registry/protocol";
 import { createHubApi } from "../../api";
 import { createCtx, createHarness, fakeSocket, paramsOf } from "../helpers";
+
+/** An area selection: its readonly items keep it from being Json, so publish converts it. */
+const AREA: SelectionInfo = {
+  ref: { kind: "ui", path: "column#0/hudRow/coins" },
+  name: "area",
+  type: "area",
+  rect: { x: 0, y: 30, w: 200, h: 60 },
+  area: { x: 0, y: 30, w: 200, h: 60 },
+  items: [{ ref: { kind: "ui", path: "column#0/hudRow/coins" }, name: "coins", type: "text" }],
+  at: 1_790_000_000_000
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // hub.publish (R6): server state pushed to every tools page, kept, and replayed
@@ -82,5 +94,38 @@ describe("hub.publish", () => {
     const harness = createHarness();
     const tools = harness.connect("tools");
     expect(tools.messages()).toHaveLength(1);
+  });
+
+  it("sends a selection as plain Json, items included", () => {
+    const harness = createHarness();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    createHubApi(harness.ctx).publish("selection", AREA);
+
+    expect(paramsOf(tools.notes("editor", "selection")[0])).toEqual({
+      ref: { kind: "ui", path: "column#0/hudRow/coins" },
+      name: "area",
+      type: "area",
+      rect: { x: 0, y: 30, w: 200, h: 60 },
+      area: { x: 0, y: 30, w: 200, h: 60 },
+      items: [{ ref: { kind: "ui", path: "column#0/hudRow/coins" }, name: "coins", type: "text" }],
+      at: 1_790_000_000_000
+    });
+  });
+
+  it("sends a null selection as a notification without params, live and on replay", () => {
+    const harness = createHarness();
+    const api = createHubApi(harness.ctx);
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    api.publish("selection", null); // eslint-disable-line unicorn/no-null -- null: nothing is selected
+    const later = harness.connect("tools");
+
+    const cleared = { jsonrpc: "2.0", channel: "editor", method: "selection" };
+    expect(tools.notes("editor", "selection")).toEqual([cleared]);
+    expect(later.notes("editor", "selection")).toEqual([cleared]);
+    expect(harness.ctx.state.published.get("selection")).toBeNull();
   });
 });

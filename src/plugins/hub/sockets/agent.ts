@@ -226,7 +226,7 @@ export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): 
   if (session === undefined) return;
 
   if (isResponse(message)) {
-    settle(ctx, message, session.id);
+    settle(ctx, message, { kind: "agent", session: session.id });
   } else if (isRequest(message)) {
     const refused = wireError(errorCode.unauthorized, "agents cannot send requests", {
       reason: "unauthorized",

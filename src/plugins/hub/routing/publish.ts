@@ -1,25 +1,28 @@
 /**
  * @file hub plugin — server state pushed to the tools pages: `publish` sends an editor-channel
  * notification to every tools connection and keeps the last value per method; a tools connection
- * that opens later gets every kept value right after its `sessions {list}` (R6).
+ * that opens later gets every kept value right after its `sessions {list}` (R6). Values are kept
+ * through `toWireValue` (A5). A `null` value (nothing selected) goes out without params, since the
+ * wire refuses null params.
  */
-import type { HotReload, Json } from "../../registry/protocol";
-import { notification } from "../../registry/protocol";
+import type { Json, Notification, PublishParams } from "../../registry/protocol";
+import { notification, toWireValue } from "../../registry/protocol";
 import { sendJson, toolsConns } from "../sockets/send";
 import type { HubCtx, HubState, PublishMethod, ToolsConn } from "../types";
 
 /**
- * The params of a published `hotReload`: a fresh plain copy of the two fields.
+ * The editor-channel notification of a kept value; `null` is sent without params.
  *
- * @param state - The hot reload state.
- * @returns The Json params.
+ * @param method - The published method.
+ * @param value - Its kept value.
+ * @returns The notification.
  * @example
  * ```ts
- * hotReloadParams({ hmr: true, owner: "bin" }); // { hmr: true, owner: "bin" }
+ * publishedNote("selection", null); // { jsonrpc: "2.0", channel: "editor", method: "selection" }
  * ```
  */
-function hotReloadParams(state: HotReload): Json {
-  return { hmr: state.hmr, owner: state.owner };
+function publishedNote(method: PublishMethod, value: Json): Notification {
+  return value === null ? notification("editor", method) : notification("editor", method, value);
 }
 
 /**
@@ -30,11 +33,15 @@ function hotReloadParams(state: HotReload): Json {
  * @param method - The published method.
  * @param params - Its value.
  */
-export function publish(ctx: HubCtx, method: PublishMethod, params: HotReload): void {
-  const value = hotReloadParams(params);
+export function publish<M extends PublishMethod>(
+  ctx: HubCtx,
+  method: M,
+  params: PublishParams[M]
+): void {
+  const value = toWireValue(params);
   ctx.state.published.set(method, value);
 
-  const note = notification("editor", method, value);
+  const note = publishedNote(method, value);
   for (const conn of toolsConns(ctx.state)) sendJson(conn, note);
   ctx.log.debug("hub:published", { method });
 }
@@ -46,7 +53,5 @@ export function publish(ctx: HubCtx, method: PublishMethod, params: HotReload): 
  * @param conn - The tools connection that just opened.
  */
 export function replayPublished(state: HubState, conn: ToolsConn): void {
-  for (const [method, value] of state.published) {
-    sendJson(conn, notification("editor", method, value));
-  }
+  for (const [method, value] of state.published) sendJson(conn, publishedNote(method, value));
 }

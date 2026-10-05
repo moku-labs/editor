@@ -5,7 +5,7 @@ import type { HubConfig, HubState } from "./types";
 
 /**
  * Creates the initial hub state: empty maps, counters from 1, no token, not served, nothing
- * published.
+ * published, no selection page, no port yet.
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
@@ -24,6 +24,8 @@ export function createHubState(_ctx: { readonly config: Readonly<HubConfig> }): 
     nextCallId: 1,
     shared: new Map(),
     silentTimer: undefined,
-    published: new Map()
+    published: new Map(),
+    selectionConn: undefined,
+    editorPort: undefined
   };
 }

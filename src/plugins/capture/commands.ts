@@ -7,7 +7,10 @@ import type { Json, RunResult } from "../registry/protocol";
 import { checkInput, errorCode, wireError } from "../registry/protocol";
 import type { CommandEntry } from "../registry/types";
 import { readDevice } from "./device";
-import { checkMaxWidth, fitWidth } from "./scale";
+import { checkEncoding } from "./encoding";
+import { cropOf } from "./locate";
+import { renderPicture } from "./picture";
+import { checkMaxWidth } from "./scale";
 import { noPicture, planSeries, recordSeries, SERIES_ID, stopSeries } from "./series";
 import { checkSheet } from "./sheet";
 import { takeShot } from "./shot";
@@ -17,7 +20,13 @@ import { SHEET_ID, SHOT_ID, WARN_SHOTS } from "./types";
 /**
  * The input schema of editor.capture.
  */
-const CAPTURE_INPUT: { readonly maxWidth: "number?" } = { maxWidth: "number?" };
+const CAPTURE_INPUT: {
+  readonly maxWidth: "number?";
+  readonly key: "string?";
+  readonly rect: "json?";
+  readonly format: "string?";
+  readonly quality: "number?";
+} = { maxWidth: "number?", key: "string?", rect: "json?", format: "string?", quality: "number?" };
 
 /**
  * The input schema of editor.series.
@@ -34,11 +43,19 @@ const SHEET_INPUT: {
   readonly frames: "number";
   readonly everyMs: "number";
   readonly maxWidth: "number?";
-} = { frames: "number", everyMs: "number", maxWidth: "number?" };
+  readonly format: "string?";
+  readonly quality: "number?";
+} = {
+  frames: "number",
+  everyMs: "number",
+  maxWidth: "number?",
+  format: "string?",
+  quality: "number?"
+};
 
 /**
- * Builds the editor.capture entry: one screenshot with its frame and device, shrunk to
- * `maxWidth` when the picture is wider.
+ * Builds the editor.capture entry: one screenshot with its frame and device, cropped to `key` or
+ * `rect`, shrunk to `maxWidth` and encoded in `format` (JPEG 0.8 by default).
  *
  * @param registry - The registry slice.
  * @param deps - The picture decoder and the log.
@@ -48,19 +65,24 @@ function captureEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntr
   return {
     descriptor: { id: SHOT_ID, title: "Screenshot", input: CAPTURE_INPUT, effect: "read" },
     /**
-     * Checks the input, takes one shot, shrinks it to `maxWidth` when asked and tags it with its
-     * frame and the device.
+     * Checks the input and finds the crop before the door runs, takes one shot, renders it and
+     * tags it with its frame and the device.
      *
-     * @param raw - Raw input (`null`, `{}` or `{ maxWidth }`).
+     * @param raw - Raw input (`null`, `{}` or `{ maxWidth?, key?, rect?, format?, quality? }`).
      * @returns The shot and the state game.capture ran with.
      */
     run: async (raw: Json): Promise<RunResult> => {
-      const maxWidth = checkMaxWidth(checkInput(CAPTURE_INPUT, raw).maxWidth);
+      const input = checkInput(CAPTURE_INPUT, raw);
+      const maxWidth = checkMaxWidth(input.maxWidth);
+      const encoding = checkEncoding(input);
+      const crop = cropOf(input, registry);
+
       const shot = await takeShot(registry);
       const { state } = shot;
-      const image =
-        maxWidth === undefined ? shot.image : await fitWidth(shot.image, maxWidth, deps);
-      const value: Shot = { image, frame: state.frame, device: readDevice() };
+      const device = readDevice();
+      const request = { maxWidth, crop, ...encoding, deviceWidth: device.w };
+      const image = await renderPicture(shot.image, request, deps);
+      const value: Shot = { image, frame: state.frame, device };
 
       return { value, state };
     }
@@ -136,7 +158,8 @@ function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandE
 
 /**
  * Builds the editor.sheet entry: one game.capture `{ sheet }` (the frames laid out on one picture
- * by the game), shrunk to `maxWidth` in the page when the sheet is wider, so it travels small.
+ * by the game), shrunk to `maxWidth` and encoded in `format` (JPEG 0.8 by default) in the page, so
+ * it travels small.
  *
  * @param registry - The registry slice.
  * @param deps - The picture decoder and the log.
@@ -146,21 +169,24 @@ function sheetEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry 
   return {
     descriptor: { id: SHEET_ID, title: "Contact sheet", input: SHEET_INPUT, effect: "read" },
     /**
-     * Checks the input, runs game.capture `{ sheet }` once, shrinks the sheet to `maxWidth` when
-     * asked and tags it with the frame of the last picture and the device.
+     * Checks the input, runs game.capture `{ sheet }` once, renders the sheet and tags it with
+     * the frame of the last picture and the device.
      *
-     * @param raw - Raw input `{ frames, everyMs, maxWidth? }`.
+     * @param raw - Raw input `{ frames, everyMs, maxWidth?, format?, quality? }`.
      * @returns The sheet and the state game.capture ran with.
      */
     run: async (raw: Json): Promise<RunResult> => {
       const input = checkInput(SHEET_INPUT, raw);
       const sheet = checkSheet(input);
       const maxWidth = checkMaxWidth(input.maxWidth, SHEET_ID);
+      const encoding = checkEncoding(input, SHEET_ID);
+
       const shot = await takeShot(registry, { sheet }, SHEET_ID);
       const { state } = shot;
-      const image =
-        maxWidth === undefined ? shot.image : await fitWidth(shot.image, maxWidth, deps);
-      const value: Sheet = { image, frame: state.frame, device: readDevice() };
+      const device = readDevice();
+      const request = { maxWidth, crop: undefined, ...encoding, deviceWidth: device.w };
+      const image = await renderPicture(shot.image, request, deps);
+      const value: Sheet = { image, frame: state.frame, device };
 
       return { value, state };
     }
@@ -171,7 +197,7 @@ function sheetEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry 
  * Adds the four capture commands (ids, inputs, effects from contracts §3 and R2; editor.sheet from
  * the MCP change).
  *
- * @param registry - The registry slice (add, command, envelope).
+ * @param registry - The registry slice (add, command, source, envelope).
  * @param deps - Config, state, log, clock and the picture decoder.
  * @throws {Error} When an id is already in the registry.
  */

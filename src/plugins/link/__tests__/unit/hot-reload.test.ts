@@ -4,7 +4,16 @@ import { createLinkApi } from "../../api";
 import { stopLink } from "../../lifecycle";
 import { addHotReloadListener, requestHotReload } from "../../server/hot-reload";
 import { onSocketMessage } from "../../socket/messages";
-import { BOOT, connected, createCtx, FakeWebSocket, flush, type TestCtx } from "../helpers";
+import { HOT_RELOAD_CONFIRM_MS } from "../../types";
+import {
+  BOOT,
+  connected,
+  createCtx,
+  FakeWebSocket,
+  flush,
+  latestSocket,
+  type TestCtx
+} from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // link hot reload (R6): the hub's editor.hotReload notification is stored and
@@ -185,10 +194,13 @@ describe("setHotReload", () => {
     expect(calls).toEqual([]);
   });
 
-  it("answers false and warns when fetch fails, never rejecting", async () => {
+  it("answers false and warns when fetch fails and no reconnect follows, never rejecting", async () => {
     stubFetch(new Error("offline"));
-    await expect(requestHotReload(ctx, true)).resolves.toBe(false);
+    const asked = requestHotReload(ctx, true);
+    await vi.advanceTimersByTimeAsync(HOT_RELOAD_CONFIRM_MS);
+    await expect(asked).resolves.toBe(false);
     expect(ctx.log.warn).toHaveBeenCalledWith("link:hot-reload-failed", { hmr: true });
+    expect(ctx.state.hotReloadWaiters.size).toBe(0);
   });
 
   it("answers false for 401 and keeps the state for a body that is not a state", async () => {
@@ -205,5 +217,116 @@ describe("setHotReload", () => {
     await requestHotReload(ctx, true);
 
     expect(calls[0]?.url).toBe("http://127.0.0.1:3000/__editor/hmr");
+  });
+});
+
+/**
+ * Stubs fetch with a call the test fails by hand.
+ *
+ * @returns Fails the pending fetch like a dropped connection.
+ */
+function stubHangingFetch(): () => void {
+  const pending: { fail?: (error: Error) => void } = {};
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise<Response>((_resolve, reject) => {
+        pending.fail = reject;
+      })
+  );
+  return () => {
+    pending.fail?.(new TypeError("network connection was lost"));
+  };
+}
+
+/**
+ * Drops the socket and lets the reconnect open a new one.
+ *
+ * @param old - The open socket.
+ * @returns The new open socket.
+ */
+async function reconnectFrom(old: FakeWebSocket): Promise<FakeWebSocket> {
+  old.drop();
+  await vi.advanceTimersByTimeAsync(1000);
+  const next = latestSocket();
+  expect(next).not.toBe(old);
+  next.open();
+  return next;
+}
+
+describe("setHotReload across the server restart (A1)", () => {
+  it("a network failure answers true once the reconnect delivered the asked state", async () => {
+    socket.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+    const failFetch = stubHangingFetch();
+    const asked = requestHotReload(ctx, false);
+
+    socket.notify("editor", "hotReload", { hmr: false, owner: "bin" });
+    failFetch();
+    const next = await reconnectFrom(socket);
+    next.notify("editor", "hotReload", { hmr: false, owner: "bin" });
+
+    await expect(asked).resolves.toBe(true);
+    expect(ctx.state.hotReloadWaiters.size).toBe(0);
+  });
+
+  it("answers false when the reconnect delivered another state (the restart failed)", async () => {
+    socket.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+    const failFetch = stubHangingFetch();
+    const asked = requestHotReload(ctx, false);
+
+    failFetch();
+    await flush();
+    const next = await reconnectFrom(socket);
+    next.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+
+    await expect(asked).resolves.toBe(false);
+  });
+
+  it("does not take a state the old socket delivered as the confirmation", async () => {
+    stubFetch(new TypeError("network connection was lost"));
+    const asked = requestHotReload(ctx, false);
+    await flush();
+
+    socket.notify("editor", "hotReload", { hmr: false, owner: "bin" });
+    await vi.advanceTimersByTimeAsync(HOT_RELOAD_CONFIRM_MS - 1);
+    expect(ctx.state.hotReloadWaiters.size).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(asked).resolves.toBe(false);
+  });
+
+  it("answers at once when the reconnect delivered before the failed fetch settled", async () => {
+    const failFetch = stubHangingFetch();
+    const asked = requestHotReload(ctx, true);
+
+    const next = await reconnectFrom(socket);
+    next.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+    failFetch();
+
+    await expect(asked).resolves.toBe(true);
+  });
+
+  it("answers false when link stops during the wait", async () => {
+    stubFetch(new TypeError("network connection was lost"));
+    const asked = requestHotReload(ctx, true);
+    await flush();
+
+    stopLink(ctx);
+
+    await expect(asked).resolves.toBe(false);
+    expect(ctx.state.hotReloadWaiters.size).toBe(0);
+  });
+
+  it("a body cut off by the restart counts as a network failure", async () => {
+    const cut = new Response("{");
+    vi.spyOn(cut, "text").mockRejectedValue(new TypeError("body stream was cut"));
+    stubFetch(cut);
+    const asked = requestHotReload(ctx, true);
+    await flush();
+
+    const next = await reconnectFrom(socket);
+    next.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+
+    await expect(asked).resolves.toBe(true);
   });
 });

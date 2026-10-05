@@ -276,12 +276,12 @@ describe("hot reload", () => {
     expect(api.hotReload()).toEqual({ hmr: true, owner: "bin" });
   });
 
-  it("setHotReload asks link; a refusal toasts how to change it and resolves false", async () => {
+  it("setHotReload asks link; a failed switch toasts how to change it and resolves false", async () => {
     ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
     await expect(api.setHotReload(false)).resolves.toBe(false);
     expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
     expect(ctx.state.toasts.map(toast => toast.message)).toEqual([
-      "Start the bin with --no-hmr to turn hot reload off"
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
     ]);
   });
 

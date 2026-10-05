@@ -1,12 +1,12 @@
 /**
  * @file capture plugin — type definitions: config, constants, state, the command values, the
- * picture decoder seam, the registry slice, the domain deps and the plugin context. No app api (the surface is the
- * registry catalogue).
+ * picture decoder seam, the picture request, the registry slice, the domain deps and the plugin
+ * context. No app api (the surface is the registry catalogue).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { Require } from "../../config";
-import type { RunState } from "../registry/protocol";
-import type { CommandEntry } from "../registry/types";
+import type { RunState, SelectionRect } from "../registry/protocol";
+import type { CommandEntry, SourceEntry } from "../registry/types";
 
 /**
  * A plan above this many shots logs `capture:series-large` and still runs.
@@ -59,6 +59,27 @@ export const MIN_MAX_WIDTH = 64;
 export const MAX_MAX_WIDTH = 4096;
 
 /**
+ * The format editor.capture and editor.sheet encode when the input names none (D-34).
+ */
+export const DEFAULT_FORMAT: PictureFormat = "jpeg";
+
+/**
+ * The JPEG quality editor.capture and editor.sheet encode with when the input names none (D-34).
+ */
+export const DEFAULT_QUALITY = 0.8;
+
+/**
+ * The padding around a cropped element, in page CSS px (scaled to picture pixels).
+ */
+export const CROP_PADDING = 8;
+
+/**
+ * The sources an element's page rect is read from, newest first: `game.locate` on game 0.4,
+ * `game.rect` on game 0.1. Both take `{ key }` and answer `{ x, y, w, h }` in page CSS px, or null.
+ */
+export const RECT_SOURCE_IDS = ["game.locate", "game.rect"] as const;
+
+/**
  * Capture configuration.
  *
  * @example
@@ -105,7 +126,7 @@ export type Device = {
 export type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
 
 /**
- * Value of `editor.sheet`: the contact sheet (one PNG data URL), the frame of the last picture and
+ * Value of `editor.sheet`: the contact sheet (one JPEG or PNG data URL), the frame of the last picture and
  * the device.
  */
 export type Sheet = { readonly image: string; readonly frame: number; readonly device: Device };
@@ -147,13 +168,45 @@ export type CaptureClock = {
 };
 
 /**
- * A picture decoded in the page: its size in pixels, a way to draw it smaller and a way to free it.
+ * The format a picture is encoded in: `"jpeg"` (the default, D-34) or `"png"` (the old lossless path).
  */
-export type DecodedPicture = {
+export type PictureFormat = "jpeg" | "png";
+
+/**
+ * A size in picture pixels.
+ */
+export type PictureSize = { readonly width: number; readonly height: number };
+
+/**
+ * A rect in picture pixels (the crop of a decoded picture), whole numbers.
+ */
+export type PixelRect = {
+  readonly x: number;
+  readonly y: number;
   readonly width: number;
   readonly height: number;
-  /** Draws the picture at `width` × `height` and answers it as a PNG data URL. */
-  toPng(width: number, height: number): Promise<string>;
+};
+
+/**
+ * How to encode a decoded picture: the part to keep, the size to draw it at, the format and the
+ * JPEG quality.
+ */
+export type EncodeOptions = {
+  /** The part of the picture to draw; absent = the whole picture. */
+  readonly crop?: PixelRect;
+  /** The size of the encoded picture. */
+  readonly size: PictureSize;
+  readonly format: PictureFormat;
+  /** JPEG quality above 0 and at most 1; png ignores it. */
+  readonly quality: number;
+};
+
+/**
+ * A picture decoded in the page: its size in pixels, a way to encode it and a way to free it.
+ */
+export type DecodedPicture = PictureSize & {
+  /** Draws the crop (or the whole picture) at `size` and answers it as a data URL of the blob's type. */
+  encode(options: EncodeOptions): Promise<string>;
   /** Frees the decoded pixels. */
   close(): void;
 };
@@ -164,10 +217,32 @@ export type DecodedPicture = {
 export type PictureDecoder = (image: string) => Promise<DecodedPicture>;
 
 /**
+ * Where editor.capture crops: a rect in page CSS px and the input field it came from (named in
+ * its errors).
+ */
+export type CropRequest = { readonly rect: SelectionRect; readonly field: "key" | "rect" };
+
+/**
+ * What editor.capture and editor.sheet ask of the door's picture: crop, then downscale, then encode.
+ */
+export type PictureRequest = {
+  /** The widest picture wanted, undefined = no downscale. */
+  readonly maxWidth: number | undefined;
+  /** The part to keep, undefined = the whole picture. */
+  readonly crop: CropRequest | undefined;
+  readonly format: PictureFormat;
+  readonly quality: number;
+  /** The game page width in CSS px (`readDevice().w`); 0 when unknown. */
+  readonly deviceWidth: number;
+};
+
+/**
  * The registry members capture uses.
  */
 export type CaptureRegistry = {
   command(id: string): CommandEntry | undefined;
+  /** The rect source of a key (`game.locate` or `game.rect`), looked up at run time. */
+  source(id: string): SourceEntry | undefined;
   add(entry: CommandEntry): void;
   envelope(): RunState;
 };
@@ -180,7 +255,7 @@ export type CaptureDeps = {
   readonly state: CaptureState;
   readonly log: Log.LogApi;
   readonly clock: CaptureClock;
-  /** Decodes a shot or a sheet for the `maxWidth` downscale of editor.capture and editor.sheet. */
+  /** Decodes a shot or a sheet for the crop, the downscale and the encoding of editor.capture and editor.sheet. */
   readonly decode: PictureDecoder;
 };
 

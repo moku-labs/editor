@@ -39,12 +39,47 @@ export type PagesState = {
   routes: EditorRoutes;
   /** Hot reload: owner "server" with HMR off until the bin attaches its server (R6). */
   hot: HotReload;
+  /** The bin's serve options and restart (D-32), set by attachServer; undefined for a game's own server. */
+  served: ServedGame | undefined;
 };
 
 /**
- * The server the bin attaches: Bun's Server is one.
+ * The server the bin attaches: Bun's Server is one. Pages reads nothing of it; a Hot reload switch
+ * goes through the bin's restart, which reaches the current server (A9).
  */
-export type AttachedServer = { reload(options: BunServeOptions): void };
+export type AttachedServer = {
+  /** The real port, undefined for a unix socket. */
+  readonly port?: number | undefined;
+  /**
+   * Stops the server.
+   *
+   * @param closeActiveConnections - True closes the open connections at once.
+   * @returns Resolves once the server stopped.
+   */
+  stop(closeActiveConnections?: boolean): Promise<void>;
+};
+
+/**
+ * The bin's restart (D-32): stops its game server and serves these options on the same port. The
+ * hub keeps running, so its token stays. Rejects when the new server cannot start.
+ *
+ * @example
+ * ```ts
+ * const restart: RestartServer = next => game.restart(next);
+ * await restart({ ...options, development: { hmr: false, console: true } });
+ * ```
+ */
+export type RestartServer = (options: BunServeOptions) => Promise<void>;
+
+/**
+ * What pages keeps of the bin's server: its options and its restart.
+ */
+export type ServedGame = {
+  /** The options the server runs with; the asked ones from the moment a switch is accepted. */
+  readonly options: BunServeOptions;
+  /** The bin's restart; undefined when the server was attached without one (no switch then). */
+  readonly restart: RestartServer | undefined;
+};
 
 /**
  * The pages api (`app.pages`).
@@ -70,20 +105,22 @@ export type PagesApi = {
   /**
    * Tells pages that the moku-editor bin serves the game with these options: the bin owns hot
    * reload from now on, HMR is read from `options.development`, and the state goes to every tools
-   * page through `hub.publish("hotReload", …)`. The bin calls it right after `Bun.serve`.
+   * page through `hub.publish("hotReload", …)`. With `restart`, `setHotReload` can switch HMR by
+   * restarting the server (D-32). The bin calls it right after its first `Bun.serve`.
    *
    * @param server - The running server (Bun's Server).
    * @param options - The options it was started with (the result of `hub.serve`).
+   * @param restart - Stops the bin's current server and serves new options on the same port.
    * @example
    * ```ts
    * // The bin, after it started the game server.
    * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
-   * const server = Bun.serve(options);
-   * editor.pages.attachServer(server, options);
+   * const game = createGameServer(options);
+   * editor.pages.attachServer(game.current(), options, next => game.restart(next));
    * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
    * ```
    */
-  attachServer(server: AttachedServer, options: BunServeOptions): void;
+  attachServer(server: AttachedServer, options: BunServeOptions, restart?: RestartServer): void;
   /**
    * The hot reload state: whether Bun reloads the game page on a source change, and who owns the
    * server. A game's own `Bun.serve` (no `attachServer` call) is owner "server" with HMR off.
@@ -97,18 +134,21 @@ export type PagesApi = {
    */
   hotReload(): HotReload;
   /**
-   * Asks for Bun HMR on or off, and publishes the state. Bun 1.3.14 cannot switch HMR on a
-   * running server, so the switch is read-only: a game's own server always answers false, the
-   * bin answers true only when its HMR already equals `on`. Restart the bin to change hot reload.
+   * Asks for Bun HMR on or off, and publishes the state. Bun cannot switch HMR on a running
+   * server, so the bin's server restarts with HMR flipped on the same port (D-32): the asked state
+   * is set and published at once, and the restart runs after the answer went out (A1). A failed
+   * restart is logged, the old state is published again and the old options are served again. A
+   * game's own server always answers false; a bin attached without a restart answers true only
+   * when its HMR already equals `on`.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise
-   * (a game's own server always answers false).
+   * @returns True when the bin owns the server and its HMR equals `on` or is switching to it; false
+   * otherwise (a game's own server always answers false).
    * @example
    * ```ts
-   * // The bin serves with HMR on.
-   * await editor.pages.setHotReload(true); // true: already on
-   * await editor.pages.setHotReload(false); // false: Bun keeps HMR on until the bin restarts
+   * // The bin serves with HMR on; the tools page asks for it off.
+   * await editor.pages.setHotReload(false); // true: the server restarts without HMR
+   * editor.pages.hotReload(); // { hmr: false, owner: "bin" }
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;

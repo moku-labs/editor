@@ -5,7 +5,7 @@ import type { PagesConfig, PagesState } from "./types";
 
 /**
  * Creates the initial pages state: no page folder, no template, no routes, hot reload owned by
- * the server with HMR off.
+ * the server with HMR off, no bin server.
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
@@ -16,6 +16,7 @@ export function createPagesState(_ctx: { readonly config: Readonly<PagesConfig> 
     pageDir: undefined,
     template: undefined,
     routes: {},
-    hot: { hmr: false, owner: "server" }
+    hot: { hmr: false, owner: "server" },
+    served: undefined
   };
 }

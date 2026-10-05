@@ -10,8 +10,9 @@ import {
 import { createCtx, flush, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Hot reload switch (round 2 R6): the state comes from link.hotReload();
-// Bun cannot switch HMR live, so a refused change says how to change it
+// The Hot reload switch (round 2 R6, D-32): the state comes from
+// link.hotReload(); the bin switches by restarting its server; a refusal (a
+// game's own server) or a failed switch says how to change it
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -37,10 +38,10 @@ afterEach(() => {
 describe("refusalHint", () => {
   it("says how to change hot reload for each owner and direction", () => {
     expect(refusalHint({ hmr: true, owner: "bin" }, false)).toBe(
-      "Start the bin with --no-hmr to turn hot reload off"
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
     );
     expect(refusalHint({ hmr: false, owner: "bin" }, true)).toBe(
-      "Start the bin without --no-hmr to turn hot reload on"
+      "Could not switch · start the bin without --no-hmr to turn hot reload on"
     );
     expect(refusalHint({ hmr: false, owner: "server" }, true)).toBe(
       "The game's own server sets hot reload"
@@ -69,10 +70,10 @@ describe("hotReloadTitle", () => {
     expect(
       hotReloadTitle(
         { hmr: true, owner: "bin" },
-        "Start the bin with --no-hmr to turn hot reload off"
+        "Could not switch · start the bin with --no-hmr to turn hot reload off"
       )
     ).toBe(
-      "Hot reload (H): on · Bun reloads the game after a save and keeps its state · Start the bin with --no-hmr to turn hot reload off"
+      "Hot reload (H): on · Bun reloads the game after a save and keeps its state · Could not switch · start the bin with --no-hmr to turn hot reload off"
     );
   });
 });
@@ -86,12 +87,22 @@ describe("canSwitchHotReload", () => {
 });
 
 describe("setHotReload", () => {
-  it("a refusal keeps the hint for the title, toasts it and resolves false", async () => {
+  it("a failed switch keeps the hint for the title, toasts it and resolves false", async () => {
     ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
     await expect(setHotReload(ctx, false)).resolves.toBe(false);
     expect(ctx.link.setHotReload).toHaveBeenCalledWith(false);
-    expect(ctx.state.hotReloadNote).toBe("Start the bin with --no-hmr to turn hot reload off");
-    expect(toasts()).toEqual(["Start the bin with --no-hmr to turn hot reload off"]);
+    expect(ctx.state.hotReloadNote).toBe(
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
+    );
+    expect(toasts()).toEqual([
+      "Could not switch · start the bin with --no-hmr to turn hot reload off"
+    ]);
+  });
+
+  it("a game's own server's refusal toasts who sets hot reload", async () => {
+    ctx.link.hotReload.mockReturnValue({ hmr: false, owner: "server" });
+    await expect(setHotReload(ctx, true)).resolves.toBe(false);
+    expect(toasts()).toEqual(["The game's own server sets hot reload"]);
   });
 
   it("an accepted change clears the hint and toasts the state", async () => {

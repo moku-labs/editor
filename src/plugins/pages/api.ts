@@ -26,9 +26,10 @@ export function createPagesApi(ctx: PagesCtx): PagesApi {
 
   return {
     routes: () => ({ ...ctx.state.routes }),
-    // The server argument is not used: Bun cannot switch HMR through server.reload (README).
-    attachServer: (_server, options) => {
-      attachServer(hotDeps(), options);
+    // The server argument is not used: a switch goes through the bin's restart, which reaches
+    // its current server (A9).
+    attachServer: (_server, options, restart) => {
+      attachServer(hotDeps(), options, restart);
     },
     hotReload: () => hotReloadOf(ctx.state),
     setHotReload: on => setHotReload(hotDeps(), on)

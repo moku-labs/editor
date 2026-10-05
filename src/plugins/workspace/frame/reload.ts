@@ -10,6 +10,9 @@
  * waits up to `hotReloadWaitMs` for that new session and reloads the frame only when none came.
  * A session whose hello carries `restored` was restored by the bridge: no second restore, no
  * second pause.
+ *
+ * The Hot reload switch (D-32) takes the checkpoint itself before the bin restarts its server and
+ * hands it to `reloadFrame`, which then restores it instead of taking a new one.
  */
 import { linkPlugin } from "../../link";
 import type { LinkApi } from "../../link/types";
@@ -34,8 +37,13 @@ type Checkpoint = { readonly bookmark: Json; readonly paused: boolean };
 /**
  * The checkpoint taken before a reload, or the reason there is none (with the failure message of
  * a bookmark that failed, warned only when the checkpoint is needed).
+ *
+ * @example
+ * ```ts
+ * const taken: Taken = { checkpoint: { bookmark: { checkpoint: "home" }, paused: false }, reason: undefined };
+ * ```
  */
-type Taken = {
+export type Taken = {
   readonly checkpoint: Checkpoint | undefined;
   readonly reason: Reason | undefined;
   readonly failure?: string;
@@ -111,17 +119,20 @@ function hasCommand(manifest: Manifest, id: string): boolean {
 /**
  * Waits for the first manifest of this tab's own embedded frame after now; the immediate call of
  * an existing manifest, a lost session (undefined), a session outside the editor and the game
- * frame of another tools tab are skipped. Ends with undefined after the timeout or at stop.
+ * frame of another tools tab are skipped. Ends with undefined after the timeout, at stop, or when
+ * the signal aborts.
  *
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
  * @param timeoutMs - How long to wait.
- * @returns The new manifest, or undefined on timeout or stop.
+ * @param signal - Ends the wait early (the Hot reload switch when the server refused).
+ * @returns The new manifest, or undefined on timeout, stop or abort.
  */
-function nextManifest(
+export function nextManifest(
   ctx: WorkspaceCtx,
   link: LinkApi,
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<Manifest | undefined> {
   return new Promise(resolve => {
     // Listen first. `armed` skips the immediate call with the manifest that exists now.
@@ -131,25 +142,31 @@ function nextManifest(
     });
     armed = true;
 
-    // The wait also ends after the timeout, or at stop.
+    // The wait also ends after the timeout, at stop, or on abort.
     const timer = setTimeout(() => {
       finish();
     }, timeoutMs);
     const untrack = trackCleanup(ctx.state, () => {
       finish();
     });
+    const aborted = (): void => {
+      finish();
+    };
+    signal?.addEventListener("abort", aborted, { once: true });
 
     /**
-     * Ends the wait once: clears the timer, the listener and the stop cleanup.
+     * Ends the wait once: clears the timer, the listener, the stop cleanup and the abort listener.
      *
-     * @param manifest - The new manifest, omitted on timeout or stop.
+     * @param manifest - The new manifest, omitted on timeout, stop or abort.
      */
     const finish = (manifest?: Manifest): void => {
       clearTimeout(timer);
       off();
       untrack();
+      signal?.removeEventListener("abort", aborted);
       resolve(manifest);
     };
+    if (signal?.aborted) finish();
   });
 }
 
@@ -161,7 +178,7 @@ function nextManifest(
  * @param link - The link api.
  * @returns The checkpoint (or undefined) and the reason it is missing.
  */
-async function takeCheckpoint(ctx: WorkspaceCtx, link: LinkApi): Promise<Taken> {
+export async function takeCheckpoint(ctx: WorkspaceCtx, link: LinkApi): Promise<Taken> {
   const { kind } = ctx.state.link;
   if (kind !== "live" && kind !== "paused") return { checkpoint: undefined, reason: "no_session" };
 
@@ -312,12 +329,14 @@ function restoredByBridge(ctx: WorkspaceCtx, manifest: Manifest): ReloadResult {
  * @param ctx - Domain context of workspace.
  * @param iframe - The game frame.
  * @param opts - Restore and afterSave.
+ * @param taken - A checkpoint taken before the run, restored instead of a new one.
  * @returns The result.
  */
 async function runOnce(
   ctx: WorkspaceCtx,
   iframe: HTMLIFrameElement,
-  opts: ReloadOptions
+  opts: ReloadOptions,
+  taken: Taken | undefined
 ): Promise<ReloadResult> {
   // A game outside the editor is reloaded there, not here.
   const link = ctx.require(linkPlugin);
@@ -328,14 +347,14 @@ async function runOnce(
 
   // Bun may already be reloading the page after the save: listen first, then bookmark.
   const fromBun = bunReload(ctx, link, opts.afterSave === true);
-  const taking = opts.restore === true ? takeCheckpoint(ctx, link) : NOTHING_TAKEN;
+  const taking = taken ?? (opts.restore === true ? takeCheckpoint(ctx, link) : NOTHING_TAKEN);
   const reloaded = fromBun === undefined ? undefined : await fromBun;
   if (reloaded?.restored !== undefined) return restoredByBridge(ctx, reloaded);
 
   // The checkpoint is needed from here on: a failed bookmark is warned now.
-  const taken = await taking;
+  const checkpoint = await taking;
   if (ctx.state.stopped) return { ...TIMED_OUT };
-  warnTaken(ctx, taken);
+  warnTaken(ctx, checkpoint);
 
   // No session from Bun: reload the frame here and wait for this tab's new session.
   const manifest = reloaded ?? (await reloadHere(ctx, link, iframe));
@@ -348,26 +367,28 @@ async function runOnce(
 
   // The new session: the bridge restored it already, or workspace restores its checkpoint.
   if (manifest.restored !== undefined) return restoredByBridge(ctx, manifest);
-  return settle(ctx, link, manifest, taken);
+  return settle(ctx, link, manifest, checkpoint);
 }
 
 /**
  * Starts a run and records it as the pending one; when it ends and another call came in during
- * it, one more run starts with the same options.
+ * it, one more run starts with the same options (and takes its own checkpoint).
  *
  * @param ctx - Domain context of workspace.
  * @param iframe - The game frame.
  * @param opts - Restore and afterSave.
+ * @param taken - A checkpoint taken before the run, if any.
  * @returns The run's result.
  */
 function startRun(
   ctx: WorkspaceCtx,
   iframe: HTMLIFrameElement,
-  opts: ReloadOptions
+  opts: ReloadOptions,
+  taken: Taken | undefined
 ): Promise<ReloadResult> {
   const { frame } = ctx.state;
   const pending: PendingReload = {
-    promise: runOnce(ctx, iframe, opts).then(result => {
+    promise: runOnce(ctx, iframe, opts, taken).then(result => {
       if (frame.reload === pending) frame.reload = undefined;
       if (pending.again && !ctx.state.stopped) void reloadFrame(ctx, opts);
       return result;
@@ -385,9 +406,15 @@ function startRun(
  * @param ctx - Domain context of workspace.
  * @param opts - `restore: true` bookmarks first and restores after; `afterSave: true` lets Bun's
  * own reload (hot reload on) come first.
+ * @param taken - A checkpoint taken before (the Hot reload switch), restored instead of a new
+ * bookmark.
  * @returns The result; a call during a run shares that run's promise.
  */
-export function reloadFrame(ctx: WorkspaceCtx, opts: ReloadOptions): Promise<ReloadResult> {
+export function reloadFrame(
+  ctx: WorkspaceCtx,
+  opts: ReloadOptions,
+  taken?: Taken
+): Promise<ReloadResult> {
   const { iframe, reload } = ctx.state.frame;
   if (iframe === undefined) return Promise.resolve({ restored: false, reason: "not_mounted" });
 
@@ -395,5 +422,5 @@ export function reloadFrame(ctx: WorkspaceCtx, opts: ReloadOptions): Promise<Rel
     reload.again = true;
     return reload.promise;
   }
-  return startRun(ctx, iframe, opts);
+  return startRun(ctx, iframe, opts, taken);
 }

@@ -61,7 +61,7 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `reference` | `() => boolean` | Reference mode. Always `false` at load. Never persisted. |
 | `setReference` | `(on) => void` | Turns Reference mode on or off. Emits `workspace:reference` on a change. |
 | `hotReload` | `() => HotReload \| undefined` | link's `{ hmr, owner }`: whether Bun reloads the game after a save, and who owns the server. `undefined` until the hub reported it. |
-| `setHotReload` | `(on) => Promise<boolean>` | Asks the server through `link.setHotReload`. A refusal toasts how to change it and keeps that hint in the switch tooltip. Never rejects. |
+| `setHotReload` | `(on) => Promise<boolean>` | Asks the server through `link.setHotReload`. An accepted switch reloads the game frame with its state once the restarted server serves again (D-32). A refusal or a failed switch toasts how to change it and keeps that hint in the switch tooltip. Never rejects. |
 | `muted` | `() => boolean` | The sound flag (R11): `true` while the viewer muted the game. Persisted; `false` for a fresh viewer. |
 | `setMuted` | `(on) => void` | Sets and persists the sound flag; `onPrefs` listeners get the new `muted`. The same value again does nothing. gameView sends `game.mute`; workspace never touches the game. |
 | `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device or sound change with `{ theme, previews, device, muted }`. |
@@ -79,7 +79,7 @@ workspace.setDevice({ preset: "galaxy-z-fold-6", folded: false }); // the inner 
 workspace.setMuted(true); // persisted; onPrefs listeners get { …, muted: true }
 workspace.muted(); // true
 workspace.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
-await workspace.setHotReload(false); // false: "Start the bin with --no-hmr to turn hot reload off"
+await workspace.setHotReload(false); // true: the bin restarts without HMR; the game reloads with its state
 await workspace.gameFrame().reload({ restore: true });
 const remove = workspace.palette.add({ id: "cmd:capture", group: "Commands", label: "Take a screenshot", run });
 workspace.toast("Saved", "src/styles.ts");
@@ -253,14 +253,35 @@ A bookmark that fails because Bun's reload already took the page is warned only 
 needs it (steps 4 and 5). The palette's "Reload game" items never wait for Bun. A session that
 ends the D-07 wait with `restored` is not restored again either.
 
-### Hot reload (round 2 R6)
+### Hot reload (round 2 R6, D-32)
 
-The switch shows link's state: `hotReload()` is `{ hmr, owner }` from the hub. Only the bin owns
-it (`owner: "bin"`). Bun 1.3.14 cannot switch HMR on a running server (pages README, spike), so a
-change is refused and the switch says how to change it: the toast "Start the bin with --no-hmr to
-turn hot reload off" (or "…without --no-hmr to turn hot reload on"), and the same hint in its
-tooltip until the state changes. For a game's own server (`owner: "server"`) and before the hub
-reported the state, the switch is inert with its reason in the tooltip; key H toasts the reason.
+The switch shows link's state: `hotReload()` is `{ hmr, owner }` from the hub. It is a
+checkbox-style toggle: `role="switch"` with `aria-checked` in the wide bar, an icon with
+`aria-pressed` in the compact bar, a `menuitemcheckbox` row in the ⋯ menu. Only the bin owns it
+(`owner: "bin"`). The bin switches by restarting its server with HMR flipped (pages README, Hot
+reload), and the game page has to load again to gain or drop Bun's HMR client. A flip (click, ⋯
+row or key H) under the bin:
+
+1. Takes the checkpoint first: `game.bookmark`, and whether the game is paused. It also starts
+   waiting for this tab's game to connect again. The bin restarts its server right after it
+   answers, so both happen before the ask.
+2. Asks `link.setHotReload(on)`. An accepted switch toasts "Hot reload on" or "Hot reload off".
+3. Waits for this tab's game on the restarted server, at most `reloadTimeoutMs`. Then the server
+   serves again.
+4. Reloads the game frame with that checkpoint, as the D-07 reload does. The new session gets
+   `game.restore`, then `game.pause` when the game was paused. Toast "Game reloaded · state
+   restored from the last checkpoint".
+
+A game outside the editor is not waited for: its toast says "The game runs outside the editor ·
+reload it there". Asking for the value hot reload already has takes no checkpoint and reloads
+nothing.
+
+The hint shows only when nothing switched. A game's own server (`owner: "server"`): "The game's
+own server sets hot reload". A failed switch (the restart failed, or link saw no reconnect in
+time): "Could not switch · start the bin with --no-hmr to turn hot reload off" (or "…without
+--no-hmr to turn hot reload on"). The hint toasts and stays in the switch's tooltip until the
+state changes. For a game's own server and before the hub reported the state, the switch is inert
+with its reason in the tooltip; key H toasts the reason.
 
 A session that comes back with `manifest.restored` after an outside edit (an agent writing a file)
 toasts "Game reloaded · state restored" once per restore; workspace does not restore or pause it.

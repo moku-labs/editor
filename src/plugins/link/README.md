@@ -7,7 +7,9 @@ websocket to the hub and keeps the list of game sessions. It chooses one session
 choice first, then this page's own game frame, then the newest embedded one, then the newest.
 The game frame of another tools tab is attached only through `choose()`. It caches that session's manifest
 and exposes the remote `EditorChannel` that every panel reads through. It also carries the files
-client and derives the link status. It renders nothing.
+client and derives the link status. As the editor page (`role: "page"`), it publishes the editor
+selection to the hub and answers the `editor.select` requests the hub relays (D-33). It renders
+nothing.
 
 ## Configuration
 
@@ -15,6 +17,7 @@ client and derives the link status. It renders nothing.
 |---|---|---|---|
 | `retryMs` | `number` | `1000` | Base delay of the reconnect backoff: `min(retryMs × 2^n, 8000)`. |
 | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the JSON script tag `pages` injects. |
+| `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays `editor.select` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
 
 Fixed constants in `types.ts` (not config):
 
@@ -27,11 +30,12 @@ Fixed constants in `types.ts` (not config):
 | `EMPTY_AFTER_LOST_MS` | `10_000` | A lost session turns into `empty` when no session came back by then. |
 | `CALL_TIMEOUT_MS` | `10_000` | Local deadline of every request. |
 | `LONG_CALL_CAP_MS` | `60_000` | Cap of the long-call extension: `durationMs` of `editor.series`, `frames × everyMs` of `editor.sheet`. |
+| `HOT_RELOAD_CONFIRM_MS` | `10_000` | How long `setHotReload` waits for the reconnect after its POST failed on the network (A1). |
 
 ## API
 
 `app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap, hot
-reload and files.
+reload, the editor selection, the select handler and files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -52,7 +56,10 @@ reload and files.
 | `heap` | `() => { usedMb, limitMb } \| undefined` | A copy of the heap from the last heartbeat of the chosen session, in MB. `undefined` until the page reports one (only Chromium does), when its last beat had none, and after every attach or session loss. |
 | `hotReload` | `() => HotReload \| undefined` | A copy of `{ hmr, owner }` from the hub's `editor.hotReload` notification (R6). `undefined` until the hub sent one. Kept across reconnects. |
 | `onHotReload` | `(listener: (state: HotReload) => void) => () => void` | Called at once when the state is known, then on each change (the same state again is no change). Each listener gets the same frozen state. A throwing listener is logged as `link:hot-reload-listener-failed`. Returns an idempotent unsubscribe. |
-| `setHotReload` | `(on: boolean) => Promise<boolean>` | `POST {path}/hmr` on the page origin (the boot socket's http origin outside a page) with `{ hmr }` and `Authorization: Bearer <boot.token>`. Takes the state the server answers. True when the bin owns the server and its HMR already equals `on`; false otherwise: a change (the server answers 200 with the unchanged state, Bun cannot switch HMR live), a game's own server (`owner: "server"`), 401, no boot, or a network failure (`link:hot-reload-failed` warn). Never rejects. |
+| `setHotReload` | `(on: boolean) => Promise<boolean>` | `POST {path}/hmr` on the page origin (the boot socket's http origin outside a page) with `{ hmr }` and `Authorization: Bearer <boot.token>`. Takes the state the server answers. True when the bin owns the server and its HMR now equals `on`: the bin restarts its server for a change (D-32). False for a game's own server (`owner: "server"`), 401 or no boot. A network failure (the restart cut the answer off) is the warn `link:hot-reload-failed`; the call then waits up to 10 s for a `hotReload` state delivered on a new socket (the reconnect) and answers whether its `hmr` equals `on` (A1). A state the old socket delivered does not count. No reconnect in time, or `app.stop()`, answers false. Never rejects. |
+| `selection` | `() => SelectionInfo \| undefined` | A fresh copy of the selection from the hub's last `editor.selection` notification: this page's own publish echoed back, or another editor page tab's. `undefined` until the hub sent one, and when nothing is selected. A malformed one is the warn `link:bad-selection` and keeps the last value. |
+| `notify` | `(method: "selection", params: SelectionInfo \| null) => void` | Sends the editor-channel notification `selection` to the hub through `toWireValue`. `null` (nothing selected) goes out without params: the wire refuses null params. Dropped while the socket is closed. The last value, `null` included, is sent again each time a socket opens. The hub takes it only from a `role: "page"` link. A failed send is the warn `link:notify-failed`. A no-op after stop. |
+| `handle` | `(method: "select", handler: (params: SelectParams) => Promise<SelectionInfo>) => () => void` | Handles the editor-channel request `select` the hub relays to this page (MCP `moku_select`). The params are checked with `parseSelectParams`; missing params are `{}`. The handler's result goes back through `toWireValue` with the hub's id. A thrown error goes back through `toWireError` and is the warn `link:request-failed`. A later handler replaces an earlier one. Returns an idempotent remover that removes only its own handler. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`. No session needed. |
 
 ```ts
@@ -67,10 +74,14 @@ app.link.frameUrl("http://127.0.0.1:3000/"); // "http://127.0.0.1:3000/?__editor
 const offTaps = app.link.onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
 app.link.heap(); // { usedMb: 12.8, limitMb: 4095.8 } in Chromium, undefined elsewhere
 app.link.hotReload(); // { hmr: true, owner: "bin" } under the moku-editor bin
-await app.link.setHotReload(false); // false: restart the bin to change hot reload
+await app.link.setHotReload(false); // true: the bin restarted without HMR
+app.link.notify("selection", info); // the hub keeps it; MCP moku_selection answers it
+const offSelect = app.link.handle("select", params => selectByKey(params)); // MCP moku_select
+app.link.selection()?.key; // "coins"
 await app.link.files.write("docs/plan.md", text);
 app.link.retry();
 offTaps();
+offSelect();
 stop();
 ```
 
@@ -85,6 +96,14 @@ Every error is a wire error built with `wireError`. Its message starts with `[mo
 | -32002 | `timeout` | yes | No answer before the deadline. |
 | -32002 | `link_closed` | yes | Socket not open, socket closed, or `app.stop()`. |
 | any | from the hub | from the hub | The hub's error, rebuilt with its code and data. |
+
+Answers this page sends to the hub for an editor-channel request:
+
+| Code | `data.reason` | When |
+|---|---|---|
+| -32601 | none | No handler for the method (`select` without `handle`, or any other editor method). |
+| -32602 | `invalid_input` | The params are not SelectParams. The handler is not called. |
+| any | the handler's | The handler threw a wire error. A plain `Error` is -32000 `command_failed`. |
 
 ## Events
 
@@ -137,7 +156,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 | Phase | Does |
 |---|---|
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners, the notified values and the request handlers. |
 
 ## Integration notes
 
@@ -150,7 +169,10 @@ const off = link.onManifest(manifest => recheck(manifest));
 - A source id missing from the new manifest is skipped with the warn `link:source-missing`. The watch record stays for a later session.
 - A watch the session refuses with -32008 `not_installed` (the game does not have the source: the manifest lists it with `available: false`) logs only the debug line `link:source-unavailable` and is never sent to that session again. A new session gets it again. `readManifest` keeps `available: false` and `reason` on a source descriptor.
 - `readManifest` keeps `restored { bookmark, frame }` (set by the bridge in the first hello after it restored its checkpoint across Bun's full reload, R6) and drops a malformed one; the manifest stays.
-- Hot reload: the hub sends `editor.hotReload { hmr, owner }` after `sessions {list}` and on each change. A malformed one is the warn `link:bad-hot-reload`. workspace (wave 2a) shows the Hot reload switch from `hotReload()`/`onHotReload` and calls `setHotReload`.
+- Hot reload: the hub sends `editor.hotReload { hmr, owner }` after `sessions {list}` and on each change. A malformed one is the warn `link:bad-hot-reload`. workspace shows the Hot reload switch from `hotReload()`/`onHotReload`, calls `setHotReload` and confirms by `onHotReload`.
+- Hot reload switch (D-32, A1): the bin answers the POST, then restarts its server. The socket drops and link reconnects after `retryMs`; the hub replays `hotReload` on open. That replay settles a `setHotReload` whose answer the restart cut off.
+- Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
+- Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.
 - The token is never logged. The connect log line carries `boot.ws` without its query.

@@ -1,7 +1,10 @@
 /**
- * @file hub plugin — requests of a tools page connection: game-channel requests are checked
+ * @file hub plugin — messages of a tools page connection: game-channel requests are checked
  * (session, id in the manifest, input) before they are forwarded to the agent; files-channel
- * requests go to the files plugin. At most 256 pending calls per connection.
+ * requests go to the files plugin; editor-channel requests answer the kept selection or are
+ * relayed to the editor page. An editor page (`role=page`, D-33) also sends its `selection` and
+ * answers relayed calls; other notifications and responses are ignored. At most 256 pending calls
+ * per connection.
  */
 import { filesPlugin } from "../../files";
 import type {
@@ -9,6 +12,7 @@ import type {
   InputSchema,
   Json,
   Message,
+  Notification,
   Request as RpcRequest,
   SourceDescriptor,
   SubId
@@ -17,14 +21,18 @@ import {
   checkInput,
   errorCode,
   failure,
+  isNotification,
   isRequest,
+  isResponse,
+  parseSelectParams,
   success,
   toWireError,
   toWireValue,
   wireError
 } from "../../registry/protocol";
-import { discardReplies, forward } from "../routing/calls";
+import { discardReplies, forward, settle } from "../routing/calls";
 import { dispatchFiles } from "../routing/files";
+import { closePage, forwardToPage, receiveSelection } from "../routing/pages";
 import { chooseSession } from "../routing/sessions";
 import { dropToolsConn, unwatch, watch } from "../routing/subscriptions";
 import type { HubCtx, Session, ToolsConn } from "../types";
@@ -81,6 +89,23 @@ function unknownMethod(name: string): Error {
  */
 function invalidRequest(message: string): Error {
   return wireError(errorCode.invalidRequest, message, { retryable: false });
+}
+
+/**
+ * The -32602 error of `editor.select` params that do not fit SelectParams.
+ *
+ * @returns The error, ready to throw.
+ * @example
+ * ```ts
+ * throw invalidSelectParams();
+ * ```
+ */
+function invalidSelectParams(): Error {
+  return wireError(
+    errorCode.invalidInput,
+    "editor.select params must be { key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }",
+    { reason: "invalid_input", retryable: false }
+  );
 }
 
 /**
@@ -229,6 +254,39 @@ function routeFiles(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
 }
 
 /**
+ * An editor-channel request: `selection` answers the kept selection (`null` when none, never
+ * forwarded); `select` is checked and relayed to the editor page, whose answer comes back with
+ * the tools id.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The tools connection.
+ * @param req - The request.
+ * @throws {Error} A wire error for the response: -32602, -32003 `no_editor_page`, -32601.
+ */
+function routeEditor(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
+  switch (req.method) {
+    case "selection": {
+      checkInput(NO_PARAMS, req.params ?? {});
+      sendJson(conn, success(req.id, ctx.state.published.get("selection") ?? JSON_NULL));
+      return;
+    }
+    case "select": {
+      const params = parseSelectParams(req.params ?? {});
+      if (params === undefined) throw invalidSelectParams();
+      forwardToPage(ctx, req.method, toWireValue(params), {
+        kind: "tools",
+        conn: conn.conn,
+        toolsId: req.id
+      });
+      return;
+    }
+    default: {
+      throw unknownMethod(`editor.${req.method}`);
+    }
+  }
+}
+
+/**
  * Routes one request by channel.
  *
  * @param ctx - Domain context of the hub.
@@ -241,32 +299,54 @@ function route(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
 
   if (req.channel === "game") routeGame(ctx, conn, req);
   else if (req.channel === "files") routeFiles(ctx, conn, req);
-  else throw unknownMethod(`${req.channel}.${req.method}`);
+  else routeEditor(ctx, conn, req);
+}
+
+/**
+ * True for the editor-channel `selection` notification.
+ *
+ * @param message - A decoded message.
+ * @returns Whether it is the selection notification.
+ * @example
+ * ```ts
+ * isSelectionNote({ jsonrpc: "2.0", channel: "editor", method: "selection" }); // true
+ * ```
+ */
+function isSelectionNote(message: Message): message is Notification {
+  return isNotification(message) && message.channel === "editor" && message.method === "selection";
 }
 
 /**
  * One decoded message of a tools connection. Requests are answered (errors through
- * toWireError, never a stack); notifications and responses from tools are ignored.
+ * toWireError, never a stack). An editor page's responses settle the calls relayed to it and its
+ * `selection` is published; every other notification or response is ignored (debug log).
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param message - The decoded message.
  */
 export function onToolsMessage(ctx: HubCtx, conn: ToolsConn, message: Message): void {
-  if (!isRequest(message)) {
-    ctx.log.debug("hub:tools-ignored", { method: "method" in message ? message.method : "" });
+  if (isRequest(message)) {
+    try {
+      route(ctx, conn, message);
+    } catch (error) {
+      sendJson(conn, failure(message.id, toWireError(error)));
+    }
     return;
   }
 
-  try {
-    route(ctx, conn, message);
-  } catch (error) {
-    sendJson(conn, failure(message.id, toWireError(error)));
+  if (conn.page && isResponse(message)) {
+    settle(ctx, message, { kind: "page", conn: conn.conn });
+  } else if (conn.page && isSelectionNote(message)) {
+    receiveSelection(ctx, conn, message.params);
+  } else {
+    ctx.log.debug("hub:tools-ignored", { method: "method" in message ? message.method : "" });
   }
 }
 
 /**
- * The tools connection closed: its replies are discarded and its subscriptions dropped.
+ * The tools connection closed: its replies are discarded and its subscriptions dropped; an
+ * editor page also fails the calls relayed to it and may clear the selection.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
@@ -274,4 +354,5 @@ export function onToolsMessage(ctx: HubCtx, conn: ToolsConn, message: Message): 
 export function onToolsClose(ctx: HubCtx, conn: ToolsConn): void {
   discardReplies(ctx.state, conn.conn);
   dropToolsConn(ctx, conn);
+  if (conn.page) closePage(ctx, conn);
 }

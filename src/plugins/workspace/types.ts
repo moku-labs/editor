@@ -755,16 +755,19 @@ export type WorkspaceApi = {
   hotReload(): HotReload | undefined;
 
   /**
-   * Asks the server for hot reload on or off (`link.setHotReload`). A refusal toasts how to
-   * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
+   * Asks the server for hot reload on or off (`link.setHotReload`). The bin switches by restarting
+   * its server (D-32): workspace bookmarks the game first, toasts the new state, waits for this
+   * tab's game on the restarted server and reloads the game frame with that bookmark, so the page
+   * gains or drops Bun's HMR client. A refusal (a game's own server) or a failed switch toasts how
+   * to change hot reload and keeps that hint in the switch's tooltip.
    *
    * @param on - The asked value.
-   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * @returns True when the bin owns the server and its HMR now equals `on`; false otherwise.
    * Never rejects.
    * @example
    * ```ts
-   * // Bun cannot switch HMR on a running bin.
-   * await app.workspace.setHotReload(false); // false; toast "Start the bin with --no-hmr to turn hot reload off"
+   * // The bin serves with HMR on.
+   * await app.workspace.setHotReload(false); // true; toast "Hot reload off", then the game reloads with its state
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
@@ -933,7 +936,7 @@ export type WorkspaceState = {
   palette: { open: boolean; query: string; index: number; items: Map<string, PaletteItem> };
   keys: { bindings: KeyBindingEntry[]; escape: EscEntry[] };
   popover: "step" | "registry" | "session" | "more" | undefined;
-  /** How to change hot reload, after the server refused a change; shown in the switch title. */
+  /** How to change hot reload, after a refused or failed switch; shown in the switch title. */
   hotReloadNote: string | undefined;
   /** The last `manifest.restored` toasted (frame and bookmark), so each restore toasts once. */
   lastRestore: string | undefined;

@@ -1,0 +1,220 @@
+import type { Mock } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BunServeOptions } from "../../../hub/types";
+import { createGameServer, STOP_GRACE_MS } from "../../serve";
+import type { AttachedServer } from "../../types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The bin's game server (D-32, A9): one mutable current server; a restart stops
+// it (bounded) and serves the next options on the same port; stop and every
+// restart reach the current one, one after another.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A fake Bun server: the options it was served with, a port and a recorded stop. */
+type FakeServer = AttachedServer & {
+  readonly options: BunServeOptions;
+  readonly stop: Mock<(closeActiveConnections?: boolean) => Promise<void>>;
+};
+
+/** The real port the fake gives a server asked for port 0. */
+const REAL_PORT = 4321;
+
+/**
+ * Serve options with a port and a development value.
+ *
+ * @param port - The asked port.
+ * @param hmr - Bun HMR on or off.
+ * @returns The options.
+ */
+function optionsOf(port: number, hmr: boolean): BunServeOptions {
+  return { port, development: { hmr, console: true } } as unknown as BunServeOptions;
+}
+
+/**
+ * A fake serve function that records every server it starts.
+ *
+ * @returns The serve mock and the started servers.
+ */
+function fakeServe() {
+  const served: FakeServer[] = [];
+  const serve = vi.fn((options: BunServeOptions): FakeServer => {
+    const asked = Number(options.port);
+    const server: FakeServer = {
+      options,
+      port: asked === 0 ? REAL_PORT : asked,
+      stop: vi.fn(() => Promise.resolve())
+    };
+    served.push(server);
+    return server;
+  });
+  return { serve, served };
+}
+
+/**
+ * The server at an index, failing the test when it is missing.
+ *
+ * @param served - The started servers.
+ * @param index - Its index.
+ * @returns The server.
+ */
+function at(served: readonly FakeServer[], index: number): FakeServer {
+  const server = served[index];
+  if (server === undefined) throw new Error(`no server ${index}`);
+  return server;
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("createGameServer", () => {
+  it("serves the options once; that server is the current one", () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+
+    expect(serve).toHaveBeenCalledTimes(1);
+    expect(game.current()).toBe(at(served, 0));
+    expect(game.current().port).toBe(REAL_PORT);
+  });
+
+  it("lets a serve failure through (the bin reports the taken port)", () => {
+    const serve = vi.fn((): AttachedServer => {
+      throw new Error("Failed to start server. Is port 3000 in use?");
+    });
+    expect(() => createGameServer(optionsOf(3000, true), serve)).toThrow("in use");
+  });
+});
+
+describe("restart", () => {
+  it("stops the current server with force, then serves the next options on its real port", async () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+
+    await game.restart(optionsOf(0, false));
+
+    expect(at(served, 0).stop).toHaveBeenCalledWith(true);
+    expect(serve).toHaveBeenCalledTimes(2);
+    expect(at(served, 1).options).toEqual(optionsOf(REAL_PORT, false));
+    expect(game.current()).toBe(at(served, 1));
+    expect(at(served, 0).stop.mock.invocationCallOrder[0]).toBeLessThan(
+      serve.mock.invocationCallOrder[1] ?? 0
+    );
+  });
+
+  it("serves the next options as they are when the server has no port (a unix socket)", async () => {
+    const served: BunServeOptions[] = [];
+    const serve = vi.fn((options: BunServeOptions): AttachedServer => {
+      served.push(options);
+      return { stop: () => Promise.resolve() };
+    });
+    const game = createGameServer(optionsOf(0, true), serve);
+
+    await game.restart(optionsOf(0, false));
+    expect(served).toEqual([optionsOf(0, true), optionsOf(0, false)]);
+  });
+
+  it("gives up on a stop that does not resolve after STOP_GRACE_MS, then serves", async () => {
+    vi.useFakeTimers();
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+    at(served, 0).stop.mockReturnValue(
+      new Promise(() => {
+        // Bun's stop while a close is in flight: never resolves.
+      })
+    );
+
+    const restarted = game.restart(optionsOf(0, false));
+    await vi.advanceTimersByTimeAsync(STOP_GRACE_MS - 1);
+    expect(serve).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await restarted;
+    expect(serve).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects when the next serve fails; the stopped server stays the current one", async () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+    serve.mockImplementationOnce(() => {
+      throw new Error("port 4321 is in use");
+    });
+
+    await expect(game.restart(optionsOf(0, false))).rejects.toThrow("port 4321 is in use");
+    expect(game.current()).toBe(at(served, 0));
+
+    await game.restart(optionsOf(0, true));
+    expect(at(served, 1).options).toEqual(optionsOf(REAL_PORT, true));
+    expect(game.current()).toBe(at(served, 1));
+  });
+
+  it("runs restarts one after another: the second stops the server the first served", async () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+    const stopping = Promise.withResolvers<void>();
+    at(served, 0).stop.mockReturnValue(stopping.promise);
+
+    const first = game.restart(optionsOf(0, false));
+    const second = game.restart(optionsOf(0, true));
+    await Promise.resolve();
+    expect(serve).toHaveBeenCalledTimes(1);
+
+    stopping.resolve();
+    await Promise.all([first, second]);
+    expect(served.map(server => server.options)).toEqual([
+      optionsOf(0, true),
+      optionsOf(REAL_PORT, false),
+      optionsOf(REAL_PORT, true)
+    ]);
+    expect(at(served, 1).stop).toHaveBeenCalledWith(true);
+    expect(game.current()).toBe(at(served, 2));
+  });
+});
+
+describe("stop", () => {
+  it("stops the current server: the restarted one, not the first", async () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+    await game.restart(optionsOf(0, false));
+
+    await game.stop();
+
+    expect(at(served, 0).stop).toHaveBeenCalledTimes(1);
+    expect(at(served, 1).stop).toHaveBeenCalledWith(true);
+  });
+
+  it("waits for a restart under way, then stops the server it served", async () => {
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+
+    const restarted = game.restart(optionsOf(0, false));
+    await game.stop();
+    await restarted;
+
+    expect(at(served, 1).stop).toHaveBeenCalledWith(true);
+  });
+
+  it("is bounded by STOP_GRACE_MS", async () => {
+    vi.useFakeTimers();
+    const { serve, served } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+    at(served, 0).stop.mockReturnValue(
+      new Promise(() => {
+        // Never resolves.
+      })
+    );
+
+    const stopped = vi.fn();
+    game.stop().then(stopped, stopped);
+    await vi.advanceTimersByTimeAsync(STOP_GRACE_MS);
+    expect(stopped).toHaveBeenCalledTimes(1);
+  });
+
+  it("a restart after stop serves nothing", async () => {
+    const { serve } = fakeServe();
+    const game = createGameServer(optionsOf(0, true), serve);
+
+    await game.stop();
+    await game.restart(optionsOf(0, false));
+
+    expect(serve).toHaveBeenCalledTimes(1);
+  });
+});

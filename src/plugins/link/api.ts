@@ -1,9 +1,11 @@
 /**
  * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
- * the frame id helpers, taps, the page heap, hot reload and the files client, composed from the
- * sub-modules.
+ * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and select
+ * handler, and the files client, composed from the sub-modules.
  */
 import { createFilesClient } from "./files/client";
+import { addHandler } from "./page/requests";
+import { currentSelection, notifyEditor } from "./page/selection";
 import { gameRequest } from "./rpc/calls";
 import { expectShape, readRunResult } from "./rpc/shapes";
 import { addHotReloadListener, requestHotReload } from "./server/hot-reload";
@@ -68,6 +70,14 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
     onHotReload: listener => addHotReloadListener(ctx, listener),
 
     setHotReload: on => requestHotReload(ctx, on),
+
+    selection: () => currentSelection(state),
+
+    notify: (method, params) => {
+      notifyEditor(ctx, method, params);
+    },
+
+    handle: (method, handler) => addHandler(ctx, method, handler),
 
     files: createFilesClient(ctx)
   };

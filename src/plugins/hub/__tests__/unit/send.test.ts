@@ -17,6 +17,7 @@ function toolsConn(): { conn: ToolsConn; socket: FakeSocket } {
     kind: "tools",
     conn: 1,
     socket,
+    page: false,
     subs: new Map(),
     pending: 0,
     congested: false,

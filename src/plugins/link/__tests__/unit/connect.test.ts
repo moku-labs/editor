@@ -86,12 +86,14 @@ describe("bootOrigin", () => {
 });
 
 describe("openSocket", () => {
-  it("opens {ws}?token=…&kind=tools with the boot page origin outside a browser", () => {
+  it("opens {ws}?token=…&kind=tools&role=page with the boot page origin outside a browser", () => {
     ctx.state.boot = BOOT;
     openSocket(ctx);
 
     const socket = latestSocket();
-    expect(socket.url).toBe("ws://127.0.0.1:3000/__editor/ws?token=secret-token-1&kind=tools");
+    expect(socket.url).toBe(
+      "ws://127.0.0.1:3000/__editor/ws?token=secret-token-1&kind=tools&role=page"
+    );
     expect(socket.extra).toEqual([{ headers: { origin: "http://127.0.0.1:3000" } }]);
     expect(ctx.state.socket).toBe(socket);
   });

@@ -73,6 +73,48 @@ async function runBin(args: string[]): Promise<{ code: number; output: string }>
   return { code: await child.exited, output: out + error };
 }
 
+/** The script path Bun's HMR client is served from: in the game HTML only while hot reload is on. */
+const HMR_CLIENT = "/_bun/client";
+
+/**
+ * POSTs a hot reload change to a running bin.
+ *
+ * @param origin - The bin's origin.
+ * @param token - The boot token.
+ * @param hmr - The asked value.
+ * @returns The response.
+ */
+function postHmr(origin: string, token: string, hmr: boolean): Promise<Response> {
+  return fetch(`${origin}/__editor/hmr`, {
+    method: "POST",
+    headers: { origin, authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ hmr })
+  });
+}
+
+/**
+ * Reads the game page until it carries Bun's HMR client or not, as asked; requests that fail
+ * while the server restarts are tried again.
+ *
+ * @param origin - The bin's origin.
+ * @param hmr - Whether the page should carry the HMR client.
+ * @returns The last page text.
+ */
+async function gamePageWith(origin: string, hmr: boolean): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  let html = "";
+  while (Date.now() < deadline) {
+    try {
+      html = await fetch(`${origin}/`).then(response => response.text());
+      if (html.includes(HMR_CLIENT) === hmr) return html;
+    } catch {
+      // The server is between its stop and its next serve.
+    }
+    await Bun.sleep(50);
+  }
+  return html;
+}
+
 let game: string;
 
 beforeAll(async () => {
@@ -139,6 +181,34 @@ describe("moku-editor bin", () => {
     expect(await bin.child.exited).toBe(0);
     expect(bin.output()).toContain("stopped");
     expect(existsSync(join(game, ".moku", "editor.json"))).toBe(false);
+  }, 60_000);
+
+  it("switches hot reload on the same port: each POST answers the asked hmr, / gains and loses Bun's HMR client (D-32, A14)", async () => {
+    const bin = await spawnBin([join(game, "index.html"), "--port", "0", "--root", game]);
+    try {
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const { token } = await hello.json();
+      expect(await gamePageWith(origin, true)).toContain(HMR_CLIENT);
+
+      for (const hmr of [false, true]) {
+        const answer = await postHmr(origin, token, hmr);
+        expect(answer.status).toBe(200);
+        expect(await answer.json()).toEqual({ hmr, owner: "bin" });
+        const html = await gamePageWith(origin, hmr);
+        expect(html).toContain('id="tiny"');
+        expect(html.includes(HMR_CLIENT)).toBe(hmr);
+      }
+
+      const again = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const helloAgain: { token: string } = await again.json();
+      expect(helloAgain.token).toBe(token);
+      const discovery = JSON.parse(await readFile(join(game, ".moku", "editor.json"), "utf8"));
+      expect(discovery).toMatchObject({ port: bin.port, token });
+    } finally {
+      bin.child.kill("SIGINT");
+    }
+    expect(await bin.child.exited).toBe(0);
   }, 60_000);
 
   it("writes .moku/editor.json 0600 and removes it on SIGTERM (M3)", async () => {

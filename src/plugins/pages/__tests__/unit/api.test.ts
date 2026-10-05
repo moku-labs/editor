@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { Require } from "../../../../config";
 import { createApp } from "../../../../server";
 import type { EditorRoutes } from "../../../hub/types";
@@ -49,21 +49,39 @@ describe("createPagesApi hot reload", () => {
 
   it("attachServer() makes the bin the owner and publishes the state through the hub", () => {
     const { api, harness } = apiWithHub();
-    const server = { reload: () => undefined };
+    const server = { port: 4000, stop: () => Promise.resolve() };
     api.attachServer(server, { development: { hmr: true, console: true } } as never);
 
     expect(api.hotReload()).toEqual({ hmr: true, owner: "bin" });
     expect(harness.hub.publish).toHaveBeenCalledWith("hotReload", { hmr: true, owner: "bin" });
   });
 
-  it("setHotReload() keeps Bun's value and answers whether it is the asked one", async () => {
+  it("setHotReload() without the bin's restart keeps Bun's value and answers whether it is the asked one", async () => {
     const { api, harness } = apiWithHub();
-    api.attachServer({ reload: () => undefined }, { development: { hmr: true } } as never);
+    api.attachServer({ stop: () => Promise.resolve() }, { development: { hmr: true } } as never);
 
     await expect(api.setHotReload(true)).resolves.toBe(true);
     await expect(api.setHotReload(false)).resolves.toBe(false);
     expect(api.hotReload().hmr).toBe(true);
     expect(harness.hub.publish).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("createPagesApi hot reload switch (D-32)", () => {
+  it("attachServer() keeps the bin's restart: setHotReload() switches through it", async () => {
+    const { api } = apiWithHub();
+    const restart = vi.fn(() => Promise.resolve());
+    api.attachServer(
+      { port: 4000, stop: () => Promise.resolve() },
+      { development: { hmr: true, console: true } } as never,
+      restart
+    );
+
+    await expect(api.setHotReload(false)).resolves.toBe(true);
+    expect(api.hotReload()).toEqual({ hmr: false, owner: "bin" });
+    await vi.waitFor(() =>
+      expect(restart).toHaveBeenCalledWith({ development: { hmr: false, console: true } })
+    );
   });
 });
 

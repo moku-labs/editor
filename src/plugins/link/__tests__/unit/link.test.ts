@@ -10,7 +10,11 @@ import { sessionOf } from "../helpers";
 describe("linkPlugin", () => {
   it("is named link and has exactly the contract config", () => {
     expect(linkPlugin.name).toBe("link");
-    expect(linkPlugin.spec.config).toEqual({ retryMs: 1000, boot: "#moku-editor-boot" });
+    expect(linkPlugin.spec.config).toEqual({
+      retryMs: 1000,
+      boot: "#moku-editor-boot",
+      role: "page"
+    });
   });
 
   it("declares no depends and no plugin events", () => {
@@ -21,7 +25,7 @@ describe("linkPlugin", () => {
 
 describe("createLinkState", () => {
   it("starts connecting with nothing attached and ids from 1", () => {
-    const state = createLinkState({ config: { retryMs: 1000, boot: "#b" } });
+    const state = createLinkState({ config: { retryMs: 1000, boot: "#b", role: "page" } });
 
     expect(state.status).toEqual({ kind: "connecting" });
     expect(state.boot).toBeUndefined();
@@ -45,15 +49,19 @@ describe("createLinkState", () => {
     expect(state.retryTimer).toBeUndefined();
     expect(state.silenceTimer).toBeUndefined();
     expect(state.stopped).toBe(false);
+    expect(state.selection).toBeUndefined();
+    expect(state.notified.size).toBe(0);
+    expect(state.handlers.size).toBe(0);
+    expect(state.hotReloadWaiters.size).toBe(0);
   });
 
   it("returns a fresh state each time", () => {
-    const config = { retryMs: 1000, boot: "#b" };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const };
     expect(createLinkState({ config }).pending).not.toBe(createLinkState({ config }).pending);
   });
 
   it("makes one random frame id per state", () => {
-    const config = { retryMs: 1000, boot: "#b" };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const };
     const state = createLinkState({ config });
     expect(state.frame).toMatch(/^[\da-f]{12}$/);
     expect(createLinkState({ config }).frame).not.toBe(state.frame);
@@ -62,7 +70,7 @@ describe("createLinkState", () => {
 
 describe("isAttached", () => {
   it("is true only with an open socket and the chosen id in the current list", () => {
-    const state = createLinkState({ config: { retryMs: 1000, boot: "#b" } });
+    const state = createLinkState({ config: { retryMs: 1000, boot: "#b", role: "page" } });
     expect(isAttached(state)).toBe(false);
 
     state.open = true;

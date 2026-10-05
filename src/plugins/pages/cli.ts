@@ -1,10 +1,10 @@
 /**
  * @file pages plugin — the moku-editor bin program: parse arguments, import the game HTML at run
- * time, start the server core, Bun.serve(hub.serve(...)) with Bun HMR on (off with `--no-hmr`), attach the server to
- * pages (hot reload), write the discovery file `.moku/editor.json` (removed on stop and exit),
- * print the URLs through the branded console (MC1). `mcp` runs the stdio MCP bridge (`mcp/`,
- * stdout for protocol frames only); `mcp-config` prints the Claude Code setup. The token is never
- * printed.
+ * time, start the server core, serve hub.serve(...) as the game server (`serve.ts`) with Bun HMR
+ * on (off with `--no-hmr`), attach it to pages with its restart (the Hot reload switch, D-32),
+ * write the discovery file `.moku/editor.json` (removed on stop and exit), print the URLs through
+ * the branded console (MC1). `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames
+ * only); `mcp-config` prints the Claude Code setup. The token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -16,6 +16,8 @@ import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
+import type { GameServer } from "./serve";
+import { createGameServer } from "./serve";
 import { createStaticFetch } from "./static";
 import type { McpConfigArgs, RunArgs } from "./types";
 
@@ -32,12 +34,6 @@ const USAGE = [
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)"
 ];
-
-/**
- * How long stop waits for Bun's server stop before it gives up (it does not resolve while a
- * close is in flight).
- */
-const STOP_GRACE_MS = 500;
 
 /**
  * A module loaded from the game HTML file (a Bun HTML import: its default export is the bundle).
@@ -235,23 +231,19 @@ function writeDiscoveryFile(
 
 /**
  * The stop function of a serving bin: the discovery file goes first, then the editor (it closes
- * its sockets), then the server, bounded (Bun's stop does not resolve while a close is in flight).
+ * its sockets), then the current game server, bounded (Bun's stop does not resolve while a close
+ * is in flight).
  *
  * @param editor - The started editor.
- * @param server - The Bun server.
- * @param server.stop - Bun's stop.
+ * @param game - The game server (the current one after any Hot reload restart).
  * @param release - Removes the discovery file.
  * @returns The stop function.
  */
-function stopper(
-  editor: EditorApp,
-  server: { stop(force?: boolean): Promise<void> },
-  release: () => void
-): () => Promise<void> {
+function stopper(editor: EditorApp, game: GameServer, release: () => void): () => Promise<void> {
   return async function stop(): Promise<void> {
     release();
     await editor.stop();
-    await Promise.race([server.stop(true), Bun.sleep(STOP_GRACE_MS)]);
+    await game.stop();
   };
 }
 
@@ -283,7 +275,7 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
   const editor = await startEditor(rootPath, ui);
   if (editor === undefined) return { code: 1 };
 
-  let server: ReturnType<typeof Bun.serve>;
+  let game: GameServer;
   let options: ReturnType<typeof editor.hub.serve>;
   try {
     options = editor.hub.serve({
@@ -294,7 +286,7 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
       routes: { "/": bundle },
       fetch: createStaticFetch(rootPath, editor.hub.guard)
     });
-    server = Bun.serve(options);
+    game = createGameServer(options);
   } catch (error) {
     const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
     const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
@@ -303,11 +295,12 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
     return { code: 1 };
   }
 
-  editor.pages.attachServer(server, options);
-  const port = server.port ?? args.port;
+  // The Hot reload switch restarts the game server on the same port (D-32); the hub keeps its token.
+  editor.pages.attachServer(game.current(), options, next => game.restart(next));
+  const port = game.current().port ?? args.port;
   const release = writeDiscoveryFile(editor, port, { rootPath, htmlPath }, ui);
   printServing(ui, port, editor.hub.path(), rootPath);
-  return { code: 0, stop: stopper(editor, server, release) };
+  return { code: 0, stop: stopper(editor, game, release) };
 }
 
 /**

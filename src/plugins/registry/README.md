@@ -237,6 +237,8 @@ Editor-channel methods:
 | request | `selection` | `{}` | `SelectionInfo \| null` | tools to hub |
 | request | `select` | `SelectParams` | `SelectionInfo` | tools to hub, hub to the editor page |
 
+A null selection travels as a `selection` notification without params.
+
 Errors of the selection relay:
 
 | Reason | Code | `errorCode` | Retryable | When |

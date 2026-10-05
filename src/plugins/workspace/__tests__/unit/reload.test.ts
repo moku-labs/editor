@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
 import { createGameFrame, gameUrl, taggedGameUrl } from "../../frame/frame";
-import { reloadFrame } from "../../frame/reload";
+import type { Taken } from "../../frame/reload";
+import { nextManifest, reloadFrame } from "../../frame/reload";
 import { RESTORED_TOAST } from "../../frame/restored";
 import { createCtx, flush, manifestOf, resultOf, type TestCtx, tagged } from "../helpers";
 
@@ -443,5 +444,62 @@ describe("reloadFrame after a save with Bun hot reload on (round 2 R6)", () => {
     await flush();
     expect(ctx.state.frame.reload).toBeDefined();
     expect(srcWrites).toEqual([]);
+  });
+});
+
+describe("reloadFrame with a checkpoint taken before (the Hot reload switch, D-32)", () => {
+  const COMMANDS = ["game.bookmark", "game.restore"];
+  const TAKEN: Taken = {
+    checkpoint: { bookmark: { checkpoint: "before" }, paused: false },
+    reason: undefined
+  };
+
+  it("restores that checkpoint and takes no new bookmark", async () => {
+    const pending = reloadFrame(ctx, { restore: true }, TAKEN);
+    await flush();
+    expect(srcWrites).toHaveLength(1);
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.restore"]);
+    expect(ctx.link.run).toHaveBeenCalledWith("game.restore", {
+      bookmark: { checkpoint: "before" }
+    });
+  });
+
+  it("the run a call made during it starts takes its own bookmark", async () => {
+    const first = reloadFrame(ctx, { restore: true }, TAKEN);
+    void reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(COMMANDS));
+    await first;
+    await flush();
+    expect(ranIds()).toEqual(["game.restore", "game.bookmark"]);
+  });
+});
+
+describe("nextManifest", () => {
+  it("resolves with this tab's next embedded manifest, not the one there now", async () => {
+    const next = nextManifest(ctx, ctx.link, 15_000);
+    const settled = settledOf(next);
+    await flush();
+    expect(settled()).toBe(false);
+    const manifest = manifestOf(["game.restore"]);
+    ctx.link.attach(manifest);
+    await expect(next).resolves.toBe(manifest);
+  });
+
+  it("ends with undefined when its signal aborts, and stops listening", async () => {
+    const cancel = new AbortController();
+    const next = nextManifest(ctx, ctx.link, 15_000, cancel.signal);
+    cancel.abort();
+    await expect(next).resolves.toBeUndefined();
+    expect(ctx.link.manifestListeners.size).toBe(0);
+  });
+
+  it("an aborted signal ends it at once", async () => {
+    const cancel = new AbortController();
+    cancel.abort();
+    await expect(nextManifest(ctx, ctx.link, 15_000, cancel.signal)).resolves.toBeUndefined();
+    expect(ctx.link.manifestListeners.size).toBe(0);
   });
 });
