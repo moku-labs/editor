@@ -11,7 +11,7 @@
  * its fake clock, maps to the checkout's source: the built testing bundle carries the
  * playwright-core loader, which a browser bundle cannot hold.
  *
- * The fixture page of game v0.4.3 also imports `@moku-labs/system` and `@moku-labs/native`, which
+ * The fixture page of game v0.4.4 also imports `@moku-labs/system` and `@moku-labs/native`, which
  * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
  *

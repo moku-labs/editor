@@ -76,13 +76,13 @@ test.describe("top bar", () => {
         /session s-[0-9a-f]{4}/
       );
       const registry = await barControl(page, "registry");
-      await expect(registry.locator("[data-part=state]")).toHaveText("19 · 20");
+      await expect(registry.locator("[data-part=state]")).toHaveText("20 · 23");
       await closeMore(page);
     } else {
       await expect(bar.locator("[data-ui=session-chip] button")).toHaveText(/^s-[0-9a-f]{4}$/);
       await expect(bar.locator("[data-action=registry]")).toHaveAttribute(
         "title",
-        "Registry · 19 sources · 20 commands"
+        "Registry · 20 sources · 23 commands"
       );
     }
     expect(await barChecked(page, "game")).toBe(true);
