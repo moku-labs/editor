@@ -1,6 +1,6 @@
 /**
  * @file capture plugin — type definitions: config, constants, state, the command values, the
- * registry slice, the domain deps and the plugin context. No app api (the surface is the
+ * picture decoder seam, the registry slice, the domain deps and the plugin context. No app api (the surface is the
  * registry catalogue).
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -17,6 +17,21 @@ export const WARN_SHOTS = 200;
  * The door command every shot runs.
  */
 export const CAPTURE_ID = "game.capture";
+
+/**
+ * The id of the one-shot command, named in its errors.
+ */
+export const SHOT_ID = "editor.capture";
+
+/**
+ * The smallest `maxWidth` editor.capture accepts, in pixels.
+ */
+export const MIN_MAX_WIDTH = 64;
+
+/**
+ * The largest `maxWidth` editor.capture accepts, in pixels.
+ */
+export const MAX_MAX_WIDTH = 4096;
 
 /**
  * Capture configuration.
@@ -101,6 +116,23 @@ export type CaptureClock = {
 };
 
 /**
+ * A picture decoded in the page: its size in pixels, a way to draw it smaller and a way to free it.
+ */
+export type DecodedPicture = {
+  readonly width: number;
+  readonly height: number;
+  /** Draws the picture at `width` × `height` and answers it as a PNG data URL. */
+  toPng(width: number, height: number): Promise<string>;
+  /** Frees the decoded pixels. */
+  close(): void;
+};
+
+/**
+ * Decodes a PNG data URL in the page (`decodePicture` in canvas.ts; tests pass a fake).
+ */
+export type PictureDecoder = (image: string) => Promise<DecodedPicture>;
+
+/**
  * The registry members capture uses.
  */
 export type CaptureRegistry = {
@@ -117,6 +149,8 @@ export type CaptureDeps = {
   readonly state: CaptureState;
   readonly log: Log.LogApi;
   readonly clock: CaptureClock;
+  /** Decodes a shot for the `maxWidth` downscale of editor.capture. */
+  readonly decode: PictureDecoder;
 };
 
 /**

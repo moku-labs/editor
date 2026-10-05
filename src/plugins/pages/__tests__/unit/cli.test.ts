@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
@@ -5,6 +6,10 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
+import { runBridge } from "../../mcp/bridge";
+
+// The bridge reads the real stdin: the cli test checks only the dispatch to it.
+vi.mock("../../mcp/bridge", () => ({ runBridge: vi.fn(() => Promise.resolve(0)) }));
 
 /** The default fake HTML bundle. */
 const GAME_PAGE: PageModule = { default: new Response("<p>game</p>") };
@@ -48,6 +53,8 @@ describe("startBin", () => {
     await expect(startBin(["--help"], deps)).resolves.toHaveProperty("code", 0);
     expect(lines.join("\n")).toContain("moku-editor <game-html>");
     expect(lines.join("\n")).toContain("--no-hmr");
+    expect(lines.join("\n")).toContain("moku-editor mcp [<game-html>]");
+    expect(lines.join("\n")).toContain("moku-editor mcp-config [<game-html>] [--port N]");
   });
 
   it("prints the error and usage with 2 for bad arguments", async () => {
@@ -207,5 +214,92 @@ describe("stopOnce", () => {
     await stopOnce(() => Promise.reject(new Error("boom")), deps)();
     expect(lines.join("\n")).toContain("boom");
     expect(deps.exit).toHaveBeenCalledWith(0);
+  });
+});
+
+describe("startBin mcp-config (M8)", () => {
+  it("prints the .mcp.json snippet and the claude mcp add line verbatim, exit 0", async () => {
+    const { deps, lines } = createDeps();
+    const started = await startBin(["mcp-config", "web/index.html", "--port", "3000"], deps);
+    expect(started).toEqual({ code: 0 });
+    expect(lines[0]).toBe("{");
+    expect(lines.join("\n")).toContain('"mcpServers"');
+    expect(lines.at(-1)).toBe(
+      "claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000"
+    );
+    expect(deps.importPage).not.toHaveBeenCalled();
+  });
+
+  it("resolves main with 0 and registers no signal handler", async () => {
+    const before = process.listenerCount("SIGINT");
+    expect(await main(["mcp-config"], createDeps().deps)).toBe(0);
+    expect(process.listenerCount("SIGINT")).toBe(before);
+  });
+});
+
+describe("startBin mcp (U4)", () => {
+  it("runs the stdio bridge with the mcp arguments, prints nothing and answers its code", async () => {
+    const { deps, lines } = createDeps();
+    const argv = ["mcp", "web/index.html", "--port", "3000", "--no-hmr"];
+    await expect(startBin(argv, deps)).resolves.toEqual({ code: 0 });
+    expect(runBridge).toHaveBeenCalledWith({
+      kind: "mcp",
+      html: "web/index.html",
+      port: 3000,
+      root: ".",
+      hmr: false
+    });
+    expect(lines).toEqual([]);
+    expect(deps.importPage).not.toHaveBeenCalled();
+  });
+});
+
+describe("startBin discovery file (M3, M6)", () => {
+  it("writes .moku/editor.json 0600 after serving, never prints the token, removes it on stop", async () => {
+    const { deps, lines } = createDeps();
+    const exits = process.listenerCount("exit");
+    const html = join(game, "index.html");
+    const started = await startBin([html, "--port", "0", "--root", game], deps);
+    const path = join(game, ".moku", "editor.json");
+    try {
+      const port = Number(/127\.0\.0\.1:(\d+)\//.exec(lines.join("\n"))?.[1]);
+      const origin = `http://127.0.0.1:${port}`;
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const body: { ws: string; token: string } = await hello.json();
+      const file = JSON.parse(readFileSync(path, "utf8"));
+      expect(file).toEqual({
+        version: 1,
+        pid: process.pid,
+        port,
+        url: origin,
+        ws: `ws://127.0.0.1:${port}/__editor/ws`,
+        token: body.token,
+        root: game,
+        html,
+        startedAt: expect.any(Number)
+      });
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+      expect(lines.join("\n")).not.toContain(body.token);
+      expect(process.listenerCount("exit")).toBe(exits + 1);
+    } finally {
+      await started.stop?.();
+    }
+    expect(existsSync(path)).toBe(false);
+    expect(process.listenerCount("exit")).toBe(exits);
+  });
+
+  it("warns and keeps serving when the file cannot be written", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-blocked-")));
+    await writeFile(join(root, ".moku"), "a file where the folder should be");
+    const { deps, lines } = createDeps();
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", root], deps);
+    try {
+      expect(started.code).toBe(0);
+      expect(lines.join("\n")).toContain("[moku-editor] could not write .moku/editor.json");
+      expect(lines.join("\n")).toContain("Tools  http://127.0.0.1:");
+    } finally {
+      await started.stop?.();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

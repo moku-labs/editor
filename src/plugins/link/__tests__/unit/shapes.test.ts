@@ -31,6 +31,16 @@ describe("readSessions", () => {
     expect(list).toEqual([sessionOf("s-1"), sessionOf("s-2", { embedded: true })]);
   });
 
+  it("reads a session that carries the hub heartbeat readout and drops the readout", () => {
+    const list = readSessions({
+      list: [
+        { ...toObject(sessionOf("s-1")), heartbeat: { frame: 1840, paused: true, silent: false } }
+      ]
+    });
+
+    expect(list).toEqual([sessionOf("s-1")]);
+  });
+
   it("is undefined without a list", () => {
     expect(readSessions({})).toBeUndefined();
     expect(readSessions(undefined)).toBeUndefined();

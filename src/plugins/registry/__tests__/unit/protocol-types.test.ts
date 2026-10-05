@@ -86,14 +86,37 @@ describe("protocol types", () => {
     expect(error.code).toBe(-32_000);
   });
 
-  it("SessionInfo has exactly id, game, page, embedded, connectedAt", () => {
+  it("SessionInfo has the five R1 fields and an optional heartbeat readout", () => {
     expectTypeOf<keyof SessionInfo>().toEqualTypeOf<
-      "id" | "game" | "page" | "embedded" | "connectedAt"
+      "id" | "game" | "page" | "embedded" | "connectedAt" | "heartbeat"
     >();
     expectTypeOf<SessionInfo["connectedAt"]>().toEqualTypeOf<number>();
+    expectTypeOf<SessionInfo["heartbeat"]>().toEqualTypeOf<
+      { readonly frame: number; readonly paused: boolean; readonly silent: boolean } | undefined
+    >();
 
     const info: SessionInfo = { id: "s", game: "g", page: "", embedded: false, connectedAt: 1 };
+    const beating: SessionInfo = {
+      ...info,
+      heartbeat: { frame: 1840, paused: false, silent: false }
+    };
     expect(Object.keys(info)).toHaveLength(5);
+    expect(Object.keys(beating)).toHaveLength(6);
+  });
+
+  it("SessionInfo with a heartbeat still travels as Json", () => {
+    const info: SessionInfo = {
+      id: "s-7f3a",
+      game: "merge-game 0.0.0",
+      page: "http://127.0.0.1:3000/",
+      embedded: true,
+      connectedAt: 1_790_000_000_000,
+      heartbeat: { frame: 1840, paused: true, silent: false }
+    };
+    const json: Json = info;
+
+    expectTypeOf<SessionInfo>().toExtend<Json>();
+    expect(json).toEqual(info);
   });
 
   it("ToolsBoot['v'] is 1 and DeviceSpec['kind'] is the three-kind union", () => {

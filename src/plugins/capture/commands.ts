@@ -7,10 +7,16 @@ import type { Json, RunResult } from "../registry/protocol";
 import { checkInput, errorCode, wireError } from "../registry/protocol";
 import type { CommandEntry } from "../registry/types";
 import { readDevice } from "./device";
+import { checkMaxWidth, fitWidth } from "./scale";
 import { noPicture, planSeries, recordSeries, SERIES_ID, stopSeries } from "./series";
 import { takeShot } from "./shot";
 import type { CaptureDeps, CaptureRegistry, SeriesValue, Shot } from "./types";
-import { WARN_SHOTS } from "./types";
+import { SHOT_ID, WARN_SHOTS } from "./types";
+
+/**
+ * The input schema of editor.capture.
+ */
+const CAPTURE_INPUT: { readonly maxWidth: "number?" } = { maxWidth: "number?" };
 
 /**
  * The input schema of editor.series.
@@ -21,23 +27,29 @@ const SERIES_INPUT: { readonly durationMs: "number"; readonly intervalMs: "numbe
 };
 
 /**
- * Builds the editor.capture entry: one screenshot with its frame and device.
+ * Builds the editor.capture entry: one screenshot with its frame and device, shrunk to
+ * `maxWidth` when the picture is wider.
  *
  * @param registry - The registry slice.
+ * @param deps - The picture decoder and the log.
  * @returns The entry.
  */
-function captureEntry(registry: CaptureRegistry): CommandEntry {
+function captureEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry {
   return {
-    descriptor: { id: "editor.capture", title: "Screenshot", input: {}, effect: "read" },
+    descriptor: { id: SHOT_ID, title: "Screenshot", input: CAPTURE_INPUT, effect: "read" },
     /**
-     * Checks the empty input, takes one shot and tags it with its frame and the device.
+     * Checks the input, takes one shot, shrinks it to `maxWidth` when asked and tags it with its
+     * frame and the device.
      *
-     * @param raw - Raw input (`null` or `{}`).
+     * @param raw - Raw input (`null`, `{}` or `{ maxWidth }`).
      * @returns The shot and the state game.capture ran with.
      */
     run: async (raw: Json): Promise<RunResult> => {
-      checkInput({}, raw);
-      const { image, state } = await takeShot(registry);
+      const maxWidth = checkMaxWidth(checkInput(CAPTURE_INPUT, raw).maxWidth);
+      const shot = await takeShot(registry);
+      const { state } = shot;
+      const image =
+        maxWidth === undefined ? shot.image : await fitWidth(shot.image, maxWidth, deps);
       const value: Shot = { image, frame: state.frame, device: readDevice() };
 
       return { value, state };
@@ -116,11 +128,11 @@ function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandE
  * Adds the three capture commands (ids, inputs, effects from contracts §3 and R2).
  *
  * @param registry - The registry slice (add, command, envelope).
- * @param deps - Config, state, log and clock.
+ * @param deps - Config, state, log, clock and the picture decoder.
  * @throws {Error} When an id is already in the registry.
  */
 export function registerCaptureCommands(registry: CaptureRegistry, deps: CaptureDeps): void {
-  registry.add(captureEntry(registry));
+  registry.add(captureEntry(registry, deps));
   registry.add(seriesEntry(registry, deps));
   registry.add(seriesStopEntry(registry, deps));
 }

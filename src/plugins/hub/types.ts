@@ -209,7 +209,8 @@ export type ToolsConn = {
 export type Conn = AgentConn | ToolsConn;
 
 /**
- * One game session (private: heartbeat, lastBeatAt and silent never reach the wire, R1).
+ * One game session. lastBeatAt stays private; frame and paused of the heartbeat and the silent
+ * flag reach the wire only as the SessionInfo heartbeat readout (M4).
  */
 export type Session = {
   id: string;
@@ -325,14 +326,15 @@ export type HubApi = {
   token(): string;
 
   /**
-   * A fresh list of the open game sessions ordered by `connectedAt`. Heartbeat and the silent
-   * flag stay private; mutating the result does not change the next call.
+   * A fresh list of the open game sessions ordered by `connectedAt`. A session that has sent a
+   * heartbeat carries the readout `heartbeat: { frame, paused, silent }`; mutating the result does
+   * not change the next call.
    *
    * @returns The open sessions.
    * @example
    * ```ts
-   * // After the game page connected its bridge.
-   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+   * // After the game page connected its bridge and sent its first heartbeat.
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
    * ```
    */
   sessions(): SessionInfo[];

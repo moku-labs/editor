@@ -74,29 +74,21 @@ function store(
  * storage or no `game.bookmark` stores nothing; a failure is logged.
  *
  * @param deps - Registry, reload seam and log.
+ * @returns Resolves once the checkpoint is stored, or was not (never rejects).
  */
-export function takeCheckpoint(deps: CheckpointDeps): void {
+export async function takeCheckpoint(deps: CheckpointDeps): Promise<void> {
   const { storage, doc } = deps.reload;
   const bookmark = deps.registry.command("game.bookmark");
   if (storage === undefined || bookmark === undefined) return;
 
-  let clock: { readonly frame: number; readonly paused: boolean };
   try {
-    clock = deps.registry.clock();
+    const clock = deps.registry.clock();
+    const at = Date.now();
+    const ran = await bookmark.run(NO_INPUT);
+    store(deps, storage, { v: VERSION, doc, at, ...clock, bookmark: ran.value });
   } catch (error) {
     deps.log.warn("bridge:checkpoint-failed", { message: messageOf(error) });
-    return;
   }
-
-  const at = Date.now();
-  bookmark.run(NO_INPUT).then(
-    ran => {
-      store(deps, storage, { v: VERSION, doc, at, ...clock, bookmark: ran.value });
-    },
-    (error: unknown) => {
-      deps.log.warn("bridge:checkpoint-failed", { message: messageOf(error) });
-    }
-  );
 }
 
 /**
@@ -107,7 +99,7 @@ export function takeCheckpoint(deps: CheckpointDeps): void {
  */
 export function watchReload(deps: CheckpointDeps): () => void {
   return deps.reload.onBeforeFullReload(() => {
-    takeCheckpoint(deps);
+    void takeCheckpoint(deps);
   });
 }
 

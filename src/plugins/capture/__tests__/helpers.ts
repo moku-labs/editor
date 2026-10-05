@@ -2,7 +2,14 @@ import { vi } from "vitest";
 import type { Json, RunResult, RunState } from "../../registry/protocol";
 import type { CommandEntry } from "../../registry/types";
 import { createCaptureState } from "../state";
-import type { CaptureClock, CaptureDeps, CaptureRegistry, Config } from "../types";
+import type {
+  CaptureClock,
+  CaptureDeps,
+  CaptureRegistry,
+  Config,
+  DecodedPicture,
+  PictureDecoder
+} from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fakes of the capture unit tests: a log mock, a fake registry whose
@@ -115,11 +122,56 @@ export function fakeClock(): FakeClock {
   return clock;
 }
 
-/** Domain deps whose log is the mock. */
-export type TestDeps = CaptureDeps & { readonly log: LogMock };
+/** A decoded picture whose drawing and freeing are mocks. */
+export type FakePicture = DecodedPicture & {
+  readonly toPng: ReturnType<typeof vi.fn<(width: number, height: number) => Promise<string>>>;
+  readonly close: ReturnType<typeof vi.fn<() => void>>;
+};
+
+/** A picture decoder that hands out one FakePicture per call and keeps them. */
+export type FakeDecoder = ReturnType<typeof vi.fn<PictureDecoder>> & {
+  /** The pictures decoded so far, in call order. */
+  readonly pictures: FakePicture[];
+};
 
 /**
- * Builds domain deps with a real state, a mock log and the given clock.
+ * The data URL the fake picture draws at a size.
+ *
+ * @param width - Drawn width in pixels.
+ * @param height - Drawn height in pixels.
+ * @returns A fake PNG data URL naming the size.
+ */
+export function smallPng(width: number, height: number): string {
+  return `data:image/png;base64,${String(width)}x${String(height)}`;
+}
+
+/**
+ * Builds a decoder whose pictures are `width` × `height` pixels and draw `smallPng(w, h)`.
+ *
+ * @param width - Picture width in pixels.
+ * @param height - Picture height in pixels.
+ * @returns The decoder.
+ */
+export function fakeDecoder(width = 1080, height = 1920): FakeDecoder {
+  const pictures: FakePicture[] = [];
+  const decode = vi.fn(async (_image: string): Promise<DecodedPicture> => {
+    const picture: FakePicture = {
+      width,
+      height,
+      toPng: vi.fn(async (w: number, h: number) => smallPng(w, h)),
+      close: vi.fn()
+    };
+    pictures.push(picture);
+    return picture;
+  });
+  return Object.assign(decode, { pictures });
+}
+
+/** Domain deps whose log and decoder are the mocks. */
+export type TestDeps = CaptureDeps & { readonly log: LogMock; readonly decode: FakeDecoder };
+
+/**
+ * Builds domain deps with a real state, a mock log, a 1080 × 1920 fake decoder and the given clock.
  *
  * @param clock - The clock.
  * @param config - Config overrides.
@@ -130,7 +182,8 @@ export function createDeps(clock: CaptureClock, config: Partial<Config> = {}): T
     config: { ...CONFIG, ...config },
     state: createCaptureState(),
     log: createLog(),
-    clock
+    clock,
+    decode: fakeDecoder()
   };
 }
 

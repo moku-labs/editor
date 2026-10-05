@@ -396,7 +396,21 @@ export type WriteParams = { path: string; text: string; version?: string };
 export type WriteBinaryParams = { path: string; data: string };
 
 /**
- * One game session the way the tools page sees it (R1: exactly these five fields).
+ * One game session the way a tools client sees it: the five R1 fields and, once the game has sent
+ * a heartbeat, the hub's liveness readout (M4). Old clients ignore `heartbeat`.
+ *
+ * @example
+ * ```ts
+ * // A paused game in the editor pane, as moku_sessions lists it.
+ * const info: SessionInfo = {
+ *   id: "s-7f3a",
+ *   game: "merge-game 0.0.0",
+ *   page: "http://127.0.0.1:3000/",
+ *   embedded: true,
+ *   connectedAt: 1790000000000,
+ *   heartbeat: { frame: 1840, paused: true, silent: false }
+ * };
+ * ```
  */
 export type SessionInfo = {
   readonly id: string;
@@ -405,6 +419,15 @@ export type SessionInfo = {
   readonly embedded: boolean;
   /** Epoch ms. */
   readonly connectedAt: number;
+  /**
+   * Frame and paused of the last heartbeat, and the hub's silent flag. Absent before the first
+   * heartbeat. The hub re-sends the list when paused or silent flips, not on every frame.
+   */
+  readonly heartbeat?: {
+    readonly frame: number;
+    readonly paused: boolean;
+    readonly silent: boolean;
+  };
 };
 
 /**

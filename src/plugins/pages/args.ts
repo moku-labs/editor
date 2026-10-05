@@ -1,13 +1,14 @@
 /**
  * @file pages plugin — the arguments of `moku-editor <game-html> [--port 3000] [--root .]
- * [--no-hmr] [--help]`. Pure: no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server
- * always binds 127.0.0.1.
+ * [--no-hmr] [--help]` and of the subcommands `moku-editor mcp [<game-html>] [--port N] [--root DIR]
+ * [--no-hmr]` and `moku-editor mcp-config [<game-html>] [--port N]`. Pure: no I/O. Unknown flags
+ * are errors (strict), so `--host` cannot exist: the server always binds 127.0.0.1.
  */
 import { parseArgs } from "node:util";
 import type { BinArgs } from "./types";
 
 /**
- * The port when `--port` is not given.
+ * The port when `--port` is not given to the serving bin.
  */
 const DEFAULT_PORT = 3000;
 
@@ -42,6 +43,11 @@ function parse(argv: readonly string[]) {
 }
 
 /**
+ * The parsed positionals and flag values.
+ */
+type Parsed = ReturnType<typeof parse>;
+
+/**
  * The parse result, or the parser's message.
  *
  * @param argv - Arguments after the script name.
@@ -51,7 +57,7 @@ function parse(argv: readonly string[]) {
  * typeof tryParse(["--host", "x"]); // "string"
  * ```
  */
-function tryParse(argv: readonly string[]): ReturnType<typeof parse> | string {
+function tryParse(argv: readonly string[]): Parsed | string {
   try {
     return parse(argv);
   } catch (error) {
@@ -76,15 +82,14 @@ function failed(message: string): BinArgs {
 /**
  * The port of a `--port` value: digits only, 0-65535 (0 = a random free port).
  *
- * @param value - The flag value, or undefined.
+ * @param value - The flag value.
  * @returns The port, or undefined when the value is not a valid port.
  * @example
  * ```ts
  * portOf("0"); // 0
  * ```
  */
-function portOf(value: string | undefined): number | undefined {
-  if (value === undefined) return DEFAULT_PORT;
+function portOf(value: string): number | undefined {
   if (!/^\d{1,5}$/.test(value)) return undefined;
 
   const port = Number(value);
@@ -92,13 +97,131 @@ function portOf(value: string | undefined): number | undefined {
 }
 
 /**
- * Parses the bin arguments.
+ * Why a game HTML positional is refused, or undefined when it ends in `.html`.
+ *
+ * @param html - The positional.
+ * @returns The problem, or undefined.
+ * @example
+ * ```ts
+ * htmlProblem("web/index.ts"); // 'expected a game HTML file ending in .html, got "web/index.ts"'
+ * ```
+ */
+function htmlProblem(html: string): string | undefined {
+  if (html.toLowerCase().endsWith(".html")) return undefined;
+  return `expected a game HTML file ending in .html, got "${html}"`;
+}
+
+/**
+ * The optional html and port of a subcommand: at most one `.html` positional and an optional
+ * `--port`. Absent values stay absent (the bridge reads them from the discovery file).
+ *
+ * @param positionals - The positionals after the subcommand.
+ * @param port - The `--port` value, or undefined.
+ * @returns The html and port that were given, or the problem.
+ * @example
+ * ```ts
+ * optionalGame(["web/index.html"], "3000"); // { html: "web/index.html", port: 3000 }
+ * ```
+ */
+function optionalGame(
+  positionals: readonly string[],
+  port: string | undefined
+): { html?: string; port?: number } | string {
+  const [html] = positionals;
+  if (positionals.length > 1) return "expected at most one game HTML file";
+
+  const problem = html === undefined ? undefined : htmlProblem(html);
+  if (problem !== undefined) return problem;
+
+  const parsedPort = port === undefined ? undefined : portOf(port);
+  if (port !== undefined && parsedPort === undefined) return "--port must be an integer 0-65535";
+
+  return {
+    ...(html === undefined ? {} : { html }),
+    ...(parsedPort === undefined ? {} : { port: parsedPort })
+  };
+}
+
+/**
+ * The arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`.
+ *
+ * @param parsed - The parsed argv; positionals[0] is "mcp".
+ * @returns `mcp` args, or an error.
+ * @example
+ * ```ts
+ * mcpArgs(parse(["mcp", "web/index.html"])); // { kind: "mcp", html: "web/index.html", root: ".", hmr: true }
+ * ```
+ */
+function mcpArgs(parsed: Parsed): BinArgs {
+  const { positionals, values } = parsed;
+  const game = optionalGame(positionals.slice(1), values.port);
+  if (typeof game === "string") return failed(game);
+
+  const root = values.root ?? ".";
+  if (root === "") return failed("--root must not be empty");
+
+  return { kind: "mcp", ...game, root, hmr: values["no-hmr"] !== true };
+}
+
+/**
+ * The arguments of `moku-editor mcp-config [<game-html>] [--port N]`.
+ *
+ * @param parsed - The parsed argv; positionals[0] is "mcp-config".
+ * @returns `mcp-config` args, or an error.
+ * @example
+ * ```ts
+ * mcpConfigArgs(parse(["mcp-config", "-p", "3000"])); // { kind: "mcp-config", port: 3000 }
+ * ```
+ */
+function mcpConfigArgs(parsed: Parsed): BinArgs {
+  const { positionals, values } = parsed;
+  if (values.root !== undefined || values["no-hmr"] !== undefined) {
+    return failed("mcp-config takes only <game-html> and --port");
+  }
+
+  const game = optionalGame(positionals.slice(1), values.port);
+  if (typeof game === "string") return failed(game);
+
+  return { kind: "mcp-config", ...game };
+}
+
+/**
+ * The arguments of the serving bin: exactly one `.html` positional.
+ *
+ * @param parsed - The parsed argv.
+ * @returns `run` args, or an error.
+ * @example
+ * ```ts
+ * runArgs(parse(["web/index.html"])); // { kind: "run", html: "web/index.html", port: 3000, root: ".", hmr: true }
+ * ```
+ */
+function runArgs(parsed: Parsed): BinArgs {
+  const { positionals, values } = parsed;
+  const [html] = positionals;
+  if (positionals.length !== 1 || html === undefined) return failed("expected one game HTML file");
+
+  const problem = htmlProblem(html);
+  if (problem !== undefined) return failed(problem);
+
+  const port = values.port === undefined ? DEFAULT_PORT : portOf(values.port);
+  if (port === undefined) return failed("--port must be an integer 0-65535");
+
+  const root = values.root ?? ".";
+  if (root === "") return failed("--root must not be empty");
+
+  return { kind: "run", html, port, root, hmr: values["no-hmr"] !== true };
+}
+
+/**
+ * Parses the bin arguments. A first positional `mcp` or `mcp-config` picks that subcommand.
  *
  * @param argv - Arguments after the script name.
- * @returns `run` with html, port, root and hmr; `help`; or `error` with a message.
+ * @returns `run` with html, port, root and hmr; `mcp`; `mcp-config`; `help`; or `error` with a
+ * message.
  * @example
  * ```ts
  * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true }
+ * parseBinArgs(["mcp", "web/index.html"]); // { kind: "mcp", html: "web/index.html", root: ".", hmr: true }
  * ```
  */
 export function parseBinArgs(argv: readonly string[]): BinArgs {
@@ -107,18 +230,8 @@ export function parseBinArgs(argv: readonly string[]): BinArgs {
   const parsed = tryParse(argv);
   if (typeof parsed === "string") return failed(parsed);
 
-  const { positionals, values } = parsed;
-  const [html] = positionals;
-  if (positionals.length !== 1 || html === undefined) return failed("expected one game HTML file");
-  if (!html.toLowerCase().endsWith(".html")) {
-    return failed(`expected a game HTML file ending in .html, got "${html}"`);
-  }
-
-  const port = portOf(values.port);
-  if (port === undefined) return failed("--port must be an integer 0-65535");
-
-  const root = values.root ?? ".";
-  if (root === "") return failed("--root must not be empty");
-
-  return { kind: "run", html, port, root, hmr: values["no-hmr"] !== true };
+  const [subcommand] = parsed.positionals;
+  if (subcommand === "mcp") return mcpArgs(parsed);
+  if (subcommand === "mcp-config") return mcpConfigArgs(parsed);
+  return runArgs(parsed);
 }

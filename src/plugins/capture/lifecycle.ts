@@ -3,6 +3,7 @@
  * running series: the pending call resolves with the shots so far).
  */
 import { registryPlugin } from "../registry";
+import { decodePicture } from "./canvas";
 import { registerCaptureCommands } from "./commands";
 import { browserClock, stopSeries } from "./series";
 import type { CaptureCtx, CaptureState } from "./types";
@@ -19,7 +20,8 @@ export function initCapture(ctx: CaptureCtx): void {
     config: ctx.config,
     state: ctx.state,
     log: ctx.log,
-    clock: browserClock
+    clock: browserClock,
+    decode: decodePicture
   });
 }
 

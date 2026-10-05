@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
@@ -125,6 +125,9 @@ describe("moku-editor bin", () => {
       expect(token).toBe(boot.token);
       expect(bin.output()).toContain(`Tools  ${origin}/__editor/`);
       expect(bin.output()).not.toContain(token);
+      const discovery = JSON.parse(await readFile(join(game, ".moku", "editor.json"), "utf8"));
+      expect(discovery).toMatchObject({ version: 1, port: bin.port, token, root: game });
+      expect(discovery.pid).toBe(bin.child.pid);
 
       const second = await runBin([join(game, "index.html"), "--port", String(bin.port)]);
       expect(second.code).toBe(1);
@@ -135,7 +138,30 @@ describe("moku-editor bin", () => {
     }
     expect(await bin.child.exited).toBe(0);
     expect(bin.output()).toContain("stopped");
+    expect(existsSync(join(game, ".moku", "editor.json"))).toBe(false);
   }, 60_000);
+
+  it("writes .moku/editor.json 0600 and removes it on SIGTERM (M3)", async () => {
+    const bin = await spawnBin([join(game, "index.html"), "--port", "0", "--root", game]);
+    const path = join(game, ".moku", "editor.json");
+    try {
+      const file = await stat(path);
+      expect(file.mode & 0o777).toBe(0o600);
+    } finally {
+      bin.child.kill("SIGTERM");
+    }
+    expect(await bin.child.exited).toBe(0);
+    expect(existsSync(path)).toBe(false);
+  }, 60_000);
+
+  it("prints the Claude Code setup for mcp-config with 0 (M8)", async () => {
+    const result = await runBin(["mcp-config", "web/index.html", "--port", "3000"]);
+    expect(result.code).toBe(0);
+    expect(result.output).toContain('"command": "bunx"');
+    expect(result.output).toContain(
+      "claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000"
+    );
+  }, 30_000);
 
   it.skipIf(!HAS_MERGE_GAME)(
     "serves the merge-game fixture page and its manifest",
@@ -168,6 +194,7 @@ describe("moku-editor bin", () => {
     const help = await runBin(["--help"]);
     expect(help.code).toBe(0);
     expect(help.output).toContain("moku-editor <game-html>");
+    expect(help.output).toContain("moku-editor mcp-config");
     const hostile = await runBin(["x.html", "--host", "0.0.0.0"]);
     expect(hostile.code).toBe(2);
   }, 30_000);

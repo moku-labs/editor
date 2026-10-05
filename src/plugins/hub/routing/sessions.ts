@@ -1,7 +1,7 @@
 /**
  * @file hub plugin — game sessions: the manifest check, open and close, the session choice of a
- * tools request, the SessionInfo list (R1) and the silent rule (R6: 6 s, or 65 s after a paused
- * heartbeat). Silence is private state: a flip broadcasts nothing.
+ * tools request, the SessionInfo list (R1 plus the heartbeat readout, M4) and the silent rule (R6:
+ * 6 s, or 65 s after a paused heartbeat). A flip of paused or silent re-sends the list.
  */
 import { randomBytes } from "node:crypto";
 import type { Heartbeat, Json, Manifest, Notification, SessionInfo } from "../../registry/protocol";
@@ -458,14 +458,19 @@ export function chooseSession(ctx: HubCtx, requested: string | undefined): Sessi
 }
 
 /**
- * The wire view of a session: exactly the five R1 fields.
+ * The wire view of a session: the five R1 fields, plus the heartbeat readout (frame and paused of
+ * the last beat, the silent flag) once the session has sent a heartbeat.
  *
  * @param session - The session.
  * @returns A fresh SessionInfo.
  */
 export function toSessionInfo(session: Session): SessionInfo {
   const { game, page, embedded } = session.manifest;
-  return { id: session.id, game, page, embedded, connectedAt: session.connectedAt };
+  const info = { id: session.id, game, page, embedded, connectedAt: session.connectedAt };
+  if (session.heartbeat === null) return info;
+
+  const { frame, paused } = session.heartbeat;
+  return { ...info, heartbeat: { frame, paused, silent: session.silent } };
 }
 
 /**
@@ -481,7 +486,9 @@ export function sessionList(state: HubState): SessionInfo[] {
 }
 
 /**
- * Stores a heartbeat; a silent session comes back (logged, nothing broadcast).
+ * Stores a heartbeat; a silent session comes back (logged). When paused flips against the last
+ * beat, or the session comes back, every tools connection gets the sessions list again. The first
+ * beat of a session and a new frame alone send nothing.
  *
  * @param ctx - Domain context of the hub.
  * @param session - The session.
@@ -494,28 +501,37 @@ export function recordHeartbeat(
   heartbeat: Heartbeat,
   now: number
 ): void {
+  const previous = session.heartbeat;
+  const pausedFlipped = previous !== null && previous.paused !== heartbeat.paused;
+  const revived = session.silent;
+
   session.heartbeat = heartbeat;
   session.lastBeatAt = now;
-  if (!session.silent) return;
-
   session.silent = false;
-  ctx.log.info("hub:session-alive", { id: session.id });
+  if (revived) ctx.log.info("hub:session-alive", { id: session.id });
+
+  if (pausedFlipped || revived) broadcastSessions(ctx);
 }
 
 /**
  * Marks sessions silent whose last heartbeat is older than the limit: silentAfterMs, or
- * PAUSED_SILENT_AFTER_MS after a paused heartbeat (R6). Logged once per flip; nothing is sent.
+ * PAUSED_SILENT_AFTER_MS after a paused heartbeat (R6). Logged once per flip; when any session
+ * flipped, every tools connection gets the sessions list once.
  *
  * @param ctx - Domain context of the hub.
  * @param now - Epoch ms.
  */
 export function tickSilent(ctx: HubCtx, now: number): void {
+  let flipped = false;
   for (const session of ctx.state.sessions.values()) {
     const paused = session.heartbeat?.paused === true;
     const limit = paused ? PAUSED_SILENT_AFTER_MS : ctx.config.silentAfterMs;
     if (session.silent || now - session.lastBeatAt <= limit) continue;
 
     session.silent = true;
+    flipped = true;
     ctx.log.info("hub:session-silent", { id: session.id, paused });
   }
+
+  if (flipped) broadcastSessions(ctx);
 }

@@ -84,8 +84,14 @@ const GAME_COMMANDS = [
   "game.walk"
 ];
 
-/** The editor commands the agent adds (capture and overlay), sorted. */
-const EDITOR_COMMANDS = ["editor.capture", "editor.overlay", "editor.series", "editor.seriesStop"];
+/** The editor commands the agent adds (capture, overlay and reload), sorted. */
+const EDITOR_COMMANDS = [
+  "editor.capture",
+  "editor.overlay",
+  "editor.reload",
+  "editor.series",
+  "editor.seriesStop"
+];
 
 /** The eight outcomes board/awaitIntent waits for: one hub lane each, sorted. */
 const BOARD_OUTCOMES = [

@@ -87,6 +87,21 @@ describe("capture integration", () => {
       ["editor.series", "read"],
       ["editor.seriesStop", "read"]
     ]);
+    expect(commands[0]?.input).toEqual({ maxWidth: "number?" });
+
+    await app.stop();
+  });
+
+  it("editor.capture { maxWidth } answers the full picture where the page cannot downscale", async () => {
+    const app = await startEditor();
+
+    const ran = await app.channel.run("editor.capture", { maxWidth: 540 });
+
+    expect(ran.value).toMatchObject({ image: PNG, frame: ran.state.frame });
+    await expect(app.channel.run("editor.capture", { maxWidth: 32 })).rejects.toMatchObject({
+      code: -32_602,
+      data: { field: "maxWidth" }
+    });
 
     await app.stop();
   });

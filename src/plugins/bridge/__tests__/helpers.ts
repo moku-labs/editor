@@ -8,6 +8,7 @@ import type {
   Manifest,
   Message,
   RunResult,
+  RunState,
   SourceDescriptor
 } from "../../registry/protocol";
 import { decode, encode, request, wireError } from "../../registry/protocol";
@@ -184,7 +185,10 @@ export const MANIFEST: Manifest = {
   commands: [{ id: "game.step", title: "Step", input: { frames: "number" }, effect: "cosmetic" }]
 };
 
-/** A fake registry slice: manifest, source descriptors, commands and the clock. */
+/** The envelope the fake registry answers for commands that run no door. */
+export const ENVELOPE: RunState = { path: "board/awaitIntent", frame: 12, tainted: false };
+
+/** A fake registry slice: manifest, source descriptors, commands, the clock and the envelope. */
 export type FakeRegistry = BridgeDeps["registry"] & {
   /** Command entries by id; empty unless a test adds one. */
   readonly commands: Map<string, CommandEntry>;
@@ -208,7 +212,8 @@ export function fakeRegistry(): FakeRegistry {
       return { descriptor, read: () => null, watch: noWatch };
     },
     command: (id: string) => registry.commands.get(id),
-    clock: () => registry.clockValue
+    clock: () => registry.clockValue,
+    envelope: () => ENVELOPE
   };
   return registry;
 }
@@ -249,9 +254,10 @@ export function fakeStorage(): FakeStorage {
   };
 }
 
-/** The reload seam double: a storage, a document id and a fireable beforeFullReload. */
+/** The reload seam double: a storage, a document id, a fireable beforeFullReload, a reload mock. */
 export type FakeReload = ReloadSeam & {
   readonly storage: FakeStorage;
+  readonly reloadPage: Mock<() => void>;
   readonly listeners: Set<() => void>;
   /** Fires bun:beforeFullReload. */
   fire(): void;
@@ -277,7 +283,8 @@ export function fakeReload(doc = 5000): FakeReload {
     },
     fire: () => {
       for (const listener of listeners) listener();
-    }
+    },
+    reloadPage: vi.fn<() => void>()
   };
 }
 
@@ -510,6 +517,21 @@ export function requestText(
   channel: "game" | "files" | "editor" = "game"
 ): string {
   return encode(request(id, channel, method, params));
+}
+
+/**
+ * Awaits a promise and returns what it rejected with.
+ *
+ * @param promise - The promise.
+ * @returns The rejection reason.
+ */
+export async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected a rejection");
 }
 
 /**

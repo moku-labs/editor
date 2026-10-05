@@ -5,7 +5,16 @@ import { registerCaptureCommands } from "../../commands";
 import { browserClock } from "../../series";
 import { WARN_SHOTS } from "../../types";
 import type { FakeRegistry, TestDeps } from "../helpers";
-import { createDeps, ENVELOPE, fakeClock, fakeRegistry, PNG, rejectionOf } from "../helpers";
+import {
+  createDeps,
+  ENVELOPE,
+  fakeClock,
+  fakeDecoder,
+  fakeRegistry,
+  PNG,
+  rejectionOf,
+  smallPng
+} from "../helpers";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -42,7 +51,12 @@ describe("registerCaptureCommands", () => {
     const { registry } = setup();
 
     expect([...registry.added.values()].map(entry => entry.descriptor)).toEqual([
-      { id: "editor.capture", title: "Screenshot", input: {}, effect: "read" },
+      {
+        id: "editor.capture",
+        title: "Screenshot",
+        input: { maxWidth: "number?" },
+        effect: "read"
+      },
       {
         id: "editor.series",
         title: "Record a series",
@@ -98,6 +112,91 @@ describe("editor.capture", () => {
     const { registry } = setup(fakeRegistry(() => ({ value: null })));
 
     expect(await rejectionOf(run(registry, "editor.capture"))).toMatchObject({ code: -32_000 });
+  });
+});
+
+describe("editor.capture with maxWidth", () => {
+  it("answers the picture unchanged and decodes nothing without maxWidth", async () => {
+    const { registry, deps } = setup();
+
+    const ran = await run(registry, "editor.capture", {});
+
+    expect(ran.value).toMatchObject({ image: PNG });
+    expect(deps.decode).not.toHaveBeenCalled();
+  });
+
+  it("downscales a wider picture to maxWidth, keeping the aspect", async () => {
+    const { registry, deps } = setup();
+
+    const ran = await run(registry, "editor.capture", { maxWidth: 540 });
+
+    expect(ran).toEqual({
+      value: {
+        image: smallPng(540, 960),
+        frame: 1778,
+        device: { w: 0, h: 0, orientation: "portrait" }
+      },
+      state: { ...ENVELOPE, frame: 1778 }
+    });
+    expect(deps.decode).toHaveBeenCalledWith(PNG);
+    expect(deps.decode.pictures[0]?.close).toHaveBeenCalledOnce();
+  });
+
+  it("answers a picture that is not wider than maxWidth unchanged", async () => {
+    const deps = { ...createDeps(fakeClock()), decode: fakeDecoder(800, 600) };
+    const { registry } = setup(fakeRegistry(), deps);
+
+    const ran = await run(registry, "editor.capture", { maxWidth: 800 });
+
+    expect(ran.value).toMatchObject({ image: PNG });
+    expect(deps.decode.pictures[0]?.toPng).not.toHaveBeenCalled();
+    expect(deps.decode.pictures[0]?.close).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    63, 4097, 100.5, 0, -1
+  ])("refuses maxWidth %s with -32602 before the door runs", async maxWidth => {
+    const { registry } = setup();
+
+    expect(await rejectionOf(run(registry, "editor.capture", { maxWidth }))).toMatchObject({
+      code: -32_602,
+      message:
+        "[moku-editor] editor.capture: maxWidth must be a whole number from 64 to 4096.\n  Pass the widest picture you want, in pixels.",
+      data: { reason: "invalid_input", id: "editor.capture", field: "maxWidth" }
+    });
+    expect(registry.capture).not.toHaveBeenCalled();
+  });
+
+  it("refuses a maxWidth that is not a number", async () => {
+    const { registry } = setup();
+
+    expect(await rejectionOf(run(registry, "editor.capture", { maxWidth: "540" }))).toMatchObject({
+      code: -32_602,
+      data: { field: "maxWidth" }
+    });
+  });
+
+  it("accepts both ends of the range", async () => {
+    const { registry, deps } = setup();
+
+    const smallest = await run(registry, "editor.capture", { maxWidth: 64 });
+    const largest = await run(registry, "editor.capture", { maxWidth: 4096 });
+
+    expect(smallest.value).toMatchObject({ image: smallPng(64, 114) });
+    expect(largest.value).toMatchObject({ image: PNG });
+    expect(deps.decode).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers the full picture and warns when the page cannot downscale it", async () => {
+    const { registry, deps } = setup();
+    deps.decode.mockRejectedValueOnce(new Error("[moku-editor] no canvas"));
+
+    const ran = await run(registry, "editor.capture", { maxWidth: 540 });
+
+    expect(ran.value).toMatchObject({ image: PNG });
+    expect(deps.log.warn).toHaveBeenCalledWith("capture:downscale-failed", {
+      message: "[moku-editor] no canvas"
+    });
   });
 });
 

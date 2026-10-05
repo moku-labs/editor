@@ -1,0 +1,393 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`tools/list > lists the fifteen moku tools with closed object schemas 1`] = `
+{
+  "tools": [
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "Whether moku-editor runs and whether this bridge started it, the game and tools page URLs, the hot reload state and the game sessions with their liveness (frame, paused, silent). Call it first.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "moku_status",
+      "title": "Editor status",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "The connected game pages: id, game, page, embedded (inside the tools page) and heartbeat { frame, paused, silent }. Pass an id as session to the game tools when several games are connected.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "moku_sessions",
+      "title": "Game sessions",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "What the game offers: its sources (id, title, input kinds, changes) for moku_read and moku_wait, and its commands (id, title, input kinds, effect) for moku_run.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_manifest",
+      "title": "Sources and commands",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "Reads a game source now, such as game.position or game.history, and answers its JSON value.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Source id from moku_manifest, such as game.position.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "input": {
+            "description": "The input of the source or command: a JSON object such as { "frames": 1 }. Omit it when it takes none (moku_manifest lists the input kinds).",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "name": "moku_read",
+      "title": "Read a source",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "Watches a source until its value deep-equals until, or differs from changedFrom, or (with neither) first changes after the current value. Answers { timedOut, value, waitedMs }; on a timeout the value is the last one seen. Frame sources update about once per second.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "changedFrom": {
+            "description": "Resolve when the value differs from this JSON value.",
+          },
+          "id": {
+            "description": "Source id from moku_manifest, such as game.position.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "input": {
+            "description": "The input of the source or command: a JSON object such as { "frames": 1 }. Omit it when it takes none (moku_manifest lists the input kinds).",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "timeoutMs": {
+            "default": 10000,
+            "description": "The longest wait in ms.",
+            "maximum": 25000,
+            "minimum": 100,
+            "type": "integer",
+          },
+          "until": {
+            "description": "Resolve when the value deep-equals this JSON value.",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "name": "moku_wait",
+      "title": "Wait for a source",
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Runs a game or editor command, such as game.step, game.pause or game.tap, and answers its value with the frame and the run state. The text starts with the command's effect (read, route, cosmetic, cheat or raw); moku_manifest lists them.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Command id from moku_manifest, such as game.step.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "input": {
+            "description": "The input of the source or command: a JSON object such as { "frames": 1 }. Omit it when it takes none (moku_manifest lists the input kinds).",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+        ],
+        "type": "object",
+      },
+      "name": "moku_run",
+      "title": "Run a command",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "A PNG of the game as it is now, at most maxWidth pixels wide, with its frame and device. The game page must be visible: a paused or hidden game answers a message instead.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "maxWidth": {
+            "default": 1080,
+            "description": "The widest picture in pixels; a wider game picture is scaled down.",
+            "maximum": 4096,
+            "minimum": 64,
+            "type": "integer",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_screenshot",
+      "title": "Screenshot",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "Takes frames pictures everyMs ms of game time apart and answers them laid out on one PNG (ceil(sqrt(frames)) columns): a motion at a glance. Needs @moku-labs/game 0.4 or newer and a visible game page.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "everyMs": {
+            "default": 500,
+            "description": "Game time between two pictures, in ms.",
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "frames": {
+            "default": 6,
+            "description": "How many pictures.",
+            "maximum": 12,
+            "minimum": 2,
+            "type": "integer",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_series",
+      "title": "Contact sheet",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "A reference card the tools page wrote when an element was picked (.moku/captures/*.md): the element, its flow node, its source lines and its crop as an image. "latest" (the default) is the newest card.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The card: "latest", its file name (with or without .md) or its path.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_reference",
+      "title": "Reference card",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "The folders and the editable files (ts, tsx, json, md, css and .moku/) of a folder of the project, with sizes and versions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dir": {
+            "description": "A folder relative to the project root; "" is the root.",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_files_list",
+      "title": "List files",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "The text of a project file and its version; pass the version to moku_files_write to make sure nobody changed the file in between.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "A path relative to the project root, such as src/nodes/merge.ts.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "path",
+        ],
+        "type": "object",
+      },
+      "name": "moku_files_read",
+      "title": "Read a file",
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Writes a project file atomically, inside the editor's sandbox (ts, tsx, json, md, css and .moku/). With version, the write fails when the file changed since that version. Bun hot reload picks the change up.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "A path relative to the project root, such as src/nodes/merge.ts.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "text": {
+            "description": "The whole new text of the file.",
+            "type": "string",
+          },
+          "version": {
+            "description": "The version moku_files_read answered.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "path",
+          "text",
+        ],
+        "type": "object",
+      },
+      "name": "moku_files_write",
+      "title": "Write a file",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Reloads the game page. With restore (the default) it keeps the game state: a checkpoint is taken before the reload and restored after it. Answers { restored, frame, session } once the game is back.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "restore": {
+            "default": true,
+            "description": "Keep the game state across the reload.",
+            "type": "boolean",
+          },
+          "session": {
+            "description": "Game session id from moku_sessions. Omit it when one game is connected, or one is embedded in the tools page.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_reload",
+      "title": "Reload the game",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Starts moku-editor for the game when it does not run (its output goes to .moku/editor.log) and connects. html defaults to the bridge's game file or the last one used; port to the bridge's --port, the last port or 3000.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "html": {
+            "description": "The game HTML file, such as web/index.html.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "port": {
+            "description": "The port on 127.0.0.1 (0 picks a free one).",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_start",
+      "title": "Start the editor",
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Stops moku-editor when this bridge started it. A moku-editor started elsewhere keeps running.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "moku_stop",
+      "title": "Stop the editor",
+    },
+  ],
+}
+`;

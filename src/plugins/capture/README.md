@@ -1,6 +1,6 @@
 # capture
 
-> Standard plugin (agent core, opt-in). Adds three editor commands to the registry so the tools page can take pictures of the running game: `editor.capture` (one screenshot), `editor.series` (a timed series in one call, never split into chunks, R1) and `editor.seriesStop` (ends a running series early, R2).
+> Standard plugin (agent core, opt-in). Adds three editor commands to the registry so the tools page can take pictures of the running game: `editor.capture` (one screenshot, optionally shrunk to `maxWidth`), `editor.series` (a timed series in one call, never split into chunks, R1) and `editor.seriesStop` (ends a running series early, R2).
 
 Capture is not in the agent's default plugins (registry, channel, overlay). A game's dev entry adds it next to the bridge.
 
@@ -32,6 +32,9 @@ Constants in `types.ts`:
 |---|---|---|
 | `WARN_SHOTS` | `200` | A plan above this many shots logs `capture:series-large` and still runs. |
 | `CAPTURE_ID` | `"game.capture"` | The door command every shot runs. |
+| `SHOT_ID` | `"editor.capture"` | The one-shot command, named in its errors. |
+| `MIN_MAX_WIDTH` | `64` | Smallest `maxWidth` of `editor.capture`, in pixels. |
+| `MAX_MAX_WIDTH` | `4096` | Largest `maxWidth` of `editor.capture`, in pixels. |
 
 ## API
 
@@ -39,7 +42,7 @@ No app api. The surface is the registry catalogue. In process it is reached thro
 
 | Command | Title | Input | Effect | Value |
 |---|---|---|---|---|
-| `editor.capture` | `"Screenshot"` | `{}` | `read` | `Shot = { image, frame, device }` |
+| `editor.capture` | `"Screenshot"` | `{ maxWidth: "number?" }` | `read` | `Shot = { image, frame, device }` |
 | `editor.series` | `"Record a series"` | `{ durationMs: "number", intervalMs: "number" }` | `read` | `SeriesValue = { shots: SeriesShot[], device }` |
 | `editor.seriesStop` | `"Stop the series"` | `{}` | `read` | `{ stopped: boolean }` |
 
@@ -54,7 +57,8 @@ type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly device: Dev
 
 ### `editor.capture`
 
-- Checks the empty input. Unknown fields are refused with -32602.
+- Checks the input. Unknown fields are refused with -32602.
+- `maxWidth` is optional: a whole number from 64 to 4096, else -32602 with field `maxWidth`. It is checked before the door runs.
 - Runs `game.capture` once. `frame` is the frame of the envelope `game.capture` returned. It is the real frame of the shot, best effort: a GPU read-back that crossed a frame boundary shows the frame before.
 - `state` is the state `game.capture` ran with.
 - `device` is the game page viewport in CSS pixels. Landscape only when wider than high. Headless it is `{ w: 0, h: 0, orientation: "portrait" }`.
@@ -62,6 +66,22 @@ type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly device: Dev
 ```ts
 const shot = await link.run("editor.capture");
 shot.value; // { image: "data:image/png;base64,iVBOR…", frame: 1841, device: { w: 393, h: 852, orientation: "portrait" } }
+```
+
+#### `maxWidth`
+
+The MCP bridge sends it (`moku_screenshot`, default 1080), so a picture stays small enough for the agent.
+
+- Absent: the picture is answered as the door gave it. Nothing is decoded.
+- The picture is not wider than `maxWidth`: answered unchanged.
+- The picture is wider: the page shrinks it to `maxWidth` pixels wide, aspect kept, height rounded (at least 1 px), and answers a PNG data URL.
+- The page decodes with `createImageBitmap` and draws on an `OffscreenCanvas`, or on a `canvas` element where there is none (`canvas.ts`, `decodePicture`). The decoded bitmap is freed after every shot.
+- A page that cannot do it (no `createImageBitmap`, no canvas, no 2d context, a picture that is not a base64 data URL) answers the full picture and logs `capture:downscale-failed` at warn with `{ message }`. The screenshot still works.
+- `frame`, `device` and `state` do not change with `maxWidth`.
+
+```ts
+const small = await link.run("editor.capture", { maxWidth: 540 });
+small.value.image; // a 540 × 960 PNG data URL for a 1080 × 1920 canvas
 ```
 
 ### `editor.series`
@@ -98,7 +118,7 @@ Every message starts with `[moku-editor] `.
 
 | Code | `data.reason` | When |
 |---|---|---|
-| -32602 | `invalid_input` | Unknown input field. `durationMs` not a positive finite number or above `maxDurationMs`. `intervalMs` not finite or below `minIntervalMs`. `data.field` names the field. |
+| -32602 | `invalid_input` | Unknown input field. `maxWidth` not a whole number from 64 to 4096. `durationMs` not a positive finite number or above `maxDurationMs`. `intervalMs` not finite or below `minIntervalMs`. `data.field` names the field. |
 | -32601 | `unknown_id` | `game.capture` is not in the registry. |
 | -32000 | `command_failed` | `game.capture` gave no picture. A series took no picture. A series is already recording. |
 | -32000 | (from the dispatcher) | The door itself threw. Its error passes through capture unchanged. |
@@ -124,7 +144,7 @@ Package: no runtime dependency beyond the framework. `@moku-labs/game` is not im
 | Phase | What |
 |---|---|
 | `createState` | `createCaptureState()`: `{ series: undefined }`. |
-| `onInit` | `initCapture`: adds `editor.capture`, `editor.series`, `editor.seriesStop`. Runs in init because the registry builds its manifest from entries added before start. |
+| `onInit` | `initCapture`: adds `editor.capture`, `editor.series`, `editor.seriesStop`, with the browser clock and the page decoder `decodePicture`. Runs in init because the registry builds its manifest from entries added before start. |
 | `onStart` | Not used. |
 | `onStop` | `stopCapture`: ends a running series. The pending call resolves with the shots so far. No timer outlives the app. |
 
@@ -171,3 +191,5 @@ ran.state.frame === ran.value.frame; // true
 - A 20 s series at 16 ms plans 1250 PNG data URLs in one response. The `WARN_SHOTS` warning flags it. Streaming shots is a follow-up. Chunking is not allowed (R1).
 - `game.capture` needs `__MOKU_GAME_DEV__`. Otherwise the door refuses and the error comes back as -32000.
 - The frame tag can be one frame early after a GPU read-back. It is the engine's envelope frame, never a planned one.
+- `maxWidth` shrinks `editor.capture` only. `editor.series` shots stay full size.
+- Log events: `capture:series-large`, `capture:shots-skipped` and `capture:downscale-failed`, all at warn.

@@ -51,6 +51,11 @@ export const DEADLINE_EXTRA_CAP_MS = 60_000;
 export const SERIES_ID = "editor.series";
 
 /**
+ * The command the bridge adds to the registry: store the checkpoint and reload the page.
+ */
+export const RELOAD_ID = "editor.reload";
+
+/**
  * Bridge configuration.
  *
  * @example
@@ -153,13 +158,18 @@ export type CheckpointStorage = {
 };
 
 /**
- * The page seam of the checkpoint across Bun's full reload (R6), injectable for tests.
- * `defaultReload()` is the real one.
+ * The page seam of the checkpoint across Bun's full reload (R6) and of `editor.reload`,
+ * injectable for tests. `defaultReload()` is the real one.
  *
  * @example
  * ```ts
- * // A unit test fires bun:beforeFullReload itself and reads a Map-backed storage.
- * const reload: ReloadSeam = { storage, doc: 5000, onBeforeFullReload: listener => listeners.add(listener) };
+ * // A unit test fires bun:beforeFullReload itself, reads a Map-backed storage and spies on the reload.
+ * const reload: ReloadSeam = {
+ *   storage,
+ *   doc: 5000,
+ *   onBeforeFullReload: listener => listeners.add(listener),
+ *   reloadPage: vi.fn()
+ * };
  * ```
  */
 export type ReloadSeam = {
@@ -173,6 +183,8 @@ export type ReloadSeam = {
    * @returns The remover.
    */
   onBeforeFullReload(listener: () => void): () => void;
+  /** Reloads the page (`location.reload()`); a no-op outside a browser page. */
+  reloadPage(): void;
 };
 
 /**
@@ -204,7 +216,7 @@ export type BridgeState = {
   pending: Map<SubId, Json>;
   /** Request id → deadline timer. */
   inflight: Map<number, ReturnType<typeof setTimeout>>;
-  /** Heartbeat listener and page listeners (visibility, taps, reload), removed on stop. */
+  /** Heartbeat listener, page listeners (visibility, taps, reload) and a scheduled reload, removed on stop. */
   off: (() => void)[];
   /** The checkpoint restored at start, sent once in the next hello (R6). */
   restored: { readonly bookmark: string; readonly frame: number } | undefined;
@@ -276,7 +288,7 @@ export type BridgeDeps = {
   readonly log: Log.LogApi;
   /** ctx.emit("bridge:status", payload). */
   readonly emit: (payload: AgentEvents["bridge:status"]) => void;
-  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock">;
+  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock" | "envelope">;
   readonly channel: Pick<ChannelApi, "read" | "watch" | "run" | "heartbeat" | "onHeartbeat">;
   readonly net: BridgeNet;
   /** sessionStorage, the document id and Bun's beforeFullReload (R6). */

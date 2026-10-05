@@ -352,7 +352,8 @@ export function readHotReload(value: Json | undefined): HotReload | undefined {
 }
 
 /**
- * Reads one session (R1: exactly five fields; other keys are dropped).
+ * Reads one session: the five R1 fields. The hub's `heartbeat` readout and other keys are dropped;
+ * the link computes silence itself from forwarded heartbeats.
  *
  * @param value - A Json value.
  * @returns The session, or undefined.
