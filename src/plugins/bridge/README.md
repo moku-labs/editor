@@ -26,6 +26,8 @@ What it does:
 7. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff.
 8. **Bye.** On stop it sends `bye` and closes with 1000.
 9. **Checkpoint across Bun's full reload (R6).** See [Checkpoint](#checkpoint).
+10. **`editor.reload`.** A registry command that stores the same checkpoint and reloads the page
+    on request (the MCP tool `moku_reload`). See [editor.reload](#editorreload).
 
 The token is never logged. Log lines name the hello origin and path only.
 
@@ -35,7 +37,7 @@ The token is never logged. Log lines name the hello origin and path only.
 |---|---|---|---|
 | `hello` | `string` | `"/__editor/hello"` | Hello route of the editor server. A same-origin path or an absolute URL. Non-empty. |
 | `retryMs` | `number` | `1000` | First reconnect delay in ms. Doubles per failure up to `MAX_RETRY_MS` (30 000), ±20 % jitter. A whole number, at least 100. |
-| `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run` in ms. A `run` of `editor.series` gets `min(input.durationMs, 60 000)` on top. A whole number, at least 100. |
+| `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run` in ms. A `run` of `editor.series` gets `min(input.durationMs, 60 000)` on top, a `run` of `editor.sheet` `min(input.frames × input.everyMs, 60 000)`. A whole number, at least 100. |
 
 `onInit` checks the three options, so a bad value throws at `createApp`:
 
@@ -52,8 +54,10 @@ Constants in `types.ts`:
 | `JITTER` | `0.2` | ±20 % on every delay. |
 | `HIGH_WATER` | `1_048_576` | Buffered bytes above which values wait in the backlog (1 MiB). |
 | `LOW_WATER` | `262_144` | Buffered bytes below which the backlog is sent (256 KiB). |
-| `DEADLINE_EXTRA_CAP_MS` | `60_000` | Cap of the `durationMs` extension. |
-| `SERIES_ID` | `"editor.series"` | The one long call. |
+| `DEADLINE_EXTRA_CAP_MS` | `60_000` | Cap of the long-call extension. |
+| `SERIES_ID` | `"editor.series"` | The long call that waits its `durationMs` on top. |
+| `SHEET_ID` | `"editor.sheet"` | The long call that waits its `frames × everyMs` on top. |
+| `RELOAD_ID` | `"editor.reload"` | The command the bridge adds to the registry. |
 
 Backoff: `nextDelay(attempt, retryMs, random)`. With the defaults and `random() = 0.5`:
 1000, 2000, 4000, 8000, 16000, 30000, 30000.
@@ -92,6 +96,35 @@ Spike (Bun 1.3.14, Chromium, a module in `node_modules` like the published agent
 - `bun:beforeFullReload` fires in the old page; Bun then runs the new code in the old page, then
   loads the new page. A sessionStorage write made a few microtasks after the event survives into
   the new page. The new page takes it; the old page's re-run leaves it (same `doc`).
+
+## editor.reload
+
+The bridge adds one command to the registry in `onInit` (`reload.ts`, `reloadEntry`):
+
+| Command | Title | Input | Effect | Value |
+|---|---|---|---|---|
+| `editor.reload` | `"Reload the page"` | `{ restore: "boolean?" }` | `route` | `{ scheduled: true }` |
+
+1. Checks the input. `restore` defaults to `true`. A non-boolean `restore` or an unknown field is
+   refused with -32602, and nothing is scheduled.
+2. With `restore`, it stores the checkpoint exactly as `bun:beforeFullReload` does
+   (`takeCheckpoint`: clock, `game.bookmark`, `sessionStorage["moku-editor:checkpoint"]`) and waits
+   for the store. A checkpoint that cannot be taken logs `bridge:checkpoint-failed`; the reload
+   still happens. `restore: false` stores nothing.
+3. It answers `{ scheduled: true }` with `state` = `registry.envelope()`.
+4. On the next macrotask, after the answer went out, it calls `location.reload()` (`reloadPage` of
+   the reload seam; a no-op outside a browser page). `onStop` before then cancels it.
+5. The bridge of the new document restores the checkpoint and sends `restored` in its first hello,
+   as after Bun's full reload. The hub ends the old session with `game_reloaded`.
+
+The effect is `route`, not `raw`: the registry refuses `cheat` and `raw` for editor commands
+(they bypass the game's journal). The reload taints nothing itself; the restore in the new
+document runs `game.restore` through the game, which does.
+
+```ts
+await link.run("editor.reload"); // { value: { scheduled: true }, state: { path, frame, tainted } }
+await link.run("editor.reload", { restore: false }); // a fresh start, no checkpoint
+```
 
 ## API
 
@@ -136,11 +169,11 @@ The bridge hooks no events.
 
 | Plugin | Used |
 |---|---|
-| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and pause flag. |
+| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and pause flag. `add(entry)` for `editor.reload` in `onInit`, `envelope()` for its `state`. |
 | `channel` | `read`, `watch`, `run` for every game request. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
 
 `depends: [registryPlugin, channelPlugin]`. Global event used: `bridge:status` (emitted).
-It uses the platform `fetch`, `WebSocket`, `sessionStorage` and Bun's `import.meta.hot`. No package dependency.
+It uses the platform `fetch`, `WebSocket`, `sessionStorage`, `location.reload()` and Bun's `import.meta.hot`. No package dependency.
 
 ## Usage
 
@@ -169,9 +202,9 @@ hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, s
 
 | Phase | What happens |
 |---|---|
-| `onInit` | `checkConfig`: `hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100. |
+| `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100), then `registry.add` of `editor.reload`. A duplicate id throws at `createApp`. |
 | `onStart` | `startBridge`: publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. With a stored checkpoint it restores it first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. |
-| `onStop` | `stopBridge`: phase `stopped`, clears the retry timer and every deadline, removes the listeners, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
+| `onStop` | `stopBridge`: phase `stopped`, clears the retry timer and every deadline, removes the listeners and a pending `editor.reload`, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
 
 Heartbeat tick, only while open: send the beat (always, even when congested), update the status,
 send the backlog when below `LOW_WATER`, then re-read every `frame` subscription (skipped while congested).
@@ -230,15 +263,16 @@ default of `hello`.
 **`overlay`.** It hooks `bridge:status` for its link dot and checks `ctx.has("bridge")` at start.
 In a build without the bridge the event never fires.
 
-**`capture`.** Added next to the bridge. Its `editor.series` command is the long call that gets
-`durationMs` on top of the deadline. `hub` and `link` use the same rule.
+**`capture`.** Added next to the bridge. Its `editor.series` and `editor.sheet` commands are the
+long calls: `durationMs`, or `frames × everyMs`, on top of the deadline. `hub` and `link` use the
+same rule.
 
 ## Limits
 
 - No cancel. A timed-out command keeps running in the game. Its result is dropped.
 - The post-run re-read runs when the `run` settles. A `run` that never settles re-reads nothing.
 - `frame` sources update once per channel heartbeat (`heartbeatMs`, default 1000), not per frame.
-- A page reload sends no `bye`. The tools page sees `game_reloaded`.
+- A page reload sends no `bye`. The tools page sees `game_reloaded`. This holds for `editor.reload` too.
 - A hidden tab under Chrome's intensive throttling beats about once a minute. Hub and link wait
   65 s before `silent` because the last beat said `paused: true`.
 - `no WebSocket in this runtime` and `no page URL for <hello>` schedule no retry. The status stays `lost` with `retryInMs: 0`.

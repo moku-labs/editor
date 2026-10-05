@@ -1,5 +1,5 @@
 /**
- * @file bridge plugin — config check (onInit), the domain deps, start (onStart: heartbeat
+ * @file bridge plugin — config check and the editor.reload command (onInit), the domain deps, start (onStart: heartbeat
  * listener, page and reload listeners, the checkpoint restore, connect — not awaited) and stop
  * (onStop: bye, close, clear timers).
  */
@@ -14,6 +14,7 @@ import { asError } from "./dispatch/dispatch";
 import { dropInflight, NORMAL_CLOSE, SOCKET_OPEN } from "./dispatch/send";
 import { dropAll } from "./dispatch/subscriptions";
 import { watchTaps, watchVisibility } from "./page";
+import { reloadEntry } from "./reload";
 import { setStatus } from "./status";
 import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState, TakenCheckpoint } from "./types";
 import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
@@ -72,6 +73,21 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
 
   checkWhole("retryMs", retryMs, DEFAULT_RETRY_MS);
   checkWhole("callTimeoutMs", callTimeoutMs, DEFAULT_CALL_TIMEOUT_MS);
+}
+
+/**
+ * onInit: checks the config, then adds `editor.reload` to the registry. Runs in init because the
+ * registry builds its manifest from the entries added before start.
+ *
+ * @param ctx - Plugin context of the bridge.
+ * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`, or when `editor.reload` is
+ *   already in the registry (createApp fails loudly).
+ */
+export function initBridge(ctx: BridgeCtx): void {
+  checkConfig(ctx);
+
+  const registry = ctx.require(registryPlugin);
+  registry.add(reloadEntry({ registry, reload: defaultReload(), state: ctx.state, log: ctx.log }));
 }
 
 /**

@@ -369,7 +369,7 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
       20
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(19);
+    expect(listOf(field(manifest, "commands"))).toHaveLength(20);
     expect(field(manifest, "game")).toBe("merge-game 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
@@ -470,6 +470,34 @@ describe("bridge integration", { timeout: 15_000 }, () => {
         data: { reason: "timeout", retryable: true, id: "test.hang" }
       }
     });
+  });
+
+  it("lists editor.reload as a route command; a run stores the checkpoint, answers, then reloads", async () => {
+    const reload = vi.fn();
+    const items = new Map<string, string>();
+    vi.stubGlobal("location", { href: "http://127.0.0.1:3000/game.html", reload });
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => items.set(key, value),
+      removeItem: (key: string) => items.delete(key)
+    });
+    const { app, connection } = await linked();
+
+    expect(app.registry.command("editor.reload")?.descriptor).toEqual({
+      id: "editor.reload",
+      title: "Reload the page",
+      input: { restore: "boolean?" },
+      effect: "route"
+    });
+
+    const ran = await call(connection, "run", { id: "editor.reload" });
+
+    expect(ran).toMatchObject({ result: { value: { scheduled: true } } });
+    const stored = JSON.parse(items.get("moku-editor:checkpoint") ?? "null");
+    expect(stored).toMatchObject({ v: 1, frame: expect.any(Number), paused: false });
+    expect(stored.bookmark).toBeDefined();
+    await waitFor(() => (reload.mock.calls.length > 0 ? true : undefined));
+    expect(reload).toHaveBeenCalledOnce();
   });
 
   it("reconnects after the hub closes the socket: lost, a new hello fetch, a new hello", async () => {

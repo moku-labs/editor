@@ -1,7 +1,9 @@
 /**
  * @file pages plugin — the moku-editor bin program: parse arguments, import the game HTML at run
  * time, start the server core, Bun.serve(hub.serve(...)) with Bun HMR on (off with `--no-hmr`), attach the server to
- * pages (hot reload), print the URLs through the branded console (MC1). The token is never
+ * pages (hot reload), write the discovery file `.moku/editor.json` (removed on stop and exit),
+ * print the URLs through the branded console (MC1). `mcp` runs the stdio MCP bridge (`mcp/`,
+ * stdout for protocol frames only); `mcp-config` prints the Claude Code setup. The token is never
  * printed.
  */
 import { existsSync } from "node:fs";
@@ -11,13 +13,21 @@ import type { BrandConsole } from "@moku-labs/common/cli";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { createApp } from "../../server";
 import { parseBinArgs } from "./args";
+import { discoveryOf, publishDiscovery } from "./discovery";
+import { runBridge } from "./mcp/bridge";
+import { mcpConfigLines } from "./mcp-config";
 import { createStaticFetch } from "./static";
+import type { McpConfigArgs, RunArgs } from "./types";
 
 /**
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
   "Usage: moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
+  "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]",
+  "       moku-editor mcp-config [<game-html>] [--port N]",
+  "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
+  "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)"
@@ -182,45 +192,89 @@ function printServing(ui: BrandConsole, port: number, path: string, rootPath: st
 }
 
 /**
- * The stop function of a serving bin: the editor first (it closes its sockets), then the server,
- * bounded (Bun's stop does not resolve while a close is in flight).
+ * The release function when no discovery file was written.
+ */
+function keepNothing(): void {
+  // Nothing was written, so nothing is removed.
+}
+
+/**
+ * Writes `.moku/editor.json` for the MCP bridge. A failed write is a warning (without the token):
+ * the bin keeps serving.
+ *
+ * @param editor - The started editor.
+ * @param port - The real port.
+ * @param paths - The absolute root and game HTML paths.
+ * @param paths.rootPath - The project root.
+ * @param paths.htmlPath - The game HTML file.
+ * @param ui - The branded console.
+ * @returns The release function (removes the file), a no-op when nothing was written.
+ */
+function writeDiscoveryFile(
+  editor: EditorApp,
+  port: number,
+  paths: { readonly rootPath: string; readonly htmlPath: string },
+  ui: BrandConsole
+): () => void {
+  const discovery = discoveryOf({
+    pid: process.pid,
+    port,
+    path: editor.hub.path(),
+    token: editor.hub.token(),
+    root: paths.rootPath,
+    html: paths.htmlPath,
+    startedAt: Date.now()
+  });
+  try {
+    return publishDiscovery(paths.rootPath, discovery);
+  } catch (error) {
+    ui.warn(`[moku-editor] could not write .moku/editor.json: ${messageOf(error)}`);
+    return keepNothing;
+  }
+}
+
+/**
+ * The stop function of a serving bin: the discovery file goes first, then the editor (it closes
+ * its sockets), then the server, bounded (Bun's stop does not resolve while a close is in flight).
  *
  * @param editor - The started editor.
  * @param server - The Bun server.
  * @param server.stop - Bun's stop.
+ * @param release - Removes the discovery file.
  * @returns The stop function.
  */
 function stopper(
   editor: EditorApp,
-  server: { stop(force?: boolean): Promise<void> }
+  server: { stop(force?: boolean): Promise<void> },
+  release: () => void
 ): () => Promise<void> {
   return async function stop(): Promise<void> {
+    release();
     await editor.stop();
     await Promise.race([server.stop(true), Bun.sleep(STOP_GRACE_MS)]);
   };
 }
 
 /**
- * Parses, imports the game, starts the editor and serves; resolves while the server runs.
+ * Prints the `.mcp.json` snippet and the `claude mcp add` line verbatim, for copying.
  *
- * @param argv - Arguments after the script name.
- * @param deps - The bin deps.
- * @returns The exit code (0 help or serving, 1 runtime error, 2 bad arguments) and, while
- * serving, the stop function.
+ * @param ui - The branded console.
+ * @param args - The `mcp-config` arguments.
  */
-export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
-  const { ui } = deps;
-  const args = parseBinArgs(argv);
-  if (args.kind === "help") {
-    printUsage(ui);
-    return { code: 0 };
-  }
-  if (args.kind === "error") {
-    ui.error(args.message);
-    printUsage(ui);
-    return { code: 2 };
-  }
+function printMcpConfig(ui: BrandConsole, args: McpConfigArgs): void {
+  for (const line of mcpConfigLines(args)) ui.line(line);
+}
 
+/**
+ * Imports the game, starts the editor, serves and writes the discovery file; resolves while the
+ * server runs.
+ *
+ * @param args - The `run` arguments.
+ * @param deps - The bin deps.
+ * @returns 0 with the stop function while serving, or 1 on a runtime error.
+ */
+async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
+  const { ui } = deps;
   const htmlPath = resolve(args.html);
   const rootPath = resolve(args.root);
   const bundle = await importGame(htmlPath, deps);
@@ -250,8 +304,40 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
   }
 
   editor.pages.attachServer(server, options);
-  printServing(ui, server.port ?? args.port, editor.hub.path(), rootPath);
-  return { code: 0, stop: stopper(editor, server) };
+  const port = server.port ?? args.port;
+  const release = writeDiscoveryFile(editor, port, { rootPath, htmlPath }, ui);
+  printServing(ui, port, editor.hub.path(), rootPath);
+  return { code: 0, stop: stopper(editor, server, release) };
+}
+
+/**
+ * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, or serving the game.
+ *
+ * @param argv - Arguments after the script name.
+ * @param deps - The bin deps.
+ * @returns The exit code (0 help, mcp-config, the mcp bridge after stdin ended, or serving; 1
+ * runtime error; 2 bad arguments) and,
+ * while serving, the stop function.
+ */
+export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
+  const { ui } = deps;
+  const args = parseBinArgs(argv);
+  if (args.kind === "help") {
+    printUsage(ui);
+    return { code: 0 };
+  }
+  if (args.kind === "error") {
+    ui.error(args.message);
+    printUsage(ui);
+    return { code: 2 };
+  }
+  if (args.kind === "mcp-config") {
+    printMcpConfig(ui, args);
+    return { code: 0 };
+  }
+  if (args.kind === "mcp") return { code: await runBridge(args) };
+
+  return serveGame(args, deps);
 }
 
 /**

@@ -88,7 +88,18 @@ describe("deadlineFor", () => {
     );
   });
 
+  it("gives editor.sheet its frames × everyMs on top, capped at 60 s", () => {
+    expect(
+      deadlineFor("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } }, 5000)
+    ).toBe(8000);
+    expect(
+      deadlineFor("run", { id: "editor.sheet", input: { frames: 12, everyMs: 9000 } }, 5000)
+    ).toBe(65_000);
+  });
+
   it.each([
+    ["a sheet without everyMs", { id: "editor.sheet", input: { frames: 6 } }],
+    ["a sheet with a text frames", { id: "editor.sheet", input: { frames: "6", everyMs: 500 } }],
     ["a text durationMs", { id: "editor.series", input: { durationMs: "x" } }],
     ["a negative durationMs", { id: "editor.series", input: { durationMs: -1 } }],
     ["no input", { id: "editor.series" }],

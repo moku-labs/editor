@@ -678,7 +678,7 @@ test.describe("half-screen and desktop", () => {
     // Registry is an icon; its counts are in the title.
     await expect(bar.getByRole("button", { name: "Registry", exact: true })).toHaveAttribute(
       "title",
-      "Registry · 20 sources · 21 commands"
+      "Registry · 20 sources · 23 commands"
     );
     const gameName = await bar.locator("[data-game-name]").boundingBox();
     expect(gameName?.width ?? 0).toBeGreaterThan(100);

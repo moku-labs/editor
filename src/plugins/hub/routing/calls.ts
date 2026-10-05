@@ -1,7 +1,8 @@
 /**
  * @file hub plugin — forwarded calls: hub ids, deadlines (R1: `editor.series` waits its duration
- * on top, capped at 60 s), settling the agent's answers to their reply target, timeouts (-32002)
- * and failing every call of a closing session (-32001), both retryable.
+ * and `editor.sheet` its `frames × everyMs` on top, capped at 60 s), settling the agent's answers
+ * to their reply target, timeouts (-32002) and failing every call of a closing session (-32001),
+ * both retryable.
  */
 import type { Json, Response as RpcResponse, WireError } from "../../registry/protocol";
 import {
@@ -23,7 +24,12 @@ import { settleWatch } from "./shared";
 const SERIES_ID = "editor.series";
 
 /**
- * The cap of the `durationMs` extension (R1).
+ * The run id whose deadline grows with its `frames × everyMs` (the contact sheet).
+ */
+const SHEET_ID = "editor.sheet";
+
+/**
+ * The cap of the long-call extension (R1).
  */
 const LONG_CALL_CAP_MS = 60_000;
 
@@ -80,8 +86,48 @@ function memberOf(value: Json | undefined, key: string): Json | undefined {
 }
 
 /**
- * The deadline of a forwarded call: callTimeoutMs, plus `input.durationMs` (finite, ≥ 0, capped
- * at 60 s) for a `run` of `editor.series` only (R1, the same rule on every hop).
+ * A length in ms or a count: a finite number ≥ 0, else 0.
+ *
+ * @param value - A Json member.
+ * @returns The number, or 0.
+ * @example
+ * ```ts
+ * lengthOf(500); // 500
+ * lengthOf("500"); // 0
+ * ```
+ */
+function lengthOf(value: Json | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * The extra wait of a long run (R1): `input.durationMs` of `editor.series`, `input.frames ×
+ * input.everyMs` of `editor.sheet`; 0 for every other call or a bad value.
+ *
+ * @param method - The request method.
+ * @param params - The request params.
+ * @returns The extra wait in ms, not capped.
+ * @example
+ * ```ts
+ * longCallMs("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } }); // 3000
+ * ```
+ */
+function longCallMs(method: string, params: Json | undefined): number {
+  if (method !== "run") return 0;
+
+  const id = memberOf(params, "id");
+  const input = memberOf(params, "input");
+  if (id === SERIES_ID) return lengthOf(memberOf(input, "durationMs"));
+  if (id === SHEET_ID) {
+    return lengthOf(memberOf(input, "frames")) * lengthOf(memberOf(input, "everyMs"));
+  }
+  return 0;
+}
+
+/**
+ * The deadline of a forwarded call: callTimeoutMs, plus the long-call extension (capped at 60 s)
+ * for a `run` of `editor.series` (`input.durationMs`) or `editor.sheet` (`input.frames ×
+ * input.everyMs`) only (R1, the same rule on every hop).
  *
  * @param method - The request method.
  * @param params - The request params.
@@ -90,6 +136,7 @@ function memberOf(value: Json | undefined, key: string): Json | undefined {
  * @example
  * ```ts
  * deadlineFor("run", { id: "editor.series", input: { durationMs: 20_000, intervalMs: 100 } }, 5000); // 25000
+ * deadlineFor("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } }, 5000); // 8000
  * ```
  */
 export function deadlineFor(
@@ -97,13 +144,7 @@ export function deadlineFor(
   params: Json | undefined,
   callTimeoutMs: number
 ): number {
-  if (method !== "run" || memberOf(params, "id") !== SERIES_ID) return callTimeoutMs;
-
-  const duration = memberOf(memberOf(params, "input"), "durationMs");
-  if (typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) {
-    return callTimeoutMs;
-  }
-  return callTimeoutMs + Math.min(duration, LONG_CALL_CAP_MS);
+  return callTimeoutMs + Math.min(longCallMs(method, params), LONG_CALL_CAP_MS);
 }
 
 /**

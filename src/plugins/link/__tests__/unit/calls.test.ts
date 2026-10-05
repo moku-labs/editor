@@ -199,6 +199,19 @@ describe("timeoutFor", () => {
     expect(timeoutFor("run", { id: "editor.series", input: { durationMs: 90_000 } })).toBe(70_000);
   });
 
+  it("extends run of editor.sheet by frames × everyMs, capped at 60 s", () => {
+    expect(timeoutFor("run", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } })).toBe(
+      13_000
+    );
+    expect(timeoutFor("run", { id: "editor.sheet", input: { frames: 12, everyMs: 9000 } })).toBe(
+      70_000
+    );
+    expect(timeoutFor("run", { id: "editor.sheet", input: { frames: 6 } })).toBe(10_000);
+    expect(timeoutFor("read", { id: "editor.sheet", input: { frames: 6, everyMs: 500 } })).toBe(
+      10_000
+    );
+  });
+
   it("gives 10 s to everything else", () => {
     expect(timeoutFor("run", { id: "editor.series", input: {} })).toBe(10_000);
     expect(timeoutFor("run", { id: "editor.series", input: { durationMs: -5 } })).toBe(10_000);

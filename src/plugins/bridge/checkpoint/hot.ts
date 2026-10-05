@@ -1,6 +1,6 @@
 /**
- * @file bridge plugin — the real reload seam: the page's sessionStorage, the document id and
- * Bun's `bun:beforeFullReload`. Bun allows its HMR API only in the direct form
+ * @file bridge plugin — the real reload seam: the page's sessionStorage, the document id,
+ * Bun's `bun:beforeFullReload` and `location.reload()`. Bun allows its HMR API only in the direct form
  * `import.meta.hot.on(…)` behind `if (import.meta.hot)` (a stored `import.meta.hot` throws "cannot
  * be used indirectly"); without Bun HMR (a production build, Vite, a test) the listener is a no-op.
  */
@@ -49,11 +49,24 @@ export function storageOf(scope: {
 }
 
 /**
- * The reload seam of this page: sessionStorage, `performance.timeOrigin` and Bun's
- * beforeFullReload.
+ * Reloads the page through `location.reload()`; outside a browser page there is none.
+ */
+function reloadPage(): void {
+  const page: { readonly reload?: () => void } | undefined = globalThis.location;
+  if (typeof page?.reload === "function") page.reload();
+}
+
+/**
+ * The reload seam of this page: sessionStorage, `performance.timeOrigin`, Bun's
+ * beforeFullReload and `location.reload()`.
  *
  * @returns The seam the bridge deps carry.
  */
 export function defaultReload(): ReloadSeam {
-  return { storage: storageOf(globalThis), doc: performance.timeOrigin, onBeforeFullReload };
+  return {
+    storage: storageOf(globalThis),
+    doc: performance.timeOrigin,
+    onBeforeFullReload,
+    reloadPage
+  };
 }

@@ -29,7 +29,7 @@ const MANIFEST_AWAY = path.join(GAME_ROOT, "manifest.e2e-away.json");
 /** A rect in px. */
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
-/** `game.render` of game 0.4.3 in a dev build. */
+/** `game.render` of game 0.4.4 in a dev build. */
 type RenderStats = {
   readonly fps: number;
   readonly frameMs: number;
@@ -481,7 +481,7 @@ test.describe("render · tiles", () => {
       })
       .toBe("ok");
 
-    // Scene: the display objects and pools of game.render, effects from game.effects (game 0.4.3).
+    // Scene: the display objects and pools of game.render, effects from game.effects (game 0.4.4).
     await expect
       .poll(async () => {
         const stats = await readSource<RenderStats>(page, "game.render");

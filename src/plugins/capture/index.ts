@@ -1,7 +1,7 @@
 /**
- * Standard tier — opt-in screenshots for the editor: registers editor.capture, editor.series and
- * editor.seriesStop into the registry, built on the door command game.capture. Never captures on
- * its own. Emits no events.
+ * Standard tier — opt-in screenshots for the editor: registers editor.capture, editor.series,
+ * editor.seriesStop and editor.sheet into the registry, built on the door command game.capture.
+ * Never captures on its own. Emits no events.
  *
  * @see README.md
  */

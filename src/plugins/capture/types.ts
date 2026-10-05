@@ -1,6 +1,6 @@
 /**
  * @file capture plugin — type definitions: config, constants, state, the command values, the
- * registry slice, the domain deps and the plugin context. No app api (the surface is the
+ * picture decoder seam, the registry slice, the domain deps and the plugin context. No app api (the surface is the
  * registry catalogue).
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -17,6 +17,46 @@ export const WARN_SHOTS = 200;
  * The door command every shot runs.
  */
 export const CAPTURE_ID = "game.capture";
+
+/**
+ * The id of the one-shot command, named in its errors.
+ */
+export const SHOT_ID = "editor.capture";
+
+/**
+ * The id of the contact-sheet command, named in its errors.
+ */
+export const SHEET_ID = "editor.sheet";
+
+/**
+ * The fewest pictures a contact sheet takes (the game's own limit).
+ */
+export const MIN_SHEET_FRAMES = 2;
+
+/**
+ * The most pictures a contact sheet takes (the game's own limit).
+ */
+export const MAX_SHEET_FRAMES = 12;
+
+/**
+ * The shortest game time between two pictures of a contact sheet, in ms.
+ */
+export const MIN_SHEET_EVERY_MS = 1;
+
+/**
+ * The longest game time between two pictures of a contact sheet, in ms.
+ */
+export const MAX_SHEET_EVERY_MS = 5000;
+
+/**
+ * The smallest `maxWidth` editor.capture and editor.sheet accept, in pixels.
+ */
+export const MIN_MAX_WIDTH = 64;
+
+/**
+ * The largest `maxWidth` editor.capture and editor.sheet accept, in pixels.
+ */
+export const MAX_MAX_WIDTH = 4096;
 
 /**
  * Capture configuration.
@@ -65,6 +105,12 @@ export type Device = {
 export type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
 
 /**
+ * Value of `editor.sheet`: the contact sheet (one PNG data URL), the frame of the last picture and
+ * the device.
+ */
+export type Sheet = { readonly image: string; readonly frame: number; readonly device: Device };
+
+/**
  * One shot of a series, tagged with its real frame and real time.
  */
 export type SeriesShot = { readonly image: string; readonly frame: number; readonly atMs: number };
@@ -101,6 +147,23 @@ export type CaptureClock = {
 };
 
 /**
+ * A picture decoded in the page: its size in pixels, a way to draw it smaller and a way to free it.
+ */
+export type DecodedPicture = {
+  readonly width: number;
+  readonly height: number;
+  /** Draws the picture at `width` × `height` and answers it as a PNG data URL. */
+  toPng(width: number, height: number): Promise<string>;
+  /** Frees the decoded pixels. */
+  close(): void;
+};
+
+/**
+ * Decodes a PNG data URL in the page (`decodePicture` in canvas.ts; tests pass a fake).
+ */
+export type PictureDecoder = (image: string) => Promise<DecodedPicture>;
+
+/**
  * The registry members capture uses.
  */
 export type CaptureRegistry = {
@@ -117,6 +180,8 @@ export type CaptureDeps = {
   readonly state: CaptureState;
   readonly log: Log.LogApi;
   readonly clock: CaptureClock;
+  /** Decodes a shot or a sheet for the `maxWidth` downscale of editor.capture and editor.sheet. */
+  readonly decode: PictureDecoder;
 };
 
 /**

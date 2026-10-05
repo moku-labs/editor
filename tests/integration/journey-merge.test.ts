@@ -86,8 +86,15 @@ const GAME_COMMANDS = [
   "game.walk"
 ];
 
-/** The editor commands the agent adds (capture and overlay), sorted. */
-const EDITOR_COMMANDS = ["editor.capture", "editor.overlay", "editor.series", "editor.seriesStop"];
+/** The editor commands the agent adds (capture, overlay and reload), sorted. */
+const EDITOR_COMMANDS = [
+  "editor.capture",
+  "editor.overlay",
+  "editor.reload",
+  "editor.series",
+  "editor.seriesStop",
+  "editor.sheet"
+];
 
 /** The eight outcomes board/awaitIntent waits for: one hub lane each, sorted. */
 const BOARD_OUTCOMES = [
@@ -508,7 +515,7 @@ describe("journey-merge: open the editor on merge-game", () => {
       const { tools, game, root } = live;
       const { link, workspace, flowView, filesView } = tools.app;
 
-      // The real manifest: 19 game sources, 16 game commands (game 0.4) plus the editor commands.
+      // The real manifest: 20 game sources, 17 game commands (game 0.4) plus the editor commands.
       const manifest: Manifest | undefined = link.manifest();
       expect(idsOf(manifest?.sources, "game.")).toEqual(GAME_SOURCES);
       expect(idsOf(manifest?.commands, "game.")).toEqual(GAME_COMMANDS);

@@ -235,7 +235,7 @@ describe("sessionIdFrom", () => {
 });
 
 describe("toSessionInfo and sessionList", () => {
-  it("returns exactly the five R1 keys", () => {
+  it("returns the five R1 keys and no heartbeat before the first beat", () => {
     const info = toSessionInfo(sessionOf("s-1", 10, true));
 
     expect(Object.keys(info).toSorted()).toEqual(["connectedAt", "embedded", "game", "id", "page"]);
@@ -246,6 +246,26 @@ describe("toSessionInfo and sessionList", () => {
       embedded: true,
       connectedAt: 10
     });
+  });
+
+  it("adds the heartbeat readout: frame and paused of the last beat, and the silent flag", () => {
+    const session: Session = {
+      ...sessionOf("s-1", 10),
+      heartbeat: { frame: 1840, paused: true, at: 5, heap: { usedMb: 12.8, limitMb: 4095.8 } },
+      silent: true
+    };
+
+    const info = toSessionInfo(session);
+
+    expect(Object.keys(info).toSorted()).toEqual([
+      "connectedAt",
+      "embedded",
+      "game",
+      "heartbeat",
+      "id",
+      "page"
+    ]);
+    expect(info.heartbeat).toEqual({ frame: 1840, paused: true, silent: true });
   });
 
   it("orders by connectedAt", () => {
@@ -328,15 +348,17 @@ describe("tickSilent (R6)", () => {
     vi.useRealTimers();
   });
 
-  it("marks a session silent after silentAfterMs, once, and broadcasts nothing", () => {
+  it("marks a session silent after silentAfterMs, once, and re-sends the sessions list once", () => {
     const harness = createHarness();
     const tools = harness.connect("tools");
-    const { session } = harness.hello();
+    const { agent, session } = harness.hello();
+    harness.send(agent, notification("game", "heartbeat", { frame: 3, paused: false, at: 1 }));
     tools.clear();
     const entry = harness.ctx.state.sessions.get(session);
 
     tickSilent(harness.ctx, 1_000_000 + 6000);
     expect(entry?.silent).toBe(false);
+    expect(tools.sent).toEqual([]);
 
     tickSilent(harness.ctx, 1_000_000 + 6001);
     tickSilent(harness.ctx, 1_000_000 + 9000);
@@ -348,12 +370,17 @@ describe("tickSilent (R6)", () => {
     expect(
       harness.ctx.log.info.mock.calls.filter(([event]) => event === "hub:session-silent")
     ).toHaveLength(1);
-    expect(tools.sent).toEqual([]);
+    const lists = tools.notes("editor", "sessions");
+    expect(lists).toHaveLength(1);
+    expect(paramsOf(lists[0])).toMatchObject({
+      list: [{ id: session, heartbeat: { frame: 3, paused: false, silent: true } }]
+    });
   });
 
-  it("revives a silent session on heartbeat, logged and not broadcast", () => {
+  it("revives a silent session on heartbeat, logged, and re-sends the sessions list", () => {
     const harness = createHarness();
     const { agent, session } = harness.hello();
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: false, at: 1 }));
     const tools = harness.connect("tools");
     tickSilent(harness.ctx, 1_000_000 + 7000);
     tools.clear();
@@ -363,7 +390,11 @@ describe("tickSilent (R6)", () => {
 
     expect(harness.ctx.state.sessions.get(session)?.silent).toBe(false);
     expect(harness.ctx.log.info).toHaveBeenCalledWith("hub:session-alive", { id: session });
-    expect(tools.notes("editor", "sessions")).toEqual([]);
+    const lists = tools.notes("editor", "sessions");
+    expect(lists).toHaveLength(1);
+    expect(paramsOf(lists[0])).toMatchObject({
+      list: [{ id: session, heartbeat: { frame: 3, paused: false, silent: false } }]
+    });
     expect(tools.notes("editor", "session")).toEqual([]);
   });
 
@@ -387,6 +418,71 @@ describe("tickSilent (R6)", () => {
 
   it("keeps PAUSED_SILENT_AFTER_MS at 65 s", () => {
     expect(PAUSED_SILENT_AFTER_MS).toBe(65_000);
+  });
+});
+
+describe("recordHeartbeat: the sessions list on a paused flip (M4)", () => {
+  it("does not re-send the list on the first beat of a session", () => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    harness.send(agent, notification("game", "heartbeat", { frame: 1, paused: false, at: 1 }));
+
+    expect(tools.notes("editor", "sessions")).toEqual([]);
+  });
+
+  it("does not re-send the list when only the frame changes", () => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    harness.send(agent, notification("game", "heartbeat", { frame: 1, paused: false, at: 1 }));
+    tools.clear();
+
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: false, at: 2 }));
+    harness.send(agent, notification("game", "heartbeat", { frame: 3, paused: false, at: 3 }));
+
+    expect(tools.notes("editor", "sessions")).toEqual([]);
+    expect(tools.notes("game", "heartbeat")).toHaveLength(2);
+  });
+
+  it("re-sends the list, with the new heartbeat readout, when paused flips either way", () => {
+    const harness = createHarness();
+    const { agent, session } = harness.hello();
+    const tools = harness.connect("tools");
+    harness.send(agent, notification("game", "heartbeat", { frame: 1, paused: false, at: 1 }));
+    tools.clear();
+
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: true, at: 2 }));
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: true, at: 3 }));
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: false, at: 4 }));
+
+    const lists = tools.notes("editor", "sessions").map(note => paramsOf(note));
+    expect(lists).toEqual([
+      {
+        list: [expect.objectContaining({ heartbeat: { frame: 2, paused: true, silent: false } })]
+      },
+      {
+        list: [expect.objectContaining({ heartbeat: { frame: 2, paused: false, silent: false } })]
+      }
+    ]);
+    expect(lists[0]).toMatchObject({ list: [{ id: session }] });
+  });
+
+  it("sends the list before the forwarded heartbeat of the flip", () => {
+    const harness = createHarness();
+    const { agent } = harness.hello();
+    const tools = harness.connect("tools");
+    harness.send(agent, notification("game", "heartbeat", { frame: 1, paused: false, at: 1 }));
+    tools.clear();
+
+    harness.send(agent, notification("game", "heartbeat", { frame: 2, paused: true, at: 2 }));
+
+    expect(tools.messages().map(message => ("method" in message ? message.method : ""))).toEqual([
+      "sessions",
+      "heartbeat"
+    ]);
   });
 });
 

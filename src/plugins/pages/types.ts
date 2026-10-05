@@ -115,19 +115,80 @@ export type PagesApi = {
 };
 
 /**
- * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`.
+ * Arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr]`: serve the game.
+ */
+export type RunArgs = {
+  readonly kind: "run";
+  readonly html: string;
+  readonly port: number;
+  readonly root: string;
+  /** False with `--no-hmr`: Bun serves the game without hot reload. */
+  readonly hmr: boolean;
+};
+
+/**
+ * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`: the stdio MCP
+ * bridge. `html`, `port` and `hmr` only feed the bin the bridge starts when none runs; a live
+ * `.moku/editor.json` under `root` wins.
+ */
+export type McpArgs = {
+  readonly kind: "mcp";
+  /** The game HTML file, when given. */
+  readonly html?: string;
+  /** The port, when `--port` was given. */
+  readonly port?: number;
+  /** The project root (default "."): where `.moku/editor.json` is read. */
+  readonly root: string;
+  /** False with `--no-hmr`. */
+  readonly hmr: boolean;
+};
+
+/**
+ * Arguments of `moku-editor mcp-config [<game-html>] [--port N]`: print the `.mcp.json` snippet
+ * and the `claude mcp add` line for the same `mcp` arguments.
+ */
+export type McpConfigArgs = {
+  readonly kind: "mcp-config";
+  /** The game HTML file, when given. */
+  readonly html?: string;
+  /** The port, when `--port` was given. */
+  readonly port?: number;
+};
+
+/**
+ * Parsed arguments of the bin: serve, the two MCP subcommands, help, or an error.
  */
 export type BinArgs =
-  | {
-      readonly kind: "run";
-      readonly html: string;
-      readonly port: number;
-      readonly root: string;
-      /** False with `--no-hmr`: Bun serves the game without hot reload. */
-      readonly hmr: boolean;
-    }
+  | RunArgs
+  | McpArgs
+  | McpConfigArgs
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The discovery file `<root>/.moku/editor.json` a serving bin writes (mode 0600) and removes on
+ * stop: how the MCP bridge finds the running editor. Holds the hub token, so it is never printed
+ * or logged.
+ */
+export type EditorDiscovery = {
+  readonly version: 1;
+  /** The bin's process id (the bridge treats a dead pid as no bin). */
+  readonly pid: number;
+  /** The real port on 127.0.0.1. */
+  readonly port: number;
+  /** `http://127.0.0.1:<port>`. */
+  readonly url: string;
+  /** `ws://127.0.0.1:<port><P>/ws`, without the query. */
+  readonly ws: string;
+  /** The hub token of this start. */
+  readonly token: string;
+  /** The absolute project root. */
+  readonly root: string;
+  /** The absolute game HTML file. */
+  readonly html: string;
+  /** `Date.now()` when the file was written. */
+  readonly startedAt: number;
+};
 
 /**
  * What the route handlers need.

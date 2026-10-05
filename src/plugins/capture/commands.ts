@@ -1,16 +1,23 @@
 /**
- * @file capture plugin — builds the editor.capture, editor.series and editor.seriesStop entries
- * and adds them to the registry. No entry runs on its own: a picture exists only because a
- * caller ran one of these commands.
+ * @file capture plugin — builds the editor.capture, editor.series, editor.seriesStop and
+ * editor.sheet entries and adds them to the registry. No entry runs on its own: a picture exists
+ * only because a caller ran one of these commands.
  */
 import type { Json, RunResult } from "../registry/protocol";
 import { checkInput, errorCode, wireError } from "../registry/protocol";
 import type { CommandEntry } from "../registry/types";
 import { readDevice } from "./device";
+import { checkMaxWidth, fitWidth } from "./scale";
 import { noPicture, planSeries, recordSeries, SERIES_ID, stopSeries } from "./series";
+import { checkSheet } from "./sheet";
 import { takeShot } from "./shot";
-import type { CaptureDeps, CaptureRegistry, SeriesValue, Shot } from "./types";
-import { WARN_SHOTS } from "./types";
+import type { CaptureDeps, CaptureRegistry, SeriesValue, Sheet, Shot } from "./types";
+import { SHEET_ID, SHOT_ID, WARN_SHOTS } from "./types";
+
+/**
+ * The input schema of editor.capture.
+ */
+const CAPTURE_INPUT: { readonly maxWidth: "number?" } = { maxWidth: "number?" };
 
 /**
  * The input schema of editor.series.
@@ -21,23 +28,38 @@ const SERIES_INPUT: { readonly durationMs: "number"; readonly intervalMs: "numbe
 };
 
 /**
- * Builds the editor.capture entry: one screenshot with its frame and device.
+ * The input schema of editor.sheet.
+ */
+const SHEET_INPUT: {
+  readonly frames: "number";
+  readonly everyMs: "number";
+  readonly maxWidth: "number?";
+} = { frames: "number", everyMs: "number", maxWidth: "number?" };
+
+/**
+ * Builds the editor.capture entry: one screenshot with its frame and device, shrunk to
+ * `maxWidth` when the picture is wider.
  *
  * @param registry - The registry slice.
+ * @param deps - The picture decoder and the log.
  * @returns The entry.
  */
-function captureEntry(registry: CaptureRegistry): CommandEntry {
+function captureEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry {
   return {
-    descriptor: { id: "editor.capture", title: "Screenshot", input: {}, effect: "read" },
+    descriptor: { id: SHOT_ID, title: "Screenshot", input: CAPTURE_INPUT, effect: "read" },
     /**
-     * Checks the empty input, takes one shot and tags it with its frame and the device.
+     * Checks the input, takes one shot, shrinks it to `maxWidth` when asked and tags it with its
+     * frame and the device.
      *
-     * @param raw - Raw input (`null` or `{}`).
+     * @param raw - Raw input (`null`, `{}` or `{ maxWidth }`).
      * @returns The shot and the state game.capture ran with.
      */
     run: async (raw: Json): Promise<RunResult> => {
-      checkInput({}, raw);
-      const { image, state } = await takeShot(registry);
+      const maxWidth = checkMaxWidth(checkInput(CAPTURE_INPUT, raw).maxWidth);
+      const shot = await takeShot(registry);
+      const { state } = shot;
+      const image =
+        maxWidth === undefined ? shot.image : await fitWidth(shot.image, maxWidth, deps);
       const value: Shot = { image, frame: state.frame, device: readDevice() };
 
       return { value, state };
@@ -113,14 +135,49 @@ function seriesStopEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandE
 }
 
 /**
- * Adds the three capture commands (ids, inputs, effects from contracts §3 and R2).
+ * Builds the editor.sheet entry: one game.capture `{ sheet }` (the frames laid out on one picture
+ * by the game), shrunk to `maxWidth` in the page when the sheet is wider, so it travels small.
+ *
+ * @param registry - The registry slice.
+ * @param deps - The picture decoder and the log.
+ * @returns The entry.
+ */
+function sheetEntry(registry: CaptureRegistry, deps: CaptureDeps): CommandEntry {
+  return {
+    descriptor: { id: SHEET_ID, title: "Contact sheet", input: SHEET_INPUT, effect: "read" },
+    /**
+     * Checks the input, runs game.capture `{ sheet }` once, shrinks the sheet to `maxWidth` when
+     * asked and tags it with the frame of the last picture and the device.
+     *
+     * @param raw - Raw input `{ frames, everyMs, maxWidth? }`.
+     * @returns The sheet and the state game.capture ran with.
+     */
+    run: async (raw: Json): Promise<RunResult> => {
+      const input = checkInput(SHEET_INPUT, raw);
+      const sheet = checkSheet(input);
+      const maxWidth = checkMaxWidth(input.maxWidth, SHEET_ID);
+      const shot = await takeShot(registry, { sheet }, SHEET_ID);
+      const { state } = shot;
+      const image =
+        maxWidth === undefined ? shot.image : await fitWidth(shot.image, maxWidth, deps);
+      const value: Sheet = { image, frame: state.frame, device: readDevice() };
+
+      return { value, state };
+    }
+  };
+}
+
+/**
+ * Adds the four capture commands (ids, inputs, effects from contracts §3 and R2; editor.sheet from
+ * the MCP change).
  *
  * @param registry - The registry slice (add, command, envelope).
- * @param deps - Config, state, log and clock.
+ * @param deps - Config, state, log, clock and the picture decoder.
  * @throws {Error} When an id is already in the registry.
  */
 export function registerCaptureCommands(registry: CaptureRegistry, deps: CaptureDeps): void {
-  registry.add(captureEntry(registry));
+  registry.add(captureEntry(registry, deps));
   registry.add(seriesEntry(registry, deps));
   registry.add(seriesStopEntry(registry, deps));
+  registry.add(sheetEntry(registry, deps));
 }

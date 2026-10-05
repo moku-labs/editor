@@ -41,14 +41,24 @@ export const HIGH_WATER = 1_048_576;
 export const LOW_WATER = 262_144;
 
 /**
- * Cap of the durationMs extension of a long call (R1: the same rule in bridge, hub and link).
+ * Cap of the extension of a long call (R1: the same rule in bridge, hub and link).
  */
 export const DEADLINE_EXTRA_CAP_MS = 60_000;
 
 /**
- * The one long call.
+ * The long call that waits its `durationMs` on top.
  */
 export const SERIES_ID = "editor.series";
+
+/**
+ * The long call that waits its `frames × everyMs` on top (the contact sheet).
+ */
+export const SHEET_ID = "editor.sheet";
+
+/**
+ * The command the bridge adds to the registry: store the checkpoint and reload the page.
+ */
+export const RELOAD_ID = "editor.reload";
 
 /**
  * Bridge configuration.
@@ -63,7 +73,7 @@ export type BridgeConfig = {
   hello: string;
   /** First reconnect delay in ms; doubles per failure up to MAX_RETRY_MS. Integer ≥ 100. */
   retryMs: number;
-  /** Deadline of one hub request in ms; run of editor.series gets + input.durationMs (R1). */
+  /** Deadline of one hub request in ms; a run of editor.series or editor.sheet waits longer (R1). */
   callTimeoutMs: number;
 };
 
@@ -153,13 +163,18 @@ export type CheckpointStorage = {
 };
 
 /**
- * The page seam of the checkpoint across Bun's full reload (R6), injectable for tests.
- * `defaultReload()` is the real one.
+ * The page seam of the checkpoint across Bun's full reload (R6) and of `editor.reload`,
+ * injectable for tests. `defaultReload()` is the real one.
  *
  * @example
  * ```ts
- * // A unit test fires bun:beforeFullReload itself and reads a Map-backed storage.
- * const reload: ReloadSeam = { storage, doc: 5000, onBeforeFullReload: listener => listeners.add(listener) };
+ * // A unit test fires bun:beforeFullReload itself, reads a Map-backed storage and spies on the reload.
+ * const reload: ReloadSeam = {
+ *   storage,
+ *   doc: 5000,
+ *   onBeforeFullReload: listener => listeners.add(listener),
+ *   reloadPage: vi.fn()
+ * };
  * ```
  */
 export type ReloadSeam = {
@@ -173,6 +188,8 @@ export type ReloadSeam = {
    * @returns The remover.
    */
   onBeforeFullReload(listener: () => void): () => void;
+  /** Reloads the page (`location.reload()`); a no-op outside a browser page. */
+  reloadPage(): void;
 };
 
 /**
@@ -204,7 +221,7 @@ export type BridgeState = {
   pending: Map<SubId, Json>;
   /** Request id → deadline timer. */
   inflight: Map<number, ReturnType<typeof setTimeout>>;
-  /** Heartbeat listener and page listeners (visibility, taps, reload), removed on stop. */
+  /** Heartbeat listener, page listeners (visibility, taps, reload) and a scheduled reload, removed on stop. */
   off: (() => void)[];
   /** The checkpoint restored at start, sent once in the next hello (R6). */
   restored: { readonly bookmark: string; readonly frame: number } | undefined;
@@ -276,7 +293,7 @@ export type BridgeDeps = {
   readonly log: Log.LogApi;
   /** ctx.emit("bridge:status", payload). */
   readonly emit: (payload: AgentEvents["bridge:status"]) => void;
-  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock">;
+  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock" | "envelope">;
   readonly channel: Pick<ChannelApi, "read" | "watch" | "run" | "heartbeat" | "onHeartbeat">;
   readonly net: BridgeNet;
   /** sessionStorage, the document id and Bun's beforeFullReload (R6). */

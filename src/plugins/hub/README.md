@@ -77,11 +77,13 @@ Throws before start and after stop. A new token on every start.
 ### `sessions()`
 
 ```ts
-editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
 ```
 
-`SessionInfo` has exactly `id`, `game`, `page`, `embedded`, `connectedAt`. Heartbeat and the
-silent flag stay private hub state. Mutating the result does not change the next call.
+`SessionInfo` has `id`, `game`, `page`, `embedded`, `connectedAt`. After the first heartbeat it
+also has `heartbeat {frame, paused, silent}`: frame and paused of the last beat and the hub's
+silent flag. `at`, `heap` and `lastBeatAt` stay private. Mutating the result does not change the
+next call.
 
 ### `fetch(req, server)`
 
@@ -169,7 +171,7 @@ Agent connection:
 | `hello {manifest}`, manifest valid (`restored` absent or `{ bookmark: string, frame: number }`) | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true}`. Tools get `session` and `sessions {list}`. `hub:session` is emitted. |
 | `hello` with a bad manifest | close 1008 `bad manifest` |
 | `hello` a second time | close 1008 `hello twice` |
-| `heartbeat {frame, paused, at, heap?}` | stored, a silent session comes back, forwarded to every tools connection. `heap {usedMb, limitMb}` is kept when both are finite numbers. A malformed `heap` is dropped and the beat still goes through. |
+| `heartbeat {frame, paused, at, heap?}` | stored, a silent session comes back, forwarded to every tools connection. When `paused` flips against the last beat, or a silent session comes back, tools first get `sessions {list}` again. `heap {usedMb, limitMb}` is kept when both are finite numbers. A malformed `heap` is dropped and the beat still goes through. |
 | `value {sub, value}` | fanned out to the tools subscribers |
 | `tap {x, y, at}` | forwarded to every tools connection with `session`, like a heartbeat. Only `x`, `y` and `at` are kept. |
 | `bye` | the close reason becomes `bye` |
@@ -198,6 +200,7 @@ checks the session choice, the id in the manifest and the input.
 
 What a tools connection gets on channel `editor`: `sessions {list}` at open, then every published
 value (`hotReload {hmr, owner}`); `session {…}` and `sessions {list}` on each session change;
+`sessions {list}` again when a session's `paused` or `silent` flips (not on every frame);
 `hotReload` again on each `publish`.
 
 Errors the hub builds (message prefix `[moku-editor]`):
@@ -221,7 +224,8 @@ Session choice when a game request has no `session`: one open session wins; with
 only `embedded` one wins; otherwise -32003.
 
 Deadline of a forwarded call: `callTimeoutMs`. A `run` of `editor.series` waits its
-`input.durationMs` on top, up to 60 s more. The same rule runs in bridge and link.
+`input.durationMs` on top, and a `run` of `editor.sheet` its `input.frames × input.everyMs`, up to
+60 s more. The same rule runs in bridge and link.
 
 Fan-out: one agent-side watch per `(session, source, input)`. The key sorts object keys, so
 `{a, b}` and `{b, a}` share a watch. A late subscriber gets `null` and then the last value. The
@@ -311,6 +315,6 @@ Lifecycle:
 - 32 MiB per frame. Bigger frames are closed by Bun (1009).
 - 256 pending calls per tools connection, files calls included.
 - Binary frames are not accepted.
-- The silent flag is private. A flip broadcasts nothing; tools compute silence themselves.
+- A silent flip re-sends `sessions {list}` with the `heartbeat` readout, once per check. A new frame alone sends no list; the forwarded `heartbeat` carries it.
 - No throttle of its own on frame sources. The bridge sends one value per heartbeat on change.
 - `serve` holds the one `as unknown as BunServeOptions` cast of the Bun seam (oven-sh/bun#17871, #18314).

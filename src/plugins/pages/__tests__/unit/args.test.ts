@@ -96,3 +96,71 @@ describe("parseBinArgs", () => {
     }
   });
 });
+
+describe("parseBinArgs mcp (M2, M3)", () => {
+  it("parses `mcp` alone: no html, no port, root . and hot reload on", () => {
+    expect(parseBinArgs(["mcp"])).toEqual({ kind: "mcp", root: ".", hmr: true });
+  });
+
+  it("parses `mcp` with the game arguments that feed the launcher", () => {
+    expect(
+      parseBinArgs(["mcp", "web/index.html", "--port", "3001", "--root", "game", "--no-hmr"])
+    ).toEqual({ kind: "mcp", html: "web/index.html", port: 3001, root: "game", hmr: false });
+    expect(parseBinArgs(["-p", "0", "mcp", "a.html"])).toEqual({
+      kind: "mcp",
+      html: "a.html",
+      port: 0,
+      root: ".",
+      hmr: true
+    });
+  });
+
+  it("leaves port out when --port is not given (discovery decides)", () => {
+    const result = parseBinArgs(["mcp", "web/index.html"]);
+    expect(result.kind === "mcp" && "port" in result).toBe(false);
+  });
+
+  it.each([
+    [["mcp", "a.html", "b.html"], "expected at most one game HTML file"],
+    [["mcp", "index.ts"], "ending in .html"],
+    [["mcp", "--port", "x"], "--port must be an integer 0-65535"],
+    [["mcp", "--root", ""], "--root must not be empty"],
+    [["mcp", "--host", "0.0.0.0"], "[moku-editor] "]
+  ])("refuses %j", (argv, message) => {
+    const result = parseBinArgs(argv);
+    expect(result.kind).toBe("error");
+    expect(result.kind === "error" && result.message).toContain(message);
+    expect(result.kind === "error" && result.message.startsWith("[moku-editor] ")).toBe(true);
+  });
+
+  it("returns help for `mcp --help`", () => {
+    expect(parseBinArgs(["mcp", "--help"])).toEqual({ kind: "help" });
+  });
+});
+
+describe("parseBinArgs mcp-config (M8)", () => {
+  it("parses `mcp-config` alone and with html and port", () => {
+    expect(parseBinArgs(["mcp-config"])).toEqual({ kind: "mcp-config" });
+    expect(parseBinArgs(["mcp-config", "web/index.html", "-p", "3000"])).toEqual({
+      kind: "mcp-config",
+      html: "web/index.html",
+      port: 3000
+    });
+  });
+
+  it.each([
+    [["mcp-config", "a.html", "b.html"], "expected at most one game HTML file"],
+    [["mcp-config", "a.txt"], "ending in .html"],
+    [["mcp-config", "--port", "99999"], "--port must be an integer 0-65535"],
+    [["mcp-config", "--root", "game"], "mcp-config takes only <game-html> and --port"],
+    [["mcp-config", "--no-hmr"], "mcp-config takes only <game-html> and --port"]
+  ])("refuses %j", (argv, message) => {
+    const result = parseBinArgs(argv);
+    expect(result.kind === "error" && result.message).toContain(message);
+  });
+
+  it("treats a subcommand only in first position: `a.html mcp` is two positionals", () => {
+    const result = parseBinArgs(["a.html", "mcp"]);
+    expect(result.kind === "error" && result.message).toContain("expected one game HTML file");
+  });
+});

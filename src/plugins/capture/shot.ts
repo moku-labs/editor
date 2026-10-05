@@ -5,7 +5,7 @@
 import type { Json, RunState } from "../registry/protocol";
 import { errorCode, wireError } from "../registry/protocol";
 import type { CaptureRegistry } from "./types";
-import { CAPTURE_ID } from "./types";
+import { CAPTURE_ID, SHOT_ID } from "./types";
 
 /**
  * The start of every picture the door answers (a PNG data URL).
@@ -37,13 +37,21 @@ function pictureOf(value: Json): string | undefined {
  * crossed a frame boundary shows the frame before).
  *
  * @param registry - The registry slice (the game.capture entry is looked up at run time).
+ * @param input - The game.capture input: `{}` for a plain picture, `{ sheet }` for a contact sheet.
+ * @param id - The editor command that asked, named in the no-picture error.
  * @returns The data URL and the run state of the shot.
  * @throws {Error} -32601 `unknown_id` when game.capture is not in the registry; -32000
  *   `command_failed` when the door answers no picture (neither a PNG data URL nor `{ png }` with
  *   one). Errors of the door pass unchanged.
+ * @example
+ * ```ts
+ * const sheet = await takeShot(registry, { sheet: { frames: 6, everyMs: 500 } }, "editor.sheet");
+ * ```
  */
 export async function takeShot(
-  registry: CaptureRegistry
+  registry: CaptureRegistry,
+  input: Json = {},
+  id: string = SHOT_ID
 ): Promise<{ image: string; state: RunState }> {
   const entry = registry.command(CAPTURE_ID);
 
@@ -59,14 +67,14 @@ export async function takeShot(
     );
   }
 
-  const ran = await entry.run({});
+  const ran = await entry.run(input);
   const image = pictureOf(ran.value);
 
   if (image === undefined) {
     throw wireError(
       errorCode.commandFailed,
       `[moku-editor] ${CAPTURE_ID} gave no picture.\n  The renderer is inert, headless or this is not a dev build.`,
-      { reason: "command_failed", retryable: false, id: "editor.capture" }
+      { reason: "command_failed", retryable: false, id }
     );
   }
 

@@ -1,14 +1,15 @@
 /**
- * @file capture plugin — onInit (add the three commands to the registry) and onStop (end a
+ * @file capture plugin — onInit (add the four commands to the registry) and onStop (end a
  * running series: the pending call resolves with the shots so far).
  */
 import { registryPlugin } from "../registry";
+import { decodePicture } from "./canvas";
 import { registerCaptureCommands } from "./commands";
 import { browserClock, stopSeries } from "./series";
 import type { CaptureCtx, CaptureState } from "./types";
 
 /**
- * onInit: adds editor.capture, editor.series and editor.seriesStop to the registry. Runs in init
+ * onInit: adds editor.capture, editor.series, editor.seriesStop and editor.sheet to the registry. Runs in init
  * because the registry builds its manifest from the entries added before start.
  *
  * @param ctx - Plugin context of capture.
@@ -19,7 +20,8 @@ export function initCapture(ctx: CaptureCtx): void {
     config: ctx.config,
     state: ctx.state,
     log: ctx.log,
-    clock: browserClock
+    clock: browserClock,
+    decode: decodePicture
   });
 }
 

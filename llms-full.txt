@@ -26,10 +26,10 @@ Contents:
 - Peer dependency: `@moku-labs/game >= 0.1.0`.
 - Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
 - `files` in the package: `dist`, `LICENSE`, `README.md`, `llms.txt`, `llms-full.txt`. `"sideEffects": false`.
-- Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 71.3 KB minified (24.8 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
+- Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 77.6 KB minified (26.7 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
 - Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
 - Engines: node >= 24, bun >= 1.3.14. The server core and the bin need Bun (`Bun.serve`, HTML imports).
-- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`). It serves with Bun hot reload on (D-23); `--no-hmr` turns it off.
+- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`). It serves with Bun hot reload on (D-23); `--no-hmr` turns it off. `moku-editor mcp` is the stdio MCP server for Claude Code; `moku-editor mcp-config` prints its setup (see "Bin" in section 6).
 
 | Import | File | Exports |
 |---|---|---|
@@ -560,7 +560,21 @@ export type Notification = {
 };
 
 /**
- * One game session the way the tools page sees it (R1: exactly these five fields).
+ * One game session the way a tools client sees it: the five R1 fields and, once the game has sent
+ * a heartbeat, the hub's liveness readout (M4). Old clients ignore `heartbeat`.
+ *
+ * @example
+ * ```ts
+ * // A paused game in the editor pane, as moku_sessions lists it.
+ * const info: SessionInfo = {
+ *   id: "s-7f3a",
+ *   game: "merge-game 0.0.0",
+ *   page: "http://127.0.0.1:3000/",
+ *   embedded: true,
+ *   connectedAt: 1790000000000,
+ *   heartbeat: { frame: 1840, paused: true, silent: false }
+ * };
+ * ```
  */
 export type SessionInfo = {
   readonly id: string;
@@ -569,6 +583,15 @@ export type SessionInfo = {
   readonly embedded: boolean;
   /** Epoch ms. */
   readonly connectedAt: number;
+  /**
+   * Frame and paused of the last heartbeat, and the hub's silent flag. Absent before the first
+   * heartbeat. The hub re-sends the list when paused or silent flips, not on every frame.
+   */
+  readonly heartbeat?: {
+    readonly frame: number;
+    readonly paused: boolean;
+    readonly silent: boolean;
+  };
 };
 
 /**
@@ -897,7 +920,7 @@ All errors are JSON-RPC error objects (`WireError`). Messages start with `[moku-
 | -32007 | `unauthorized` | `unauthorized` | no | hub | a request from an agent connection |
 | -32008 | `notInstalled` | `not_installed` (with `data.id`) | no | registry | a read or watch of a source the game does not have: its door threw on the probe (manifest `available: false`). Message `[moku-editor] source <id> is not available in this game: <reason>`. The link does not log or retry it. |
 
-Deadlines: bridge `callTimeoutMs` (5000), hub `callTimeoutMs` (5000), link `CALL_TIMEOUT_MS` (10000). A `run` of `editor.series` gets `min(input.durationMs, 60000)` on top in all three.
+Deadlines: bridge `callTimeoutMs` (5000), hub `callTimeoutMs` (5000), link `CALL_TIMEOUT_MS` (10000). A `run` of `editor.series` gets `min(input.durationMs, 60000)` on top in all three, and a `run` of `editor.sheet` gets `min(input.frames × input.everyMs, 60000)`. The MCP bridge waits at most 70 s for any hub answer.
 
 Config errors (not wire errors) are thrown at `createApp` from `onInit`, in the shape:
 
@@ -922,7 +945,7 @@ Global events only; no plugin declares its own `events` field. Payload types are
 |---|---|---|---|---|---|
 | agent | `bridge:status` | `{ status: LinkStatus; session?: string }` | bridge | at start (`connecting`), on every change of status kind, on every session change; never from `onStop` | overlay (link dot) |
 | server | `hub:session` | `HubSession` | hub | a valid `hello` (`open: true`); an agent close (`open: false`, `reason` `"bye"` or `"game_reloaded"`) | none in the package; for consumer plugins |
-| server | `files:written` | `FilesWritten` | files | after each successful `write` or `writeBinary`, after the rename; `kind` from `classifyWrite(path)` | none in the package; for a later MCP layer |
+| server | `files:written` | `FilesWritten` | files | after each successful `write` or `writeBinary`, after the rename; `kind` from `classifyWrite(path)` | none in the package; for consumer plugins |
 | tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | status changed kind or any field, or the session changed | workspace, panels, flowView, gameView, renderView, stateView, filesView, consoleView |
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | `show()` changed the workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` | workspace (origins `topbar`, `key`, `palette`), panels (origin `panel`, or the api `run` origin) | a command run from the tools page settled | stateView (taint), consoleView (error lines) |
@@ -1029,7 +1052,11 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 
 ### Bin
 
-`moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`
+```
+moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
+moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
+moku-editor mcp-config [<game-html>] [--port N]
+```
 
 | Flag | Short | Default | Rule |
 |---|---|---|---|
@@ -1040,7 +1067,34 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 
 Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(server, options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so `setHotReload` is refused: `POST {P}/hmr` answers 200 with the unchanged state (round 2b R16; no console error on the page), and the caller compares it with what it asked. Restart the bin with or without `--no-hmr`.
 
-Exit codes: 0 help or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
+Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
+
+Discovery file: after `Bun.serve` the bin writes `<root>/.moku/editor.json` `{ version: 1, pid, port, url, ws, token, root, html, startedAt }` (type `EditorDiscovery`, mode 0600, temp file then rename) and removes it on SIGINT/SIGTERM and in an `exit` listener, only while it still carries this pid. A bin killed with SIGKILL leaves it; the MCP bridge treats a dead pid as no bin. Add `.moku/` to the game's `.gitignore`.
+
+`mcp-config` prints the `.mcp.json` snippet, a blank line and the `claude mcp add` line, then exits 0:
+
+```
+{
+  "mcpServers": {
+    "moku-editor": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["moku-editor", "mcp", "web/index.html", "--port", "3000"]
+    }
+  }
+}
+
+claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000
+```
+
+MCP bridge (`moku-editor mcp`, `src/plugins/pages/mcp/`, D-31): a separate process, not a plugin; a hub **tools client** (`${ws}?token=…&kind=tools`, `Origin: http://127.0.0.1:<port>`), so the hub's session choice, input checks and files sandbox apply as for the tools page. Newline-delimited JSON-RPC 2.0 on stdio; stdout carries only protocol frames, logs go to stderr.
+
+- `initialize` → `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version } }`; versions `2025-11-25`, `2025-06-18`, `2025-03-26` (the client's when listed, else `2025-11-25`). `ping` and `logging/setLevel` → `{}`. An unknown method → -32601, bad params → -32602, a line that is not JSON → -32700. Notifications are never answered; `notifications/cancelled { requestId }` aborts that call. `notifications/progress` during `moku_wait` and `moku_series` when the request has `_meta.progressToken`; `notifications/tools/list_changed` when it connects to another bin.
+- Claude Code 2.1.280 (recorded in `src/plugins/pages/__tests__/fixtures/claude-*.json`): it sends `server/discover` (draft protocol 2026-07-28) first, gets -32601, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized` and `tools/list`.
+- Which bin: a live `.moku/editor.json` under `--root` (default the working directory) wins. Without one the bridge starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached (output in `.moku/editor.log`, 0600), when it knows a game html (argv, else the last discovery file it saw); port `--port`, else the last port, else 3000; it waits at most 15 s for the discovery file and owns that bin. Without an html, tools answer `isError` "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." A closed hub socket is re-read and reconnected once.
+- Teardown on stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes, an owned bin gets SIGTERM, then SIGKILL after 2 s; a bin the bridge did not start keeps running. After a signal it lets go of stdin, so the process exits 0 while the client keeps the pipe open.
+- Tools (15, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`editor.capture { maxWidth }`, default 1080; above 300 KB taken once more at half width), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080 }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a `.moku/captures/*.md` card and its crop), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
+- Liveness (M7): screenshot and series read the session heartbeat first; paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume". Pictures need a visible game page.
 
 ---
 
@@ -1382,6 +1436,8 @@ export type OverlayApi = {
 - Backoff with defaults and `random() = 0.5`: 1000, 2000, 4000, 8000, 16000, 30000, 30000.
 - Lost reasons: `no WebSocket in this runtime` (no retry), `no page URL for <hello>` (no retry), `hello unreachable`, `hello <status>`, `hello answered without ws and token`, `hello answered a bad ws URL`, `socket failed`, `socket closed (<code>)[: <reason>]`, `stopped` (no retry).
 - Taps: a `pointerdown` on the page window sends the `tap { x, y, at }` notification (page CSS px, `at` = `performance.now()`), at most one per 50 ms, passive, never for events inside the overlay host. The tools page draws a ripple at the tap point.
+- Command `editor.reload` (`{ restore: "boolean?" }`, default true, effect `raw`, MCP `moku_reload`): with restore it stores the checkpoint below exactly as on `bun:beforeFullReload`, answers `{ scheduled: true }` and calls `location.reload()` on the next macrotask; `restore: false` skips the checkpoint. The new page restores it and says so in its hello.
+- Long calls: a `run` of `editor.series` waits `min(input.durationMs, 60000)` and a `run` of `editor.sheet` `min(input.frames × input.everyMs, 60000)` on top of `callTimeoutMs` (`deadlineFor`).
 - Checkpoint across Bun's reload (round 2 R6): on `import.meta.hot.on("bun:beforeFullReload")` the bridge runs `game.bookmark` synchronously through the registry door and stores `{ v: 1, doc, at, frame, paused, bookmark }` in `sessionStorage["moku-editor:checkpoint"]`. On start it restores a stored checkpoint (`game.restore`, then `game.pause` when it was paused), removes it, and only then connects: its first hello carries `manifest.restored = { bookmark, frame }`. A checkpoint older than 30 s or malformed is dropped; a failed restore logs `bridge:restore-failed` and workspace's D-07 restore is the fallback.
 - Events: emits `bridge:status`. Logs: `bridge:connected` (info), `bridge:lost` (warn then debug), `bridge:disabled` (error), `bridge:connect-crashed`, `bridge:request-crashed` (error), others at debug.
 
@@ -1407,14 +1463,24 @@ export const HIGH_WATER = 1_048_576;
 export const LOW_WATER = 262_144;
 
 /**
- * Cap of the durationMs extension of a long call (R1: the same rule in bridge, hub and link).
+ * Cap of the extension of a long call (R1: the same rule in bridge, hub and link).
  */
 export const DEADLINE_EXTRA_CAP_MS = 60_000;
 
 /**
- * The one long call.
+ * The long call that waits its `durationMs` on top.
  */
 export const SERIES_ID = "editor.series";
+
+/**
+ * The long call that waits its `frames × everyMs` on top (the contact sheet).
+ */
+export const SHEET_ID = "editor.sheet";
+
+/**
+ * The command the bridge adds to the registry: store the checkpoint and reload the page.
+ */
+export const RELOAD_ID = "editor.reload";
 
 /**
  * Bridge configuration.
@@ -1429,7 +1495,7 @@ export type BridgeConfig = {
   hello: string;
   /** First reconnect delay in ms; doubles per failure up to MAX_RETRY_MS. Integer ≥ 100. */
   retryMs: number;
-  /** Deadline of one hub request in ms; run of editor.series gets + input.durationMs (R1). */
+  /** Deadline of one hub request in ms; a run of editor.series or editor.sheet waits longer (R1). */
   callTimeoutMs: number;
 };
 
@@ -1467,10 +1533,12 @@ export type BridgeApi = {
 
 ### 7.5 capture — agent, Standard, opt-in
 
-- depends: `[registryPlugin]`. Lifecycle: `createState`, `onInit` (adds three commands), `onStop` (ends a running series). No app api.
-- Commands: `editor.capture` (`{}`, effect `read`, value `Shot`), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`).
+- depends: `[registryPlugin]`. Lifecycle: `createState`, `onInit` (adds four commands), `onStop` (ends a running series). No app api.
+- Commands: `editor.capture` (`{ maxWidth: "number?" }`, effect `read`, value `Shot`), `editor.series` (`{ durationMs: "number", intervalMs: "number" }`, effect `read`, value `SeriesValue`), `editor.seriesStop` (`{}`, effect `read`, value `{ stopped: boolean }`), `editor.sheet` (`{ frames: "number", everyMs: "number", maxWidth: "number?" }`, effect `read`, value `Sheet`).
 - Every shot runs the door command `game.capture` (needs `__MOKU_GAME_DEV__`). The picture is the PNG data URL the door answers (game 0.1) or the string `png` of `{ png, legend? }` (game 0.4); anything else is -32000 "gave no picture". A series plans `max(1, floor(durationMs / intervalMs))` shots, never overlapping, one series at a time.
-- Events: none. Logs: `capture:series-large`, `capture:shots-skipped` (warn).
+- `maxWidth` (a whole number 64–4096, else -32602 field `maxWidth`): a wider picture is shrunk in the page to `maxWidth` pixels wide, aspect kept (`createImageBitmap`, then an `OffscreenCanvas` or a canvas element, PNG data URL). A page that cannot do it answers the full picture and logs `capture:downscale-failed`.
+- `editor.sheet` runs `game.capture { sheet: { frames, everyMs } }` once (game ≥ 0.4: the game lays the frames out in `ceil(sqrt(frames))` columns) and shrinks the sheet to `maxWidth`. `frames` is a whole number 2–12, `everyMs` a number 1–5000, else -32602 naming the field. `frame` is the frame after the last picture. MCP `moku_series` sends `maxWidth: 1080`.
+- Events: none. Logs: `capture:series-large`, `capture:shots-skipped`, `capture:downscale-failed` (warn).
 
 ~~~ts
 /**
@@ -1482,6 +1550,46 @@ export const WARN_SHOTS = 200;
  * The door command every shot runs.
  */
 export const CAPTURE_ID = "game.capture";
+
+/**
+ * The id of the one-shot command, named in its errors.
+ */
+export const SHOT_ID = "editor.capture";
+
+/**
+ * The id of the contact-sheet command, named in its errors.
+ */
+export const SHEET_ID = "editor.sheet";
+
+/**
+ * The fewest pictures a contact sheet takes (the game's own limit).
+ */
+export const MIN_SHEET_FRAMES = 2;
+
+/**
+ * The most pictures a contact sheet takes (the game's own limit).
+ */
+export const MAX_SHEET_FRAMES = 12;
+
+/**
+ * The shortest game time between two pictures of a contact sheet, in ms.
+ */
+export const MIN_SHEET_EVERY_MS = 1;
+
+/**
+ * The longest game time between two pictures of a contact sheet, in ms.
+ */
+export const MAX_SHEET_EVERY_MS = 5000;
+
+/**
+ * The smallest `maxWidth` editor.capture and editor.sheet accept, in pixels.
+ */
+export const MIN_MAX_WIDTH = 64;
+
+/**
+ * The largest `maxWidth` editor.capture and editor.sheet accept, in pixels.
+ */
+export const MAX_MAX_WIDTH = 4096;
 
 /**
  * Capture configuration.
@@ -1511,6 +1619,12 @@ export type Device = {
  * Value of `editor.capture`.
  */
 export type Shot = { readonly image: string; readonly frame: number; readonly device: Device };
+
+/**
+ * Value of `editor.sheet`: the contact sheet (one PNG data URL), the frame of the last picture and
+ * the device.
+ */
+export type Sheet = { readonly image: string; readonly frame: number; readonly device: Device };
 
 /**
  * One shot of a series, tagged with its real frame and real time.
@@ -1691,6 +1805,8 @@ export type FilesApi = {
 - Guard modes: `upgrade` (Origin required), `same-origin` (Origin and Sec-Fetch-Site checked when present), `navigate`.
 - Session choice for a game request without `session`: one open session wins; with several, the only embedded one wins; else -32003.
 - Heartbeats (with a well-formed `heap` kept) and `tap { x, y, at }` notifications are forwarded to every tools connection with `session`. A malformed heartbeat, value or tap is one strike; ten strikes close with 1008.
+- Liveness readout (M4): each `SessionInfo` of `sessions()` and of the `sessions` notification carries `heartbeat: { frame, paused, silent }` once the session has sent a heartbeat. The list is re-sent when a session's `paused` or `silent` flips, not on every frame.
+- Deadline of a forwarded call: `callTimeoutMs`, plus `input.durationMs` for a `run` of `editor.series` and `input.frames × input.everyMs` for a `run` of `editor.sheet`, capped at +60 s (the same rule as bridge and link).
 - `publish("hotReload", state)` (round 2 R6): sends the `editor` notification `hotReload` to every tools connection now, keeps the last value per method and replays it right after each tools hello. pages publishes from `attachServer` and after each `setHotReload`.
 - Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
 
@@ -1791,14 +1907,15 @@ export type HubApi = {
   token(): string;
 
   /**
-   * A fresh list of the open game sessions ordered by `connectedAt`. Heartbeat and the silent
-   * flag stay private; mutating the result does not change the next call.
+   * A fresh list of the open game sessions ordered by `connectedAt`. A session that has sent a
+   * heartbeat carries the readout `heartbeat: { frame, paused, silent }`; mutating the result does
+   * not change the next call.
    *
    * @returns The open sessions.
    * @example
    * ```ts
-   * // After the game page connected its bridge.
-   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000 }]
+   * // After the game page connected its bridge and sent its first heartbeat.
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
    * ```
    */
   sessions(): SessionInfo[];
@@ -1912,6 +2029,7 @@ export type PublishMethod = "hotReload";
 - Hot reload (D-23, round 2 R6): the bin serves with `development: { hmr: true, console: true }` (`--no-hmr`: `hmr: false`) and calls `attachServer(server, options)` right after `Bun.serve`. `hotReload()` is `{ hmr, owner }`, owner `"server"` with `hmr: false` until `attachServer`. Bun 1.3.14 cannot apply `development.hmr` on `server.reload` (spike in the pages README), so `setHotReload(on)` answers false unless `on` already is the state; restart the bin to change it.
 - Boot tag: `<script type="application/json" id="moku-editor-boot">` with `ToolsBoot` `{ v: 1, ws, token, path, title, editorUrl, gameUrl, root }`.
 - `PAGE_CSP` (exported from `routes.ts`): `default-src 'self'; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
+- Home of the `moku-editor` bin, its `mcp` and `mcp-config` subcommands, the `.moku/editor.json` discovery file and the stdio MCP bridge in `mcp/` (see "Bin" in section 6).
 - Events: none. Logs: `pages:not-built` (warn at init, error at first request), `pages:hot-reload` (info, `attachServer`), `pages:hot-reload-read-only` (info, a refused change).
 
 ~~~ts
@@ -2003,19 +2121,80 @@ export type PagesApi = {
 };
 
 /**
- * Parsed arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]`.
+ * Arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr]`: serve the game.
+ */
+export type RunArgs = {
+  readonly kind: "run";
+  readonly html: string;
+  readonly port: number;
+  readonly root: string;
+  /** False with `--no-hmr`: Bun serves the game without hot reload. */
+  readonly hmr: boolean;
+};
+
+/**
+ * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`: the stdio MCP
+ * bridge. `html`, `port` and `hmr` only feed the bin the bridge starts when none runs; a live
+ * `.moku/editor.json` under `root` wins.
+ */
+export type McpArgs = {
+  readonly kind: "mcp";
+  /** The game HTML file, when given. */
+  readonly html?: string;
+  /** The port, when `--port` was given. */
+  readonly port?: number;
+  /** The project root (default "."): where `.moku/editor.json` is read. */
+  readonly root: string;
+  /** False with `--no-hmr`. */
+  readonly hmr: boolean;
+};
+
+/**
+ * Arguments of `moku-editor mcp-config [<game-html>] [--port N]`: print the `.mcp.json` snippet
+ * and the `claude mcp add` line for the same `mcp` arguments.
+ */
+export type McpConfigArgs = {
+  readonly kind: "mcp-config";
+  /** The game HTML file, when given. */
+  readonly html?: string;
+  /** The port, when `--port` was given. */
+  readonly port?: number;
+};
+
+/**
+ * Parsed arguments of the bin: serve, the two MCP subcommands, help, or an error.
  */
 export type BinArgs =
-  | {
-      readonly kind: "run";
-      readonly html: string;
-      readonly port: number;
-      readonly root: string;
-      /** False with `--no-hmr`: Bun serves the game without hot reload. */
-      readonly hmr: boolean;
-    }
+  | RunArgs
+  | McpArgs
+  | McpConfigArgs
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The discovery file `<root>/.moku/editor.json` a serving bin writes (mode 0600) and removes on
+ * stop: how the MCP bridge finds the running editor. Holds the hub token, so it is never printed
+ * or logged.
+ */
+export type EditorDiscovery = {
+  readonly version: 1;
+  /** The bin's process id (the bridge treats a dead pid as no bin). */
+  readonly pid: number;
+  /** The real port on 127.0.0.1. */
+  readonly port: number;
+  /** `http://127.0.0.1:<port>`. */
+  readonly url: string;
+  /** `ws://127.0.0.1:<port><P>/ws`, without the query. */
+  readonly ws: string;
+  /** The hub token of this start. */
+  readonly token: string;
+  /** The absolute project root. */
+  readonly root: string;
+  /** The absolute game HTML file. */
+  readonly html: string;
+  /** `Date.now()` when the file was written. */
+  readonly startedAt: number;
+};
 
 /**
  * The server the bin attaches: Bun's Server is one.
@@ -2065,7 +2244,8 @@ export const EMPTY_AFTER_LOST_MS = 10_000;
 export const CALL_TIMEOUT_MS = 10_000;
 
 /**
- * Cap of the durationMs extension of a long call (R1).
+ * Cap of the extension of a long call (R1): durationMs of editor.series, frames × everyMs of
+ * editor.sheet.
  */
 export const LONG_CALL_CAP_MS = 60_000;
 
@@ -2177,8 +2357,8 @@ export type FilesClient = {
  * - `read` and `run` reject -32003 `no_session` (not retryable) at once when no game is connected.
  * - `watch` is accepted in every state, also while disconnected, and is sent again after every
  * reconnect or session change. The first value is the agent's immediate read.
- * - `run` checks the RunResult shape; `editor.series` waits its `durationMs` on top of the call
- * timeout (R1).
+ * - `run` checks the RunResult shape; `editor.series` waits its `durationMs` and `editor.sheet`
+ * its `frames × everyMs` on top of the call timeout (R1).
  * - `status` returns a copy.
  *
  * @example
@@ -2401,7 +2581,7 @@ export type LinkApi = EditorChannel & {
 - depends: `[linkPlugin]`. Lifecycle: `onInit` (config, prefs, theme, hash, keys, Esc layers, palette), `onStart` (window listeners, `link.onManifest`), `mount(el)` (renders the shell, creates the frame layer once), `onStop`.
 - Workspaces in rail order: Game (the default, ⌘1), Flow (⌘2), Render, State, Files, Console.
 - Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; H hot reload; Esc unwinds layers in `EscLayer` order.
-- Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) logo, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference mode, Registry (icon only; counts in its title "Registry · 20 sources · 21 commands"), theme. Below 900 px (`compact`) logo, game name (hidden at 560 px and narrower), link pill (session id in its title; it opens the session menu), Pause and Step as icons (the labels are their accessible names, round 2b R15), the icon toggles Reference mode (`data-action="reference"`, target, `aria-pressed`) and Hot reload (`data-action="hot-reload"`, flame with a dot while on; only above 560 px; inert with its reason in the title when the editor cannot change it), a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Reference mode, Hot reload (each with its state and key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls; Reference mode and Hot reload stay in the menu while their icons show. No two controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (e2e/top-bar.spec.ts).
+- Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) logo, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference mode, Registry (icon only; counts in its title "Registry · 20 sources · 23 commands"), theme. Below 900 px (`compact`) logo, game name (hidden at 560 px and narrower), link pill (session id in its title; it opens the session menu), Pause and Step as icons (the labels are their accessible names, round 2b R15), the icon toggles Reference mode (`data-action="reference"`, target, `aria-pressed`) and Hot reload (`data-action="hot-reload"`, flame with a dot while on; only above 560 px; inert with its reason in the title when the editor cannot change it), a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Reference mode, Hot reload (each with its state and key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls; Reference mode and Hot reload stay in the menu while their icons show. No two controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (e2e/top-bar.spec.ts).
 - Hot reload switch: mirrors `link.hotReload()`. Owner `"bin"`: a click asks `setHotReload`; Bun cannot switch, so it toasts "Start the bin with --no-hmr to turn hot reload off" (or "…without --no-hmr to turn hot reload on") and keeps that hint in the title. Owner `"server"` or unknown: inert, the reason in the title.
 - Narrow first: built for Claude's browser pane at 1/3 (480 px) and 1/2 (720 px) of the screen; every workspace works at 480 px without horizontal page scroll.
 - Density: `auto` (default; compact below 820 px of window width, comfortable from there), `compact` or `comfortable`. Palette items "Density: …"; saved with the theme; `data-density` on `<html>`; `workspace:density` when the applied value changes.
@@ -5075,7 +5255,7 @@ if (__MOKU_GAME_DEV__) {
 
 Measured with `Bun.build` (browser, minified, the game external; `tests/integration/agent-bundle.test.ts`):
 flag `false` adds 0 B (no `/__editor/hello`, `editor.capture` or `bridge:` in the output); flag
-`true` adds 71.3 KB minified (24.8 KB gzip: agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common`). A static import used only inside the `if` drops out too (`"sideEffects":
+`true` adds 77.6 KB minified (26.7 KB gzip: agent core, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common`). A static import used only inside the `if` drops out too (`"sideEffects":
 false`); an agent export used outside it keeps the whole agent.
 
 ### 9.2 In process, without a server (tests, headless)
@@ -5255,7 +5435,7 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | tools → hub | files | request | `write` | `{ path, text, version? }` | `WriteResult` |
 | tools → hub | files | request | `writeBinary` | `{ path, data }` (data URL) | `WriteResult` |
 | tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
-| hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` | — |
+| hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` (each with `heartbeat { frame, paused, silent }` once known; re-sent when paused or silent flips) | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
 | hub → tools | editor | notification | `hotReload` | `HotReload` (`{ hmr, owner }`; replayed after each tools hello) | — |
 | hub → tools | game | notification | `heartbeat`, `value`, `tap` | forwarded, with `session` | — |
