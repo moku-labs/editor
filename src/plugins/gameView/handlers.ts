@@ -3,6 +3,7 @@
  * workspace:open-sheet, workspace:inspect (R9), workspace:reference (D-27).
  */
 import type { ToolsEvents } from "../../config";
+import { isReloading } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { openSheet } from "./capture/sheet";
 import { inspectElement } from "./element/select";
@@ -30,7 +31,8 @@ export function createHandlers(ctx: GameViewCtx): GameViewHooks {
 /**
  * Applies one link status: a new session (live/paused after lost, or another session id) drops
  * the scene, the calibration and the manifest; empty turns the picker off, closes the popover
- * and ends a running series early; silent and lost keep everything (the UI marks it stale).
+ * and ends a running series early; silent and lost keep everything (the UI marks it stale). An
+ * expected reload (`isReloading`) keeps the toolbar Reload busy (U11).
  *
  * @param ctx - Domain context of gameView.
  * @param payload - The link:status payload.
@@ -42,8 +44,10 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
   const attached = status.kind === "live" || status.kind === "paused";
   const changed =
     session !== undefined && previous.session !== undefined && session !== previous.session;
+  const isNewSession = attached && (previous.status === "lost" || changed);
 
-  if (attached && (previous.status === "lost" || changed)) {
+  // A new game page: what gameView read of the old one no longer holds.
+  if (isNewSession) {
     state.scene = undefined;
     state.calibration = undefined;
     state.calibrationRead = false;
@@ -51,17 +55,26 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
     state.calibrationRun.waiting = false;
     state.manifest = undefined;
   }
+
+  // No game at all: nothing to pick, and a running series ends early.
   if (status.kind === "empty") {
     state.picker = { on: false, hover: undefined };
     state.series.popover = false;
     if (state.series.recording !== undefined) state.series.recording.stopRequested = true;
   }
-  state.link = { status: status.kind, session: session ?? previous.session };
+
+  // Keep the session across statuses without one; an expected reload keeps Reload busy.
+  state.link = {
+    status: status.kind,
+    session: session ?? previous.session,
+    reloading: isReloading(status)
+  };
   notify(state);
 }
 
 /**
- * The link:status hook.
+ * Keeps gameView in step with the game link: every status goes through `applyLinkStatus` (a new
+ * session drops the scene and the calibration, empty ends picking and a series).
  *
  * @param ctx - Domain context of gameView.
  * @returns The handler.

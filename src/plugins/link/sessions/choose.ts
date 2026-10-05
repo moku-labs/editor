@@ -11,6 +11,7 @@ import { expectShape, readManifest } from "../rpc/shapes";
 import { backoffDelay } from "../socket/backoff";
 import { clearRetry, isAttached } from "../state";
 import { applyStatus, emitStatus } from "../status/machine";
+import { expectReload } from "../status/reload";
 import { detachAll, resubscribeAll, unwatchAll } from "../subscriptions/watch";
 import type { LinkCtx } from "../types";
 import { EMPTY_AFTER_LOST_MS } from "../types";
@@ -152,8 +153,14 @@ export function retrySession(ctx: LinkCtx): void {
 }
 
 /**
+ * The hub's close reason of a session whose game said bye: an expected reload (U7).
+ */
+const BYE = "bye";
+
+/**
  * The chosen session closed: wire subs dropped (records kept), manifest dropped, listeners told,
- * status lost with `retryInMs = retryMs`, session retry scheduled.
+ * status lost with `retryInMs = retryMs`, session retry scheduled. A game that said bye reloads on
+ * purpose: the status reads `reloading` (U7).
  *
  * @param ctx - Domain context of link.
  * @param reason - The hub's close reason.
@@ -163,6 +170,7 @@ export function closeChosen(ctx: LinkCtx, reason: string): void {
   const id = state.chosen;
   if (id === undefined) return;
 
+  if (reason === BYE) expectReload(ctx);
   detachAll(ctx);
   state.chosen = undefined;
   state.sticky = false;

@@ -214,8 +214,19 @@ describe("Stage", () => {
     expect(badges(stage({ kind: "connecting" }))).toEqual(["Connecting"]);
   });
 
-  it("shows Reloading game and the REC badge", () => {
-    ctx.state.reloading = true;
+  it("an expected reload (U12) shows one Reloading badge and no stale fade", () => {
+    const reloading = stage({
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 12,
+      retryInMs: 1000,
+      reloading: true
+    });
+    expect(badges(reloading)).toEqual(["Reloading · last frame 12"]);
+    expect(find(reloading.root, "[data-game='stage']").dataset.stale).toBeUndefined();
+  });
+
+  it("shows the REC badge", () => {
     ctx.state.series.recording = {
       folder: "f/",
       label: "a",
@@ -227,7 +238,7 @@ describe("Stage", () => {
       written: 0,
       stopRequested: false
     };
-    expect(badges(stage())).toEqual(["Reloading game", "● REC 0.0 s"]);
+    expect(badges(stage())).toEqual(["● REC 0.0 s"]);
   });
 
   it("shows the picker hint pill, and the calibration hint without a keyed element", () => {

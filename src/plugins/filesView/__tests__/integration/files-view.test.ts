@@ -113,7 +113,11 @@ describe("filesView integration", () => {
     const saved = await app.filesView.save();
     expect(saved).toMatchObject({ kind: "saved", reload: true });
     expect(workspace.toast).toHaveBeenCalledWith("✓ Saved", "nodes/merge.ts");
-    expect(workspace.reload).toHaveBeenCalledWith({ restore: true });
+    expect(workspace.reload).toHaveBeenCalledWith({
+      restore: true,
+      afterSave: true,
+      since: expect.any(Number)
+    });
 
     // the file changes behind the tab → conflict → overwrite
     files.set("nodes/merge.ts", "export const merge = 99;\n");

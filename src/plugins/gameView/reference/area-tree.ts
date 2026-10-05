@@ -31,11 +31,6 @@ const TEXT_CHARS = 40;
 
 /**
  * One child line of the tree: the node, its level below the root (1 = a child) and its text.
- *
- * @example
- * ```ts
- * const child: AreaChild = { node: coinPillTextNode, depth: 1, text: "1 250" };
- * ```
  */
 export type AreaChild = {
   readonly node: SceneNode;
@@ -45,11 +40,6 @@ export type AreaChild = {
 
 /**
  * The tree of one group root: the root's own text, its child lines and how many the cap left out.
- *
- * @example
- * ```ts
- * const branch: AreaBranch = { text: undefined, children: [{ node: homeIconNode, depth: 1, text: undefined }], more: 0 };
- * ```
  */
 export type AreaBranch = {
   readonly text: string | undefined;
@@ -192,13 +182,9 @@ function layoutParents(scene: SceneSnapshot, node: SceneNode): SceneNode[] {
  * @param scene - The scene.
  * @param roots - The group roots, in card order.
  * @returns The lines without the `layout: ` label; none for a root without parents.
- * @example
- * ```ts
- * layoutLines(boardScene, [homeNode, coinPillNode]);
- * // ["home, coinPill < hudRow (row, padding 0/40/0/40, margin 40/0/0/0) < boardScreen (column, padding 0/0/0/0)"]
- * ```
  */
 export function layoutLines(scene: SceneSnapshot, roots: readonly SceneNode[]): readonly string[] {
+  // Group the roots by their parent chain.
   const chains = new Map<string, { names: string[]; parents: SceneNode[] }>();
   for (const root of roots) {
     const parents = layoutParents(scene, root);
@@ -208,6 +194,8 @@ export function layoutLines(scene: SceneSnapshot, roots: readonly SceneNode[]): 
     if (chain === undefined) chains.set(id, { names: [root.name], parents });
     else chain.names.push(root.name);
   }
+
+  // One line per chain: the roots, then each parent with its layout.
   return [...chains.values()].map(
     chain =>
       `${chain.names.join(", ")} < ${chain.parents.map(parent => layoutOf(parent)).join(" < ")}`
@@ -276,6 +264,25 @@ function impliedIds(scene: SceneSnapshot, roots: readonly SceneNode[]): Set<stri
 }
 
 /**
+ * True for a node partly in the area: visible, placed, overlapping it but not inside, and not
+ * implied by the group's trees or layout lines.
+ *
+ * @param node - The node.
+ * @param area - The area in device CSS px.
+ * @param implied - The ids of the group's trees and of the parents its layout lines name.
+ * @returns Whether the node is partly in the area.
+ */
+function isPartlyIn(node: SceneNode, area: PageRect, implied: ReadonlySet<string>): node is Placed {
+  return (
+    node.visible &&
+    node.rect !== undefined &&
+    !implied.has(node.id) &&
+    overlapOf(node.rect, area) > 0 &&
+    !inside(node.rect, area)
+  );
+}
+
+/**
  * The nodes partly in the area: visible, placed, overlapping it but not inside, not in the
  * group's trees and not a parent a layout line names (a background, the screen root above the
  * chain). Largest overlap first, then top to bottom; at most 8. None in a scene without a
@@ -298,13 +305,8 @@ export function partlyInArea(
   if (!scene.calibrated) return [];
 
   const implied = impliedIds(scene, roots);
-  const partly = [...scene.nodes.values()].filter(
-    (node): node is Placed =>
-      node.visible &&
-      node.rect !== undefined &&
-      !implied.has(node.id) &&
-      overlapOf(node.rect, area) > 0 &&
-      !inside(node.rect, area)
+  const partly = [...scene.nodes.values()].filter((node): node is Placed =>
+    isPartlyIn(node, area, implied)
   );
   const ordered = partly.toSorted(
     (a, b) =>

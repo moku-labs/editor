@@ -99,8 +99,11 @@ export function inspectElement(ctx: GameViewCtx, ref: ElementRef): void {
  */
 export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
   const { state } = ctx;
+  // Number this call: a newer one drops it.
   state.highlightSeq += 1;
   const request = state.highlightSeq;
+
+  // A clear, or an element of the built scene: draw at once.
   if (ref === undefined || state.scene?.nodes.has(refId(ref))) {
     state.treeHover = ref;
     if (ref !== undefined) ensureOverlayRoot(ctx);
@@ -108,6 +111,7 @@ export function highlightElement(ctx: GameViewCtx, ref?: ElementRef): void {
     return;
   }
 
+  // Otherwise read the scene first, and draw only when no newer call came.
   readScene(ctx).then(
     () => {
       if (request !== state.highlightSeq) return;
@@ -137,9 +141,8 @@ function nodeIn(
   box: FrameBox | undefined,
   client: ClientPoint
 ): SceneNode | undefined {
-  if (scene === undefined || !scene.calibrated || box === undefined || box.scale <= 0) {
-    return undefined;
-  }
+  const hasCalibratedFrame = scene?.calibrated === true && box !== undefined && box.scale > 0;
+  if (!hasCalibratedFrame) return undefined;
   return elementAt(scene, pageFromClient(client, box));
 }
 

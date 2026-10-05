@@ -3,11 +3,12 @@
  * `editor.hotReload`, its listeners, and the change request `POST {path}/hmr` with the boot token
  * as a Bearer. The state is a server fact shared by every tools tab, never stored in the page. The
  * bin restarts its server for a change (D-32), which can cut the answer off: the request then waits
- * for the reconnect to deliver the state (A1).
+ * for the reconnect to deliver the state (A1). A change the bin makes is an expected reload (U7).
  */
 import type { HotReload, Json, ToolsBoot } from "../../registry/protocol";
 import { pageHref } from "../boot/read";
 import { readHotReload } from "../rpc/shapes";
+import { expectReload } from "../status/reload";
 import type { HotReloadWaiter, LinkCtx, LinkState } from "../types";
 import { HOT_RELOAD_CONFIRM_MS } from "../types";
 
@@ -120,6 +121,17 @@ export function addHotReloadListener(
  * @returns The absolute URL.
  * @example
  * ```ts
+ * // Outside a page (a Bun process): the http origin of the boot socket.
+ * const boot: ToolsBoot = {
+ *   v: 1,
+ *   ws: "ws://127.0.0.1:3000/__editor/ws",
+ *   token: "t-1",
+ *   path: "/__editor",
+ *   title: "Coin Rush",
+ *   editorUrl: "vscode://file/{file}:{line}",
+ *   root: "/work/coin-rush",
+ *   gameUrl: "http://127.0.0.1:3000/"
+ * };
  * hmrUrl(boot); // "http://127.0.0.1:3000/__editor/hmr"
  * ```
  */
@@ -196,7 +208,9 @@ function reconnectDelivered(waiter: HotReloadWaiter): Promise<boolean> {
 /**
  * Asks the server for hot reload on or off: `POST {path}/hmr` with `{ hmr }` and the boot token.
  * The state the server answers is applied. A network failure (the bin restarts its server for a
- * change, D-32) waits for the reconnect to deliver the state and compares it (A1). Never rejects.
+ * change, D-32) waits for the reconnect to deliver the state and compares it (A1). A change the
+ * bin makes opens the expected reload window first: the restart reads `reloading` (U7). Never
+ * rejects.
  *
  * @param ctx - Domain context of link.
  * @param on - The asked value.
@@ -206,6 +220,10 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
   const { state } = ctx;
   const { boot } = state;
   if (boot === undefined) return false;
+
+  const current = state.hotReload;
+  const isBinRestart = current?.owner === "bin" && current.hmr !== on;
+  if (isBinRestart) expectReload(ctx);
 
   const waiter: HotReloadWaiter = { before: state.socket, delivered: false, settle: undefined };
   state.hotReloadWaiters.add(waiter);
@@ -217,7 +235,8 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
     }
 
     if (answer.state !== undefined) applyHotReload(ctx, answer.state);
-    return answer.ok && answer.state?.owner === "bin" && answer.state.hmr === on;
+    const binApplied = answer.ok && answer.state?.owner === "bin" && answer.state.hmr === on;
+    return binApplied;
   } finally {
     state.hotReloadWaiters.delete(waiter);
   }

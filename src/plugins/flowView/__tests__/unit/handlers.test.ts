@@ -60,6 +60,43 @@ describe("link:status (M4, M13)", () => {
     expect(vi.mocked(fakes.files.read).mock.calls.length).toBeGreaterThan(reads);
   });
 
+  it("an expected reload (U9) marks no stale and keeps the last stale frame clear", () => {
+    const { ctx } = createTestCtx();
+    const hooks = createHandlers(ctx);
+    hooks["link:status"]({ status: { kind: "live", frame: 1840 }, session: "s-1" });
+    hooks["link:status"]({
+      status: { kind: "lost", reason: "bye", lastFrame: 1840, retryInMs: 1000, reloading: true }
+    });
+    expect(ctx.state.data.stale).toBe(false);
+    expect(ctx.state.data.staleFrame).toBeUndefined();
+    expect(ctx.state.data.status.kind).toBe("lost");
+  });
+
+  it("a new session after a reload reads layout.json again; the same pins do not lay out again (B9)", async () => {
+    const { ctx, fakes } = createTestCtx({
+      files: {
+        ".moku/editor/layout.json":
+          '{ "version": 1, "nodes": { "main/home": { "x": 0, "y": 0 } } }\n'
+      }
+    });
+    await prepare(ctx);
+    const hooks = createHandlers(ctx);
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    await flush(10);
+    const result = ctx.state.layout.result;
+    const relayout = vi.spyOn(actionsOf(ctx).layout, "relayout");
+    const reads = vi.mocked(fakes.files.read).mock.calls.length;
+
+    hooks["link:status"]({
+      status: { kind: "lost", reason: "bye", lastFrame: 1, retryInMs: 1000, reloading: true }
+    });
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-2" });
+    await flush(10);
+    expect(vi.mocked(fakes.files.read).mock.calls.length).toBeGreaterThan(reads);
+    expect(relayout).not.toHaveBeenCalled();
+    expect(ctx.state.layout.result).toBe(result);
+  });
+
   it("logs a failed load as a warning", async () => {
     const { ctx, fakes } = createTestCtx();
     fakes.files.failing.set(".moku/editor/layout.json", new Error("boom"));

@@ -236,6 +236,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       session: () => "s-1",
       choose: vi.fn(() => Promise.resolve(manifestOf())),
       retry: vi.fn(),
+      expectReload: vi.fn(),
       boot: () => undefined,
       frameUrl: url => url,
       isOtherTab: () => false,

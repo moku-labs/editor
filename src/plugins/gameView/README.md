@@ -124,7 +124,7 @@ gameView declares no events. It uses the global tools events (R4).
 |---|---|---|---|
 | Emits | `workspace:reveal` | `{ ref }` | Element tab "Show in render tree". renderView hooks it. |
 | Emits | `workspace:open-file` | `{ path, line }` | "Open in Files" on the style card, the call card and "Defined at". filesView hooks it. |
-| Hooks | `link:status` | `{ status, session? }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. |
+| Hooks | `link:status` | `{ status, session? }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. An expected reload (`isReloading`) keeps the toolbar Reload busy (U11). |
 | Hooks | `workspace:changed` | `{ ws }` | Entering Game starts the scene watches. Leaving stops them and turns the picker off. |
 | Hooks | `workspace:open-sheet` | `{ index }` | Opens that contact sheet. |
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
@@ -207,6 +207,8 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Device toolbar and stage
 
+- The stage badge shows the link: "Paused · frame N" and "No heartbeat for N s · showing frame N" (warn), "Connecting" (info, spinner), "Game page reloaded, reconnecting · retry in N s · last frame N" (error, spinner) on a real loss. An expected reload (`isReloading`: `lost` with `reloading: true`, U9) shows "Reloading · last frame N" (info, spinner, U12) and no `data-stale` fade: the badge overlays the stage, so the layout does not move, and workspace's spinner on the game frame stays. The toolbar Reload calls `workspace.gameFrame().reload({ restore: false })`: no save, so the frame reloads at once. A style save calls it with `{ restore: true, afterSave: true, since }`, `since` taken before the write, so Bun's reload or the game's hot swap comes first. A failed reload logs `gameView: reload failed`.
+- The toolbar Reload (`button[data-part="reload"]`) is busy from the click until the reload settles (resolved or failed), and while the link reports an expected reload from another trigger (`isReloading`, U11): `disabled`, `aria-busy="true"`, aria-label "Reloading", label "…". A hidden "Reload" sizer (`::after`, toolbar.css) keeps its width, so the toolbar does not shift. A click while busy starts no second reload.
 - The device select has one `<optgroup>` per preset group: iPhone, Android, Foldable, Tablet, Desktop (`DEVICE_GROUPS` of the protocol).
 - Each option's title has the size and dpr. An estimated preset adds "approx: estimated values".
 - A foldable preset (`fold`) shows Fold / Unfold (`data-action="fold"`): "Unfold" on the cover, "Fold" on the inner screen. It calls `workspace.setDevice({ folded })`. No reload: the game sees a resize, and the picker calibrates again after the next `game.ui` snapshot.

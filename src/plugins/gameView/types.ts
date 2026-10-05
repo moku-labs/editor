@@ -15,6 +15,7 @@ import type {
 } from "../panels/shared/scene";
 import type { StyleBlock, StyleBlockRef, StyleEditError } from "../panels/shared/style-edit";
 import type { FileText, Json, LinkStatus, SelectionInfo } from "../registry/protocol";
+import type { FrameBox } from "../workspace/types";
 
 export type {
   Calibration,
@@ -254,6 +255,8 @@ export type ClientPoint = { readonly x: number; readonly y: number };
 export type AreaPress = {
   readonly pointerId: number;
   readonly start: ClientPoint;
+  /** The frame box at the press, read once: the marquee maps through it for the whole drag. */
+  readonly box: FrameBox | undefined;
   /** The pointer moved 4 client px or more: the layer holds the pointer, the marquee follows. */
   dragging: boolean;
   /** Esc ended the drag: the release picks nothing. */
@@ -494,22 +497,27 @@ export type GameViewState = {
     styleSave?: ReturnType<typeof setTimeout>;
   };
   disposers: (() => void)[];
-  /** Kind and session of the last link:status: a new session drops scene, calibration, manifest. */
-  link: { status: LinkStatus["kind"] | undefined; session: string | undefined };
+  /**
+   * Kind and session of the last link:status: a new session drops scene, calibration, manifest.
+   * `reloading` is true while that status is an expected reload (`isReloading`, U11).
+   */
+  link: { status: LinkStatus["kind"] | undefined; session: string | undefined; reloading: boolean };
+  /** The gameView reloads in flight (toolbar Reload, style save): the Reload button is busy (U11). */
+  reloads: number;
   /** True once game.rect was asked for this session and device (calibration may stay undefined). */
   calibrationRead: boolean;
   /** The style search of the selected element while no StyleCard is shown. */
   lookup: StyleLookup | undefined;
   /** The capture card is hovered or focused, so it stays. */
   cardHeld: boolean;
-  /** A game reload gameView started has not settled. */
-  reloading: boolean;
   /** Bumped by every highlight call; an older pending call is dropped. */
   highlightSeq: number;
   /** The calibration's target, revision and pending reads. */
   calibrationRun: CalibrationRun;
   /** The last source search result per ui key (proxies and Copy reference read it). */
   found: Map<string, StyleSource>;
+  /** The components whose definition a full search did not find: never searched again. */
+  missedDefinitions: Set<string>;
   /** The source search in flight per ui key: a second ask waits for the same search. */
   searches: Map<string, Promise<StyleSource | undefined>>;
   /** The style block found per ui key (the reference block's `style:` and the proxies). */

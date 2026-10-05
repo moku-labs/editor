@@ -28,11 +28,11 @@ describe("createGameViewState", () => {
       overlayRoot: undefined,
       timers: {},
       disposers: [],
-      link: { status: undefined, session: undefined },
+      link: { status: undefined, session: undefined, reloading: false },
+      reloads: 0,
       calibrationRead: false,
       lookup: undefined,
       cardHeld: false,
-      reloading: false,
       highlightSeq: 0
     });
     expect(state.listeners.size).toBe(0);
@@ -45,6 +45,7 @@ describe("createGameViewState", () => {
     expect(state.searches.size).toBe(0);
     expect(state.blocks.size).toBe(0);
     expect(state.spawns.size).toBe(0);
+    expect(state.missedDefinitions.size).toBe(0);
     expect(state.cards.size).toBe(0);
   });
 

@@ -25,8 +25,11 @@ import { closeMore, isCompact, moreMenu, openMore, topBar } from "./top-bar";
 /** The project root the bin serves. */
 const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
-/** A game source the save checks touch: an appended comment changes nothing the game shows. */
-const SAVED_SOURCE = "features/home/styles.ts";
+/**
+ * A game source the save checks touch: an appended comment changes nothing the game shows. A
+ * logic module, so Bun reloads the page; a view module would hot swap in place (game 0.5.0, U10).
+ */
+const SAVED_SOURCE = "rules/rules.ts";
 
 /** The script Bun's HMR client adds to the HTML of a page served with HMR on. */
 const HMR_CLIENT = "/_bun/client";
@@ -261,6 +264,23 @@ async function reloadState(page: Page): Promise<string> {
 }
 
 /**
+ * Waits until the game page's own clock has run `ms` on in the document `markGame` marked. A
+ * reload in that time drops the mark, so the wait cannot end and fails.
+ *
+ * @param page - The tools page.
+ * @param ms - How long the game must keep its page.
+ */
+async function gameKeepsPageFor(page: Page, ms: number): Promise<void> {
+  const frame = gameFrame(page);
+  const until = (await frame.evaluate(() => performance.now())) + ms;
+  await frame.waitForFunction(
+    end => Reflect.get(globalThis, "__e2eMark") === 1 && performance.now() >= end,
+    until,
+    { timeout: ms + SWITCH_MS }
+  );
+}
+
+/**
  * Starts recording every toast the tools page shows, in order: a switch toasts its state and the
  * frame reload toasts right after it, faster than a locator poll.
  *
@@ -332,6 +352,51 @@ async function switchHotReload(page: Page, control: Locator, on: boolean): Promi
     timeout: SWITCH_MS
   });
   expect(await servesHmrClient(page), `/ with hot reload ${state}`).toBe(on);
+}
+
+/**
+ * Starts recording, on the tools page, every element that shows `data-tone="error"`: added, or
+ * an attribute that turns to it, with its ms since the start and its text (U7).
+ *
+ * @param page - The tools page.
+ */
+async function recordErrorTones(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const start = performance.now();
+    const seen: string[] = [];
+    Reflect.set(globalThis, "__e2eErrorTones", seen);
+    const note = (element: Element): void => {
+      const ms = Math.round(performance.now() - start);
+      seen.push(`${ms} ms ${element.tagName} ${element.textContent ?? ""}`);
+    };
+    const scan = (node: Node): void => {
+      if (!(node instanceof Element)) return;
+      if (node.matches("[data-tone=error]")) note(node);
+      for (const element of node.querySelectorAll("[data-tone=error]")) note(element);
+    };
+    for (const element of document.querySelectorAll("[data-tone=error]")) note(element);
+    new MutationObserver(records => {
+      for (const record of records) {
+        if (record.type === "attributes") scan(record.target);
+        else for (const node of record.addedNodes) scan(node);
+      }
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-tone"]
+    });
+  });
+}
+
+/**
+ * The `data-tone="error"` elements seen since `recordErrorTones`.
+ *
+ * @param page - The tools page.
+ * @returns One line per element: ms, tag and text.
+ */
+async function errorTones(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...(Reflect.get(globalThis, "__e2eErrorTones") ?? [])].map(String));
 }
 
 /**
@@ -766,12 +831,12 @@ test.describe("top bar · round 2", () => {
     await markGame(page);
     const putBack = await saveSource();
     try {
-      await page.waitForTimeout(3000);
+      await gameKeepsPageFor(page, 3000);
       expect(await reloadState(page), "the game after a save with hot reload off").toBe("marked");
     } finally {
       await putBack();
     }
-    await page.waitForTimeout(1000);
+    await gameKeepsPageFor(page, 1000);
     expect(await reloadState(page)).toBe("marked");
 
     // On: the bin serves with HMR again; the frame reloads with the board.
@@ -795,6 +860,30 @@ test.describe("top bar · round 2", () => {
     await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
       timeout: SWITCH_MS
     });
+    expect(errors.unexpected(), "no console error from the switches").toEqual([]);
+  });
+
+  test("Hot reload: the switch is an expected reload, no red flash on the tools page (U7)", async ({
+    tools,
+    errors
+  }) => {
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    const page = tools.page;
+    await resize(tools, 1440);
+    await tools.show("game");
+    const hot = topBar(page).getByRole("switch", { name: "Hot reload", exact: true });
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => gamePath(page)).toBe("home");
+    await answer(page, "play");
+    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+
+    // Off and on again: the restart (close 1012), both reconnects and the frame reloads.
+    await recordErrorTones(page);
+    await switchHotReload(page, hot, false);
+    await switchHotReload(page, hot, true);
+    await expect(hot).toHaveAttribute("aria-checked", "true");
+
+    expect(await errorTones(page), "no data-tone=error during the switches").toEqual([]);
     expect(errors.unexpected(), "no console error from the switches").toEqual([]);
   });
 

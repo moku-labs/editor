@@ -78,10 +78,6 @@ function textField(text: string | undefined): string | undefined {
  *
  * @param node - The node.
  * @returns "235,74 290×76 px", undefined for an unplaced node.
- * @example
- * ```ts
- * pxField(coinPillNode); // "235,74 290×76 px"
- * ```
  */
 function pxField(node: SceneNode): string | undefined {
   return node.rect === undefined ? undefined : `${rectText(node.rect)} px`;
@@ -106,8 +102,8 @@ function countText(total: number): string {
  * @returns `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`.
  * @example
  * ```ts
- * areaHead(facts, ".moku/captures/area-f25.md");
- * // "@moku area 520×135 · board/awaitIntent · 2 elements · ref 30,45 520×135 · .moku/captures/area-f25.md"
+ * areaHead(facts, ".moku/captures/2026-10-05/area-f25.md");
+ * // "@moku area 520×135 · board/awaitIntent · 2 elements · ref 30,45 520×135 · .moku/captures/2026-10-05/area-f25.md"
  * ```
  */
 export function areaHead(facts: AreaFacts, card: string | undefined): string {
@@ -203,7 +199,7 @@ function partlyLine(partly: readonly SceneNode[]): string | undefined {
  * @returns The block, one fact per line.
  * @example
  * ```ts
- * areaBlock(facts, ".moku/captures/area-f25.md").split("\n")[1]; // "- home button · key home · 40,52 120×120 px · ref 40,52 120×120"
+ * areaBlock(facts, ".moku/captures/2026-10-05/area-f25.md").split("\n")[1]; // "- home button · key home · 40,52 120×120 px · ref 40,52 120×120"
  * ```
  */
 export function areaBlock(facts: AreaFacts, card: string | undefined): string {
@@ -229,10 +225,6 @@ export function areaBlock(facts: AreaFacts, card: string | undefined): string {
  * @param codes - The code of the elements with a source.
  * @param components - The component definitions, none by default.
  * @returns The markdown text, ending with a newline.
- * @example
- * ```ts
- * areaCardText(block, facts, []).split("\n")[0]; // "# @moku area 520×135"
- * ```
  */
 export function areaCardText(
   block: string,

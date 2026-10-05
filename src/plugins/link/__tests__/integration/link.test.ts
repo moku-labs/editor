@@ -124,6 +124,43 @@ afterEach(async () => {
   await window.happyDOM.close();
 });
 
+describe("link integration · expected reload (U7)", () => {
+  it("a server restart (close 1012) reads lost reloading, then live again; no plain lost", async () => {
+    hub.sessions = [sessionOf("s-1")];
+    hub.manifests.set("s-1", manifest);
+    const app = createApp();
+    await app.start();
+    await until(() => app.link.manifest() !== undefined, "attach");
+    hub.heartbeat("s-1", 1825, false);
+    await until(() => app.link.status().kind === "live", "live");
+
+    for (const socket of hub.sockets) socket.close(1012, "editor restarting");
+    await until(() => app.link.status().kind === "lost", "lost");
+    expect(app.link.status()).toEqual({
+      kind: "lost",
+      reason: "socket_closed",
+      lastFrame: 1825,
+      retryInMs: 1000,
+      reloading: true
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => hub.upgrades.length === 2, "the reconnect");
+    hub.heartbeat("s-1", 1826, false);
+    await until(() => app.link.status().kind === "live", "live again");
+
+    const plain = seen.filter(({ status }) => status.kind === "lost" && status.reloading !== true);
+    expect(plain).toEqual([]);
+    await app.stop();
+  });
+
+  it("createApp refuses a reloadGraceMs that is not positive", () => {
+    expect(() => framework.createApp({ pluginConfigs: { link: { reloadGraceMs: 0 } } })).toThrow(
+      "[moku-editor] link.reloadGraceMs is invalid.\n  Use a positive number of milliseconds."
+    );
+  });
+});
+
 describe("link integration", () => {
   it("start → connecting → attach → first value → heartbeat → live", async () => {
     hub.sessions = [sessionOf("s-1")];

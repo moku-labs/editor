@@ -270,6 +270,29 @@ describe("mountPanel: status and stale marking", () => {
     expect(section().dataset.stale).toBeUndefined();
   });
 
+  it("an expected reload (U9) marks no stale and keeps the last values on screen", () => {
+    const deps = createDeps({ kind: "live", frame: 1 });
+    const panel = mountPanel(flowPanel(), host, deps);
+    deliverAll(deps);
+    const shown = section().textContent;
+
+    panel.setStatus({
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 1,
+      retryInMs: 1000,
+      reloading: true
+    });
+    deps.frames.flush();
+    expect(section().dataset.stale).toBeUndefined();
+    expect(section().dataset.panelState).toBe("ready");
+    expect(section().textContent).toBe(shown);
+
+    panel.setStatus({ kind: "live", frame: 2 });
+    deps.frames.flush();
+    expect(section().dataset.stale).toBeUndefined();
+  });
+
   it("tools.status follows setStatus: each status change schedules a render", () => {
     const deps = createDeps({ kind: "live", frame: 1 });
     const statuses: string[] = [];

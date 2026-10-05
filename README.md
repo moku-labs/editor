@@ -25,7 +25,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 - **Doors, not hooks.** The editor touches the game only through `@moku-labs/game/inspect` and `@moku-labs/game/control`, plus the game's own `.dev` modules. If the engine does not expose it, the editor does not see it.
 - **Three runtimes, three cores.** The game page, the Bun server and the tools page each get their own Moku core with their own events (`editor-agent`, `editor-server`, `editor-tools`). Bun code never reaches the browser; Preact never reaches the server.
 - **A panel is data.** `definePanel` returns a frozen spec of sources, commands and a view. The `panels` host owns every subscription, stale marking and teardown — views never poll.
-- **Edits keep the game state.** With Bun hot reload on (the bin's default), a save of a game source reloads the game page and the bridge restores the bookmark it took just before: "Game reloaded · state restored", in about a second on merge-game. Without hot reload the editor bookmarks, reloads the frame and restores it itself (D-07).
+- **Edits keep the game state.** With Bun hot reload on (the bin's default), a save of a game source reloads the game page and the bridge restores the bookmark it took just before: "Game reloaded · state restored", in about a second on merge-game. With `@moku-labs/game` 0.5.0 and its hot swap plugin in the game's `bunfig.toml`, a save of a view module (styles, components, strings) swaps in place without a reload: "Game updated". Without hot reload the editor bookmarks, reloads the frame and restores it itself (D-07). Only the game reloads: the editor does not move, and one spinner on the game frame shows the reload.
 - **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. The server runs no shell and spawns nothing. Only the MCP bridge starts a process: the bin, when none runs, and it stops only that one.
 
 ## Install
@@ -319,10 +319,39 @@ agent writing the file, goes like this:
 3. The tools page toasts "Game reloaded · state restored". It does not reload or restore a second
    time.
 
+**Hot swap** (`@moku-labs/game` 0.5.0). A game that lists the game's Bun plugin in the
+`bunfig.toml` of its root swaps a saved view module in place:
+
+```toml
+[serve.static]
+plugins = ["@moku-labs/game/hot"]
+```
+
+A view module is a `.tsx` file, a `styles.ts`, a `view.ts`, an `animations.ts`, an `effects.ts` or
+a generated `generated/strings.<locale>.ts`. Its save reaches the running game: the same session,
+the same page, the new style or component on screen, and the toast "Game updated". The game writes
+`ui:hot-swap` to its log; `workspace.gameFrame().reload()` after a save ends on it with
+`{ restored: false, reason: "hot_swap" }`, reloads nothing and restores nothing. A logic module
+(rules, nodes, flows, state) still reloads the page and restores the bookmark, also with a popup
+open: the screen under it comes back too.
+
+Bun reads `[serve.static] plugins` once, at process start, from the `bunfig.toml` in the process
+cwd. Run the bin from anywhere: when `--root` holds such a `bunfig.toml` and the cwd is another
+folder, the bin re-runs itself in the root and serves from there (see the
+[pages README](src/plugins/pages/README.md#bunfigtoml-of-the-game-root)). `moku-editor mcp`
+starts the bin in the root already.
+
+**The editor stands still.** During an expected reload (Reload, the Hot reload switch, Bun's reload
+after a save) the top bar keeps the game name, the session id and the pill text, the panels keep
+their data, and one spinner on the game frame shows the reload. Only when the game has not come
+back within `reloadGraceMs` (link, 5 s) does the red bar show, over the workspace, never pushing
+it down.
+
 `e2e/edit-loop.spec.ts` measures it on merge-game: five edits made only from the reference line
 and the block in its card (move an element, resize a button, recolour and resize a text style, swap
-a texture), each written to disk. Each shows in the game with its state restored in about 0.8 s;
-the recolour takes about 1.1 s, because the test reads the colour back from captured frames.
+a texture), each written to disk. All five are style edits, so the game hot swaps them: each shows
+in the game, its state untouched, in about 30 ms; the recolour takes about 0.1 s, because the test
+reads the colour back from captured frames. A reload with the bookmark restored took about 0.8 s.
 
 The **Hot reload** switch (key H) turns it off and on while the bin runs. Bun cannot switch HMR on
 a running server, so the bin restarts its server with HMR flipped, on the same port, and keeps its
@@ -639,6 +668,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 |---|---|---|---|
 | link | `retryMs` | `1000` | Base of the reconnect backoff, capped at 8 s. |
 | link | `boot` | `"#moku-editor-boot"` | Selector of the boot JSON tag. |
+| link | `reloadGraceMs` | `5000` | How long an expected reload reads as "reloading" (neutral, the spinner on the frame) before a game that has not come back reads as lost (red). |
 | workspace | `defaultWorkspace` | `"game"` | Shown at start when the hash names none. |
 | workspace | `storageKey` | `"moku-editor"` | localStorage key of the preferences. |
 | workspace | `reloadTimeoutMs` | `15000` | How long `reload()` waits for the new session. |
@@ -729,7 +759,7 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 **Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.4
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.5.0
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 

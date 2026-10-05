@@ -1,7 +1,9 @@
 /**
- * @file workspace plugin — hooks: link:status drives the pill, the stale bar and the F4 cards.
+ * @file workspace plugin — hooks: link:status drives the pill, the stale bar, the F4 cards and
+ * the frame spinner of an expected reload.
  */
 import type { ToolsEvents } from "../../config";
+import { syncSpinner } from "./frame/frame";
 import type { WorkspaceCtx, WorkspaceHooks, WorkspaceState } from "./types";
 
 /**
@@ -10,7 +12,8 @@ import type { WorkspaceCtx, WorkspaceHooks, WorkspaceState } from "./types";
 const TICK_MS = 1000;
 
 /**
- * The workspace's hooks factory (`hooks: createHandlers`).
+ * Workspace listens to one global event: `link:status`, which drives the pill, the stale bar, the
+ * F4 cards and the frame spinner of an expected reload.
  *
  * @param ctx - Domain context of workspace.
  * @returns The hooks.
@@ -30,8 +33,8 @@ export function stopTicker(state: WorkspaceState): void {
 }
 
 /**
- * Stores the status, sets everLive, runs the 1 s ticker while silent or lost, closes a stale
- * step popover, bumps the UI.
+ * Stores the status, sets everLive, runs the 1 s ticker while silent or lost, shows the frame
+ * spinner while the link reloads (U9 B6), closes a stale step popover, bumps the UI.
  *
  * @param ctx - Domain context of workspace.
  * @returns The `link:status` handler.
@@ -50,6 +53,7 @@ export function handleLinkStatus(
         state.ui.bump();
       }, TICK_MS);
     } else stopTicker(state);
+    syncSpinner(state);
 
     if (!running && state.popover === "step") state.popover = undefined;
     state.ui.bump();

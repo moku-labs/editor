@@ -11,6 +11,8 @@ import {
   checkInput,
   definePanel,
   flowFile,
+  isHotSwapEntry,
+  isReloading,
   isSelectionInfo,
   nodeFile,
   parseSelectionInfo,
@@ -155,10 +157,18 @@ describe("core boot", () => {
       bareMessage,
       isSelectionInfo,
       parseSelectionInfo,
-      parseSelectParams
+      parseSelectParams,
+      isReloading,
+      isHotSwapEntry
     ]) {
       expect(helper).toBeTypeOf("function");
     }
+    expect(
+      isReloading({ kind: "lost", reason: "bye", lastFrame: 1, retryInMs: 1000, reloading: true })
+    ).toBe(true);
+    expect(
+      isHotSwapEntry({ level: "info", event: "ui:hot-swap", data: { file: "/g/a.tsx" }, ts: 1 })
+    ).toBe(true);
     const selection: SelectionInfo = {
       ref: { kind: "ui", path: "hud/infoBar" },
       key: "infoBar",

@@ -49,8 +49,15 @@ function bufferedOf(socket: SocketLike): number {
  * @returns Whether new values should wait in the backlog.
  * @example
  * ```ts
- * congested({ bufferedAmount: 2_000_000, … }); // true: above HIGH_WATER (1_048_576)
- * congested({ bufferedAmount: 1000, … }); // false
+ * const socket: SocketLike = {
+ *   readyState: 1,
+ *   bufferedAmount: 2_000_000,
+ *   send() {},
+ *   close() {},
+ *   addEventListener() {}
+ * };
+ * congested(socket); // true: above HIGH_WATER (1_048_576)
+ * congested({ ...socket, bufferedAmount: 1000 }); // false
  * ```
  */
 export function congested(socket: SocketLike): boolean {
@@ -72,6 +79,17 @@ export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Messag
   } catch (error) {
     deps.log.debug("bridge:send-failed", { message: messageOf(error) });
   }
+}
+
+/**
+ * Says `bye` on the open socket right before the page reloads on purpose (Bun's full reload,
+ * `editor.reload`): the hub then ends the session with reason `bye`, which the tools read as an
+ * expected reload (U7). The socket stays open until the page goes. Dropped without an open socket.
+ *
+ * @param deps - The state and the log.
+ */
+export function sendBye(deps: Pick<BridgeDeps, "state" | "log">): void {
+  sendNow(deps, notification("game", "bye"));
 }
 
 /**

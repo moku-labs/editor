@@ -2,7 +2,8 @@
  * @file link plugin — watch records (kept while disconnected, R4) and their numeric wire subs
  * (R6: taken from `nextSub`, never reused, so a late value of an old sub is dropped). A watch the
  * session refuses with -32008 `not_installed` (the game does not have the source) is not retried
- * there and not logged above debug.
+ * there and not logged above debug. A watch lost to a session that closed, -32003 `no_session` or
+ * a -32001 inside an expected reload (A5), is deferred at debug to the next attach.
  */
 import type { Json, SubId } from "../../registry/protocol";
 import { errorCode, isWireError } from "../../registry/protocol";
@@ -44,6 +45,38 @@ function isNotInstalledError(error: unknown): boolean {
 }
 
 /**
+ * True for a refusal of a session the hub already closed (-32003 `no_session`): the session went
+ * away while the watch was on its way, as in a reload, and the next attach sends the watch again.
+ *
+ * @param error - The rejection.
+ * @returns Whether the session was gone.
+ * @example
+ * ```ts
+ * isSessionGoneError(wireError(-32_003, "[moku-editor] no session", { reason: "no_session" })); // true
+ * ```
+ */
+function isSessionGoneError(error: unknown): boolean {
+  return (
+    isWireError(error) && error.code === errorCode.noSession && error.data?.reason === "no_session"
+  );
+}
+
+/**
+ * True for a watch the hub failed with -32001 because its session closed while the link expects
+ * a reload (U7, `state.reload` set): the page reloads on purpose, and the next attach sends the
+ * watch again.
+ *
+ * @param ctx - Domain context of link.
+ * @param error - The rejection.
+ * @returns Whether the watch was lost to an expected reload.
+ */
+function isLostToReload(ctx: LinkCtx, error: unknown): boolean {
+  return (
+    ctx.state.reload !== undefined && isWireError(error) && error.code === errorCode.gameReloaded
+  );
+}
+
+/**
  * Sends `unwatch { sub }`; the answer is ignored, a failure is logged at debug.
  *
  * @param ctx - Domain context of link.
@@ -58,9 +91,10 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 
 /**
  * Records a refused watch: -32008 marks the session that does not have the source (debug only,
- * never sent to it again); any other answer is logged as `link:watch-failed` and the record is
- * sent again on the next attach. A watch the link itself closed on stop (`link_closed`) is not
- * logged.
+ * never sent to it again); a session the hub already closed (`no_session`, a reload) or one that
+ * closed in an expected reload (-32001) is `link:watch-deferred` at debug; any other answer is
+ * logged as `link:watch-failed`. Both are sent again on the next attach. A watch the link itself
+ * closed on stop (`link_closed`) is not logged.
  *
  * @param ctx - Domain context of link.
  * @param sub - The record.
@@ -78,6 +112,8 @@ function onWatchRefused(
   if (isNotInstalledError(error)) {
     sub.refusedBy = session;
     ctx.log.debug("link:source-unavailable", details);
+  } else if (isSessionGoneError(error) || isLostToReload(ctx, error)) {
+    ctx.log.debug("link:watch-deferred", details);
   } else if (!ctx.state.stopped) {
     ctx.log.error("link:watch-failed", details);
   }

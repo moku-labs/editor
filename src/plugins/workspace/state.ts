@@ -61,6 +61,7 @@ export function createWorkspaceState(ctx: {
     muted: false,
     taps: [],
     link: { kind: "connecting" },
+    shown: { game: undefined, session: undefined },
     everLive: false,
     badges: {},
     toasts: [],

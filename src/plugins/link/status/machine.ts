@@ -3,7 +3,9 @@
  * the store-and-emit step that publishes the global `link:status`.
  */
 import type { LinkStatus } from "../../registry/protocol";
-import type { LinkCtx, StatusInput } from "../types";
+import { isReloading } from "../../registry/protocol";
+import { clearReload } from "../state";
+import type { LinkCtx, LinkState, StatusInput } from "../types";
 
 /**
  * The frame of the last heartbeat a status carries (0 when none).
@@ -32,7 +34,8 @@ export function lastFrameOf(status: LinkStatus): number {
 }
 
 /**
- * True for the states a heartbeat moves to live or paused.
+ * True for the states a heartbeat moves to live or paused. The neutral `lost` of a reload counts:
+ * it may hide the reconnect, and the game's next heartbeat ends it.
  *
  * @param status - The current status.
  * @returns Whether a heartbeat applies.
@@ -42,7 +45,8 @@ export function lastFrameOf(status: LinkStatus): number {
  * ```
  */
 function beats(status: LinkStatus): boolean {
-  return status.kind !== "lost" && status.kind !== "empty";
+  if (status.kind === "lost") return isReloading(status);
+  return status.kind !== "empty";
 }
 
 /**
@@ -106,6 +110,42 @@ function sameStatus(left: LinkStatus, right: LinkStatus): boolean {
 }
 
 /**
+ * Applies the expected reload window (U7) to a new status. In a window a `lost` (not `no_boot`)
+ * gets `reloading: true` and the frame of before the reload when it carries none; a heartbeat
+ * after that loss ends the window. After its loss the window keeps the neutral `lost` through the
+ * reconnect (`connecting`, `empty`). A plain `lost` of before the window stays plain. Without a
+ * window the status is unchanged.
+ *
+ * @param state - Link state (its window is updated).
+ * @param next - The new status.
+ * @returns The status to store.
+ */
+function withReload(state: LinkState, next: LinkStatus): LinkStatus {
+  const { reload, status: current } = state;
+  if (reload === undefined) return next;
+
+  // A heartbeat after the loss: the game is back, the window ends.
+  if (next.kind === "live" || next.kind === "paused") {
+    if (reload.lost) clearReload(state);
+    return next;
+  }
+
+  // The reconnect after the loss: the neutral lost stays until the game beats.
+  const isReconnect = next.kind === "connecting" || next.kind === "empty";
+  if (isReconnect && reload.lost && isReloading(current)) return current;
+  if (next.kind !== "lost" || next.reason === "no_boot") return next;
+
+  // A plain loss of before the window: a retry that applies it again keeps it plain.
+  const isEarlierLoss = !reload.lost && current.kind === "lost" && !isReloading(current);
+  if (isEarlierLoss) return next;
+
+  const lastFrame = next.lastFrame > 0 ? next.lastFrame : reload.lastFrame;
+  reload.lastFrame = lastFrame;
+  reload.lost = true;
+  return { ...next, lastFrame, reloading: true };
+}
+
+/**
  * Emits the global `link:status` with the current status and the chosen session.
  *
  * @param ctx - Domain context of link.
@@ -116,16 +156,18 @@ export function emitStatus(ctx: LinkCtx): void {
 }
 
 /**
- * Stores a status and emits `link:status` when its kind or a field changed.
+ * Stores a status, marked `reloading` inside an expected reload window, and emits `link:status`
+ * when its kind or a field changed.
  *
  * @param ctx - Domain context of link.
  * @param next - The new status.
  * @returns Whether it changed (and was emitted).
  */
 export function setStatus(ctx: LinkCtx, next: LinkStatus): boolean {
-  if (sameStatus(ctx.state.status, next)) return false;
+  const status = withReload(ctx.state, next);
+  if (sameStatus(ctx.state.status, status)) return false;
 
-  ctx.state.status = next;
+  ctx.state.status = status;
   emitStatus(ctx);
   return true;
 }

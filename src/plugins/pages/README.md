@@ -218,6 +218,24 @@ moku-editor mcp-config [<game-html>] [--port N]
 
 The positional must be one file ending in `.html`. Unknown flags are errors, so there is no `--host`. The server always binds 127.0.0.1.
 
+### bunfig.toml of the game root
+
+The `bunfig.toml` of the game root is honoured. Hot swap needs `[serve.static] plugins = ["@moku-labs/game/hot"]` in it.
+
+Bun reads `[serve.static] plugins` once, at process start, from the `bunfig.toml` in the process cwd. `process.chdir` comes too late (spike, Bun 1.3.14). So the bin re-spawns itself in the root (`reexec.ts`):
+
+| Rule | Value |
+|---|---|
+| When | `run` only. The root's `bunfig.toml` has a `[serve.static]` table, and the cwd is another folder (real paths compared). |
+| Child | The same bin (`[process.execPath, Bun.main]`) with absolute html and root, the same port, and `--no-hmr` when hot reload is off. `cwd` is the root. stdio is inherited. |
+| Loop guard | The child gets `MOKU_EDITOR_REEXEC=1` and never re-spawns. |
+| Signals | The parent forwards SIGINT, SIGTERM and SIGHUP. The child runs in its own process group, so a terminal Ctrl+C reaches it once. |
+| Exit | The parent exits with the child's code. |
+| Orphan | A parent killed by SIGKILL forwards nothing. The child reads `process.ppid` every second (an unref'd timer). Once it changed, the child stops gracefully (discovery file, editor, game server), prints "stopped" and exits 0. |
+| Discovery | The child writes `.moku/editor.json`, so `pid` is the child's. |
+
+Started from the game root, or from the MCP launcher (it spawns with `cwd: root`), the bin serves itself as before.
+
 ### Subcommands
 
 A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywhere else it is a second positional and an error.
@@ -341,6 +359,7 @@ Safety: `.moku/editor.json` holds the token. The bridge never prints or logs it,
 What `main` (`cli.ts`) does:
 
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage. `mcp-config` prints the Claude Code setup and exits 0. `mcp` runs `runBridge(args)`, which catches SIGINT and SIGTERM itself, and exits with its code (0) when stdin ends or a signal arrives.
+   A `run` whose root has a `[serve.static]` bunfig, started elsewhere, re-spawns the bin there and exits with its code (see bunfig.toml of the game root). The steps below run in that child.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console.
 4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
@@ -358,6 +377,7 @@ What `main` (`cli.ts`) does:
 | Exit code | When |
 |---|---|
 | 0 | Help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving |
+| child's code | A bin re-spawned in the game root ended |
 | 1 | Runtime error: missing or bad HTML file, start failed, port in use |
 | 2 | Bad arguments |
 

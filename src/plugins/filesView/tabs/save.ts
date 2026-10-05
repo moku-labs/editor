@@ -59,14 +59,21 @@ function isLinked(ctx: FilesViewCtx): boolean {
 
 /**
  * After a write: the index entry size, the toast, the overrides when the override file was
- * saved, and the D-07 reload (not awaited; a failure is warned).
+ * saved, and the D-07 reload after a save (not awaited; a failure is warned).
  *
  * @param ctx - Domain context of filesView.
  * @param path - The written path.
  * @param bytes - Bytes written.
+ * @param savedAt - Epoch ms taken before the write: the reload looks for the game's hot swap
+ * from then on.
  * @returns Whether the reload ran.
  */
-async function afterWrite(ctx: FilesViewCtx, path: string, bytes: number): Promise<boolean> {
+async function afterWrite(
+  ctx: FilesViewCtx,
+  path: string,
+  bytes: number,
+  savedAt: number
+): Promise<boolean> {
   const { state } = ctx;
   const workspace = ctx.require(workspacePlugin);
   const entry = state.index?.files.get(path);
@@ -82,7 +89,7 @@ async function afterWrite(ctx: FilesViewCtx, path: string, bytes: number): Promi
   if (reload) {
     workspace
       .gameFrame()
-      .reload({ restore: true })
+      .reload({ restore: true, afterSave: true, since: savedAt })
       .catch((error: unknown) => {
         ctx.log.warn("filesView:reload-failed", { message: messageOf(error) });
       });
@@ -109,13 +116,14 @@ async function write(
   tab.message = undefined;
   notify(ctx.state);
 
+  const savedAt = Date.now();
   try {
     const result = await ctx.require(linkPlugin).files.write(tab.path, text, version);
     tab.saved = text;
     tab.version = result.version;
     tab.checkedAt = Date.now();
     tab.status = "ready";
-    const reload = await afterWrite(ctx, tab.path, result.bytes);
+    const reload = await afterWrite(ctx, tab.path, result.bytes, savedAt);
     notify(ctx.state);
     return { kind: "saved", path: tab.path, bytes: result.bytes, version: result.version, reload };
   } catch (error) {

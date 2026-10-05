@@ -17,6 +17,7 @@ nothing.
 |---|---|---|---|
 | `retryMs` | `number` | `1000` | Base delay of the reconnect backoff: `min(retryMs × 2^n, 8000)`. |
 | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the JSON script tag `pages` injects. |
+| `reloadGraceMs` | `number` | `5000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
 | `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays `editor.select` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
 
 Fixed constants in `types.ts` (not config):
@@ -48,6 +49,7 @@ reload, the editor selection, the select handler and files.
 | `sessions` | `() => readonly SessionInfo[]` | A copy of the last session list from the hub. Empty while disconnected. |
 | `session` | `() => string \| undefined` | The chosen session id. |
 | `choose` | `(session) => Promise<Manifest>` | Makes a session the sticky choice and attaches it. Rejects -32003 `choose_session` for an id that is not open. |
+| `expectReload` | `() => void` | Tells link that the game page is about to reload on purpose (U7). The loss that follows reads `lost` with `reloading: true` until the game beats again, or for `reloadGraceMs`. A loss before the call stays plain. No-op after stop. workspace calls it before it reloads the game frame. |
 | `retry` | `() => void` | "Retry now": reconnects, re-picks a session or re-reads the boot tag. No-op unless the status is `lost`. |
 | `boot` | `() => ToolsBoot \| undefined` | The boot data. `undefined` without a valid tag. Never log its token. |
 | `frameUrl` | `(url) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. |
@@ -69,6 +71,7 @@ const ran = await app.link.run("game.step", { frames: 1 }); // ran.state.frame =
 app.link.status(); // { kind: "live", frame: 1840 }
 app.link.onManifest(m => palette.index(m?.commands ?? []));
 await app.link.choose("s-7f3a");
+app.link.expectReload(); // workspace, right before it reloads the game frame
 app.link.boot()?.gameUrl; // "/"
 app.link.frameUrl("http://127.0.0.1:3000/"); // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
 const offTaps = app.link.onTap(tap => ripple(tap.x, tap.y)); // { x: 206, y: 640, at: 15234.5 }
@@ -119,6 +122,27 @@ Answers this page sends to the hub for an editor-channel request:
 | `live` / `paused` | The chosen session beats. `paused` comes from the heartbeat flag. |
 | `silent` | No heartbeat for 6 s, or 65 s when the last one said `paused: true`. |
 | `lost` | Socket closed (`socket_closed`), chosen session closed (its reason), or no boot tag (`no_boot`). |
+| `lost` with `reloading: true` | The same, inside an expected reload window (U7). |
+
+### Expected reload (U7)
+
+An expected reload window opens on:
+
+- a socket close with code 1012 (the bin restarts its server, D-32);
+- `setHotReload(on)` when the bin owns the server and `on` differs from its HMR (before the POST);
+- `expectReload()` (workspace's frame reload, the palette's Reload);
+- a close of the chosen session with reason `bye` (the bridge says bye before Bun's full reload
+  and before `editor.reload`).
+
+Inside the window every `lost` except `no_boot` carries `reloading: true`, and the frame of the
+last heartbeat before the reload when the new one has none (`lastFrame` 0 after the reconnect).
+After the loss the reconnect (`connecting`, `empty`) keeps the neutral `lost` until the game
+beats. A plain `lost` of before the window stays plain, also when a retry applies it again.
+A heartbeat after the loss ends the window. A window that saw no loss yet is not ended by a
+heartbeat (the old page may beat once more before it goes). After `reloadGraceMs` the window ends:
+a `lost` with `reloading: true` is sent again as a plain `lost`. A second trigger renews the timer and waits for its own loss: workspace may reload the frame right
+after the reconnect, before the game beat, and the old page may beat once more.
+A loss outside a window is a plain `lost` at once.
 | `empty` | Connected, no game session. Also 10 s after a lost session when none came back. |
 
 Hooks: none. Inputs are socket messages and timers.
@@ -155,8 +179,9 @@ const off = link.onManifest(manifest => recheck(manifest));
 
 | Phase | Does |
 |---|---|
+| `onInit` | Validates `reloadGraceMs`. |
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners, the notified values and the request handlers. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners, the notified values and the request handlers. |
 
 ## Integration notes
 
@@ -181,6 +206,6 @@ const off = link.onManifest(manifest => recheck(manifest));
 ## Limits
 
 - Requests are not queued while disconnected. They reject at once. Only watch records are kept.
-- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text.
+- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text. A watch the hub refuses because its session just closed (-32003 `no_session`, during a reload), or one it fails with -32001 while link expects a reload (`expectReload`, a server restart or a bye), is `link:watch-deferred` at debug; the next attach sends it again.
 - A game reload mid-call rejects with the hub's -32001 `game_reloaded` (retryable).
 - A throttled hidden game tab that is not paused can read `silent`.

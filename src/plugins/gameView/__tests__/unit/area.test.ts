@@ -372,6 +372,25 @@ describe("pickArea", () => {
     expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(0);
   });
 
+  it("searches a component without a local definition once per session", async () => {
+    ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
+    ctx.state.found.set("homeSettings", homeLine(6));
+    ctx.state.found.set("homeCoins", homeLine(5));
+    ctx.state.found.set("giftCorner", homeLine(8));
+    ctx.state.found.set("homeLogo", homeLine(2));
+    const list = vi.spyOn(ctx.link.files, "list");
+
+    await pickArea(ctx, homeScene(), HOME_AREA);
+    expect(list.mock.calls.filter(([dir]) => dir === "").length).toBeGreaterThan(0);
+    expect([...ctx.state.missedDefinitions]).toEqual(
+      expect.arrayContaining(["LogoSign", "HudPill", "RoundButton"])
+    );
+
+    list.mockClear();
+    await pickArea(ctx, homeScene(), HOME_AREA);
+    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(0);
+  });
+
   it("publishes the area first without sources, then with them and the card (A18)", async () => {
     ctx.state.selected = { kind: "entity", id: 1_048_628 };
     const info = await pickArea(ctx, boardScene(), HUD_AREA);

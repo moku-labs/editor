@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { styleValue } from "../../ui/text";
+import { linkBadge, styleValue } from "../../ui/text";
+
+describe("linkBadge", () => {
+  it("an expected reload (U12) shows the blue Reloading badge with a spinner", () => {
+    const status = {
+      kind: "lost",
+      reason: "socket_closed",
+      lastFrame: 1825,
+      retryInMs: 1000,
+      reloading: true
+    } as const;
+    expect(linkBadge(status, 0)).toEqual({
+      key: "link",
+      text: "Reloading · last frame 1825",
+      tone: "info",
+      spinner: true
+    });
+  });
+
+  it("a real loss stays the red reconnecting badge", () => {
+    const status = {
+      kind: "lost",
+      reason: "game_reloaded",
+      lastFrame: 9,
+      retryInMs: 1000
+    } as const;
+    expect(linkBadge(status, 0)).toMatchObject({
+      text: "Game page reloaded, reconnecting · retry in 1 s · last frame 9",
+      tone: "error"
+    });
+  });
+});
 
 describe("styleValue", () => {
   it("shows strings and numbers as they are", () => {

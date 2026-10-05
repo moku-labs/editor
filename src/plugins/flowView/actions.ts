@@ -40,7 +40,8 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
       ctx.require(workspacePlugin).show("flow");
     },
     active: () => ctx.require(workspacePlugin).active() === "flow",
-    reload: () => ctx.require(workspacePlugin).gameFrame().reload({ restore: true }),
+    reload: since =>
+      ctx.require(workspacePlugin).gameFrame().reload({ restore: true, afterSave: true, since }),
     preview: () => ctx.require(workspacePlugin).preview("flow"),
     openFile: (path, line) => {
       ctx.emit("workspace:open-file", line === undefined ? { path } : { path, line });

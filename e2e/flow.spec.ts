@@ -4,8 +4,9 @@
  * Info rows (←/→, ↑/↓, Enter, Alt+← back), sub-flows expanded in place and entered, the
  * breadcrumb, the board hub with its lanes and "You are here", the history strip, zoom, fit,
  * Follow, the minimap, pan, drag to pin with the layout file on disk, Reset layout, the three
- * context menus with Step 1 frame while paused, the Inspector tabs with a code save and a style
- * step that write the file and reload the game (D-07), the keys and the Esc layers. The geometry
+ * context menus with Step 1 frame while paused, the Inspector tabs with a code save that writes
+ * the file and reloads the game (D-07) and a style step the game hot swaps in place (U10), the
+ * keys and the Esc layers. The geometry
  * is the browser's: camera transforms, card rects and drags are measured. Below 600 px the
  * Inspector is a drawer that starts collapsed: a test opens it before it works in it, and a card
  * the camera left outside the canvas (or under the preview float) is panned into view first.
@@ -1178,7 +1179,7 @@ test.describe("flow · inspector", () => {
     }
   });
 
-  test("Styles: the size stepper writes one number and reloads the game", async ({
+  test("Styles: the size stepper writes one number and the game hot swaps it (U10)", async ({
     tools,
     errors
   }) => {
@@ -1201,7 +1202,7 @@ test.describe("flow · inspector", () => {
       await up.click();
       await expect(value).toHaveText(String(before + 1));
       await expect(tab.locator("[data-part=applied]")).toHaveText(
-        /^✓ Written to features\/ui\/styles\.ts:\d+ · game reloaded · state restored$/,
+        /^✓ Written to features\/ui\/styles\.ts:\d+ · game updated$/,
         { timeout: 30_000 }
       );
       const after = (await readGameFile(STYLES_FILE)) ?? "";

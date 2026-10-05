@@ -13,7 +13,7 @@ import {
 import { storageOf } from "../../checkpoint/hot";
 import type { CheckpointStorage } from "../../types";
 import type { TestDeps } from "../helpers";
-import { commandEntry, createDeps, flush, MANIFEST } from "../helpers";
+import { commandEntry, createDeps, FakeSocket, flush, MANIFEST } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The bridge checkpoint across Bun's full reload (R6): the bookmark is taken at
@@ -160,6 +160,29 @@ describe("watchReload", () => {
     off();
     deps.reload.fire();
     expect(bookmark).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("watchReload says bye (U7)", () => {
+  it("sends bye on bun:beforeFullReload, so the tools read the reload as expected", () => {
+    const { deps } = depsWithCommands();
+    const socket = new FakeSocket();
+    socket.readyState = 1;
+    deps.state.socket = socket;
+    watchReload(deps);
+
+    deps.reload.fire();
+
+    expect(socket.messages()).toEqual([{ jsonrpc: "2.0", channel: "game", method: "bye" }]);
+    expect(socket.closes).toEqual([]);
+  });
+
+  it("sends nothing without an open socket", () => {
+    const { deps } = depsWithCommands();
+    watchReload(deps);
+    expect(() => {
+      deps.reload.fire();
+    }).not.toThrow();
   });
 });
 

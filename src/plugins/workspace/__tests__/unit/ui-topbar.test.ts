@@ -116,6 +116,37 @@ describe("TopBar", () => {
     );
   });
 
+  it("an expected reload keeps the last game name and session id; a real loss shows No game (U9)", () => {
+    ctx.state.shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+    ctx.state.link = {
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 310,
+      retryInMs: 1000,
+      reloading: true
+    };
+    mount();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("merge-game 0.0.0");
+    expect(root.querySelector("[data-ui='session-chip'] button")?.textContent).toBe("s-7f3a");
+
+    ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 310, retryInMs: 1000 };
+    bump();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("No game");
+    expect(root.querySelector("[data-ui='session-chip']")?.textContent).toBe("no session");
+
+    ctx.state.link = { kind: "empty" };
+    bump();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("No game");
+  });
+
+  it("a session that closed before the link status follows keeps the name and the session (U9)", () => {
+    ctx.state.shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+    ctx.state.link = { kind: "live", frame: 310 };
+    mount();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("merge-game 0.0.0");
+    expect(root.querySelector("[data-ui='session-chip'] button")?.textContent).toBe("s-7f3a");
+  });
+
   it("Step is inert unless paused, with the tooltip; when paused it runs game.step origin topbar", async () => {
     ctx.state.link = { kind: "live", frame: 3 };
     mount();
@@ -316,7 +347,30 @@ describe("LinkPill", () => {
     expect(pillText({ kind: "empty" }, now).text).toBe("No game");
   });
 
-  it("lost shows Retry now, which calls link.retry()", () => {
+  it("an expected reload (U9 B8) keeps the live look and text: Live · f<lastFrame>", () => {
+    const status = {
+      kind: "lost",
+      reason: "game_reloaded",
+      lastFrame: 1825,
+      retryInMs: 1000,
+      reloading: true
+    } as const;
+    expect(pillText(status, 0)).toEqual({
+      text: "Live · f1825",
+      note: "Reloading the game · last frame 1825"
+    });
+
+    ctx.state.link = status;
+    act(() => {
+      render(h(LinkPill, { ctx }), root);
+    });
+    const pill = root.querySelector<HTMLElement>("[data-ui='link-pill']");
+    expect(pill?.dataset.kind).toBe("live");
+    expect(pill?.querySelector("[data-text]")?.textContent).toBe("Live · f1825");
+    expect(pill?.querySelector("button")).toBeNull();
+  });
+
+  it("lost reads red with no Retry now of its own (the stale bar keeps it, U9 B8)", () => {
     ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 2, retryInMs: 2000 };
     act(() => {
       render(h(LinkPill, { ctx }), root);
@@ -324,8 +378,7 @@ describe("LinkPill", () => {
     const pill = root.querySelector<HTMLElement>("[data-ui='link-pill']");
     expect(pill?.dataset.kind).toBe("lost");
     expect(pill?.title).toBe("Connection to the editor server closed · reconnecting in 2 s");
-    act(() => pill?.querySelector("button")?.click());
-    expect(ctx.link.retry).toHaveBeenCalledTimes(1);
+    expect(pill?.querySelector("button")).toBeNull();
   });
 });
 

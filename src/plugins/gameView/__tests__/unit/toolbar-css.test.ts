@@ -52,4 +52,20 @@ describe("Game toolbar sheet (round 2b R17)", () => {
     );
     expect(narrow).toMatch(/:has\(> \[data-part="tool-icon"\]\) \{[^}]*width: 28px;/);
   });
+
+  it("Reload keeps its width while busy: a hidden Reload sizer shares the label cell (U11)", () => {
+    const css = sheet("toolbar.css");
+    expect(css).toMatch(/\[data-part="reload"\] \{[^}]*display: inline-grid;/);
+    expect(css).toMatch(
+      /\[data-part="reload"\]::after \{[^}]*content: "Reload";[^}]*grid-area: 1 \/ 1;[^}]*visibility: hidden;/
+    );
+    expect(css).toMatch(/\[data-part="reload-label"\] \{[^}]*grid-area: 1 \/ 1;/);
+  });
+
+  it("the Reload label fills its cell and starts at its left edge, so the busy … moves nothing (B10)", () => {
+    const css = sheet("toolbar.css");
+    expect(css).toMatch(
+      /\[data-part="reload-label"\] \{[^}]*justify-self: stretch;[^}]*text-align: start;/
+    );
+  });
 });

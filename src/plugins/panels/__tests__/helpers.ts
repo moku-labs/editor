@@ -134,6 +134,7 @@ export function createLinkMock(): LinkMock {
       session: () => undefined,
       choose: vi.fn(() => Promise.resolve(manifestOf([]))),
       retry: vi.fn(),
+      expectReload: vi.fn(),
       boot: () => undefined,
       frameUrl: url => url,
       isOtherTab: () => false,

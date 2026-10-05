@@ -171,8 +171,9 @@ export function showCard(ctx: GameViewCtx, card: CaptureCardInfo): void {
 
 /**
  * Takes one screenshot through panels.run, saves it in today's folder under `capturesDir`
- * (`<yyyy-mm-dd>/<hhmm>-<flow>.jpg`) with the extension of its picture (`.jpg` for the JPEG editor.capture answers by default) and puts `shot: <path>` on the
- * clipboard (a refusal is only logged).
+ * (`<yyyy-mm-dd>/<hhmm>-<flow>.jpg`) with the extension of its picture (`.jpg` for the JPEG
+ * editor.capture answers by default) and puts `shot: <path>` on the clipboard (a refusal is only
+ * logged).
  *
  * @param ctx - Domain context of gameView.
  * @returns The saved capture, undefined without a game or on a failure (toasted).
@@ -186,6 +187,7 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
   }
 
   try {
+    // Capture the picture and the flow position it was taken at.
     const position = await currentPosition(ctx);
     const ran = await ctx.require(panelsPlugin).run(GAME_COMMANDS.capture);
     const shot = shotOf(ran.value);
@@ -194,6 +196,8 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
         "[moku-editor] editor.capture returned no image.\n  Update the game's capturePlugin."
       );
     }
+
+    // Name it in today's folder and write it.
     const now = new Date();
     const folder = dayFolder(ctx.config.capturesDir, now);
     const taken = await listTaken(ctx, folder);
@@ -201,6 +205,7 @@ export async function takeScreenshot(ctx: GameViewCtx): Promise<CaptureFile | un
     const path = capturePath(folder, stamp(now), nodeOf(position), taken, extension);
     await link.files.writeBinary(path, shot.image);
 
+    // Announce it: the capture card, the toast and the path on the clipboard.
     const preset = workspace.device().preset;
     const card: CaptureFile = {
       path,

@@ -378,10 +378,6 @@ function deviceLine(device: DeviceFacts | undefined): string | undefined {
  *
  * @param facts - The position, the frame, the game, the device and the pick.
  * @returns The five lines.
- * @example
- * ```ts
- * tailLines(facts); // ["flow: board > awaitIntent", "game: merge-game 0.0.0 · s-1 · f25 · …", "device: …", undefined, undefined]
- * ```
  */
 export function tailLines(facts: TailFacts): readonly (string | undefined)[] {
   const { pick } = facts;

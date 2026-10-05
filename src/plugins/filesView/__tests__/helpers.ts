@@ -189,6 +189,7 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       session: () => undefined,
       choose: vi.fn(() => Promise.resolve(MANIFEST)),
       retry: vi.fn(),
+      expectReload: vi.fn(),
       boot: () => link.bootValue,
       frameUrl: url => url,
       isOtherTab: () => false,

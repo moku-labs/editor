@@ -45,6 +45,12 @@ const FENCE_LANG: Readonly<Record<string, string>> = {
 const BACKTICKS = /`{3,}/g;
 
 /**
+ * The backtick run a fence counts with when the lines have a shorter one: the fence is one
+ * longer, so it has at least three backticks.
+ */
+const MIN_FENCE_RUN = 2;
+
+/**
  * The name a pick files its bookmark, crop and card under: the ui key, else the node name.
  *
  * @param node - The picked node.
@@ -77,8 +83,8 @@ function placeOf(facts: ReferenceFacts, code: ElementCode | undefined): string |
  * @returns `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
  * @example
  * ```ts
- * referenceLine(facts, code, ".moku/captures/settingsBoard-f25.md");
- * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/settingsBoard-f25.md"
+ * referenceLine(facts, code, ".moku/captures/2026-10-05/settingsBoard-f25.md");
+ * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
  * ```
  */
 export function referenceLine(
@@ -111,7 +117,7 @@ export function referenceLine(
  */
 export function fenced(lines: readonly string[], lang: string): string[] {
   const longest = Math.max(
-    2,
+    MIN_FENCE_RUN,
     ...lines.flatMap(line => [...line.matchAll(BACKTICKS)].map(run => run[0].length))
   );
   const fence = "`".repeat(longest + 1);
@@ -151,8 +157,11 @@ export function snippetSection(title: string, snippet: CodeSnippet): string[] {
  * ```
  */
 export function codeSections(code: ElementCode | undefined, owner?: string): string[][] {
+  // No code known: no section.
   if (code === undefined) return [];
   const prefix = owner === undefined ? "" : `${owner} · `;
+
+  // An entity: one section with its projection and its components.
   if (code.kind === "entity") {
     const { spawn } = code;
     const where = spawn === undefined ? "" : ` · ${spawn.path}:${spawn.line}`;
@@ -161,6 +170,8 @@ export function codeSections(code: ElementCode | undefined, owner?: string): str
     );
     return [[`## ${prefix}Spawned by ${code.projection}${where}`, "", ...rows]];
   }
+
+  // An element: its JSX, then its style, each when found.
   const sections: string[][] = [];
   if (code.jsx !== undefined) sections.push(snippetSection(`${prefix}JSX`, code.jsx));
   if (code.style !== undefined) {
@@ -227,6 +238,20 @@ export async function codeOf(ctx: GameViewCtx, node: SceneNode): Promise<Element
 }
 
 /**
+ * A new card path for a reference: `<name>-f<frame>.md` in the day folder of its pick, with
+ * `-2`, `-3` … when the name is taken.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param facts - The facts (node, frame and pick).
+ * @returns The card path.
+ */
+async function newCardPath(ctx: GameViewCtx, facts: ReferenceFacts): Promise<string> {
+  const folder = cardFolder(ctx.config.capturesDir, facts.pick?.full, new Date());
+  const taken = await listTaken(ctx, folder);
+  return cardPath(folder, nameOf(facts.node), facts.frame, taken);
+}
+
+/**
  * Writes the card of a reference: a new `<name>-f<frame>.md` for a pick, the one written before
  * for the same node and frame otherwise.
  *
@@ -245,12 +270,8 @@ async function writeCard(
   const memo = `${facts.node.id}@${facts.frame}`;
   try {
     // "Copy reference" rewrites the card of this node and frame; a pick always takes a new name.
-    let path = fresh ? undefined : ctx.state.cards.get(memo);
-    if (path === undefined) {
-      const folder = cardFolder(ctx.config.capturesDir, facts.pick?.full, new Date());
-      const taken = await listTaken(ctx, folder);
-      path = cardPath(folder, nameOf(facts.node), facts.frame, taken);
-    }
+    const written = fresh ? undefined : ctx.state.cards.get(memo);
+    const path = written ?? (await newCardPath(ctx, facts));
 
     // Write the card, then remember it for the next "Copy reference".
     await ctx.require(linkPlugin).files.write(path, text);

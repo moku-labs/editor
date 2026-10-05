@@ -181,6 +181,7 @@ export function createLinkMock(): LinkMock {
     session: vi.fn<LinkApi["session"]>(() => link.sessionList[0]?.id),
     choose: vi.fn<LinkApi["choose"]>(() => Promise.resolve(manifestOf())),
     retry: vi.fn<LinkApi["retry"]>(),
+    expectReload: vi.fn<LinkApi["expectReload"]>(),
     boot: vi.fn<LinkApi["boot"]>(() => link.bootValue),
     frameUrl: vi.fn<LinkApi["frameUrl"]>(url => tagged(url)),
     isOtherTab: vi.fn<LinkApi["isOtherTab"]>(page => {

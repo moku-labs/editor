@@ -1,13 +1,14 @@
 /**
  * @file workspace plugin — the link pill of the top bar: one look per link status (connecting,
- * live, paused, silent with the seconds since the last heartbeat, lost with "Retry now", empty)
- * and the D7 status note as its tooltip and description. In the compact bar (below 900 px) it
+ * live, paused, silent with the seconds since the last heartbeat, lost, empty) and the D7 status
+ * note as its tooltip and description. An expected reload (U9) keeps the live look and text with
+ * the last frame, so the top bar does not move; "Retry now" lives in the stale bar only. In the compact bar (below 900 px) it
  * also stands in for the session chip: the session id goes into its tooltip and its status opens
  * the session menu when there is more than one session.
  */
 import type { VNode } from "preact";
-import { linkPlugin } from "../../link";
 import type { LinkStatus } from "../../registry/protocol";
+import { isReloading } from "../../registry/protocol";
 import type { WorkspaceCtx } from "../types";
 import { type SessionsView, sessionsView, toggleSessionMenu } from "./SessionChip";
 import { useWorkspace } from "./store";
@@ -36,6 +37,8 @@ const NOTE_ID = "moku-link-note";
  * @example
  * ```ts
  * pillText({ kind: "live", frame: 1840 }, Date.now()).text; // "Live · f1840"
+ * // An expected reload keeps the live text with the last frame.
+ * pillText({ kind: "lost", reason: "bye", lastFrame: 310, retryInMs: 1000, reloading: true }, 0).text; // "Live · f310"
  * ```
  */
 export function pillText(status: LinkStatus, now: number): { text: string; note: string } {
@@ -60,6 +63,12 @@ export function pillText(status: LinkStatus, now: number): { text: string; note:
       };
     }
     case "lost": {
+      if (status.reloading === true) {
+        return {
+          text: `Live · f${status.lastFrame}`,
+          note: `Reloading the game · last frame ${status.lastFrame}`
+        };
+      }
       const retry = secondsOf(status.retryInMs);
       return {
         text: `Lost · retry in ${retry} s`,
@@ -113,7 +122,7 @@ export function LinkPill(props: LinkPillProps): VNode {
   return (
     <span
       data-ui="link-pill"
-      data-kind={status.kind}
+      data-kind={isReloading(status) ? "live" : status.kind}
       title={view === undefined ? note : sessionNote(note, view)}
       aria-describedby={NOTE_ID}
     >
@@ -134,16 +143,6 @@ export function LinkPill(props: LinkPillProps): VNode {
       <span id={NOTE_ID} hidden>
         {note}
       </span>
-      {status.kind === "lost" && (
-        <button
-          type="button"
-          data-size="sm"
-          data-variant="ghost"
-          onClick={() => ctx.require(linkPlugin).retry()}
-        >
-          Retry now
-        </button>
-      )}
     </span>
   );
 }

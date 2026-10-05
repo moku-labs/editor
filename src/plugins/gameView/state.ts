@@ -45,11 +45,11 @@ export function createGameViewState(): GameViewState {
     listeners: new Set(),
     timers: {},
     disposers: [],
-    link: { status: undefined, session: undefined },
+    link: { status: undefined, session: undefined, reloading: false },
+    reloads: 0,
     calibrationRead: false,
     lookup: undefined,
     cardHeld: false,
-    reloading: false,
     highlightSeq: 0,
     calibrationRun: {
       revision: 0,
@@ -59,6 +59,7 @@ export function createGameViewState(): GameViewState {
       waiting: false
     },
     found: new Map(),
+    missedDefinitions: new Set(),
     searches: new Map(),
     blocks: new Map(),
     spawns: new Map(),

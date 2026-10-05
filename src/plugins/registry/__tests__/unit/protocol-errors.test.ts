@@ -8,6 +8,7 @@ import {
   errorCode,
   fromWireError,
   isRetryable,
+  isVersionConflict,
   isWireError,
   ProtocolError,
   toWireError,
@@ -299,6 +300,21 @@ describe("toWireError", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // isRetryable and fromWireError
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe("isVersionConflict", () => {
+  it("is true for a -32005 rejection: the file changed since it was read", () => {
+    const conflict = wireError(-32_005, "version conflict: nodes/merge.ts", {
+      reason: "version_conflict"
+    });
+    expect(isVersionConflict(conflict)).toBe(true);
+  });
+
+  it("is false for another code, a plain Error and nothing", () => {
+    expect(isVersionConflict(wireError(-32_004, "forbidden path"))).toBe(false);
+    expect(isVersionConflict(new Error("version conflict"))).toBe(false);
+    expect(isVersionConflict(undefined)).toBe(false);
+  });
+});
 
 describe("isRetryable", () => {
   it("is true for -32001 and -32002 without data", () => {

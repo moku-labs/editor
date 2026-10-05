@@ -75,7 +75,8 @@ export function showInTopLayer(element: HTMLElement | null): void {
 }
 
 /**
- * The series popover.
+ * The "Record a series" dialog in the top layer: the duration and interval chips, the planned
+ * shots, the folder, Cancel and Start; the recording view while a series runs.
  *
  * @param props - The gameView domain context.
  * @returns The popover, undefined while closed.

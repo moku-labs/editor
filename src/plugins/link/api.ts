@@ -13,6 +13,7 @@ import { chooseSession } from "./sessions/choose";
 import { isOtherFrame, tagFrame } from "./sessions/frame";
 import { addManifestListener, currentManifest } from "./sessions/manifest";
 import { retryNow } from "./socket/connect";
+import { expectReload } from "./status/reload";
 import { addTapListener } from "./subscriptions/taps";
 import { addWatch } from "./subscriptions/watch";
 import type { LinkApi, LinkCtx } from "./types";
@@ -50,6 +51,10 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
 
     retry: () => {
       retryNow(ctx);
+    },
+
+    expectReload: () => {
+      expectReload(ctx);
     },
 
     boot: () => state.boot,

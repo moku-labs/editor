@@ -7,11 +7,16 @@
  */
 import { createToolsPlugin } from "../../config";
 import { createLinkApi } from "./api";
-import { startLink, stopLink } from "./lifecycle";
+import { checkLinkConfig, startLink, stopLink } from "./lifecycle";
 import { createLinkState } from "./state";
 import type { Config } from "./types";
 
-const defaultConfig: Config = { retryMs: 1000, boot: "#moku-editor-boot", role: "page" };
+const defaultConfig: Config = {
+  retryMs: 1000,
+  boot: "#moku-editor-boot",
+  role: "page",
+  reloadGraceMs: 5000
+};
 
 /**
  * The link plugin: one websocket to the hub and the remote EditorChannel every panel reads.
@@ -27,6 +32,7 @@ export const linkPlugin = createToolsPlugin("link", {
   config: defaultConfig,
   createState: createLinkState,
   api: createLinkApi,
+  onInit: checkLinkConfig,
   // @no-resource-check — onStart opens the websocket and the silence interval; onStop closes them
   onStart: startLink,
   onStop: stopLink

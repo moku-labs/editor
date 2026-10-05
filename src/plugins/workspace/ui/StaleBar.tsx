@@ -1,10 +1,13 @@
 /**
- * @file workspace plugin — F3, the stale bar above the workspace hosts while the link is silent
- * (warn) or lost (error) after the game was live once: which frame the data is from and why, with
- * "Retry now" when lost. No backdrop blur; panels fade their own data areas (`data-stale`).
+ * @file workspace plugin — F3, the stale bar over the top of the workspace area while the link is
+ * silent (warn) or lost (error) after the game was live once: which frame the data is from and
+ * why, with "Retry now" when lost. During an expected reload (U9, `isReloading`) it stays hidden:
+ * the frame spinner is the one indicator. An overlay, never in the layout flow. No backdrop blur;
+ * panels fade their own data areas (`data-stale`).
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
+import { isReloading } from "../../registry/protocol";
 import type { WorkspaceCtx } from "../types";
 import { useWorkspace } from "./store";
 import { lostReason, secondsOf, secondsSince } from "./text";
@@ -18,7 +21,7 @@ export type StaleBarProps = { readonly ctx: WorkspaceCtx };
  * The stale bar.
  *
  * @param props - The workspace domain context.
- * @returns The bar (hidden while the data is fresh).
+ * @returns The bar (hidden while the data is fresh or the game reloads on purpose).
  */
 export function StaleBar(props: StaleBarProps): VNode {
   const { ctx } = props;
@@ -26,9 +29,11 @@ export function StaleBar(props: StaleBarProps): VNode {
   useWorkspace(state.ui, () => state.ui.version);
   const status = state.link;
 
-  if (!state.everLive || (status.kind !== "silent" && status.kind !== "lost")) {
-    return <div data-ui="stale-bar" hidden />;
-  }
+  // Hidden before the game was ever live, while the data is fresh, and in an expected reload.
+  const isStale = status.kind === "silent" || status.kind === "lost";
+  const isHidden = !state.everLive || !isStale || isReloading(status);
+  if (isHidden) return <div data-ui="stale-bar" hidden />;
+
   if (status.kind === "silent") {
     const seconds = secondsSince(status.since, Date.now());
     return (

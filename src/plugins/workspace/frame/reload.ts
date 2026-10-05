@@ -6,10 +6,12 @@
  * one more run after it. The internal bookmark/restore/pause runs are not user runs: they emit no
  * `workspace:ran`. Reload never writes files (the caller does, contracts §6).
  *
- * After a save with Bun hot reload on (round 2 R6), Bun reloads the page itself: the run first
- * waits up to `hotReloadWaitMs` for that new session and reloads the frame only when none came.
- * A session whose hello carries `restored` was restored by the bridge: no second restore, no
- * second pause.
+ * After a save (`afterSave`) with Bun hot reload on (round 2 R6), Bun reloads the page itself: the
+ * run first waits up to `hotReloadWaitMs` for that new session and reloads the frame only when
+ * none came. A session whose hello carries `restored` was restored by the bridge: no second
+ * restore, no second pause. In the same wait a game that hot swapped the saved module since the
+ * saver's `since` (U10 B1, a `ui:hot-swap` entry in its game.log) ends the run: no frame reload,
+ * no restore, toast "Game updated". A reload that is no save (toolbar, palette) reloads at once.
  *
  * The Hot reload switch (D-32) takes the checkpoint itself before the bin restarts its server and
  * hands it to `reloadFrame`, which then restores it instead of taking a new one.
@@ -17,10 +19,10 @@
 import { linkPlugin } from "../../link";
 import type { LinkApi } from "../../link/types";
 import type { Json, Manifest } from "../../registry/protocol";
-import { bareMessage, toWireError } from "../../registry/protocol";
+import { bareMessage, isHotSwapEntry, toWireError } from "../../registry/protocol";
 import { trackCleanup } from "../state";
 import { showToast } from "../toasts";
-import type { PendingReload, ReloadResult, WorkspaceCtx } from "../types";
+import type { PendingReload, ReloadOptions, ReloadResult, WorkspaceCtx } from "../types";
 import { taggedGameUrl } from "./frame";
 import { RESTORED_TOAST, takeRestore } from "./restored";
 
@@ -37,11 +39,6 @@ type Checkpoint = { readonly bookmark: Json; readonly paused: boolean };
 /**
  * The checkpoint taken before a reload, or the reason there is none (with the failure message of
  * a bookmark that failed, warned only when the checkpoint is needed).
- *
- * @example
- * ```ts
- * const taken: Taken = { checkpoint: { bookmark: { checkpoint: "home" }, paused: false }, reason: undefined };
- * ```
  */
 export type Taken = {
   readonly checkpoint: Checkpoint | undefined;
@@ -66,10 +63,10 @@ const TIMED_OUT: ReloadResult = Object.freeze({ restored: false, reason: "timeou
 const MS_PER_SECOND = 1000;
 
 /**
- * How a run reloads: with the state kept, and whether a save started it (then Bun may reload
- * the page first).
+ * What ends the wait for Bun's reload after a save: the new session's manifest, the game's hot
+ * swap, or nothing (timeout, stop).
  */
-export type ReloadOptions = { readonly restore?: boolean; readonly afterSave?: boolean };
+type BunOutcome = Manifest | "hot_swap" | undefined;
 
 /**
  * Builds a result without a `reason` key when there is none.
@@ -138,7 +135,8 @@ export function nextManifest(
     // Listen first. `armed` skips the immediate call with the manifest that exists now.
     let armed = false;
     const off = link.onManifest(manifest => {
-      if (armed && manifest?.embedded && !link.isOtherTab(manifest.page)) finish(manifest);
+      const isOwnNewSession = armed && manifest?.embedded && !link.isOtherTab(manifest.page);
+      if (isOwnNewSession) finish(manifest);
     });
     armed = true;
 
@@ -251,7 +249,8 @@ async function restore(
 }
 
 /**
- * Reloads the frame in place and waits for this tab's own new session.
+ * Reloads the frame in place and waits for this tab's own new session. link is told first, so
+ * the session close reads as an expected reload (U7).
  *
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
@@ -264,27 +263,121 @@ function reloadHere(
   iframe: HTMLIFrameElement
 ): Promise<Manifest | undefined> {
   const next = nextManifest(ctx, link, ctx.config.reloadTimeoutMs);
+  link.expectReload();
   iframe.src = taggedGameUrl(ctx);
   return next;
 }
 
 /**
- * The new session Bun's own reload brings after a save with hot reload on, armed before anything
- * else so a fast reload is not missed; undefined when Bun does not reload (no save, hot reload off
- * or unknown).
+ * True for a game.log entry logged before a moment; an entry without a numeric `ts` is not.
+ *
+ * @param entry - One entry of the game.log value.
+ * @param since - Epoch ms.
+ * @returns Whether the entry is older than the moment.
+ * @example
+ * ```ts
+ * loggedBefore({ level: "info", event: "boot", ts: 999 }, 1000); // true
+ * ```
+ */
+function loggedBefore(entry: Json | undefined, since: number): boolean {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+  return typeof entry.ts === "number" && entry.ts < since;
+}
+
+/**
+ * True when a game.log value, the whole trace oldest first, holds a hot swap logged at or after
+ * a moment. The trace is read from its newest entry back to the first one logged before the
+ * moment, no further.
+ *
+ * @param value - The game.log value.
+ * @param since - Epoch ms; older entries are not this save's.
+ * @returns Whether the game hot swapped since then.
+ * @example
+ * ```ts
+ * const entry = { level: "info", event: "ui:hot-swap", data: { file: "/g/a.ts" }, ts: 1_000 };
+ * hotSwappedSince([entry], 1_000); // true
+ * hotSwappedSince([entry], 1_001); // false
+ * ```
+ */
+export function hotSwappedSince(value: Json, since: number): boolean {
+  if (!Array.isArray(value)) return false;
+
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const entry = value[index];
+    if (loggedBefore(entry, since)) return false;
+    if (entry !== undefined && isHotSwapEntry(entry)) return true;
+  }
+  return false;
+}
+
+/**
+ * Waits for the game's hot swap of a save: the first game.log value with a `ui:hot-swap` entry
+ * logged at or after `since`. Ends with false when the signal aborts; the watch stops either way.
+ *
+ * @param link - The link api.
+ * @param since - Epoch ms of the save.
+ * @param signal - Ends the wait (the manifest wait settled).
+ * @returns True on a hot swap, false on abort.
+ */
+function nextHotSwap(link: LinkApi, since: number, signal: AbortSignal): Promise<boolean> {
+  return new Promise(resolve => {
+    let done = false;
+    let stop: (() => void) | undefined;
+
+    /**
+     * Ends the wait once: stops the watch and the abort listener.
+     *
+     * @param swapped - Whether the game hot swapped.
+     */
+    const finish = (swapped: boolean): void => {
+      if (done) return;
+      done = true;
+      stop?.();
+      signal.removeEventListener("abort", aborted);
+      resolve(swapped);
+    };
+    const aborted = (): void => {
+      finish(false);
+    };
+
+    signal.addEventListener("abort", aborted, { once: true });
+    stop = link.watch("game.log", undefined, value => {
+      if (hotSwappedSince(value, since)) finish(true);
+    });
+    if (done || signal.aborted) {
+      stop();
+      finish(false);
+    }
+  });
+}
+
+/**
+ * What Bun's own reload brings after a save with hot reload on, armed before anything else so a
+ * fast reload is not missed: the new session, or the game's hot swap of the saved module (U10
+ * B1) logged since the saver's `since`, whichever comes first within `hotReloadWaitMs`.
+ * Undefined when Bun does not reload (no save, hot reload off or unknown).
  *
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
- * @param afterSave - Whether a save started the run.
+ * @param opts - Whether a save started the run, and its moment.
  * @returns The wait, or undefined.
  */
 function bunReload(
   ctx: WorkspaceCtx,
   link: LinkApi,
-  afterSave: boolean
-): Promise<Manifest | undefined> | undefined {
-  if (!afterSave || link.hotReload()?.hmr !== true) return undefined;
-  return nextManifest(ctx, link, ctx.config.hotReloadWaitMs);
+  opts: ReloadOptions
+): Promise<BunOutcome> | undefined {
+  if (opts.afterSave !== true || link.hotReload()?.hmr !== true) return undefined;
+
+  // The first of the two ends the other.
+  const settled = new AbortController();
+  const manifest = nextManifest(ctx, link, ctx.config.hotReloadWaitMs, settled.signal);
+  const hotSwap = nextHotSwap(link, opts.since ?? Date.now(), settled.signal).then(
+    (swapped): BunOutcome | Promise<BunOutcome> => (swapped ? "hot_swap" : manifest)
+  );
+  return Promise.race([manifest, hotSwap]).finally(() => {
+    settled.abort();
+  });
 }
 
 /**
@@ -324,11 +417,23 @@ function restoredByBridge(ctx: WorkspaceCtx, manifest: Manifest): ReloadResult {
 }
 
 /**
+ * The run's result when the game swapped the saved module in place: one toast, no frame reload,
+ * no restore.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns `{ restored: false, reason: "hot_swap" }`.
+ */
+function hotSwapped(ctx: WorkspaceCtx): ReloadResult {
+  showToast(ctx, "Game updated");
+  return { restored: false, reason: "hot_swap" };
+}
+
+/**
  * One reload run (steps 2–7 of the D-07 flow, with Bun's reload first after a save).
  *
  * @param ctx - Domain context of workspace.
  * @param iframe - The game frame.
- * @param opts - Restore and afterSave.
+ * @param opts - Restore, afterSave and since.
  * @param taken - A checkpoint taken before the run, restored instead of a new one.
  * @returns The result.
  */
@@ -346,10 +451,13 @@ async function runOnce(
   }
 
   // Bun may already be reloading the page after the save: listen first, then bookmark.
-  const fromBun = bunReload(ctx, link, opts.afterSave === true);
+  const fromBun = bunReload(ctx, link, opts);
   const taking = taken ?? (opts.restore === true ? takeCheckpoint(ctx, link) : NOTHING_TAKEN);
-  const reloaded = fromBun === undefined ? undefined : await fromBun;
-  if (reloaded?.restored !== undefined) return restoredByBridge(ctx, reloaded);
+
+  // The game's hot swap, or a session the bridge restored across Bun's reload, ends the run here.
+  const outcome = fromBun === undefined ? undefined : await fromBun;
+  if (outcome === "hot_swap") return hotSwapped(ctx);
+  if (outcome?.restored !== undefined) return restoredByBridge(ctx, outcome);
 
   // The checkpoint is needed from here on: a failed bookmark is warned now.
   const checkpoint = await taking;
@@ -357,7 +465,7 @@ async function runOnce(
   warnTaken(ctx, checkpoint);
 
   // No session from Bun: reload the frame here and wait for this tab's new session.
-  const manifest = reloaded ?? (await reloadHere(ctx, link, iframe));
+  const manifest = outcome ?? (await reloadHere(ctx, link, iframe));
   if (manifest === undefined) {
     if (ctx.state.stopped) return { ...TIMED_OUT };
     const seconds = Math.round(ctx.config.reloadTimeoutMs / MS_PER_SECOND);
@@ -372,11 +480,13 @@ async function runOnce(
 
 /**
  * Starts a run and records it as the pending one; when it ends and another call came in during
- * it, one more run starts with the same options (and takes its own checkpoint).
+ * it, one more run starts with the same options (and takes its own checkpoint). Its hot swap
+ * wait counts from the save moment of the latest call that gave one, else from its own start: the
+ * first run's moment is older than that save.
  *
  * @param ctx - Domain context of workspace.
  * @param iframe - The game frame.
- * @param opts - Restore and afterSave.
+ * @param opts - Restore, afterSave and since.
  * @param taken - A checkpoint taken before the run, if any.
  * @returns The run's result.
  */
@@ -390,10 +500,13 @@ function startRun(
   const pending: PendingReload = {
     promise: runOnce(ctx, iframe, opts, taken).then(result => {
       if (frame.reload === pending) frame.reload = undefined;
-      if (pending.again && !ctx.state.stopped) void reloadFrame(ctx, opts);
+      if (pending.again && !ctx.state.stopped) {
+        void reloadFrame(ctx, { ...opts, since: pending.since ?? Date.now() });
+      }
       return result;
     }),
-    again: false
+    again: false,
+    since: undefined
   };
   frame.reload = pending;
   return pending.promise;
@@ -401,11 +514,12 @@ function startRun(
 
 /**
  * Reloads the game frame (D-07). Before the first mount there is no frame: resolves
- * `not_mounted`. `gameFrame().reload()` is the after-save reload; the palette's reload is not.
+ * `not_mounted`. A saver passes `afterSave` and `since`; the toolbar and the palette reload
+ * without them.
  *
  * @param ctx - Domain context of workspace.
  * @param opts - `restore: true` bookmarks first and restores after; `afterSave: true` lets Bun's
- * own reload (hot reload on) come first.
+ * own reload (hot reload on) come first; `since` is the saver's moment before its write.
  * @param taken - A checkpoint taken before (the Hot reload switch), restored instead of a new
  * bookmark.
  * @returns The result; a call during a run shares that run's promise.
@@ -420,6 +534,7 @@ export function reloadFrame(
 
   if (reload !== undefined) {
     reload.again = true;
+    reload.since = opts.since ?? reload.since;
     return reload.promise;
   }
   return startRun(ctx, iframe, opts, taken);

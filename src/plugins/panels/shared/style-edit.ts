@@ -4,7 +4,7 @@
  * Bounds and error codes live only here (R8).
  */
 import type { FileText, WriteResult } from "../../registry/protocol";
-import { errorCode, isWireError } from "../../registry/protocol";
+import { errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
 
 /**
  * Which block of a style file: a text-style table entry or a `defineStyle` constant (R8, R9).
@@ -1091,20 +1091,6 @@ function isNoFile(error: unknown): boolean {
 }
 
 /**
- * True for a version-conflict rejection (-32005).
- *
- * @param error - A rejection of the files client.
- * @returns Whether the file changed since it was read.
- * @example
- * ```ts
- * isConflict(wireError(-32_005, "version conflict")); // true
- * ```
- */
-function isConflict(error: unknown): boolean {
-  return isWireError(error) && error.code === errorCode.versionConflict;
-}
-
-/**
  * Reads and parses a style file; a missing or forbidden file → `no-file`.
  *
  * @param files - The files client.
@@ -1158,7 +1144,7 @@ async function tryWrite(
       bytes: result.bytes
     };
   } catch (error) {
-    if (isConflict(error)) return undefined;
+    if (isVersionConflict(error)) return undefined;
     if (isNoFile(error)) return { error: "no-file", path };
     throw error;
   }

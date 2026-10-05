@@ -15,6 +15,7 @@ import {
   writeNumber
 } from "../../panels/shared/style-edit";
 import { bareMessage } from "../../registry/protocol";
+import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment } from "../types";
 import { stylesFileOf } from "./styles-file";
@@ -72,7 +73,10 @@ export function styleErrorText(error: StyleEditError, file: string | undefined):
  * @returns Blocks addressed by `{ kind: "text", key }`.
  * @example
  * ```ts
- * textBlocks(file.blocks).length; // 18
+ * textBlocks([
+ *   { ref: { kind: "text", key: "ui.title" }, line: 3, endLine: 6, fields: [] },
+ *   { ref: { kind: "const", name: "coin" }, line: 9, endLine: 12, fields: [] }
+ * ]).length; // 1
  * ```
  */
 function textBlocks(blocks: readonly StyleBlock[]): StyleBlock[] {
@@ -157,6 +161,33 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
 }
 
 /**
+ * The result line after a style write, from the reload that followed it: a hot swap (U10)
+ * reloaded nothing, so there is nothing to restore; a state that was not restored names why.
+ *
+ * @param where - The written place, `file:line`.
+ * @param reload - The reload's result.
+ * @returns The result line.
+ * @example
+ * ```ts
+ * reloadResultLine("features/ui/styles.ts:74", { restored: false, reason: "hot_swap" }).text; // "✓ Written to features/ui/styles.ts:74 · game updated"
+ * reloadResultLine("features/ui/styles.ts:74", { restored: false, reason: "timeout" }).ok; // false
+ * ```
+ */
+function reloadResultLine(where: string, reload: ReloadResult): NonNullable<StylesState["result"]> {
+  if (reload.reason === "hot_swap") {
+    return { ok: true, text: `✓ Written to ${where} · game updated` };
+  }
+  if (reload.restored) {
+    return { ok: true, text: `✓ Written to ${where} · game reloaded · state restored` };
+  }
+  const reason = reload.reason ?? "unknown";
+  return {
+    ok: false,
+    text: `! Written to ${where} · game reloaded, state not restored (${reason})`
+  };
+}
+
+/**
  * Writes the pending stepper burst with the card's version, then reloads the game.
  *
  * @param ctx - Domain context of flowView.
@@ -175,6 +206,9 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
     raw: pending.raw
   };
 
+  // One version-checked write of the literal; the moment before it is where the reload starts
+  // to look for the game's hot swap.
+  const savedAt = Date.now();
   let written: Awaited<ReturnType<typeof writeNumber>>;
   try {
     written = await writeNumber(
@@ -191,6 +225,8 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
     notify(ctx.state);
     return;
   }
+
+  // A refusal of the shared style edit shows on the card; nothing was written.
   if (isStyleEditError(written)) {
     styles.error = written;
     styles.result = { ok: false, text: styleErrorText(written, file) };
@@ -198,6 +234,7 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
     return;
   }
 
+  // Written: the cards follow the new text at once.
   const parsed = parseStyleFile(written.text);
   styles.text = written.text;
   styles.version = written.version;
@@ -205,13 +242,9 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
   env.toast("Saved", file);
   notify(ctx.state);
 
-  const reload = await env.reload();
-  styles.result = reload.restored
-    ? { ok: true, text: `✓ Written to ${file}:${written.line} · game reloaded · state restored` }
-    : {
-        ok: false,
-        text: `! Written to ${file}:${written.line} · game reloaded, state not restored (${reload.reason ?? "unknown"})`
-      };
+  // The game reloads (or swaps the module in place) and the result line says which.
+  const reload = await env.reload(savedAt);
+  styles.result = reloadResultLine(`${file}:${written.line}`, reload);
   notify(ctx.state);
 }
 

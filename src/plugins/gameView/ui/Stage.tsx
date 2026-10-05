@@ -12,7 +12,7 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { linkPlugin } from "../../link";
 import { rectSourceOf } from "../../panels/shared/scene";
 import type { LinkStatus, Manifest } from "../../registry/protocol";
-import { resolveDevice } from "../../registry/protocol";
+import { isReloading, resolveDevice } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { type Bezel, bezelOf, frameOf, kindScale, slotSize } from "../stage/geometry";
 import type { GameViewCtx, GameViewState } from "../types";
@@ -117,7 +117,8 @@ function useStageDock(
 }
 
 /**
- * The badges over the stage: the link badge, a reload in flight, the recording.
+ * The badges over the stage: the link badge and the recording. An expected reload shows the
+ * blue "Reloading" badge (U12); the badges overlay the stage, so the layout does not move.
  *
  * @param status - The link status.
  * @param state - gameView state.
@@ -127,9 +128,6 @@ function stageBadges(status: LinkStatus, state: GameViewState): readonly StageBa
   const badges: StageBadge[] = [];
   const link = linkBadge(status, Date.now());
   if (link !== undefined) badges.push(link);
-  if (state.reloading) {
-    badges.push({ key: "reload", text: "Reloading game", tone: "info", spinner: true });
-  }
   const { recording } = state.series;
   if (recording !== undefined) {
     const elapsed = elapsedText(performance.now() - recording.startedAt);
@@ -189,7 +187,8 @@ export function Stage(props: StageProps): VNode {
   const cover = useDrawerCover(root);
   useLayoutEffect(() => observeSize(viewport.current, setMeasured), []);
   useStageDock(ctx, { slot, clip }, zoom, cover);
-  const silent = status.kind === "silent" || status.kind === "lost";
+  // An expected reload (U9) keeps the stage as it is: no stale fade, no ticking clock.
+  const silent = (status.kind === "silent" || status.kind === "lost") && !isReloading(status);
   useTicker(
     silent || state.series.recording !== undefined,
     silent ? SILENT_TICK_MS : RECORD_TICK_MS

@@ -9,7 +9,7 @@
  * document other than the one that stored it; one older than CHECKPOINT_MAX_AGE_MS is dropped.
  */
 import type { Json, Manifest } from "../../registry/protocol";
-import { messageOf } from "../dispatch/send";
+import { messageOf, sendBye } from "../dispatch/send";
 import type { BridgeDeps, CheckpointStorage, TakenCheckpoint } from "../types";
 
 /**
@@ -92,7 +92,8 @@ export async function takeCheckpoint(deps: CheckpointDeps): Promise<void> {
 }
 
 /**
- * Takes a checkpoint on every `bun:beforeFullReload`.
+ * Takes a checkpoint on every `bun:beforeFullReload` and says bye, so the tools read the reload as
+ * expected (U7).
  *
  * @param deps - Registry, reload seam and log.
  * @returns The remover.
@@ -100,6 +101,7 @@ export async function takeCheckpoint(deps: CheckpointDeps): Promise<void> {
 export function watchReload(deps: CheckpointDeps): () => void {
   return deps.reload.onBeforeFullReload(() => {
     void takeCheckpoint(deps);
+    sendBye(deps);
   });
 }
 

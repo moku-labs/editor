@@ -219,7 +219,7 @@ async function writeSeries(
     failure ??= error;
   }
 
-  // Tell the user, then swap the recording for the contact sheet.
+  // Tell the user what was saved.
   if (failure === undefined) {
     workspace.toast(`✓ ${written.shots.length} shots saved`, recording.folder);
   } else {
@@ -228,10 +228,14 @@ async function writeSeries(
   if (written.shots.length > 0) {
     await copyQuietly(ctx, `series: ${recording.folder} (${written.shots.length} frames)`);
   }
+
+  // Swap the recording for the contact sheet.
   state.series.recording = undefined;
   state.series.popover = false;
   state.series.sheet = { indexPath, index, images: written.images, version, big: undefined };
   notify(state);
+
+  // Show the first shot on the capture card.
   const [first] = written.images;
   if (first !== undefined) {
     showCard(ctx, {
@@ -317,6 +321,7 @@ export async function recordSeries(
   const taken = await listTaken(ctx, day);
   if (refuseWhileRecording(ctx)) return undefined;
 
+  // Mark the series as recording, then run it and write what it answers.
   const { durationMs, intervalMs } = options;
   const recording: Recording = {
     folder: seriesFolder(day, stamp(now), taken),

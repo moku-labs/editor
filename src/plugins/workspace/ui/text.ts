@@ -1,8 +1,16 @@
 /**
  * @file workspace plugin — small text helpers shared by the shell components: lost reasons in
- * words, seconds since a time, clock times, badge labels for screen readers, input summaries.
+ * words, seconds since a time, clock times, badge labels for screen readers, input summaries, the
+ * name and session the top bar keeps through a reload.
  */
-import type { InputSchema, Json } from "../../registry/protocol";
+import type { InputSchema, Json, LinkStatus } from "../../registry/protocol";
+import { isReloading } from "../../registry/protocol";
+import type { WorkspaceState } from "../types";
+
+/**
+ * The game name and session id of the last manifest.
+ */
+type Shown = Readonly<WorkspaceState["shown"]>;
 
 /**
  * Words for the lost reasons link reports.
@@ -158,4 +166,25 @@ export function inputText(input: Json | undefined): string {
 export function schemaText(schema: InputSchema): string {
   const parts = Object.entries(schema).map(([key, kind]) => `${key}: ${kind}`);
   return parts.length === 0 ? "—" : parts.join(", ");
+}
+
+/**
+ * The game name and session id the top bar keeps showing while the game has no manifest: the last
+ * ones, unless the link reports a real loss or no game. An expected reload (`isReloading`), and
+ * the moments between a session's close and the link status that follows it, keep them (U9: the
+ * bar does not move sideways).
+ *
+ * @param link - The link status.
+ * @param shown - The game name and session id of the last manifest.
+ * @returns What to show without a manifest; both undefined on a real loss.
+ * @example
+ * ```ts
+ * const shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+ * heldNames({ kind: "lost", reason: "bye", lastFrame: 310, retryInMs: 1000, reloading: true }, shown); // shown
+ * heldNames({ kind: "lost", reason: "socket_closed", lastFrame: 310, retryInMs: 1000 }, shown); // both undefined
+ * ```
+ */
+export function heldNames(link: LinkStatus, shown: Shown): Shown {
+  const lost = link.kind === "empty" || (link.kind === "lost" && !isReloading(link));
+  return lost ? { game: undefined, session: undefined } : shown;
 }

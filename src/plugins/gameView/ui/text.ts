@@ -3,6 +3,7 @@
  * series result line (D3) and one value of the Styles list (finding 4).
  */
 import type { Json, LinkStatus } from "../../registry/protocol";
+import { isReloading } from "../../registry/protocol";
 
 /**
  * Milliseconds in a second.
@@ -62,10 +63,12 @@ export function elapsedText(ms: number): string {
  *
  * @param status - The link status.
  * @param now - Date.now().
- * @returns The badge, undefined while live or empty.
+ * @returns The badge, undefined while live or empty. An expected reload shows the blue
+ * "Reloading · last frame N" with a spinner (U12).
  * @example
  * ```ts
  * linkBadge({ kind: "paused", frame: 1841 }, 0)?.text; // "Paused · frame 1841"
+ * linkBadge({ kind: "lost", reason: "socket_closed", lastFrame: 1825, retryInMs: 1000, reloading: true }, 0)?.text; // "Reloading · last frame 1825"
  * ```
  */
 export function linkBadge(status: LinkStatus, now: number): StageBadge | undefined {
@@ -79,6 +82,10 @@ export function linkBadge(status: LinkStatus, now: number): StageBadge | undefin
       return { key: "link", text, tone: "warn", spinner: false };
     }
     case "lost": {
+      if (isReloading(status)) {
+        const text = `Reloading · last frame ${status.lastFrame}`;
+        return { key: "link", text, tone: "info", spinner: true };
+      }
       const retry = Math.ceil(status.retryInMs / MS_PER_SECOND);
       const text = `Game page reloaded, reconnecting · retry in ${retry} s · last frame ${status.lastFrame}`;
       return { key: "link", text, tone: "error", spinner: true };

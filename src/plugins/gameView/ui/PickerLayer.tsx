@@ -17,7 +17,8 @@ import { layerHandlers } from "./layer-handlers";
 export type PickerLayerProps = { readonly ctx: GameViewCtx };
 
 /**
- * The picker layer.
+ * The transparent layer over the game frame while picking: a move shows the hover box, a click
+ * picks the element under the pointer, a drag picks an area.
  *
  * @param props - The gameView domain context.
  * @returns The layer.
