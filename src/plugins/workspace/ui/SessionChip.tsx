@@ -12,7 +12,7 @@ import { closePopover, openPopover } from "../actions";
 import type { WorkspaceCtx } from "../types";
 import { usePopover } from "./popover";
 import { useElement, useWorkspace } from "./store";
-import { clockTime } from "./text";
+import { clockTime, heldNames } from "./text";
 
 /**
  * Props of `SessionChip` and `SessionMenu`.
@@ -38,7 +38,8 @@ export type SessionsView = {
 };
 
 /**
- * Reads the sessions from link.
+ * Reads the sessions from link. While the link reloads, the chosen session is the last one shown
+ * (`heldNames`, U9: the chip keeps its id and its width).
  *
  * @param ctx - Domain context of workspace.
  * @returns The sessions, the chosen one and whether there are several.
@@ -46,7 +47,7 @@ export type SessionsView = {
 export function sessionsView(ctx: WorkspaceCtx): SessionsView {
   const link = ctx.require(linkPlugin);
   const sessions = link.sessions();
-  const current = link.session();
+  const current = link.session() ?? heldNames(ctx.state.link, ctx.state.shown).session;
   return {
     sessions,
     current,

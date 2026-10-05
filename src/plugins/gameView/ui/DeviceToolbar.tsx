@@ -2,7 +2,7 @@
  * @file gameView plugin — the device toolbar (A2): picker, device select grouped by kind (iPhone,
  * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
  * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
- * (`game.mute`, dimmed with a tooltip without it, round 2b R11), Reload, camera,
+ * (`game.mute`, dimmed with a tooltip without it, round 2b R11), Reload ("…" while busy, U11), camera,
  * Series (red with the time while recording) and, while the Element panel is closed, its reopen
  * button. Camera and Series are dimmed with a tooltip when the game lacks their command; each
  * carries an icon and a label, and below a 1000 px workspace shows the icon only, named by its
@@ -24,7 +24,7 @@ import { missingCommand } from "../palette";
 import { SIDE_PANEL, SIDE_TITLE } from "../side";
 import { canMute, NO_MUTE_TEXT, setSound } from "../sound";
 import { foldDevice } from "../stage/fold";
-import { reloadGame } from "../stage/reload";
+import { isReloadBusy, reloadFromToolbar } from "../stage/reload";
 import type { GameViewCtx } from "../types";
 import { setZoom, toggleSafeArea } from "../view-state";
 import { ToolIcon } from "./ToolIcon";
@@ -251,10 +251,33 @@ function ViewControls(props: { readonly ctx: GameViewCtx }): VNode {
         Safe area
       </button>
       <SoundSwitch ctx={ctx} />
-      <button type="button" data-part="reload" onClick={() => reloadGame(ctx, false)}>
-        Reload
-      </button>
+      <ReloadButton ctx={ctx} />
     </>
+  );
+}
+
+/**
+ * Reload (U11): while a reload runs it is disabled, aria-busy and shows "…"; a hidden "Reload"
+ * sizer in toolbar.css keeps its width, so the toolbar does not shift.
+ *
+ * @param props - The gameView domain context.
+ * @param props.ctx - Domain context of gameView.
+ * @returns The button.
+ */
+function ReloadButton(props: { readonly ctx: GameViewCtx }): VNode {
+  const { ctx } = props;
+  const busy = isReloadBusy(ctx.state);
+  return (
+    <button
+      type="button"
+      data-part="reload"
+      disabled={busy}
+      aria-busy={busy ? "true" : undefined}
+      aria-label={busy ? "Reloading" : undefined}
+      onClick={() => reloadFromToolbar(ctx)}
+    >
+      <span data-part="reload-label">{busy ? "…" : "Reload"}</span>
+    </button>
   );
 }
 

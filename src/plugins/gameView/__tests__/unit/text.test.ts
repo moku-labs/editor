@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { linkBadge, styleValue } from "../../ui/text";
 
 describe("linkBadge", () => {
-  it("an expected reload (U9) shows no badge: the frame spinner is the one indicator", () => {
+  it("an expected reload (U12) shows the blue Reloading badge with a spinner", () => {
     const status = {
       kind: "lost",
       reason: "socket_closed",
@@ -10,7 +10,12 @@ describe("linkBadge", () => {
       retryInMs: 1000,
       reloading: true
     } as const;
-    expect(linkBadge(status, 0)).toBeUndefined();
+    expect(linkBadge(status, 0)).toEqual({
+      key: "link",
+      text: "Reloading · last frame 1825",
+      tone: "info",
+      spinner: true
+    });
   });
 
   it("a real loss stays the red reconnecting badge", () => {

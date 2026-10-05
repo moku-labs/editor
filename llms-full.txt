@@ -33,7 +33,7 @@ Contents:
 
 | Import | File | Exports |
 |---|---|---|
-| `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
+| `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `isReloading`, `isHotSwapEntry`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
 | `@moku-labs/editor/agent` | `src/agent.ts` | `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`, namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
 | `@moku-labs/editor/server` | `src/server.ts` | `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`, namespaces `Files`, `Hub`, `Pages`. |
 | `@moku-labs/editor/tools` | `src/tools.ts` | `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`, namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
@@ -425,6 +425,7 @@ export type Tap = { readonly x: number; readonly y: number; readonly at: number 
  * @example
  * ```ts
  * const status: LinkStatus = { kind: "live", frame: 1840 };
+ * const reloading: LinkStatus = { kind: "lost", reason: "socket_closed", lastFrame: 1825, retryInMs: 1000, reloading: true };
  * ```
  */
 export type LinkStatus =
@@ -432,7 +433,7 @@ export type LinkStatus =
   | { kind: "live"; frame: number }
   | { kind: "paused"; frame: number }
   | { kind: "silent"; since: number; lastFrame: number }
-  | { kind: "lost"; reason: string; lastFrame: number; retryInMs: number }
+  | { kind: "lost"; reason: string; lastFrame: number; retryInMs: number; reloading?: true }
   | { kind: "empty" };
 
 /**
@@ -1222,6 +1223,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 |---|---|---|---|---|
 | link | `retryMs` | `number` | `1000` | Base of the reconnect backoff `min(retryMs × 2^n, 8000)`. |
 | link | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the boot JSON tag `pages` injects. |
+| link | `reloadGraceMs` | `number` | `5000` | How long an expected reload (U7: close 1012, a reload the editor started, a game that said bye) reads `lost` with `reloading: true`. Without a heartbeat of the game by then the status is a plain `lost`. Positive; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
 | workspace | `defaultWorkspace` | `WorkspaceId` | `"game"` | Shown at start when the URL hash names none. |
 | workspace | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | workspace | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
@@ -1278,7 +1280,7 @@ moku-editor mcp-config [<game-html>] [--port N]
 | `--no-hmr` | | hot reload on | Serves with `development: { hmr: false, console: true }`; `hotReload()` reports `{ hmr: false, owner: "bin" }`. |
 | `--help` | `-h` | | Prints usage, exit 0. |
 
-Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so the bin gives `attachServer` its restart and the Hot reload switch restarts the server with HMR flipped on the same port (D-32): `POST {P}/hmr` answers 200 with the asked state, then the server restarts (A1); the token, the sessions table and `.moku/editor.json` stay, every socket drops for about a second, and the tools page reloads the game frame with its checkpoint so the page gains or drops `/_bun/client`. While HMR is off a save on disk does not reload the game. A failed restart publishes the old state and serves the old options again.
+Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so the bin gives `attachServer` its restart and the Hot reload switch restarts the server with HMR flipped on the same port (D-32): `POST {P}/hmr` answers 200 with the asked state, then the server restarts (A1); the token, the sessions table and `.moku/editor.json` stay, every socket drops for about a second, and the tools page reloads the game frame with its checkpoint so the page gains or drops `/_bun/client`. While HMR is off a save on disk does not reload the game. A failed restart publishes the old state and serves the old options again. Hot swap (game 0.5.0): with `[serve.static] plugins = ["@moku-labs/game/hot"]` in the game root's `bunfig.toml`, a save of a view module (`.tsx`, `styles.ts`, `view.ts`, `animations.ts`, `effects.ts`, `generated/strings.<locale>.ts`) swaps in place: same session, no reload, toast "Game updated"; a logic module still reloads and restores. Bun reads that bunfig once at process start from the process cwd, so a `run` whose `--root` has a `[serve.static]` bunfig and whose cwd is another folder re-spawns the bin in the root (`reexec.ts`: absolute html and root, `MOKU_EDITOR_REEXEC=1` loop guard, SIGINT/SIGTERM/SIGHUP forwarded, the parent exits with the child's code, the discovery file names the child). The MCP launcher spawns the bin with `cwd: root`.
 
 Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
 
@@ -2451,7 +2453,7 @@ export type AttachedServer = { reload(options: BunServeOptions): void };
 - Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.owner === "bin" && state.hmr === on`: true when the bin owns the server and switched (D-32), false for a game's own server (as `pages.setHotReload`); a refusal is a 200 with the old state, so the page logs nothing (round 2b R16). The restart can cut the answer off: after a network failure the call waits up to 10 s for the reconnect to deliver `hotReload` and answers whether its `hmr` equals `on` (A1).
 - Editor page role (D-33, A12): config `role: "page"` (default) adds `&role=page` to the socket URL; a headless client passes `"tools"`. `notify("selection", info | null)` publishes the selection (dropped while closed, the last value sent again on each open); `handle("select", handler)` answers the `select` requests the hub relays (params checked with `parseSelectParams`, no handler -32601); `selection()` is the last `editor.selection` notification.
 - A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
-- Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
+- Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:watch-deferred` (debug, a watch refused with `no_session` while its session closed; sent again on the next attach), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
 ~~~ts
 /**
@@ -2503,6 +2505,17 @@ export type Config = {
   retryMs: number;
   /** CSS selector of the JSON script tag pages injects. Default "#moku-editor-boot". */
   boot: string;
+  /**
+   * "page": the editor page (`&role=page` on the upgrade, D-33): the hub takes its selection and
+   * relays `editor.select` to it. "tools": a plain tools client (no role sent). Default "page".
+   */
+  role: "page" | "tools";
+  /**
+   * How long an expected reload (U7) reads neutral: a server restart (close 1012), a reload the
+   * editor started, a game that said bye. Without a heartbeat of the game by then, the status is a
+   * plain `lost`. A positive number of ms. Default 5000.
+   */
+  reloadGraceMs: number;
 };
 
 /**
@@ -2685,6 +2698,24 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   retry(): void;
+
+  /**
+   * Tells link that the game page is about to reload on purpose (U7). Until the game beats again,
+   * or for `reloadGraceMs`, the loss that follows reads `lost` with `reloading: true`, which the
+   * views show in a neutral tone; after that it is a plain `lost`. A loss that happened before the
+   * call stays as it is. A no-op after stop.
+   *
+   * @example
+   * ```ts
+   * // workspace reloads the docked game frame from the palette.
+   * const link = ctx.require(linkPlugin);
+   * link.expectReload();
+   * iframe.src = link.frameUrl("http://127.0.0.1:3000/");
+   * // the session close that follows:
+   * link.status(); // { kind: "lost", reason: "game_reloaded", lastFrame: 1825, retryInMs: 1000, reloading: true }
+   * ```
+   */
+  expectReload(): void;
 
   /**
    * The boot data of the tools page; its token is never to be logged.
@@ -2887,7 +2918,8 @@ export type LinkApi = EditorChannel & {
 - Devices (round 2 R4, round 2b R9 R10, `devices()`): the presets live in `registry/protocol/devices.ts` (`DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `resolveDevice`, `screenOf`, `deviceById`, `presetOf`, `isDevicePresetId`); workspace and gameView both read them there. Twenty-one presets in `<optgroup>` groups. iPhone: SE 3 · small, 2022 (`iphone-se`, 375×667, safe 20/0, `frame: "home-button"`), 15 (`iphone-15`, 393×852, 59/34), 17e (`iphone-17e`, 390×844, 47/34, approx), Air (`iphone-air`, 420×912, 68/34, approx), 18 Pro (`iphone-18-pro`, default, 402×874, 62/34, approx), 18 Pro Max (`iphone-18-pro-max`, 440×956, 62/34, approx), then 15 Pro Max (430×932, 59/34), 16 Pro (402×874, 62/34), 16 Pro Max (440×956, 62/34) at the end so a stored choice keeps working. Android (no insets): Galaxy S24 (360×780), Galaxy A55 (412×892), Redmi Note 13 (393×873, approx), Pixel 8 (412×915), Xperia 1 V 21:9 (411×960). Foldable: Galaxy Z Fold 6 (cover 369×905 ⇄ inner 707×823, approx), Galaxy Z Flip 6 (412×1005), Pixel 9 Pro Fold (cover 411×923 ⇄ inner 791×820, approx), iPhone Duo (`iphone-duo`, cover 466×678 ⇄ inner 890×626, a book that opens landscape-wide; Apple's pixels divided by 3, approx). Tablet: iPad mini 7 (744×1133), iPad Air 11" (820×1180). Desktop (1440×900). Each has `dpr`, `radius`, `group` and `frame` (`"modern"` | `"home-button"`); `approx: true` marks estimated sizes or insets. `setDevice({ folded })` switches a foldable live (the game sees a resize); a new preset starts folded. An unknown stored id falls back to the iPhone 18 Pro.
 - Sound flag (round 2b R11): `muted()` and `setMuted(on)` keep it in the prefs record (`muted`, default false; `onPrefs` gets it). workspace never touches the game: gameView sends `game.mute`.
 - Dark theme bezel `--color-bezel: #2c2c34` with a 1 px `--border-strong` outline; the docked frame's clip-path is `inset(… round <radius>px)` in the frame's own px, on the stage and in the pinned preview.
-- D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`. With Bun hot reload on, `gameFrame().reload()` after a save first waits up to `hotReloadWaitMs` (1500) for the page Bun reloads: its hello with `manifest.restored` ends the run with the toast "Game reloaded · state restored" (no second reload, restore or pause); without `restored` workspace restores its bookmark; no new session in time → the frame reloads itself. A session with `restored` after an outside edit (an agent writing a file) toasts "Game reloaded · state restored" once.
+- D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`. With Bun hot reload on, `gameFrame().reload()` after a save first waits up to `hotReloadWaitMs` (1500) for the page Bun reloads: its hello with `manifest.restored` ends the run with the toast "Game reloaded · state restored" (no second reload, restore or pause); without `restored` workspace restores its bookmark; no new session in time → the frame reloads itself. A session with `restored` after an outside edit (an agent writing a file) toasts "Game reloaded · state restored" once. Hot swap (game 0.5.0, U10): in the same wait, a `ui:hot-swap` entry of the game's `game.log` (`isHotSwapEntry`) logged after the save ends the run with `{ restored: false, reason: "hot_swap" }` and the toast "Game updated": no frame reload, no restore.
+- Only the game reloads (U9): `link.expectReload()` before a frame reload; while `isReloading(status)` (a `lost` with `reloading: true`) the top bar keeps the last game name, session id and the pill text `Live · f<lastFrame>` (fixed width), the StaleBar is hidden, the panels keep their data, and the one indicator is the spinner `[data-frame-reloading]` on the game frame (counter-scaled, no layout). A real loss, or one past `reloadGraceMs`, shows the red StaleBar as an overlay at the top of the workspace, never in the layout flow. e2e/reload-quiet.spec.ts measures 0 layout shift on the tools page across Reload, Hot reload off/on and a rules save.
 - Events: emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`.
 
 ~~~ts
@@ -2963,7 +2995,8 @@ export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation; folde
 export type Badge = { count: number; tone: "warn" | "error"; label: string };
 
 /**
- * Result of the D-07 reload.
+ * Result of the D-07 reload. `hot_swap`: after a save the game swapped the module in place (dev
+ * hot swap of game 0.5.0), so the frame was not reloaded and nothing was restored.
  */
 export type ReloadResult = {
   restored: boolean;
@@ -2973,7 +3006,8 @@ export type ReloadResult = {
     | "no_session"
     | "bookmark_failed"
     | "restore_failed"
-    | "timeout";
+    | "timeout"
+    | "hot_swap";
 };
 
 /**
@@ -3026,7 +3060,9 @@ export type GameFrame = {
    * The D-07 reload after a save: bookmark, reload in place, restore on the new session, toast.
    * With Bun hot reload on, Bun reloads the page itself: the run waits up to `hotReloadWaitMs` for
    * that session and reloads the frame only when none came; a session the bridge already restored
-   * (`manifest.restored`) is not restored or paused again. Concurrent calls share one run.
+   * (`manifest.restored`) is not restored or paused again. A game that hot swapped the saved
+   * module in that wait (a `ui:hot-swap` game.log entry) ends the run with `reason: "hot_swap"`
+   * and the toast "Game updated": no frame reload, no restore. Concurrent calls share one run.
    *
    * @param opts - `restore: true` bookmarks first and restores after.
    * @param opts.restore - Whether to bookmark and restore the game state.
@@ -3035,6 +3071,8 @@ export type GameFrame = {
    * ```ts
    * // The game code changed; reload it and keep the board.
    * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+   * // A saved styles module the game swapped in place, with Bun hot reload on.
+   * await app.workspace.gameFrame().reload({ restore: true }); // { restored: false, reason: "hot_swap" }
    * ```
    */
   reload(opts?: { restore?: boolean }): Promise<ReloadResult>;

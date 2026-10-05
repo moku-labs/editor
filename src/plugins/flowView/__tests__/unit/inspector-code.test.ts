@@ -78,6 +78,17 @@ describe("saveCode", () => {
     expect(JSON.stringify(ctx.state.inspector.code)).not.toContain("hot update");
   });
 
+  it("a save the game hot swapped says game updated, without a warn (U10)", async () => {
+    const { ctx, fakes } = await setup();
+    fakes.reload.mockResolvedValueOnce({ restored: false, reason: "hot_swap" });
+    const inspector = actionsOf(ctx).inspector;
+    inspector.edit();
+    inspector.setDraft("changed");
+    await inspector.saveCode();
+    expect(ctx.state.inspector.code?.result).toEqual({ ok: true, text: "✓ Saved · game updated" });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+  });
+
   it("names the reason when the state was not restored, and warns", async () => {
     const { ctx, fakes } = await setup();
     fakes.reload.mockResolvedValueOnce({ restored: false, reason: "timeout" });

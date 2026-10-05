@@ -214,7 +214,7 @@ describe("Stage", () => {
     expect(badges(stage({ kind: "connecting" }))).toEqual(["Connecting"]);
   });
 
-  it("an expected reload (U9) keeps the stage as it is: no badge, no stale fade", () => {
+  it("an expected reload (U12) shows one Reloading badge and no stale fade", () => {
     const reloading = stage({
       kind: "lost",
       reason: "bye",
@@ -222,7 +222,7 @@ describe("Stage", () => {
       retryInMs: 1000,
       reloading: true
     });
-    expect(badges(reloading)).toEqual([]);
+    expect(badges(reloading)).toEqual(["Reloading · last frame 12"]);
     expect(find(reloading.root, "[data-game='stage']").dataset.stale).toBeUndefined();
   });
 

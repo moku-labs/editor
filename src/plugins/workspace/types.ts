@@ -935,6 +935,11 @@ export type WorkspaceState = {
   /** The tap ripples alive in the overlay, oldest first (at most 8). */
   taps: TapRipple[];
   link: LinkStatus;
+  /**
+   * The game name and session id of the last manifest. The top bar keeps showing them while the
+   * link reloads (U9: the bar does not move sideways); a real loss shows "No game".
+   */
+  shown: { game: string | undefined; session: string | undefined };
   everLive: boolean;
   badges: Partial<Record<WorkspaceId, Badge>>;
   toasts: Toast[];

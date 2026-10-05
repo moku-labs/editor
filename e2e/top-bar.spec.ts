@@ -25,8 +25,11 @@ import { closeMore, isCompact, moreMenu, openMore, topBar } from "./top-bar";
 /** The project root the bin serves. */
 const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
-/** A game source the save checks touch: an appended comment changes nothing the game shows. */
-const SAVED_SOURCE = "features/home/styles.ts";
+/**
+ * A game source the save checks touch: an appended comment changes nothing the game shows. A
+ * logic module, so Bun reloads the page; a view module would hot swap in place (game 0.5.0, U10).
+ */
+const SAVED_SOURCE = "rules/rules.ts";
 
 /** The script Bun's HMR client adds to the HTML of a page served with HMR on. */
 const HMR_CLIENT = "/_bun/client";

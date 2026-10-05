@@ -137,6 +137,28 @@ describe("addWatch", () => {
     expect(socket.last("watch").params).toMatchObject({ sub: 2, id: "game.position" });
   });
 
+  it("a watch the hub refuses with no_session (the session just closed) logs at debug and retries on the next attach", async () => {
+    const socket = await connected(ctx);
+    addWatch(ctx, "game.position", undefined, vi.fn());
+    socket.reject(socket.last("watch"), {
+      code: -32_003,
+      message: "[moku-editor] no session",
+      data: { reason: "no_session", retryable: false }
+    });
+    await flush();
+
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:watch-deferred", {
+      id: "game.position",
+      code: -32_003,
+      reason: "no_session"
+    });
+    expect(ctx.state.subs.size).toBe(1);
+
+    await attach(ctx, "s-1");
+    expect(socket.last("watch").params).toMatchObject({ sub: 2, id: "game.position" });
+  });
+
   it("a watch in flight at stop logs no error: the link closed it itself", async () => {
     const socket = await connected(ctx);
     addWatch(ctx, "game.position", undefined, vi.fn());

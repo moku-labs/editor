@@ -212,6 +212,19 @@ describe("stepStyle", () => {
     });
   });
 
+  it("a write the game hot swapped says game updated (U10)", async () => {
+    const { ctx, fakes } = createTestCtx({ files: { [STYLES]: fixture } });
+    fakes.reload.mockResolvedValueOnce({ restored: false, reason: "hot_swap" });
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles("ui.number");
+    inspector.stepStyle("size", 1, false);
+    await settle(600);
+    expect(ctx.state.inspector.styles?.result).toEqual({
+      ok: true,
+      text: "✓ Written to features/ui/styles.ts:74 · game updated"
+    });
+  });
+
   it("steppers exist only for fields with a shared rule: wrap steps, an unknown number is read-only", async () => {
     const text = fixture.replace(
       '"ui.body": { font: "ui.font-body", size: 52,',

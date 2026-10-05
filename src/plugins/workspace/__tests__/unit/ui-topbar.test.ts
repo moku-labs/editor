@@ -116,6 +116,37 @@ describe("TopBar", () => {
     );
   });
 
+  it("an expected reload keeps the last game name and session id; a real loss shows No game (U9)", () => {
+    ctx.state.shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+    ctx.state.link = {
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 310,
+      retryInMs: 1000,
+      reloading: true
+    };
+    mount();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("merge-game 0.0.0");
+    expect(root.querySelector("[data-ui='session-chip'] button")?.textContent).toBe("s-7f3a");
+
+    ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 310, retryInMs: 1000 };
+    bump();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("No game");
+    expect(root.querySelector("[data-ui='session-chip']")?.textContent).toBe("no session");
+
+    ctx.state.link = { kind: "empty" };
+    bump();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("No game");
+  });
+
+  it("a session that closed before the link status follows keeps the name and the session (U9)", () => {
+    ctx.state.shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+    ctx.state.link = { kind: "live", frame: 310 };
+    mount();
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("merge-game 0.0.0");
+    expect(root.querySelector("[data-ui='session-chip'] button")?.textContent).toBe("s-7f3a");
+  });
+
   it("Step is inert unless paused, with the tooltip; when paused it runs game.step origin topbar", async () => {
     ctx.state.link = { kind: "live", frame: 3 };
     mount();

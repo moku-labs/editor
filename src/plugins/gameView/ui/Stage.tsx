@@ -117,8 +117,8 @@ function useStageDock(
 }
 
 /**
- * The badges over the stage: the link badge and the recording. A reload shows none: workspace's
- * frame spinner is the one indicator (U9).
+ * The badges over the stage: the link badge and the recording. An expected reload shows the
+ * blue "Reloading" badge (U12); the badges overlay the stage, so the layout does not move.
  *
  * @param status - The link status.
  * @param state - gameView state.
@@ -187,7 +187,7 @@ export function Stage(props: StageProps): VNode {
   const cover = useDrawerCover(root);
   useLayoutEffect(() => observeSize(viewport.current, setMeasured), []);
   useStageDock(ctx, { slot, clip }, zoom, cover);
-  // An expected reload (U9) keeps the stage as it is: no stale fade, no ticking badge.
+  // An expected reload (U9) keeps the stage as it is: no stale fade, no ticking clock.
   const silent = (status.kind === "silent" || status.kind === "lost") && !isReloading(status);
   useTicker(
     silent || state.series.recording !== undefined,

@@ -6,7 +6,7 @@
 - Peer dependency: `@moku-labs/game >= 0.1.0`
 - Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both. The contact sheet (`editor.sheet`, MCP `moku_series`) needs game 0.4.
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
-- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` starts it off, and the Hot reload switch flips it while the bin runs (D-32). `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` is the stdio MCP server for Claude Code; `moku-editor mcp-config [<game-html>] [--port N]` prints its `.mcp.json` snippet and `claude mcp add` line.
+- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` starts it off, and the Hot reload switch flips it while the bin runs (D-32). Bun reads `[serve.static]` of `bunfig.toml` from the process cwd only, so when `--root` holds such a bunfig and the cwd is another folder the bin re-runs itself in the root: run it from anywhere. `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` is the stdio MCP server for Claude Code; `moku-editor mcp-config [<game-html>] [--port N]` prints its `.mcp.json` snippet and `claude mcp add` line.
 - Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
 - Built for a narrow pane: Claude's browser pane at 1/3 (480 px) or 1/2 (720 px) of the screen; every workspace works at 480 px.
 
@@ -64,7 +64,8 @@
 - Panels are data (D-04): `definePanel` returns a frozen spec; the `panels` host owns subscriptions, first-value waiting, stale marking, teardown.
 - Views never depend on each other (D-13): cross-view intents are global tools events (`workspace:open-file`, `workspace:select-node`, …).
 - One game iframe (D-14): `workspace` owns it and never moves it in the DOM; views dock it and draw in its overlay.
-- Live edits (D-07, D-23): with Bun hot reload on (the bin's default) a save of a game source makes Bun reload the game page; the bridge stores a `game.bookmark` checkpoint in `sessionStorage` before and restores it after (hello `manifest.restored`), toast "Game reloaded · state restored". Without it (`--no-hmr`, a game's own server, or no new page within `hotReloadWaitMs`) the editor runs D-07: `game.bookmark` → reload the frame → `game.restore` on reconnect. The session reads tainted. The Hot reload switch (key H) turns it off and on while the bin runs (D-32): Bun cannot change HMR on a running server, so the bin restarts its server with HMR flipped on the same port (token kept, every socket drops for about a second), and the tools page reloads the game frame with its checkpoint, so the page gains or drops `/_bun/client`; toasts "Hot reload off" / "Hot reload on", then "Game reloaded · state restored from the last checkpoint". While off, a save on disk does not reload the game. A game's own server owns it (the switch is inert); a failed switch says to restart the bin with or without `--no-hmr`. Measured on merge-game (e2e/edit-loop.spec.ts): save → updated frame with state restored in about 0.8 s (a recolour, read back from captured frames, about 1.1 s).
+- Live edits (D-07, D-23): with Bun hot reload on (the bin's default) a save of a game source makes Bun reload the game page; the bridge stores a `game.bookmark` checkpoint in `sessionStorage` before and restores it after (hello `manifest.restored`), toast "Game reloaded · state restored". Without it (`--no-hmr`, a game's own server, or no new page within `hotReloadWaitMs`) the editor runs D-07: `game.bookmark` → reload the frame → `game.restore` on reconnect. The session reads tainted. The Hot reload switch (key H) turns it off and on while the bin runs (D-32): Bun cannot change HMR on a running server, so the bin restarts its server with HMR flipped on the same port (token kept, every socket drops for about a second), and the tools page reloads the game frame with its checkpoint, so the page gains or drops `/_bun/client`; toasts "Hot reload off" / "Hot reload on", then "Game reloaded · state restored from the last checkpoint". While off, a save on disk does not reload the game. A game's own server owns it (the switch is inert); a failed switch says to restart the bin with or without `--no-hmr`. Measured on merge-game (e2e/edit-loop.spec.ts): save → updated frame in about 30 ms with the hot swap (a recolour, read back from captured frames, about 0.1 s); a reload with the state restored takes about 0.8 s. Hot swap (game 0.5.0): with `[serve.static] plugins = ["@moku-labs/game/hot"]` in the game root's `bunfig.toml`, a save of a view module (`.tsx`, `styles.ts`, `view.ts`, `animations.ts`, `effects.ts`, generated strings) swaps in place: same session, no reload, toast "Game updated", and `gameFrame().reload()` resolves `{ restored: false, reason: "hot_swap" }` (it ends on the game's `ui:hot-swap` log entry). A logic module still reloads and restores, also under a popup.
+- Only the game reloads (U9): during an expected reload (`link.expectReload()`, close 1012, a game's bye; `isReloading(status)`) the top bar keeps its name, session and pill width, the panels keep their data, and one spinner `[data-frame-reloading]` shows on the game frame. A real loss, or one past link's `reloadGraceMs` (5000), shows the red bar over the workspace, never in the flow.
 - Files sandbox (D-09): `files` works under one root, allowlist + denylist, realpath check, atomic writes, optional sha1 `version`.
 - Security: the server binds 127.0.0.1 only; Host, Origin and a per-start 43-char token gate every upgrade. The token is never logged or printed.
 - Tools page ships prebuilt (D-06): `bun run build:tools` bundles `src/plugins/pages/page/` into `dist/tools/`; `pages` serves it.
@@ -137,6 +138,8 @@ toWireError(error: unknown): WireError
 fromWireError(error: WireError): ProtocolError
 isRetryable(error: unknown): boolean
 bareMessage(message: string): string                            // strips "[moku-editor] "
+isReloading(status: LinkStatus): boolean                        // a lost with reloading: true (an expected reload, U7/U9)
+isHotSwapEntry(entry: Json): boolean                            // a game.log entry of an applied dev hot swap (ui:hot-swap, game 0.5.0)
 errorCode, ERROR_PREFIX, ProtocolError                         // errorCode.notInstalled = -32008
 nodeFile, flowFile, kebab, parseOverrides, SOURCE_ROOTS, SOURCE_OVERRIDES_PATH   // node → file rule
 isSelectionInfo(value) / parseSelectionInfo(value) / parseSelectParams(value)     // SelectionInfo guard and checked copies
@@ -189,7 +192,7 @@ hub.path(): string
 hub.publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void   // "hotReload" | "selection"; to every tools socket, replayed after each tools hello
 
 pages.routes(): EditorRoutes
-pages.attachServer(options, restart?): void   // the bin calls it right after Bun.serve; restart lets the switch restart the server
+pages.attachServer(options, restart?): void   // the bin calls it right after Bun.serve (in the game root: it re-runs itself there for a [serve.static] bunfig); restart lets the switch restart the server
 pages.hotReload(): HotReload                     // { hmr, owner: "bin" | "server" }
 pages.setHotReload(on: boolean): Promise<boolean> // the bin with its restart: true, then restarts its server with HMR flipped (D-32)
 ```
@@ -204,6 +207,7 @@ link.sessions(): readonly SessionInfo[]
 link.session(): string | undefined
 link.choose(session: string): Promise<Manifest>
 link.retry(): void
+link.expectReload(): void                         // the next loss reads lost with reloading: true, for reloadGraceMs
 link.boot(): ToolsBoot | undefined
 link.frameUrl(url: string): string / link.isOtherTab(page: string): boolean
 link.onTap(listener: (tap: Tap) => void): () => void
@@ -214,6 +218,7 @@ link.selection(): SelectionInfo | undefined / notify("selection", info | null) /
 
 workspace.active() / show(ws) / theme() / setTheme(theme?) / density() / setDensity(choice) / preview(ws) / setPreview(ws, patch)
 workspace.device() / setDevice(patch) / devices() / gameFrame() / palette.add(item) / palette.open(query?)
+workspace.gameFrame().reload({ restore? }): Promise<ReloadResult>   // { restored, reason?: "not_mounted" | "not_embedded" | "no_session" | "bookmark_failed" | "restore_failed" | "timeout" | "hot_swap" }
 workspace.toast(message, file?) / mount(element) / host(ws) / badge(ws, badge?) / previewZone(ws, el, insets?)
 workspace.keys.bind(binding) / keys.escape(layer, close) / overlayInGame() / setOverlayInGame(on) / reference() / setReference(on) / onPrefs(fn)
 workspace.muted() / setMuted(on)                  // the sound flag, persisted; gameView sends game.mute

@@ -4,6 +4,7 @@
  * Wire errors are shown without the `[moku-editor]` prefix (R7).
  */
 import { bareMessage, errorCode, isWireError } from "../../registry/protocol";
+import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
 import { fileOfNode, lineOf, loadSourceLookup, noFileText, SOURCE_LOADS } from "./files";
@@ -156,18 +157,26 @@ async function writeCode(
     return;
   }
 
-  const reload = await env.reload();
-  if (reload.restored) {
-    code.result = {
-      ok: true,
-      text: "✓ Saved · game reloaded · state restored from the last checkpoint"
-    };
-  } else {
-    const reason = reload.reason ?? "unknown";
-    ctx.log.warn("flowView: the game state was not restored after a save", { reason });
-    code.result = { ok: false, text: `! Saved · game reloaded, state not restored (${reason})` };
-  }
+  code.result = savedResult(ctx, await env.reload());
   notify(ctx.state);
+}
+
+/**
+ * The result line after a save, from the reload that followed it. A state that was not restored
+ * is warned; a hot swap (U10) reloaded nothing, so there is nothing to restore.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param reload - The reload's result.
+ * @returns The result line.
+ */
+function savedResult(ctx: FlowCtx, reload: ReloadResult): NonNullable<CodeState["result"]> {
+  if (reload.reason === "hot_swap") return { ok: true, text: "✓ Saved · game updated" };
+  if (reload.restored) {
+    return { ok: true, text: "✓ Saved · game reloaded · state restored from the last checkpoint" };
+  }
+  const reason = reload.reason ?? "unknown";
+  ctx.log.warn("flowView: the game state was not restored after a save", { reason });
+  return { ok: false, text: `! Saved · game reloaded, state not restored (${reason})` };
 }
 
 /**

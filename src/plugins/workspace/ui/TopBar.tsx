@@ -38,6 +38,7 @@ import { RegistryPopover } from "./RegistryPopover";
 import { SessionChip, SessionMenu, sessionsView } from "./SessionChip";
 import { StepPopover } from "./StepPopover";
 import { useWorkspace } from "./store";
+import { heldNames } from "./text";
 
 /**
  * Props of `TopBar`.
@@ -317,13 +318,15 @@ export function TopBar(props: TopBarProps): VNode {
   const { kind } = state.link;
   const paused = kind === "paused";
   const running = kind === "live" || paused;
+  // While the link reloads the bar keeps the last name (U9: nothing moves sideways).
+  const held = heldNames(state.link, state.shown).game;
 
   return (
     <header data-ui="top-bar" data-layout={layout}>
       <span data-logo aria-hidden="true">
         <Icon name="logo" />
       </span>
-      <GameName game={manifest?.game ?? "No game"} />
+      <GameName game={manifest?.game ?? held ?? "No game"} />
       {!compact && <SessionChip ctx={ctx} />}
       <LinkPill ctx={ctx} session={compact} />
       <BarButton

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { DEVICES } from "../../../registry/protocol";
+import { onLinkStatus } from "../../handlers";
 import { stopGameView } from "../../lifecycle";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
@@ -176,6 +177,60 @@ describe("DeviceToolbar", () => {
     click(find(view.root, "[data-part='reload']"));
     await settle();
     expect(ctx.workspace.reload).toHaveBeenCalledWith({ restore: false });
+  });
+
+  it("Reload is busy from the click until the reload settles; a second click does nothing (U11)", async () => {
+    let finish: (() => void) | undefined;
+    ctx.workspace.reload.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = () => resolve({ restored: false });
+        })
+    );
+    click(find(view.root, "[data-part='reload']"));
+    await settle();
+    const busy = find<HTMLButtonElement>(view.root, "[data-part='reload']");
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.textContent).toBe("…");
+    expect(busy.getAttribute("aria-label")).toBe("Reloading");
+
+    click(busy);
+    await settle();
+    expect(ctx.workspace.reload).toHaveBeenCalledTimes(1);
+
+    finish?.();
+    await settle();
+    const idle = find<HTMLButtonElement>(view.root, "[data-part='reload']");
+    expect(idle.disabled).toBe(false);
+    expect(idle.getAttribute("aria-busy")).toBeNull();
+    expect(idle.textContent).toBe("Reload");
+  });
+
+  it("Reload comes back after a failed reload (U11)", async () => {
+    ctx.workspace.reload.mockRejectedValueOnce(new Error("frame gone"));
+    click(find(view.root, "[data-part='reload']"));
+    await settle();
+    const idle = find<HTMLButtonElement>(view.root, "[data-part='reload']");
+    expect(idle.disabled).toBe(false);
+    expect(idle.textContent).toBe("Reload");
+  });
+
+  it("Reload is busy while the link reports an expected reload from another trigger (U11)", async () => {
+    const hook = onLinkStatus(ctx);
+    hook({
+      status: { kind: "lost", reason: "bye", lastFrame: 3, retryInMs: 1000, reloading: true },
+      session: "s-1"
+    });
+    await settle();
+    const busy = find<HTMLButtonElement>(view.root, "[data-part='reload']");
+    expect(busy.disabled).toBe(true);
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    expect(busy.textContent).toBe("…");
+
+    hook({ status: { kind: "live", frame: 4 }, session: "s-1" });
+    await settle();
+    expect(find(view.root, "[data-part='reload']").textContent).toBe("Reload");
   });
 
   it("the camera takes a screenshot through panels.run", async () => {

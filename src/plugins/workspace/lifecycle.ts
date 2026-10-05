@@ -175,12 +175,17 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
     watchOsTheme(theme => osThemeChanged(ctx, theme))
   );
 
-  // Manifest: everLive, the overlay flag and the palette counts follow the attached game.
+  // Manifest: everLive, the shown name and session, the overlay flag and the palette counts
+  // follow the attached game.
+  const link = ctx.require(linkPlugin);
   trackCleanup(
     state,
-    ctx.require(linkPlugin).onManifest(manifest => {
+    link.onManifest(manifest => {
       if (state.stopped) return;
-      if (manifest !== undefined) state.everLive = true;
+      if (manifest !== undefined) {
+        state.everLive = true;
+        state.shown = { game: manifest.game, session: link.session() };
+      }
       reapplyOverlay(ctx, manifest);
       state.ui.bump();
     })

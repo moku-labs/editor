@@ -8,8 +8,8 @@
  * files of a series and the contact sheet with stepping and Mark as bug, the element picker on the
  * game's real geometry (hover ring, click, Element tab, its Code section of R12, Show in render
  * tree, Esc), the Device tab,
- * the style stepper that writes the source and reloads with state restored (D-07, through Bun hot
- * reload), the Overlay in game switch of the top bar (round 2 R1: the toolbar lost its own), and
+ * the style stepper that writes the source, which the game hot swaps in place (game 0.5.0, U10),
+ * the Overlay in game switch of the top bar (round 2 R1: the toolbar lost its own), and
  * driving the game itself: pause, step, resume, palette commands and real taps on the game canvas
  * whose effect shows in State. The Element and Device tabs live in the Element panel, a side
  * panel that floats as a drawer below 600 px and starts collapsed there: a test opens it before it
@@ -1910,7 +1910,7 @@ test.describe("game · element picker", () => {
     expect(await gamePath(page)).toBe("board/awaitIntent");
   });
 
-  test("the style stepper writes one number; Bun reloads the game and its state is restored (D-07)", async ({
+  test("the style stepper writes one number; the game hot swaps the style in place, no reload (U10)", async ({
     tools,
     errors
   }) => {
@@ -1941,11 +1941,11 @@ test.describe("game · element picker", () => {
       await recordToasts(page);
       await up.click();
       await expect.poll(async () => Number(await value.textContent())).toBeGreaterThan(start);
-      // The write toasts "✓ Saved". Bun hot reload reloads the page and the bridge restores its
-      // checkpoint (D-23): one reload, one toast, no second restore by the editor.
+      // The write toasts "✓ Saved". The game swaps the styles module in place (game 0.5.0 hot
+      // swap, U10): "Game updated", no reload, no restore.
       await expect
         .poll(() => toastHistory(page), { timeout: 30_000 })
-        .toEqual([`✓ Saved · ${file}`, "Game reloaded · state restored"]);
+        .toEqual([`✓ Saved · ${file}`, "Game updated"]);
       await expect.poll(() => readGameFile(file)).not.toBe(original);
       const after = (await readGameFile(file)) ?? "";
       const changed = after
@@ -1953,7 +1953,7 @@ test.describe("game · element picker", () => {
         .filter((line, index) => line !== original.split("\n")[index]);
       expect(changed).toHaveLength(1);
       expect(changed[0]).toContain(name.split(".").at(-1) ?? name);
-      await expect.poll(() => reloadState(page), { timeout: 30_000 }).toBe("reloaded");
+      expect(await reloadState(page), "the game page after a hot swap").toBe("marked");
       await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
         timeout: 30_000
       });

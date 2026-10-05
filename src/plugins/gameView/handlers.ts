@@ -3,6 +3,7 @@
  * workspace:open-sheet, workspace:inspect (R9), workspace:reference (D-27).
  */
 import type { ToolsEvents } from "../../config";
+import { isReloading } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { openSheet } from "./capture/sheet";
 import { inspectElement } from "./element/select";
@@ -30,7 +31,8 @@ export function createHandlers(ctx: GameViewCtx): GameViewHooks {
 /**
  * Applies one link status: a new session (live/paused after lost, or another session id) drops
  * the scene, the calibration and the manifest; empty turns the picker off, closes the popover
- * and ends a running series early; silent and lost keep everything (the UI marks it stale).
+ * and ends a running series early; silent and lost keep everything (the UI marks it stale). An
+ * expected reload (`isReloading`) keeps the toolbar Reload busy (U11).
  *
  * @param ctx - Domain context of gameView.
  * @param payload - The link:status payload.
@@ -56,7 +58,11 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
     state.series.popover = false;
     if (state.series.recording !== undefined) state.series.recording.stopRequested = true;
   }
-  state.link = { status: status.kind, session: session ?? previous.session };
+  state.link = {
+    status: status.kind,
+    session: session ?? previous.session,
+    reloading: isReloading(status)
+  };
   notify(state);
 }
 

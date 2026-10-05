@@ -206,12 +206,18 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
   notify(ctx.state);
 
   const reload = await env.reload();
-  styles.result = reload.restored
-    ? { ok: true, text: `✓ Written to ${file}:${written.line} · game reloaded · state restored` }
-    : {
-        ok: false,
-        text: `! Written to ${file}:${written.line} · game reloaded, state not restored (${reload.reason ?? "unknown"})`
-      };
+  const where = `${file}:${written.line}`;
+  if (reload.reason === "hot_swap") {
+    // The game swapped the module in place (U10): nothing reloaded, nothing to restore.
+    styles.result = { ok: true, text: `✓ Written to ${where} · game updated` };
+  } else {
+    styles.result = reload.restored
+      ? { ok: true, text: `✓ Written to ${where} · game reloaded · state restored` }
+      : {
+          ok: false,
+          text: `! Written to ${where} · game reloaded, state not restored (${reload.reason ?? "unknown"})`
+        };
+  }
   notify(ctx.state);
 }
 

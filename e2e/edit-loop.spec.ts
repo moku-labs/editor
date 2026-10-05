@@ -19,8 +19,9 @@
  * 5. swap a texture: the button's nine-slice (`texture`) for another one of its bundle in its
  *    style block; the button's style in `game.ui` and a `NineSlice` in `game.entities` name it.
  *
- * Before each edit the game commits a marker (`session.taps`); "restored" means the reloaded page
- * holds the marker again and stands on home, which a fresh start would not. A row is a first-try
+ * Before each edit the game commits a marker (`session.taps`); "restored" means the page holds the
+ * marker and stands on home, which a fresh start would not: the game hot swaps these style edits
+ * in place (game 0.5.0, U10), and a page Bun reloads restores its bookmark. A row is a first-try
  * success when the first edit derived from the block shows its value within 10 s. The spec prints
  * the table, attaches it as edit-loop.json, fails on any edit above 1500 ms, and writes every
  * game file back afterwards. It runs in the desktop project only: the loop does not depend on the

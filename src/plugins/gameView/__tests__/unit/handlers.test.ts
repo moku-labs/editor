@@ -93,7 +93,7 @@ describe("link:status", () => {
     expect(ctx.state.scene).toBe(scene);
     hook({ status: { kind: "live", frame: 3 }, session: "s-2" });
     expect(ctx.state.scene).toBeUndefined();
-    expect(ctx.state.link).toEqual({ status: "live", session: "s-2" });
+    expect(ctx.state.link).toEqual({ status: "live", session: "s-2", reloading: false });
   });
 
   it("empty turns the picker off, closes the popover and ends a running series early", () => {

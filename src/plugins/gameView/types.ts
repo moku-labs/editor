@@ -497,8 +497,13 @@ export type GameViewState = {
     styleSave?: ReturnType<typeof setTimeout>;
   };
   disposers: (() => void)[];
-  /** Kind and session of the last link:status: a new session drops scene, calibration, manifest. */
-  link: { status: LinkStatus["kind"] | undefined; session: string | undefined };
+  /**
+   * Kind and session of the last link:status: a new session drops scene, calibration, manifest.
+   * `reloading` is true while that status is an expected reload (`isReloading`, U11).
+   */
+  link: { status: LinkStatus["kind"] | undefined; session: string | undefined; reloading: boolean };
+  /** The gameView reloads in flight (toolbar Reload, style save): the Reload button is busy (U11). */
+  reloads: number;
   /** True once game.rect was asked for this session and device (calibration may stay undefined). */
   calibrationRead: boolean;
   /** The style search of the selected element while no StyleCard is shown. */

@@ -212,7 +212,10 @@ turns it off (layer `reference`, just before `selection`).
 The overlay holds one `<div data-frame-reloading aria-hidden="true">`, created with it. It shows
 while the link is `lost` to an expected reload (`isReloading`), and hides when the game beats
 again. It is the only reload indicator: absolute, centred on the game, 24 px on screen at any
-frame scale (`calc(24px / var(--frame-scale, 1))`). Nothing outside the frame moves.
+frame scale (`calc(24px / var(--frame-scale, 1))`). Nothing outside the frame moves: the top bar
+keeps the game name and the session id of the last manifest (`state.shown`, `heldNames`) until a
+real loss or no game, also in the moment between a session's close and the link status that
+follows it. e2e/reload-quiet.spec.ts measures 0 layout shift on the tools page.
 
 ### Tap ripples
 

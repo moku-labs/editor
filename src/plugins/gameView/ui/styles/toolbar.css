@@ -1,4 +1,4 @@
-/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload, camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. Below a 1000 px workspace (the `game` container, stage.css) Shot and Series show their icon only, the label kept for screen readers, so a 960 px window keeps one row (round 2b R17). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload (keeps its width while busy, U11), camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. Below a 1000 px workspace (the `game` container, stage.css) Shot and Series show their icon only, the label kept for screen readers, so a 960 px window keeps one row (round 2b R17). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="toolbar"]) {
   :scope {
     display: flex;
@@ -23,7 +23,7 @@
     color: var(--text-ink);
   }
 
-  button:hover:not([aria-disabled="true"]) {
+  button:hover:not([aria-disabled="true"], :disabled) {
     background: var(--surface-panel-2);
   }
 
@@ -50,7 +50,28 @@
   }
 
   [data-part="reload"] {
+    display: inline-grid;
+    place-items: center;
     margin-left: auto;
+  }
+
+  /* U11: a hidden "Reload" shares the label cell, so "…" while busy keeps the width. */
+  [data-part="reload"]::after {
+    content: "Reload";
+    grid-area: 1 / 1;
+    visibility: hidden;
+  }
+
+  /* Stretched over the cell and start-aligned: "…" starts where "Reload" starts, so neither the
+     label box nor its text moves (B10: 0 layout shift). */
+  [data-part="reload-label"] {
+    grid-area: 1 / 1;
+    justify-self: stretch;
+    text-align: start;
+  }
+
+  [data-part="reload"]:disabled {
+    cursor: progress;
   }
 
   [data-part="tool-icon"] {
