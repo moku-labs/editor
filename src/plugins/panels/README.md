@@ -102,6 +102,7 @@ Renders are coalesced to one per animation frame.
 |---|---|
 | `silent` | `silent` |
 | `lost`, `empty` | `lost` |
+| `lost` with `reloading: true` (`isReloading`, an expected reload, U9) | absent: the section keeps its last values until the new session's arrive |
 | `connecting` | clears `fresh`, then `resync` while a received value is not fresh again |
 | `live`, `paused` | `resync` while a received value is not fresh again |
 

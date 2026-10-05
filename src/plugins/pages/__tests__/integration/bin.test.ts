@@ -28,11 +28,13 @@ type Running = {
  * Spawns the bin and waits for its Tools line.
  *
  * @param args - Bin arguments.
+ * @param detached - Start it as the leader of its own process group, as a shell does.
  * @returns The running bin with its real port.
  */
-async function spawnBin(args: string[]): Promise<Running> {
+async function spawnBin(args: string[], detached = false): Promise<Running> {
   const child = Bun.spawn(["bun", BIN, ...args], {
     cwd: REPO,
+    detached,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe"
@@ -151,7 +153,35 @@ async function openClient(
   return { closed };
 }
 
+/** A bunfig plugin that rewrites the marker of the game's main.ts: the page shows it ran. */
+const MARKER_PLUGIN = String.raw`export default {
+  name: "marker",
+  setup(build) {
+    build.onLoad({ filter: /\/main\.ts$/ }, async ({ path }) => ({
+      contents: (await Bun.file(path).text()).replace("MARKER_ORIGINAL", "MARKER_INJECTED"),
+      loader: "ts"
+    }));
+  }
+};
+`;
+
+/**
+ * The text of every script of a served page.
+ *
+ * @param origin - The bin's origin.
+ * @returns The joined JavaScript.
+ */
+async function pageScripts(origin: string): Promise<string> {
+  const html = await fetch(`${origin}/`).then(response => response.text());
+  let js = "";
+  for (const match of html.matchAll(/src="([^"]+\.js)"/g)) {
+    js += await fetch(new URL(match[1] ?? "", `${origin}/`)).then(response => response.text());
+  }
+  return js;
+}
+
 let game: string;
+let bunfigGame: string;
 
 beforeAll(async () => {
   if (!existsSync(join(REPO, "dist", "tools", "index.html"))) {
@@ -170,10 +200,25 @@ beforeAll(async () => {
   await writeFile(join(game, "main.ts"), 'document.title = "tiny game";\n');
   await writeFile(join(game, "data.json"), '{"level":1}');
   await writeFile(join(game, ".env"), "SECRET=1");
+  bunfigGame = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-bunfig-")));
+  await writeFile(
+    join(bunfigGame, "index.html"),
+    '<!doctype html><html><head><title>bunfig game</title></head><body><script type="module" src="./main.ts"></script></body></html>'
+  );
+  await writeFile(
+    join(bunfigGame, "main.ts"),
+    'export const marker = "MARKER_ORIGINAL";\nconsole.log(marker);\n'
+  );
+  await writeFile(join(bunfigGame, "marker-plugin.ts"), MARKER_PLUGIN);
+  await writeFile(
+    join(bunfigGame, "bunfig.toml"),
+    '[serve.static]\nplugins = ["./marker-plugin.ts"]\n'
+  );
 }, 120_000);
 
 afterAll(async () => {
   await rm(game, { recursive: true, force: true });
+  await rm(bunfigGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -264,6 +309,29 @@ describe("moku-editor bin", () => {
       bin.child.kill("SIGTERM");
     }
     expect(await bin.child.exited).toBe(0);
+    expect(existsSync(path)).toBe(false);
+  }, 60_000);
+
+  it("honours the bunfig.toml of a root started from elsewhere: a re-spawned child serves the plugin's build, writes its own pid and stops once on a group Ctrl+C (B2)", async () => {
+    const html = join(bunfigGame, "index.html");
+    const bin = await spawnBin([html, "--port", "0", "--root", bunfigGame], true);
+    const path = join(bunfigGame, ".moku", "editor.json");
+    try {
+      expect(bin.port).toBeGreaterThan(0);
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const js = await pageScripts(origin);
+      expect(js).toContain("MARKER_INJECTED");
+      expect(js).not.toContain("MARKER_ORIGINAL");
+      const discovery = JSON.parse(await readFile(path, "utf8"));
+      expect(discovery).toMatchObject({ port: bin.port, root: bunfigGame, html });
+      expect(discovery.pid).not.toBe(bin.child.pid);
+      expect(process.kill(discovery.pid, 0)).toBe(true);
+    } finally {
+      // A terminal Ctrl+C: SIGINT to the whole process group of the bin.
+      process.kill(-bin.child.pid, "SIGINT");
+    }
+    expect(await bin.child.exited).toBe(0);
+    expect(bin.output().match(/stopped/g)).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
   }, 60_000);
 

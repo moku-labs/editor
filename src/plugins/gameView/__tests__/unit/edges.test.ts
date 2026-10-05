@@ -98,12 +98,11 @@ describe("failure paths", () => {
     expect(ctx.state.calibrationRead).toBe(false);
   });
 
-  it("reloadGame logs a rejected reload and clears the badge", async () => {
+  it("reloadGame logs a rejected reload", async () => {
     ctx = createCtx();
     ctx.workspace.reload.mockRejectedValueOnce(new Error("frame gone"));
     await reloadGame(ctx, false);
     expect(ctx.log.warn).toHaveBeenCalledWith("gameView: reload failed", { message: "frame gone" });
-    expect(ctx.state.reloading).toBe(false);
   });
 
   it("chooseDevice ignores an unknown preset", () => {

@@ -1,4 +1,4 @@
-/* workspace · LinkPill. One look per link status: spinner while connecting or reloading (U7), live dot, pause glyph, warn while silent, error with "Retry now" when lost. In the compact top bar the dot and the text sit in a plain button that opens the session menu. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · LinkPill. One look per link status: spinner while connecting, live dot (also through an expected reload, U9), pause glyph, warn while silent, error when lost. The text keeps a fixed minimum width, so a status change never moves the top bar. In the compact top bar the dot and the text sit in a plain button that opens the session menu. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="link-pill"]) {
   :scope {
     display: inline-flex;
@@ -21,6 +21,11 @@
     color: inherit;
   }
 
+  [data-text] {
+    display: inline-block;
+    min-width: 19ch;
+  }
+
   [data-part="status"][aria-haspopup="menu"]:hover [data-text] {
     text-decoration: underline;
   }
@@ -32,8 +37,7 @@
     background: var(--text-muted);
   }
 
-  :scope[data-kind="connecting"] [data-dot],
-  :scope[data-kind="reloading"] [data-dot] {
+  :scope[data-kind="connecting"] [data-dot] {
     border: 2px solid var(--line-2);
     border-top-color: var(--accent);
     background: none;

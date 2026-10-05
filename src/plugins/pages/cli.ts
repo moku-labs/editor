@@ -3,8 +3,9 @@
  * time, start the server core, serve hub.serve(...) as the game server (`serve.ts`) with Bun HMR
  * on (off with `--no-hmr`), attach it to pages with its restart (the Hot reload switch, D-32),
  * write the discovery file `.moku/editor.json` (removed on stop and exit), print the URLs through
- * the branded console (MC1). `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames
- * only); `mcp-config` prints the Claude Code setup. The token is never printed.
+ * the branded console (MC1). A root whose `bunfig.toml` has `[serve.static]` is served from a
+ * re-spawned bin with that cwd (`reexec.ts`). `mcp` runs the stdio MCP bridge (`mcp/`, stdout for
+ * protocol frames only); `mcp-config` prints the Claude Code setup. The token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -16,10 +17,11 @@ import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
+import { processReexec, reexecBin } from "./reexec";
 import type { GameServer } from "./serve";
 import { createGameServer } from "./serve";
 import { createStaticFetch } from "./static";
-import type { McpConfigArgs, RunArgs } from "./types";
+import type { McpConfigArgs, ReexecDeps, RunArgs } from "./types";
 
 /**
  * The usage lines of `--help` and of an argument error.
@@ -41,12 +43,14 @@ const USAGE = [
 export type PageModule = { readonly default?: unknown };
 
 /**
- * What the bin talks to: the console, the HTML import and the process exit.
+ * What the bin talks to: the console, the HTML import, the process exit and, for the real
+ * process, the re-spawn in the game root (without it the bin always serves itself).
  */
 export type CliDeps = {
   readonly ui: BrandConsole;
   readonly importPage: (url: string) => Promise<PageModule>;
   readonly exit: (code: number) => void;
+  readonly reexec?: ReexecDeps;
 };
 
 /**
@@ -307,7 +311,8 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
 }
 
 /**
- * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, or serving the game.
+ * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, or serving the game (from a
+ * re-spawned bin when `deps.reexec` asks for one: then the child's exit code).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps.
@@ -333,7 +338,8 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
   }
   if (args.kind === "mcp") return { code: await runBridge(args) };
 
-  return serveGame(args, deps);
+  const reexecCode = deps.reexec === undefined ? undefined : await reexecBin(args, deps.reexec);
+  return reexecCode === undefined ? serveGame(args, deps) : { code: reexecCode };
 }
 
 /**
@@ -386,14 +392,14 @@ function exit(code: number): void {
 /**
  * The deps of the real process.
  *
- * @returns Console, HTML import and exit of this process.
+ * @returns Console, HTML import, exit and re-spawn of this process.
  * @example
  * ```ts
  * await main(Bun.argv.slice(2), processDeps());
  * ```
  */
 function processDeps(): CliDeps {
-  return { ui: createBrandConsole(), importPage, exit };
+  return { ui: createBrandConsole(), importPage, exit, reexec: processReexec() };
 }
 
 /**

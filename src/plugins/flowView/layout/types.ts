@@ -278,7 +278,10 @@ export type LayoutApi = {
 export type LayoutActions = LayoutApi & {
   /** Lays out the graph again (cached, stale results dropped). */
   relayout(): Promise<void>;
-  /** Reads layout.json (missing = empty, invalid = read-only), then lays out again. */
+  /**
+   * Reads layout.json (missing = empty, invalid = read-only), then lays out again; the same pins
+   * over a layout on screen lay out nothing (B9: a new session after a reload).
+   */
   loadPins(): Promise<void>;
   /** Pins a dragged node at a world position (snapped to 12) and schedules the save. */
   drop(key: ItemKey, x: number, y: number): void;

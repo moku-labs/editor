@@ -1,11 +1,12 @@
 /**
- * @file flowView plugin — hooks of the global tools events (R4): link:status (stale marking,
- * first-live loads, empty reset), workspace:changed (active flag, default camera),
+ * @file flowView plugin — hooks of the global tools events (R4): link:status (stale marking, none
+ * in an expected reload; first-live loads, empty reset), workspace:changed (active flag, default camera),
  * workspace:density (the layout spacing), and the intents of other views: workspace:select-node,
  * workspace:focus-frame. The handler of an intent shows its own workspace; an intent that comes
  * before the first flow values waits for them (intents.ts).
  */
 import type { ToolsEvents } from "../../config";
+import { isReloading } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { actionsOf } from "./actions";
 import { requestIntent } from "./intents";
@@ -34,8 +35,9 @@ async function loadSession(ctx: FlowCtx): Promise<void> {
 }
 
 /**
- * link:status — stores the status; silent/lost mark the data stale (M13); live/paused clear it and,
- * first in a session, load the session files; empty clears the selection, closes the menu (M4) and
+ * link:status — stores the status; silent/lost mark the data stale (M13), except the `lost` of an
+ * expected reload (U9: the graph stays as it is); live/paused clear it and, first in a session, load
+ * the session files (the same pins lay out nothing again, B9); empty clears the selection, closes the menu (M4) and
  * drops an intent still waiting for the flow values.
  *
  * @param ctx - Domain context of flowView.
@@ -50,6 +52,7 @@ export function onLinkStatus(ctx: FlowCtx): (payload: ToolsEvents["link:status"]
     switch (status.kind) {
       case "silent":
       case "lost": {
+        if (isReloading(status)) break;
         data.stale = true;
         data.staleFrame = status.lastFrame;
 

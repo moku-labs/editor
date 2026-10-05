@@ -316,7 +316,7 @@ describe("LinkPill", () => {
     expect(pillText({ kind: "empty" }, now).text).toBe("No game");
   });
 
-  it("an expected reload (U7) reads Reloading · last frame N, neutral, with no Retry now", () => {
+  it("an expected reload (U9 B8) keeps the live look and text: Live · f<lastFrame>", () => {
     const status = {
       kind: "lost",
       reason: "game_reloaded",
@@ -325,7 +325,7 @@ describe("LinkPill", () => {
       reloading: true
     } as const;
     expect(pillText(status, 0)).toEqual({
-      text: "Reloading · last frame 1825",
+      text: "Live · f1825",
       note: "Reloading the game · last frame 1825"
     });
 
@@ -334,11 +334,12 @@ describe("LinkPill", () => {
       render(h(LinkPill, { ctx }), root);
     });
     const pill = root.querySelector<HTMLElement>("[data-ui='link-pill']");
-    expect(pill?.dataset.kind).toBe("reloading");
+    expect(pill?.dataset.kind).toBe("live");
+    expect(pill?.querySelector("[data-text]")?.textContent).toBe("Live · f1825");
     expect(pill?.querySelector("button")).toBeNull();
   });
 
-  it("lost shows Retry now, which calls link.retry()", () => {
+  it("lost reads red with no Retry now of its own (the stale bar keeps it, U9 B8)", () => {
     ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 2, retryInMs: 2000 };
     act(() => {
       render(h(LinkPill, { ctx }), root);
@@ -346,8 +347,7 @@ describe("LinkPill", () => {
     const pill = root.querySelector<HTMLElement>("[data-ui='link-pill']");
     expect(pill?.dataset.kind).toBe("lost");
     expect(pill?.title).toBe("Connection to the editor server closed · reconnecting in 2 s");
-    act(() => pill?.querySelector("button")?.click());
-    expect(ctx.link.retry).toHaveBeenCalledTimes(1);
+    expect(pill?.querySelector("button")).toBeNull();
   });
 });
 

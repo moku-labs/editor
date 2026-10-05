@@ -1,9 +1,12 @@
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureOverlay } from "../../frame/frame";
 import { createHandlers, handleLinkStatus } from "../../handlers";
 import { createCtx, resultOf } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// link:status: everLive, the 1 s ticker for silent/lost, stale step popover
+// link:status: everLive, the 1 s ticker for silent/lost, stale step popover,
+// the frame spinner of an expected reload (U9 B6)
 // ─────────────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -74,5 +77,30 @@ describe("handleLinkStatus", () => {
     ctx.state.popover = "registry";
     handle({ status: { kind: "empty" } });
     expect(ctx.state.popover).toBe("registry");
+  });
+
+  it("shows the frame spinner only while the link is lost to an expected reload (U9 B6)", () => {
+    const ctx = createCtx();
+    const spinner = ensureOverlay(ctx.state).querySelector<HTMLElement>("[data-frame-reloading]");
+    const handle = handleLinkStatus(ctx);
+    handle({
+      status: { kind: "lost", reason: "bye", lastFrame: 310, retryInMs: 1000, reloading: true }
+    });
+    expect(spinner?.hidden).toBe(false);
+
+    handle({ status: { kind: "live", frame: 311 } });
+    expect(spinner?.hidden).toBe(true);
+
+    handle({ status: { kind: "lost", reason: "socket_closed", lastFrame: 311, retryInMs: 1000 } });
+    expect(spinner?.hidden).toBe(true);
+  });
+
+  it("before the overlay exists it only stores the status", () => {
+    const ctx = createCtx();
+    const handle = handleLinkStatus(ctx);
+    handle({
+      status: { kind: "lost", reason: "bye", lastFrame: 310, retryInMs: 1000, reloading: true }
+    });
+    expect(ctx.state.frame.overlay).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createFrameLayer,
   createGameFrame,
+  ensureOverlay,
   followTransitions,
   removeFrameLayer,
   syncFrame,
@@ -61,6 +62,27 @@ describe("createFrameLayer", () => {
     expect(overlay.parentElement).toBe(boxElement());
     expect(frame.overlay()).toBe(overlay);
     expect(ctx.state.frame.iframe).toBe(iframe);
+  });
+
+  it("the overlay holds one spinner of an expected reload, hidden unless the link reloads (U9 B6)", () => {
+    const spinners = frame.overlay().querySelectorAll<HTMLElement>("[data-frame-reloading]");
+    expect(spinners).toHaveLength(1);
+    expect(spinners[0]?.hidden).toBe(true);
+    expect(spinners[0]?.getAttribute("aria-hidden")).toBe("true");
+    expect(ensureOverlay(ctx.state).querySelectorAll("[data-frame-reloading]")).toHaveLength(1);
+
+    const reloading = createCtx();
+    reloading.state.link = {
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 310,
+      retryInMs: 1000,
+      reloading: true
+    };
+    const spinner = ensureOverlay(reloading.state).querySelector<HTMLElement>(
+      "[data-frame-reloading]"
+    );
+    expect(spinner?.hidden).toBe(false);
   });
 
   it("removeFrameLayer takes the layer out and forgets it", () => {

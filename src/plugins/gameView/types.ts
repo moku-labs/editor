@@ -505,8 +505,6 @@ export type GameViewState = {
   lookup: StyleLookup | undefined;
   /** The capture card is hovered or focused, so it stays. */
   cardHeld: boolean;
-  /** A game reload gameView started has not settled. */
-  reloading: boolean;
   /** Bumped by every highlight call; an older pending call is dropped. */
   highlightSeq: number;
   /** The calibration's target, revision and pending reads. */

@@ -3,6 +3,7 @@
  * the store-and-emit step that publishes the global `link:status`.
  */
 import type { LinkStatus } from "../../registry/protocol";
+import { isReloading } from "../../registry/protocol";
 import { clearReload } from "../state";
 import type { LinkCtx, LinkState, StatusInput } from "../types";
 
@@ -30,20 +31,6 @@ export function lastFrameOf(status: LinkStatus): number {
       return 0;
     }
   }
-}
-
-/**
- * True for the neutral `lost` of an expected reload (U7).
- *
- * @param status - A link status.
- * @returns Whether it is `lost` with `reloading: true`.
- * @example
- * ```ts
- * isReloading({ kind: "lost", reason: "bye", lastFrame: 310, retryInMs: 1000, reloading: true }); // true
- * ```
- */
-function isReloading(status: LinkStatus): boolean {
-  return status.kind === "lost" && status.reloading === true;
 }
 
 /**

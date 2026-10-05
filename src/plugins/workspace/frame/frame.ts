@@ -5,10 +5,11 @@
  * `syncFrame` reads the target rects once and writes one transform and one clip; the clip rounds
  * the screen corners by the preset radius. The docked iframe takes the pointer and the keyboard
  * in the preview and on the Game stage; Reference mode marks the box so its overlay takes the
- * pointer instead.
+ * pointer instead. The overlay holds the one indicator of an expected reload (U9 B6): a spinner
+ * on the game, shown while the link is lost to that reload.
  */
 import { linkPlugin } from "../../link";
-import { resolveDevice } from "../../registry/protocol";
+import { isReloading, resolveDevice } from "../../registry/protocol";
 import { deviceChoiceOf } from "../devices";
 import { hostOf } from "../hosts";
 import { trackCleanup } from "../state";
@@ -69,8 +70,8 @@ export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
 }
 
 /**
- * The overlay element above the iframe (device space), created once; attached into the frame box
- * by the first mount.
+ * The overlay element above the iframe (device space), created once with the reload spinner;
+ * attached into the frame box by the first mount.
  *
  * @param state - Workspace state.
  * @returns The element.
@@ -80,8 +81,36 @@ export function ensureOverlay(state: WorkspaceState): HTMLElement {
 
   const overlay = document.createElement("div");
   overlay.dataset.frameOverlay = "";
+  overlay.append(createSpinner(state));
   state.frame.overlay = overlay;
   return overlay;
+}
+
+/**
+ * The spinner of an expected reload (U9 B6), shown when the link reloads at its creation.
+ *
+ * @param state - Workspace state.
+ * @returns The element.
+ */
+function createSpinner(state: WorkspaceState): HTMLElement {
+  const spinner = document.createElement("div");
+  spinner.dataset.frameReloading = "";
+  spinner.setAttribute("aria-hidden", "true");
+  spinner.hidden = !isReloading(state.link);
+  return spinner;
+}
+
+/**
+ * Shows the reload spinner while the link is lost to an expected reload (U9 B6). Before the
+ * overlay exists it does nothing: the overlay starts with the current status.
+ *
+ * @param state - Workspace state.
+ */
+export function syncSpinner(state: WorkspaceState): void {
+  const spinner = state.frame.overlay?.querySelector<HTMLElement>(
+    ":scope > [data-frame-reloading]"
+  );
+  if (spinner !== null && spinner !== undefined) spinner.hidden = !isReloading(state.link);
 }
 
 /**

@@ -23,7 +23,7 @@ sideways.
 | `defaultWorkspace` | `WorkspaceId` | `"game"` | Workspace shown at start when the URL hash names none. |
 | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
-| `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload()` waits for the page Bun reloads before it reloads the frame itself. |
+| `hotReloadWaitMs` | `number` | `1500` | After a save with Bun hot reload on: how long `gameFrame().reload()` waits for the page Bun reloads, or the game's hot swap, before it reloads the frame itself. |
 | `toastMs` | `number` | `2600` | How long one toast stays. Hover or focus pauses it. |
 
 `onInit` throws `[moku-editor] workspace.<field> is invalid.\n  <fix>.` for a bad value. The game
@@ -207,6 +207,13 @@ The top-bar button (`data-action="reference"`, `aria-pressed`), key R, the palet
 outline marks the frame. gameView draws its element proxies into `gameFrame().overlay()`. Esc
 turns it off (layer `reference`, just before `selection`).
 
+### Reload spinner (U9)
+
+The overlay holds one `<div data-frame-reloading aria-hidden="true">`, created with it. It shows
+while the link is `lost` to an expected reload (`isReloading`), and hides when the game beats
+again. It is the only reload indicator: absolute, centred on the game, 24 px on screen at any
+frame scale (`calc(24px / var(--frame-scale, 1))`). Nothing outside the frame moves.
+
 ### Tap ripples
 
 workspace subscribes once to `link.onTap`. While the frame is docked and Show taps is on, a tap
@@ -244,12 +251,17 @@ session close of the reload an expected reload (U7): the link reads `lost` with 
 
 A link `lost` with `reloading: true` is a reload on purpose: a server restart (close 1012), this
 reload, the Hot reload switch, or a game that said bye before Bun's full reload. Until the game is
-back, the shell shows it in a neutral tone, with no "Retry now":
+back, the editor stands still (U9): only the frame spinner shows it.
 
 | Where | Real loss (`lost`) | Expected reload (`lost`, `reloading: true`) |
 |---|---|---|
-| Stale bar | `data-tone="error"`: "Stale · data from frame N · {reason}, reconnecting in N s · Retry now" | `data-tone="info"`: "Reloading…" |
-| Link pill | `data-kind="lost"`, red: "Lost · retry in N s", Retry now | `data-kind="reloading"`, spinner: "Reloading · last frame N" |
+| Stale bar | `data-tone="error"`: "Stale · data from frame N · {reason}, reconnecting in N s · Retry now" | hidden |
+| Link pill | `data-kind="lost"`, red: "Lost · retry in N s" | `data-kind="live"`: "Live · f{lastFrame}" |
+| Frame | nothing | the reload spinner |
+
+The stale bar is an overlay: absolute over the top of the workspace area, never in the layout
+flow. The pill text keeps a 19ch minimum width, so a status change never moves the top bar.
+"Retry now" is in the stale bar only.
 
 When the game is not back within link's `reloadGraceMs` (5000 ms), link sends a plain `lost` and
 the red texts show.
@@ -263,6 +275,12 @@ Bun hot reload on (`link.hotReload().hmr`), Bun reloads the game page itself:
    · state restored", result `{ restored: true }`, no second restore and no second pause.
 4. Without `restored`, workspace restores its own bookmark as above (the D-07 fallback).
 5. No new session within `hotReloadWaitMs`: the frame reloads itself as above.
+
+In the same wait the run watches `game.log` (U10). The value is the whole trace, oldest first. An
+entry of event `ui:hot-swap` (`isHotSwapEntry`) logged at or after the save means the game
+swapped the module in place: the run ends with `{ restored: false, reason: "hot_swap" }` and the
+toast "Game updated". No frame reload, no restore. Whichever comes first, the session or the hot
+swap, ends the other wait.
 
 A bookmark that fails because Bun's reload already took the page is warned only when the run
 needs it (steps 4 and 5). The palette's "Reload game" items never wait for Bun. A session that
@@ -309,6 +327,7 @@ toasts "Game reloaded · state restored" once per restore; workspace does not re
 | `bookmark_failed` | `game.bookmark` failed. |
 | `restore_failed` | `game.restore` failed. The game stays at its fresh start. |
 | `timeout` | No new session within `reloadTimeoutMs`. |
+| `hot_swap` | After a save the game swapped the module in place. Nothing reloaded or restored. |
 
 ### Keys and Esc
 
@@ -342,7 +361,7 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 | emits | `workspace:ran` | `RanEvent` | A command the shell ran for the user settled. Origins `topbar`, `key`, `palette`. |
 | emits | `workspace:density` | `{ density: "compact" \| "comfortable" }` | The applied density changed: a choice, or `auto` crossing 820 px on a resize. |
 | emits | `workspace:reference` | `{ on: boolean }` | Reference mode turned on or off. |
-| hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards (a `lost` with `reloading: true` in a neutral tone, U7). Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
+| hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards. Shows the frame spinner while the link reloads on purpose (U9). Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
 
 `RanEvent` = `{ id, input, origin, at }` plus `{ ok: true, result }` or `{ ok: false, error }`.
 

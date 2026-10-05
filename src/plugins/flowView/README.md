@@ -117,7 +117,7 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 | Kind | Name | Payload | When |
 |---|---|---|---|
 | Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code and Styles tabs, and ⇧↵ of a Nodes palette item. filesView hooks it. |
-| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13). The first `live`/`paused` of a session loads `layout.file` and the style keys. `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
+| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13); the `lost` of an expected reload (`isReloading`, U9) marks nothing. The first `live`/`paused` of a session loads `layout.file` and the style keys; pins equal to the ones on screen lay out nothing again (B9). `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
 | Hooks | `workspace:changed` | `{ ws }` | `flow`: the default camera. Leaving Flow closes the menu and cancels the camera move. |
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. Before the first flow values the selection waits for them. When Flow shows for the first time, the first canvas measure frames the selection, not the current node. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. Before the first flow values it waits for them. |

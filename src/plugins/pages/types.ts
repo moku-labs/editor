@@ -205,6 +205,44 @@ export type BinArgs =
   | { readonly kind: "error"; readonly message: string };
 
 /**
+ * A signal the re-spawning bin forwards to its child (`reexec.ts`).
+ */
+export type ForwardedSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
+
+/**
+ * The re-spawned bin as its parent sees it.
+ */
+export type ReexecChild = {
+  /** Resolves with the exit code. */
+  readonly exited: Promise<number>;
+  /** Sends a signal; throws when the child is gone. */
+  kill(signal: ForwardedSignal): void;
+};
+
+/**
+ * What the bin needs to re-spawn itself in the game root (`reexec.ts`): the process cwd and
+ * environment, the command prefix, the spawn and the signal handlers.
+ */
+export type ReexecDeps = {
+  /** The process cwd. */
+  readonly cwd: () => string;
+  /** The process environment, handed on to the child with the loop marker. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** The command words before the bin arguments: `[bun, bin script]`. */
+  readonly command: readonly string[];
+  /** Starts the child with stdio inherited, in its own process group. */
+  readonly spawn: (
+    cmd: readonly string[],
+    options: {
+      readonly cwd: string;
+      readonly env: Readonly<Record<string, string | undefined>>;
+    }
+  ) => ReexecChild;
+  /** Adds a signal handler; returns its removal. */
+  readonly onSignal: (signal: ForwardedSignal, handler: () => void) => () => void;
+};
+
+/**
  * The discovery file `<root>/.moku/editor.json` a serving bin writes (mode 0600) and removes on
  * stop: how the MCP bridge finds the running editor. Holds the hub token, so it is never printed
  * or logged.

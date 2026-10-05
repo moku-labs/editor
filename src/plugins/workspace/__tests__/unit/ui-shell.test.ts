@@ -177,7 +177,7 @@ describe("Shell", () => {
     expect(staleBar()?.hidden).toBe(true);
   });
 
-  it("F3 (U7): an expected reload shows a neutral Reloading… with no Retry now", () => {
+  it("F3 (U9 B7): an expected reload hides the stale bar; the red bar comes back on a real loss", () => {
     ctx.state.everLive = true;
     ctx.state.link = {
       kind: "lost",
@@ -187,11 +187,14 @@ describe("Shell", () => {
       reloading: true
     };
     bump();
-    expect(staleBar()?.hidden).toBe(false);
-    expect(staleBar()?.dataset.tone).toBe("info");
-    expect(staleBar()?.textContent).toBe("Reloading…");
-    expect(staleBar()?.querySelector("button")).toBeNull();
+    expect(staleBar()?.hidden).toBe(true);
+    expect(staleBar()?.textContent).toBe("");
     expect(root.querySelector("[data-tone='error']")).toBeNull();
+
+    ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 1825, retryInMs: 1000 };
+    bump();
+    expect(staleBar()?.hidden).toBe(false);
+    expect(staleBar()?.dataset.tone).toBe("error");
   });
 });
 

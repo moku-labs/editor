@@ -32,7 +32,6 @@ describe("createGameViewState", () => {
       calibrationRead: false,
       lookup: undefined,
       cardHeld: false,
-      reloading: false,
       highlightSeq: 0
     });
     expect(state.listeners.size).toBe(0);

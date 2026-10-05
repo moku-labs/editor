@@ -163,7 +163,8 @@ export type FrameBox = {
 };
 
 /**
- * Result of the D-07 reload.
+ * Result of the D-07 reload. `hot_swap`: after a save the game swapped the module in place (dev
+ * hot swap of game 0.5.0), so the frame was not reloaded and nothing was restored.
  */
 export type ReloadResult = {
   restored: boolean;
@@ -173,7 +174,8 @@ export type ReloadResult = {
     | "no_session"
     | "bookmark_failed"
     | "restore_failed"
-    | "timeout";
+    | "timeout"
+    | "hot_swap";
 };
 
 /**
@@ -231,7 +233,9 @@ export type GameFrame = {
    * The D-07 reload after a save: bookmark, reload in place, restore on the new session, toast.
    * With Bun hot reload on, Bun reloads the page itself: the run waits up to `hotReloadWaitMs` for
    * that session and reloads the frame only when none came; a session the bridge already restored
-   * (`manifest.restored`) is not restored or paused again. Concurrent calls share one run.
+   * (`manifest.restored`) is not restored or paused again. A game that hot swapped the saved
+   * module in that wait (a `ui:hot-swap` game.log entry) ends the run with `reason: "hot_swap"`
+   * and the toast "Game updated": no frame reload, no restore. Concurrent calls share one run.
    *
    * @param opts - `restore: true` bookmarks first and restores after.
    * @param opts.restore - Whether to bookmark and restore the game state.
@@ -240,6 +244,8 @@ export type GameFrame = {
    * ```ts
    * // The game code changed; reload it and keep the board.
    * await app.workspace.gameFrame().reload({ restore: true }); // { restored: true }
+   * // A saved styles module the game swapped in place, with Bun hot reload on.
+   * await app.workspace.gameFrame().reload({ restore: true }); // { restored: false, reason: "hot_swap" }
    * ```
    */
   reload(opts?: { restore?: boolean }): Promise<ReloadResult>;

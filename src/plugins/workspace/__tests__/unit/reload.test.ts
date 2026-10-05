@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
+import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Json } from "../../../registry/protocol";
 import { wireError } from "../../../registry/protocol";
 import { createGameFrame, gameUrl, taggedGameUrl } from "../../frame/frame";
 import type { Taken } from "../../frame/reload";
-import { nextManifest, reloadFrame } from "../../frame/reload";
+import { hotSwappedSince, nextManifest, reloadFrame } from "../../frame/reload";
 import { RESTORED_TOAST } from "../../frame/restored";
 import { createCtx, flush, manifestOf, resultOf, type TestCtx, tagged } from "../helpers";
 
@@ -520,5 +522,128 @@ describe("nextManifest", () => {
     cancel.abort();
     await expect(nextManifest(ctx, ctx.link, 15_000, cancel.signal)).resolves.toBeUndefined();
     expect(ctx.link.manifestListeners.size).toBe(0);
+  });
+});
+
+/**
+ * A game.log entry of an applied hot swap.
+ *
+ * @param ts - When the game logged it.
+ * @returns The entry.
+ */
+function hotSwap(ts: number): Json {
+  return { level: "info", event: "ui:hot-swap", data: { file: "/g/home/styles.ts" }, ts };
+}
+
+describe("reloadFrame after a save that the game hot swapped (U10 B1)", () => {
+  const COMMANDS = ["game.bookmark", "game.restore"];
+  const SAVED_AT = 1_759_680_000_000;
+
+  let logListeners: ((value: Json) => void)[];
+  let stops: Mock<() => void>[];
+
+  /**
+   * Delivers a whole game.log trace to every game.log watcher, like link does.
+   *
+   * @param trace - The trace, oldest first.
+   */
+  function deliver(trace: Json[]): void {
+    for (const listener of logListeners) listener(trace);
+  }
+
+  beforeEach(() => {
+    vi.setSystemTime(SAVED_AT);
+    logListeners = [];
+    stops = [];
+    ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
+    ctx.link.watch.mockImplementation((id, _input, onValue) => {
+      const stop = vi.fn<() => void>();
+      if (id === "game.log") {
+        logListeners.push(onValue);
+        stops.push(stop);
+      }
+      return stop;
+    });
+  });
+
+  it("a hot swap logged after the save ends the run: no frame reload, no restore, Game updated", async () => {
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    await flush();
+    expect(ctx.link.watch).toHaveBeenCalledWith("game.log", undefined, expect.any(Function));
+
+    deliver([{ level: "info", event: "boot", data: {}, ts: SAVED_AT - 5000 }, hotSwap(SAVED_AT)]);
+    await expect(pending).resolves.toEqual({ restored: false, reason: "hot_swap" });
+    expect(srcWrites).toEqual([]);
+    expect(ranIds()).not.toContain("game.restore");
+    expect(ctx.link.expectReload).not.toHaveBeenCalled();
+    expect(toasts()).toEqual(["Game updated"]);
+    expect(stops[0]).toHaveBeenCalledTimes(1);
+    expect(ctx.link.manifestListeners.size).toBe(0);
+  });
+
+  it("a hot swap of before the save and other entries do not end the wait", async () => {
+    const pending = reloadFrame(ctx, { restore: true, afterSave: true });
+    const settled = settledOf(pending);
+    await flush();
+    deliver([hotSwap(SAVED_AT - 1), { level: "info", event: "ui:hot-refused", ts: SAVED_AT }]);
+    await flush();
+    expect(settled()).toBe(false);
+
+    ctx.link.attach(manifestOf(COMMANDS));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(toasts()).toEqual(["Game reloaded · state restored from the last checkpoint"]);
+    expect(stops[0]).toHaveBeenCalledTimes(1);
+  });
+
+  it("no hot swap and no session within hotReloadWaitMs: the frame reloads, the watch stops", async () => {
+    const pending = reloadFrame(ctx, { afterSave: true });
+    await flush();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(stops[0]).toHaveBeenCalledTimes(1);
+    expect(srcWrites).toEqual([taggedGameUrl(ctx)]);
+
+    deliver([hotSwap(SAVED_AT + 2000)]);
+    ctx.link.attach(manifestOf());
+    await expect(pending).resolves.toEqual({ restored: false });
+    expect(toasts()).toEqual(["Game reloaded"]);
+  });
+
+  it("a palette reload and hot reload off do not watch game.log", async () => {
+    const palette = reloadFrame(ctx, {});
+    await flush();
+    ctx.link.attach(manifestOf());
+    await palette;
+
+    ctx.link.hotReload.mockReturnValue({ hmr: false, owner: "bin" });
+    const save = reloadFrame(ctx, { afterSave: true });
+    await flush();
+    ctx.link.attach(manifestOf());
+    await save;
+    expect(ctx.link.watch).not.toHaveBeenCalled();
+  });
+
+  it("a stop while waiting ends the run quietly and stops the watch", async () => {
+    const pending = reloadFrame(ctx, { afterSave: true });
+    await flush();
+    ctx.state.stopped = true;
+    for (const cleanup of ctx.state.dom.cleanup) cleanup();
+    await expect(pending).resolves.toEqual({ restored: false, reason: "timeout" });
+    expect(stops[0]).toHaveBeenCalledTimes(1);
+    expect(toasts()).toEqual([]);
+  });
+});
+
+describe("hotSwappedSince", () => {
+  const entry = { level: "info", event: "ui:hot-swap", data: { file: "/g/a.ts" }, ts: 1000 };
+
+  it("finds a hot swap logged at or after the moment in the whole trace", () => {
+    expect(hotSwappedSince([{ level: "info", event: "boot", ts: 1 }, entry], 1000)).toBe(true);
+    expect(hotSwappedSince([entry], 1001)).toBe(false);
+  });
+
+  it("is false for a value that is not a trace or holds no hot swap", () => {
+    expect(hotSwappedSince(entry, 0)).toBe(false);
+    expect(hotSwappedSince([], 0)).toBe(false);
+    expect(hotSwappedSince([{ ...entry, event: "ui:hot-refused" }], 0)).toBe(false);
   });
 });

@@ -90,6 +90,31 @@ describe("pins", () => {
     expect(ctx.state.layout.pinsVersion).toBe("v1");
   });
 
+  it("reading the same pins again keeps the layout (B9); changed pins lay out again", async () => {
+    const { ctx, fakes } = createTestCtx({
+      files: { [LAYOUT]: '{ "version": 1, "nodes": { "main/home": { "x": 12, "y": 24 } } }\n' }
+    });
+    await prepare(ctx);
+    const layout = actionsOf(ctx).layout;
+    await layout.loadPins();
+    const result = ctx.state.layout.result;
+    const relayout = vi.spyOn(layout, "relayout");
+
+    await layout.loadPins();
+    expect(relayout).not.toHaveBeenCalled();
+    expect(ctx.state.layout.result).toBe(result);
+    expect(ctx.state.layout.pinsVersion).toBe("v1");
+
+    fakes.files.store.set(LAYOUT, {
+      text: '{ "version": 1, "nodes": { "main/home": { "x": 48, "y": 24 } } }\n',
+      version: "v2"
+    });
+    await layout.loadPins();
+    expect(relayout).toHaveBeenCalledTimes(1);
+    expect(ctx.state.layout.pins.nodes["main/home"]).toEqual({ x: 48, y: 24 });
+    expect(ctx.state.layout.pinsVersion).toBe("v2");
+  });
+
   it("an invalid file is read-only: warned once, toasted, never written", async () => {
     const { ctx, fakes } = createTestCtx({
       config: { layout: testLayout({ saveDelayMs: 0 }) },

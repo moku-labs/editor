@@ -424,6 +424,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
     },
 
     loadPins: async () => {
+      const before = serializePins(layout.pins);
       try {
         const file = await env.files().read(path);
         const pins = parsePins(file.text);
@@ -441,6 +442,8 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
         layout.pinsReadOnly = false;
       }
       layout.dirty.clear();
+      // A new session reads the same pins again (B9): the layout on screen stays as it is.
+      if (layout.result !== undefined && serializePins(layout.pins) === before) return;
       await actions.relayout();
     },
 

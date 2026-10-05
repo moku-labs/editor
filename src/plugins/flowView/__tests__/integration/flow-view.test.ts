@@ -133,7 +133,10 @@ function createApp() {
         layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 0 },
         styleSaveDelayMs: 0
       },
-      workspace: { reloadTimeoutMs: 50 }
+      workspace: { reloadTimeoutMs: 50 },
+      // The style save opens link's expected reload window; a short grace lets the later real
+      // loss read as a plain lost (U9: a loss inside the window marks nothing stale).
+      link: { reloadGraceMs: 50 }
     }
   });
   app.log.clearSinks();

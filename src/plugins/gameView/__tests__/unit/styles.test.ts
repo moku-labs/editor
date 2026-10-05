@@ -201,7 +201,6 @@ describe("stepStyle and saveStyle", () => {
     expect(ctx.state.styles?.block.fields.find(field => field.path === "height")).toMatchObject({
       value: 88
     });
-    expect(ctx.state.reloading).toBe(false);
   });
 
   it("keeps a number field without a fieldRule read-only", async () => {

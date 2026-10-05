@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
 import { runBridge } from "../../mcp/bridge";
+import { REEXEC_ENV } from "../../reexec";
+import type { ReexecDeps } from "../../types";
 
 // The bridge reads the real stdin: the cli test checks only the dispatch to it.
 vi.mock("../../mcp/bridge", () => ({ runBridge: vi.fn(() => Promise.resolve(0)) }));
@@ -340,6 +342,74 @@ describe("startBin discovery file (M3, M6)", () => {
     } finally {
       await started.stop?.();
       await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The removal of a signal handler the fake reexec never added.
+ */
+function keepHandlers(): void {
+  // Nothing was added, so nothing is removed.
+}
+
+/**
+ * Reexec deps with a fake spawn whose child exits at once with a code.
+ *
+ * @param code - The child's exit code.
+ * @returns The deps and the spawn mock.
+ */
+function reexecDeps(code: number) {
+  const spawn = vi.fn<ReexecDeps["spawn"]>(() => ({
+    exited: Promise.resolve(code),
+    kill: vi.fn()
+  }));
+  const reexec: ReexecDeps = {
+    cwd: () => tmpdir(),
+    env: {},
+    command: ["bun", "bin.ts"],
+    spawn,
+    onSignal: () => keepHandlers
+  };
+  return { reexec, spawn };
+}
+
+describe("startBin re-spawn in the game root (B2)", () => {
+  it("answers the child's code and serves nothing itself when the root has [serve.static]", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-bunfig-")));
+    await writeFile(join(root, "index.html"), "<html></html>");
+    await writeFile(join(root, "bunfig.toml"), '[serve.static]\nplugins = ["./p.ts"]\n');
+    const { deps } = createDeps();
+    const { reexec, spawn } = reexecDeps(7);
+    try {
+      const started = await startBin([join(root, "index.html"), "--root", root], {
+        ...deps,
+        reexec
+      });
+      expect(started).toEqual({ code: 7 });
+      expect(spawn).toHaveBeenCalledWith(expect.arrayContaining(["--root", root]), {
+        cwd: root,
+        env: { [REEXEC_ENV]: "1" }
+      });
+      expect(deps.importPage).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("serves itself when the root has no [serve.static] bunfig", async () => {
+    const { deps } = createDeps();
+    const { reexec, spawn } = reexecDeps(7);
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], {
+      ...deps,
+      reexec
+    });
+    try {
+      expect(started.code).toBe(0);
+      expect(spawn).not.toHaveBeenCalled();
+      expect(deps.importPage).toHaveBeenCalledTimes(1);
+    } finally {
+      await started.stop?.();
     }
   });
 });

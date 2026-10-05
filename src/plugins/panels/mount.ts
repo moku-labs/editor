@@ -9,7 +9,7 @@ import type { Log } from "@moku-labs/common/browser";
 import { h, render } from "preact";
 import type { LinkApi } from "../link/types";
 import type { EditorChannel, Json, LinkStatus, Manifest, RunResult } from "../registry/protocol";
-import { toWireError } from "../registry/protocol";
+import { isReloading, toWireError } from "../registry/protocol";
 import type { RanEvent, WorkspaceApi } from "../workspace/types";
 import { PanelBoundary, Placeholder, type PlaceholderState } from "./PanelBoundary";
 import type { MountedPanel, PanelRunOrigin, PanelSpec, PanelsCtx, PanelTools } from "./types";
@@ -376,7 +376,8 @@ function errorReporter(
 
 /**
  * Sets `data-stale` from the status (11-panels "Mount behaviour" 6): silent and lost by kind,
- * empty as lost; connecting, live and paused as `resync` while a received value is not fresh.
+ * empty as lost; connecting, live and paused as `resync` while a received value is not fresh. An
+ * expected reload (U9) marks nothing: the last values stay until the new session's arrive.
  *
  * @param controller - The panel controller.
  */
@@ -388,6 +389,7 @@ function applyStale(controller: Controller): void {
   if (status.kind === "silent" || status.kind === "lost") stale = status.kind;
   else if (status.kind === "empty") stale = "lost";
   else if ([...panel.received].some(key => !panel.fresh.has(key))) stale = "resync";
+  if (isReloading(status)) stale = undefined;
 
   if (stale === undefined) delete dataset.stale;
   else dataset.stale = stale;

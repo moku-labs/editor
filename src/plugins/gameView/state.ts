@@ -49,7 +49,6 @@ export function createGameViewState(): GameViewState {
     calibrationRead: false,
     lookup: undefined,
     cardHeld: false,
-    reloading: false,
     highlightSeq: 0,
     calibrationRun: {
       revision: 0,
