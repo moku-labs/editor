@@ -74,8 +74,8 @@ await app.files.list("src/nodes"); // [{ path: "src/nodes/await-intent.ts", kind
 const { text, version } = await app.files.read("features/ui/styles.ts");
 await app.files.write("features/ui/styles.ts", edited, version); // { path, bytes, version }
 
-await app.files.writeBinary(".moku/captures/2026-09-24-1012-board.png", bytes);
-const { dataUrl } = await app.files.readBinary(".moku/captures/2026-09-24-1012-board.png");
+await app.files.writeBinary(".moku/captures/2026-10-05/0846-board.png", bytes);
+const { dataUrl } = await app.files.readBinary(".moku/captures/2026-10-05/0846-board.png");
 // dataUrl: "data:image/png;base64,…"
 
 app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
@@ -96,8 +96,8 @@ It accepts only `data:image/(png|jpeg|webp|gif);base64,<payload>`.
 | Mime does not match the extension of `path` | -32602 `field: "data"` |
 
 ```ts
-await app.files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
-// { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
+await app.files.writeDataUrl(".moku/captures/2026-10-05/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+// { path: ".moku/captures/2026-10-05/f12-full.jpg", bytes: 48213, version: "3f7a…" }
 ```
 
 ### Errors

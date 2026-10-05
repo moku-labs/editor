@@ -1,7 +1,8 @@
 /**
- * @file gameView plugin — capture names (pure): the local minute stamp, the extension of a picture
- * (D-34), screenshot paths, the two files, the card file (round 2b R13) and the bookmark id of a
- * pick, and series folders with `-2`, `-3` … on a collision,
+ * @file gameView plugin — capture names (pure): the day folder every capture goes into
+ * (`<capturesDir>/<yyyy-mm-dd>`, captures-by-day), the local minute stamp, the extension of a
+ * picture (D-34), screenshot paths, the two files, the card file (round 2b R13) and the bookmark id
+ * of a pick, the folder of a card, and series folders with `-2`, `-3` … on a collision,
  * zero-padded shot names, and small readers of the values a capture needs (game.position, folder
  * of a path).
  */
@@ -46,18 +47,53 @@ function two(value: number): string {
 }
 
 /**
- * The local date and minute as `yyyy-mm-dd-hhmm`.
+ * The local hour and minute as `hhmm`: a capture's name inside its day folder.
  *
  * @param date - The moment.
  * @returns The stamp.
  * @example
  * ```ts
- * stamp(new Date(2026, 8, 24, 10, 12)); // "2026-09-24-1012"
+ * stamp(new Date(2026, 9, 5, 8, 46)); // "0846"
  * ```
  */
 export function stamp(date: Date): string {
+  return `${two(date.getHours())}${two(date.getMinutes())}`;
+}
+
+/**
+ * The day folder of a capture: `<capturesDir>/<yyyy-mm-dd>` of the local date, the same clock as
+ * `stamp`. Every capture writer names its files inside it.
+ *
+ * @param capturesDir - The captures folder.
+ * @param date - The moment of the capture.
+ * @returns The folder, without a trailing slash.
+ * @example
+ * ```ts
+ * dayFolder(".moku/captures", new Date(2026, 9, 5, 8, 46)); // ".moku/captures/2026-10-05"
+ * ```
+ */
+export function dayFolder(capturesDir: string, date: Date): string {
   const day = `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
-  return `${day}-${two(date.getHours())}${two(date.getMinutes())}`;
+  return `${capturesDir}/${day}`;
+}
+
+/**
+ * The folder of a reference card: the folder of its pick's full frame, so the card's
+ * `![frame](…)` links find the pictures even when the pick was taken on another day; the day
+ * folder of `date` without one.
+ *
+ * @param capturesDir - The captures folder.
+ * @param full - The full frame of the pick, undefined without one.
+ * @param date - The moment of the card.
+ * @returns The folder, without a trailing slash.
+ * @example
+ * ```ts
+ * cardFolder(".moku/captures", ".moku/captures/2026-10-04/f12-full.jpg", new Date(2026, 9, 5)); // ".moku/captures/2026-10-04"
+ * cardFolder(".moku/captures", undefined, new Date(2026, 9, 5)); // ".moku/captures/2026-10-05"
+ * ```
+ */
+export function cardFolder(capturesDir: string, full: string | undefined, date: Date): string {
+  return full === undefined ? dayFolder(capturesDir, date) : folderOf(full).slice(0, -1);
 }
 
 /**
@@ -100,7 +136,7 @@ export function imageExtension(image: string): string {
 /**
  * The screenshot path `<dir>/<stamp>-<node>.<extension>`, with `-2`, `-3` … when taken.
  *
- * @param capturesDir - The captures folder.
+ * @param capturesDir - The day folder (`dayFolder`).
  * @param minute - The stamp.
  * @param node - The node name (unsafe characters become "-").
  * @param taken - Paths already in the folder.
@@ -108,7 +144,7 @@ export function imageExtension(image: string): string {
  * @returns The path.
  * @example
  * ```ts
- * capturePath(".moku/captures", "2026-09-24-1012", "board", new Set(), "jpg"); // ".moku/captures/2026-09-24-1012-board.jpg"
+ * capturePath(".moku/captures/2026-10-05", "0846", "board", new Set(), "jpg"); // ".moku/captures/2026-10-05/0846-board.jpg"
  * ```
  */
 export function capturePath(
@@ -125,7 +161,7 @@ export function capturePath(
  * The two files of a pick (A19): the crop `<dir>/<name>-f<frame>-crop.<ext>` and the full frame
  * `<dir>/f<frame>-full.<ext>`, each with `-2`, `-3` … before the suffix when taken.
  *
- * @param capturesDir - The captures folder.
+ * @param capturesDir - The day folder (`dayFolder`).
  * @param name - The ui key or name of the picked element, "area" for an area (unsafe characters become "-").
  * @param frame - The frame of the shot.
  * @param taken - Paths already in the folder.
@@ -133,8 +169,8 @@ export function capturePath(
  * @returns The crop and the full frame paths.
  * @example
  * ```ts
- * pickPaths(".moku/captures", "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" });
- * // { crop: ".moku/captures/settingsBoard-f1841-crop.jpg", full: ".moku/captures/f1841-full.jpg" }
+ * pickPaths(".moku/captures/2026-10-05", "settingsBoard", 1841, new Set(), { crop: "jpg", full: "jpg" });
+ * // { crop: ".moku/captures/2026-10-05/settingsBoard-f1841-crop.jpg", full: ".moku/captures/2026-10-05/f1841-full.jpg" }
  * ```
  */
 export function pickPaths(
@@ -158,14 +194,14 @@ export function pickPaths(
  * The card file of a reference (round 2b R13): `<dir>/<name>-f<frame>.md`, with `-2`, `-3` …
  * when taken.
  *
- * @param capturesDir - The captures folder.
+ * @param capturesDir - The folder of the card (`cardFolder`).
  * @param name - The ui key or name of the element (unsafe characters become "-").
  * @param frame - The frame of the reference.
  * @param taken - Paths already in the folder.
  * @returns The card path.
  * @example
  * ```ts
- * cardPath(".moku/captures", "settingsBoard", 25, new Set()); // ".moku/captures/settingsBoard-f25.md"
+ * cardPath(".moku/captures/2026-10-05", "settingsBoard", 25, new Set()); // ".moku/captures/2026-10-05/settingsBoard-f25.md"
  * ```
  */
 export function cardPath(
@@ -210,13 +246,13 @@ function safeName(name: string): string {
 /**
  * The series folder `<dir>/series-<stamp>/`, with `-2` … when taken; ends with "/".
  *
- * @param capturesDir - The captures folder.
+ * @param capturesDir - The day folder (`dayFolder`).
  * @param minute - The stamp.
  * @param taken - Paths already in the folder (folders without a trailing slash).
  * @returns The folder path with a trailing slash.
  * @example
  * ```ts
- * seriesFolder(".moku/captures", "2026-09-24-1015", new Set()); // ".moku/captures/series-2026-09-24-1015/"
+ * seriesFolder(".moku/captures/2026-10-05", "1015", new Set()); // ".moku/captures/2026-10-05/series-1015/"
  * ```
  */
 export function seriesFolder(
@@ -285,7 +321,7 @@ export function nodeOf(position: PositionInfo): string {
  * @returns The folder.
  * @example
  * ```ts
- * folderOf(".moku/captures/series-a/index.json"); // ".moku/captures/series-a/"
+ * folderOf(".moku/captures/2026-10-05/series-1015/index.json"); // ".moku/captures/2026-10-05/series-1015/"
  * ```
  */
 export function folderOf(path: string): string {

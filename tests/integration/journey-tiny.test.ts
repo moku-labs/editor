@@ -827,7 +827,7 @@ describe("journey-tiny: pictures", () => {
     // 1. one capture: named after the flow (gameView/capture/naming.ts nodeOf)
     const capture = await gameView.capture();
     if (capture === undefined) throw new Error("the capture was refused");
-    expect(capture.path).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/);
+    expect(capture.path).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/\d{4}-main\.png$/);
     expect(server.written).toContainEqual({
       path: capture.path,
       bytes: expect.any(Number),
@@ -844,7 +844,7 @@ describe("journey-tiny: pictures", () => {
     const series = await gameView.series({ durationMs: 400, intervalMs: 100 });
     if (series === undefined) throw new Error("the series was refused");
     expect(agentRuns(server.tap, "editor.series")).toHaveLength(1);
-    expect(series.folder).toMatch(/^\.moku\/captures\/series-\d{4}-\d{2}-\d{2}-\d{4}\/$/);
+    expect(series.folder).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/series-\d{4}\/$/);
     expect(series.shots).toBeGreaterThan(0);
     const index = await readIndex(root, series.indexPath);
     expect(index).toMatchObject({

@@ -2,17 +2,18 @@
  * @file A pick for the chat (round 2 R2, round 2b R13) on the frozen merge-game: a picker click on
  * the settings board (opened from the board's HUD) bookmarks the game, saves the cropped element
  * (`<key>-f<frame>-crop.jpg`) and the full frame (`f<frame>-full.jpg`, JPEG by default, D-34)
- * under .moku/captures of the game copy, writes the card `<key>-f<frame>.md` there (the reference
- * block with its eleven lines in the fixed order inside a `text` fence, the JSX of the element and
- * the links to both pictures), puts ONE line naming the card on the clipboard and toasts
- * "Reference, shot and bookmark copied". The Element tab shows the full block and the
- * Code section; the capture card of the pick offers the line again. Restoring the pick's bookmark
+ * in today's folder `.moku/captures/<yyyy-mm-dd>/` of the game copy (captures by day), writes the
+ * card `<key>-f<frame>.md` there (the reference block with its eleven lines in the fixed order
+ * inside a `text` fence, the JSX of the element and the links to both pictures), puts ONE line
+ * naming the card on the clipboard and toasts "Reference, shot and bookmark copied". The Element
+ * tab shows the full block and the Code section; the capture card of the pick offers the line again. Restoring the pick's bookmark
  * from a fresh start brings the game back to board/settings/open. In Reference mode the proxies
  * carry the frame, the reference bounds and, once a pick found it, the style source; a key built
  * in a loop (card0) resolves to its template literal. In Reference mode the cursor over the game is
  * a crosshair, a real click still picks one element, and a drag picks an area (U9): the card
- * `area-f<frame>.md` lists the elements inside it, next to the area's crop. Shot and Series put
- * their paths on the clipboard too.
+ * `area-f<frame>.md` lists the elements inside it with their child trees, layout lines and px
+ * bounds (captures-by-day U5), next to the area's crop. In Select mode a drag picks an area too
+ * (U4). Shot and Series put their paths on the clipboard too.
  *
  * The bookmark value is read off the tools page's socket: the answer to the tools' own
  * `game.bookmark` run, as the hub sent it. The restore runs `game.restore` with that value through
@@ -63,7 +64,7 @@ const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
  * count, group 4 the card path.
  */
 const AREA_LINE =
-  /^@moku area (\d+)×(\d+) · .* · (\d+) elements? · .*(\.moku\/captures\/area-f\d+(?:-\d+)?\.md)$/;
+  /^@moku area (\d+)×(\d+) · .* · (\d+) elements? · .*(\.moku\/captures\/\d{4}-\d{2}-\d{2}\/area-f\d+(?:-\d+)?\.md)$/;
 
 /** Game-frame warnings a reload provokes that are not editor defects (see flow.spec.ts). */
 const RELOAD_WARNINGS: readonly RegExp[] = [
@@ -140,6 +141,18 @@ async function runCommand(page: Page, id: string, input: object): Promise<void> 
     },
     [id, input] as const
   );
+}
+
+/**
+ * The day folder of a capture path (captures by day).
+ *
+ * @param capture - A capture path, relative to the game root.
+ * @returns `.moku/captures/<yyyy-mm-dd>`.
+ */
+function dayOf(capture: string): string {
+  const day = /^\.moku\/captures\/\d{4}-\d{2}-\d{2}(?=\/)/.exec(capture)?.[0] ?? "";
+  expect(day, capture).not.toBe("");
+  return day;
 }
 
 /**
@@ -448,7 +461,7 @@ test.describe("pick · for the chat", () => {
     const line = await clipboard(page);
     expect(line).not.toContain("\n");
     expect(line).toMatch(
-      /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/settingsBoard-f\d+\.md$/
+      /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md$/
     );
     const { card, text, block } = await sharedOf(line);
     const lines = block.split("\n");
@@ -483,10 +496,12 @@ test.describe("pick · for the chat", () => {
     const shotMatch = /^shot: (\S+) · frame: (\S+)$/.exec(shot ?? "");
     expect(shotMatch, shot).not.toBeNull();
     const [, crop = "", full = ""] = shotMatch ?? [];
-    expect(crop).toBe(`${CAPTURES_DIR}/settingsBoard-f${frame}-crop.jpg`);
-    expect(full).toBe(`${CAPTURES_DIR}/f${frame}-full.jpg`);
+    // Everything of the pick goes into today's day folder (captures by day).
+    const day = dayOf(card);
+    expect(crop).toBe(`${day}/settingsBoard-f${frame}-crop.jpg`);
+    expect(full).toBe(`${day}/f${frame}-full.jpg`);
     // The card is named for the same frame; the line's ref bounds are the block's.
-    expect(card).toBe(`${CAPTURES_DIR}/settingsBoard-f${frame}.md`);
+    expect(card).toBe(`${day}/settingsBoard-f${frame}.md`);
     const ref = /· ref (\d+,\d+ \d+×\d+)$/.exec(bounds ?? "")?.[1];
     expect(line).toContain(` · ref ${ref} · `);
     // The card: its title, the block, the JSX of the board with file:line, and both images.
@@ -658,8 +673,8 @@ test.describe("pick · for the chat", () => {
     expect(Number(count), line).toBeGreaterThanOrEqual(1);
 
     // The card: its title, the block whose head is the line, one line per element inside, the
-    // tail lines and both pictures. Group roots only: the Play sign stack is listed, the Play
-    // button and its label inside it are not; the meadow behind is not inside.
+    // tail lines and both pictures. Group roots only: the Play sign stack is an item, the Play
+    // button and its label inside it are child lines under it; the meadow behind is not inside.
     const text = await readFile(path.join(GAME_ROOT, card), "utf8");
     expect(text.split("\n")[0]).toBe(`# @moku area ${areaW}×${areaH}`);
     const [, block = ""] = TEXT_FENCE.exec(text) ?? [];
@@ -669,16 +684,31 @@ test.describe("pick · for the chat", () => {
     expect(items, block).toHaveLength(Number(count));
     const signs = items.filter(entry => entry.startsWith("- playSign stack · key playSign · "));
     expect(signs, block).toHaveLength(1);
-    expect(block).not.toContain("· key play ·");
-    expect(block).not.toContain("· key playLabel ·");
+    expect(
+      items.filter(entry => / · key play(Label)? · /.test(entry)),
+      block
+    ).toEqual([]);
     expect(block).not.toContain("· key homeBackground ·");
-    const frame = /^\.moku\/captures\/area-f(\d+)/.exec(card)?.[1] ?? "";
+
+    // The fuller card (U5): the sign's line ends with its px bounds and its reference rect, a
+    // child line under it is indented with its px bounds, and a layout line names the chain.
+    const sign = await settledRect(page, "playSign");
+    const px = [sign.x, sign.y, sign.w, sign.h].map(value => Math.round(value));
+    expect(signs[0]).toMatch(
+      new RegExp(String.raw` · ${px[0]},${px[1]} ${px[2]}×${px[3]} px · ref \d+,\d+ \d+×\d+$`)
+    );
+    const child = lines.find(entry => entry.startsWith("  - play "));
+    expect(child, block).toContain(" · key play · ");
+    expect(child, block).toMatch(/ \d+,\d+ \d+×\d+ px$/);
+    expect(block).toMatch(/^layout: playSign < \S+/m);
+    const frame = /\/area-f(\d+)/.exec(card)?.[1] ?? "";
+    const day = dayOf(card);
     expect(block).toMatch(/^restore: bookmark area-f\d+(-\d+)?$/m);
     const shot = /^shot: (\S+) · frame: (\S+)$/m.exec(block);
     expect(shot, block).not.toBeNull();
     const [, crop = "", full = ""] = shot ?? [];
-    expect(crop).toBe(`${CAPTURES_DIR}/area-f${frame}-crop.jpg`);
-    expect(full).toBe(`${CAPTURES_DIR}/f${frame}-full.jpg`);
+    expect(crop).toBe(`${day}/area-f${frame}-crop.jpg`);
+    expect(full).toBe(`${day}/f${frame}-full.jpg`);
     expect(text).toContain(`![area](area-f${frame}-crop.jpg)`);
     expect(text).toContain(`![frame](f${frame}-full.jpg)`);
 
@@ -690,6 +720,47 @@ test.describe("pick · for the chat", () => {
     expect(Math.abs(cropSize.h - (Number(areaH) + 16) * ratio)).toBeLessThanOrEqual(2 * ratio + 2);
   });
 
+  test("Select mode: a drag picks the area like Reference mode: area-f<frame>.md in today's folder, the area line on the clipboard, the picker off (U4)", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    const rect = await toClient(page, await settledRect(page, "play"));
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+
+    // Select on: the picker layer takes the pointer over the game.
+    await bar(page, "pick").click();
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("[data-game=overlay] [data-part=picker]")).toBeVisible();
+
+    // A drag from just outside one corner of the Play sign past the other: the marquee follows,
+    // the release picks the area and turns the picker off.
+    const margin = 6;
+    await page.mouse.move(rect.x - margin, rect.y - margin);
+    await page.mouse.down();
+    await page.mouse.move(rect.x + rect.w + margin, rect.y + rect.h + margin, { steps: 8 });
+    const marquee = page.locator('[data-game=overlay] [data-box="area"]');
+    await expect(marquee).toBeVisible();
+    await page.mouse.up();
+    await expect(marquee).toHaveCount(0);
+    await expect.poll(() => clipboard(page), { timeout: 15_000 }).toMatch(AREA_LINE);
+    await expect(toast(page)).toHaveText("Reference, shot and bookmark copied");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+
+    // The card is written in today's folder and lists the Play sign.
+    const line = await clipboard(page);
+    const match = AREA_LINE.exec(line);
+    const count = match?.[3] ?? "0";
+    const card = match?.[4] ?? "";
+    expect(Number(count), line).toBeGreaterThanOrEqual(1);
+    expect(card).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/area-f\d+\.md$/);
+    const text = await readFile(path.join(GAME_ROOT, card), "utf8");
+    const [, block = ""] = TEXT_FENCE.exec(text) ?? [];
+    expect(block.split("\n")[0]).toBe(line);
+    expect(block).toMatch(/^- playSign stack · key playSign · /m);
+  });
+
   test("Shot and Series put their paths on the clipboard", async ({ tools }) => {
     const page = tools.page;
     await showGame(tools);
@@ -698,7 +769,7 @@ test.describe("pick · for the chat", () => {
     await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
     // The card cuts the path in the middle; its title holds the whole path (round 2b R14).
     const shown = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
-    expect(shown).toMatch(/^\.moku\/captures\/.+\.jpg$/);
+    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/\d{4}-[\w-]+\.jpg$/);
     await expect.poll(() => clipboard(page)).toBe(`shot: ${shown}`);
     await card.getByRole("button", { name: "Close" }).click();
 
@@ -717,7 +788,7 @@ test.describe("pick · for the chat", () => {
     await expect(sheet).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(() => clipboard(page))
-      .toMatch(/^series: \.moku\/captures\/series-\d{4}-\d{2}-\d{2}-\d{4}\/ \(4 frames\)$/);
+      .toMatch(/^series: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/series-\d{4}\/ \(4 frames\)$/);
     await sheet.getByRole("button", { name: "Close" }).click();
   });
 });

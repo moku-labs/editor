@@ -216,7 +216,7 @@ describe("ElementTab", () => {
     click(copy);
     await settle();
     expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
-      /^@moku coinPill row · src\/hud\/Hud\.tsx:2 · ref .* · \.moku\/captures\/coinPill-f1841\.md$/
+      /^@moku coinPill row · src\/hud\/Hud\.tsx:2 · ref .* · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/coinPill-f1841\.md$/
     );
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
     vi.unstubAllGlobals();

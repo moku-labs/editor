@@ -3,8 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageRect, SceneNode, SceneSnapshot } from "../../../panels/shared/scene";
 import type { SelectionInfo } from "../../../registry/protocol";
 import { AREA_ITEMS, areaGroup, pickArea, pickDraggedArea } from "../../reference/area";
+import { rawUiNodeAt } from "../../reference/facts";
 import { CROP_JPEG, stubCanvas } from "../canvas";
-import { createCtx, flush, JPEG, manifestOf, type TestCtx, useScene } from "../helpers";
+import {
+  createCtx,
+  DAY,
+  flush,
+  JPEG,
+  manifestOf,
+  sceneCapture,
+  type TestCtx,
+  TODAY,
+  useScene
+} from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +97,7 @@ function published(): (SelectionInfo | null)[] {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   ctx = createCtx(HUD);
   useScene(ctx);
   ctx.state.scene = boardScene();
@@ -107,6 +119,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -166,32 +179,30 @@ describe("pickArea", () => {
 
     const line = String(writeText.mock.calls[0]?.at(0));
     expect(line).toBe(
-      "@moku area 520×135 · board/awaitIntent · 2 elements · ref 30,45 520×135 · .moku/captures/area-f1842.md"
+      `@moku area 520×135 · board/awaitIntent · 2 elements · ref 30,45 520×135 · ${DAY}/area-f1842.md`
     );
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
-    expect(ctx.link.files.dataUrl(".moku/captures/area-f1842-crop.jpg")).toBe(CROP_JPEG);
-    expect(ctx.link.files.dataUrl(".moku/captures/f1842-full.jpg")).toBe(JPEG);
+    expect(ctx.link.files.dataUrl(`${DAY}/area-f1842-crop.jpg`)).toBe(CROP_JPEG);
+    expect(ctx.link.files.dataUrl(`${DAY}/f1842-full.jpg`)).toBe(JPEG);
     expect(ctx.state.bookmarks[0]?.id).toBe("area-f1841");
 
-    const card = ctx.link.files.text(".moku/captures/area-f1842.md");
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
     expect(card.split("\n").slice(0, 6)).toEqual([
       "# @moku area 520×135",
       "",
       "```text",
       line,
-      "- home button · key home · src/hud/Hud.tsx:1 · ref 40,52 120×120",
-      "- coinPill row · key coinPill · src/hud/Hud.tsx:2 · ref 235,74 290×76"
+      "- home button · key home · src/hud/Hud.tsx:1 · 40,52 120×120 px · ref 40,52 120×120",
+      "  - homeIcon icon · key homeIcon · 61,73 79×79 px"
     ]);
     expect(card).toContain("restore: bookmark area-f1841");
-    expect(card).toContain(
-      "shot: .moku/captures/area-f1842-crop.jpg · frame: .moku/captures/f1842-full.jpg"
-    );
+    expect(card).toContain(`shot: ${DAY}/area-f1842-crop.jpg · frame: ${DAY}/f1842-full.jpg`);
     expect(card).toContain("## home · JSX · src/hud/Hud.tsx:1");
     expect(card).toContain("## coinPill · JSX · src/hud/Hud.tsx:2");
     expect(card).toContain("![area](area-f1842-crop.jpg)\n![frame](f1842-full.jpg)\n");
 
     expect(ctx.state.card).toMatchObject({
-      path: ".moku/captures/area-f1842-crop.jpg",
+      path: `${DAY}/area-f1842-crop.jpg`,
       image: CROP_JPEG,
       reference: line
     });
@@ -201,8 +212,8 @@ describe("pickArea", () => {
       type: "area",
       rect: HUD_AREA,
       area: HUD_AREA,
-      card: ".moku/captures/area-f1842.md",
-      crop: ".moku/captures/area-f1842-crop.jpg",
+      card: `${DAY}/area-f1842.md`,
+      crop: `${DAY}/area-f1842-crop.jpg`,
       line,
       frame: 1842
     });
@@ -210,6 +221,42 @@ describe("pickArea", () => {
       { path: "src/hud/Hud.tsx", line: 1 },
       { path: "src/hud/Hud.tsx", line: 2 }
     ]);
+  });
+
+  it("prints the child tree, texts, px bounds, layout, partly line and components (U5)", async () => {
+    const { ui } = sceneCapture("scene-board.txt");
+    const label = rawUiNodeAt(ui, "boardScreen/hudRow/coinPill/coinPillText");
+    if (label === undefined) throw new Error("fixture");
+    label.content = " 1 250 ";
+    ctx.state.sources = { ...ctx.state.sources, ui };
+    ctx.link.files.put(
+      "src/kit/Pill.tsx",
+      "export function Pill(props: PillProps) {\n  return <row key={props.id} />;\n}\n"
+    );
+    const list = vi.spyOn(ctx.link.files, "list");
+
+    await pickArea(ctx, boardScene(), HUD_AREA);
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
+    expect(card).toContain(
+      "- coinPill row · key coinPill · src/hud/Hud.tsx:2 · 235,74 290×76 px · ref 235,74 290×76\n" +
+        "  - coinPillIcon icon · key coinPillIcon · 199,57 110×110 px\n" +
+        '  - coinPillText text · key coinPillText · text "1 250" · 392,76 36×72 px\n'
+    );
+    expect(card).toContain(
+      "\nlayout: home, coinPill < hudRow (row, padding 0/40/0/40, margin 40/0/0/0) < boardScreen (column, padding 0/0/0/0)\n"
+    );
+    expect(card).toContain("\npartly in the area: boardBackground image 0,0 1080×1440 px\n");
+    expect(card).toContain(
+      "## coinPill · component Pill · src/kit/Pill.tsx:1\n\n```tsx\nexport function Pill(props: PillProps) {\n  return <row key={props.id} />;\n}\n```"
+    );
+    expect(ctx.state.found.get("<Pill>")).toEqual({
+      kind: "defined",
+      path: "src/kit/Pill.tsx",
+      line: 1
+    });
+
+    // Two keys, three children and two components (Button, Pill): 7 of the 10 searches.
+    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(7);
   });
 
   it("publishes the area first without sources, then with them and the card (A18)", async () => {
@@ -229,7 +276,7 @@ describe("pickArea", () => {
     expect(info.ref).toEqual({ kind: "ui", path: "" });
     expect(info.items).toEqual([]);
     expect(String(writeText.mock.calls[0]?.at(0))).toContain(" · no elements · ");
-    expect(ctx.link.files.paths()).toContain(".moku/captures/area-f1842-crop.jpg");
+    expect(ctx.link.files.paths()).toContain(`${DAY}/area-f1842-crop.jpg`);
   });
 
   it("searches at most 10 new sources per area", async () => {
@@ -237,14 +284,14 @@ describe("pickArea", () => {
     await pickArea(ctx, gridScene(45), { x: 0, y: 0, w: 400, h: 400 });
     expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(10);
     expect(String(writeText.mock.calls[0]?.at(0))).toContain(" · 45 elements · ");
-    expect(ctx.link.files.text(".moku/captures/area-f1842.md")).toContain("\n+5 more\n");
+    expect(ctx.link.files.text(`${DAY}/area-f1842.md`)).toContain("\n+5 more\n");
   });
 
   it("copy false (MCP): no clipboard and no toast; the capture card still shows", async () => {
     await pickArea(ctx, boardScene(), HUD_AREA, { copy: false, card: true });
     expect(writeText).not.toHaveBeenCalled();
     expect(ctx.workspace.toast).not.toHaveBeenCalled();
-    expect(ctx.state.card?.path).toBe(".moku/captures/area-f1842-crop.jpg");
+    expect(ctx.state.card?.path).toBe(`${DAY}/area-f1842-crop.jpg`);
   });
 
   it("card false: no bookmark, no shot, no card; the sources follow in a second publish", async () => {
@@ -266,7 +313,7 @@ describe("pickArea", () => {
   it("without a calibration in state the head has no ref; a card that cannot be written leaves its path out", async () => {
     ctx.state.calibration = undefined;
     ctx.link.files.failWrites(
-      ".moku/captures/area-f1842.md",
+      `${DAY}/area-f1842.md`,
       Object.assign(new Error("[moku-editor] disk full"), { code: -32_000 })
     );
     const info = await pickArea(ctx, boardScene(), HUD_AREA);
@@ -282,7 +329,7 @@ describe("pickDraggedArea", () => {
   it("reads a fresh scene, then picks the area", async () => {
     await pickDraggedArea(ctx, HUD_AREA);
     expect(ctx.link.read).toHaveBeenCalledWith("game.ui");
-    expect(ctx.link.files.paths()).toContain(".moku/captures/area-f1842.md");
+    expect(ctx.link.files.paths()).toContain(`${DAY}/area-f1842.md`);
   });
 
   it("picks from the scene there is when the read fails; nothing without any scene", async () => {
@@ -291,7 +338,7 @@ describe("pickDraggedArea", () => {
     expect(ctx.log.debug).toHaveBeenCalledWith("gameView: area read failed", {
       message: "no value for game.ui"
     });
-    expect(ctx.link.files.paths()).toContain(".moku/captures/area-f1842.md");
+    expect(ctx.link.files.paths()).toContain(`${DAY}/area-f1842.md`);
 
     ctx.state.scene = undefined;
     ctx.panels.run.mockClear();

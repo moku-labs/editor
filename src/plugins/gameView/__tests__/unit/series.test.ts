@@ -5,7 +5,7 @@ import { recordSeries, setPopover, stopRecording } from "../../capture/series";
 import type { SeriesIndex } from "../../types";
 import { createCtx, flush, manifestOf, PNG, resultOf, type TestCtx, useScene } from "../helpers";
 
-const FOLDER = ".moku/captures/series-2026-09-24-1015/";
+const FOLDER = ".moku/captures/2026-09-24/series-1015/";
 const INDEX = `${FOLDER}index.json`;
 const DEVICE = { w: 393, h: 852, orientation: "portrait" } as const;
 
@@ -215,7 +215,7 @@ describe("recordSeries", () => {
   it("uses the next folder name when the minute is taken", async () => {
     ctx.link.files.put(`${FOLDER}index.json`, "{}");
     const result = await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
-    expect(result?.folder).toBe(".moku/captures/series-2026-09-24-1015-2/");
+    expect(result?.folder).toBe(".moku/captures/2026-09-24/series-1015-2/");
   });
 });
 

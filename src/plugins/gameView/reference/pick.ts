@@ -16,7 +16,7 @@ import { refId } from "../../panels/shared/scene";
 import { resolveDevice } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { cropImage } from "../capture/crop";
-import { bookmarkId, deviceLabel, imageExtension, pickPaths } from "../capture/naming";
+import { bookmarkId, dayFolder, deviceLabel, imageExtension, pickPaths } from "../capture/naming";
 import { listTaken, shotOf, showCard } from "../capture/shot";
 import { copyText } from "../clipboard";
 import { GAME_COMMANDS, gameReady } from "../commands";
@@ -120,7 +120,8 @@ async function cropOf(
 }
 
 /**
- * Captures the frame for a pick and saves the crop and the full frame under `capturesDir`, each
+ * Captures the frame for a pick and saves the crop and the full frame in today's folder under
+ * `capturesDir`, each
  * named with the extension of its picture (`-crop.jpg`, `-full.jpg` by default).
  *
  * @param ctx - Domain context of gameView.
@@ -149,9 +150,9 @@ export async function saveShots(
 
     // Crop the rect and name the files, each with the extension of its picture.
     const crop = await cropOf(ctx, rect, scene, shot.image);
-    const { capturesDir } = ctx.config;
-    const taken = await listTaken(ctx, capturesDir);
-    const paths = pickPaths(capturesDir, name, shot.frame, taken, {
+    const folder = dayFolder(ctx.config.capturesDir, new Date());
+    const taken = await listTaken(ctx, folder);
+    const paths = pickPaths(folder, name, shot.frame, taken, {
       crop: imageExtension(crop ?? shot.image),
       full: imageExtension(shot.image)
     });

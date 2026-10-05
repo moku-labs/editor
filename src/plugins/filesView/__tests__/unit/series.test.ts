@@ -27,6 +27,13 @@ describe("isSeriesIndexPath", () => {
     expect(isSeriesIndexPath("x/.moku/captures/series-a/index.json")).toBe(false);
     expect(isSeriesIndexPath(".moku/captures/shot/index.json")).toBe(false);
   });
+
+  it("matches a series in a day folder (captures by day)", () => {
+    expect(isSeriesIndexPath(".moku/captures/2026-10-05/series-1015/index.json")).toBe(true);
+    expect(isSeriesIndexPath(".moku/captures/2026-10-05/series-1015-2/index.json")).toBe(true);
+    expect(isSeriesIndexPath(".moku/captures/old/series-1015/index.json")).toBe(false);
+    expect(isSeriesIndexPath(".moku/captures/2026-10-05/x/series-1015/index.json")).toBe(false);
+  });
 });
 
 describe("parseSeriesIndex", () => {

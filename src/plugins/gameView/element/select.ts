@@ -154,12 +154,14 @@ function frameBox(ctx: GameViewCtx): FrameBox | undefined {
 }
 
 /**
- * Picker hover: the node under the pointer becomes the hover box (undefined clears it).
+ * Picker hover: the node under the pointer becomes the hover box (undefined clears it). The box
+ * stays while an area drag runs.
  *
  * @param ctx - Domain context of gameView.
  * @param client - The pointer in client px; omitted when it left the layer.
  */
 export function hoverAt(ctx: GameViewCtx, client?: ClientPoint): void {
+  if (ctx.state.reference.press?.dragging === true) return;
   const hover =
     client === undefined ? undefined : nodeIn(ctx.state.scene, frameBox(ctx), client)?.id;
   if (ctx.state.picker.hover === hover) return;

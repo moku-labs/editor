@@ -130,7 +130,7 @@ export type FilesApi = {
    * @example
    * ```ts
    * // Store a board screenshot the capture panel took.
-   * await app.files.writeBinary(".moku/captures/2026-09-24-1012-board.png", bytes);
+   * await app.files.writeBinary(".moku/captures/2026-10-05/0846-board.png", bytes);
    * ```
    */
   writeBinary(path: string, bytes: Uint8Array): Promise<WriteResult>;
@@ -150,8 +150,8 @@ export type FilesApi = {
    * ```ts
    * // hub serves the files-channel `writeBinary { path, data }` of a tools page.
    * const files = ctx.require(filesPlugin);
-   * await files.writeDataUrl(".moku/captures/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
-   * // { path: ".moku/captures/f12-full.jpg", bytes: 48213, version: "3f7a…" }
+   * await files.writeDataUrl(".moku/captures/2026-10-05/f12-full.jpg", "data:image/jpeg;base64,/9j/4AAQ…");
+   * // { path: ".moku/captures/2026-10-05/f12-full.jpg", bytes: 48213, version: "3f7a…" }
    * ```
    */
   writeDataUrl(path: string, dataUrl: string): Promise<WriteResult>;
@@ -166,7 +166,7 @@ export type FilesApi = {
    * @example
    * ```ts
    * // Show a stored capture again.
-   * const { dataUrl } = await app.files.readBinary(".moku/captures/2026-09-24-1012-board.png");
+   * const { dataUrl } = await app.files.readBinary(".moku/captures/2026-10-05/0846-board.png");
    * // dataUrl: "data:image/png;base64,…"
    * ```
    */

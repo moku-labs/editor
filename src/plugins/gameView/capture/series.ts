@@ -14,7 +14,7 @@ import { GAME_COMMANDS, gameReady, NO_GAME_TEXT } from "../commands";
 import { reportFailure } from "../report";
 import { notify } from "../state";
 import type { GameViewCtx, Recording, SeriesIndex, SeriesResult, SeriesShot } from "../types";
-import { deviceLabel, plannedShots, seriesFolder, shotName, stamp } from "./naming";
+import { dayFolder, deviceLabel, plannedShots, seriesFolder, shotName, stamp } from "./naming";
 import { currentPosition, deviceOf, isObject, listTaken, type ShotValue, showCard } from "./shot";
 
 /**
@@ -311,13 +311,15 @@ export async function recordSeries(
 
   // Name the folder; another series may have started while the position and the list loaded.
   workspace.show("game");
+  const now = new Date();
+  const day = dayFolder(config.capturesDir, now);
   const position = await currentPosition(ctx);
-  const taken = await listTaken(ctx, config.capturesDir);
+  const taken = await listTaken(ctx, day);
   if (refuseWhileRecording(ctx)) return undefined;
 
   const { durationMs, intervalMs } = options;
   const recording: Recording = {
-    folder: seriesFolder(config.capturesDir, stamp(new Date()), taken),
+    folder: seriesFolder(day, stamp(now), taken),
     label: options.label ?? position.path ?? DEFAULT_LABEL,
     startedAt: performance.now(),
     durationMs,

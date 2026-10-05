@@ -33,7 +33,7 @@ const defaultConfig: GameViewConfig = {
  *
  * @example
  * ```ts
- * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", … }
  * ```
  */
 export const gameViewPlugin = createToolsPlugin("gameView", {

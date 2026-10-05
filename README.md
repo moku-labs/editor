@@ -39,7 +39,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 >
 > **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both. The contact sheet `editor.sheet` (MCP `moku_series`) needs game 0.4.
 >
-> **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole.
+> **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole. Captures go into day folders `<capturesDir>/<yyyy-mm-dd>/` (local date): a Shot is `0846-board.jpg` there (was `2026-10-05-0846-board.jpg`), a series `series-1015/` (was `series-2026-10-05-1015/`); picks and cards keep their names. Old flat files stay where they are; `moku_reference` finds cards in both.
 >
 > **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` starts it off; the Hot reload switch flips it while the bin runs). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>-crop.jpg` and `f<frame>-full.jpg` in `capturesDir`, which must be `.moku/captures` or a folder under it. Screenshots are JPEG by default: `editor.capture` and `editor.sheet` take `format` (`"jpeg"` or `"png"`) and `quality`, and the Game Shot saves a `.jpg`. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
 
@@ -157,7 +157,7 @@ Which editor the bridge uses:
 | `moku_run` | Runs a command, such as `game.pause`. The answer starts with its effect. |
 | `moku_screenshot` | A JPEG of the game, at most 1080 px wide by default. `key` crops it to one ui element; `format: "png"` keeps it lossless. Over 300 KB it is taken once more at half the width. |
 | `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one JPEG at most 1080 px wide. Game 0.4. |
-| `moku_reference` | The newest or a named reference card of `.moku/captures/` with its crop. |
+| `moku_reference` | The newest or a named reference card with its crop: the day folders `.moku/captures/<yyyy-mm-dd>/` and the older flat `.moku/captures/`. |
 | `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. |
 | `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. Needs the tools page open. |
 | `moku_files_list` | Lists project files. |
@@ -196,16 +196,17 @@ its own.
 ### The reference line and card
 
 A pick (a picker click, or a click on a Reference mode proxy) bookmarks the game
-(`game.bookmark`), saves the element and the whole frame as JPEGs, writes a card file next to them,
+(`game.bookmark`), saves the element and the whole frame as JPEGs in today's folder
+`<capturesDir>/<yyyy-mm-dd>/`, writes a card file next to them,
 puts one line on the clipboard and toasts "Reference, shot and bookmark copied". Paste the line
 into the chat: it names the element, its flow node, its code, its place, and the card that holds
 the rest.
 
 ```text
-@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/settingsBoard-f212.md
+@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md
 ```
 
-The card `<capturesDir>/<key>-f<frame>.md` (`-2`, `-3` … when taken) is Markdown:
+The card `<capturesDir>/<yyyy-mm-dd>/<key>-f<frame>.md` (`-2`, `-3` … when taken that day) is Markdown:
 
 - a title `# @moku <name> <type>`;
 - the full reference block in a `text` fence (below);
@@ -227,7 +228,7 @@ flow: board > settings > open · last: board/settings/enter → done
 game: merge-game 0.0.0 · s-1f12 · f212 · 15:31:13 · live · clean
 device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
 restore: bookmark settingsBoard-f210
-shot: .moku/captures/settingsBoard-f212-crop.jpg · frame: .moku/captures/f212-full.jpg
+shot: .moku/captures/2026-10-05/settingsBoard-f212-crop.jpg · frame: .moku/captures/2026-10-05/f212-full.jpg
 ```
 
 | Line | Says |
@@ -242,7 +243,7 @@ shot: .moku/captures/settingsBoard-f212-crop.jpg · frame: .moku/captures/f212-f
 | `game` | Name and version, session, frame, time, live or paused, clean or tainted. |
 | `device` | Preset, size, orientation, pixel ratio, safe insets. |
 | `restore` | The bookmark id. `gameView.bookmarks()` keeps the last 20; `panels.run("game.restore", { bookmark: value })` goes back. |
-| `shot` | The crop (`<key>-f<frame>-crop.jpg`, the element plus 8 px) and the full frame (`f<frame>-full.jpg`) under `capturesDir`. |
+| `shot` | The crop (`<key>-f<frame>-crop.jpg`, the element plus 8 px) and the full frame (`f<frame>-full.jpg`) in the day folder `<capturesDir>/<yyyy-mm-dd>/`. |
 
 A line or a field that is not known is left out; a card that cannot be written leaves its path out
 of the line. The Element tab shows the full block read-only. Its "Copy reference" writes the card
@@ -251,19 +252,33 @@ Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
 
 #### An area
 
-In Reference mode a press that moves 4 px or more drags a dashed marquee over the game. The release
+In Reference mode, and in Select mode, a press that moves 4 px or more drags a dashed marquee over
+the game. The release
 picks the area: the elements fully inside it (else the ones it covers by at least half of their own
 area), group roots only, top to bottom then left to right, at most 40. The pick goes as for one
 element: a bookmark, the area plus 8 px as `area-f<frame>-crop.jpg`, the full frame, the card
-`area-f<frame>.md` and one line on the clipboard:
+`area-f<frame>.md` in today's folder and one line on the clipboard. In Select mode the picker then
+turns off, like a click pick:
 
 ```text
-@moku area 337×97 · main/home · 1 element · ref 77,1825 925×265 · .moku/captures/area-f96.md
+@moku area 337×97 · main/home · 1 element · ref 77,1825 925×265 · .moku/captures/2026-10-05/area-f96.md
+- playSign stack · key playSign · features/home/view.tsx:50 · 36,672 320×80 px · ref 100,1848 880×220
+  - playPostLeft image · key playPostLeft · 87,687 17×120 px
+  - playPostRight image · key playPostRight · 288,687 17×120 px
+  - play button · key play · 36,672 320×80 px
+    - playLabel text · key playLabel · 123,688 147×48 px
+  - playSprigLeft image · key playSprigLeft · 14,658 62×67 px
+  - playSprigRight image · key playSprigRight · 319,711 62×67 px
+layout: playSign < homeCentre (column, gap 30) < homeMiddle (margin 0/0/44/0) < homeScreen (column, padding 0/0/0/0)
+partly in the area: homeBackground image 0,0 393×852 px · homeTop column 0,0 393×852 px
 ```
 
-The card's block lists one line per element (name, type, key, `file:line`, `ref` rect), then the
-`flow`, `game`, `device`, `restore` and `shot` lines; the code of the first three elements with a
-source follows. A press that moves less is a click and picks the element under it. Esc during the
+The card's block lists one line per element (name, type, key, `text "…"` when the game reports
+one, `file:line`, the bounds in px, `ref` rect). Under each element its child tree, two spaces per
+level, 3 levels and 60 lines at most. Then one `layout:` line per parent chain, the
+`partly in the area:` line (nodes that overlap the area but are not inside, at most 8), and the
+`flow`, `game`, `device`, `restore` and `shot` lines. The code of the first three elements with a
+source follows, then `## <key> · component <Name> · <file:line>` for each component the area uses. A press that moves less is a click and picks the element under it. Esc during the
 drag cancels it.
 
 #### The selection over MCP
@@ -520,7 +535,7 @@ await editor.files.list("src");
 
 const ran = await tools.link.run("game.step", { frames: 1 }); // tools: ran.state.frame === 1841
 tools.workspace.show("game");
-await tools.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
+await tools.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", … }
 ```
 
 ### Writing a plugin
@@ -635,7 +650,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | flowView | `layout` | `{ file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 }` | Saved positions, ELK in a worker, layout save debounce. Replaced as a whole. |
 | flowView | `zoom` | `{ min: 0.08, max: 3, defaultMin: 0.8 }` | Zoom range and default camera floor. Replaced as a whole. |
 | flowView | `hub` | `{ minOutcomes: 6, minReturns: 4 }` | The hub rule. Replaced as a whole. |
-| gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go. `.moku/captures` or a folder under it. |
+| gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go, each in a day folder `<yyyy-mm-dd>/`. `.moku/captures` or a folder under it. |
 | gameView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |
 | gameView | `seriesDurationsMs` · `seriesIntervalsMs` | `[1000, 2000, 5000, 10000, 20000]` · `[16, 50, 100, 250, 500, 1000]` | Series popover chips. |

@@ -37,6 +37,9 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 /** The captures folder of gameView, relative to the game root. */
 const CAPTURES_DIR = ".moku/captures";
 
+/** A day folder in the captures folder: `yyyy-mm-dd` (captures by day). */
+const DAY_FOLDER = /^\d{4}-\d{2}-\d{2}$/;
+
 /** The source file of the home screen styles (the Play button's style block). */
 const HOME_STYLES = "features/home/styles.ts";
 
@@ -373,13 +376,40 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * The series folders under the captures folder.
+ * Everything gameView wrote into the day folders of the captures folder (captures by day).
  *
- * @returns The folder names, sorted.
+ * @returns The `<yyyy-mm-dd>/<name>` paths, relative to the captures folder, sorted.
+ */
+async function captured(): Promise<string[]> {
+  const top = await list(CAPTURES_DIR);
+  const days = top.filter(name => DAY_FOLDER.test(name));
+  const names = await Promise.all(
+    days.map(async day => {
+      const inside = await list(`${CAPTURES_DIR}/${day}`);
+      return inside.map(name => `${day}/${name}`);
+    })
+  );
+  return names.flat().toSorted();
+}
+
+/**
+ * A capture path relative to the captures folder.
+ *
+ * @param capture - The path relative to the game root.
+ * @returns The `<yyyy-mm-dd>/<name>` part.
+ */
+function inCaptures(capture: string): string {
+  return capture.slice(CAPTURES_DIR.length + 1);
+}
+
+/**
+ * The series folders in the day folders of the captures folder.
+ *
+ * @returns The `<yyyy-mm-dd>/series-<hhmm>` folders, sorted.
  */
 async function seriesFolders(): Promise<string[]> {
-  const names = await list(CAPTURES_DIR);
-  return names.filter(name => name.startsWith("series-"));
+  const names = await captured();
+  return names.filter(name => name.split("/")[1]?.startsWith("series-"));
 }
 
 /**
@@ -1298,7 +1328,7 @@ test.describe("game · capture", () => {
     await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
     // The path line is cut in the middle; its title holds the whole path (round 2b R14).
     const shown = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
-    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.jpg$/);
+    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/\d{4}-main\.jpg$/);
     await expect(card.locator("[data-part=meta]")).toHaveText(/^f\d+ · iPhone 15 portrait$/);
     await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/jpeg|^blob:/);
     await expect(toast(page)).toContainText("✓ Screenshot saved");
@@ -1306,7 +1336,7 @@ test.describe("game · capture", () => {
     await expect(overlay(page).locator("[data-part=flash]")).toBeAttached();
 
     // The JPEG on disk is the game frame at the device size.
-    expect(await list(CAPTURES_DIR)).toEqual([path.basename(shown)]);
+    expect(await captured()).toEqual([inCaptures(shown)]);
     const size = await jpegSize(path.join(GAME_ROOT, shown));
     expect(size.w / size.h).toBeCloseTo(393 / 852, 2);
 
@@ -1318,11 +1348,9 @@ test.describe("game · capture", () => {
     expect(second).toMatch(
       sameMinute
         ? shown.replace(".jpg", "-2.jpg")
-        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.jpg$/
+        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}\/\d{4}-main\.jpg$/
     );
-    expect(await list(CAPTURES_DIR)).toEqual(
-      [path.basename(shown), path.basename(second)].toSorted()
-    );
+    expect(await captured()).toEqual([inCaptures(shown), inCaptures(second)].toSorted());
 
     // Notes are gone: the card attaches nothing.
     await expect(card.getByRole("button", { name: "Attach to note" })).toHaveCount(0);
@@ -1342,7 +1370,7 @@ test.describe("game · capture", () => {
     await palette.getByRole("combobox", { name: "Search" }).fill("Take a screenshot");
     await palette.getByRole("option", { name: /Take a screenshot/ }).click();
     await expect(toast(page)).toContainText("✓ Screenshot saved");
-    await expect.poll(() => list(CAPTURES_DIR)).toHaveLength(1);
+    await expect.poll(() => captured()).toHaveLength(1);
     await showGame(tools);
     const card = page.locator("[data-game=card]");
     await expect(card).toBeVisible();
@@ -1464,7 +1492,7 @@ test.describe("game · series", () => {
     await expect(pop.locator("[data-part=result]")).toHaveText("8 shots · 2 s at 250 ms");
     await expect(pop.locator("[data-part=warning]")).toHaveCount(0);
     await expect(pop.locator("[data-part=folder]")).toHaveText(
-      /^Saves to \.moku\/captures\/series-\d{4}-\d{2}-\d{2}-\d{4}\/ with index\.json$/
+      /^Saves to \.moku\/captures\/\d{4}-\d{2}-\d{2}\/series-\d{4}\/ with index\.json$/
     );
 
     await duration.getByRole("radio", { name: "20 s" }).click();
@@ -1557,7 +1585,9 @@ test.describe("game · series", () => {
     await expect(rec).toHaveAttribute("data-phase", "recording");
     await expect(rec).toContainText("Every250 ms");
     await expect(rec).toContainText("Length10 s");
-    await expect(rec).toContainText(/Writing to \.moku\/captures\/series-/);
+    await expect(rec).toContainText(
+      /Writing to \.moku\/captures\/\d{4}-\d{2}-\d{2}\/series-\d{4}\//
+    );
     await expect(game(page).locator("[data-part=badge][data-tone=rec]")).toHaveText(
       /^● REC \d+\.\d s$/
     );

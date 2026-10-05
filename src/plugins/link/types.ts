@@ -456,7 +456,7 @@ export type LinkApi = EditorChannel & {
    * ```ts
    * // gameView selects the element MCP asks for and answers its selection.
    * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
-   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/editor/captures/coins-1840.md", … }
+   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/captures/2026-10-05/coins-f1840.md", … }
    * remove();
    * ```
    */

@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import { act } from "preact/test-utils";
 import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setPicker } from "../../element/select";
 import { escapeClosers } from "../../keys";
 import { stopGameView } from "../../lifecycle";
 import { isDrag, rectBetween } from "../../reference/gesture";
 import { setReferenceMode } from "../../reference/mode";
 import { stubCanvas } from "../canvas";
-import { createCtx, JPEG, manifestOf, type TestCtx, useScene } from "../helpers";
+import { createCtx, DAY, JPEG, manifestOf, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene, find, fire, settle } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ function marquee(): HTMLElement | undefined {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callback(0);
     return 1;
@@ -86,6 +88,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   stopGameView(ctx);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -138,7 +141,7 @@ describe("a press on the proxy layer", () => {
     await settle();
 
     expect(ctx.state.selected).toBeUndefined();
-    const card = ctx.link.files.text(".moku/captures/area-f1842.md");
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
     expect(card).toContain("- home button · key home");
     expect(card).toContain("- coinPill row · key coinPill");
   });
@@ -221,6 +224,110 @@ describe("a press on the proxy layer", () => {
     );
     expect(ctx.state.reference.area).toBeUndefined();
     expect(ctx.state.reference.press?.dragging).toBe(false);
+  });
+});
+
+/**
+ * The picker layer in the overlay.
+ *
+ * @returns The layer element.
+ */
+function picker(): HTMLElement {
+  return find(ctx.workspace.overlayElement ?? document.body, "[data-part='picker']");
+}
+
+/**
+ * The client point at the middle of a scene node.
+ *
+ * @param id - The node id.
+ * @returns Client x and y (the frame box is at 100,50, scale 1).
+ */
+function middleOf(id: string): { readonly x: number; readonly y: number } {
+  const rect = ctx.state.scene?.nodes.get(id)?.rect;
+  if (rect === undefined) throw new Error(`fixture: no rect for ${id}`);
+  return { x: 100 + rect.x + rect.w / 2, y: 50 + rect.y + rect.h / 2 };
+}
+
+describe("an area drag in Select (the picker layer, captures-by-day U4)", () => {
+  let pickerCapture: Mock<(pointerId: number) => void>;
+
+  beforeEach(() => {
+    act(() => {
+      setReferenceMode(ctx, false);
+      setPicker(ctx, true);
+    });
+    pickerCapture = vi.fn<(pointerId: number) => void>();
+    picker().setPointerCapture = pickerCapture;
+  });
+
+  it("a click without a drag still picks one element: Element tab, picker off", async () => {
+    const coin = middleOf("ui:boardScreen/hudRow/coinPill");
+    pointer(picker(), "pointerdown", coin.x, coin.y);
+    pointer(picker(), "pointermove", coin.x + 2, coin.y + 1, { buttons: 1 });
+    pointer(picker(), "pointerup", coin.x + 2, coin.y + 1);
+    await settle();
+    await settle();
+
+    expect(pickerCapture).not.toHaveBeenCalled();
+    expect(marquee()).toBeUndefined();
+    expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    expect(ctx.state.picker.on).toBe(false);
+    expect(ctx.state.tab).toBe("element");
+    expect(ctx.link.files.paths()).toContain(`${DAY}/coinPill-f1842.md`);
+    expect(ctx.link.files.paths()).not.toContain(`${DAY}/area-f1842.md`);
+  });
+
+  it("a drag takes the pointer, draws the marquee, writes the area card and turns the picker off", async () => {
+    pointer(picker(), "pointerdown", 130, 95);
+    pointer(picker(), "pointermove", 140, 100, { buttons: 1 });
+    expect(pickerCapture).toHaveBeenCalledWith(1);
+
+    pointer(picker(), "pointermove", 650, 230, { buttons: 1 });
+    expect(ctx.state.reference.area).toEqual({ x: 30, y: 45, w: 520, h: 135 });
+    expect(marquee()?.style.width).toBe("520px");
+
+    pointer(picker(), "pointerup", 650, 230);
+    expect(marquee()).toBeUndefined();
+    expect(ctx.state.picker.on).toBe(false);
+    await settle();
+    await settle();
+
+    expect(ctx.state.selected).toBeUndefined();
+    const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
+    expect(card).toContain("- home button · key home");
+    expect(card).toContain("- coinPill row · key coinPill");
+  });
+
+  it("the hover box stays where it was while the drag runs", () => {
+    const coin = middleOf("ui:boardScreen/hudRow/coinPill");
+    pointer(picker(), "pointermove", coin.x, coin.y);
+    const hover = ctx.state.picker.hover;
+    expect(hover).toBeDefined();
+
+    pointer(picker(), "pointerdown", coin.x, coin.y);
+    pointer(picker(), "pointermove", 140, 100, { buttons: 1 });
+    expect(ctx.state.picker.hover).toBe(hover);
+  });
+
+  it("Esc during the drag cancels only the drag; the next Esc turns the picker off", async () => {
+    pointer(picker(), "pointerdown", 130, 95);
+    pointer(picker(), "pointermove", 650, 230, { buttons: 1 });
+    const closer = escapeClosers(ctx).find(entry => entry.layer === "picker");
+
+    act(() => {
+      expect(closer?.close()).toBe(true);
+    });
+    expect(marquee()).toBeUndefined();
+    expect(ctx.state.picker.on).toBe(true);
+
+    pointer(picker(), "pointerup", 650, 230);
+    await settle();
+    expect(ctx.panels.run).not.toHaveBeenCalled();
+    expect(ctx.state.picker.on).toBe(true);
+    act(() => {
+      expect(closer?.close()).toBe(true);
+    });
+    expect(ctx.state.picker.on).toBe(false);
   });
 });
 

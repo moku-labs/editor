@@ -1,14 +1,17 @@
 /**
- * @file gameView plugin — the area gesture on the Reference mode proxy layer (U9, A16). A press
+ * @file gameView plugin — the area gesture on the Reference mode proxy layer (U9, A16) and the
+ * Select picker layer (captures-by-day U4). A press
  * remembers where it started and takes nothing. A move of 4 client px or more turns it into an
  * area drag: the layer holds the pointer from then, the hover freezes and the marquee follows in
  * `state.reference.area` (device px, through the frame box with `pageFromClient`). The release
- * picks the area. Under 4 px the release is a click and the proxy under it picks, as before. Esc
- * during the drag cancels it: the release then picks nothing.
+ * picks the area and turns the picker off. Under 4 px the release is a click: the proxy under it
+ * picks, or the picker picks the element at the point, as before. Esc during the drag cancels it:
+ * the release then picks nothing.
  */
 import type { PageRect } from "../../panels/shared/scene";
 import { pageFromClient } from "../../panels/shared/scene";
 import { workspacePlugin } from "../../workspace";
+import { setPicker } from "../element/select";
 import { notify } from "../state";
 import type { ClientPoint, GameViewCtx } from "../types";
 import { pickDraggedArea } from "./area";
@@ -131,23 +134,29 @@ export function moveArea(ctx: GameViewCtx, at: PointerAt, pressed: boolean): boo
 }
 
 /**
- * The release on the layer: after a drag, picks the area (unless Esc cancelled it); after a
- * click, only forgets the press (the proxy's own pointerup picks).
+ * The release on a layer: after a drag, picks the area (unless Esc cancelled it) and turns the
+ * picker off like a click pick; after a click, only forgets the press and says it was a click
+ * (the proxy's own pointerup picks, the picker picks at the point).
  *
  * @param ctx - Domain context of gameView.
  * @param at - The pointer and its client point.
+ * @returns True for a click: no area drag ran for this release.
  */
-export function releaseArea(ctx: GameViewCtx, at: PointerAt): void {
+export function releaseArea(ctx: GameViewCtx, at: PointerAt): boolean {
   const { reference } = ctx.state;
   const { press } = reference;
-  if (press?.pointerId !== at.pointerId) return;
+  if (press?.pointerId !== at.pointerId) return press?.dragging !== true;
   reference.press = undefined;
-  if (!press.dragging) return;
+  if (!press.dragging) return true;
 
   reference.area = undefined;
   notify(ctx.state);
   const area = press.cancelled ? undefined : marqueeOf(ctx, press.start, at);
-  if (area !== undefined && area.w > 0 && area.h > 0) void pickDraggedArea(ctx, area);
+  if (area === undefined || area.w <= 0 || area.h <= 0) return false;
+
+  if (ctx.state.picker.on) setPicker(ctx, false);
+  void pickDraggedArea(ctx, area);
+  return false;
 }
 
 /**

@@ -6,7 +6,7 @@ import { startGameView, stopGameView } from "../../lifecycle";
 import { hoverProxy, setReferenceMode } from "../../reference/mode";
 import { copySelectedReference } from "../../reference/pick";
 import { notify } from "../../state";
-import { createCtx, flush, type TestCtx, useScene } from "../helpers";
+import { createCtx, DAY, flush, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene, find, findAll, fire } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ function layer(): HTMLElement | undefined {
 }
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callback(0);
     return 1;
@@ -53,6 +54,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   stopGameView(ctx);
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -195,7 +197,7 @@ describe("a click on a proxy", () => {
     expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
-      /^@moku coinPill row · board\/awaitIntent · .* · \.moku\/captures\/coinPill-f1841\.md$/
+      /^@moku coinPill row · board\/awaitIntent · .* · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/coinPill-f1841\.md$/
     );
     expect(ctx.state.pick?.nodeId).toBe("ui:boardScreen/hudRow/coinPill");
   });
@@ -210,11 +212,11 @@ describe("copySelectedReference", () => {
 
     const line = await copySelectedReference(ctx);
     expect(line).toMatch(
-      /^@moku coinPill row · board\/awaitIntent · src\/hud\/Hud\.tsx:2 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/coinPill-f1841\.md$/
+      /^@moku coinPill row · board\/awaitIntent · src\/hud\/Hud\.tsx:2 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/coinPill-f1841\.md$/
     );
     expect(writeText).toHaveBeenCalledWith(line);
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
-    const card = ctx.link.files.text(".moku/captures/coinPill-f1841.md");
+    const card = ctx.link.files.text(`${DAY}/coinPill-f1841.md`);
     expect(card.split("\n").slice(0, 6)).toEqual([
       "# @moku coinPill row",
       "",
@@ -227,8 +229,27 @@ describe("copySelectedReference", () => {
     // The same node and frame again: the same card, written again.
     await copySelectedReference(ctx);
     expect(ctx.link.files.paths().filter(path => path.endsWith(".md"))).toEqual([
-      ".moku/captures/coinPill-f1841.md"
+      `${DAY}/coinPill-f1841.md`
     ]);
+  });
+
+  it("writes the card beside the pictures of a pick taken on another day, so its links work", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(() => Promise.resolve()) } });
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
+    ctx.state.pick = {
+      nodeId: "ui:boardScreen/hudRow/coinPill",
+      frame: 1841,
+      bookmark: undefined,
+      crop: ".moku/captures/2026-10-04/coinPill-f1841-crop.jpg",
+      full: ".moku/captures/2026-10-04/f1841-full.jpg",
+      tainted: undefined
+    };
+
+    const line = await copySelectedReference(ctx);
+    expect(line).toMatch(/ · \.moku\/captures\/2026-10-04\/coinPill-f1841\.md$/);
+    const card = ctx.link.files.text(".moku/captures/2026-10-04/coinPill-f1841.md");
+    expect(card).toContain("![element](coinPill-f1841-crop.jpg)");
+    expect(card).toContain("![frame](f1841-full.jpg)");
   });
 
   it("toasts when the clipboard refuses or does not exist, and returns the block all the same", async () => {

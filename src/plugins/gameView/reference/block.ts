@@ -86,7 +86,7 @@ export type ReferenceFacts = TailFacts & {
 };
 
 /** The parents `layout` names, nearest first. */
-const LAYOUT_PARENTS = 3;
+export const LAYOUT_PARENTS = 3;
 
 /** The components `path` names of an entity. */
 const ENTITY_COMPONENTS = 5;
@@ -206,12 +206,17 @@ function layoutValue(value: Json | undefined): string | undefined {
 }
 
 /**
- * One parent of the layout line: its name and its direction, padding, margin and gap.
+ * One parent of the layout line: its name and its direction, padding, margin and gap. An area
+ * block prints its parent chains the same way (captures-by-day U5).
  *
  * @param parent - A ui ancestor.
  * @returns "settingsBoard (column, padding 266/72/64/72, gap 24)", or the bare name.
+ * @example
+ * ```ts
+ * layoutOf(hudRowNode); // "hudRow (row, padding 0/40/0/40, margin 40/0/0/0)"
+ * ```
  */
-function layoutOf(parent: SceneNode): string {
+export function layoutOf(parent: SceneNode): string {
   const style = parent.style ?? {};
   const fields = [
     layoutValue(style.direction),

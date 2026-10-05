@@ -35,7 +35,7 @@ export type {
  * ```
  */
 export type GameViewConfig = {
-  /** Folder of screenshots and series, relative to the files root. */
+  /** Folder of screenshots and series, relative to the files root; each in a `<yyyy-mm-dd>/` day folder. */
   capturesDir: string;
   /** Where the game's asset manifest may live, tried in order. */
   manifestPaths: readonly string[];
@@ -328,10 +328,10 @@ export type PickOptions = { readonly copy: boolean };
  * ```ts
  * const result: PickResult = {
  *   block: "@moku coinPill · row · board/awaitIntent · f1842\n…",
- *   line: "@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · .moku/captures/coinPill-f1842.md",
- *   card: ".moku/captures/coinPill-f1842.md",
- *   crop: ".moku/captures/coinPill-f1842-crop.jpg",
- *   full: ".moku/captures/f1842-full.jpg",
+ *   line: "@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · .moku/captures/2026-10-05/coinPill-f1842.md",
+ *   card: ".moku/captures/2026-10-05/coinPill-f1842.md",
+ *   crop: ".moku/captures/2026-10-05/coinPill-f1842-crop.jpg",
+ *   full: ".moku/captures/2026-10-05/f1842-full.jpg",
  *   frame: 1842,
  *   info
  * };
@@ -411,7 +411,7 @@ export type ElementCode =
  *
  * @example
  * ```ts
- * const shot: CaptureFile = { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
+ * const shot: CaptureFile = { path: ".moku/captures/2026-10-05/0846-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" };
  * ```
  */
 export type CaptureFile = {
@@ -428,7 +428,7 @@ export type CaptureFile = {
  *
  * @example
  * ```ts
- * const card: CaptureCardInfo = { path: ".moku/captures/series-2026-09-24-1015/", frame: 1777, device: "iPhone 15 portrait", image: "data:image/png;base64,…", series: { indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 } };
+ * const card: CaptureCardInfo = { path: ".moku/captures/2026-10-05/series-1015/", frame: 1777, device: "iPhone 15 portrait", image: "data:image/png;base64,…", series: { indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 } };
  * ```
  */
 export type CaptureCardInfo = CaptureFile & {
@@ -443,7 +443,7 @@ export type CaptureCardInfo = CaptureFile & {
  *
  * @example
  * ```ts
- * const result: SeriesResult = { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 };
+ * const result: SeriesResult = { folder: ".moku/captures/2026-10-05/series-1015/", indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 };
  * ```
  */
 export type SeriesResult = {
@@ -538,7 +538,7 @@ export type GameViewState = {
  *
  * @example
  * ```ts
- * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
+ * const shot = await app.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", … }
  * ```
  */
 export type GameViewApi = {
@@ -546,9 +546,10 @@ export type GameViewApi = {
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
    * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
    * element bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full frame
-   * (`f<frame>-full.jpg`) under `capturesDir`, writes the reference card next to them, puts its one
-   * reference line on the clipboard (see `copyReference`), shows the capture card with a Reference
-   * action and publishes the selection for MCP `moku_selection`.
+   * (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the reference
+   * card next to them, puts its one reference line on the clipboard (see `copyReference`), shows
+   * the capture card with a Reference action and publishes the selection for MCP
+   * `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
@@ -658,25 +659,27 @@ export type GameViewApi = {
   manifest(): Promise<TextureCatalogue | undefined>;
 
   /**
-   * One screenshot: runs `editor.capture` through panels (R9), writes the picture under
-   * `capturesDir` named after its type (`.jpg` for the JPEG editor.capture answers by default,
-   * D-34), puts `shot: <path>` on the clipboard, toasts, shows the capture card and the shutter
-   * flash. Never captures on its own: only a user action or this call does.
+   * One screenshot: runs `editor.capture` through panels (R9), writes the picture into today's
+   * folder `<capturesDir>/<yyyy-mm-dd>/` as `<hhmm>-<flow>` with the extension of its type
+   * (`.jpg` for the JPEG editor.capture answers by default, D-34), puts `shot: <path>` on the
+   * clipboard, toasts, shows the capture card and the shutter flash. Never captures on its own:
+   * only a user action or this call does.
    *
    * @returns The saved capture, undefined when no game is connected, the game lacks
    * `editor.capture`, or the capture failed (a toast says which).
    * @example
    * ```ts
    * // The developer saw a glitch on the board and keeps a picture of it.
-   * await app.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
+   * await app.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", frame: 1841, device: "iPhone 15 portrait", image: "data:image/jpeg;base64,…" }
    * ```
    */
   capture(): Promise<CaptureFile | undefined>;
 
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
-   * new `series-<stamp>/` folder, puts `series: <folder> (<n> frames)` on the clipboard, then
-   * opens the contact sheet. Shows Game first. Refuses while another series runs.
+   * new `<capturesDir>/<yyyy-mm-dd>/series-<hhmm>/` folder, puts `series: <folder> (<n> frames)`
+   * on the clipboard, then opens the contact sheet. Shows Game first. Refuses while another
+   * series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -687,7 +690,7 @@ export type GameViewApi = {
    * @example
    * ```ts
    * // Watch the merge animation frame by frame.
-   * await app.gameView.series({ durationMs: 2000, intervalMs: 100 }); // { folder: ".moku/captures/series-2026-09-24-1015/", indexPath: ".moku/captures/series-2026-09-24-1015/index.json", shots: 20 }
+   * await app.gameView.series({ durationMs: 2000, intervalMs: 100 }); // { folder: ".moku/captures/2026-10-05/series-1015/", indexPath: ".moku/captures/2026-10-05/series-1015/index.json", shots: 20 }
    * ```
    */
   series(options: {
@@ -718,7 +721,7 @@ export type GameViewApi = {
    * @example
    * ```ts
    * // filesView's "Open contact sheet" on a series folder.
-   * await app.gameView.openSheet(".moku/captures/series-2026-09-24-1015/index.json");
+   * await app.gameView.openSheet(".moku/captures/2026-10-05/series-1015/index.json");
    * ```
    */
   openSheet(indexPath: string): Promise<void>;
@@ -726,9 +729,9 @@ export type GameViewApi = {
   /**
    * Writes the reference card of the selected element and puts its one line on the clipboard
    * (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
-   * The card `<capturesDir>/<key>-f<frame>.md` holds the full reference block (`@moku` head,
-   * `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a pick
-   * `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
+   * The card `<key>-f<frame>.md`, beside the pick's pictures in `<capturesDir>/<yyyy-mm-dd>/`,
+   * holds the full reference block (`@moku` head, `path`, `source`, `layout`, `bounds`, `state`,
+   * `flow`, `game`, `device`, and after a pick `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
    * the pick's crop and full frame. The same node and frame write the same card again. A field
    * that is not known is left out; a card that cannot be written leaves its path out. A clipboard
    * that refuses is toasted; the line is returned all the same.
@@ -739,7 +742,7 @@ export type GameViewApi = {
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
    * await app.gameView.copyReference();
-   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/settingsBoard-f25.md"
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;

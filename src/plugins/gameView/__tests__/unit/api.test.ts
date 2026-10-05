@@ -4,12 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGameViewApi } from "../../api";
 import { createHandlers } from "../../handlers";
 import { initGameView, startGameView, stopGameView } from "../../lifecycle";
-import { createCtx, flush, PNG, sceneCapture, type TestCtx, useScene } from "../helpers";
+import {
+  createCtx,
+  DAY,
+  flush,
+  PNG,
+  sceneCapture,
+  type TestCtx,
+  TODAY,
+  useScene
+} from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
 let ctx: TestCtx;
 
 beforeEach(() => {
+  vi.setSystemTime(TODAY);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callback(0);
     return 1;
@@ -24,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   stopGameView(ctx);
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -112,9 +123,9 @@ describe("copyReference, bookmarks and fold", () => {
     api.select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     const line = await api.copyReference();
     expect(line).toBe(
-      "@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · .moku/captures/coinPill-f1841.md"
+      `@moku coinPill row · board/awaitIntent · ref 235,74 290×76 · ${DAY}/coinPill-f1841.md`
     );
-    expect(ctx.link.files.text(".moku/captures/coinPill-f1841.md")).toContain(
+    expect(ctx.link.files.text(`${DAY}/coinPill-f1841.md`)).toContain(
       "@moku coinPill · row · board/awaitIntent · f1841"
     );
     expect(api.bookmarks()).toEqual([]);
