@@ -91,6 +91,7 @@ export type {
   RunResult,
   RunState,
   SelectionInfo,
+  SelectionItem,
   SelectionRect,
   SelectionRef,
   SelectParams,

@@ -12,6 +12,7 @@ import type {
   PublishMethod,
   PublishParams,
   SelectionInfo,
+  SelectionItem,
   SelectionRect,
   SelectionRef,
   SelectParams,
@@ -27,9 +28,11 @@ import {
   isResponse,
   isRetryable,
   isSelectionInfo,
+  notification,
   parseSelectionInfo,
   parseSelectParams,
   toWireError,
+  toWireValue,
   wireError
 } from "../../protocol";
 
@@ -62,6 +65,39 @@ const picked: SelectionInfo = {
   at: 1_790_000_000_000
 };
 
+/** An area selection of two group elements (U9). */
+const area: SelectionInfo = {
+  ref: { kind: "ui", path: "column#0/hudRow" },
+  name: "area",
+  type: "area",
+  rect: { x: 0, y: 30, w: 200, h: 60 },
+  area: { x: 0, y: 30, w: 200, h: 60 },
+  items: [
+    {
+      ref: { kind: "ui", path: "column#0/hudRow/coins" },
+      key: "coins",
+      name: "coins",
+      type: "text",
+      rect: { x: 12, y: 40, w: 96, h: 24 },
+      source: { path: "src/ui/hud.ts", line: 42 }
+    },
+    { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity" }
+  ],
+  frame: 1840,
+  at: 1
+};
+
+/** An area with no element inside. */
+const emptyArea: SelectionInfo = {
+  ref: { kind: "ui", path: "" },
+  name: "area",
+  type: "area",
+  rect: { x: 0, y: 0, w: 10, h: 10 },
+  area: { x: 0, y: 0, w: 10, h: 10 },
+  items: [],
+  at: 1
+};
+
 /** The JSON text of the full selection, as the wire carries it. */
 const pickedText = JSON.stringify(picked);
 
@@ -91,6 +127,26 @@ describe("isSelectionInfo", () => {
   it("ignores unknown fields", () => {
     expect(isSelectionInfo({ ...picked, zoom: 2, extra: { a: 1 } })).toBe(true);
     expect(isSelectionInfo({ ...minimal, ref: { kind: "ui", path: "a", depth: 3 } })).toBe(true);
+  });
+
+  it("accepts an area selection and an empty one", () => {
+    expect(isSelectionInfo(area)).toBe(true);
+    expect(isSelectionInfo(emptyArea)).toBe(true);
+    expect(isSelectionInfo({ ...area, items: [{ ...area.items?.[0], zoom: 2 }] })).toBe(true);
+  });
+
+  it.each([
+    ["area missing w", { area: { x: 0, y: 0, h: 1 } }],
+    ["area null", { area: null }],
+    ["items not an array", { items: { 0: minimal } }],
+    ["item not an object", { items: ["coins"] }],
+    ["item without a name", { items: [{ ref: { kind: "ui", path: "a" }, type: "text" }] }],
+    ["item with a bad ref", { items: [{ ref: { kind: "ui" }, name: "a", type: "text" }] }],
+    ["item with a number key", { items: [{ ...minimal, key: 1 }] }],
+    ["item with a bad rect", { items: [{ ...minimal, rect: { x: 0 } }] }],
+    ["item with a bad source", { items: [{ ...minimal, source: { path: "a.ts" } }] }]
+  ])("rejects an area selection with a bad %s", (_label, patch) => {
+    expect(isSelectionInfo({ ...area, ...patch })).toBe(false);
   });
 
   it.each([
@@ -189,20 +245,52 @@ describe("parseSelectionInfo", () => {
     expect(Object.keys(copy ?? {})).toEqual(["ref", "name", "type", "at"]);
   });
 
+  it("copies the area and the items, fresh, without unknown fields", () => {
+    const copy = parseSelectionInfo({
+      ...area,
+      area: { ...area.area, z: 1 },
+      items: [
+        {
+          ...area.items?.[0],
+          at: 5,
+          frame: 3,
+          zoom: 2,
+          ref: { kind: "ui", path: "column#0/hudRow/coins", depth: 1 },
+          rect: { x: 12, y: 40, w: 96, h: 24, z: 0 },
+          source: { path: "src/ui/hud.ts", line: 42, column: 3 }
+        },
+        area.items?.[1]
+      ]
+    });
+
+    expect(copy).toEqual(area);
+    expect(copy?.area).not.toBe(area.area);
+    expect(copy?.items).not.toBe(area.items);
+    expect(copy?.items?.[0]).not.toBe(area.items?.[0]);
+    expect(copy?.items?.[0]?.rect).not.toBe(area.items?.[0]?.rect);
+    expect(Object.keys(copy?.items?.[1] ?? {})).toEqual(["ref", "name", "type"]);
+  });
+
+  it("keeps an empty item list", () => {
+    expect(parseSelectionInfo(emptyArea)).toEqual(emptyArea);
+  });
+
   it("returns undefined for a value that is not a selection", () => {
     expect(parseSelectionInfo(null)).toBeUndefined();
     expect(parseSelectionInfo({ ...minimal, at: "now" })).toBeUndefined();
   });
 
-  it("the copy travels as Json and survives encode and decode", () => {
-    const copy = parseSelectionInfo(picked);
+  it.each([
+    ["a pick", picked],
+    ["an area", area]
+  ])("the copy of %s survives toWireValue, encode and decode", (_label, info) => {
+    const copy = parseSelectionInfo(info);
     if (copy === undefined) throw new Error("expected a selection");
 
-    const message = decode(
-      encode({ jsonrpc: "2.0", channel: "editor", method: "selection", params: copy })
-    );
+    const params = toWireValue(copy);
+    const message = decode(encode(notification("editor", "selection", params)));
 
-    expect("params" in message && parseSelectionInfo(message.params)).toEqual(picked);
+    expect("params" in message && parseSelectionInfo(message.params)).toEqual(info);
   });
 });
 
@@ -220,6 +308,14 @@ describe("parseSelectParams", () => {
     expect(parseSelectParams({})).toEqual({});
   });
 
+  it("copies an area rect, fresh and without unknown fields", () => {
+    const rect = { x: 0, y: 30, w: 200, h: 60, z: 1 };
+    const params = parseSelectParams({ rect, key: "coins", card: true });
+
+    expect(params).toEqual({ rect: { x: 0, y: 30, w: 200, h: 60 }, key: "coins", card: true });
+    expect(params?.rect).not.toBe(rect);
+  });
+
   it("drops unknown fields and keeps absent fields absent", () => {
     const params = parseSelectParams({ key: "coins", ref: { kind: "ui", path: "a", x: 1 }, z: 1 });
 
@@ -232,7 +328,9 @@ describe("parseSelectParams", () => {
     ["an array", ["coins"]],
     ["a number key", { key: 1 }],
     ["a bad ref", { ref: { kind: "ui", path: 1 } }],
-    ["a string card", { card: "yes" }]
+    ["a string card", { card: "yes" }],
+    ["a rect without h", { rect: { x: 0, y: 0, w: 1 } }],
+    ["a rect of strings", { rect: { x: "0", y: "0", w: "1", h: "1" } }]
   ])("returns undefined for %s", (_label, value) => {
     expect(parseSelectParams(value)).toBeUndefined();
   });
@@ -282,15 +380,15 @@ describe("selection types", () => {
     expect(ref.kind).toBe("ui");
   });
 
-  it("SelectionInfo is readonly and travels as Json", () => {
-    expectTypeOf<SelectionInfo>().toExtend<Json>();
-
+  it("SelectionInfo is readonly; its readonly items make senders use toWireValue", () => {
     const info: SelectionInfo = { ...picked };
-    const json: Json = info;
+    // @ts-expect-error -- readonly items are not the mutable Json, like Manifest
+    const json: Json = area;
     // @ts-expect-error -- every field is readonly
     info.at = 2;
 
-    expect(json).toBe(info);
+    expect(toWireValue(info)).toEqual({ ...picked, at: 2 });
+    expect(json).toBe(area);
   });
 
   it("PublishMethod is hotReload or selection, typed by PublishParams", () => {
@@ -302,10 +400,27 @@ describe("selection types", () => {
     expect(params.selection).toBeNull();
   });
 
-  it("SelectParams has an optional key, ref and card", () => {
+  it("SelectionInfo carries an optional area and items of SelectionItem", () => {
+    expectTypeOf<SelectionInfo["area"]>().toEqualTypeOf<SelectionRect | undefined>();
+    expectTypeOf<SelectionInfo["items"]>().toEqualTypeOf<readonly SelectionItem[] | undefined>();
+    expectTypeOf<SelectionItem>().toEqualTypeOf<{
+      readonly ref: SelectionRef;
+      readonly key?: string;
+      readonly name: string;
+      readonly type: string;
+      readonly rect?: SelectionRect;
+      readonly source?: { readonly path: string; readonly line: number };
+    }>();
+    expectTypeOf<SelectionItem>().toExtend<Json>();
+
+    expect(area.items).toHaveLength(2);
+  });
+
+  it("SelectParams has an optional key, ref, rect and card", () => {
     expectTypeOf<SelectParams>().toEqualTypeOf<{
       readonly key?: string;
       readonly ref?: SelectionRef;
+      readonly rect?: SelectionRect;
       readonly card?: boolean;
     }>();
 

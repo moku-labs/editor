@@ -192,7 +192,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 |---|---|
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
 | `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`. |
-| `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values. Unknown fields are ignored by the guard and dropped by the parsers. |
+| `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values, `area`, `items` and the `select` `rect` included. Unknown fields are ignored by the guard and dropped by the parsers, inside the items too. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
@@ -208,18 +208,21 @@ Shapes added in round 2 (R4, R6):
 | `HotReload` | `{ hmr: boolean, owner: "bin" \| "server" }`: the hub's editor-channel notification `hotReload`. |
 | `DeviceSpec` | Gains `dpr`, `radius`, `group` (`iphone`, `android`, `foldable`, `tablet`, `desktop`), `frame` (`"modern"` \| `"home-button"`, round 2b R9: the bezel gameView draws), `approx?: true`, `fold?: { cover, inner }` of `FoldScreen { w, h, radius }`. `dpr`, `radius`, `group` and `frame` are required: `devices.ts` fills them for the 21 presets. |
 
-Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10):
+Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10, A15):
 
 | Type | Fields |
 |---|---|
-| `SelectionInfo` | All readonly. `ref` (`SelectionRef`: `{ kind: "ui", path }` or `{ kind: "entity", id }`, the scene's `ElementRef`), `name`, `type`, `at` (`Date.now()` at publish) required. Optional: `key`, `projection`, `rect` (`SelectionRect` in page CSS px, as `SceneNode.rect`), `source { path, line }`, `card` and `crop` (project-relative under `capturesDir`), `line` (the `@moku …` reference), `session`, `frame` (the scene frame; after a pick, the pick frame). Assignable to `Json`. |
+| `SelectionInfo` | All readonly. `ref` (`SelectionRef`: `{ kind: "ui", path }` or `{ kind: "entity", id }`, the scene's `ElementRef`), `name`, `type`, `at` (`Date.now()` at publish) required. Optional: `key`, `projection`, `rect` (`SelectionRect` in page CSS px, as `SceneNode.rect`), `source { path, line }`, `card` and `crop` (project-relative under `capturesDir`), `line` (the `@moku …` reference), `session`, `frame` (the scene frame; after a pick, the pick frame), `area` and `items` (an area selection, below). The readonly `items` make it not assignable to `Json`: senders pass it through `toWireValue`, like a `Manifest`. |
+| `SelectionItem` | All readonly. One element of an area selection: `ref`, `name`, `type` required; `key`, `rect`, `source` optional. |
+| Area selection (U9) | `type: "area"`, `name: "area"`, `rect` = `area` = the dragged area in page CSS px, `items` = the group roots inside, top to bottom then left to right, at most 40. `ref` = the first item's ref, or `{ kind: "ui", path: "" }` when no element is inside (`items: []`). |
 | `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null }`. `PublishMethod` is its keys: `"hotReload" \| "selection"`. |
-| `SelectParams` | `{ key?: string, ref?: SelectionRef, card?: boolean }`. The page treats an absent `card` as `true`. |
+| `SelectParams` | `{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }`. `rect` picks an area like a Reference-mode drag and wins over `key` and `ref`. The page treats an absent `card` as `true`. |
 | `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. |
 
 ```ts
 parseSelectionInfo({ ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1, zoom: 2 });
 // { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1 }
+parseSelectParams({ rect: { x: 0, y: 30, w: 200, h: 60 } }); // an area: every element inside
 parseSelectParams({ card: "yes" }); // undefined
 ```
 

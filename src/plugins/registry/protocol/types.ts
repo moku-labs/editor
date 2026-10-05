@@ -534,9 +534,37 @@ export type SelectionRect = {
 };
 
 /**
+ * One element of an area selection (U9): the group roots that lie in the area, in page order.
+ *
+ * @example
+ * ```ts
+ * const item: SelectionItem = {
+ *   ref: { kind: "ui", path: "column#0/hudRow/coins" },
+ *   key: "coins",
+ *   name: "coins",
+ *   type: "text",
+ *   rect: { x: 12, y: 40, w: 96, h: 24 },
+ *   source: { path: "src/ui/hud.ts", line: 42 }
+ * };
+ * ```
+ */
+export type SelectionItem = {
+  readonly ref: SelectionRef;
+  /** The ui node's `key`, when it has one. */
+  readonly key?: string;
+  readonly name: string;
+  readonly type: string;
+  /** Where it is drawn, in page CSS px. Absent: not placed. */
+  readonly rect?: SelectionRect;
+  /** The style source line of the element, once found. */
+  readonly source?: { readonly path: string; readonly line: number };
+};
+
+/**
  * The element selected in the editor page, as the page publishes it (editor-channel notification
  * `selection`) and as the hub answers `editor.selection` and `editor.select`. Check a received
- * value with `parseSelectionInfo`.
+ * value with `parseSelectionInfo`. Its readonly `items` make it not assignable to the mutable
+ * Json: senders pass it through `toWireValue`, like a Manifest.
  *
  * @example
  * ```ts
@@ -580,6 +608,14 @@ export type SelectionInfo = {
   readonly session?: string;
   /** The scene frame; after a pick the frame of the pick. */
   readonly frame?: number;
+  /**
+   * The area of an area selection (U9), in page CSS px. An area selection has `type: "area"`,
+   * `name: "area"`, `rect` = the area and `ref` = the first item's ref (`{ kind: "ui", path: "" }`
+   * when no element is inside).
+   */
+  readonly area?: SelectionRect;
+  /** The elements of an area selection, top to bottom then left to right; at most 40. */
+  readonly items?: readonly SelectionItem[];
   /** Epoch ms of the publish (`Date.now()`). */
   readonly at: number;
 };
@@ -605,18 +641,22 @@ export type PublishParams = {
 export type PublishMethod = keyof PublishParams;
 
 /**
- * Params of the editor-channel request `select`: the element by `key` (a ui node key,
- * projection-qualified like `"hud/infoBar"` allowed) or by `ref`. `card` (the page treats absent
+ * Params of the editor-channel request `select`: an area by `rect`, the element by `key` (a ui
+ * node key, projection-qualified like `"hud/infoBar"` allowed) or by `ref`. `rect` wins over `key`
+ * and `ref`. `card` (the page treats absent
  * as true) asks for the capture card and the crop as after a picker click.
  *
  * @example
  * ```ts
  * const params: SelectParams = { key: "hud/infoBar", card: true };
+ * const areaParams: SelectParams = { rect: { x: 0, y: 30, w: 200, h: 60 } }; // every element inside
  * ```
  */
 export type SelectParams = {
   readonly key?: string;
   readonly ref?: SelectionRef;
+  /** An area in page CSS px, picked like a Reference-mode drag (U9). It wins over key and ref. */
+  readonly rect?: SelectionRect;
   readonly card?: boolean;
 };
 
