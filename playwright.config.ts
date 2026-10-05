@@ -6,6 +6,8 @@
  *
  * The bin runs with its defaults, so Bun hot reload is on (D-23): a save of a game source reloads
  * the game page, and the bridge restores its checkpoint. e2e/edit-loop.spec.ts measures that loop.
+ * e2e/top-bar.spec.ts flips the Hot reload switch off and on (D-32: the bin restarts its server on
+ * the same port) and leaves it on.
  *
  * One worker: the bin hosts one game link, and every test opens its own tools page and game frame
  * on it. Chromium runs the full suite on desktop (1440×900), on the two half-screen windows

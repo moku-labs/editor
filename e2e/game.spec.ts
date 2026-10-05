@@ -4,7 +4,7 @@
  * the iPhone Duo, orientation, Fit with one scale for every phone and 100 %, safe-area bands, the
  * Sound switch that needs `game.mute`, Reload), the dark-theme bezel and the rounded screen, the
  * iPhone SE 3 home-button frame, the fresh viewer on the iPhone 18 Pro (round 2b R9-R11), the Shot
- * with its PNG on disk and the compact capture card (R14), the Series popover, the recording view, Stop, the
+ * with its JPEG on disk (D-34) and the compact capture card (R14), the Series popover, the recording view, Stop, the
  * files of a series and the contact sheet with stepping and Mark as bug, the element picker on the
  * game's real geometry (hover ring, click, Element tab, its Code section of R12, Show in render
  * tree, Esc), the Device tab,
@@ -13,8 +13,8 @@
  * driving the game itself: pause, step, resume, palette commands and real taps on the game canvas
  * whose effect shows in State. The Element and Device tabs live in the Element panel, a side
  * panel that floats as a drawer below 600 px and starts collapsed there: a test opens it before it
- * looks at or works in a tab. A pick also bookmarks the game, saves two PNGs and copies the
- * reference block (round 2 R2): e2e/pick.spec.ts covers that.
+ * looks at or works in a tab. A pick also bookmarks the game, saves two JPEGs and copies the
+ * reference line (round 2 R2): e2e/pick.spec.ts covers that.
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.locate` of the game page
  * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
@@ -28,6 +28,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, type Tools, test } from "./fixtures";
+import { jpegSize, pngSize } from "./pictures";
 import { barChecked, flipBarToggle, showPreview } from "./top-bar";
 
 /** The project root the bin serves. */
@@ -412,18 +413,6 @@ async function heightOf(locator: Locator): Promise<number> {
 async function readGameFile(file: string): Promise<string | undefined> {
   const full = path.join(GAME_ROOT, file);
   return existsSync(full) ? readFile(full, "utf8") : undefined;
-}
-
-/**
- * The width and height of a PNG from its IHDR chunk.
- *
- * @param file - The path relative to the root.
- * @returns The size, after checking the PNG signature.
- */
-async function pngSize(file: string): Promise<{ w: number; h: number }> {
-  const bytes = await readFile(path.join(GAME_ROOT, file));
-  expect([...bytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-  return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
 }
 
 /**
@@ -1299,7 +1288,7 @@ test.describe("game · the default device (round 2b R10)", () => {
 });
 
 test.describe("game · capture", () => {
-  test("Shot writes a PNG under .moku/captures and shows the card", async ({ tools }) => {
+  test("Shot writes a JPEG under .moku/captures and shows the card", async ({ tools }) => {
     const page = tools.page;
     await showGame(tools);
     await bar(page, "capture").click();
@@ -1309,27 +1298,27 @@ test.describe("game · capture", () => {
     await expect(card.locator("[data-part=saved]")).toHaveText("✓ Screenshot saved");
     // The path line is cut in the middle; its title holds the whole path (round 2b R14).
     const shown = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
-    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/);
+    expect(shown).toMatch(/^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.jpg$/);
     await expect(card.locator("[data-part=meta]")).toHaveText(/^f\d+ · iPhone 15 portrait$/);
-    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/png|^blob:/);
+    await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/jpeg|^blob:/);
     await expect(toast(page)).toContainText("✓ Screenshot saved");
     await expect(toast(page)).toContainText(shown);
     await expect(overlay(page).locator("[data-part=flash]")).toBeAttached();
 
-    // The PNG on disk is the game frame at the device size.
+    // The JPEG on disk is the game frame at the device size.
     expect(await list(CAPTURES_DIR)).toEqual([path.basename(shown)]);
-    const size = await pngSize(shown);
+    const size = await jpegSize(path.join(GAME_ROOT, shown));
     expect(size.w / size.h).toBeCloseTo(393 / 852, 2);
 
     // A second shot in the same minute gets a -2 suffix (one in the next minute a name of its own).
     await bar(page, "capture").click();
     await expect(card.locator("[data-part=path]")).not.toHaveAttribute("title", shown);
     const second = (await card.locator("[data-part=path]").getAttribute("title")) ?? "";
-    const sameMinute = second.startsWith(shown.replace("-main.png", ""));
+    const sameMinute = second.startsWith(shown.replace("-main.jpg", ""));
     expect(second).toMatch(
       sameMinute
-        ? shown.replace(".png", "-2.png")
-        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.png$/
+        ? shown.replace(".jpg", "-2.jpg")
+        : /^\.moku\/captures\/\d{4}-\d{2}-\d{2}-\d{4}-main\.jpg$/
     );
     expect(await list(CAPTURES_DIR)).toEqual(
       [path.basename(shown), path.basename(second)].toSorted()
@@ -1388,7 +1377,7 @@ test.describe("game · capture card (round 2b R14)", () => {
     await expect(card).toBeVisible();
     const path = card.locator("[data-part=path]");
     const full = (await path.getAttribute("title")) ?? "";
-    expect(full).toMatch(/^\.moku\/captures\/.+\.png$/);
+    expect(full).toMatch(/^\.moku\/captures\/.+\.jpg$/);
     // The shown path is the whole one, or cut in the middle with an ellipsis.
     const shown = (await path.textContent()) ?? "";
     expect(shown === full || (shown.includes("…") && shown.length < full.length)).toBe(true);
@@ -1534,7 +1523,7 @@ test.describe("game · series", () => {
       "003.png",
       "004.png"
     ]);
-    await pngSize(`${folder}/001.png`);
+    await pngSize(path.join(GAME_ROOT, folder, "001.png"));
 
     await expect(sheet.getByRole("heading")).toHaveText(
       new RegExp(`^Series · .+ · 4 shots · 1 s at 250 ms · from frame ${index.fromFrame}$`)

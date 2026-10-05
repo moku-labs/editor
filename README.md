@@ -41,7 +41,7 @@ bun add -d @moku-labs/editor @moku-labs/game
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole.
 >
-> **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` turns it off). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>.png` and `f<frame>.png` in `capturesDir`, which must be `.moku/captures` or a folder under it. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
+> **Breaking since 0.0.3 (round 2, unreleased):** the bin serves with Bun hot reload on (`--no-hmr` starts it off; the Hot reload switch flips it while the bin runs). A pick and "Copy reference" put [one reference line](#the-reference-line-and-card) on the clipboard; the full reference block moves into the card file `<key>-f<frame>.md` the line names, and `gameView.copyReference()` returns the line. A pick also saves `<key>-f<frame>-crop.jpg` and `f<frame>-full.jpg` in `capturesDir`, which must be `.moku/captures` or a folder under it. Screenshots are JPEG by default: `editor.capture` and `editor.sheet` take `format` (`"jpeg"` or `"png"`) and `quality`, and the Game Shot saves a `.jpg`. The Game toolbar lost its Overlay switch: the top bar has it. Device preset ids are unchanged; fifteen presets are new, and a fresh viewer starts on the iPhone 18 Pro. `DeviceSpec` gains `frame`. Fit uses one scale per device kind. The capture card's meta line reads `f<frame> · <device>`.
 
 > [!IMPORTANT]
 > The server core and the `moku-editor` bin run on **Bun** (`Bun.serve`, HTML imports). The agent and tools cores run in the browser. The package is **ESM only**.
@@ -77,7 +77,7 @@ Tools  http://127.0.0.1:3000/__editor/
 Root   /Users/alex/game
 ```
 
-Hot reload is on: Bun reloads the game page after a save, and the game comes back where it was (see [Hot reload](#hot-reload)). To turn it off, start with `--no-hmr`. `bunx moku-editor --help` lists every flag.
+Hot reload is on: Bun reloads the game page after a save, and the game comes back where it was (see [Hot reload](#hot-reload)). The **Hot reload** switch of the tools page turns it off and on while the bin runs; `--no-hmr` starts the bin with it off. `bunx moku-editor --help` lists every flag.
 
 Or wrap the game's own `Bun.serve` with the server core:
 
@@ -100,7 +100,8 @@ saved with the theme. Below 900 px the [top bar](#the-top-bar) is compact. **Ref
 (key R) lays `data-moku-*` proxies over the game elements, so whoever reads the page can name
 them; the game gets no input while it is on. A click on an element (the picker, or a proxy in
 Reference mode) copies its [reference line](#the-reference-line-and-card) for the chat and writes
-the card file that line names.
+the card file that line names. In Reference mode the cursor over the game is a crosshair, and a
+drag picks [an area](#an-area) with every element inside it.
 
 > [!TIP]
 > The tools page is itself a Moku app (`src/plugins/pages/page/main.tsx`). To compose your own, start the tools core and mount the shell:
@@ -112,7 +113,7 @@ the card file that line names.
 
 ## Use with Claude Code
 
-`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude fifteen `moku_*` tools: read the game, wait for a value, run commands, take screenshots, edit files.
+`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude seventeen `moku_*` tools: read the game, wait for a value, run commands, take screenshots, read and make the editor's selection, edit files.
 
 **1. Register it** from the game folder:
 
@@ -154,9 +155,11 @@ Which editor the bridge uses:
 | `moku_read` | Reads a source, such as `game.position`. |
 | `moku_wait` | Waits until a source equals a value, leaves a value, or changes (at most 25 s). |
 | `moku_run` | Runs a command, such as `game.pause`. The answer starts with its effect. |
-| `moku_screenshot` | A PNG of the game, at most 1080 px wide by default. |
-| `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one PNG at most 1080 px wide. Game 0.4. |
+| `moku_screenshot` | A JPEG of the game, at most 1080 px wide by default. `key` crops it to one ui element; `format: "png"` keeps it lossless. Over 300 KB it is taken once more at half the width. |
+| `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one JPEG at most 1080 px wide. Game 0.4. |
 | `moku_reference` | The newest or a named reference card of `.moku/captures/` with its crop. |
+| `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. |
+| `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. Needs the tools page open. |
 | `moku_files_list` | Lists project files. |
 | `moku_files_read` | Reads a file and its version. |
 | `moku_files_write` | Writes a file, with an optional version check. |
@@ -193,7 +196,7 @@ its own.
 ### The reference line and card
 
 A pick (a picker click, or a click on a Reference mode proxy) bookmarks the game
-(`game.bookmark`), saves the element and the whole frame as PNGs, writes a card file next to them,
+(`game.bookmark`), saves the element and the whole frame as JPEGs, writes a card file next to them,
 puts one line on the clipboard and toasts "Reference, shot and bookmark copied". Paste the line
 into the chat: it names the element, its flow node, its code, its place, and the card that holds
 the rest.
@@ -208,7 +211,7 @@ The card `<capturesDir>/<key>-f<frame>.md` (`-2`, `-3` … when taken) is Markdo
 - the full reference block in a `text` fence (below);
 - `## JSX · <file:line>` and `## Style · <name> · <file:line>`, each a fenced snippet; for an
   entity, `## Spawned by <projection> · <file:line>` and its components;
-- `![element](<key>-f<frame>.png)` and `![frame](f<frame>.png)`.
+- `![element](<key>-f<frame>-crop.jpg)` and `![frame](f<frame>-full.jpg)`.
 
 The reference block says what the element is, where its code is, where it sits, and how to get the
 game back to this moment:
@@ -224,7 +227,7 @@ flow: board > settings > open · last: board/settings/enter → done
 game: merge-game 0.0.0 · s-1f12 · f212 · 15:31:13 · live · clean
 device: iPhone 15 393×852 portrait · dpr 3 · safe 59/0/34/0
 restore: bookmark settingsBoard-f210
-shot: .moku/captures/settingsBoard-f212.png · frame: .moku/captures/f212.png
+shot: .moku/captures/settingsBoard-f212-crop.jpg · frame: .moku/captures/f212-full.jpg
 ```
 
 | Line | Says |
@@ -239,12 +242,37 @@ shot: .moku/captures/settingsBoard-f212.png · frame: .moku/captures/f212.png
 | `game` | Name and version, session, frame, time, live or paused, clean or tainted. |
 | `device` | Preset, size, orientation, pixel ratio, safe insets. |
 | `restore` | The bookmark id. `gameView.bookmarks()` keeps the last 20; `panels.run("game.restore", { bookmark: value })` goes back. |
-| `shot` | The crop (`<key>-f<frame>.png`, the element plus 8 px) and the full frame (`f<frame>.png`) under `capturesDir`. |
+| `shot` | The crop (`<key>-f<frame>-crop.jpg`, the element plus 8 px) and the full frame (`f<frame>-full.jpg`) under `capturesDir`. |
 
 A line or a field that is not known is left out; a card that cannot be written leaves its path out
 of the line. The Element tab shows the full block read-only. Its "Copy reference" writes the card
 of the selection and copies its line; the same node and frame write the same card again. Shot and
 Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
+
+#### An area
+
+In Reference mode a press that moves 4 px or more drags a dashed marquee over the game. The release
+picks the area: the elements fully inside it (else the ones it covers by at least half of their own
+area), group roots only, top to bottom then left to right, at most 40. The pick goes as for one
+element: a bookmark, the area plus 8 px as `area-f<frame>-crop.jpg`, the full frame, the card
+`area-f<frame>.md` and one line on the clipboard:
+
+```text
+@moku area 337×97 · main/home · 1 element · ref 77,1825 925×265 · .moku/captures/area-f96.md
+```
+
+The card's block lists one line per element (name, type, key, `file:line`, `ref` rect), then the
+`flow`, `game`, `device`, `restore` and `shot` lines; the code of the first three elements with a
+source follows. A press that moves less is a click and picks the element under it. Esc during the
+drag cancels it.
+
+#### The selection over MCP
+
+The tools page publishes what is selected (a pick, an area, nothing after Esc) to the editor
+server, and Claude reads it with `moku_selection`. `moku_select { key }` or
+`moku_select { rect }` selects from the chat: the tools page shows the element in the Game
+workspace, picks it like a click (bookmark, crop, card, without the clipboard) and answers the
+selection.
 
 ### The Game workspace
 
@@ -281,11 +309,16 @@ and the block in its card (move an element, resize a button, recolour and resize
 a texture), each written to disk. Each shows in the game with its state restored in about 0.8 s;
 the recolour takes about 1.1 s, because the test reads the colour back from captured frames.
 
-The **Hot reload** switch (key H) shows the state. Bun cannot switch HMR on a running server, so a
-click says how to change it: start the bin with `--no-hmr`, or without it. The refused change
-answers 200 with the unchanged state, so the page logs no error. A game that serves itself
-with its own `Bun.serve` owns the setting; the switch is inert there. Without hot reload, a save in
-the editor still keeps the state: the editor bookmarks, reloads the frame and restores (D-07).
+The **Hot reload** switch (key H) turns it off and on while the bin runs. Bun cannot switch HMR on
+a running server, so the bin restarts its server with HMR flipped, on the same port, and keeps its
+token. The tools page bookmarks the game first, and every socket drops for about a second. Then
+the tools page reloads the game frame, because the page has to load again to gain or drop Bun's
+HMR client (`/_bun/client`), and restores the bookmark: "Hot reload off", then "Game reloaded ·
+state restored from the last checkpoint". While it is off, a save on disk does not reload the
+game. A failed switch says how to change it instead: start the bin with `--no-hmr`, or without it.
+A game that serves itself with its own `Bun.serve` owns the setting; the switch is inert there.
+Without hot reload, a save in the editor still keeps the state: the editor bookmarks, reloads the
+frame and restores (D-07).
 
 ### Devices
 
@@ -487,7 +520,7 @@ await editor.files.list("src");
 
 const ran = await tools.link.run("game.step", { frames: 1 }); // tools: ran.state.frame === 1841
 tools.workspace.show("game");
-await tools.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.png", … }
+await tools.gameView.capture(); // { path: ".moku/captures/2026-09-24-1012-board.jpg", … }
 ```
 
 ### Writing a plugin
@@ -536,13 +569,13 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect. | `status`, `session`; command `editor.reload` |
 | [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop`, `editor.sheet` |
 | [`files`](src/plugins/files/README.md) | server | Standard | The project-root sandbox: list, read, atomic write with version check, image captures. | `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` |
-| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
-| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, `--no-hmr`) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
-| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload` |
+| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification, the editor page's selection and the `editor.select` relay to it. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
+| [`pages`](src/plugins/pages/README.md) | server | Standard | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, switched by restarting its server; `--no-hmr` starts it off) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
+| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state, the editor page role (publishes the selection, answers `editor.select`). | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload`, `selection`, `notify`, `handle` |
 | [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
 | [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, code and style inspector. | `camera`, `focus`, `flows`, `layout` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound switch, element picker, style card, the Code section, Reference mode proxies, the pick for the chat (bookmark, two PNGs, the card file, one line), screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound switch, element picker, style card, the Code section, Reference mode proxies and area drags, the pick for the chat (bookmark, two JPEGs, the card file, one line), the selection published to MCP and `editor.select`, screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
 | [`renderView`](src/plugins/renderView/README.md) | tools | Standard | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |

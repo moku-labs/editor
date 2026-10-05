@@ -11,7 +11,11 @@ import {
   checkInput,
   definePanel,
   flowFile,
+  isSelectionInfo,
   nodeFile,
+  parseSelectionInfo,
+  parseSelectParams,
+  type SelectionInfo,
   toWireValue,
   wireError
 } from "../../src/index";
@@ -148,10 +152,26 @@ describe("core boot", () => {
       nodeFile,
       flowFile,
       wireError,
-      bareMessage
+      bareMessage,
+      isSelectionInfo,
+      parseSelectionInfo,
+      parseSelectParams
     ]) {
       expect(helper).toBeTypeOf("function");
     }
+    const selection: SelectionInfo = {
+      ref: { kind: "ui", path: "hud/infoBar" },
+      key: "infoBar",
+      name: "infoBar",
+      type: "row",
+      at: 1
+    };
+    expect(isSelectionInfo(selection)).toBe(true);
+    expect(parseSelectionInfo({ ...selection, extra: 1 })).toEqual(selection);
+    expect(parseSelectParams({ key: "infoBar", card: false })).toEqual({
+      key: "infoBar",
+      card: false
+    });
     const exists = (file: string): boolean => existsSync(path.join(root, file));
     expect(nodeFile({ flow: "main", node: "home" }, undefined, {}, exists)).toBe("nodes/home.ts");
     expect(flowFile("visit", {}, exists)).toBe("flows/visit.ts");
