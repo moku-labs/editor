@@ -4,13 +4,12 @@
  * listeners (theme, preview, device and sound only), re-render and re-dock the frame. Visibility
  * changes of a preview toast the workspace name.
  */
-
+import { WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { DEVICES, ERROR_PREFIX, isDevicePresetId } from "../../registry/protocol";
 import { deviceChoiceOf } from "../devices";
 import { PREVIEW_SIZES } from "../frame/dock";
 import { syncFrame } from "../frame/frame";
 import { clearTaps } from "../frame/taps";
-import { WORKSPACE_LABELS } from "../ids";
 import { showToast } from "../toasts";
 import type {
   DensityChoice,

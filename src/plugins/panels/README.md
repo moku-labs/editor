@@ -180,7 +180,7 @@ Rules for all of them:
   one exception is `definePanel`: a malformed panel throws at startup.
 - Only `loadStyleFile`, `writeNumber` and `findStylesFile` are async. They do I/O through the files client they get.
 - Not exported from `"."` and not a plugin api, except `definePanel`. Views and workspace import them by relative path, e.g. `../panels/shared/style-edit`.
-- Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `define.ts` has type-only imports; `workspaces.ts` re-exports from `workspace/ids.ts`.
+- Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `define.ts` imports only `workspaces.ts` at runtime; `workspaces.ts` takes the `WorkspaceId` type from workspace.
 
 | Module | Imported by | Holds |
 |---|---|---|
@@ -193,7 +193,7 @@ Rules for all of them:
 | `side-panel/` | flowView, gameView, filesView | The one SidePanel of every view's side panel: resize, collapse, close and reopen, overlay. |
 | `icons.tsx` | workspace, flowView | `Icon` and `IconName`: the 16 px stroke icons of the shell and the views, `aria-hidden`. |
 | `define.ts` | the six views, `"."` | `definePanel`: validates and freezes a panel. |
-| `workspaces.ts` | panels | `WORKSPACE_IDS` in rail order (Game first) and `WORKSPACE_LABELS`, re-exported from `workspace/ids.ts`. |
+| `workspaces.ts` | workspace, panels | `WORKSPACE_IDS` in rail order (Game first) and `WORKSPACE_LABELS`. |
 | `editable.ts` | workspace, gameView | `isEditableTarget`: whether a target types text (input, textarea, select, contenteditable). |
 
 ### `style-edit.ts`

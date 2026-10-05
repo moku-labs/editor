@@ -6,8 +6,8 @@
  */
 import type { VNode } from "preact";
 import { Icon } from "../../panels/shared/icons";
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { showWorkspace } from "../actions";
-import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../ids";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { openPalette } from "../palette/items";
 import type { WorkspaceCtx } from "../types";

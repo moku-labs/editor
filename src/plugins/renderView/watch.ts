@@ -367,7 +367,10 @@ export async function calibrate(
   const { ui } = state.sources;
   if (ui === undefined) return;
 
+  // Mark asked first, so a burst of game.ui values reads once.
   state.calibrationAsked = true;
+
+  // Pick the keyed element and the rect source; without either there is nothing to read.
   const target = calibrationTarget(ui);
   const source = rectSourceOf(link.manifest());
   if (target === undefined || source === undefined) {
@@ -376,6 +379,7 @@ export async function calibrate(
     return;
   }
 
+  // Read its page rect once; a failed read keeps no calibration.
   try {
     const page = rectOf(await link.read(source, { key: target.key }));
     state.calibration = page === undefined ? undefined : calibrationFrom(page, target.drawn);
@@ -383,6 +387,8 @@ export async function calibrate(
     state.calibration = undefined;
     ctx.log.warn("renderView: calibration failed", { key: target.key, message: messageOf(error) });
   }
+
+  // Rebuild the scene with the new calibration while Render is shown.
   if (state.watching.length > 0) scheduleBuild(ctx, link);
   notify(state);
 }

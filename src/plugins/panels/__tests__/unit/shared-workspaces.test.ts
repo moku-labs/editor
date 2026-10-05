@@ -1,15 +1,36 @@
-import { describe, expect, it } from "vitest";
-import * as ids from "../../../workspace/ids";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import type { WorkspaceId } from "../../../workspace/types";
 import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../shared/workspaces";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// shared/workspaces.ts: re-exports the workspace ids and labels of
-// workspace/ids.ts (their tests live with workspace).
+// workspaces.ts: the six workspace ids in rail order and their labels, shared
+// by workspace (rail, hosts, palette, keys, prefs) and panels (palette items).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("shared/workspaces", () => {
-  it("re-exports the ids and labels of workspace/ids.ts", () => {
-    expect(WORKSPACE_IDS).toBe(ids.WORKSPACE_IDS);
-    expect(WORKSPACE_LABELS).toBe(ids.WORKSPACE_LABELS);
+describe("WORKSPACE_IDS", () => {
+  it("lists the six workspaces in rail order, Game first", () => {
+    expect(WORKSPACE_IDS).toEqual(["game", "flow", "render", "state", "files", "console"]);
+    expectTypeOf(WORKSPACE_IDS).toEqualTypeOf<readonly WorkspaceId[]>();
+  });
+});
+
+describe("WORKSPACE_LABELS", () => {
+  it("labels every workspace", () => {
+    expect(WORKSPACE_LABELS).toEqual({
+      flow: "Flow",
+      game: "Game",
+      render: "Render",
+      state: "State",
+      files: "Files",
+      console: "Console"
+    });
+    expect(WORKSPACE_IDS.map(ws => WORKSPACE_LABELS[ws])).toEqual([
+      "Game",
+      "Flow",
+      "Render",
+      "State",
+      "Files",
+      "Console"
+    ]);
   });
 });

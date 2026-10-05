@@ -414,7 +414,6 @@ workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "fl
 
 ## Integration notes
 
-- `ids.ts` holds `WORKSPACE_IDS` in rail order and `WORKSPACE_LABELS`. panels re-exports them from `panels/shared/workspaces.ts`, so workspace imports nothing of them from panels.
 - `panels` renders into `host(ws)` and mounts on `workspace:changed`. Hosts exist before `mount`, so panels can render in its own `onStart`.
 - `panels.run` emits `workspace:ran` with origin `panel`. Views never emit it themselves.
 - gameView docks the frame with `gameFrame().dock(slot, { fit })` and draws over it with `gameFrame().overlay()`.

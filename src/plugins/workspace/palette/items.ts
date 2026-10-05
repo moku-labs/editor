@@ -5,9 +5,9 @@
  * (game, Reference mode, preview, theme, density, Show taps, go-to, reload, registry, retry).
  */
 import { linkPlugin } from "../../link";
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { openPopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { reloadFrame } from "../frame/reload";
-import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../ids";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { setOverlayInGame } from "../overlay";
 import { chooseDensity, chooseShowTaps, chooseTheme } from "../prefs/apply";
