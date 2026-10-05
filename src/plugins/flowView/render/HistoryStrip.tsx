@@ -5,7 +5,7 @@
  * clip box, right-aligned to the canvas edge, 38 px apart: they can never cover the Inspector (M3).
  */
 import type { VNode } from "preact";
-import { Icon } from "../../workspace/ui/icons";
+import { Icon } from "../../panels/shared/icons";
 import type { FlowActions, FlowCtx, Rect } from "../types";
 import { useFlowStore } from "../useFlowStore";
 import type { HistoryRow } from "./types";

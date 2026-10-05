@@ -9,9 +9,9 @@ import type { VNode } from "preact";
 import { render } from "preact";
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
+import type { DeviceSize } from "../../registry/protocol";
+import { resolveDevice } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
-import { resolveDevice } from "../../workspace/devices";
-import type { DeviceSize } from "../../workspace/types";
 import {
   type DeviceFrame,
   frameOf,

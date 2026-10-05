@@ -46,6 +46,9 @@ import {
 // the overlay in the game, the theme and the palette (J5).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** J1 gets 20 s: three cores, the live wire, the camera and a layout save in one journey. */
+const J1_TIMEOUT_MS = 20_000;
+
 let stack: Stack | undefined;
 const extras: (Stoppable | undefined)[] = [];
 let unhandled: UnhandledTracker | undefined;
@@ -552,7 +555,9 @@ async function walkStack(): Promise<Live & { readonly game: WalkGame }> {
 }
 
 describe("journey-tiny: open the editor", () => {
-  it("J1: top bar, Game by default, then Flow: camera calls and a drag that pins one card", async () => {
+  it("J1: top bar, Game by default, then Flow: camera calls and a drag that pins one card", {
+    timeout: J1_TIMEOUT_MS
+  }, async () => {
     const live = await liveStack();
     const { tools, page, server, root } = live;
     const { workspace, flowView } = tools.app;

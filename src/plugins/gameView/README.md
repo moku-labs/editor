@@ -174,7 +174,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - **renderView** emits `workspace:inspect` ("Inspect in Game") and hooks `workspace:reveal`.
 - **filesView** emits `workspace:open-sheet` ("Open contact sheet") and hooks `workspace:open-file`. It previews the series `index.json` gameView writes.
 - **workspace** owns the overlay-in-game flag and runs `editor.overlay`. Its top bar and the palette item flip it.
-- **workspace** owns the device presets (`devices.ts`: groups, `dpr`, `radius`, `approx`, `fold`) and the docked frame's rounded clip.
+- **workspace** owns the chosen device and the docked frame's rounded clip. The presets themselves (groups, `dpr`, `radius`, `approx`, `fold`) and `resolveDevice` live in the protocol (`registry/protocol/devices.ts`), shared by both.
 - **workspace** owns Reference mode (`R`, the top-bar button, Esc). While it is on, the frame overlay takes the pointer and gameView draws the proxies.
 
 ### Scene and picker
@@ -194,7 +194,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Device toolbar and stage
 
-- The device select has one `<optgroup>` per preset group: iPhone, Android, Foldable, Tablet, Desktop (`DEVICE_GROUPS` of workspace).
+- The device select has one `<optgroup>` per preset group: iPhone, Android, Foldable, Tablet, Desktop (`DEVICE_GROUPS` of the protocol).
 - Each option's title has the size and dpr. An estimated preset adds "approx: estimated values".
 - A foldable preset (`fold`) shows Fold / Unfold (`data-action="fold"`): "Unfold" on the cover, "Fold" on the inner screen. It calls `workspace.setDevice({ folded })`. No reload: the game sees a resize, and the picker calibrates again after the next `game.ui` snapshot.
 - The bezel has a 1 px `var(--border-strong)` outline. Its inner radius is the preset's `radius` at the stage scale (`--screen-radius` on the bezel), so it matches workspace's rounded frame clip.

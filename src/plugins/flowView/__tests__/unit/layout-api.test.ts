@@ -5,6 +5,7 @@ import { createInlineEngine } from "../../layout/engine";
 import { parsePins } from "../../layout/pins";
 import type { LayoutEngine } from "../../layout/types";
 import { createTestCtx, flush, jumpCamera, prepare } from "../ctx";
+import { testLayout } from "../helpers";
 
 const LAYOUT = ".moku/editor/layout.json";
 
@@ -91,7 +92,7 @@ describe("pins", () => {
 
   it("an invalid file is read-only: warned once, toasted, never written", async () => {
     const { ctx, fakes } = createTestCtx({
-      config: { layoutSaveDelayMs: 0 },
+      config: { layout: testLayout({ saveDelayMs: 0 }) },
       files: { [LAYOUT]: "{ nope" }
     });
     await prepare(ctx);
@@ -109,7 +110,7 @@ describe("pins", () => {
   });
 
   it("drop snaps to 12, pins, saves after the debounce and toasts the file (M12)", async () => {
-    const { ctx, fakes } = createTestCtx({ config: { layoutSaveDelayMs: 0 } });
+    const { ctx, fakes } = createTestCtx({ config: { layout: testLayout({ saveDelayMs: 0 }) } });
     await prepare(ctx);
     const layout = actionsOf(ctx).layout;
     const origin = ctx.state.layout.result?.origins["#main|main"] ?? { x: 0, y: 0 };
@@ -128,7 +129,7 @@ describe("pins", () => {
 
   it("on a conflict re-reads, re-applies only the moved ids and writes once more", async () => {
     const { ctx, fakes } = createTestCtx({
-      config: { layoutSaveDelayMs: 0 },
+      config: { layout: testLayout({ saveDelayMs: 0 }) },
       files: { [LAYOUT]: '{ "version": 1 }\n' }
     });
     await prepare(ctx);
@@ -148,7 +149,7 @@ describe("pins", () => {
 
   it("a second conflict toasts that the move was not saved and reloads the pins", async () => {
     const { ctx, fakes } = createTestCtx({
-      config: { layoutSaveDelayMs: 0 },
+      config: { layout: testLayout({ saveDelayMs: 0 }) },
       files: { [LAYOUT]: '{ "version": 1, "nodes": {} }\n' }
     });
     await prepare(ctx);

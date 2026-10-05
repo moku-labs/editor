@@ -63,7 +63,7 @@ describe("SceneNode.refRect", () => {
   it("is the root-units rect of a placed entity, undefined for an unplaced one", () => {
     const calibrated = sceneOf({ scale: 2, x: 0, y: 0 });
     const item = nodeOf(calibrated, "entity:1048628");
-    const unplaced = nodeOf(calibrated, "entity:1048641");
+    const unplaced = nodeOf(calibrated, "entity:1048640");
 
     expect(item.refRect).toEqual({ x: 428.5, y: 880.5, w: 223, h: 223 });
     expect(item.rect).toEqual({ x: 857, y: 1761, w: 446, h: 446 });

@@ -6,8 +6,8 @@
 import { linkPlugin } from "../link";
 import { showSidePanel } from "../panels/shared/side-panel";
 import type { DeviceSpec } from "../registry/protocol";
+import { isDevicePresetId } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
-import { isDevicePresetId } from "../workspace/devices";
 import type { PaletteItem } from "../workspace/types";
 import { setPopover } from "./capture/series";
 import { takeScreenshot } from "./capture/shot";

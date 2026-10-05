@@ -20,7 +20,7 @@ const PANEL_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)*$/;
 const DOTTED_ID = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
 
 /**
- * The six workspaces (repeated from workspace/workspaces.ts: define.ts imports no runtime module).
+ * The six workspaces (repeated from shared/workspaces.ts: define.ts imports no runtime module).
  */
 const WORKSPACES: ReadonlySet<string> = new Set<WorkspaceId>([
   "flow",

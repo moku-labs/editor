@@ -16,7 +16,7 @@
  * looks at or works in a tab. A pick also bookmarks the game, saves two PNGs and copies the
  * reference block (round 2 R2): e2e/pick.spec.ts covers that.
  *
- * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
+ * Geometry is the browser's: the iframe box, the overlay boxes and `game.locate` of the game page
  * are compared in client px. Every write lands in dist-e2e/game (the copy the bin serves); the
  * tests remove or restore what they wrote, so a second run starts from the same files. The specs
  * written for the iPhone 15 pin it (e2e/fixtures.ts `pinnedDevice`); the tests of the new default
@@ -195,7 +195,7 @@ function gameFrame(page: Page): Frame {
  * Reads a registry source of the game page directly, as ground truth for the editor's view.
  *
  * @param page - The test page.
- * @param id - The source id, e.g. "game.rect".
+ * @param id - The source id, e.g. "game.locate".
  * @param input - The source input.
  * @returns The value.
  */
@@ -222,7 +222,7 @@ async function readSource<T>(page: Page, id: string, input: object = {}): Promis
  * @returns The rect.
  */
 async function gameRect(page: Page, key: string): Promise<Rect> {
-  return readSource<Rect>(page, "game.rect", { key });
+  return readSource<Rect>(page, "game.locate", { key });
 }
 
 /**
@@ -844,7 +844,7 @@ test.describe("game · device toolbar", () => {
       .toBe(true);
   });
 
-  test("Fold / Unfold on the Galaxy Z Fold 6 resizes the frame live; the picker matches game.rect after a fold", async ({
+  test("Fold / Unfold on the Galaxy Z Fold 6 resizes the frame live; the picker matches game.locate after a fold", async ({
     tools,
     errors
   }) => {
@@ -1227,7 +1227,7 @@ test.describe("game · round 2b devices", () => {
     expect(await reloadState(page)).toBe("marked");
   });
 
-  test("Sound needs game.mute: on game 0.1.0 the switch is dimmed with the hint, and neither a click nor M changes it", async ({
+  test("Sound needs game.mute: on game 0.4.3 the switch is dimmed with the hint, and neither a click nor M changes it", async ({
     tools
   }) => {
     const page = tools.page;

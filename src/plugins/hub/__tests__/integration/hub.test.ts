@@ -179,6 +179,26 @@ describe("hub over real websockets", () => {
     expect(seen).toEqual([{ id: session, game: AGENT_MANIFEST.game, open: true }]);
   });
 
+  it("publish sends the state to an open tools page and replays it to one that connects later, never to an agent", async () => {
+    const { app } = await serveEditor();
+    const first = await tools();
+    await first.next(isNote("editor", "sessions"));
+    const { agent: game } = await agent();
+
+    app.hub.publish("hotReload", { hmr: true, owner: "bin" });
+
+    expect(paramsOf(await first.next(isNote("editor", "hotReload")))).toEqual({
+      hmr: true,
+      owner: "bin"
+    });
+    const later = await tools();
+    await later.next(isNote("editor", "hotReload"));
+    const methods = later.messages.map(message => ("method" in message ? message.method : ""));
+    expect(methods.slice(0, 2)).toEqual(["sessions", "hotReload"]);
+    expect(paramsOf(later.messages[1])).toEqual({ hmr: true, owner: "bin" });
+    expect(game.messages.filter(isNote("editor", "hotReload"))).toEqual([]);
+  });
+
   it("forwards a tools read to the agent and answers it", async () => {
     await serveEditor();
     const { agent: game } = await agent();

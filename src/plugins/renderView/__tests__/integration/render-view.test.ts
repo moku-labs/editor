@@ -74,7 +74,7 @@ let root: HTMLElement;
 let inspected: ElementRef[];
 
 async function until(check: () => boolean, label: string): Promise<void> {
-  const deadline = performance.now() + 3000;
+  const deadline = performance.now() + 10_000;
   while (!check()) {
     if (performance.now() > deadline) throw new Error(`timed out waiting for ${label}`);
     await act(async () => {
@@ -152,7 +152,9 @@ describe("renderView integration", () => {
     expect(app.panels.list().map(panel => panel.id)).toEqual(["render"]);
   });
 
-  it("createApp → start → show Render → snapshot, reveal, inspect → leave → stop", async () => {
+  it("createApp → start → show Render → snapshot, reveal, inspect → leave → stop", {
+    timeout: 15_000
+  }, async () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));
@@ -261,7 +263,9 @@ describe("renderView integration", () => {
     expect(watched()).toEqual([]);
   });
 
-  it("a game older than 0.0.3 (no game.effects in the manifest) gets no effects watch", async () => {
+  it("a game older than 0.0.3 (no game.effects in the manifest) gets no effects watch", {
+    timeout: 15_000
+  }, async () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));

@@ -5,7 +5,7 @@
  * where the game is).
  */
 import type { VNode } from "preact";
-import { Icon } from "../../workspace/ui/icons";
+import { Icon } from "../../panels/shared/icons";
 import type { FlowActions, FlowCtx } from "../types";
 import { useFlowStore } from "../useFlowStore";
 

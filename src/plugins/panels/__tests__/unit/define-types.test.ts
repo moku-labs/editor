@@ -63,14 +63,14 @@ describe("catalogue spike: source values", () => {
     expect(history).toEqual([]);
   });
 
-  it("game.rect (undefined at top level) becomes a rect or null", () => {
-    expectTypeOf<SourceValue<"game.rect">>().toEqualTypeOf<{
+  it("game.locate (undefined at top level) becomes a rect or null", () => {
+    expectTypeOf<SourceValue<"game.locate">>().toEqualTypeOf<{
       x: number;
       y: number;
       w: number;
       h: number;
     } | null>();
-    const rect: SourceValue<"game.rect"> = null;
+    const rect: SourceValue<"game.locate"> = null;
     expect(rect).toBeNull();
   });
 

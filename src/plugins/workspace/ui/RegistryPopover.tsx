@@ -6,10 +6,10 @@
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
+import { Icon } from "../../panels/shared/icons";
 import type { Effect } from "../../registry/protocol";
 import { closePopover } from "../actions";
 import type { WorkspaceCtx } from "../types";
-import { Icon } from "./icons";
 import { usePopover } from "./popover";
 import { useElement, useWorkspace } from "./store";
 import { schemaText } from "./text";

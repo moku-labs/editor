@@ -12,8 +12,8 @@ import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/s
 import { ancestorsOf, refId } from "../../panels/shared/scene";
 import type { StyleField } from "../../panels/shared/style-edit";
 import { fieldRule, formatNumber } from "../../panels/shared/style-edit";
+import { resolveDevice } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
-import { resolveDevice } from "../../workspace/devices";
 import {
   highlightElement,
   openInFiles,

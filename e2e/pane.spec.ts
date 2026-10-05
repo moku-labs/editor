@@ -10,7 +10,7 @@
  * the pulse, Alt+← back), find current (C), the Styles tab without a preselected style, and the
  * side panels of Flow, Game and Files (collapse, resize, close, reopen; a drawer below 600 px).
  *
- * Geometry is the browser's: the iframe box, the overlay boxes and `game.rect` of the game page
+ * Geometry is the browser's: the iframe box, the overlay boxes and `game.locate` of the game page
  * are compared in client px. Ground truth is read from the game page (`globalThis.editor`). A pick
  * saves two PNGs under .moku/captures of the game copy (round 2 R2); each test removes them.
  */
@@ -106,7 +106,7 @@ function gameFrame(page: Page): Frame {
  * Reads a registry source of the game page directly, as ground truth for the editor's view.
  *
  * @param page - The test page.
- * @param id - The source id, e.g. "game.rect".
+ * @param id - The source id, e.g. "game.locate".
  * @param input - The source input.
  * @returns The value.
  */
@@ -149,9 +149,9 @@ async function gamePath(page: Page): Promise<string> {
  */
 async function gameRect(page: Page, key: string): Promise<Rect> {
   await expect
-    .poll(async () => (await readSource<Rect | null>(page, "game.rect", { key })) !== null)
+    .poll(async () => (await readSource<Rect | null>(page, "game.locate", { key })) !== null)
     .toBe(true);
-  return readSource<Rect>(page, "game.rect", { key });
+  return readSource<Rect>(page, "game.locate", { key });
 }
 
 /**
@@ -789,7 +789,7 @@ test.describe("pane · reference mode", () => {
     await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
   });
 
-  test("settingsBoard: the frame matches game.rect, the source is found, the proxy and Copy reference carry the bounds", async ({
+  test("settingsBoard: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds", async ({
     tools
   }) => {
     const page = tools.page;

@@ -2,7 +2,7 @@
  * @file workspace plugin — state factory (MinimalContext: no DOM, no storage) and the cleanup
  * registry every listener, timer and observer goes through, so onStop can remove all of them.
  */
-import { DEFAULT_DEVICE } from "./devices";
+import { DEFAULT_DEVICE } from "../registry/protocol";
 import type { PreviewPrefs, PreviewWorkspace, WorkspaceConfig, WorkspaceState } from "./types";
 import { createUiStore } from "./ui/store";
 

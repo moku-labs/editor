@@ -13,11 +13,6 @@ import type { TapRipple, WorkspaceCtx, WorkspaceState } from "../types";
 
 /**
  * Ripples alive at once; a newer tap removes the oldest.
- *
- * @example
- * ```ts
- * state.taps.length <= MAX_RIPPLES; // always true
- * ```
  */
 export const MAX_RIPPLES = 8;
 
@@ -63,16 +58,29 @@ function removeRipple(state: WorkspaceState, ripple: TapRipple): void {
 }
 
 /**
+ * True while a tap may draw: workspace runs, Show taps is on, and the frame is docked (preview or
+ * stage).
+ *
+ * @param state - Workspace state.
+ * @returns Whether to draw the ripple.
+ */
+function isDrawable(state: WorkspaceState): boolean {
+  const { box } = state.frame;
+  const isDocked = box !== undefined && box.docked !== "hidden";
+  return !state.stopped && state.showTaps && isDocked;
+}
+
+/**
  * Draws one tap ripple in the overlay while the frame is docked and Show taps is on.
  *
  * @param state - Workspace state.
  * @param tap - The tap in device px (page CSS px of the game document).
  */
 export function drawTap(state: WorkspaceState, tap: Tap): void {
-  const { overlay, box } = state.frame;
-  const isDocked = box !== undefined && box.docked !== "hidden";
-  if (state.stopped || !state.showTaps || overlay === undefined || !isDocked) return;
+  const { overlay } = state.frame;
+  if (overlay === undefined || !isDrawable(state)) return;
 
+  // The overlay is in device px already: the tap point is placed as it is.
   const reduced = prefersReducedMotion();
   const element = document.createElement("span");
   element.dataset.tapRipple = reduced ? "dot" : "ring";
@@ -80,6 +88,7 @@ export function drawTap(state: WorkspaceState, tap: Tap): void {
   element.style.top = `${tap.y}px`;
   overlay.append(element);
 
+  // The ripple removes itself when its animation ends.
   const ripple: TapRipple = {
     element,
     timer: setTimeout(
@@ -91,6 +100,7 @@ export function drawTap(state: WorkspaceState, tap: Tap): void {
   };
   state.taps.push(ripple);
 
+  // Past the cap, the oldest ripple goes first.
   const oldest = state.taps.length > MAX_RIPPLES ? state.taps[0] : undefined;
   if (oldest !== undefined) removeRipple(state, oldest);
 }

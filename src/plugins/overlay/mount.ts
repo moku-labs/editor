@@ -3,12 +3,12 @@
  * opens when config.open) and onStop (removes everything).
  */
 import { render } from "preact";
+import { HOST_ATTRIBUTE } from "../registry/protocol";
 import { openOverlay } from "./api";
 import { overlayCtxOf } from "./context";
 import { paint } from "./paint";
 import { overlayCss } from "./styles";
 import type { OverlayCtx, OverlayPluginCtx, OverlayState } from "./types";
-import { HOST_ATTRIBUTE } from "./types";
 
 /**
  * The events stopped at the host, so overlay input never reaches the game's window/document

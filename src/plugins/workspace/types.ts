@@ -1,16 +1,18 @@
 /**
  * @file workspace plugin — type definitions: config, workspace ids, preview, device, frame,
  * palette, keys, the api every view gets as `tools.workspace`, the payload of `workspace:ran`,
- * state and the domain context. DeviceSpec comes from the protocol (R1).
+ * state and the domain context. DeviceSpec and the device preset types come from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
 import type {
+  DevicePresetId,
   DeviceSpec,
   HotReload,
   Json,
   LinkStatus,
+  Orientation,
   RunResult,
   WireError
 } from "../registry/protocol";
@@ -85,35 +87,10 @@ export type PreviewPrefs = { visible: boolean; size: PreviewSize; corner: Previe
 export type PreviewState = PreviewPrefs & { width: number; height: number };
 
 /**
- * The twenty-one device presets (round 2 R4, round 2b R10), in display order.
+ * The preset id, the orientation and the resolved size live in the protocol with DeviceSpec and
+ * the presets (registry/protocol/devices.ts); re-exported here for `Workspace.*`.
  */
-export type DevicePresetId =
-  | "iphone-se"
-  | "iphone-15"
-  | "iphone-17e"
-  | "iphone-air"
-  | "iphone-18-pro"
-  | "iphone-18-pro-max"
-  | "iphone-15-pro-max"
-  | "iphone-16-pro"
-  | "iphone-16-pro-max"
-  | "galaxy-s24"
-  | "galaxy-a55"
-  | "redmi-note-13"
-  | "pixel-8"
-  | "xperia-1-v"
-  | "galaxy-z-fold-6"
-  | "galaxy-z-flip-6"
-  | "pixel-9-pro-fold"
-  | "iphone-duo"
-  | "ipad-mini"
-  | "ipad-air-11"
-  | "desktop";
-
-/**
- * Device orientation.
- */
-export type Orientation = "portrait" | "landscape";
+export type { DevicePresetId, DeviceSize, Orientation } from "../registry/protocol";
 
 /**
  * What device() returns (R4): the preset as it shows now (an unfolded foldable carries its inner
@@ -126,15 +103,6 @@ export type DeviceChoice = { preset: DeviceSpec; orientation: Orientation; folde
  * flag (absent = folded, the cover screen).
  */
 export type StoredDevice = { preset: DevicePresetId; orientation: Orientation; folded?: boolean };
-
-/**
- * Size and safe insets of a preset in an orientation (resolveDevice, R8).
- */
-export type DeviceSize = {
-  w: number;
-  h: number;
-  safe: { top: number; right: number; bottom: number; left: number };
-};
 
 /**
  * A rail badge.
@@ -249,7 +217,7 @@ export type Insets = { top?: number; right?: number; bottom?: number; left?: num
 export type GameFrame = {
   /**
    * Absolute URL of the game page: `link.boot()?.gameUrl` resolved against the page, "/" without
-   * a boot.
+   * a boot. Read again on every access, so a refreshed boot is seen.
    *
    * @example
    * ```ts
@@ -791,7 +759,8 @@ export type WorkspaceApi = {
    * change it and keeps that hint in the switch's tooltip; a change toasts the new state.
    *
    * @param on - The asked value.
-   * @returns Whether hot reload is the asked value afterwards; never rejects.
+   * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
+   * Never rejects.
    * @example
    * ```ts
    * // Bun cannot switch HMR on a running bin.

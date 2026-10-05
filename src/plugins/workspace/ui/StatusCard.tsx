@@ -5,10 +5,10 @@
  * hosts are inert and faded.
  */
 import type { VNode } from "preact";
+import { Icon } from "../../panels/shared/icons";
 import { gameUrl } from "../frame/frame";
 import { showToast } from "../toasts";
 import type { WorkspaceCtx, WorkspaceState } from "../types";
-import { Icon } from "./icons";
 import { useWorkspace } from "./store";
 
 /**

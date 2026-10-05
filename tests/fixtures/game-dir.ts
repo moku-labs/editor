@@ -5,17 +5,19 @@
  * - `MOKU_GAME_DIR` when it is set: an absolute path, or a path relative to the repository root;
  * - otherwise `<repo root>/../game-fixture`.
  *
- * `../game-fixture` is a detached worktree of the game repository, pinned to the tag that matches
- * the `@moku-labs/game` dev dependency in package.json (now `v0.1.0`). The live sibling `../game`
- * may hold work in progress that breaks the fixture, so the tests never read it. Create the
- * worktree once, with its dependencies (the bin test bundles the fixture page with Bun):
+ * `../game-fixture` is a detached worktree of the game repository, pinned to `v0.4.3`: the tag of
+ * the `@moku-labs/game` dev dependency in package.json. Its `@moku-labs/game` imports resolve to
+ * that dev dependency (through the aliases of vitest.config.ts), so the merge game runs on the
+ * engine it was released with. The live sibling `../game` may hold work in progress that breaks
+ * the fixture, so the tests never read it. Create the worktree once, with its dependencies (the
+ * bin test bundles the fixture page with Bun):
  *
  * ```sh
- * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.1.0
+ * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.4.3
  * bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
  * ```
  *
- * When package.json bumps `@moku-labs/game`, move the worktree to the same tag and install again:
+ * To move the fixture to another tag, check it out and install again:
  * `git -C ../game-fixture checkout vX.Y.Z`, then the `bun install` line above.
  *
  * CI has no game checkout. There vitest.config.ts skips the test files that load the fixture.

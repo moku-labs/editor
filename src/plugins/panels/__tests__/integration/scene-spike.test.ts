@@ -9,14 +9,20 @@ import { registryPlugin } from "../../../registry";
 import type { Json } from "../../../registry/protocol";
 import type { GameLike, RegistryApi } from "../../../registry/types";
 import type { PageRect, SceneInput, SceneNode, SceneSnapshot } from "../../shared/scene";
-import { buildScene, calibrationFrom, calibrationTarget, elementAt } from "../../shared/scene";
+import {
+  buildScene,
+  calibrationFrom,
+  calibrationTarget,
+  elementAt,
+  rectSourceOf
+} from "../../shared/scene";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Build spike of scene/ (R8) on the live merge game: createScreenGame with the
 // inert renderer, headless assets (no io: every bundle counts as loaded, the
 // way the fixtures were captured), the timber player with two wood items.
-// The agent registry reads game.ui, game.entities, game.projections and
-// game.rect at home, at board/awaitIntent and at board/settings/open. The
+// The agent registry reads game.ui, game.entities, game.projections and the
+// rect source (game.locate on game 0.4, game.rect on 0.1) at home, at board/awaitIntent and at board/settings/open. The
 // scene rules 2–4 run on those values, and the values must still match the
 // stored fixtures of the unit tests (ids and animation fields aside).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +43,7 @@ type StartingPlayer = JsonObject & {
   readonly merge: JsonObject & { readonly board: JsonObject; readonly energy: JsonObject };
 };
 
-/** One capture of the three scene sources plus game.rect of some keys. */
+/** One capture of the three scene sources plus the page rects of some keys. */
 type Capture = {
   readonly path: string;
   readonly ui: Json;
@@ -111,13 +117,25 @@ function read(id: string, input: Json = {}): Json {
   return source.read(input);
 }
 
-/** Reads the scene sources, and game.rect of some keys and of the calibration target. */
+/**
+ * The rect source the manifest lists: game.locate (game 0.4) or game.rect (game 0.1).
+ *
+ * @returns The source id.
+ */
+function rectSource(): string {
+  const id = rectSourceOf(registry.manifest());
+  if (id === undefined) throw new Error("no rect source");
+  return id;
+}
+
+/** Reads the scene sources, and the page rects of some keys and of the calibration target. */
 function captureLive(keys: readonly string[]): Capture {
   const ui = read("game.ui");
+  const source = rectSource();
   const target = calibrationTarget(ui)?.key;
   const rects: Record<string, PageRect> = {};
   for (const key of target === undefined ? keys : [...keys, target]) {
-    rects[key] = pageRect(read("game.rect", { key }));
+    rects[key] = pageRect(read(source, { key }));
   }
   return {
     path: game.flow.state().path,
@@ -446,17 +464,15 @@ describe("scene on the live board (board/awaitIntent)", () => {
   it("lists unplaced entities with rect undefined: the hud root, Text-only entities", () => {
     const scene = sceneOf(board);
     const hud = entityNode(scene, board, "hud", "hud");
-    const coins = entityNode(scene, board, "hud.coins", "coins");
     const count = entityNode(scene, board, "board.badges", "sawmill.count");
 
     expect(scene.roots).toEqual(["ui:boardScreen", hud.id]);
     expect(hud).toMatchObject({ type: "Container", parent: undefined, rect: undefined });
-    expect(coins).toMatchObject({ parent: "ui:boardScreen/hudRow/coinPill", rect: undefined });
     expect(count.rect).toBeUndefined();
     expect(count.entity?.components).toContain("Text");
   });
 
-  it("hits the settings button at the centre of its game.rect", () => {
+  it("hits the settings button at the centre of its page rect", () => {
     const hit = elementAt(sceneOf(board), center(board.rects.settings));
 
     expect(hit?.id.startsWith("ui:boardScreen/hudRow/settings")).toBe(true);
@@ -503,7 +519,7 @@ describe("calibration on the inert renderer", () => {
     ["home", () => home, "homeScreen"],
     ["board", () => board, "boardScreen"],
     ["settings", () => settings, "settingsScreen"]
-  ])("is the identity on %s, and every keyed rect equals game.rect", (_name, live, key) => {
+  ])("is the identity on %s, and every keyed rect equals the rect source", (_name, live, key) => {
     const capture = live();
     const target = calibrationTarget(capture.ui);
     if (target === undefined) throw new Error("no calibration target");

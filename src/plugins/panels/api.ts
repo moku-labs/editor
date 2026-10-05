@@ -7,8 +7,8 @@ import { linkPlugin } from "../link";
 import type { Json, RunResult } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import type { PaletteItem, WorkspaceId } from "../workspace/types";
-import { WORKSPACE_LABELS } from "../workspace/workspaces";
 import { type MountDeps, mountPanel, runFromPanel, scheduleFrame } from "./mount";
+import { WORKSPACE_LABELS } from "./shared/workspaces";
 import type { MountedWorkspace, PanelRunOrigin, PanelSpec, PanelsApi, PanelsCtx } from "./types";
 
 /**

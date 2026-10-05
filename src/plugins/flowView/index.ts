@@ -20,16 +20,11 @@ const defaultConfig: FlowViewConfig = {
   historyLast: 20,
   trailLength: 6,
   rejectedOutcomes: ["rejected"],
-  hubMinOutcomes: 6,
-  hubMinReturns: 4,
-  layoutFile: ".moku/editor/layout.json",
   stylesFile: undefined,
-  layoutWorker: true,
-  layoutSaveDelayMs: 400,
   styleSaveDelayMs: 600,
-  minZoom: 0.08,
-  maxZoom: 3,
-  defaultMinZoom: 0.8
+  layout: { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 },
+  zoom: { min: 0.08, max: 3, defaultMin: 0.8 },
+  hub: { minOutcomes: 6, minReturns: 4 }
 };
 
 /**

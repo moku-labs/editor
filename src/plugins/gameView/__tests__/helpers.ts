@@ -9,8 +9,8 @@ import { panelsPlugin } from "../../panels";
 import type { PageRect } from "../../panels/shared/scene";
 import type { PanelSpec, PanelsApi } from "../../panels/types";
 import type { Json, LinkStatus, Manifest, RunResult, WireError } from "../../registry/protocol";
+import { DEVICES, presetOf, screenOf } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
-import { DEVICES, presetOf, screenOf } from "../../workspace/devices";
 import type {
   DevicePresetId,
   EscLayer,

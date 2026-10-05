@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
-import { DEVICES, presetOf, resolveDevice, screenOf } from "../../../workspace/devices";
+import { DEVICES, presetOf, resolveDevice, screenOf } from "../../../registry/protocol";
 import {
   bezelOf,
   drawerCover,

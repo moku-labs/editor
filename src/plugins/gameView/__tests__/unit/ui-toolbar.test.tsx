@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
-import { DEVICES } from "../../../workspace/devices";
+import { DEVICES } from "../../../registry/protocol";
 import { stopGameView } from "../../lifecycle";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";

@@ -111,7 +111,7 @@ describe("guard upgrade mode", () => {
     );
   });
 
-  it("allows an origin listed in config.allow (H10)", () => {
+  it("allows an origin listed in config.allowOrigins (H10)", () => {
     expect(statusOf("upgrade", { origin: "http://192.168.1.4:3000" }, ALLOW)).toBe(200);
   });
 

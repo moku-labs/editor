@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { presetOf } from "../../../workspace/devices";
+import { presetOf } from "../../../registry/protocol";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ensureOverlayRoot } from "../../ui/OverlayRoot";

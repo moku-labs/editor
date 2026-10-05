@@ -47,6 +47,17 @@ type Taken = {
 const NOTHING_TAKEN: Taken = { checkpoint: undefined, reason: undefined };
 
 /**
+ * The result of a run that got no new session: the wait timed out, or workspace stopped. Returned
+ * as a copy, so no caller shares it.
+ */
+const TIMED_OUT: ReloadResult = Object.freeze({ restored: false, reason: "timeout" });
+
+/**
+ * Milliseconds in a second, for the timeout toast.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
  * How a run reloads: with the state kept, and whether a save started it (then Bun may reload
  * the page first).
  */
@@ -74,7 +85,8 @@ function resultOf(restored: boolean, reason: Reason | undefined): ReloadResult {
  * @returns The wire message.
  * @example
  * ```ts
- * messageOf(error); // "[moku-editor] game.restore: shape changed"
+ * messageOf(new Error("game.restore: shape changed")); // "[moku-editor] game.restore: shape changed"
+ * messageOf("boom"); // "[moku-editor] Unknown error"
  * ```
  */
 function messageOf(error: unknown): string {
@@ -112,25 +124,27 @@ function nextManifest(
   timeoutMs: number
 ): Promise<Manifest | undefined> {
   return new Promise(resolve => {
+    // Listen first. `armed` skips the immediate call with the manifest that exists now.
     let armed = false;
-    let finish: (manifest?: Manifest) => void = resolve;
     const off = link.onManifest(manifest => {
       if (armed && manifest?.embedded && !link.isOtherTab(manifest.page)) finish(manifest);
     });
     armed = true;
 
+    // The wait also ends after the timeout, or at stop.
     const timer = setTimeout(() => {
       finish();
     }, timeoutMs);
     const untrack = trackCleanup(ctx.state, () => {
       finish();
     });
+
     /**
      * Ends the wait once: clears the timer, the listener and the stop cleanup.
      *
      * @param manifest - The new manifest, omitted on timeout or stop.
      */
-    finish = manifest => {
+    const finish = (manifest?: Manifest): void => {
       clearTimeout(timer);
       off();
       untrack();
@@ -305,6 +319,7 @@ async function runOnce(
   iframe: HTMLIFrameElement,
   opts: ReloadOptions
 ): Promise<ReloadResult> {
+  // A game outside the editor is reloaded there, not here.
   const link = ctx.require(linkPlugin);
   if (link.manifest()?.embedded === false) {
     showToast(ctx, "The game runs outside the editor · reload it there");
@@ -317,17 +332,21 @@ async function runOnce(
   const reloaded = fromBun === undefined ? undefined : await fromBun;
   if (reloaded?.restored !== undefined) return restoredByBridge(ctx, reloaded);
 
+  // The checkpoint is needed from here on: a failed bookmark is warned now.
   const taken = await taking;
-  if (ctx.state.stopped) return { restored: false, reason: "timeout" };
+  if (ctx.state.stopped) return { ...TIMED_OUT };
   warnTaken(ctx, taken);
 
+  // No session from Bun: reload the frame here and wait for this tab's new session.
   const manifest = reloaded ?? (await reloadHere(ctx, link, iframe));
   if (manifest === undefined) {
-    if (ctx.state.stopped) return { restored: false, reason: "timeout" };
-    const seconds = Math.round(ctx.config.reloadTimeoutMs / 1000);
+    if (ctx.state.stopped) return { ...TIMED_OUT };
+    const seconds = Math.round(ctx.config.reloadTimeoutMs / MS_PER_SECOND);
     showToast(ctx, `Game reloaded · no game connected after ${seconds} s`);
-    return { restored: false, reason: "timeout" };
+    return { ...TIMED_OUT };
   }
+
+  // The new session: the bridge restored it already, or workspace restores its checkpoint.
   if (manifest.restored !== undefined) return restoredByBridge(ctx, manifest);
   return settle(ctx, link, manifest, taken);
 }

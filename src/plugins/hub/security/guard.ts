@@ -37,7 +37,7 @@ export function allowedHosts(port: number): ReadonlySet<string> {
  * too on port 80) plus the configured extra origins.
  *
  * @param port - The server port.
- * @param allow - Extra origins (normalized config.allow).
+ * @param allow - Extra origins (normalized config.allowOrigins).
  * @returns The allowed Origin header values.
  * @example
  * ```ts
@@ -58,7 +58,7 @@ export function allowedOrigins(port: number, allow: ReadonlySet<string>): Readon
  * @param req - The request.
  * @param server - The Bun server (its port).
  * @param mode - Which rules apply.
- * @param allow - Extra origins (normalized config.allow).
+ * @param allow - Extra origins (normalized config.allowOrigins).
  * @returns The failing check, or undefined.
  * @example
  * ```ts
@@ -165,7 +165,7 @@ export function refuse(status: number, word: string): Response {
  * @param req - The request.
  * @param server - The Bun server (its port).
  * @param mode - Which rules apply.
- * @param allow - Extra origins (normalized config.allow).
+ * @param allow - Extra origins (normalized config.allowOrigins).
  * @returns A 403 response, or undefined.
  * @example
  * ```ts

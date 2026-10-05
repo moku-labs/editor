@@ -9,8 +9,9 @@
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
+import { Icon } from "../../panels/shared/icons";
+import { presetOf, resolveDevice } from "../../registry/protocol";
 import { showWorkspace } from "../actions";
-import { presetOf, resolveDevice } from "../devices";
 import { floatRect, nearestCorner, PREVIEW_SIZES, resolveInsets } from "../frame/dock";
 import { followTransitions, syncFrame } from "../frame/frame";
 import { hostOf } from "../hosts";
@@ -24,7 +25,6 @@ import type {
   WorkspaceCtx
 } from "../types";
 import { isPreviewWorkspace } from "../workspaces";
-import { Icon } from "./icons";
 import { useElement, useWorkspace } from "./store";
 
 /**

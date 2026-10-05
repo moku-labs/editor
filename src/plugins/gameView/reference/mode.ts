@@ -32,12 +32,15 @@ function startReference(ctx: GameViewCtx): void {
   const reference = state.reference;
   reference.on = true;
   startSceneWatches(ctx);
+
+  // The proxies name the flow node: follow game.position, re-render only when the path changes.
   reference.unwatch = ctx.require(linkPlugin).watch("game.position", undefined, value => {
     const node = positionOf(value).path;
     if (reference.node === node) return;
     reference.node = node;
     notify(state);
   });
+
   ensureOverlayRoot(ctx);
 }
 
@@ -85,10 +88,6 @@ export function hoverProxy(ctx: GameViewCtx, id?: string): void {
  *
  * @param state - Own state.
  * @param state.reference - Reference mode.
- * @example
- * ```ts
- * dropReference(ctx.state); // game.position unwatched, Reference mode off in gameView's state
- * ```
  */
 export function dropReference(state: { reference: ReferenceState }): void {
   state.reference.unwatch?.();

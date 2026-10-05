@@ -21,14 +21,14 @@ import type {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
+ * createApp({ pluginConfigs: { hub: { allowOrigins: ["http://192.168.1.4:3000"] } } });
  * ```
  */
 export type HubConfig = {
   /** URL prefix of every editor route. Starts with "/", no trailing slash. */
   path: string;
   /** Extra exact origins allowed to upgrade and to call same-origin routes. */
-  allow: readonly string[];
+  allowOrigins: readonly string[];
   /** Deadline of a forwarded call before it fails with -32002 (retryable). */
   callTimeoutMs: number;
   /** A session with no heartbeat for this long is marked silent (65 s after a paused beat, R6). */
@@ -269,7 +269,7 @@ export type HubState = {
   /** serve() ran; routes are frozen after it. */
   served: boolean;
   routes: Map<string, Response | RouteHandler>;
-  /** Normalized config.allow, built in onInit. */
+  /** Normalized config.allowOrigins, built in onInit. */
   origins: ReadonlySet<string>;
   conns: Map<number, Conn>;
   nextConn: number;

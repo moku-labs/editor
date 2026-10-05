@@ -181,7 +181,8 @@ A `visibilitychange` (either way) sends one heartbeat in a microtask while open.
 `watchTaps` listens to `pointerdown` on the window in the capture phase, so a game that stops the
 event at its canvas still sends the tap, and passive, so it never delays the game's input. The
 overlay stops its own input at its host, but a window capture listener runs first, so the tap watch
-skips any event whose path holds the overlay host (`data-moku-editor-overlay`). A tap dropped
+skips any event whose path holds the overlay host (`HOST_ATTRIBUTE`, `data-moku-editor-overlay`,
+from the protocol, the marker overlay sets). A tap dropped
 because the bridge is not open does not count for the 50 ms throttle. Outside a browser (no
 `window`) it does nothing.
 

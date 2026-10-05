@@ -5,6 +5,7 @@
  * (game, Reference mode, preview, theme, density, Show taps, go-to, reload, registry, retry).
  */
 import { linkPlugin } from "../../link";
+import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { openPopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { reloadFrame } from "../frame/reload";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
@@ -21,7 +22,7 @@ import type {
   WorkspaceCtx,
   WorkspaceState
 } from "../types";
-import { isPreviewWorkspace, WORKSPACE_IDS, WORKSPACE_LABELS } from "../workspaces";
+import { isPreviewWorkspace } from "../workspaces";
 import { fuzzyScore, scoreItem } from "./match";
 
 /**

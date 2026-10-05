@@ -13,11 +13,15 @@ import { testConfig } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 // Layout quality on every graph shape (finding 16): nothing overlaps, every
 // node is placed, bounds are finite, forward edges read left to right, labels
-// stay inside the world, and a layout stays under twice the perf budget.
+// stay inside the world, and (PERF=1 only) a layout stays under twice the perf
+// budget.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Twice the ELK budget of layout-perf.test.ts (450 ms p95, CI factor 3). */
 const BUDGET_MS = 2 * 450;
+
+/** Wall-clock budgets run only on request (`PERF=1 bun run test:unit`): a shared runner is noisy. */
+const isPerfRun = process.env.PERF === "1";
 
 /** Item kinds that take room on the canvas next to their siblings. */
 const BOXES: ReadonlySet<Item["kind"]> = new Set(["node", "hub", "frame", "stub"]);
@@ -76,9 +80,13 @@ async function layout(
 describe.each(
   graphShapes().map(shape => [shape.name, shape] as const)
 )("layout quality: %s", (_name, shape) => {
-  it("places every node of every shown flow, inside its frame, with finite bounds in budget", async () => {
-    const { result, ms } = await layout(shape);
+  it.skipIf(!isPerfRun)("lays out within twice the perf budget (PERF=1)", async () => {
+    const { ms } = await layout(shape);
     expect(ms).toBeLessThanOrEqual(BUDGET_MS);
+  });
+
+  it("places every node of every shown flow, inside its frame, with finite bounds", async () => {
+    const { result } = await layout(shape);
     for (const value of Object.values(result.bounds)) expect(Number.isFinite(value)).toBe(true);
     expect(result.bounds.w).toBeGreaterThan(0);
     expect(result.bounds.h).toBeGreaterThan(0);

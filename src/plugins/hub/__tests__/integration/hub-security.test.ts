@@ -43,12 +43,12 @@ const clients: Client[] = [];
 /**
  * Creates, starts and serves an editor app; registers a same-origin test route first.
  *
- * @param allow - Extra allowed origins.
+ * @param allowOrigins - Extra allowed origins.
  * @returns The running app.
  */
-async function serveEditor(allow: readonly string[] = []): Promise<Running> {
+async function serveEditor(allowOrigins: readonly string[] = []): Promise<Running> {
   const app = framework.createApp({
-    pluginConfigs: { files: { root: base }, hub: { allow } }
+    pluginConfigs: { files: { root: base }, hub: { allowOrigins } }
   });
   app.hub.addRoutes({
     "/__editor/hello": (req, server) =>
@@ -121,7 +121,7 @@ describe("upgrade refusals over HTTP (H1–H17)", () => {
     ).toBe(101);
   });
 
-  it("H10: an origin listed in config.allow → 101", async () => {
+  it("H10: an origin listed in config.allowOrigins → 101", async () => {
     const { port, token } = await serveEditor(["http://192.168.1.4:3000"]);
 
     expect(await upgradeStatus(port, { token, origin: "http://192.168.1.4:3000" })).toBe(101);

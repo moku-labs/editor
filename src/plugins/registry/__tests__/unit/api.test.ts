@@ -73,8 +73,8 @@ describe("manifest()", () => {
     expect(manifest.game).toBe("merge-game 0.0.0");
     expect(manifest.page).toBe("");
     expect(manifest.embedded).toBe(false);
-    expect(manifest.sources).toHaveLength(15);
-    expect(manifest.commands).toHaveLength(15);
+    expect(manifest.sources).toHaveLength(19);
+    expect(manifest.commands).toHaveLength(17);
     expect(manifest.commands.at(-1)?.id).toBe("merge.addCoins");
   });
 

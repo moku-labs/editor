@@ -3,7 +3,7 @@ import { detectHub, returnsOf } from "../../layout/hub";
 import type { FlowJson } from "../../types";
 import { flowOf, testConfig } from "../helpers";
 
-const config = testConfig();
+const rule = testConfig().hub;
 
 /** A rest node with outcomes. */
 function rest(outcomes: string[]) {
@@ -26,18 +26,18 @@ function plain(outcomes: string[]) {
 describe("detectHub (design §7.1)", () => {
   it("makes board/awaitIntent (8 outcomes, 9 returns) the board hub", () => {
     expect(returnsOf(flowOf("board"), "awaitIntent")).toBe(9);
-    expect(detectHub(flowOf("board"), config)).toBe("awaitIntent");
+    expect(detectHub(flowOf("board"), rule)).toBe("awaitIntent");
   });
 
   it("finds no hub in main, settingsPopup and rewardPopup", () => {
     // Fixed: the spec says 3 returns; splash, dailyGift, leaveGame, settings and board all lead to home.
     expect(returnsOf(flowOf("main"), "home")).toBe(5);
-    expect(detectHub(flowOf("main"), config)).toBeUndefined();
+    expect(detectHub(flowOf("main"), rule)).toBeUndefined();
     // merge-game v5: settingsPopup/open has 5 outcomes and 5 returns, one outcome short of a hub.
     expect(flowOf("settingsPopup").nodes.open?.outcomes).toHaveLength(5);
     expect(returnsOf(flowOf("settingsPopup"), "open")).toBe(5);
-    expect(detectHub(flowOf("settingsPopup"), config)).toBeUndefined();
-    expect(detectHub(flowOf("rewardPopup"), config)).toBeUndefined();
+    expect(detectHub(flowOf("settingsPopup"), rule)).toBeUndefined();
+    expect(detectHub(flowOf("rewardPopup"), rule)).toBeUndefined();
   });
 
   it("makes a rest node with 6 outcomes and 4 returns a hub, not one with 5 outcomes", () => {
@@ -57,12 +57,12 @@ describe("detectHub (design §7.1)", () => {
         r3: { x: "menu" }
       }
     };
-    // s, r1, r2 and r3 lead to menu: exactly hubMinReturns.
+    // s, r1, r2 and r3 lead to menu: exactly hub.minReturns.
     expect(returnsOf(flow, "menu")).toBe(4);
-    expect(detectHub(flow, config)).toBe("menu");
+    expect(detectHub(flow, rule)).toBe("menu");
     const five = structuredClone(flow);
     five.nodes.menu = rest(["a", "b", "c", "d", "e"]);
-    expect(detectHub(five, config)).toBeUndefined();
+    expect(detectHub(five, rule)).toBeUndefined();
   });
 
   it("breaks a tie by declared order and respects the thresholds", () => {
@@ -86,8 +86,8 @@ describe("detectHub (design §7.1)", () => {
         r4: { x: "first", y: "second" }
       }
     };
-    expect(detectHub(flow, config)).toBe("first");
-    expect(detectHub(flow, testConfig({ hubMinReturns: 6 }))).toBeUndefined();
-    expect(detectHub(flow, testConfig({ hubMinOutcomes: 7 }))).toBeUndefined();
+    expect(detectHub(flow, rule)).toBe("first");
+    expect(detectHub(flow, { minOutcomes: 6, minReturns: 6 })).toBeUndefined();
+    expect(detectHub(flow, { minOutcomes: 7, minReturns: 4 })).toBeUndefined();
   });
 });

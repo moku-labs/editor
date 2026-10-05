@@ -19,7 +19,7 @@ export async function workerUrl(): Promise<string> {
   const text: unknown = script.default;
   if (typeof text !== "string") {
     throw new TypeError(
-      "[moku-editor] The ELK worker script did not load as text.\n  Bundle the tools page with Bun.build, or set flowView.layoutWorker to false."
+      "[moku-editor] The ELK worker script did not load as text.\n  Bundle the tools page with Bun.build, or set flowView.layout.worker to false."
     );
   }
   return URL.createObjectURL(new Blob([text], { type: "text/javascript" }));

@@ -4,8 +4,8 @@
  * (M8), and Inspector reopens the closed Inspector panel.
  */
 import type { VNode } from "preact";
+import { Icon } from "../../panels/shared/icons";
 import { useSidePanel } from "../../panels/shared/side-panel";
-import { Icon } from "../../workspace/ui/icons";
 import { INSPECTOR_PANEL } from "../keys";
 import type { FlowActions, FlowCtx } from "../types";
 import { useFlowStore } from "../useFlowStore";

@@ -8,7 +8,8 @@
  * pointer instead.
  */
 import { linkPlugin } from "../../link";
-import { deviceChoiceOf, resolveDevice } from "../devices";
+import { resolveDevice } from "../../registry/protocol";
+import { deviceChoiceOf } from "../devices";
 import { hostOf } from "../hosts";
 import { trackCleanup } from "../state";
 import type {
@@ -93,19 +94,23 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   const { state } = ctx;
   if (state.frame.layer !== undefined) return;
 
+  // The fixed layer and the box that docking moves; hidden until the first dock.
   const layer = document.createElement("div");
   layer.dataset.frameLayer = "";
   const box = document.createElement("div");
   box.dataset.frameBox = "";
   box.dataset.docked = "hidden";
+  markReference(box, state.reference);
+
+  // The game page, tagged with this tab's frame id; out of the tab order until it is docked.
   const iframe = document.createElement("iframe");
   iframe.dataset.gameFrame = "";
   iframe.title = "Game";
   iframe.setAttribute("allow", "autoplay; fullscreen");
   iframe.tabIndex = -1;
   iframe.src = taggedGameUrl(ctx);
-  markReference(box, state.reference);
 
+  // Attach once in document.body: an iframe that moves reloads its document.
   box.append(iframe, ensureOverlay(state));
   layer.append(box);
   document.body.append(layer);
@@ -373,7 +378,7 @@ export function followTransitions(
 export function createGameFrame(ctx: WorkspaceCtx): GameFrame {
   return {
     /**
-     * Reads the URL on every access, so a refreshed boot is seen.
+     * The getter of `GameFrame.url`; the contract is on the type.
      *
      * @returns The absolute URL of the game page.
      */

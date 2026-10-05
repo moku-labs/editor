@@ -6,9 +6,8 @@
  * Sizes and insets come from workspace's resolveDevice (R8); gameView has no rule of its own.
  */
 import type { PageRect } from "../../panels/shared/scene";
-import type { DeviceSpec } from "../../registry/protocol";
-import { resolveDevice } from "../../workspace/devices";
-import type { DeviceSize, Orientation } from "../../workspace/types";
+import type { DeviceSize, DeviceSpec, Orientation } from "../../registry/protocol";
+import { resolveDevice } from "../../registry/protocol";
 
 /**
  * Stage chrome around the device (toolbar gap and badges), in px.

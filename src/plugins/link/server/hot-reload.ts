@@ -113,7 +113,7 @@ async function stateOf(response: Response): Promise<HotReload | undefined> {
  *
  * @param ctx - Domain context of link.
  * @param on - The asked value.
- * @returns True when the answer is ok and its state has hot reload `on`, false otherwise.
+ * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise.
  */
 export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boolean> {
   const { boot } = ctx.state;
@@ -135,5 +135,5 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
 
   const answered = await stateOf(response);
   if (answered !== undefined) applyHotReload(ctx, answered);
-  return response.ok && answered?.hmr === on;
+  return response.ok && answered?.owner === "bin" && answered.hmr === on;
 }

@@ -116,10 +116,6 @@ type ElkBuild = {
  * @param build - The graph being built.
  * @param node - The node name.
  * @returns Whether the node is laid out.
- * @example
- * ```ts
- * included(build, "home"); // true without a subset
- * ```
  */
 function included(build: ElkBuild, node: string): boolean {
   return build.only === undefined || build.only.has(node);
@@ -141,16 +137,32 @@ function labelsOf(id: string, outcome: string): ElkLabel[] {
 }
 
 /**
+ * Adds the ELK node of an exit once: a port-sized node in the last layer.
+ *
+ * @param build - The graph being built.
+ * @param exit - The exit name.
+ * @returns The ELK id of the exit node.
+ */
+function addExitNode(build: ElkBuild, exit: string): string {
+  const id = `${ID.exit}${exit}`;
+  if (build.exits.has(exit)) return id;
+  build.exits.add(exit);
+  build.children.push({
+    id,
+    width: PORT,
+    height: PORT,
+    layoutOptions: { "elk.layered.layering.layerConstraint": "LAST" }
+  });
+  return id;
+}
+
+/**
  * Adds the ELK edge of one outcome: to an exit node (added once, last layer), to a stub node for a
  * back edge or a target outside the subset, else to the target's entry port.
  *
  * @param build - The graph being built.
  * @param node - The source node.
  * @param outcome - The outcome.
- * @example
- * ```ts
- * addEdge(build, "home", "play");
- * ```
  */
 function addEdge(build: ElkBuild, node: string, outcome: string): void {
   const raw = build.flow.edges[node]?.[outcome];
@@ -158,35 +170,23 @@ function addEdge(build: ElkBuild, node: string, outcome: string): void {
   const source = `${ID.port}${node}:${outcome}`;
   const id = `${ID.edge}${node}:${outcome}`;
   const labels = labelsOf(id, outcome);
-  const exit = exitOf(raw);
-  const target = targetNode(raw);
 
+  // An exit: the edge ends in the exit's node in the last layer.
+  const exit = exitOf(raw);
   if (exit !== undefined) {
-    if (!build.exits.has(exit)) {
-      build.exits.add(exit);
-      build.children.push({
-        id: `${ID.exit}${exit}`,
-        width: PORT,
-        height: PORT,
-        layoutOptions: { "elk.layered.layering.layerConstraint": "LAST" }
-      });
-    }
-    build.edges.push({ id, sources: [source], targets: [`${ID.exit}${exit}`], labels });
+    build.edges.push({ id, sources: [source], targets: [addExitNode(build, exit)], labels });
     return;
   }
+
+  // A node of the flow: a back edge or a target outside the subset ends in a stub of its own,
+  // any other edge in the target's entry port.
+  const target = targetNode(raw);
   if (target === undefined || build.flow.nodes[target] === undefined) return;
   const isStub = build.classes.get(`${node}:${outcome}`) === "back" || !included(build, target);
-  if (isStub) {
-    build.children.push({ id: `${ID.stub}${node}:${outcome}`, width: STUB_W, height: STUB_H });
-    build.edges.push({
-      id,
-      sources: [source],
-      targets: [`${ID.stub}${node}:${outcome}`],
-      labels
-    });
-  } else {
-    build.edges.push({ id, sources: [source], targets: [`${ID.entry}${target}`], labels });
-  }
+  const stub = `${ID.stub}${node}:${outcome}`;
+  if (isStub) build.children.push({ id: stub, width: STUB_W, height: STUB_H });
+  const end = isStub ? stub : `${ID.entry}${target}`;
+  build.edges.push({ id, sources: [source], targets: [end], labels });
 }
 
 /**
@@ -236,6 +236,8 @@ export function toElkGraph(
 ): ElkNode {
   const { sizes = new Map(), only, density } = options;
   const build: ElkBuild = { flow, classes, only, children: [], edges: [], exits: new Set() };
+
+  // One ELK node per laid-out node: its card or expanded box, growing tall enough for its ports.
   const nodes = Object.entries(flow.nodes).filter(([node]) => included(build, node));
   for (const [node, info] of nodes) {
     const size = sizes.get(node) ?? { w: NODE_W, h: NODE_H };
@@ -251,8 +253,12 @@ export function toElkGraph(
       ports: portsOf(node, info.outcomes)
     });
   }
+
+  // Then one edge per outcome; the stub and exit nodes they add come after the nodes.
   for (const [node, info] of nodes)
     for (const outcome of info.outcomes) addEdge(build, node, outcome);
+
+  // The graph: the density's spacing, the nodes, the edges.
   return {
     id: flowName,
     layoutOptions: elkOptions(density),
@@ -284,10 +290,6 @@ function splitEdge(text: string): { readonly node: string; readonly outcome: str
  * @param classes - The DFS edge classes.
  * @param child - The laid-out ELK child.
  * @returns The item, or undefined for an unknown id.
- * @example
- * ```ts
- * itemOf("main", main, classes, { id: "n:home", x: 0, y: 0, width: 172, height: 44 });
- * ```
  */
 function itemOf(
   flowName: string,
@@ -421,6 +423,59 @@ function labelCentre(edge: ElkExtendedEdge): { x: number; y: number } | undefine
 }
 
 /**
+ * Extends an edge into an exit port: the port moves to the height where ELK ended the edge, and
+ * the edge goes on to the port's centre on the frame's right edge.
+ *
+ * @param toItem - The exit port item; its y is moved in place.
+ * @param points - ELK's points of the edge.
+ * @param exitX - x of the exit ports.
+ * @returns The points ending in the port, or the points as they are when ELK gave none.
+ * @example
+ * ```ts
+ * extendToExit(port, [{ x: 0, y: 30 }, { x: 200, y: 30 }], 400);
+ * // [{ x: 0, y: 30 }, { x: 200, y: 30 }, { x: 406, y: 30 }]; port.y is 24
+ * ```
+ */
+function extendToExit(
+  toItem: Item,
+  points: readonly { x: number; y: number }[],
+  exitX: number
+): { x: number; y: number }[] {
+  const end = points.at(-1);
+  if (end === undefined) return [...points];
+  toItem.y = end.y - PORT / 2;
+  return [...points, { x: exitX + PORT / 2, y: end.y }];
+}
+
+/**
+ * The return edge of a stub: from the stub to the node it stands for.
+ *
+ * @param stub - The item an edge ends in.
+ * @param byKey - Items by local key.
+ * @param key - The key of the edge into the stub.
+ * @param outcome - The outcome of that edge.
+ * @returns The return edge, or undefined when the item is no stub or its node is not laid out.
+ */
+function returnEdgeOf(
+  stub: Item,
+  byKey: ReadonlyMap<string, Item>,
+  key: string,
+  outcome: string
+): EdgePath | undefined {
+  if (stub.kind !== "stub" || stub.target === undefined) return undefined;
+  const target = byKey.get(stub.target);
+  if (target === undefined) return undefined;
+  return {
+    key,
+    from: stub.key,
+    to: target.key,
+    outcome,
+    kind: "return",
+    points: orthogonalRoute(anchorOut(stub, outcome), anchorIn(target))
+  };
+}
+
+/**
  * The edges of one ELK edge: the edge with ELK's points (extended onto a moved exit port, routed
  * when ELK gave no section) and its label centre and, into a stub, the stub's return edge.
  *
@@ -429,10 +484,6 @@ function labelCentre(edge: ElkExtendedEdge): { x: number; y: number } | undefine
  * @param byKey - Items by local key.
  * @param exitX - x of the exit ports.
  * @returns One or two edges.
- * @example
- * ```ts
- * edgesOf("main", elkEdge, byKey, 1200);
- * ```
  */
 function edgesOf(
   flowName: string,
@@ -440,21 +491,24 @@ function edgesOf(
   byKey: ReadonlyMap<string, Item>,
   exitX: number
 ): EdgePath[] {
+  // Resolve the ends: the source node and the item the ELK target stands for.
   const { node, outcome } = splitEdge(edge.id.slice(ID.edge.length));
   const from = `${flowName}/${node}`;
   const to = targetKey(flowName, edge.targets[0] ?? "", edge.id);
   const fromItem = byKey.get(from);
   const toItem = byKey.get(to);
-  let points = pointsOf(edge);
-  const labelAt = points.length === 0 ? undefined : labelCentre(edge);
-  const end = points.at(-1);
-  if (toItem?.kind === "port" && end !== undefined) {
-    toItem.y = end.y - PORT / 2;
-    points = [...points, { x: exitX + PORT / 2, y: end.y }];
-  }
+
+  // ELK's points; into an exit port they go on to the port on the frame's right edge.
+  const elkPoints = pointsOf(edge);
+  const labelAt = elkPoints.length === 0 ? undefined : labelCentre(edge);
+  let points = toItem?.kind === "port" ? extendToExit(toItem, elkPoints, exitX) : elkPoints;
+
+  // Fallback route: without an ELK section, an orthogonal route between the two ends.
   if (points.length === 0 && fromItem !== undefined && toItem !== undefined) {
     points = [...orthogonalRoute(anchorOut(fromItem, outcome), anchorIn(toItem))];
   }
+
+  // The main edge, with the label centre ELK placed.
   const main: EdgePath = {
     key: `${from}:${outcome}`,
     from,
@@ -465,20 +519,10 @@ function edgesOf(
     label: outcome
   };
   if (labelAt !== undefined) main.labelAt = labelAt;
-  const edges: EdgePath[] = [main];
-  const target =
-    toItem?.kind === "stub" && toItem.target !== undefined ? byKey.get(toItem.target) : undefined;
-  if (toItem !== undefined && target !== undefined) {
-    edges.push({
-      key: `${from}:${outcome}`,
-      from: toItem.key,
-      to: target.key,
-      outcome,
-      kind: "return",
-      points: orthogonalRoute(anchorOut(toItem, outcome), anchorIn(target))
-    });
-  }
-  return edges;
+
+  // Into a stub: the stub's return edge to the node it stands for.
+  const back = toItem === undefined ? undefined : returnEdgeOf(toItem, byKey, main.key, outcome);
+  return back === undefined ? [main] : [main, back];
 }
 
 /**
@@ -502,9 +546,11 @@ export function fromElkGraph(
   classes: ReadonlyMap<string, EdgeClass>,
   output: ElkNode
 ): FlowBox {
+  // The items ELK placed: nodes, stubs and exit ports.
   const items = (output.children ?? []).flatMap(
     child => itemOf(flowName, flow, classes, child) ?? []
   );
+
   // The content: the items and the label boxes ELK placed (exits sit past both).
   const content: Rect[] = [
     ...items.filter(entry => entry.kind !== "port"),
@@ -514,11 +560,16 @@ export function fromElkGraph(
   const top = Math.min(0, ...content.map(entry => entry.y));
   const right = Math.max(0, ...content.map(entry => entry.x + entry.w));
   const bottom = Math.max(0, ...content.map(entry => entry.y + entry.h));
+
+  // The exit ports move onto the frame's right edge, past the content.
   const exitX = right + FRAME_PAD - PORT / 2;
   for (const port of items) if (port.kind === "port") port.x = exitX;
 
+  // The edges, extended into the moved exits, and the return edges of the stubs.
   const byKey = new Map(items.map(entry => [entry.key, entry]));
   const edges = (output.edges ?? []).flatMap(edge => edgesOf(flowName, edge, byKey, exitX));
+
+  // The entry port: left of the content, at the height of the start node.
   const start = byKey.get(`${flowName}/${flow.start}`);
   items.push({
     key: "entry",
@@ -533,6 +584,7 @@ export function fromElkGraph(
     label: "entry"
   });
 
+  // The flow box: hub lanes, heads and unreached nodes belong to hub flows only.
   return {
     items,
     edges,

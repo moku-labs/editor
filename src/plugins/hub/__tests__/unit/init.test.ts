@@ -1,4 +1,4 @@
-/* eslint-disable sonarjs/no-clear-text-protocols -- config.allow cases are plain http and ftp origins */
+/* eslint-disable sonarjs/no-clear-text-protocols -- config.allowOrigins cases are plain http and ftp origins */
 import { describe, expect, it } from "vitest";
 import { validateHubConfig } from "../../init";
 import type { HubConfig } from "../../types";
@@ -36,8 +36,8 @@ describe("validateHubConfig", () => {
     expect(ctx.state.origins.size).toBe(0);
   });
 
-  it("builds state.origins from allow", () => {
-    const ctx = init({ allow: ["http://192.168.1.4:3000", "https://dev.example.com"] });
+  it("builds state.origins from allowOrigins", () => {
+    const ctx = init({ allowOrigins: ["http://192.168.1.4:3000", "https://dev.example.com"] });
 
     expect(ctx.state.origins).toEqual(
       new Set(["http://192.168.1.4:3000", "https://dev.example.com"])
@@ -57,7 +57,7 @@ describe("validateHubConfig", () => {
     expect(() => init(loose('{"path":5}'))).toThrow(/^\[moku-editor] hub\.path /);
   });
 
-  it("refuses allow entries that are not bare http(s) origins", () => {
+  it("refuses allowOrigins entries that are not bare http(s) origins", () => {
     for (const entry of [
       "not a url",
       "ftp://x.com",
@@ -67,11 +67,13 @@ describe("validateHubConfig", () => {
       "null",
       "file:///tmp"
     ]) {
-      expect(() => init({ allow: [entry] })).toThrow(FORMAT);
-      expect(() => init({ allow: [entry] })).toThrow(/^\[moku-editor] hub\.allow /);
+      expect(() => init({ allowOrigins: [entry] })).toThrow(FORMAT);
+      expect(() => init({ allowOrigins: [entry] })).toThrow(/^\[moku-editor] hub\.allowOrigins /);
     }
-    expect(() => init(loose('{"allow":"http://x.com"}'))).toThrow(/^\[moku-editor] hub\.allow /);
-    expect(() => init(loose('{"allow":[1]}'))).toThrow(/^\[moku-editor] hub\.allow /);
+    expect(() => init(loose('{"allowOrigins":"http://x.com"}'))).toThrow(
+      /^\[moku-editor] hub\.allowOrigins /
+    );
+    expect(() => init(loose('{"allowOrigins":[1]}'))).toThrow(/^\[moku-editor] hub\.allowOrigins /);
   });
 
   it("refuses timeouts that are not finite integers ≥ 100", () => {

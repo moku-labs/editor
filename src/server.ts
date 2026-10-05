@@ -12,7 +12,7 @@
  * | files | allow | ["**\/*.ts", "**\/*.tsx", "**\/*.json", "**\/*.md", "**\/*.css", ".moku/**"] |
  * | files | deny | ["**\/node_modules/**", "**\/.git/**", "**\/dist/**", "**\/.env*"] |
  * | hub | path | "/__editor" |
- * | hub | allow | [] |
+ * | hub | allowOrigins | [] |
  * | hub | callTimeoutMs | 5000 |
  * | hub | silentAfterMs | 6000 |
  * | pages | title | "moku editor" |

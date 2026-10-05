@@ -13,11 +13,11 @@ import { createCtx, fakeServer, field, helloOf, keysOf, MANIFEST } from "../help
 /**
  * A ctx and its api.
  *
- * @param allow - Extra origins.
+ * @param allowOrigins - Extra origins.
  * @returns The ctx and the api.
  */
-function setup(allow: readonly string[] = []) {
-  const ctx = createCtx({ allow });
+function setup(allowOrigins: readonly string[] = []) {
+  const ctx = createCtx({ allowOrigins });
   validateHubConfig(ctx);
   return { ctx, api: createHubApi(ctx) };
 }

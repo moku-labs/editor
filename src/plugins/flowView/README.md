@@ -24,27 +24,43 @@ The Info tab is the one place for the neighbours of a node (D-25). A click on a 
 both ends, a 600 ms pulse plays on the reached node, and Back (Alt+←) returns. With a selection,
 ← → walk, ↑ ↓ move the highlight through the rows and Enter follows it.
 
-Nodes can be dragged. They snap to a 12-unit grid and are saved to `layoutFile`.
+Nodes can be dragged. They snap to a 12-unit grid and are saved to `layout.file`.
 The Inspector reads and edits the node's code and the text styles of the game.
 A save writes the file and runs the D-07 reload/restore flow.
 
 ## Configuration
+
+> **Breaking (D-30, pre-1.0).** The layout, zoom and hub options moved into the one-level objects
+> `layout`, `zoom` and `hub`: `layoutFile` is now `layout.file`, `layoutWorker` is `layout.worker`,
+> `layoutSaveDelayMs` is `layout.saveDelayMs`, `minZoom` is `zoom.min`, `maxZoom` is `zoom.max`,
+> `defaultMinZoom` is `zoom.defaultMin`, `hubMinOutcomes` is `hub.minOutcomes` and `hubMinReturns`
+> is `hub.minReturns`. The kernel merges config shallowly, so an object you pass replaces the
+> default object as a whole: give every field of it.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `historyLast` | `number` | `20` | Entries of `game.history` flowView watches. |
 | `trailLength` | `number` | `6` | Edges drawn as the trail, newest strongest. |
 | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| `hubMinOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
-| `hubMinReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
-| `layoutFile` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped; the search is `panels/shared/styles-file`, shared with gameView). |
-| `layoutWorker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
-| `layoutSaveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
 | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
-| `minZoom` | `number` | `0.08` | Lowest zoom (8 %). |
-| `maxZoom` | `number` | `3` | Highest zoom (300 %). |
-| `defaultMinZoom` | `number` | `0.8` | Floor of the default camera (M11). |
+| `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
+| `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
+| `layout.saveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
+| `zoom.min` | `number` | `0.08` | Lowest zoom (8 %). |
+| `zoom.max` | `number` | `3` | Highest zoom (300 %). |
+| `zoom.defaultMin` | `number` | `0.8` | Floor of the default camera (M11). |
+| `hub.minOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
+| `hub.minReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
+
+```ts
+// ELK inline: the whole layout object, the other two fields at their defaults.
+createApp({
+  pluginConfigs: {
+    flowView: { layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400 } }
+  }
+});
+```
 
 The node → file rule has no option here. It is `registry/protocol/source-files.ts` (R1), with its
 override file `.moku/editor/files.json`. filesView uses the same rule.
@@ -59,7 +75,7 @@ override file `.moku/editor/files.json`. filesView uses the same rule.
 | `camera.get` | `() => Camera` | `{ x, y, z }`: screen = world · z + (x, y). |
 | `camera.fitAll` | `() => void` | Fit the root frame (F, ⇧1), leaving room for the preview and the minimap. |
 | `camera.fitSelection` | `() => void` | Fit the selection and its neighbours (⇧2), else the current node. |
-| `camera.zoomBy` | `(factor: number) => void` | Zoom around the viewport centre in 200 ms, inside `minZoom`–`maxZoom`. |
+| `camera.zoomBy` | `(factor: number) => void` | Zoom around the viewport centre in 200 ms, inside `zoom.min`–`zoom.max`. |
 | `camera.zoomTo` | `(z: number) => void` | Same, to an absolute zoom. |
 | `camera.follow` | `(on?: boolean) => boolean` | Toggle or set Follow the game. Only this call and the toolbar change it (M9). |
 | `focus.select` | `(key: ItemKey \| NodeId \| undefined) => boolean` | Select = focus, the Inspector shows it. A bare `NodeId` expands its collapsed parents. `false` for an unknown key. `undefined` leaves focus. |
@@ -75,7 +91,7 @@ override file `.moku/editor/files.json`. filesView uses the same rule.
 | `flows.enter` | `(key: ItemKey) => void` | Enter a sub-flow as the canvas root. |
 | `flows.up` | `(depth: number) => void` | Breadcrumb back up (M1). |
 | `layout.pinnedCount` | `() => number` | Pins of the visible flows. Reset layout is disabled at 0 (M8). |
-| `layout.reset` | `() => Promise<void>` | Clear those pins, write `layoutFile` and toast. Rejects when nothing is pinned. |
+| `layout.reset` | `() => Promise<void>` | Clear those pins, write `layout.file` and toast. Rejects when nothing is pinned. |
 
 ```ts
 app.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
@@ -101,7 +117,7 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 | Kind | Name | Payload | When |
 |---|---|---|---|
 | Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code and Styles tabs, and ⇧↵ of a Nodes palette item. filesView hooks it. |
-| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13). The first `live`/`paused` of a session loads `layoutFile` and the style keys. `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
+| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13). The first `live`/`paused` of a session loads `layout.file` and the style keys. `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
 | Hooks | `workspace:changed` | `{ ws }` | `flow`: the default camera. Leaving Flow closes the menu and cancels the camera move. |
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. Before the first flow values the selection waits for them. When Flow shows for the first time, the first canvas measure frames the selection, not the current node. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. Before the first flow values it waits for them. |
@@ -132,8 +148,8 @@ Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared
 | Phase | What |
 |---|---|
 | `onInit` | Registers the Flow panel: no sources; commands `step: "game.step"`, `pause: "game.pause"`, `resume: "game.resume"`. Adds the palette Commands. Binds the Flow keys. Binds the Esc layers `contextMenu`, `codeEdit`, `selection`. Captures `link.files`. Takes `workspace.density()`. No I/O. |
-| `onStart` | Watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session (R6), whatever workspace shows. The values go in once all three arrived, then one by one: the Nodes palette group, the layout, the intents of other views and the live history frames work before Flow is shown. The Flow canvas renders when Flow is first shown. Loading `layoutFile` and the style keys starts on the first `live`/`paused` status. |
-| `onStop` | Waits for a pending `layoutFile` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches among them. |
+| `onStart` | Watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session (R6), whatever workspace shows. The values go in once all three arrived, then one by one: the Nodes palette group, the layout, the intents of other views and the live history frames work before Flow is shown. The Flow canvas renders when Flow is first shown. Loading `layout.file` and the style keys starts on the first `live`/`paused` status. |
+| `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches among them. |
 
 Palette: Commands "Fit all", "Fit selection", "Follow the game", "Reset layout", "Go to current node", "Show where the game is", "Show Inspector".
 The Nodes group is replaced when the graph hash changes. The Styles group is replaced whenever the styles file is read.
@@ -209,7 +225,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 | `layout/` | Hub detection, the hub-lane layout and its label pass, DFS back edges, the ELK input (labels, spacing by density) and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, instance edges (`edges.ts`: the edge of an Info row, the other end of an edge). |
 | `inspector/` | The node → file lookup, the Code tab controller, the styles file search, the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
-| `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. |
+| `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. Icons come from `panels/shared/icons`. |
 
 ### Layout engine (elkjs)
 
@@ -230,6 +246,13 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 - Stale data areas get `filter: saturate(0.2); opacity: 0.55`, never `backdrop-filter` (M6).
 - A dimmed card, hub or stub keeps its opaque background; only its content fades, so no edge shows through. The world paints frames, lanes, heads, then the edges and their labels, then the items.
 - The context menu is a `popover` (M7, D-14). It opens at the click when it fits; else it flips to end at the click; else it sits against the far canvas edge, never before 0.
+
+## Tests
+
+`bun --bun vitest run src/plugins/flowView` runs the unit and integration tests of the plugin.
+The wall-clock budgets (`layout-perf.test.ts`, the timing case of `layout-shapes-quality.test.ts`)
+are skipped by default, because a shared runner is noisy: `PERF=1 bun run test:unit` runs the
+budgets. The layout checks of both files always run.
 
 ## Limits and game follow-ups
 

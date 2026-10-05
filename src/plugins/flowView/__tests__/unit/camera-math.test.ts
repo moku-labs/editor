@@ -17,7 +17,7 @@ import {
 import type { Camera } from "../../types";
 import { item, testConfig } from "../helpers";
 
-const config = testConfig();
+const zoom = testConfig().zoom;
 const view = { w: 1000, h: 800 };
 const noInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
@@ -37,9 +37,9 @@ function seeded(seed: number): () => number {
 
 describe("clampZoom", () => {
   it("clamps to [0.08, 3]", () => {
-    expect(clampZoom(0.01, config)).toBe(0.08);
-    expect(clampZoom(9, config)).toBe(3);
-    expect(clampZoom(1.2, config)).toBe(1.2);
+    expect(clampZoom(0.01, zoom)).toBe(0.08);
+    expect(clampZoom(9, zoom)).toBe(3);
+    expect(clampZoom(1.2, zoom)).toBe(1.2);
   });
 });
 
@@ -52,7 +52,7 @@ describe("zoomAt", () => {
       const py = random() * view.h;
       const factor = 0.5 + random() * 1.5;
       const world = { x: (px - cam.x) / cam.z, y: (py - cam.y) / cam.z };
-      const next = zoomAt(cam, px, py, factor, config);
+      const next = zoomAt(cam, px, py, factor, zoom);
       const screen = toScreen(next, world.x, world.y);
       expect(screen.x).toBeCloseTo(px, 6);
       expect(screen.y).toBeCloseTo(py, 6);
@@ -60,14 +60,14 @@ describe("zoomAt", () => {
   });
 
   it("clamps the zoom at 0.08 and 3", () => {
-    expect(zoomAt({ x: 0, y: 0, z: 2 }, 0, 0, 10, config).z).toBe(3);
-    expect(zoomAt({ x: 0, y: 0, z: 0.1 }, 0, 0, 0.01, config).z).toBe(0.08);
+    expect(zoomAt({ x: 0, y: 0, z: 2 }, 0, 0, 10, zoom).z).toBe(3);
+    expect(zoomAt({ x: 0, y: 0, z: 0.1 }, 0, 0, 0.01, zoom).z).toBe(0.08);
   });
 });
 
 describe("fitRect", () => {
   it("fits and centres a rect in the available rect", () => {
-    const cam = fitRect({ x: 0, y: 0, w: 920, h: 360 }, view, noInsets, 40, 1.4, config);
+    const cam = fitRect({ x: 0, y: 0, w: 920, h: 360 }, view, noInsets, 40, 1.4, zoom);
     expect(cam.z).toBeCloseTo(1, 6);
     const centre = toScreen(cam, 460, 180);
     expect(centre.x).toBeCloseTo(500, 6);
@@ -76,7 +76,7 @@ describe("fitRect", () => {
 
   it("leaves the insets out of the available rect", () => {
     const insets = { top: 0, right: 224, bottom: 224, left: 0 };
-    const cam = fitRect({ x: 0, y: 0, w: 100, h: 100 }, view, insets, 40, 1.4, config);
+    const cam = fitRect({ x: 0, y: 0, w: 100, h: 100 }, view, insets, 40, 1.4, zoom);
     expect(cam.z).toBe(1.4);
     const centre = toScreen(cam, 50, 50);
     expect(centre.x).toBeCloseTo((1000 - 224) / 2, 6);
@@ -89,7 +89,7 @@ describe("fitRect", () => {
     const narrow = { w: 368, h: 856 };
     const insets = { top: 0, right: 174, bottom: 224, left: 0 };
     const rect = { x: 0, y: 0, w: 500, h: 100 };
-    const cam = fitRect(rect, narrow, insets, 70, 1.3, config);
+    const cam = fitRect(rect, narrow, insets, 70, 1.3, zoom);
     expect(cam.z).toBeCloseTo((194 - 2 * (194 / 8)) / 500, 6);
     expect(toScreen(cam, 0, 0).x).toBeCloseTo(194 / 8, 6);
     expect(toScreen(cam, 500, 0).x).toBeCloseTo(194 - 194 / 8, 6);
@@ -99,7 +99,7 @@ describe("fitRect", () => {
     const desktop = { w: 1088, h: 856 };
     const insets = { top: 0, right: 224, bottom: 224, left: 0 };
     const rect = { x: 0, y: 0, w: 1000, h: 1000 };
-    const cam = fitRect(rect, desktop, insets, 70, 1.3, config);
+    const cam = fitRect(rect, desktop, insets, 70, 1.3, zoom);
     expect(cam.z).toBeCloseTo((632 - 140) / 1000, 6);
   });
 });
@@ -107,15 +107,15 @@ describe("fitRect", () => {
 describe("defaultCamera (M11)", () => {
   it("fits the frame when the fit zoom is at least 0.8", () => {
     const frame = { x: 0, y: 0, w: 900, h: 600 };
-    const cam = defaultCamera(frame, undefined, view, noInsets, config);
-    expect(cam).toEqual(fitRect(frame, view, noInsets, FIT_ALL.pad, FIT_ALL.maxZ, config));
+    const cam = defaultCamera(frame, undefined, view, noInsets, zoom);
+    expect(cam).toEqual(fitRect(frame, view, noInsets, FIT_ALL.pad, FIT_ALL.maxZ, zoom));
     expect(cam.z).toBeGreaterThanOrEqual(0.8);
   });
 
   it("keeps 0.8 and centres on the current node when the frame does not fit", () => {
     const frame = { x: 0, y: 0, w: 4000, h: 3000 };
     const current = { x: 2000, y: 1500, w: 172, h: 44 };
-    const cam = defaultCamera(frame, current, view, noInsets, config);
+    const cam = defaultCamera(frame, current, view, noInsets, zoom);
     expect(cam.z).toBe(0.8);
     const centre = toScreen(cam, 2086, 1522);
     expect(centre.x).toBeCloseTo(500, 6);

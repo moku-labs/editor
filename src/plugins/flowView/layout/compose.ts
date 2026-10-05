@@ -386,7 +386,7 @@ async function layoutNodes(
   flow: FlowJson,
   sizes: ReadonlyMap<string, { w: number; h: number }>
 ): Promise<FlowBox> {
-  const hub = detectHub(flow, input.config);
+  const hub = detectHub(flow, input.config.hub);
   if (hub !== undefined) {
     return withUnreached(input, flowName, flow, layoutLanes(flowName, flow, hub, sizes), sizes);
   }

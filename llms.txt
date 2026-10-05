@@ -59,7 +59,7 @@
 
   An unknown line or field is left out. `bounds` is device px, then the game's reference units (`SceneNode.refRect`). `restore` names the kept bookmark: `panels.run("game.restore", { bookmark: gameView.bookmarks()[0].value })` goes back to it.
 - Devices (round 2b R9, R10): twenty-one presets grouped iPhone (SE 3 · small, 2022 with the home-button frame, 15, 17e approx, Air approx, 18 Pro approx — the default, 18 Pro Max approx, then 15 Pro Max, 16 Pro, 16 Pro Max), Android (Galaxy S24, Galaxy A55, Redmi Note 13 approx, Pixel 8, Xperia 1 V 21:9), Foldable (Galaxy Z Fold 6 approx, Galaxy Z Flip 6, Pixel 9 Pro Fold approx, iPhone Duo approx: cover 466×678, inner 890×626 landscape-wide; the folding ones with Fold/Unfold), Tablet (iPad mini 7, iPad Air 11"), Desktop. Each has `dpr`, safe insets (Android, foldable and tablet report 0), a screen `radius` and `frame` (`"modern"` | `"home-button"`); the docked frame is clipped round. Fit is one scale per kind (the tallest preset of the kind, bezel included), so an SE shows smaller than an 18 Pro Max; foldables are phones; 100 % is 1 CSS px per px.
-- Game toolbar (round 2b): a Sound switch (key M in Game) runs `game.mute { muted }` when the manifest lists it and keeps the flag (`workspace.muted()`, `setMuted(on)`, re-applied to every game that connects); without `game.mute` (game 0.1.0) it is dimmed, title "Needs @moku-labs/game with game.mute". The Element tab's Code section (`data-part="code"`) shows the picked element's JSX and its `defineStyle` block with `file:line`, Open in Files and highlighting (20 lines, then "Show all N lines"); an entity shows "Spawned by <projection> · <file:line>" and its components. The capture card (Shot, pick, Series) is compact: a 56 px thumbnail, one line each for the title, the path (cut in the middle, the whole path in `title`) and `f<frame> · <device>`, then Copy link, Open and (a pick) Reference; at most 360 × 120 px.
+- Game toolbar (round 2b): a Sound switch (key M in Game) runs `game.mute { muted }` when the manifest lists it and keeps the flag (`workspace.muted()`, `setMuted(on)`, re-applied to every game that connects); without `game.mute` (game 0.4.3) it is dimmed, title "Needs @moku-labs/game with game.mute". The Element tab's Code section (`data-part="code"`) shows the picked element's JSX and its `defineStyle` block with `file:line`, Open in Files and highlighting (20 lines, then "Show all N lines"); an entity shows "Spawned by <projection> · <file:line>" and its components. The capture card (Shot, pick, Series) is compact: a 56 px thumbnail, one line each for the title, the path (cut in the middle, the whole path in `title`) and `f<frame> · <device>`, then Copy link, Open and (a pick) Reference; at most 360 × 120 px.
 - LinkStatus: `connecting`, `live { frame }`, `paused { frame }`, `silent { since, lastFrame }`, `lost { reason, lastFrame, retryInMs }`, `empty`.
 - Panels are data (D-04): `definePanel` returns a frozen spec; the `panels` host owns subscriptions, first-value waiting, stale marking, teardown.
 - Views never depend on each other (D-13): cross-view intents are global tools events (`workspace:open-file`, `workspace:select-node`, …).
@@ -333,10 +333,10 @@ src/
   tools.ts           @moku-labs/editor/tools
   plugins/
     index.ts         barrel of all 17 instances and type namespaces (imported by no entry)
-    registry/        + protocol/ (types, errors, check, wire-value, messages, source-files)
+    registry/        + protocol/ (types, errors, check, wire-value, messages, source-files, devices, overlay-host)
     channel/ overlay/ bridge/ capture/
     files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor)
-    link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules)
+    link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules, icons, workspaces)
     flowView/ gameView/ renderView/ stateView/ filesView/ consoleView/
     <name>/__tests__/unit, __tests__/integration
 tests/

@@ -75,14 +75,14 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * The real ELK engine: a Blob worker when layoutWorker is on and the page allows it, else inline
+ * The real ELK engine: a Blob worker when `layout.worker` is on and the page allows it, else inline
  * (one warning).
  *
  * @param ctx - Domain context of flowView.
  * @returns The engine.
  */
 async function realEngine(ctx: FlowCtx): Promise<LayoutEngine> {
-  if (!ctx.config.layoutWorker) return createInlineEngine();
+  if (!ctx.config.layout.worker) return createInlineEngine();
   let url: string | undefined;
   try {
     url = await workerUrl();
@@ -158,7 +158,7 @@ function chainTo(graph: GraphJson, root: string, flow: string): NodeId[] | undef
  */
 export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActions {
   const { layout } = ctx.state;
-  const path = ctx.config.layoutFile;
+  const path = ctx.config.layout.file;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
@@ -183,8 +183,8 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       [...layout.expanded].toSorted(),
       serializePins(layout.pins),
       layout.density,
-      ctx.config.hubMinOutcomes,
-      ctx.config.hubMinReturns
+      ctx.config.hub.minOutcomes,
+      ctx.config.hub.minReturns
     ]);
   }
 
@@ -323,7 +323,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
   }
 
   /**
-   * Debounces the save after a drop (layoutSaveDelayMs); a read-only layout.json is never written.
+   * Debounces the save after a drop (`layout.saveDelayMs`); a read-only layout.json is never written.
    */
   function scheduleSave(): void {
     if (layout.pinsReadOnly) return;
@@ -335,7 +335,7 @@ export function createLayoutApi(ctx: FlowCtx, env: FlowEnvironment): LayoutActio
       ctx.state.view.timers.delete(timer);
       saveTimer = undefined;
       save("Layout saved").catch(() => {});
-    }, ctx.config.layoutSaveDelayMs);
+    }, ctx.config.layout.saveDelayMs);
     saveTimer = timer;
     ctx.state.view.timers.add(timer);
   }

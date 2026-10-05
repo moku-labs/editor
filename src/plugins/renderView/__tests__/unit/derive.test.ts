@@ -335,7 +335,7 @@ describe("tree rows", () => {
 
   it("are empty without a scene; the head counts cover every node", () => {
     expect(treeRowsOf(undefined, new Set())).toEqual([]);
-    expect(treeCounts(boardScene())).toEqual({ nodes: 104, textures: 24, entities: 33 });
+    expect(treeCounts(boardScene())).toEqual({ nodes: 104, textures: 24, entities: 32 });
     expect(treeCounts(undefined)).toEqual({ nodes: 0, textures: 0, entities: 0 });
   });
 

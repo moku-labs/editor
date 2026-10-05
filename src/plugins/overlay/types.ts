@@ -34,9 +34,10 @@ export const ERROR_MS = 3000;
 export const Z_INDEX = 2_147_483_000;
 
 /**
- * The attribute that marks the host element.
+ * The attribute that marks the host element. It lives in the protocol, so the bridge's tap watch
+ * reads the same marker; re-exported here for `Overlay.*`.
  */
-export const HOST_ATTRIBUTE = "data-moku-editor-overlay";
+export { HOST_ATTRIBUTE } from "../registry/protocol";
 
 /**
  * The corner of the game page the card sits in.

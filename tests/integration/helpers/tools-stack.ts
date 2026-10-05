@@ -178,7 +178,7 @@ function putBoot(boot: ToolsBoot | undefined): void {
 /**
  * Boots the tools page: GET `<origin><hub path>/` from the real pages route, puts its boot JSON
  * into the page, creates the tools app with the speed configs (`link.retryMs: 100`,
- * `workspace.reloadTimeoutMs: 3000`, `flowView.layoutWorker: false`) and the tools probe, starts it
+ * `workspace.reloadTimeoutMs: 3000`, `flowView.layout.worker: false`) and the tools probe, starts it
  * and mounts the workspace into `[data-editor-root]` inside `act`. Given a `ToolsBoot` instead of a
  * server (L4: nothing listens yet), it uses that boot as is.
  *
@@ -204,7 +204,10 @@ export async function bootTools(
       ...configs,
       link: { retryMs: 100, ...configs.link },
       workspace: { reloadTimeoutMs: 3000, ...configs.workspace },
-      flowView: { layoutWorker: false, ...configs.flowView }
+      flowView: {
+        layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400 },
+        ...configs.flowView
+      }
     }
   });
   app.log.clearSinks();

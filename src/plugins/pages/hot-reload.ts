@@ -60,14 +60,11 @@ export function hmrOf(development: unknown): boolean {
 }
 
 /**
- * A fresh copy of the hot reload state.
+ * A fresh copy of the hot reload state: `{ hmr: false, owner: "server" }` until the bin attaches
+ * its server.
  *
  * @param state - pages state.
  * @returns `{ hmr, owner }`.
- * @example
- * ```ts
- * hotReloadOf(state); // { hmr: false, owner: "server" } until the bin attaches its server
- * ```
  */
 export function hotReloadOf(state: PagesState): HotReload {
   return { hmr: state.hot.hmr, owner: state.hot.owner };
@@ -97,12 +94,13 @@ export function attachServer(deps: HotReloadDeps, options: BunServeOptions): voi
 
 /**
  * Asks for HMR on or off. Bun cannot switch it on a running server, so only the current value is
- * "applied": a game's own server answers false, the bin answers whether HMR already is `on`. A
- * refused change is logged at info. The state is published either way.
+ * "applied": a game's own server always answers false, the bin answers true only when its HMR
+ * already equals `on`. A refused change is logged at info. The state is published either way.
  *
  * @param deps - Hub, state and log.
  * @param on - The asked value.
- * @returns Whether hot reload is `on` afterwards.
+ * @returns True when the bin owns the server and its HMR already equals `on`; false otherwise
+ * (a game's own server always answers false).
  */
 export function setHotReload(deps: HotReloadDeps, on: boolean): Promise<boolean> {
   const { hot } = deps.state;

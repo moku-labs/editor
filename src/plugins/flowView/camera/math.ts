@@ -4,7 +4,7 @@
  * clear of the preview, the dot grid pitch and the log-scale zoom interpolation.
  */
 import { NODE_W } from "../layout/types";
-import type { Camera, FlowViewConfig, Item, Rect } from "../types";
+import type { Camera, FlowZoomConfig, Item, Rect } from "../types";
 import type { ViewInsets, ViewSize } from "./types";
 
 /**
@@ -79,18 +79,15 @@ function clamp(value: number, min: number, max: number): number {
  * Clamps a zoom to the configured range (8 %–300 %).
  *
  * @param z - The zoom.
- * @param config - minZoom and maxZoom.
+ * @param zoom - The zoom range: min and max.
  * @returns The clamped zoom.
  * @example
  * ```ts
- * clampZoom(9, { minZoom: 0.08, maxZoom: 3 }); // 3
+ * clampZoom(9, { min: 0.08, max: 3 }); // 3
  * ```
  */
-export function clampZoom(
-  z: number,
-  config: Pick<Readonly<FlowViewConfig>, "minZoom" | "maxZoom">
-): number {
-  return clamp(z, config.minZoom, config.maxZoom);
+export function clampZoom(z: number, zoom: Pick<FlowZoomConfig, "min" | "max">): number {
+  return clamp(z, zoom.min, zoom.max);
 }
 
 /**
@@ -100,11 +97,11 @@ export function clampZoom(
  * @param px - Screen x of the fixed point.
  * @param py - Screen y of the fixed point.
  * @param factor - The zoom factor.
- * @param config - minZoom and maxZoom.
+ * @param zoom - The zoom range: min and max.
  * @returns The new camera.
  * @example
  * ```ts
- * zoomAt({ x: 0, y: 0, z: 1 }, 100, 100, 2, config); // { x: -100, y: -100, z: 2 }
+ * zoomAt({ x: 0, y: 0, z: 1 }, 100, 100, 2, { min: 0.08, max: 3 }); // { x: -100, y: -100, z: 2 }
  * ```
  */
 export function zoomAt(
@@ -112,9 +109,9 @@ export function zoomAt(
   px: number,
   py: number,
   factor: number,
-  config: Pick<Readonly<FlowViewConfig>, "minZoom" | "maxZoom">
+  zoom: Pick<FlowZoomConfig, "min" | "max">
 ): Camera {
-  const z = clampZoom(cam.z * factor, config);
+  const z = clampZoom(cam.z * factor, zoom);
   return { x: px - ((px - cam.x) * z) / cam.z, y: py - ((py - cam.y) * z) / cam.z, z };
 }
 
@@ -208,11 +205,11 @@ export function centreAt(
  * @param insets - The insets.
  * @param pad - Padding in px on every side.
  * @param maxZ - Highest zoom of this fit.
- * @param config - minZoom and maxZoom.
+ * @param zoom - The zoom range: min and max.
  * @returns The camera.
  * @example
  * ```ts
- * fitRect({ x: 0, y: 0, w: 920, h: 360 }, { w: 1000, h: 800 }, noInsets, 40, 1.4, config).z; // 1
+ * fitRect({ x: 0, y: 0, w: 920, h: 360 }, { w: 1000, h: 800 }, noInsets, 40, 1.4, { min: 0.08, max: 3 }).z; // 1
  * ```
  */
 export function fitRect(
@@ -221,7 +218,7 @@ export function fitRect(
   insets: ViewInsets,
   pad: number,
   maxZ: number,
-  config: Pick<Readonly<FlowViewConfig>, "minZoom" | "maxZoom">
+  zoom: Pick<FlowZoomConfig, "min" | "max">
 ): Camera {
   const area = availableRect(view, insets);
   const padX = Math.min(pad, area.w * PAD_SHARE);
@@ -230,23 +227,23 @@ export function fitRect(
     (area.w - 2 * padX) / Math.max(1, rect.w),
     (area.h - 2 * padY) / Math.max(1, rect.h)
   );
-  const z = clamp(fit, config.minZoom, maxZ);
+  const z = clamp(fit, zoom.min, maxZ);
   return centreAt({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, z, view, insets);
 }
 
 /**
- * The default camera (M11): the frame fitted when that zoom is at least defaultMinZoom; else
- * defaultMinZoom, centred on the current node (or the frame centre without one).
+ * The default camera (M11): the frame fitted when that zoom is at least `zoom.defaultMin`; else
+ * `zoom.defaultMin`, centred on the current node (or the frame centre without one).
  *
  * @param frame - The current flow's frame.
  * @param current - The current node's rect, if visible.
  * @param view - The viewport size.
  * @param insets - The insets.
- * @param config - minZoom, maxZoom and defaultMinZoom.
+ * @param zoom - The zoom range: min, max and defaultMin.
  * @returns The camera.
  * @example
  * ```ts
- * defaultCamera({ x: 0, y: 0, w: 4000, h: 3000 }, current, view, noInsets, config).z; // 0.8
+ * defaultCamera({ x: 0, y: 0, w: 4000, h: 3000 }, current, view, noInsets, { min: 0.08, max: 3, defaultMin: 0.8 }).z; // 0.8
  * ```
  */
 export function defaultCamera(
@@ -254,14 +251,14 @@ export function defaultCamera(
   current: Rect | undefined,
   view: ViewSize,
   insets: ViewInsets,
-  config: Pick<Readonly<FlowViewConfig>, "minZoom" | "maxZoom" | "defaultMinZoom">
+  zoom: FlowZoomConfig
 ): Camera {
-  const fit = fitRect(frame, view, insets, FIT_ALL.pad, FIT_ALL.maxZ, config);
-  if (fit.z >= config.defaultMinZoom) return fit;
+  const fit = fitRect(frame, view, insets, FIT_ALL.pad, FIT_ALL.maxZ, zoom);
+  if (fit.z >= zoom.defaultMin) return fit;
 
   const target = current ?? frame;
   const point = { x: target.x + target.w / 2, y: target.y + target.h / 2 };
-  return centreAt(point, config.defaultMinZoom, view, insets);
+  return centreAt(point, zoom.defaultMin, view, insets);
 }
 
 /**

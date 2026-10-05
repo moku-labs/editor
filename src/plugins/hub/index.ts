@@ -16,7 +16,7 @@ import type { HubConfig } from "./types";
 
 const defaultConfig: HubConfig = {
   path: "/__editor",
-  allow: [],
+  allowOrigins: [],
   callTimeoutMs: 5000,
   silentAfterMs: 6000
 };

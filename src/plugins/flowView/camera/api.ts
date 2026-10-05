@@ -129,7 +129,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
         insetsOf(ctx, env),
         FIT_ALL.pad,
         FIT_ALL.maxZ,
-        ctx.config
+        ctx.config.zoom
       );
       animateTo(ctx, target, DURATION.camera);
     },
@@ -143,7 +143,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
         insetsOf(ctx, env),
         FIT_SELECTION.pad,
         FIT_SELECTION.maxZ,
-        ctx.config
+        ctx.config.zoom
       );
       animateTo(ctx, target, DURATION.camera);
     },
@@ -154,13 +154,13 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
         camera.viewport.w / 2,
         camera.viewport.h / 2,
         factor,
-        ctx.config
+        ctx.config.zoom
       );
       animateTo(ctx, target, DURATION.zoom);
     },
 
     zoomTo: z => {
-      actions.zoomBy(clampZoom(z, ctx.config) / camera.cam.z);
+      actions.zoomBy(clampZoom(z, ctx.config.zoom) / camera.cam.z);
     },
 
     follow: on => {
@@ -179,7 +179,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
 
     zoomAround: (px, py, factor) => {
       cancelAnimation(ctx);
-      camera.cam = zoomAt(camera.cam, px, py, factor, ctx.config);
+      camera.cam = zoomAt(camera.cam, px, py, factor, ctx.config.zoom);
       applyCamera(ctx);
     },
 
@@ -219,7 +219,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
         insetsOf(ctx, env),
         FIT_SELECTION.pad,
         FIT_SELECTION.maxZ,
-        ctx.config
+        ctx.config.zoom
       );
       animateTo(ctx, target, DURATION.camera);
       return true;
@@ -234,7 +234,7 @@ export function createCameraApi(ctx: FlowCtx, env: FlowEnvironment): CameraActio
       const selected = waitingSelection(ctx);
       camera.cam =
         selected === undefined
-          ? defaultCamera(frame, current, camera.viewport, insets, ctx.config)
+          ? defaultCamera(frame, current, camera.viewport, insets, ctx.config.zoom)
           : focusCamera(selected, camera.cam, camera.viewport, insets);
       camera.initialised = true;
       applyCamera(ctx);

@@ -10,6 +10,7 @@
 import { createToolsPlugin } from "../../config";
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
+import { DEFAULT_MANIFEST_PATHS } from "../panels/shared/manifest-paths";
 import { workspacePlugin } from "../workspace";
 import { createGameViewApi } from "./api";
 import { createHandlers } from "./handlers";
@@ -19,7 +20,7 @@ import type { GameViewConfig } from "./types";
 
 const defaultConfig: GameViewConfig = {
   capturesDir: ".moku/captures",
-  manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"],
+  manifestPaths: DEFAULT_MANIFEST_PATHS,
   captureCardMs: 10_000,
   seriesDurationsMs: [1000, 2000, 5000, 10_000, 20_000],
   seriesIntervalsMs: [16, 50, 100, 250, 500, 1000],

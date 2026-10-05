@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
 import { actionsOf } from "../../actions";
 import { createTestCtx, flush, jumpCamera, prepare } from "../ctx";
-import { fixtureText } from "../helpers";
+import { fixtureText, testLayout } from "../helpers";
 
 const STYLES = "features/ui/styles.ts";
 const LAYOUT = ".moku/editor/layout.json";
@@ -52,7 +52,7 @@ describe("layout failures", () => {
   it("a non-conflict write error toasts 'Layout not saved'; an invalid file on conflict turns read-only", async () => {
     jumpCamera();
     const { ctx, fakes } = createTestCtx({
-      config: { layoutSaveDelayMs: 0 },
+      config: { layout: testLayout({ saveDelayMs: 0 }) },
       files: { [LAYOUT]: '{ "version": 1 }\n' }
     });
     await prepare(ctx);
