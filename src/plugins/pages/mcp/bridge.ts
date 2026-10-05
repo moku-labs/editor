@@ -35,6 +35,7 @@ function noop(): void {
  * @param line - The line.
  */
 function writeStderr(line: string): void {
+  // @log-sink: the bridge's only stderr writer (stdout carries protocol frames)
   process.stderr.write(`${line}\n`);
 }
 
