@@ -4,6 +4,7 @@ import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runBridge } from "../../../mcp/bridge";
+import { INSTRUCTIONS } from "../../../mcp/server";
 import type { BridgeDeps } from "../../../mcp/types";
 import { VERSION } from "../../../mcp/version";
 import discoverProbe from "../../fixtures/claude-discover-probe.json";
@@ -27,10 +28,10 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** One frame the bridge wrote. */
+/** One frame the bridge wrote: the fields the tests read (a tools/list result's tools). */
 type Frame = {
   readonly id?: string | number | null;
-  readonly result?: Record<string, unknown>;
+  readonly result?: { readonly tools?: readonly { readonly name: string }[] };
   readonly error?: { readonly code: number; readonly message: string };
 };
 
@@ -77,7 +78,8 @@ describe("the Claude Code 2.1.280 handshake", () => {
         result: {
           protocolVersion: "2025-11-25",
           capabilities: { tools: { listChanged: true }, logging: {} },
-          serverInfo: { name: "moku-editor", version: VERSION }
+          serverInfo: { name: "moku-editor", version: VERSION },
+          instructions: INSTRUCTIONS
         }
       }
     ]);

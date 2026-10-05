@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`tools/list > lists the seventeen moku tools with closed object schemas 1`] = `
+exports[`tools/list > lists the generic moku tools with closed object schemas 1`] = `
 {
   "tools": [
     {

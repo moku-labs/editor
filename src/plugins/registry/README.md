@@ -194,6 +194,8 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `isVersionConflict` (-32005: the file changed since it was read), `bareMessage`. |
 | `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values, `area`, `items` and the `select` `rect` included. Unknown fields are ignored by the guard and dropped by the parsers, inside the items too. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
+| `hash.ts` | `commandsHash(manifest)` (D-37): commands sorted by `id`, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit over the UTF-16 code units, 8 lowercase hex chars. Titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`. |
+| `session-choice.ts` | `pickSession(sessions, requested?)`: the one session rule of a game request. The asked id, else the only session, else the one embedded session; `undefined` when none or several fit. An unknown asked id never falls back. Generic over `{ id, embedded }`, so it returns the caller's own type. The hub's `chooseSession` wraps it and throws -32003; the MCP bridge's `chooseSession` uses it as is. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
 | `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
@@ -228,12 +230,24 @@ parseSelectParams({ rect: { x: 0, y: 30, w: 200, h: 60 } }); // an area: every e
 parseSelectParams({ card: "yes" }); // undefined
 ```
 
+Shape of the MCP door tools (change mcp-doors, D-37):
+
+| Type | Fields |
+|---|---|
+| `SessionInfo.manifestHash?` | `commandsHash` of the session's manifest, set by the hub on `hello`. The MCP bridge rebuilds its door tools only when it moves. |
+
+```ts
+commandsHash({ ...manifest, commands: [{ id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route" }] });
+// "4f528e73", the same for the same commands in any order
+commandsHash({ ...manifest, commands: [] }); // "811c9dc5"
+```
+
 Editor-channel methods:
 
 | Kind | Method | Params | Result | Between |
 |---|---|---|---|---|
 | notification | `session` | `SessionParams` | | hub to agents and tools |
-| notification | `sessions` | `SessionsParams` | | hub to tools |
+| notification | `sessions` | `SessionsParams`: `{ list: SessionInfo[] }`. Each `SessionInfo` carries `id`, `game`, `page`, `embedded`, `connectedAt`, the optional `heartbeat` and the optional `manifestHash` (`commandsHash` of its manifest, set by the hub; old clients ignore it). | | hub to tools |
 | notification | `hotReload` | `HotReload` | | hub to tools (published) |
 | notification | `selection` | `SelectionInfo \| null` | | editor page to hub, hub to tools (published) |
 | request | `selection` | `{}` | `SelectionInfo \| null` | tools to hub |

@@ -5,7 +5,7 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeDiscovery } from "../../../discovery";
 import { createEditorLink, NOT_RUNNING } from "../../../mcp/connection";
-import type { ChildProcess, SpawnProcess } from "../../../mcp/types";
+import type { ChildProcess, HubClient, SpawnProcess } from "../../../mcp/types";
 import type { McpArgs } from "../../../types";
 import type { FakeHub } from "../../fake-hub";
 import { session, startFakeHub, until } from "../../fake-hub";
@@ -69,14 +69,16 @@ function link(args: Partial<McpArgs> = {}, startBin = true) {
     if (startBin) setTimeout(() => writeDiscovery(root, hub.discovery(root, pid)), 20);
     return fakeChild(pid);
   });
-  const onBinChanged = vi.fn();
+  const onConnected = vi.fn<(client: HubClient) => void>();
+  const onDisconnected = vi.fn();
   const editor = createEditorLink({
     root,
     args: { kind: "mcp", root, hmr: true, ...args },
     deps: { ui, spawn, isAlive: pid => alive.has(pid), command: ["bun", "bin.mjs"], now: Date.now },
-    onBinChanged
+    onConnected,
+    onDisconnected
   });
-  return { editor, lines, spawn, onBinChanged, alive };
+  return { editor, lines, spawn, onConnected, onDisconnected, alive };
 }
 
 describe("startup", () => {
@@ -159,31 +161,29 @@ describe("startup", () => {
 });
 
 describe("reconnect", () => {
-  it("reconnects once to the same bin after a close, without a tools change", async () => {
+  it("reconnects once to the same bin after a close, and reports the close and each connect", async () => {
     writeDiscovery(root, hub.discovery(root));
-    const { editor, onBinChanged } = link();
+    const { editor, onConnected, onDisconnected } = link();
     await editor.start();
     const first = await editor.hub();
+    expect(onConnected.mock.calls).toEqual([[first]]);
     hub.dropClients();
     await until(() => !first.isOpen(), "the close");
     const second = await editor.hub();
     expect(second).not.toBe(first);
     expect(second.isOpen()).toBe(true);
-    expect(onBinChanged).not.toHaveBeenCalled();
+    expect(onDisconnected).toHaveBeenCalledOnce();
+    expect(onConnected.mock.calls).toEqual([[first], [second]]);
     await editor.shutdown();
+    expect(onDisconnected).toHaveBeenCalledTimes(2);
   });
 
-  it("signals a tools change when it connects to another bin", async () => {
-    writeDiscovery(root, hub.discovery(root));
-    const { editor, onBinChanged } = link();
+  it("reports nothing on shutdown when no connection is open", async () => {
+    const { editor, onConnected, onDisconnected } = link();
     await editor.start();
-    const first = await editor.hub();
-    writeDiscovery(root, { ...hub.discovery(root), startedAt: 1_800_000_000_000 });
-    hub.dropClients();
-    await until(() => !first.isOpen(), "the close");
-    await editor.hub();
-    expect(onBinChanged).toHaveBeenCalledTimes(1);
     await editor.shutdown();
+    expect(onConnected).not.toHaveBeenCalled();
+    expect(onDisconnected).not.toHaveBeenCalled();
   });
 
   it("answers not running when the bin is gone after the close", async () => {
@@ -238,12 +238,13 @@ describe("launch and stop", () => {
   });
 
   it("stops the bin it started and closes the connection", async () => {
-    const { editor, lines } = link({ html: "web/index.html" });
+    const { editor, lines, onDisconnected } = link({ html: "web/index.html" });
     await editor.start();
     const client = await editor.hub();
     const stopped = await editor.stopOwned();
     expect(stopped.stopped).toBe(true);
     expect(client.isOpen()).toBe(false);
+    expect(onDisconnected).toHaveBeenCalledOnce();
     expect(children[0]?.signals).toEqual(["SIGTERM"]);
     expect(lines.join("\n")).toContain("stopped moku-editor (pid 7000)");
   });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { bridgePlugin, capturePlugin, createApp } from "../../src/agent";
+import type { RpcFrame } from "../../src/plugins/pages/__tests__/rpc-frame";
 import {
   createProject,
   createTinyGame,
@@ -38,15 +39,6 @@ const HUB_PATH = "/__editor";
 /** The `.moku/editor.json` the bin writes (the fields the test reads). */
 type Discovery = { readonly pid: number; readonly port: number; readonly url: string };
 
-/** One frame the bridge wrote to stdout. */
-type Frame = {
-  readonly jsonrpc?: string;
-  readonly id?: number;
-  readonly method?: string;
-  readonly result?: unknown;
-  readonly error?: { readonly code: number; readonly message: string };
-};
-
 /** A tools/call result. */
 type ToolAnswer = {
   readonly content: readonly { readonly type: string; readonly text?: string }[];
@@ -59,7 +51,7 @@ type Bridge = {
   /** Every stdout line, raw. */
   readonly lines: string[];
   readonly stderr: () => string;
-  request(method: string, params?: object): Promise<Frame>;
+  request(method: string, params?: object): Promise<RpcFrame>;
   notify(method: string): void;
   call(name: string, args?: object): Promise<ToolAnswer>;
   /** Ends stdin and resolves with the exit code. */
@@ -204,7 +196,7 @@ function startBridge(args: readonly string[], cwd: string): Bridge {
   bridgeRoots.push(cwd);
   const stderr = collect(child.stderr);
   const lines: string[] = [];
-  const frames: Frame[] = [];
+  const frames: RpcFrame[] = [];
   const decoder = new TextDecoder();
   void (async () => {
     let buffered = "";
@@ -243,7 +235,7 @@ function startBridge(args: readonly string[], cwd: string): Bridge {
    * @param params - The params.
    * @returns The response frame.
    */
-  const request = async (method: string, params?: object): Promise<Frame> => {
+  const request = async (method: string, params?: object): Promise<RpcFrame> => {
     const id = nextId;
     nextId += 1;
     send(
@@ -316,7 +308,7 @@ async function startTinyAgent(origin: string, png?: string): Promise<TinyGame> {
  * @param bridge - The bridge.
  * @returns The initialize response.
  */
-async function initialize(bridge: Bridge): Promise<Frame> {
+async function initialize(bridge: Bridge): Promise<RpcFrame> {
   const answer = await bridge.request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
@@ -379,10 +371,18 @@ describe("moku-editor mcp over stdio", () => {
       serverInfo: { name: "moku-editor" }
     });
 
+    await until(
+      async () => textOf(await bridge.call("moku_sessions")).includes(TINY_NAME),
+      "the tiny game session in moku_sessions",
+      SLOW_MS
+    );
+
+    // The generic tools first, then one tool per command door of the game (D-35).
     const list = await bridge.request("tools/list");
     const names = (list.result as { tools: { name: string }[] }).tools.map(tool => tool.name);
-    expect(names).toHaveLength(17);
-    expect(names).toEqual(
+    const generic = names.filter(name => name.startsWith("moku_"));
+    expect(generic).toHaveLength(17);
+    expect(generic).toEqual(
       expect.arrayContaining([
         "moku_read",
         "moku_run",
@@ -392,12 +392,14 @@ describe("moku-editor mcp over stdio", () => {
         "moku_select"
       ])
     );
-
-    await until(
-      async () => textOf(await bridge.call("moku_sessions")).includes(TINY_NAME),
-      "the tiny game session in moku_sessions",
-      SLOW_MS
-    );
+    expect(names.slice(0, 17)).toEqual(generic);
+    const doors = names.slice(17);
+    expect(doors).toEqual(expect.arrayContaining(["game_pause", "game_resume", "game_tap"]));
+    expect(doors).not.toContain("editor_capture");
+    expect(doors).not.toContain("game_capture");
+    const doorPause = await bridge.call("game_pause");
+    expect(textOf(doorPause)).toMatch(/^effect: cosmetic\n/);
+    await bridge.call("game_resume");
 
     const position = await bridge.call("moku_read", { id: "game.position" });
     expect(position.isError).toBeUndefined();

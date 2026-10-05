@@ -1,11 +1,19 @@
 /**
  * @file hub plugin — game sessions: the manifest check, open and close, the session choice of a
- * tools request, the SessionInfo list (R1 plus the heartbeat readout, M4) and the silent rule (R6:
- * 6 s, or 65 s after a paused heartbeat). A flip of paused or silent re-sends the list.
+ * tools request, the SessionInfo list (R1, the manifest hash of D-37, the heartbeat readout of M4)
+ * and the silent rule (R6: 6 s, or 65 s after a paused heartbeat). A flip of paused or silent
+ * re-sends the list.
  */
 import { randomBytes } from "node:crypto";
 import type { Heartbeat, Json, Manifest, Notification, SessionInfo } from "../../registry/protocol";
-import { errorCode, notification, toWireValue, wireError } from "../../registry/protocol";
+import {
+  commandsHash,
+  errorCode,
+  notification,
+  pickSession,
+  toWireValue,
+  wireError
+} from "../../registry/protocol";
 import { JSON_NULL, sendJson, toolsConns } from "../sockets/send";
 import type { AgentConn, HubCtx, HubSession, HubState, Session } from "../types";
 import { failSession } from "./calls";
@@ -306,6 +314,7 @@ export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): S
     id: sessionIdFrom(ctx.state.sessions),
     conn: conn.conn,
     manifest,
+    manifestHash: commandsHash(manifest),
     connectedAt: now,
     heartbeat: JSON_NULL,
     lastBeatAt: now,
@@ -427,8 +436,8 @@ function noSession(message: string, reason: "no_session" | "choose_session", id?
 }
 
 /**
- * The session a game-channel request goes to: the requested one, else the only one, else the one
- * embedded session.
+ * The session a game-channel request goes to, by the one protocol rule (`pickSession`): the
+ * requested one, else the only one, else the one embedded session.
  *
  * @param ctx - Domain context of the hub.
  * @param requested - The request's `session`, if any.
@@ -436,37 +445,38 @@ function noSession(message: string, reason: "no_session" | "choose_session", id?
  * @throws {Error} -32003 `no_session` (unknown id or no game) or `choose_session` (ambiguous).
  */
 export function chooseSession(ctx: HubCtx, requested: string | undefined): Session {
-  const { sessions } = ctx.state;
+  const open = [...ctx.state.sessions.values()].map(session => ({
+    id: session.id,
+    embedded: session.manifest.embedded,
+    session
+  }));
+  const picked = pickSession(open, requested);
+  if (picked !== undefined) return picked.session;
 
-  if (requested !== undefined) {
-    const found = sessions.get(requested);
-    if (found === undefined)
-      throw noSession(`no game session ${requested}`, "no_session", requested);
-    return found;
-  }
-
-  const open = [...sessions.values()];
-  const [only] = open;
-  if (only === undefined) throw noSession("no game is connected", "no_session");
-  if (open.length === 1) return only;
-
-  const embedded = open.filter(session => session.manifest.embedded);
-  const [chosen] = embedded;
-  if (chosen !== undefined && embedded.length === 1) return chosen;
-
+  if (requested !== undefined)
+    throw noSession(`no game session ${requested}`, "no_session", requested);
+  if (open.length === 0) throw noSession("no game is connected", "no_session");
   throw noSession("several games are connected; choose a session", "choose_session");
 }
 
 /**
- * The wire view of a session: the five R1 fields, plus the heartbeat readout (frame and paused of
- * the last beat, the silent flag) once the session has sent a heartbeat.
+ * The wire view of a session: the five R1 fields and the manifest hash kept since hello (D-37),
+ * plus the heartbeat readout (frame and paused of the last beat, the silent flag) once the session
+ * has sent a heartbeat.
  *
  * @param session - The session.
  * @returns A fresh SessionInfo.
  */
 export function toSessionInfo(session: Session): SessionInfo {
   const { game, page, embedded } = session.manifest;
-  const info = { id: session.id, game, page, embedded, connectedAt: session.connectedAt };
+  const info = {
+    id: session.id,
+    game,
+    page,
+    embedded,
+    connectedAt: session.connectedAt,
+    manifestHash: session.manifestHash
+  };
   if (session.heartbeat === null) return info;
 
   const { frame, paused } = session.heartbeat;

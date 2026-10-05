@@ -113,7 +113,7 @@ drag picks [an area](#an-area) with every element inside it.
 
 ## Use with Claude Code
 
-`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude seventeen `moku_*` tools: read the game, wait for a value, run commands, take screenshots, read and make the editor's selection, edit files.
+`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude 17 generic `moku_*` tools: read the game, wait for a value, run commands, take screenshots, read and make the editor's selection, edit files. On top of them it lists one tool per command door of the connected game (see [Door tools](#door-tools)).
 
 **1. Register it** from the game folder:
 
@@ -168,6 +168,25 @@ Which editor the bridge uses:
 | `moku_stop` | Stops the editor, only when the bridge started it. |
 
 Every game tool takes an optional `session`. The file tools stay in the files sandbox and never show or touch `.moku/editor.json` or `.moku/editor.log`. The bridge never prints the token. Detail: [pages README, MCP bridge](src/plugins/pages/README.md#mcp-bridge-mcp).
+
+### Door tools
+
+After the 17 generic tools, `tools/list` holds one tool per command door of the selected session. Each has a typed input schema, so Claude does not guess `input` for `moku_run`. Sources stay behind `moku_read`.
+
+- **Name.** The door id with `.` as `_`: `game.tap` is `game_tap`. Cheat and raw doors carry the effect first: `cheat_game_fill`, `raw_game_restore`.
+- **Input.** One property per door field (`string`, `number`, `boolean`, `json`); fields without `?` are required. The optional `_session` picks another session.
+- **Answer.** The same as `moku_run { id, input }`: `effect: <effect>`, then `{ value, frame, state }`.
+- **Selected session.** The one `moku_run` uses without `session`: the only one, else the embedded one. Several sessions and none embedded: no door tools.
+- **No tool.** The doors the generic tools cover: `game.capture`, `editor.capture`, `editor.sheet`, `editor.series`, `editor.seriesStop`, `editor.reload`. Screenshots go only through `moku_screenshot`: JPEG by default, about 300 KB at most. Also no tool for a name that starts with `moku_` or is longer than 40 characters, an id outside `[A-Za-z0-9._-]`, a field named `_session` or outside `[A-Za-z0-9_-]{1,64}`, or two doors with the same name. The bridge logs each one once on stderr; `moku_run` still runs it.
+- **Change.** The hub stamps `manifestHash` (the hash of the game's commands) on every session. The bridge rebuilds the door tools, and sends `notifications/tools/list_changed`, only when that hash moves. A hot reload of the same game keeps the list: it stays 5 s while no session is chosen. The first `tools/list` waits at most 3 s for the door tools.
+
+Deny the cheat and raw doors in Claude Code settings:
+
+```json
+{ "permissions": { "deny": ["mcp__moku-editor__cheat_*", "mcp__moku-editor__raw_*"] } }
+```
+
+A client that does not refresh its list after `list_changed` keeps the old door tools. A door that is gone answers `isError`. `moku_run` runs every door.
 
 ## The tools page
 

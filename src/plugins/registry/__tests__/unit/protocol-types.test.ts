@@ -86,10 +86,11 @@ describe("protocol types", () => {
     expect(error.code).toBe(-32_000);
   });
 
-  it("SessionInfo has the five R1 fields and an optional heartbeat readout", () => {
+  it("SessionInfo has the five R1 fields, an optional heartbeat and an optional manifestHash", () => {
     expectTypeOf<keyof SessionInfo>().toEqualTypeOf<
-      "id" | "game" | "page" | "embedded" | "connectedAt" | "heartbeat"
+      "id" | "game" | "page" | "embedded" | "connectedAt" | "heartbeat" | "manifestHash"
     >();
+    expectTypeOf<SessionInfo["manifestHash"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<SessionInfo["connectedAt"]>().toEqualTypeOf<number>();
     expectTypeOf<SessionInfo["heartbeat"]>().toEqualTypeOf<
       { readonly frame: number; readonly paused: boolean; readonly silent: boolean } | undefined
@@ -100,18 +101,21 @@ describe("protocol types", () => {
       ...info,
       heartbeat: { frame: 1840, paused: false, silent: false }
     };
+    const stamped: SessionInfo = { ...beating, manifestHash: "4f528e73" };
     expect(Object.keys(info)).toHaveLength(5);
     expect(Object.keys(beating)).toHaveLength(6);
+    expect(Object.keys(stamped)).toHaveLength(7);
   });
 
-  it("SessionInfo with a heartbeat still travels as Json", () => {
+  it("SessionInfo with a heartbeat and a manifestHash still travels as Json", () => {
     const info: SessionInfo = {
       id: "s-7f3a",
       game: "merge-game 0.0.0",
       page: "http://127.0.0.1:3000/",
       embedded: true,
       connectedAt: 1_790_000_000_000,
-      heartbeat: { frame: 1840, paused: true, silent: false }
+      heartbeat: { frame: 1840, paused: true, silent: false },
+      manifestHash: "4f528e73"
     };
     const json: Json = info;
 

@@ -287,7 +287,7 @@ Each core registers `logPlugin` and `envPlugin` from `@moku-labs/common/browser`
 
 ## 3. Wire protocol types (`src/plugins/registry/protocol/`, verbatim)
 
-The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`). `devices.ts` holds the device presets and their helpers (`DeviceSpec`, `DevicePresetId`, `Orientation`, `DeviceSize` are below); `overlay-host.ts` holds `HOST_ATTRIBUTE`, the DOM marker of the in-game overlay host.
+The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`). `devices.ts` holds the device presets and their helpers (`DeviceSpec`, `DevicePresetId`, `Orientation`, `DeviceSize` are below); `overlay-host.ts` holds `HOST_ATTRIBUTE`, the DOM marker of the in-game overlay host. `hash.ts` holds `commandsHash(manifest)` (D-37): the commands sorted by id, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit, 8 lowercase hex chars; titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`; the MCP bridge rebuilds its door tools only when it moves. It is in the protocol barrel, not exported from the package root.
 
 ~~~ts
 /**
@@ -565,8 +565,9 @@ export type Notification = {
 };
 
 /**
- * One game session the way a tools client sees it: the five R1 fields and, once the game has sent
- * a heartbeat, the hub's liveness readout (M4). Old clients ignore `heartbeat`.
+ * One game session the way a tools client sees it: the five R1 fields, the hub's liveness readout
+ * once the game has sent a heartbeat (M4), and the hash of the session's command doors (D-37).
+ * Old clients ignore `heartbeat` and `manifestHash`.
  *
  * @example
  * ```ts
@@ -577,7 +578,8 @@ export type Notification = {
  *   page: "http://127.0.0.1:3000/",
  *   embedded: true,
  *   connectedAt: 1790000000000,
- *   heartbeat: { frame: 1840, paused: true, silent: false }
+ *   heartbeat: { frame: 1840, paused: true, silent: false },
+ *   manifestHash: "4f528e73"
  * };
  * ```
  */
@@ -597,6 +599,11 @@ export type SessionInfo = {
     readonly paused: boolean;
     readonly silent: boolean;
   };
+  /**
+   * `commandsHash` of the session's manifest, set by the hub on hello. The MCP bridge compares it
+   * to rebuild its door tools only when the commands change. Absent from an old hub.
+   */
+  readonly manifestHash?: string;
 };
 
 /**
@@ -1304,11 +1311,17 @@ claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000
 
 MCP bridge (`moku-editor mcp`, `src/plugins/pages/mcp/`, D-31): a separate process, not a plugin; a hub **tools client** (`${ws}?token=…&kind=tools`, `Origin: http://127.0.0.1:<port>`), so the hub's session choice, input checks and files sandbox apply as for the tools page. Newline-delimited JSON-RPC 2.0 on stdio; stdout carries only protocol frames, logs go to stderr.
 
-- `initialize` → `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version } }`; versions `2025-11-25`, `2025-06-18`, `2025-03-26` (the client's when listed, else `2025-11-25`). `ping` and `logging/setLevel` → `{}`. An unknown method → -32601, bad params → -32602, a line that is not JSON → -32700. Notifications are never answered; `notifications/cancelled { requestId }` aborts that call. `notifications/progress` during `moku_wait` and `moku_series` when the request has `_meta.progressToken`; `notifications/tools/list_changed` when it connects to another bin.
+- `initialize` → `{ protocolVersion, capabilities: { tools: { listChanged: true }, logging: {} }, serverInfo: { name: "moku-editor", version }, instructions }` (`instructions`: which tools are generic, which are command doors, that cheat_* and raw_* change the game outside its rules, and that the list changes when the game reloads); versions `2025-11-25`, `2025-06-18`, `2025-03-26` (the client's when listed, else `2025-11-25`). `ping` and `logging/setLevel` → `{}`. An unknown method → -32601, bad params → -32602, a line that is not JSON → -32700. Notifications are never answered; `notifications/cancelled { requestId }` aborts that call. `notifications/progress` during `moku_wait` and `moku_series` when the request has `_meta.progressToken`; `notifications/tools/list_changed` only when the door tools change (below); a change before `notifications/initialized` is sent once right after it. `tools/list` is the generic tools, then the door tools; the first one waits at most 3 s for the door tools. A door tool that is gone answers `isError` "`<name>` is gone: the game changed. Call moku_manifest, or moku_run { id }."
 - Claude Code 2.1.280 (recorded in `src/plugins/pages/__tests__/fixtures/claude-*.json`): it sends `server/discover` (draft protocol 2026-07-28) first, gets -32601, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized` and `tools/list`.
 - Which bin: a live `.moku/editor.json` under `--root` (default the working directory) wins. Without one the bridge starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached (output in `.moku/editor.log`, 0600), when it knows a game html (argv, else the last discovery file it saw); port `--port`, else the last port, else 3000; it waits at most 15 s for the discovery file and owns that bin. Without an html, tools answer `isError` "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." A closed hub socket is re-read and reconnected once.
 - Teardown on stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes, an owned bin gets SIGTERM, then SIGKILL after 2 s; a bin the bridge did not start keeps running. After a signal it lets go of stdin, so the process exits 0 while the client keeps the pipe open.
-- Tools (17, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a card and its crop: `"latest"` is the newest card of `.moku/captures/<yyyy-mm-dd>/*.md` (only `YYYY-MM-DD` folder names, newest day first) and the older flat `.moku/captures/*.md`; a name is the newest card with that name; a path is that card), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, card? }`, exactly one of `key` or `rect`; hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
+- Generic tools (17, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }` and `manifestHash`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a card and its crop: `"latest"` is the newest card of `.moku/captures/<yyyy-mm-dd>/*.md` (only `YYYY-MM-DD` folder names, newest day first) and the older flat `.moku/captures/*.md`; a name is the newest card with that name; a path is that card), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, card? }`, exactly one of `key` or `rect`; hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_start`, `moku_stop` (owned bin only).
+- Door tools (`door-tools.ts`, D-35, D-36, D-37): one tool per command door of the selected session (the one `moku_run` uses without `session`: the only one, else the embedded one; several sessions and none embedded: no door tools). Sources stay behind `moku_read`.
+  - Name: the id with `.` as `_` (`game.tap` → `game_tap`, `timber.openShop` → `timber_openShop`); `cheat` and `raw` doors get the prefix `cheat_` / `raw_` (`cheat_game_fill`, `raw_game_restore`).
+  - No tool (logged once per hash on stderr as `[moku-editor] mcp: no tool for <id>: <reason>; use moku_run`): `COVERED_DOORS` = `game.capture`, `editor.capture`, `editor.sheet`, `editor.series`, `editor.seriesStop`, `editor.reload` (screenshots go only through `moku_screenshot`, JPEG by default, about 300 KB at most; data URL answers and the `game_reloaded` end of a reload stay with the generic tools); a final name starting with `moku_`; a name longer than 40 characters (so `mcp__moku-editor__<name>` fits 64); an id outside `[A-Za-z0-9._-]`; an input field `_session` or outside `[A-Za-z0-9_-]{1,64}`; two doors whose names collide (`a.b` and `a_b`: both dropped).
+  - Input schema: closed object, one property per field (`string`, `number` finite, `boolean`, `json` any JSON), fields without `?` required, plus the optional `_session`. A call sends hub `run { id, input }` in that session (`input` left out when empty); the text reads like `moku_run`.
+  - Description `[<effect>] <title>. Command door <id> of <game>. Same as moku_run { id: "<id>" }.`; annotations: `read` read-only, `route` and `cosmetic` not destructive, `cheat` and `raw` destructive, never open-world. Claude Code ignores annotations for permissions; deny with `{ "permissions": { "deny": ["mcp__moku-editor__cheat_*", "mcp__moku-editor__raw_*"] } }`.
+  - Change: the set follows the hub's `sessions` by `SessionInfo.manifestHash`. The same hash changes nothing; a new hash fetches the manifest, rebuilds the set and sends `notifications/tools/list_changed` once. No session chosen: the set stays 5 s (a hot reload of the same game blinks nothing), then empties, with one `list_changed` when it held doors. A bin without `manifestHash` is fetched once per session. A failed manifest fetch keeps the old set. A client that does not refresh after `list_changed` keeps the old list; `moku_run` runs every door.
 - Liveness (M7): screenshot and series read the session heartbeat first; paused or silent answers `isError` "game paused or hidden at frame N — bring the editor pane to front or resume". Pictures need a visible game page.
 
 ---
@@ -2041,6 +2054,7 @@ export type FilesApi = {
 - Session choice for a game request without `session`: one open session wins; with several, the only embedded one wins; else -32003.
 - Heartbeats (with a well-formed `heap` kept) and `tap { x, y, at }` notifications are forwarded to every tools connection with `session`. A malformed heartbeat, value or tap is one strike; ten strikes close with 1008.
 - Liveness readout (M4): each `SessionInfo` of `sessions()` and of the `sessions` notification carries `heartbeat: { frame, paused, silent }` once the session has sent a heartbeat. The list is re-sent when a session's `paused` or `silent` flips, not on every frame.
+- Manifest hash (D-37): on `hello` the hub sets `manifestHash = commandsHash(manifest)` on the session; every `SessionInfo` of `sessions()` and of the `sessions` notification carries it. The MCP bridge rebuilds its door tools only when it moves.
 - Deadline of a forwarded call: `callTimeoutMs`, plus `input.durationMs` for a `run` of `editor.series` and `input.frames × input.everyMs` for a `run` of `editor.sheet`, capped at +60 s (the same rule as bridge and link).
 - `publish("hotReload", state)` (round 2 R6): sends the `editor` notification `hotReload` to every tools connection now, keeps the last value per method and replays it right after each tools hello. pages publishes from `attachServer` and after each `setHotReload`.
 - Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
@@ -2142,7 +2156,8 @@ export type HubApi = {
   token(): string;
 
   /**
-   * A fresh list of the open game sessions ordered by `connectedAt`. A session that has sent a
+   * A fresh list of the open game sessions ordered by `connectedAt`. Each carries `manifestHash`,
+   * the `commandsHash` of its manifest computed on hello (D-37). A session that has sent a
    * heartbeat carries the readout `heartbeat: { frame, paused, silent }`; mutating the result does
    * not change the next call.
    *
@@ -2150,7 +2165,7 @@ export type HubApi = {
    * @example
    * ```ts
    * // After the game page connected its bridge and sent its first heartbeat.
-   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
+   * app.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, manifestHash: "4f528e73", heartbeat: { frame: 1840, paused: false, silent: false } }]
    * ```
    */
   sessions(): SessionInfo[];
@@ -5778,7 +5793,7 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | tools → hub | files | request | `write` | `{ path, text, version? }` | `WriteResult` |
 | tools → hub | files | request | `writeBinary` | `{ path, data }` (data URL) | `WriteResult` |
 | tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
-| hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` (each with `heartbeat { frame, paused, silent }` once known; re-sent when paused or silent flips) | — |
+| hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` (each with `heartbeat { frame, paused, silent }` once known and `manifestHash`; re-sent when paused or silent flips) | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
 | hub → tools | editor | notification | `hotReload` | `HotReload` (`{ hmr, owner }`; replayed after each tools hello) | — |
 | hub → tools | editor | notification | `selection` | `SelectionInfo`, or no params for nothing selected (kept, replayed after each tools hello; `null` when the last editor page closes) | — |

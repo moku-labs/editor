@@ -1,15 +1,16 @@
 /**
  * @file pages/mcp — `moku-editor mcp` (D-31): the stdio MCP server Claude Code starts. It reads
  * newline-delimited JSON-RPC from stdin, answers on stdout (protocol frames only; logs go to
- * stderr), connects to the running bin's hub as a tools client or starts the bin, and on stdin
- * end, SIGINT or SIGTERM aborts pending calls, closes the socket and stops a bin it started.
- * Exit code 0.
+ * stderr), connects to the running bin's hub as a tools client or starts the bin, lists the
+ * generic tools and the door tools of the selected session (D-35), and on stdin end, SIGINT or
+ * SIGTERM aborts pending calls, closes the socket and stops a bin it started. Exit code 0.
  */
 import { resolve } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import type { McpArgs } from "../types";
 import { createEditorLink } from "./connection";
 import { isProcessAlive } from "./discovery";
+import { createDoorTools } from "./door-tools";
 import { spawnDetached } from "./launcher";
 import { frameText, readLines } from "./rpc";
 import { createMcpServer } from "./server";
@@ -23,7 +24,7 @@ import { VERSION } from "./version";
 const SETTLE_MS = 2000;
 
 /**
- * Does nothing (the tools-changed callback until the server exists).
+ * Does nothing (the door set's change callback until the server exists).
  */
 function noop(): void {
   // Replaced once the server exists.
@@ -110,11 +111,6 @@ export function processBridgeDeps(): BridgeDeps {
  *
  * @param deps - The bridge deps (onSignal).
  * @returns Whether one fired, the first one and the remover.
- * @example
- * ```ts
- * const stop = listenForStop(deps);
- * await stop.stopped; // "signal" after the first SIGINT or SIGTERM
- * ```
  */
 function listenForStop(deps: Pick<BridgeDeps, "onSignal">): StopListener {
   let fired = false;
@@ -186,25 +182,46 @@ export async function runBridge(
 ): Promise<number> {
   const root = resolve(args.root);
   let toolsChanged: () => void = noop;
-  const editor = createEditorLink({ root, args, deps, onBinChanged: () => toolsChanged() });
+  // The door rebuild is the one source of tools/list_changed (a bin restart is an unfollow and a
+  // follow).
+  const doors = createDoorTools({ ui: deps.ui, onChange: () => toolsChanged() });
+
+  // The door set follows every hub client the link opens.
+  const editor = createEditorLink({
+    root,
+    args,
+    deps,
+    onConnected: client => doors.follow(client),
+    onDisconnected: () => doors.unfollow()
+  });
+
+  // The server lists the generic tools, then the doors; a door change reaches it from here on.
   const server = createMcpServer({
     send: frame => deps.write(frameText(frame)),
-    tools: TOOLS,
+    tools: () => [...TOOLS, ...doors.tools()],
+    ready: () => doors.ready,
+    retired: () => doors.retired(),
     context: { editor, now: deps.now },
     version: VERSION
   });
   toolsChanged = () => server.toolsChanged();
 
   deps.ui.info(`moku-editor mcp ${VERSION}: stdio MCP server for ${root}`);
-  // The startup never rejects; shutdown waits for it (and cancels a bin start in progress).
-  editor.start();
+  // The startup never rejects; shutdown waits for it (and cancels a bin start in progress). Without
+  // a client after it no bin will come on its own, so the first tools/list need not wait.
+  editor.start().then(() => {
+    if (editor.connected() === undefined) doors.noEditor();
+  }, noop);
+
   // The signals stay caught until the teardown is done: a second Ctrl+C cannot orphan a bin.
   const stop = listenForStop(deps);
   const ending = await readUntilStop(deps.input, stop, line => server.handleLine(line));
 
+  // Teardown: calls in flight first, then the link and the doors, then the signals and stdin.
   server.cancelAll();
   await settleWithin(server.idle(), SETTLE_MS);
   await editor.shutdown();
+  doors.dispose();
   stop.remove();
   if (ending === "signal") deps.releaseInput();
   deps.ui.info(

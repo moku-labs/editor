@@ -1,7 +1,9 @@
 /**
- * @file pages/mcp — the MCP dispatcher (M1): `initialize` with version negotiation,
- * `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel` and
- * `notifications/cancelled`. A message without an id is never answered; an unknown request is
+ * @file pages/mcp — the MCP dispatcher (M1): `initialize` with version negotiation and the
+ * instructions, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`
+ * and `notifications/cancelled`. The tools are read per request (the generic tools, then the door
+ * tools); the first `tools/list` waits for the door tools at most 3 s, and no `list_changed` goes
+ * out before it was answered. A message without an id is never answered; an unknown request is
  * -32601, bad params -32602, a line that is not JSON -32700.
  */
 import type { Json } from "../../registry/protocol";
@@ -17,7 +19,8 @@ import type {
   OutgoingFrame,
   Tool,
   ToolCall,
-  ToolContext
+  ToolContext,
+  ToolResult
 } from "./types";
 
 /**
@@ -31,12 +34,30 @@ export const PROTOCOL_VERSIONS: readonly string[] = ["2025-11-25", "2025-06-18",
 const SERVER_NAME = "moku-editor";
 
 /**
- * What the dispatcher needs: the frame writer, the tools, their context and the version.
+ * The `instructions` of the `initialize` result: how the generic tools and the door tools differ.
+ */
+export const INSTRUCTIONS =
+  "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read.";
+
+/**
+ * The longest wait of the first `tools/list` for the door tools.
+ */
+const FIRST_LIST_WAIT_MS = 3000;
+
+/**
+ * What the dispatcher needs: the frame writer, the tools, the door set seams, the tool context and
+ * the version.
  */
 export type McpServerOptions = {
   /** Writes one frame to stdout. */
   readonly send: (frame: OutgoingFrame) => void;
-  readonly tools: readonly Tool[];
+  /** The tools now: the generic tools first, then the door tools. Read on every request. */
+  readonly tools: () => readonly Tool[];
+  /** Settles once the door tools are known; the first `tools/list` waits for it at most 3 s. */
+  readonly ready: () => Promise<void>;
+  /** Names that were door tools and are gone: a call answers `isError` instead of -32602. */
+  readonly retired: () => ReadonlySet<string>;
+  /** What every tool runs with: the editor link and the clock. */
   readonly context: ToolContext;
   /** `serverInfo.version`: the package version. */
   readonly version: string;
@@ -48,7 +69,11 @@ export type McpServerOptions = {
 export type McpServer = {
   /** Handles one stdin line. */
   handleLine(line: string): void;
-  /** Sends `notifications/tools/list_changed` once the client is initialized. */
+  /**
+   * Sends `notifications/tools/list_changed`. Before the first `tools/list` was answered it sends
+   * nothing: that list is already the new one. After it but before `notifications/initialized`
+   * the change is kept and sent once right after it.
+   */
   toolsChanged(): void;
   /** Aborts every tool call in flight (stdin end); their responses are not sent. */
   cancelAll(): void;
@@ -125,13 +150,54 @@ function progressTokenOf(params: JsonObject | undefined): string | number | unde
 }
 
 /**
+ * Waits for a promise, at most `ms`.
+ *
+ * @param work - The promise.
+ * @param ms - The longest wait.
+ * @returns Resolves when the work settled or the time is up.
+ * @example
+ * ```ts
+ * await waitAtMost(options.ready(), 3000);
+ * ```
+ */
+async function waitAtMost(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>(done => {
+    timer = setTimeout(done, ms);
+  });
+  await Promise.race([work, deadline]);
+  clearTimeout(timer);
+}
+
+/**
+ * The `isError` answer of a door tool that is gone.
+ *
+ * @param name - The tool name.
+ * @returns The result.
+ * @example
+ * ```ts
+ * goneResult("game_tap"); // "game_tap is gone: the game changed. Call moku_manifest, or moku_run { id }."
+ * ```
+ */
+function goneResult(name: string): ToolResult {
+  return errorResult(`${name} is gone: the game changed. Call moku_manifest, or moku_run { id }.`);
+}
+
+/**
  * Creates the dispatcher.
  *
- * @param options - Frame writer, tools, tool context and version.
+ * @param options - Frame writer, tools getter, door set seams, tool context and version.
  * @returns The dispatcher.
  * @example
  * ```ts
- * const server = createMcpServer({ send: frame => process.stdout.write(frameText(frame)), tools: TOOLS, context, version: VERSION });
+ * const server = createMcpServer({
+ *   send: frame => process.stdout.write(frameText(frame)),
+ *   tools: () => [...TOOLS, ...doors.tools()],
+ *   ready: () => doors.ready,
+ *   retired: () => doors.retired(),
+ *   context,
+ *   version: VERSION
+ * });
  * await readLines(process.stdin, line => server.handleLine(line));
  * ```
  */
@@ -140,6 +206,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   const inflight = new Map<string, AbortController>();
   const running = new Set<Promise<void>>();
   let initialized = false;
+  let listed = false;
+  let pendingChange = false;
+  let firstList: Promise<void> | undefined;
 
   /**
    * The `initialize` result: the negotiated version, the capabilities and the server info.
@@ -155,7 +224,8 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     return {
       protocolVersion: negotiateVersion(requested),
       capabilities: { tools: { listChanged: true }, logging: {} },
-      serverInfo: { name: SERVER_NAME, version }
+      serverInfo: { name: SERVER_NAME, version },
+      instructions: INSTRUCTIONS
     };
   }
 
@@ -171,8 +241,11 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const name = params?.name;
     if (typeof name !== "string")
       throw new RpcError(rpcCode.invalidParams, "tools/call needs a tool name");
-    const tool = tools.find(entry => entry.name === name);
-    if (tool === undefined) throw new RpcError(rpcCode.invalidParams, `unknown tool: ${name}`);
+    const tool = tools().find(entry => entry.name === name);
+    if (tool === undefined) {
+      if (options.retired().has(name)) return goneResult(name);
+      throw new RpcError(rpcCode.invalidParams, `unknown tool: ${name}`);
+    }
     const args = checkArguments(tool.inputSchema, params?.arguments);
     if (typeof args === "string") return errorResult(args);
 
@@ -185,6 +258,19 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       send(notificationFrame("notifications/progress", { progressToken: token, ...counts }));
     };
     return runToolSafely(tool, { args, signal: controller.signal, progress }, context);
+  }
+
+  /**
+   * A `tools/list`: the first one (and any that arrive while it waits) waits for the door tools at
+   * most 3 s; later ones answer at once. From then on a tools change is announced.
+   *
+   * @returns The tool definitions.
+   */
+  async function listTools(): Promise<JsonShaped> {
+    firstList ??= waitAtMost(options.ready(), FIRST_LIST_WAIT_MS);
+    await firstList;
+    listed = true;
+    return { tools: tools().map(tool => definitionOf(tool)) };
   }
 
   /**
@@ -204,7 +290,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         return {};
       }
       case "tools/list": {
-        return { tools: tools.map(tool => definitionOf(tool)) };
+        return listTools();
       }
       case "tools/call": {
         return callTool(request);
@@ -235,13 +321,25 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   }
 
   /**
-   * Handles a notification: initialized, cancelled; every other one is ignored.
+   * Sends `notifications/tools/list_changed`.
+   */
+  function sendListChanged(): void {
+    send(notificationFrame("notifications/tools/list_changed"));
+  }
+
+  /**
+   * Handles a notification: initialized (sends a change kept until then), cancelled; every other
+   * one is ignored.
    *
    * @param note - The notification.
    */
   function onNotification(note: McpNotification): void {
     if (note.method === "notifications/initialized") {
       initialized = true;
+      if (pendingChange) {
+        pendingChange = false;
+        sendListChanged();
+      }
       return;
     }
     if (note.method === "notifications/cancelled") {
@@ -282,7 +380,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       }
     },
     toolsChanged: () => {
-      if (initialized) send(notificationFrame("notifications/tools/list_changed"));
+      // The client has no list yet: its first tools/list already reads the new tools.
+      if (!listed) return;
+      if (initialized) sendListChanged();
+      else pendingChange = true;
     },
     cancelAll: () => {
       for (const controller of inflight.values()) controller.abort();

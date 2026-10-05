@@ -30,16 +30,18 @@ export const NOT_RUNNING =
 export type ConnectHub = (bin: EditorDiscovery, options: HubClientOptions) => Promise<HubClient>;
 
 /**
- * What the bin side needs: the root, the `mcp` arguments, the process seams and the callback of a
- * new bin.
+ * What the bin side needs: the root, the `mcp` arguments, the process seams and the callbacks of
+ * an open and a lost connection.
  */
 export type EditorLinkOptions = {
   /** The absolute project root. */
   readonly root: string;
   readonly args: McpArgs;
   readonly deps: Pick<BridgeDeps, "spawn" | "isAlive" | "command" | "now" | "ui">;
-  /** Called when the bridge connects to another bin than the one before (tools/list_changed). */
-  readonly onBinChanged: () => void;
+  /** Called with every new hub connection (the startup, a reconnect, a launch). */
+  readonly onConnected: (client: HubClient) => void;
+  /** Called when the open connection is gone: it closed, the owned bin stopped, or shutdown. */
+  readonly onDisconnected: () => void;
   /** The hub connection factory (default `connectHub`). */
   readonly connect?: ConnectHub;
 };
@@ -51,7 +53,6 @@ type LinkState = {
   client: HubClient | undefined;
   owned: { readonly child: ChildProcess; readonly bin: EditorDiscovery } | undefined;
   seen: EditorDiscovery | undefined;
-  lastBin: string | undefined;
   startup: Promise<void> | undefined;
   reconnect: Promise<void> | undefined;
   launching: Promise<EditorStatus> | undefined;
@@ -126,6 +127,7 @@ function statusOf(state: LinkState): EditorStatus {
 function onLost(ctx: LinkCtx): void {
   const { state } = ctx;
   state.client = undefined;
+  ctx.onDisconnected();
   if (state.closing) return;
 
   ctx.deps.ui.warn("[moku-editor] mcp: the moku-editor connection closed; reconnecting once");
@@ -135,7 +137,8 @@ function onLost(ctx: LinkCtx): void {
 }
 
 /**
- * Connects to a live bin. A bin other than the last one makes the tools list change.
+ * Connects to a live bin and hands the open client to `onConnected` (the door tools follow its
+ * sessions).
  *
  * @param ctx - The bin side.
  * @param bin - The live discovery record.
@@ -151,10 +154,7 @@ async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient>
   state.client = client;
   state.seen = bin;
   state.lastError = undefined;
-
-  const id = `${String(bin.pid)}:${String(bin.startedAt)}`;
-  if (state.lastBin !== undefined && state.lastBin !== id) ctx.onBinChanged();
-  state.lastBin = id;
+  ctx.onConnected(client);
   ctx.deps.ui.info(`moku-editor mcp: connected to ${bin.url}`);
   return client;
 }
@@ -174,8 +174,10 @@ async function launchNow(
   input: { readonly html?: string; readonly port?: number }
 ): Promise<EditorStatus> {
   const { state, args, deps, root } = ctx;
+  // Already connected: nothing to start.
   if (state.client?.isOpen() === true) return statusOf(state);
 
+  // A bin that came up meanwhile is used instead of a second one.
   const found = findEditor(root, deps.isAlive);
   state.seen = found.seen ?? state.seen;
   if (found.live !== undefined) {
@@ -183,6 +185,7 @@ async function launchNow(
     return statusOf(state);
   }
 
+  // The html and port: the call's, else argv's, else the last discovery file's.
   const html = input.html ?? args.html ?? state.seen?.html;
   if (html === undefined) {
     throw new Error(
@@ -190,11 +193,14 @@ async function launchNow(
     );
   }
   const port = input.port ?? args.port ?? state.seen?.port ?? DEFAULT_PORT;
+
+  // Start the bin; shutdown can abort the start through the controller.
   const controller = new AbortController();
   state.launchAbort = controller;
   const options = { html: resolve(html), port, root, hmr: args.hmr };
   const { child, bin } = await launchEditor(options, { ...deps, signal: controller.signal });
 
+  // The bin is ours until its process exits; then connect, unless shutdown began.
   state.owned = { child, bin };
   child.exited.then(() => {
     if (state.owned?.child === child) state.owned = undefined;
@@ -226,6 +232,22 @@ function launchOnce(
 }
 
 /**
+ * Warns when `--port` names another port than the running bin's: the flag only applies to a bin
+ * the bridge starts.
+ *
+ * @param ctx - The bin side.
+ * @param port - The port the running bin listens on.
+ */
+function warnOnPortMismatch(ctx: LinkCtx, port: number): void {
+  const asked = ctx.args.port;
+  if (asked === undefined || asked === port) return;
+
+  ctx.deps.ui.warn(
+    `[moku-editor] mcp: the running moku-editor listens on port ${String(port)}; --port ${String(asked)} only applies when the bridge starts it`
+  );
+}
+
+/**
  * The startup: a live bin is connected (a different `--port` prints one line); otherwise the bin
  * is started when an html is known. Failures are remembered, never thrown.
  *
@@ -237,12 +259,7 @@ async function startup(ctx: LinkCtx): Promise<void> {
   state.seen = found.seen;
 
   if (found.live !== undefined) {
-    const { port } = found.live;
-    if (args.port !== undefined && args.port !== port) {
-      deps.ui.warn(
-        `[moku-editor] mcp: the running moku-editor listens on port ${String(port)}; --port ${String(args.port)} only applies when the bridge starts it`
-      );
-    }
+    warnOnPortMismatch(ctx, found.live.port);
     await connectTo(ctx, found.live).catch((error: unknown) => noteFailure(ctx, error));
     return;
   }
@@ -293,6 +310,7 @@ async function stopOwnedBin(
   if (state.client?.bin.pid === owned.bin.pid) {
     state.client.close();
     state.client = undefined;
+    ctx.onDisconnected();
   }
   state.owned = undefined;
   await stopChild(owned.child);
@@ -311,9 +329,12 @@ async function shutdown(ctx: LinkCtx): Promise<void> {
   state.launchAbort?.abort();
   await Promise.allSettled([state.startup, state.reconnect, state.launching]);
 
-  state.client?.close();
+  const { client, owned } = state;
   state.client = undefined;
-  const { owned } = state;
+  if (client !== undefined) {
+    client.close();
+    ctx.onDisconnected();
+  }
   state.owned = undefined;
   if (owned !== undefined) await stopChild(owned.child);
 }
@@ -328,11 +349,17 @@ function noop(): void {
 /**
  * Creates the bin side of the bridge.
  *
- * @param options - Root, `mcp` arguments, process seams and the bin-changed callback.
+ * @param options - Root, `mcp` arguments, process seams and the connection callbacks.
  * @returns The EditorLink the tools use.
  * @example
  * ```ts
- * const editor = createEditorLink({ root, args, deps, onBinChanged: () => server.toolsChanged() });
+ * const editor = createEditorLink({
+ *   root,
+ *   args,
+ *   deps,
+ *   onConnected: client => doors.follow(client),
+ *   onDisconnected: () => doors.unfollow()
+ * });
  * void editor.start();
  * const hub = await editor.hub(); // throws "moku-editor is not running…" when no bin runs
  * ```
@@ -345,7 +372,6 @@ export function createEditorLink(options: EditorLinkOptions): EditorLink {
       client: undefined,
       owned: undefined,
       seen: undefined,
-      lastBin: undefined,
       startup: undefined,
       reconnect: undefined,
       launching: undefined,

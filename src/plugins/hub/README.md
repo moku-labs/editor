@@ -80,13 +80,16 @@ Throws before start and after stop. A new token on every start.
 ### `sessions()`
 
 ```ts
-editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, heartbeat: { frame: 1840, paused: false, silent: false } }]
+editor.hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", page: "http://127.0.0.1:3000/", embedded: true, connectedAt: 1790000000000, manifestHash: "4f528e73", heartbeat: { frame: 1840, paused: false, silent: false } }]
 ```
 
-`SessionInfo` has `id`, `game`, `page`, `embedded`, `connectedAt`. After the first heartbeat it
-also has `heartbeat {frame, paused, silent}`: frame and paused of the last beat and the hub's
-silent flag. `at`, `heap` and `lastBeatAt` stay private. Mutating the result does not change the
-next call.
+`SessionInfo` has `id`, `game`, `page`, `embedded`, `connectedAt` and `manifestHash`.
+`manifestHash` is `commandsHash(manifest)` from `registry/protocol` (D-37): 8 hex chars over the
+command doors only (id, effect, input; not titles, not sources). The hub computes it once on
+`hello` and sends it in every `sessions {list}`, so the MCP bridge rebuilds its door tools only
+when it moves. After the first heartbeat it also has `heartbeat {frame, paused, silent}`: frame
+and paused of the last beat and the hub's silent flag. `at`, `heap` and `lastBeatAt` stay private.
+Mutating the result does not change the next call.
 
 ### `fetch(req, server)`
 
@@ -327,7 +330,7 @@ Log events (`ctx.log`):
 |---|---|---|
 | depends | `filesPlugin` | `list`, `read`, `write`, `writeDataUrl`, `readBinary` for the files channel. `writeBinary {path, data}` calls `writeDataUrl(path, data)`: a mime that does not match the path is -32602, a non-image path is -32004 |
 | global event | `hub:session` | emitted |
-| protocol | `../registry/protocol` | `SessionInfo`, `SelectionInfo`, `PublishParams`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
+| protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
 
 ## Usage
 

@@ -1,7 +1,8 @@
 /**
  * @file pages/mcp — the editor and game tools of the bridge (M5): moku_status, moku_sessions,
- * moku_manifest, moku_read, moku_run and moku_wait. Each goes through the hub exactly as the
- * tools page does: the hub picks the session, checks the id and the input.
+ * moku_manifest, moku_read, moku_run and moku_wait, and `runDoor`, the run every door tool shares
+ * with moku_run. Each goes through the hub exactly as the tools page does: the hub picks the
+ * session, checks the id and the input.
  */
 import type { Json } from "../../registry/protocol";
 import { bareMessage } from "../../registry/protocol";
@@ -51,7 +52,7 @@ const SOURCE_ID = {
  * @returns `http://127.0.0.1:<port><P>/`.
  * @example
  * ```ts
- * toolsUrl(bin); // "http://127.0.0.1:3000/__editor/"
+ * toolsUrl({ ...bin, ws: "ws://127.0.0.1:3000/__editor/ws" }); // "http://127.0.0.1:3000/__editor/"
  * ```
  */
 function toolsUrl(bin: EditorDiscovery): string {
@@ -106,6 +107,33 @@ async function status(_call: ToolCall, context: ToolContext): Promise<ToolResult
 }
 
 /**
+ * Runs a command door through the hub and answers the way moku_run and every door tool do: the
+ * line `effect: <effect>`, then the value with the frame and the run state.
+ *
+ * @param hub - The hub connection.
+ * @param id - The command id, such as game.tap.
+ * @param effect - The effect printed first: the door's own, or "unknown".
+ * @param input - The input, or undefined to send none.
+ * @param session - The session id, or undefined for the hub's rule.
+ * @returns `effect: <effect>` and the envelope (value, frame, state).
+ */
+export async function runDoor(
+  hub: HubClient,
+  id: string,
+  effect: string,
+  input: Json | undefined,
+  session: string | undefined
+): Promise<ToolResult> {
+  const ran = await hub.request("game", "run", callParams(id, input), session);
+  const result = readRunResult(ran);
+  const envelope =
+    result === undefined
+      ? ran
+      : { value: result.value, frame: result.state.frame, state: result.state };
+  return { content: [textItem(`effect: ${effect}\n${jsonText(envelope)}`)] };
+}
+
+/**
  * moku_run: runs a command; the text starts with its effect from the manifest.
  *
  * @param call - The call: id, input, session.
@@ -118,14 +146,7 @@ async function runCommand(call: ToolCall, context: ToolContext): Promise<ToolRes
   const session = textArgument(call.args, "session");
   const manifest = await hub.request("game", "manifest", {}, session);
   const effect = commandOf(manifest, id)?.effect ?? "unknown";
-
-  const ran = await hub.request("game", "run", callParams(id, call.args.input), session);
-  const result = readRunResult(ran);
-  const envelope =
-    result === undefined
-      ? ran
-      : { value: result.value, frame: result.state.frame, state: result.state };
-  return { content: [textItem(`effect: ${effect}\n${jsonText(envelope)}`)] };
+  return runDoor(hub, id, effect, call.args.input, session);
 }
 
 /**
@@ -154,6 +175,7 @@ function ruleOf(args: JsonObject): WaitRule {
  * @returns `{ timedOut, value, waitedMs }`.
  */
 async function wait(call: ToolCall, context: ToolContext): Promise<ToolResult> {
+  // Where to watch: the source, its input and the session.
   const hub = await context.editor.hub();
   const { args } = call;
   const target = {
@@ -161,18 +183,23 @@ async function wait(call: ToolCall, context: ToolContext): Promise<ToolResult> {
     input: args.input,
     session: textArgument(args, "session")
   };
+
+  // Watch until the rule matches or the time is up; progress and cancel ride on the call.
   const timeoutMs = numberArgument(args, "timeoutMs", WAIT_DEFAULT_MS);
   const outcome = await waitForValue(hub, target, ruleOf(args), {
     timeoutMs,
     call,
     now: context.now
   });
+
+  // A source that never answered still gets a readable value.
   const value = outcome.value === undefined ? "no value arrived" : outcome.value;
   return jsonResult({ ...outcome, value });
 }
 
 /**
- * moku_status.
+ * moku_status: whether a bin runs and who started it, its URLs, the hot reload state and the
+ * sessions with their liveness. Never an error: without a bin it answers `running: false`.
  */
 export const statusTool: Tool = {
   name: "moku_status",
@@ -185,7 +212,8 @@ export const statusTool: Tool = {
 };
 
 /**
- * moku_sessions.
+ * moku_sessions: lists the connected game pages with their liveness, so a call can name its
+ * session when several games are connected.
  */
 export const sessionsTool: Tool = {
   name: "moku_sessions",
@@ -201,7 +229,7 @@ export const sessionsTool: Tool = {
 };
 
 /**
- * moku_manifest.
+ * moku_manifest: answers the sources and the commands a game offers, as the hub keeps them.
  */
 export const manifestTool: Tool = {
   name: "moku_manifest",
@@ -223,7 +251,7 @@ export const manifestTool: Tool = {
 };
 
 /**
- * moku_read.
+ * moku_read: reads one game source now and answers its JSON value.
  */
 export const readTool: Tool = {
   name: "moku_read",
@@ -247,7 +275,7 @@ export const readTool: Tool = {
 };
 
 /**
- * moku_run.
+ * moku_run: runs any command door by id, covered doors included, and answers its effect and value.
  */
 export const runTool: Tool = {
   name: "moku_run",
@@ -278,7 +306,7 @@ export const runTool: Tool = {
 };
 
 /**
- * moku_wait.
+ * moku_wait: watches a source until its value matches the rule or the time is up.
  */
 export const waitTool: Tool = {
   name: "moku_wait",
