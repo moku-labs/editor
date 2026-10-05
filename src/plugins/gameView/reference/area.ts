@@ -65,11 +65,6 @@ const AREA_NAME = "area";
 
 /**
  * The group of an area: at most 40 nodes in page order, and how many there were.
- *
- * @example
- * ```ts
- * const group: AreaGroup = { nodes: [homeNode, coinPillNode], total: 2 };
- * ```
  */
 export type AreaGroup = { readonly nodes: readonly SceneNode[]; readonly total: number };
 

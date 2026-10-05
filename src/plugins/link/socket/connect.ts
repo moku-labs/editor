@@ -41,7 +41,11 @@ const SERVICE_RESTART = 1012;
  * @returns The socket.
  * @example
  * ```ts
- * const socket = createSocket(`${boot.ws}?token=${token}&kind=tools`, undefined);
+ * const url = "ws://127.0.0.1:3000/__editor/ws?token=t-1&kind=tools";
+ * // In a browser: the URL only; the browser sets Origin itself.
+ * createSocket(url, undefined); // new WebSocket(url)
+ * // In a Bun process: the Origin header rides in Bun's options object.
+ * createSocket(url, "http://127.0.0.1:3000"); // new WebSocket(url, { headers: { origin: "http://127.0.0.1:3000" } })
  * ```
  */
 export function createSocket(url: string, origin: string | undefined): WebSocket {
@@ -131,9 +135,9 @@ export function openSocket(ctx: LinkCtx): void {
   const { boot } = state;
   if (boot === undefined) return;
 
+  // Create the socket; a constructor that throws counts as a failed connect.
   const url = upgradeUrl(boot, ctx.config.role);
   log.info("link:connect", { ws: boot.ws });
-
   let socket: WebSocket;
   try {
     socket = createSocket(url, socketOrigin(boot.ws));
@@ -145,6 +149,7 @@ export function openSocket(ctx: LinkCtx): void {
   }
   state.socket = socket;
 
+  // Wire its events: each one counts only while this socket is the current one.
   /**
    * True while this socket is the current one and link has not stopped.
    *
@@ -200,12 +205,17 @@ export function onSocketClose(
   const { state } = ctx;
   const wasOpen = state.open;
 
+  // Reset the socket state: no socket, no sessions, no retry timer.
   state.open = false;
   state.socket = undefined;
   state.sessions = [];
   clearRetry(state);
+
+  // Fail the pending calls and drop the wire subs (their records stay).
   failAll(ctx, linkClosedError());
   detachAll(ctx);
+
+  // Reconnect later; a server restart (1012) is an expected reload.
   state.attempt = wasOpen ? 1 : state.attempt + 1;
   ctx.log.info("link:closed", { code: event.code, reason: event.reason });
   if (event.code === SERVICE_RESTART) expectReload(ctx);

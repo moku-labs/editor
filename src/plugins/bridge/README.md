@@ -114,9 +114,9 @@ The bridge adds one command to the registry in `onInit` (`reload.ts`, `reloadEnt
    for the store. A checkpoint that cannot be taken logs `bridge:checkpoint-failed`; the reload
    still happens. `restore: false` stores nothing.
 3. It answers `{ scheduled: true }` with `state` = `registry.envelope()`.
-4. On the next macrotask, after the answer went out, it sends `bye` on the open socket and calls
-   `location.reload()` (`reloadPage` of the reload seam; a no-op outside a browser page). `onStop`
-   before then cancels it.
+4. On the next macrotask, after the answer went out, it sends `bye` on the open socket. On the
+   macrotask after that it calls `location.reload()` (`reloadPage` of the reload seam; a no-op
+   outside a browser page). `onStop` before then cancels it.
 5. The bridge of the new document restores the checkpoint and sends `restored` in its first hello,
    as after Bun's full reload. The hub ends the old session with `bye` (U7: an expected reload).
 

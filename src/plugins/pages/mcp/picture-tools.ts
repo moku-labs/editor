@@ -154,6 +154,21 @@ function shotRequestOf(call: ToolCall): ShotRequest {
 }
 
 /**
+ * The width a picture above about 300 KB is taken at once more: half of what came back (a picture
+ * narrower than `asked` is halved from its own width), at least MIN_WIDTH.
+ *
+ * @param asked - The asked maxWidth.
+ * @param image - The picture that came back, as a data URL.
+ * @returns The smaller width; undefined when the picture is small enough or cannot get narrower.
+ */
+function shrinkWidth(asked: number, image: string): number | undefined {
+  if (!isTooLarge(image)) return undefined;
+  const width = Math.min(asked, pictureSize(image)?.width ?? asked);
+  const half = Math.max(MIN_WIDTH, Math.floor(width / 2));
+  return half < width ? half : undefined;
+}
+
+/**
  * moku_screenshot: liveness, then editor.capture at `maxWidth` in the asked format, cropped to the
  * element `key` names; a picture above about 300 KB is taken once more at half its width (half of
  * `maxWidth`, or of the picture when it is narrower; the width is read from the PNG or JPEG
@@ -170,16 +185,12 @@ async function screenshot(call: ToolCall, context: ToolContext): Promise<ToolRes
   if (problem !== undefined) return errorResult(problem);
 
   const request = shotRequestOf(call);
-  const asked = numberArgument(call.args, "maxWidth", DEFAULT_MAX_WIDTH);
-  let maxWidth = asked;
+  let maxWidth = numberArgument(call.args, "maxWidth", DEFAULT_MAX_WIDTH);
   let shot = await captureShot(hub, maxWidth, request, session);
-  // Half of what came back: a picture narrower than maxWidth is halved from its own width.
-  const width = Math.min(asked, pictureSize(shot.image)?.width ?? asked);
-  const half = Math.max(MIN_WIDTH, Math.floor(width / 2));
-  // A picture above about 300 KB is taken once more, when half its width is still narrower.
-  const tooLargeToShrink = isTooLarge(shot.image) && half < width;
-  if (tooLargeToShrink) {
-    maxWidth = half;
+  // A picture above about 300 KB is taken once more, at half its width.
+  const smaller = shrinkWidth(maxWidth, shot.image);
+  if (smaller !== undefined) {
+    maxWidth = smaller;
     shot = await captureShot(hub, maxWidth, request, session);
   }
 

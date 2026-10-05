@@ -49,8 +49,15 @@ function bufferedOf(socket: SocketLike): number {
  * @returns Whether new values should wait in the backlog.
  * @example
  * ```ts
- * congested({ bufferedAmount: 2_000_000, … }); // true: above HIGH_WATER (1_048_576)
- * congested({ bufferedAmount: 1000, … }); // false
+ * const socket: SocketLike = {
+ *   readyState: 1,
+ *   bufferedAmount: 2_000_000,
+ *   send() {},
+ *   close() {},
+ *   addEventListener() {}
+ * };
+ * congested(socket); // true: above HIGH_WATER (1_048_576)
+ * congested({ ...socket, bufferedAmount: 1000 }); // false
  * ```
  */
 export function congested(socket: SocketLike): boolean {

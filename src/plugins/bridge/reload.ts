@@ -1,8 +1,8 @@
 /**
  * @file bridge plugin — the `editor.reload` command (moku_reload): it stores the checkpoint the
- * way `bun:beforeFullReload` does, answers `{ scheduled: true }`, then says bye and reloads the page
- * on the next macrotask, after the answer went out (the bye makes the tools read the reload as
- * expected, U7). The bridge of the new document restores the checkpoint and sends `restored` in its
+ * way `bun:beforeFullReload` does, answers `{ scheduled: true }`, then says bye on the next
+ * macrotask, after the answer went out, and reloads the page on the one after it (the bye makes the
+ * tools read the reload as expected, U7). The bridge of the new document restores the checkpoint and sends `restored` in its
  * first hello.
  */
 import type { Json, RunResult } from "../registry/protocol";
@@ -25,8 +25,9 @@ const RELOAD_INPUT: { readonly restore: "boolean?" } = { restore: "boolean?" };
 type ReloadDeps = Pick<BridgeDeps, "registry" | "reload" | "state" | "log">;
 
 /**
- * Reloads the page on the next macrotask, after a bye, so the tools read the reload as expected
- * (U7). A stop before then cancels it: the canceller sits in `state.off` until the timer fires.
+ * Says bye on the next macrotask, after the answer went out, and reloads the page on the macrotask
+ * after that, so the bye leaves the socket before the page goes (U7). A stop before the reload
+ * cancels it: the canceller sits in `state.off` until the reload runs.
  *
  * @param deps - The reload seam, the state and the log.
  */
@@ -34,16 +35,20 @@ function scheduleReload(deps: Pick<ReloadDeps, "reload" | "state" | "log">): voi
   const { off } = deps.state;
 
   /**
-   * Cancels the pending reload.
+   * Cancels the pending step: the bye or the reload.
    */
   const cancel = (): void => {
     clearTimeout(timer);
   };
-  const timer = setTimeout(() => {
-    const index = off.indexOf(cancel);
-    if (index !== -1) off.splice(index, 1);
+
+  // The bye first; the reload one macrotask later.
+  let timer = setTimeout(() => {
     sendBye(deps);
-    deps.reload.reloadPage();
+    timer = setTimeout(() => {
+      const index = off.indexOf(cancel);
+      if (index !== -1) off.splice(index, 1);
+      deps.reload.reloadPage();
+    }, 0);
   }, 0);
 
   off.push(cancel);
@@ -56,10 +61,6 @@ function scheduleReload(deps: Pick<ReloadDeps, "reload" | "state" | "log">): voi
  *
  * @param deps - Registry, reload seam, state and log.
  * @returns The entry the bridge adds to the registry in onInit.
- * @example
- * ```ts
- * registry.add(reloadEntry({ registry, reload: defaultReload(), state: ctx.state, log: ctx.log }));
- * ```
  */
 export function reloadEntry(deps: ReloadDeps): CommandEntry {
   return {

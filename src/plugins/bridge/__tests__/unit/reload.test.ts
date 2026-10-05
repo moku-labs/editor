@@ -72,7 +72,7 @@ describe("reloadEntry", () => {
     });
     expect(deps.reload.reloadPage).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
     expect(deps.state.off).toEqual([]);
@@ -89,9 +89,39 @@ describe("reloadEntry", () => {
 
     await entry.run(null);
     expect(socket.sent).toEqual([]);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
+  });
+
+  it("says bye on the next macrotask and reloads on the one after it", async () => {
+    const { deps, entry } = setup();
+    const socket = new FakeSocket();
+    socket.readyState = 1;
+    deps.state.socket = socket;
+
+    await entry.run({ restore: false });
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(socket.messages()).toEqual([{ jsonrpc: "2.0", channel: "game", method: "bye" }]);
+    expect(deps.reload.reloadPage).not.toHaveBeenCalled();
+
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
+    expect(deps.state.off).toEqual([]);
+  });
+
+  it("a stop between the bye and the reload cancels the reload", async () => {
+    const { deps, entry } = setup();
+
+    await entry.run({ restore: false });
+    await vi.advanceTimersToNextTimerAsync();
+    stopBridge({ state: deps.state });
+    await vi.runAllTimersAsync();
+
+    expect(deps.reload.reloadPage).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("restore: true is the default spelled out", async () => {
@@ -106,7 +136,7 @@ describe("reloadEntry", () => {
     const { deps, bookmark, entry } = setup();
 
     const ran = await entry.run({ restore: false });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(ran.value).toEqual({ scheduled: true });
     expect(bookmark).not.toHaveBeenCalled();
@@ -119,7 +149,7 @@ describe("reloadEntry", () => {
     bookmark.mockRejectedValueOnce(new Error("[moku-editor] no rest point"));
 
     const ran = await entry.run(null);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(ran.value).toEqual({ scheduled: true });
     expect(deps.log.warn).toHaveBeenCalledWith("bridge:checkpoint-failed", {
@@ -148,7 +178,7 @@ describe("reloadEntry", () => {
 
     await entry.run({ restore: false });
     stopBridge({ state: deps.state });
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.runAllTimersAsync();
 
     expect(deps.reload.reloadPage).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);

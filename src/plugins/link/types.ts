@@ -278,6 +278,7 @@ export type LinkApi = EditorChannel & {
    * @returns The id, undefined when none is chosen.
    * @example
    * ```ts
+   * // The session chip marks the game the tools are attached to.
    * app.link.session(); // "s-1"
    * ```
    */

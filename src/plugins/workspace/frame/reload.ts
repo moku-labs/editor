@@ -37,11 +37,6 @@ type Checkpoint = { readonly bookmark: Json; readonly paused: boolean };
 /**
  * The checkpoint taken before a reload, or the reason there is none (with the failure message of
  * a bookmark that failed, warned only when the checkpoint is needed).
- *
- * @example
- * ```ts
- * const taken: Taken = { checkpoint: { bookmark: { checkpoint: "home" }, paused: false }, reason: undefined };
- * ```
  */
 export type Taken = {
   readonly checkpoint: Checkpoint | undefined;
@@ -138,7 +133,8 @@ export function nextManifest(
     // Listen first. `armed` skips the immediate call with the manifest that exists now.
     let armed = false;
     const off = link.onManifest(manifest => {
-      if (armed && manifest?.embedded && !link.isOtherTab(manifest.page)) finish(manifest);
+      const isOwnNewSession = armed && manifest?.embedded && !link.isOtherTab(manifest.page);
+      if (isOwnNewSession) finish(manifest);
     });
     armed = true;
 

@@ -18,11 +18,6 @@ import { pickDraggedArea } from "./area";
 
 /**
  * One pointer event as the gesture reads it: the pointer and its client point.
- *
- * @example
- * ```ts
- * const at: PointerAt = { pointerId: 1, x: 412, y: 230 };
- * ```
  */
 export type PointerAt = ClientPoint & { readonly pointerId: number };
 

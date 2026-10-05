@@ -157,8 +157,11 @@ export function snippetSection(title: string, snippet: CodeSnippet): string[] {
  * ```
  */
 export function codeSections(code: ElementCode | undefined, owner?: string): string[][] {
+  // No code known: no section.
   if (code === undefined) return [];
   const prefix = owner === undefined ? "" : `${owner} · `;
+
+  // An entity: one section with its projection and its components.
   if (code.kind === "entity") {
     const { spawn } = code;
     const where = spawn === undefined ? "" : ` · ${spawn.path}:${spawn.line}`;
@@ -167,6 +170,8 @@ export function codeSections(code: ElementCode | undefined, owner?: string): str
     );
     return [[`## ${prefix}Spawned by ${code.projection}${where}`, "", ...rows]];
   }
+
+  // An element: its JSX, then its style, each when found.
   const sections: string[][] = [];
   if (code.jsx !== undefined) sections.push(snippetSection(`${prefix}JSX`, code.jsx));
   if (code.style !== undefined) {

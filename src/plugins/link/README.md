@@ -136,6 +136,8 @@ An expected reload window opens on:
 
 Inside the window every `lost` except `no_boot` carries `reloading: true`, and the frame of the
 last heartbeat before the reload when the new one has none (`lastFrame` 0 after the reconnect).
+After the loss the reconnect (`connecting`, `empty`) keeps the neutral `lost` until the game
+beats. A plain `lost` of before the window stays plain, also when a retry applies it again.
 A heartbeat after the loss ends the window. A window that saw no loss yet is not ended by a
 heartbeat (the old page may beat once more before it goes). After `reloadGraceMs` the window ends:
 a `lost` with `reloading: true` is sent again as a plain `lost`. A second trigger renews the timer and waits for its own loss: workspace may reload the frame right

@@ -121,6 +121,17 @@ export function addHotReloadListener(
  * @returns The absolute URL.
  * @example
  * ```ts
+ * // Outside a page (a Bun process): the http origin of the boot socket.
+ * const boot: ToolsBoot = {
+ *   v: 1,
+ *   ws: "ws://127.0.0.1:3000/__editor/ws",
+ *   token: "t-1",
+ *   path: "/__editor",
+ *   title: "Coin Rush",
+ *   editorUrl: "vscode://file/{file}:{line}",
+ *   root: "/work/coin-rush",
+ *   gameUrl: "http://127.0.0.1:3000/"
+ * };
  * hmrUrl(boot); // "http://127.0.0.1:3000/__editor/hmr"
  * ```
  */
@@ -211,7 +222,8 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
   if (boot === undefined) return false;
 
   const current = state.hotReload;
-  if (current?.owner === "bin" && current.hmr !== on) expectReload(ctx);
+  const isBinRestart = current?.owner === "bin" && current.hmr !== on;
+  if (isBinRestart) expectReload(ctx);
 
   const waiter: HotReloadWaiter = { before: state.socket, delivered: false, settle: undefined };
   state.hotReloadWaiters.add(waiter);
@@ -223,7 +235,8 @@ export async function requestHotReload(ctx: LinkCtx, on: boolean): Promise<boole
     }
 
     if (answer.state !== undefined) applyHotReload(ctx, answer.state);
-    return answer.ok && answer.state?.owner === "bin" && answer.state.hmr === on;
+    const binApplied = answer.ok && answer.state?.owner === "bin" && answer.state.hmr === on;
+    return binApplied;
   } finally {
     state.hotReloadWaiters.delete(waiter);
   }
