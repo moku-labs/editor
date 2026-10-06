@@ -88,9 +88,9 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 /**
  * Records a refused watch: -32008 marks the session that does not have the source (debug only,
  * never sent to it again); a session the hub already closed (`no_session`) or one that closed in
- * a reload (-32001) is `link:watch-deferred` at debug; any other answer is
- * logged as `link:watch-failed`. Both are sent again on the next attach. A watch the link itself
- * closed on stop (`link_closed`) is not logged.
+ * a reload (-32001) is `link:watch-deferred` at debug; any other answer is logged as
+ * `link:watch-failed`. The deferred and the failed watch are sent again on the next attach; a
+ * -32008 one is not. A watch the link itself closed on stop (`link_closed`) is not logged.
  *
  * @param ctx - Domain context of link.
  * @param sub - The record.

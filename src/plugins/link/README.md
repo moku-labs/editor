@@ -212,6 +212,6 @@ const off = link.onManifest(manifest => recheck(manifest));
 ## Limits
 
 - Requests are not queued while disconnected. They reject at once. Only watch records are kept.
-- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text. A watch the hub refuses because its session just closed (-32003 `no_session`, during a reload), or one it fails with -32001 while link expects a reload (`expectReload`, a server restart or a bye), is `link:watch-deferred` at debug; the next attach sends it again.
+- `EditorChannel.watch` has no error path. A failed watch is logged as `link:watch-failed` (not for -32008 `not_installed`); panels shows the waiting text. A watch the hub refuses because its session just closed (-32003 `no_session`, during a reload), or one it fails with -32001 because its session closed in a reload (the editor's, a server restart, a bye, or Bun hot reload after a save), is `link:watch-deferred` at debug; the next attach sends it again.
 - A game reload mid-call rejects with the hub's -32001 `game_reloaded` (retryable).
 - A throttled hidden game tab that is not paused can read `silent`.

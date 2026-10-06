@@ -116,16 +116,18 @@ export function flowStartOf(graph: Json | undefined, flow: string): string | und
 
 /**
  * True for a read the reload of the game page took away: a retryable error (-32001
- * `game_reloaded`, the link closed) or -32003 because the session closed meanwhile.
+ * `game_reloaded`, -32002 when the link closed or timed out, any `data.retryable`) or -32003
+ * because the session closed meanwhile.
  *
  * @param error - The rejection.
  * @returns Whether the next manifest will read again.
  * @example
  * ```ts
- * isLostToReload(wireError(-32_003, "No game is connected.", { reason: "no_session" })); // true
+ * isReadLostToReload(wireError(-32_001, "game reloaded", { reason: "game_reloaded" })); // true
+ * isReadLostToReload(wireError(-32_003, "No game is connected.", { reason: "no_session" })); // true
  * ```
  */
-function isLostToReload(error: unknown): boolean {
+function isReadLostToReload(error: unknown): boolean {
   return isRetryable(error) || (isWireError(error) && error.code === errorCode.noSession);
 }
 
@@ -153,7 +155,7 @@ export async function loadGraph(ctx: FilesViewCtx): Promise<void> {
   } catch (error) {
     state.graph = undefined;
     const details = { message: messageOf(error) };
-    if (isLostToReload(error)) ctx.log.debug("filesView:graph-failed", details);
+    if (isReadLostToReload(error)) ctx.log.debug("filesView:graph-failed", details);
     else ctx.log.warn("filesView:graph-failed", details);
   }
   notify(state);

@@ -126,7 +126,7 @@ filesView declares no events. It uses the global tools events of `src/config.ts`
 | Hooks | `workspace:changed` | `{ ws }` | `ws === "files"`: rebuilds an index older than `INDEX_STALE_MS`, re-reads the active tab. |
 | Hooks | `workspace:open-file` | `{ path, line? }` | Opens the file for another view. A failure logs `filesView:open-failed`. |
 
-Log events: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:follow-failed` (warn); `filesView:save-failed` (error).
+Log events: `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:follow-failed`, `filesView:graph-failed` (warn; debug when the read was lost to a reload, and the next manifest reads it again); `filesView:save-failed` (error).
 
 ## Dependencies
 
