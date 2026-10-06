@@ -46,7 +46,7 @@ createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
 | `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`, `project` a `ProjectState`. A tools page that connects later gets it right after `sessions {list}`. |
-| `closeAll` | `(code: number, reason: string) => void` | Closes every agent and tools socket with one code and reason. The hub keeps running and keeps its token. |
+| `closeAll` | `(code: number, reason: string) => Promise<void>` | Closes every agent and tools socket with one code and reason, and resolves when Bun reported the closes (at most 500 ms). The hub keeps running and keeps its token. |
 | `path` | `() => string` | `config.path`. |
 
 ### `serve(options)`

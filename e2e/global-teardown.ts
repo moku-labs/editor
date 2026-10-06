@@ -4,8 +4,8 @@
  * fails the run on any. A tools page that looks fine while the server logs an error is a defect.
  *
  * A spec that provokes server errors on purpose names the byte window of the log it provoked them
- * in, in dist-e2e/server-log-provoked.json (`[{ log, from, to, by }]`): e2e/project-stress.spec.ts
- * breaks and deletes game files, and Bun's dev server logs the bundle errors. Lines in a window
+ * in, in dist-e2e/server-log-provoked.json (`[{ log, from, to, by }]`). `log` is the worker's log
+ * path, `EditorServer.log` of the `editor` fixture. No spec writes one today. Lines in a window
  * are skipped, except a `[moku-editor]` line, which is always an editor error. The file is removed
  * after every run, so a window never applies to the log of another run.
  */

@@ -26,6 +26,9 @@ export const BASE_PORT = Number(process.env.PORT ?? 4317);
 /** How long a bin may take to answer its tools page. */
 const START_MS = 60_000;
 
+/** How long a bin may take to exit after SIGINT before it is killed. */
+const STOP_MS = 5000;
+
 /** A running editor of one worker. */
 export type EditorServer = {
   /** The page origin, `http://127.0.0.1:<port>`. */
@@ -91,6 +94,13 @@ export async function startEditor(
   const url = `http://127.0.0.1:${port}`;
   const log = path.join(DIST, `server-${index}.log`);
 
+  // A port that already answers belongs to a bin of another run: the specs would talk to it.
+  const taken = await fetch(`${url}/__editor/`).then(
+    () => true,
+    () => false
+  );
+  if (taken) throw new Error(`[e2e] port ${port} is already in use: stop the old bin`);
+
   // A fresh root per worker start: the bin's writes (notes, captures, saved sources) stay in it.
   await rm(root, { recursive: true, force: true });
   await cp(path.join(DIST, "game"), root, { recursive: true });
@@ -104,15 +114,26 @@ export async function startEditor(
   );
   child.stdout?.pipe(out);
   child.stderr?.pipe(out);
-  await waitReady(`${url}/__editor/`, child);
+  const closeLog = (): Promise<void> => new Promise(resolve => out.end(resolve));
+  try {
+    await waitReady(`${url}/__editor/`, child);
+  } catch (error) {
+    child.kill("SIGKILL");
+    await closeLog();
+    throw error;
+  }
 
+  // SIGINT, the bin's own stop; SIGKILL when it does not exit in time. The log is flushed before
+  // the global teardown reads it.
   const stop = async (): Promise<void> => {
     if (child.exitCode === null) {
       const exited = new Promise(resolve => child.once("exit", resolve));
+      const timer = setTimeout(() => child.kill("SIGKILL"), STOP_MS);
       child.kill("SIGINT");
       await exited;
+      clearTimeout(timer);
     }
-    out.end();
+    await closeLog();
   };
   return { server: { url, root, log }, stop };
 }
