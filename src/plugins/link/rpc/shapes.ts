@@ -1,7 +1,8 @@
 /**
  * @file link plugin — reads the wire shapes link receives (sessions, manifest, run results, file
  * results, boot, hello and hot reload JSON) from Json into fresh typed objects. No casts: every field is
- * checked, unknown keys are dropped, a bad shape reads as undefined.
+ * checked, unknown keys are dropped, a bad shape reads as undefined. The project-index shapes are the
+ * protocol's own parsers, re-exported under the reader names.
  */
 
 import type {
@@ -24,6 +25,13 @@ import type {
   WriteResult
 } from "../../registry/protocol";
 import { errorCode, wireError } from "../../registry/protocol";
+
+export {
+  /** Reads the result of a files-channel `find`: the protocol's `parseFoundList`. */
+  parseFoundList as readFoundList,
+  /** Reads the params of an `editor.project` notification: the protocol's `parseProjectState`. */
+  parseProjectState as readProjectState
+} from "../../registry/protocol";
 
 /**
  * A decoded JSON object.

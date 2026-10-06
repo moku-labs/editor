@@ -8,7 +8,8 @@ choice first, then this page's own game frame, then the newest embedded one, the
 The game frame of another tools tab is attached only through `choose()`. It caches that session's manifest
 and exposes the remote `EditorChannel` that every panel reads through. It also carries the files
 client and derives the link status. As the editor page (`role: "page"`), it publishes the editor
-selection to the hub and answers the `editor.select` requests the hub relays (D-33). It renders
+selection to the hub and answers the `editor.select` requests the hub relays (D-33). It keeps
+the project index the hub publishes and asks it where a key lives (`files.find`). It renders
 nothing.
 
 ## Configuration
@@ -36,7 +37,7 @@ Fixed constants in `types.ts` (not config):
 ## API
 
 `app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap, hot
-reload, the editor selection, the select handler and files.
+reload, the editor selection, the select handler, the project index and files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -62,7 +63,8 @@ reload, the editor selection, the select handler and files.
 | `selection` | `() => SelectionInfo \| undefined` | A fresh copy of the selection from the hub's last `editor.selection` notification: this page's own publish echoed back, or another editor page tab's. `undefined` until the hub sent one, and when nothing is selected. A malformed one is the warn `link:bad-selection` and keeps the last value. |
 | `notify` | `(method: "selection", params: SelectionInfo \| null) => void` | Sends the editor-channel notification `selection` to the hub through `toWireValue`. `null` (nothing selected) goes out without params: the wire refuses null params. Dropped while the socket is closed. The last value, `null` included, is sent again each time a socket opens. The hub takes it only from a `role: "page"` link. A failed send is the warn `link:notify-failed`. A no-op after stop. |
 | `handle` | `(method: "select", handler: (params: SelectParams) => Promise<SelectionInfo>) => () => void` | Handles the editor-channel request `select` the hub relays to this page (MCP `moku_select`). The params are checked with `parseSelectParams`; missing params are `{}`. The handler's result goes back through `toWireValue` with the hub's id. A thrown error goes back through `toWireError` and is logged as `link:request-failed`: at debug for invalid input (-32602, such as an unknown key; the caller gets the error), at warn otherwise. A later handler replaces an earlier one. Returns an idempotent remover that removes only its own handler. |
-| `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`. No session needed. |
+| `project` | `() => ProjectState \| undefined` | The project index from the hub's last `editor.project` notification: `on` with its key maps (`defs`, `uses`, `broken`, `manifest`), or `off` with the reason. Frozen. Kept across reconnects. `undefined` until the hub sent one. |
+| `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`, `find(key)`. No session needed. `find` answers the `ProjectFound[]` of a project-index key, lines read from disk at the call; `[]` for a key the index does not know; -32008 `not_installed` while the index is off. |
 
 ```ts
 const graph = await app.link.read("game.graph");
@@ -81,6 +83,8 @@ await app.link.setHotReload(false); // true: the bin restarted without HMR
 app.link.notify("selection", info); // the hub keeps it; MCP moku_selection answers it
 const offSelect = app.link.handle("select", params => selectByKey(params)); // MCP moku_select
 app.link.selection()?.key; // "coins"
+app.link.project(); // { state: "on", revision: "r2", defs: { "node:board/merge": ["nodes/merge.ts"] }, … }
+await app.link.files.find("node:board/merge"); // [{ path: "nodes/merge.ts", line: 17, range: [17, 1, 30, 3], hash: "a1" }]
 await app.link.files.write("docs/plan.md", text);
 app.link.retry();
 offTaps();
@@ -110,11 +114,12 @@ Answers this page sends to the hub for an editor-channel request:
 
 ## Events
 
-`link` declares no plugin events. It emits one global tools event, declared in `src/config.ts`.
+`link` declares no plugin events. It emits two global tools events, declared in `src/config.ts`.
 
 | Event | Payload | When |
 |---|---|---|
 | `link:status` | `{ status: LinkStatus; session?: string }` | The status changed kind or any field (new heartbeat frame, new `retryInMs`), or the session changed with the same status. |
+| `link:project` | `{ state: ProjectState; delta: ProjectDelta }` | A new project-index state arrived. The same state again (on at the same revision and manifest, off with the same reason) emits nothing. At the same revision with another `manifest` (the game revision hashes sources only) `delta` is `{ all: false, files: [old manifest, new manifest] }`. Else `delta` is `projectDelta(held, next)`: `all: true` for the first state, a revision gap (reconnect) or an off state; else the `files`, `moved` and `removed` of the state's change. Both are frozen. |
 
 | Status | When |
 |---|---|
@@ -153,7 +158,7 @@ Hooks: none. Inputs are socket messages and timers.
 |---|---|
 | `depends` | none. `link` is the first tools plugin. |
 | Imports | `../registry/protocol` (runtime-free wire types and helpers). |
-| Global events | emits `link:status`. |
+| Global events | emits `link:status`, `link:project`. |
 | Runtime globals | `WebSocket`, `fetch`, `document`, timers. No npm runtime dependency. |
 
 ## Usage
@@ -198,6 +203,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 - Hot reload: the hub sends `editor.hotReload { hmr, owner }` after `sessions {list}` and on each change. A malformed one is the warn `link:bad-hot-reload`. workspace shows the Hot reload switch from `hotReload()`/`onHotReload`, calls `setHotReload` and confirms by `onHotReload`.
 - Hot reload switch (D-32, A1): the bin answers the POST, then restarts its server. The hub closes the socket with 1012 `editor restarting` first; link logs `link:closed` at info, as every close, and reconnects after `retryMs`; the hub replays `hotReload` on open. That replay settles a `setHotReload` whose answer the restart cut off.
 - Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
+- Project index: the files plugin opens the index of the files root; the hub publishes its state as `editor.project` and replays it on every socket open. link parses it with the protocol's `parseProjectState` (re-exported as `readProjectState`). A malformed state is the warn `link:bad-project` and keeps the last one. Views read `project()` and drop what the `link:project` delta names. JSX keys never ride the state: only `files.find` reaches them.
 - Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.

@@ -85,6 +85,41 @@ describe("createFilesClient", () => {
     await expect(reading).resolves.toEqual({ dataUrl: url, version: "v" });
   });
 
+  it("find sends find { key } and reads the Found list", async () => {
+    const found = {
+      path: "nodes/merge.ts",
+      binding: "merge",
+      key: "node:board/merge",
+      line: 17,
+      range: [17, 1, 30, 3],
+      hash: "a1"
+    };
+    const finding = createFilesClient(ctx).find("node:board/merge");
+    const sent = latestSocket().last("find");
+    expect(sent).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      channel: "files",
+      method: "find",
+      params: { key: "node:board/merge" }
+    });
+    latestSocket().answer(sent, [found]);
+    await expect(finding).resolves.toEqual([found]);
+  });
+
+  it("find resolves [] for a key the index does not know and rejects a bad Found -32600", async () => {
+    const files = createFilesClient(ctx);
+    const unknown = files.find("jsx:nowhere");
+    latestSocket().answer(latestSocket().last("find"), []);
+    await expect(unknown).resolves.toEqual([]);
+
+    const bad = files.find("node:board/merge").catch((error: unknown) => error);
+    latestSocket().answer(latestSocket().last("find"), [
+      { path: "nodes/merge.ts", line: 17, range: [17, 1, 30], hash: "a1" }
+    ]);
+    expect(await bad).toMatchObject({ code: -32_600 });
+  });
+
   it("never sends a session, even when one is chosen", () => {
     ctx.state.chosen = "s-1";
     createFilesClient(ctx)

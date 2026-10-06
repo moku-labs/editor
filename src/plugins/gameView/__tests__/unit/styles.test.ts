@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
-import type { StyleEditCode } from "../../../panels/shared/style-edit";
+import { STYLE_BROKEN_TEXT, type StyleEditCode } from "../../../panels/shared/style-edit";
+import { wireError } from "../../../registry/protocol";
 import { openStyleCard, saveStyle, stepStyle, styleErrorText } from "../../element/styles";
 import type { ElementRef } from "../../types";
-import { createCtx, flush, sceneCapture, type TestCtx, templateOf } from "../helpers";
+import { answer, createCtx, flush, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
 const COIN: ElementRef = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
@@ -50,8 +51,13 @@ function withKey(scene: SceneSnapshot, path: string, key: string): SceneSnapshot
 
 let ctx: TestCtx;
 
+/** The style key of the coin pill block in the index. */
+const COIN_STYLE = "style:src/hud/styles.ts#coinPill";
+
 beforeEach(() => {
   ctx = createCtx({ "src/hud/Hud.tsx": HUD, "src/hud/styles.ts": STYLES });
+  ctx.link.projectValue = projectOn({ [COIN_STYLE]: ["src/hud/styles.ts"] });
+  answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [3, 3, 3, 43]));
   ctx.state.scene = boardScene();
   ctx.state.selected = COIN;
 });
@@ -83,30 +89,35 @@ describe("openStyleCard", () => {
     expect(ctx.state.blocks.get("coinPill")).toEqual({ path: "src/hud/styles.ts", line: 3 });
   });
 
-  it("says a key built in a loop is defined at the template literal (loop)", async () => {
-    ctx.link.files.put("src/hud/Hud.tsx", `const id = ${templateOf("orderCard", "slot")};`);
+  it("asks the index for the key of the scene node (a pattern answer too)", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", "<Row>\n  <column key={id} />\n</Row>");
+    answer(ctx, "jsx:orderCard0", place("src/hud/Hud.tsx", [2, 3, 2, 22], { key: "orderCard*" }));
     ctx.state.scene = withKey(boardScene(), "boardScreen/hudRow/coinPill", "orderCard0");
     await openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({
       key: "orderCard0",
       status: "defined",
       path: "src/hud/Hud.tsx",
-      line: 1,
-      loop: true
+      line: 2
     });
   });
 
-  it("uses a defineStyle constant of the same file first", async () => {
+  it("uses a defineStyle constant of the same file first when the index defines it there", async () => {
     ctx.link.files.put(
       "src/hud/Hud.tsx",
       'const coinPill = defineStyle({ height: 10 });\n<Pill key="coinPill" style={coinPill} />\n'
     );
+    ctx.link.projectValue = projectOn({
+      [COIN_STYLE]: ["src/hud/styles.ts"],
+      "style:src/hud/Hud.tsx#coinPill": ["src/hud/Hud.tsx"]
+    });
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 1, 2, 42]));
     await openStyleCard(ctx, COIN);
     expect(ctx.state.styles?.path).toBe("src/hud/Hud.tsx");
   });
 
-  it("shows searching, then missing when no file has the key", async () => {
-    ctx.link.files.put("src/hud/Hud.tsx", "<Row />");
+  it("shows the lookup, then missing when the index does not know the key", async () => {
+    ctx.link.files.answers.delete("jsx:coinPill");
     const pending = openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({ key: "coinPill", status: "searching" });
     await pending;
@@ -114,8 +125,9 @@ describe("openStyleCard", () => {
     expect(ctx.state.styles).toBeUndefined();
   });
 
-  it("reports the shared module's refusal when the block is not found", async () => {
+  it("reports the shared module's refusal when the index defines no such block", async () => {
     ctx.link.files.put("src/hud/Hud.tsx", '<Pill key="coinPill" style={nowhere} />');
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 1, 41]));
     await openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({
       key: "coinPill",
@@ -125,8 +137,11 @@ describe("openStyleCard", () => {
     });
   });
 
-  it("logs a failing search and reports missing", async () => {
-    vi.spyOn(ctx.link.files, "list").mockResolvedValueOnce([{ path: "src", kind: "dir", size: 0 }]);
+  it("reports missing when the index is off or the key file cannot be read", async () => {
+    vi.spyOn(ctx.link.files, "find").mockRejectedValueOnce(new Error("project index off"));
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toEqual({ key: "coinPill", status: "missing" });
+
     vi.spyOn(ctx.link.files, "read").mockRejectedValue(new Error("offline"));
     await openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({ key: "coinPill", status: "missing" });
@@ -145,6 +160,7 @@ describe("openStyleCard", () => {
       "src/hud/Hud.tsx",
       '<Pill\n  key="coinPill"\n  style={pillOf(props.width, 2)}\n/>'
     );
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 4, 3], { line: 2 }));
     await openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({
       key: "coinPill",
@@ -158,12 +174,29 @@ describe("openStyleCard", () => {
 
   it("says where the key is defined when its element has no style", async () => {
     ctx.link.files.put("src/hud/Hud.tsx", '<Row>\n  <HudPill id="coinPill" />\n</Row>');
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 3, 2, 27], { kind: "idProp" }));
     await openStyleCard(ctx, COIN);
     expect(ctx.state.lookup).toEqual({
       key: "coinPill",
       status: "defined",
       path: "src/hud/Hud.tsx",
       line: 2
+    });
+  });
+
+  it("says the style file does not parse now when the index lists it broken (D-44)", async () => {
+    ctx.link.projectValue = projectOn(
+      { [COIN_STYLE]: ["src/hud/styles.ts"] },
+      { broken: { "src/hud/styles.ts": "src/hud/styles.ts:4:3 ',' expected" } }
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.styles?.error).toEqual({ error: "broken", path: "src/hud/styles.ts" });
+
+    ctx.link.files.put("src/hud/styles.ts", "export const coinPill = defineStyle({ height: ");
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toMatchObject({
+      status: "failed",
+      error: { error: "broken", path: "src/hud/styles.ts" }
     });
   });
 
@@ -263,15 +296,169 @@ describe("stepStyle and saveStyle", () => {
     expect(text).toContain("left: 21");
   });
 
+  it("writes nothing while the index answers the block from a broken file, and says so", async () => {
+    answer(ctx, COIN_STYLE, place("src/hud/styles.ts", [3, 1, 8, 3], { broken: true }));
+    stepStyle(ctx, "height", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(ctx.link.files.writes).toEqual([]);
+    expect(ctx.state.styles?.error).toEqual({ error: "broken", path: "src/hud/styles.ts" });
+    expect(
+      styleErrorText({ error: "broken", path: "src/hud/styles.ts" }, ctx.link.projectValue)
+    ).toBe(STYLE_BROKEN_TEXT);
+  });
+
+  it("writes nothing while the index is off, and the card says why (D-48)", async () => {
+    vi.spyOn(ctx.link.files, "find").mockRejectedValue(
+      wireError(-32_008, "project index off: disabled", { reason: "not_installed" })
+    );
+    stepStyle(ctx, "height", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(ctx.link.files.writes).toEqual([]);
+    expect(ctx.state.styles?.error).toEqual({ error: "index-off", path: "src/hud/styles.ts" });
+    expect(
+      styleErrorText(
+        { error: "index-off", path: "src/hud/styles.ts" },
+        {
+          state: "off",
+          reason: "disabled"
+        }
+      )
+    ).toBe("Project index is off: disabled");
+  });
+
   it("saveStyle without a pending edit does nothing", async () => {
     await saveStyle(ctx);
     expect(ctx.link.files.writes).toEqual([]);
   });
 });
 
+describe("a style a function builds (G2)", () => {
+  const KIT = "src/hud/kit.tsx";
+  const ICON_KEY = "style:src/hud/kit.tsx#roundStylesOf.icon";
+  const BOARD_KEY = "style:src/hud/kit.tsx#signboardStyle";
+  const KIT_TEXT = [
+    'import { defineStyle } from "../kit";',
+    "",
+    "export function roundStylesOf(size: number) {",
+    "  return {",
+    "    icon: defineStyle({ width: 40, height: 40 })",
+    "  };",
+    "}",
+    "",
+    "export function signboardStyle(hung: boolean) {",
+    "  if (!hung) return defineStyle(board);",
+    "  return defineStyle({",
+    "    ...board,",
+    "    gap: 12",
+    "  });",
+    "}",
+    ""
+  ].join("\n");
+
+  /**
+   * Styles the coin pill with a call and lets the index know the function's keys.
+   *
+   * @param call - The style attribute's call.
+   */
+  function styledBy(call: string): void {
+    ctx.link.files.put(
+      "src/hud/Hud.tsx",
+      `import { roundStylesOf, signboardStyle } from "./kit";\n<Pill\n  key="coinPill"\n  style={${call}}\n/>`
+    );
+    ctx.link.files.put(KIT, KIT_TEXT);
+    ctx.link.projectValue = projectOn({ [ICON_KEY]: [KIT], [BOARD_KEY]: [KIT] });
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 1, 5, 3], { line: 3 }));
+    answer(ctx, ICON_KEY, place(KIT, [5, 11, 5, 49], { binding: "roundStylesOf", key: "icon" }));
+    answer(
+      ctx,
+      BOARD_KEY,
+      place(KIT, [10, 21, 10, 41], { binding: "signboardStyle" }),
+      place(KIT, [11, 10, 14, 5], { binding: "signboardStyle" })
+    );
+  }
+
+  it("shows an editable card at the defineStyle call the index answers", async () => {
+    styledBy("roundStylesOf(76).icon");
+    await openStyleCard(ctx, COIN);
+
+    expect(ctx.state.lookup).toBeUndefined();
+    expect(ctx.state.styles).toMatchObject({
+      path: KIT,
+      current: { text: KIT_TEXT, version: ctx.link.files.version(KIT) },
+      ref: { kind: "call", name: "roundStylesOf.icon", line: 5, column: 11 },
+      block: { line: 5, endLine: 5 },
+      error: undefined
+    });
+  });
+
+  it("takes the first call of the function that has an object to edit", async () => {
+    styledBy("signboardStyle(true)");
+    await openStyleCard(ctx, COIN);
+
+    expect(ctx.state.styles).toMatchObject({
+      ref: { kind: "call", name: "signboardStyle", line: 11, column: 10 },
+      block: { line: 11, endLine: 14 }
+    });
+  });
+
+  it("a step writes the literal in the call and nothing else", async () => {
+    styledBy("roundStylesOf(76).icon");
+    await openStyleCard(ctx, COIN);
+    vi.useFakeTimers();
+
+    stepStyle(ctx, "width", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+
+    const text = ctx.link.files.text(KIT);
+    expect(text).toBe(KIT_TEXT.replace("width: 40, height: 40", "width: 41, height: 40"));
+    expect(ctx.state.styles?.block.fields.find(field => field.path === "width")).toMatchObject({
+      value: 41
+    });
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Saved", KIT);
+  });
+
+  it("writes nothing while the index answers the call from a broken file", async () => {
+    styledBy("roundStylesOf(76).icon");
+    await openStyleCard(ctx, COIN);
+    answer(ctx, ICON_KEY, place(KIT, [5, 11, 5, 49], { broken: true }));
+    vi.useFakeTimers();
+
+    stepStyle(ctx, "height", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(ctx.link.files.writes).toEqual([]);
+    expect(ctx.state.styles?.error).toEqual({ error: "broken", path: KIT });
+  });
+
+  it("stays a read-only call when the call has no object, or the index has no answer", async () => {
+    styledBy("signboardStyle(false)");
+    answer(ctx, BOARD_KEY, place(KIT, [10, 21, 10, 41], { binding: "signboardStyle" }));
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.styles).toBeUndefined();
+    expect(ctx.state.lookup).toMatchObject({ status: "call", call: "signboardStyle(false)" });
+
+    ctx.link.files.answers.delete(BOARD_KEY);
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toMatchObject({ status: "call", line: 4 });
+  });
+
+  it("shows the refusal when the file of the call does not parse", async () => {
+    styledBy("roundStylesOf(76).icon");
+    ctx.link.files.put(KIT, `${KIT_TEXT}function broken() {\n`);
+    await openStyleCard(ctx, COIN);
+
+    expect(ctx.state.lookup).toMatchObject({
+      status: "failed",
+      path: KIT,
+      error: { error: "parse" }
+    });
+  });
+});
+
 describe("styleErrorText", () => {
   it("gives one line of gameView's own text for every code", () => {
     const codes: StyleEditCode[] = [
+      "broken",
       "no-file",
       "parse",
       "no-key",
@@ -279,13 +466,19 @@ describe("styleErrorText", () => {
       "not-literal",
       "read-only",
       "changed-on-disk",
-      "out-of-range"
+      "out-of-range",
+      "index-off"
     ];
-    const texts = codes.map(error => styleErrorText({ error, line: 4, key: "coinPill" }));
+    const project = projectOn();
+    const texts = codes.map(error => styleErrorText({ error, line: 4, key: "coinPill" }, project));
     expect(new Set(texts).size).toBe(codes.length);
     for (const text of texts) expect(text).not.toContain("\n");
-    expect(styleErrorText({ error: "no-key", key: "coinPill" })).toBe(
+    expect(styleErrorText({ error: "no-key", key: "coinPill" }, project)).toBe(
       "No style block named coinPill."
+    );
+    expect(styleErrorText({ error: "index-off" }, project)).toBe("Project index is off");
+    expect(styleErrorText({ error: "index-off" }, undefined)).toBe(
+      "Project index is off: no state from the server yet"
     );
   });
 });

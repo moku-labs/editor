@@ -2,12 +2,14 @@
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
  * children, the resolved style, the layout style card with its steppers (or the read-only call,
- * or where the key is defined, `(loop)` for a key built in a loop), the Code section (round 2b
- * R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
+ * or where the key is defined, or why the project index has no answer), the Code section (round
+ * 2b R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
  * (workspace:reveal) and "Pick another".
  */
 import type { VNode } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import { linkPlugin } from "../../link";
+import { notFoundText } from "../../panels/shared/project";
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { ancestorsOf, refId } from "../../panels/shared/scene";
 import type { StyleField } from "../../panels/shared/style-edit";
@@ -145,7 +147,7 @@ function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleC
       </dl>
       {card.error !== undefined && (
         <p data-part="error" role="alert">
-          {styleErrorText(card.error)}
+          {styleErrorText(card.error, ctx.require(linkPlugin).project())}
         </p>
       )}
     </>
@@ -182,13 +184,13 @@ function CallCard(props: {
 }
 
 /**
- * What the style card section says while no card is shown: the search failed, found a style
- * call (read-only card), found the key without a style ("Defined at"), found nothing, or still
- * runs.
+ * What the style card section says while no card is shown: the style edit refused, the index found
+ * a style call (read-only card), found the key without a style ("Defined at"), has no answer
+ * (`Not in the project index: jsx:<key>`, or why the index is off), or is still asked.
  *
  * @param props - The context, the lookup and the ui key.
  * @param props.ctx - Domain context of gameView.
- * @param props.lookup - The style search of the selected element.
+ * @param props.lookup - The style lookup of the selected element.
  * @param props.nodeKey - The ui key.
  * @returns The note.
  */
@@ -201,7 +203,7 @@ function LookupNote(props: {
   if (lookup?.status === "failed") {
     return (
       <p data-part="error" role="alert">
-        {styleErrorText(lookup.error)}{" "}
+        {styleErrorText(lookup.error, ctx.require(linkPlugin).project())}{" "}
         <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}>
           Open in Files
         </button>
@@ -216,19 +218,21 @@ function LookupNote(props: {
         <code data-part="where">
           {lookup.path}:{lookup.line}
         </code>{" "}
-        {lookup.loop === true && <span data-part="loop">(loop) </span>}
         <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.line)}>
           Open in Files
         </button>
       </p>
     );
   }
-  if (lookup?.status === "missing") return <p>Source not found for key {nodeKey}</p>;
-  return <p>Searching the sources for {nodeKey}…</p>;
+  if (lookup?.status === "missing") {
+    const project = ctx.require(linkPlugin).project();
+    return <p data-part="not-found">{notFoundText(project, `jsx:${nodeKey}`)}</p>;
+  }
+  return <p>Finding {nodeKey} in the project index…</p>;
 }
 
 /**
- * The style card section of a keyed ui node: searching, missing, refused, or the card.
+ * The style card section of a keyed ui node: asking the index, no answer, refused, or the card.
  *
  * @param props - The context and the ui key.
  * @param props.ctx - Domain context of gameView.
@@ -276,7 +280,7 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
 /**
  * The full reference block of the node, read-only, with Copy (round 2 R2): Copy writes the card
  * and puts its one line on the clipboard (round 2b R13). It is gathered again when the node, its
- * style search, its style block, its bounds, the flow node or the last pick changes; not on every
+ * style lookup, its style block, its bounds, the flow node or the last pick changes; not on every
  * scene frame.
  *
  * @param props - The context, the scene, the node and the flow node.

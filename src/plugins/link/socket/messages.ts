@@ -1,9 +1,9 @@
 /**
  * @file link plugin — routes what the hub sends: responses settle calls; `editor` requests go to
  * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice,
- * `hotReload` the hot reload state, `selection` the editor selection; `game` notifications of the
- * chosen session (`heartbeat`, `value`, `tap`) drive the status, the heap, the watches and the tap
- * listeners (R1).
+ * `hotReload` the hot reload state, `selection` the editor selection, `project` the project index;
+ * `game` notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the
+ * heap, the watches and the tap listeners (R1).
  */
 
 import type { Json, Message, Notification } from "../../registry/protocol";
@@ -13,6 +13,7 @@ import { onSelectionNote } from "../page/selection";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
 import { onHotReloadNote } from "../server/hot-reload";
+import { onProjectNote } from "../server/project";
 import { applySessions, closeChosen } from "../sessions/choose";
 import { applyStatus } from "../status/machine";
 import { notifyTap } from "../subscriptions/taps";
@@ -79,6 +80,16 @@ function onHotReload(ctx: LinkCtx, note: Notification): void {
  */
 function onSelection(ctx: LinkCtx, note: Notification): void {
   onSelectionNote(ctx, note.params);
+}
+
+/**
+ * `editor` · `project {ProjectState}`: the project index the hub keeps and replays.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onProject(ctx: LinkCtx, note: Notification): void {
+  onProjectNote(ctx, note.params);
 }
 
 /**
@@ -162,6 +173,7 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.session", onSession],
   ["editor.hotReload", onHotReload],
   ["editor.selection", onSelection],
+  ["editor.project", onProject],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]

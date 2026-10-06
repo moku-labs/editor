@@ -7,7 +7,6 @@ import { linkPlugin } from "../../link";
 import type { FilesClient } from "../../link/types";
 import type { FileEntry, LinkStatus } from "../../registry/protocol";
 import { codeOf, messageOf } from "../errors";
-import { loadOverrides, rebuildUsedBy } from "../links/used-by";
 import { notify } from "../store";
 import type { FileIndex, FilesViewCtx } from "../types";
 import { WALK_CONCURRENCY, WALK_MAX_DEPTH } from "../types";
@@ -173,32 +172,52 @@ async function walk(ctx: FilesViewCtx): Promise<FileIndex | undefined> {
 }
 
 /**
- * Builds the file index (single flight: a running build is shared), then loads the overrides,
- * rebuilds Used by, replaces the palette items and notifies. A failing root list leaves the
- * index as it was. Never rejects.
+ * One walk into the state: the index and the palette items. A failing root list leaves the index
+ * as it was. Never rejects: a failure is warned.
  *
  * @param ctx - Domain context of filesView.
- * @returns When the build is done.
+ * @returns When the walk is stored.
+ */
+async function indexOnce(ctx: FilesViewCtx): Promise<void> {
+  try {
+    const index = await walk(ctx);
+    if (index === undefined) return;
+    ctx.state.index = index;
+    replacePaletteItems(ctx);
+  } catch (error) {
+    ctx.log.warn("filesView:index-failed", { message: messageOf(error) });
+  }
+}
+
+/**
+ * Builds the file index, then replaces the palette items and notifies. Single flight: a call
+ * while a walk runs gets that walk, marks the index dirty (`state.indexDirty`) and the walk runs
+ * once more after it, since it may have listed a folder before the change that asked. Never
+ * rejects.
+ *
+ * @param ctx - Domain context of filesView.
+ * @returns When the build is done, the walk once more included.
  */
 export function buildIndex(ctx: FilesViewCtx): Promise<void> {
   const { state } = ctx;
-  if (state.indexing !== undefined) return state.indexing;
+  if (state.indexing !== undefined) {
+    state.indexDirty = true;
+    return state.indexing;
+  }
 
   const run = (async () => {
-    const index = await walk(ctx);
-    if (index === undefined) return;
-    state.index = index;
-    state.overrides = await loadOverrides(ctx);
-    rebuildUsedBy(ctx);
-    replacePaletteItems(ctx);
-  })()
-    .catch((error: unknown) => {
-      ctx.log.warn("filesView:index-failed", { message: messageOf(error) });
-    })
-    .finally(() => {
+    try {
+      await indexOnce(ctx);
+    } finally {
       state.indexing = undefined;
       notify(state);
-    });
+    }
+
+    // A call during the walk asked again: walk once more, after this one.
+    if (!state.indexDirty) return;
+    state.indexDirty = false;
+    await buildIndex(ctx);
+  })();
   state.indexing = run;
   notify(state);
   return run;

@@ -4,14 +4,26 @@ import type { SelectionInfo } from "../../../registry/protocol";
 import { pickAt, pickProxy, selectElement } from "../../element/select";
 import { completePick } from "../../reference/pick";
 import { stubCanvas } from "../canvas";
-import { createCtx, DAY, flush, JPEG, manifestOf, type TestCtx, TODAY, useScene } from "../helpers";
+import {
+  answer,
+  createCtx,
+  DAY,
+  flush,
+  JPEG,
+  manifestOf,
+  place,
+  type TestCtx,
+  TODAY,
+  useScene
+} from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The editor page publishes its selection (U4, D-33): every change of
 // state.selected sends a SelectionInfo through link.notify("selection", …),
-// null when nothing is selected; first without the source while its search
-// runs, then again with it. A completed pick publishes its card, crop and line.
+// null when nothing is selected; first without the source while the project
+// index is asked, then again with it. A completed pick publishes its card, crop
+// and line.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COIN = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
@@ -33,6 +45,7 @@ function published(): (SelectionInfo | null)[] {
 beforeEach(() => {
   vi.setSystemTime(TODAY);
   ctx = createCtx(HUD);
+  answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 1, 42]));
   useScene(ctx);
   ctx.state.scene = boardScene();
   ctx.state.sources = { projections: { hud: { coinPill: 1, boardScreen: 2 } } };
@@ -46,7 +59,7 @@ afterEach(() => {
 });
 
 describe("selectElement publishes", () => {
-  it("the selected node at once, then again with its source when the search found it", async () => {
+  it("the selected node at once, then again with its source when the index answered it", async () => {
     selectElement(ctx, COIN);
     expect(ctx.link.notify).toHaveBeenCalledTimes(1);
     expect(ctx.link.notify.mock.calls[0]?.[0]).toBe("selection");
@@ -72,7 +85,12 @@ describe("selectElement publishes", () => {
   });
 
   it("a source found before goes out with the first publish, and once", async () => {
-    ctx.state.found.set("coinPill", { kind: "defined", path: "src/a.tsx", line: 9 });
+    ctx.state.found.set("coinPill", {
+      kind: "defined",
+      path: "src/a.tsx",
+      line: 9,
+      range: [9, 1, 9, 30]
+    });
     selectElement(ctx, COIN);
     await flush();
     expect(published()).toHaveLength(1);
@@ -88,11 +106,12 @@ describe("selectElement publishes", () => {
     expect(ctx.state.selection).toBeUndefined();
   });
 
-  it("a key no file names publishes once; an entity needs no search", async () => {
+  it("a key the index does not know publishes once, without a source; an entity asks nothing", async () => {
     selectElement(ctx, { kind: "ui", path: "boardScreen/hudRow/energyPill" });
     selectElement(ctx, { kind: "entity", id: 1_048_628 });
     await flush();
     expect(published().map(info => info?.name)).toEqual(["energyPill", "i1"]);
+    expect(published()[0]).not.toHaveProperty("source");
   });
 
   it("a ref the scene does not have is published bare", () => {
@@ -118,15 +137,15 @@ describe("selectElement publishes", () => {
     });
   });
 
-  it("a failed source search keeps the first publish and logs at debug", async () => {
-    vi.spyOn(ctx.link.api, "manifest").mockImplementation(() => {
-      throw new Error("[moku-editor] no manifest");
+  it("a failed lookup keeps the first publish and logs at debug", async () => {
+    vi.spyOn(ctx.link.api, "project").mockImplementation(() => {
+      throw new Error("[moku-editor] no project");
     });
     selectElement(ctx, COIN);
     await flush();
     expect(published()).toHaveLength(1);
     expect(ctx.log.debug).toHaveBeenCalledWith("gameView: selection source failed", {
-      message: "[moku-editor] no manifest"
+      message: "[moku-editor] no project"
     });
   });
 });

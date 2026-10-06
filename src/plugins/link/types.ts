@@ -1,7 +1,7 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
- * taps, the page heap, hot reload and the editor page's selection and select handler), the files
- * client, state and the domain context. Wire shapes come from the protocol (R1).
+ * taps, the page heap, hot reload, the editor page's selection and select handler, and the project
+ * index), the files client, state and the domain context. Wire shapes come from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -15,6 +15,8 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  ProjectFound,
+  ProjectState,
   PublishParams,
   SelectionInfo,
   SelectParams,
@@ -213,6 +215,22 @@ export type FilesClient = {
    * ```
    */
   readBinary(path: string): Promise<FileBinary>;
+
+  /**
+   * Asks the project index where a key lives. Lines are read from disk at the call, and each
+   * answer's `hash` equals the files `version` of its path. Rejects -32008 `not_installed` while
+   * the index is off.
+   *
+   * @param key - A project-index key, e.g. `"node:board/merge"` or `"jsx:settingsBoard"`.
+   * @returns Every place the key is defined; empty for a key the index does not know.
+   * @example
+   * ```ts
+   * // The Flow inspector opens the Code tab of the selected node.
+   * await ctx.require(linkPlugin).files.find("node:board/merge");
+   * // [{ path: "nodes/merge.ts", binding: "merge", line: 17, range: [17, 1, 30, 3], hash: "a1" }]
+   * ```
+   */
+  find(key: string): Promise<readonly ProjectFound[]>;
 };
 
 /**
@@ -500,6 +518,20 @@ export type LinkApi = EditorChannel & {
    */
   handle(method: "select", handler: SelectHandler): () => void;
   /**
+   * The project index the hub last sent (`editor.project`): on with its key maps, or off with the
+   * reason. Kept across reconnects. Each new state is also the tools event `link:project`, with
+   * the delta a view drops by.
+   *
+   * @returns The frozen state; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // filesView lists the flows that use the open node file.
+   * const project = ctx.require(linkPlugin).project();
+   * project?.state === "on" ? project.uses["node:board/merge"] : []; // ["flows/board.ts"]
+   * ```
+   */
+  project(): ProjectState | undefined;
+  /**
    * The files channel client.
    *
    * @example
@@ -575,6 +607,8 @@ export type LinkState = {
   hotReloadWaiters: Set<HotReloadWaiter>;
   /** The selection the hub last sent (`editor.selection`); undefined for none or null. */
   selection: SelectionInfo | undefined;
+  /** The project index the hub last sent (`editor.project`), frozen; kept across reconnects. */
+  project: ProjectState | undefined;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
   /** The handler of each editor-channel request the hub relays to this page. */
@@ -612,6 +646,6 @@ export type LinkState = {
 export type LinkCtx = {
   readonly config: Readonly<Config>;
   state: LinkState;
-  readonly emit: EmitFn<Pick<ToolsEvents, "link:status">>;
+  readonly emit: EmitFn<Pick<ToolsEvents, "link:status" | "link:project">>;
   readonly log: Log.LogApi;
 };

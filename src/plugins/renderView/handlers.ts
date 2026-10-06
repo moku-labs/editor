@@ -1,13 +1,20 @@
 /**
  * @file renderView plugin — hooks of the global tools events: workspace:changed starts and stops
- * the scene watches, link:status keeps or clears the session data, workspace:reveal reveals.
+ * the scene watches, link:status keeps or clears the session data, link:project reads a stale
+ * catalogue again, workspace:reveal reveals.
  */
 import type { ToolsEvents } from "../../config";
 import { highlightRef, revealRef, setTexturePalette } from "./actions";
 import { removeOverlay } from "./overlay";
 import { notify } from "./state";
 import type { RenderViewCtx, RenderViewHooks, RenderViewState } from "./types";
-import { refreshRenderView, startScene, stopScene } from "./watch";
+import {
+  isCatalogueStale,
+  refreshRenderView,
+  rereadCatalogue,
+  startScene,
+  stopScene
+} from "./watch";
 
 /**
  * Forgets what belongs to one game session: FPS samples, the page heap, loaded bundles, the
@@ -102,6 +109,20 @@ export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:st
 }
 
 /**
+ * Reads the catalogue again when a project change made it stale: the first state after Render
+ * read none, another manifest in the index, an edit of the manifest file, a gap.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns The hook.
+ */
+export function onProject(ctx: RenderViewCtx): (payload: ToolsEvents["link:project"]) => void {
+  return ({ state, delta }) => {
+    if (!isCatalogueStale(ctx.state.catalogue, state, delta)) return;
+    void rereadCatalogue(ctx);
+  };
+}
+
+/**
  * Reveals the element in the render tree (gameView's "Show in render tree").
  *
  * @param ctx - Domain context of renderView.
@@ -115,12 +136,13 @@ export function onReveal(ctx: RenderViewCtx): (payload: ToolsEvents["workspace:r
  * renderView's hooks factory (`hooks: createHandlers`).
  *
  * @param ctx - Domain context of renderView.
- * @returns The three hooks.
+ * @returns The four hooks.
  */
 export function createHandlers(ctx: RenderViewCtx): RenderViewHooks {
   return {
     "workspace:changed": onWorkspaceChanged(ctx),
     "link:status": onLinkStatus(ctx),
+    "link:project": onProject(ctx),
     "workspace:reveal": onReveal(ctx)
   };
 }

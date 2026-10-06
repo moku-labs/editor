@@ -23,6 +23,7 @@ import {
   flush,
   MANIFEST_TEXT,
   manifestOf,
+  projectWith,
   RENDER,
   serveManifest,
   stubFrames,
@@ -512,7 +513,7 @@ describe("calibrate", () => {
 });
 
 describe("readCatalogue", () => {
-  it("tries the paths in order and parses the first manifest found", async () => {
+  it("reads only the manifest the project index names", async () => {
     serveManifest(ctx, "public/manifest.json");
 
     const catalogue = await readCatalogue(ctx);
@@ -520,17 +521,30 @@ describe("readCatalogue", () => {
     expect(catalogue?.path).toBe("public/manifest.json");
     expect(catalogue?.textures.get("ui.hud-pill")?.gpuMb).toBe(4);
     expect(vi.mocked(ctx.link.api.files.read).mock.calls.map(call => call[0])).toEqual([
-      "manifest.json",
       "public/manifest.json"
     ]);
   });
 
-  it("is null when no path holds a manifest of version 1", async () => {
+  it("is null without a manifest from the index; nothing is read", async () => {
+    serveManifest(ctx, "manifest.json");
+
+    ctx.link.api.project = () => undefined;
+    expect(await readCatalogue(ctx)).toBeNull();
+    ctx.link.api.project = () => ({ state: "off", reason: "typescript is not installed" });
+    expect(await readCatalogue(ctx)).toBeNull();
+    ctx.link.api.project = () => projectWith();
+    expect(await readCatalogue(ctx)).toBeNull();
+
+    expect(ctx.link.api.files.read).not.toHaveBeenCalled();
+  });
+
+  it("is null when the named file is no manifest of version 1 or does not read", async () => {
     serveManifest(ctx, "web/manifest.json", JSON.stringify({ version: 2 }));
     expect(await readCatalogue(ctx)).toBeNull();
 
-    serveManifest(ctx, "manifest.json", MANIFEST_TEXT);
-    expect(await readCatalogue(ctx)).not.toBeNull();
+    serveManifest(ctx, "web/manifest.json", MANIFEST_TEXT);
+    ctx.link.api.project = () => projectWith("manifest.json");
+    expect(await readCatalogue(ctx)).toBeNull();
   });
 });
 

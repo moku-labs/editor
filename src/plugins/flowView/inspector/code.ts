@@ -1,14 +1,17 @@
 /**
- * @file flowView inspector module — the Code tab controller: read a node's file, edit, save with
- * the version, then the D-07 reload/restore flow; conflicts offer "Reload file" / "Save anyway".
- * Wire errors are shown without the `[moku-editor]` prefix (R7).
+ * @file flowView inspector module — the Code tab controller: read a node's file at the place the
+ * project index gives, follow it when an agent edits or moves it, edit, save with the version, then
+ * the D-07 reload/restore flow; conflicts offer "Reload file" / "Save anyway". Wire errors are
+ * shown without the `[moku-editor]` prefix (R7).
  */
+import type { FreshFound } from "../../panels/shared/project";
+import { findFresh } from "../../panels/shared/project";
 import { bareMessage, isVersionConflict } from "../../registry/protocol";
 import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
-import { fileOfNode, lineOf, loadSourceLookup, noFileText, SOURCE_LOADS } from "./files";
-import type { CodeState, SourceLookup } from "./types";
+import { missingCodeText, nodeKey, SOURCE_LOADS } from "./files";
+import type { CodeState } from "./types";
 
 /**
  * The result line of a conflicting save.
@@ -16,15 +19,69 @@ import type { CodeState, SourceLookup } from "./types";
 export const CHANGED_ON_DISK = "! The file changed on disk";
 
 /**
- * The session lookup of the node → file rule, built on first need.
+ * A fresh Code tab slice from an index answer and the read after it.
+ *
+ * @param fresh - The answer with the text and version of its file.
+ * @returns The slice, not editing.
+ * @example
+ * ```ts
+ * codeOf({ found: { path: "nodes/merge.ts", line: 17, range: [17, 1, 30, 3], hash: "a1" }, text, version: "a1" });
+ * // { path: "nodes/merge.ts", line: 17, version: "a1", draft: undefined, … }
+ * ```
+ */
+function codeOf(fresh: FreshFound): CodeState {
+  return {
+    path: fresh.found.path,
+    text: fresh.text,
+    version: fresh.version,
+    line: fresh.found.line,
+    draft: undefined,
+    result: undefined,
+    conflict: false,
+    discard: false
+  };
+}
+
+/**
+ * Shows a node's code from the project index without blanking the tab first: the same file at the
+ * same version keeps the tab (its result line too) and moves only the line; another file or version
+ * replaces it; no answer shows why. A draft typed meanwhile is never replaced.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
- * @returns The lookup.
+ * @param id - The node id.
+ * @param isCurrent - False once a newer request started (its result is dropped).
+ * @returns Resolves when the tab shows the file or a placeholder.
  */
-export async function lookupOf(ctx: FlowCtx, env: FlowEnvironment): Promise<SourceLookup> {
-  ctx.state.inspector.sources ??= await loadSourceLookup(env.files(), ctx.log);
-  return ctx.state.inspector.sources;
+export async function showCode(
+  ctx: FlowCtx,
+  env: FlowEnvironment,
+  id: NodeId,
+  isCurrent: () => boolean
+): Promise<void> {
+  const { inspector } = ctx.state;
+  const fresh = await findFresh(env.files(), nodeKey(id));
+  const held = inspector.code;
+  if (!isCurrent() || held?.draft !== undefined) return;
+
+  // No answer: the index is off, does not know the node, or its file could not be read.
+  if (fresh === undefined) {
+    const note = missingCodeText(env.project(), id);
+    if (note === SOURCE_LOADS) ctx.log.warn("flowView: source not read", { id });
+    inspector.code = undefined;
+    inspector.codeNote = note;
+    notify(ctx.state);
+    return;
+  }
+
+  // The file as the tab has it: only the line may have moved.
+  if (held?.path === fresh.found.path && held.version === fresh.version) {
+    held.line = fresh.found.line;
+  } else {
+    inspector.code = codeOf(fresh);
+  }
+  inspector.codeNote = undefined;
+  notify(ctx.state);
 }
 
 /**
@@ -43,38 +100,13 @@ export async function openCode(
   isCurrent: () => boolean
 ): Promise<void> {
   const { inspector } = ctx.state;
-  const { graph } = ctx.state.data;
-  if (graph === undefined) return;
+  if (ctx.state.data.graph === undefined) return;
+  inspector.codeNode = id;
   inspector.code = undefined;
   inspector.codeNote = SOURCE_LOADS;
   notify(ctx.state);
 
-  try {
-    const lookup = await lookupOf(ctx, env);
-    const path = fileOfNode(lookup, graph, id);
-    if (path === undefined) {
-      if (isCurrent()) inspector.codeNote = noFileText(lookup, graph, id);
-      return;
-    }
-    const file = await env.files().read(path);
-    if (!isCurrent()) return;
-    inspector.code = {
-      path,
-      text: file.text,
-      version: file.version,
-      line: lineOf(file.text, id.slice(id.indexOf("/") + 1)),
-      draft: undefined,
-      result: undefined,
-      conflict: false,
-      discard: false
-    };
-    inspector.codeNote = undefined;
-  } catch (error) {
-    ctx.log.warn("flowView: source not read", { id, message: String(error) });
-    if (isCurrent()) inspector.codeNote = SOURCE_LOADS;
-  } finally {
-    notify(ctx.state);
-  }
+  await showCode(ctx, env, id, isCurrent);
 }
 
 /**
@@ -94,11 +126,15 @@ const savesInFlight = new WeakMap<CodeState, Promise<void>>();
  * @returns Resolves when the result line is set.
  */
 export function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolean): Promise<void> {
+  // No Code tab open: nothing to save.
   const code = ctx.state.inspector.code;
   if (code === undefined) return Promise.resolve();
+
+  // A save in flight: this one runs after it, with the version that save wrote.
   const running = savesInFlight.get(code);
   if (running !== undefined) return running.then(() => saveCode(ctx, env, force));
 
+  // The first save: kept until it settles, so a ⌘S during it waits for it.
   const run = writeCode(ctx, env, code, force).finally(() => {
     if (savesInFlight.get(code) === run) savesInFlight.delete(code);
   });

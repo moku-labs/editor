@@ -28,7 +28,7 @@ export type SelectionContext = {
 
 /**
  * What the info of one scene node is built from: the context, the `game.projections` value and
- * the source search result of its key.
+ * the index answer of its key.
  */
 export type SelectionFacts = SelectionContext & {
   readonly projections: Json | undefined;
@@ -41,9 +41,9 @@ export type SelectionFacts = SelectionContext & {
 const NO_ELEMENT: ElementRef = { kind: "ui", path: "" };
 
 /**
- * The file and the key line of a source search result, as a selection names them.
+ * The file and the key line of a index answer, as a selection names them.
  *
- * @param source - A source search result.
+ * @param source - A index answer.
  * @returns `{ path, line }`.
  * @example
  * ```ts
@@ -108,7 +108,7 @@ export function projectionOf(projections: Json | undefined, node: SceneNode): st
  * The element part of a selection: ref, key, name, type, rect and source, the known ones.
  *
  * @param node - The scene node.
- * @param source - The source search result of its key, undefined when not known.
+ * @param source - The index answer of its key, undefined when not known.
  * @returns The item.
  * @example
  * ```ts

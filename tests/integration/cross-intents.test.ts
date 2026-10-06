@@ -359,7 +359,8 @@ describe("cross-intents: file and sheet intents", () => {
     );
     await click(elementIn(flow, '[data-flow="code-tab"] [data-action="open-files"]'));
     await until(() => tools.eventsOf("workspace:open-file").length === 1, "open-file");
-    expect(tools.eventsOf("workspace:open-file")).toEqual([{ path: "nodes/home.ts", line: 2 }]);
+    // The project index answers node:main/home with the line of `export const home`.
+    expect(tools.eventsOf("workspace:open-file")).toEqual([{ path: "nodes/home.ts", line: 5 }]);
     await until(() => workspace.active() === "files", "Files shown");
     await until(() => filesView.active() === "nodes/home.ts", "home.ts the active tab");
 

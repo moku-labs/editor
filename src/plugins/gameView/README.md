@@ -9,20 +9,17 @@ What it does:
 - It watches `game.ui`, `game.entities` and `game.projections` while Game is shown (R6) or Reference mode is on (D-27). No timer reads a frame source.
 - It runs every command through `ctx.require(panelsPlugin).run(id, input)` (R9). There is no `link.run` in gameView.
 - It never captures on its own. Only a user action or an api call takes a screenshot, a series or a pick.
+- It knows where game code lives only from the project index (D-38, D-48): `link.files.find(key)` for the lines of a key, `link.project()` for the key map and the manifest. No file crawl, no path rule, no configured list. A key the index does not know shows `Not in the project index: <key>`; an index that is off shows `Project index is off: <reason>` (`panels/shared/project`).
 
 ## Configuration
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `capturesDir` | `string` | `".moku/captures"` | Folder of screenshots, series, pick shots and cards. Every capture goes into a day folder under it: `<capturesDir>/<yyyy-mm-dd>/` (local date). `.moku/captures` or a folder under it: the files sandbox writes there. |
-| `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Where the asset manifest may live, tried in order. |
 | `captureCardMs` | `number` | `10_000` | The capture card hides after this, unless hovered or focused. Then it checks again every 2 s. |
 | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10_000, 20_000]` | Duration chips of the series popover. |
 | `seriesIntervalsMs` | `readonly number[]` | `[16, 50, 100, 250, 500, 1000]` | Interval chips of the series popover. |
 | `seriesWarnShots` | `number` | `200` | The popover warns above this many planned shots. |
-| `sourceSearch` | `{ maxFiles: number; skip: readonly string[] }` | `{ maxFiles: 1500, skip: ["node_modules", "dist", ".git", ".moku"] }` | Search for the source and the style block of a picked element: the folder of the game page entry first, then the root. |
-
-`sourceSearch` is replaced as a whole: config merges shallowly. Pass both fields when you override it.
 
 Any other `capturesDir` stops the app in `onInit`:
 
@@ -32,9 +29,7 @@ Any other `capturesDir` stops the app in `onInit`:
 ```
 
 ```ts
-createApp({
-  pluginConfigs: { gameView: { sourceSearch: { maxFiles: 3000, skip: ["node_modules", "dist", ".git", ".moku"] } } }
-});
+createApp({ pluginConfigs: { gameView: { captureCardMs: 5000 } } });
 ```
 
 ## API
@@ -50,7 +45,7 @@ createApp({
 | `scene` | `() => Promise<SceneSnapshot>` | The scene from the watched sources, after a calibration in flight lands. While Game is hidden it reads the three sources once. Rejects with the link's `WireError` when no game is connected. |
 | `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | The pink box over the game frame. `undefined` clears it. A newer call drops an older one still waiting for the scene. |
-| `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the first readable `manifestPaths` entry. Cached per session. |
+| `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the manifest the project index names (`ProjectState.manifest`). Cached until a new session, or a project change that names another manifest or changes it on disk. `undefined` while the index is off or names none. |
 | `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd>/<hhmm>-<flow>.jpg`. The extension follows the picture: `editor.capture` answers JPEG by default (D-34), an old game PNG (`.png`). Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
 | `series` | `(options: { durationMs; intervalMs; label? }) => Promise<SeriesResult \| undefined>` | One `editor.series` call. Writes `<yyyy-mm-dd>/series-<hhmm>/NNN.png` and `index.json`, puts `series: <folder> (<n> frames)` on the clipboard, then opens the contact sheet. Refuses while another series runs. |
 | `stopSeries` | `() => void` | Runs `editor.seriesStop`. The pending series resolves with the shots taken so far. Its index gets `stoppedEarly`. |
@@ -75,7 +70,7 @@ await app.gameView.series({ durationMs: 2000, intervalMs: 100 });
 
 app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
 await app.gameView.copyReference();
-// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
 
 app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
 app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w === 707
@@ -83,6 +78,14 @@ app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w ==
 const [last] = app.gameView.bookmarks();
 if (last) await app.panels.run("game.restore", { bookmark: last.value });
 ```
+
+Breaking (pre-1.0, project index, D-38 and amendment N):
+
+- The options `manifestPaths` and `sourceSearch` are gone. The project index names the manifest and every code location; there is no crawl and no fallback.
+- A key the index does not know shows `Not in the project index: jsx:<key>` (was "Source not found for key <key>"), and its `SelectionInfo.source` is absent. An index that is off shows `Project index is off: <reason>`.
+- A key built in a loop answers the line of the element that builds it, not the template literal: `card0` is `features/orders/strip.tsx:216` (was `:157 (loop)`, D-47). `(loop)` is gone from the Element tab, `data-moku-source` and the reference card.
+- An area card no longer has a budget of 10 new searches (A18): every key and component is one index lookup.
+- A style edit on a file the index says does not parse now is refused as `broken` (D-44): "The file does not parse now · fix it, then edit". With the index off it is refused as `index-off` (D-48): "Project index is off: <reason>".
 
 Breaking (pre-1.0, captures by day):
 
@@ -125,18 +128,19 @@ gameView declares no events. It uses the global tools events (R4).
 | Emits | `workspace:reveal` | `{ ref }` | Element tab "Show in render tree". renderView hooks it. |
 | Emits | `workspace:open-file` | `{ path, line }` | "Open in Files" on the style card, the call card and "Defined at". filesView hooks it. |
 | Hooks | `link:status` | `{ status, session? }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. An expected reload (`isReloading`) keeps the toolbar Reload busy (U11). |
+| Hooks | `link:project` | `{ state, delta }` | A new project index state (D-46). `all`: drops every key answer and style block. Else drops the answers in the changed and moved-from files, of a removed `jsx:` key, and the blocks in changed files (the kept style-call answers of the Code section too). Drops the projection answers in the changed and moved-from files, of a removed `projection:` key, and the asks still running. Reads the manifest again when it was read and the index names another or it changed. Shows the broken text on the style card while its file does not parse. Looks the selected element's style up again when its key file, style file or refusal file changed, the index had no answer, or after `all`; never during a stepper burst. |
 | Hooks | `workspace:changed` | `{ ws }` | Entering Game starts the scene watches. Leaving stops them and turns the picker off. |
 | Hooks | `workspace:open-sheet` | `{ index }` | Opens that contact sheet. |
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
 | Hooks | `workspace:reference` | `{ on }` | Reference mode on or off: the proxy layer in the frame overlay (D-27). |
 
-Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: projections read failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed`. `gameView: calibration failed`, `gameView: projections read failed` and `gameView: highlight failed` log at debug instead when the read failed with reason `link_closed` or `game_reloaded` (a server restart or a game reload heals on its own, U11). Debug: `gameView: area read failed`, `gameView: area source failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
+Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: projections read failed`, `gameView: reference block failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed` (the style file of an index answer cannot be loaded). `gameView: calibration failed`, `gameView: projections read failed` and `gameView: highlight failed` log at debug instead when the read failed with reason `link_closed` or `game_reloaded`, or failed with any reason while the link status is an expected reload (`isReloading`: the Hot reload switch, a server restart; e.g. -32003 before the game is back). A server restart or a game reload heals on its own (U11). Debug: `gameView: area read failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`, and for the reference block `game.position`, `game.history { last: 1 }`, `game.tainted`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`; `manifest()`, `onManifest` (the toolbar, and the sound flag on connect), `status()`, `session()`; `notify("selection", …)` and `handle("select", …)` (MCP, U4) |
+| `linkPlugin` | `watch` of the scene sources, and of `game.position` while Reference mode is on; `read` of `game.ui`, `game.entities`, `game.projections`, `game.locate` or `game.rect`, `game.render`, and for the reference block `game.position`, `game.history { last: 1 }`, `game.tainted`; `files.list`, `files.read`, `files.write`, `files.readBinary`, `files.writeBinary`, `files.find` (the project index); `project()` (the key map, the manifest, the broken files); `manifest()`, `onManifest` (the toolbar, and the sound flag on connect), `status()`, `session()`; `notify("selection", …)` and `handle("select", …)` (MCP, U4) |
 | `workspacePlugin` | `gameFrame()` (`dock`, `overlay`, `box`), `show`, `active`, `device`, `devices`, `setDevice` (preset, orientation, `folded`), `onPrefs`, `overlayInGame`, `reference`, `muted`, `setMuted`, `toast`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Game panel, `run` the `editor.*` commands, `game.bookmark` and `game.mute` |
 
@@ -220,16 +224,15 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Style card
 
-1. The search lists `.ts`/`.tsx` files breadth-first: the folder of the game page entry (from the manifest's page URL) first, then the root. It reads at most `maxFiles` files.
-2. It looks for the key as `key="k"`, `key={"k"}`, `key: "k"`, or the same three `id` forms of a component (`<Signboard id="settingsBoard">`).
-3. The style is searched from the key line to the line that closes the JSX element, eight lines at most.
-4. `style={ident}`: the block is the `StyleBlockRef` `{ kind: "const", name: ident }`. The shared style edit looks for it in that file first. If the ident is imported from a relative module, it then looks in that module (`.ts`, `.tsx`, `/index.ts`). This is how merge-game keeps its styles.
-5. `style={call(...)}`: a read-only card with the call, its `file:line` and "Open in Files".
-6. No style in any file: "Defined at file:line" and "Open in Files", from the first file that names the key. "Source not found" only when no file names it. A text node with a text style key (`style="ui.link"`, also `style={"ui.link"}`) is "defined at" its line too, and the search stops there: the source keeps the key as `textStyle` for the Code section (round 2b R17).
-7. No file names the key literally, and the key ends in digits: the search looks for the template literal of its stem. `card0` finds `` `card${slot}` `` (merge-game `features/orders/strip.tsx:157`). It shows "Defined at file:line (loop)".
-8. Steppers exist only for fields with a `fieldRule`.
-9. A burst writes once with `writeNumber`. A success toasts "✓ Saved" and reloads the game with restore (D-07).
-10. Every search result is kept per key, and so is the place of a found style block. The proxies and the reference block read them. One search per key runs at a time: a second ask waits for it.
+1. The project index is asked `find("jsx:<key>")`; the first answer is the element (the index orders them: exact keys and `id=` props, then `{id}` patterns, then `*` patterns). `settingsBoard` is `features/settings/settings.tsx:290`, the board from line 289; `card0` is the element at `features/orders/strip.tsx:216`. The file is read right after; when it changed in between, the index is asked once more.
+2. The style is the `style` attribute of the tag that opens the answer's range. A child's style is never the element's.
+3. `style={ident}`: the block is the `StyleBlockRef` `{ kind: "const", name: ident }`, in the files the index defines `style:<file>#<ident>` in: the key file first, then the file the ident is imported from, then any other. The index defines none: the key file, and the shared style edit says "No style block named <ident>."
+4. `style={call(...)}` (G2): when the index has a `style:<file>#<function>` key (`#<function>.<property>` for `fn(…).property`), the card is the `defineStyle({ … })` call it answers: the `StyleBlockRef` `{ kind: "call", name, line, column }` at the answer's range start, with steppers like a const block. `#<function>` answers every call of the function; the first call with an object literal is the card (`signboardStyle` answers `defineStyle(board)`, then `defineStyle({ … })`). The Code section shows that call. Without such a key, or when no call has an object to edit, the card stays read-only: the call, its `file:line` and "Open in Files".
+5. No style: "Defined at file:line" and "Open in Files". A text node with a text style key (`style="ui.link"`, also `style={"ui.link"}`) is "defined at" its line too; the source keeps the key as `textStyle` for the Code section (round 2b R17).
+6. The index has no answer: `Not in the project index: jsx:<key>`, or `Project index is off: <reason>`.
+7. Steppers exist only for fields with a `fieldRule`.
+8. A burst writes once with `writeNumber`. A file the index says does not parse now is refused as `broken`: "The file does not parse now · fix it, then edit", nothing written (D-44). An index that is off refuses as `index-off`: "Project index is off: <reason>", nothing written (D-48). A success toasts "✓ Saved" and reloads the game with restore (D-07).
+9. Every answer is kept per key, and so is the place of a found style block. The proxies and the reference block read them. A `link:project` change drops the ones in the files it changed.
 
 The Styles list shows an object value as `key value` pairs (`top 266 · right 72 · bottom 64 · left 72`) and an array joined with `, `.
 
@@ -241,9 +244,9 @@ The side panel of the Game workspace is the shared `SidePanel` (D-29): id `game.
 
 The Element tab's `data-part="code"` section (round 2b R12) shows where the element is written:
 
-- A ui element: its JSX, from the line that opens its tag to the line that closes it, and the `defineStyle` block of `style={ident}`. A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17). The block is in the file that calls `defineTextStyles(`: the search of `panels/shared/styles-file`, run once per app and remembered. A remembered file that is gone is searched for again. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
-- The element is found by the style card's source search. A key built in a loop shows the element of its template line, or the template line alone when it is in no tag (merge-game `cardKey`).
-- An entity: "Spawned by <projection> · <file:line>", the line that names the projection key (`name: "board.items"`) inside a `projection({…})` call, else the first line that names it. Then its components with a short value (48 characters) from `game.entities`.
+- A ui element: its JSX, the lines of the range the index answered for its key (from the line that opens its tag to the line that closes it), and the `defineStyle` block of `style={ident}`, or the `defineStyle` call of a style function the index knows (G2). A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17): the lines the index answers for `textStyle:ui.link`. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
+- The element is the style card's index answer. A key the index does not know shows no Code section; the style card says why.
+- An entity: "Spawned by <projection> · <file:line>", the index's answer for `projection:<key>` (the line of its `name: "board.items"`), or `Not in the project index: projection:<key>`; asked again on every new project state, so an entity picked before the first state or before the index knew its projection follows. Then its components with a short value (48 characters) from `game.entities`.
 - It reads again when the element, its source or its style file changes.
 
 ### Reference mode
@@ -254,7 +257,7 @@ Game elements become referenceable from the chat (finding 17, D-27). workspace o
 - gameView's overlay root renders `<div data-moku-proxies>` with one invisible `<div data-moku-proxy role="img">` per placed visible scene node (ui and entity), at its rect in device px. The overlay carries the frame box transform.
 - Paint order is kept, a later proxy is on top. Layout-only nodes come first, under every drawing node.
 - Proxies are keyed by node id, so a scene change updates them in place.
-- Attributes: `aria-label="<name>"`, `title="<name> · <type>"`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path` (ui path or `entity:<id>`), `data-moku-node` (`flow/node`), `data-moku-source` (`file:line` when a search found it, ` (loop)` for a key built in a loop), `data-moku-style` (the style identifier or call, else the nine-slice texture), `data-moku-style-source` (`file:line` of the style block or the call), `data-moku-bounds` (`x y w h`, rounded like the Element tab), `data-moku-ref-bounds` (`x y w h` in reference units), `data-moku-frame` (the scene frame).
+- Attributes: `aria-label="<name>"`, `title="<name> · <type>"`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path` (ui path or `entity:<id>`), `data-moku-node` (`flow/node`), `data-moku-source` (`file:line` when the index answered the key), `data-moku-style` (the style identifier or call, else the nine-slice texture), `data-moku-style-source` (`file:line` of the style block or the call), `data-moku-bounds` (`x y w h`, rounded like the Element tab), `data-moku-ref-bounds` (`x y w h` in reference units), `data-moku-frame` (the scene frame).
 - A hover draws the picker box with its label.
 - A click (`pointerup`) picks the proxy's node (see below), in any workspace.
 - The cursor is a crosshair over the whole layer and every proxy. The layer takes the pointer too, so a press anywhere over the game can drag an area (see "Area pick").
@@ -312,7 +315,7 @@ On merge-game, the settings board after a pick:
 ```text
 @moku settingsBoard · panel · settingsPopup/open · f25
 path: settingsScreen/settingsBoard
-source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+source: features/settings/settings.tsx:290 · texture: ui.panel-signboard
 layout: settingsScreen (column, padding 0/0/0/0)
 bounds: 65,190 950×1060 px · ref 65,190 950×1060
 state: visible
@@ -361,10 +364,10 @@ flow: … · game: … · device: … · restore: … · shot: …
 - One `layout:` line per parent chain of the elements: the elements that share it, then up to 3 parents in the form of a single element's `layout:`.
 - `partly in the area:` the nodes that overlap the area but are not inside it, largest overlap first, at most 8. A node of an element's tree and a parent a layout line names are left out. A background is named here.
 - Then the tail lines of a single element's block (`tailLines`).
-- The card adds the JSX and style snippets of every element with a source, each titled with its element. A known source line spends no new search.
-- An element or a child whose JSX line is a component instance (`<RoundButton id="homeSettings" …>`) adds `## <key> · component <Name> · <file:line>` with the component's definition, once per component. The definition is remembered in `state.found` under `<Name>`.
+- The card adds the JSX and style snippets of every element with a source, each titled with its element. A known source is not asked again.
+- An element or a child that is a component instance (`<RoundButton id="homeSettings" …>`: the tag that opens its index range) adds `## <key> · component <Name> · <file:line>` with the component's definition, once per component: the index's answer for `component:<Name>` (G1), 60 lines at most. A component the index does not know is left out.
 - Then `![area](…)` `![frame](…)`.
-- Sources come from the source search results. An area starts at most 10 new searches (A18), shared by the element keys, the child keys and the component definitions. `SelectionInfo.items` is unchanged: the children are card text only.
+- Sources come from the project index, one lookup per key not known yet. `SelectionInfo.items` is unchanged: the children are card text only.
 - The capture card shows like a pick. The single selection is cleared.
 
 ### Selection for MCP
@@ -374,7 +377,7 @@ The editor page publishes its selection to the hub (U4, D-33) with `link.notify(
 - Every change of the selection publishes: a picker click, a proxy click, `select`, `inspect`, a tree row. `select(undefined)` publishes null.
 - The info (`SelectionInfo` of the protocol): `ref`, `key`, `projection`, `name`, `type`, `rect` (page CSS px), `source` (`file:line` of the key), `session`, `frame`, `at`. Unknown fields are left out.
 - `projection`: an entity's owner. A ui node: the projection of `game.projections` that holds its key (and its root key when two hold it).
-- A key whose source search still runs is published without `source` first, then again with it. A newer selection drops the late one.
+- A key the index has not answered yet is published without `source` first, then again with it. A key the index does not know stays without `source`. A newer selection drops the late one.
 - After a pick: `card`, `crop`, `line` and the frame of the pick. An area: `type: "area"`, `name: "area"`, `rect` and `area` the area, `items` the group, `ref` the first item's (`{ kind: "ui", path: "" }` when empty). First without sources, then with them and the files.
 
 MCP `moku_select` reaches gameView as the editor-channel request `select` (`link.handle("select", …)`, added in `onInit`):
@@ -396,14 +399,14 @@ MCP `moku_select` reaches gameView as the editor-channel request `select` (`link
 
 ## Files
 
-`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload, fold), `capture/` (naming, shot, series, sheet, crop), `element/` (source, styles, select, selection, publish, select-request, jsx, code, spawn), `reference/` (mode, proxies, gesture, area, area-block, block, facts, card, pick), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `clipboard.ts`, `sound.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
+`scene/` (watch, calibrate, rebuild, read, manifest), `stage/` (geometry, label, reload, fold), `capture/` (naming, shot, series, sheet, crop), `element/` (source, styles, select, selection, publish, select-request, jsx, code, spawn, text-styles, project), `reference/` (mode, proxies, gesture, area, area-block, block, facts, card, pick), `side.ts`, `keys.ts`, `palette.ts`, `commands.ts`, `clipboard.ts`, `sound.ts`, `report.ts`, `view-state.ts`, and `ui/` (Preact components and `ui/styles/*.css`, one `@scope` per part, no `@layer` wrapper).
 
 ## Tests
 
 - `__tests__/unit/`: one file per module and per component. The components run under happy-dom.
 - `__tests__/integration/game-view.test.ts`: the real link, workspace, panels and gameView over an in-process hub.
 - `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where the pinned game checkout exists (`tests/fixtures/game-dir.ts`).
-- `__tests__/unit/source.test.ts` also reads the merge-game files when the checkout exists: `settingsBoard` and the loop key `card0`. `jsx.test.ts` reads the settings Signboard element there too.
+- `__tests__/unit/source.test.ts` also opens the project index of the merge game when the checkout exists: `settingsBoard` answers `settings.tsx:290` (range from 289) and `card0` answers the element at `strip.tsx:216` with its style call at 218. `jsx.test.ts` reads that style attribute there too. The other unit tests script `files.find` and `link.project()` (`answer`, `place`, `projectOn` in `__tests__/helpers.ts`).
 - `tests/integration/pick-reference.test.ts` (root): a proxy pick on the merge-game settings popup writes both PNGs and the card `.md`, copies the one reference line that names the card, the card's `text` fence holds every line of the block and links both PNGs, and its bookmark restores the popup. Local only, like the merge journeys.
 
 ## Limits and game follow-ups

@@ -1,15 +1,17 @@
 /**
  * @file gameView plugin — the component sources of the fuller area card (captures-by-day U5): a
- * group root or a child in the tree whose JSX line is a component instance
- * (`<RoundButton id="homeSettings" …>`) gets the definition of that component, once per
- * component. Keys and definitions are found with the bounded source search: remembered ones are
- * free, the rest take from the area's 10 new searches (A18). A definition is remembered in
- * `state.found` under `<Name>`, which no ui key can be. Nothing here throws.
+ * group root or a child in the tree whose element is a component instance
+ * (`<RoundButton id="homeSettings" …>`, the tag that opens the range the project index answered
+ * for its key) gets the definition of that component, once per component: the first answer of
+ * `component:<Name>` (G1), cut to 60 lines. Keys and definitions come from the index only; a
+ * component it does not know is left out. Nothing here throws.
  */
+import { linkPlugin } from "../../link";
+import { findFresh } from "../../panels/shared/project";
 import type { SceneNode } from "../../panels/shared/scene";
-import { keyColumn } from "../element/jsx";
-import { findStyleSource, readText, sourceFiles } from "../element/source";
-import type { CodeSnippet, GameViewCtx, StyleSource } from "../types";
+import { snippetOf, tagNameAt } from "../element/jsx";
+import { findStyleSource, readText } from "../element/source";
+import type { CodeSnippet, GameViewCtx, SourceRange, StyleSource } from "../types";
 import type { AreaBranch } from "./area-tree";
 
 /**
@@ -18,29 +20,9 @@ import type { AreaBranch } from "./area-tree";
 export const DEFINITION_LINES = 60;
 
 /**
- * The lines above a key line searched for the tag that holds the key.
- */
-const TAG_LINES = 8;
-
-/**
- * An opening JSX tag and its name (`<RoundButton`, `<column`, `<Kit.Button`).
- */
-const OPEN_TAG = /<([$A-Z_a-z][\w$.]*)/g;
-
-/**
  * A component name: a capital first letter, no member access.
  */
 const COMPONENT_NAME = /^[A-Z][\w$]*$/;
-
-/**
- * Regex special characters of a name.
- */
-const REGEX_SPECIAL = /[$()*+.?[\\\]^{|}]/g;
-
-/**
- * The searches an area may still start (A18), shared by the keys and the definitions.
- */
-export type SearchBudget = { left: number };
 
 /**
  * The definition of a component the area uses, under the key that first uses it.
@@ -52,97 +34,20 @@ export type AreaComponent = {
 };
 
 /**
- * The component whose tag holds a key: the nearest opening tag before the key, on its line or up
- * to eight lines above; a lowercase (intrinsic) or member tag is none.
+ * The component an element is an instance of: the tag that opens its range, when that tag is a
+ * component (a capital name); an intrinsic (`<column>`) or a member tag (`<Kit.Button>`) is none.
  *
  * @param lines - The file lines.
- * @param line - The 1-based key line.
- * @param column - The 0-based column of the key on it.
+ * @param range - The index answer's range of the element.
  * @returns The component name, undefined for none.
  * @example
  * ```ts
- * componentAt(['<RoundButton id="homeSettings" />'], 1, 13); // "RoundButton"
+ * componentAt(['          <RoundButton id="homeSettings" />'], [1, 11, 1, 46]); // "RoundButton"
  * ```
  */
-export function componentAt(
-  lines: readonly string[],
-  line: number,
-  column: number
-): string | undefined {
-  const first = Math.max(0, line - 1 - TAG_LINES);
-  const before = [...lines.slice(first, line - 1), (lines[line - 1] ?? "").slice(0, column)];
-  const tag = [...before.join("\n").matchAll(OPEN_TAG)].at(-1)?.[1];
+export function componentAt(lines: readonly string[], range: SourceRange): string | undefined {
+  const tag = tagNameAt(lines, range);
   return tag !== undefined && COMPONENT_NAME.test(tag) ? tag : undefined;
-}
-
-/**
- * The line that defines a component: `function Name(`, `function Name<`, or `const Name =`
- * (`let`, a type annotation allowed).
- *
- * @param text - A file text.
- * @param name - The component name.
- * @returns The 1-based line, undefined when the file does not define it.
- * @example
- * ```ts
- * definitionLine("export function RoundButton(props: P) {", "RoundButton"); // 1
- * ```
- */
-export function definitionLine(text: string, name: string): number | undefined {
-  const escaped = name.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
-  const pattern = new RegExp(
-    String.raw`(?:\bfunction\s+${escaped}\s*[(<]|\b(?:const|let)\s+${escaped}\s*(?::[^=]*)?=)`
-  );
-  const index = text.split("\n").findIndex(entry => pattern.test(entry));
-  return index === -1 ? undefined : index + 1;
-}
-
-/**
- * The braces a line opens minus the ones it closes.
- *
- * @param line - A line.
- * @returns The change of the brace depth.
- * @example
- * ```ts
- * braceChange("function A() {"); // 1
- * ```
- */
-function braceChange(line: string): number {
-  let change = 0;
-  for (const char of line) {
-    if (char === "{") change += 1;
-    if (char === "}") change -= 1;
-  }
-  return change;
-}
-
-/**
- * The lines of a definition: from its line to the one where its braces close (a line without
- * braces that ends with `;` closes an arrow), 60 lines at most.
- *
- * @param lines - The file lines.
- * @param line - The 1-based definition line.
- * @returns The first and the last line.
- * @example
- * ```ts
- * definitionRange(["function A() {", "  return 1;", "}"], 1); // { start: 1, end: 3 }
- * ```
- */
-export function definitionRange(
-  lines: readonly string[],
-  line: number
-): { readonly start: number; readonly end: number } {
-  const last = Math.min(lines.length, line - 1 + DEFINITION_LINES);
-  let depth = 0;
-  let opened = false;
-  for (let index = line - 1; index < last; index += 1) {
-    const text = lines[index] ?? "";
-    const change = braceChange(text);
-    depth += change;
-    opened ||= text.includes("{");
-    if (opened && depth <= 0) return { start: line, end: index + 1 };
-    if (!opened && text.trimEnd().endsWith(";")) return { start: line, end: index + 1 };
-  }
-  return { start: line, end: last };
 }
 
 /**
@@ -163,103 +68,27 @@ async function textOnce(
 }
 
 /**
- * The source of a key: remembered, else a search when the budget has one left.
+ * The source of a key: remembered, else the index answer.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
- * @param budget - The searches left.
- * @returns The source, undefined when none is known or found.
+ * @returns The source, undefined when the index has no answer.
  */
-async function keySource(
-  ctx: GameViewCtx,
-  key: string,
-  budget: SearchBudget
-): Promise<StyleSource | undefined> {
-  const known = ctx.state.found.get(key);
-  if (known !== undefined || budget.left <= 0) return known;
-  budget.left -= 1;
-  try {
-    return await findStyleSource(ctx, key);
-  } catch {
-    return undefined;
-  }
+async function keySource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
+  return ctx.state.found.get(key) ?? (await findStyleSource(ctx, key));
 }
 
 /**
- * Searches the source files, in order, for the line that defines a component.
+ * The definition of a component: the first answer of `component:<Name>`, cut to 60 lines.
  *
  * @param ctx - Domain context of gameView.
  * @param name - The component name.
- * @returns Where the component is defined, undefined when no file defines it; rejects when the
- *   search fails.
+ * @returns The snippet, undefined when the index has no answer or its file cannot be read.
  */
-async function searchDefinition(ctx: GameViewCtx, name: string): Promise<StyleSource | undefined> {
-  for await (const path of sourceFiles(ctx)) {
-    const text = await readText(ctx, path);
-    const line = text === undefined ? undefined : definitionLine(text, name);
-    if (line !== undefined) return { kind: "defined", path, line };
-  }
-  return undefined;
-}
-
-/**
- * Where a component is defined: remembered, else a search when the budget has one left. The
- * result is remembered; a full search that finds none too, so it runs once per session.
- *
- * @param ctx - Domain context of gameView.
- * @param name - The component name.
- * @param budget - The searches left.
- * @returns Where the component is defined, undefined when unknown or not found.
- */
-async function definitionSource(
-  ctx: GameViewCtx,
-  name: string,
-  budget: SearchBudget
-): Promise<StyleSource | undefined> {
-  const { found, missedDefinitions } = ctx.state;
-  const memo = `<${name}>`;
-  const known = found.get(memo);
-  const isSettled = known !== undefined || missedDefinitions.has(name);
-  if (isSettled || budget.left <= 0) return known;
-  budget.left -= 1;
-  try {
-    const source = await searchDefinition(ctx, name);
-    // Every file searched and none defines it: remembered too. A failed search is tried again.
-    if (source === undefined) missedDefinitions.add(name);
-    else found.set(memo, source);
-    return source;
-  } catch (error) {
-    ctx.log.debug("gameView: component search failed", { name, error });
-    return undefined;
-  }
-}
-
-/**
- * The definition of a component, cut to the braces that close it. The search takes from the
- * budget; the file is read once per area.
- *
- * @param ctx - Domain context of gameView.
- * @param texts - The texts read so far, by path.
- * @param name - The component name.
- * @param budget - The searches the area may still start.
- * @returns The snippet, undefined when the definition is not found or cannot be read.
- */
-async function definitionSnippet(
-  ctx: GameViewCtx,
-  texts: Map<string, string | undefined>,
-  name: string,
-  budget: SearchBudget
-): Promise<CodeSnippet | undefined> {
-  const definition = await definitionSource(ctx, name, budget);
-  const file = definition === undefined ? undefined : await textOnce(ctx, texts, definition.path);
-  if (definition === undefined || file === undefined) return undefined;
-  const fileLines = file.split("\n");
-  const range = definitionRange(fileLines, definition.line);
-  return {
-    path: definition.path,
-    line: range.start,
-    lines: fileLines.slice(range.start - 1, range.end)
-  };
+async function definitionSnippet(ctx: GameViewCtx, name: string): Promise<CodeSnippet | undefined> {
+  const fresh = await findFresh(ctx.require(linkPlugin).files, `component:${name}`);
+  if (fresh === undefined) return undefined;
+  return snippetOf(fresh.found.path, fresh.text, fresh.found.range, DEFINITION_LINES);
 }
 
 /**
@@ -282,19 +111,17 @@ function keyedNodes(
 
 /**
  * The definitions of the components the area's roots and children are instances of, once per
- * component, under the first key that uses it. Searches take from the budget.
+ * component, under the first key that uses it.
  *
  * @param ctx - Domain context of gameView.
  * @param roots - The group roots.
  * @param branches - The tree of each root.
- * @param budget - The searches the area may still start.
  * @returns The component snippets, in card order.
  */
 export async function areaComponents(
   ctx: GameViewCtx,
   roots: readonly SceneNode[],
-  branches: ReadonlyMap<string, AreaBranch>,
-  budget: SearchBudget
+  branches: ReadonlyMap<string, AreaBranch>
 ): Promise<readonly AreaComponent[]> {
   const texts = new Map<string, string | undefined>();
   const components: AreaComponent[] = [];
@@ -302,18 +129,17 @@ export async function areaComponents(
 
   for (const node of keyedNodes(roots, branches)) {
     const key = node.key ?? "";
-    const source = await keySource(ctx, key, budget);
+    const source = await keySource(ctx, key);
     const text = source === undefined ? undefined : await textOnce(ctx, texts, source.path);
     if (source === undefined || text === undefined) continue;
 
-    // The component the key line belongs to, once per name.
-    const lines = text.split("\n");
-    const name = componentAt(lines, source.line, keyColumn(lines[source.line - 1] ?? "", key));
+    // The component the element is an instance of, once per name.
+    const name = componentAt(text.split("\n"), source.range);
     if (name === undefined || seen.has(name)) continue;
     seen.add(name);
 
-    // Its definition, cut to the braces that close it.
-    const snippet = await definitionSnippet(ctx, texts, name, budget);
+    // Its definition, as the index answers it.
+    const snippet = await definitionSnippet(ctx, name);
     if (snippet === undefined) continue;
     components.push({ key, name, snippet });
   }

@@ -58,11 +58,11 @@ describe("selectionOf", () => {
     expect(isSelectionInfo(info)).toBe(true);
   });
 
-  it("adds the source line once the search found it", () => {
+  it("adds the source line once the index answered it", () => {
     const info = selectionOf(nodeOf("ui:boardScreen/hudRow/coinPill"), {
       ...FACTS,
       projections: BOARD.projections,
-      source: { kind: "defined", path: "src/hud/Hud.tsx", line: 12, loop: true }
+      source: { kind: "defined", path: "src/hud/Hud.tsx", line: 12, range: [11, 5, 14, 9] }
     });
     expect(info.source).toEqual({ path: "src/hud/Hud.tsx", line: 12 });
   });
@@ -170,6 +170,7 @@ describe("itemOf and areaSelection (U9)", () => {
       kind: "call",
       path: "src/hud.tsx",
       line: 4,
+      range: [4, 3, 6, 5],
       call: "pill(1)",
       callLine: 5
     });
@@ -209,7 +210,14 @@ describe("itemOf and areaSelection (U9)", () => {
   });
 
   it("sourceAt keeps the file and the key line of any source", () => {
-    expect(sourceAt({ kind: "defined", path: "a.tsx", line: 3, textStyle: "ui.link" })).toEqual({
+    const text = {
+      kind: "defined",
+      path: "a.tsx",
+      line: 3,
+      range: [3, 1, 3, 40],
+      textStyle: "ui.link"
+    } as const;
+    expect(sourceAt(text)).toEqual({
       path: "a.tsx",
       line: 3
     });

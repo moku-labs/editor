@@ -15,6 +15,7 @@ const COIN_SOURCE: StyleSource = {
   kind: "ident",
   path: "src/hud/Hud.tsx",
   line: 2,
+  range: [2, 1, 2, 42],
   ref: { kind: "const", name: "coinPill" },
   files: ["src/hud/Hud.tsx"]
 };
@@ -82,6 +83,7 @@ describe("proxyList", () => {
       kind: "call",
       path: "kit.tsx",
       line: 9,
+      range: [8, 5, 12, 7],
       call: "pillOf(2)",
       callLine: 10
     };
@@ -95,19 +97,19 @@ describe("proxyList", () => {
     expect(withCall?.attributes["data-moku-style-source"]).toBe("kit.tsx:10");
   });
 
-  it("marks a source built in a loop; an identifier without a found block has no style source", () => {
+  it("names the element line of a pattern answer; an identifier without a found block has no style source", () => {
     const proxies = proxyList(boardScene(), {
       node: undefined,
       found: new Map<string, StyleSource>([
         ["coinPill", COIN_SOURCE],
-        ["energyPill", { kind: "defined", path: "strip.tsx", line: 157, loop: true }]
+        ["energyPill", { kind: "defined", path: "strip.tsx", line: 216, range: [215, 5, 247, 14] }]
       ]),
       blocks: new Map()
     });
     const coin = proxies.find(proxy => proxy.id === "ui:boardScreen/hudRow/coinPill");
     const energy = proxies.find(proxy => proxy.id === "ui:boardScreen/hudRow/energyPill");
     expect(coin?.attributes["data-moku-style-source"]).toBeUndefined();
-    expect(energy?.attributes["data-moku-source"]).toBe("strip.tsx:157 (loop)");
+    expect(energy?.attributes["data-moku-source"]).toBe("strip.tsx:216");
   });
 
   it("gives the reference bounds in reference units and the scene frame", () => {

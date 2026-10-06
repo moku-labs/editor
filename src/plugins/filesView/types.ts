@@ -1,12 +1,12 @@
 /**
  * @file filesView plugin — type definitions: config, constants, open tabs, the file index,
  * Used by, save results, the series index shape, state, api, the domain context and the hooks.
- * The node → file rule types come from the protocol (R1).
+ * Where code lives comes from the project index (`link.project()`, D-38); there is no rule.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
-import type { FileEntry, Json, NodeRef, SourceOverrides } from "../registry/protocol";
+import type { FileEntry, Json, NodeRef } from "../registry/protocol";
 
 /**
  * Parallel folder listings of the tree walk.
@@ -114,14 +114,23 @@ export type TreeRow = {
 };
 
 /**
- * Flows and nodes whose file is a path.
+ * What the project index knows of a file: the flows and nodes it defines, and the files that use
+ * what it defines.
  *
  * @example
  * ```ts
- * const usedBy: UsedBy = { flows: ["board"], nodes: [{ flow: "board", node: "merge" }] };
+ * // nodes/merge.ts defines the board's merge node; the board flow imports it.
+ * const usedBy: UsedBy = { flows: [], nodes: [{ flow: "board", node: "merge" }], usedIn: ["flows/board.ts"] };
  * ```
  */
-export type UsedBy = { readonly flows: readonly string[]; readonly nodes: readonly NodeRef[] };
+export type UsedBy = {
+  /** Flows defined in the file (`flow:` keys). */
+  readonly flows: readonly string[];
+  /** Nodes defined in the file (`node:` keys). */
+  readonly nodes: readonly NodeRef[];
+  /** Files that use anything the file defines, sorted, without the file itself. */
+  readonly usedIn: readonly string[];
+};
 
 /**
  * A tab as the api lists it.
@@ -194,19 +203,19 @@ export type FilesViewState = {
   index: FileIndex | undefined;
   /** Single flight of buildIndex. */
   indexing: Promise<void> | undefined;
+  /** A buildIndex call came while a walk ran: the walk runs once more after it. */
+  indexDirty: boolean;
   /** Open folders. */
   expanded: Set<string>;
   /** Tab order. */
   tabs: OpenTab[];
   active: string | undefined;
-  /** game.graph of the current session (read once per manifest). */
+  /** game.graph of the current session (read once per manifest): the start node of a flow chip. */
   graph: Json | undefined;
-  /** Parsed SOURCE_OVERRIDES_PATH (flat map, R1); {} when missing. */
-  overrides: SourceOverrides;
-  /** Reverse map; undefined without a graph. */
-  usedBy: Map<string, UsedBy> | undefined;
   /** Tab path whose discard popover is open. */
   confirmClose: string | undefined;
+  /** The project delta being applied to the tabs; the next one waits for it. */
+  following: Promise<void> | undefined;
   listeners: Set<() => void>;
   /** Keys, escape layer, manifest listener, beforeunload. */
   removers: (() => void)[];
@@ -221,7 +230,7 @@ export type FilesViewState = {
  * @example
  * ```ts
  * await app.filesView.open("nodes/merge.ts", { line: 12 });
- * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+ * app.filesView.usedBy("nodes/merge.ts").usedIn; // ["flows/board.ts"]
  * ```
  */
 export type FilesViewApi = {
@@ -391,23 +400,25 @@ export type FilesViewApi = {
   files(): readonly FileEntry[];
 
   /**
-   * The source file of a graph node: its own `file` from the graph (F-H2) when it has one, else
-   * the protocol rule (R1) against the file index. flowView resolves a node the same way.
+   * The file that defines a graph node, from the project index (`node:<flow>/<node>`); the first
+   * file of a conflict. Any file name: the index reads the code, not the name.
    *
    * @param ref - Flow and node name.
-   * @returns The path, or undefined (sub-flow and slot nodes have no own file).
+   * @returns The path, or undefined while the index is off or does not know the node (a sub-flow
+   * or slot node has no definition of its own).
    * @example
    * ```ts
-   * app.filesView.fileOf({ flow: "board", node: "awaitIntent" }); // "nodes/await-intent.ts"
+   * // The settings popup keeps all its nodes in one file.
+   * app.filesView.fileOf({ flow: "settingsPopup", node: "open" }); // "features/settings/nodes.ts"
    * ```
    */
   fileOf(ref: NodeRef): string | undefined;
 
   /**
-   * The source file of a flow by the protocol rule (R1), against the file index.
+   * The file that defines a flow, from the project index (`flow:<name>`).
    *
    * @param flow - The flow name.
-   * @returns The path, or undefined.
+   * @returns The path, or undefined while the index is off or does not know the flow.
    * @example
    * ```ts
    * app.filesView.flowFileOf("board"); // "flows/board.ts"
@@ -416,13 +427,15 @@ export type FilesViewApi = {
   flowFileOf(flow: string): string | undefined;
 
   /**
-   * Flows and nodes of the current game whose file is `path`; empty without a graph.
+   * What the project index knows of `path`: the flows and nodes defined in it, and the files that
+   * use them. Needs no game; empty while the index is off.
    *
    * @param path - Relative file path.
-   * @returns The flows and nodes.
+   * @returns The flows, nodes and using files.
    * @example
    * ```ts
-   * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+   * app.filesView.usedBy("nodes/merge.ts");
+   * // { flows: [], nodes: [{ flow: "board", node: "merge" }], usedIn: ["flows/board.ts"] }
    * ```
    */
   usedBy(path: string): UsedBy;
@@ -470,6 +483,7 @@ export type FilesViewCtx = {
  */
 export type FilesViewHooks = {
   readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
+  readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "workspace:open-file": (payload: ToolsEvents["workspace:open-file"]) => void;
 };

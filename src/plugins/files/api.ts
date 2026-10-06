@@ -1,7 +1,8 @@
 /**
  * @file files plugin — api factory: list, read, write, writeBinary, writeDataUrl, readBinary,
- * resolve, root.
- * Thin: every call goes through the sandbox (sandbox.ts) and then the file-system helpers (io.ts).
+ * resolve, root, find, project.
+ * Thin: every call goes through the sandbox (sandbox.ts) and then the file-system helpers (io.ts);
+ * find and project go to the project index (project.ts).
  * Any error that is not already a wire error becomes -32000 naming the relative path only.
  */
 import { realpath } from "node:fs/promises";
@@ -9,6 +10,7 @@ import { dirname } from "node:path/posix";
 import type { FileBinary, FileEntry, FileText, WriteResult } from "../registry/protocol";
 import { isWireError } from "../registry/protocol";
 import { decodeDataUrl, encodeDataUrl } from "./binary";
+import { emitLogged } from "./emit";
 import { conflict, forbidden, invalid, ioFailed } from "./errors";
 import {
   atomicWrite,
@@ -21,6 +23,7 @@ import {
   withLock
 } from "./io";
 import { classifyWrite } from "./kind";
+import { findKey } from "./project";
 import { describeChild, isInside, isMissing, resolveReal, resolveRealSync } from "./sandbox";
 import type { FilesApi, FilesCtx } from "./types";
 
@@ -28,6 +31,23 @@ import type { FilesApi, FilesCtx } from "./types";
  * UTF-8 encoder of written text.
  */
 const ENCODER = new TextEncoder();
+
+/**
+ * The errno code of a thrown file-system error.
+ *
+ * @param error - What was thrown.
+ * @returns `error.code` when it is a string, else `"EIO"`.
+ * @example
+ * ```ts
+ * errnoCodeOf(Object.assign(new Error("permission denied"), { code: "EACCES" })); // "EACCES"
+ * errnoCodeOf("boom"); // "EIO"
+ * ```
+ */
+function errnoCodeOf(error: unknown): string {
+  if (!(error instanceof Error) || !("code" in error)) return "EIO";
+
+  return typeof error.code === "string" ? error.code : "EIO";
+}
 
 /**
  * Turns anything a call threw into the error it rejects with: wire errors pass unchanged, any
@@ -45,12 +65,7 @@ const ENCODER = new TextEncoder();
 function toFilesError(operation: string, path: string, error: unknown): Error {
   if (error instanceof Error && isWireError(error)) return error;
 
-  const code =
-    error instanceof Error && "code" in error && typeof error.code === "string"
-      ? error.code
-      : "EIO";
-
-  return ioFailed(`${operation} failed: ${String(path)} (${code})`);
+  return ioFailed(`${operation} failed: ${String(path)} (${errnoCodeOf(error)})`);
 }
 
 /**
@@ -86,53 +101,6 @@ async function recheckParent(ctx: FilesCtx, real: string, path: string): Promise
 }
 
 /**
- * Fires an emit that is not awaited. A throw, or a rejected promise the emit returns, goes to
- * `onFailure`, so a failing hook never breaks the caller.
- *
- * @param fire - Calls ctx.emit.
- * @param onFailure - Logs the failure.
- * @example
- * ```ts
- * emitLogged(() => Promise.reject(new Error("x")), console.error); // returns; logs "Error: x" later
- * ```
- */
-function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
-  try {
-    const emitted = fire();
-    if (emitted instanceof Promise) emitted.catch(onFailure);
-  } catch (error) {
-    onFailure(error);
-  }
-}
-
-/**
- * Writes the bytes atomically, announces the write and builds the result. The emit is not
- * awaited; a throw or a rejected promise of the emit is logged as `files:emit-failed`.
- *
- * @param ctx - Domain context of files.
- * @param path - The requested path.
- * @param real - The real target.
- * @param bytes - The bytes to write.
- * @returns `{ path, bytes, version }`.
- */
-async function commit(
-  ctx: FilesCtx,
-  path: string,
-  real: string,
-  bytes: Uint8Array
-): Promise<WriteResult> {
-  await atomicWrite(real, bytes, () => recheckParent(ctx, real, path));
-
-  const payload = { path, bytes: bytes.length, kind: classifyWrite(path) };
-  emitLogged(
-    () => ctx.emit("files:written", payload),
-    error => ctx.log.error("files:emit-failed", { path, error: String(error) })
-  );
-
-  return { path, bytes: bytes.length, version: sha1(bytes) };
-}
-
-/**
  * The optimistic concurrency check: the current bytes must hash to `version`.
  *
  * @param real - The real target.
@@ -153,7 +121,43 @@ async function checkVersion(real: string, path: string, version: string): Promis
 }
 
 /**
- * The body of `write`, run under the path's lock.
+ * Writes the bytes atomically, announces the write and builds the result. Right before the
+ * rename the parent folder is checked again and, when a version is given, the bytes on disk must
+ * still hash to it (D-45): the window is narrowed to hash-then-rename. A conflict there removes
+ * the temp file. The emit is not awaited; a throw or a rejected promise of the emit is logged as
+ * `files:emit-failed`.
+ *
+ * @param ctx - Domain context of files.
+ * @param path - The requested path.
+ * @param real - The real target.
+ * @param bytes - The bytes to write.
+ * @param version - Optional version the caller saw.
+ * @returns `{ path, bytes, version }`.
+ */
+async function commit(
+  ctx: FilesCtx,
+  path: string,
+  real: string,
+  bytes: Uint8Array,
+  version?: string
+): Promise<WriteResult> {
+  await atomicWrite(real, bytes, async () => {
+    await recheckParent(ctx, real, path);
+    if (version !== undefined) await checkVersion(real, path, version);
+  });
+
+  const payload = { path, bytes: bytes.length, kind: classifyWrite(path) };
+  emitLogged(
+    () => ctx.emit("files:written", payload),
+    error => ctx.log.error("files:emit-failed", { path, error: String(error) })
+  );
+
+  return { path, bytes: bytes.length, version: sha1(bytes) };
+}
+
+/**
+ * The body of `write`, run under the path's lock. The text is checked first; the version only
+ * right before the rename.
  *
  * @param ctx - Domain context of files.
  * @param path - The requested path.
@@ -168,13 +172,12 @@ async function writeText(
   version: string | undefined
 ): Promise<WriteResult> {
   const real = await resolveReal(ctx, path, "write");
-  if (version !== undefined) await checkVersion(real, path, version);
   if (typeof text !== "string") throw invalid("text", `write: text must be a string: ${path}`);
 
   const bytes = ENCODER.encode(text);
   if (bytes.length > MAX_TEXT_BYTES) throw invalid("text", `write: text over 2 MiB: ${path}`);
 
-  return commit(ctx, path, real, bytes);
+  return commit(ctx, path, real, bytes, version);
 }
 
 /**
@@ -261,7 +264,10 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
         throw toFilesError("resolve", path, error);
       }
     },
-    root: () => ctx.state.rootReal
+    root: () => ctx.state.rootReal,
+    find: key => guard("find", key, () => findKey(ctx, key)),
+    // Every state files announces is frozen: the caller gets it without a copy.
+    project: () => ctx.state.projectState
   };
 
   return api;

@@ -122,21 +122,40 @@ export async function loadTab(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
 }
 
 /**
- * Re-reads a ready text tab whose last check is older than `revalidateMs`: the same version
- * only refreshes the check time; a changed file replaces a clean tab silently and marks a
- * modified tab as conflict; a deleted file marks it missing. Never rejects.
+ * True when a tab is re-read: a ready text tab, and with `force` also a missing one (its file
+ * may be back).
+ *
+ * @param tab - The tab.
+ * @param force - A re-read the project index asked for.
+ * @returns Whether to read it.
+ * @example
+ * ```ts
+ * isCheckable({ ...tab, status: "missing" }, true); // true
+ * ```
+ */
+function isCheckable(tab: OpenTab, force: boolean): boolean {
+  if (tab.kind === "image") return false;
+  return tab.status === "ready" || (force && tab.status === "missing");
+}
+
+/**
+ * Re-reads a text tab: a ready one whose last check is older than `revalidateMs`, or with `force`
+ * (the project index saw the file change) a ready or missing one at once. The same version only
+ * refreshes the check time (a missing tab is ready again); a changed file replaces a clean tab
+ * silently and marks a modified tab as conflict; a deleted file marks it missing. Never rejects.
  *
  * @param ctx - Domain context of filesView.
  * @param tab - The tab.
+ * @param force - Read now, whatever the check time; also a missing tab.
  * @returns When the check is done.
  */
-export async function revalidate(ctx: FilesViewCtx, tab: OpenTab): Promise<void> {
-  if (tab.kind === "image" || tab.status !== "ready") return;
-  if (Date.now() - tab.checkedAt < ctx.config.revalidateMs) return;
+export async function revalidate(ctx: FilesViewCtx, tab: OpenTab, force = false): Promise<void> {
+  if (!isCheckable(tab, force)) return;
+  if (!force && Date.now() - tab.checkedAt < ctx.config.revalidateMs) return;
 
   try {
     const { text, version } = await ctx.require(linkPlugin).files.read(tab.path);
-    if (version === tab.version) tab.checkedAt = Date.now();
+    if (version === tab.version) markChecked(tab);
     else if (isModified(tab)) tab.status = "conflict";
     else storeText(tab, text, version);
   } catch (error) {
@@ -149,4 +168,18 @@ export async function revalidate(ctx: FilesViewCtx, tab: OpenTab): Promise<void>
     }
   }
   notify(ctx.state);
+}
+
+/**
+ * The file on disk is still the tab's version: refreshes the check time; a missing tab is ready
+ * again.
+ *
+ * @param tab - The tab.
+ */
+export function markChecked(tab: OpenTab): void {
+  tab.checkedAt = Date.now();
+  if (tab.status !== "missing") return;
+
+  tab.status = "ready";
+  tab.message = undefined;
 }

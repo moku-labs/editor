@@ -77,7 +77,7 @@ function hudArea(overrides: Partial<AreaFacts> = {}): AreaFacts {
       { node: roots[0] ?? nodeOf("ui:boardScreen"), source: undefined },
       {
         node: roots[1] ?? nodeOf("ui:boardScreen"),
-        source: { kind: "defined", path: "src/hud/Hud.tsx", line: 2 }
+        source: { kind: "defined", path: "src/hud/Hud.tsx", line: 2, range: [2, 1, 2, 42] }
       }
     ],
     total: 2,

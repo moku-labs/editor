@@ -128,4 +128,30 @@ describe("hub.publish", () => {
     expect(later.notes("editor", "selection")).toEqual([cleared]);
     expect(harness.ctx.state.published.get("selection")).toBeNull();
   });
+
+  it("logs the bytes and the tools connections of a published project state (debug)", () => {
+    const harness = createHarness();
+    const first = harness.connect("tools");
+    harness.connect("tools");
+    harness.hello();
+    first.clear();
+
+    createHubApi(harness.ctx).publish("project", { state: "off", reason: "disabled" });
+
+    const [sent] = first.sent;
+    expect(harness.ctx.log.debug).toHaveBeenCalledWith("hub:published", {
+      method: "project",
+      bytes: new TextEncoder().encode(sent).byteLength,
+      conns: 2
+    });
+  });
+
+  it("logs only the method of the other published values", () => {
+    const harness = createHarness();
+    harness.connect("tools");
+
+    createHubApi(harness.ctx).publish("hotReload", { hmr: true, owner: "bin" });
+
+    expect(harness.ctx.log.debug).toHaveBeenCalledWith("hub:published", { method: "hotReload" });
+  });
 });

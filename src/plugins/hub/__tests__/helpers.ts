@@ -194,7 +194,11 @@ export function fakeFiles(): FakeFiles {
       version: "v4"
     })),
     resolve: vi.fn<FilesApi["resolve"]>(path => path),
-    root: vi.fn<FilesApi["root"]>(() => "/root")
+    root: vi.fn<FilesApi["root"]>(() => "/root"),
+    find: vi.fn<FilesApi["find"]>(async key => [
+      { path: "nodes/merge.ts", binding: "merge", key, line: 17, range: [17, 1, 24, 3], hash: "h1" }
+    ]),
+    project: vi.fn<FilesApi["project"]>(() => ({ state: "off", reason: "not opened" }))
   };
 }
 

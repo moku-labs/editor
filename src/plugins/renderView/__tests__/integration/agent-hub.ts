@@ -18,15 +18,18 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // An in-process hub between the tools link and one agent: the scripted hub of
 // the workspace tests (sessions, heartbeats, manifests, runs) plus the game
-// channel routed to an agent EditorChannel (read, watch, unwatch) and the files
-// channel answered from an in-memory store. Closing a socket drops its watches,
+// channel routed to an agent EditorChannel (read, watch, unwatch), the files
+// channel answered from an in-memory store and the project index replayed on
+// each open. Closing a socket drops its watches,
 // like the real hub.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** What the hub routes to: the agent's channel and the project files. */
+/** What the hub routes to: the agent's channel, the project files and the project index. */
 export type Agent = {
   readonly channel: EditorChannel;
   readonly files: ReadonlyMap<string, string>;
+  /** The `editor.project` state each socket gets after it opens, like the hub's replay. */
+  readonly project?: Json;
 };
 
 /** The agent hub: the scripted hub plus the routed watches. */
@@ -66,6 +69,13 @@ export function createAgentHub(agent: Agent): AgentHub {
   /** The scripted socket with the game and files channels routed. */
   class Socket extends Base {
     readonly #subs = new Set<number>();
+
+    constructor(url: string) {
+      super(url);
+      if (agent.project !== undefined) {
+        this.deliver(encode(notification("editor", "project", agent.project)));
+      }
+    }
 
     override send(text: string): void {
       const message = decode(text);

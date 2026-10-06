@@ -3,6 +3,7 @@ import type {
   EditorChannel,
   Json,
   Manifest,
+  ProjectState,
   Request as RpcRequest,
   SessionInfo
 } from "../../../registry/protocol";
@@ -40,6 +41,8 @@ export type TestHub = {
   open(info: SessionInfo, manifest: Manifest): void;
   /** Sends a heartbeat of the open session. */
   heartbeat(frame: number): void;
+  /** Publishes a project index state: the editor-channel note `project` (`editor.project`). */
+  project(state: ProjectState): void;
   /** Requests of a method, optionally of one channel. */
   requests(method: string, channel?: "game" | "files"): RpcRequest[];
   /** The source id of every watch sub. */
@@ -112,6 +115,9 @@ export function createTestHub(backend: HubBackend, files: FilesStore): TestHub {
       }
       case "writeBinary": {
         return toWireValue(await files.writeBinary(text(params, "path"), text(params, "data")));
+      }
+      case "find": {
+        return toWireValue(await files.find(text(params, "key")));
       }
       default: {
         return toWireValue(await files.readBinary(text(params, "path")));
@@ -218,6 +224,9 @@ export function createTestHub(backend: HubBackend, files: FilesStore): TestHub {
     },
     heartbeat(frame) {
       notify("game", "heartbeat", { frame, paused: false, at: frame }, session);
+    },
+    project(state) {
+      notify("editor", "project", toWireValue(state));
     },
     requests(method, channel) {
       return hub.received.filter(

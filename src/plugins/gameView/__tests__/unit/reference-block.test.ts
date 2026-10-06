@@ -7,6 +7,7 @@ import {
   referenceBlock,
   sourceText
 } from "../../reference/block";
+import type { StyleSource } from "../../types";
 import { sceneCapture } from "../helpers";
 import { boardScene } from "../ui";
 
@@ -72,6 +73,7 @@ const FULL: ReferenceFacts = {
     kind: "ident",
     path: "features/settings/settings.tsx",
     line: 309,
+    range: [309, 9, 312, 21],
     ref: { kind: "const", name: "settingsPane" },
     files: ["features/settings/settings.tsx"]
   },
@@ -185,10 +187,17 @@ describe("referenceBlock", () => {
     expect(lines).toContain("game: merge-game 0.0.0 · s-1 · f12 · 09:05:07 · live · tainted");
   });
 
-  it("prints a call as the style, a loop source, and the last edge without a frame", () => {
+  it("prints a call as the style, and the last edge without a frame", () => {
     const facts: ReferenceFacts = {
       ...bare(BOARD),
-      source: { kind: "call", path: "kit.tsx", line: 3, call: "boardOf(950, 1060)", callLine: 4 },
+      source: {
+        kind: "call",
+        path: "kit.tsx",
+        line: 3,
+        range: [2, 5, 8, 13],
+        call: "boardOf(950, 1060)",
+        callLine: 4
+      },
       last: { path: "home", outcome: "play" }
     };
     const lines = referenceBlock(facts).split("\n");
@@ -220,11 +229,19 @@ describe("referenceBlock", () => {
 });
 
 describe("sourceText", () => {
-  it("is file:line, with (loop) for a key built in a loop", () => {
-    expect(sourceText({ kind: "defined", path: "a.tsx", line: 3 })).toBe("a.tsx:3");
-    expect(sourceText({ kind: "defined", path: "strip.tsx", line: 157, loop: true })).toBe(
-      "strip.tsx:157 (loop)"
+  it("is file:line of the line the index answered (strip.tsx:216 for card0, D-47)", () => {
+    expect(sourceText({ kind: "defined", path: "a.tsx", line: 3, range: [3, 1, 3, 9] })).toBe(
+      "a.tsx:3"
     );
+    const card: StyleSource = {
+      kind: "call",
+      path: "features/orders/strip.tsx",
+      line: 216,
+      range: [215, 5, 247, 14],
+      call: "orderCardStyle(card.slot)",
+      callLine: 218
+    };
+    expect(sourceText(card)).toBe("features/orders/strip.tsx:216");
   });
 });
 

@@ -3,9 +3,12 @@
  * Commands, the Nodes group (replaced when the graph changes; ⇧↵ "Open in Files") and the Styles
  * group (replaced whenever the styles file is read).
  */
+import { linkPlugin } from "../link";
+import { notFoundText } from "../panels/shared/project";
 import { showSidePanel } from "../panels/shared/side-panel";
 import { workspacePlugin } from "../workspace";
 import type { PaletteGroup, PaletteItem } from "../workspace/types";
+import { nodeKey } from "./inspector/files";
 import { INSPECTOR_PANEL } from "./keys";
 import type { FlowActions, FlowCtx } from "./types";
 
@@ -34,7 +37,8 @@ function paletteItem(
 }
 
 /**
- * Opens a node's file in Files (⇧↵ of a Nodes item), or toasts that there is none.
+ * Opens a node's file in Files at the place the project index gives (⇧↵ of a Nodes item), or
+ * toasts why there is none.
  *
  * @param ctx - Domain context of flowView.
  * @param actions - The flowView actions.
@@ -43,8 +47,11 @@ function paletteItem(
  */
 export async function openNodeFile(ctx: FlowCtx, actions: FlowActions, id: string): Promise<void> {
   const file = await actions.inspector.fileOf(id);
-  if (file === undefined) ctx.require(workspacePlugin).toast("No file found for this node");
-  else actions.inspector.openInFiles(file.path, file.line);
+  if (file === undefined) {
+    ctx
+      .require(workspacePlugin)
+      .toast(notFoundText(ctx.require(linkPlugin).project(), nodeKey(id)));
+  } else actions.inspector.openInFiles(file.path, file.line);
 }
 
 /**
@@ -165,7 +172,7 @@ export function setNodeItems(ctx: FlowCtx, actions: FlowActions): void {
 }
 
 /**
- * Replaces the Styles group: one item per text-style key of stylesFile; running one shows Flow and
+ * Replaces the Styles group: one item per text-style key of the index's text-styles file; running one shows Flow and
  * opens the Styles tab on that key's card.
  *
  * @param ctx - Domain context of flowView.

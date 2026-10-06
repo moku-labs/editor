@@ -1,13 +1,14 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { FilesClient } from "../../link/types";
-import type { FileEntry } from "../../registry/protocol";
+import type { FileEntry, ProjectFound } from "../../registry/protocol";
 import { wireError } from "../../registry/protocol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // An in-memory FilesClient: a flat path → text map, versions = a content hash,
 // readBinary for images (the stored text is the data URL), folders derived from
-// the paths, injectable errors (Error & WireError) and a list concurrency gauge.
+// the paths, injectable errors (Error & WireError), a list concurrency gauge and
+// the project-index answers of `find` by key.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The fake files channel plus test controls. */
@@ -17,15 +18,22 @@ export type FakeFiles = {
     readonly read: Mock<FilesClient["read"]>;
     readonly write: Mock<FilesClient["write"]>;
     readonly readBinary: Mock<FilesClient["readBinary"]>;
+    readonly find: Mock<FilesClient["find"]>;
   };
   /** Path → text (data URL for images). */
   readonly contents: Map<string, string>;
   /** Errors to throw, by `<method>:<path or dir>`; kept until deleted. */
   readonly failures: Map<string, Error>;
+  /** What `find` answers, by key; an unknown key answers []. */
+  readonly found: Map<string, readonly ProjectFound[]>;
   /** Folders listed, in call order. */
   readonly listed: string[];
   /** Highest number of list calls in flight at once. */
   maxInFlight: number;
+  /**
+   * Holds the next list of a folder until released: `reached` resolves when that list is asked.
+   */
+  hold(dir: string): { readonly reached: Promise<void>; release(): void };
   /** Changes a file behind the editor's back. */
   set(path: string, text: string): void;
   /** The version of a stored file. */
@@ -79,7 +87,9 @@ export const tooLargeError = (path: string): Error =>
 export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): FakeFiles {
   const contents = new Map(Object.entries(seed));
   const failures = new Map<string, Error>();
+  const found = new Map<string, readonly ProjectFound[]>();
   const listed: string[] = [];
+  const holds = new Map<string, { readonly gate: Promise<void>; readonly arrive: () => void }>();
   let inFlight = 0;
 
   const fail = (key: string): void => {
@@ -105,11 +115,17 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
   const fake: FakeFiles = {
     contents,
     failures,
+    found,
     listed,
     maxInFlight: 0,
     client: {
       list: vi.fn(async (dir: string) => {
         listed.push(dir);
+        const held = holds.get(dir);
+        if (held !== undefined) {
+          held.arrive();
+          await held.gate;
+        }
         inFlight += 1;
         fake.maxInFlight = Math.max(fake.maxInFlight, inFlight);
         try {
@@ -148,10 +164,27 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
         const dataUrl = contents.get(path);
         if (dataUrl === undefined) throw notFoundError(path);
         return { dataUrl, version: hashOf(dataUrl) };
+      }),
+      find: vi.fn(async (key: string) => {
+        await Promise.resolve();
+        fail(`find:${key}`);
+        return found.get(key) ?? [];
       })
     },
     set(path, text) {
       contents.set(path, text);
+    },
+    hold(dir) {
+      const gate = Promise.withResolvers<void>();
+      const reached = Promise.withResolvers<void>();
+      holds.set(dir, { gate: gate.promise, arrive: reached.resolve });
+      return {
+        reached: reached.promise,
+        release() {
+          holds.delete(dir);
+          gate.resolve();
+        }
+      };
     },
     versionOf(path) {
       const text = contents.get(path);

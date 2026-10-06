@@ -61,6 +61,8 @@ export type FakeHub = {
   /** Value of each source id, sent first on watch and answered on read. */
   readonly values: Map<string, Json>;
   readonly files: Map<string, StoredFile>;
+  /** The `find` answer of each project-index key; an unknown key answers []. */
+  readonly found: Map<string, Json>;
   /** Source ids whose read never answers. */
   readonly hang: Set<string>;
   /** Sends a notification to every tools socket. */
@@ -143,6 +145,8 @@ function answerFiles(
   method: string,
   text: (key: string) => string
 ): { result: Json } | { error: WireError } {
+  if (method === "find") return { result: hub.found.get(text("key")) ?? [] };
+
   const path = text("path");
   const stored = hub.files.get(path);
 
@@ -207,6 +211,7 @@ export function startFakeHub(token: string): FakeHub {
     manifests: new Map(),
     values: new Map(),
     files: new Map(),
+    found: new Map(),
     hang: new Set(),
     notify(channel, method, params, session) {
       broadcast(encode(notification(channel, method, params, session)));

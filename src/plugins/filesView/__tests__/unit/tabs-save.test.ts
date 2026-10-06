@@ -1,16 +1,17 @@
 import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SOURCE_OVERRIDES_PATH, wireError } from "../../../registry/protocol";
+import { wireError } from "../../../registry/protocol";
 import { findTab } from "../../tabs/model";
 import { openTab } from "../../tabs/open";
 import { resolveConflict, saveTab, shouldReload } from "../../tabs/save";
+import type { SaveResult } from "../../types";
 import { hashOf } from "../fake-files";
-import { CONFIG, createCtx, GRAPH, settle, type TestCtx } from "../helpers";
+import { CONFIG, createCtx, settle, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The save flow: unchanged → no write; saved → toast; D-07 reload only for game
 // sources outside .moku/ while live or paused; conflict; resolve reload and
-// overwrite; saving the override file rebuilds Used by.
+// overwrite.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -148,7 +149,7 @@ describe("saveTab", () => {
 
   it.each([
     ["a .md save", ".moku/notes/2026-09-24-first.md", { kind: "live", frame: 1 }],
-    ["a .moku/ json save", ".moku/editor/files.json", { kind: "live", frame: 1 }],
+    ["a .moku/ json save", ".moku/editor/layout.json", { kind: "live", frame: 1 }],
     ["a save with no game", "nodes/merge.ts", { kind: "empty" }],
     ["a save while connecting", "nodes/merge.ts", { kind: "connecting" }]
   ] as const)("does not reload for %s", async (_label, path, status) => {
@@ -187,25 +188,6 @@ describe("saveTab", () => {
       path: "nodes/merge.ts",
       code: -32_602
     });
-  });
-
-  it("rebuilds Used by after saving the override file", async () => {
-    ctx.state.graph = GRAPH;
-    ctx.state.index = {
-      files: new Map(
-        ["flows/board.ts", "features/settings/nodes.ts", ".moku/editor/files.json"].map(path => [
-          path,
-          { path, kind: "file" as const, size: 1 }
-        ])
-      ),
-      children: new Map(),
-      builtAt: 1,
-      truncated: false
-    };
-    await edited(".moku/editor/files.json", '{ "board": "features/settings/nodes.ts" }');
-    await saveTab(ctx, ".moku/editor/files.json");
-    expect(ctx.state.overrides).toEqual({ board: "features/settings/nodes.ts" });
-    expect(ctx.state.usedBy?.get("features/settings/nodes.ts")?.flows).toEqual(["board"]);
   });
 });
 
@@ -304,30 +286,26 @@ describe("saveTab while a write is in flight", () => {
   });
 
   it("a write started while the previous one finishes keeps its own tracking", async () => {
-    await edited(SOURCE_OVERRIDES_PATH, "{}\n");
-    const releaseRead = hold(ctx.files.client.read);
-    const first = saveTab(ctx, SOURCE_OVERRIDES_PATH);
-    await settle();
-    // The write landed; the overrides read after it is held, so the first save is not done.
-    const tab = findTab(ctx.state, SOURCE_OVERRIDES_PATH);
-    expect(tab?.status).toBe("ready");
-    if (tab) tab.buffer = '{ "a": "b.ts" }\n';
-    const releaseWrite = hold(ctx.files.client.write);
-    const second = saveTab(ctx, SOURCE_OVERRIDES_PATH);
-    releaseRead();
-    await first;
+    const path = "README.md";
+    await edited(path, "first\n");
+    const tab = findTab(ctx.state, path);
+    let second: Promise<SaveResult> | undefined;
+    let releaseWrite: (() => void) | undefined;
+    // The toast of the first save runs after its write landed, before its tracking ends.
+    ctx.workspace.toast.mockImplementationOnce(() => {
+      if (tab) tab.buffer = "second\n";
+      releaseWrite = hold(ctx.files.client.write);
+      second = saveTab(ctx, path);
+    });
+    expect(await saveTab(ctx, path)).toMatchObject({ kind: "saved" });
 
     // The first write's end must not forget the second one: a save now queues behind it.
-    if (tab) tab.buffer = '{ "c": "d.ts" }\n';
-    const third = saveTab(ctx, SOURCE_OVERRIDES_PATH);
-    releaseWrite();
+    if (tab) tab.buffer = "third\n";
+    const third = saveTab(ctx, path);
+    releaseWrite?.();
     expect(await second).toMatchObject({ kind: "saved" });
-    expect(await third).toMatchObject({ kind: "saved", version: hashOf('{ "c": "d.ts" }\n') });
-    expect(writes().map(([text]) => text)).toEqual([
-      "{}\n",
-      '{ "a": "b.ts" }\n',
-      '{ "c": "d.ts" }\n'
-    ]);
+    expect(await third).toMatchObject({ kind: "saved", version: hashOf("third\n") });
+    expect(writes().map(([text]) => text)).toEqual(["first\n", "second\n", "third\n"]);
   });
 });
 

@@ -59,7 +59,9 @@ async function liveAt(frame: number): Promise<FakeWebSocket> {
  * @returns The statuses.
  */
 function emitted(): LinkStatus[] {
-  return ctx.emit.mock.calls.map(([, payload]) => payload.status);
+  return ctx.emit.mock.calls.flatMap(([, payload]) =>
+    "status" in payload ? [payload.status] : []
+  );
 }
 
 /**

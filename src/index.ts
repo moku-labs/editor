@@ -1,7 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: sectioned manifest (protocol types → protocol helpers → panels) is house style
 /**
  * The `@moku-labs/editor` package root. Runtime-free: the wire protocol shared by the game page,
- * the server and the tools page (types and pure helpers, including the node → file rule), and
+ * the server and the tools page (types and pure helpers, including the project-index helpers), and
  * `definePanel` with its types. It imports no plugin instance and no core (D-01).
  *
  * Subpaths next to the root:
@@ -35,6 +35,7 @@ export type {
   FileBinary,
   FileEntry,
   FileText,
+  FindParams,
   FoldScreen,
   Heartbeat,
   HelloBody,
@@ -53,6 +54,12 @@ export type {
   Notification,
   PathParams,
   PictureFormat,
+  ProjectAnchor,
+  ProjectChange,
+  ProjectDelta,
+  ProjectFound,
+  ProjectMove,
+  ProjectState,
   PublishMethod,
   PublishParams,
   ReadParams,
@@ -70,7 +77,6 @@ export type {
   SessionParams,
   SessionsParams,
   SourceDescriptor,
-  SourceOverrides,
   SubId,
   Tap,
   ToolsBoot,
@@ -86,6 +92,7 @@ export type {
 
 // ─── Protocol: helpers (pure) ─────────────────────────────────
 export {
+  anchorKey,
   bareMessage,
   checkInput,
   decode,
@@ -93,7 +100,7 @@ export {
   ERROR_PREFIX,
   errorCode,
   failure,
-  flowFile,
+  firstDefinition,
   fromWireError,
   isFailure,
   isHotSwapEntry,
@@ -105,16 +112,14 @@ export {
   isRetryable,
   isSelectionInfo,
   isWireError,
-  kebab,
-  nodeFile,
   notification,
-  parseOverrides,
+  parseFoundList,
+  parseProjectState,
   parseSelectionInfo,
   parseSelectParams,
+  projectDelta,
   ProtocolError,
   request,
-  SOURCE_OVERRIDES_PATH,
-  SOURCE_ROOTS,
   success,
   toWireError,
   toWireValue,

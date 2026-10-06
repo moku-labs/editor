@@ -7,11 +7,13 @@ import { rawUiNodeAt } from "../../reference/facts";
 import type { StyleSource } from "../../types";
 import { CROP_JPEG, stubCanvas } from "../canvas";
 import {
+  answer,
   createCtx,
   DAY,
   flush,
   JPEG,
   manifestOf,
+  place,
   sceneCapture,
   type TestCtx,
   TODAY,
@@ -24,7 +26,8 @@ import { boardScene } from "../ui";
 // fully inside, else the ones it covers by half; group roots only; top to
 // bottom, then left to right; at most 40), then the pick path with the area:
 // bookmark, full shot, crop, the card area-f<frame>.md, the area line on the
-// clipboard, the capture card, and the selection published twice (A18).
+// clipboard, the capture card, and the selection published twice. Sources and
+// component definitions are the project index's answers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The left of the hud row: the home button and the coin pill. */
@@ -148,14 +151,38 @@ function homeScene(): SceneSnapshot {
   };
 }
 
+/** The Home view's keys: their key line and the range of their element. */
+const HOME_KEYS: readonly (readonly [string, number, readonly [number, number, number, number]])[] =
+  [
+    ["homeSettings", 6, [6, 3, 6, 35]],
+    ["homeCoins", 5, [5, 3, 5, 28]],
+    ["giftCorner", 8, [8, 1, 10, 10]],
+    ["homeLogo", 2, [2, 3, 2, 29]]
+  ];
+
 /**
  * A key source in the Home view.
  *
  * @param line - The 1-based key line.
+ * @param range - The range of the element.
  * @returns The source.
  */
-function homeLine(line: number): StyleSource {
-  return { kind: "defined", path: "features/home/view.tsx", line };
+function homeLine(line: number, range: readonly [number, number, number, number]): StyleSource {
+  return { kind: "defined", path: "features/home/view.tsx", line, range: [...range] };
+}
+
+/** The spy on the store's find. */
+type FindSpy = { readonly mock: { readonly calls: readonly (readonly string[])[] } };
+
+/**
+ * The project-index keys `find` was asked for.
+ *
+ * @param find - The spy on the store's find.
+ * @param prefix - Only the keys with this prefix.
+ * @returns The keys, in order.
+ */
+function askedKeys(find: FindSpy, prefix: string): string[] {
+  return find.mock.calls.map(([key = ""]) => key).filter(key => key.startsWith(prefix));
 }
 
 /**
@@ -170,6 +197,8 @@ function published(): (SelectionInfo | null)[] {
 beforeEach(() => {
   vi.setSystemTime(TODAY);
   ctx = createCtx(HUD);
+  answer(ctx, "jsx:home", place("src/hud/Hud.tsx", [1, 1, 1, 21]));
+  answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 1, 2, 42]));
   useScene(ctx);
   ctx.state.scene = boardScene();
   ctx.state.calibration = { scale: 1, x: 0, y: 0 };
@@ -304,7 +333,8 @@ describe("pickArea", () => {
       "src/kit/Pill.tsx",
       "export function Pill(props: PillProps) {\n  return <row key={props.id} />;\n}\n"
     );
-    const list = vi.spyOn(ctx.link.files, "list");
+    answer(ctx, "component:Pill", place("src/kit/Pill.tsx", [1, 1, 3, 2]));
+    const find = vi.spyOn(ctx.link.files, "find");
 
     await pickArea(ctx, boardScene(), HUD_AREA);
     const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
@@ -320,18 +350,15 @@ describe("pickArea", () => {
     expect(card).toContain(
       "## coinPill · component Pill · src/kit/Pill.tsx:1\n\n```tsx\nexport function Pill(props: PillProps) {\n  return <row key={props.id} />;\n}\n```"
     );
-    expect(ctx.state.found.get("<Pill>")).toEqual({
-      kind: "defined",
-      path: "src/kit/Pill.tsx",
-      line: 1
-    });
-
-    // Two keys, three children and two components (Button, Pill): 7 of the 10 searches.
-    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(7);
+    expect(card).not.toContain("component Button");
+    expect(askedKeys(find, "component:")).toEqual(["component:Button", "component:Pill"]);
   });
 
   it("Home shape: every group root with a known line gets its JSX block (U6)", async () => {
     ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
+    for (const [key, line, range] of HOME_KEYS) {
+      answer(ctx, `jsx:${key}`, place("features/home/view.tsx", [...range], { line }));
+    }
     await pickArea(ctx, homeScene(), HOME_AREA);
     const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
     expect(card).toContain("- homeLogo column · key homeLogo · features/home/view.tsx:2 · ");
@@ -345,53 +372,36 @@ describe("pickArea", () => {
     }
   });
 
-  it("Home shape: known lines spend no new search for their JSX blocks (U6)", async () => {
+  it("Home shape: known lines ask the index only for the component definitions (U6)", async () => {
     ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
-    ctx.state.found.set("homeSettings", homeLine(6));
-    ctx.state.found.set("homeCoins", homeLine(5));
-    ctx.state.found.set("giftCorner", homeLine(8));
-    ctx.state.found.set("homeLogo", homeLine(2));
+    for (const [key, line, range] of HOME_KEYS) ctx.state.found.set(key, homeLine(line, range));
     ctx.link.files.put(
       "features/ui/kit.tsx",
       "export function LogoSign() {}\nexport function HudPill() {}\nexport function RoundButton() {}\n"
     );
-    for (const [line, name] of ["LogoSign", "HudPill", "RoundButton"].entries()) {
-      ctx.state.found.set(`<${name}>`, {
-        kind: "defined",
-        path: "features/ui/kit.tsx",
-        line: line + 1
-      });
+    for (const [index, name] of ["LogoSign", "HudPill", "RoundButton"].entries()) {
+      const line = index + 1;
+      answer(ctx, `component:${name}`, place("features/ui/kit.tsx", [line, 1, line, 30]));
     }
-    const list = vi.spyOn(ctx.link.files, "list");
+    const find = vi.spyOn(ctx.link.files, "find");
 
     await pickArea(ctx, homeScene(), HOME_AREA);
     const card = ctx.link.files.text(`${DAY}/area-f1842.md`);
     expect(card).toContain(
       '## homeLogo · JSX · features/home/view.tsx:2\n\n```tsx\n  <LogoSign id="homeLogo" />\n```'
     );
-    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(0);
-  });
-
-  it("searches a component without a local definition once per session", async () => {
-    ctx.link.files.put("features/home/view.tsx", HOME_VIEW);
-    ctx.state.found.set("homeSettings", homeLine(6));
-    ctx.state.found.set("homeCoins", homeLine(5));
-    ctx.state.found.set("giftCorner", homeLine(8));
-    ctx.state.found.set("homeLogo", homeLine(2));
-    const list = vi.spyOn(ctx.link.files, "list");
-
-    await pickArea(ctx, homeScene(), HOME_AREA);
-    expect(list.mock.calls.filter(([dir]) => dir === "").length).toBeGreaterThan(0);
-    expect([...ctx.state.missedDefinitions]).toEqual(
-      expect.arrayContaining(["LogoSign", "HudPill", "RoundButton"])
+    expect(card).toContain(
+      "## homeSettings · component RoundButton · features/ui/kit.tsx:3\n\n```tsx\nexport function RoundButton() {}\n```"
     );
-
-    list.mockClear();
-    await pickArea(ctx, homeScene(), HOME_AREA);
-    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(0);
+    expect(askedKeys(find, "jsx:")).toEqual([]);
+    expect(askedKeys(find, "component:").toSorted()).toEqual([
+      "component:HudPill",
+      "component:LogoSign",
+      "component:RoundButton"
+    ]);
   });
 
-  it("publishes the area first without sources, then with them and the card (A18)", async () => {
+  it("publishes the area first without sources, then with them and the card", async () => {
     ctx.state.selected = { kind: "entity", id: 1_048_628 };
     const info = await pickArea(ctx, boardScene(), HUD_AREA);
     expect(published()).toHaveLength(2);
@@ -411,10 +421,10 @@ describe("pickArea", () => {
     expect(ctx.link.files.paths()).toContain(`${DAY}/area-f1842-crop.jpg`);
   });
 
-  it("searches at most 10 new sources per area", async () => {
-    const list = vi.spyOn(ctx.link.files, "list");
+  it("asks the index for every key the card keeps, with no search budget", async () => {
+    const find = vi.spyOn(ctx.link.files, "find");
     await pickArea(ctx, gridScene(45), { x: 0, y: 0, w: 400, h: 400 });
-    expect(list.mock.calls.filter(([dir]) => dir === "")).toHaveLength(10);
+    expect(new Set(askedKeys(find, "jsx:")).size).toBe(40);
     expect(String(writeText.mock.calls[0]?.at(0))).toContain(" · 45 elements · ");
     expect(ctx.link.files.text(`${DAY}/area-f1842.md`)).toContain("\n+5 more\n");
   });

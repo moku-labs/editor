@@ -9,7 +9,7 @@
  * tab shows the full block and the Code section; the capture card of the pick offers the line again. Restoring the pick's bookmark
  * from a fresh start brings the game back to board/settings/open. In Reference mode the proxies
  * carry the frame, the reference bounds and, once a pick found it, the style source; a key built
- * in a loop (card0) resolves to its template literal. In Reference mode the cursor over the game is
+ * in a loop (card0) resolves to the element that takes it (the project index, D-47). In Reference mode the cursor over the game is
  * a crosshair, a real click still picks one element, and a drag picks an area (U9): the card
  * `area-f<frame>.md` lists the elements inside it with their child trees, layout lines and px
  * bounds (captures-by-day U5), next to the area's crop. In Select mode a drag picks an area too
@@ -461,7 +461,7 @@ test.describe("pick · for the chat", () => {
     const line = await clipboard(page);
     expect(line).not.toContain("\n");
     expect(line).toMatch(
-      /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md$/
+      /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:290 · ref \d+,\d+ \d+×\d+ · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md$/
     );
     const { card, text, block } = await sharedOf(line);
     const lines = block.split("\n");
@@ -477,7 +477,7 @@ test.describe("pick · for the chat", () => {
     expect(head, block).toMatch(/^@moku settingsBoard · panel · settingsPopup\/open · f\d+$/);
     expect(pathLine).toBe("path: settingsScreen/settingsBoard");
     expect(source).toMatch(
-      /^source: features\/settings\/settings\.tsx:301 · texture: ui\.panel-signboard$/
+      /^source: features\/settings\/settings\.tsx:290 · texture: ui\.panel-signboard$/
     );
     expect(layout).toMatch(/^layout: settingsScreen \(column, padding \d+\/\d+\/\d+\/\d+\)/);
     const px = [board.x, board.y, board.w, board.h].map(value => Math.round(value));
@@ -506,7 +506,7 @@ test.describe("pick · for the chat", () => {
     expect(line).toContain(` · ref ${ref} · `);
     // The card: its title, the block, the JSX of the board with file:line, and both images.
     expect(text.split("\n")[0]).toBe("# @moku settingsBoard panel");
-    expect(text).toMatch(/^## JSX · features\/settings\/settings\.tsx:300$/m);
+    expect(text).toMatch(/^## JSX · features\/settings\/settings\.tsx:289$/m);
     expect(text).toMatch(/^```tsx\n\s*<Signboard\n\s*id="settingsBoard"/m);
     expect(text).toContain(`![element](settingsBoard-f${frame}-crop.jpg)`);
     expect(text).toContain(`![frame](f${frame}-full.jpg)`);
@@ -538,11 +538,11 @@ test.describe("pick · for the chat", () => {
     const jsx = code.locator("[data-part=snippet]").first();
     await expect(jsx.locator("header [data-part=title]")).toHaveText("JSX", { timeout: 20_000 });
     await expect(jsx.locator("header [data-part=where]")).toHaveText(
-      "features/settings/settings.tsx:300"
+      "features/settings/settings.tsx:289"
     );
     const rows = jsx.locator("[data-part=code-lines] > div");
     await expect(rows).toHaveCount(20);
-    await expect(rows.first()).toHaveAttribute("data-line", "300");
+    await expect(rows.first()).toHaveAttribute("data-line", "289");
     await expect(rows.nth(1)).toContainText('id="settingsBoard"');
     const showAll = jsx.locator("[data-action=show-all]");
     await expect(showAll).toHaveText("Show all 22 lines");
@@ -580,7 +580,7 @@ test.describe("pick · for the chat", () => {
     expect([back.x, back.y, back.w, back.h].map(value => Math.round(value))).toEqual(px);
   });
 
-  test("Reference mode: proxies carry the frame, the reference bounds and the style source; card0 resolves as a loop key", async ({
+  test("Reference mode: proxies carry the frame, the reference bounds and the style source; card0 resolves to the element that builds it", async ({
     tools
   }) => {
     const page = tools.page;
@@ -608,18 +608,19 @@ test.describe("pick · for the chat", () => {
     expect(text).toContain(`## Style · playButton · ${style?.[1] ?? ""}`);
     expect(text).toContain("export const playButton = defineStyle({");
 
-    // On the board, the order card keyed card0 is built in a loop: `card${slot}`.
+    // On the board, the order card keyed card0 is built in a loop: `key={id}` with
+    // `id = cardKey(card.slot)`. The project index answers the element that takes the key (D-47).
     await answer(page, "play");
     await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
     const card0 = page.locator('[data-moku-proxy][data-moku-key="card0"]');
     await expect(card0).toHaveCount(1, { timeout: 15_000 });
     const card0Shared = await pickProxy(page, "card0");
-    expect(card0Shared.line).toMatch(/ · features\/orders\/strip\.tsx:157 \(loop\) · /);
+    expect(card0Shared.line).toMatch(/ · features\/orders\/strip\.tsx:216 · /);
     expect(card0Shared.block.split("\n")[0]).toMatch(/^@moku card0 · /);
-    expect(card0Shared.block).toMatch(/^source: features\/orders\/strip\.tsx:157 \(loop\)/m);
-    // A loop key shows the element of its template line.
-    expect(card0Shared.text).toMatch(/^## JSX · features\/orders\/strip\.tsx:\d+$/m);
-    expect(card0Shared.text).toContain("`card${");
+    expect(card0Shared.block).toMatch(/^source: features\/orders\/strip\.tsx:216( · |$)/m);
+    // The JSX of the card starts at its element: `<column` on line 215, `key={id}` on 216.
+    expect(card0Shared.text).toMatch(/^## JSX · features\/orders\/strip\.tsx:215$/m);
+    expect(card0Shared.text).toContain("key={id}");
     await page.keyboard.press("r");
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
   });

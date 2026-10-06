@@ -2,10 +2,11 @@
  * @file gameView plugin — one failure path for every capture, series, sheet and style
  * write: a toast with the bare message (R7: no `[moku-editor]` prefix in the UI) and a log entry
  * that keeps the full message and the wire code; and the log level of a read that failed because
- * the link or the game page went away (U11).
+ * the link or the game page went away (U11), or failed inside an expected reload.
  */
 
-import { bareMessage, type ErrorReason, isWireError } from "../registry/protocol";
+import { linkPlugin } from "../link";
+import { bareMessage, type ErrorReason, isReloading, isWireError } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import type { GameViewCtx } from "./types";
 
@@ -50,7 +51,9 @@ export function isLinkLoss(error: unknown): boolean {
 
 /**
  * Logs a failed read with its message: at debug when the link or the game page went away
- * (`isLinkLoss`), at warn otherwise.
+ * (`isLinkLoss`) or the link is inside an expected reload (`isReloading`: the Hot reload switch,
+ * a server restart; a read there fails with any reason, e.g. -32003 before the game is back), at
+ * warn otherwise.
  *
  * @param ctx - Domain context of gameView.
  * @param event - The log event, e.g. "gameView: calibration failed".
@@ -58,13 +61,14 @@ export function isLinkLoss(error: unknown): boolean {
  * @param fields - More log fields, e.g. the key read.
  */
 export function logReadFailure(
-  ctx: Pick<GameViewCtx, "log">,
+  ctx: Pick<GameViewCtx, "log" | "require">,
   event: string,
   error: unknown,
   fields: Readonly<Record<string, string>> = {}
 ): void {
   const data = { ...fields, message: messageOf(error) };
-  if (isLinkLoss(error)) ctx.log.debug(event, data);
+  const isExpected = isLinkLoss(error) || isReloading(ctx.require(linkPlugin).status());
+  if (isExpected) ctx.log.debug(event, data);
   else ctx.log.warn(event, data);
 }
 

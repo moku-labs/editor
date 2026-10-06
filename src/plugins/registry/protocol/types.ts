@@ -404,6 +404,22 @@ export type WriteParams = { path: string; text: string; version?: string };
 export type WriteBinaryParams = { path: string; data: string };
 
 /**
+ * Params of the files-channel `find` request: one project-index key.
+ */
+export type FindParams = { key: string };
+
+/**
+ * A graph node by flow and node name: the `node:<flow>/<node>` key of the project index.
+ *
+ * @example
+ * ```ts
+ * // filesView's Used by card lists the nodes a file defines.
+ * const ref: NodeRef = { flow: "board", node: "merge" }; // node:board/merge
+ * ```
+ */
+export type NodeRef = { readonly flow: string; readonly node: string };
+
+/**
  * One game session the way a tools client sees it: the five R1 fields, the hub's liveness readout
  * once the game has sent a heartbeat (M4), and the hash of the session's command doors (D-37).
  * Old clients ignore `heartbeat` and `manifestHash`.
@@ -472,6 +488,159 @@ export type WriteResult = {
   readonly path: string;
   readonly bytes: number;
   readonly version: string;
+};
+
+/**
+ * Where a project-index key is defined or used, without a line: the file and what in it holds the
+ * key. Mirrors the game's `Anchor` (`@moku-labs/game/project`) field by field.
+ *
+ * @example
+ * ```ts
+ * // node:board/merge, defined by the const `merge` of nodes/merge.ts.
+ * const anchor: ProjectAnchor = { path: "nodes/merge.ts", binding: "merge" };
+ * ```
+ */
+export type ProjectAnchor = {
+  /** The file, root-relative POSIX. */
+  readonly path: string;
+  /** The const, function or export the definition is bound to. */
+  readonly binding?: string;
+  /** The property or attribute key: a text style key, the `name` of a projection, a JSX key. */
+  readonly key?: string;
+  /**
+   * JSX: the component a key-carrying prop sits on, or the component a `{id}` or `{amountKey}`
+   * pattern is written in.
+   */
+  readonly component?: string;
+  /** JSX only: how the key is written. */
+  readonly kind?: "literal" | "template" | "idProp" | "ident";
+  /** JSX templates and identifiers: the literal head of the pattern, `card` for `card*Picture`. */
+  readonly stem?: string;
+  /** JSX idProp: the prop the value sits on, `id` or `amountKey`. */
+  readonly prop?: string;
+};
+
+/**
+ * One answer of the files-channel `find`: the anchor with its line read from disk at the call.
+ * Mirrors the game's `Found`.
+ *
+ * @example
+ * ```ts
+ * // The JSX key settingsBoard: the line of its attribute, the whole element as the range.
+ * const found: ProjectFound = {
+ *   path: "features/settings/settings.tsx",
+ *   key: "settingsBoard",
+ *   component: "Signboard",
+ *   kind: "idProp",
+ *   prop: "id",
+ *   line: 290,
+ *   range: [289, 7, 310, 19],
+ *   hash: "0f3c9a…"
+ * };
+ * ```
+ */
+export type ProjectFound = ProjectAnchor & {
+  /** The line, 1-based. */
+  readonly line: number;
+  /** Start line, start column, end line, end column; 1-based, the end column exclusive. */
+  readonly range: readonly [
+    startLine: number,
+    startColumn: number,
+    endLine: number,
+    endColumn: number
+  ];
+  /** sha1 hex of the bytes the line was read from; equals the files `version` of those bytes. */
+  readonly hash: string;
+  /** The file does not parse now; the line comes from its last good parse. Write no style edit. */
+  readonly broken?: true;
+};
+
+/**
+ * A project-index key that left one file for another in one watch batch.
+ *
+ * @example
+ * ```ts
+ * const move: ProjectMove = {
+ *   key: "node:board/catchUp",
+ *   from: "nodes/catch-up.ts",
+ *   to: "nodes/board/catch-up.ts"
+ * };
+ * ```
+ */
+export type ProjectMove = { readonly key: string; readonly from: string; readonly to: string };
+
+/**
+ * What one watch batch of the project index changed. The game's `ProjectChange` without its
+ * `revision`, which `ProjectState` carries.
+ *
+ * @example
+ * ```ts
+ * // An agent moved nodes/catch-up.ts into nodes/board/ and fixed the import of the board flow.
+ * const change: ProjectChange = {
+ *   files: ["flows/board.ts", "nodes/board/catch-up.ts", "nodes/catch-up.ts"],
+ *   moved: [{ key: "node:board/catchUp", from: "nodes/catch-up.ts", to: "nodes/board/catch-up.ts" }],
+ *   removed: []
+ * };
+ * ```
+ */
+export type ProjectChange = {
+  /** The root-relative paths whose bytes changed, appeared or vanished, sorted. */
+  readonly files: readonly string[];
+  readonly moved: readonly ProjectMove[];
+  /** Keys gone from every file. */
+  readonly removed: readonly string[];
+};
+
+/**
+ * The project index as the server publishes it (`editor.project`): `off` with the reason, or
+ * `on` with the key → path maps. JSX keys never ride the state; only `find` reaches them.
+ *
+ * @example
+ * ```ts
+ * const off: ProjectState = { state: "off", reason: "disabled" };
+ * const on: ProjectState = {
+ *   state: "on",
+ *   revision: "9c1e…",
+ *   manifest: "manifest.json",
+ *   defs: { "flow:board": ["flows/board.ts"], "node:board/merge": ["nodes/merge.ts"] },
+ *   uses: { "node:board/merge": ["flows/board.ts"] },
+ *   broken: {}
+ * };
+ * ```
+ */
+export type ProjectState =
+  | { readonly state: "off"; readonly reason: string }
+  | {
+      readonly state: "on";
+      readonly revision: string;
+      /** Revision before this batch; absent on the first state after open. */
+      readonly previous?: string;
+      /** The asset manifest, root-relative, when that file exists. */
+      readonly manifest?: string;
+      /** Every key except `jsx:` → its def paths, in def order (a conflict lists both). */
+      readonly defs: Readonly<Record<string, readonly string[]>>;
+      /** `node:` and `style:` keys that have uses → the paths of the uses. */
+      readonly uses: Readonly<Record<string, readonly string[]>>;
+      /** Broken files → the first parse error (`<path>:<line>:<col> <message>`). */
+      readonly broken: Readonly<Record<string, string>>;
+      /** What the batch behind this state changed; absent on the first state after open. */
+      readonly change?: ProjectChange;
+    };
+
+/**
+ * What a view drops when a new project state arrives: `all` after a revision gap (reconnect, the
+ * first state, off), otherwise the files, moves and removed keys of the batch.
+ *
+ * @example
+ * ```ts
+ * const delta: ProjectDelta = { all: false, files: ["nodes/merge.ts"], moved: [], removed: [] };
+ * ```
+ */
+export type ProjectDelta = {
+  readonly all: boolean;
+  readonly files: readonly string[];
+  readonly moved: readonly ProjectMove[];
+  readonly removed: readonly string[];
 };
 
 /**
@@ -637,17 +806,23 @@ export type SelectionInfo = {
  *
  * @example
  * ```ts
- * const kept: PublishParams = { hotReload: { hmr: true, owner: "bin" }, selection: null };
+ * const kept: PublishParams = {
+ *   hotReload: { hmr: true, owner: "bin" },
+ *   selection: null,
+ *   project: { state: "off", reason: "not opened" }
+ * };
  * ```
  */
 export type PublishParams = {
   readonly hotReload: HotReload;
   /** `null`: nothing is selected. */
   readonly selection: SelectionInfo | null;
+  /** The project index of the files root (`files:project`). */
+  readonly project: ProjectState;
 };
 
 /**
- * A method `publish` sends to the tools pages (R6): `"hotReload"` or `"selection"`.
+ * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"` or `"project"`.
  */
 export type PublishMethod = keyof PublishParams;
 

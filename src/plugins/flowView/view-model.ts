@@ -3,7 +3,10 @@
  * focus module's graph and trail queries and passed to the components by props (spec/15 §2.5: the
  * render and inspector modules never import the focus module).
  */
+
+import { linkPlugin } from "../link";
 import type { Json } from "../registry/protocol";
+import { firstDefinition } from "../registry/protocol";
 import { incomingEdge, localKey, outgoingEdgeKey } from "./focus/edges";
 import {
   incoming,
@@ -15,7 +18,7 @@ import {
   splitId
 } from "./focus/graph";
 import { entryFrame, frameLabel, lastFires, rejectedEdges, trailRanks } from "./focus/trail";
-import { fileOfNode } from "./inspector/files";
+import { nodeKey } from "./inspector/files";
 import type { InfoOutcome, InfoSource, InfoView } from "./inspector/types";
 import { edgeId, laneId } from "./render/Edges";
 import type {
@@ -744,7 +747,6 @@ export function infoView(ctx: FlowCtx, actions: FlowActions, id: NodeId): InfoVi
 
   const current = actions.focus.current() === id;
   const key = shownKey(ctx, actions, id);
-  const lookup = ctx.state.inspector.sources;
 
   return {
     id,
@@ -762,6 +764,6 @@ export function infoView(ctx: FlowCtx, actions: FlowActions, id: NodeId): InfoVi
     expanded: key !== undefined && ctx.state.layout.expanded.has(key),
     outcomes: outcomeRows(ctx, graph, id, current, key),
     comesFrom: sourceRows(ctx, graph, id, key),
-    file: lookup === undefined ? undefined : fileOfNode(lookup, graph, id)
+    file: firstDefinition(ctx.require(linkPlugin).project(), nodeKey(id))
   };
 }

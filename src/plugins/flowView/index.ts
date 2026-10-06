@@ -1,7 +1,7 @@
 /**
  * VeryComplex tier — the Flow workspace: canvas, hub-lane layout, focus, Inspector.
  * Declares no events; emits the global `workspace:open-file` (its commands run through
- * panels.run). Hooks `link:status`, `workspace:changed`, `workspace:select-node`,
+ * panels.run). Hooks `link:status`, `link:project`, `workspace:changed`, `workspace:select-node`,
  * `workspace:focus-frame`, `workspace:density`. Watches the flow sources for the session.
  *
  * @see README.md
@@ -20,7 +20,6 @@ const defaultConfig: FlowViewConfig = {
   historyLast: 20,
   trailLength: 6,
   rejectedOutcomes: ["rejected"],
-  stylesFile: undefined,
   styleSaveDelayMs: 600,
   layout: { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 },
   zoom: { min: 0.08, max: 3, defaultMin: 0.8 },

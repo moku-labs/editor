@@ -6,7 +6,7 @@ import { linkPlugin } from "../../link";
 import type { LinkApi } from "../../link/types";
 import { panelsPlugin } from "../../panels";
 import type { PanelSpec } from "../../panels/types";
-import type { Json, LinkStatus, Manifest, ToolsBoot } from "../../registry/protocol";
+import type { Json, LinkStatus, Manifest, ProjectState, ToolsBoot } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type {
   EscLayer,
@@ -54,7 +54,7 @@ export const SEED: Readonly<Record<string, string>> = {
   "nodes/merge.ts": "export const merge = 1;\n",
   "nodes/await-intent.ts": "export const awaitIntent = 1;\n",
   "features/settings/nodes.ts": "export const enter = 1;\n",
-  ".moku/editor/files.json": '{ "settingsPopup/*": "features/settings/nodes.ts" }\n',
+  ".moku/editor/layout.json": '{ "panes": 2 }\n',
   ".moku/captures/series-2026-09-24-1015/index.json": JSON.stringify({
     label: "merge burst",
     durationMs: 3000,
@@ -69,6 +69,29 @@ export const SEED: Readonly<Record<string, string>> = {
     "---\ntitle: First top item\nstatus: todo\ncaptures:\n  - .moku/captures/a.png\n---\n# Heading\n\nSome *text*.\n",
   ".moku/captures/a.png": "data:image/png;base64,iVBORw0KGgo=",
   "README.md": "# Game\n"
+};
+
+/**
+ * The project index of SEED: the flows in flows/, the board nodes in nodes/ and the settings
+ * popup nodes in one non-kebab file, features/settings/nodes.ts.
+ */
+export const PROJECT: Extract<ProjectState, { state: "on" }> = {
+  state: "on",
+  revision: "r1",
+  defs: {
+    "flow:main": ["flows/main.ts"],
+    "flow:board": ["flows/board.ts"],
+    "node:board/awaitIntent": ["nodes/await-intent.ts"],
+    "node:board/merge": ["nodes/merge.ts"],
+    "node:settingsPopup/enter": ["features/settings/nodes.ts"],
+    "node:settingsPopup/open": ["features/settings/nodes.ts"]
+  },
+  uses: {
+    "node:board/awaitIntent": ["flows/board.ts"],
+    "node:board/merge": ["flows/board.ts"],
+    "node:settingsPopup/enter": ["flows/main.ts"]
+  },
+  broken: {}
 };
 
 /** A small game.graph: main → board (sub-flow), board nodes, a settings popup. */
@@ -146,6 +169,8 @@ export type LinkMock = {
   manifestValue: Manifest | undefined;
   /** What `read("game.graph")` answers; undefined rejects. */
   graph: Json | undefined;
+  /** What `project()` answers (default PROJECT). */
+  projectValue: ProjectState | undefined;
   /** Sets the manifest and calls every listener. */
   attach(manifest: Manifest | undefined): void;
 };
@@ -170,6 +195,7 @@ export function createLinkMock(files: FakeFiles): LinkMock {
     bootValue: BOOT,
     manifestValue: undefined,
     graph: GRAPH,
+    projectValue: PROJECT,
     api: {
       read,
       watch: vi.fn(() => unwatch),
@@ -201,6 +227,7 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       selection: vi.fn(() => undefined),
       notify: vi.fn(),
       handle: vi.fn(() => vi.fn()),
+      project: () => link.projectValue,
       files: files.client
     },
     attach(manifest) {

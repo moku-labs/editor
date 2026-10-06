@@ -1,24 +1,23 @@
 /**
- * @file gameView plugin — the source of a picked element (finding 5): a breadth-first search of
- * `.ts`/`.tsx` files through link.files, from the folder of the game page entry first, then the
- * root (skipping `sourceSearch.skip`, at most `maxFiles`), for a line with the ui key as
- * `key="k"`, `key={"k"}`, `key: "k"` or the `id` forms of a component, then its style anywhere in
- * the JSX element (to the line that closes it, eight lines at most). `style={ident}` is the
- * StyleBlockRef `{ kind: "const", name: ident }` (R8) the shared style edit finds in that file or
- * in the file the ident is imported from; `style={call(...)}` is shown read-only; an element with
- * no style is still "defined at" its line, a text node with `style="ui.link"` too, with its text
- * style key (round 2b R17: the Code section shows that key's block). A key no file names
- * literally that ends in digits is
- * looked for as built in a loop: the template literal of its stem (`card${` for "card0") is
- * "defined at" its line with `loop`. Every result is remembered per key in `state.found`; one
- * search per key runs at a time (`state.searches`).
+ * @file gameView plugin — the source of a picked element, from the project index only (D-38,
+ * amendment N): `find("jsx:<key>")` through link.files, and its first answer (the index orders
+ * them: exact keys, then `{id}` patterns filled from an `id=` prop, then `*` patterns). The style
+ * is the `style` attribute of the tag that opens the answer's range: `style={ident}` is the
+ * StyleBlockRef `{ kind: "const", name: ident }` (R8) in the files the index defines
+ * `style:<file>#<ident>` in, the key file first, then the file the ident is imported from;
+ * `style={call(...)}` is shown read-only, with the `style:` key of the called function when the
+ * index has one (G2); `style="ui.link"` names the text style key of a text node (round 2b R17);
+ * an element with no style is still "defined at" the key line. A key the index does not know has
+ * no source. Every answer is remembered per key in `state.found` until a project change drops it.
  */
 import { linkPlugin } from "../../link";
-import type { FileEntry } from "../../registry/protocol";
-import type { GameViewCtx, StyleSource } from "../types";
+import { type FreshFound, findFresh } from "../../panels/shared/project";
+import type { ProjectState } from "../../registry/protocol";
+import type { GameViewCtx, SourceRange, StyleSource } from "../types";
+import { tagAttributes } from "./jsx";
 
 /**
- * A searched source file.
+ * A file a relative import may name as it is.
  */
 const SOURCE_FILE = /\.tsx?$/;
 
@@ -33,39 +32,19 @@ const IDENT = /^[$A-Z_a-z][\w$]*$/;
 const CALL = /^[$A-Z_a-z][\w$.]*\s*\(/;
 
 /**
- * The opening of a style attribute (not `data-style=`).
- */
-const STYLE_OPEN = /(?<![\w$.-])style=\{/;
-
-/**
- * A text style key as a string attribute: `style="ui.link"` (not `data-style=`).
- */
-const TEXT_STYLE = /(?<![\w$.-])style="([^"]+)"/;
-
-/**
  * A quoted string: the whole text of a `style={"ui.link"}`.
  */
 const QUOTED = /^"([^"]+)"$/;
 
 /**
- * A `>` that closes a JSX tag: not the arrow of `=>`.
+ * The plain function a style call starts with: `roundStylesOf` in `roundStylesOf(size).icon`.
  */
-const CLOSES_TAG = /(?<!=)>/;
+const CALLED_FUNCTION = /^([$A-Z_a-z][\w$]*)\s*\(/;
 
 /**
- * The lines of one JSX element searched for its style, the key line included.
+ * The property a style call reads from the result: `icon` in `roundStylesOf(size).icon`.
  */
-const ELEMENT_LINES = 8;
-
-/**
- * Regex special characters of a key.
- */
-const REGEX_SPECIAL = /[$()*+.?[\\\]^{|}]/g;
-
-/**
- * The trailing characters of a key built in a loop.
- */
-const DIGITS = "0123456789";
+const RESULT_PROPERTY = /\)\s*\.\s*([$A-Z_a-z][\w$]*)$/;
 
 /**
  * A named import list and its module specifier.
@@ -73,8 +52,13 @@ const DIGITS = "0123456789";
 const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
 
 /**
+ * The prefix of a style key of the project index: `style:<file>#<name>`.
+ */
+const STYLE_KEY = "style:";
+
+/**
  * The style of an element: a plain identifier, a call shown as written (`…` when it goes on
- * past its line), or the text style key of a text node, with its 1-based line.
+ * past its line), or the text style key of a text node, with the 1-based line of the attribute.
  */
 export type KeyStyle =
   | { readonly kind: "ident"; readonly name: string; readonly line: number }
@@ -82,179 +66,52 @@ export type KeyStyle =
   | { readonly kind: "text"; readonly key: string; readonly line: number };
 
 /**
- * The pattern of a key in its six forms: `key` or `id`, as `="k"`, `={"k"}` or `: "k"`.
+ * The element file a style is looked up for: its path and its text.
+ */
+type ElementFile = { readonly path: string; readonly text: string };
+
+/**
+ * A call on one line: its first line and `…` when it goes on.
  *
- * @param key - The ui key.
- * @returns The pattern.
+ * @param text - The call as written.
+ * @returns The call on one line.
  * @example
  * ```ts
- * keyPattern("hudRow").test('<Row key="hudRow">'); // true
+ * firstLineOf("styles.row(\n  1\n)"); // "styles.row(…"
  * ```
  */
-export function keyPattern(key: string): RegExp {
-  const escaped = key.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
-  const quoted = `"${escaped}"`;
-  return new RegExp(
-    String.raw`(?<![\w$.-])(?:key|id)(?:=(?:${quoted}|\{\s*${quoted}\s*\})|:\s*${quoted})`
-  );
+function firstLineOf(text: string): string {
+  const end = text.indexOf("\n");
+  return end === -1 ? text : `${text.slice(0, end).trim()}…`;
 }
 
 /**
- * The text inside the braces that open at `start`, up to the brace that closes them; the rest of
- * the line and `…` when they do not close on it.
- *
- * @param line - A line.
- * @param start - The index right after the opening brace.
- * @returns The text between the braces, trimmed.
- * @example
- * ```ts
- * bracedText("style={row({ gap: 4 })} />", 7); // "row({ gap: 4 })"
- * ```
- */
-function bracedText(line: string, start: number): string {
-  let depth = 1;
-  for (let index = start; index < line.length; index += 1) {
-    const char = line[index];
-    if (char === "{") depth += 1;
-    if (char === "}") depth -= 1;
-    if (depth === 0) return line.slice(start, index).trim();
-  }
-  return `${line.slice(start).trim()}…`;
-}
-
-/**
- * The style attribute on one line: an identifier, a call or a text style key (`style="ui.link"`,
- * `style={"ui.link"}`); anything else (an inline object, a condition) is no style the search can
- * show.
- *
- * @param line - A line.
- * @param number - Its 1-based line number.
- * @returns The style, or undefined.
- * @example
- * ```ts
- * styleOn("  style={hudRow}", 5); // { kind: "ident", name: "hudRow", line: 5 }
- * styleOn('  style="ui.link"', 6); // { kind: "text", key: "ui.link", line: 6 }
- * ```
- */
-function styleOn(line: string, number: number): KeyStyle | undefined {
-  const textKey = TEXT_STYLE.exec(line)?.[1];
-  if (textKey !== undefined) return { kind: "text", key: textKey, line: number };
-  const open = STYLE_OPEN.exec(line);
-  if (open === null) return undefined;
-
-  const text = bracedText(line, open.index + open[0].length);
-  if (IDENT.test(text)) return { kind: "ident", name: text, line: number };
-  if (CALL.test(text)) return { kind: "call", text, line: number };
-  const quoted = QUOTED.exec(text)?.[1];
-  return quoted === undefined ? undefined : { kind: "text", key: quoted, line: number };
-}
-
-/**
- * The style of the JSX element whose key sits on a line: searched from that line to the line
- * that closes the tag, eight lines at most. On the key line only the text after the key can
- * close it.
+ * The style of the element whose range an index answer gives: the `style` attribute of the tag
+ * that opens the range, as an identifier, a call or a text style key (`style="ui.link"`,
+ * `style={"ui.link"}`). Anything else (an inline object, a condition) is no style a card can show,
+ * and a child's style is not the element's.
  *
  * @param lines - The file lines.
- * @param index - The 0-based key line.
- * @param keyEnd - Where the key match ends on that line.
+ * @param range - The answer's range.
  * @returns The style, or undefined.
- */
-function elementStyle(
-  lines: readonly string[],
-  index: number,
-  keyEnd: number
-): KeyStyle | undefined {
-  const last = Math.min(lines.length, index + ELEMENT_LINES);
-  for (let current = index; current < last; current += 1) {
-    const line = lines[current] ?? "";
-    const style = styleOn(line, current + 1);
-    if (style !== undefined) return style;
-    const rest = current === index ? line.slice(keyEnd) : line;
-    if (CLOSES_TAG.test(rest)) return undefined;
-  }
-  return undefined;
-}
-
-/**
- * The key in a file: the first key line whose element has a style, else the first key line.
- *
- * @param text - A file text.
- * @param key - The ui key.
- * @returns The 1-based key line and its element's style, or undefined.
  * @example
  * ```ts
- * matchKey('<Row key="hudRow" style={hudRow}>', "hudRow"); // { line: 1, style: { kind: "ident", name: "hudRow", line: 1 } }
+ * // merge-game's order card (features/orders/strip.tsx, the answer of jsx:card0).
+ * styleInRange(stripLines, [215, 5, 247, 14]); // { kind: "call", text: "orderCardStyle(card.slot)", line: 218 }
  * ```
  */
-export function matchKey(
-  text: string,
-  key: string
-): { line: number; style: KeyStyle | undefined } | undefined {
-  const pattern = keyPattern(key);
-  const lines = text.split("\n");
-  let first: { line: number; style: undefined } | undefined;
-  for (const [index, line] of lines.entries()) {
-    const match = pattern.exec(line);
-    if (match === null) continue;
-    const style = elementStyle(lines, index, match.index + match[0].length);
-    if (style !== undefined) return { line: index + 1, style };
-    first ??= { line: index + 1, style: undefined };
-  }
-  return first;
-}
+export function styleInRange(lines: readonly string[], range: SourceRange): KeyStyle | undefined {
+  const style = tagAttributes(lines, range).find(attribute => attribute.name === "style");
+  const value = style?.value;
+  if (style === undefined || value === undefined) return undefined;
+  const { line } = style;
+  if (!value.braced) return { kind: "text", key: value.text, line };
 
-/**
- * The stem of a key built in a loop: the key without its trailing digits.
- *
- * @param key - The ui key.
- * @returns The stem, undefined when the key has no trailing digits or nothing before them.
- * @example
- * ```ts
- * loopStem("card0"); // "card"
- * ```
- */
-function loopStem(key: string): string | undefined {
-  let end = key.length;
-  while (end > 0 && DIGITS.includes(key.charAt(end - 1))) end -= 1;
-  return end === key.length || end === 0 ? undefined : key.slice(0, end);
-}
-
-/**
- * The line that builds a key in a loop: a template literal that starts with the key's stem and
- * goes on with an interpolation (`` `card${slot}` `` for "card0", also as `key={`card${i}`}`).
- *
- * @param text - A file text.
- * @param key - The ui key; only a key that ends in digits after a stem has a loop form.
- * @returns The 1-based line, or undefined.
- * @example
- * ```ts
- * matchLoopKey("const id = `card${slot}`;", "card0"); // 1
- * ```
- */
-export function matchLoopKey(text: string, key: string): number | undefined {
-  const pattern = loopKeyPattern(key);
-  if (pattern === undefined) return undefined;
-  const index = text.split("\n").findIndex(line => pattern.test(line));
-  return index === -1 ? undefined : index + 1;
-}
-
-/**
- * The pattern of the template literal that builds a key in a loop: a backtick, the key's stem,
- * then `${`.
- *
- * @param key - The ui key.
- * @returns The pattern, undefined when the key has no loop form (no trailing digits after a stem).
- * @example
- * ```ts
- * loopKeyPattern("card0")?.test("const id = `card${slot}`;"); // true
- * ```
- */
-export function loopKeyPattern(key: string): RegExp | undefined {
-  const stem = loopStem(key);
-  if (stem === undefined) return undefined;
-
-  const escaped = stem.replaceAll(REGEX_SPECIAL, String.raw`\$&`);
-  return new RegExp(`\`${escaped}\\$\\{`);
+  const { text } = value;
+  if (IDENT.test(text)) return { kind: "ident", name: text, line };
+  if (CALL.test(text)) return { kind: "call", text: firstLineOf(text), line };
+  const quoted = QUOTED.exec(text)?.[1];
+  return quoted === undefined ? undefined : { kind: "text", key: quoted, line };
 }
 
 /**
@@ -303,39 +160,80 @@ export function importCandidates(text: string, ident: string, from: string): rea
 }
 
 /**
- * The folder of the game page entry, from the page URL of the manifest, relative to the files
- * root; empty at the root, without a page or for a URL that does not parse.
+ * Every file the index defines the style `name` in (`style:<file>#<name>`), in key order.
  *
- * @param page - The page URL (absolute, or a path).
- * @returns The folder without leading or trailing slashes.
+ * @param project - The project state.
+ * @param name - A style const, a style function, or `function.property` (G2).
+ * @returns The files; empty when the index is off or defines none.
  * @example
  * ```ts
- * entryDirOf("http://127.0.0.1:3000/web/editor.html"); // "web"
+ * stylePaths(project, "coinPill"); // ["src/hud/styles.ts"]
  * ```
  */
-export function entryDirOf(page: string | undefined): string {
-  if (page === undefined) return "";
-  try {
-    const { pathname } = new URL(page, "http://localhost/");
-    return decodeURIComponent(pathname.slice(1, pathname.lastIndexOf("/") + 1)).replace(/\/$/, "");
-  } catch {
-    return "";
-  }
+function stylePaths(project: ProjectState | undefined, name: string): readonly string[] {
+  if (project?.state !== "on") return [];
+
+  const suffix = `#${name}`;
+  return Object.keys(project.defs)
+    .filter(key => key.startsWith(STYLE_KEY) && key.endsWith(suffix))
+    .map(key => key.slice(STYLE_KEY.length, -suffix.length));
 }
 
 /**
- * Lists one folder; a folder that cannot be listed is empty.
+ * The files the index defines a style in, nearest first: the element's own file, then the files
+ * the element imports `binding` from, then every other file that defines it.
  *
- * @param ctx - Domain context of gameView.
- * @param dir - The folder, "" for the root.
- * @returns Its entries.
+ * @param project - The project state (`link.project()`).
+ * @param element - The element's file and text.
+ * @param binding - The local name the element uses: the ident, or the called function.
+ * @param name - The style's name in its key: the ident, the function or `function.property`.
+ * @returns The files, each once; empty when the index defines none.
+ * @example
+ * ```ts
+ * // <Pill key="coinPill" style={coinPill} /> in src/hud/Hud.tsx, imported from "./styles".
+ * styleFilesOf(project, { path: "src/hud/Hud.tsx", text }, "coinPill", "coinPill"); // ["src/hud/styles.ts"]
+ * ```
  */
-async function listFolder(ctx: GameViewCtx, dir: string): Promise<readonly FileEntry[]> {
-  try {
-    return await ctx.require(linkPlugin).files.list(dir);
-  } catch {
-    return [];
+export function styleFilesOf(
+  project: ProjectState | undefined,
+  element: ElementFile,
+  binding: string,
+  name: string
+): readonly string[] {
+  const defined = stylePaths(project, name);
+  const near = [element.path, ...importCandidates(element.text, binding, element.path)];
+  return [...new Set([...near.filter(path => defined.includes(path)), ...defined])];
+}
+
+/**
+ * The style key of a style call (G2): `style:<file>#<function>.<property>` for
+ * `function(…).property`, else `style:<file>#<function>`, in the nearest file that defines it. A
+ * call of a member (`styles.row(1)`) has none.
+ *
+ * @param project - The project state (`link.project()`).
+ * @param element - The element's file and text.
+ * @param call - The call as written.
+ * @returns The key, undefined when the index has none.
+ * @example
+ * ```ts
+ * callStyleKey(project, kit, "roundStylesOf(size).icon"); // "style:features/ui/kit.tsx#roundStylesOf.icon"
+ * ```
+ */
+export function callStyleKey(
+  project: ProjectState | undefined,
+  element: ElementFile,
+  call: string
+): string | undefined {
+  const called = CALLED_FUNCTION.exec(call)?.[1];
+  if (called === undefined) return undefined;
+
+  const property = RESULT_PROPERTY.exec(call)?.[1];
+  const names = property === undefined ? [called] : [`${called}.${property}`, called];
+  for (const name of names) {
+    const [path] = styleFilesOf(project, element, called, name);
+    if (path !== undefined) return `${STYLE_KEY}${path}#${name}`;
   }
+  return undefined;
 }
 
 /**
@@ -355,140 +253,54 @@ export async function readText(ctx: GameViewCtx, path: string): Promise<string |
 }
 
 /**
- * Queues the sub-folders of a listing that are neither skipped nor queued before.
+ * The source of an index answer and the text it was read from.
  *
- * @param entries - The listing.
- * @param queue - The folders still to list.
- * @param seen - Every folder queued so far.
- * @param skip - Folder names never searched.
- */
-function queueFolders(
-  entries: readonly FileEntry[],
-  queue: string[],
-  seen: Set<string>,
-  skip: readonly string[]
-): void {
-  for (const entry of entries) {
-    if (entry.kind !== "dir" || seen.has(entry.path)) continue;
-    seen.add(entry.path);
-    if (!skip.includes(entry.path.slice(entry.path.lastIndexOf("/") + 1))) queue.push(entry.path);
-  }
-}
-
-/**
- * Yields `.ts`/`.tsx` files breadth-first, folder by folder, from the game page entry's folder,
- * then the root (the entry folder is listed once), skipping the configured folders, up to
- * `maxFiles`. A folder that cannot be listed is skipped.
- *
- * @param ctx - Domain context of gameView.
- * @yields {string} The file paths in search order.
- */
-export async function* sourceFiles(ctx: GameViewCtx): AsyncGenerator<string, void, undefined> {
-  const { maxFiles, skip } = ctx.config.sourceSearch;
-  const entry = entryDirOf(ctx.require(linkPlugin).manifest()?.page);
-  const queue = entry === "" ? [""] : [entry, ""];
-  const seen = new Set(queue);
-  let found = 0;
-
-  for (let next = 0; next < queue.length && found < maxFiles; next += 1) {
-    const entries = await listFolder(ctx, queue[next] ?? "");
-    queueFolders(entries, queue, seen, skip);
-    for (const item of entries) {
-      if (item.kind === "dir" || !SOURCE_FILE.test(item.path) || found >= maxFiles) continue;
-      found += 1;
-      yield item.path;
-    }
-  }
-}
-
-/**
- * The search result of one key match in a file.
- *
- * @param path - The file.
- * @param text - Its text.
- * @param match - The key line and its element's style.
- * @param match.line - The 1-based key line.
- * @param match.style - The style of the element, undefined for none.
+ * @param fresh - The first answer of `jsx:<key>` with its file's text.
+ * @param project - The project state (`link.project()`).
  * @returns The style source.
  */
-function sourceOf(
-  path: string,
-  text: string,
-  match: { readonly line: number; readonly style: KeyStyle | undefined }
-): StyleSource {
-  const { line, style } = match;
+function sourceOf(fresh: FreshFound, project: ProjectState | undefined): StyleSource {
+  const { found, text } = fresh;
+  const at = { path: found.path, line: found.line, range: found.range };
+  const element = { path: found.path, text };
+  const style = styleInRange(text.split("\n"), found.range);
+
   if (style?.kind === "ident") {
+    const files = styleFilesOf(project, element, style.name, style.name);
     const ref = { kind: "const", name: style.name } as const;
-    return {
-      kind: "ident",
-      path,
-      line,
-      ref,
-      files: [path, ...importCandidates(text, style.name, path)]
-    };
+    return { kind: "ident", ...at, ref, files: files.length > 0 ? files : [found.path] };
   }
-  if (style?.kind === "call")
-    return { kind: "call", path, line, call: style.text, callLine: style.line };
-  if (style?.kind === "text") return { kind: "defined", path, line, textStyle: style.key };
-  return { kind: "defined", path, line };
+  if (style?.kind === "call") {
+    const call = { kind: "call", ...at, call: style.text, callLine: style.line } as const;
+    const styleKey = callStyleKey(project, element, style.text);
+    return styleKey === undefined ? call : { ...call, styleKey };
+  }
+  if (style?.kind === "text") return { kind: "defined", ...at, textStyle: style.key };
+  return { kind: "defined", ...at };
 }
 
 /**
- * One search of a ui key over the source files: the first element with a style (a text style key
- * too) returns at once; else the first file that defines the key, else the first loop that
- * builds it.
+ * Asks the project index where a ui key is: its first answer, the style of that element and the
+ * files of the style. The result is remembered in `state.found`; a key the index does not know
+ * (or an index that is off or unreachable) is forgotten there. Never rejects.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
- * @returns Where the key and its style are, undefined when no file names the key.
+ * @returns Where the key and its style are, undefined when the index has no answer.
  */
-async function searchSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
-  let defined: StyleSource | undefined;
-  let loop: StyleSource | undefined;
-  for await (const path of sourceFiles(ctx)) {
-    const text = await readText(ctx, path);
-    if (text === undefined) continue;
-
-    const match = matchKey(text, key);
-    if (match === undefined) {
-      const line = loop === undefined ? matchLoopKey(text, key) : undefined;
-      if (line !== undefined) loop = { kind: "defined", path, line, loop: true };
-      continue;
-    }
-    const source = sourceOf(path, text, match);
-    if (source.kind !== "defined" || source.textStyle !== undefined) return source;
-    defined ??= source;
+export async function findStyleSource(
+  ctx: GameViewCtx,
+  key: string
+): Promise<StyleSource | undefined> {
+  const link = ctx.require(linkPlugin);
+  const fresh = await findFresh(link.files, `jsx:${key}`);
+  const { found } = ctx.state;
+  if (fresh === undefined) {
+    found.delete(key);
+    return undefined;
   }
-  return defined ?? loop;
-}
 
-/**
- * Searches the source of a ui key: the first element with a style (an identifier or a call),
- * else the first file that defines the key, else the loop that builds it. The result is
- * remembered in `state.found`; a key no file names is forgotten there. A second call for a key
- * whose search still runs gets that search.
- *
- * @param ctx - Domain context of gameView.
- * @param key - The ui key.
- * @returns Where the key and its style are, undefined when no file names the key.
- */
-export function findStyleSource(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
-  const { found, searches } = ctx.state;
-  const running = searches.get(key);
-  if (running !== undefined) return running;
-
-  const search = searchSource(ctx, key).then(
-    source => {
-      searches.delete(key);
-      if (source === undefined) found.delete(key);
-      else found.set(key, source);
-      return source;
-    },
-    (error: unknown) => {
-      searches.delete(key);
-      throw error;
-    }
-  );
-  searches.set(key, search);
-  return search;
+  const source = sourceOf(fresh, link.project());
+  found.set(key, source);
+  return source;
 }

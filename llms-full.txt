@@ -23,8 +23,10 @@ Contents:
 ## 1. Package and entry points
 
 - Name: `@moku-labs/editor`, MIT, ESM only (`"type": "module"`).
-- Peer dependency: `@moku-labs/game >= 0.1.0`.
-- Compatibility: works with @moku-labs/game 0.1.x and 0.4.x. Game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
+- Peer dependencies: `@moku-labs/game >= 0.7.0` and `typescript >= 5.5`, both required. The server opens the game's project index (`@moku-labs/game/project`), which needs `typescript`. Without them the index is off and every view that needs a code location says `Project index is off: <reason>` (see the next item).
+- Project index (D-38 … D-48): the server core's `files` plugin opens the project index of its root on start and keeps it fresh with its watch; the tools page asks it through the files-channel `find { key }` (lines read from disk at the call) and reads the key maps from the published `editor.project` state (`link.project()`, event `link:project`). The index is the only source of code locations: Flow node and flow files, the Code tab, Used by, the picked element's JSX and style block, projections, text styles, the asset manifest. A key the index does not know shows `Not in the project index: <key>`; no guess, no crawl. The index needs no `bunfig.toml` (that is only for the hot swap plugin). Moves and edits by agents while the editor is open are followed: open tabs, Used by, Code tab lines, caches.
+- Breaking (project index): removed the node → file rule exports (`nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`, types `SourceOverrides`) and the protocol file `source-files.ts`; the configs `flowView.stylesFile`, `gameView.manifestPaths`, `gameView.sourceSearch`, `renderView.manifestPaths`; `.moku/editor/files.json` is ignored; the graph node `file` field (F-H2) is gone; `UsedBy.usedIn` is new; `StyleEditCode` gains `"broken"` (no style write while the file does not parse) and `"index-off"` (no style write while the index is off); a key built in a loop answers the element line. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are required.
+- Doors: game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
 - `files` in the package: `dist`, `LICENSE`, `README.md`, `llms.txt`, `llms-full.txt`. `"sideEffects": false`.
 - Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 77.6 KB minified (26.7 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
 - Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
@@ -33,7 +35,7 @@ Contents:
 
 | Import | File | Exports |
 |---|---|---|
-| `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `isReloading`, `isHotSwapEntry`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
+| `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `isReloading`, `isHotSwapEntry`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `parseProjectState`, `parseFoundList`, `projectDelta`, `firstDefinition`, `anchorKey`), project types (`ProjectState`, `ProjectFound`, `ProjectAnchor`, `ProjectDelta`, `ProjectChange`, `ProjectMove`, `FindParams`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
 | `@moku-labs/editor/agent` | `src/agent.ts` | `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`, namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
 | `@moku-labs/editor/server` | `src/server.ts` | `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`, namespaces `Files`, `Hub`, `Pages`. |
 | `@moku-labs/editor/tools` | `src/tools.ts` | `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`, namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
@@ -76,7 +78,7 @@ import { createCoreConfig } from "@moku-labs/core";
 import type { FilesWritten } from "./plugins/files/types";
 import type { HubSession } from "./plugins/hub/types";
 import type { ElementRef } from "./plugins/panels/shared/scene/types";
-import type { LinkStatus } from "./plugins/registry/protocol";
+import type { LinkStatus, ProjectDelta, ProjectState } from "./plugins/registry/protocol";
 import type { Density, RanEvent, WorkspaceId } from "./plugins/workspace/types";
 
 /**
@@ -126,6 +128,8 @@ export type ServerEvents = {
   "hub:session": HubSession;
   /** A file was written inside the project root (text or capture). */
   "files:written": FilesWritten;
+  /** The project index of the files root opened, changed or went off (hub publishes it). */
+  "files:project": ProjectState;
 };
 
 /**
@@ -140,6 +144,8 @@ export type ServerEvents = {
 export type ToolsEvents = {
   /** The link status or the chosen session changed. */
   "link:status": { status: LinkStatus; session?: string };
+  /** A new project-index state arrived; views drop what the delta names. */
+  "link:project": { state: ProjectState; delta: ProjectDelta };
   /** The shown workspace changed. */
   "workspace:changed": { ws: WorkspaceId };
   /** A command run from the tools page settled (top bar, palette, key or a panel's tools.run). */
@@ -287,7 +293,7 @@ Each core registers `logPlugin` and `envPlugin` from `@moku-labs/common/browser`
 
 ## 3. Wire protocol types (`src/plugins/registry/protocol/`, verbatim)
 
-The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `NodeRef` and `SourceOverrides` come from `source-files.ts` (the node → file rule); `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`). `devices.ts` holds the device presets and their helpers (`DeviceSpec`, `DevicePresetId`, `Orientation`, `DeviceSize` are below); `overlay-host.ts` holds `HOST_ATTRIBUTE`, the DOM marker of the in-game overlay host. `hash.ts` holds `commandsHash(manifest)` (D-37): the commands sorted by id, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit, 8 lowercase hex chars; titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`; the MCP bridge rebuilds its door tools only when it moves. It is in the protocol barrel, not exported from the package root.
+The protocol is runtime-free and imports nothing outside itself. It is re-exported from the package root. `project.ts` holds the project-index helpers: `parseProjectState(value)` and `parseFoundList(value)` (strict checked copies, `undefined` for a bad value), `projectDelta(held, next)` (what a view drops: `all: true` after a revision gap, for the first state or an off state; else the lists of `next.change`), `firstDefinition(state, key)` (the first def path of a key, `undefined` when off or unknown) and `anchorKey(ref, path)` (the `style:` or `textStyle:` key of a style block). The project types (`ProjectAnchor`, `ProjectFound`, `ProjectMove`, `ProjectChange`, `ProjectState`, `ProjectDelta`, `FindParams`) mirror the game's `@moku-labs/game/project` types field by field without importing them. `ElementRef` and `PageRect` from `src/plugins/panels/shared/scene/types.ts` (payloads of `workspace:reveal` and `workspace:inspect`). `devices.ts` holds the device presets and their helpers (`DeviceSpec`, `DevicePresetId`, `Orientation`, `DeviceSize` are below); `overlay-host.ts` holds `HOST_ATTRIBUTE`, the DOM marker of the in-game overlay host. `hash.ts` holds `commandsHash(manifest)` (D-37): the commands sorted by id, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit, 8 lowercase hex chars; titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`; the MCP bridge rebuilds its door tools only when it moves. It is in the protocol barrel, not exported from the package root.
 
 ~~~ts
 /**
@@ -420,7 +426,10 @@ export type Heartbeat = {
 export type Tap = { readonly x: number; readonly y: number; readonly at: number };
 
 /**
- * The link state shown everywhere (design-context §6 B1, F3).
+ * The link state shown everywhere (design-context §6 B1, F3). A `lost` with `reloading: true` is
+ * an expected reload (U7): a server restart (close 1012), a reload the editor started, or a game
+ * that said bye before its reload. The views show it in a neutral tone until the game is back, or
+ * as a plain `lost` once link's `reloadGraceMs` ran out.
  *
  * @example
  * ```ts
@@ -848,25 +857,173 @@ export type WriteParams = { path: string; text: string; version?: string };
 export type WriteBinaryParams = { path: string; data: string };
 
 /**
- * A graph node by flow and node name.
+ * A graph node by flow and node name: the `node:<flow>/<node>` key of the project index.
+ *
+ * @example
+ * ```ts
+ * // filesView's Used by card lists the nodes a file defines.
+ * const ref: NodeRef = { flow: "board", node: "merge" }; // node:board/merge
+ * ```
  */
 export type NodeRef = { readonly flow: string; readonly node: string };
 
 /**
- * Parsed `.moku/editor/files.json`: keys `<flow>`, `<flow>/<node>`, `<flow>/*`; value a relative
- * path, or null for "no file".
+ * Where a project-index key is defined or used, without a line: the file and what in it holds the
+ * key. Mirrors the game's `Anchor` (`@moku-labs/game/project`) field by field.
+ *
+ * @example
+ * ```ts
+ * // node:board/merge, defined by the const `merge` of nodes/merge.ts.
+ * const anchor: ProjectAnchor = { path: "nodes/merge.ts", binding: "merge" };
+ * ```
  */
-export type SourceOverrides = Readonly<Record<string, string | null>>;
+export type ProjectAnchor = {
+  /** The file, root-relative POSIX. */
+  readonly path: string;
+  /** The const, function or export the definition is bound to. */
+  readonly binding?: string;
+  /** The property or attribute key: a text style key, the `name` of a projection, a JSX key. */
+  readonly key?: string;
+  /**
+   * JSX: the component a key-carrying prop sits on, or the component a `{id}` or `{amountKey}`
+   * pattern is written in.
+   */
+  readonly component?: string;
+  /** JSX only: how the key is written. */
+  readonly kind?: "literal" | "template" | "idProp" | "ident";
+  /** JSX templates and identifiers: the literal head of the pattern, `card` for `card*Picture`. */
+  readonly stem?: string;
+  /** JSX idProp: the prop the value sits on, `id` or `amountKey`. */
+  readonly prop?: string;
+};
 
 /**
- * Where the override map lives, relative to the project root.
+ * One answer of the files-channel `find`: the anchor with its line read from disk at the call.
+ * Mirrors the game's `Found`.
+ *
+ * @example
+ * ```ts
+ * // The JSX key settingsBoard: the line of its attribute, the whole element as the range.
+ * const found: ProjectFound = {
+ *   path: "features/settings/settings.tsx",
+ *   key: "settingsBoard",
+ *   component: "Signboard",
+ *   kind: "idProp",
+ *   prop: "id",
+ *   line: 290,
+ *   range: [289, 7, 310, 19],
+ *   hash: "0f3c9a…"
+ * };
+ * ```
  */
-export const SOURCE_OVERRIDES_PATH = ".moku/editor/files.json";
+export type ProjectFound = ProjectAnchor & {
+  /** The line, 1-based. */
+  readonly line: number;
+  /** Start line, start column, end line, end column; 1-based, the end column exclusive. */
+  readonly range: readonly [
+    startLine: number,
+    startColumn: number,
+    endLine: number,
+    endColumn: number
+  ];
+  /** sha1 hex of the bytes the line was read from; equals the files `version` of those bytes. */
+  readonly hash: string;
+  /** The file does not parse now; the line comes from its last good parse. Write no style edit. */
+  readonly broken?: true;
+};
 
 /**
- * The roots the convention tries, in order.
+ * A project-index key that left one file for another in one watch batch.
+ *
+ * @example
+ * ```ts
+ * const move: ProjectMove = {
+ *   key: "node:board/catchUp",
+ *   from: "nodes/catch-up.ts",
+ *   to: "nodes/board/catch-up.ts"
+ * };
+ * ```
  */
-export const SOURCE_ROOTS: readonly string[] = ["", "src/"];
+export type ProjectMove = { readonly key: string; readonly from: string; readonly to: string };
+
+/**
+ * What one watch batch of the project index changed. The game's `ProjectChange` without its
+ * `revision`, which `ProjectState` carries.
+ *
+ * @example
+ * ```ts
+ * // An agent moved nodes/catch-up.ts into nodes/board/ and fixed the import of the board flow.
+ * const change: ProjectChange = {
+ *   files: ["flows/board.ts", "nodes/board/catch-up.ts", "nodes/catch-up.ts"],
+ *   moved: [{ key: "node:board/catchUp", from: "nodes/catch-up.ts", to: "nodes/board/catch-up.ts" }],
+ *   removed: []
+ * };
+ * ```
+ */
+export type ProjectChange = {
+  /** The root-relative paths whose bytes changed, appeared or vanished, sorted. */
+  readonly files: readonly string[];
+  readonly moved: readonly ProjectMove[];
+  /** Keys gone from every file. */
+  readonly removed: readonly string[];
+};
+
+/**
+ * The project index as the server publishes it (`editor.project`): `off` with the reason, or
+ * `on` with the key → path maps. JSX keys never ride the state; only `find` reaches them.
+ *
+ * @example
+ * ```ts
+ * const off: ProjectState = { state: "off", reason: "disabled" };
+ * const on: ProjectState = {
+ *   state: "on",
+ *   revision: "9c1e…",
+ *   manifest: "manifest.json",
+ *   defs: { "flow:board": ["flows/board.ts"], "node:board/merge": ["nodes/merge.ts"] },
+ *   uses: { "node:board/merge": ["flows/board.ts"] },
+ *   broken: {}
+ * };
+ * ```
+ */
+export type ProjectState =
+  | { readonly state: "off"; readonly reason: string }
+  | {
+      readonly state: "on";
+      readonly revision: string;
+      /** Revision before this batch; absent on the first state after open. */
+      readonly previous?: string;
+      /** The asset manifest, root-relative, when that file exists. */
+      readonly manifest?: string;
+      /** Every key except `jsx:` → its def paths, in def order (a conflict lists both). */
+      readonly defs: Readonly<Record<string, readonly string[]>>;
+      /** `node:` and `style:` keys that have uses → the paths of the uses. */
+      readonly uses: Readonly<Record<string, readonly string[]>>;
+      /** Broken files → the first parse error (`<path>:<line>:<col> <message>`). */
+      readonly broken: Readonly<Record<string, string>>;
+      /** What the batch behind this state changed; absent on the first state after open. */
+      readonly change?: ProjectChange;
+    };
+
+/**
+ * What a view drops when a new project state arrives: `all` after a revision gap (reconnect, the
+ * first state, off), otherwise the files, moves and removed keys of the batch.
+ *
+ * @example
+ * ```ts
+ * const delta: ProjectDelta = { all: false, files: ["nodes/merge.ts"], moved: [], removed: [] };
+ * ```
+ */
+export type ProjectDelta = {
+  readonly all: boolean;
+  readonly files: readonly string[];
+  readonly moved: readonly ProjectMove[];
+  readonly removed: readonly string[];
+};
+
+/**
+ * Params of the files-channel `find` request: one project-index key.
+ */
+export type FindParams = { key: string };
 
 /**
  * A ui element by its path of segments, or a world entity by id.
@@ -1033,23 +1190,34 @@ export type SelectionInfo = {
  *
  * @example
  * ```ts
- * const kept: PublishParams = { hotReload: { hmr: true, owner: "bin" }, selection: null };
+ * const kept: PublishParams = {
+ *   hotReload: { hmr: true, owner: "bin" },
+ *   selection: null,
+ *   project: { state: "off", reason: "not opened" }
+ * };
  * ```
  */
 export type PublishParams = {
   readonly hotReload: HotReload;
   /** `null`: nothing is selected. */
   readonly selection: SelectionInfo | null;
+  /** The project index of the files root (`files:project`). */
+  readonly project: ProjectState;
 };
 
 /**
- * A method `publish` sends to the tools pages (R6): `"hotReload"` or `"selection"`.
+ * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"` or `"project"`.
  */
 export type PublishMethod = keyof PublishParams;
 
 /**
  * The format a picture travels in on the wire (editor.capture, editor.sheet, a crop): `"jpeg"`
  * (the default, D-34) or `"png"` (lossless).
+ *
+ * @example
+ * ```ts
+ * const format: PictureFormat = "jpeg";
+ * ```
  */
 export type PictureFormat = "jpeg" | "png";
 
@@ -1167,7 +1335,9 @@ Global events only; no plugin declares its own `events` field. Payload types are
 | agent | `bridge:status` | `{ status: LinkStatus; session?: string }` | bridge | at start (`connecting`), on every change of status kind, on every session change; never from `onStop` | overlay (link dot) |
 | server | `hub:session` | `HubSession` | hub | a valid `hello` (`open: true`); an agent close (`open: false`, `reason` `"bye"` or `"game_reloaded"`) | none in the package; for consumer plugins |
 | server | `files:written` | `FilesWritten` | files | after each successful `write` or `writeBinary`, after the rename; `kind` from `classifyWrite(path)` | none in the package; for consumer plugins |
+| server | `files:project` | `ProjectState` | files | the project index opened (on), a watch batch changed it (on, with `previous` and `change`), or it went off (once) | hub (`publish("project", state)`: the `editor.project` notification, kept and replayed) |
 | tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | status changed kind or any field, or the session changed | workspace, panels, flowView, gameView, renderView, stateView, filesView, consoleView |
+| tools | `link:project` | `{ state: ProjectState; delta: ProjectDelta }` | link | a new `editor.project` state: not the held one again (on at the same revision and manifest, off with the same reason). `delta` is `projectDelta(held, next)`; at the same revision with another `manifest` it is `{ all: false, files: [old, new manifest] }` | flowView, gameView, renderView, filesView |
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | `show()` changed the workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` | workspace (origins `topbar`, `key`, `palette`), panels (origin `panel`, or the api `run` origin) | a command run from the tools page settled | stateView (taint), consoleView (error lines) |
 | tools | `workspace:density` | `{ density: Density }` (`"compact" \| "comfortable"`) | workspace | the applied density changed: a choice in the palette, or `auto` crossing 820 px of window width | flowView (ELK spacing) |
@@ -1215,6 +1385,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | files | `root` | `string` | `"."` | Project root, absolute or relative to the working folder. Resolved once with `realpathSync`; must be an existing folder. |
 | files | `allow` | `readonly string[]` | `["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"]` | Globs a file must match to be read or written. Case-sensitive. Not empty. |
 | files | `deny` | `readonly string[]` | `["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]` | Globs never listed, read or written. Case-insensitive. |
+| files | `project` | `boolean` | `true` | Open the project index of `root` on start. `false` leaves it off with reason `"disabled"`; the index is never loaded. |
 | hub | `path` | `string` | `"/__editor"` | URL prefix of every editor route. Starts with `/`; letters, digits, `_`, `-`, `/`; no trailing or double slash. |
 | hub | `allowOrigins` | `readonly string[]` | `[]` | Extra exact http(s) origins allowed to upgrade and call same-origin routes. No path, no trailing slash. |
 | hub | `callTimeoutMs` | `number` | `5000` | Deadline of a forwarded call before -32002. Integer ≥ 100. |
@@ -1240,7 +1411,6 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `historyLast` | `number` | `20` | Entries of `game.history` the panel watches. |
 | flowView | `trailLength` | `number` | `6` | Edges drawn as the trail. |
 | flowView | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| flowView | `stylesFile` | `string \| undefined` | `undefined` | Text styles the Styles tab edits. Unset: the first project file that calls `defineTextStyles(`, found once per session. |
 | flowView | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
 | flowView | `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | flowView | `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
@@ -1251,15 +1421,12 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `hub.minOutcomes` | `number` | `6` | Hub rule: a rest node with at least this many outcomes. |
 | flowView | `hub.minReturns` | `number` | `4` | Hub rule: at least this many other nodes return to it. |
 | gameView | `capturesDir` | `string` | `".moku/captures"` | Screenshots, series and the two pictures of a pick (`<key>-f<frame>-crop.jpg`, `f<frame>-full.jpg`), each in a day folder `<yyyy-mm-dd>/` (local date; a Shot is `<hhmm>-<flow>.jpg`, a series `series-<hhmm>/`). `.moku/captures` or a folder under it (the files sandbox); `onInit` throws `[moku-editor] gameView.capturesDir must be .moku/captures or a folder under it.` otherwise. |
-| gameView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates, in order. |
 | gameView | `captureCardMs` | `number` | `10000` | Capture card hides after this unless hovered or focused. |
 | gameView | `seriesDurationsMs` | `readonly number[]` | `[1000, 2000, 5000, 10000, 20000]` | Duration chips. |
 | gameView | `seriesIntervalsMs` | `readonly number[]` | `[16, 50, 100, 250, 500, 1000]` | Interval chips. |
 | gameView | `seriesWarnShots` | `number` | `200` | Popover warns above this many planned shots. |
-| gameView | `sourceSearch` | `{ maxFiles: number; skip: readonly string[] }` | `{ maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }` | Search for the style block of a picked element. |
 | renderView | `fpsSamples` | `number` | `60` | FPS samples kept for the sparkline. |
 | renderView | `releaseLogMax` | `number` | `50` | Release log entries kept. |
-| renderView | `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | stateView | `expandDepth` | `number` | `2` | Tree levels open by default. |
 | stateView | `maxPatches` | `number` | `200` | Most patches kept per commit. |
 | stateView | `pageSize` | `number` | `100` | Children shown per array or object before "Show N more". |
@@ -1867,11 +2034,14 @@ export type SeriesValue = { readonly shots: readonly SeriesShot[]; readonly devi
 
 ### 7.6 files — server, Standard
 
-- depends: none (first server plugin). Lifecycle: `onInit` only (`validateFilesConfig`).
+- depends: none (first server plugin). Lifecycle: `onInit` (`validateFilesConfig`), `onStart` (opens the project index of the root, not awaited; `find` waits for it), `onStop` (ends the watch, closes the index, state off `"stopped"`, nothing emitted).
 - Node built-ins only; no `Bun.*`. Limits (`io.ts`): `MAX_TEXT_BYTES` 2 MiB, `MAX_BINARY_BYTES` 16 MiB, `MAX_PATH_LENGTH` 1024. Image extensions: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`.
 - Sandbox order: lexical → deny → allow (files only; image and `.moku/captures/` rules for binaries) → real path under the real root → kind.
 - `writeDataUrl(path, dataUrl)` decodes the files-channel data URL (`decodeDataUrl` in `binary.ts`, not exported from the plugin) for `hub`.
-- Events: emits `files:written`. Log: `files:emit-failed`.
+- Project index (D-38, D-40, D-48): `openProject({ root })` of `@moku-labs/game/project`; its watch emits every batch of file changes. The index is the only source of code locations; off is an error state, not a fallback. On: `defs` (every key but `jsx:` → def paths), `uses` (`node:`/`style:` keys → use paths), `broken` (path → first parse error), `manifest`, `revision`, `previous`, `change`. Off reasons: `"disabled"` (`project: false`), `"@moku-labs/game 0.7.0 or newer is needed for the project index"`, the bare message of a rejected open (no `typescript`, bad root), `"not opened"` before start, `"stopped"` after stop.
+- `find(key)` (files channel `find { key }`): the `ProjectFound[]` of a key, `line` and `range` read from disk now, `hash` = the `version` of `read`, `broken: true` when the file does not parse now; answers outside the sandbox are dropped; `[]` for an unknown key; key over 512 chars -32602; index off -32008 `"project index off: <reason>"`. `project()` is the last state. The editor's own writes are not fed to the index; other tabs hear them through the next watch batch.
+- Version check (D-45): `write(path, text, version)` compares the version right before the rename, after the temp file is written; a conflict removes the temp file and rejects -32005. An external write between that hash and the rename is still overwritten (window narrowed, not closed).
+- Events: emits `files:written`, `files:project`. Logs: `files:emit-failed`, `files:project-on { files, keys, ms }` (info; the bin prints it), `files:project-off { reason }` (error, once).
 
 ~~~ts
 /**
@@ -1889,6 +2059,8 @@ export type FilesConfig = {
   allow: readonly string[];
   /** Globs that are never listed, read or written. Matched case-insensitively. */
   deny: readonly string[];
+  /** Open the project index of the root on start. `false` leaves it off as `"disabled"`. */
+  project: boolean;
 };
 
 /**
@@ -2000,6 +2172,7 @@ export type FilesApi = {
    * // { path: ".moku/captures/2026-10-05/f12-full.jpg", bytes: 48213, version: "3f7a…" }
    * ```
    */
+  writeDataUrl(path: string, dataUrl: string): Promise<WriteResult>;
 
   /**
    * Reads an image back as a data URL with its version (R3). Emits nothing. Max 16 MiB.
@@ -2043,6 +2216,39 @@ export type FilesApi = {
    * ```
    */
   root(): string;
+
+  /**
+   * Where a key of the project index lives, with lines read from the files on disk now. Waits
+   * for the open that started with the app. Answers the files the sandbox lets it read only.
+   *
+   * @param key - A project-index key, at most 512 characters: `node:board/merge`,
+   *   `jsx:settingsBoard`, `textStyle:ui.title`, `style:features/ui/popup.tsx#popupScreen`.
+   * @returns One answer per place, in the index's order; `[]` for a key the index does not know.
+   *   `hash` equals the `version` of `read`; `broken` when the file does not parse now.
+   * @throws {Error} -32602 `invalid_input` (`field: "key"`) for a key that is not a string or is
+   *   too long, -32008 `not_installed` (`project index off: <reason>`) while the index is off.
+   * @example
+   * ```ts
+   * // hub serves the files-channel `find { key }` of a tools page.
+   * const files = ctx.require(filesPlugin);
+   * await files.find("node:main/open"); // [{ path: "features/settings/nodes.ts", binding: "open", line: 3, … }]
+   * ```
+   */
+  find(key: string): Promise<ProjectFound[]>;
+
+  /**
+   * The project state last announced with `files:project`: on with its revision and key maps, or
+   * off with a reason (`"not opened"` before start, `"disabled"`, `"stopped"`, why the open failed).
+   *
+   * @returns The state.
+   * @example
+   * ```ts
+   * // A server plugin checks the index before it answers a location.
+   * const state = ctx.require(filesPlugin).project();
+   * if (state.state === "on") state.defs["node:board/merge"]; // ["nodes/merge.ts"]
+   * ```
+   */
+  project(): ProjectState;
 };
 ~~~
 
@@ -2057,7 +2263,8 @@ export type FilesApi = {
 - Manifest hash (D-37): on `hello` the hub sets `manifestHash = commandsHash(manifest)` on the session; every `SessionInfo` of `sessions()` and of the `sessions` notification carries it. The MCP bridge rebuilds its door tools only when it moves.
 - Deadline of a forwarded call: `callTimeoutMs`, plus `input.durationMs` for a `run` of `editor.series` and `input.frames × input.everyMs` for a `run` of `editor.sheet`, capped at +60 s (the same rule as bridge and link).
 - `publish("hotReload", state)` (round 2 R6): sends the `editor` notification `hotReload` to every tools connection now, keeps the last value per method and replays it right after each tools hello. pages publishes from `attachServer` and after each `setHotReload`.
-- Events: emits `hub:session`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
+- Project index: hooks `files:project` and publishes it as the `editor` notification `project` (`publish("project", state)`, kept and replayed after each tools hello). The files channel routes `find { key }` to `files.find` (missing key -32602). The MCP bridge ignores `editor.project`.
+- Events: emits `hub:session`; hooks `files:project`. Logs: `hub:started`, `hub:refused`, `hub:session-open`, `hub:session-silent`, `hub:session-alive`, `hub:emit-failed`, debug lines.
 
 ~~~ts
 /**
@@ -2172,8 +2379,8 @@ export type HubApi = {
 
   /**
    * The `{path}/ws` upgrade handler; `serve` already mounts it. Checks the path (404), the start
-   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401) and the kind
-   * (400), then upgrades.
+   * (503), the upgrade request (426), `guard(…, "upgrade")` (403), the token (401), the kind and
+   * the role (400: `role=page` only with `kind=tools`), then upgrades.
    *
    * @param req - The request.
    * @param server - The Bun server.
@@ -2244,8 +2451,9 @@ export type HubApi = {
    * is stored through `toWireValue`. A `null` selection goes out as a `selection` notification
    * without params (the wire refuses null params).
    *
-   * @param method - The state: `"hotReload"` or `"selection"`.
-   * @param params - Its value: a HotReload, or a SelectionInfo or null for the selection.
+   * @param method - The state: `"hotReload"`, `"selection"` or `"project"`.
+   * @param params - Its value: a HotReload, a SelectionInfo or null for the selection, or a
+   * ProjectState (the hub publishes `project` itself from `files:project`).
    * @example
    * ```ts
    * // pages tells every tools page whether Bun reloads the game page on a save.
@@ -2254,6 +2462,22 @@ export type HubApi = {
    * ```
    */
   publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void;
+
+  /**
+   * Closes every open socket, agent and tools, with one code and reason. The hub keeps running:
+   * the token stays, and each connection is forgotten when Bun reports its close, so its session
+   * or subscriptions end as on any close. Clients reconnect on their own.
+   *
+   * @param code - The close code: 1012 (service restart) for the bin's restart.
+   * @param reason - The close reason the clients see.
+   * @example
+   * ```ts
+   * // The bin, right before Bun's stop on a Hot reload switch (pages serve.ts).
+   * editor.hub.closeAll(1012, "editor restarting");
+   * // the bridge and every tools page see close 1012 "editor restarting", log it at info and reconnect
+   * ```
+   */
+  closeAll(code: number, reason: string): void;
 
   /**
    * The editor path, `config.path` (R3).
@@ -2269,10 +2493,10 @@ export type HubApi = {
 };
 
 /**
- * A method `publish` sends to the tools pages (R6, A5): `"hotReload"` or `"selection"`, the keys of
- * the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
+ * A method `publish` sends to the tools pages (R6, A5): `"hotReload"`, `"selection"` or
+ * `"project"`, the keys of the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
  */
-export type { PublishMethod };
+export type { PublishMethod } from "../registry/protocol";
 ~~~
 
 ### 7.8 pages — server, Standard
@@ -2468,7 +2692,8 @@ export type AttachedServer = { reload(options: BunServeOptions): void };
 - Hot reload (round 2 R6): `hotReload()` is the last `hotReload` notification of the hub (`undefined` before it); `onHotReload(listener)` gets every change; `setHotReload(on)` POSTs `{ hmr }` to `P/hmr` with the boot token and resolves `response.ok && state.owner === "bin" && state.hmr === on`: true when the bin owns the server and switched (D-32), false for a game's own server (as `pages.setHotReload`); a refusal is a 200 with the old state, so the page logs nothing (round 2b R16). The restart can cut the answer off: after a network failure the call waits up to 10 s for the reconnect to deliver `hotReload` and answers whether its `hmr` equals `on` (A1).
 - Editor page role (D-33, A12): config `role: "page"` (default) adds `&role=page` to the socket URL; a headless client passes `"tools"`. `notify("selection", info | null)` publishes the selection (dropped while closed, the last value sent again on each open); `handle("select", handler)` answers the `select` requests the hub relays (params checked with `parseSelectParams`, no handler -32601); `selection()` is the last `editor.selection` notification.
 - A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
-- Events: emits `link:status`. Logs: `link:source-missing` (warn), `link:watch-failed` (error), `link:watch-deferred` (debug, a watch refused with `no_session` while its session closed; sent again on the next attach), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
+- Project index: `project()` is the last `editor.project` state, frozen, kept across reconnects (`undefined` before the first). A new state emits `link:project` with its delta; the same state again (the hub's replay) emits nothing; a same-revision state with another `manifest` (the game revision hashes sources only) emits `{ all: false, files: [old, new manifest] }`. A malformed state logs `link:bad-project` (warn) and changes nothing. `files.find(key)` sends the files-channel `find`.
+- Events: emits `link:status`, `link:project`. Logs: `link:bad-project` (warn), `link:source-missing` (warn), `link:watch-failed` (error), `link:watch-deferred` (debug, a watch refused with `no_session` while its session closed; sent again on the next attach), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
 ~~~ts
 /**
@@ -2512,7 +2737,8 @@ export const LONG_CALL_CAP_MS = 60_000;
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { link: { retryMs: 500 } } });
+ * // A headless e2e client connects as a plain tools client, not as the editor page.
+ * createApp({ pluginConfigs: { link: { retryMs: 500, role: "tools" } } });
  * ```
  */
 export type Config = {
@@ -2617,6 +2843,22 @@ export type FilesClient = {
    * ```
    */
   readBinary(path: string): Promise<FileBinary>;
+
+  /**
+   * Asks the project index where a key lives. Lines are read from disk at the call, and each
+   * answer's `hash` equals the files `version` of its path. Rejects -32008 `not_installed` while
+   * the index is off.
+   *
+   * @param key - A project-index key, e.g. `"node:board/merge"` or `"jsx:settingsBoard"`.
+   * @returns Every place the key is defined; empty for a key the index does not know.
+   * @example
+   * ```ts
+   * // The Flow inspector opens the Code tab of the selected node.
+   * await ctx.require(linkPlugin).files.find("node:board/merge");
+   * // [{ path: "nodes/merge.ts", binding: "merge", line: 17, range: [17, 1, 30, 3], hash: "a1" }]
+   * ```
+   */
+  find(key: string): Promise<readonly ProjectFound[]>;
 };
 
 /**
@@ -2682,6 +2924,7 @@ export type LinkApi = EditorChannel & {
    * @returns The id, undefined when none is chosen.
    * @example
    * ```ts
+   * // The session chip marks the game the tools are attached to.
    * app.link.session(); // "s-1"
    * ```
    */
@@ -2852,7 +3095,6 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
-
   /**
    * The selection of the editor, as the hub last sent it (`editor.selection`): this page's own
    * publish echoed back, or the one of another editor page tab.
@@ -2865,7 +3107,6 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   selection(): SelectionInfo | undefined;
-
   /**
    * Sends an editor-channel notification to the hub: `selection` publishes what the editor page
    * selected (`null`: nothing). The hub takes it only from a `role: "page"` link. Dropped while
@@ -2886,7 +3127,6 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   notify(method: NotifyMethod, params: PublishParams["selection"]): void;
-
   /**
    * Handles an editor-channel request the hub relays to this page: `select` (MCP `moku_select`).
    * The params are checked first (-32602 `invalid_input`); the handler's result is the answer, a
@@ -2905,6 +3145,20 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   handle(method: "select", handler: SelectHandler): () => void;
+  /**
+   * The project index the hub last sent (`editor.project`): on with its key maps, or off with the
+   * reason. Kept across reconnects. Each new state is also the tools event `link:project`, with
+   * the delta a view drops by.
+   *
+   * @returns The frozen state; undefined until the hub sent one.
+   * @example
+   * ```ts
+   * // filesView lists the flows that use the open node file.
+   * const project = ctx.require(linkPlugin).project();
+   * project?.state === "on" ? project.uses["node:board/merge"] : []; // ["flows/board.ts"]
+   * ```
+   */
+  project(): ProjectState | undefined;
   /**
    * The files channel client.
    *
@@ -3799,7 +4053,7 @@ export type PanelsApi = {
 - Density: ELK spacing follows `workspace:density` (comfortable 120 / 20, compact 96 / 14), edge labels take their own layer so they never overlap.
 - A `workspace:select-node` that shows Flow for the first time is framed by the first canvas measure, not the current node.
 - Notes are gone: no `notes` namespace, no `notesDir`, no `workspace:new-note`.
-- Events: emits `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`.
+- Events: emits `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`.
 
 ~~~ts
 /**
@@ -3867,7 +4121,8 @@ export type FlowHubConfig = {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { flowView: { stylesFile: "src/ui/styles.ts" } } });
+ * createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
+ * // a stepper burst is written 300 ms after the last press
  * ```
  */
 export type FlowViewConfig = {
@@ -3877,11 +4132,6 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /**
-   * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
-   * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
-   */
-  stylesFile: string | undefined;
   /** Debounce before a style stepper burst is written. Default 600. */
   styleSaveDelayMs: number;
   /** The layout file and the ELK engine. */
@@ -4220,30 +4470,29 @@ export type LayoutApi = {
 - Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. The cursor over the layer and every proxy is a crosshair. A click (`pointerup`) on a proxy is a pick. A press that moves 4 client px or more drags an area (U9; in Select mode the picker layer does the same and turns off after the pick, U4): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`. Each element line is `- <name> <type> · key <key> · text "…" · <file:line> · x,y w×h px · ref x,y w×h` (U5; `text` when the game reports `content`, 40 characters at most), followed by its child tree (visible descendants, two spaces per level, 3 levels, 60 lines in the whole tree, then `+N more`); then one `layout: <roots> < <parent> (…) < …` line per parent chain (up to 3 parents), `partly in the area: <name> <type> x,y w×h px · …` (overlapping nodes not inside, largest overlap first, at most 8), the tail lines; the card adds `## <key> · component <Name> · <file:line>` for each component instance (within the 10 new source searches of an area, A18).
 - Selection over MCP (U4, D-33): every change of the selection (a pick, an area, select, Esc) is published through `link.notify("selection", …)` (first without the style source, then again with it; after a pick with `card`, `crop`, `line`). `link.handle("select", …)` answers MCP `moku_select`: `rect` picks an area; `key` (first ui node with it, `"hud/infoBar"` allowed) or `ref` is inspected in the Game workspace and, unless `card: false`, picked without the clipboard; an unknown key is -32602 "No element with key <key>".
 - A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<day>/<key>-f<frame>-crop.jpg` and `<day>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<day>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken that day); `<day>` is `<capturesDir>/<yyyy-mm-dd>` (local date; old flat files are not moved), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
-- The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md`. `<file:line>` is the key's source (` (loop)` for a loop key), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
+- The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md`. `<file:line>` is the index's answer for the key (`jsx:<key>`; a key built in a loop answers the line of the element that builds it, `card0` → `features/orders/strip.tsx:216`, D-47), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
 - The card file, Markdown: `# @moku <name> <type>`; the full reference block in a `text` fence (a fence one backtick longer than any run inside); `## JSX · <file:line>` and `## Style · <name> · <file:line>` with fenced snippets (language from the extension); an entity: `## Spawned by <projection> · <file:line>` and `- <component>: <short value>` rows; then `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`. "Copy reference" writes the card of the same node and frame again (one file), or a new one.
-- The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) writes the card and copies the one line. A key built in a loop (`card${slot}` for `card0`) resolves to its template literal line with ` (loop)`.
+- The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) writes the card and copies the one line. A key built in a loop (`card${slot}` for `card0`) answers the line of the element that builds it (`features/orders/strip.tsx:216`, D-47); a key the index does not know leaves `source` out.
 - Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title, "… · approx: estimated values"); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1). The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run` when the manifest lists it and keeps the flag with `workspace.setMuted`; a game that connects while muted is muted again (a hot reload connects a new page); without `game.mute` it is `aria-disabled` with the title "Needs @moku-labs/game with game.mute"; a refusal toasts "Sound switch failed · <message>".
 - Stage (round 2b R9): Fit is one scale per device kind, the scale that fits the tallest preset of the kind with its bezel (phones include foldables; tablets and the desktop have their own), and the screen shown always fits; 100 % is 1 CSS px per px. The bezel (`data-frame` on `[data-part="bezel"]`) follows `DeviceSpec.frame`: `modern` 10 px all round with the island and home bar guides; `home-button` 64 px above and below, 10 px at the sides, a square screen (`--screen-radius: 0px`) and a 44 px round `[data-part="home-button"]` in the bottom bezel (the right one in landscape), no island and no home bar.
-- Code section (round 2b R12, `data-part="code"` in the Element tab): a ui element's JSX (from the line that opens its tag to the one that closes it; a loop key shows its template line) and the `defineStyle` block of `style={ident}`, each with `file:line`, Open in Files and the shared highlighter, 20 lines then "Show all N lines"; an entity: "Spawned by <projection> · <file:line>" (the `name: "<key>"` line inside a `projection({…})` call) and its components with short values (48 characters). A text style key (`style="ui.link"`) and a style call get no style snippet.
+- Code section (round 2b R12, `data-part="code"` in the Element tab): a ui element's JSX (the range the index answers for its key, from the line that opens its tag to the one that closes it) and the `defineStyle` block of `style={ident}`, each with `file:line`, Open in Files and the shared highlighter, 20 lines then "Show all N lines"; an entity: "Spawned by <projection> · <file:line>" (the `name: "<key>"` line inside a `projection({…})` call) and its components with short values (48 characters). A text style key (`style="ui.link"`) and a style call get no style snippet.
 - Capture card (round 2b R14, `[data-game="card"]`): grid `56px minmax(0, 1fr) auto`; the thumbnail, one line each for the title ("✓ Screenshot saved", "✓ 20 shots saved"), the path cut in the middle (36 characters; the whole path in `title`) and `f<frame> · <device>`, then Copy link (`shot: <path>` / `series: <dir>/ (<n> frames)`), Open (Files, or the contact sheet of a series) and, after a pick, Reference; × closes. At most 360 px wide and 120 px tall; at 480 px of window it takes the width less 24. A screenshot, a pick and a series each show it; it hides after `captureCardMs` unless hovered or focused, and it is an Esc layer above the picker.
 - The Element panel is a `SidePanel` (panels/shared/side-panel). Notes and the attach api are gone (no `attach`, `notes`, `notesDir`, `workspace:new-note`).
-- Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
+- Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
 
 ~~~ts
 /**
- * gameView configuration.
+ * gameView configuration. Where the game's code and asset manifest live is the project index's
+ * answer (D-38), not configuration.
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { gameView: { manifestPaths: ["public/manifest.json"] } } });
+ * createApp({ pluginConfigs: { gameView: { captureCardMs: 5000 } } });
  * ```
  */
 export type GameViewConfig = {
   /** Folder of screenshots and series, relative to the files root; each in a `<yyyy-mm-dd>/` day folder. */
   capturesDir: string;
-  /** Where the game's asset manifest may live, tried in order. */
-  manifestPaths: readonly string[];
   /** The capture card hides after this unless hovered or focused. */
   captureCardMs: number;
   /** Duration chips of the series popover (the longest equals capture's maxDurationMs). */
@@ -4252,19 +4501,6 @@ export type GameViewConfig = {
   seriesIntervalsMs: readonly number[];
   /** Above this many planned shots the popover warns. */
   seriesWarnShots: number;
-  /**
-   * Source search for the style block of a picked element: from the folder of the game page
-   * entry first, then the root. Config merges shallowly, so an override replaces this object as a
-   * whole: pass both fields.
-   *
-   * @example
-   * ```ts
-   * createApp({
-   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 3000, skip: ["node_modules", "dist", ".git", ".moku"] } } }
-   * });
-   * ```
-   */
-  sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
 };
 
 /**
@@ -4337,7 +4573,8 @@ export type GameViewApi = {
   selected(): ElementRef | undefined;
 
   /**
-   * Selects an element without the picker, or clears the selection. Clears the style card.
+   * Selects an element without the picker, or clears the selection. Clears the style card and
+   * publishes the selection to the hub (MCP `moku_selection`; null when cleared).
    *
    * @param ref - The element, undefined to clear.
    * @example
@@ -4409,10 +4646,11 @@ export type GameViewApi = {
   highlight(ref: ElementRef | undefined): void;
 
   /**
-   * The game's texture catalogue: the first readable `manifestPaths` entry parsed with the shared
-   * `parseTextureManifest`. Cached for the session.
+   * The game's texture catalogue: the manifest the project index names (`ProjectState.manifest`)
+   * parsed with the shared `parseTextureManifest`. Cached until the session or the index names
+   * another manifest, or the manifest changes on disk.
    *
-   * @returns The catalogue, undefined when no manifest was found.
+   * @returns The catalogue, undefined when the index is off, names no manifest, or it does not parse.
    * @example
    * ```ts
    * // The Element tab shows the GPU size of a picked sprite's texture.
@@ -4493,8 +4731,8 @@ export type GameViewApi = {
    * Writes the reference card of the selected element and puts its one line on the clipboard
    * (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref x,y w×h · <card path>`.
    * The card `<key>-f<frame>.md`, beside the pick's pictures in `<capturesDir>/<yyyy-mm-dd>/`,
-   * holds the full reference block (`@moku` head, `path`, `source`, `layout`, `bounds`, `state`, `flow`, `game`, `device`, and after a pick
-   * `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
+   * holds the full reference block (`@moku` head, `path`, `source`, `layout`, `bounds`, `state`,
+   * `flow`, `game`, `device`, and after a pick `restore` and `shot`), the JSX and style snippets with their `file:line`, and the links to
    * the pick's crop and full frame. The same node and frame write the same card again. A field
    * that is not known is left out; a card that cannot be written leaves its path out. A clipboard
    * that refuses is toasted; the line is returned all the same.
@@ -4505,7 +4743,7 @@ export type GameViewApi = {
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
    * await app.gameView.copyReference();
-   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;
@@ -4568,7 +4806,7 @@ export type PickBookmark = {
 - Tiles: FPS (sparkline; "Resting at 30 fps …" while the game rests at its idle rate, D-28), frame time, draw calls ("Not counted in a production build" without the dev counter), texture memory, Scene (entities, display objects, pooled, and the effects line), and JS heap only where the page heartbeat reports `heap` (Chromium, `link.heap()`).
 - Effects line: the `game.effects` counts (game 0.0.3); "Particles and filters are not reported (follow-up F-R1)" on an older game; "Effects not installed in this game" when the manifest lists `game.effects` with `available: false` (a game without `effectsPlugin`; `snapshot().tiles.effectsInstalled === false`, no watch is sent, nothing is logged).
 - Calibration: `{ key }` of the first keyed ui element from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1); neither listed: no read, no warn, an uncalibrated scene.
-- Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `workspace:reveal`. Logs: `renderView: unexpected source shape` (warn), `renderView: calibration failed` (warn).
+- Events: emits `workspace:inspect`; hooks `workspace:changed`, `link:status`, `link:project`, `workspace:reveal`. Logs: `renderView: unexpected source shape` (warn), `renderView: calibration failed` (warn).
 
 ~~~ts
 /**
@@ -4584,8 +4822,6 @@ export type RenderViewConfig = {
   fpsSamples: number;
   /** Release log entries kept, newest first. */
   releaseLogMax: number;
-  /** Where the game's asset manifest may live, tried in order through link.files.read. */
-  manifestPaths: readonly string[];
 };
 
 /**
@@ -4982,7 +5218,7 @@ export type StateViewApi = {
 ### 7.16 filesView — tools, Complex
 
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Files panel, `mod+s`, `fileEdit` Esc layer), `onStart` (`game.graph` per manifest, index build, `beforeunload` guard), `onStop`.
-- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `workspace:changed`, `workspace:open-file`. Logs: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:overrides-invalid` (warn); `filesView:save-failed` (error); `filesView:overrides-missing` (debug).
+- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-file`. Logs: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed` (warn); `filesView:save-failed` (error).
 
 ~~~ts
 /**
@@ -5065,14 +5301,23 @@ export type SaveResult =
   | { kind: "failed"; code: number | undefined; message: string };
 
 /**
- * Flows and nodes whose file is a path.
+ * What the project index knows of a file: the flows and nodes it defines, and the files that use
+ * what it defines.
  *
  * @example
  * ```ts
- * const usedBy: UsedBy = { flows: ["board"], nodes: [{ flow: "board", node: "merge" }] };
+ * // nodes/merge.ts defines the board's merge node; the board flow imports it.
+ * const usedBy: UsedBy = { flows: [], nodes: [{ flow: "board", node: "merge" }], usedIn: ["flows/board.ts"] };
  * ```
  */
-export type UsedBy = { readonly flows: readonly string[]; readonly nodes: readonly NodeRef[] };
+export type UsedBy = {
+  /** Flows defined in the file (`flow:` keys). */
+  readonly flows: readonly string[];
+  /** Nodes defined in the file (`node:` keys). */
+  readonly nodes: readonly NodeRef[];
+  /** Files that use anything the file defines, sorted, without the file itself. */
+  readonly usedIn: readonly string[];
+};
 
 /**
  * The filesView api (`app.filesView`): the view, the palette items, the open-file hook and
@@ -5081,7 +5326,7 @@ export type UsedBy = { readonly flows: readonly string[]; readonly nodes: readon
  * @example
  * ```ts
  * await app.filesView.open("nodes/merge.ts", { line: 12 });
- * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+ * app.filesView.usedBy("nodes/merge.ts").usedIn; // ["flows/board.ts"]
  * ```
  */
 export type FilesViewApi = {
@@ -5251,23 +5496,25 @@ export type FilesViewApi = {
   files(): readonly FileEntry[];
 
   /**
-   * The source file of a graph node: its own `file` from the graph (F-H2) when it has one, else
-   * the protocol rule (R1) against the file index. flowView resolves a node the same way.
+   * The file that defines a graph node, from the project index (`node:<flow>/<node>`); the first
+   * file of a conflict. Any file name: the index reads the code, not the name.
    *
    * @param ref - Flow and node name.
-   * @returns The path, or undefined (sub-flow and slot nodes have no own file).
+   * @returns The path, or undefined while the index is off or does not know the node (a sub-flow
+   * or slot node has no definition of its own).
    * @example
    * ```ts
-   * app.filesView.fileOf({ flow: "board", node: "awaitIntent" }); // "nodes/await-intent.ts"
+   * // The settings popup keeps all its nodes in one file.
+   * app.filesView.fileOf({ flow: "settingsPopup", node: "open" }); // "features/settings/nodes.ts"
    * ```
    */
   fileOf(ref: NodeRef): string | undefined;
 
   /**
-   * The source file of a flow by the protocol rule (R1), against the file index.
+   * The file that defines a flow, from the project index (`flow:<name>`).
    *
    * @param flow - The flow name.
-   * @returns The path, or undefined.
+   * @returns The path, or undefined while the index is off or does not know the flow.
    * @example
    * ```ts
    * app.filesView.flowFileOf("board"); // "flows/board.ts"
@@ -5276,13 +5523,15 @@ export type FilesViewApi = {
   flowFileOf(flow: string): string | undefined;
 
   /**
-   * Flows and nodes of the current game whose file is `path`; empty without a graph.
+   * What the project index knows of `path`: the flows and nodes defined in it, and the files that
+   * use them. Needs no game; empty while the index is off.
    *
    * @param path - Relative file path.
-   * @returns The flows and nodes.
+   * @returns The flows, nodes and using files.
    * @example
    * ```ts
-   * app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
+   * app.filesView.usedBy("nodes/merge.ts");
+   * // { flows: [], nodes: [{ flow: "board", node: "merge" }], usedIn: ["flows/board.ts"] }
    * ```
    */
   usedBy(path: string): UsedBy;
@@ -5793,8 +6042,10 @@ Frames are JSON-RPC 2.0 text with `channel` (`game`, `files`, `editor`) and opti
 | tools → hub | files | request | `write` | `{ path, text, version? }` | `WriteResult` |
 | tools → hub | files | request | `writeBinary` | `{ path, data }` (data URL) | `WriteResult` |
 | tools → hub | files | request | `readBinary` | `{ path }` | `FileBinary` |
+| tools → hub | files | request | `find` | `FindParams` `{ key }` | `ProjectFound[]` (`[]` for an unknown key; -32008 when the index is off) |
 | hub → tools | editor | notification | `sessions` | `{ list: SessionInfo[] }` (each with `heartbeat { frame, paused, silent }` once known and `manifestHash`; re-sent when paused or silent flips) | — |
 | hub → tools | editor | notification | `session` | `HubSession` | — |
+| hub → tools | editor | notification | `project` | `ProjectState` (kept, replayed after each tools hello) | — |
 | hub → tools | editor | notification | `hotReload` | `HotReload` (`{ hmr, owner }`; replayed after each tools hello) | — |
 | hub → tools | editor | notification | `selection` | `SelectionInfo`, or no params for nothing selected (kept, replayed after each tools hello; `null` when the last editor page closes) | — |
 | editor page → hub | editor | notification | `selection` | `SelectionInfo`, or no params (only from a `role=page` connection; checked with `parseSelectionInfo`) | — |

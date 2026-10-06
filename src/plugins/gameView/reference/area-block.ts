@@ -16,7 +16,7 @@ import { flowNodeOf, rectText, sourceText, type TailFacts, tailLines } from "./b
 import { codeSections, fenced, fileName, snippetSection } from "./card";
 
 /**
- * One element of the group with its source search result.
+ * One element of the group with its index answer.
  */
 export type AreaItem = { readonly node: SceneNode; readonly source: StyleSource | undefined };
 

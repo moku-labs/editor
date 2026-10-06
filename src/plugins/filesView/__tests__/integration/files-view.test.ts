@@ -6,15 +6,16 @@ import { createToolsCore, createToolsPlugin, toolsCoreConfig } from "../../../..
 import { panelsPlugin } from "../../../panels";
 import { filesViewPlugin } from "../..";
 import { createFakeFiles, hashOf } from "../fake-files";
-import { createLinkMock, createWorkspaceMock, MANIFEST, SEED } from "../helpers";
+import { createLinkMock, createWorkspaceMock, MANIFEST, PROJECT, SEED } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A tools core with a link stub over the in-memory files, a workspace stub,
 // the real panels, a probe plugin that hooks workspace:select-node and
 // workspace:open-sheet (the global events of src/config.ts, R4), and
-// filesView. No flowView, no gameView: start → index → palette → open → edit
-// → save (toast + reload) → conflict → overwrite → Used by → contact sheet →
-// chip → workspace:open-file → stop.
+// filesView. No flowView, no gameView: start → index → palette → Used by from
+// the project index → open → edit → save (toast + reload) → conflict →
+// overwrite → chip → contact sheet → workspace:open-file → an agent moves the
+// file (link:project) → stop.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const files = createFakeFiles({
@@ -97,13 +98,17 @@ describe("filesView integration", () => {
     expect(fileItems).toHaveLength(app.filesView.files().length);
     expect(added).toHaveBeenCalledWith("beforeunload", expect.any(Function));
 
-    // the game connects: the graph arrives, Used by fills in
+    // Used by comes from the project index, with no game; the game brings the graph
+    expect(app.filesView.usedBy("features/settings/nodes.ts")).toEqual({
+      flows: [],
+      nodes: [
+        { flow: "settingsPopup", node: "enter" },
+        { flow: "settingsPopup", node: "open" }
+      ],
+      usedIn: ["flows/main.ts"]
+    });
     link.attach(MANIFEST);
-    await until(() => app.filesView.usedBy("nodes/merge.ts").nodes.length > 0, "the graph");
-    expect(app.filesView.usedBy("features/settings/nodes.ts").nodes).toEqual([
-      { flow: "settingsPopup", node: "enter" },
-      { flow: "settingsPopup", node: "open" }
-    ]);
+    await until(() => link.read.mock.calls.length > 0, "the graph");
 
     // open → edit → save: toast + D-07 reload
     await app.filesView.open("nodes/merge.ts");
@@ -153,6 +158,30 @@ describe("filesView integration", () => {
     await until(() => app.filesView.tabs().at(-1)?.status === "ready", "the board tab");
     await until(() => host.querySelector("[data-line-current]") !== null, "the current line");
     expect(host.querySelector<HTMLElement>("[data-line-current]")?.dataset.line).toBe("3");
+
+    // an agent moves the board flow: the tab follows in place, Used by reads the new state
+    files.contents.delete("flows/board.ts");
+    files.set("flows/board/board.ts", SEED["flows/board.ts"] ?? "");
+    const moved = {
+      ...PROJECT,
+      revision: "r2",
+      previous: "r1",
+      defs: { ...PROJECT.defs, "flow:board": ["flows/board/board.ts"] }
+    };
+    link.projectValue = moved;
+    app.emit("link:project", {
+      state: moved,
+      delta: {
+        all: false,
+        files: ["flows/board.ts", "flows/board/board.ts"],
+        moved: [{ key: "flow:board", from: "flows/board.ts", to: "flows/board/board.ts" }],
+        removed: []
+      }
+    });
+    await until(() => app.filesView.active() === "flows/board/board.ts", "the tab to follow");
+    expect(app.filesView.tabs().at(-1)).toMatchObject({ status: "ready", modified: false });
+    expect(app.filesView.flowFileOf("board")).toBe("flows/board/board.ts");
+    await until(() => host.textContent?.includes("Moved from flows/board.ts") === true, "the note");
 
     // ⌘S is bound for Files only, while editing
     expect(workspace.bindings[0]?.when?.()).toBe(false);

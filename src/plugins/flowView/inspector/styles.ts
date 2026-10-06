@@ -1,46 +1,68 @@
 /**
  * @file flowView inspector module — the Styles tab controller over the shared style edit
- * (panels/shared/style-edit, R4, R8): load the text-style cards of the styles file (configured or
- * found), no card chosen until the person picks one, stepper bursts debounced into one
- * version-checked write of one numeric literal, then the D-07 reload. flowView owns only the
- * texts of the shared error codes.
+ * (panels/shared/style-edit, R4, R8): load the text-style cards of the file the project index
+ * names, no card chosen until the person picks one, stepper bursts debounced into one
+ * version-checked write of one numeric literal (none while the file does not parse, D-44, or the
+ * index is off, D-48), then the D-07 reload. flowView owns only the texts of the shared error codes.
  */
+import { NOT_IN_INDEX_TEXT, projectOffText, textStylesFile } from "../../panels/shared/project";
 import type { StyleBlock, StyleEditError } from "../../panels/shared/style-edit";
 import {
   fieldRule,
   isStyleEditError,
   loadStyleFile,
   parseStyleFile,
+  STYLE_BROKEN_TEXT,
   stepValue,
   writeNumber
 } from "../../panels/shared/style-edit";
+import type { ProjectState } from "../../registry/protocol";
 import { bareMessage } from "../../registry/protocol";
 import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment } from "../types";
-import { stylesFileOf } from "./styles-file";
+import { isWriting } from "./follow";
 import type { StylesState } from "./types";
+
+/**
+ * The text of an `index-off` refusal while link still holds an on state: the off state is on its
+ * way, and the card shows its reason once it arrives.
+ */
+const INDEX_OFF_TEXT = "Project index is off";
 
 /**
  * flowView's text for a refused style edit (one row per shared code).
  *
  * @param error - The shared error.
- * @param file - The styles file; undefined when none was found.
+ * @param file - The styles file; undefined when the index names none.
+ * @param project - The project state (`link.project()`): why there is no styles file.
  * @returns The text shown on the card.
  * @example
  * ```ts
- * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts"); // "lineHeight has no edit rule · edit it in Files"
- * styleErrorText({ error: "no-file" }, undefined); // "No file calls defineTextStyles( · set flowView.stylesFile"
+ * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts", project); // "lineHeight has no edit rule · edit it in Files"
+ * styleErrorText({ error: "no-file" }, undefined, { state: "off", reason: "typescript is not installed" });
+ * // "Project index is off: typescript is not installed"
+ * styleErrorText({ error: "index-off", path: "features/ui/styles.ts" }, "features/ui/styles.ts", { state: "off", reason: "disabled" });
+ * // "Project index is off: disabled"
  * ```
  */
-export function styleErrorText(error: StyleEditError, file: string | undefined): string {
+export function styleErrorText(
+  error: StyleEditError,
+  file: string | undefined,
+  project: ProjectState | undefined
+): string {
   const path = error.path ?? "the field";
   const key = error.key ?? "the style";
   switch (error.error) {
     case "no-file": {
-      return file === undefined
-        ? "No file calls defineTextStyles( · set flowView.stylesFile"
-        : `No text styles at ${file} · set flowView.stylesFile`;
+      if (file !== undefined) return `No text styles at ${file}`;
+      return projectOffText(project) ?? `${NOT_IN_INDEX_TEXT}: text styles`;
+    }
+    case "broken": {
+      return STYLE_BROKEN_TEXT;
+    }
+    case "index-off": {
+      return projectOffText(project) ?? INDEX_OFF_TEXT;
     }
     case "parse": {
       return `Can't read ${file} safely · Open in Files`;
@@ -98,7 +120,7 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
 }
 
 /**
- * The Styles tab with no cards: no styles file, or one that cannot be read.
+ * The Styles tab with no cards: no text-styles file in the index, or one that cannot be read.
  *
  * @param file - The styles file, if one was found.
  * @param error - Why there are no cards.
@@ -116,25 +138,44 @@ function emptyStyles(file: string | undefined, error: StyleEditError): StylesSta
     blocks: [],
     key: undefined,
     pending: undefined,
+    writing: false,
     result: undefined,
     error
   };
 }
 
 /**
- * Loads the styles file into the Styles tab and replaces the palette group Styles. No card is
- * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
- * a stepper keeps that card and the pending step.
+ * What a read of the text styles found: the file the index names and its load.
+ */
+type StylesRead = {
+  readonly file: string | undefined;
+  readonly loaded: Awaited<ReturnType<typeof loadStyleFile>> | undefined;
+};
+
+/**
+ * Reads the text-styles file the project index names; nothing is read when it names none.
+ *
+ * @param env - Services and actions.
+ * @returns The file and its load.
+ */
+async function readStyles(env: FlowEnvironment): Promise<StylesRead> {
+  const file = textStylesFile(env.project());
+  const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+  return { file, loaded };
+}
+
+/**
+ * Shows a read in the Styles tab and replaces the palette group Styles. A chosen card and a
+ * pending step are kept when the card is still there; an asked key wins.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
+ * @param read - The file and its load.
  * @param key - The card to select; default the card already chosen, else none.
- * @returns Resolves when loaded.
  */
-export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
+function showStyles(ctx: FlowCtx, env: FlowEnvironment, read: StylesRead, key?: string): void {
   const { inspector } = ctx.state;
-  const file = await stylesFileOf(ctx, env);
-  const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+  const { file, loaded } = read;
   if (loaded === undefined || isStyleEditError(loaded)) {
     inspector.styles = emptyStyles(file, loaded ?? { error: "no-file" });
     env.setStyleItems([]);
@@ -153,11 +194,66 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
     blocks,
     key: chosen,
     pending: inspector.styles?.pending,
+    writing: false,
     result: undefined,
     error: undefined
   };
   env.setStyleItems(keys);
   notify(ctx.state);
+}
+
+/**
+ * Loads the index's text-styles file into the Styles tab and replaces the palette group Styles
+ * (remembered as the file the group was read from). No card is
+ * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
+ * a stepper keeps that card and the pending step.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param env - Services and actions.
+ * @param key - The card to select; default the card already chosen, else none.
+ * @returns Resolves when loaded.
+ */
+export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
+  ctx.state.inspector.keysFile = textStylesFile(env.project());
+  showStyles(ctx, env, await readStyles(env), key);
+}
+
+/**
+ * True when a read shows what the tab already shows: the same file at the same version (the
+ * editor's own write), or still no file (the reason line reads the project state when drawn).
+ *
+ * @param styles - The Styles tab slice.
+ * @param read - The new read.
+ * @returns Whether the tab stays as it is.
+ */
+function isSameRead(styles: StylesState, read: StylesRead): boolean {
+  const { file, loaded } = read;
+  if (file !== styles.file) return false;
+  if (loaded === undefined) return true;
+
+  return !isStyleEditError(loaded) && loaded.version === styles.version;
+}
+
+/**
+ * Reads the Styles tab again after a project change (link:project, D-46). The tab and its result
+ * line stay when the index names the same file at the same version (the batch of the editor's own
+ * write), and when an edit of its own started meanwhile; a newer open wins.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param env - Services and actions.
+ * @returns Resolves when the tab shows the new read or stays.
+ */
+export async function followStyles(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
+  const { inspector } = ctx.state;
+  const shown = inspector.styles;
+  if (shown === undefined || isWriting(shown)) return;
+
+  const read = await readStyles(env);
+  const styles = inspector.styles;
+  if (styles !== shown || isWriting(styles) || isSameRead(styles, read)) return;
+
+  inspector.keysFile = read.file;
+  showStyles(ctx, env, read);
 }
 
 /**
@@ -210,6 +306,7 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
   // to look for the game's hot swap.
   const savedAt = Date.now();
   let written: Awaited<ReturnType<typeof writeNumber>>;
+  styles.writing = true;
   try {
     written = await writeNumber(
       env.files(),
@@ -224,12 +321,14 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
     styles.result = { ok: false, text: `! ${bareMessage(message)}` };
     notify(ctx.state);
     return;
+  } finally {
+    styles.writing = false;
   }
 
   // A refusal of the shared style edit shows on the card; nothing was written.
   if (isStyleEditError(written)) {
     styles.error = written;
-    styles.result = { ok: false, text: styleErrorText(written, file) };
+    styles.result = { ok: false, text: styleErrorText(written, file, env.project()) };
     notify(ctx.state);
     return;
   }
@@ -274,7 +373,10 @@ export function stepStyle(
   const rule = fieldRule({ kind: "text", key }, path);
   if (rule === undefined) {
     styles.error = { error: "read-only", path };
-    styles.result = { ok: false, text: styleErrorText(styles.error, styles.file) };
+    styles.result = {
+      ok: false,
+      text: styleErrorText(styles.error, styles.file, env.project())
+    };
     notify(ctx.state);
     return;
   }

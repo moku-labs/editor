@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHandlers } from "../../handlers";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
-import { createCtx, sceneCapture, type TestCtx, templateOf } from "../helpers";
+import { answer, createCtx, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
 import { boardScene, button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
@@ -20,6 +21,18 @@ const MANIFEST = JSON.stringify({
   }
 });
 
+/**
+ * The spawn line of the shown entity's Code section.
+ *
+ * @returns The line.
+ */
+function spawn(): Element {
+  return find(view.root, "section[data-part='code'] [data-part='spawn']");
+}
+
+/** The delta of the first project state: a gap, everything is read again. */
+const FIRST_STATE = { all: true, files: [], moved: [], removed: [] } as const;
+
 let ctx: TestCtx;
 let view: Mounted;
 
@@ -29,6 +42,11 @@ beforeEach(() => {
     "src/hud/styles.ts": STYLES,
     "manifest.json": MANIFEST
   });
+  ctx.link.projectValue = projectOn(
+    { "style:src/hud/styles.ts#coinPill": ["src/hud/styles.ts"] },
+    { manifest: "manifest.json" }
+  );
+  answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 1, 2, 42]));
   ctx.state.scene = boardScene();
   view = mount(<ElementTab ctx={ctx} />);
 });
@@ -153,11 +171,14 @@ describe("ElementTab", () => {
     expect(find(card, "[data-field='radius']").querySelector("button")).toBeNull();
   });
 
-  it("says when the source was not found, and shows a refusal with Open in Files", async () => {
+  it("says a key is not in the project index, and shows a refusal with Open in Files", async () => {
     await select({ kind: "ui", path: "boardScreen/orders" });
-    expect(view.root.textContent).toContain("Source not found for key orders");
+    expect(find(view.root, "[data-part='not-found']").textContent).toBe(
+      "Not in the project index: jsx:orders"
+    );
 
     ctx.link.files.put("src/hud/Row.tsx", '<Row key="hudRow" style={nowhere} />');
+    answer(ctx, "jsx:hudRow", place("src/hud/Row.tsx", [1, 1, 1, 38]));
     await select({ kind: "ui", path: "boardScreen/hudRow" });
     expect(view.root.textContent).toContain("No style block named nowhere.");
     click(button(find(view.root, "[data-part='style-card']"), "Open in Files"));
@@ -167,8 +188,19 @@ describe("ElementTab", () => {
     });
   });
 
+  it("says why when the project index is off", async () => {
+    ctx.link.projectValue = { state: "off", reason: "typescript is not installed" };
+    vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("project index off"));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    expect(find(view.root, "[data-part='not-found']").textContent).toBe(
+      "Project index is off: typescript is not installed"
+    );
+    expect(view.root.querySelector("section[data-part='code']")).toBeNull();
+  });
+
   it("shows a style call read-only and where a key without a style is defined", async () => {
     ctx.link.files.put("src/hud/Orders.tsx", '<Board\n  id="orders"\n  style={boardOf(3)}\n/>');
+    answer(ctx, "jsx:orders", place("src/hud/Orders.tsx", [1, 1, 4, 3], { line: 2 }));
     await select({ kind: "ui", path: "boardScreen/orders" });
     const card = find(view.root, "[data-part='style-card']");
     expect(find(card, "[data-part='where']").textContent).toBe("src/hud/Orders.tsx:3");
@@ -182,11 +214,12 @@ describe("ElementTab", () => {
     });
 
     ctx.link.files.put("src/hud/Orders.tsx", '<Board id="orders" />');
+    answer(ctx, "jsx:orders", place("src/hud/Orders.tsx", [1, 1, 1, 22]));
     await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     await select({ kind: "ui", path: "boardScreen/orders" });
     const defined = find(view.root, "[data-part='style-card']");
     expect(defined.textContent).toContain("Defined at src/hud/Orders.tsx:1");
-    expect(defined.textContent).not.toContain("Source not found");
+    expect(defined.querySelector("[data-part='not-found']")).toBeNull();
     click(button(defined, "Open in Files"));
     expect(ctx.emit).toHaveBeenCalledWith("workspace:open-file", {
       path: "src/hud/Orders.tsx",
@@ -249,6 +282,7 @@ describe("ElementTab", () => {
       "src/hud/Hud.tsx",
       ['<Pill key="coinPill">', ...children, "</Pill>"].join("\n")
     );
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 32, 8]));
     await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     await settle();
     const jsx = find(view.root, "section[data-part='code'] [data-part='snippet']");
@@ -265,6 +299,7 @@ describe("ElementTab", () => {
       "features/board/items.tsx",
       'export const boardItems = projection({\n  name: "board.items",\n});'
     );
+    answer(ctx, "projection:board.items", place("features/board/items.tsx", [2, 3, 2, 22]));
     ctx.state.sources.entities = sceneCapture("scene-board.txt").entities;
     await select({ kind: "entity", id: 1_048_628 });
     await settle();
@@ -281,27 +316,64 @@ describe("ElementTab", () => {
     expect(rows.map(row => find(row, "dt").textContent)).toContain("Sprite");
   });
 
-  it("marks a key built in a loop: Defined at file:line (loop)", async () => {
-    ctx.link.files.put("src/hud/Hud.tsx", `const id = ${templateOf("coinPill", "slot")};`);
-    const scene = boardScene();
-    const nodes = new Map(scene.nodes);
-    const coin = nodes.get("ui:boardScreen/hudRow/coinPill");
-    if (coin === undefined) throw new Error("fixture");
-    nodes.set(coin.id, { ...coin, key: "coinPill3", name: "coinPill3" });
-    act(() => {
-      ctx.state.scene = { ...scene, nodes };
-    });
-    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
-    const defined = find(view.root, "[data-part='defined']");
-    expect(defined.textContent).toContain("Defined at src/hud/Hud.tsx:1 (loop)");
+  it("says when the index does not know the projection of an entity", async () => {
+    await select({ kind: "entity", id: 1_048_628 });
+    await settle();
+    const spawn = find(view.root, "section[data-part='code'] [data-part='spawn']");
+    expect(spawn.textContent).toBe(
+      "Spawned by board.items · Not in the project index: projection:board.items"
+    );
+    expect(spawn.querySelector("button")).toBeNull();
   });
 
-  it("says searching while the sources are read", () => {
+  it("an entity picked before the first project state shows its projection once the state arrives", async () => {
+    ctx.link.projectValue = undefined;
+    const lost = vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("link lost"));
+    await select({ kind: "entity", id: 1_048_628 });
+    expect(spawn().textContent).toBe(
+      "Spawned by board.items · Project index is off: no state from the server yet"
+    );
+
+    lost.mockRestore();
+    ctx.link.files.put(
+      "features/board/items.tsx",
+      'export const boardItems = projection({\n  name: "board.items",\n});'
+    );
+    answer(ctx, "projection:board.items", place("features/board/items.tsx", [2, 3, 2, 22]));
+    const state = projectOn({ "projection:board.items": ["features/board/items.tsx"] });
+    ctx.link.projectValue = state;
+    act(() => {
+      createHandlers(ctx)["link:project"]({ state, delta: FIRST_STATE });
+    });
+    await settle();
+    expect(spawn().textContent).toBe("Spawned by board.items · features/board/items.tsx:2");
+  });
+
+  it("a ui element picked before the first project state shows its style card once the state arrives", async () => {
+    ctx.link.projectValue = undefined;
+    const lost = vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("link lost"));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    expect(find(view.root, "[data-part='not-found']").textContent).toBe(
+      "Project index is off: no state from the server yet"
+    );
+
+    lost.mockRestore();
+    const state = projectOn({ "style:src/hud/styles.ts#coinPill": ["src/hud/styles.ts"] });
+    ctx.link.projectValue = state;
+    act(() => {
+      createHandlers(ctx)["link:project"]({ state, delta: FIRST_STATE });
+    });
+    await settle();
+    expect(view.root.querySelector("[data-part='not-found']")).toBeNull();
+    expect(ctx.state.styles?.path).toBe("src/hud/styles.ts");
+  });
+
+  it("says the index is asked while the answer is on its way", () => {
     act(() => {
       ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
       notify(ctx.state);
     });
-    expect(view.root.textContent).toContain("Searching the sources for coinPill…");
+    expect(view.root.textContent).toContain("Finding coinPill in the project index…");
   });
 
   it("waits for the scene; an unplaced node says so; a texture without manifest data shows the key", async () => {

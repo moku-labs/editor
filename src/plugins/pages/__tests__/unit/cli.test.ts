@@ -126,6 +126,21 @@ describe("startBin", () => {
   });
 });
 
+describe("startBin log forwarding", () => {
+  it("prints the files:project-on info line, so the server log shows the index is on", async () => {
+    const { deps, lines } = createDeps();
+    const started = await startBin([join(game, "index.html"), "--port", "0", "--root", game], deps);
+    try {
+      expect(started.code).toBe(0);
+      await vi.waitFor(() => expect(lines.join("\n")).toContain("files:project-on {"), {
+        timeout: 3000
+      });
+    } finally {
+      await started.stop?.();
+    }
+  });
+});
+
 describe("startBin dev server (D-23)", () => {
   it("serves the game with Bun's HMR and console forwarding", async () => {
     const serve = vi.spyOn(Bun, "serve");

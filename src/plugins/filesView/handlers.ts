@@ -1,10 +1,11 @@
 /**
  * @file filesView plugin — hooks of the global tools events (R4): `link:status` builds a missing
- * index, `workspace:changed` refreshes Files when shown, `workspace:open-file` opens a file for
- * another view.
+ * index, `link:project` lets the open tabs follow the project index, `workspace:changed`
+ * refreshes Files when shown, `workspace:open-file` opens a file for another view.
  */
 import type { ToolsEvents } from "../../config";
 import { notify } from "./store";
+import { followProject } from "./tabs/follow";
 import { revalidate } from "./tabs/load";
 import { activeTab } from "./tabs/model";
 import { openOrLog } from "./tabs/open";
@@ -16,11 +17,12 @@ import { INDEX_STALE_MS } from "./types";
  * filesView's hooks factory (`hooks: createHandlers`).
  *
  * @param ctx - Domain context of filesView.
- * @returns The three hooks.
+ * @returns The four hooks.
  */
 export function createHandlers(ctx: FilesViewCtx): FilesViewHooks {
   return {
     "link:status": onLinkStatus(ctx),
+    "link:project": onLinkProject(ctx),
     "workspace:changed": onWorkspaceChanged(ctx),
     "workspace:open-file": handleOpenFile(ctx)
   };
@@ -40,6 +42,19 @@ export function onLinkStatus(ctx: FilesViewCtx): (payload: ToolsEvents["link:sta
     const missing = state.index === undefined && state.indexing === undefined;
     if (missing && canList(status)) void buildIndex(ctx);
     notify(state);
+  };
+}
+
+/**
+ * A new project state: Used by re-reads it, and the open tabs follow its delta (moves, edits,
+ * gone files; see followProject).
+ *
+ * @param ctx - Domain context of filesView.
+ * @returns The `link:project` hook.
+ */
+export function onLinkProject(ctx: FilesViewCtx): (payload: ToolsEvents["link:project"]) => void {
+  return ({ delta }) => {
+    void followProject(ctx, delta);
   };
 }
 

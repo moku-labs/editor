@@ -1,11 +1,14 @@
 /**
  * @file gameView plugin — the code of a picked element (round 2b R12) for the Element tab's Code
- * section and the reference card: a ui element's JSX (element/jsx around the line the source
- * search found) and the `defineStyle` block of `style={ident}` (the style card's loader), or the
+ * section and the reference card: a ui element's JSX (the range the project index answered for
+ * its key) and the `defineStyle` block of `style={ident}` (the style card's loader), the
+ * `defineStyle` call a style function builds (`style={call(…)}` with a `style:` key, G2), or the
  * text style key block of a text node's `style="ui.link"` (element/text-styles, round 2b R17); an
  * entity's projection, the line that defines it (element/spawn) and its components with their
  * values from the raw `game.entities`. Nothing here throws: what cannot be read is left out.
  */
+import { linkPlugin } from "../../link";
+import { findFresh } from "../../panels/shared/project";
 import type { SceneNode } from "../../panels/shared/scene";
 import type { Json } from "../../registry/protocol";
 import { isObject } from "../capture/shot";
@@ -18,7 +21,7 @@ import type {
   StyleSource
 } from "../types";
 import { styleValue } from "../ui/text";
-import { elementLines, keyColumn } from "./jsx";
+import { snippetOf } from "./jsx";
 import { findStyleSource, readText } from "./source";
 import { findProjectionSource } from "./spawn";
 import { type IdentSource, loadBlock } from "./styles";
@@ -45,38 +48,26 @@ export function shortValue(value: Json): string {
 }
 
 /**
- * The source of a ui key: remembered, else the search (the one in flight when there is one).
+ * The source of a ui key: remembered, else the index answer.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
- * @returns The source, undefined when none is found or the search failed.
+ * @returns The source, undefined when the index has no answer.
  */
 async function sourceOfKey(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
-  try {
-    return ctx.state.found.get(key) ?? (await findStyleSource(ctx, key));
-  } catch {
-    return undefined;
-  }
+  return ctx.state.found.get(key) ?? (await findStyleSource(ctx, key));
 }
 
 /**
- * The JSX of the element whose key the source found.
+ * The JSX of the element whose key the index found: the lines of its range.
  *
  * @param ctx - Domain context of gameView.
  * @param source - Where the key is.
- * @param key - The ui key.
  * @returns The element's lines, undefined when the file cannot be read.
  */
-async function jsxOf(
-  ctx: GameViewCtx,
-  source: StyleSource,
-  key: string
-): Promise<CodeSnippet | undefined> {
+async function jsxOf(ctx: GameViewCtx, source: StyleSource): Promise<CodeSnippet | undefined> {
   const text = await readText(ctx, source.path);
-  if (text === undefined) return undefined;
-  const lines = text.split("\n");
-  const range = elementLines(lines, source.line, keyColumn(lines[source.line - 1] ?? "", key));
-  return { path: source.path, line: range.start, lines: lines.slice(range.start - 1, range.end) };
+  return text === undefined ? undefined : snippetOf(source.path, text, source.range);
 }
 
 /**
@@ -99,8 +90,37 @@ async function styleOf(ctx: GameViewCtx, source: IdentSource): Promise<StyleSnip
 }
 
 /**
- * The style block of a key source: the `defineStyle` block of `style={ident}`, the text style key
- * block of `style="ui.link"`; none for a call or an element without a style.
+ * The `defineStyle` call a style function builds (G2): the first answer of its `style:` key, named
+ * by the part after `#` (`boardStyle`, `roundStylesOf.icon`). The answer is kept in
+ * `state.blocks` under the key with its path and range, so the next look reads the file only; a
+ * project change that touches the file drops it (D-46).
+ *
+ * @param ctx - Domain context of gameView.
+ * @param styleKey - `style:<file>#<function>[.<property>]`.
+ * @returns The call's lines with its name, undefined when the index has no answer.
+ */
+async function callStyleOf(ctx: GameViewCtx, styleKey: string): Promise<StyleSnippet | undefined> {
+  const name = styleKey.slice(styleKey.lastIndexOf("#") + 1);
+
+  // A kept answer: its file is read again, the index is not asked.
+  const known = ctx.state.blocks.get(styleKey);
+  if (known?.range !== undefined) {
+    const text = await readText(ctx, known.path);
+    if (text !== undefined) return { ...snippetOf(known.path, text, known.range), name };
+  }
+
+  // Else the index answers, and the answer is kept.
+  const fresh = await findFresh(ctx.require(linkPlugin).files, styleKey);
+  if (fresh === undefined) return undefined;
+  const { found, text } = fresh;
+  ctx.state.blocks.set(styleKey, { path: found.path, line: found.line, range: found.range });
+  return { ...snippetOf(found.path, text, found.range), name };
+}
+
+/**
+ * The style block of a key source: the `defineStyle` block of `style={ident}`, the `defineStyle`
+ * call of a style function the index knows, the text style key block of `style="ui.link"`; none
+ * for another call or an element without a style.
  *
  * @param ctx - Domain context of gameView.
  * @param source - Where the key is.
@@ -111,6 +131,9 @@ async function styleBlockOf(
   source: StyleSource
 ): Promise<StyleSnippet | undefined> {
   if (source.kind === "ident") return styleOf(ctx, source);
+  if (source.kind === "call" && source.styleKey !== undefined) {
+    return callStyleOf(ctx, source.styleKey);
+  }
   if (source.kind === "defined" && source.textStyle !== undefined) {
     return textStyleOf(ctx, source.textStyle);
   }
@@ -147,8 +170,7 @@ function componentsOf(
  *
  * @param ctx - Domain context of gameView.
  * @param node - The scene node.
- * @returns The code, undefined for an unkeyed ui node, a key no source names, or an entity
- * without an owner.
+ * @returns The code, undefined for an unkeyed ui node or a key the index does not know.
  */
 export async function elementCode(
   ctx: GameViewCtx,
@@ -164,6 +186,6 @@ export async function elementCode(
 
   const source = await sourceOfKey(ctx, node.key);
   if (source === undefined) return undefined;
-  const [jsx, style] = await Promise.all([jsxOf(ctx, source, node.key), styleBlockOf(ctx, source)]);
+  const [jsx, style] = await Promise.all([jsxOf(ctx, source), styleBlockOf(ctx, source)]);
   return { kind: "ui", jsx, style };
 }

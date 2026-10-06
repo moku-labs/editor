@@ -16,7 +16,7 @@ import {
 import type { Calibration, PageRect, SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene } from "../../panels/shared/scene";
 import type { PanelSpec } from "../../panels/types";
-import type { Json } from "../../registry/protocol";
+import type { Json, ProjectState } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type {
   PaletteItem,
@@ -38,9 +38,19 @@ import type { RenderViewConfig, RenderViewCtx } from "../types";
 /** The default config of the plugin. */
 export const CONFIG: RenderViewConfig = {
   fpsSamples: 60,
-  releaseLogMax: 50,
-  manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"]
+  releaseLogMax: 50
 };
+
+/**
+ * A project index state that names the asset manifest.
+ *
+ * @param manifest - The root-relative manifest path; none when omitted.
+ * @returns The on state.
+ */
+export function projectWith(manifest?: string): ProjectState {
+  const state: ProjectState = { state: "on", revision: "r1", defs: {}, uses: {}, broken: {} };
+  return manifest === undefined ? state : { ...state, manifest };
+}
 
 /** One capture of the three scene sources plus game.rect of some keys. */
 export type Capture = {
@@ -292,13 +302,15 @@ export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
 }
 
 /**
- * Serves the manifest at a path through the mock link's files.read; every other path rejects.
+ * Serves the manifest at a path through the mock link's files.read (every other path rejects), and
+ * makes the project index name that path.
  *
  * @param ctx - The test ctx.
  * @param path - Where the manifest lives.
  * @param text - The manifest text.
  */
 export function serveManifest(ctx: TestCtx, path = "manifest.json", text = MANIFEST_TEXT): void {
+  ctx.link.api.project = () => projectWith(path);
   vi.mocked(ctx.link.api.files.read).mockImplementation((asked: string) =>
     asked === path
       ? Promise.resolve({ text, version: "v1" })

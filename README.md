@@ -31,13 +31,15 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 ## Install
 
 ```sh
-bun add -d @moku-labs/editor @moku-labs/game
+bun add -d @moku-labs/editor @moku-labs/game typescript
 ```
 
 > [!NOTE]
-> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.1.0` is a **peer dependency**.
+> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index).
 >
-> **Compatibility:** works with @moku-labs/game 0.1.x and 0.4.x. The views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both. The contact sheet `editor.sheet` (MCP `moku_series`) needs game 0.4.
+> **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
+>
+> **Doors:** the views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both. The contact sheet `editor.sheet` (MCP `moku_series`) needs game 0.4.
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole. Captures go into day folders `<capturesDir>/<yyyy-mm-dd>/` (local date): a Shot is `0846-board.jpg` there (was `2026-10-05-0846-board.jpg`), a series `series-1015/` (was `series-2026-10-05-1015/`); picks and cards keep their names. Old flat files stay where they are; `moku_reference` finds cards in both.
 >
@@ -188,6 +190,69 @@ Deny the cheat and raw doors in Claude Code settings:
 
 A client that does not refresh its list after `list_changed` keeps the old door tools. A door that is gone answers `isError`. `moku_run` runs every door.
 
+## Project index
+
+The editor does not guess where game code lives. It asks the game's **project index**
+(`@moku-labs/game/project`, game 0.7.0 and newer). The server core's `files` plugin opens the
+index of its root on start (`openProject({ root })`, about 150 ms on merge-game, not awaited) and
+keeps it fresh with the index's watch. The bin prints `files:project-on { files, keys, ms }` once it
+is open.
+
+The tools page reads it two ways:
+
+- **Lines:** the files-channel request `find { key }` (`link.files.find(key)`). Each answer carries
+  the path, the line and range read from disk at the call, and the `hash` of the bytes, which equals
+  the files `version`.
+- **Key maps:** the published state `editor.project` (`link.project()`, event `link:project` with a
+  `ProjectDelta`): on or off, the revision, the manifest path, key → def paths, key → use paths,
+  broken files and the last change. JSX keys never ride the state; only `find` reaches them.
+
+Every view asks the index first and only the index:
+
+| View | Keys |
+|---|---|
+| Flow | `node:<flow>/<node>` (Code tab, file of a node), the file with the most `textStyle:` keys (Styles tab) |
+| Game | `jsx:<key>` (picked element and its JSX), `style:` (its style block), `projection:` (an entity), `textStyle:`, `component:` (area card) |
+| Files | `flow:` and `node:` defs and their uses (Used by) |
+| Game, Render | `ProjectState.manifest` (the asset manifest) |
+
+Moves and edits by agents while the editor is open are followed. A watch batch names the changed,
+moved and removed files: open Files tabs follow a move ("Moved from nodes/catch-up.ts"), Used by and
+the Code tab read again, and the views drop the caches the batch names.
+
+**Requirements.** `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` in the game repository (a game
+already has `typescript` as a dev dependency). 0.7.0 brings the component, style and static JSX
+keys the views ask for. The index needs no `bunfig.toml`: that file only
+loads the hot swap plugin.
+
+**What a view says:**
+
+- `Project index is off: <reason>`: the index could not open (no `typescript`, a game before 0.7.0,
+  `pluginConfigs.files.project: false` reads `disabled`). One line in every view that needs a code
+  location. The server logs `files:project-off { reason }` at error. MCP and the game keep working.
+- `Not in the project index: <key>`: the index has no answer for that key. No crawl, no guess.
+- `The file does not parse now · fix it, then edit`: a style edit on a file the index marks broken
+  writes nothing.
+
+**Version check.** A write with a `version` compares it right before the rename, after the temp file
+is written. A conflict answers -32005 and keeps the other bytes. An external write that lands
+between that check and the rename is still overwritten: the window is narrowed, not closed.
+
+### Breaking: the project index
+
+- `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are required peers.
+- The index is the only source of code locations. Removed: the kebab node → file rule and its root
+  exports `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`
+  and the type `SourceOverrides`; the source crawls of the style block, the projection, the text
+  styles and the components.
+- `.moku/editor/files.json` is ignored.
+- Removed configs: `flowView.stylesFile`, `gameView.manifestPaths`, `gameView.sourceSearch`,
+  `renderView.manifestPaths`. The manifest is `ProjectState.manifest`.
+- The graph node field `file` (F-H2) is gone. `UsedBy.usedIn` is new. `StyleEditCode` gains
+  `"broken"` and `"index-off"`.
+- A key built in a loop answers the line of the element that builds it: `card0` is
+  `features/orders/strip.tsx:216` (was `:157 (loop)`).
+
 ## The tools page
 
 ### The top bar
@@ -222,7 +287,7 @@ into the chat: it names the element, its flow node, its code, its place, and the
 the rest.
 
 ```text
-@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md
+@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md
 ```
 
 The card `<capturesDir>/<yyyy-mm-dd>/<key>-f<frame>.md` (`-2`, `-3` … when taken that day) is Markdown:
@@ -239,7 +304,7 @@ game back to this moment:
 ```text
 @moku settingsBoard · panel · settingsPopup/open · f212
 path: settingsScreen/settingsBoard
-source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+source: features/settings/settings.tsx:290 · texture: ui.panel-signboard
 layout: settingsScreen (column, padding 0/0/0/0)
 bounds: 24,233 346×386 px · ref 65,641 950×1060
 state: visible
@@ -254,7 +319,7 @@ shot: .moku/captures/2026-10-05/settingsBoard-f212-crop.jpg · frame: .moku/capt
 |---|---|
 | `@moku` | Name, type, flow/node of the game position, frame. |
 | `path` | The ui path, or `entity #<id>` with up to 5 components. |
-| `source` | `file:line` of the key (` (loop)` for a key built in a loop, `card${i}` for `card0`), the style identifier with the `file:line` of its block, the nine-slice or texture. |
+| `source` | `file:line` of the key from the project index (a key built in a loop answers the line of the element that builds it: `card0` is `features/orders/strip.tsx:216`), the style identifier with the `file:line` of its block, the nine-slice or texture. |
 | `layout` | Up to 3 ui parents, nearest first: direction, padding and margin as `t/r/b/l`, gap. |
 | `bounds` | The rect in device px, then in the game's reference units (`ref`). |
 | `state` | visible or hidden, the true flags (pressed, disabled, selected), the text, alpha. |
@@ -318,9 +383,9 @@ selection.
 - **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
   to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
   its `file:line`, "Open in Files" and the shared highlighter; after 20 lines it shows "Show all N
-  lines". A key built in a loop shows its template line. An entity shows "Spawned by
-  <projection> · <file:line>" and its components with short values. A text style key
-  (`style="ui.link"`) and a style call (`style={boardOf(…)}`) show no style block yet.
+  lines". The lines are the index's answer for the key. An entity shows "Spawned by
+  <projection> · <file:line>" and its components with short values. A key the index does not know
+  shows `Not in the project index: <key>`.
 - **The capture card** after a Shot, a pick or a Series: a 56 px thumbnail, one line each for the
   title ("✓ Screenshot saved"), the path (cut in the middle, the whole path in its tooltip) and
   `f<frame> · <device>`, then Copy link (`shot: <path>`), Open and, after a pick, Reference (the
@@ -672,6 +737,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | files | `root` | `"."` | Project root; must be an existing folder. |
 | files | `allow` | `["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"]` | Globs a file must match. Case-sensitive. |
 | files | `deny` | `["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]` | Globs never listed, read or written. Case-insensitive. |
+| files | `project` | `true` | Open the [project index](#project-index) of `root` on start. `false`: off with reason `disabled`. |
 | hub | `path` | `"/__editor"` | URL prefix of every editor route. |
 | hub | `allowOrigins` | `[]` | Extra exact origins allowed, e.g. `"http://192.168.1.4:3000"`. |
 | hub | `callTimeoutMs` | `5000` | Deadline of a forwarded call. |
@@ -695,17 +761,14 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | workspace | `toastMs` | `2600` | How long one toast stays. |
 | panels | — | `{}` | No options. |
 | flowView | `historyLast` · `trailLength` · `rejectedOutcomes` | `20` · `6` · `["rejected"]` | History watched, trail edges, rejection outcomes. |
-| flowView | `stylesFile` · `styleSaveDelayMs` | `undefined` · `600` | The text styles file (unset: the first file that calls `defineTextStyles(`, found once per session); style save debounce. |
+| flowView | `styleSaveDelayMs` | `600` | Style save debounce. |
 | flowView | `layout` | `{ file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 }` | Saved positions, ELK in a worker, layout save debounce. Replaced as a whole. |
 | flowView | `zoom` | `{ min: 0.08, max: 3, defaultMin: 0.8 }` | Zoom range and default camera floor. Replaced as a whole. |
 | flowView | `hub` | `{ minOutcomes: 6, minReturns: 4 }` | The hub rule. Replaced as a whole. |
 | gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go, each in a day folder `<yyyy-mm-dd>/`. `.moku/captures` or a folder under it. |
-| gameView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |
 | gameView | `seriesDurationsMs` · `seriesIntervalsMs` | `[1000, 2000, 5000, 10000, 20000]` · `[16, 50, 100, 250, 500, 1000]` | Series popover chips. |
-| gameView | `sourceSearch` | `{ maxFiles: 400, skip: ["node_modules", "dist", ".git", ".moku"] }` | Style-block search of a picked element. |
 | renderView | `fpsSamples` · `releaseLogMax` | `60` · `50` | Sparkline samples, release log size. |
-| renderView | `manifestPaths` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Asset manifest candidates. |
 | stateView | `expandDepth` · `maxPatches` · `pageSize` | `2` · `200` · `100` | Tree depth open, patches kept, children per page. |
 | filesView | `maxFiles` · `maxHighlightChars` | `5000` · `512000` | Index cap, highlight cap. |
 | filesView | `reloadExtensions` · `revalidateMs` | `[".ts", ".tsx", ".css", ".json"]` · `2000` | Saves that reload the game, tab re-read age. |
@@ -721,7 +784,9 @@ Global events are declared per core in `src/config.ts`. No plugin declares its o
 | agent | `bridge:status` | `{ status: LinkStatus; session?: string }` | bridge | overlay |
 | server | `hub:session` | `HubSession` = `{ id, game, open, reason?: "bye" \| "game_reloaded" }` | hub | — (for consumer plugins) |
 | server | `files:written` | `FilesWritten` = `{ path, bytes, kind: WrittenKind }` | files | — (for a later MCP layer) |
+| server | `files:project` | `ProjectState` | files | hub (published as `editor.project`) |
 | tools | `link:status` | `{ status: LinkStatus; session?: string }` | link | workspace, panels, all six views |
+| tools | `link:project` | `{ state: ProjectState; delta: ProjectDelta }` | link | flowView, gameView, renderView, filesView |
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` = `{ id, input, origin, at } & ({ ok: true, result } \| { ok: false, error })` | workspace, panels | stateView, consoleView |
 | tools | `workspace:density` | `{ density: "compact" \| "comfortable" }` | workspace | flowView |
@@ -754,7 +819,7 @@ JSON-RPC 2.0 text frames with a `channel` (`game`, `files`, `editor`) and, for f
 | -32007 | `unauthorized` | `unauthorized` | no |
 | -32008 | `notInstalled` | `not_installed`: the game does not have the source (its game plugin is missing) | no |
 
-Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs`, and a run of `editor.sheet` its `frames × everyMs`, on top of the deadline (capped at +60 s) in bridge, hub and link alike. The `sessions` notification gives each `SessionInfo` a `heartbeat { frame, paused, silent }` once the game has sent one, and is sent again when `paused` or `silent` flips.
+The files channel has `find { key }` (the `ProjectFound[]` of a project-index key; -32008 while the index is off), and the editor channel the published `project` notification (the `ProjectState`, replayed after each tools hello). Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs`, and a run of `editor.sheet` its `frames × everyMs`, on top of the deadline (capped at +60 s) in bridge, hub and link alike. The `sessions` notification gives each `SessionInfo` a `heartbeat { frame, paused, silent }` once the game has sent one, and is sent again when `paused` or `silent` flips.
 
 ## Scripts
 
@@ -775,20 +840,21 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.
 
-**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a detached worktree at `../game-fixture`, on the tag that matches the `@moku-labs/game` dev dependency in `package.json`. Create it once, with its dependencies:
+**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a worktree at `../game-fixture`, on the commit that matches the `@moku-labs/game` dev dependency in `package.json`. That is the tag `v0.7.0` (dev dependency `@moku-labs/game` `0.7.0`). Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.5.0
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.7.0
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 
-When `package.json` bumps `@moku-labs/game`, move it and install again: `git -C ../game-fixture checkout vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
+When `package.json` moves to a newer release, move it and install again: `git -C ../game fetch --tags && git -C ../game-fixture checkout --detach vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
 
 ## Requirements
 
 - **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.1.0`** — the peer the editor inspects and controls.
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.7.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives.
+- **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 
 ## Docs

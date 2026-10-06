@@ -25,29 +25,71 @@ async function setup() {
   return test;
 }
 
-describe("openCode", () => {
-  it("reads the node's file and finds its line", async () => {
-    const { ctx } = await setup();
+describe("openCode reads the node's place from the project index", () => {
+  it("opens the file the index names at the line it gives", async () => {
+    const { ctx, fakes } = await setup();
     expect(ctx.state.inspector.code).toMatchObject({
       path: "nodes/merge.ts",
       line: 3,
       version: "v1"
     });
     expect(ctx.state.inspector.codeNote).toBeUndefined();
+    expect(fakes.files.find).toHaveBeenCalledWith("node:board/merge");
   });
 
-  it("shows the placeholder for a node without a file", async () => {
+  it("a node in a file no rule would name opens there (non-kebab)", async () => {
+    const { ctx, fakes } = await setup();
+    fakes.files.store.set("features/settings/nodes.ts", { text: "x\n".repeat(120), version: "s1" });
+    fakes.files.index.set("node:settingsPopup/open", [
+      { path: "features/settings/nodes.ts", line: 106 }
+    ]);
+    await actionsOf(ctx).inspector.openCode("settingsPopup/open");
+    expect(ctx.state.inspector.code).toMatchObject({
+      path: "features/settings/nodes.ts",
+      line: 106,
+      version: "s1"
+    });
+  });
+
+  it("a sub-flow node shows its index anchor (D-41)", async () => {
+    const { ctx, fakes } = await setup();
+    fakes.files.store.set("flows/main.ts", { text: "a\nb\nc\nsettings\n", version: "m1" });
+    fakes.files.index.set("node:main/settings", [{ path: "flows/main.ts", line: 4 }]);
+    await actionsOf(ctx).inspector.openCode("main/settings");
+    expect(ctx.state.inspector.code).toMatchObject({ path: "flows/main.ts", line: 4 });
+  });
+
+  it("a key the index does not know shows 'Not in the project index' with the key", async () => {
     const { ctx } = await setup();
     await actionsOf(ctx).inspector.openCode("main/settings");
     expect(ctx.state.inspector.code).toBeUndefined();
-    expect(ctx.state.inspector.codeNote).toBe("This node has no file of its own.");
+    expect(ctx.state.inspector.codeNote).toBe("Not in the project index: node:main/settings");
   });
 
-  it("shows 'Source loads from the dev server.' when the read fails", async () => {
+  it("an index that is off shows its reason once, no guess", async () => {
+    const { ctx, fakes } = await setup();
+    fakes.files.off = "typescript is not installed";
+    await actionsOf(ctx).inspector.openCode("board/merge");
+    expect(ctx.state.inspector.code).toBeUndefined();
+    expect(ctx.state.inspector.codeNote).toBe("Project index is off: typescript is not installed");
+    expect(fakes.files.list).not.toHaveBeenCalled();
+  });
+
+  it("before the first project state the index counts as off", async () => {
+    const { ctx, fakes } = await setup();
+    fakes.project = undefined;
+    await actionsOf(ctx).inspector.openCode("main/settings");
+    expect(ctx.state.inspector.codeNote).toBe("Project index is off: no state from the server yet");
+  });
+
+  it("shows 'Source loads from the dev server.' when the index knows the key but the read fails", async () => {
     const { ctx, fakes } = await setup();
     fakes.files.failing.set("nodes/merge.ts", new Error("[moku-editor] link closed"));
     await actionsOf(ctx).inspector.openCode("board/merge");
     expect(ctx.state.inspector.codeNote).toBe(SOURCE_LOADS);
+    expect(ctx.log.warn).toHaveBeenCalledWith("flowView: source not read", {
+      id: "board/merge"
+    });
   });
 });
 
@@ -334,12 +376,12 @@ describe("Open in Files and Open in editor", () => {
     expect(actionsOf(ctx).inspector.editorUrl("nodes/merge.ts", 3)).toBeUndefined();
   });
 
-  it("fileOf resolves a node's file and line for the palette", async () => {
-    const { ctx } = await setup();
-    expect(await actionsOf(ctx).inspector.fileOf("board/merge")).toEqual({
-      path: "nodes/merge.ts",
-      line: 3
-    });
-    expect(await actionsOf(ctx).inspector.fileOf("board/catchUp")).toBeUndefined();
+  it("fileOf answers the index place of a node; line 1 when the file cannot be read", async () => {
+    const { ctx, fakes } = await setup();
+    const inspector = actionsOf(ctx).inspector;
+    expect(await inspector.fileOf("board/merge")).toEqual({ path: "nodes/merge.ts", line: 3 });
+    expect(await inspector.fileOf("board/catchUp")).toBeUndefined();
+    fakes.files.failing.set("nodes/merge.ts", new Error("[moku-editor] link closed"));
+    expect(await inspector.fileOf("board/merge")).toEqual({ path: "nodes/merge.ts", line: 1 });
   });
 });

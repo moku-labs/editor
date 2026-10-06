@@ -3,15 +3,26 @@
  * numeric-literal edit with a version-checked write (flowView Styles C4, gameView Element C7).
  * Bounds and error codes live only here (R8).
  */
-import type { FileText, WriteResult } from "../../registry/protocol";
-import { errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
+import type { FileText, ProjectFound, WriteResult } from "../../registry/protocol";
+import { anchorKey, errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
 
 /**
- * Which block of a style file: a text-style table entry or a `defineStyle` constant (R8, R9).
+ * Which block of a style file: a text-style table entry, a `defineStyle` constant (R8, R9), or a
+ * `defineStyle({ … })` call a style function makes (G2), found at the place the project index
+ * answers for its `style:<path>#<function>[.<property>]` key.
  */
 export type StyleBlockRef =
   | { readonly kind: "text"; readonly key: string }
-  | { readonly kind: "const"; readonly name: string };
+  | { readonly kind: "const"; readonly name: string }
+  | {
+      readonly kind: "call";
+      /** The part of the style key after `#`: `roundStylesOf.icon`, `signboardStyle`. */
+      readonly name: string;
+      /** 1-based line where the call starts: the first number of the answer's range. */
+      readonly line: number;
+      /** 1-based column where the call starts; the callee may come later (`kit.defineStyle`). */
+      readonly column: number;
+    };
 
 /**
  * A numeric literal field with its exact columns.
@@ -56,19 +67,37 @@ export type StyleBlock = {
 };
 
 /**
+ * A `defineStyle({ … })` call no const binds: a style built in a function (G2). `findBlock` finds
+ * it by the place of a call ref.
+ */
+export type CallBlock = {
+  /** 1-based line of `defineStyle`. */
+  readonly line: number;
+  /** 1-based column of `defineStyle`. */
+  readonly column: number;
+  readonly endLine: number;
+  readonly fields: readonly StyleField[];
+};
+
+/**
  * A parsed style file.
  */
 export type StyleFile = {
   readonly blocks: readonly StyleBlock[];
+  /** The calls of style functions, in source order. */
+  readonly calls: readonly CallBlock[];
   /** Identifier → "#rrggbb", for read-only swatches. */
   readonly colours: ReadonlyMap<string, string>;
   readonly eol: "\n" | "\r\n";
 };
 
 /**
- * Why an edit was refused.
+ * Why an edit was refused. `index-off`: the project index answered -32008 to the broken guard, so
+ * nothing is written while it is off (D-48).
  */
 export type StyleEditCode =
+  | "broken"
+  | "index-off"
   | "no-file"
   | "parse"
   | "no-key"
@@ -125,12 +154,20 @@ export type WriteDone = {
 };
 
 /**
- * Structural files client: link.files and tools.files fit it.
+ * Structural files client: link.files and tools.files fit it. With `find`, a write first asks the
+ * project index whether the file parses now (D-44); a rejected `find` refuses the write (D-48).
  */
 export type StyleFiles = {
   read(path: string): Promise<FileText>;
   write(path: string, text: string, version?: string): Promise<WriteResult>;
+  find?(key: string): Promise<readonly ProjectFound[]>;
 };
+
+/**
+ * The shared text of a `broken` refusal: the file does not parse now, so no style edit is written
+ * (D-44). flowView's stepper and gameView's style card show it.
+ */
+export const STYLE_BROKEN_TEXT = "The file does not parse now · fix it, then edit";
 
 /**
  * A loaded style file: its text, version and parsed blocks.
@@ -186,10 +223,6 @@ type Cursor = {
  * @param to - End index (exclusive).
  * @param kind - QUOTED or COMMENT.
  * @returns The end index, the next position of the cursor.
- * @example
- * ```ts
- * cursor.index = mark(cursor, 4, 9, QUOTED);
- * ```
  */
 function mark(cursor: Cursor, from: number, to: number, kind: number): number {
   const end = Math.min(to, cursor.text.length);
@@ -500,10 +533,6 @@ function trimRange(scan: Scan, start: number, end: number): [number, number] {
  * @param start - Index after the opening `{`.
  * @param end - Index of the closing `}`.
  * @returns The member ranges, untrimmed.
- * @example
- * ```ts
- * splitMembers(scan, open + 1, close);
- * ```
  */
 function splitMembers(scan: Scan, start: number, end: number): [number, number][] {
   const ranges: [number, number][] = [];
@@ -611,10 +640,6 @@ function valueField(scan: Scan, path: string, start: number, end: number): Style
  * @param end - Index of the closing `}`.
  * @param prefix - "" for the block, "shadow." for a nested object.
  * @param fields - Where the fields go, in source order.
- * @example
- * ```ts
- * readMembers(scan, open + 1, close, "", fields);
- * ```
  */
 function readMembers(
   scan: Scan,
@@ -680,6 +705,9 @@ const TEXT_BLOCK = /^\s*(["'])([\w.-]+)\1\s*:\s*\{/;
 /** A layout style constant: `export const hudRow = defineStyle({`. */
 const CONST_BLOCK = /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*defineStyle\s*\(\s*\{/;
 
+/** The start of a style call with an object: `defineStyle({`, also after `kit.`. */
+const STYLE_CALL = /\bdefineStyle\s*\(\s*\{/g;
+
 /** A colour constant: `const sky = "#aabbcc"` or `const cream = 0xff_f3_d6`. */
 const COLOUR =
   /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:(["'])#([\dA-Fa-f]{6})\2|0x([\dA-Fa-f_]+))/;
@@ -742,19 +770,63 @@ function colourOf(scan: Scan, line: number): [string, string] | undefined {
 }
 
 /**
- * Parses the style blocks and colour constants of a file.
+ * Reads every `defineStyle({` call that no block of the file holds: the calls of style functions.
  *
- * @param text - The file text.
- * @returns The style file, or `{ error: "parse", line }` when a block or the braces never close.
+ * @param scan - The scan.
+ * @param read - The `[open, close]` brace indexes of the blocks read already.
+ * @returns The calls in source order, or `{ error: "parse", line }` when one never closes.
  * @example
  * ```ts
- * const file = parseStyleFile(text);
- * if (!isStyleEditError(file)) file.blocks.map(block => block.ref);
+ * // `    icon: defineStyle({ width: 40, height: 40 })` on line 10.
+ * readCalls(scan, []); // [{ line: 10, column: 11, endLine: 10, fields: [width, height] }]
+ * ```
+ */
+function readCalls(
+  scan: Scan,
+  read: readonly (readonly [number, number])[]
+): CallBlock[] | StyleEditError {
+  const calls: CallBlock[] = [];
+
+  for (const match of scan.text.matchAll(STYLE_CALL)) {
+    // A call in a comment or a string, or inside a block already read, is no call block.
+    const start = match.index;
+    const open = start + match[0].length - 1;
+    const isInside = read.some(([from, to]) => open >= from && open <= to);
+    if (scan.kinds[start] !== CODE || scan.kinds[open] !== CODE || isInside) continue;
+
+    // A call whose brace never closes fails the parse at its line.
+    const line = lineOf(scan, start);
+    const close = scan.partners[open] ?? -1;
+    if (close === -1) return { error: "parse", line };
+
+    const fields: StyleField[] = [];
+    readMembers(scan, open + 1, close, "", fields);
+    const column = start - (scan.lineStarts[line - 1] ?? 0) + 1;
+    calls.push({ line, column, endLine: lineOf(scan, close), fields });
+  }
+
+  return calls;
+}
+
+/**
+ * Parses the style blocks, the calls of style functions and the colour constants of a file.
+ *
+ * @param text - The file text.
+ * @returns The style file, or `{ error: "parse", line }` when a block, a call or the braces never
+ * close.
+ * @example
+ * ```ts
+ * parseStyleFile("export const hudRow = defineStyle({\n  gap: 8\n});\n");
+ * // { blocks: [{ ref: { kind: "const", name: "hudRow" }, line: 1, endLine: 3, fields: [
+ * //     { kind: "number", path: "gap", value: 8, raw: "8", line: 2, colStart: 7, colEnd: 8 }] }],
+ * //   calls: [], colours: Map(0) {}, eol: "\n" }
+ * parseStyleFile("export const hudRow = defineStyle({\n  gap: 8\n"); // { error: "parse", line: 1 }
  * ```
  */
 export function parseStyleFile(text: string): StyleFile | StyleEditError {
   const scan = scanText(text);
   const blocks: StyleBlock[] = [];
+  const read: [number, number][] = [];
   const colours = new Map<string, string>();
   let line = 1;
 
@@ -779,8 +851,13 @@ export function parseStyleFile(text: string): StyleFile | StyleEditError {
     readMembers(scan, start.open + 1, close, "", fields);
     const endLine = lineOf(scan, close);
     blocks.push({ ref: start.ref, line, endLine, fields });
+    read.push([start.open, close]);
     line = endLine + 1;
   }
+
+  // The calls of style functions: every other `defineStyle({`.
+  const calls = readCalls(scan, read);
+  if (isStyleEditError(calls)) return calls;
 
   // Any other unbalanced brace fails the parse at its line.
   if (scan.unbalanced !== -1) return { error: "parse", line: lineOf(scan, scan.unbalanced) };
@@ -789,14 +866,14 @@ export function parseStyleFile(text: string): StyleFile | StyleEditError {
   const lineBreak = text.indexOf("\n");
   const eol = lineBreak > 0 && text[lineBreak - 1] === "\r" ? "\r\n" : "\n";
 
-  return { blocks, colours, eol };
+  return { blocks, calls, colours, eol };
 }
 
 /**
  * The key or name of a block ref.
  *
  * @param ref - The block ref.
- * @returns `ref.key` for a text block, `ref.name` for a const block.
+ * @returns `ref.key` for a text block, `ref.name` for a const block or a call.
  * @example
  * ```ts
  * refKey({ kind: "const", name: "hudRow" }); // "hudRow"
@@ -807,7 +884,31 @@ function refKey(ref: StyleBlockRef): string {
 }
 
 /**
- * Finds one block by ref: `no-key` or `ambiguous` when not exactly one.
+ * The call block a call ref points to: the first call on its line that starts at or after its
+ * column (the index answers the start of the call expression, `kit` of `kit.defineStyle`).
+ *
+ * @param file - A parsed style file.
+ * @param ref - The call ref.
+ * @returns The block under the asked ref, or `{ error: "no-key", key }` when no call with an
+ * object starts there.
+ * @example
+ * ```ts
+ * findCall(file, { kind: "call", name: "roundStylesOf.icon", line: 10, column: 11 }); // { ref, line: 10, endLine: 10, fields }
+ * ```
+ */
+function findCall(
+  file: StyleFile,
+  ref: Extract<StyleBlockRef, { readonly kind: "call" }>
+): StyleBlock | StyleEditError {
+  const call = file.calls.find(entry => entry.line === ref.line && entry.column >= ref.column);
+  if (call === undefined) return { error: "no-key", key: ref.name };
+
+  return { ref, line: call.line, endLine: call.endLine, fields: call.fields };
+}
+
+/**
+ * Finds one block by ref: `no-key` or `ambiguous` when not exactly one. A call ref is found by its
+ * place, and the block comes back under that ref.
  *
  * @param file - A parsed style file.
  * @param ref - The block ref.
@@ -816,9 +917,12 @@ function refKey(ref: StyleBlockRef): string {
  * @example
  * ```ts
  * findBlock(file, { kind: "text", key: "ui.number" }); // { ref, line: 72, endLine: 80, fields }
+ * findBlock(file, { kind: "call", name: "roundStylesOf.icon", line: 10, column: 11 }); // { ref, line: 10, … }
  * ```
  */
 export function findBlock(file: StyleFile, ref: StyleBlockRef): StyleBlock | StyleEditError {
+  if (ref.kind === "call") return findCall(file, ref);
+
   const key = refKey(ref);
   const found = file.blocks.filter(
     block => block.ref.kind === ref.kind && refKey(block.ref) === key
@@ -960,10 +1064,6 @@ export function formatNumber(value: number): string {
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns The field, or the refusal.
- * @example
- * ```ts
- * editableField(text, target, 64); // { kind: "number", path: "size", … }
- * ```
  */
 function editableField(
   text: string,
@@ -1151,13 +1251,61 @@ async function tryWrite(
 }
 
 /**
- * The one retry after a conflict: read the file again and write when the literal is unchanged.
+ * True for the rejection of a `find` while the project index is off: -32008 `not_installed`.
+ *
+ * @param error - A rejection of the files client.
+ * @returns Whether the index is off.
+ * @example
+ * ```ts
+ * isIndexOff(wireError(-32_008, "project index off: disabled")); // true
+ * isIndexOff(wireError(-32_002, "timeout")); // false
+ * ```
+ */
+function isIndexOff(error: unknown): boolean {
+  return isWireError(error) && error.code === errorCode.notInstalled;
+}
+
+/**
+ * Asks the project index whether the block's file parses now, before a write (D-44). Three ways
+ * out, no silent fallback (D-48): an answer on `path` from the last good parse refuses as
+ * `broken`; -32008 refuses as `index-off`; any other rejection propagates, so the view shows its
+ * message and nothing is written. A client without `find` writes.
+ *
+ * @param files - The files client.
+ * @param path - The style file path.
+ * @param ref - The block being edited.
+ * @returns The refusal, or undefined when the write may go on.
+ * @throws {Error} The rejection of `find` when it is not -32008.
+ */
+async function indexRefusal(
+  files: StyleFiles,
+  path: string,
+  ref: StyleBlockRef
+): Promise<StyleEditError | undefined> {
+  let answers: readonly ProjectFound[];
+
+  try {
+    answers = (await files.find?.(anchorKey(ref, path))) ?? [];
+  } catch (error) {
+    if (isIndexOff(error)) return { error: "index-off", path };
+    throw error;
+  }
+
+  const isBroken = answers.some(found => found.path === path && found.broken === true);
+  return isBroken ? { error: "broken", path } : undefined;
+}
+
+/**
+ * The one retry after a conflict: ask the index again, read the file again and write when the
+ * literal is unchanged.
  *
  * @param files - The files client.
  * @param path - The style file path.
  * @param target - What the card showed.
  * @param next - The new value.
- * @returns The write, `no-file` or `changed-on-disk`.
+ * @returns The write, `broken`, `index-off`, `no-file` or `changed-on-disk`.
+ * @throws {Error} A rejection of `find` other than -32008, or of the read other than -32601 and
+ * -32004.
  */
 async function retryWrite(
   files: StyleFiles,
@@ -1165,6 +1313,9 @@ async function retryWrite(
   target: EditTarget,
   next: number
 ): Promise<WriteDone | StyleEditError> {
+  const refusal = await indexRefusal(files, path, target.ref);
+  if (refusal !== undefined) return refusal;
+
   let fresh: FileText;
 
   try {
@@ -1182,6 +1333,8 @@ async function retryWrite(
 
 /**
  * Edits and writes with the read version; one retry on -32005 when the literal is unchanged.
+ * With `files.find`, the project index is asked before each write: a file that does not parse now
+ * is refused as `broken` (D-44), an index that is off as `index-off` (D-48); nothing is written.
  *
  * @param files - The files client.
  * @param path - The style file path.
@@ -1189,11 +1342,15 @@ async function retryWrite(
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns `{ ok: true, text, line, version, bytes }`, or the refusal; nothing is written on a
- * refusal. Rejections other than -32005 and -32004 propagate.
+ * refusal.
+ * @throws {Error} A rejection of `find` other than -32008 (nothing is written), and a rejection of
+ * the write other than -32005, -32601 and -32004.
  * @example
  * ```ts
- * await writeNumber(tools.files, "features/ui/styles.ts", loaded, target, 64);
+ * await writeNumber(link.files, "features/ui/styles.ts", loaded, target, 64);
  * // { ok: true, line: 74, version: "9c1e…", … }
+ * // While an agent's edit left the file unparseable: { error: "broken", path: "features/ui/styles.ts" }
+ * // While the index is off: { error: "index-off", path: "features/ui/styles.ts" }
  * ```
  */
 export async function writeNumber(
@@ -1206,6 +1363,9 @@ export async function writeNumber(
   const edited = editNumber(current.text, target, next);
   if (isStyleEditError(edited)) return edited;
 
+  const refusal = await indexRefusal(files, path, target.ref);
+  if (refusal !== undefined) return refusal;
+
   return (
     (await tryWrite(files, path, edited, current.version)) ?? retryWrite(files, path, target, next)
   );
@@ -1213,6 +1373,8 @@ export async function writeNumber(
 
 /** Every edit error code. */
 const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
+  "broken",
+  "index-off",
   "no-file",
   "parse",
   "no-key",
@@ -1227,10 +1389,11 @@ const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
  * True for a StyleEditError.
  *
  * @param value - Anything.
- * @returns Whether `value` is an object whose `error` is one of the eight codes.
+ * @returns Whether `value` is an object whose `error` is one of the ten codes.
  * @example
  * ```ts
- * if (isStyleEditError(loaded)) return showReason(loaded);
+ * isStyleEditError({ error: "broken", path: "features/ui/styles.ts" }); // true
+ * isStyleEditError({ ok: true, text: "…", line: 74, version: "9c1e", bytes: 2048 }); // false
  * ```
  */
 export function isStyleEditError(value: unknown): value is StyleEditError {

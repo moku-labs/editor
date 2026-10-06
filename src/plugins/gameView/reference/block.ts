@@ -154,24 +154,25 @@ export function flowNodeOf(position: PositionInfo): string | undefined {
 }
 
 /**
- * The text of a source: `file:line`, and ` (loop)` for a key built in a loop.
+ * The text of a source: `file:line` of the line the project index answered for the key.
  *
- * @param source - A source search result.
+ * @param source - An index answer.
  * @returns The text.
  * @example
  * ```ts
- * sourceText({ kind: "defined", path: "features/orders/strip.tsx", line: 157, loop: true }); // "features/orders/strip.tsx:157 (loop)"
+ * // card0 is built from `card${slot}`: the index answers the element that builds it.
+ * sourceText({ kind: "call", path: "features/orders/strip.tsx", line: 216, range: [215, 5, 247, 14], call: "orderCardStyle(card.slot)", callLine: 218 });
+ * // "features/orders/strip.tsx:216"
  * ```
  */
 export function sourceText(source: StyleSource): string {
-  const at = `${source.path}:${source.line}`;
-  return source.kind === "defined" && source.loop === true ? `${at} (loop)` : at;
+  return `${source.path}:${source.line}`;
 }
 
 /**
  * The style field: the identifier with the place of its block, or the call with its line.
  *
- * @param source - The source search result.
+ * @param source - The index answer.
  * @param block - Where the identifier's block is.
  * @returns "style: …", or undefined without a style.
  */

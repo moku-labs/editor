@@ -193,7 +193,8 @@ export function createLinkMock(): LinkMock {
       read: vi.fn(() => Promise.resolve({ text: "", version: "v" })),
       write: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
       writeBinary: vi.fn(() => Promise.resolve({ path: "", bytes: 0, version: "v" })),
-      readBinary: vi.fn(() => Promise.resolve({ dataUrl: "", version: "v" }))
+      readBinary: vi.fn(() => Promise.resolve({ dataUrl: "", version: "v" })),
+      find: vi.fn(() => Promise.resolve([]))
     },
     onTap: vi.fn<LinkApi["onTap"]>(listener => {
       tapListeners.add(listener);
@@ -206,6 +207,7 @@ export function createLinkMock(): LinkMock {
     onHotReload: vi.fn<LinkApi["onHotReload"]>(() => vi.fn()),
     setHotReload: vi.fn<LinkApi["setHotReload"]>(() => Promise.resolve(false)),
     selection: vi.fn<LinkApi["selection"]>(() => undefined),
+    project: vi.fn<LinkApi["project"]>(() => undefined),
     notify: vi.fn<LinkApi["notify"]>(),
     handle: vi.fn<LinkApi["handle"]>(() => vi.fn()),
     tapListeners,

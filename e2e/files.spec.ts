@@ -6,7 +6,7 @@
  * with its front matter as raw text, the image preview of a capture PNG, the series card that
  * opens the contact sheet in Game, edit mode (Cancel, Esc, ⌘S, Save), the version conflict with
  * Reload and Overwrite, a game source save that reloads the game and restores its state (D-07),
- * the "Used by" chips that jump to the Flow node, the editor link, "file too large" and the
+ * the "Used by" chips that jump to the Flow node and the "Used in" files of the project index, the editor link, "file too large" and the
  * sandbox. Below 600 px the tree is a drawer that starts collapsed and shuts when a file opens: a
  * test opens it before it works in the tree.
  *
@@ -728,7 +728,7 @@ test.describe("files · views", () => {
     await expect(code.locator("[data-token=number]", { hasText: "3" })).toBeVisible();
     // A file outside a flow has no Used by.
     await expect(files(page).locator("[data-part=used-by] [data-muted]")).toHaveText(
-      "Used by · no node or flow"
+      "Used by · no node, flow or file"
     );
   });
 
@@ -1011,7 +1011,13 @@ test.describe("files · used by", () => {
     await showFiles(tools);
     await openInTree(page, "nodes/merge.ts");
     const usedBy = files(page).locator("[data-part=used-by]");
-    await expect(usedBy.locator("[data-label]")).toHaveText("Used by");
+    // The node the file defines, and the files that use it (the project index).
+    await expect(usedBy.locator("[data-label]")).toHaveText(["Used by", "Used in"]);
+    await expect(
+      usedBy.locator("[data-row=used-in] [data-chip][data-kind=file]", {
+        hasText: "flows/board.ts"
+      })
+    ).toBeVisible();
     const nodeChip = usedBy.locator("[data-chip][data-kind=node]", { hasText: "board/merge" });
     await expect(nodeChip).toBeVisible();
     await nodeChip.click();

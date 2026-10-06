@@ -36,7 +36,8 @@ if (!hasFixture) {
 /**
  * The built entry of the `@moku-labs/game` dev dependency for one subpath.
  *
- * @param subpath - "index", "testing", "inspect", "control", "jsx-runtime" or "jsx-dev-runtime".
+ * @param subpath - "index", "testing", "inspect", "control", "project", "jsx-runtime" or
+ *   "jsx-dev-runtime".
  * @returns The absolute path of dist/<subpath>.mjs inside node_modules.
  */
 const game = (subpath: string): string =>
@@ -51,6 +52,7 @@ export default defineConfig({
       { find: "@moku-labs/game/testing", replacement: game("testing") },
       { find: "@moku-labs/game/inspect", replacement: game("inspect") },
       { find: "@moku-labs/game/control", replacement: game("control") },
+      { find: "@moku-labs/game/project", replacement: game("project") },
       { find: "@moku-labs/game/jsx-dev-runtime", replacement: game("jsx-dev-runtime") },
       { find: "@moku-labs/game/jsx-runtime", replacement: game("jsx-runtime") },
       { find: /^@moku-labs\/game$/, replacement: game("index") }

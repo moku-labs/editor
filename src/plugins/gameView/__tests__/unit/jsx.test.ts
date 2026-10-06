@@ -2,10 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
-import { elementLines, keyColumn } from "../../element/jsx";
+import { snippetOf, tagAttributes, tagNameAt } from "../../element/jsx";
 import { templateOf } from "../helpers";
 
-/** merge-game's settings popup (features/settings/settings.tsx:299-322), from line 1. */
+// ─────────────────────────────────────────────────────────────────────────────
+// The source text of a project-index answer (round 2b R12, D-38): the lines of
+// its range, and the tag that opens a JSX range with its attributes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** merge-game's settings popup (features/settings/settings.tsx:299-310), from line 1. */
 const SETTINGS = [
   '    <PopupScreen id="settings" dismiss="close">',
   "      <Signboard",
@@ -15,104 +20,124 @@ const SETTINGS = [
   "        hung",
   '        close="close"',
   "      >",
-  '        <Parchment id="settingsPane">',
-  "          {paneOf(local.tab, props)}",
-  '          <row key="settingsTabs" style={tabRow}>',
-  "            {tabs.map(tab => (",
-  "              <TabButton tab={tab} open={local.tab === tab} />",
-  "            ))}",
-  "          </row>",
-  "        </Parchment>",
   '        <button key="settingsReset" intent="reset" style={linkStyle}>',
-  '          <text key="settingsResetLabel" style="ui.link" content={tr("settings.reset")} />',
-  "        </button>",
   "      </Signboard>",
   "    </PopupScreen>"
 ];
 
-/**
- * The lines of the element whose key is on a line.
- *
- * @param lines - The file lines.
- * @param line - The 1-based key line.
- * @param key - The key.
- * @returns The first and last line of the element.
- */
-function rangeOf(lines: readonly string[], line: number, key: string) {
-  return elementLines(lines, line, keyColumn(lines[line - 1] ?? "", key));
-}
+describe("snippetOf (round 2b R12)", () => {
+  it("is the lines of the range, from its start line to its end line", () => {
+    expect(snippetOf("settings.tsx", SETTINGS.join("\n"), [2, 7, 10, 19])).toEqual({
+      path: "settings.tsx",
+      line: 2,
+      lines: SETTINGS.slice(1, 10)
+    });
+  });
 
-describe("keyColumn", () => {
-  it("finds the key or id attribute, else the template literal of a loop key, else 0", () => {
-    expect(keyColumn('        id="settingsBoard"', "settingsBoard")).toBe(8);
-    expect(keyColumn('<row key="settingsTabs">', "settingsTabs")).toBe(5);
-    expect(keyColumn(`  return ${templateOf("card", "slot")};`, "card0")).toBe(9);
-    expect(keyColumn("nothing here", "coinPill")).toBe(0);
+  it("keeps at most `max` lines", () => {
+    const text = Array.from({ length: 80 }, (_, index) => `line ${index + 1}`).join("\n");
+    const snippet = snippetOf("a.tsx", text, [5, 1, 80, 8], 60);
+    expect(snippet.line).toBe(5);
+    expect(snippet.lines).toHaveLength(60);
+    expect(snippet.lines.at(-1)).toBe("line 64");
   });
 });
 
-describe("elementLines (round 2b R12)", () => {
-  it("runs from the line that opens the tag to the line of its closing tag", () => {
-    expect(rangeOf(SETTINGS, 3, "settingsBoard")).toEqual({ start: 2, end: 20 });
+describe("tagNameAt", () => {
+  it("names the tag that opens where the range starts", () => {
+    expect(tagNameAt(SETTINGS, [2, 7, 10, 19])).toBe("Signboard");
+    expect(tagNameAt(['<Kit.Button id="ok" />'], [1, 1, 1, 23])).toBe("Kit.Button");
   });
 
-  it("is one line for a self-closing element on its line", () => {
-    expect(rangeOf(SETTINGS, 18, "settingsResetLabel")).toEqual({ start: 18, end: 18 });
-  });
-
-  it("skips expression children, arrows and comparisons inside braces", () => {
-    expect(rangeOf(SETTINGS, 11, "settingsTabs")).toEqual({ start: 11, end: 15 });
-  });
-
-  it("ends a multi-line self-closing tag at its />", () => {
-    const lines = [
-      "      <image",
-      '        key="homeBackground"',
-      '        texture="board.bg-forest-meadow"',
-      '        style={{ "--x": "}" }}',
-      "      />",
-      "      <spacer />"
-    ];
-    expect(rangeOf(lines, 2, "homeBackground")).toEqual({ start: 1, end: 5 });
-  });
-
-  it("counts fragments and nested tags of the same name", () => {
-    const lines = [
-      '<column key="outer">',
-      "  <>",
-      '    <column key="inner">{/* don\'t */}</column>',
-      "  </>",
-      "</column>"
-    ];
-    expect(rangeOf(lines, 1, "outer")).toEqual({ start: 1, end: 5 });
-    expect(rangeOf(lines, 3, "inner")).toEqual({ start: 3, end: 3 });
-  });
-
-  it("is the key line alone when it is not inside a tag (a loop key's template line)", () => {
-    const lines = [
-      "/**",
-      " * The key of the card in one slot, `<card>`.",
-      " */",
-      "export function cardKey(slot: number): string {",
-      `  return ${templateOf("card", "slot")};`,
-      "}"
-    ];
-    expect(rangeOf(lines, 5, "card0")).toEqual({ start: 5, end: 5 });
-  });
-
-  it("stops at the key line when the element never closes", () => {
-    const lines = ['<column key="open">', "  <row>", "  text"];
-    expect(rangeOf(lines, 1, "open")).toEqual({ start: 1, end: 1 });
+  it("is undefined when no tag opens there", () => {
+    expect(tagNameAt(SETTINGS, [2, 1, 10, 19])).toBeUndefined();
+    expect(tagNameAt(SETTINGS, [40, 1, 41, 1])).toBeUndefined();
   });
 });
 
-describe.skipIf(!existsSync(MERGE_GAME_DIR))("elementLines on the merge-game fixture files", () => {
-  it("reads the settings Signboard from its tag to </Signboard>", () => {
-    const file = path.join(MERGE_GAME_DIR, "features/settings/settings.tsx");
-    const lines = readFileSync(file, "utf8").split("\n");
-    const { start, end } = rangeOf(lines, 301, "settingsBoard");
-    expect(lines[start - 1]?.trim()).toBe("<Signboard");
-    expect(lines[end - 1]?.trim()).toBe("</Signboard>");
-    expect(end - start).toBeGreaterThan(20);
+describe("tagAttributes", () => {
+  it("lists the attributes of the opening tag with their lines and values, not the children's", () => {
+    expect(tagAttributes(SETTINGS, [2, 7, 10, 19])).toEqual([
+      { name: "id", line: 3, value: { braced: false, text: "settingsBoard" } },
+      { name: "title", line: 4, value: { braced: true, text: 'tr("settings.title")' } },
+      { name: "width", line: 5, value: { braced: true, text: "950" } },
+      { name: "hung", line: 6 },
+      { name: "close", line: 7, value: { braced: false, text: "close" } }
+    ]);
+  });
+
+  it("skips spreads, arrows, comparisons and strings inside braces, and ends at />", () => {
+    const lines = [
+      "<image",
+      '  key="homeBackground"',
+      '  onTap={() => go(a > b, "}")}',
+      "  {...rest}",
+      "  data-style='x'",
+      "  style = {{ gap: 4 }}",
+      "/>",
+      '<spacer key="after" />'
+    ];
+    expect(tagAttributes(lines, [1, 1, 7, 3]).map(attribute => attribute.name)).toEqual([
+      "key",
+      "onTap",
+      "data-style",
+      "style"
+    ]);
+    expect(tagAttributes(lines, [1, 1, 7, 3]).at(-1)).toEqual({
+      name: "style",
+      line: 6,
+      value: { braced: true, text: "{ gap: 4 }" }
+    });
+  });
+
+  it("skips comments, template literals and escaped quotes inside braces", () => {
+    const lines = [
+      "<row",
+      "  a={x /* } > */}",
+      "  b={// } >",
+      "    y}",
+      String.raw`  c={${templateOf("", "d", "}>")} + '\'}'}`,
+      '  style={"ui.title"}',
+      ">"
+    ];
+    expect(tagAttributes(lines, [1, 1, 7, 2]).map(attribute => attribute.name)).toEqual([
+      "a",
+      "b",
+      "c",
+      "style"
+    ]);
+    expect(tagAttributes(lines, [1, 1, 7, 2]).at(-1)?.line).toBe(6);
+  });
+
+  it("reads an unquoted value as nothing and stops where an open brace never closes", () => {
+    expect(tagAttributes(["<row a=b />"], [1, 1, 1, 12])).toEqual([
+      { name: "a", line: 1 },
+      { name: "b", line: 1 }
+    ]);
+    expect(tagAttributes(["<row a={b /* c"], [1, 1, 1, 15]).map(entry => entry.name)).toEqual([
+      "a"
+    ]);
+  });
+
+  it("is empty when no tag opens where the range starts", () => {
+    expect(tagAttributes([`const id = ${templateOf("card", "slot")};`], [1, 1, 1, 27])).toEqual([]);
   });
 });
+
+describe.skipIf(!existsSync(MERGE_GAME_DIR))(
+  "tagAttributes on the merge-game fixture files",
+  () => {
+    it("reads the order card's style call at strip.tsx:218 from the range of jsx:card0", () => {
+      const file = path.join(MERGE_GAME_DIR, "features/orders/strip.tsx");
+      const lines = readFileSync(file, "utf8").split("\n");
+      expect(tagNameAt(lines, [215, 5, 247, 14])).toBe("column");
+      expect(tagAttributes(lines, [215, 5, 247, 14]).find(entry => entry.name === "style")).toEqual(
+        {
+          name: "style",
+          line: 218,
+          value: { braced: true, text: "orderCardStyle(card.slot)" }
+        }
+      );
+    });
+  }
+);

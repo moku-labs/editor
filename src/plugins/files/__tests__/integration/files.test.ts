@@ -1,22 +1,25 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createServerCore, createServerPlugin, serverCoreConfig } from "../../../../config";
-import type { FileBinary, FileText } from "../../../registry/protocol";
+import type { FileBinary, FileText, ProjectFound, ProjectState } from "../../../registry/protocol";
 import { filesPlugin } from "../..";
 import { decodeDataUrl } from "../../binary";
 import type { FilesWritten } from "../../types";
-import { PNG_BYTES } from "../helpers";
+import { MINI_GAME, PNG_BYTES } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A server core composed with files and an audit plugin that hooks
-// files:written. hub and pages join the core in later waves; this core keeps
-// the files integration independent of them.
+// files:written and files:project. hub and pages join the core in later waves;
+// this core keeps the files integration independent of them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Every files:written payload the audit plugin saw. */
 const seen: FilesWritten[] = [];
+
+/** Every files:project payload the audit plugin saw. */
+const announced: ProjectState[] = [];
 
 /**
  * Records a files:written payload.
@@ -33,7 +36,12 @@ function record(payload: FilesWritten): void {
  * @returns The hook map.
  */
 function auditHooks() {
-  return { "files:written": record };
+  return {
+    "files:written": record,
+    "files:project": (state: ProjectState) => {
+      announced.push(state);
+    }
+  };
 }
 
 const auditPlugin = createServerPlugin("audit", {
@@ -48,6 +56,7 @@ let root: string;
 
 beforeEach(async () => {
   seen.length = 0;
+  announced.length = 0;
   base = await mkdtemp(join(tmpdir(), "moku-files-"));
   root = join(base, "game");
   await mkdir(join(root, "src"), { recursive: true });
@@ -104,6 +113,37 @@ describe("files integration", () => {
     await app.stop();
   });
 
+  it("opens the project index on start, finds keys and closes it on stop", async () => {
+    await Promise.all(
+      Object.entries(MINI_GAME).map(async ([path, text]) => {
+        await mkdir(join(root, path, ".."), { recursive: true });
+        await writeFile(join(root, path), text);
+      })
+    );
+    const app = framework.createApp({ pluginConfigs: { files: { root } } });
+    await app.start();
+
+    const found: ProjectFound[] = await app.files.find("node:main/open");
+    expect(found).toMatchObject([{ path: "features/settings/nodes.ts", line: 3 }]);
+    await vi.waitFor(() => expect(announced).toHaveLength(1));
+    expect(announced[0]).toMatchObject({ state: "on", defs: { "flow:main": ["flows/main.ts"] } });
+    expect(app.files.project()).toEqual(announced[0]);
+
+    await app.stop();
+    expect(app.files.project()).toEqual({ state: "off", reason: "stopped" });
+    expect(announced).toHaveLength(1);
+  });
+
+  it("stays off as disabled with files.project false and keeps the files working", async () => {
+    const app = framework.createApp({ pluginConfigs: { files: { root, project: false } } });
+    await app.start();
+
+    await expect(app.files.find("flow:main")).rejects.toMatchObject({ code: -32_008 });
+    expect(announced).toEqual([{ state: "off", reason: "disabled" }]);
+    await expect(app.files.read("src/main.ts")).resolves.toHaveProperty("text");
+    await app.stop();
+  });
+
   it("throws from createApp on a missing root", () => {
     const missing = join(base, "missing");
     expect(() => framework.createApp({ pluginConfigs: { files: { root: missing } } })).toThrow(
@@ -115,6 +155,8 @@ describe("files integration", () => {
     const app = framework.createApp({ pluginConfigs: { files: { root } } });
     expectTypeOf(app.files.read).returns.toEqualTypeOf<Promise<FileText>>();
     expectTypeOf(app.files.readBinary).returns.toEqualTypeOf<Promise<FileBinary>>();
+    expectTypeOf(app.files.find).returns.toEqualTypeOf<Promise<ProjectFound[]>>();
+    expectTypeOf(app.files.project).returns.toEqualTypeOf<ProjectState>();
     // @ts-expect-error — the state never leaks onto the app
     expect(app.files.state).toBeUndefined();
   });

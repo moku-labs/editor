@@ -23,12 +23,10 @@ export function createFilesPanel(ctx: FilesViewCtx): PanelSpec {
     workspace: "files",
     sources: {},
     /**
-     * Renders the Files workspace with the link status of this render.
+     * Renders the Files workspace; the view re-reads the state on every filesView change.
      *
-     * @param _values - No source values (sources is empty).
-     * @param tools - Panel tools; only the status is used.
      * @returns The Files view.
      */
-    view: (_values, tools) => <FilesView ctx={ctx} api={api} status={tools.status} />
+    view: () => <FilesView ctx={ctx} api={api} />
   });
 }

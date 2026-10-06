@@ -1,7 +1,7 @@
 /**
  * @file gameView plugin — the facts of the reference block (round 2 R2), gathered for one scene
- * node: its ui ancestors from the scene, its source and style block (the source search and the
- * style module, shared with the Element tab), its flags and text from the raw `game.ui` node, and
+ * node: its ui ancestors from the scene, its source and style block (the project index answer and
+ * the style module, shared with the Element tab), its flags and text from the raw `game.ui` node, and
  * the tail facts an area block shares (A17): one read each of `game.position`,
  * `game.history { last: 1 }` and (without a pick) `game.tainted`, the link's manifest, session and
  * status, workspace's device and the files of the pick. A read that fails leaves its fact out;
@@ -159,22 +159,18 @@ export function contentOf(node: SceneNode, raw: JsonObject | undefined): string 
 }
 
 /**
- * The source of a ui key: remembered, else the search (the one in flight when there is one).
+ * The source of a ui key: remembered, else the project index answer.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key, undefined for an entity or an unkeyed node.
- * @returns The source, undefined when none is found or the search failed.
+ * @returns The source, undefined when the index has no answer.
  */
 async function sourceFor(
   ctx: GameViewCtx,
   key: string | undefined
 ): Promise<StyleSource | undefined> {
   if (key === undefined) return undefined;
-  try {
-    return ctx.state.found.get(key) ?? (await findStyleSource(ctx, key));
-  } catch {
-    return undefined;
-  }
+  return ctx.state.found.get(key) ?? (await findStyleSource(ctx, key));
 }
 
 /**
@@ -281,7 +277,7 @@ export async function referenceFacts(
   const picked: PickFacts | undefined =
     pick === undefined ? undefined : { bookmark: pick.bookmark, crop: pick.crop, full: pick.full };
 
-  // The reads and the source search, side by side.
+  // The reads and the index answer, side by side.
   const [tail, source] = await Promise.all([
     tailFacts(ctx, pick?.frame ?? scene.frame, picked, pick?.tainted),
     sourceFor(ctx, node.key)

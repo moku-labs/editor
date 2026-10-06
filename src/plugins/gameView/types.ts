@@ -14,7 +14,7 @@ import type {
   TextureCatalogue
 } from "../panels/shared/scene";
 import type { StyleBlock, StyleBlockRef, StyleEditError } from "../panels/shared/style-edit";
-import type { FileText, Json, LinkStatus, SelectionInfo } from "../registry/protocol";
+import type { FileText, Json, LinkStatus, ProjectFound, SelectionInfo } from "../registry/protocol";
 import type { FrameBox } from "../workspace/types";
 
 export type {
@@ -28,18 +28,17 @@ export type {
 } from "../panels/shared/scene";
 
 /**
- * gameView configuration.
+ * gameView configuration. Where the game's code and asset manifest live is the project index's
+ * answer (D-38), not configuration.
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { gameView: { manifestPaths: ["public/manifest.json"] } } });
+ * createApp({ pluginConfigs: { gameView: { captureCardMs: 5000 } } });
  * ```
  */
 export type GameViewConfig = {
   /** Folder of screenshots and series, relative to the files root; each in a `<yyyy-mm-dd>/` day folder. */
   capturesDir: string;
-  /** Where the game's asset manifest may live, tried in order. */
-  manifestPaths: readonly string[];
   /** The capture card hides after this unless hovered or focused. */
   captureCardMs: number;
   /** Duration chips of the series popover (the longest equals capture's maxDurationMs). */
@@ -48,19 +47,6 @@ export type GameViewConfig = {
   seriesIntervalsMs: readonly number[];
   /** Above this many planned shots the popover warns. */
   seriesWarnShots: number;
-  /**
-   * Source search for the style block of a picked element: from the folder of the game page
-   * entry first, then the root. Config merges shallowly, so an override replaces this object as a
-   * whole: pass both fields.
-   *
-   * @example
-   * ```ts
-   * createApp({
-   *   pluginConfigs: { gameView: { sourceSearch: { maxFiles: 3000, skip: ["node_modules", "dist", ".git", ".moku"] } } }
-   * });
-   * ```
-   */
-  sourceSearch: { readonly maxFiles: number; readonly skip: readonly string[] };
 };
 
 /**
@@ -146,17 +132,24 @@ export type StyleCard = {
 };
 
 /**
- * Where a source search found a ui key: `ident` with `style={ident}` (the editable card), `call`
- * with `style={call(...)}` (a read-only card), `defined` with no style on the element. `line` is
- * the 1-based line of the key. A `defined` with `loop` found no literal key: its line builds the
- * key in a template literal (`card${slot}` for "card0"). A `defined` with `textStyle` is a text
- * node with `style="ui.link"`: the Code section shows that key's block (round 2b R17).
+ * The range of a project-index answer: start line, start column, end line, end column (1-based,
+ * the end column exclusive). For a JSX key it is the whole element.
+ */
+export type SourceRange = ProjectFound["range"];
+
+/**
+ * Where the project index found a ui key (`find("jsx:<key>")`, its first answer): `ident` with
+ * `style={ident}` (the editable card), `call` with `style={call(...)}` (an editable card at the
+ * function's `defineStyle({ … })` call when the index knows its `styleKey`, G2; else read-only),
+ * `defined` with no style on the element. `line` is the 1-based line the index answers (the key
+ * attribute), `range` the whole element. A `defined` with `textStyle` is a text node with
+ * `style="ui.link"`: the Code section shows that key's block (round 2b R17).
  *
  * @example
  * ```ts
- * const source: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 301 };
- * const card: StyleSource = { kind: "defined", path: "features/orders/strip.tsx", line: 157, loop: true };
- * const link: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 318, textStyle: "ui.link" };
+ * const board: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 290, range: [289, 7, 310, 19] };
+ * const card: StyleSource = { kind: "call", path: "features/orders/strip.tsx", line: 216, range: [215, 5, 247, 14], call: "orderCardStyle(card.slot)", callLine: 218 };
+ * const link: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 318, range: [318, 11, 318, 92], textStyle: "ui.link" };
  * ```
  */
 export type StyleSource =
@@ -164,33 +157,44 @@ export type StyleSource =
       readonly kind: "ident";
       readonly path: string;
       readonly line: number;
+      readonly range: SourceRange;
       readonly ref: Extract<StyleBlockRef, { readonly kind: "const" }>;
-      /** Files that may hold the block, in order: the key file, then the import candidates. */
+      /**
+       * Files that may hold the block, in order: the ones the index defines `style:<file>#<name>`
+       * in (the key file first, then the file it is imported from); the key file alone when none.
+       */
       readonly files: readonly string[];
     }
   | {
       readonly kind: "call";
       readonly path: string;
       readonly line: number;
+      readonly range: SourceRange;
       /** The call as written: `boardOf(props.width, props.height)`. */
       readonly call: string;
       /** 1-based line of the `style={…}` attribute. */
       readonly callLine: number;
+      /**
+       * The project-index key of the style the called function builds (G2):
+       * `style:<file>#<function>`, or `#<function>.<property>` for `fn(…).property`. Absent when
+       * the index has none.
+       */
+      readonly styleKey?: string;
     }
   | {
       readonly kind: "defined";
       readonly path: string;
       readonly line: number;
-      /** The key is built in a loop: the line holds its template literal. */
-      readonly loop?: true;
-      /** The text style key of a text node (`style="ui.link"`): its block is in the styles file. */
+      readonly range: SourceRange;
+      /** The text style key of a text node (`style="ui.link"`): the index answers its block. */
       readonly textStyle?: string;
     };
 
 /**
- * Where the style search of the selected element stands while no StyleCard is shown: searching,
- * nothing found, found but the shared style edit refused the file (no-file, parse, no-key,
- * ambiguous), a style computed by a call (read-only), or the element found without a style.
+ * Where the style lookup of the selected element stands while no StyleCard is shown: asking the
+ * index, not in the index (or the index is off), found but the shared style edit refused the file
+ * (broken, no-file, parse, no-key, ambiguous), a style computed by a call (read-only), or the
+ * element found without a style.
  */
 export type StyleLookup =
   | { readonly key: string; readonly status: "searching" }
@@ -213,8 +217,6 @@ export type StyleLookup =
       readonly status: "defined";
       readonly path: string;
       readonly line: number;
-      /** The key is built in a loop: the line holds its template literal. */
-      readonly loop?: true;
     };
 
 /**
@@ -352,9 +354,27 @@ export type PickResult = {
 };
 
 /**
- * Where the style block of a ui key was found: its file and the 1-based line of the block.
+ * Where a style block was found: its file and the 1-based line of the block. The `defineStyle`
+ * call of a style function (G2) also keeps the range the index answered, so its lines are read
+ * again without asking the index.
  */
-export type BlockAt = { readonly path: string; readonly line: number };
+export type BlockAt = {
+  readonly path: string;
+  readonly line: number;
+  /** The range of the call the index answered for its `style:` key. */
+  readonly range?: SourceRange;
+};
+
+/**
+ * The index asked for the definition of a projection (round 2b R12): the ask, which a second ask
+ * while it runs shares, and the place once it answered, so a project change drops it by its file
+ * (D-46).
+ */
+export type SpawnAsk = {
+  readonly asked: Promise<BlockAt | undefined>;
+  /** The file and line the index answered; undefined while the ask runs. */
+  at: BlockAt | undefined;
+};
 
 /**
  * Lines of one source file the Element tab and the reference card show (round 2b R12).
@@ -506,7 +526,7 @@ export type GameViewState = {
   reloads: number;
   /** True once game.rect was asked for this session and device (calibration may stay undefined). */
   calibrationRead: boolean;
-  /** The style search of the selected element while no StyleCard is shown. */
+  /** The style lookup of the selected element while no StyleCard is shown. */
   lookup: StyleLookup | undefined;
   /** The capture card is hovered or focused, so it stays. */
   cardHeld: boolean;
@@ -514,21 +534,23 @@ export type GameViewState = {
   highlightSeq: number;
   /** The calibration's target, revision and pending reads. */
   calibrationRun: CalibrationRun;
-  /** The last source search result per ui key (proxies and Copy reference read it). */
-  found: Map<string, StyleSource>;
-  /** The components whose definition a full search did not find: never searched again. */
-  missedDefinitions: Set<string>;
-  /** The source search in flight per ui key: a second ask waits for the same search. */
-  searches: Map<string, Promise<StyleSource | undefined>>;
-  /** The style block found per ui key (the reference block's `style:` and the proxies). */
-  blocks: Map<string, BlockAt>;
-  /** The search for the definition of a projection, per projection key (round 2b R12). */
-  spawns: Map<string, Promise<BlockAt | undefined>>;
   /**
-   * The search for the file that calls `defineTextStyles(` (round 2b R17), once per app; dropped
-   * when it finds none or the file is gone.
+   * The last index answer per ui key (proxies and Copy reference read it); a project change drops
+   * the answers in the files it changed (D-46).
    */
-  textStyles: Promise<string | undefined> | undefined;
+  found: Map<string, StyleSource>;
+  /**
+   * The style block found per ui key (the reference block's `style:` and the proxies), and the
+   * call of a style function per `style:` key (the Code section, G2); a project change drops the
+   * blocks in the files it changed (D-46).
+   */
+  blocks: Map<string, BlockAt>;
+  /**
+   * The index answer for the definition of a projection, per projection key (round 2b R12); a
+   * project change drops the answers in the files it changed, of a removed key, and the asks
+   * still running (D-46).
+   */
+  spawns: Map<string, SpawnAsk>;
   /** The reference card written last per `<node id>@<frame>` (round 2b R13). */
   cards: Map<string, string>;
   /** Reference mode: the proxy layer in the frame overlay. */
@@ -654,10 +676,11 @@ export type GameViewApi = {
   highlight(ref: ElementRef | undefined): void;
 
   /**
-   * The game's texture catalogue: the first readable `manifestPaths` entry parsed with the shared
-   * `parseTextureManifest`. Cached for the session.
+   * The game's texture catalogue: the manifest the project index names (`ProjectState.manifest`)
+   * parsed with the shared `parseTextureManifest`. Cached until the session or the index names
+   * another manifest, or the manifest changes on disk.
    *
-   * @returns The catalogue, undefined when no manifest was found.
+   * @returns The catalogue, undefined when the index is off, names no manifest, or it does not parse.
    * @example
    * ```ts
    * // The Element tab shows the GPU size of a picked sprite's texture.
@@ -750,7 +773,7 @@ export type GameViewApi = {
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
    * await app.gameView.copyReference();
-   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;
@@ -805,4 +828,5 @@ export type GameViewHooks = {
   readonly "workspace:open-sheet": (payload: ToolsEvents["workspace:open-sheet"]) => void;
   readonly "workspace:inspect": (payload: ToolsEvents["workspace:inspect"]) => void;
   readonly "workspace:reference": (payload: ToolsEvents["workspace:reference"]) => void;
+  readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
 };

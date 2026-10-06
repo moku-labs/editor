@@ -8,7 +8,7 @@ import { createCtx, settle } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 // buildIndex: breadth-first, at most 4 lists in flight, maxFiles truncation,
 // the depth cap, a failing folder skipped with a warn, a failing root, single
-// flight; then overrides, Used by, palette items and a notify.
+// flight; then the palette items and a notify.
 // ─────────────────────────────────────────────────────────────────────────────
 
 afterEach(() => {
@@ -109,30 +109,53 @@ describe("buildIndex", () => {
     expect(ctx.workspace.paletteAdd).not.toHaveBeenCalled();
   });
 
-  it("runs one walk at a time (single flight)", async () => {
+  it("runs one walk at a time (single flight): a call during a walk walks once more after it", async () => {
     const ctx = createCtx();
     const first = buildIndex(ctx);
     const second = buildIndex(ctx);
+    const third = buildIndex(ctx);
     expect(second).toBe(first);
+    expect(third).toBe(first);
     expect(ctx.state.indexing).toBe(first);
     await first;
-    expect(ctx.files.listed.filter(dir => dir === "")).toHaveLength(1);
+    expect(ctx.files.listed.filter(dir => dir === "")).toHaveLength(2);
+    expect(ctx.files.maxInFlight).toBeLessThanOrEqual(4);
     expect(ctx.state.indexing).toBeUndefined();
+    expect(ctx.state.indexDirty).toBe(false);
   });
 
-  it("then loads overrides, builds Used by, replaces the palette items and notifies", async () => {
+  it("picks up a file added while a walk listed past it (indexDirty)", async () => {
     const ctx = createCtx();
-    ctx.state.graph = ctx.link.graph;
+    const nodes = ctx.files.hold("nodes");
+    const first = buildIndex(ctx);
+    // The root is listed; the walk waits on the next level when an agent adds a root file.
+    await nodes.reached;
+    ctx.files.set("added.ts", "x");
+    void buildIndex(ctx);
+    nodes.release();
+    await first;
+    expect(ctx.state.index?.files.has("added.ts")).toBe(true);
+  });
+
+  it("walks once more after a walk whose root list failed", async () => {
+    const ctx = createCtx();
+    ctx.files.client.list.mockImplementationOnce(() =>
+      Promise.reject(new Error("[moku-editor] link closed"))
+    );
+    const first = buildIndex(ctx);
+    void buildIndex(ctx);
+    await first;
+    expect(ctx.state.index?.files.has("nodes/merge.ts")).toBe(true);
+  });
+
+  it("then replaces the palette items and notifies", async () => {
+    const ctx = createCtx();
     const listener = vi.fn();
     ctx.state.listeners.add(listener);
     const previous = vi.fn();
     ctx.state.paletteRemover = previous;
     await buildIndex(ctx);
-    expect(ctx.state.overrides).toEqual({ "settingsPopup/*": "features/settings/nodes.ts" });
-    expect(ctx.state.usedBy?.get("features/settings/nodes.ts")?.nodes).toEqual([
-      { flow: "settingsPopup", node: "enter" },
-      { flow: "settingsPopup", node: "open" }
-    ]);
+    expect(ctx.files.client.read).not.toHaveBeenCalled();
     expect(previous).toHaveBeenCalledTimes(1);
     expect(ctx.workspace.paletteAdd).toHaveBeenCalledTimes(1);
     expect(ctx.workspace.items.map(item => item.id)).toContain("file:nodes/merge.ts");

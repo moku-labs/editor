@@ -42,7 +42,7 @@ const SETTINGS_OPEN = "board/settings/open";
 
 /** The one clipboard line of the pick: name, type, flow node, source, ref bounds, card. */
 const LINE =
-  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:290 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
 
 /** The reference block inside the card file: its `text` fence. */
 const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
@@ -258,7 +258,7 @@ describe("a pick for the chat on merge-game (round 2 R2, 2b R13)", () => {
       expect(lines[0]).toMatch(/^@moku settingsBoard · panel · settingsPopup\/open · f\d+$/);
       expect(lines[1]).toBe("path: settingsScreen/settingsBoard");
       expect(lines[2]).toBe(
-        "source: features/settings/settings.tsx:301 · texture: ui.panel-signboard"
+        "source: features/settings/settings.tsx:290 · texture: ui.panel-signboard"
       );
       expect(lines[3]).toMatch(/^layout: settingsScreen \(column, padding 0\/0\/0\/0\)$/);
       expect(lines[6]).toMatch(

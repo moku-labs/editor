@@ -167,6 +167,8 @@ beforeEach(() => {
   document.body.append(root);
   hub.files.set("features/ui/styles.ts", { text: fixtureText("ui-styles.txt"), version: "v1" });
   hub.files.set("nodes/merge.ts", { text: "export const merge = node({});\n", version: "v1" });
+  hub.index.set("node:board/merge", [{ path: "nodes/merge.ts", line: 1 }]);
+  hub.index.set("textStyle:ui.number", [{ path: "features/ui/styles.ts", line: 73 }]);
 });
 
 afterEach(() => {
@@ -410,6 +412,38 @@ describe("flowView integration", () => {
 
     await app.stop();
     expect(root.querySelector('[data-flow="world"]')).toBeNull();
+  });
+
+  it("an agent's edit above the node: the Code tab follows the index after link:project", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    act(() => app.workspace.show("flow"));
+    hub.open(SESSION, MANIFEST);
+    await untilWatched();
+    sendFlowValues();
+    await until(() => app.flowView.focus.select("board/merge"), "the merge node");
+    const codeTab = [
+      ...root.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')
+    ].find(tab => tab.textContent === "Code");
+    act(() => codeTab?.click());
+    await until(
+      () => root.querySelector('[data-flow="code-tab"] [data-line="1"][data-highlight]') !== null,
+      "the node line"
+    );
+
+    hub.files.set("nodes/merge.ts", {
+      text: "// a\n// b\n// c\nexport const merge = node({});\n",
+      version: "v9"
+    });
+    hub.index.set("node:board/merge", [{ path: "nodes/merge.ts", line: 4 }]);
+    hub.project({ files: ["nodes/merge.ts"], moved: [], removed: [] });
+    await until(
+      () => root.querySelector('[data-flow="code-tab"] [data-line="4"][data-highlight]') !== null,
+      "the moved line"
+    );
+    expect(hub.received.filter(request => request.method === "find").length).toBeGreaterThan(1);
+    await app.stop();
   });
 
   it("default hub thresholds: settingsPopup/open (5 outcomes) is a card, not a hub", async () => {

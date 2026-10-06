@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
+import type { Require } from "../../../../config";
 import { forbidden, invalid } from "../../../files/errors";
-import { request, wireError } from "../../../registry/protocol";
+import { encode, request, wireError } from "../../../registry/protocol";
 import { dispatchFiles } from "../../routing/files";
-import { createHarness, errorOf, fakeFiles, resultOf } from "../helpers";
+import { createSocketHandler } from "../../sockets/handler";
+import {
+  createCtx,
+  createHarness,
+  errorOf,
+  fakeFiles,
+  fakeSocket,
+  resultOf,
+  TOKEN
+} from "../helpers";
 
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -81,6 +91,47 @@ describe("dispatchFiles", () => {
     expect(files.readBinary).toHaveBeenCalledWith(".moku/captures/a.png");
   });
 
+  it("calls find with the key and answers the found list as Json", async () => {
+    const files = fakeFiles();
+
+    expect(await dispatchFiles(files, "find", { key: "node:board/merge" })).toEqual([
+      {
+        path: "nodes/merge.ts",
+        binding: "merge",
+        key: "node:board/merge",
+        line: 17,
+        range: [17, 1, 24, 3],
+        hash: "h1"
+      }
+    ]);
+    expect(files.find).toHaveBeenCalledWith("node:board/merge");
+  });
+
+  it("refuses find without a string key (-32602 on field key)", async () => {
+    const files = fakeFiles();
+
+    await expect(dispatchFiles(files, "find", {})).rejects.toMatchObject({
+      code: -32_602,
+      data: { field: "key" }
+    });
+    await expect(dispatchFiles(files, "find", { key: 7 })).rejects.toMatchObject({
+      code: -32_602,
+      data: { field: "key" }
+    });
+    expect(files.find).not.toHaveBeenCalled();
+  });
+
+  it("rethrows the find error of an index that is off unchanged", async () => {
+    const files = fakeFiles();
+    const error = wireError(-32_008, "project index off: disabled", {
+      reason: "not_installed",
+      retryable: false
+    });
+    files.find.mockRejectedValueOnce(error);
+
+    await expect(dispatchFiles(files, "find", { key: "flow:main" })).rejects.toBe(error);
+  });
+
   it("checks params with checkInput (-32602) and refuses unknown methods (-32601)", async () => {
     const files = fakeFiles();
 
@@ -119,6 +170,7 @@ describe("files channel over a tools socket", () => {
       request(4, "files", "writeBinary", { path: ".moku/captures/a.png", data: PNG })
     );
     harness.send(tools, request(5, "files", "readBinary", { path: ".moku/captures/a.png" }));
+    harness.send(tools, request(6, "files", "find", { key: "node:board/merge" }));
     await flush();
 
     expect(resultOf(tools, 1)).toEqual([{ path: "src/a.ts", kind: "file", size: 3 }]);
@@ -126,8 +178,18 @@ describe("files channel over a tools socket", () => {
     expect(resultOf(tools, 3)).toEqual({ path: "src/a.ts", bytes: 1, version: "v2" });
     expect(resultOf(tools, 4)).toEqual({ path: ".moku/captures/a.png", bytes: 8, version: "v3" });
     expect(resultOf(tools, 5)).toEqual({ dataUrl: "data:image/png;base64,AA==", version: "v4" });
+    expect(resultOf(tools, 6)).toMatchObject([{ path: "nodes/merge.ts", line: 17 }]);
     expect(files.list).toHaveBeenCalledWith("");
     expect(harness.toolsConn(tools).pending).toBe(0);
+  });
+
+  it("answers a find without a key with -32602", async () => {
+    const { harness, tools } = setup();
+
+    harness.send(tools, request(1, "files", "find", {}));
+    await flush();
+
+    expect(errorOf(tools, 1)).toMatchObject({ code: -32_602, data: { field: "key" } });
   });
 
   it("passes a files wire error through with its code, data and message (H33)", async () => {
@@ -163,6 +225,31 @@ describe("files channel over a tools socket", () => {
     expect(errorOf(tools, 2)).toMatchObject({ code: -32_000, message: "[moku-editor] sync boom" });
     expect(tools.sent.join("")).not.toContain("stack");
     expect(tools.sent.join("")).not.toContain("at ");
+  });
+
+  it("asks for the files api once when the handler is made, not per request", async () => {
+    const ctx = createCtx();
+    ctx.state.token = TOKEN;
+    let asked = 0;
+    const require = (() => {
+      asked += 1;
+      return ctx.files;
+    }) as unknown as Require;
+    const handler = createSocketHandler({ ...ctx, require });
+    const tools = fakeSocket("tools", ctx.state.nextConn++);
+    handler.open(tools);
+
+    for (const id of [1, 2, 3]) {
+      handler.message(tools, encode(request(id, "files", "read", { path: "src/a.ts" })));
+    }
+    await flush();
+
+    expect(asked).toBe(1);
+    expect([1, 2, 3].map(id => resultOf(tools, id))).toEqual([
+      { text: "abc", version: "v1" },
+      { text: "abc", version: "v1" },
+      { text: "abc", version: "v1" }
+    ]);
   });
 
   it("keeps a wireError built by the protocol", async () => {

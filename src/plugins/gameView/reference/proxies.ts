@@ -24,7 +24,7 @@ export type ProxyAttributes = {
   readonly "data-moku-path": string;
   /** "<flow>/<node>" of the game position. */
   readonly "data-moku-node": string | undefined;
-  /** `file:line` of the key, from the source search results (` (loop)` for a key built in a loop). */
+  /** `file:line` of the key, from the index answers. */
   readonly "data-moku-source": string | undefined;
   /** The style identifier or call, else the nine-slice texture. */
   readonly "data-moku-style": string | undefined;
@@ -48,7 +48,7 @@ export type Proxy = {
 };
 
 /**
- * What the proxies read besides the scene: the flow node, the source search results and the
+ * What the proxies read besides the scene: the flow node, the index answers and the
  * style blocks found.
  */
 export type ProxyContext = {
@@ -72,11 +72,11 @@ function rounded(rect: PageRect): readonly [number, number, number, number] {
 }
 
 /**
- * The style a proxy names: the identifier or the call of the source search, else the nine-slice
+ * The style a proxy names: the identifier or the call of the index answer, else the nine-slice
  * texture of the node's style.
  *
  * @param node - The node.
- * @param source - Its source search result.
+ * @param source - Its index answer.
  * @returns The style text, or undefined.
  */
 function styleName(node: SceneNode, source: StyleSource | undefined): string | undefined {
@@ -89,7 +89,7 @@ function styleName(node: SceneNode, source: StyleSource | undefined): string | u
 /**
  * Where the style of a node is written: the block of its identifier, or its call.
  *
- * @param source - Its source search result.
+ * @param source - Its index answer.
  * @param block - The block found for its key.
  * @returns `file:line`, or undefined.
  */
@@ -107,7 +107,7 @@ function styleSource(
  *
  * @param node - The node.
  * @param rect - Its rect.
- * @param context - The flow node, the source search results and the style blocks.
+ * @param context - The flow node, the index answers and the style blocks.
  * @param frame - The frame of the scene.
  * @returns The proxy.
  */
@@ -142,7 +142,7 @@ function proxyOf(node: SceneNode, rect: PageRect, context: ProxyContext, frame: 
  * scene has none: its rects are not device px.
  *
  * @param scene - The scene.
- * @param context - The flow node, the source search results and the style blocks.
+ * @param context - The flow node, the index answers and the style blocks.
  * @returns The proxies, back to front.
  * @example
  * ```ts

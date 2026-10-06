@@ -1,12 +1,20 @@
 /**
  * @file files plugin — type definitions. The wire shapes (FileEntry, FileText, FileBinary,
- * WriteResult) come from the protocol (R1); files declares only its config, state, api, the
- * `files:written` payload and its domain context.
+ * WriteResult, ProjectFound, ProjectState) come from the protocol (R1); files declares only its
+ * config, state, api, the `files:written` payload, the project handle it keeps and its domain
+ * context. No type here names a type of `@moku-labs/game/project` (P4): the handle is structural.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { ServerEvents } from "../../config";
-import type { FileBinary, FileEntry, FileText, WriteResult } from "../registry/protocol";
+import type {
+  FileBinary,
+  FileEntry,
+  FileText,
+  ProjectFound,
+  ProjectState,
+  WriteResult
+} from "../registry/protocol";
 
 /**
  * Resolved config of the files plugin. Shallow-merged; arrays replace the default entirely.
@@ -23,6 +31,20 @@ export type FilesConfig = {
   allow: readonly string[];
   /** Globs that are never listed, read or written. Matched case-insensitively. */
   deny: readonly string[];
+  /** Open the project index of the root on start. `false` leaves it off as `"disabled"`. */
+  project: boolean;
+};
+
+/**
+ * The part of an open project index (`openProject` of `@moku-labs/game/project`) the files state
+ * keeps: the lines of a key and the close. The watch is started once at open and kept as
+ * `stopWatch`.
+ */
+export type ProjectHandle = {
+  /** The places of a key, with lines read from disk now; `[]` for an unknown key. */
+  find(key: string): Promise<readonly ProjectFound[]>;
+  /** Stops the watcher of the handle. */
+  close(): void;
 };
 
 /**
@@ -38,6 +60,19 @@ export type FilesState = {
   denyGlobs: readonly RegExp[];
   /** Per-path write lock: the tail promise of the last write to that relative path. */
   locks: Map<string, Promise<void>>;
+  /** The open project index; undefined while it is off. */
+  project: ProjectHandle | undefined;
+  /** The open started in onStart; settles (never rejects) when the index is on or off. */
+  opening: Promise<void> | undefined;
+  /**
+   * The last announced project state, frozen. Off `"not opened"` before start, `"stopped"` after
+   * stop.
+   */
+  projectState: ProjectState;
+  /** Ends the watch of the open index. */
+  stopWatch: (() => void) | undefined;
+  /** Set by onStop; an open that settles later closes its handle and announces nothing. */
+  stopped: boolean;
 };
 
 /**
@@ -198,6 +233,39 @@ export type FilesApi = {
    * ```
    */
   root(): string;
+
+  /**
+   * Where a key of the project index lives, with lines read from the files on disk now. Waits
+   * for the open that started with the app. Answers the files the sandbox lets it read only.
+   *
+   * @param key - A project-index key, at most 512 characters: `node:board/merge`,
+   *   `jsx:settingsBoard`, `textStyle:ui.title`, `style:features/ui/popup.tsx#popupScreen`.
+   * @returns One answer per place, in the index's order; `[]` for a key the index does not know.
+   *   `hash` equals the `version` of `read`; `broken` when the file does not parse now.
+   * @throws {Error} -32602 `invalid_input` (`field: "key"`) for a key that is not a string or is
+   *   too long, -32008 `not_installed` (`project index off: <reason>`) while the index is off.
+   * @example
+   * ```ts
+   * // hub serves the files-channel `find { key }` of a tools page.
+   * const files = ctx.require(filesPlugin);
+   * await files.find("node:main/open"); // [{ path: "features/settings/nodes.ts", binding: "open", line: 3, … }]
+   * ```
+   */
+  find(key: string): Promise<ProjectFound[]>;
+
+  /**
+   * The project state last announced with `files:project`: on with its revision and key maps, or
+   * off with a reason (`"not opened"` before start, `"disabled"`, `"stopped"`, why the open failed).
+   *
+   * @returns The state.
+   * @example
+   * ```ts
+   * // A server plugin checks the index before it answers a location.
+   * const state = ctx.require(filesPlugin).project();
+   * if (state.state === "on") state.defs["node:board/merge"]; // ["nodes/merge.ts"]
+   * ```
+   */
+  project(): ProjectState;
 };
 
 /**
@@ -206,6 +274,6 @@ export type FilesApi = {
 export type FilesCtx = {
   readonly config: Readonly<FilesConfig>;
   state: FilesState;
-  readonly emit: EmitFn<Pick<ServerEvents, "files:written">>;
+  readonly emit: EmitFn<Pick<ServerEvents, "files:written" | "files:project">>;
   readonly log: Log.LogApi;
 };

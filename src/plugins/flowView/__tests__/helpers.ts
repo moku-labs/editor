@@ -37,13 +37,12 @@ export function testLayout(overrides: Partial<FlowLayoutConfig> = {}): FlowLayou
   return { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 400, ...overrides };
 }
 
-/** The default config of index.ts (ELK inline, a styles file set), with overrides. */
+/** The default config of index.ts (ELK inline), with overrides. */
 export function testConfig(overrides: Partial<FlowViewConfig> = {}): FlowViewConfig {
   return {
     historyLast: 20,
     trailLength: 6,
     rejectedOutcomes: ["rejected"],
-    stylesFile: "features/ui/styles.ts",
     styleSaveDelayMs: 600,
     layout: testLayout(),
     zoom: { min: 0.08, max: 3, defaultMin: 0.8 },

@@ -34,9 +34,19 @@ function ctxOf(config: Partial<FilesConfig>): TestCtx {
 }
 
 describe("createFilesState", () => {
-  it("starts with no root, no globs and no locks", () => {
+  it("starts with no root, no globs, no locks and the project index not opened", () => {
     const state = createFilesState();
-    expect(state).toEqual({ rootReal: "", allowGlobs: [], denyGlobs: [], locks: new Map() });
+    expect(state).toEqual({
+      rootReal: "",
+      allowGlobs: [],
+      denyGlobs: [],
+      locks: new Map(),
+      project: undefined,
+      opening: undefined,
+      projectState: { state: "off", reason: "not opened" },
+      stopWatch: undefined,
+      stopped: false
+    });
   });
 
   it("returns a fresh state per call", () => {

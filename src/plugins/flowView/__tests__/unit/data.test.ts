@@ -34,13 +34,13 @@ describe("parseGraph", () => {
     expect(parseGraph({ main: "x", flows: {}, slots: {} })).toEqual({ field: "main" });
   });
 
-  it("keeps a dev-only file of a node (F-H2)", () => {
+  it("drops a node `file` from the wire: the project index is the only source (F-H2 retired)", () => {
     const graph = cloneGraph();
     Reflect.set(graph.flows.board?.nodes.merge ?? {}, "file", "src/nodes/merge.ts");
     const parsed = parseGraph(graph);
-    expect("graph" in parsed && parsed.graph.flows.board?.nodes.merge?.file).toBe(
-      "src/nodes/merge.ts"
-    );
+    const merge = "graph" in parsed ? parsed.graph.flows.board?.nodes.merge : undefined;
+    expect(merge).toBeDefined();
+    expect(Object.hasOwn(merge ?? {}, "file")).toBe(false);
   });
 });
 

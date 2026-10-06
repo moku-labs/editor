@@ -178,14 +178,14 @@ Rules for all of them:
 - No state, except `side-panel/`: it keeps the state of each side panel (D-29), in memory and in localStorage.
 - Bad input never throws. Functions return a typed error value; the view writes its own text. The
   one exception is `definePanel`: a malformed panel throws at startup.
-- Only `loadStyleFile`, `writeNumber` and `findStylesFile` are async. They do I/O through the files client they get.
+- Only `loadStyleFile`, `writeNumber`, `findFresh` and `findAllFresh` are async. They do I/O through the files client they get.
 - Not exported from `"."` and not a plugin api, except `definePanel`. Views and workspace import them by relative path, e.g. `../panels/shared/style-edit`.
 - Imports: the protocol by relative path; `preact` in `highlight.ts`, `icons.tsx` and `side-panel/` only; `define.ts` imports only `workspaces.ts` at runtime; `workspaces.ts` takes the `WorkspaceId` type from workspace.
 
 | Module | Imported by | Holds |
 |---|---|---|
-| `style-edit.ts` | flowView, gameView | Style blocks of a TS source file, the one safe numeric-literal edit, the version-checked write. |
-| `styles-file.ts` | flowView, gameView | `findStylesFile`: the first `.ts`/`.tsx` file that calls `defineTextStyles(`, breadth-first, at most 400 reads. |
+| `project.ts` | flowView, gameView, filesView, renderView | What the views ask the project index: `findFresh`, `findAllFresh`, `textStylesFile`, `usedIn`, `manifestOf` and the shared texts. |
+| `style-edit.ts` | flowView, gameView | Style blocks of a TS source file, the one safe numeric-literal edit, the version-checked write, the broken guard. |
 | `highlight.ts` | flowView, filesView | The one syntax highlighter (TS/TSX, CSS, JSON, Markdown). |
 | `tokens.ts` | renderView | CSS custom property names of the workspace tokens. |
 | `scene/` | gameView, renderView | The scene mapping from `game.ui`, `game.entities`, `game.projections`. |
@@ -200,18 +200,27 @@ Rules for all of them:
 
 | Export | Signature | What |
 |---|---|---|
-| `parseStyleFile` | `(text) => StyleFile \| StyleEditError` | Blocks, fields with exact columns, colour identifiers. |
-| `findBlock` | `(file, ref) => StyleBlock \| StyleEditError` | One block by `{ kind: "text", key }` or `{ kind: "const", name }`. |
+| `parseStyleFile` | `(text) => StyleFile \| StyleEditError` | Blocks, fields with exact columns, colour identifiers, and `calls`: every `defineStyle({` no const binds, with its line, column and fields. |
+| `findBlock` | `(file, ref) => StyleBlock \| StyleEditError` | One block by `{ kind: "text", key }` or `{ kind: "const", name }`, or the call of a style function by `{ kind: "call", name, line, column }` (G2): the first call on `line` at or after `column`, under the asked ref. |
 | `fieldRule` | `(ref, path) => FieldRule \| undefined` | Stepper bounds. Views keep no bounds of their own. |
 | `stepValue` | `(rule, value, direction, big) => number` | One step, clamped, rounded. |
 | `formatNumber` | `(value) => string` | Up to 2 decimals. |
 | `editNumber` | `(text, target, next) => EditDone \| StyleEditError` | Rewrites one literal's columns and re-parses to check. |
 | `loadStyleFile` | `(files, path) => Promise<LoadedStyleFile \| StyleEditError>` | Reads and parses. |
-| `writeNumber` | `(files, path, current, target, next) => Promise<WriteDone \| StyleEditError>` | Version-checked write with one retry. |
+| `writeNumber` | `(files, path, current, target, next) => Promise<WriteDone \| StyleEditError>` | Version-checked write with one retry. With `files.find`, the index is asked before each write (D-44, D-48). |
+| `STYLE_BROKEN_TEXT` | `string` | "The file does not parse now · fix it, then edit". |
 | `isStyleEditError` | `(value) => value is StyleEditError` | Guard. |
 
-Error codes (`StyleEditCode`): `no-file`, `parse`, `no-key`, `ambiguous`, `not-literal`,
-`read-only`, `changed-on-disk`, `out-of-range`.
+Error codes (`StyleEditCode`): `broken`, `index-off`, `no-file`, `parse`, `no-key`, `ambiguous`,
+`not-literal`, `read-only`, `changed-on-disk`, `out-of-range`.
+
+Broken guard (D-44). `StyleFiles` has an optional `find`. `writeNumber` and its one retry call
+`find(anchorKey(ref, path))` first. An answer on `path` with `broken: true` means the index
+answered from the last good parse: the file does not parse now. The write is refused as
+`{ error: "broken", path }` and nothing is written. Index off is no fallback (D-48): a `find` that
+rejects with -32008 refuses as `{ error: "index-off", path }`; any other rejection of `find`
+rejects `writeNumber` with it. Nothing is written either way, and the view shows the off line or
+the message. A client without `find` writes.
 
 ```ts
 const loaded = await loadStyleFile(tools.files, "features/ui/styles.ts");
@@ -220,7 +229,43 @@ await writeNumber(tools.files, "features/ui/styles.ts", loaded, target, 64);
 // { ok: true, line: 74, version: "9c1e…", … }
 ```
 
+Styles built in a function (G2). The index keys them `style:<path>#<function>` (one answer per
+`defineStyle(` call in the function, the range the call) and `style:<path>#<function>.<property>`
+(the call that is the value of that property). The call ref takes `line` and `column` from the
+answer's range start, `name` from the key after `#`. The edit and the broken guard work as for a
+const: `anchorKey` gives the `style:` key back. A `defineStyle(board)` with no object literal has no
+block (`no-key`).
+
+```ts
+const ref = { kind: "call", name: "roundStylesOf.icon", line: 358, column: 11 } as const;
+await writeNumber(link.files, "features/ui/kit.tsx", loaded, { ref, path: "width", raw: "40" }, 41);
+```
+
 Limit: the scanner does not recognise regex literals. Style files have none.
+
+### `project.ts`
+
+The index is the only source of code locations (amendment N). No crawl, no kebab rule, no list.
+
+| Export | Signature | What |
+|---|---|---|
+| `findFresh` | `(files, key) => Promise<FreshFound \| undefined>` | `find(key)[0]`, then `read(path)`. A read version other than `hash` asks once more. Never throws. |
+| `findAllFresh` | `(files, key) => Promise<FreshAnswers \| undefined>` | Like `findFresh`, with every answer in the file of the first one: the calls of a style function (G2). |
+| `textStylesFile` | `(state) => string \| undefined` | The file with the most `textStyle:` keys; a tie takes the first sorted path. |
+| `usedIn` | `(state, path) => readonly string[]` | The use paths of every key defined in `path`: once each, sorted, without `path`. |
+| `manifestOf` | `(state) => string \| undefined` | `ProjectState.manifest` when on. The manifest has no other source. |
+| `projectOffText` | `(state) => string \| undefined` | "Project index is off: <reason>"; undefined when on. |
+| `notFoundText` | `(state, key) => string` | The off text, else "Not in the project index: <key>". |
+| `NOT_IN_INDEX_TEXT` | `string` | "Not in the project index". |
+
+`findFresh` answers undefined for an unknown key (`[]`), a client without `find`, a rejected
+`find` and a rejected read. The view then shows `notFoundText(link.project(), key)`.
+
+```ts
+const fresh = await findFresh(link.files, "node:board/merge");
+if (fresh === undefined) return notFoundText(link.project(), "node:board/merge");
+openCode(fresh.found.path, fresh.found.line, fresh.text); // "nodes/merge.ts", 17
+```
 
 ### `highlight.ts`
 

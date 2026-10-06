@@ -124,7 +124,15 @@ beforeEach(() => {
   );
   hub = createAgentHub({
     channel: agent.channel,
-    files: new Map([["manifest.json", MANIFEST_TEXT]])
+    files: new Map([["manifest.json", MANIFEST_TEXT]]),
+    project: {
+      state: "on",
+      revision: "r1",
+      manifest: "manifest.json",
+      defs: {},
+      uses: {},
+      broken: {}
+    }
   });
   vi.stubGlobal("WebSocket", hub.Socket);
   localStorage.clear();

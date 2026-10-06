@@ -11,9 +11,18 @@
  * its fake clock, maps to the checkout's source: the built testing bundle carries the
  * playwright-core loader, which a browser bundle cannot hold.
  *
- * The fixture page of game v0.5.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
+ * The fixture is the game release `v0.7.0` (the tag of the dev dependency `@moku-labs/game` 0.7.0);
+ * see tests/fixtures/game-dir.ts.
+ *
+ * The fixture page of game 0.7.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
  * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
+ *
+ * The bin opens the project index of the copy (`@moku-labs/game/project`), which needs
+ * `typescript`, a dev dependency of every game. The copy sits under the editor, so `typescript`
+ * resolves through the editor's node_modules; when it does not, it is linked from the checkout's
+ * node_modules, and a copy where neither has it stops here: the index would be off
+ * (`files:project-off`) and every view would only say so.
  *
  * The copy gets its own package.json, as a game project has. Without it the copy inherits the
  * editor's `"sideEffects": false`, and the bin's bundler drops the page's bare `import "./main"`:
@@ -22,7 +31,7 @@
  * The bin serves the copy with Bun hot reload on (D-23): a spec that writes a game source sees the
  * game page reload and restore its checkpoint, and restores the file it wrote.
  *
- * The copy keeps the fixture's `bunfig.toml` (game v0.5.0 ships one): its `[serve.static]` loads
+ * The copy keeps the fixture's `bunfig.toml` (game 0.7.0 ships one): its `[serve.static]` loads
  * the hot swap plugin `@moku-labs/game/hot`, so a save of a view module swaps in place without a
  * reload (U10). A fixture without one gets that file written here (B3). The bin, started from the
  * editor root with `--root dist-e2e/game`, re-runs itself in the copy, where Bun reads it.
@@ -52,6 +61,32 @@ for (const name of CHECKOUT_PACKAGES) {
     path.join(GAME_DIR, "node_modules", name),
     path.join(OUT, "node_modules", name),
     "dir"
+  );
+}
+/**
+ * True when a package resolves from the copy, as the bin's index resolves it.
+ *
+ * @param name - The package name.
+ * @returns Whether it resolves.
+ */
+function resolvesFromCopy(name: string): boolean {
+  try {
+    Bun.resolveSync(`${name}/package.json`, OUT);
+    return true;
+  } catch {
+    return false;
+  }
+}
+if (!resolvesFromCopy("typescript")) {
+  await symlink(
+    path.join(GAME_DIR, "node_modules", "typescript"),
+    path.join(OUT, "node_modules", "typescript"),
+    "dir"
+  );
+}
+if (!resolvesFromCopy("typescript")) {
+  throw new Error(
+    "[moku-editor] typescript does not resolve from dist-e2e/game: the project index would be off.\n  Run bun install in the editor or in the game checkout."
   );
 }
 const tsconfig = {

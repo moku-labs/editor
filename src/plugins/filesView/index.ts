@@ -1,8 +1,10 @@
 /**
  * Complex tier — the Files workspace: project tree, tabs, viewer and editor with syntax colour,
  * save with version conflicts, Used by, previews and the D-07 reload after a game source save.
- * Declares no events; emits the global `workspace:select-node` and `workspace:open-sheet`, hooks
- * `link:status`, `workspace:changed`, `workspace:open-file` (R4).
+ * Used by, the node and flow files and the tabs that follow moved files come from the project
+ * index (`link.project()`). Declares no events; emits the global `workspace:select-node` and
+ * `workspace:open-sheet`, hooks `link:status`, `link:project`, `workspace:changed`,
+ * `workspace:open-file` (R4).
  *
  * @see README.md
  */

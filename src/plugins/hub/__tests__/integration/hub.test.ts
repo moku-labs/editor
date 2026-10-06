@@ -72,11 +72,12 @@ const clients: Client[] = [];
 /**
  * Creates, starts and serves an editor app.
  *
+ * @param project - Open the project index of the root (files config `project`).
  * @returns The running app and server.
  */
-async function serveEditor(): Promise<Running> {
+async function serveEditor(project = true): Promise<Running> {
   const app = framework.createApp({
-    pluginConfigs: { files: { root: base }, hub: { callTimeoutMs: 400 } }
+    pluginConfigs: { files: { root: base, project }, hub: { callTimeoutMs: 400 } }
   });
   await app.start();
   const server = Bun.serve(
@@ -209,10 +210,12 @@ describe("hub over real websockets", () => {
       owner: "bin"
     });
     const later = await tools();
-    await later.next(isNote("editor", "hotReload"));
-    const methods = later.messages.map(message => ("method" in message ? message.method : ""));
+    const replayed = await later.next(isNote("editor", "hotReload"));
+    const methods = later.messages
+      .map(message => ("method" in message ? message.method : ""))
+      .filter(method => method !== "project");
     expect(methods.slice(0, 2)).toEqual(["sessions", "hotReload"]);
-    expect(paramsOf(later.messages[1])).toEqual({ hmr: true, owner: "bin" });
+    expect(paramsOf(replayed)).toEqual({ hmr: true, owner: "bin" });
     expect(game.messages.filter(isNote("editor", "hotReload"))).toEqual([]);
   });
 
@@ -372,6 +375,39 @@ describe("hub over real websockets", () => {
     page.send(request(5, "files", "list", { dir: "src" }));
     const listed = await page.next(isResponseTo(5));
     expect(JSON.stringify(listed)).toContain("src/b.ts");
+  });
+
+  it("publishes the files project state as editor.project, replayed right after sessions", async () => {
+    const { app } = await serveEditor(false);
+    const page = await tools();
+
+    const note = await page.next(isNote("editor", "project"));
+    expect(paramsOf(note)).toEqual({ state: "off", reason: "disabled" });
+    expect(paramsOf(note)).toEqual(app.files.project());
+    const methods = page.messages.map(message => ("method" in message ? message.method : ""));
+    expect(methods.slice(0, 2)).toEqual(["sessions", "project"]);
+
+    page.send(request(1, "files", "find", { key: "node:board/merge" }));
+    expect(await page.next(isResponseTo(1))).toMatchObject({
+      error: { code: -32_008, message: "[moku-editor] project index off: disabled" }
+    });
+  });
+
+  it("answers files.find from the open index and refuses a find without a key", async () => {
+    await serveEditor();
+    const page = await tools();
+    const note = await page.next(
+      message => isNote("editor", "project")(message) && paramsOf(message)?.state === "on",
+      5000
+    );
+    expect(paramsOf(note)).toMatchObject({ state: "on", defs: {}, broken: {} });
+
+    page.send(request(1, "files", "find", { key: "node:board/merge" }));
+    expect(await page.next(isResponseTo(1))).toMatchObject({ result: [] });
+    page.send(request(2, "files", "find", {}));
+    expect(await page.next(isResponseTo(2))).toMatchObject({
+      error: { code: -32_602, data: { field: "key" } }
+    });
   });
 
   it("closes every socket with 1001 on stop and refuses new upgrades with 503", async () => {

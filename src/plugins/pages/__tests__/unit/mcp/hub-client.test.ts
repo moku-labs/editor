@@ -169,6 +169,22 @@ describe("sessions and liveness (M4)", () => {
   });
 });
 
+describe("editor.project", () => {
+  it("ignores the published project state: sessions and hot reload stay as they were", async () => {
+    const server = fake({ sessions: [session("s-1")] });
+    const client = await connectHub(server.discovery("/root"));
+
+    server.notify("editor", "project", { state: "off", reason: "disabled" });
+    server.notify("editor", "hotReload", { hmr: false, owner: "bin" });
+    await until(() => client.hotReload() !== undefined, "the note after project");
+
+    expect(client.hotReload()).toEqual({ hmr: false, owner: "bin" });
+    expect(client.sessions()).toEqual([session("s-1")]);
+    expect(client.isOpen()).toBe(true);
+    client.close();
+  });
+});
+
 describe("watch", () => {
   it("delivers values of its sub and unwatches once on stop", async () => {
     const server = fake({ sessions: [session("s-1")] });

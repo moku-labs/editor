@@ -28,6 +28,25 @@ function lost(reason: "link_closed" | "game_reloaded"): () => never {
   };
 }
 
+/**
+ * A read in the reconnect window of a server restart: the hub has no game session yet. A thrower
+ * for `link.values`.
+ *
+ * @throws {Error} Always: the -32003 `no_session` wire error.
+ */
+function noSession(): never {
+  throw wireError(errorCode.noSession, "No game session.", { reason: "no_session" });
+}
+
+/** The link status inside an expected reload (Hot reload switch, server restart). */
+const RELOADING = {
+  kind: "lost",
+  reason: "socket_closed",
+  lastFrame: 1825,
+  retryInMs: 1000,
+  reloading: true
+} as const;
+
 /** Sends the three board values. */
 function sendBoard(): void {
   ctx.link.send("game.ui", BOARD.ui);
@@ -151,6 +170,33 @@ describe("startSceneWatches", () => {
     expect(ctx.log.debug).toHaveBeenCalledWith("gameView: calibration failed", {
       key: "boardScreen",
       message: "[moku-editor] The link closed."
+    });
+  });
+
+  it("logs a calibration read that failed during an expected reload at debug, not warn", async () => {
+    ctx.link.values.set("game.rect", noSession);
+    ctx.link.current = RELOADING;
+    startSceneWatches(ctx);
+    sendBoard();
+    await flush();
+
+    expect(ctx.state.calibration).toBeUndefined();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: calibration failed", {
+      key: "boardScreen",
+      message: "[moku-editor] No game session."
+    });
+  });
+
+  it("warns for the same read failure outside an expected reload", async () => {
+    ctx.link.values.set("game.rect", noSession);
+    startSceneWatches(ctx);
+    sendBoard();
+    await flush();
+
+    expect(ctx.log.warn).toHaveBeenCalledWith("gameView: calibration failed", {
+      key: "boardScreen",
+      message: "[moku-editor] No game session."
     });
   });
 
@@ -280,6 +326,24 @@ describe("projections behind the entities", () => {
     );
     expect(ctx.log.debug).toHaveBeenCalledWith("gameView: projections read failed", {
       message: "[moku-editor] The link closed."
+    });
+  });
+
+  it("logs a projections read that failed during an expected reload at debug", async () => {
+    ctx.link.values.set("game.projections", noSession);
+    ctx.link.current = RELOADING;
+    startSceneWatches(ctx);
+    ctx.link.send("game.ui", BOARD.ui);
+    ctx.link.send("game.projections", {});
+    ctx.link.send("game.entities", BOARD.entities);
+    await flush();
+
+    expect(ctx.log.warn).not.toHaveBeenCalledWith(
+      "gameView: projections read failed",
+      expect.anything()
+    );
+    expect(ctx.log.debug).toHaveBeenCalledWith("gameView: projections read failed", {
+      message: "[moku-editor] No game session."
     });
   });
 
