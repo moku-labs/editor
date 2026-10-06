@@ -1,53 +1,81 @@
 /**
- * @file Where the local merge-game tests find the game repository. One rule, used by
- * vitest.config.ts and every test helper that reads game files:
+ * @file Where the local merge-game tests find the game checkout. One rule, used by
+ * vitest.config.ts, e2e/prepare-game.ts and every test helper that reads game files:
+ * `MOKU_GAME_DIR`, an absolute path or a path relative to the repository root. There is no
+ * default. Without it the merge-game tests skip: vitest.config.ts leaves out the files that load
+ * the fixture, and the few `skipIf` tests check `HAS_GAME`.
  *
- * - `MOKU_GAME_DIR` when it is set: an absolute path, or a path relative to the repository root;
- * - otherwise `<repo root>/../game-fixture`.
- *
- * `../game-fixture` is a worktree of the game repository, checked out detached at the tag `v0.7.0`:
- * the release of the `@moku-labs/game` dev dependency in package.json (`0.7.0`). Its
- * `@moku-labs/game` imports resolve to that dev dependency (through the aliases of vitest.config.ts), so the merge
- * game runs on the engine it was built with. The live sibling `../game` may hold work in progress
- * that breaks the fixture, so the tests never read it. Create the worktree once, with its
- * dependencies (the bin test bundles the fixture page with Bun):
+ * The checkout must sit on the release of the `@moku-labs/game` dev dependency in package.json,
+ * so the fixture runs on the engine it was built with, with its dependencies installed (the bin
+ * test bundles the fixture page with Bun):
  *
  * ```sh
- * git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.7.0
- * bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
+ * MOKU_GAME_DIR=<game checkout at that tag> bun run test
  * ```
  *
- * When the dev dependency moves to a newer release, move the fixture to its tag and install again:
- * `git -C ../game fetch --tags && git -C ../game-fixture checkout --detach vX.Y.Z`, then the
- * `bun install` line above.
- *
- * CI has no game checkout. There vitest.config.ts skips the test files that load the fixture.
+ * CI sets no `MOKU_GAME_DIR`, so these tests skip there.
  */
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The root of this repository. */
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-/**
- * The game checkout directory, absolute: `MOKU_GAME_DIR` (resolved from the repository root) or
- * `<repo root>/../game-fixture`.
- */
-export const GAME_DIR = path.resolve(REPO_ROOT, process.env.MOKU_GAME_DIR ?? "../game-fixture");
+/** Why the merge-game tests skip, or why a helper that needs the checkout throws. */
+export const NO_GAME_REASON =
+  "MOKU_GAME_DIR is not set or has no tests/integration/merge-game: the merge-game tests skip";
 
-/** The merge-game fixture folder inside the game checkout, absolute. */
-export const MERGE_GAME_DIR = path.join(GAME_DIR, "tests", "integration", "merge-game");
+/** The game checkout directory, absolute, or undefined when `MOKU_GAME_DIR` is not set. */
+export const GAME_DIR: string | undefined = process.env.MOKU_GAME_DIR
+  ? path.resolve(REPO_ROOT, process.env.MOKU_GAME_DIR)
+  : undefined;
+
+/** True when `MOKU_GAME_DIR` names a checkout that holds the merge-game fixture. */
+export const HAS_GAME =
+  GAME_DIR !== undefined &&
+  existsSync(path.join(GAME_DIR, "tests", "integration", "merge-game", "game.ts"));
+
+/**
+ * The game checkout directory. Call it only in a test that runs when `HAS_GAME` is true.
+ *
+ * @returns The absolute path of the checkout.
+ * @throws {Error} With `NO_GAME_REASON` when `MOKU_GAME_DIR` is not set.
+ * @example
+ * ```ts
+ * const testing = path.join(gameDir(), "src", "testing.ts");
+ * ```
+ */
+export function gameDir(): string {
+  if (GAME_DIR === undefined) throw new Error(NO_GAME_REASON);
+  return GAME_DIR;
+}
+
+/**
+ * The merge-game fixture folder inside the game checkout.
+ *
+ * @returns The absolute path of `tests/integration/merge-game` in the checkout.
+ * @throws {Error} With `NO_GAME_REASON` when `MOKU_GAME_DIR` is not set.
+ * @example
+ * ```ts
+ * const manifest = readFileSync(path.join(mergeGameDir(), "manifest.json"), "utf8");
+ * ```
+ */
+export function mergeGameDir(): string {
+  return path.join(gameDir(), "tests", "integration", "merge-game");
+}
 
 /**
  * The file URL of a file in the game checkout, for a run-time `import()`.
  *
  * @param relative - A path relative to the game checkout, with `/` separators.
  * @returns The `file://` URL of the file.
+ * @throws {Error} With `NO_GAME_REASON` when `MOKU_GAME_DIR` is not set.
  * @example
  * ```ts
  * const helpers = await import(gameFileUrl("tests/integration/timber-helpers.ts"));
  * ```
  */
 export function gameFileUrl(relative: string): string {
-  return pathToFileURL(path.join(GAME_DIR, relative)).href;
+  return pathToFileURL(path.join(gameDir(), relative)).href;
 }

@@ -15,7 +15,7 @@ const LEADING_SLASHES = /^\/+/;
  * @returns The root without trailing slashes.
  * @example
  * ```ts
- * withoutTrailingSlashes("/Users/alex/game//"); // "/Users/alex/game"
+ * withoutTrailingSlashes("/home/dev/game//"); // "/home/dev/game"
  * ```
  */
 function withoutTrailingSlashes(root: string): string {
@@ -36,8 +36,8 @@ function withoutTrailingSlashes(root: string): string {
  * @returns The link, or undefined without a template or a root.
  * @example
  * ```ts
- * editorUrlOf("vscode://file/{path}:{line}", "/Users/alex/game", "nodes/merge.ts", 12);
- * // "vscode://file/Users/alex/game/nodes/merge.ts:12"
+ * editorUrlOf("vscode://file/{path}:{line}", "/home/dev/game", "nodes/merge.ts", 12);
+ * // "vscode://file/home/dev/game/nodes/merge.ts:12"
  * ```
  */
 export function editorUrlOf(

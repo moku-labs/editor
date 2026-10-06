@@ -183,9 +183,9 @@ describe("createFilesViewApi", () => {
     const ctx = createCtx();
     const api = createFilesViewApi(ctx);
     expect(api.editorUrl("nodes/merge.ts", 12)).toBe(
-      "vscode://file/Users/moku/game/nodes/merge.ts:12"
+      "vscode://file/home/dev/game/nodes/merge.ts:12"
     );
-    expect(api.editorUrl("nodes/merge.ts")).toBe("vscode://file/Users/moku/game/nodes/merge.ts:1");
+    expect(api.editorUrl("nodes/merge.ts")).toBe("vscode://file/home/dev/game/nodes/merge.ts:1");
     ctx.link.bootValue = undefined;
     expect(api.editorUrl("nodes/merge.ts")).toBeUndefined();
   });

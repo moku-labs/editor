@@ -86,8 +86,8 @@ await app.files.writeBinary(".moku/captures/2026-10-05/0846-board.png", bytes);
 const { dataUrl } = await app.files.readBinary(".moku/captures/2026-10-05/0846-board.png");
 // dataUrl: "data:image/png;base64,…"
 
-app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
-app.files.root(); // "/Users/alex/game"
+app.files.resolve("src/main.ts"); // "/home/dev/game/src/main.ts"
+app.files.root(); // "/home/dev/game"
 
 await app.files.find("node:main/open"); // [{ path: "features/settings/nodes.ts", binding: "open", line: 3, … }]
 app.files.project(); // { state: "on", revision: "8a72…", defs: { "node:main/open": ["features/settings/nodes.ts"], … }, … }

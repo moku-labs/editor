@@ -448,7 +448,7 @@ export type FilesViewApi = {
    * @returns The link, or undefined without boot data.
    * @example
    * ```ts
-   * app.filesView.editorUrl("nodes/merge.ts", 12); // "vscode://file/Users/moku/game/nodes/merge.ts:12"
+   * app.filesView.editorUrl("nodes/merge.ts", 12); // "vscode://file/home/dev/game/nodes/merge.ts:12"
    * ```
    */
   editorUrl(path: string, line?: number): string | undefined;

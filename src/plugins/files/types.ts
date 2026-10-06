@@ -216,7 +216,7 @@ export type FilesApi = {
    * @example
    * ```ts
    * // Turn a project path into the absolute path an "Open in editor" link needs.
-   * app.files.resolve("src/main.ts"); // "/Users/alex/game/src/main.ts"
+   * app.files.resolve("src/main.ts"); // "/home/dev/game/src/main.ts"
    * ```
    */
   resolve(path: string): string;
@@ -229,7 +229,7 @@ export type FilesApi = {
    * ```ts
    * // pages puts the root into the tools boot JSON.
    * const files = ctx.require(filesPlugin);
-   * const boot = { root: files.root() }; // { root: "/Users/alex/game" }
+   * const boot = { root: files.root() }; // { root: "/home/dev/game" }
    * ```
    */
   root(): string;

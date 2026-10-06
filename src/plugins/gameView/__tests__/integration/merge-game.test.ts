@@ -15,7 +15,7 @@ import { createCtx, type TestCtx } from "../helpers";
 // walks createScreenGame (inert renderer) onto board/awaitIntent; the agent
 // core (registry + channel) serves its sources in process; gameView reads and
 // watches them through a link whose read and watch are the agent channel's.
-// Runs only where the pinned game checkout exists (tests/fixtures/game-dir.ts;
+// Runs only when MOKU_GAME_DIR names a game checkout (tests/fixtures/game-dir.ts;
 // vitest.config.ts skips files that call loadMergeGame… when it is absent, as on CI).
 // ─────────────────────────────────────────────────────────────────────────────
 

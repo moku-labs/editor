@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isWireError } from "../../../registry/protocol";
 import { conflict, forbidden, invalid, ioFailed, notFound, tooLarge } from "../../errors";
 
-const ROOT_REAL = "/Users/alex/game";
+const ROOT_REAL = "/home/dev/game";
 
 describe("files errors", () => {
   it.each([

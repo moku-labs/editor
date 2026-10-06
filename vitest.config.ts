@@ -1,18 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
-import { MERGE_GAME_DIR } from "./tests/fixtures/game-dir";
-
-/**
- * The merge-game fixture lives in a pinned game checkout. tests/fixtures/game-dir.ts holds the one
- * rule for where it is (`MOKU_GAME_DIR`, or the default worktree) and how to set it up. CI has no
- * checkout, so the tests that load the fixture are left out there, with a warning.
- */
-const fixture = path.join(MERGE_GAME_DIR, "game.ts");
-const hasFixture = existsSync(fixture);
+import { HAS_GAME, NO_GAME_REASON } from "./tests/fixtures/game-dir";
 
 /**
  * Test files that load the merge-game fixture (through loadMergeGame or the registry startGame helper).
+ * The fixture lives in the game checkout named by `MOKU_GAME_DIR` (tests/fixtures/game-dir.ts).
+ * Without it (CI) these files are left out, with a warning that says why.
  *
  * @returns Paths relative to the repository root.
  */
@@ -28,9 +21,9 @@ function fixtureTests(): string[] {
   );
 }
 
-const skipped = hasFixture ? [] : fixtureTests();
-if (!hasFixture) {
-  console.warn(`merge-game fixture not found at ${fixture}: skipping ${skipped.length} test files`);
+const skipped = HAS_GAME ? [] : fixtureTests();
+if (!HAS_GAME) {
+  console.warn(`${NO_GAME_REASON}: skipping ${skipped.length} test files`);
 }
 
 /**

@@ -76,7 +76,7 @@ bunx moku-editor web/index.html --port 3000 --root .
 ```
 Game   http://127.0.0.1:3000/
 Tools  http://127.0.0.1:3000/__editor/
-Root   /Users/alex/game
+Root   /home/dev/game
 ```
 
 Hot reload is on: Bun reloads the game page after a save, and the game comes back where it was (see [Hot reload](#hot-reload)). The **Hot reload** switch of the tools page turns it off and on while the bin runs; `--no-hmr` starts the bin with it off. `bunx moku-editor --help` lists every flag.
@@ -840,14 +840,14 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.
 
-**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a worktree at `../game-fixture`, on the commit that matches the `@moku-labs/game` dev dependency in `package.json`. That is the tag `v0.7.0` (dev dependency `@moku-labs/game` `0.7.0`). Create it once, with its dependencies:
+**Local merge-game tests.** The merge-game tests need a game checkout, named by `MOKU_GAME_DIR` (absolute, or relative to this repository). There is no default path. The checkout sits on the tag of the `@moku-labs/game` dev dependency in `package.json` (`v0.7.1`), with its dependencies installed:
 
 ```sh
-git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.7.0
-bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
+MOKU_GAME_DIR=<game checkout at v0.7.1> bun run test
+MOKU_GAME_DIR=<game checkout at v0.7.1> bun run test:e2e
 ```
 
-When `package.json` moves to a newer release, move it and install again: `git -C ../game fetch --tags && git -C ../game-fixture checkout --detach vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
+Without `MOKU_GAME_DIR` the merge-game tests skip, and `vitest.config.ts` prints why. CI sets no `MOKU_GAME_DIR`. The rule lives in `tests/fixtures/game-dir.ts`.
 
 ## Requirements
 

@@ -42,7 +42,7 @@ export const BOOT: ToolsBoot = {
   path: "/__editor",
   title: "moku editor",
   editorUrl: "vscode://file/{path}:{line}",
-  root: "/Users/moku/game",
+  root: "/home/dev/game",
   gameUrl: "/game.html"
 };
 

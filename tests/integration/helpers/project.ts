@@ -5,7 +5,7 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { MERGE_GAME_DIR } from "../../fixtures/game-dir";
+import { mergeGameDir } from "../../fixtures/game-dir";
 
 /**
  * The merge-game text styles (`defineTextStyles` from `../../kit`), copied into the tiny project as
@@ -216,7 +216,7 @@ async function fillTinyProject(root: string): Promise<void> {
  */
 export async function createProject(kind: "tiny" | "merge"): Promise<string> {
   const root = await makeTemp(`moku-root-${kind}-`);
-  await (kind === "tiny" ? fillTinyProject(root) : cp(MERGE_GAME_DIR, root, { recursive: true }));
+  await (kind === "tiny" ? fillTinyProject(root) : cp(mergeGameDir(), root, { recursive: true }));
   return root;
 }
 

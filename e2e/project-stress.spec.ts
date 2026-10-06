@@ -29,7 +29,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
-import { MERGE_GAME_DIR } from "../tests/fixtures/game-dir";
+import { mergeGameDir } from "../tests/fixtures/game-dir";
 import { expect, openTools, test, type WorkspaceId } from "./fixtures";
 import { topBar } from "./top-bar";
 
@@ -174,13 +174,13 @@ async function restoreFromFixture(): Promise<void> {
   await rm(abs(MOVED_DIR), { recursive: true, force: true });
   const writes: Promise<void>[] = [];
   for (const dir of ["nodes", "flows"]) {
-    const fixture = await readdir(path.join(MERGE_GAME_DIR, dir));
+    const fixture = await readdir(path.join(mergeGameDir(), dir));
     const copy = existsSync(abs(dir)) ? await readdir(abs(dir)) : [];
     for (const name of copy.filter(entry => !fixture.includes(entry))) {
       writes.push(rm(abs(`${dir}/${name}`), { recursive: true, force: true }));
     }
     for (const name of fixture) {
-      const want = await readFile(path.join(MERGE_GAME_DIR, dir, name), "utf8");
+      const want = await readFile(path.join(mergeGameDir(), dir, name), "utf8");
       const rel = `${dir}/${name}`;
       const have = existsSync(abs(rel)) ? await readFile(abs(rel), "utf8") : undefined;
       if (have !== want) writes.push(writeFile(abs(rel), want));
@@ -195,10 +195,10 @@ async function restoreFromFixture(): Promise<void> {
  * @returns The files.
  */
 async function nodeFiles(): Promise<NodeFile[]> {
-  const entries = await readdir(path.join(MERGE_GAME_DIR, "nodes"));
+  const entries = await readdir(path.join(mergeGameDir(), "nodes"));
   const names = entries.filter(name => name.endsWith(".ts"));
   const texts = await Promise.all(
-    names.map(name => readFile(path.join(MERGE_GAME_DIR, "nodes", name), "utf8"))
+    names.map(name => readFile(path.join(mergeGameDir(), "nodes", name), "utf8"))
   );
   const stems = names.map(name => name.slice(0, -".ts".length));
   const siblings = new Set(
@@ -642,8 +642,8 @@ test.describe("project index · stress", () => {
     await setHotReload(page, false);
 
     const flows = new Map<string, string>();
-    for (const name of await readdir(path.join(MERGE_GAME_DIR, "flows"))) {
-      flows.set(`flows/${name}`, await readFile(path.join(MERGE_GAME_DIR, "flows", name), "utf8"));
+    for (const name of await readdir(path.join(mergeGameDir(), "flows"))) {
+      flows.set(`flows/${name}`, await readFile(path.join(mergeGameDir(), "flows", name), "utf8"));
     }
     const script = new Script(await nodeFiles(), flows);
     const framesBefore = states.length;

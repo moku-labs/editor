@@ -405,7 +405,7 @@ MCP `moku_select` reaches gameView as the editor-channel request `select` (`link
 
 - `__tests__/unit/`: one file per module and per component. The components run under happy-dom.
 - `__tests__/integration/game-view.test.ts`: the real link, workspace, panels and gameView over an in-process hub.
-- `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where the pinned game checkout exists (`tests/fixtures/game-dir.ts`).
+- `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only when `MOKU_GAME_DIR` names a game checkout (`tests/fixtures/game-dir.ts`).
 - `__tests__/unit/source.test.ts` also opens the project index of the merge game when the checkout exists: `settingsBoard` answers `settings.tsx:290` (range from 289) and `card0` answers the element at `strip.tsx:216` with its style call at 218. `jsx.test.ts` reads that style attribute there too. The other unit tests script `files.find` and `link.project()` (`answer`, `place`, `projectOn` in `__tests__/helpers.ts`).
 - `tests/integration/pick-reference.test.ts` (root): a proxy pick on the merge-game settings popup writes both PNGs and the card `.md`, copies the one reference line that names the card, the card's `text` fence holds every line of the block and links both PNGs, and its bookmark restores the popup. Local only, like the merge journeys.
 
