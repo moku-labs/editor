@@ -1,9 +1,9 @@
 /**
  * @file Merge-game helpers of the root integration wave (plan §2.7), local only. They call
- * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the
- * game checkout of tests/fixtures/game-dir.ts (MOKU_GAME_DIR). CI test files never import this module: vitest.config.ts skips only the
- * test files whose text names `loadMergeGame`, so a local-only test imports it and says
- * `loadMergeGame` itself.
+ * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the game
+ * checkout of tests/fixtures/game-dir.ts (MOKU_GAME_DIR). CI test files never import this module:
+ * vitest.config.ts skips only the test files whose text names `loadMergeGame`, so a local-only
+ * test imports it and says `loadMergeGame` itself.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";

@@ -208,8 +208,8 @@ async function fillTinyProject(root: string): Promise<void> {
 
 /**
  * Creates a project root in a fresh temp folder (its real path). `"tiny"` writes the tiny
- * project; `"merge"` copies the merge-game fixture of the pinned game checkout (local only; writes
- * never touch the checkout).
+ * project; `"merge"` copies the merge-game fixture of the checkout named by MOKU_GAME_DIR (local
+ * only; writes never touch the checkout).
  *
  * @param kind - Which project.
  * @returns The absolute real path of the root.

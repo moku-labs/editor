@@ -1,8 +1,9 @@
 /**
  * @file The e2e game build step (the `build:e2e` of this repository): copies the merge-game
- * fixture of the game checkout named by MOKU_GAME_DIR (tests/fixtures/game-dir.ts) into dist-e2e/game/, puts the
- * e2e game page (e2e/game/editor.html and editor.ts: the fixture page plus the editor agent) into
- * its web/ folder and writes the tsconfig the Bun HTML bundler reads for the copied files.
+ * fixture of the game checkout named by MOKU_GAME_DIR (tests/fixtures/game-dir.ts) into
+ * dist-e2e/game/, puts the e2e game page (e2e/game/editor.html and editor.ts: the fixture page
+ * plus the editor agent) into its web/ folder and writes the tsconfig the Bun HTML bundler reads
+ * for the copied files.
  *
  * The copy is the project root the bin serves, so the editor's writes (notes, layout, styles,
  * captures) land in dist-e2e/, never in the game checkout, and every run starts from the same
