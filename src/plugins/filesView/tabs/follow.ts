@@ -36,7 +36,10 @@ export function movedText(from: string): string {
  * @returns The path a file left → its first move.
  * @example
  * ```ts
- * movesByFile([merge, mergeHelper]).size; // 1: both keys left nodes/merge.ts
+ * movesByFile([
+ *   { key: "node:board/merge", from: "nodes/merge.ts", to: "nodes/board/merge.ts" },
+ *   { key: "node:board/mergeHelper", from: "nodes/merge.ts", to: "nodes/board/merge.ts" }
+ * ]).size; // 1: both keys left nodes/merge.ts
  * ```
  */
 function movesByFile(moved: readonly ProjectMove[]): Map<string, ProjectMove> {
@@ -65,16 +68,17 @@ async function isGone(ctx: FilesViewCtx, path: string): Promise<boolean> {
 }
 
 /**
- * The line of a moved key in its new file, read from disk by the index.
+ * The line of a moved key in its new file, read from disk by the index. Only an answer at the
+ * new path counts: the line of another file means nothing in this tab.
  *
  * @param ctx - Domain context of filesView.
  * @param move - The move.
- * @returns The line, or undefined when `find` fails or has no answer.
+ * @returns The line, or undefined when `find` fails or has no answer at `move.to`.
  */
 async function lineOf(ctx: FilesViewCtx, move: ProjectMove): Promise<number | undefined> {
   try {
     const answers = await ctx.require(linkPlugin).files.find(move.key);
-    return (answers.find(found => found.path === move.to) ?? answers[0])?.line;
+    return answers.find(found => found.path === move.to)?.line;
   } catch {
     return undefined;
   }

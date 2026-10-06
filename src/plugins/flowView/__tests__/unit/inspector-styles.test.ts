@@ -245,6 +245,22 @@ describe("stepStyle", () => {
     expect(ctx.state.inspector.styles?.result).toEqual({ ok: false, text: STYLE_BROKEN_TEXT });
     expect(fakes.reload).not.toHaveBeenCalled();
   });
+
+  it("an index that went off before the write: nothing written, the card shows the off line (D-48)", async () => {
+    const { ctx, fakes } = createTestCtx({ files: { [STYLES]: fixture } });
+    const inspector = actionsOf(ctx).inspector;
+    await inspector.openStyles("ui.number");
+    inspector.stepStyle("size", 1, false);
+    fakes.files.off = "typescript is not installed";
+    await settle(600);
+    expect(fakes.files.writes).toEqual([]);
+    expect(ctx.state.inspector.styles?.error).toEqual({ error: "index-off", path: STYLES });
+    expect(ctx.state.inspector.styles?.result).toEqual({
+      ok: false,
+      text: "Project index is off: typescript is not installed"
+    });
+    expect(fakes.reload).not.toHaveBeenCalled();
+  });
 });
 
 describe("styleErrorText", () => {
@@ -258,7 +274,8 @@ describe("styleErrorText", () => {
       ["read-only", "size has no edit rule · edit it in Files"],
       ["changed-on-disk", "The file changed on disk · Reload card"],
       ["out-of-range", "size is out of range · not written"],
-      ["broken", STYLE_BROKEN_TEXT]
+      ["broken", STYLE_BROKEN_TEXT],
+      ["index-off", "Project index is off"]
     ];
     for (const [code, text] of rows) {
       expect(

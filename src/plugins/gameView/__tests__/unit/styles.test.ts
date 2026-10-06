@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
 import { STYLE_BROKEN_TEXT, type StyleEditCode } from "../../../panels/shared/style-edit";
+import { wireError } from "../../../registry/protocol";
 import { openStyleCard, saveStyle, stepStyle, styleErrorText } from "../../element/styles";
 import type { ElementRef } from "../../types";
 import { answer, createCtx, flush, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
@@ -301,7 +302,28 @@ describe("stepStyle and saveStyle", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(ctx.link.files.writes).toEqual([]);
     expect(ctx.state.styles?.error).toEqual({ error: "broken", path: "src/hud/styles.ts" });
-    expect(styleErrorText({ error: "broken", path: "src/hud/styles.ts" })).toBe(STYLE_BROKEN_TEXT);
+    expect(
+      styleErrorText({ error: "broken", path: "src/hud/styles.ts" }, ctx.link.projectValue)
+    ).toBe(STYLE_BROKEN_TEXT);
+  });
+
+  it("writes nothing while the index is off, and the card says why (D-48)", async () => {
+    vi.spyOn(ctx.link.files, "find").mockRejectedValue(
+      wireError(-32_008, "project index off: disabled", { reason: "not_installed" })
+    );
+    stepStyle(ctx, "height", 1, false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(ctx.link.files.writes).toEqual([]);
+    expect(ctx.state.styles?.error).toEqual({ error: "index-off", path: "src/hud/styles.ts" });
+    expect(
+      styleErrorText(
+        { error: "index-off", path: "src/hud/styles.ts" },
+        {
+          state: "off",
+          reason: "disabled"
+        }
+      )
+    ).toBe("Project index is off: disabled");
   });
 
   it("saveStyle without a pending edit does nothing", async () => {
@@ -444,13 +466,19 @@ describe("styleErrorText", () => {
       "not-literal",
       "read-only",
       "changed-on-disk",
-      "out-of-range"
+      "out-of-range",
+      "index-off"
     ];
-    const texts = codes.map(error => styleErrorText({ error, line: 4, key: "coinPill" }));
+    const project = projectOn();
+    const texts = codes.map(error => styleErrorText({ error, line: 4, key: "coinPill" }, project));
     expect(new Set(texts).size).toBe(codes.length);
     for (const text of texts) expect(text).not.toContain("\n");
-    expect(styleErrorText({ error: "no-key", key: "coinPill" })).toBe(
+    expect(styleErrorText({ error: "no-key", key: "coinPill" }, project)).toBe(
       "No style block named coinPill."
+    );
+    expect(styleErrorText({ error: "index-off" }, project)).toBe("Project index is off");
+    expect(styleErrorText({ error: "index-off" }, undefined)).toBe(
+      "Project index is off: no state from the server yet"
     );
   });
 });

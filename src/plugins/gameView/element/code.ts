@@ -91,17 +91,29 @@ async function styleOf(ctx: GameViewCtx, source: IdentSource): Promise<StyleSnip
 
 /**
  * The `defineStyle` call a style function builds (G2): the first answer of its `style:` key, named
- * by the part after `#` (`boardStyle`, `roundStylesOf.icon`).
+ * by the part after `#` (`boardStyle`, `roundStylesOf.icon`). The answer is kept in
+ * `state.blocks` under the key with its path and range, so the next look reads the file only; a
+ * project change that touches the file drops it (D-46).
  *
  * @param ctx - Domain context of gameView.
  * @param styleKey - `style:<file>#<function>[.<property>]`.
  * @returns The call's lines with its name, undefined when the index has no answer.
  */
 async function callStyleOf(ctx: GameViewCtx, styleKey: string): Promise<StyleSnippet | undefined> {
+  const name = styleKey.slice(styleKey.lastIndexOf("#") + 1);
+
+  // A kept answer: its file is read again, the index is not asked.
+  const known = ctx.state.blocks.get(styleKey);
+  if (known?.range !== undefined) {
+    const text = await readText(ctx, known.path);
+    if (text !== undefined) return { ...snippetOf(known.path, text, known.range), name };
+  }
+
+  // Else the index answers, and the answer is kept.
   const fresh = await findFresh(ctx.require(linkPlugin).files, styleKey);
   if (fresh === undefined) return undefined;
   const { found, text } = fresh;
-  const name = styleKey.slice(styleKey.lastIndexOf("#") + 1);
+  ctx.state.blocks.set(styleKey, { path: found.path, line: found.line, range: found.range });
   return { ...snippetOf(found.path, text, found.range), name };
 }
 

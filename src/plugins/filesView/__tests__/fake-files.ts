@@ -30,6 +30,10 @@ export type FakeFiles = {
   readonly listed: string[];
   /** Highest number of list calls in flight at once. */
   maxInFlight: number;
+  /**
+   * Holds the next list of a folder until released: `reached` resolves when that list is asked.
+   */
+  hold(dir: string): { readonly reached: Promise<void>; release(): void };
   /** Changes a file behind the editor's back. */
   set(path: string, text: string): void;
   /** The version of a stored file. */
@@ -85,6 +89,7 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
   const failures = new Map<string, Error>();
   const found = new Map<string, readonly ProjectFound[]>();
   const listed: string[] = [];
+  const holds = new Map<string, { readonly gate: Promise<void>; readonly arrive: () => void }>();
   let inFlight = 0;
 
   const fail = (key: string): void => {
@@ -116,6 +121,11 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
     client: {
       list: vi.fn(async (dir: string) => {
         listed.push(dir);
+        const held = holds.get(dir);
+        if (held !== undefined) {
+          held.arrive();
+          await held.gate;
+        }
         inFlight += 1;
         fake.maxInFlight = Math.max(fake.maxInFlight, inFlight);
         try {
@@ -163,6 +173,18 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
     },
     set(path, text) {
       contents.set(path, text);
+    },
+    hold(dir) {
+      const gate = Promise.withResolvers<void>();
+      const reached = Promise.withResolvers<void>();
+      holds.set(dir, { gate: gate.promise, arrive: reached.resolve });
+      return {
+        reached: reached.promise,
+        release() {
+          holds.delete(dir);
+          gate.resolve();
+        }
+      };
     },
     versionOf(path) {
       const text = contents.get(path);

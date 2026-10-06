@@ -147,6 +147,32 @@ describe("a moved file", () => {
     expect(ctx.state.confirmClose).toBe(TO);
   });
 
+  it("takes the line only from an answer at the new path", async () => {
+    await openTab(ctx, FROM, { line: 4 });
+    moveFile();
+    ctx.files.found.set(MOVE.key, [
+      { path: "nodes/elsewhere.ts", binding: "catchUp", line: 30, range: [30, 1, 31, 3], hash: "x" }
+    ]);
+
+    await follow(MOVED);
+
+    expect(findTab(ctx.state, TO)?.line).toBe(4);
+  });
+
+  it("rebuilds the tree once more when a delta comes during a walk", async () => {
+    const nodes = ctx.files.hold("nodes");
+    const walking = buildIndex(ctx);
+    // The walk listed the root and waits on the next level when an agent adds a root file.
+    await nodes.reached;
+    ctx.files.set("fresh.ts", "export const fresh = 1;\n");
+
+    await follow(deltaOf({ files: ["fresh.ts"] }));
+    nodes.release();
+    await walking;
+
+    expect(ctx.state.index?.files.has("fresh.ts")).toBe(true);
+  });
+
   it("does not follow a key that left a file still on disk", async () => {
     await openTab(ctx, FROM, {});
     ctx.files.set(TO, "export const catchUp = 2;\n");

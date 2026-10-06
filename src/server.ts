@@ -11,6 +11,7 @@
  * | files | root | "." |
  * | files | allow | ["**\/*.ts", "**\/*.tsx", "**\/*.json", "**\/*.md", "**\/*.css", ".moku/**"] |
  * | files | deny | ["**\/node_modules/**", "**\/.git/**", "**\/dist/**", "**\/.env*"] |
+ * | files | project | true: open the project index of root on start |
  * | hub | path | "/__editor" |
  * | hub | allowOrigins | [] |
  * | hub | callTimeoutMs | 5000 |

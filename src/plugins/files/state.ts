@@ -1,6 +1,7 @@
 /**
  * @file files plugin — state factory.
  */
+import { offState } from "./project";
 import type { FilesState } from "./types";
 
 /**
@@ -17,7 +18,7 @@ export function createFilesState(): FilesState {
     locks: new Map(),
     project: undefined,
     opening: undefined,
-    projectState: { state: "off", reason: "not opened" },
+    projectState: offState("not opened"),
     stopWatch: undefined,
     stopped: false
   };

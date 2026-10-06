@@ -19,8 +19,9 @@
  * row (delta-spec risks). The spec turns it off first and on again at the end. Bun still bundles
  * on every write and logs the syntax errors and missing imports the script makes; the spec names
  * that window of the server log in `dist-e2e/server-log-provoked.json`, which the teardown skips
- * (never a `[moku-editor]` line). It runs in the desktop project only: the index does not depend
- * on the window.
+ * (never a `[moku-editor]` line). The window is written open before the run and closed after it,
+ * so a run that is killed half way still names it. It runs in the desktop project only: the index
+ * does not depend on the window.
  */
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -342,24 +343,112 @@ function serverLog(): string | undefined {
 /** Where a spec names the server log window it provoked errors in (e2e/global-teardown.ts). */
 const PROVOKED = path.join(REPO, "dist-e2e", "server-log-provoked.json");
 
+/** The spec a window of this file names. */
+const BY = "project-stress.spec.ts";
+
+/** The `to` of a window whose run has not ended: the rest of the log is in it. */
+const OPEN_END = Number.MAX_SAFE_INTEGER;
+
+/** One provoked window: a byte range of a server log, as the teardown reads it. */
+type ProvokedWindow = {
+  readonly log: string;
+  readonly from: number;
+  readonly to: number;
+  readonly by?: string;
+};
+
 /** The server log and the size it had when the run started; set by the test. */
 let provoked: { readonly log: string; readonly from: number } | undefined;
 
 /**
- * Names the window of the server log this spec provoked errors in: Bun's dev server bundles the
- * game on every write even with hot reload off, and logs the syntax errors and the missing
- * imports the script makes on purpose. The teardown skips that window, except `[moku-editor]`
- * lines.
+ * True for a JSON object (not null, not an array).
+ *
+ * @param value - A parsed JSON value.
+ * @returns Whether it is an object.
  */
-async function recordProvoked(): Promise<void> {
-  if (provoked === undefined) return;
-  const windows: unknown[] = existsSync(PROVOKED)
-    ? (JSON.parse(await readFile(PROVOKED, "utf8")) as unknown[])
-    : [];
-  const to = statSync(provoked.log).size;
-  windows.push({ log: provoked.log, from: provoked.from, to, by: "project-stress.spec.ts" });
+function isObject(value: unknown): value is { readonly [key: string]: unknown } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * True for a well-formed provoked window.
+ *
+ * @param value - One parsed entry of the windows file.
+ * @returns Whether it is a window.
+ */
+function isProvokedWindow(value: unknown): value is ProvokedWindow {
+  if (!isObject(value)) return false;
+  const { log, from, to, by } = value;
+  const isNamed = by === undefined || typeof by === "string";
+  return typeof log === "string" && typeof from === "number" && typeof to === "number" && isNamed;
+}
+
+/**
+ * The windows named so far in this run; a file that does not parse names none.
+ *
+ * @returns The windows.
+ */
+async function readWindows(): Promise<ProvokedWindow[]> {
+  if (!existsSync(PROVOKED)) return [];
+  try {
+    const parsed: unknown = JSON.parse(await readFile(PROVOKED, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter(entry => isProvokedWindow(entry)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Writes the windows file.
+ *
+ * @param windows - Every window of this run.
+ */
+async function writeWindows(windows: readonly ProvokedWindow[]): Promise<void> {
   await writeFile(PROVOKED, `${JSON.stringify(windows, undefined, 2)}\n`);
+}
+
+/**
+ * Opens the window of the server log this spec provokes errors in, before the run: Bun's dev
+ * server bundles the game on every write even with hot reload off, and logs the syntax errors
+ * and the missing imports the script makes on purpose. The window runs to the end of the log
+ * until `closeProvoked` ends it, so a killed run still excuses those lines. The teardown skips
+ * the window, except `[moku-editor]` lines.
+ *
+ * @param log - The server log.
+ * @param from - Its size before the run.
+ */
+async function openProvoked(log: string, from: number): Promise<void> {
+  provoked = { log, from };
+  const windows = await readWindows();
+  windows.push({ log, from, to: OPEN_END, by: BY });
+  await writeWindows(windows);
+}
+
+/**
+ * Ends the window this spec opened at the size the log has now.
+ */
+async function closeProvoked(): Promise<void> {
+  if (provoked === undefined) return;
+  const { log, from } = provoked;
+  const to = statSync(log).size;
+  const windows = await readWindows();
+  const isOurs = (window: ProvokedWindow): boolean =>
+    window.log === log && window.from === from && window.by === BY;
+  await writeWindows(windows.map(window => (isOurs(window) ? { ...window, to } : window)));
   provoked = undefined;
+}
+
+/**
+ * The state of an `editor.project` frame.
+ *
+ * @param payload - The text of a frame the page received.
+ * @returns `"on"` or `"off"`, `""` for a project frame without one, undefined for another frame.
+ */
+function projectStateOf(payload: string): string | undefined {
+  const note: unknown = JSON.parse(payload);
+  if (!isObject(note) || note.channel !== "editor" || note.method !== "project") return undefined;
+  const { params } = note;
+  return isObject(params) && typeof params.state === "string" ? params.state : "";
 }
 
 /**
@@ -498,7 +587,7 @@ test.beforeEach(async () => {
 
 test.afterEach(async ({ page }) => {
   await restoreFromFixture();
-  await recordProvoked();
+  await closeProvoked();
   // A run that stopped half way leaves Hot reload on for the specs after it, as every spec does.
   const hot = topBar(page).getByRole("switch", { name: "Hot reload", exact: true });
   if ((await hot.count()) === 1 && (await hot.getAttribute("aria-checked")) === "false") {
@@ -522,19 +611,13 @@ test.describe("project index · stress", () => {
       if (!socket.url().includes("/__editor/")) return;
       socket.on("framereceived", ({ payload }) => {
         if (typeof payload !== "string" || !payload.includes('"project"')) return;
-        const note = JSON.parse(payload) as {
-          channel?: string;
-          method?: string;
-          params?: { state?: string };
-        };
-        if (note.channel === "editor" && note.method === "project") {
-          states.push(note.params?.state ?? "");
-        }
+        const state = projectStateOf(payload);
+        if (state !== undefined) states.push(state);
       });
     });
     const log = serverLog();
     const logFrom = log === undefined ? 0 : statSync(log).size;
-    if (log !== undefined) provoked = { log, from: logFrom };
+    if (log !== undefined) await openProvoked(log, logFrom);
     await openTools(page);
     await expect.poll(() => states.at(-1), { timeout: SWITCH_MS }).toBe("on");
 
@@ -564,6 +647,7 @@ test.describe("project index · stress", () => {
     }
     const script = new Script(await nodeFiles(), flows);
     const framesBefore = states.length;
+    let frames = 0;
     try {
       const end = Date.now() + RUN_MS;
       let next = Date.now();
@@ -575,14 +659,16 @@ test.describe("project index · stress", () => {
       await script.heal();
     } finally {
       await restoreFromFixture();
+      // The operations and the project frames the page saw, also for a run that stopped half way.
+      frames = states.length - framesBefore;
+      const summary = { counts: script.counts, frames };
+      await testInfo.attach("stress-ops.json", {
+        body: JSON.stringify(summary, undefined, 2),
+        contentType: "application/json"
+      });
+      console.log(`\nProject index stress: ${frames} editor.project frames observed`);
+      console.log(`Project index stress: ${JSON.stringify(summary)}\n`);
     }
-    const frames = states.length - framesBefore;
-    const summary = { counts: script.counts, frames };
-    await testInfo.attach("stress-ops.json", {
-      body: JSON.stringify(summary, undefined, 2),
-      contentType: "application/json"
-    });
-    console.log(`\nProject index stress: ${JSON.stringify(summary)}\n`);
 
     // The Code tab is back on the node's definition.
     await show(page, "flow");

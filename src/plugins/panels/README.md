@@ -207,17 +207,20 @@ Rules for all of them:
 | `formatNumber` | `(value) => string` | Up to 2 decimals. |
 | `editNumber` | `(text, target, next) => EditDone \| StyleEditError` | Rewrites one literal's columns and re-parses to check. |
 | `loadStyleFile` | `(files, path) => Promise<LoadedStyleFile \| StyleEditError>` | Reads and parses. |
-| `writeNumber` | `(files, path, current, target, next) => Promise<WriteDone \| StyleEditError>` | Version-checked write with one retry. With `files.find`, the index is asked before each write (D-44). |
+| `writeNumber` | `(files, path, current, target, next) => Promise<WriteDone \| StyleEditError>` | Version-checked write with one retry. With `files.find`, the index is asked before each write (D-44, D-48). |
 | `STYLE_BROKEN_TEXT` | `string` | "The file does not parse now · fix it, then edit". |
 | `isStyleEditError` | `(value) => value is StyleEditError` | Guard. |
 
-Error codes (`StyleEditCode`): `broken`, `no-file`, `parse`, `no-key`, `ambiguous`, `not-literal`,
-`read-only`, `changed-on-disk`, `out-of-range`.
+Error codes (`StyleEditCode`): `broken`, `index-off`, `no-file`, `parse`, `no-key`, `ambiguous`,
+`not-literal`, `read-only`, `changed-on-disk`, `out-of-range`.
 
 Broken guard (D-44). `StyleFiles` has an optional `find`. `writeNumber` and its one retry call
 `find(anchorKey(ref, path))` first. An answer on `path` with `broken: true` means the index
 answered from the last good parse: the file does not parse now. The write is refused as
-`{ error: "broken", path }` and nothing is written. A rejected `find` does not refuse the write.
+`{ error: "broken", path }` and nothing is written. Index off is no fallback (D-48): a `find` that
+rejects with -32008 refuses as `{ error: "index-off", path }`; any other rejection of `find`
+rejects `writeNumber` with it. Nothing is written either way, and the view shows the off line or
+the message. A client without `find` writes.
 
 ```ts
 const loaded = await loadStyleFile(tools.files, "features/ui/styles.ts");

@@ -373,9 +373,21 @@ export function parseFoundList(value: unknown): readonly ProjectFound[] | undefi
  * @returns The delta.
  * @example
  * ```ts
- * // An agent edited nodes/merge.ts while the editor was open.
- * projectDelta(held, arrived); // { all: false, files: ["nodes/merge.ts"], moved: [], removed: [] }
- * projectDelta(undefined, arrived); // { all: true, files: [], moved: [], removed: [] }
+ * // An agent edited nodes/merge.ts while the editor was open: r2 follows the held r1.
+ * projectDelta(
+ *   { state: "on", revision: "r1", defs: {}, uses: {}, broken: {} },
+ *   {
+ *     state: "on",
+ *     revision: "r2",
+ *     previous: "r1",
+ *     defs: {},
+ *     uses: {},
+ *     broken: {},
+ *     change: { files: ["nodes/merge.ts"], moved: [], removed: [] }
+ *   }
+ * ); // { all: false, files: ["nodes/merge.ts"], moved: [], removed: [] }
+ * // The first state after a reconnect: everything is dropped.
+ * projectDelta(undefined, { state: "off", reason: "disabled" }); // { all: true, files: [], moved: [], removed: [] }
  * ```
  */
 export function projectDelta(held: ProjectState | undefined, next: ProjectState): ProjectDelta {

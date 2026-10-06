@@ -126,11 +126,15 @@ const savesInFlight = new WeakMap<CodeState, Promise<void>>();
  * @returns Resolves when the result line is set.
  */
 export function saveCode(ctx: FlowCtx, env: FlowEnvironment, force: boolean): Promise<void> {
+  // No Code tab open: nothing to save.
   const code = ctx.state.inspector.code;
   if (code === undefined) return Promise.resolve();
+
+  // A save in flight: this one runs after it, with the version that save wrote.
   const running = savesInFlight.get(code);
   if (running !== undefined) return running.then(() => saveCode(ctx, env, force));
 
+  // The first save: kept until it settles, so a ⌘S during it waits for it.
   const run = writeCode(ctx, env, code, force).finally(() => {
     if (savesInFlight.get(code) === run) savesInFlight.delete(code);
   });

@@ -2,8 +2,8 @@
  * @file flowView inspector module — the Styles tab controller over the shared style edit
  * (panels/shared/style-edit, R4, R8): load the text-style cards of the file the project index
  * names, no card chosen until the person picks one, stepper bursts debounced into one
- * version-checked write of one numeric literal (none while the file does not parse, D-44), then
- * the D-07 reload. flowView owns only the texts of the shared error codes.
+ * version-checked write of one numeric literal (none while the file does not parse, D-44, or the
+ * index is off, D-48), then the D-07 reload. flowView owns only the texts of the shared error codes.
  */
 import { NOT_IN_INDEX_TEXT, projectOffText, textStylesFile } from "../../panels/shared/project";
 import type { StyleBlock, StyleEditError } from "../../panels/shared/style-edit";
@@ -25,6 +25,12 @@ import { isWriting } from "./follow";
 import type { StylesState } from "./types";
 
 /**
+ * The text of an `index-off` refusal while link still holds an on state: the off state is on its
+ * way, and the card shows its reason once it arrives.
+ */
+const INDEX_OFF_TEXT = "Project index is off";
+
+/**
  * flowView's text for a refused style edit (one row per shared code).
  *
  * @param error - The shared error.
@@ -36,6 +42,8 @@ import type { StylesState } from "./types";
  * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts", project); // "lineHeight has no edit rule · edit it in Files"
  * styleErrorText({ error: "no-file" }, undefined, { state: "off", reason: "typescript is not installed" });
  * // "Project index is off: typescript is not installed"
+ * styleErrorText({ error: "index-off", path: "features/ui/styles.ts" }, "features/ui/styles.ts", { state: "off", reason: "disabled" });
+ * // "Project index is off: disabled"
  * ```
  */
 export function styleErrorText(
@@ -52,6 +60,9 @@ export function styleErrorText(
     }
     case "broken": {
       return STYLE_BROKEN_TEXT;
+    }
+    case "index-off": {
+      return projectOffText(project) ?? INDEX_OFF_TEXT;
     }
     case "parse": {
       return `Can't read ${file} safely · Open in Files`;

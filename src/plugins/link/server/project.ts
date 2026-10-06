@@ -64,9 +64,9 @@ function isSameProject(held: ProjectState | undefined, next: ProjectState): bool
  * ```
  */
 function deltaOf(held: ProjectState | undefined, next: ProjectState): ProjectDelta {
-  if (held?.state !== "on" || next.state !== "on" || next.revision !== held.revision) {
-    return projectDelta(held, next);
-  }
+  const isRevisionStep =
+    held?.state !== "on" || next.state !== "on" || next.revision !== held.revision;
+  if (isRevisionStep) return projectDelta(held, next);
 
   const files = [held.manifest, next.manifest].filter(path => path !== undefined);
   return { all: false, files, moved: [], removed: [] };

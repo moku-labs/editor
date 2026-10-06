@@ -39,12 +39,6 @@ export type FilesConfig = {
  * The part of an open project index (`openProject` of `@moku-labs/game/project`) the files state
  * keeps: the lines of a key and the close. The watch is started once at open and kept as
  * `stopWatch`.
- *
- * @example
- * ```ts
- * // findKey asks the handle, then copies and filters the answers.
- * const answers = await ctx.state.project?.find("node:board/merge"); // [{ path: "nodes/merge.ts", line: 17, … }]
- * ```
  */
 export type ProjectHandle = {
   /** The places of a key, with lines read from disk now; `[]` for an unknown key. */
@@ -70,7 +64,10 @@ export type FilesState = {
   project: ProjectHandle | undefined;
   /** The open started in onStart; settles (never rejects) when the index is on or off. */
   opening: Promise<void> | undefined;
-  /** The last announced project state. Off `"not opened"` before start, `"stopped"` after stop. */
+  /**
+   * The last announced project state, frozen. Off `"not opened"` before start, `"stopped"` after
+   * stop.
+   */
   projectState: ProjectState;
   /** Ends the watch of the open index. */
   stopWatch: (() => void) | undefined;

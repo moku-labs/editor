@@ -2,11 +2,12 @@
  * @file gameView plugin — a new project state (`link:project`, D-46): what gameView remembered of
  * the files a batch changed is dropped, so the next ask goes to the index again. `all` (a gap, the
  * first state, off) drops every key answer; else the answers in a changed or moved-from file and
- * of a removed `jsx:` key, with their style blocks. Projection answers always go. The manifest is
- * read again when it was read and the index names another or it changed. The selected element
- * looks its style up again when its file, its style file or the file of its refusal changed, or
- * the index did not know it (never during a stepper burst), and the style card says when its file
- * does not parse now.
+ * of a removed `jsx:` key, with their style blocks (the blocks of style calls too), and the
+ * projection answers in a changed or moved-from file, of a removed `projection:` key, or still
+ * asked. The manifest is read again when it was read and the index names another or it changed.
+ * The selected element looks its style up again when its file, its style file or the file of its
+ * refusal changed, or the index did not know it (never during a stepper burst), and the style
+ * card says when its file does not parse now.
  */
 import type { ToolsEvents } from "../../../config";
 import { manifestOf } from "../../panels/shared/project";
@@ -14,7 +15,7 @@ import { refId } from "../../panels/shared/scene";
 import type { ProjectDelta, ProjectState } from "../../registry/protocol";
 import { readManifest } from "../scene/manifest";
 import { notify } from "../state";
-import type { GameViewCtx, GameViewState } from "../types";
+import type { GameViewCtx, GameViewState, TextureCatalogue } from "../types";
 import { brokenError, openStyleCard } from "./styles";
 
 /**
@@ -92,6 +93,53 @@ function dropAnswers(
 }
 
 /**
+ * Drops the projection answers a batch made stale: every one after a gap; else the answers in a
+ * changed or moved-from file, of a removed `projection:` key, and the asks still running (their
+ * answer may come from before the batch).
+ *
+ * @param state - gameView state.
+ * @param delta - The delta of the project change.
+ * @param changed - The files the batch touched.
+ */
+function dropSpawns(state: GameViewState, delta: ProjectDelta, changed: ReadonlySet<string>): void {
+  if (delta.all) {
+    state.spawns.clear();
+    return;
+  }
+
+  const removed = new Set(delta.removed);
+  for (const [name, { at }] of state.spawns) {
+    const isStale = at === undefined || changed.has(at.path) || removed.has(`projection:${name}`);
+    if (isStale) state.spawns.delete(name);
+  }
+}
+
+/**
+ * True when the read manifest is stale: after a gap, when the index names another one (or one
+ * where none was found), or when the batch changed it on disk.
+ *
+ * @param read - The manifest read before: its catalogue, or null when none was found.
+ * @param named - The manifest the index names now; undefined when it names none.
+ * @param delta - The delta of the project change.
+ * @returns Whether to read the manifest again.
+ * @example
+ * ```ts
+ * isManifestStale(null, "public/manifest.json", { all: false, files: [], moved: [], removed: [] }); // true
+ * isManifestStale(null, undefined, { all: false, files: [], moved: [], removed: [] }); // false
+ * ```
+ */
+function isManifestStale(
+  read: TextureCatalogue | null,
+  named: string | undefined,
+  delta: ProjectDelta
+): boolean {
+  if (delta.all) return true;
+  if (read === null) return named !== undefined;
+
+  return read.path !== named || delta.files.includes(read.path);
+}
+
+/**
  * Reads the manifest again when it was read and the index now names another one, or it changed
  * on disk.
  *
@@ -101,13 +149,7 @@ function dropAnswers(
  */
 function refreshManifest(ctx: GameViewCtx, project: ProjectState, delta: ProjectDelta): void {
   const read = ctx.state.manifest;
-  if (read === undefined) return;
-
-  const named = manifestOf(project);
-  const isStale =
-    delta.all ||
-    (read === null ? named !== undefined : read.path !== named || delta.files.includes(read.path));
-  if (!isStale) return;
+  if (read === undefined || !isManifestStale(read, manifestOf(project), delta)) return;
 
   ctx.state.manifest = undefined;
   void readManifest(ctx);
@@ -129,7 +171,7 @@ function markBroken(ctx: GameViewCtx): void {
 }
 
 /**
- * Applies a new project state: drops the stale answers, the projection answers and a stale
+ * Applies a new project state: drops the stale answers, the stale projection answers and a stale
  * manifest, marks a broken style card, and looks the selected element's style up again when the
  * batch touched it and no stepper burst waits.
  *
@@ -143,7 +185,7 @@ export function applyProjectChange(ctx: GameViewCtx, payload: ToolsEvents["link:
   const isTouched = delta.all || touchesSelected(state, changed);
 
   dropAnswers(state, delta, changed);
-  state.spawns.clear();
+  dropSpawns(state, delta, changed);
   refreshManifest(ctx, payload.state, delta);
   markBroken(ctx);
 

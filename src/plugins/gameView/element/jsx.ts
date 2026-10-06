@@ -49,7 +49,7 @@ export type TagAttribute = {
  * @returns The snippet from the start line.
  * @example
  * ```ts
- * // The JSX of the settings board: settings.tsx from line 300 to line 321.
+ * // The JSX of the settings board: settings.tsx from line 289 to line 310.
  * snippetOf("features/settings/settings.tsx", text, [289, 7, 310, 19]).lines.length; // 22
  * ```
  */
@@ -120,17 +120,24 @@ function lineOf(starts: readonly number[], offset: number, from: number): number
 function skipLiteral(text: string, start: number): number | undefined {
   const char = text.charAt(start);
   const next = text.charAt(start + 1);
+
+  // A line comment ends at the line break, which stays code.
   if (char === "/" && next === "/") {
     const end = text.indexOf("\n", start);
     return end === -1 ? text.length : end;
   }
+
+  // A block comment ends after its `*/`; one that never closes runs to the end.
   if (char === "/" && next === "*") {
     const end = text.indexOf("*/", start + 2);
     return end === -1 ? text.length : end + 2;
   }
+
+  // A template literal may hold `${…}` parts with braces of their own.
   if (char === "`") return skipTemplate(text, start);
   if (char !== '"' && char !== "'") return undefined;
 
+  // A quoted string ends at its own quote; an escaped one does not end it.
   let index = start + 1;
   while (index < text.length && text.charAt(index) !== char) {
     index += text.charAt(index) === "\\" ? 2 : 1;
@@ -252,6 +259,7 @@ export function tagAttributes(
   lines: readonly string[],
   range: SourceRange
 ): readonly TagAttribute[] {
+  // The tag must open exactly where the range starts: the sticky regex reads only there.
   const text = lines.join("\n");
   const starts = lineStarts(lines);
   const from = range[0] - 1;
@@ -259,6 +267,8 @@ export function tagAttributes(
   const tag = OPENING_TAG.exec(text);
   if (tag === null) return [];
 
+  // Read the attributes up to the `>` or `/>` that ends the tag. A spread or any other braced
+  // part is skipped whole, so a `>` inside it (an arrow, a comparison) never ends the tag.
   const attributes: TagAttribute[] = [];
   let index = tag.index + tag[0].length;
   while (index < text.length) {

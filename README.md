@@ -193,7 +193,7 @@ A client that does not refresh its list after `list_changed` keeps the old door 
 ## Project index
 
 The editor does not guess where game code lives. It asks the game's **project index**
-(`@moku-labs/game/project`, game 0.6.0 and newer). The server core's `files` plugin opens the
+(`@moku-labs/game/project`, game 0.7.0 and newer). The server core's `files` plugin opens the
 index of its root on start (`openProject({ root })`, about 150 ms on merge-game, not awaited) and
 keeps it fresh with the index's watch. The bin prints `files:project-on { files, keys, ms }` once it
 is open.
@@ -227,7 +227,7 @@ loads the hot swap plugin.
 
 **What a view says:**
 
-- `Project index is off: <reason>`: the index could not open (no `typescript`, a game before 0.6.0,
+- `Project index is off: <reason>`: the index could not open (no `typescript`, a game before 0.7.0,
   `pluginConfigs.files.project: false` reads `disabled`). One line in every view that needs a code
   location. The server logs `files:project-off { reason }` at error. MCP and the game keep working.
 - `Not in the project index: <key>`: the index has no answer for that key. No crawl, no guess.
@@ -249,7 +249,7 @@ between that check and the rename is still overwritten: the window is narrowed, 
 - Removed configs: `flowView.stylesFile`, `gameView.manifestPaths`, `gameView.sourceSearch`,
   `renderView.manifestPaths`. The manifest is `ProjectState.manifest`.
 - The graph node field `file` (F-H2) is gone. `UsedBy.usedIn` is new. `StyleEditCode` gains
-  `"broken"`.
+  `"broken"` and `"index-off"`.
 - A key built in a loop answers the line of the element that builds it: `card0` is
   `features/orders/strip.tsx:216` (was `:157 (loop)`).
 

@@ -20,7 +20,7 @@ import { createFixture, MINI_GAME, outcome, projectStates, putMiniGame } from ".
 const WAIT = { timeout: 5000, interval: 20 };
 
 /** The reason of an index the installed game cannot give. */
-const NO_INDEX = "@moku-labs/game 0.6.0 or newer is needed for the project index";
+const NO_INDEX = "@moku-labs/game 0.7.0 or newer is needed for the project index";
 
 /** Every fixture a test made, closed and removed after it. */
 const made: Fixture[] = [];
@@ -257,12 +257,14 @@ describe("project index: off", () => {
 
     expect(load).not.toHaveBeenCalled();
     expect(projectStates(fixture.ctx)).toEqual([{ state: "off", reason: "disabled" }]);
+    expect(Object.isFrozen(fixture.api.project())).toBe(true);
   });
 
   it("answers -32008 not opened before start", async () => {
     const fixture = await gameFixture();
 
     expect(fixture.api.project()).toEqual({ state: "off", reason: "not opened" });
+    expect(Object.isFrozen(fixture.api.project())).toBe(true);
     await expect(fixture.api.find("node:main/open")).rejects.toMatchObject({
       code: -32_008,
       message: "[moku-editor] project index off: not opened"
@@ -353,6 +355,7 @@ describe("project index: lifecycle", () => {
     expect(unwatch).toHaveBeenCalledTimes(1);
     expect(handle.close).toHaveBeenCalledTimes(1);
     expect(fixture.ctx.emit).not.toHaveBeenCalled();
+    expect(Object.isFrozen(fixture.api.project())).toBe(true);
     await expect(fixture.api.find("flow:main")).rejects.toMatchObject({
       message: "[moku-editor] project index off: stopped"
     });
@@ -530,6 +533,25 @@ describe("summarize", () => {
 
     expect(state).toEqual({ state: "on", revision: "r1", defs: {}, uses: {}, broken: {} });
     expect(Object.keys(state)).not.toContain("previous");
+  });
+
+  it("is frozen all the way down: project() hands out no state to change", () => {
+    const change = {
+      revision: "r9",
+      files: ["nodes/a.ts"],
+      moved: [{ key: "node:main/a", from: "nodes/a.ts", to: "nodes/b/a.ts" }],
+      removed: []
+    };
+    const state = summarize(index, "r8", change);
+    if (state.state !== "on") throw new Error("summarize gives an on state");
+
+    expect(Object.isFrozen(state)).toBe(true);
+    expect(Object.isFrozen(state.defs)).toBe(true);
+    expect(Object.isFrozen(state.defs["flow:main"])).toBe(true);
+    expect(Object.isFrozen(state.uses["node:main/home"])).toBe(true);
+    expect(Object.isFrozen(state.broken)).toBe(true);
+    expect(Object.isFrozen(state.change?.moved[0])).toBe(true);
+    expect(Object.isFrozen(state.change?.files)).toBe(true);
   });
 
   it("does not touch the index it reads and shares no list with it", () => {

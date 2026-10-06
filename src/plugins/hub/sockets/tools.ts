@@ -6,7 +6,7 @@
  * answers relayed calls; other notifications and responses are ignored. At most 256 pending calls
  * per connection.
  */
-import { filesPlugin } from "../../files";
+import type { FilesApi } from "../../files/types";
 import type {
   CommandDescriptor,
   InputSchema,
@@ -240,12 +240,13 @@ function routeGame(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * connection closed meanwhile.
  *
  * @param ctx - Domain context of the hub.
+ * @param files - The files api, resolved once with the socket handler.
  * @param conn - The tools connection.
  * @param req - The request.
  */
-function routeFiles(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
+function routeFiles(ctx: HubCtx, files: FilesApi, conn: ToolsConn, req: RpcRequest): void {
   conn.pending += 1;
-  dispatchFiles(ctx.require(filesPlugin), req.method, req.params)
+  dispatchFiles(files, req.method, req.params)
     .then(
       result => success(req.id, result),
       (error: unknown) => failure(req.id, toWireError(error))
@@ -293,15 +294,16 @@ function routeEditor(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
  * Routes one request by channel.
  *
  * @param ctx - Domain context of the hub.
+ * @param files - The files api, resolved once with the socket handler.
  * @param conn - The tools connection.
  * @param req - The request.
  * @throws {Error} A wire error for the response.
  */
-function route(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
+function route(ctx: HubCtx, files: FilesApi, conn: ToolsConn, req: RpcRequest): void {
   if (conn.pending >= MAX_PENDING) throw invalidRequest("too many pending calls");
 
   if (req.channel === "game") routeGame(ctx, conn, req);
-  else if (req.channel === "files") routeFiles(ctx, conn, req);
+  else if (req.channel === "files") routeFiles(ctx, files, conn, req);
   else routeEditor(ctx, conn, req);
 }
 
@@ -325,13 +327,19 @@ function isSelectionNote(message: Message): message is Notification {
  * `selection` is published; every other notification or response is ignored (debug log).
  *
  * @param ctx - Domain context of the hub.
+ * @param files - The files api, resolved once with the socket handler.
  * @param conn - The tools connection.
  * @param message - The decoded message.
  */
-export function onToolsMessage(ctx: HubCtx, conn: ToolsConn, message: Message): void {
+export function onToolsMessage(
+  ctx: HubCtx,
+  files: FilesApi,
+  conn: ToolsConn,
+  message: Message
+): void {
   if (isRequest(message)) {
     try {
-      route(ctx, conn, message);
+      route(ctx, files, conn, message);
     } catch (error) {
       sendJson(conn, failure(message.id, toWireError(error)));
     }

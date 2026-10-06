@@ -52,7 +52,7 @@ const JSX_PREFIX = "jsx:";
 /**
  * Why the index is off when the installed game has no `@moku-labs/game/project`.
  */
-const NO_INDEX = "@moku-labs/game 0.6.0 or newer is needed for the project index";
+const NO_INDEX = "@moku-labs/game 0.7.0 or newer is needed for the project index";
 
 /**
  * The text fields an answer of `find` may carry.
@@ -66,6 +66,38 @@ const ANCHOR_TEXT_FIELDS = ["binding", "key", "component", "stem", "prop"] as co
  */
 function loadGameProject(): Promise<ProjectModule> {
   return import("@moku-labs/game/project");
+}
+
+/**
+ * Freezes a fresh value and every object and array inside it.
+ *
+ * @param value - A value built here that nobody else holds yet.
+ * @returns The same value, frozen all the way down.
+ * @example
+ * ```ts
+ * const state = freezeDeep({ state: "on", revision: "r1", defs: { "flow:main": ["flows/main.ts"] }, uses: {}, broken: {} });
+ * Object.isFrozen(state.defs["flow:main"]); // true
+ * ```
+ */
+function freezeDeep<T>(value: T): T {
+  if (typeof value !== "object" || value === null) return value;
+
+  for (const child of Object.values(value)) freezeDeep(child);
+  return Object.freeze(value);
+}
+
+/**
+ * An off state, frozen like every state files announces.
+ *
+ * @param reason - Why the index is off.
+ * @returns The state.
+ * @example
+ * ```ts
+ * offState("disabled"); // { state: "off", reason: "disabled" }, frozen
+ * ```
+ */
+export function offState(reason: string): ProjectState {
+  return Object.freeze({ state: "off", reason });
 }
 
 /**
@@ -140,16 +172,31 @@ function brokenOf(index: ProjectIndex): Record<string, string> {
 
 /**
  * The state files publishes for an index: the key maps (no `jsx:` key), the broken files and,
- * after a watch batch, the revision it follows and what it changed. Pure.
+ * after a watch batch, the revision it follows and what it changed. Pure. Frozen all the way
+ * down, so `project()` and the `files:project` hooks share it without copying.
  *
  * @param index - The index of the game.
  * @param previous - The revision of the state announced before; absent on the first.
  * @param change - What the watch batch changed; absent on the first.
- * @returns A fresh on state.
+ * @returns A fresh on state, frozen.
  * @example
  * ```ts
- * summarize(project.index);
- * // { state: "on", revision: "8a72…", defs: { "flow:main": ["flows/main.ts"], … }, uses: { … }, broken: {} }
+ * summarize({
+ *   schemaVersion: 1,
+ *   revision: "8a72",
+ *   symbols: {
+ *     "flow:main": { def: [{ path: "flows/main.ts", binding: "main" }] },
+ *     "node:main/home": {
+ *       def: [{ path: "nodes/home.ts", binding: "home" }],
+ *       uses: [{ path: "flows/main.ts", binding: "main", key: "home" }]
+ *     },
+ *     "jsx:hudRow": { def: [{ path: "features/ui/hud.tsx", key: "hudRow", kind: "literal" }] }
+ *   },
+ *   files: {},
+ *   unresolved: []
+ * });
+ * // { state: "on", revision: "8a72", defs: { "flow:main": ["flows/main.ts"], "node:main/home": ["nodes/home.ts"] },
+ * //   uses: { "node:main/home": ["flows/main.ts"] }, broken: {} }
  * ```
  */
 export function summarize(
@@ -175,7 +222,7 @@ export function summarize(
     };
   }
 
-  return state;
+  return freezeDeep(state);
 }
 
 /**
@@ -200,7 +247,7 @@ function announce(ctx: FilesCtx, state: ProjectState): void {
  * @param reason - Why the index is off.
  */
 function turnOff(ctx: FilesCtx, reason: string): void {
-  announce(ctx, { state: "off", reason });
+  announce(ctx, offState(reason));
   ctx.log.error("files:project-off", { reason });
 }
 
@@ -231,13 +278,19 @@ async function openHandle(
   load: () => Promise<ProjectModule>
 ): Promise<ProjectApi | undefined> {
   const { state } = ctx;
+
+  // Stopped while the module loaded: nothing is opened and nothing is announced.
   const module = await loadModule(load);
   if (state.stopped) return undefined;
+
+  // A game without `@moku-labs/game/project`: the index is off with the version it needs.
   if (module === undefined) {
     turnOff(ctx, NO_INDEX);
     return undefined;
   }
 
+  // The open: a handle that comes after stop is closed at once; a failure turns the index off
+  // with its message, unless files stopped meanwhile.
   try {
     const project = await module.openProject({ root: state.rootReal });
     if (!state.stopped) return project;
@@ -393,5 +446,5 @@ export function closeIndex(state: FilesState): void {
   state.project?.close();
   state.stopWatch = undefined;
   state.project = undefined;
-  state.projectState = { state: "off", reason: "stopped" };
+  state.projectState = offState("stopped");
 }

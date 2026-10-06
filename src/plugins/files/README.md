@@ -9,7 +9,7 @@ every flow, node, JSX key, text style and style of the game lives. `hub` calls i
 requests from `tools` connections and publishes the index state. `pages` reads `root()`.
 
 Node built-ins only (`node:fs`, `node:fs/promises`, `node:path/posix`, `node:crypto`). No `Bun.*`.
-The project index is `@moku-labs/game/project` (game 0.6.0 or newer, with `typescript` 5.5 or newer
+The project index is `@moku-labs/game/project` (game 0.7.0 or newer, with `typescript` 5.5 or newer
 in the game repo), loaded with a dynamic `import()` on start.
 
 ## Configuration
@@ -60,7 +60,7 @@ Paths are relative posix paths from the root, for example `src/nodes/merge.ts`. 
 | `resolve(path: string)` | `string` | Synchronous full check, as for a write. The absolute real path. A missing file gives the path it would have. |
 | `root()` | `string` | The real, symlink-resolved root. |
 | `find(key: string)` | `Promise<ProjectFound[]>` | Where a key of the project index lives. Lines are read from disk at the call. See [Project index](#project-index). |
-| `project()` | `ProjectState` | The state last announced with `files:project`. |
+| `project()` | `ProjectState` | The state last announced with `files:project`, frozen all the way down. |
 
 Image extensions: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, case-insensitive (`IMAGE_EXTENSIONS`).
 With the default `allow`, images are readable and writable only under `.moku/**`.
@@ -169,7 +169,7 @@ every batch of file changes. `onStop` ends the watch and closes the index.
 | Open done | on, no `previous`, no `change` | info `files:project-on { files, keys, ms }` |
 | Watch batch (an agent edits, moves, breaks a file) | on, `previous` = the revision before, `change` = `{ files, moved, removed }` | none |
 | `project: false` | off `"disabled"` | error `files:project-off { reason }` |
-| Game without `@moku-labs/game/project` | off `"@moku-labs/game 0.6.0 or newer is needed for the project index"` | error `files:project-off { reason }` |
+| Game without `@moku-labs/game/project` | off `"@moku-labs/game 0.7.0 or newer is needed for the project index"` | error `files:project-off { reason }` |
 | `openProject` rejects (no `typescript`, bad root) | off with the bare message | error `files:project-off { reason }` |
 | Before start | off `"not opened"` | none |
 | After stop | off `"stopped"`, not announced | none |
@@ -231,7 +231,7 @@ This plugin hooks no events.
 | Global events emitted | `files:written`, `files:project` |
 | Global events hooked | none |
 | Lifecycle | `onInit` (`validateFilesConfig`), `onStart` (`startFiles`: opens the project index), `onStop` (`stopFiles`: ends the watch, closes the index). |
-| Peer packages | `@moku-labs/game` >= 0.6.0 and `typescript` >= 5.5, for the project index. |
+| Peer packages | `@moku-labs/game` >= 0.7.0 and `typescript` >= 5.5, for the project index. |
 
 ## Usage
 

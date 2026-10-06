@@ -203,6 +203,8 @@ export type FilesViewState = {
   index: FileIndex | undefined;
   /** Single flight of buildIndex. */
   indexing: Promise<void> | undefined;
+  /** A buildIndex call came while a walk ran: the walk runs once more after it. */
+  indexDirty: boolean;
   /** Open folders. */
   expanded: Set<string>;
   /** Tab order. */

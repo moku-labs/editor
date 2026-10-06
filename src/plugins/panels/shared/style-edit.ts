@@ -92,10 +92,12 @@ export type StyleFile = {
 };
 
 /**
- * Why an edit was refused.
+ * Why an edit was refused. `index-off`: the project index answered -32008 to the broken guard, so
+ * nothing is written while it is off (D-48).
  */
 export type StyleEditCode =
   | "broken"
+  | "index-off"
   | "no-file"
   | "parse"
   | "no-key"
@@ -153,7 +155,7 @@ export type WriteDone = {
 
 /**
  * Structural files client: link.files and tools.files fit it. With `find`, a write first asks the
- * project index whether the file parses now (D-44).
+ * project index whether the file parses now (D-44); a rejected `find` refuses the write (D-48).
  */
 export type StyleFiles = {
   read(path: string): Promise<FileText>;
@@ -221,10 +223,6 @@ type Cursor = {
  * @param to - End index (exclusive).
  * @param kind - QUOTED or COMMENT.
  * @returns The end index, the next position of the cursor.
- * @example
- * ```ts
- * cursor.index = mark(cursor, 4, 9, QUOTED);
- * ```
  */
 function mark(cursor: Cursor, from: number, to: number, kind: number): number {
   const end = Math.min(to, cursor.text.length);
@@ -535,10 +533,6 @@ function trimRange(scan: Scan, start: number, end: number): [number, number] {
  * @param start - Index after the opening `{`.
  * @param end - Index of the closing `}`.
  * @returns The member ranges, untrimmed.
- * @example
- * ```ts
- * splitMembers(scan, open + 1, close);
- * ```
  */
 function splitMembers(scan: Scan, start: number, end: number): [number, number][] {
   const ranges: [number, number][] = [];
@@ -646,10 +640,6 @@ function valueField(scan: Scan, path: string, start: number, end: number): Style
  * @param end - Index of the closing `}`.
  * @param prefix - "" for the block, "shadow." for a nested object.
  * @param fields - Where the fields go, in source order.
- * @example
- * ```ts
- * readMembers(scan, open + 1, close, "", fields);
- * ```
  */
 function readMembers(
   scan: Scan,
@@ -826,8 +816,11 @@ function readCalls(
  * close.
  * @example
  * ```ts
- * const file = parseStyleFile(text);
- * if (!isStyleEditError(file)) file.blocks.map(block => block.ref);
+ * parseStyleFile("export const hudRow = defineStyle({\n  gap: 8\n});\n");
+ * // { blocks: [{ ref: { kind: "const", name: "hudRow" }, line: 1, endLine: 3, fields: [
+ * //     { kind: "number", path: "gap", value: 8, raw: "8", line: 2, colStart: 7, colEnd: 8 }] }],
+ * //   calls: [], colours: Map(0) {}, eol: "\n" }
+ * parseStyleFile("export const hudRow = defineStyle({\n  gap: 8\n"); // { error: "parse", line: 1 }
  * ```
  */
 export function parseStyleFile(text: string): StyleFile | StyleEditError {
@@ -1071,10 +1064,6 @@ export function formatNumber(value: number): string {
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns The field, or the refusal.
- * @example
- * ```ts
- * editableField(text, target, 64); // { kind: "number", path: "size", … }
- * ```
  */
 function editableField(
   text: string,
@@ -1262,21 +1251,48 @@ async function tryWrite(
 }
 
 /**
- * True when the project index answers the block's key from the last good parse of `path`: the
- * file does not parse now. A client without `find`, or a rejected `find`, does not block the write.
+ * True for the rejection of a `find` while the project index is off: -32008 `not_installed`.
+ *
+ * @param error - A rejection of the files client.
+ * @returns Whether the index is off.
+ * @example
+ * ```ts
+ * isIndexOff(wireError(-32_008, "project index off: disabled")); // true
+ * isIndexOff(wireError(-32_002, "timeout")); // false
+ * ```
+ */
+function isIndexOff(error: unknown): boolean {
+  return isWireError(error) && error.code === errorCode.notInstalled;
+}
+
+/**
+ * Asks the project index whether the block's file parses now, before a write (D-44). Three ways
+ * out, no silent fallback (D-48): an answer on `path` from the last good parse refuses as
+ * `broken`; -32008 refuses as `index-off`; any other rejection propagates, so the view shows its
+ * message and nothing is written. A client without `find` writes.
  *
  * @param files - The files client.
  * @param path - The style file path.
  * @param ref - The block being edited.
- * @returns Whether the write must be refused as `broken`.
+ * @returns The refusal, or undefined when the write may go on.
+ * @throws {Error} The rejection of `find` when it is not -32008.
  */
-async function isBroken(files: StyleFiles, path: string, ref: StyleBlockRef): Promise<boolean> {
+async function indexRefusal(
+  files: StyleFiles,
+  path: string,
+  ref: StyleBlockRef
+): Promise<StyleEditError | undefined> {
+  let answers: readonly ProjectFound[];
+
   try {
-    const answers = (await files.find?.(anchorKey(ref, path))) ?? [];
-    return answers.some(found => found.path === path && found.broken === true);
-  } catch {
-    return false;
+    answers = (await files.find?.(anchorKey(ref, path))) ?? [];
+  } catch (error) {
+    if (isIndexOff(error)) return { error: "index-off", path };
+    throw error;
   }
+
+  const isBroken = answers.some(found => found.path === path && found.broken === true);
+  return isBroken ? { error: "broken", path } : undefined;
 }
 
 /**
@@ -1287,7 +1303,9 @@ async function isBroken(files: StyleFiles, path: string, ref: StyleBlockRef): Pr
  * @param path - The style file path.
  * @param target - What the card showed.
  * @param next - The new value.
- * @returns The write, `broken`, `no-file` or `changed-on-disk`.
+ * @returns The write, `broken`, `index-off`, `no-file` or `changed-on-disk`.
+ * @throws {Error} A rejection of `find` other than -32008, or of the read other than -32601 and
+ * -32004.
  */
 async function retryWrite(
   files: StyleFiles,
@@ -1295,7 +1313,8 @@ async function retryWrite(
   target: EditTarget,
   next: number
 ): Promise<WriteDone | StyleEditError> {
-  if (await isBroken(files, path, target.ref)) return { error: "broken", path };
+  const refusal = await indexRefusal(files, path, target.ref);
+  if (refusal !== undefined) return refusal;
 
   let fresh: FileText;
 
@@ -1315,7 +1334,7 @@ async function retryWrite(
 /**
  * Edits and writes with the read version; one retry on -32005 when the literal is unchanged.
  * With `files.find`, the project index is asked before each write: a file that does not parse now
- * is refused as `broken` and nothing is written (D-44).
+ * is refused as `broken` (D-44), an index that is off as `index-off` (D-48); nothing is written.
  *
  * @param files - The files client.
  * @param path - The style file path.
@@ -1323,12 +1342,15 @@ async function retryWrite(
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns `{ ok: true, text, line, version, bytes }`, or the refusal; nothing is written on a
- * refusal. Rejections other than -32005 and -32004 propagate; a rejected `find` does not refuse.
+ * refusal.
+ * @throws {Error} A rejection of `find` other than -32008 (nothing is written), and a rejection of
+ * the write other than -32005, -32601 and -32004.
  * @example
  * ```ts
  * await writeNumber(link.files, "features/ui/styles.ts", loaded, target, 64);
  * // { ok: true, line: 74, version: "9c1e…", … }
  * // While an agent's edit left the file unparseable: { error: "broken", path: "features/ui/styles.ts" }
+ * // While the index is off: { error: "index-off", path: "features/ui/styles.ts" }
  * ```
  */
 export async function writeNumber(
@@ -1340,7 +1362,9 @@ export async function writeNumber(
 ): Promise<WriteDone | StyleEditError> {
   const edited = editNumber(current.text, target, next);
   if (isStyleEditError(edited)) return edited;
-  if (await isBroken(files, path, target.ref)) return { error: "broken", path };
+
+  const refusal = await indexRefusal(files, path, target.ref);
+  if (refusal !== undefined) return refusal;
 
   return (
     (await tryWrite(files, path, edited, current.version)) ?? retryWrite(files, path, target, next)
@@ -1350,6 +1374,7 @@ export async function writeNumber(
 /** Every edit error code. */
 const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
   "broken",
+  "index-off",
   "no-file",
   "parse",
   "no-key",
@@ -1364,10 +1389,11 @@ const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
  * True for a StyleEditError.
  *
  * @param value - Anything.
- * @returns Whether `value` is an object whose `error` is one of the nine codes.
+ * @returns Whether `value` is an object whose `error` is one of the ten codes.
  * @example
  * ```ts
- * if (isStyleEditError(loaded)) return showReason(loaded);
+ * isStyleEditError({ error: "broken", path: "features/ui/styles.ts" }); // true
+ * isStyleEditError({ ok: true, text: "…", line: 74, version: "9c1e", bytes: 2048 }); // false
  * ```
  */
 export function isStyleEditError(value: unknown): value is StyleEditError {

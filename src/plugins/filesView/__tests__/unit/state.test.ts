@@ -12,6 +12,7 @@ describe("createFilesViewState", () => {
       [
         "index",
         "indexing",
+        "indexDirty",
         "expanded",
         "tabs",
         "active",
@@ -29,6 +30,7 @@ describe("createFilesViewState", () => {
     const state = createFilesViewState();
     expect(state.index).toBeUndefined();
     expect(state.indexing).toBeUndefined();
+    expect(state.indexDirty).toBe(false);
     expect(state.active).toBeUndefined();
     expect(state.graph).toBeUndefined();
     expect(state.following).toBeUndefined();

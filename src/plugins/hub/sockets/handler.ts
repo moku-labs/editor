@@ -3,6 +3,8 @@
  * connection of the upgrade's kind, message refuses binary frames and decodes text, close ends
  * agent sessions and tools subscriptions, drain flushes the tools backlog.
  */
+import { filesPlugin } from "../../files";
+import type { FilesApi } from "../../files/types";
 import type { Message } from "../../registry/protocol";
 import { decode } from "../../registry/protocol";
 import { replayPublished } from "../routing/publish";
@@ -92,10 +94,11 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
  * One frame: binary closes 1003, an undecodable text is a strike, a message goes to its kind.
  *
  * @param ctx - Domain context of the hub.
+ * @param files - The files api the files channel goes to.
  * @param ws - The socket.
  * @param frame - The frame.
  */
-function onFrame(ctx: HubCtx, ws: HubSocket, frame: string | Uint8Array): void {
+function onFrame(ctx: HubCtx, files: FilesApi, ws: HubSocket, frame: string | Uint8Array): void {
   const conn = ctx.state.conns.get(ws.data.conn);
   if (conn === undefined) return;
 
@@ -107,7 +110,7 @@ function onFrame(ctx: HubCtx, ws: HubSocket, frame: string | Uint8Array): void {
   const message = tryDecode(frame);
   if (message === undefined) strike(conn);
   else if (conn.kind === "agent") onAgentMessage(ctx, conn, message);
-  else onToolsMessage(ctx, conn, message);
+  else onToolsMessage(ctx, files, conn, message);
 }
 
 /**
@@ -127,18 +130,21 @@ function closeConn(ctx: HubCtx, ws: HubSocket): void {
 }
 
 /**
- * Creates the hub's websocket handler (`websocket` of the Bun.serve options).
+ * Creates the hub's websocket handler (`websocket` of the Bun.serve options). The files api is
+ * resolved here, once: every files-channel request of every socket uses it.
  *
  * @param ctx - Domain context of the hub.
  * @returns The handler.
  */
 export function createSocketHandler(ctx: HubCtx): HubWebSocketHandler {
+  const files = ctx.require(filesPlugin);
+
   return {
     open: ws => {
       openConn(ctx, ws);
     },
     message: (ws, frame) => {
-      onFrame(ctx, ws, frame);
+      onFrame(ctx, files, ws, frame);
     },
     close: ws => {
       closeConn(ctx, ws);

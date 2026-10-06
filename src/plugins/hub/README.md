@@ -327,7 +327,7 @@ Log events (`ctx.log`):
 | `hub:late-response` | debug | `id`. Also a page answer to a call that was not relayed to it. |
 | `hub:unknown-notification` | debug | `channel`, `method` |
 | `hub:tools-ignored` | debug | `method`. Also a `selection` or a response from a plain tools connection. |
-| `hub:published` | debug | `method` |
+| `hub:published` | debug | `method`; for `project` also `bytes` (the frame size) and `conns` (the tools connections it went to) |
 
 ## Dependencies
 

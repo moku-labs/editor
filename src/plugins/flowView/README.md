@@ -81,7 +81,8 @@ before the first `editor.project` state, each of these shows one line:
 "Source loads from the dev server.".
 
 A style step on a file that does not parse now writes nothing. The card shows
-"The file does not parse now · fix it, then edit" (D-44).
+"The file does not parse now · fix it, then edit" (D-44). With the index off it writes nothing
+either; the card shows `Project index is off: <reason>` (D-48).
 
 ## API
 

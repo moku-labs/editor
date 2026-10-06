@@ -33,6 +33,23 @@ import type { FilesApi, FilesCtx } from "./types";
 const ENCODER = new TextEncoder();
 
 /**
+ * The errno code of a thrown file-system error.
+ *
+ * @param error - What was thrown.
+ * @returns `error.code` when it is a string, else `"EIO"`.
+ * @example
+ * ```ts
+ * errnoCodeOf(Object.assign(new Error("permission denied"), { code: "EACCES" })); // "EACCES"
+ * errnoCodeOf("boom"); // "EIO"
+ * ```
+ */
+function errnoCodeOf(error: unknown): string {
+  if (!(error instanceof Error) || !("code" in error)) return "EIO";
+
+  return typeof error.code === "string" ? error.code : "EIO";
+}
+
+/**
  * Turns anything a call threw into the error it rejects with: wire errors pass unchanged, any
  * other error becomes -32000 with the operation, the relative path and the errno code.
  *
@@ -48,12 +65,7 @@ const ENCODER = new TextEncoder();
 function toFilesError(operation: string, path: string, error: unknown): Error {
   if (error instanceof Error && isWireError(error)) return error;
 
-  const code =
-    error instanceof Error && "code" in error && typeof error.code === "string"
-      ? error.code
-      : "EIO";
-
-  return ioFailed(`${operation} failed: ${String(path)} (${code})`);
+  return ioFailed(`${operation} failed: ${String(path)} (${errnoCodeOf(error)})`);
 }
 
 /**
@@ -254,6 +266,7 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
     },
     root: () => ctx.state.rootReal,
     find: key => guard("find", key, () => findKey(ctx, key)),
+    // Every state files announces is frozen: the caller gets it without a copy.
     project: () => ctx.state.projectState
   };
 

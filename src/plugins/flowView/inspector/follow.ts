@@ -51,7 +51,8 @@ export function codeToFollow(
   delta: ProjectDelta
 ): NodeId | undefined {
   const { tab, code, codeNode } = inspector;
-  if (tab !== "code" || codeNode === undefined || code?.draft !== undefined) return undefined;
+  const isCodeTabFree = tab === "code" && codeNode !== undefined && code?.draft === undefined;
+  if (!isCodeTabFree) return undefined;
   if (code !== undefined && !touches(delta, code.path)) return undefined;
 
   return codeNode;
@@ -91,8 +92,10 @@ export function textStylesChanged(
  * @returns Whether a project change leaves the tab alone.
  * @example
  * ```ts
- * // A size press waits 600 ms for the next one.
- * isWriting(inspector.styles); // true until the write of the burst returns
+ * // The write of a size burst is on the way.
+ * isWriting({ pending: undefined, writing: true }); // true
+ * // No press waits and no write runs: a project change may read the file again.
+ * isWriting({ pending: undefined, writing: false }); // false
  * ```
  */
 export function isWriting(styles: Pick<StylesState, "pending" | "writing">): boolean {

@@ -354,9 +354,27 @@ export type PickResult = {
 };
 
 /**
- * Where the style block of a ui key was found: its file and the 1-based line of the block.
+ * Where a style block was found: its file and the 1-based line of the block. The `defineStyle`
+ * call of a style function (G2) also keeps the range the index answered, so its lines are read
+ * again without asking the index.
  */
-export type BlockAt = { readonly path: string; readonly line: number };
+export type BlockAt = {
+  readonly path: string;
+  readonly line: number;
+  /** The range of the call the index answered for its `style:` key. */
+  readonly range?: SourceRange;
+};
+
+/**
+ * The index asked for the definition of a projection (round 2b R12): the ask, which a second ask
+ * while it runs shares, and the place once it answered, so a project change drops it by its file
+ * (D-46).
+ */
+export type SpawnAsk = {
+  readonly asked: Promise<BlockAt | undefined>;
+  /** The file and line the index answered; undefined while the ask runs. */
+  at: BlockAt | undefined;
+};
 
 /**
  * Lines of one source file the Element tab and the reference card show (round 2b R12).
@@ -521,13 +539,18 @@ export type GameViewState = {
    * the answers in the files it changed (D-46).
    */
   found: Map<string, StyleSource>;
-  /** The style block found per ui key (the reference block's `style:` and the proxies). */
+  /**
+   * The style block found per ui key (the reference block's `style:` and the proxies), and the
+   * call of a style function per `style:` key (the Code section, G2); a project change drops the
+   * blocks in the files it changed (D-46).
+   */
   blocks: Map<string, BlockAt>;
   /**
-   * The index answer for the definition of a projection, per projection key (round 2b R12); every
-   * project change drops them.
+   * The index answer for the definition of a projection, per projection key (round 2b R12); a
+   * project change drops the answers in the files it changed, of a removed key, and the asks
+   * still running (D-46).
    */
-  spawns: Map<string, Promise<BlockAt | undefined>>;
+  spawns: Map<string, SpawnAsk>;
   /** The reference card written last per `<node id>@<frame>` (round 2b R13). */
   cards: Map<string, string>;
   /** Reference mode: the proxy layer in the frame overlay. */

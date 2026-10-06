@@ -803,15 +803,47 @@ describe("writeNumber broken guard (D-44)", () => {
     expect(fake.files.write).toHaveBeenCalledTimes(1);
   });
 
-  it("writes when find rejects: the guard never blocks on a lost link", async () => {
+  it("returns index-off and writes nothing while the index is off (-32008, D-48)", async () => {
     const fake = fakeFiles({ [UI_PATH]: UI });
     const find = vi.fn(async (): Promise<readonly ProjectFound[]> => {
-      throw wireError(-32_002, "timeout");
+      throw wireError(-32_008, "project index off: disabled", { reason: "not_installed" });
     });
 
-    expect(
-      await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)
-    ).toMatchObject({ ok: true });
+    expect(await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)).toEqual({
+      error: "index-off",
+      path: UI_PATH
+    });
+    expect(fake.files.write).not.toHaveBeenCalled();
+    expect(fake.texts.get(UI_PATH)).toBe(UI);
+  });
+
+  it("refuses with the rejection of any other failed find: no silent write (D-48)", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    const lost = wireError(-32_002, "timeout");
+    const find = vi.fn(async (): Promise<readonly ProjectFound[]> => {
+      throw lost;
+    });
+
+    await expect(
+      writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)
+    ).rejects.toBe(lost);
+    expect(fake.files.write).not.toHaveBeenCalled();
+  });
+
+  it("returns index-off before the retry when the index went off after a conflict", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    fake.touch(UI_PATH, UI.replace("size: 100,", "size: 101,"));
+    const find = vi
+      .fn<(key: string) => Promise<readonly ProjectFound[]>>()
+      .mockResolvedValueOnce([found(UI_PATH, false)])
+      .mockRejectedValueOnce(wireError(-32_008, "project index off: stopped"));
+
+    expect(await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)).toEqual({
+      error: "index-off",
+      path: UI_PATH
+    });
+    expect(fake.files.write).toHaveBeenCalledTimes(1);
+    expect(fake.files.read).not.toHaveBeenCalled();
   });
 
   it("checks again before the retry: a file broken since the conflict is not written", async () => {
@@ -996,7 +1028,8 @@ describe("isStyleEditError", () => {
       "not-literal",
       "read-only",
       "changed-on-disk",
-      "out-of-range"
+      "out-of-range",
+      "index-off"
     ];
     for (const error of codes) expect(isStyleEditError({ error })).toBe(true);
   });

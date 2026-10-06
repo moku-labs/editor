@@ -127,9 +127,10 @@ function forwardLog(app: EditorApp, ui: BrandConsole): void {
     write(entry: { level: string; event: string; data?: unknown }): void {
       const line =
         entry.data === undefined ? entry.event : `${entry.event} ${JSON.stringify(entry.data)}`;
+      const isPrintedInfo = entry.level === "info" && PRINTED_INFO.has(entry.event);
       if (entry.level === "error") ui.error(line);
       else if (entry.level === "warn") ui.warn(line);
-      else if (entry.level === "info" && PRINTED_INFO.has(entry.event)) ui.info(line);
+      else if (isPrintedInfo) ui.info(line);
     }
   };
   app.log.clearSinks();

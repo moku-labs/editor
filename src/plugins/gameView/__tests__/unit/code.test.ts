@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SceneNode } from "../../../panels/shared/scene";
 import { elementCode, shortValue } from "../../element/code";
+import { onProjectChange } from "../../handlers";
 import { answer, createCtx, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
 import { boardScene } from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
 const STYLES = "export const coinPill = defineStyle({\n  height: 76,\n  radius: 38\n});\n";
+/** The style key of the style function `boardStyle` in features/ui/kit.tsx (G2). */
+const BOARD_STYLE = "style:features/ui/kit.tsx#boardStyle";
 const ITEMS = [
   'import { projection } from "../../kit";',
   'const style = { name: "board.items" };',
@@ -123,6 +126,43 @@ describe("elementCode of a ui element (round 2b R12)", () => {
       lines: ["  return defineStyle({ width, gap: 4 });"],
       name: "boardStyle"
     });
+  });
+
+  it("asks the index for a call style once, and again after a change of its file (D-46)", async () => {
+    const kit = [
+      "function boardStyle(width: number) {",
+      "  return defineStyle({ width, gap: 4 });",
+      "}",
+      '<panel key="coinPill" style={boardStyle(950)} />'
+    ].join("\n");
+    const ctx = ctxWith({ "features/ui/kit.tsx": kit });
+    ctx.link.projectValue = projectOn({ [BOARD_STYLE]: ["features/ui/kit.tsx"] });
+    answer(ctx, "jsx:coinPill", place("features/ui/kit.tsx", [4, 1, 4, 49]));
+    answer(ctx, BOARD_STYLE, place("features/ui/kit.tsx", [2, 10, 2, 41]));
+    const find = vi.spyOn(ctx.link.files, "find");
+    const styleAsks = (): number => find.mock.calls.filter(([key]) => key === BOARD_STYLE).length;
+
+    const first = await elementCode(ctx, coinPill());
+    const again = await elementCode(ctx, coinPill());
+    expect(again).toEqual(first);
+    expect(styleAsks()).toBe(1);
+    expect(ctx.state.blocks.get(BOARD_STYLE)).toEqual({
+      path: "features/ui/kit.tsx",
+      line: 2,
+      range: [2, 10, 2, 41]
+    });
+
+    ctx.link.files.put("features/ui/kit.tsx", `// moved down\n${kit}`);
+    answer(ctx, "jsx:coinPill", place("features/ui/kit.tsx", [5, 1, 5, 49]));
+    answer(ctx, BOARD_STYLE, place("features/ui/kit.tsx", [3, 10, 3, 41]));
+    onProjectChange(ctx)({
+      state: projectOn({ [BOARD_STYLE]: ["features/ui/kit.tsx"] }, { revision: "r2" }),
+      delta: { all: false, files: ["features/ui/kit.tsx"], moved: [], removed: [] }
+    });
+
+    const moved = await elementCode(ctx, coinPill());
+    expect(styleAsks()).toBe(2);
+    expect(moved?.kind === "ui" ? moved.style?.line : "?").toBe(3);
   });
 
   it("has no style block for a call the index has no style key for", async () => {

@@ -85,7 +85,7 @@ Breaking (pre-1.0, project index, D-38 and amendment N):
 - A key the index does not know shows `Not in the project index: jsx:<key>` (was "Source not found for key <key>"), and its `SelectionInfo.source` is absent. An index that is off shows `Project index is off: <reason>`.
 - A key built in a loop answers the line of the element that builds it, not the template literal: `card0` is `features/orders/strip.tsx:216` (was `:157 (loop)`, D-47). `(loop)` is gone from the Element tab, `data-moku-source` and the reference card.
 - An area card no longer has a budget of 10 new searches (A18): every key and component is one index lookup.
-- A style edit on a file the index says does not parse now is refused as `broken` (D-44): "The file does not parse now · fix it, then edit".
+- A style edit on a file the index says does not parse now is refused as `broken` (D-44): "The file does not parse now · fix it, then edit". With the index off it is refused as `index-off` (D-48): "Project index is off: <reason>".
 
 Breaking (pre-1.0, captures by day):
 
@@ -128,7 +128,7 @@ gameView declares no events. It uses the global tools events (R4).
 | Emits | `workspace:reveal` | `{ ref }` | Element tab "Show in render tree". renderView hooks it. |
 | Emits | `workspace:open-file` | `{ path, line }` | "Open in Files" on the style card, the call card and "Defined at". filesView hooks it. |
 | Hooks | `link:status` | `{ status, session? }` | Attached again after `lost`, or a new session: drops scene, calibration and manifest. `empty`: picker off, popover closed, a series ends early. An expected reload (`isReloading`) keeps the toolbar Reload busy (U11). |
-| Hooks | `link:project` | `{ state, delta }` | A new project index state (D-46). `all`: drops every key answer and style block. Else drops the answers in the changed and moved-from files, of a removed `jsx:` key, and the blocks in changed files. Always drops the projection answers. Reads the manifest again when it was read and the index names another or it changed. Shows the broken text on the style card while its file does not parse. Looks the selected element's style up again when its key file, style file or refusal file changed, the index had no answer, or after `all`; never during a stepper burst. |
+| Hooks | `link:project` | `{ state, delta }` | A new project index state (D-46). `all`: drops every key answer and style block. Else drops the answers in the changed and moved-from files, of a removed `jsx:` key, and the blocks in changed files (the kept style-call answers of the Code section too). Drops the projection answers in the changed and moved-from files, of a removed `projection:` key, and the asks still running. Reads the manifest again when it was read and the index names another or it changed. Shows the broken text on the style card while its file does not parse. Looks the selected element's style up again when its key file, style file or refusal file changed, the index had no answer, or after `all`; never during a stepper burst. |
 | Hooks | `workspace:changed` | `{ ws }` | Entering Game starts the scene watches. Leaving stops them and turns the picker off. |
 | Hooks | `workspace:open-sheet` | `{ index }` | Opens that contact sheet. |
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
@@ -231,7 +231,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 5. No style: "Defined at file:line" and "Open in Files". A text node with a text style key (`style="ui.link"`, also `style={"ui.link"}`) is "defined at" its line too; the source keeps the key as `textStyle` for the Code section (round 2b R17).
 6. The index has no answer: `Not in the project index: jsx:<key>`, or `Project index is off: <reason>`.
 7. Steppers exist only for fields with a `fieldRule`.
-8. A burst writes once with `writeNumber`. A file the index says does not parse now is refused as `broken`: "The file does not parse now · fix it, then edit", nothing written (D-44). A success toasts "✓ Saved" and reloads the game with restore (D-07).
+8. A burst writes once with `writeNumber`. A file the index says does not parse now is refused as `broken`: "The file does not parse now · fix it, then edit", nothing written (D-44). An index that is off refuses as `index-off`: "Project index is off: <reason>", nothing written (D-48). A success toasts "✓ Saved" and reloads the game with restore (D-07).
 9. Every answer is kept per key, and so is the place of a found style block. The proxies and the reference block read them. A `link:project` change drops the ones in the files it changed.
 
 The Styles list shows an object value as `key value` pairs (`top 266 · right 72 · bottom 64 · left 72`) and an array joined with `, `.

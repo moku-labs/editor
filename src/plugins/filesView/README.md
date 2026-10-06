@@ -62,7 +62,7 @@ The panel view and `app.filesView` share one state: `createFilesPanel` builds a 
 | `setMode` | `(path, mode: "preview" \| "source") => void` | For markdown and series tabs only. |
 | `save` | `(path?) => Promise<SaveResult>` | The save flow. `saved`, `unchanged`, `conflict` or `failed`. Never rejects. |
 | `resolveConflict` | `(path, choice: "reload" \| "overwrite") => Promise<SaveResult>` | `reload` drops the buffer and returns `unchanged`. `overwrite` writes the buffer over the fresh version. |
-| `refresh` | `() => Promise<void>` | Rebuilds the index (single flight), then Used by and the palette items. |
+| `refresh` | `() => Promise<void>` | Rebuilds the index (single flight: a call during a walk walks once more after it, `indexDirty`), then Used by and the palette items. |
 | `files` | `() => readonly FileEntry[]` | Indexed entries in tree order. Empty before the first index. |
 | `fileOf` | `(ref: NodeRef) => string \| undefined` | The file that defines a graph node: the first def of `node:<flow>/<node>` in the project index. `undefined` while the index is off or does not know the node. |
 | `flowFileOf` | `(flow: string) => string \| undefined` | The file that defines a flow: the first def of `flow:<name>`. |
@@ -99,9 +99,9 @@ app.filesView.close("nodes/merge.ts", { discard: true }); // true
 
 Each `link:project` delta is applied after the one before it (`state.following`).
 
-- **Moved file.** A text tab at `moved[].from` whose file is gone is replaced at the same place by a tab at the first `to`. Buffer, edit mode, mode and saved text stay. The active tab and the discard popover follow. The line comes from `files.find(key)`. The status line reads "Moved from <from>". The same bytes keep the tab as it was; other bytes replace a clean tab and put a modified one in conflict. A tab that loads or saves, a file still on disk, and a path that already has a tab are left alone.
+- **Moved file.** A text tab at `moved[].from` whose file is gone is replaced at the same place by a tab at the first `to`. Buffer, edit mode, mode and saved text stay. The active tab and the discard popover follow. The line comes from the answer of `files.find(key)` at the new path; without one the tab keeps its line. The status line reads "Moved from <from>". The same bytes keep the tab as it was; other bytes replace a clean tab and put a modified one in conflict. A tab that loads or saves, a file still on disk, and a path that already has a tab are left alone.
 - **Changed file.** Tabs of `delta.files` are re-read at once, without waiting `revalidateMs`. All tabs after a revision gap (`delta.all`). A gone file shows missing; a missing tab whose file is back is ready again.
-- **Tree.** A move, a gone key, a path the tree does not have, or a gone file still in the tree rebuilds the tree.
+- **Tree.** A move, a gone key, a path the tree does not have, or a gone file still in the tree rebuilds the tree. A rebuild asked while a walk runs walks once more after it, since that walk may have listed the folder before the change.
 
 ### Read and save errors
 
@@ -191,6 +191,6 @@ Markdown renders as VNodes, never `innerHTML`. Links only for http(s) and relati
 
 | Limit | Follow-up |
 |---|---|
-| Without the project index (game < 0.6.0, no `typescript`, open failed) there is no Used by and no node file. Nothing is guessed. | None. Install the requirements. |
+| Without the project index (game < 0.7.0, no `typescript`, open failed) there is no Used by and no node file. Nothing is guessed. | None. Install the requirements. |
 | Files over 2 MB do not open here. | None. Open in editor. |
 | The walk stops at `maxFiles` and `WALK_MAX_DEPTH`. | None. |

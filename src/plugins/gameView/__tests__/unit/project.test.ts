@@ -3,7 +3,7 @@ import type { ProjectDelta, ProjectState } from "../../../registry/protocol";
 import { openStyleCard } from "../../element/styles";
 import { onProjectChange } from "../../handlers";
 import { subscribe } from "../../state";
-import type { ElementRef, StyleSource, TextureCatalogue } from "../../types";
+import type { ElementRef, SpawnAsk, StyleSource, TextureCatalogue } from "../../types";
 import { answer, createCtx, flush, place, projectOn, type TestCtx } from "../helpers";
 import { boardScene } from "../ui";
 
@@ -47,6 +47,17 @@ function sourceIn(path: string): StyleSource {
 }
 
 /**
+ * A projection answer the index gave in a file.
+ *
+ * @param path - The file.
+ * @returns The ask and its place at line 4.
+ */
+function spawnIn(path: string): SpawnAsk {
+  const at = { path, line: 4 };
+  return { asked: Promise.resolve(at), at };
+}
+
+/**
  * A delta of a contiguous batch.
  *
  * @param change - The files, moves and removed keys.
@@ -83,10 +94,10 @@ beforeEach(() => {
 });
 
 describe("link:project: what gameView remembered", () => {
-  it("drops every answer and block after a gap (all), and every projection answer", () => {
+  it("drops every answer, block and projection answer after a gap (all)", () => {
     ctx.state.found.set("hudRow", sourceIn("a.tsx"));
     ctx.state.blocks.set("hudRow", { path: "b.ts", line: 3 });
-    ctx.state.spawns.set("board.items", Promise.resolve(undefined));
+    ctx.state.spawns.set("board.items", spawnIn("features/board/items.tsx"));
     change({ ...deltaOf(), all: true });
     expect(ctx.state.found.size).toBe(0);
     expect(ctx.state.blocks.size).toBe(0);
@@ -101,7 +112,7 @@ describe("link:project: what gameView remembered", () => {
     ctx.state.blocks.set("edited", { path: "kept-styles.ts", line: 1 });
     ctx.state.blocks.set("kept", { path: "kept-styles.ts", line: 4 });
     ctx.state.blocks.set("styleEdited", { path: "styles.ts", line: 2 });
-    ctx.state.spawns.set("board.items", Promise.resolve(undefined));
+    ctx.state.spawns.set("board.items", { asked: Promise.resolve(undefined), at: undefined });
 
     change(
       deltaOf({
@@ -114,6 +125,24 @@ describe("link:project: what gameView remembered", () => {
     expect([...ctx.state.found.keys()]).toEqual(["kept"]);
     expect([...ctx.state.blocks.keys()]).toEqual(["kept"]);
     expect(ctx.state.spawns.size).toBe(0);
+  });
+
+  it("drops a projection answer in a changed or moved-from file, of a removed key, or still asked", () => {
+    ctx.state.spawns.set("board.items", spawnIn("features/board/items.tsx"));
+    ctx.state.spawns.set("board.moved", spawnIn("old.tsx"));
+    ctx.state.spawns.set("board.removed", spawnIn("kept-file.tsx"));
+    ctx.state.spawns.set("board.asking", { asked: new Promise(() => {}), at: undefined });
+    ctx.state.spawns.set("board.kept", spawnIn("kept.tsx"));
+
+    change(
+      deltaOf({
+        files: ["features/board/items.tsx"],
+        moved: [{ key: "projection:board.moved", from: "old.tsx", to: "new.tsx" }],
+        removed: ["projection:board.removed"]
+      })
+    );
+
+    expect([...ctx.state.spawns.keys()]).toEqual(["board.kept"]);
   });
 
   it("tells the UI", () => {

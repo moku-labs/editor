@@ -6,7 +6,7 @@
 import { linkPlugin } from "../../link";
 import { usedIn } from "../../panels/shared/project";
 import type { Json, NodeRef, ProjectState } from "../../registry/protocol";
-import { bareMessage } from "../../registry/protocol";
+import { messageOf } from "../errors";
 import { notify } from "../store";
 import type { FilesViewCtx, UsedBy } from "../types";
 
@@ -124,17 +124,18 @@ export async function loadGraph(ctx: FilesViewCtx): Promise<void> {
   const link = ctx.require(linkPlugin);
   const { state } = ctx;
 
+  // No manifest, no session: no graph.
   if (link.manifest() === undefined) {
     state.graph = undefined;
-  } else {
-    try {
-      state.graph = await link.read("game.graph");
-    } catch (error) {
-      state.graph = undefined;
-      ctx.log.warn("filesView:graph-failed", {
-        message: bareMessage(error instanceof Error ? error.message : String(error))
-      });
-    }
+    notify(state);
+    return;
+  }
+
+  try {
+    state.graph = await link.read("game.graph");
+  } catch (error) {
+    state.graph = undefined;
+    ctx.log.warn("filesView:graph-failed", { message: messageOf(error) });
   }
   notify(state);
 }

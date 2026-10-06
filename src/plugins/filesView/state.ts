@@ -13,6 +13,7 @@ export function createFilesViewState(): FilesViewState {
   return {
     index: undefined,
     indexing: undefined,
+    indexDirty: false,
     expanded: new Set(),
     tabs: [],
     active: undefined,

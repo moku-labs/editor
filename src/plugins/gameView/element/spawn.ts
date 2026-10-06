@@ -2,7 +2,8 @@
  * @file gameView plugin — where the projection that spawns an entity is defined (round 2b R12):
  * the project index's first answer of `projection:<key>`, the key being the entity's owner in
  * game.projections (the line of its `name: "<key>"`). A found place is kept per key in
- * `state.spawns` until the next project change; a key the index does not know is asked again.
+ * `state.spawns` until a project change touches its file; a key the index does not know is asked
+ * again.
  */
 import { linkPlugin } from "../../link";
 import type { BlockAt, GameViewCtx } from "../types";
@@ -35,12 +36,16 @@ async function locateProjection(ctx: GameViewCtx, name: string): Promise<BlockAt
 export function findProjectionSource(ctx: GameViewCtx, name: string): Promise<BlockAt | undefined> {
   const { spawns } = ctx.state;
   const known = spawns.get(name);
-  if (known !== undefined) return known;
+  if (known !== undefined) return known.asked;
 
   const asked = locateProjection(ctx, name).then(found => {
-    if (found === undefined && spawns.get(name) === asked) spawns.delete(name);
+    // A project change may have dropped this ask meanwhile; then nothing is kept.
+    const spawn = spawns.get(name);
+    if (spawn?.asked !== asked) return found;
+    if (found === undefined) spawns.delete(name);
+    else spawn.at = found;
     return found;
   });
-  spawns.set(name, asked);
+  spawns.set(name, { asked, at: undefined });
   return asked;
 }

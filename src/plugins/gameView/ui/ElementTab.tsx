@@ -147,7 +147,7 @@ function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleC
       </dl>
       {card.error !== undefined && (
         <p data-part="error" role="alert">
-          {styleErrorText(card.error)}
+          {styleErrorText(card.error, ctx.require(linkPlugin).project())}
         </p>
       )}
     </>
@@ -203,7 +203,7 @@ function LookupNote(props: {
   if (lookup?.status === "failed") {
     return (
       <p data-part="error" role="alert">
-        {styleErrorText(lookup.error)}{" "}
+        {styleErrorText(lookup.error, ctx.require(linkPlugin).project())}{" "}
         <button type="button" onClick={() => openInFiles(ctx, lookup.path, lookup.error.line ?? 1)}>
           Open in Files
         </button>

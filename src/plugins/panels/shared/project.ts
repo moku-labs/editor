@@ -54,6 +54,11 @@ const NO_STATE_REASON = "no state from the server yet";
 const TRIES = 2;
 
 /**
+ * The key prefix of a text style the game defines.
+ */
+const TEXT_STYLE_KEY = "textStyle:";
+
+/**
  * The answers of a key; none when `find` is missing or rejects.
  *
  * @param files - The files client.
@@ -98,7 +103,8 @@ async function readOrNothing(files: FindReadFiles, path: string): Promise<FileTe
  * // The Code tab of the selected node opens its file at the definition.
  * const fresh = await findFresh(link.files, "node:board/merge");
  * if (fresh === undefined) return notFoundText(link.project(), "node:board/merge");
- * openCode(fresh.found.path, fresh.found.line, fresh.text); // "nodes/merge.ts", 17
+ * fresh.found.path; // "nodes/merge.ts"
+ * fresh.found.line; // 17
  * ```
  */
 export async function findFresh(
@@ -136,20 +142,26 @@ export async function findAllFresh(
   let fresh: FreshAnswers | undefined;
 
   for (let attempt = 0; attempt < TRIES; attempt += 1) {
+    // No answer, or a file that cannot be read: nothing to show.
     const [first, ...rest] = await answersOf(files, key);
     if (first === undefined) return undefined;
 
     const read = await readOrNothing(files, first.path);
     if (read === undefined) return undefined;
 
+    // Keep the answers in the first answer's file: the text read is theirs.
     const answers: FreshAnswers["answers"] = [
       first,
       ...rest.filter(found => found.path === first.path)
     ];
     fresh = { answers, text: read.text, version: read.version };
+
+    // The read is the text the index answered from: the lines match. Else the file changed in
+    // between, and the index is asked once more.
     if (read.version === first.hash) return fresh;
   }
 
+  // The file changed again: the last answer stays, its write is still version-checked.
   return fresh;
 }
 
@@ -168,12 +180,42 @@ export async function findAllFresh(
 export function textStylesFile(state: ProjectState | undefined): string | undefined {
   if (state?.state !== "on") return undefined;
 
+  return mostDefined(countTextStyleDefs(state.defs));
+}
+
+/**
+ * How many `textStyle:` keys each file defines; both files of a conflict count.
+ *
+ * @param defs - The defs map of an on project state.
+ * @returns File → number of text styles it defines.
+ * @example
+ * ```ts
+ * countTextStyleDefs({ "textStyle:ui.title": ["a.ts", "b.ts"], "textStyle:ui.body": ["a.ts"], "flow:main": ["f.ts"] });
+ * // Map { "a.ts" => 2, "b.ts" => 1 }
+ * ```
+ */
+function countTextStyleDefs(
+  defs: Readonly<Record<string, readonly string[]>>
+): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
-  for (const [key, paths] of Object.entries(state.defs)) {
-    if (!key.startsWith("textStyle:")) continue;
+  for (const [key, paths] of Object.entries(defs)) {
+    if (!key.startsWith(TEXT_STYLE_KEY)) continue;
     for (const path of new Set(paths)) counts.set(path, (counts.get(path) ?? 0) + 1);
   }
+  return counts;
+}
 
+/**
+ * The path with the highest count; on a tie the first path in sorted order.
+ *
+ * @param counts - Path → count.
+ * @returns The path, or undefined when there is none.
+ * @example
+ * ```ts
+ * mostDefined(new Map([["b.ts", 2], ["a.ts", 2], ["c.ts", 1]])); // "a.ts"
+ * ```
+ */
+function mostDefined(counts: ReadonlyMap<string, number>): string | undefined {
   let best: string | undefined;
   let bestCount = 0;
   for (const path of [...counts.keys()].toSorted()) {
@@ -183,7 +225,6 @@ export function textStylesFile(state: ProjectState | undefined): string | undefi
       bestCount = count;
     }
   }
-
   return best;
 }
 

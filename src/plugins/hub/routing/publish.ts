@@ -6,9 +6,14 @@
  * wire refuses null params.
  */
 import type { Json, Notification, PublishParams } from "../../registry/protocol";
-import { notification, toWireValue } from "../../registry/protocol";
+import { encode, notification, toWireValue } from "../../registry/protocol";
 import { sendJson, toolsConns } from "../sockets/send";
 import type { HubCtx, HubState, PublishMethod, ToolsConn } from "../types";
+
+/**
+ * UTF-8 encoder of the frame size the `project` debug line reports.
+ */
+const ENCODER = new TextEncoder();
 
 /**
  * The editor-channel notification of a kept value; `null` is sent without params.
@@ -27,7 +32,9 @@ function publishedNote(method: PublishMethod, value: Json): Notification {
 
 /**
  * Keeps the value of a method and sends `editor.<method>` to every open tools connection. A
- * state notification is never dropped: it goes out congested or not.
+ * state notification is never dropped: it goes out congested or not. The debug line of a
+ * `project` state also names its frame size and how many tools connections got it: the project
+ * state is the largest value the hub publishes.
  *
  * @param ctx - Domain context of the hub.
  * @param method - The published method.
@@ -42,8 +49,15 @@ export function publish<M extends PublishMethod>(
   ctx.state.published.set(method, value);
 
   const note = publishedNote(method, value);
-  for (const conn of toolsConns(ctx.state)) sendJson(conn, note);
-  ctx.log.debug("hub:published", { method });
+  const conns = toolsConns(ctx.state);
+  for (const conn of conns) sendJson(conn, note);
+
+  if (method !== "project") {
+    ctx.log.debug("hub:published", { method });
+    return;
+  }
+  const bytes = ENCODER.encode(encode(note)).byteLength;
+  ctx.log.debug("hub:published", { method, bytes, conns: conns.length });
 }
 
 /**

@@ -3,13 +3,13 @@
  * through element/source (the project index) and the shared style edit
  * (panels/shared/style-edit, R4, R8), steppers bounded only by `fieldRule`, one debounced
  * `writeNumber` per burst (version checked, one retry on a conflict, refused as `broken` while the
- * index says the file does not parse, D-44), then a toast and the D-07 reload with restore. A
- * refusal writes nothing. The block is a `defineStyle` const (`style={ident}`), or the
- * `defineStyle({ … })` call a style function makes (`style={fn(…)}` whose `style:` key the index
- * knows, G2), found at the place the index answers.
+ * index says the file does not parse, D-44, or as `index-off` while it is off, D-48), then a toast
+ * and the D-07 reload with restore. A refusal writes nothing. The block is a `defineStyle` const
+ * (`style={ident}`), or the `defineStyle({ … })` call a style function makes (`style={fn(…)}`
+ * whose `style:` key the index knows, G2), found at the place the index answers.
  */
 import { linkPlugin } from "../../link";
-import { findAllFresh } from "../../panels/shared/project";
+import { findAllFresh, projectOffText } from "../../panels/shared/project";
 import type { ElementRef } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
 import type {
@@ -28,6 +28,7 @@ import {
   stepValue,
   writeNumber
 } from "../../panels/shared/style-edit";
+import type { ProjectState } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { messageOf, reportFailure } from "../report";
 import { reloadGame } from "../stage/reload";
@@ -346,19 +347,31 @@ export function stepStyle(ctx: GameViewCtx, path: string, direction: 1 | -1, big
 }
 
 /**
+ * The text of an `index-off` refusal while link still holds an on state: the off state is on its
+ * way, and the card shows its reason once it arrives.
+ */
+const INDEX_OFF_TEXT = "Project index is off";
+
+/**
  * gameView's one line for a refusal of the shared style edit.
  *
  * @param error - The refusal.
+ * @param project - The project state (`link.project()`): why the index is off.
  * @returns The text the card shows next to "Open in Files".
  * @example
  * ```ts
- * styleErrorText({ error: "no-key", key: "coinPill" }); // "No style block named coinPill."
+ * styleErrorText({ error: "no-key", key: "coinPill" }, link.project()); // "No style block named coinPill."
+ * styleErrorText({ error: "index-off", path: "src/hud/styles.ts" }, { state: "off", reason: "disabled" });
+ * // "Project index is off: disabled"
  * ```
  */
-export function styleErrorText(error: StyleEditError): string {
+export function styleErrorText(error: StyleEditError, project: ProjectState | undefined): string {
   switch (error.error) {
     case "broken": {
       return STYLE_BROKEN_TEXT;
+    }
+    case "index-off": {
+      return projectOffText(project) ?? INDEX_OFF_TEXT;
     }
     case "no-file": {
       return "The style file is gone.";
