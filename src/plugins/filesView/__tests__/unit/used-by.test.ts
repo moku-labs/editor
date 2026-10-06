@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Json, ProjectState } from "../../../registry/protocol";
+import { errorCode, wireError } from "../../../registry/protocol";
 import { flowStartOf, loadGraph, usedByOf } from "../../links/used-by";
 import { createCtx, MANIFEST, PROJECT } from "../helpers";
 
@@ -133,6 +134,39 @@ describe("loadGraph", () => {
     expect(ctx.log.warn).toHaveBeenCalledWith("filesView:graph-failed", {
       message: "no value for game.graph"
     });
+  });
+
+  it("logs a read lost to a page reload at debug: the next manifest reads again", async () => {
+    const ctx = createCtx();
+    ctx.link.manifestValue = MANIFEST;
+    ctx.link.read.mockRejectedValueOnce(
+      wireError(errorCode.gameReloaded, "game reloaded", {
+        reason: "game_reloaded",
+        retryable: true
+      })
+    );
+    await loadGraph(ctx);
+    expect(ctx.state.graph).toBeUndefined();
+    expect(ctx.log.debug).toHaveBeenCalledWith("filesView:graph-failed", {
+      message: "game reloaded"
+    });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+  });
+
+  it("logs a read whose session closed meanwhile at debug", async () => {
+    const ctx = createCtx();
+    ctx.link.manifestValue = MANIFEST;
+    ctx.link.read.mockRejectedValueOnce(
+      wireError(errorCode.noSession, "No game is connected.", {
+        reason: "no_session",
+        retryable: false
+      })
+    );
+    await loadGraph(ctx);
+    expect(ctx.log.debug).toHaveBeenCalledWith("filesView:graph-failed", {
+      message: "No game is connected."
+    });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
   });
 
   it("does not need the index for Used by", () => {

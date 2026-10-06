@@ -181,7 +181,7 @@ describe("addWatch", () => {
     expect(ctx.state.wire.size).toBe(0);
   });
 
-  it("the same -32001 outside an expected reload is a link:watch-failed error", async () => {
+  it("the same -32001 outside an expected reload (Bun hot reload after a save) is deferred too", async () => {
     const socket = await connected(ctx);
     addWatch(ctx, "game.position", undefined, vi.fn());
     socket.reject(socket.last("watch"), {
@@ -191,11 +191,13 @@ describe("addWatch", () => {
     });
     await flush();
 
-    expect(ctx.log.error).toHaveBeenCalledWith("link:watch-failed", {
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:watch-deferred", {
       id: "game.position",
       code: -32_001,
       reason: "game_reloaded"
     });
+    expect(ctx.log.error).not.toHaveBeenCalled();
+    expect(ctx.state.subs.size).toBe(1);
   });
 
   it("a watch in flight at stop logs no error: the link closed it itself", async () => {
