@@ -62,18 +62,14 @@ function isSessionGoneError(error: unknown): boolean {
 }
 
 /**
- * True for a watch the hub failed with -32001 because its session closed while the link expects
- * a reload (U7, `state.reload` set): the page reloads on purpose, and the next attach sends the
- * watch again.
+ * True for a watch the hub failed with -32001 because its session closed: the game page reloaded,
+ * by the editor (U7) or by Bun hot reload after a save, and the next attach sends the watch again.
  *
- * @param ctx - Domain context of link.
  * @param error - The rejection.
- * @returns Whether the watch was lost to an expected reload.
+ * @returns Whether the watch was lost to a reload.
  */
-function isLostToReload(ctx: LinkCtx, error: unknown): boolean {
-  return (
-    ctx.state.reload !== undefined && isWireError(error) && error.code === errorCode.gameReloaded
-  );
+function isLostToReload(error: unknown): boolean {
+  return isWireError(error) && error.code === errorCode.gameReloaded;
 }
 
 /**
@@ -91,8 +87,8 @@ function sendUnwatch(ctx: LinkCtx, sub: SubId, session: string | undefined): voi
 
 /**
  * Records a refused watch: -32008 marks the session that does not have the source (debug only,
- * never sent to it again); a session the hub already closed (`no_session`, a reload) or one that
- * closed in an expected reload (-32001) is `link:watch-deferred` at debug; any other answer is
+ * never sent to it again); a session the hub already closed (`no_session`) or one that closed in
+ * a reload (-32001) is `link:watch-deferred` at debug; any other answer is
  * logged as `link:watch-failed`. Both are sent again on the next attach. A watch the link itself
  * closed on stop (`link_closed`) is not logged.
  *
@@ -112,7 +108,7 @@ function onWatchRefused(
   if (isNotInstalledError(error)) {
     sub.refusedBy = session;
     ctx.log.debug("link:source-unavailable", details);
-  } else if (isSessionGoneError(error) || isLostToReload(ctx, error)) {
+  } else if (isSessionGoneError(error) || isLostToReload(error)) {
     ctx.log.debug("link:watch-deferred", details);
   } else if (!ctx.state.stopped) {
     ctx.log.error("link:watch-failed", details);

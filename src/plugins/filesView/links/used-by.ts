@@ -6,6 +6,7 @@
 import { linkPlugin } from "../../link";
 import { usedIn } from "../../panels/shared/project";
 import type { Json, NodeRef, ProjectState } from "../../registry/protocol";
+import { errorCode, isRetryable, isWireError } from "../../registry/protocol";
 import { messageOf } from "../errors";
 import { notify } from "../store";
 import type { FilesViewCtx, UsedBy } from "../types";
@@ -114,8 +115,24 @@ export function flowStartOf(graph: Json | undefined, flow: string): string | und
 }
 
 /**
+ * True for a read the reload of the game page took away: a retryable error (-32001
+ * `game_reloaded`, the link closed) or -32003 because the session closed meanwhile.
+ *
+ * @param error - The rejection.
+ * @returns Whether the next manifest will read again.
+ * @example
+ * ```ts
+ * isLostToReload(wireError(-32_003, "No game is connected.", { reason: "no_session" })); // true
+ * ```
+ */
+function isLostToReload(error: unknown): boolean {
+  return isRetryable(error) || (isWireError(error) && error.code === errorCode.noSession);
+}
+
+/**
  * Reads `game.graph` of the current session (no manifest: no graph) and notifies. A failed read
- * is warned and leaves no graph. Called on every manifest.
+ * leaves no graph: one lost to a reload (retryable, or its session closed meanwhile; the next
+ * manifest reads again) is logged at debug, any other is warned. Called on every manifest.
  *
  * @param ctx - Domain context of filesView.
  * @returns When the graph is stored.
@@ -135,7 +152,9 @@ export async function loadGraph(ctx: FilesViewCtx): Promise<void> {
     state.graph = await link.read("game.graph");
   } catch (error) {
     state.graph = undefined;
-    ctx.log.warn("filesView:graph-failed", { message: messageOf(error) });
+    const details = { message: messageOf(error) };
+    if (isLostToReload(error)) ctx.log.debug("filesView:graph-failed", details);
+    else ctx.log.warn("filesView:graph-failed", details);
   }
   notify(state);
 }
