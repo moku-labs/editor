@@ -1,18 +1,17 @@
 /**
  * The e2e suite of the tools page. The webServer builds the package (tsdown and the tools page
- * bundle), copies the frozen merge-game fixture into dist-e2e/game (e2e/prepare-game.ts) and
- * serves it with the real bin: the game page at `/`, the tools page at `/__editor/`. Its stdout
+ * bundle), copies the tiny game of e2e/game into dist-e2e/game (e2e/prepare-game.ts; no game
+ * checkout, only the `@moku-labs/game` dev dependency) and serves it with the real bin: the game page at `/`, the tools page at `/__editor/`. Its stdout
  * and stderr go to dist-e2e/server.log, which e2e/global-teardown.ts scans for errors.
  *
  * The bin runs with its defaults, so Bun hot reload is on (D-23): a save of a game source reloads
- * the game page, and the bridge restores its checkpoint. e2e/edit-loop.spec.ts measures that loop.
- * e2e/top-bar.spec.ts flips the Hot reload switch off and on (D-32: the bin restarts its server on
+ * the game page, and the bridge restores its checkpoint. e2e/top-bar.spec.ts flips the Hot reload switch off and on (D-32: the bin restarts its server on
  * the same port) and leaves it on.
  *
  * One worker: the bin hosts one game link, and every test opens its own tools page and game frame
  * on it. Chromium runs the full suite on desktop (1440×900), on the two half-screen windows
- * (720×900, 960×1080) and on the third-screen window of the Claude pane (480×900). The top-bar and
- * edit-loop specs set their own window sizes and run in the desktop project only. Phones are out
+ * (720×900, 960×1080) and on the third-screen window of the Claude pane (480×900). The top-bar
+ * spec sets its own window sizes and runs in the desktop project only. Phones are out
  * of scope (no mobile layout, D-21): the Pixel 7 project only runs the boot guard,
  * e2e/no-js-errors.spec.ts.
  *

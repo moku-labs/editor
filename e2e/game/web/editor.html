@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>merge-game 0.0.0</title>
+    <title>tiny-game 0.0.0</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #10161d; }
+      html, body { margin: 0; height: 100%; background: #1b263b; }
       #game { width: 100%; height: 100%; touch-action: none; }
     </style>
   </head>
   <body>
-    <!-- The e2e game page: the merge-game fixture page with the editor agent, bridge and capture.
-         The e2e webServer copies it next to the fixture's web/ folder (dist-e2e/game/web/). -->
+    <!-- The e2e game page: the tiny game with the editor agent, bridge and capture.
+         e2e/prepare-game.ts copies it with the rest of e2e/game/ to dist-e2e/game/. -->
     <div id="game"></div>
     <script type="module" src="./editor.ts"></script>
   </body>

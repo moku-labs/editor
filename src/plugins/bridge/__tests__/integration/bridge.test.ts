@@ -1,9 +1,8 @@
 /* eslint-disable unicorn/no-null -- null is the JSON value the wire carries */
 import { defineCommand } from "@moku-labs/game/control";
 import { defineSource } from "@moku-labs/game/inspect";
-import { createHeadless } from "@moku-labs/game/testing";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
@@ -28,7 +27,7 @@ import { bridgePlugin } from "../..";
 import type { BridgeApi } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The agent core (registry + channel + bridge) over the headless merge game,
+// The agent core (registry + channel + bridge) over the headless tiny game,
 // linked to a minimal hub: a real Bun.serve with the hello route and the
 // websocket upgrade (token, kind=agent and an Origin header required).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ type Hub = {
   stop(): Promise<void>;
 };
 
-/** A started headless merge game. */
+/** A started headless tiny game. */
 type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
 
 let game: StartedGame;
@@ -153,7 +152,7 @@ function startHub(): Hub {
         ) {
           ws.send(
             encode(
-              notification("editor", "session", { id: "s-test", game: "merge-game", open: true })
+              notification("editor", "session", { id: "s-test", game: "tiny-screen", open: true })
             )
           );
         }
@@ -291,7 +290,7 @@ async function startAgent() {
   const app = framework.createApp({
     plugins: [spyPlugin],
     pluginConfigs: {
-      registry: { game: game.app, modules: [testModule], name: "merge-game 0.0.0" },
+      registry: { game: game.app, modules: [testModule], name: "tiny-screen 0.0.0" },
       channel: { heartbeatMs: 100 },
       bridge: {
         hello: `http://127.0.0.1:${String(hub.port)}/__editor/hello`,
@@ -332,10 +331,7 @@ async function linked() {
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const { createGame } = await loadMergeGame();
-  const { app } = createGame();
-  const headless = await createHeadless(app);
-  game = { app, stop: () => headless.stop() };
+  game = await startTinyHeadless();
   hub = startHub();
   count = 0;
   statuses.length = 0;
@@ -370,7 +366,7 @@ describe("bridge integration", { timeout: 15_000 }, () => {
       20
     );
     expect(listOf(field(manifest, "commands"))).toHaveLength(20);
-    expect(field(manifest, "game")).toBe("merge-game 0.0.0");
+    expect(field(manifest, "game")).toBe("tiny-screen 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
     expect(app.bridge.session()).toBe("s-test");

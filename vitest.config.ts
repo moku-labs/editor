@@ -1,56 +1,6 @@
-import { readdirSync, readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
-import { HAS_GAME, NO_GAME_REASON } from "./tests/fixtures/game-dir";
-
-/**
- * Test files that load the merge-game fixture (through loadMergeGame or the registry startGame helper).
- * The fixture lives in the game checkout named by `MOKU_GAME_DIR` (tests/fixtures/game-dir.ts).
- * Without it (CI) these files are left out, with a warning that says why.
- *
- * @returns Paths relative to the repository root.
- */
-function fixtureTests(): string[] {
-  const root = new URL(".", import.meta.url).pathname;
-  const files = ["src", "tests"].flatMap(dir =>
-    readdirSync(`${root}${dir}`, { recursive: true, encoding: "utf8" })
-      .filter(file => file.endsWith(".test.ts") || file.endsWith(".test.tsx"))
-      .map(file => `${dir}/${file}`)
-  );
-  return files.filter(file =>
-    /loadMergeGame|startGame\(/.test(readFileSync(`${root}${file}`, "utf8"))
-  );
-}
-
-const skipped = HAS_GAME ? [] : fixtureTests();
-if (!HAS_GAME) {
-  console.warn(`${NO_GAME_REASON}: skipping ${skipped.length} test files`);
-}
-
-/**
- * The built entry of the `@moku-labs/game` dev dependency for one subpath.
- *
- * @param subpath - "index", "testing", "inspect", "control", "project", "jsx-runtime" or
- *   "jsx-dev-runtime".
- * @returns The absolute path of dist/<subpath>.mjs inside node_modules.
- */
-const game = (subpath: string): string =>
-  new URL(`node_modules/@moku-labs/game/dist/${subpath}.mjs`, import.meta.url).pathname;
 
 export default defineConfig({
-  // The merge-game fixture (in the game checkout of tests/fixtures/game-dir.ts) imports the
-  // engine by its package name from outside this repository. The aliases send the fixture and
-  // the editor to the same built files, so both share one copy of the engine modules.
-  resolve: {
-    alias: [
-      { find: "@moku-labs/game/testing", replacement: game("testing") },
-      { find: "@moku-labs/game/inspect", replacement: game("inspect") },
-      { find: "@moku-labs/game/control", replacement: game("control") },
-      { find: "@moku-labs/game/project", replacement: game("project") },
-      { find: "@moku-labs/game/jsx-dev-runtime", replacement: game("jsx-dev-runtime") },
-      { find: "@moku-labs/game/jsx-runtime", replacement: game("jsx-runtime") },
-      { find: /^@moku-labs\/game$/, replacement: game("index") }
-    ]
-  },
   test: {
     projects: [
       {
@@ -62,7 +12,7 @@ export default defineConfig({
             "tests/unit/**/*.test.{ts,tsx}",
             "src/plugins/**/__tests__/unit/**/*.test.{ts,tsx}"
           ],
-          exclude: ["**/node_modules/**", ...skipped]
+          exclude: ["**/node_modules/**"]
         }
       },
       {
@@ -73,7 +23,7 @@ export default defineConfig({
             "tests/integration/**/*.test.{ts,tsx}",
             "src/plugins/**/__tests__/integration/**/*.test.{ts,tsx}"
           ],
-          exclude: ["**/node_modules/**", ...skipped]
+          exclude: ["**/node_modules/**"]
         }
       }
     ],

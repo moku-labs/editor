@@ -1,9 +1,8 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" */
 import { defineCommand } from "@moku-labs/game/control";
-import { createHeadless } from "@moku-labs/game/testing";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { registryPlugin } from "../../../registry";
@@ -13,11 +12,10 @@ import type { Config, OverlayApi } from "../../types";
 import { HOST_ATTRIBUTE } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The agent defaults (registry, channel, overlay) over the headless merge game,
+// The agent defaults (registry, channel, overlay) over the headless tiny game,
 // with a dev module holding one one-click cheat and one cheat with required input.
-// The DOM is a happy-dom Window stubbed onto the globals by hand: under the
-// happy-dom environment, import.meta.url of the merge-game fixture loader is an
-// http URL, so the fixture cannot load.
+// The DOM is a happy-dom Window stubbed onto the globals by hand, so the test
+// runs in the node environment.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createAgentCore(agentCoreConfig, {
@@ -50,7 +48,7 @@ const devModule: DevModule = {
   ]
 };
 
-/** A started headless merge game. */
+/** A started headless tiny game. */
 type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
 
 let game: StartedGame;
@@ -93,10 +91,7 @@ function shadow(): ShadowRoot {
 beforeEach(async () => {
   coinsAdded = 0;
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const { createGame } = await loadMergeGame();
-  const { app } = createGame();
-  const headless = await createHeadless(app);
-  game = { app, stop: () => headless.stop() };
+  game = await startTinyHeadless();
   dom = new Window();
   vi.stubGlobal("document", dom.document);
   vi.stubGlobal("CSSStyleSheet", dom.CSSStyleSheet);

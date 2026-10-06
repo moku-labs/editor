@@ -7,6 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   # No `workflow_call:` needed — publish.yml reaches the same checks through
   # package-release.yml, which calls package-ci.yml itself.
 
@@ -20,3 +21,14 @@ permissions:
 jobs:
   ci:
     uses: moku-labs/ci/.github/workflows/package-ci.yml@v1
+
+  # The moku demos (moku-labs/demos) against this PR's editor preview, published by `ci`. The label
+  # `demos:full` adds the full tier. Its checks land as "demos / fast" or "demos / full";
+  # the full tier adds pixels on macOS and the editor scenarios of each demo.
+  demos:
+    needs: ci
+    if: github.event_name == 'pull_request'
+    uses: moku-labs/ci/.github/workflows/demos.yml@v1
+    with:
+      editor: https://pkg.pr.new/@moku-labs/editor@${{ github.event.pull_request.head.sha }}
+      tier: ${{ contains(github.event.pull_request.labels.*.name, 'demos:full') && 'full' || 'fast' }}

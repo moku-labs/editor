@@ -1,6 +1,6 @@
 /**
  * @file The e2e test fixture. `tools` opens the tools page, waits for the link to go live with
- * the merge-game manifest and hands a small driver to the test. `errors` runs for every test: it
+ * the tiny game's manifest and hands a small driver to the test. `errors` runs for every test: it
  * records console errors and warnings, uncaught exceptions, unhandled rejections and failed
  * responses on BOTH the tools page and the game frame, and fails the test on any entry the
  * allowlist does not name.
@@ -29,8 +29,8 @@ export const WORKSPACES = [
 /** One workspace id. */
 export type WorkspaceId = (typeof WORKSPACES)[number]["id"];
 
-/** The game name the merge-game fixture registers (e2e/game/editor.ts). */
-export const GAME_NAME = "merge-game 0.0.0";
+/** The game name the tiny e2e game registers (e2e/game/web/editor.ts). */
+export const GAME_NAME = "tiny-game 0.0.0";
 
 /** The tools page path the bin serves. */
 export const TOOLS_PATH = "/__editor/";
@@ -164,7 +164,7 @@ async function pinDevice(page: Page, preset: string): Promise<void> {
 }
 
 /**
- * Opens the tools page and waits for a live link with the merge-game manifest.
+ * Opens the tools page and waits for a live link with the tiny game's manifest.
  *
  * @param page - The test page.
  * @param hash - An optional workspace hash, e.g. "#render".
@@ -176,7 +176,7 @@ export async function openTools(page: Page, hash = ""): Promise<void> {
 }
 
 /**
- * Waits for a live link and the merge-game manifest in the top bar.
+ * Waits for a live link and the tiny game's manifest in the top bar.
  *
  * @param page - The test page.
  */

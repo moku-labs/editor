@@ -1,42 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { gameFileUrl } from "../../../../../tests/fixtures/game-dir";
+import { commands, run } from "@moku-labs/game/control";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  startTinyScreenGame,
+  type TinyScreenGame
+} from "../../../../../tests/fixtures/tiny-screen-game";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { refId, type SceneNode } from "../../../panels/shared/scene";
 import { registryPlugin } from "../../../registry";
-import type { GameLike } from "../../../registry/types";
 import { pickAt } from "../../element/select";
 import { readScene } from "../../scene/read";
 import { startSceneWatches, stopSceneWatches } from "../../scene/watch";
 import { createCtx, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// gameView's scene over the real merge game: the game repository's own helper
-// walks createScreenGame (inert renderer) onto board/awaitIntent; the agent
-// core (registry + channel) serves its sources in process; gameView reads and
-// watches them through a link whose read and watch are the agent channel's.
-// Runs only when MOKU_GAME_DIR names a game checkout (tests/fixtures/game-dir.ts;
-// vitest.config.ts skips files that call loadMergeGame… when it is absent, as on CI).
+// gameView's scene over a real game: the tiny screen game (inert renderer)
+// walked onto board/awaitIntent by a tap on Play; the agent core (registry +
+// channel) serves its sources in process; gameView reads and watches them
+// through a link whose read and watch are the agent channel's.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** The game repository's helper module (timber-helpers.ts), loaded at run time like the fixture. */
-const HELPERS = gameFileUrl("tests/integration/timber-helpers.ts");
-
-/** What the test uses of the helper module. */
-type BoardHelpers = {
-  readonly player: unknown;
-  startOnBoard(start: unknown): Promise<{ readonly app: GameLike & { stop(): Promise<void> } }>;
-};
-
-/**
- * Loads the merge-game board helpers of the game repository.
- *
- * @returns The helpers.
- */
-async function loadMergeGameBoard(): Promise<BoardHelpers> {
-  const helpers: BoardHelpers = await import(/* @vite-ignore */ HELPERS);
-  return helpers;
-}
 
 /**
  * Polls until a check holds: the scene builds on the next animation frame, whose timing the test
@@ -57,10 +39,15 @@ async function until(check: () => boolean, label: string): Promise<void> {
 const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
 
 let ctx: TestCtx;
+let game: TinyScreenGame;
 let stopAll: () => Promise<void>;
 beforeEach(async () => {
-  const { player, startOnBoard } = await loadMergeGameBoard();
-  const game = await startOnBoard(player);
+  vi.stubGlobal("__MOKU_GAME_DEV__", true);
+  game = await startTinyScreenGame();
+  const tapped = run(game.app, commands.tap, { key: "play" });
+  await game.until("board/awaitIntent");
+  await game.frames(6);
+  await tapped;
   const agent = framework.createApp({
     pluginConfigs: { registry: { game: game.app, modules: [] } }
   });
@@ -68,7 +55,7 @@ beforeEach(async () => {
   await agent.start();
 
   ctx = createCtx();
-  // The agent's own manifest: it lists game.locate (game 0.4) or game.rect (game 0.1).
+  // The agent's own manifest: it lists the rect source game.locate.
   ctx.link.manifestValue = agent.registry.manifest();
   ctx.link.read.mockImplementation((id, input) => agent.channel.read(id, input));
   ctx.link.watch.mockImplementation((id, input, onValue) =>
@@ -76,40 +63,41 @@ beforeEach(async () => {
   );
   stopAll = async () => {
     await agent.stop();
-    await game.app.stop();
+    await game.stop();
   };
 }, 30_000);
 
 afterEach(async () => {
   stopSceneWatches(ctx);
   await stopAll();
+  vi.unstubAllGlobals();
 });
 
 /**
- * The board items of a scene.
+ * The items of a scene.
  *
  * @param nodes - The scene nodes.
- * @returns The placed board items.
+ * @returns The placed items.
  */
-function boardItems(nodes: Iterable<SceneNode>): SceneNode[] {
-  return [...nodes].filter(node => node.entity?.owner === "board.items" && node.rect !== undefined);
+function trayItems(nodes: Iterable<SceneNode>): SceneNode[] {
+  return [...nodes].filter(node => node.entity?.owner === "tiny.items" && node.rect !== undefined);
 }
 
-describe("gameView on merge-game", () => {
-  it("scene() lists boardSlot and the board items with rects, calibrated from the rect source", async () => {
+describe("gameView on the tiny screen game", () => {
+  it("scene() lists the tray and the items with rects, calibrated from the rect source", async () => {
     const scene = await readScene(ctx);
 
     expect(scene.calibrated).toBe(true);
     expect(ctx.state.calibration).toEqual({ scale: 1, x: 0, y: 0 });
-    expect(scene.nodes.get("ui:boardScreen/boardSlot")?.rect).toEqual({
-      x: 55,
-      y: 801,
-      w: 970,
-      h: 970
+    expect(scene.nodes.get("ui:boardScreen/tray")?.rect).toEqual({
+      x: 240,
+      y: 140,
+      w: 600,
+      h: 600
     });
-    const items = boardItems(scene.nodes.values());
-    expect(items.length).toBeGreaterThan(0);
-    for (const item of items) expect(item.parent).toBe("ui:boardScreen/boardSlot");
+    const items = trayItems(scene.nodes.values());
+    expect(items.map(item => item.name)).toEqual(["a", "b"]);
+    for (const item of items) expect(item.parent).toBe("ui:boardScreen/tray");
   });
 
   it("the watches deliver the three sources and the next frame builds the scene", async () => {
@@ -125,10 +113,10 @@ describe("gameView on merge-game", () => {
     expect(ctx.state.scene?.calibrated).toBe(true);
   });
 
-  it("a picker click at a board item selects it", async () => {
+  it("a picker click at an item selects it", async () => {
     const scene = await readScene(ctx);
-    const [item] = boardItems(scene.nodes.values());
-    if (item?.rect === undefined) throw new Error("no board item");
+    const [item] = trayItems(scene.nodes.values());
+    if (item?.rect === undefined) throw new Error("no item");
     ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
     ctx.state.picker.on = true;
 

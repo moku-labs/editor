@@ -29,7 +29,7 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
  * A game source the save checks touch: an appended comment changes nothing the game shows. A
  * logic module, so Bun reloads the page; a view module would hot swap in place (game 0.5.0, U10).
  */
-const SAVED_SOURCE = "rules/rules.ts";
+const SAVED_SOURCE = "rules.ts";
 
 /** The script Bun's HMR client adds to the HTML of a page served with HMR on. */
 const HMR_CLIENT = "/_bun/client";
@@ -53,10 +53,23 @@ const RESTORED = "Game reloaded · state restored from the last checkpoint";
 const SWITCH_WARNINGS: readonly RegExp[] = [
   /WebSocket connection to 'ws:\/\/127\.0\.0\.1:\d+\/_bun\/hmr' failed/,
   /^\[Bun\] Hot-module-reloading socket disconnected, reconnecting\.\.\.$/,
-  // The game's own asset warnings after the frame reload (game-release-brief item 6).
+  // The engine's asset warnings while a reloaded frame loads its bundle (game-release-brief item 6).
   /event: assets: texture is not loaded yet/,
   /event: renderer: no texture for asset key/,
   /event: assets: the node waited for a bundle/
+];
+
+/**
+ * What a game reload can provoke on the tools page while the tools page talks to the old page:
+ * a watch or the manifest fetch it sent in that moment is refused with -32001 `game_reloaded`,
+ * which link logs at error when it did not expect the reload (a save under Bun HMR), and the Files
+ * graph read in flight fails. The tiny game reloads fast enough to hit that window about one run in
+ * three. Allowed only in the tests that switch hot reload or save a game source.
+ */
+const RELOAD_RACE_LOGS: readonly RegExp[] = [
+  /event: link:watch-failed/,
+  /event: link:manifest-failed/,
+  /event: filesView:graph-failed/
 ];
 
 /** How long one switch may take: the restart, both reconnects and the frame reload. */
@@ -561,11 +574,11 @@ test.describe("top bar · round 2", () => {
 
     // The icon switches hot reload off, the ⋯ row on again; each switch reloads the game frame
     // with its state (D-32). Once, at 600 px: a switch restarts the bin's server.
-    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
     await resize(tools, 600);
     await expect.poll(() => gamePath(page)).toBe("home");
     await answer(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page)).toBe("level");
     const hot = topBar(page).locator(":scope > [data-action=hot-reload]");
     await switchHotReload(page, hot, false);
     await expect(hot).toHaveAttribute("aria-pressed", "false");
@@ -809,7 +822,7 @@ test.describe("top bar · round 2", () => {
     tools,
     errors
   }) => {
-    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
     const page = tools.page;
     await resize(tools, 1440);
     await tools.show("game");
@@ -817,12 +830,12 @@ test.describe("top bar · round 2", () => {
     await expect(hot).toHaveAttribute("aria-checked", "true");
     expect(await servesHmrClient(page), "/ with hot reload on").toBe(true);
 
-    // A state a fresh start would lose: the board.
+    // A state a fresh start would lose: the level.
     await expect.poll(() => gamePath(page)).toBe("home");
     await answer(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page)).toBe("level");
 
-    // Off: the bin serves without HMR; the frame reloads with the board.
+    // Off: the bin serves without HMR; the frame reloads on the level.
     await switchHotReload(page, hot, false);
     await expect(hot).toHaveAttribute("aria-checked", "false");
     await expect(hot).toHaveAttribute("title", HOT_OFF_TITLE);
@@ -839,24 +852,24 @@ test.describe("top bar · round 2", () => {
     await gameKeepsPageFor(page, 1000);
     expect(await reloadState(page)).toBe("marked");
 
-    // On: the bin serves with HMR again; the frame reloads with the board.
+    // On: the bin serves with HMR again; the frame reloads on the level.
     await switchHotReload(page, hot, true);
     await expect(hot).toHaveAttribute("aria-checked", "true");
     await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
 
-    // A save reloads the game again, and the bridge restores the board; so does putting the file
+    // A save reloads the game again, and the bridge restores the level; so does putting the file
     // back.
     await markGame(page);
     const putBackAgain = await saveSource();
     try {
       await expect.poll(() => reloadState(page), { timeout: SWITCH_MS }).toBe("reloaded");
-      await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("board/awaitIntent");
+      await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("level");
       await markGame(page);
     } finally {
       await putBackAgain();
     }
     await expect.poll(() => reloadState(page), { timeout: SWITCH_MS }).toBe("reloaded");
-    await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page), { timeout: SWITCH_MS }).toBe("level");
     await expect(page.locator("[data-ui=link-pill]")).toHaveAttribute("data-kind", "live", {
       timeout: SWITCH_MS
     });
@@ -867,7 +880,7 @@ test.describe("top bar · round 2", () => {
     tools,
     errors
   }) => {
-    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
+    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
     const page = tools.page;
     await resize(tools, 1440);
     await tools.show("game");
@@ -875,7 +888,7 @@ test.describe("top bar · round 2", () => {
     await expect(hot).toHaveAttribute("aria-checked", "true");
     await expect.poll(() => gamePath(page)).toBe("home");
     await answer(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page)).toBe("level");
 
     // Off and on again: the restart (close 1012), both reconnects and the frame reloads.
     await recordErrorTones(page);

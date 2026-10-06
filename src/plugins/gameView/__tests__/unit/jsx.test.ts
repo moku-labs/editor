@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HAS_GAME, mergeGameDir } from "../../../../../tests/fixtures/game-dir";
 import { snippetOf, tagAttributes, tagNameAt } from "../../element/jsx";
 import { templateOf } from "../helpers";
 
@@ -124,15 +122,20 @@ describe("tagAttributes", () => {
   });
 });
 
-describe.skipIf(!HAS_GAME)("tagAttributes on the merge-game fixture files", () => {
-  it("reads the order card's style call at strip.tsx:218 from the range of jsx:card0", () => {
-    const file = path.join(mergeGameDir(), "features/orders/strip.tsx");
-    const lines = readFileSync(file, "utf8").split("\n");
-    expect(tagNameAt(lines, [215, 5, 247, 14])).toBe("column");
-    expect(tagAttributes(lines, [215, 5, 247, 14]).find(entry => entry.name === "style")).toEqual({
+/** The view file of the tiny project fixture: the order cards keyed `card<slot>` (`jsx:card*`). */
+const VIEW = new URL("../fixtures/tiny-project/features/ui/view.tsx", import.meta.url).pathname;
+
+/** The range the project index answers for `jsx:card0` in VIEW. */
+const CARD_RANGE = [22, 5, 28, 14] as const;
+
+describe("tagAttributes on the tiny project fixture files", () => {
+  it("reads the order card's style call at view.tsx:25 from the range of jsx:card0", () => {
+    const lines = readFileSync(VIEW, "utf8").split("\n");
+    expect(tagNameAt(lines, CARD_RANGE)).toBe("column");
+    expect(tagAttributes(lines, CARD_RANGE).find(entry => entry.name === "style")).toEqual({
       name: "style",
-      line: 218,
-      value: { braced: true, text: "orderCardStyle(card.slot)" }
+      line: 25,
+      value: { braced: true, text: "cardStyle(props.slot)" }
     });
   });
 });

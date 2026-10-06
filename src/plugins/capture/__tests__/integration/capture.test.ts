@@ -1,6 +1,5 @@
-import { createHeadless } from "@moku-labs/game/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { registryPlugin } from "../../../registry";
@@ -10,7 +9,7 @@ import { capturePlugin } from "../..";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The agent core (registry + channel) with capture added the way a game's dev
-// entry adds it, over the headless merge game. The headless app has no
+// entry adds it, over the headless tiny game. The headless app has no
 // renderer, so a Proxy hands the game.capture door a stub renderer. The game
 // page viewport is stubbed on globalThis (393 x 852, a phone in portrait).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,14 +57,12 @@ beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
   vi.stubGlobal("innerWidth", 393);
   vi.stubGlobal("innerHeight", 852);
-  const { createGame } = await loadMergeGame();
-  const { app } = createGame();
-  const headless = await createHeadless(app);
+  const { app, stop } = await startTinyHeadless();
   renderer = { capture: vi.fn(async (): Promise<string | undefined> => PNG) };
   game = new Proxy(app, {
     get: (target, key) => (key === "renderer" ? renderer : Reflect.get(target, key))
   });
-  stopGame = () => headless.stop();
+  stopGame = stop;
   vi.useFakeTimers();
 });
 
@@ -137,7 +134,7 @@ describe("capture integration", () => {
   it("editor.capture { key } reads game.locate before the door; its error passes through", async () => {
     const app = await startEditor();
 
-    // The merge game has no ui plugin, so game.locate itself throws.
+    // The headless tiny game has no ui plugin, so game.locate itself throws.
     await expect(app.channel.run("editor.capture", { key: "hud" })).rejects.toMatchObject({
       message: expect.stringContaining("[moku-editor] game.locate:"),
       data: { id: "game.locate" }

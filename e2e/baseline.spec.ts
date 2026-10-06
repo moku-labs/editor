@@ -15,9 +15,6 @@ type Bookmark = { readonly session: { readonly [key: string]: unknown } } & {
   readonly [key: string]: unknown;
 };
 
-/** What the spec reads of game.model and game.position. */
-type Settled = { readonly path: string; readonly loading: number };
-
 /**
  * The game page frame.
  *
@@ -31,28 +28,24 @@ function gameFrame(page: Page): Frame {
 }
 
 /**
- * Where the game stands: its path and its loading progress, read on the game page.
+ * Where the game stands: its path, read on the game page.
  *
  * @param page - The test page.
- * @returns The path and `session.loading`, or a pending marker while the page is not ready.
+ * @returns The path, or "pending" while the page is not ready.
  */
-async function settled(page: Page): Promise<Settled> {
+async function settled(page: Page): Promise<string> {
   try {
-    const json = await gameFrame(page).evaluate(async () => {
+    return await gameFrame(page).evaluate(async () => {
       const registry = (
         Reflect.get(globalThis, "editor") as {
           registry: { source(id: string): { read(input: object): Promise<unknown> } };
         }
       ).registry;
       const position = (await registry.source("game.position").read({})) as { path: string };
-      const model = (await registry.source("game.model").read({})) as {
-        session: { loading: number };
-      };
-      return JSON.stringify({ path: position.path, loading: model.session.loading });
+      return position.path;
     });
-    return JSON.parse(json) as Settled;
   } catch {
-    return { path: "pending", loading: 0 };
+    return "pending";
   }
 }
 
@@ -77,7 +70,7 @@ async function commitTaps(page: Page, taps: number): Promise<void> {
 }
 
 /**
- * Makes State's Last commit a known one: once the game rests at home with its assets loaded, two
+ * Makes State's Last commit a known one: once the game rests at home, two
  * restores set `session.taps` to 41, then 42. The second commit is diffed against a baseline that
  * already holds 41, so it is exactly `replace /session/taps 41 → 42`, however the boot commits
  * and the first restore were grouped. It touches the masked Session card only.
@@ -88,7 +81,7 @@ async function showKnownCommit(tools: Tools): Promise<void> {
   const { page } = tools;
   const list = tools.host("state").locator("[data-part=patch-list]");
   const patches = list.locator("[data-part=patches] > li");
-  await expect.poll(() => settled(page), { timeout: 30_000 }).toEqual({ path: "home", loading: 1 });
+  await expect.poll(() => settled(page), { timeout: 30_000 }).toBe("home");
 
   await commitTaps(page, 41);
   await expect(patches.filter({ hasText: "/session/taps" })).toContainText("41");

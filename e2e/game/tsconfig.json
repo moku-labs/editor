@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsxImportSource": "@moku-labs/game"
+  },
+  "include": ["."],
+  "exclude": ["web/editor.ts"]
+}

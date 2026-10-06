@@ -8,15 +8,15 @@ import type { CommandDescriptor } from "../../protocol";
 import { checkInput } from "../../protocol";
 import type { CommandEntry, GameLike, RegistryApi } from "../../types";
 import type { StartedGame, TestCtx } from "../helpers";
-import { createCtx, startGame, thrownBy } from "../helpers";
+import { createCtx, startBareGame, thrownBy } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The registry api over the real merge game
+// The registry api over the bare game
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A module cheat, to taint the session. */
 const addCoins = defineCommand({
-  id: "merge.addCoins",
+  id: "tiny.addCoins",
   title: "Add coins",
   input: { amount: "number" },
   effect: "cheat",
@@ -29,11 +29,11 @@ let registry: RegistryApi;
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  game = await startGame();
+  game = await startBareGame();
   ctx = createCtx({
     game: game.app,
     modules: [{ commands: [addCoins] }],
-    name: "merge-game 0.0.0"
+    name: "tiny-game 0.0.0"
   });
   registry = createRegistryApi(ctx);
   buildCatalogue(ctx);
@@ -70,12 +70,12 @@ describe("manifest()", () => {
   it("lists the doors, the module command and the game name", () => {
     const manifest = registry.manifest();
 
-    expect(manifest.game).toBe("merge-game 0.0.0");
+    expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.page).toBe("");
     expect(manifest.embedded).toBe(false);
     expect(manifest.sources).toHaveLength(20);
     expect(manifest.commands).toHaveLength(18);
-    expect(manifest.commands.at(-1)?.id).toBe("merge.addCoins");
+    expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
   });
 
   it("returns the cached manifest until the next add", () => {
@@ -99,7 +99,7 @@ describe("source() and command()", () => {
   it("look up entries by id", () => {
     expect(registry.source("game.position")?.descriptor.id).toBe("game.position");
     expect(registry.command("game.step")?.descriptor.id).toBe("game.step");
-    expect(registry.command("merge.addCoins")?.descriptor.effect).toBe("cheat");
+    expect(registry.command("tiny.addCoins")?.descriptor.effect).toBe("cheat");
   });
 
   it("return undefined for an unknown id or the other kind", () => {
@@ -164,7 +164,7 @@ describe("add()", () => {
     expect(() => registry.add(editorEntry({ id }))).not.toThrow();
   });
 
-  it.each(["game.position", "game.step", "merge.addCoins"])("refuses the duplicate id %s", id => {
+  it.each(["game.position", "game.step", "tiny.addCoins"])("refuses the duplicate id %s", id => {
     expect(() => registry.add(editorEntry({ id }))).toThrow(
       `[moku-editor] Duplicate registry id "${id}".\n  Each source and command id must be unique; rename one of them.`
     );
@@ -225,7 +225,7 @@ describe("envelope()", () => {
   });
 
   it("turns tainted after a cheat module command", async () => {
-    await registry.command("merge.addCoins")?.run({ amount: 3 });
+    await registry.command("tiny.addCoins")?.run({ amount: 3 });
 
     expect(registry.envelope().tainted).toBe(true);
   });

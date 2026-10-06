@@ -1,9 +1,11 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mergeGameDir } from "../../../../../tests/fixtures/game-dir";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import {
+  startTinyScreenGame,
+  TINY_SCREEN_MANIFEST,
+  TINY_SCREEN_NAME,
+  type TinyScreenGame
+} from "../../../../../tests/fixtures/tiny-screen-game";
 import {
   agentCoreConfig,
   createAgentCore,
@@ -14,25 +16,17 @@ import { channelPlugin } from "../../../channel";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import { registryPlugin } from "../../../registry";
-import type { Json, Manifest, SessionInfo, ToolsBoot } from "../../../registry/protocol";
-import type { GameLike } from "../../../registry/types";
+import type { Manifest, SessionInfo, ToolsBoot } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import { renderViewPlugin } from "../..";
 import { type AgentHub, createAgentHub } from "./agent-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The real chain: tools link → in-process hub → agent registry + channel on the
-// merge game with its (inert) screen, walked onto the board. The asset manifest
-// is the game's committed manifest.json, served by the in-memory files store.
+// tiny screen game (inert renderer, bundles loaded through the stand-in io),
+// walked onto the board. The asset manifest is the game's own, served by the
+// in-memory files store.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** The screen game as this test drives it. */
-type ScreenApp = GameLike & {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  readonly flow: { run(): Promise<unknown>; state(): { readonly path: string } };
-  readonly time: { step(ms: number): void };
-};
 
 const BOOT: ToolsBoot = {
   v: 1,
@@ -47,19 +41,10 @@ const BOOT: ToolsBoot = {
 
 const SESSION: SessionInfo = {
   id: "s-1",
-  game: "merge-game 0.0.0",
+  game: TINY_SCREEN_NAME,
   page: BOOT.gameUrl,
   embedded: true,
   connectedAt: 1000
-};
-
-/** The game's asset io over the files of the fixture: bundles load for real, textures are stand-ins. */
-const DISK_IO = {
-  fetch: async (url: string) =>
-    new Response(readFileSync(path.join(mergeGameDir(), url.replace(/^\//u, "")))),
-  decode: async () => ({ width: 1, height: 1 }),
-  createTexture: () => ({ label: "stand-in" }),
-  destroyTexture: () => undefined
 };
 
 const tools = createToolsCore(toolsCoreConfig, {
@@ -67,17 +52,9 @@ const tools = createToolsCore(toolsCoreConfig, {
 });
 const agentCore = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
 
-let game: ScreenApp;
+let game: TinyScreenGame;
 let hub: AgentHub;
 let agentManifest: Manifest;
-
-async function frames(count: number): Promise<void> {
-  for (let frame = 0; frame < count; frame += 1) {
-    game.time.step(16);
-    for (let tick = 0; tick < 40; tick += 1) await Promise.resolve();
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-}
 
 async function until(check: () => boolean, label: string): Promise<void> {
   const deadline = performance.now() + 10_000;
@@ -93,33 +70,22 @@ function watched(): string[] {
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const manifestText = readFileSync(path.join(mergeGameDir(), "manifest.json"), "utf8");
-  const fixture = await loadMergeGame();
-  const create = fixture.createScreenGame as unknown as (options: {
-    manifest: Json;
-    io: typeof DISK_IO;
-  }) => { app: ScreenApp };
-  game = create({ manifest: JSON.parse(manifestText), io: DISK_IO }).app;
-  await game.start();
-  game.flow.run().catch(() => undefined);
-  await frames(6);
+  game = await startTinyScreenGame({ io: true });
 
   const agent = agentCore.createApp({
-    pluginConfigs: { registry: { game }, channel: { heartbeatMs: 100 } }
+    pluginConfigs: { registry: { game: game.app }, channel: { heartbeatMs: 100 } }
   });
   await agent.start();
   agentManifest = agent.registry.manifest();
   // The tap settles on a later frame of the fake clock: step frames while it runs.
   const tapped = agent.channel.run("game.tap", { key: "play" });
-  for (let step = 0; step < 200 && game.flow.state().path !== "board/awaitIntent"; step += 1) {
-    await frames(1);
-  }
-  await frames(6);
+  await game.until("board/awaitIntent");
+  await game.frames(6);
   await tapped;
 
   hub = createAgentHub({
     channel: agent.channel,
-    files: new Map([["manifest.json", manifestText]]),
+    files: new Map([["manifest.json", JSON.stringify(TINY_SCREEN_MANIFEST)]]),
     project: {
       state: "on",
       revision: "r1",
@@ -130,7 +96,7 @@ beforeEach(async () => {
     }
   });
   vi.stubGlobal("WebSocket", hub.Socket);
-  // Node environment (the fixture loads by a file URL): a happy-dom document holds the boot.
+  // Node environment: a happy-dom document holds the boot.
   const window = new Window({ url: "http://127.0.0.1:3000/__editor" });
   window.document.body.innerHTML = `<script type="application/json" id="moku-editor-boot">${JSON.stringify(BOOT)}</script>`;
   vi.stubGlobal("document", window.document);
@@ -141,11 +107,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("renderView on the merge game", () => {
-  it("show Render → tiles, texture rows of the loaded bundles, tree rows with boardSlot → leave → stop", {
+describe("renderView on the tiny screen game", () => {
+  it("show Render → tiles, texture rows of the loaded bundles, tree rows with the tray → leave → stop", {
     timeout: 15_000
   }, async () => {
-    expect(game.flow.state().path).toBe("board/awaitIntent");
+    expect(game.app.flow.state().path).toBe("board/awaitIntent");
     const manifest: Manifest = agentManifest;
     const app = tools.createApp();
     app.log.clearSinks();
@@ -181,7 +147,7 @@ describe("renderView on the merge game", () => {
       gpuMb: 0.19,
       use: { kind: "in-use" }
     });
-    expect(snapshot.tree.map(row => row.id)).toContain("ui:boardScreen/boardSlot");
+    expect(snapshot.tree.map(row => row.id)).toContain("ui:boardScreen/tray");
 
     app.workspace.show("flow");
     await until(() => hub.unwatched.length === 3, "three unwatch");

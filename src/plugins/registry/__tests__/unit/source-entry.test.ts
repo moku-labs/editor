@@ -6,10 +6,10 @@ import type { Json } from "../../protocol";
 import { ProtocolError } from "../../protocol";
 import type { GameLike } from "../../types";
 import type { LogMock, StartedGame } from "../helpers";
-import { createLog, startGame, thrownBy } from "../helpers";
+import { createLog, startBareGame, thrownBy } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// sourceEntry: read and watch over the real merge game
+// sourceEntry: read and watch over the bare game
 // ─────────────────────────────────────────────────────────────────────────────
 
 let game: StartedGame;
@@ -17,7 +17,7 @@ let log: LogMock;
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  game = await startGame();
+  game = await startBareGame();
   log = createLog();
 });
 

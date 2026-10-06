@@ -6,7 +6,7 @@ import { addEditorCommand, buildCatalogue, requireGame } from "../../catalogue";
 import type { CommandDescriptor, SourceDescriptor } from "../../protocol";
 import type { CommandEntry, DevModule, DoorCommand, DoorSource, GameLike } from "../../types";
 import type { StartedGame } from "../helpers";
-import { createCtx, startGame, thrownBy } from "../helpers";
+import { createCtx, startBareGame, thrownBy } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // buildCatalogue (onInit) and addEditorCommand: order, origins, the rules
@@ -16,7 +16,7 @@ let game: StartedGame;
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  game = await startGame();
+  game = await startBareGame();
 });
 
 afterEach(async () => {
@@ -29,7 +29,7 @@ const doorCommandIds = Object.values(commands).map(command => command.id);
 
 /** A module source. */
 const coins = defineSource({
-  id: "merge.coins",
+  id: "tiny.coins",
   title: "Coins",
   input: {},
   changes: "commit",
@@ -38,7 +38,7 @@ const coins = defineSource({
 
 /** A module cheat (modules may claim cheat or raw). */
 const refill = defineCommand({
-  id: "merge.refill",
+  id: "tiny.refill",
   title: "Refill energy",
   input: { amount: "number?" },
   effect: "cheat",
@@ -63,7 +63,7 @@ const editorEntry = (descriptor: CommandDescriptor): CommandEntry => ({
  * @returns The source.
  */
 const sourceWith = (fields: Partial<SourceDescriptor>): DoorSource => ({
-  id: "merge.source",
+  id: "tiny.source",
   title: "Source",
   input: {},
   changes: "frame",
@@ -78,7 +78,7 @@ const sourceWith = (fields: Partial<SourceDescriptor>): DoorSource => ({
  * @returns The command.
  */
 const commandWith = (fields: Partial<CommandDescriptor>): DoorCommand => ({
-  id: "merge.command",
+  id: "tiny.command",
   title: "Command",
   input: {},
   effect: "read",
@@ -102,20 +102,20 @@ describe("buildCatalogue", () => {
 
   it("adds module entries after the doors, modules in config order", () => {
     const first: DevModule = { sources: [coins], commands: [refill] };
-    const second: DevModule = { commands: [commandWith({ id: "merge.second" })] };
+    const second: DevModule = { commands: [commandWith({ id: "tiny.second" })] };
     const ctx = createCtx({ game: game.app, modules: [first, second] });
 
     buildCatalogue(ctx);
 
-    expect([...ctx.state.sources.keys()]).toEqual([...doorSourceIds, "merge.coins"]);
+    expect([...ctx.state.sources.keys()]).toEqual([...doorSourceIds, "tiny.coins"]);
     expect([...ctx.state.commands.keys()]).toEqual([
       ...doorCommandIds,
-      "merge.refill",
-      "merge.second"
+      "tiny.refill",
+      "tiny.second"
     ]);
-    expect(ctx.state.origins.get("merge.coins")).toBe("module");
-    expect(ctx.state.origins.get("merge.refill")).toBe("module");
-    expect(ctx.state.commands.get("merge.refill")?.descriptor.effect).toBe("cheat");
+    expect(ctx.state.origins.get("tiny.coins")).toBe("module");
+    expect(ctx.state.origins.get("tiny.refill")).toBe("module");
+    expect(ctx.state.commands.get("tiny.refill")?.descriptor.effect).toBe("cheat");
   });
 
   it("re-appends editor commands added before init after the modules", () => {
@@ -128,7 +128,7 @@ describe("buildCatalogue", () => {
     const early = ctx.state.commands.get("editor.early");
     buildCatalogue(ctx);
 
-    expect([...ctx.state.commands.keys()].slice(-2)).toEqual(["merge.refill", "editor.early"]);
+    expect([...ctx.state.commands.keys()].slice(-2)).toEqual(["tiny.refill", "editor.early"]);
     expect(ctx.state.commands.get("editor.early")).toBe(early);
     expect(ctx.state.origins.get("editor.early")).toBe("editor");
   });
@@ -181,7 +181,7 @@ describe("buildCatalogue", () => {
     });
 
     expect(() => buildCatalogue(ctx)).toThrow(
-      '[moku-editor] Command "merge.command" has an unknown input kind "int" for "amount".\n  Use string, number, boolean or json, with an optional ?.'
+      '[moku-editor] Command "tiny.command" has an unknown input kind "int" for "amount".\n  Use string, number, boolean or json, with an optional ?.'
     );
   });
 
@@ -196,10 +196,10 @@ describe("buildCatalogue", () => {
     });
 
     expect(() => buildCatalogue(changes)).toThrow(
-      '[moku-editor] Source "merge.source" has an unknown changes'
+      '[moku-editor] Source "tiny.source" has an unknown changes'
     );
     expect(() => buildCatalogue(effect)).toThrow(
-      '[moku-editor] Command "merge.command" has an unknown effect'
+      '[moku-editor] Command "tiny.command" has an unknown effect'
     );
   });
 

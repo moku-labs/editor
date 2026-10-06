@@ -4,9 +4,8 @@
  * tap on Play walks it, the size stays), a tap draws a ripple at the tap point, Reference mode
  * (proxies named for the game elements at their Element tab bounds, no input reaches the game,
  * Copy reference with the one line of round 2b R13 that names the card holding the reference
- * block of round 2), the Element tab bounds of homeBackground
- * after splash → home and after a device change, the source of settingsBoard, Flow following a
- * Comes from edge (both ends framed,
+ * block of round 2), the Element tab bounds of homeBackground after a reload and after a device
+ * change, the source of levelPanel, Flow following a Comes from edge (both ends framed,
  * the pulse, Alt+← back), find current (C), the Styles tab without a preselected style, and the
  * side panels of Flow, Game and Files (collapse, resize, close, reopen; a drawer below 600 px).
  *
@@ -37,9 +36,36 @@ const CAPTURES = fileURLToPath(new URL("../dist-e2e/game/.moku/captures/", impor
 /** The project root the bin serves. */
 const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
-/** The one reference line of settingsBoard; group 1 is the card it names. */
-const BOARD_LINE =
-  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:290 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
+/** The view module of the tiny game, root-relative: it defines every keyed element. */
+const VIEW_FILE = "features/tiny/view.tsx";
+
+/** The level panel the source and reference checks pick. */
+const PANEL_KEY = "levelPanel";
+
+/**
+ * The one-based line of the view module that writes a key, as the project index reports it.
+ *
+ * @param key - The ui key.
+ * @returns The line.
+ */
+async function viewLine(key: string): Promise<number> {
+  const text = await readFile(path.join(GAME_ROOT, VIEW_FILE), "utf8");
+  const line = text.split("\n").findIndex(row => row.includes(`key="${key}"`)) + 1;
+  expect(line, `${VIEW_FILE} writes ${key}`).toBeGreaterThan(0);
+  return line;
+}
+
+/**
+ * The one reference line of levelPanel; group 1 is the card it names.
+ *
+ * @param line - The line of the view module that writes levelPanel.
+ * @returns The pattern.
+ */
+function panelLine(line: number): RegExp {
+  return new RegExp(
+    String.raw`^@moku levelPanel panel · main\/level · features\/tiny\/view\.tsx:${line} · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/levelPanel-f\d+\.md)$`
+  );
+}
 
 /** The reference block inside a card file: its `text` fence. */
 const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
@@ -48,10 +74,11 @@ const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
  * The reference block in the card a reference line names.
  *
  * @param line - The clipboard line.
+ * @param pattern - The pattern of the line; group 1 is the card.
  * @returns The block.
  */
-async function cardBlock(line: string): Promise<string> {
-  const card = BOARD_LINE.exec(line)?.[1] ?? "";
+async function cardBlock(line: string, pattern: RegExp): Promise<string> {
+  const card = pattern.exec(line)?.[1] ?? "";
   expect(card, line).not.toBe("");
   const text = await readFile(path.join(GAME_ROOT, card), "utf8");
   return TEXT_FENCE.exec(text)?.[1] ?? "";
@@ -66,14 +93,14 @@ type Point = { readonly x: number; readonly y: number };
 /** One ripple the recorder saw: its centre in client px and its kind. */
 type Ripple = { readonly x: number; readonly y: number; readonly kind: string };
 
-/** Game-frame warnings a reload provokes that are not editor defects (see flow.spec.ts). */
+/** Game-frame warnings a reload provokes while the engine loads the bundle: not editor defects. */
 const RELOAD_WARNINGS: readonly RegExp[] = [
   /event: assets: texture is not loaded yet/,
   /event: renderer: no texture for asset key/,
   /event: assets: the node waited for a bundle/
 ];
 
-/** The pixi warning a device change provokes in the game frame (see game.spec.ts). */
+/** The pixi warning a device change provokes in the game frame: not an editor defect. */
 const PIXI_RESIZE = /PixiJS Warning: +\[BindGroup\] a 'texture(Source|Sampler)' was destroyed/;
 
 /** The container width below which a side panel floats as a drawer (every view uses 600). */
@@ -126,7 +153,7 @@ async function readSource<T>(page: Page, id: string, input: object = {}): Promis
 }
 
 /**
- * The game position path, e.g. "home" or "board/awaitIntent".
+ * The game position path, e.g. "home" or "level".
  *
  * @param page - The test page.
  * @returns The path, or "pending" while the game page reloads.
@@ -178,7 +205,7 @@ async function settledRect(page: Page, key: string): Promise<Rect> {
  * Answers the flow gate of the game, as a tap on a control would.
  *
  * @param page - The test page.
- * @param intent - The intent, e.g. "openSettings".
+ * @param intent - The intent, e.g. "play".
  */
 async function answer(page: Page, intent: string): Promise<void> {
   const took = await gameFrame(page).evaluate(
@@ -520,7 +547,9 @@ async function pickIn(page: Page, rect: Rect, label: RegExp): Promise<void> {
           for (const fx of xs) {
             const at = { x: rect.x + rect.w * fx, y: rect.y + rect.h * fy };
             await page.mouse.move(at.x, at.y);
-            const text = (await hover.count()) > 0 ? ((await hover.textContent()) ?? "") : "";
+            // One read: the label goes while the pointer is over no element, and a count then a
+            // textContent would wait for it to come back.
+            const text = await hover.evaluateAll(labels => labels[0]?.textContent ?? "");
             if (label.test(text)) {
               found = at;
               return text;
@@ -711,7 +740,7 @@ test.describe("pane · the pinned preview plays the game", () => {
     await expect.poll(() => gamePath(page)).toBe("home");
 
     await tapGame(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page)).toBe("level");
     await expect(preview).toHaveAttribute("data-size", "M");
     await expect(page.locator("[data-ui=shell]")).toHaveAttribute("data-workspace", "render");
   });
@@ -786,36 +815,36 @@ test.describe("pane · reference mode", () => {
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
     await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
     await tapGame(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
+    await expect.poll(() => gamePath(page)).toBe("level");
   });
 
-  test("settingsBoard: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds", async ({
+  test("levelPanel: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds", async ({
     tools
   }) => {
     const page = tools.page;
+    const panelAt = await viewLine(PANEL_KEY);
+    const pattern = panelLine(panelAt);
     await showGame(tools);
     await expect.poll(() => gamePath(page)).toBe("home");
-    // Settings from the board's HUD: the position stack is board > settings > open.
+    // Play leads to the level, whose panel holds the title and the score.
     await answer(page, "play");
-    await expect.poll(() => gamePath(page)).toBe("board/awaitIntent");
-    await answer(page, "openSettings");
-    await expect.poll(() => gamePath(page)).toBe("board/settings/open");
-    const board = await settledRect(page, "settingsBoard");
+    await expect.poll(() => gamePath(page)).toBe("level");
+    const panel = await settledRect(page, PANEL_KEY);
 
-    // Pick the board itself, where no child of it is drawn over the point.
-    await pickIn(page, await toClient(page, board), /^settingsBoard · /);
+    // Pick the panel itself, where no child of it is drawn over the point.
+    await pickIn(page, await toClient(page, panel), /^levelPanel · /);
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
       "Reference, shot and bookmark copied"
     );
     const picked = await page.evaluate(() => navigator.clipboard.readText());
     await expandSide(page, "game.side");
     const tab = elementTab(page);
-    await expect(tab.locator("[data-part=name]")).toHaveText("settingsBoard");
+    await expect(tab.locator("[data-part=name]")).toHaveText(PANEL_KEY);
 
     // The selected frame and the bounds are the element's real rect (2 px).
-    const expected = [board.x, board.y, board.w, board.h];
+    const expected = [panel.x, panel.y, panel.w, panel.h];
     await expect.poll(async () => near(await tabBounds(page), expected, 2)).toBe(true);
-    const client = await toClient(page, board);
+    const client = await toClient(page, panel);
     await expect
       .poll(async () => {
         const box = await overlay(page).locator("[data-box=selected]").boundingBox();
@@ -828,22 +857,22 @@ test.describe("pane · reference mode", () => {
       })
       .toBe(true);
 
-    // The source: "Defined at …settings.tsx:290", or the style card of its style.
+    // The source: "Defined at …view.tsx:<line>", or the style card of its style.
     const source = tab.locator("[data-part=style-card]");
     await expect(source).not.toContainText("Searching the sources", { timeout: 20_000 });
     await expect(source).not.toContainText("Source not found");
     await ((await source.locator("[data-part=defined]").count()) > 0
       ? expect(source.locator("[data-part=defined] [data-part=where]")).toHaveText(
-          /features\/settings\/settings\.tsx:290$/
+          new RegExp(String.raw`features/tiny/view\.tsx:${panelAt}$`)
         )
       : expect(source.locator("[data-part=where]").first()).toHaveText(/\.tsx?:\d+$/));
 
-    // Reference mode: the settingsBoard proxy has the Element tab bounds (2 px).
+    // Reference mode: the levelPanel proxy has the Element tab bounds (2 px).
     const bounds = await tabBounds(page);
     await flipBarToggle(page, "reference");
-    const proxy = page.locator('[data-moku-proxy][data-moku-key="settingsBoard"]');
+    const proxy = page.locator(`[data-moku-proxy][data-moku-key="${PANEL_KEY}"]`);
     await expect(proxy).toHaveCount(1);
-    await expect(proxy).toHaveAttribute("aria-label", "settingsBoard");
+    await expect(proxy).toHaveAttribute("aria-label", PANEL_KEY);
     const proxyBounds = ((await proxy.getAttribute("data-moku-bounds")) ?? "")
       .split(" ")
       .map(Number);
@@ -856,12 +885,10 @@ test.describe("pane · reference mode", () => {
     await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
       "✓ Reference copied"
     );
-    await expect
-      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-      .toMatch(BOARD_LINE);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(pattern);
     const line = await page.evaluate(() => navigator.clipboard.readText());
     expect(line).toBe(picked);
-    const block = await cardBlock(line);
+    const block = await cardBlock(line, pattern);
     const lines = block.split("\n");
     expect(
       lines.map(text => (text.startsWith("@moku ") ? "@moku" : text.split(":")[0])),
@@ -880,17 +907,19 @@ test.describe("pane · reference mode", () => {
       "shot"
     ]);
     const [head, , sourceLine, , boundsLine, , flowLine] = lines;
-    expect(head, block).toMatch(/^@moku settingsBoard · panel · settingsPopup\/open · f\d+$/);
-    expect(sourceLine, block).toMatch(/^source: features\/settings\/settings\.tsx:290\b/);
+    expect(head, block).toMatch(/^@moku levelPanel · panel · main\/level · f\d+$/);
+    expect(sourceLine, block).toMatch(
+      new RegExp(String.raw`^source: features/tiny/view\.tsx:${panelAt}\b`)
+    );
     // The bounds: device px as the Element tab shows them, then the reference units.
     const [x, y, w, h] = bounds;
     expect(boundsLine, block).toMatch(
       new RegExp(String.raw`^bounds: ${x},${y} ${w}×${h} px · ref \d+,\d+ \d+×\d+$`)
     );
-    expect(flowLine, block).toMatch(/^flow: board > settings > open( · last: .+)?$/);
-    expect(lines[9], block).toMatch(/^restore: bookmark settingsBoard-f\d+$/);
+    expect(flowLine, block).toMatch(/^flow: level( · last: .+)?$/);
+    expect(lines[9], block).toMatch(/^restore: bookmark levelPanel-f\d+$/);
     expect(lines[10], block).toMatch(
-      /^shot: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+-crop\.jpg · frame: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/f\d+-full\.jpg$/
+      /^shot: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/levelPanel-f\d+-crop\.jpg · frame: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/f\d+-full\.jpg$/
     );
     // Copy reference and the pick give the same facts (only the clock may differ): the card's
     // block is the one the Element tab shows.
@@ -903,7 +932,7 @@ test.describe("pane · reference mode", () => {
 });
 
 test.describe("pane · element bounds", () => {
-  test("homeBackground fills the Pixel 8 screen after splash → home and after a device change", async ({
+  test("homeBackground fills the Pixel 8 screen after a reload and after a device change", async ({
     tools,
     errors
   }) => {
@@ -914,7 +943,7 @@ test.describe("pane · element bounds", () => {
     await bar(page, "device").selectOption("pixel-8");
     await expect.poll(() => gameFrame(page).evaluate(() => innerWidth)).toBe(412);
 
-    // Splash → home: the Reload of the toolbar boots the game page again.
+    // The Reload of the toolbar boots the game page again, on home.
     await markGame(page);
     await bar(page, "reload").click();
     await expect.poll(() => reloadState(page), { timeout: 30_000 }).toBe("reloaded");
@@ -951,8 +980,8 @@ test.describe("pane · flow", () => {
   }) => {
     const page = tools.page;
     await showFlow(tools);
-    await clickCard(page, "main/settings");
-    await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
+    await clickCard(page, "main/level");
+    await expect(card(page, "main/level")).toHaveAttribute("aria-pressed", "true");
     await expandSide(page, "flow.inspector");
     await recordPulses(page);
 
@@ -963,15 +992,13 @@ test.describe("pane · flow", () => {
     await expect.poll(() => pulses(page)).toContain("main/home");
     // The camera frames both ends of the edge.
     await expect
-      .poll(
-        async () => (await insideCanvas(page, "main/home")) && insideCanvas(page, "main/settings")
-      )
+      .poll(async () => (await insideCanvas(page, "main/home")) && insideCanvas(page, "main/level"))
       .toBe(true);
 
     const back = inspector(page).locator("[data-action=back]");
     await expect(back).toBeVisible();
     await page.keyboard.press("Alt+ArrowLeft");
-    await expect(card(page, "main/settings")).toHaveAttribute("aria-pressed", "true");
+    await expect(card(page, "main/level")).toHaveAttribute("aria-pressed", "true");
     await expect(back).toHaveCount(0);
   });
 
@@ -1020,8 +1047,8 @@ test.describe("pane · flow", () => {
     await expect(tab.locator("[data-part=card]")).toHaveCount(0);
     await expect(tab).not.toContainText("Used by appears");
 
-    await select.selectOption("ui.title");
-    await expect(select).toHaveValue("ui.title");
+    await select.selectOption("tiny.title");
+    await expect(select).toHaveValue("tiny.title");
     await expect(tab.locator("[data-part=card]")).toBeVisible();
     await expect(tab.getByRole("button", { name: /^Increase / }).first()).toBeVisible();
   });

@@ -69,8 +69,11 @@ test.describe("layout", () => {
   });
 
   test("Render: the view scrolls inside its panel", async ({ tools, isMobile }) => {
-    await tools.show("render");
     const page = tools.page;
+    // The tiny game's Render view fits a 900 px tall window: a 480 px tall one makes it overflow.
+    const viewport = page.viewportSize();
+    if (viewport !== null) await page.setViewportSize({ width: viewport.width, height: 480 });
+    await tools.show("render");
     await expect(page.locator("[data-render=textures]")).toBeVisible();
     const scrolled = await tools.host("render").evaluate(host => {
       const scrollers = [host, ...host.querySelectorAll<HTMLElement>("*")].filter(element => {
