@@ -32,6 +32,7 @@ const levelScene = defineScene("level", {
   projections: [levelScreen]
 });
 
+/** The tiny feature: its bundle, the home and level scenes, their screens and text styles. */
 export const tinyFeature = defineFeature("tiny", {
   scenes: [homeScene, levelScene],
   projections: [homeScreen, levelScreen],

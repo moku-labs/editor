@@ -5,6 +5,7 @@
 import { defineFlow } from "./kit";
 import { home, level, score } from "./nodes";
 
+/** The main flow: home → level on Play, level → score → level on a tap, level → home on Back. */
 export const mainFlow = defineFlow("main", {
   nodes: { home, level, score },
   start: "home",

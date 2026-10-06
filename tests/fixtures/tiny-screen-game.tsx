@@ -377,6 +377,12 @@ export type TinyScreenGame = {
   stop(): Promise<void>;
 };
 
+/** Microtask turns per frame, so the promise chains of one frame settle before the next. */
+const SETTLE_MICROTASKS = 40;
+
+/** The most frames `until` steps before it gives up on a path. */
+const UNTIL_MAX_FRAMES = 200;
+
 /**
  * Starts the tiny screen game: `start()`, `flow.run()` and six frames, at `home`. The caller
  * stubs `__MOKU_GAME_DEV__` when it runs door commands.
@@ -398,12 +404,13 @@ export async function startTinyScreenGame(
   const frames = async (count: number): Promise<void> => {
     for (let frame = 0; frame < count; frame += 1) {
       app.time.step(FRAME_MS);
-      for (let tick = 0; tick < 40; tick += 1) await Promise.resolve();
+      for (let tick = 0; tick < SETTLE_MICROTASKS; tick += 1) await Promise.resolve();
       await new Promise(resolve => setTimeout(resolve, 0));
     }
   };
   const until = async (path: string): Promise<void> => {
-    for (let step = 0; step < 200 && app.flow.state().path !== path; step += 1) await frames(1);
+    for (let step = 0; step < UNTIL_MAX_FRAMES && app.flow.state().path !== path; step += 1)
+      await frames(1);
   };
   await app.start();
   app.flow.run().catch(() => undefined);

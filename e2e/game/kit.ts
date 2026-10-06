@@ -11,6 +11,15 @@ export type AssetKey = "tiny.font-body";
 /** Every text style the game draws with: the two of the engine and the three of its feature. */
 export type TextStyleKey = "body" | "digits" | "tiny.title" | "tiny.button" | "tiny.score";
 
+/**
+ * The authoring helpers of the tiny game (`defineGame` bound to its player, session, assets and
+ * text styles): nodes, the flow, the feature, its projections, bundles, scenes and styles.
+ *
+ * @example
+ * ```ts
+ * const home = defineNode({ outcomes: { play: type() }, rest: true, checkpoint: true });
+ * ```
+ */
 export const {
   defineNode,
   defineFlow,
