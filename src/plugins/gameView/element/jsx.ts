@@ -50,7 +50,7 @@ export type TagAttribute = {
  * @example
  * ```ts
  * // The JSX of the settings board: settings.tsx from line 300 to line 321.
- * snippetOf("features/settings/settings.tsx", text, [300, 7, 321, 19]).lines.length; // 22
+ * snippetOf("features/settings/settings.tsx", text, [289, 7, 310, 19]).lines.length; // 22
  * ```
  */
 export function snippetOf(

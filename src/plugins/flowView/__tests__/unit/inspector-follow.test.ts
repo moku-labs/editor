@@ -210,6 +210,99 @@ describe("link:project and the text styles", () => {
   });
 });
 
+describe("link:project and the Styles tab", () => {
+  const STYLES = "features/ui/styles.ts";
+  const FIXTURE = fixtureText("ui-styles.txt");
+
+  /** The fixture after an agent changed the size of ui.number to 62. */
+  const AGENT_EDIT = FIXTURE.replace(
+    '"ui.number": {\n    font: "ui.font-display",\n    size: 60',
+    '"ui.number": {\n    font: "ui.font-display",\n    size: 62'
+  );
+
+  /** A game file that defines one text style. */
+  const DEFINES =
+    'export const textStyles = defineTextStyles({\n  "hud.coins": { size: 40 }\n});\n';
+
+  it("a Styles tab opened before the first project state reads the styles when it arrives", async () => {
+    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
+    test.fakes.project = undefined;
+    await actionsOf(test.ctx).inspector.openStyles();
+    expect(test.ctx.state.inspector.styles).toMatchObject({ file: undefined, blocks: [] });
+
+    test.fakes.project = "index";
+    await announce(test, { all: true });
+    const styles = test.ctx.state.inspector.styles;
+    expect(styles?.file).toBe(STYLES);
+    expect(styles?.blocks.length).toBeGreaterThan(10);
+    expect(styles?.error).toBeUndefined();
+    expect(styleItems(test)).toContain("ui.number");
+  });
+
+  it("a tab that said the index has no text styles reads them once the index learns them", async () => {
+    const test = createTestCtx({ files: { "game/text.ts": DEFINES }, index: {} });
+    await actionsOf(test.ctx).inspector.openStyles();
+    expect(test.ctx.state.inspector.styles?.file).toBeUndefined();
+
+    test.fakes.files.index.set("textStyle:hud.coins", [{ path: "game/text.ts", line: 2 }]);
+    await announce(test, { files: ["game/text.ts"] });
+    expect(test.ctx.state.inspector.styles?.file).toBe("game/text.ts");
+    expect(test.ctx.state.inspector.styles?.blocks.map(block => block.ref)).toEqual([
+      { kind: "text", key: "hud.coins" }
+    ]);
+  });
+
+  it("an agent's edit of the styles file re-reads the tab and keeps the chosen card", async () => {
+    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
+    await actionsOf(test.ctx).inspector.openStyles("ui.number");
+    test.fakes.files.store.set(STYLES, { text: AGENT_EDIT, version: "v9" });
+    await announce(test, { files: [STYLES] });
+    expect(test.ctx.state.inspector.styles).toMatchObject({
+      file: STYLES,
+      text: AGENT_EDIT,
+      version: "v9",
+      key: "ui.number"
+    });
+  });
+
+  it("a change elsewhere does not read the tab again", async () => {
+    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
+    await actionsOf(test.ctx).inspector.openStyles("ui.number");
+    const reads = vi.mocked(test.fakes.files.read).mock.calls.length;
+    await announce(test, { files: ["nodes/merge.ts"] });
+    expect(vi.mocked(test.fakes.files.read).mock.calls.length).toBe(reads);
+  });
+
+  it("after its own write the result line stays: the file on disk is the written version", async () => {
+    const test = createTestCtx({ files: { [STYLES]: FIXTURE }, config: { styleSaveDelayMs: 0 } });
+    const inspector = actionsOf(test.ctx).inspector;
+    await inspector.openStyles("ui.number");
+    inspector.stepStyle("size", 1, false);
+    await flush(10);
+    const written = test.ctx.state.inspector.styles;
+    expect(written?.result?.text).toBe(
+      "✓ Written to features/ui/styles.ts:74 · game reloaded · state restored"
+    );
+
+    await announce(test, { files: [STYLES] });
+    expect(test.ctx.state.inspector.styles).toBe(written);
+    expect(test.ctx.state.inspector.styles?.result).toEqual(written?.result);
+  });
+
+  it("a stepper burst waiting for its write is never re-read", async () => {
+    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
+    const inspector = actionsOf(test.ctx).inspector;
+    await inspector.openStyles("ui.number");
+    inspector.stepStyle("size", 1, false);
+    test.fakes.files.store.set(STYLES, { text: AGENT_EDIT, version: "v9" });
+    await announce(test, { files: [STYLES] });
+    const styles = test.ctx.state.inspector.styles;
+    expect(styles).toMatchObject({ version: "v1", text: FIXTURE });
+    expect(styles?.pending?.next).toBe(61);
+    clearTimeout(styles?.pending?.timer);
+  });
+});
+
 describe("link:project and the Info tab", () => {
   it("shows the file the index names now, and re-renders", async () => {
     const test = await codeOpen();

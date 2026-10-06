@@ -84,7 +84,7 @@ function placeOf(facts: ReferenceFacts, code: ElementCode | undefined): string |
  * @example
  * ```ts
  * referenceLine(facts, code, ".moku/captures/2026-10-05/settingsBoard-f25.md");
- * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+ * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
  * ```
  */
 export function referenceLine(

@@ -30,7 +30,7 @@ const KIT = [
   "    </panel>"
 ];
 
-/** The settings board as merge-game writes it (features/settings/settings.tsx:300-308). */
+/** The settings board as merge-game writes it, shortened (features/settings/settings.tsx:289). */
 const SETTINGS = [
   "      <Signboard",
   '        id="settingsBoard"',
@@ -326,12 +326,12 @@ describe.skipIf(!existsSync(MERGE_GAME_DIR))("findStyleSource on the merge-game 
     close();
   });
 
-  it("answers settingsBoard with settings.tsx:301 (Defined at), the board from line 300", async () => {
+  it("answers settingsBoard with settings.tsx:290 (Defined at), the board from line 289", async () => {
     expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
       kind: "defined",
       path: "features/settings/settings.tsx",
-      line: 301,
-      range: [300, 7, 321, 19]
+      line: 290,
+      range: [289, 7, 310, 19]
     });
   });
 

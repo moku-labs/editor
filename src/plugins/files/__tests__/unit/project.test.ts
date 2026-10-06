@@ -406,6 +406,24 @@ describe("project index: lifecycle", () => {
     });
   });
 
+  it("copies the prop of an idProp answer (G4)", async () => {
+    const fixture = await gameFixture();
+    const found = {
+      path: "flows/main.ts",
+      key: "settingsBoard",
+      component: "Signboard",
+      kind: "idProp" as const,
+      prop: "id",
+      line: 2,
+      range: [1, 1, 3, 1] as [number, number, number, number],
+      hash: "h1"
+    };
+    const handle = fakeHandle({ find: vi.fn(async () => [found]) });
+    await openIndex(fixture.ctx, loaderOf(Promise.resolve(handle)));
+
+    expect(await fixture.api.find("jsx:settingsBoard")).toEqual([found]);
+  });
+
   it("maps a find the index fails to -32000", async () => {
     const fixture = await gameFixture();
     const handle = fakeHandle({ find: vi.fn(() => Promise.reject(new Error("EACCES"))) });

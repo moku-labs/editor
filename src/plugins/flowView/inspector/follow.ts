@@ -1,11 +1,12 @@
 /**
  * @file flowView inspector module — what a project index change (link:project, D-46) asks of the
- * inspector: which node the Code tab reads again, and whether the text styles changed. Pure.
+ * inspector: which node the Code tab reads again, whether the Styles tab reads its file again,
+ * and whether the text styles changed. Pure.
  */
 import { textStylesFile } from "../../panels/shared/project";
 import type { ProjectDelta, ProjectState } from "../../registry/protocol";
 import type { NodeId } from "../types";
-import type { InspectorState } from "./types";
+import type { InspectorState, StylesState } from "./types";
 
 /**
  * True when a delta touches a file: everything after a revision gap, or the file was edited,
@@ -80,4 +81,48 @@ export function textStylesChanged(
 
   const file = textStylesFile(state);
   return file !== keysFile || touches(delta, file);
+}
+
+/**
+ * True while the Styles tab holds an edit of its own: a stepper burst waiting for its debounce, or
+ * its write on the way.
+ *
+ * @param styles - The Styles tab slice.
+ * @returns Whether a project change leaves the tab alone.
+ * @example
+ * ```ts
+ * // A size press waits 600 ms for the next one.
+ * isWriting(inspector.styles); // true until the write of the burst returns
+ * ```
+ */
+export function isWriting(styles: Pick<StylesState, "pending" | "writing">): boolean {
+  return styles.pending !== undefined || styles.writing;
+}
+
+/**
+ * True when the Styles tab reads its file again after a change: it was opened and shows no
+ * styles (the index was off, had no state yet, named no text-styles file, or the file could not
+ * be read), or the index names another text-styles file, or the change touches that file. Never
+ * during an edit of its own (a stepper burst or its write).
+ *
+ * @param inspector - The inspector slice.
+ * @param state - The new project state.
+ * @param delta - What the index changed.
+ * @returns Whether the Styles tab is read again.
+ * @example
+ * ```ts
+ * // The Styles tab opened before the first project state said "Project index is off".
+ * stylesToFollow(inspector, state, { all: true, files: [], moved: [], removed: [] }); // true
+ * ```
+ */
+export function stylesToFollow(
+  inspector: Pick<InspectorState, "styles">,
+  state: ProjectState,
+  delta: ProjectDelta
+): boolean {
+  const { styles } = inspector;
+  if (styles === undefined || isWriting(styles)) return false;
+  if (styles.file === undefined || styles.error?.error === "no-file") return true;
+
+  return textStylesFile(state) !== styles.file || touches(delta, styles.file);
 }

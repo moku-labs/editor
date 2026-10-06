@@ -19,7 +19,7 @@ type ProjectOn = Extract<ProjectState, { state: "on" }>;
 /**
  * The text fields of a Found that may be absent.
  */
-const ANCHOR_TEXT_FIELDS = ["binding", "key", "component", "stem"] as const;
+const ANCHOR_TEXT_FIELDS = ["binding", "key", "component", "stem", "prop"] as const;
 
 /**
  * How a JSX key may be written (the game's `JsxKind`).

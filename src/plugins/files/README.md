@@ -73,7 +73,7 @@ Wire shapes come from `../registry/protocol`:
 | `FileText` | `{ text, version }` |
 | `FileBinary` | `{ dataUrl, version }` |
 | `WriteResult` | `{ path, bytes, version }` |
-| `ProjectFound` | `{ path, line, range, hash, binding?, key?, component?, kind?, stem?, broken? }` |
+| `ProjectFound` | `{ path, line, range, hash, binding?, key?, component?, kind?, stem?, prop?, broken? }` |
 | `ProjectState` | `{ state: "off", reason }` or `{ state: "on", revision, previous?, manifest?, defs, uses, broken, change? }` |
 
 ```ts

@@ -828,8 +828,10 @@ test.describe("render · textures, bundles, pools, release log", () => {
     await rename(MANIFEST, MANIFEST_AWAY);
     try {
       await refresh.click();
+      // The manifest is the one the project index names. With the file gone, the read of the
+      // named path fails, or the index already names none (its state may keep the revision).
       await expect(render(page).locator("[data-render=textures] [data-empty]")).toHaveText(
-        "No asset manifest found at manifest.json, public/manifest.json, web/manifest.json · per-texture data needs game.textures (follow-up F-R2)"
+        /^(No asset manifest of version 1 at manifest\.json|The project index found no asset manifest) · per-texture data needs game\.textures \(follow-up F-R2\)$/
       );
       await expect(rows).toHaveCount(0);
     } finally {

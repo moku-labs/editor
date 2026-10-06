@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHandlers } from "../../handlers";
 import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
@@ -19,6 +20,18 @@ const MANIFEST = JSON.stringify({
     }
   }
 });
+
+/**
+ * The spawn line of the shown entity's Code section.
+ *
+ * @returns The line.
+ */
+function spawn(): Element {
+  return find(view.root, "section[data-part='code'] [data-part='spawn']");
+}
+
+/** The delta of the first project state: a gap, everything is read again. */
+const FIRST_STATE = { all: true, files: [], moved: [], removed: [] } as const;
 
 let ctx: TestCtx;
 let view: Mounted;
@@ -311,6 +324,48 @@ describe("ElementTab", () => {
       "Spawned by board.items · Not in the project index: projection:board.items"
     );
     expect(spawn.querySelector("button")).toBeNull();
+  });
+
+  it("an entity picked before the first project state shows its projection once the state arrives", async () => {
+    ctx.link.projectValue = undefined;
+    const lost = vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("link lost"));
+    await select({ kind: "entity", id: 1_048_628 });
+    expect(spawn().textContent).toBe(
+      "Spawned by board.items · Project index is off: no state from the server yet"
+    );
+
+    lost.mockRestore();
+    ctx.link.files.put(
+      "features/board/items.tsx",
+      'export const boardItems = projection({\n  name: "board.items",\n});'
+    );
+    answer(ctx, "projection:board.items", place("features/board/items.tsx", [2, 3, 2, 22]));
+    const state = projectOn({ "projection:board.items": ["features/board/items.tsx"] });
+    ctx.link.projectValue = state;
+    act(() => {
+      createHandlers(ctx)["link:project"]({ state, delta: FIRST_STATE });
+    });
+    await settle();
+    expect(spawn().textContent).toBe("Spawned by board.items · features/board/items.tsx:2");
+  });
+
+  it("a ui element picked before the first project state shows its style card once the state arrives", async () => {
+    ctx.link.projectValue = undefined;
+    const lost = vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("link lost"));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    expect(find(view.root, "[data-part='not-found']").textContent).toBe(
+      "Project index is off: no state from the server yet"
+    );
+
+    lost.mockRestore();
+    const state = projectOn({ "style:src/hud/styles.ts#coinPill": ["src/hud/styles.ts"] });
+    ctx.link.projectValue = state;
+    act(() => {
+      createHandlers(ctx)["link:project"]({ state, delta: FIRST_STATE });
+    });
+    await settle();
+    expect(view.root.querySelector("[data-part='not-found']")).toBeNull();
+    expect(ctx.state.styles?.path).toBe("src/hud/styles.ts");
   });
 
   it("says the index is asked while the answer is on its way", () => {

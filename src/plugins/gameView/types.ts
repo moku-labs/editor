@@ -147,7 +147,7 @@ export type SourceRange = ProjectFound["range"];
  *
  * @example
  * ```ts
- * const board: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 301, range: [300, 7, 321, 19] };
+ * const board: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 290, range: [289, 7, 310, 19] };
  * const card: StyleSource = { kind: "call", path: "features/orders/strip.tsx", line: 216, range: [215, 5, 247, 14], call: "orderCardStyle(card.slot)", callLine: 218 };
  * const link: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 318, range: [318, 11, 318, 92], textStyle: "ui.link" };
  * ```
@@ -750,7 +750,7 @@ export type GameViewApi = {
    * // The developer picked the settings board and asks Claude to move it.
    * app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
    * await app.gameView.copyReference();
-   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+   * // "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
    * ```
    */
   copyReference(): Promise<string | undefined>;

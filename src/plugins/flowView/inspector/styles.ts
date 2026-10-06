@@ -21,6 +21,7 @@ import { bareMessage } from "../../registry/protocol";
 import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment } from "../types";
+import { isWriting } from "./follow";
 import type { StylesState } from "./types";
 
 /**
@@ -126,27 +127,44 @@ function emptyStyles(file: string | undefined, error: StyleEditError): StylesSta
     blocks: [],
     key: undefined,
     pending: undefined,
+    writing: false,
     result: undefined,
     error
   };
 }
 
 /**
- * Loads the index's text-styles file into the Styles tab and replaces the palette group Styles
- * (remembered as the file the group was read from). No card is
- * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
- * a stepper keeps that card and the pending step.
+ * What a read of the text styles found: the file the index names and its load.
+ */
+type StylesRead = {
+  readonly file: string | undefined;
+  readonly loaded: Awaited<ReturnType<typeof loadStyleFile>> | undefined;
+};
+
+/**
+ * Reads the text-styles file the project index names; nothing is read when it names none.
+ *
+ * @param env - Services and actions.
+ * @returns The file and its load.
+ */
+async function readStyles(env: FlowEnvironment): Promise<StylesRead> {
+  const file = textStylesFile(env.project());
+  const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+  return { file, loaded };
+}
+
+/**
+ * Shows a read in the Styles tab and replaces the palette group Styles. A chosen card and a
+ * pending step are kept when the card is still there; an asked key wins.
  *
  * @param ctx - Domain context of flowView.
  * @param env - Services and actions.
+ * @param read - The file and its load.
  * @param key - The card to select; default the card already chosen, else none.
- * @returns Resolves when loaded.
  */
-export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
+function showStyles(ctx: FlowCtx, env: FlowEnvironment, read: StylesRead, key?: string): void {
   const { inspector } = ctx.state;
-  const file = textStylesFile(env.project());
-  inspector.keysFile = file;
-  const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
+  const { file, loaded } = read;
   if (loaded === undefined || isStyleEditError(loaded)) {
     inspector.styles = emptyStyles(file, loaded ?? { error: "no-file" });
     env.setStyleItems([]);
@@ -165,11 +183,66 @@ export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: strin
     blocks,
     key: chosen,
     pending: inspector.styles?.pending,
+    writing: false,
     result: undefined,
     error: undefined
   };
   env.setStyleItems(keys);
   notify(ctx.state);
+}
+
+/**
+ * Loads the index's text-styles file into the Styles tab and replaces the palette group Styles
+ * (remembered as the file the group was read from). No card is
+ * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
+ * a stepper keeps that card and the pending step.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param env - Services and actions.
+ * @param key - The card to select; default the card already chosen, else none.
+ * @returns Resolves when loaded.
+ */
+export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
+  ctx.state.inspector.keysFile = textStylesFile(env.project());
+  showStyles(ctx, env, await readStyles(env), key);
+}
+
+/**
+ * True when a read shows what the tab already shows: the same file at the same version (the
+ * editor's own write), or still no file (the reason line reads the project state when drawn).
+ *
+ * @param styles - The Styles tab slice.
+ * @param read - The new read.
+ * @returns Whether the tab stays as it is.
+ */
+function isSameRead(styles: StylesState, read: StylesRead): boolean {
+  const { file, loaded } = read;
+  if (file !== styles.file) return false;
+  if (loaded === undefined) return true;
+
+  return !isStyleEditError(loaded) && loaded.version === styles.version;
+}
+
+/**
+ * Reads the Styles tab again after a project change (link:project, D-46). The tab and its result
+ * line stay when the index names the same file at the same version (the batch of the editor's own
+ * write), and when an edit of its own started meanwhile; a newer open wins.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param env - Services and actions.
+ * @returns Resolves when the tab shows the new read or stays.
+ */
+export async function followStyles(ctx: FlowCtx, env: FlowEnvironment): Promise<void> {
+  const { inspector } = ctx.state;
+  const shown = inspector.styles;
+  if (shown === undefined || isWriting(shown)) return;
+
+  const read = await readStyles(env);
+  const styles = inspector.styles;
+  if (styles !== shown || isWriting(styles) || isSameRead(styles, read)) return;
+
+  inspector.keysFile = read.file;
+  showStyles(ctx, env, read);
 }
 
 /**
@@ -222,6 +295,7 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
   // to look for the game's hot swap.
   const savedAt = Date.now();
   let written: Awaited<ReturnType<typeof writeNumber>>;
+  styles.writing = true;
   try {
     written = await writeNumber(
       env.files(),
@@ -236,6 +310,8 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
     styles.result = { ok: false, text: `! ${bareMessage(message)}` };
     notify(ctx.state);
     return;
+  } finally {
+    styles.writing = false;
   }
 
   // A refusal of the shared style edit shows on the card; nothing was written.

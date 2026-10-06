@@ -247,7 +247,7 @@ Shapes of the project index (change project-index). They mirror the game's types
 
 | Type | Fields |
 |---|---|
-| `ProjectAnchor` | `path` (root-relative POSIX) required. Optional: `binding`, `key`, `component`, `kind` (`"literal" \| "template" \| "idProp" \| "ident"`), `stem`. |
+| `ProjectAnchor` | `path` (root-relative POSIX) required. Optional: `binding`, `key`, `component`, `kind` (`"literal" \| "template" \| "idProp" \| "ident"`), `stem`, `prop` (the prop an idProp value sits on, `id` or `amountKey`). |
 | `ProjectFound` | `ProjectAnchor` plus `line` (1-based, read from disk at the call), `range` (`[startLine, startColumn, endLine, endColumn]`, 1-based, end column exclusive), `hash` (sha1 of the bytes; equals a files `version`), `broken?: true` (the file does not parse now: write no style edit). |
 | `ProjectMove` | `{ key, from, to }`: a key that left one file for another in one batch. |
 | `ProjectChange` | `{ files, moved, removed }` of one watch batch. |

@@ -70,7 +70,7 @@ await app.gameView.series({ durationMs: 2000, intervalMs: 100 });
 
 app.gameView.select({ kind: "ui", path: "settingsScreen/settingsBoard" });
 await app.gameView.copyReference();
-// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:301 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
+// "@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,190 950×1060 · .moku/captures/2026-10-05/settingsBoard-f25.md"
 
 app.workspace.setDevice({ preset: "galaxy-z-fold-6" });
 app.gameView.fold(true); // the inner screen: app.workspace.device().preset.w === 707
@@ -224,7 +224,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 
 ### Style card
 
-1. The project index is asked `find("jsx:<key>")`; the first answer is the element (the index orders them: exact keys and `id=` props, then `{id}` patterns, then `*` patterns). `settingsBoard` is `features/settings/settings.tsx:301`, the board from line 300; `card0` is the element at `features/orders/strip.tsx:216`. The file is read right after; when it changed in between, the index is asked once more.
+1. The project index is asked `find("jsx:<key>")`; the first answer is the element (the index orders them: exact keys and `id=` props, then `{id}` patterns, then `*` patterns). `settingsBoard` is `features/settings/settings.tsx:290`, the board from line 289; `card0` is the element at `features/orders/strip.tsx:216`. The file is read right after; when it changed in between, the index is asked once more.
 2. The style is the `style` attribute of the tag that opens the answer's range. A child's style is never the element's.
 3. `style={ident}`: the block is the `StyleBlockRef` `{ kind: "const", name: ident }`, in the files the index defines `style:<file>#<ident>` in: the key file first, then the file the ident is imported from, then any other. The index defines none: the key file, and the shared style edit says "No style block named <ident>."
 4. `style={call(...)}` (G2): when the index has a `style:<file>#<function>` key (`#<function>.<property>` for `fn(…).property`), the card is the `defineStyle({ … })` call it answers: the `StyleBlockRef` `{ kind: "call", name, line, column }` at the answer's range start, with steppers like a const block. `#<function>` answers every call of the function; the first call with an object literal is the card (`signboardStyle` answers `defineStyle(board)`, then `defineStyle({ … })`). The Code section shows that call. Without such a key, or when no call has an object to edit, the card stays read-only: the call, its `file:line` and "Open in Files".
@@ -246,7 +246,7 @@ The Element tab's `data-part="code"` section (round 2b R12) shows where the elem
 
 - A ui element: its JSX, the lines of the range the index answered for its key (from the line that opens its tag to the line that closes it), and the `defineStyle` block of `style={ident}`, or the `defineStyle` call of a style function the index knows (G2). A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17): the lines the index answers for `textStyle:ui.link`. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
 - The element is the style card's index answer. A key the index does not know shows no Code section; the style card says why.
-- An entity: "Spawned by <projection> · <file:line>", the index's answer for `projection:<key>` (the line of its `name: "board.items"`), or `Not in the project index: projection:<key>`. Then its components with a short value (48 characters) from `game.entities`.
+- An entity: "Spawned by <projection> · <file:line>", the index's answer for `projection:<key>` (the line of its `name: "board.items"`), or `Not in the project index: projection:<key>`; asked again on every new project state, so an entity picked before the first state or before the index knew its projection follows. Then its components with a short value (48 characters) from `game.entities`.
 - It reads again when the element, its source or its style file changes.
 
 ### Reference mode
@@ -315,7 +315,7 @@ On merge-game, the settings board after a pick:
 ```text
 @moku settingsBoard · panel · settingsPopup/open · f25
 path: settingsScreen/settingsBoard
-source: features/settings/settings.tsx:301 · texture: ui.panel-signboard
+source: features/settings/settings.tsx:290 · texture: ui.panel-signboard
 layout: settingsScreen (column, padding 0/0/0/0)
 bounds: 65,190 950×1060 px · ref 65,190 950×1060
 state: visible
@@ -406,7 +406,7 @@ MCP `moku_select` reaches gameView as the editor-channel request `select` (`link
 - `__tests__/unit/`: one file per module and per component. The components run under happy-dom.
 - `__tests__/integration/game-view.test.ts`: the real link, workspace, panels and gameView over an in-process hub.
 - `__tests__/integration/merge-game.test.ts`: the scene, the watches and the picker over the real merge game through the agent channel. It runs only where the pinned game checkout exists (`tests/fixtures/game-dir.ts`).
-- `__tests__/unit/source.test.ts` also opens the project index of the merge game when the checkout exists: `settingsBoard` answers `settings.tsx:301` (range from 300) and `card0` answers the element at `strip.tsx:216` with its style call at 218. `jsx.test.ts` reads that style attribute there too. The other unit tests script `files.find` and `link.project()` (`answer`, `place`, `projectOn` in `__tests__/helpers.ts`).
+- `__tests__/unit/source.test.ts` also opens the project index of the merge game when the checkout exists: `settingsBoard` answers `settings.tsx:290` (range from 289) and `card0` answers the element at `strip.tsx:216` with its style call at 218. `jsx.test.ts` reads that style attribute there too. The other unit tests script `files.find` and `link.project()` (`answer`, `place`, `projectOn` in `__tests__/helpers.ts`).
 - `tests/integration/pick-reference.test.ts` (root): a proxy pick on the merge-game settings popup writes both PNGs and the card `.md`, copies the one reference line that names the card, the card's `text` fence holds every line of the block and links both PNGs, and its bookmark restores the popup. Local only, like the merge journeys.
 
 ## Limits and game follow-ups

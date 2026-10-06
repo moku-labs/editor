@@ -56,6 +56,8 @@ export type StylesState = {
   /** The chosen card; undefined until the person picks one (no preselect). */
   key: string | undefined;
   pending: PendingEdit | undefined;
+  /** The write of a burst is on its way: a project change does not read the tab again. */
+  writing: boolean;
   result: SaveResult | undefined;
   error: StyleEditError | undefined;
 };
@@ -120,7 +122,8 @@ export type InspectorActions = {
   editorUrl(path: string, line?: number): string | undefined;
   /**
    * The link:project hook: the Code tab reads its node again when the change touches its file (no
-   * draft), the palette group Styles is read again when the text styles changed.
+   * draft); the Styles tab is read again when it shows no styles or its file changed (no edit of
+   * its own on the way), else the palette group Styles when the text styles changed.
    */
   followProject(change: ToolsEvents["link:project"]): void;
 };

@@ -163,6 +163,21 @@ describe("parseFoundList", () => {
     expect(parseFoundList([{ ...found, extra: 1 }])).toEqual([found]);
   });
 
+  it("keeps the prop a key value sits on (G4)", () => {
+    const tab: ProjectFound = {
+      path: "features/ui/kit.tsx",
+      key: "{id}",
+      component: "Tab",
+      kind: "idProp",
+      prop: "id",
+      line: 105,
+      range: [104, 5, 112, 11],
+      hash: "b2"
+    };
+
+    expect(parseFoundList(structuredClone([tab]))).toEqual([tab]);
+  });
+
   it.each([
     ["a non-array", found],
     ["a 3-number range", [{ ...found, range: [300, 5, 318] }]],
@@ -173,6 +188,7 @@ describe("parseFoundList", () => {
     ["an unknown kind", [{ ...found, kind: "spread" }]],
     ["broken false", [{ ...found, broken: false }]],
     ["a bad binding", [{ ...found, binding: 1 }]],
+    ["a bad prop", [{ ...found, prop: 1 }]],
     ["one bad answer among good ones", [found, { ...found, line: "301" }]]
   ])("rejects %s", (_name, value) => {
     expect(parseFoundList(value)).toBeUndefined();

@@ -57,7 +57,7 @@ const NO_INDEX = "@moku-labs/game 0.6.0 or newer is needed for the project index
 /**
  * The text fields an answer of `find` may carry.
  */
-const ANCHOR_TEXT_FIELDS = ["binding", "key", "component", "stem"] as const;
+const ANCHOR_TEXT_FIELDS = ["binding", "key", "component", "stem", "prop"] as const;
 
 /**
  * Loads the game's project index. A separate chunk: a game below 0.6.0 has no such export.

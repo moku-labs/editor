@@ -39,7 +39,7 @@ const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /** The one reference line of settingsBoard; group 1 is the card it names. */
 const BOARD_LINE =
-  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:301 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
+  /^@moku settingsBoard panel · settingsPopup\/open · features\/settings\/settings\.tsx:290 · ref \d+,\d+ \d+×\d+ · (\.moku\/captures\/\d{4}-\d{2}-\d{2}\/settingsBoard-f\d+\.md)$/;
 
 /** The reference block inside a card file: its `text` fence. */
 const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
@@ -828,13 +828,13 @@ test.describe("pane · reference mode", () => {
       })
       .toBe(true);
 
-    // The source: "Defined at …settings.tsx:301", or the style card of its style.
+    // The source: "Defined at …settings.tsx:290", or the style card of its style.
     const source = tab.locator("[data-part=style-card]");
     await expect(source).not.toContainText("Searching the sources", { timeout: 20_000 });
     await expect(source).not.toContainText("Source not found");
     await ((await source.locator("[data-part=defined]").count()) > 0
       ? expect(source.locator("[data-part=defined] [data-part=where]")).toHaveText(
-          /features\/settings\/settings\.tsx:301$/
+          /features\/settings\/settings\.tsx:290$/
         )
       : expect(source.locator("[data-part=where]").first()).toHaveText(/\.tsx?:\d+$/));
 
@@ -881,7 +881,7 @@ test.describe("pane · reference mode", () => {
     ]);
     const [head, , sourceLine, , boundsLine, , flowLine] = lines;
     expect(head, block).toMatch(/^@moku settingsBoard · panel · settingsPopup\/open · f\d+$/);
-    expect(sourceLine, block).toMatch(/^source: features\/settings\/settings\.tsx:301\b/);
+    expect(sourceLine, block).toMatch(/^source: features\/settings\/settings\.tsx:290\b/);
     // The bounds: device px as the Element tab shows them, then the reference units.
     const [x, y, w, h] = bounds;
     expect(boundsLine, block).toMatch(

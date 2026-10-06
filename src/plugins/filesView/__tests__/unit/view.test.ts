@@ -646,6 +646,27 @@ describe("used by", () => {
     await flush();
   });
 
+  it("a file opened before the first project state shows its chips once the state arrives", async () => {
+    ctx.link.projectValue = undefined;
+    mount();
+    await act(async () => {
+      await api.open("nodes/merge.ts");
+    });
+    expect(get('[data-part="used-by"]').textContent).toBe(
+      "Used by · Project index is off: no state from the server yet"
+    );
+    act(() => {
+      ctx.link.projectValue = PROJECT;
+      onLinkProject(ctx)({
+        state: PROJECT,
+        delta: { all: true, files: [], moved: [], removed: [] }
+      });
+    });
+    const chips = [...root.querySelectorAll('[data-chip][data-kind="node"]')];
+    expect(chips.map(chip => chip.textContent)).toEqual(["board/merge"]);
+    await flush();
+  });
+
   it("says why there are no chips, and hides itself under .moku/", async () => {
     ctx.link.projectValue = { state: "off", reason: "typescript is not installed" };
     mount();

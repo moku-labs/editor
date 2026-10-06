@@ -210,7 +210,7 @@ export async function blockOf(
  * @returns The lookup to show.
  * @example
  * ```ts
- * lookupOf("settingsBoard", { kind: "defined", path: "settings.tsx", line: 301, range: [300, 7, 321, 19] }); // { key: "settingsBoard", status: "defined", path: "settings.tsx", line: 301 }
+ * lookupOf("settingsBoard", { kind: "defined", path: "settings.tsx", line: 290, range: [289, 7, 310, 19] }); // { key: "settingsBoard", status: "defined", path: "settings.tsx", line: 290 }
  * ```
  */
 function lookupOf(key: string, source: Exclude<StyleSource, IdentSource> | undefined): StyleLookup {

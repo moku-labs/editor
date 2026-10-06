@@ -507,12 +507,17 @@ export type ProjectAnchor = {
   readonly binding?: string;
   /** The property or attribute key: a text style key, the `name` of a projection, a JSX key. */
   readonly key?: string;
-  /** JSX: the component an `id=` prop sits on, or the component an `{id}` pattern is written in. */
+  /**
+   * JSX: the component a key-carrying prop sits on, or the component a `{id}` or `{amountKey}`
+   * pattern is written in.
+   */
   readonly component?: string;
   /** JSX only: how the key is written. */
   readonly kind?: "literal" | "template" | "idProp" | "ident";
   /** JSX templates and identifiers: the literal head of the pattern, `card` for `card*Picture`. */
   readonly stem?: string;
+  /** JSX idProp: the prop the value sits on, `id` or `amountKey`. */
+  readonly prop?: string;
 };
 
 /**
@@ -527,8 +532,9 @@ export type ProjectAnchor = {
  *   key: "settingsBoard",
  *   component: "Signboard",
  *   kind: "idProp",
- *   line: 301,
- *   range: [300, 5, 318, 7],
+ *   prop: "id",
+ *   line: 290,
+ *   range: [289, 7, 310, 19],
  *   hash: "0f3c9a…"
  * };
  * ```

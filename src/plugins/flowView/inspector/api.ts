@@ -12,8 +12,8 @@ import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
 import { openCode, reloadCode, saveCode, showCode } from "./code";
 import { nodeKey } from "./files";
-import { codeToFollow, textStylesChanged } from "./follow";
-import { keysOf, openStyles, stepStyle } from "./styles";
+import { codeToFollow, stylesToFollow, textStylesChanged } from "./follow";
+import { followStyles, keysOf, openStyles, stepStyle } from "./styles";
 import type { InspectorActions } from "./types";
 
 /**
@@ -162,8 +162,13 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
     followProject: ({ state, delta }) => {
       const node = codeToFollow(inspector, delta);
       if (node !== undefined) showCode(ctx, env, node, nextRequest()).catch(() => {});
-      if (textStylesChanged(inspector.keysFile, state, delta))
+      // The Styles tab reads its file and the palette group Styles with it; without a tab only
+      // the group is read again.
+      if (stylesToFollow(inspector, state, delta)) {
+        followStyles(ctx, env).catch(() => {});
+      } else if (textStylesChanged(inspector.keysFile, state, delta)) {
         actions.readStyleKeys().catch(() => {});
+      }
       notify(ctx.state);
     }
   };
