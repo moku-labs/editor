@@ -18,5 +18,5 @@
     "jsxImportSource": "preact"
   },
   "include": ["src", "tests", "scripts", "e2e", "declarations.d.ts", "*.config.ts"],
-  "exclude": ["e2e/game"]
+  "exclude": ["e2e/game", "src/plugins/gameView/__tests__/fixtures/tiny-project"]
 }

@@ -3,8 +3,6 @@
  * roots, the server, agent and tools stacks over the real wire, the page, the waits and the
  * bounded shutdown. "Stack" in the scenarios is `startStack()`: a tiny project, the server, the
  * page, an agent on a tiny game and the tools app, all live.
- *
- * The merge-game helpers live in `merge.ts`, which CI test files never import.
  */
 import { vi } from "vitest";
 import { type AgentOptions, type AgentStack, type BareAgentStack, startAgent } from "./agent-stack";

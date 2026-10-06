@@ -1,16 +1,15 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HAS_GAME, mergeGameDir } from "../../../../../tests/fixtures/game-dir";
 import { bootJsonOf, rawGet } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The moku-editor bin as a real process: a tiny game folder and the merge-game
-// fixture page, served next to the editor on a random port. The merge-game case
-// runs only when MOKU_GAME_DIR is set (tests/fixtures/game-dir.ts).
+// The moku-editor bin as a real process: a tiny game folder and an engine game
+// page (a game on the npm @moku-labs/game that Bun bundles), served next to the
+// editor on a random port.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = fileURLToPath(new URL("../../../../../", import.meta.url));
@@ -209,8 +208,27 @@ async function pageScripts(origin: string): Promise<string> {
   return js;
 }
 
+/**
+ * The entry of the engine game page: a headless-safe game on the npm `@moku-labs/game` that names
+ * itself in the title once its app is made, so the bundle carries the engine.
+ */
+const ENGINE_MAIN = `import { createApp, defineGame, type } from "@moku-labs/game";
+
+const { defineNode, defineFlow } = defineGame();
+const home = defineNode({ outcomes: { play: type() }, rest: true, checkpoint: true });
+const mainFlow = defineFlow("main", { nodes: { home }, start: "home", edges: { home: { play: "home" } } });
+const app = createApp({
+  pluginConfigs: {
+    model: { initialPlayer: { coins: 0 }, initialSession: {}, seed: 1 },
+    flow: { mainFlow, safeNode: "home" }
+  }
+});
+document.title = "ENGINE_GAME " + typeof app.flow.run;
+`;
+
 let game: string;
 let bunfigGame: string;
+let engineGame: string;
 
 beforeAll(async () => {
   if (!existsSync(join(REPO, "dist", "tools", "index.html"))) {
@@ -243,11 +261,23 @@ beforeAll(async () => {
     join(bunfigGame, "bunfig.toml"),
     '[serve.static]\nplugins = ["./marker-plugin.ts"]\n'
   );
+  // A game project the way a real one sits: web/index.html, its manifest at the root, and the
+  // engine resolved from node_modules (this repository's, linked in).
+  engineGame = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-engine-")));
+  await mkdir(join(engineGame, "web"));
+  await writeFile(
+    join(engineGame, "web", "index.html"),
+    '<!doctype html><html><head><title>engine game</title></head><body><div id="game"></div><script type="module" src="./main.ts"></script></body></html>'
+  );
+  await writeFile(join(engineGame, "web", "main.ts"), ENGINE_MAIN);
+  await writeFile(join(engineGame, "manifest.json"), '{"version":1,"bundles":{}}');
+  await symlink(join(REPO, "node_modules"), join(engineGame, "node_modules"), "dir");
 }, 120_000);
 
 afterAll(async () => {
   await rm(game, { recursive: true, force: true });
   await rm(bunfigGame, { recursive: true, force: true });
+  await rm(engineGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -393,32 +423,31 @@ describe("moku-editor bin", () => {
     );
   }, 30_000);
 
-  it.skipIf(!HAS_GAME)(
-    "serves the merge-game fixture page and its manifest",
-    async () => {
-      const bin = await spawnBin([
-        join(mergeGameDir(), "web", "index.html"),
-        "--port",
-        "0",
-        "--root",
-        mergeGameDir()
-      ]);
-      try {
-        const origin = `http://127.0.0.1:${bin.port}`;
-        const page = await firstOk(`${origin}/`);
-        expect(page.status).toBe(200);
-        expect(await page.text()).toContain('id="game"');
-        await expect(fetch(`${origin}/manifest.json`)).resolves.toHaveProperty("status", 200);
-        await expect(fetch(`${origin}/__editor/`)).resolves.toHaveProperty("status", 200);
-        const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
-        expect(hello.status).toBe(200);
-      } finally {
-        bin.child.kill("SIGINT");
-      }
-      expect(await bin.child.exited).toBe(0);
-    },
-    60_000
-  );
+  it("serves an engine game page bundled from @moku-labs/game, and its manifest", async () => {
+    const bin = await spawnBin([
+      join(engineGame, "web", "index.html"),
+      "--port",
+      "0",
+      "--root",
+      engineGame
+    ]);
+    try {
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const page = await firstOk(`${origin}/`);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain('id="game"');
+      const js = await pageScripts(origin);
+      expect(js).toContain("ENGINE_GAME");
+      expect(js).toContain("[game]");
+      await expect(fetch(`${origin}/manifest.json`)).resolves.toHaveProperty("status", 200);
+      await expect(fetch(`${origin}/__editor/`)).resolves.toHaveProperty("status", 200);
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      expect(hello.status).toBe(200);
+    } finally {
+      bin.child.kill("SIGINT");
+    }
+    expect(await bin.child.exited).toBe(0);
+  }, 60_000);
 
   it("prints usage on --help (0) and refuses bad arguments with 2 (P14)", async () => {
     const help = await runBin(["--help"]);

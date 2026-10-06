@@ -5,9 +5,9 @@ import { commands, defineCommand, run } from "@moku-labs/game/control";
 import type { InputOf as GameInputOf } from "@moku-labs/game/inspect";
 import { read, sources, watch } from "@moku-labs/game/inspect";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
 import type { InputOf, InputSchema, Json } from "../../protocol";
 import type { DevModule, DoorCommand, DoorSource, GameLike } from "../../types";
+import { createBareApp } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1 typing spike (01-registry, Risks R1): the erased door types hold every
@@ -21,7 +21,7 @@ type HeadlessGameApp = ReturnType<typeof createApp>;
 
 /** A dev command whose app is the registry's GameLike (wider than HeadlessApp). */
 const addCoins = defineCommand({
-  id: "merge.addCoins",
+  id: "tiny.addCoins",
   title: "Add coins",
   input: { amount: "number", note: "json?" },
   effect: "cheat",
@@ -99,13 +99,12 @@ describe("typing spike (S1)", () => {
     const door: DoorCommand = addCoins;
     const module: DevModule = { commands: [addCoins] };
 
-    expect(door.id).toBe("merge.addCoins");
+    expect(door.id).toBe("tiny.addCoins");
     expect(module.commands?.[0]?.input).toEqual({ amount: "number", note: "json?" });
   });
 
-  it("fits the headless game app into GameLike", async () => {
-    const { createGame } = await loadMergeGame();
-    const { app } = createGame();
+  it("fits the headless game app into GameLike", () => {
+    const app = createBareApp();
 
     expectTypeOf<HeadlessGameApp>().toExtend<GameLike>();
     expect(typeof app.time.snapshot).toBe("function");
@@ -113,8 +112,7 @@ describe("typing spike (S1)", () => {
   });
 
   it("calls the generic door functions with erased descriptors and checked input", async () => {
-    const { createGame } = await loadMergeGame();
-    const { app } = createGame();
+    const app = createBareApp();
     const input: InputOf<InputSchema> = {};
 
     expect(readErased(app, sources.position, input)).toEqual(read(app, sources.position));
@@ -137,7 +135,7 @@ describe("typing spike (S1)", () => {
 
   it("rejects a descriptor whose changes key is not a Changes", () => {
     const bad = {
-      id: "merge.bad",
+      id: "tiny.bad",
       title: "Bad",
       input: {},
       changes: "sometimes",

@@ -1,13 +1,12 @@
 import { createApp, defineGame, type } from "@moku-labs/game";
 import { createHeadless, fakeClock, memory } from "@moku-labs/game/testing";
 import { vi } from "vitest";
-import { loadMergeGame } from "../../../../tests/fixtures/merge-game";
 import { createRegistryState } from "../state";
 import type { GameLike, RegistryConfig, RegistryCtx } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared test helpers of the registry: a log mock, a domain ctx and a started
-// headless merge game.
+// headless bare game.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -49,21 +48,8 @@ export function createCtx(config: Partial<RegistryConfig> = {}): TestCtx {
   };
 }
 
-/** A started headless merge game. */
+/** A started headless game. */
 export type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
-
-/**
- * Creates the merge game and starts it headless (it rests at "home").
- *
- * @returns The app and its stop.
- */
-export async function startGame(): Promise<StartedGame> {
-  const { createGame } = await loadMergeGame();
-  const { app } = createGame();
-  const game = await createHeadless(app);
-
-  return { app, stop: () => game.stop() };
-}
 
 /** The flow of the bare game: one rest node. */
 const bareFlow = (() => {
@@ -78,12 +64,17 @@ const bareFlow = (() => {
 })();
 
 /**
- * Creates a bare game and starts it headless: the engine's core plugins only, so it has no
- * world, ui, renderer, audio, effects or assets plugin. Runs on CI (no merge-game checkout).
+ * Creates a bare game (not started): the engine's core plugins only, so it has no world, ui,
+ * renderer, audio, effects or assets plugin. It rests at "home".
  *
- * @returns The app and its stop.
+ * @returns The app.
+ * @example
+ * ```ts
+ * const app = createBareApp();
+ * await createHeadless(app);
+ * ```
  */
-export async function startBareGame(): Promise<StartedGame> {
+export function createBareApp() {
   const app = createApp({
     pluginConfigs: {
       model: { playerProvider: memory(), initialPlayer: { coins: 0 }, initialSession: {}, seed: 1 },
@@ -92,6 +83,21 @@ export async function startBareGame(): Promise<StartedGame> {
     }
   });
   app.log.clearSinks();
+  return app;
+}
+
+/**
+ * Creates a bare game and starts it headless (it rests at "home").
+ *
+ * @returns The app and its stop.
+ * @example
+ * ```ts
+ * const game = await startBareGame();
+ * await game.stop();
+ * ```
+ */
+export async function startBareGame(): Promise<StartedGame> {
+  const app = createBareApp();
   const game = await createHeadless(app);
 
   return { app, stop: () => game.stop() };

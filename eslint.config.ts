@@ -17,7 +17,9 @@ export default [
       ".claude/**",
       ".planning/**",
       "node_modules/**",
-      "declarations.d.ts"
+      "declarations.d.ts",
+      // A game project the project index reads in gameView's source tests; never compiled here.
+      "src/plugins/gameView/__tests__/fixtures/tiny-project/**"
     ]
   },
 

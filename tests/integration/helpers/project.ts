@@ -2,10 +2,9 @@
  * @file The temp folders of the root integration wave (plan §2.2): the project root the files
  * plugin serves, the tools page folder pages serves, and the list `shutdown` removes.
  */
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { mergeGameDir } from "../../fixtures/game-dir";
 
 /**
  * The merge-game text styles (`defineTextStyles` from `../../kit`), copied into the tiny project as
@@ -207,16 +206,14 @@ async function fillTinyProject(root: string): Promise<void> {
 }
 
 /**
- * Creates a project root in a fresh temp folder (its real path). `"tiny"` writes the tiny
- * project; `"merge"` copies the merge-game fixture of the checkout named by MOKU_GAME_DIR (local
- * only; writes never touch the checkout).
+ * Creates a project root in a fresh temp folder (its real path) and writes the tiny project.
  *
- * @param kind - Which project.
+ * @param kind - Which project: `"tiny"`, the only one.
  * @returns The absolute real path of the root.
  */
-export async function createProject(kind: "tiny" | "merge"): Promise<string> {
+export async function createProject(kind: "tiny"): Promise<string> {
   const root = await makeTemp(`moku-root-${kind}-`);
-  await (kind === "tiny" ? fillTinyProject(root) : cp(mergeGameDir(), root, { recursive: true }));
+  await fillTinyProject(root);
   return root;
 }
 

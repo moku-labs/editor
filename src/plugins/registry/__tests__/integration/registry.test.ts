@@ -6,10 +6,10 @@ import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../..
 import { registryPlugin } from "../..";
 import type { DevModule, GameLike, RegistryApi } from "../../types";
 import type { StartedGame } from "../helpers";
-import { startGame } from "../helpers";
+import { startBareGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// An agent core composed with only the registry, over the real merge game
+// An agent core composed with only the registry, over the bare game
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin] });
@@ -18,7 +18,7 @@ const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin] }
 const testModule: DevModule = {
   sources: [
     defineSource({
-      id: "merge.coins",
+      id: "tiny.coins",
       title: "Coins",
       input: {},
       changes: "commit",
@@ -27,7 +27,7 @@ const testModule: DevModule = {
   ],
   commands: [
     defineCommand({
-      id: "merge.addCoins",
+      id: "tiny.addCoins",
       title: "Add coins",
       input: { amount: "number" },
       effect: "cheat",
@@ -40,7 +40,7 @@ let game: StartedGame;
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  game = await startGame();
+  game = await startBareGame();
 });
 
 afterEach(async () => {
@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 describe("registry integration", () => {
-  it("lists the merge game's 20 sources and 17 commands without modules", async () => {
+  it("lists the bare game's 20 sources and 17 commands without modules", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     await app.start();
 
@@ -64,17 +64,17 @@ describe("registry integration", () => {
   it("createApp → start → manifest → read → run → stop", async () => {
     const app = framework.createApp({
       pluginConfigs: {
-        registry: { game: game.app, modules: [testModule], name: "merge-game 0.0.0" }
+        registry: { game: game.app, modules: [testModule], name: "tiny-game 0.0.0" }
       }
     });
     await app.start();
 
     const manifest = app.registry.manifest();
-    expect(manifest.game).toBe("merge-game 0.0.0");
+    expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.sources).toHaveLength(21);
     expect(manifest.commands).toHaveLength(18);
-    expect(manifest.sources.at(-1)?.id).toBe("merge.coins");
-    expect(manifest.commands.at(-1)?.id).toBe("merge.addCoins");
+    expect(manifest.sources.at(-1)?.id).toBe("tiny.coins");
+    expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
 
     expect(app.registry.source("game.position")?.read(null)).toMatchObject({
       path: read(game.app, sources.position).path
@@ -88,7 +88,7 @@ describe("registry integration", () => {
       tainted: false
     });
 
-    await app.registry.command("merge.addCoins")?.run({ amount: 1 });
+    await app.registry.command("tiny.addCoins")?.run({ amount: 1 });
     expect(app.registry.envelope().tainted).toBe(true);
 
     await app.stop();

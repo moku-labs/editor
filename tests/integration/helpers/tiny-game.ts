@@ -98,7 +98,7 @@ function createTinyApp(clock: ReturnType<typeof fakeClock>) {
 /** The tiny game app: the full engine app type, so a test reads `app.model.store`. */
 export type TinyApp = ReturnType<typeof createTinyApp>;
 
-/** Any started game the agent can serve: the tiny game or the merge game. */
+/** Any started game the agent can serve. */
 export type StartedGame = {
   readonly kind: "game";
   readonly app: Registry.GameLike;

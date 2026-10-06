@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { HAS_GAME, mergeGameDir } from "../../../../../tests/fixtures/game-dir";
 import {
   callStyleKey,
   findStyleSource,
@@ -300,22 +299,25 @@ describe("findStyleSource", () => {
   });
 });
 
+/** The tiny project fixture: a kit, the styles and one view file. */
+const TINY_PROJECT = new URL("../fixtures/tiny-project", import.meta.url).pathname;
+
 /**
- * A ctx whose files and index are the merge-game fixture: `find` is the game's project index on
+ * A ctx whose files and index are the tiny project fixture: `find` is the game's project index on
  * the fixture folder, `read` the file with its sha1 as the version (the files plugin's hash).
  */
-describe.skipIf(!HAS_GAME)("findStyleSource on the merge-game index", () => {
+describe("findStyleSource on the tiny project index", () => {
   let ctx: TestCtx;
   let close: () => void;
 
   beforeAll(async () => {
     const { openProject } = await import("@moku-labs/game/project");
-    const project = await openProject({ root: mergeGameDir() });
+    const project = await openProject({ root: TINY_PROJECT });
     close = () => project.close();
     ctx = createCtx();
     vi.spyOn(ctx.link.files, "find").mockImplementation(async key => await project.find(key));
     vi.spyOn(ctx.link.files, "read").mockImplementation(file => {
-      const text = readFileSync(path.join(mergeGameDir(), file), "utf8");
+      const text = readFileSync(path.join(TINY_PROJECT, file), "utf8");
       // eslint-disable-next-line sonarjs/hashing -- the files plugin's content version, not security
       const version = createHash("sha1").update(text).digest("hex");
       return Promise.resolve({ text, version });
@@ -326,23 +328,23 @@ describe.skipIf(!HAS_GAME)("findStyleSource on the merge-game index", () => {
     close();
   });
 
-  it("answers settingsBoard with settings.tsx:290 (Defined at), the board from line 289", async () => {
+  it("answers settingsBoard with view.tsx:36 (Defined at), the board from line 35", async () => {
     expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
       kind: "defined",
-      path: "features/settings/settings.tsx",
-      line: 290,
-      range: [289, 7, 310, 19]
+      path: "features/ui/view.tsx",
+      line: 36,
+      range: [35, 7, 40, 15]
     });
   });
 
-  it("answers the order card card0 with the element strip.tsx:216 and its style call (D-47)", async () => {
+  it("answers the order card card0 with the element view.tsx:23 and its style call (D-47)", async () => {
     expect(await findStyleSource(ctx, "card0")).toEqual({
       kind: "call",
-      path: "features/orders/strip.tsx",
-      line: 216,
-      range: [215, 5, 247, 14],
-      call: "orderCardStyle(card.slot)",
-      callLine: 218
+      path: "features/ui/view.tsx",
+      line: 23,
+      range: [22, 5, 28, 14],
+      call: "cardStyle(props.slot)",
+      callLine: 25
     });
   });
 });

@@ -6,10 +6,10 @@ import { commandEntry, guardEntry } from "../../entries/command-entry";
 import { ProtocolError, wireError } from "../../protocol";
 import type { CommandEntry, GameLike } from "../../types";
 import type { LogMock, StartedGame } from "../helpers";
-import { createLog, startGame } from "../helpers";
+import { createLog, startBareGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// commandEntry over the real merge game, and guardEntry for editor commands
+// commandEntry over the bare game, and guardEntry for editor commands
 // ─────────────────────────────────────────────────────────────────────────────
 
 let game: StartedGame;
@@ -17,7 +17,7 @@ let log: LogMock;
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  game = await startGame();
+  game = await startBareGame();
   log = createLog();
 });
 

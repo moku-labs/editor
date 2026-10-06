@@ -1,7 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" */
-import { createHeadless } from "@moku-labs/game/testing";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { registryPlugin } from "../../../registry";
 import type { EditorChannel, Heartbeat, Json, RunResult } from "../../../registry/protocol";
@@ -10,13 +9,13 @@ import { channelPlugin } from "../..";
 import type { ChannelApi, HeartbeatListener } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The agent core composed with registry + channel, over the headless merge game.
-// Headless, the game rests at "splash"; answering "loaded" moves it to "home".
+// The agent core composed with registry + channel, over the headless tiny game.
+// Headless, the game rests at "home"; answering "play" moves it to "board/awaitIntent".
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
 
-/** A started headless merge game. */
+/** A started headless tiny game. */
 type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
 
 let game: StartedGame;
@@ -49,10 +48,7 @@ function pathOf(value: Json | undefined): unknown {
 
 beforeEach(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const { createGame } = await loadMergeGame();
-  const { app } = createGame();
-  const headless = await createHeadless(app);
-  game = { app, stop: () => headless.stop() };
+  game = await startTinyHeadless();
 });
 
 afterEach(async () => {
@@ -68,7 +64,7 @@ describe("channel integration", () => {
     const value = await app.channel.read("game.position");
 
     expect(value).toEqual(app.registry.source("game.position")?.read(null));
-    expect(pathOf(value)).toBe("splash");
+    expect(pathOf(value)).toBe("home");
     await app.stop();
   });
 
@@ -111,11 +107,11 @@ describe("channel integration", () => {
     game.app.time.step(16);
     expect(values).toHaveLength(1);
 
-    await app.channel.run("game.answer", { intent: "loaded" });
+    await app.channel.run("game.answer", { intent: "play" });
     expect(values).toHaveLength(1);
     game.app.time.step(16);
 
-    expect(values.map(value => pathOf(value))).toEqual(["splash", "home"]);
+    expect(values.map(value => pathOf(value))).toEqual(["home", "board/awaitIntent"]);
     game.app.time.step(16);
     expect(values).toHaveLength(2);
     stop();
@@ -146,7 +142,7 @@ describe("channel integration", () => {
     app.channel.onHeartbeat(beat => beats.push(beat));
 
     await app.stop();
-    await app.registry.command("game.answer")?.run({ intent: "loaded" });
+    await app.registry.command("game.answer")?.run({ intent: "play" });
     game.app.time.step(16);
     vi.advanceTimersByTime(1000);
 

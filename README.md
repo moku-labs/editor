@@ -431,7 +431,7 @@ their data, and one spinner on the game frame shows the reload. Only when the ga
 back within `reloadGraceMs` (link, 5 s) does the red bar show, over the workspace, never pushing
 it down.
 
-`e2e/edit-loop.spec.ts` measures it on merge-game: five edits made only from the reference line
+The edit-loop scenario of the merge-game demo (moku-labs/demos, `merge-game/tests/editor/`) measures it: five edits made only from the reference line
 and the block in its card (move an element, resize a button, recolour and resize a text style, swap
 a texture), each written to disk. All five are style edits, so the game hot swaps them: each shows
 in the game, its state untouched, in about 30 ms; the recolour takes about 0.1 s, because the test
@@ -835,19 +835,16 @@ bun run lint               # Biome check + ESLint
 bun run lint:fix           # auto-fix lint issues
 bun run format             # Biome format
 bun run validate           # publint + attw (esm-only profile)
-bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px windows; prints the edit-loop table
+bun run test:e2e           # Playwright on the tiny e2e game, 480–1440 px windows
 ```
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.
 
-**Local merge-game tests.** The merge-game tests need a game checkout, named by `MOKU_GAME_DIR` (absolute, or relative to this repository). There is no default path. The checkout sits on the tag of the `@moku-labs/game` dev dependency in `package.json` (`v0.7.1`), with its dependencies installed:
+**Demos.** The tests of a real game live in [moku-labs/demos](https://github.com/moku-labs/demos): `merge-game/tests/editor/` runs the editor scenarios on the merge game. The editor needs no game checkout. The `demos` job of CI runs the demos against the preview of each pull request (`demos / fast`; the label `demos:full` or a `/demos full` comment adds the full tier). The Playwright scenarios of the demo run locally only. Run them against this tree before a release:
 
 ```sh
-MOKU_GAME_DIR=<game checkout at v0.7.1> bun run test
-MOKU_GAME_DIR=<game checkout at v0.7.1> bun run test:e2e
+cd <demos>/merge-game && bun install && bun run test:editor --e2e --editor <editor-path>
 ```
-
-Without `MOKU_GAME_DIR` the merge-game tests skip, and `vitest.config.ts` prints why. CI sets no `MOKU_GAME_DIR`. The rule lives in `tests/fixtures/game-dir.ts`.
 
 ## Requirements
 

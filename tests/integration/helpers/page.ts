@@ -1,7 +1,7 @@
 /**
  * @file The page of the root integration wave (plan §2.5): a happy-dom `Window` built by hand in
  * the node environment (the `@vitest-environment happy-dom` pragma would make `import.meta.url`
- * http and break the merge-game fixture). One document holds the game page and the tools root.
+ * http). One document holds the game page and the tools root.
  * `WebSocket` and `fetch` are never stubbed: they stay Bun's.
  */
 import { GlobalWindow } from "happy-dom";

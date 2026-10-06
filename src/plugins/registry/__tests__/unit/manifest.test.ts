@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildCatalogue } from "../../catalogue";
 import { buildManifest, currentManifest, gameName, pageInfo } from "../../manifest";
 import type { StartedGame, TestCtx } from "../helpers";
-import { createCtx, startGame } from "../helpers";
+import { createCtx, startBareGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The manifest: descriptors only, game name, page and embedded
@@ -12,8 +12,8 @@ let game: StartedGame;
 let ctx: TestCtx;
 
 beforeEach(async () => {
-  game = await startGame();
-  ctx = createCtx({ game: game.app, name: "merge-game 0.0.0" });
+  game = await startBareGame();
+  ctx = createCtx({ game: game.app, name: "tiny-game 0.0.0" });
   buildCatalogue(ctx);
 });
 
@@ -54,9 +54,9 @@ function stubPage(options: { href: string; framed: boolean; parentOrigin: string
 
 describe("buildManifest", () => {
   it("lists every source and command descriptor in state order", () => {
-    const manifest = buildManifest(ctx.state, "merge-game 0.0.0");
+    const manifest = buildManifest(ctx.state, "tiny-game 0.0.0");
 
-    expect(manifest.game).toBe("merge-game 0.0.0");
+    expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.sources.map(source => source.id)).toEqual([...ctx.state.sources.keys()]);
     expect(manifest.commands.map(command => command.id)).toEqual([...ctx.state.commands.keys()]);
     expect(manifest.sources).toHaveLength(20);
@@ -96,8 +96,8 @@ describe("gameName", () => {
   it("uses config.name first", () => {
     vi.stubGlobal("document", { title: "Page title" });
 
-    expect(gameName({ game: game.app, modules: [], name: "merge-game 0.0.0" })).toBe(
-      "merge-game 0.0.0"
+    expect(gameName({ game: game.app, modules: [], name: "tiny-game 0.0.0" })).toBe(
+      "tiny-game 0.0.0"
     );
   });
 

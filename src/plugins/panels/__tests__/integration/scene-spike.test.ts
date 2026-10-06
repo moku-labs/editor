@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { mergeGameDir } from "../../../../../tests/fixtures/game-dir";
-import { loadMergeGame } from "../../../../../tests/fixtures/merge-game";
+import {
+  ITEM_SIZE,
+  startTinyScreenGame,
+  type TinyScreenGame
+} from "../../../../../tests/fixtures/tiny-screen-game";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { registryPlugin } from "../../../registry";
 import type { Json } from "../../../registry/protocol";
-import type { GameLike, RegistryApi } from "../../../registry/types";
+import type { RegistryApi } from "../../../registry/types";
 import type { PageRect, SceneInput, SceneNode, SceneSnapshot } from "../../shared/scene";
 import {
   buildScene,
@@ -18,30 +18,15 @@ import {
 } from "../../shared/scene";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Build spike of scene/ (R8) on the live merge game: createScreenGame with the
-// inert renderer, headless assets (no io: every bundle counts as loaded, the
-// way the fixtures were captured), the timber player with two wood items.
+// Build spike of scene/ (R8) on a live game: the tiny screen game with the
+// inert renderer and headless assets (no io: every bundle counts as loaded).
 // The agent registry reads game.ui, game.entities, game.projections and the
-// rect source (game.locate on game 0.4, game.rect on 0.1) at home, at board/awaitIntent and at board/settings/open. The
-// scene rules 2–4 run on those values, and the values must still match the
-// stored fixtures of the unit tests (ids and animation fields aside).
+// rect source game.locate at home, at board/awaitIntent and at
+// board/settings/open, and the scene rules 2–4 run on those values.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** The screen game as this test drives it. */
-type ScreenApp = GameLike & {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  readonly flow: { run(): Promise<unknown>; state(): { readonly path: string } };
-  readonly time: { step(ms: number): void };
-};
 
 /** A JSON object. */
 type JsonObject = { [key: string]: Json };
-
-/** The game's starting player, as far as this test changes it. */
-type StartingPlayer = JsonObject & {
-  readonly merge: JsonObject & { readonly board: JsonObject; readonly energy: JsonObject };
-};
 
 /** One capture of the three scene sources plus the page rects of some keys. */
 type Capture = {
@@ -54,9 +39,12 @@ type Capture = {
 
 const IDENTITY = { scale: 1, x: 0, y: 0 };
 
+/** The entities on the board: the hud root, its seven ui elements, two items and the badge. */
+const ENTITY_COUNT = 11;
+
 const agentCore = createAgentCore(agentCoreConfig, { plugins: [registryPlugin] });
 
-let game: ScreenApp;
+let game: TinyScreenGame;
 let registry: RegistryApi;
 let home: Capture;
 let board: Capture;
@@ -90,24 +78,17 @@ function pageRect(value: Json): PageRect {
 
 // ── the live game ────────────────────────────────────────────────────────────
 
-async function frames(count: number): Promise<void> {
-  for (let frame = 0; frame < count; frame += 1) {
-    game.time.step(16);
-    for (let tick = 0; tick < 40; tick += 1) await Promise.resolve();
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
-}
-
 /**
- * Taps a keyed element and steps frames until the flow reaches a path, then `settle` more, and on
- * until `atLeast` frames passed since the tap (the frame counts the fixtures were captured at).
+ * Taps a keyed element and steps frames until the flow reaches a path, then `settle` more.
+ *
+ * @param key - The element key.
+ * @param target - The flow path to reach.
+ * @param settle - Frames to step after it.
  */
-async function tapUntil(key: string, target: string, settle: number, atLeast = 0): Promise<void> {
+async function tapUntil(key: string, target: string, settle: number): Promise<void> {
   const tapped = registry.command("game.tap")?.run({ key });
-  let stepped = 0;
-  for (; stepped < 200 && game.flow.state().path !== target; stepped += 1) await frames(1);
-  await frames(settle);
-  await frames(Math.max(0, atLeast - stepped - settle));
+  await game.until(target);
+  await game.frames(settle);
   await tapped;
 }
 
@@ -138,7 +119,7 @@ function captureLive(keys: readonly string[]): Capture {
     rects[key] = pageRect(read(source, { key }));
   }
   return {
-    path: game.flow.state().path,
+    path: game.app.flow.state().path,
     ui,
     entities: read("game.entities"),
     projections: read("game.projections"),
@@ -146,59 +127,19 @@ function captureLive(keys: readonly string[]): Capture {
   };
 }
 
-async function importGame<T>(file: string): Promise<T> {
-  const module: T = await import(
-    /* @vite-ignore */ pathToFileURL(path.join(mergeGameDir(), file)).href
-  );
-  return module;
-}
-
-/** The timber player: a plank and a twig on the board, seven energy counted at the start. */
-async function timberPlayer(): Promise<JsonObject> {
-  const { startingPlayer } = await importGame<{ startingPlayer: StartingPlayer }>("state.ts");
-  const { startMoment } = await importGame<{ startMoment: number }>("game.ts");
-  const { merge } = startingPlayer;
-  return {
-    ...startingPlayer,
-    merge: {
-      ...merge,
-      board: {
-        ...merge.board,
-        items: [
-          { id: "i1", chain: "wood", level: 3, cell: "c1_0" },
-          { id: "i2", chain: "wood", level: 1, cell: "c2_1" }
-        ]
-      },
-      energy: { ...merge.energy, value: 7, countedAt: startMoment },
-      nextItemId: 3
-    }
-  };
-}
-
 beforeAll(async () => {
   vi.stubGlobal("__MOKU_GAME_DEV__", true);
-  const manifest: Json = JSON.parse(
-    readFileSync(path.join(mergeGameDir(), "manifest.json"), "utf8")
-  );
-  const fixture = await loadMergeGame();
-  const create = fixture.createScreenGame as unknown as (options: {
-    player: JsonObject;
-    manifest: Json;
-  }) => { app: ScreenApp };
-  game = create({ player: await timberPlayer(), manifest }).app;
-  await game.start();
-  game.flow.run().catch(() => undefined);
-  await frames(6);
+  game = await startTinyScreenGame();
 
-  const agent = agentCore.createApp({ pluginConfigs: { registry: { game } } });
+  const agent = agentCore.createApp({ pluginConfigs: { registry: { game: game.app } } });
   await agent.start();
   registry = agent.registry;
 
   home = captureLive(["play"]);
   await tapUntil("play", "board/awaitIntent", 6);
-  board = captureLive(["settings", "boardScreen", "boardSlot"]);
-  await tapUntil("settings", "board/settings/open", 0, 30);
-  settings = captureLive(["settingsScreen", "settingsBoard"]);
+  board = captureLive(["settings", "boardScreen", "tray", "coinPill"]);
+  await tapUntil("settings", "board/settings/open", 6);
+  settings = captureLive(["settingsScreen", "settingsBoard", "close"]);
 });
 
 afterAll(async () => {
@@ -275,121 +216,7 @@ function center(box: PageRect | undefined): { x: number; y: number } {
   return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
 }
 
-// ── structure: the capture without entity ids and animation fields ───────────
-
-function storedCapture(name: string): Capture {
-  const parsed: Capture = JSON.parse(
-    readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8")
-  );
-  return parsed;
-}
-
-/**
- * Drops what animations drive: the card swing (rotation), the transform of an entity that plays an
- * Animation (the settings board drops in) and the selection ring's flipbook frame.
- */
-function stillComponents(components: JsonObject): JsonObject {
-  const still: JsonObject = { ...components };
-  if (isObject(still.Transform)) {
-    still.Transform =
-      still.Animation === undefined
-        ? without(still.Transform, "rotation")
-        : without(still.Transform, "x", "y", "rotation", "scale");
-  }
-  if (still.SelectionRing !== undefined && isObject(still.Sprite)) {
-    still.Sprite = without(still.Sprite, "texture");
-  }
-  return still;
-}
-
-function without(value: JsonObject, ...keys: string[]): JsonObject {
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
-}
-
-/**
- * The entities by a stable label: `<projection>.<key>`, else `<owner kind>:<owner name>#<n>` in
- * list order; Parent references follow the labels.
- */
-function entityStructure(capture: Capture): Record<string, Json> {
-  const labels = new Map<number, string>();
-  for (const [projection, keys] of Object.entries(objectOf(capture.projections))) {
-    for (const [key, id] of Object.entries(objectOf(keys))) {
-      labels.set(numberOf(id), `${projection}.${key}`);
-    }
-  }
-  const counts = new Map<string, number>();
-  const entities = arrayOf(capture.entities).map(each => objectOf(each));
-  for (const entity of entities) {
-    const id = numberOf(entity.id);
-    if (labels.has(id)) continue;
-    const owner = objectOf(entity.owner);
-    const prefix = `${String(owner.kind)}:${String(owner.name)}`;
-    const count = counts.get(prefix) ?? 0;
-    counts.set(prefix, count + 1);
-    labels.set(id, `${prefix}#${count}`);
-  }
-  const structure: Record<string, Json> = {};
-  for (const entity of entities) {
-    const components = stillComponents(objectOf(entity.components));
-    if (isObject(components.Parent)) {
-      const parent = numberOf(components.Parent.entity);
-      components.Parent = { entity: labels.get(parent) ?? `unknown:${parent}` };
-    }
-    structure[labels.get(numberOf(entity.id)) ?? ""] = {
-      owner: entity.owner ?? {},
-      components,
-      skipped: entity.skipped ?? []
-    };
-  }
-  return structure;
-}
-
-function structureOf(capture: Capture, rectKeys: readonly string[]) {
-  const projections = Object.fromEntries(
-    Object.entries(objectOf(capture.projections)).map(([name, keys]) => [
-      name,
-      Object.keys(objectOf(keys)).toSorted()
-    ])
-  );
-  return {
-    path: capture.path,
-    ui: capture.ui,
-    projections,
-    entities: entityStructure(capture),
-    rects: Object.fromEntries(rectKeys.map(key => [key, capture.rects[key]]))
-  };
-}
-
-function uiIds(scene: SceneSnapshot): string[] {
-  return [...scene.nodes.keys()].filter(id => id.startsWith("ui:"));
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-
-describe("the stored fixtures are the live game", () => {
-  it.each([
-    ["scene-board.txt", () => board],
-    ["scene-settings.txt", () => settings]
-  ])("%s matches the live capture in path, ui, projection keys, entities and rects", (name, live) => {
-    const stored = storedCapture(name);
-    const keys = Object.keys(stored.rects);
-
-    expect(structureOf(live(), keys)).toEqual(structureOf(stored, keys));
-  });
-
-  it("builds the same ui nodes and entity counts from the live values as from the fixtures", () => {
-    for (const [name, live] of [
-      ["scene-board.txt", board],
-      ["scene-settings.txt", settings]
-    ] as const) {
-      const fromLive = sceneOf(live);
-      const fromStored = sceneOf(storedCapture(name));
-      expect(uiIds(fromLive)).toEqual(uiIds(fromStored));
-      expect(fromLive.nodes.size).toBe(fromStored.nodes.size);
-      expect(fromLive.entityCount).toBe(fromStored.entityCount);
-    }
-  });
-});
 
 describe("scene on the live board (board/awaitIntent)", () => {
   it("names ui nodes by their key paths", () => {
@@ -397,12 +224,12 @@ describe("scene on the live board (board/awaitIntent)", () => {
 
     expect(board.path).toBe("board/awaitIntent");
     expect(scene.calibrated).toBe(false);
-    expect(scene.entityCount).toBe(104);
-    expect(keyedNode(scene, "boardSlot").id).toBe("ui:boardScreen/boardSlot");
+    expect(scene.entityCount).toBe(ENTITY_COUNT);
+    expect(keyedNode(scene, "tray").id).toBe("ui:boardScreen/tray");
     expect(keyedNode(scene, "settings").id).toBe("ui:boardScreen/hudRow/settings");
     expect(nodeOf(scene, "ui:boardScreen/hudRow/coinPill")).toMatchObject({
       ref: { kind: "ui", path: "boardScreen/hudRow/coinPill" },
-      type: "row",
+      type: "panel",
       texture: "ui.hud-pill",
       parent: "ui:boardScreen/hudRow"
     });
@@ -416,34 +243,30 @@ describe("scene on the live board (board/awaitIntent)", () => {
     expectRect(play.rect, home.rects.play);
   });
 
-  it("hosts the board items and cells under boardSlot, with rects", () => {
+  it("hosts the items under the tray, with rects", () => {
     const scene = sceneOf(board);
-    const i1 = entityNode(scene, board, "board.items", "i1");
-    const hosted = ["board.items", "board.cells"].flatMap(projection =>
-      Object.keys(objectOf(objectOf(board.projections)[projection])).map(key =>
-        entityNode(scene, board, projection, key)
-      )
+    const a = entityNode(scene, board, "tiny.items", "a");
+    const hosted = Object.keys(objectOf(objectOf(board.projections)["tiny.items"])).map(key =>
+      entityNode(scene, board, "tiny.items", key)
     );
-
-    expect(hosted).toHaveLength(11);
-    for (const node of hosted) expect(node.parent).toBe("ui:boardScreen/boardSlot");
-    expect(Object.fromEntries(hosted.map(node => [node.name, node.rect]))).toEqual({
-      i1: { x: 428.5, y: 880.5, w: 223, h: 223 },
-      i2: { x: 722.5, y: 1174.5, w: 223, h: 223 },
-      c0_0: { x: 110, y: 856, w: 272, h: 272 },
-      c1_0: { x: 404, y: 856, w: 272, h: 272 },
-      c2_0: { x: 698, y: 856, w: 272, h: 272 },
-      c0_1: { x: 110, y: 1150, w: 272, h: 272 },
-      c1_1: { x: 404, y: 1150, w: 272, h: 272 },
-      c2_1: { x: 698, y: 1150, w: 272, h: 272 },
-      c0_2: { x: 110, y: 1444, w: 272, h: 272 },
-      c1_2: { x: 404, y: 1444, w: 272, h: 272 },
-      c2_2: { x: 698, y: 1444, w: 272, h: 272 }
+    const tray = board.rects.tray;
+    if (tray === undefined) throw new Error("no tray rect");
+    // A sprite is centred on its Transform: (100 + slot * 200, 100) in the tray's own space.
+    const itemRect = (slot: number): PageRect => ({
+      x: tray.x + 100 + slot * 200 - ITEM_SIZE / 2,
+      y: tray.y + 100 - ITEM_SIZE / 2,
+      w: ITEM_SIZE,
+      h: ITEM_SIZE
     });
-    expect(i1).toMatchObject({ name: "i1", type: "Sprite", texture: "board.item-wood-3" });
-    expect(i1.rect).toEqual({ x: 428.5, y: 880.5, w: 223, h: 223 });
-    expect(entityNode(scene, board, "board.items", "i2").texture).toBe("board.item-wood-1");
-    expect(elementAt(scene, center(i1.rect))?.id).toBe(i1.id);
+
+    expect(hosted).toHaveLength(2);
+    for (const node of hosted) expect(node.parent).toBe("ui:boardScreen/tray");
+    expect(Object.fromEntries(hosted.map(node => [node.name, node.rect]))).toEqual({
+      a: itemRect(0),
+      b: itemRect(1)
+    });
+    expect(a).toMatchObject({ name: "a", type: "Sprite", texture: "board.cell" });
+    expect(elementAt(scene, center(a.rect))?.id).toBe(a.id);
   });
 
   it("breaks the boardScreen / boardBackground Box tie with the projection key", () => {
@@ -464,7 +287,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
   it("lists unplaced entities with rect undefined: the hud root, Text-only entities", () => {
     const scene = sceneOf(board);
     const hud = entityNode(scene, board, "hud", "hud");
-    const count = entityNode(scene, board, "board.badges", "sawmill.count");
+    const count = entityNode(scene, board, "tiny.badges", "count");
 
     expect(scene.roots).toEqual(["ui:boardScreen", hud.id]);
     expect(hud).toMatchObject({ type: "Container", parent: undefined, rect: undefined });
@@ -496,7 +319,7 @@ describe("scene on the live settings popup (board/settings/open)", () => {
     expect([...scene.nodes.keys()].some(id => id.startsWith("ui:screen#"))).toBe(false);
     expect(nodeOf(scene, "ui:settingsScreen").parent).toBeUndefined();
     expect(at("ui:boardScreen")).toBe(0);
-    expect(at("ui:boardScreen/infoBar")).toBeLessThan(at("ui:settingsScreen"));
+    expect(at("ui:boardScreen/tray")).toBeLessThan(at("ui:settingsScreen"));
     expect(new Set(scene.paintOrder).size).toBe(scene.nodes.size);
   });
 
@@ -507,7 +330,7 @@ describe("scene on the live settings popup (board/settings/open)", () => {
   });
 
   it("blocks the board under the backdrop: the settings icon's spot gives the backdrop", () => {
-    const hit = elementAt(sceneOf(settings), { x: 980, y: 112 });
+    const hit = elementAt(sceneOf(settings), center(board.rects.settings));
 
     expect(hit?.id).toBe("ui:settingsScreen/settingsBackdrop");
     expect(hit?.id.startsWith("ui:boardScreen")).toBe(false);
