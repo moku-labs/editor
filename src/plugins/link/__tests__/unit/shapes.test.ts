@@ -1,13 +1,15 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { describe, expect, it } from "vitest";
-import { toWireValue } from "../../../registry/protocol";
+import { parseFoundList, parseProjectState, toWireValue } from "../../../registry/protocol";
 import {
   expectShape,
   readFileBinary,
   readFileEntries,
   readFileText,
+  readFoundList,
   readHelloBody,
   readManifest,
+  readProjectState,
   readRunResult,
   readSessions,
   readToolsBoot,
@@ -204,3 +206,14 @@ function toObject(value: object): { [key: string]: import("../../../registry/pro
     throw new Error("not an object");
   return json;
 }
+
+describe("project index shapes", () => {
+  it("are the protocol parsers, not a second parser", () => {
+    expect(readProjectState).toBe(parseProjectState);
+    expect(readFoundList).toBe(parseFoundList);
+    expect(readProjectState({ state: "off", reason: "disabled" })).toEqual({
+      state: "off",
+      reason: "disabled"
+    });
+  });
+});

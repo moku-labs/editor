@@ -3,6 +3,9 @@
  * files root that calls `defineTextStyles(` (the game's text-style definer) on a line of code,
  * breadth-first, skipping node_modules, dist, .git and .moku, at most 400 reads (flowView's
  * Styles tab, gameView's Code section, D-13). The caller keeps the result; nothing here caches.
+ * Deprecated (amendment N1): the text-styles file comes from the project index
+ * (`textStylesFile` in `./project`). Still imported by `flowView/inspector/styles-file.ts` and
+ * `gameView/element/text-styles.ts`; the file is deleted when they stop.
  */
 import type { FileEntry, FileText } from "../../registry/protocol";
 
@@ -119,6 +122,9 @@ export function splitFolder(entries: readonly FileEntry[]): {
  * Searches the styles file breadth-first: the files of a folder in listing order before the
  * folders under it, at most 400 reads.
  *
+ * @deprecated A crawl; the index is the only source. Use `textStylesFile(link.project())` from
+ * `panels/shared/project`. Importers left: flowView/inspector/styles-file.ts,
+ * gameView/element/text-styles.ts.
  * @param files - The files client (link.files, tools.files).
  * @returns The path of the first file calling `defineTextStyles(`, or undefined.
  * @example

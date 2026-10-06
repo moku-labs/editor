@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import type { FileText, WriteResult } from "../../../registry/protocol";
+import type { FileText, ProjectFound, WriteResult } from "../../../registry/protocol";
 import { wireError } from "../../../registry/protocol";
 import type {
   EditTarget,
@@ -19,6 +19,7 @@ import {
   isStyleEditError,
   loadStyleFile,
   parseStyleFile,
+  STYLE_BROKEN_TEXT,
   stepValue,
   writeNumber
 } from "../../shared/style-edit";
@@ -741,9 +742,103 @@ describe("writeNumber", () => {
   });
 });
 
+/**
+ * One answer of `find` for the edited block.
+ *
+ * @param path - The file of the answer.
+ * @param broken - Whether the last good parse answered.
+ * @returns The Found.
+ */
+function found(path: string, broken: boolean): ProjectFound {
+  const answer: ProjectFound = { path, line: 72, range: [72, 3, 80, 4], hash: "v1" };
+  return broken ? { ...answer, broken: true } : answer;
+}
+
+describe("writeNumber broken guard (D-44)", () => {
+  const current: FileText = { text: UI, version: "v1" };
+  const NUMBER_KEY = "textStyle:ui.number";
+
+  it("writes nothing and returns broken when the index says the file does not parse now", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    const find = vi.fn(async () => [found(UI_PATH, true)]);
+
+    expect(await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)).toEqual({
+      error: "broken",
+      path: UI_PATH
+    });
+    expect(find).toHaveBeenCalledWith(NUMBER_KEY);
+    expect(fake.files.write).not.toHaveBeenCalled();
+    expect(fake.texts.get(UI_PATH)).toBe(UI);
+  });
+
+  it("asks the style: key of a defineStyle const", async () => {
+    const fake = fakeFiles({ "features/hud/styles.ts": HUD });
+    const find = vi.fn(async () => [found("features/hud/styles.ts", true)]);
+    const target: EditTarget = {
+      ref: { kind: "const", name: "hudRow" },
+      path: "padding.left",
+      raw: "40"
+    };
+
+    const done = await writeNumber(
+      { ...fake.files, find },
+      "features/hud/styles.ts",
+      { text: HUD, version: "v1" },
+      target,
+      41
+    );
+
+    expect(done).toEqual({ error: "broken", path: "features/hud/styles.ts" });
+    expect(find).toHaveBeenCalledWith("style:features/hud/styles.ts#hudRow");
+  });
+
+  it("writes when the index answers the file whole, or a broken file elsewhere", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    const find = vi.fn(async () => [found(UI_PATH, false), found("other/styles.ts", true)]);
+
+    expect(
+      await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)
+    ).toMatchObject({ ok: true, line: 74 });
+    expect(fake.files.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes when find rejects: the guard never blocks on a lost link", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    const find = vi.fn(async (): Promise<readonly ProjectFound[]> => {
+      throw wireError(-32_002, "timeout");
+    });
+
+    expect(
+      await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)
+    ).toMatchObject({ ok: true });
+  });
+
+  it("checks again before the retry: a file broken since the conflict is not written", async () => {
+    const fake = fakeFiles({ [UI_PATH]: UI });
+    fake.touch(UI_PATH, UI.replace("size: 100,", "size: 101,"));
+    const find = vi
+      .fn<(key: string) => Promise<readonly ProjectFound[]>>()
+      .mockResolvedValueOnce([found(UI_PATH, false)])
+      .mockResolvedValueOnce([found(UI_PATH, true)]);
+
+    expect(await writeNumber({ ...fake.files, find }, UI_PATH, current, NUMBER_SIZE, 64)).toEqual({
+      error: "broken",
+      path: UI_PATH
+    });
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(fake.files.write).toHaveBeenCalledTimes(1);
+    expect(fake.files.read).not.toHaveBeenCalled();
+  });
+
+  it("has one shared text for the views", () => {
+    expect(STYLE_BROKEN_TEXT).toBe("The file does not parse now · fix it, then edit");
+  });
+});
+
 describe("isStyleEditError", () => {
   it("is true for every edit error code", () => {
     const codes: StyleEditError["error"][] = [
+      "broken",
       "no-file",
       "parse",
       "no-key",

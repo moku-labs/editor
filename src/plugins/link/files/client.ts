@@ -7,6 +7,7 @@ import {
   readFileBinary,
   readFileEntries,
   readFileText,
+  readFoundList,
   readWriteResult
 } from "../rpc/shapes";
 import type { FilesClient, LinkCtx } from "../types";
@@ -40,6 +41,9 @@ export function createFilesClient(ctx: LinkCtx): FilesClient {
     readBinary: async path => {
       const result = await request(ctx, "files", "readBinary", { path });
       return expectShape(result, readFileBinary, "readBinary");
-    }
+    },
+
+    find: async key =>
+      expectShape(await request(ctx, "files", "find", { key }), readFoundList, "find")
   };
 }

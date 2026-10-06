@@ -5,6 +5,8 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  ProjectDelta,
+  ProjectState,
   SelectionInfo,
   SessionInfo,
   Tap,
@@ -379,6 +381,41 @@ describe("link integration", () => {
     hub.notify("editor", "selection", toWireValue(info));
     await until(() => app.link.selection() !== undefined, "the hub's selection");
     expect(app.link.selection()).toEqual(info);
+    await app.stop();
+  });
+
+  it("project index: editor.project reaches link:project with its delta; files.find answers", async () => {
+    const changes: { state: ProjectState; delta: ProjectDelta }[] = [];
+    const observer = framework.createPlugin("projectObserver", {
+      hooks: () => ({
+        "link:project": (payload: { state: ProjectState; delta: ProjectDelta }) => {
+          changes.push(payload);
+        }
+      })
+    });
+    const app = framework.createApp({ plugins: [observer] });
+    app.log.clearSinks();
+    await app.start();
+    await until(() => app.link.status().kind === "empty", "empty");
+
+    const first: ProjectState = {
+      state: "on",
+      revision: "r1",
+      defs: { "node:board/merge": ["nodes/merge.ts"] },
+      uses: {},
+      broken: {}
+    };
+    hub.notify("editor", "project", toWireValue(first));
+    hub.notify("editor", "project", toWireValue(first));
+    hub.notify("editor", "project", toWireValue({ ...first, revision: "r2", previous: "r1" }));
+    await until(() => changes.length === 2, "two project states");
+    expect(changes.map(change => change.delta.all)).toEqual([true, false]);
+    expect(app.link.project()).toMatchObject({ revision: "r2" });
+
+    const found = { path: "nodes/merge.ts", line: 17, range: [17, 1, 30, 3], hash: "a1" };
+    hub.found.set("node:board/merge", [found]);
+    await expect(app.link.files.find("node:board/merge")).resolves.toEqual([found]);
+    await expect(app.link.files.find("jsx:nowhere")).resolves.toEqual([]);
     await app.stop();
   });
 

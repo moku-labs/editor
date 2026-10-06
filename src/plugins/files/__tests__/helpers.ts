@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path/posix";
 import type { Mock } from "vitest";
 import { vi } from "vitest";
+import type { ServerEvents } from "../../../config";
+import type { ProjectState } from "../../registry/protocol";
+import { parseProjectState } from "../../registry/protocol";
 import { createFilesApi } from "../api";
 import { validateFilesConfig } from "../init";
 import { createFilesState } from "../state";
@@ -17,7 +20,35 @@ import type { FilesApi, FilesConfig, FilesCtx } from "../types";
 export const DEFAULT_CONFIG: FilesConfig = {
   root: ".",
   allow: ["**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", ".moku/**"],
-  deny: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"]
+  deny: ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.env*"],
+  project: true
+};
+
+/**
+ * A mini game the project index reads: the flow `main` takes the node `open` from a file whose
+ * name is not the kebab name of the node (line 3) and the node `home` from `nodes/home.ts`.
+ */
+export const MINI_GAME: Readonly<Record<string, string>> = {
+  "flows/main.ts": [
+    'import { defineFlow } from "@moku-labs/game";',
+    'import { open } from "../features/settings/nodes";',
+    'import { home } from "../nodes/home";',
+    "",
+    'export const main = defineFlow("main", { nodes: { open, home }, start: "home" });',
+    ""
+  ].join("\n"),
+  "features/settings/nodes.ts": [
+    'import { defineNode } from "@moku-labs/game";',
+    "",
+    'export const open = defineNode({ id: "open" });',
+    ""
+  ].join("\n"),
+  "nodes/home.ts": [
+    'import { defineNode } from "@moku-labs/game";',
+    "",
+    'export const home = defineNode({ id: "home" });',
+    ""
+  ].join("\n")
 };
 
 /** A 1x1 transparent PNG. */
@@ -47,18 +78,26 @@ export function createLog() {
   };
 }
 
+/** The events files emits. */
+type Emitted = Pick<ServerEvents, "files:written" | "files:project">;
+
+/**
+ * The files emit as one signature a mock can take; it fits both overloads of `FilesCtx["emit"]`.
+ */
+export type EmitMock = Mock<(name: keyof Emitted, payload: Emitted[keyof Emitted]) => void>;
+
 /**
  * A typed mock of the files emit.
  *
  * @returns The mock.
  */
-export function createEmit(): Mock<FilesCtx["emit"]> {
-  return vi.fn<FilesCtx["emit"]>();
+export function createEmit(): EmitMock {
+  return vi.fn();
 }
 
 /** A files ctx whose emit and log are mocks. */
 export type TestCtx = FilesCtx & {
-  readonly emit: Mock<FilesCtx["emit"]>;
+  readonly emit: EmitMock;
   readonly log: ReturnType<typeof createLog>;
 };
 
@@ -131,6 +170,29 @@ export async function createFixture(config: Partial<FilesConfig> = {}): Promise<
     },
     cleanup: () => rm(base, { recursive: true, force: true })
   };
+}
+
+/**
+ * Writes the mini game into the root of a fixture.
+ *
+ * @param fixture - The fixture.
+ */
+export async function putMiniGame(fixture: Fixture): Promise<void> {
+  await Promise.all(Object.entries(MINI_GAME).map(([path, text]) => fixture.put(path, text)));
+}
+
+/**
+ * Every project state the files ctx announced with `files:project`, in order.
+ *
+ * @param ctx - A test ctx.
+ * @returns The announced states.
+ */
+export function projectStates(ctx: TestCtx): ProjectState[] {
+  return ctx.emit.mock.calls.flatMap(call => {
+    const [name, payload]: readonly unknown[] = call;
+    const state = name === "files:project" ? parseProjectState(payload) : undefined;
+    return state === undefined ? [] : [state];
+  });
 }
 
 /**

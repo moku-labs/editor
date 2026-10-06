@@ -5,6 +5,8 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  ProjectFound,
+  ProjectState,
   RunResult,
   SelectionInfo,
   SelectParams,
@@ -63,6 +65,14 @@ describe("link types", () => {
       .toEqualTypeOf<(params: SelectParams) => Promise<SelectionInfo>>();
     expectTypeOf(app.link.handle).returns.toEqualTypeOf<() => void>();
     expect(app.link.selection()).toBeUndefined();
+  });
+
+  it("app.link carries the project index: project() and files.find", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.project).returns.toEqualTypeOf<ProjectState | undefined>();
+    expectTypeOf(app.link.files.find).parameter(0).toEqualTypeOf<string>();
+    expectTypeOf(app.link.files.find).returns.toEqualTypeOf<Promise<readonly ProjectFound[]>>();
+    expect(app.link.project()).toBeUndefined();
   });
 
   it("rejects an unknown notify or handle method", () => {

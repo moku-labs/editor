@@ -1,5 +1,6 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
+import type { ToolsEvents } from "../../../config";
 import type {
   Channel,
   Json,
@@ -50,9 +51,17 @@ export function createLog() {
 /** The mock log type. */
 export type LogMock = ReturnType<typeof createLog>;
 
+/** The tools events link emits. */
+type LinkEvents = Pick<ToolsEvents, "link:status" | "link:project">;
+
+/** The emit mock: one signature over every link event, so it is callable as each overload. */
+export type EmitMock = Mock<
+  (name: keyof LinkEvents, payload: LinkEvents[keyof LinkEvents]) => void
+>;
+
 /** A link ctx whose emit and log are mocks. */
 export type TestCtx = Omit<LinkCtx, "emit" | "log"> & {
-  readonly emit: Mock<LinkCtx["emit"]>;
+  readonly emit: EmitMock;
   readonly log: LogMock;
 };
 
@@ -86,7 +95,7 @@ export function createCtx(config: Partial<Config> = {}): TestCtx {
   return {
     config: resolved,
     state: createLinkState({ config: resolved }),
-    emit: vi.fn<LinkCtx["emit"]>(),
+    emit: vi.fn<(name: keyof LinkEvents, payload: LinkEvents[keyof LinkEvents]) => void>(),
     log: createLog()
   };
 }

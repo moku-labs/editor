@@ -3,8 +3,8 @@
  * numeric-literal edit with a version-checked write (flowView Styles C4, gameView Element C7).
  * Bounds and error codes live only here (R8).
  */
-import type { FileText, WriteResult } from "../../registry/protocol";
-import { errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
+import type { FileText, ProjectFound, WriteResult } from "../../registry/protocol";
+import { anchorKey, errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
 
 /**
  * Which block of a style file: a text-style table entry or a `defineStyle` constant (R8, R9).
@@ -69,6 +69,7 @@ export type StyleFile = {
  * Why an edit was refused.
  */
 export type StyleEditCode =
+  | "broken"
   | "no-file"
   | "parse"
   | "no-key"
@@ -125,12 +126,20 @@ export type WriteDone = {
 };
 
 /**
- * Structural files client: link.files and tools.files fit it.
+ * Structural files client: link.files and tools.files fit it. With `find`, a write first asks the
+ * project index whether the file parses now (D-44).
  */
 export type StyleFiles = {
   read(path: string): Promise<FileText>;
   write(path: string, text: string, version?: string): Promise<WriteResult>;
+  find?(key: string): Promise<readonly ProjectFound[]>;
 };
+
+/**
+ * The shared text of a `broken` refusal: the file does not parse now, so no style edit is written
+ * (D-44). flowView's stepper and gameView's style card show it.
+ */
+export const STYLE_BROKEN_TEXT = "The file does not parse now · fix it, then edit";
 
 /**
  * A loaded style file: its text, version and parsed blocks.
@@ -1151,13 +1160,32 @@ async function tryWrite(
 }
 
 /**
- * The one retry after a conflict: read the file again and write when the literal is unchanged.
+ * True when the project index answers the block's key from the last good parse of `path`: the
+ * file does not parse now. A client without `find`, or a rejected `find`, does not block the write.
+ *
+ * @param files - The files client.
+ * @param path - The style file path.
+ * @param ref - The block being edited.
+ * @returns Whether the write must be refused as `broken`.
+ */
+async function isBroken(files: StyleFiles, path: string, ref: StyleBlockRef): Promise<boolean> {
+  try {
+    const answers = (await files.find?.(anchorKey(ref, path))) ?? [];
+    return answers.some(found => found.path === path && found.broken === true);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The one retry after a conflict: ask the index again, read the file again and write when the
+ * literal is unchanged.
  *
  * @param files - The files client.
  * @param path - The style file path.
  * @param target - What the card showed.
  * @param next - The new value.
- * @returns The write, `no-file` or `changed-on-disk`.
+ * @returns The write, `broken`, `no-file` or `changed-on-disk`.
  */
 async function retryWrite(
   files: StyleFiles,
@@ -1165,6 +1193,8 @@ async function retryWrite(
   target: EditTarget,
   next: number
 ): Promise<WriteDone | StyleEditError> {
+  if (await isBroken(files, path, target.ref)) return { error: "broken", path };
+
   let fresh: FileText;
 
   try {
@@ -1182,6 +1212,8 @@ async function retryWrite(
 
 /**
  * Edits and writes with the read version; one retry on -32005 when the literal is unchanged.
+ * With `files.find`, the project index is asked before each write: a file that does not parse now
+ * is refused as `broken` and nothing is written (D-44).
  *
  * @param files - The files client.
  * @param path - The style file path.
@@ -1189,11 +1221,12 @@ async function retryWrite(
  * @param target - What the card showed.
  * @param next - The new value.
  * @returns `{ ok: true, text, line, version, bytes }`, or the refusal; nothing is written on a
- * refusal. Rejections other than -32005 and -32004 propagate.
+ * refusal. Rejections other than -32005 and -32004 propagate; a rejected `find` does not refuse.
  * @example
  * ```ts
- * await writeNumber(tools.files, "features/ui/styles.ts", loaded, target, 64);
+ * await writeNumber(link.files, "features/ui/styles.ts", loaded, target, 64);
  * // { ok: true, line: 74, version: "9c1e…", … }
+ * // While an agent's edit left the file unparseable: { error: "broken", path: "features/ui/styles.ts" }
  * ```
  */
 export async function writeNumber(
@@ -1205,6 +1238,7 @@ export async function writeNumber(
 ): Promise<WriteDone | StyleEditError> {
   const edited = editNumber(current.text, target, next);
   if (isStyleEditError(edited)) return edited;
+  if (await isBroken(files, path, target.ref)) return { error: "broken", path };
 
   return (
     (await tryWrite(files, path, edited, current.version)) ?? retryWrite(files, path, target, next)
@@ -1213,6 +1247,7 @@ export async function writeNumber(
 
 /** Every edit error code. */
 const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
+  "broken",
   "no-file",
   "parse",
   "no-key",
@@ -1227,7 +1262,7 @@ const CODES: ReadonlySet<unknown> = new Set<StyleEditCode>([
  * True for a StyleEditError.
  *
  * @param value - Anything.
- * @returns Whether `value` is an object whose `error` is one of the eight codes.
+ * @returns Whether `value` is an object whose `error` is one of the nine codes.
  * @example
  * ```ts
  * if (isStyleEditError(loaded)) return showReason(loaded);

@@ -61,7 +61,8 @@ export function conflict(path: string): Error & WireError {
 }
 
 /**
- * An input that cannot be written (text or data too large, bad data URL): -32602 `invalid_input`.
+ * An input that cannot be used (text or data too large, bad data URL, bad `find` key): -32602
+ * `invalid_input`.
  *
  * @param field - The offending field of the files-channel params.
  * @param message - What is wrong, naming the relative path.
@@ -71,7 +72,7 @@ export function conflict(path: string): Error & WireError {
  * throw invalid("text", "write: text over 2 MiB: src/a.ts");
  * ```
  */
-export function invalid(field: "text" | "data", message: string): Error & WireError {
+export function invalid(field: "text" | "data" | "key", message: string): Error & WireError {
   return wireError(errorCode.invalidInput, message, {
     reason: "invalid_input",
     retryable: false,
@@ -109,6 +110,24 @@ export function tooLarge(path: string): Error & WireError {
 export function ioFailed(message: string): Error & WireError {
   return wireError(errorCode.commandFailed, message, {
     reason: "command_failed",
+    retryable: false
+  });
+}
+
+/**
+ * A `find` while the project index is off (disabled, game without the index, open failed,
+ * stopped): -32008 `not_installed`.
+ *
+ * @param reason - Why the index is off.
+ * @returns The error, ready to throw.
+ * @example
+ * ```ts
+ * indexOff("disabled").message; // "[moku-editor] project index off: disabled"
+ * ```
+ */
+export function indexOff(reason: string): Error & WireError {
+  return wireError(errorCode.notInstalled, `project index off: ${reason}`, {
+    reason: "not_installed",
     retryable: false
   });
 }
