@@ -1349,7 +1349,7 @@ Global events only; no plugin declares its own `events` field. Payload types are
 | tools | `workspace:inspect` | `{ ref: ElementRef }` | renderView | "Inspect in Game" | gameView |
 | tools | `workspace:open-sheet` | `{ index: string }` | filesView | "Open contact sheet" on a series `index.json` | gameView |
 
-`files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, or ends with `.styles.ts`/`.styles.tsx` → `style`; other `.ts`/`.tsx` → `code`; else `other`.
+`files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, ends with `.styles.ts`/`.styles.tsx`, or a `.ts`/`.tsx` module directly in a `styles/` folder (`shared/styles/text.ts`) → `style`; other `.ts`/`.tsx` → `code`; else `other`.
 
 `LinkStatus` semantics: `connecting` (socket open or session attached, no heartbeat yet); `live`/`paused` (the chosen session beats; `paused` from the heartbeat flag); `silent` (no heartbeat for 6 s, or 65 s after a `paused: true` beat); `lost` (socket closed, chosen session closed, or no boot tag `no_boot`); `empty` (connected, no game session, also 10 s after a lost session). The bridge reports only `connecting`, `live`, `paused`, `lost`.
 
