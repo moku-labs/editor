@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
+import { HAS_GAME, mergeGameDir } from "../../../../../tests/fixtures/game-dir";
 import {
   callStyleKey,
   findStyleSource,
@@ -304,18 +304,18 @@ describe("findStyleSource", () => {
  * A ctx whose files and index are the merge-game fixture: `find` is the game's project index on
  * the fixture folder, `read` the file with its sha1 as the version (the files plugin's hash).
  */
-describe.skipIf(!existsSync(MERGE_GAME_DIR))("findStyleSource on the merge-game index", () => {
+describe.skipIf(!HAS_GAME)("findStyleSource on the merge-game index", () => {
   let ctx: TestCtx;
   let close: () => void;
 
   beforeAll(async () => {
     const { openProject } = await import("@moku-labs/game/project");
-    const project = await openProject({ root: MERGE_GAME_DIR });
+    const project = await openProject({ root: mergeGameDir() });
     close = () => project.close();
     ctx = createCtx();
     vi.spyOn(ctx.link.files, "find").mockImplementation(async key => await project.find(key));
     vi.spyOn(ctx.link.files, "read").mockImplementation(file => {
-      const text = readFileSync(path.join(MERGE_GAME_DIR, file), "utf8");
+      const text = readFileSync(path.join(mergeGameDir(), file), "utf8");
       // eslint-disable-next-line sonarjs/hashing -- the files plugin's content version, not security
       const version = createHash("sha1").update(text).digest("hex");
       return Promise.resolve({ text, version });

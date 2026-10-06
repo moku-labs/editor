@@ -1,8 +1,9 @@
 /**
  * @file The e2e game build step (the `build:e2e` of this repository): copies the merge-game
- * fixture of the pinned game checkout (tests/fixtures/game-dir.ts) into dist-e2e/game/, puts the
- * e2e game page (e2e/game/editor.html and editor.ts: the fixture page plus the editor agent) into
- * its web/ folder and writes the tsconfig the Bun HTML bundler reads for the copied files.
+ * fixture of the game checkout named by MOKU_GAME_DIR (tests/fixtures/game-dir.ts) into
+ * dist-e2e/game/, puts the e2e game page (e2e/game/editor.html and editor.ts: the fixture page
+ * plus the editor agent) into its web/ folder and writes the tsconfig the Bun HTML bundler reads
+ * for the copied files.
  *
  * The copy is the project root the bin serves, so the editor's writes (notes, layout, styles,
  * captures) land in dist-e2e/, never in the game checkout, and every run starts from the same
@@ -11,10 +12,10 @@
  * its fake clock, maps to the checkout's source: the built testing bundle carries the
  * playwright-core loader, which a browser bundle cannot hold.
  *
- * The fixture is the game release `v0.7.0` (the tag of the dev dependency `@moku-labs/game` 0.7.0);
- * see tests/fixtures/game-dir.ts.
+ * The checkout sits on the release of the `@moku-labs/game` dev dependency; see
+ * tests/fixtures/game-dir.ts.
  *
- * The fixture page of game 0.7.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
+ * The fixture page also imports `@moku-labs/system` and `@moku-labs/native`, which
  * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
  *
@@ -31,7 +32,7 @@
  * The bin serves the copy with Bun hot reload on (D-23): a spec that writes a game source sees the
  * game page reload and restore its checkpoint, and restores the file it wrote.
  *
- * The copy keeps the fixture's `bunfig.toml` (game 0.7.0 ships one): its `[serve.static]` loads
+ * The copy keeps the fixture's `bunfig.toml`: its `[serve.static]` loads
  * the hot swap plugin `@moku-labs/game/hot`, so a save of a view module swaps in place without a
  * reload (U10). A fixture without one gets that file written here (B3). The bin, started from the
  * editor root with `--root dist-e2e/game`, re-runs itself in the copy, where Bun reads it.
@@ -39,14 +40,17 @@
 import { access, cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GAME_DIR, MERGE_GAME_DIR } from "../tests/fixtures/game-dir";
+import { gameDir, HAS_GAME, mergeGameDir, NO_GAME_REASON } from "../tests/fixtures/game-dir";
+
+if (!HAS_GAME)
+  throw new Error(`[moku-editor] e2e needs the merge-game fixture. ${NO_GAME_REASON}.`);
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const OUT = path.join(REPO, "dist-e2e", "game");
 
 await rm(OUT, { recursive: true, force: true });
 await mkdir(path.dirname(OUT), { recursive: true });
-await cp(MERGE_GAME_DIR, OUT, {
+await cp(mergeGameDir(), OUT, {
   recursive: true,
   filter: source => !source.includes(`${path.sep}__tests__`)
 });
@@ -58,7 +62,7 @@ const CHECKOUT_PACKAGES = ["@moku-labs/system", "@moku-labs/native"];
 await mkdir(path.join(OUT, "node_modules", "@moku-labs"), { recursive: true });
 for (const name of CHECKOUT_PACKAGES) {
   await symlink(
-    path.join(GAME_DIR, "node_modules", name),
+    path.join(gameDir(), "node_modules", name),
     path.join(OUT, "node_modules", name),
     "dir"
   );
@@ -79,7 +83,7 @@ function resolvesFromCopy(name: string): boolean {
 }
 if (!resolvesFromCopy("typescript")) {
   await symlink(
-    path.join(GAME_DIR, "node_modules", "typescript"),
+    path.join(gameDir(), "node_modules", "typescript"),
     path.join(OUT, "node_modules", "typescript"),
     "dir"
   );
@@ -93,7 +97,7 @@ const tsconfig = {
   extends: "../../tsconfig.json",
   compilerOptions: {
     jsxImportSource: "@moku-labs/game",
-    paths: { "@moku-labs/game/testing": [path.join(GAME_DIR, "src", "testing.ts")] }
+    paths: { "@moku-labs/game/testing": [path.join(gameDir(), "src", "testing.ts")] }
   }
 };
 await writeFile(path.join(OUT, "tsconfig.json"), `${JSON.stringify(tsconfig, undefined, 2)}\n`);

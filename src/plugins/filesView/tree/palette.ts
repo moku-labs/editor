@@ -15,7 +15,7 @@ import { filesInTreeOrder, nameOf } from "./model";
  * @param url - The link.
  * @example
  * ```ts
- * openExternal("vscode://file/Users/moku/game/nodes/merge.ts:1");
+ * openExternal("vscode://file/home/dev/game/nodes/merge.ts:1");
  * ```
  */
 export function openExternal(url: string): void {

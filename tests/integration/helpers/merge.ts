@@ -1,22 +1,19 @@
 /**
  * @file Merge-game helpers of the root integration wave (plan §2.7), local only. They call
- * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the pinned
- * game checkout of tests/fixtures/game-dir.ts. CI test files never import this module: vitest.config.ts skips only the
- * test files whose text names `loadMergeGame`, so a local-only test imports it and says
- * `loadMergeGame` itself.
+ * `loadMergeGame` and the game repository's `timber-helpers.ts`, both of which need the game
+ * checkout of tests/fixtures/game-dir.ts (MOKU_GAME_DIR). CI test files never import this module:
+ * vitest.config.ts skips only the test files whose text names `loadMergeGame`, so a local-only
+ * test imports it and says `loadMergeGame` itself.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createHeadless } from "@moku-labs/game/testing";
 import type { Registry } from "../../../src/agent";
-import { gameFileUrl, MERGE_GAME_DIR } from "../../fixtures/game-dir";
+import { gameFileUrl, mergeGameDir } from "../../fixtures/game-dir";
 import { loadMergeGame } from "../../fixtures/merge-game";
 import { withoutPage } from "./page";
 import type { StartedGame } from "./tiny-game";
 import { settle } from "./wait";
-
-/** The game repository's helper module (`startOnBoard`, `tap`, `until`), loaded at run time. */
-const TIMBER_HELPERS = gameFileUrl("tests/integration/timber-helpers.ts");
 
 /** Milliseconds per frame of `frames(n)`. */
 const FRAME_MS = 16;
@@ -59,7 +56,7 @@ type ScreenFactory = (options: { manifest: unknown; io: typeof DISK_IO }) => { a
 /** The game's asset io over the fixture files: bundles load for real, textures are stand-ins. */
 export const DISK_IO = {
   fetch: async (url: string) =>
-    new Response(readFileSync(path.join(MERGE_GAME_DIR, url.replace(/^\//u, "")))),
+    new Response(readFileSync(path.join(mergeGameDir(), url.replace(/^\//u, "")))),
   decode: async () => ({ width: 1, height: 1 }),
   createTexture: () => ({ label: "stand-in" }),
   destroyTexture: () => undefined
@@ -71,7 +68,9 @@ export const DISK_IO = {
  * @returns The helpers.
  */
 async function loadTimberHelpers(): Promise<TimberHelpers> {
-  const helpers: TimberHelpers = await import(/* @vite-ignore */ TIMBER_HELPERS);
+  const helpers: TimberHelpers = await import(
+    /* @vite-ignore */ gameFileUrl("tests/integration/timber-helpers.ts")
+  );
   return helpers;
 }
 
@@ -132,7 +131,7 @@ async function startScreen(): Promise<MergeGame> {
   // The fixture types createScreenGame by its seed only; at run time it takes manifest and io.
   const create = fixture.createScreenGame as unknown as ScreenFactory;
   const manifest: unknown = JSON.parse(
-    readFileSync(path.join(MERGE_GAME_DIR, "manifest.json"), "utf8")
+    readFileSync(path.join(mergeGameDir(), "manifest.json"), "utf8")
   );
   const { app } = create({ manifest, io: DISK_IO });
   const game = mergeGameOf(app);

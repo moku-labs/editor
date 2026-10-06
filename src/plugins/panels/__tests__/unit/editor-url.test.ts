@@ -9,17 +9,17 @@ const VSCODE = "vscode://file/{path}:{line}";
 
 describe("editorUrlOf", () => {
   it("joins root and path with one slash and fills the line", () => {
-    expect(editorUrlOf(VSCODE, "/Users/alex/game", "nodes/merge.ts", 12)).toBe(
-      "vscode://file/Users/alex/game/nodes/merge.ts:12"
+    expect(editorUrlOf(VSCODE, "/home/dev/game", "nodes/merge.ts", 12)).toBe(
+      "vscode://file/home/dev/game/nodes/merge.ts:12"
     );
   });
 
   it("never doubles the slash between root and path", () => {
-    expect(editorUrlOf(VSCODE, "/Users/alex/game/", "nodes/merge.ts", 3)).toBe(
-      "vscode://file/Users/alex/game/nodes/merge.ts:3"
+    expect(editorUrlOf(VSCODE, "/home/dev/game/", "nodes/merge.ts", 3)).toBe(
+      "vscode://file/home/dev/game/nodes/merge.ts:3"
     );
-    expect(editorUrlOf(VSCODE, "/Users/alex/game/", "/nodes/merge.ts", 3)).toBe(
-      "vscode://file/Users/alex/game/nodes/merge.ts:3"
+    expect(editorUrlOf(VSCODE, "/home/dev/game/", "/nodes/merge.ts", 3)).toBe(
+      "vscode://file/home/dev/game/nodes/merge.ts:3"
     );
   });
 
@@ -30,8 +30,8 @@ describe("editorUrlOf", () => {
   });
 
   it("defaults the line to 1 and encodes spaces", () => {
-    expect(editorUrlOf(VSCODE, "/Users/alex/my game", "nodes/big merge.ts")).toBe(
-      "vscode://file/Users/alex/my%20game/nodes/big%20merge.ts:1"
+    expect(editorUrlOf(VSCODE, "/home/dev/my game", "nodes/big merge.ts")).toBe(
+      "vscode://file/home/dev/my%20game/nodes/big%20merge.ts:1"
     );
   });
 

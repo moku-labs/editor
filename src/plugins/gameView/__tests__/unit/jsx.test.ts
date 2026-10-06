@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { MERGE_GAME_DIR } from "../../../../../tests/fixtures/game-dir";
+import { HAS_GAME, mergeGameDir } from "../../../../../tests/fixtures/game-dir";
 import { snippetOf, tagAttributes, tagNameAt } from "../../element/jsx";
 import { templateOf } from "../helpers";
 
@@ -124,20 +124,15 @@ describe("tagAttributes", () => {
   });
 });
 
-describe.skipIf(!existsSync(MERGE_GAME_DIR))(
-  "tagAttributes on the merge-game fixture files",
-  () => {
-    it("reads the order card's style call at strip.tsx:218 from the range of jsx:card0", () => {
-      const file = path.join(MERGE_GAME_DIR, "features/orders/strip.tsx");
-      const lines = readFileSync(file, "utf8").split("\n");
-      expect(tagNameAt(lines, [215, 5, 247, 14])).toBe("column");
-      expect(tagAttributes(lines, [215, 5, 247, 14]).find(entry => entry.name === "style")).toEqual(
-        {
-          name: "style",
-          line: 218,
-          value: { braced: true, text: "orderCardStyle(card.slot)" }
-        }
-      );
+describe.skipIf(!HAS_GAME)("tagAttributes on the merge-game fixture files", () => {
+  it("reads the order card's style call at strip.tsx:218 from the range of jsx:card0", () => {
+    const file = path.join(mergeGameDir(), "features/orders/strip.tsx");
+    const lines = readFileSync(file, "utf8").split("\n");
+    expect(tagNameAt(lines, [215, 5, 247, 14])).toBe("column");
+    expect(tagAttributes(lines, [215, 5, 247, 14]).find(entry => entry.name === "style")).toEqual({
+      name: "style",
+      line: 218,
+      value: { braced: true, text: "orderCardStyle(card.slot)" }
     });
-  }
-);
+  });
+});

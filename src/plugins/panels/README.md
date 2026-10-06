@@ -423,8 +423,8 @@ palette.add({ id: "flow:show-inspector", label: "Show Inspector", run: () => sho
 never spawns a process.
 
 ```ts
-editorUrlOf("vscode://file/{path}:{line}", "/Users/alex/game", "nodes/merge.ts", 12);
-// "vscode://file/Users/alex/game/nodes/merge.ts:12"
+editorUrlOf("vscode://file/{path}:{line}", "/home/dev/game", "nodes/merge.ts", 12);
+// "vscode://file/home/dev/game/nodes/merge.ts:12"
 ```
 
 ### `editable.ts`

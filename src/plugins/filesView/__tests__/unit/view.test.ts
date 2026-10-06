@@ -467,7 +467,7 @@ describe("file bar", () => {
   it("shows the crumb, Open in editor and Edit here", () => {
     expect(get("[data-crumb]").textContent).toBe("nodes/merge.ts");
     const link = get<HTMLAnchorElement>("a[data-open-editor]");
-    expect(link.getAttribute("href")).toBe("vscode://file/Users/moku/game/nodes/merge.ts:1");
+    expect(link.getAttribute("href")).toBe("vscode://file/home/dev/game/nodes/merge.ts:1");
     act(() => {
       link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
@@ -717,7 +717,7 @@ describe("body states", () => {
     });
     expect(root.textContent).toContain("File too large to open here (over 2 MB)");
     expect(get('[data-body-state="error"] a').getAttribute("href")).toBe(
-      "vscode://file/Users/moku/game/big.ts:1"
+      "vscode://file/home/dev/game/big.ts:1"
     );
   });
 

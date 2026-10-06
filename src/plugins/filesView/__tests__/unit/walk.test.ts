@@ -218,7 +218,7 @@ describe("palette items", () => {
     ) {
       hrefs.push(this.href);
     });
-    openExternal("vscode://file/Users/moku/game/nodes/merge.ts:1");
-    expect(hrefs).toEqual(["vscode://file/Users/moku/game/nodes/merge.ts:1"]);
+    openExternal("vscode://file/home/dev/game/nodes/merge.ts:1");
+    expect(hrefs).toEqual(["vscode://file/home/dev/game/nodes/merge.ts:1"]);
   });
 });
