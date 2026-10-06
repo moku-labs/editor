@@ -103,8 +103,13 @@ function printUsage(ui: BrandConsole): void {
 }
 
 /**
- * Routes the warn and error log entries of the app to the branded console from now on (the
- * default console sink is removed).
+ * The info log events the bin prints: the server log shows that the project index is on.
+ */
+const PRINTED_INFO = new Set(["files:project-on"]);
+
+/**
+ * Routes the warn and error log entries of the app, and the info entries in `PRINTED_INFO`, to
+ * the branded console from now on (the default console sink is removed).
  *
  * @param app - The editor app.
  * @param ui - The branded console.
@@ -124,6 +129,7 @@ function forwardLog(app: EditorApp, ui: BrandConsole): void {
         entry.data === undefined ? entry.event : `${entry.event} ${JSON.stringify(entry.data)}`;
       if (entry.level === "error") ui.error(line);
       else if (entry.level === "warn") ui.warn(line);
+      else if (entry.level === "info" && PRINTED_INFO.has(entry.event)) ui.info(line);
     }
   };
   app.log.clearSinks();

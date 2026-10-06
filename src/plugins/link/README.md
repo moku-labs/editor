@@ -119,7 +119,7 @@ Answers this page sends to the hub for an editor-channel request:
 | Event | Payload | When |
 |---|---|---|
 | `link:status` | `{ status: LinkStatus; session?: string }` | The status changed kind or any field (new heartbeat frame, new `retryInMs`), or the session changed with the same status. |
-| `link:project` | `{ state: ProjectState; delta: ProjectDelta }` | A new project-index state arrived. The same state again (on at the same revision, off with the same reason) emits nothing. `delta` is `projectDelta(held, next)`: `all: true` for the first state, a revision gap (reconnect) or an off state; else the `files`, `moved` and `removed` of the state's change. Both are frozen. |
+| `link:project` | `{ state: ProjectState; delta: ProjectDelta }` | A new project-index state arrived. The same state again (on at the same revision and manifest, off with the same reason) emits nothing. At the same revision with another `manifest` (the game revision hashes sources only) `delta` is `{ all: false, files: [old manifest, new manifest] }`. Else `delta` is `projectDelta(held, next)`: `all: true` for the first state, a revision gap (reconnect) or an off state; else the `files`, `moved` and `removed` of the state's change. Both are frozen. |
 
 | Status | When |
 |---|---|

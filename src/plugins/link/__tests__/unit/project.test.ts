@@ -111,6 +111,26 @@ describe("editor.project notification", () => {
     expect(projectEvents()).toHaveLength(1);
   });
 
+  it("the same revision with another manifest emits the old and new manifest paths", () => {
+    publish(FIRST);
+    publish({ ...FIRST, manifest: "assets/game.json" });
+
+    expect(projectEvents()[1]).toEqual({
+      state: { ...FIRST, manifest: "assets/game.json" },
+      delta: { all: false, files: ["game.json", "assets/game.json"], moved: [], removed: [] }
+    });
+    expect(createLinkApi(ctx).project()).toMatchObject({ manifest: "assets/game.json" });
+  });
+
+  it("a manifest gone at the same revision lists only the old path", () => {
+    publish(FIRST);
+    publish({ state: "on", revision: "r1", defs: {}, uses: {}, broken: {} });
+
+    expect(projectEvents()[1]).toMatchObject({
+      delta: { all: false, files: ["game.json"], moved: [], removed: [] }
+    });
+  });
+
   it("the same off reason again emits nothing; on after off is `all`", () => {
     publish({ state: "off", reason: "disabled" });
     publish({ state: "off", reason: "disabled" });
