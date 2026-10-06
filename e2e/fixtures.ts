@@ -13,6 +13,7 @@
  * an empty record: a reload keeps what the test chose.
  */
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import { type EditorServer, gameRootOf, startEditor } from "./editor-server";
 
 /**
  * The six workspaces in rail order (⌘1-⌘6), with their labels. Game is first and the default.
@@ -251,6 +252,24 @@ function driver(page: Page): Tools {
   };
 }
 
+/** The worker fixtures: one editor per worker (e2e/editor-server.ts). */
+type WorkerFixtures = {
+  editor: EditorServer;
+};
+
+/**
+ * The game root the editor of the running test serves (dist-e2e/game-<n>/). Call it inside a test.
+ *
+ * @returns The absolute root, with a trailing slash.
+ * @example
+ * ```ts
+ * const file = path.join(gameRoot(), "rules.ts");
+ * ```
+ */
+export function gameRoot(): string {
+  return gameRootOf(base.info().parallelIndex);
+}
+
 /** The fixtures of the e2e test. */
 type Fixtures = {
   /** The preset pinned before the page loads; false starts on the product default. */
@@ -262,9 +281,22 @@ type Fixtures = {
 };
 
 /**
- * The e2e test: `errors` and the device pin are automatic, `tools` opens a live tools page.
+ * The e2e test: the worker's editor, `errors` and the device pin are automatic, `tools` opens a
+ * live tools page. `baseURL` is the worker's editor.
  */
-export const test = base.extend<Fixtures>({
+export const test = base.extend<Fixtures, WorkerFixtures>({
+  editor: [
+    // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies from this destructuring.
+    async ({}, use, workerInfo) => {
+      const { server, stop } = await startEditor(workerInfo.parallelIndex);
+      await use(server);
+      await stop();
+    },
+    { scope: "worker", auto: true, timeout: 120_000 }
+  ],
+  baseURL: async ({ editor }, use) => {
+    await use(editor.url);
+  },
   pinnedDevice: [PINNED_DEVICE, { option: true }],
   devicePin: [
     async ({ page, pinnedDevice }, use) => {

@@ -18,7 +18,7 @@ type FakeServer = AttachedServer & {
 };
 
 /** A closeAll that closes nothing, for the cases about the server alone. */
-const keepSockets: CloseSockets = () => undefined;
+const keepSockets: CloseSockets = async () => undefined;
 
 /** The real port the fake gives a server asked for port 0. */
 const REAL_PORT = 4321;
@@ -92,7 +92,7 @@ describe("createGameServer", () => {
 describe("restart", () => {
   it('closes every socket with 1012 "editor restarting" before Bun\'s stop (U11)', async () => {
     const { serve, served } = fakeServe();
-    const closeAll = vi.fn<CloseSockets>();
+    const closeAll = vi.fn<CloseSockets>(async () => undefined);
     const game = createGameServer(optionsOf(0, true), closeAll, serve);
 
     await game.restart(optionsOf(0, false));
@@ -102,6 +102,21 @@ describe("restart", () => {
     expect(closeAll.mock.invocationCallOrder[0]).toBeLessThan(
       at(served, 0).stop.mock.invocationCallOrder[0] ?? 0
     );
+  });
+
+  it("stops the server only after the sockets reported their close: the 1012 frame goes out", async () => {
+    const { serve, served } = fakeServe();
+    const closed = Promise.withResolvers<void>();
+    const closeAll = vi.fn<CloseSockets>(() => closed.promise);
+    const game = createGameServer(optionsOf(0, true), closeAll, serve);
+
+    const restart = game.restart(optionsOf(0, false));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(at(served, 0).stop).not.toHaveBeenCalled();
+
+    closed.resolve();
+    await restart;
+    expect(at(served, 0).stop).toHaveBeenCalled();
   });
 
   it("closes no socket on the final stop nor on a restart after it", async () => {

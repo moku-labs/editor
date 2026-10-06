@@ -1,23 +1,23 @@
 /**
- * @file The server side of the error capture: after the run, scans the bin's stdout and stderr
- * (dist-e2e/server.log, written by the webServer command) for error-level lines and fails the run
- * on any. A tools page that looks fine while the server logs an error is a defect.
+ * @file The server side of the error capture: after the run, scans the stdout and stderr of every
+ * worker's bin (dist-e2e/server-<n>.log, written by e2e/editor-server.ts) for error-level lines and
+ * fails the run on any. A tools page that looks fine while the server logs an error is a defect.
  *
  * A spec that provokes server errors on purpose names the byte window of the log it provoked them
- * in, in dist-e2e/server-log-provoked.json (`[{ log, from, to, by }]`): e2e/project-stress.spec.ts
- * breaks and deletes game files, and Bun's dev server logs the bundle errors. Lines in a window
+ * in, in dist-e2e/server-log-provoked.json (`[{ log, from, to, by }]`). `log` is the worker's log
+ * path, `EditorServer.log` of the `editor` fixture. No spec writes one today. Lines in a window
  * are skipped, except a `[moku-editor]` line, which is always an editor error. The file is removed
  * after every run, so a window never applies to the log of another run.
  */
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The e2e output folder. */
 const DIST = path.join(fileURLToPath(new URL("..", import.meta.url)), "dist-e2e");
 
-/** The server log of the webServer command. */
-const LOG = path.join(DIST, "server.log");
+/** The server logs of this run, one per worker. */
+const LOG_NAME = /^server-\d+\.log$/;
 
 /** The windows of the server logs that specs provoked errors in. */
 const PROVOKED = path.join(DIST, "server-log-provoked.json");
@@ -79,12 +79,18 @@ function badLines(text: string, windows: readonly Window[]): string[] {
 }
 
 /**
- * Fails when the server log holds an error-level line.
+ * Fails when a server log holds an error-level line.
  */
 export default function globalTeardown(): void {
-  const windows = takeWindows().filter(window => window.log === LOG);
-  if (process.env.PW_EXTERNAL_SERVER || !existsSync(LOG)) return;
-  const bad = badLines(readFileSync(LOG, "utf8"), windows);
+  const windows = takeWindows();
+  if (!existsSync(DIST)) return;
+  const logs = readdirSync(DIST)
+    .filter(name => LOG_NAME.test(name))
+    .map(name => path.join(DIST, name));
+  const bad = logs.flatMap(log => {
+    const own = windows.filter(window => window.log === log);
+    return badLines(readFileSync(log, "utf8"), own).map(line => `${path.basename(log)}: ${line}`);
+  });
   if (bad.length > 0) {
     throw new Error(`The e2e server logged ${bad.length} error lines:\n${bad.join("\n")}`);
   }

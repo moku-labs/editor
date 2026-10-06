@@ -2473,11 +2473,11 @@ export type HubApi = {
    * @example
    * ```ts
    * // The bin, right before Bun's stop on a Hot reload switch (pages serve.ts).
-   * editor.hub.closeAll(1012, "editor restarting");
+   * await editor.hub.closeAll(1012, "editor restarting");
    * // the bridge and every tools page see close 1012 "editor restarting", log it at info and reconnect
    * ```
    */
-  closeAll(code: number, reason: string): void;
+  closeAll(code: number, reason: string): Promise<void>;
 
   /**
    * The editor path, `config.path` (R3).

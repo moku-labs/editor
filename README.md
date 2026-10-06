@@ -835,7 +835,7 @@ bun run lint               # Biome check + ESLint
 bun run lint:fix           # auto-fix lint issues
 bun run format             # Biome format
 bun run validate           # publint + attw (esm-only profile)
-bun run test:e2e           # Playwright on the tiny e2e game, 480–1440 px windows
+bun run test:e2e           # Playwright on the tiny e2e game, 4 workers (E2E_WORKERS), 480–1440 px windows
 ```
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.

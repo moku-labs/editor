@@ -51,8 +51,9 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
    answers 200 with it.
 3. On the next macrotask, after the answer went out (A1), `restart(next)` runs. `next` is the
    current options with `development.hmr` flipped; the other `development` fields stay.
-4. The restart (`serve.ts`) first calls `hub.closeAll(1012, "editor restarting")`: every agent
-   and tools socket gets a clean close 1012 instead of a dropped socket (1006). Then it stops the
+4. The restart (`serve.ts`) first awaits `hub.closeAll(1012, "editor restarting")`: every agent
+   and tools socket gets a clean close 1012 instead of a dropped socket (1006), and the stop
+   waits until Bun reported the closes, at most 500 ms, so the close frames go out. Then it stops the
    current server with its open connections, waiting at most 500 ms, and serves `next` on the same
    port. A bin started with `--port 0` keeps its port.
 5. The hub plugin is not stopped. The token and `.moku/editor.json` stay. The tools page's link
@@ -383,7 +384,7 @@ What `main` (`cli.ts`) does:
    A `run` whose root has a `[serve.static]` bunfig, started elsewhere, re-spawns the bin there and exits with its code (see bunfig.toml of the game root). The steps below run in that child.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console, and the info line `files:project-on { files, keys, ms }`, so the server log shows the project index is on.
-4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
+4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, waits until Bun reported the closes (at most 500 ms), stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
 5. `editor.pages.attachServer(options, next => game.restart(next))`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification, and the Hot reload switch can restart the server (see Hot reload).
 6. Writes `.moku/editor.json` (see Discovery file).
 7. Prints the Game, Tools and Root lines. The token is never printed.

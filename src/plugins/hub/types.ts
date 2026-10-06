@@ -450,20 +450,23 @@ export type HubApi = {
   publish<M extends PublishMethod>(method: M, params: PublishParams[M]): void;
 
   /**
-   * Closes every open socket, agent and tools, with one code and reason. The hub keeps running:
-   * the token stays, and each connection is forgotten when Bun reports its close, so its session
-   * or subscriptions end as on any close. Clients reconnect on their own.
+   * Closes every open socket, agent and tools, with one code and reason, and resolves when Bun
+   * reported every close (at most 500 ms). The hub keeps running: the token stays, and each
+   * connection is forgotten when Bun reports its close, so its session or subscriptions end as on
+   * any close. Clients reconnect on their own. Stop a server only after it resolves: a stop before
+   * drops the close frame, and the client sees 1006 instead of the code.
    *
    * @param code - The close code: 1012 (service restart) for the bin's restart.
    * @param reason - The close reason the clients see.
+   * @returns When every socket closed, or the wait ran out.
    * @example
    * ```ts
    * // The bin, right before Bun's stop on a Hot reload switch (pages serve.ts).
-   * editor.hub.closeAll(1012, "editor restarting");
+   * await editor.hub.closeAll(1012, "editor restarting");
    * // the bridge and every tools page see close 1012 "editor restarting", log it at info and reconnect
    * ```
    */
-  closeAll(code: number, reason: string): void;
+  closeAll(code: number, reason: string): Promise<void>;
 
   /**
    * The editor path, `config.path` (R3).

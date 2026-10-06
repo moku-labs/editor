@@ -46,7 +46,7 @@ createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
 | `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`, `project` a `ProjectState`. A tools page that connects later gets it right after `sessions {list}`. |
-| `closeAll` | `(code: number, reason: string) => void` | Closes every agent and tools socket with one code and reason. The hub keeps running and keeps its token. |
+| `closeAll` | `(code: number, reason: string) => Promise<void>` | Closes every agent and tools socket with one code and reason, and resolves when Bun reported the closes (at most 500 ms). The hub keeps running and keeps its token. |
 | `path` | `() => string` | `config.path`. |
 
 ### `serve(options)`
@@ -177,12 +177,13 @@ notification: sent while a tools connection is congested too, never dropped.
 ### `closeAll(code, reason)`
 
 ```ts
-editor.hub.closeAll(1012, "editor restarting");
-// every agent and tools socket closes with 1012 "editor restarting"
+await editor.hub.closeAll(1012, "editor restarting");
+// every agent and tools socket closed with 1012 "editor restarting", or 500 ms passed
 ```
 
-The bin calls it right before Bun's stop when the Hot reload switch restarts its server
-(pages `serve.ts`). Clients see a clean 1012 instead of a dropped socket (1006). The bridge and
+The bin awaits it before Bun's stop when the Hot reload switch restarts its server
+(pages `serve.ts`). It resolves when Bun reported every close, at most after 500 ms. A stop before
+that drops the close frame, and the client sees 1006. Clients see a clean 1012 instead. The bridge and
 link log it at info and reconnect as after any close. The hub keeps running: the token stays,
 and each connection is forgotten when Bun reports its close, so its session or subscriptions end
 as on any close. Logged at info as `hub:close-all` with the socket count.

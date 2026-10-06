@@ -194,7 +194,7 @@ describe("hub types", () => {
 
   it("closeAll takes a close code and a reason", () => {
     expectTypeOf<HubApi["closeAll"]>().parameters.toEqualTypeOf<[code: number, reason: string]>();
-    expectTypeOf<HubApi["closeAll"]>().returns.toBeVoid();
+    expectTypeOf<HubApi["closeAll"]>().returns.toEqualTypeOf<Promise<void>>();
     const noReason = () =>
       // @ts-expect-error — the reason is required
       app.hub.closeAll(1012);

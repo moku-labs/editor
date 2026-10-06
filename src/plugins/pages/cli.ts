@@ -297,9 +297,7 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
       routes: { "/": bundle },
       fetch: createStaticFetch(rootPath, editor.hub.guard)
     });
-    game = createGameServer(options, (code, reason) => {
-      editor.hub.closeAll(code, reason);
-    });
+    game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason));
   } catch (error) {
     const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
     const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
