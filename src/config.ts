@@ -8,7 +8,7 @@ import { createCoreConfig } from "@moku-labs/core";
 import type { FilesWritten } from "./plugins/files/types";
 import type { HubSession } from "./plugins/hub/types";
 import type { ElementRef } from "./plugins/panels/shared/scene/types";
-import type { LinkStatus } from "./plugins/registry/protocol";
+import type { LinkStatus, ProjectDelta, ProjectState } from "./plugins/registry/protocol";
 import type { Density, RanEvent, WorkspaceId } from "./plugins/workspace/types";
 
 /**
@@ -58,6 +58,8 @@ export type ServerEvents = {
   "hub:session": HubSession;
   /** A file was written inside the project root (text or capture). */
   "files:written": FilesWritten;
+  /** The project index of the files root opened, changed or went off (hub publishes it). */
+  "files:project": ProjectState;
 };
 
 /**
@@ -72,6 +74,8 @@ export type ServerEvents = {
 export type ToolsEvents = {
   /** The link status or the chosen session changed. */
   "link:status": { status: LinkStatus; session?: string };
+  /** A new project-index state arrived; views drop what the delta names. */
+  "link:project": { state: ProjectState; delta: ProjectDelta };
   /** The shown workspace changed. */
   "workspace:changed": { ws: WorkspaceId };
   /** A command run from the tools page settled (top bar, palette, key or a panel's tools.run). */

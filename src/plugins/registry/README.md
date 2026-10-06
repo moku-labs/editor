@@ -202,6 +202,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `devices.ts` | The 21 device presets and their rules, shared by workspace and gameView: `DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `deviceById`, `presetOf`, `isDevicePresetId`, `screenOf`, `resolveDevice`. Types `DevicePresetId`, `Orientation`, `DeviceSize` are in `types.ts`. |
 | `overlay-host.ts` | `HOST_ATTRIBUTE`: the marker overlay sets on its host; the bridge's tap watch skips events whose path holds it. |
 | `reload.ts` | The two reload signals (U9, U10): `isReloading(status)`, true for the neutral `lost` of an expected reload (`reloading: true`); `isHotSwapEntry(entry)`, a type guard to `HotSwapEntry`, true for the game.log entry of an applied dev hot swap (game 0.5.0: event `ui:hot-swap`, numeric `ts`, `data.file`). A refused swap logs `ui:hot-refused` and the page reloads. The game.log value is the whole trace, so a caller tests its entries. |
+| `project.ts` | The project index on the wire (change project-index): `parseProjectState`, `parseFoundList` (strict: one bad map entry or answer rejects the whole value; unknown fields dropped; a `__proto__` key stays a plain entry), `projectDelta(held, next)`, `firstDefinition(state, key)`, `anchorKey(ref, path)`. |
 
 Shapes added in round 2 (R4, R6):
 
@@ -218,7 +219,7 @@ Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10, A15):
 | `SelectionInfo` | All readonly. `ref` (`SelectionRef`: `{ kind: "ui", path }` or `{ kind: "entity", id }`, the scene's `ElementRef`), `name`, `type`, `at` (`Date.now()` at publish) required. Optional: `key`, `projection`, `rect` (`SelectionRect` in page CSS px, as `SceneNode.rect`), `source { path, line }`, `card` and `crop` (project-relative, in a day folder `<capturesDir>/<yyyy-mm-dd>/`), `line` (the `@moku …` reference), `session`, `frame` (the scene frame; after a pick, the pick frame), `area` and `items` (an area selection, below). The readonly `items` make it not assignable to `Json`: senders pass it through `toWireValue`, like a `Manifest`. |
 | `SelectionItem` | All readonly. One element of an area selection: `ref`, `name`, `type` required; `key`, `rect`, `source` optional. |
 | Area selection (U9) | `type: "area"`, `name: "area"`, `rect` = `area` = the dragged area in page CSS px, `items` = the group roots inside, top to bottom then left to right, at most 40. `ref` = the first item's ref, or `{ kind: "ui", path: "" }` when no element is inside (`items: []`). |
-| `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null }`. `PublishMethod` is its keys: `"hotReload" \| "selection"`. |
+| `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null, project: ProjectState }`. `PublishMethod` is its keys: `"hotReload" \| "selection" \| "project"`. |
 | `PictureFormat` | `"jpeg" \| "png"`: the format of a picture on the wire (editor.capture, editor.sheet, a crop). JPEG is the default (D-34). capture, gameView and the MCP bridge use this one type. |
 | `SelectParams` | `{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }`. `rect` picks an area like a Reference-mode drag and wins over `key` and `ref`. The page treats an absent `card` as `true`. |
 | `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. |
@@ -242,6 +243,33 @@ commandsHash({ ...manifest, commands: [{ id: "game.tap", title: "Tap", input: { 
 commandsHash({ ...manifest, commands: [] }); // "811c9dc5"
 ```
 
+Shapes of the project index (change project-index). They mirror the game's types of
+`@moku-labs/game/project` field by field; the protocol never imports that subpath.
+
+| Type | Fields |
+|---|---|
+| `ProjectAnchor` | `path` (root-relative POSIX) required. Optional: `binding`, `key`, `component`, `kind` (`"literal" \| "template" \| "idProp" \| "ident"`), `stem`. |
+| `ProjectFound` | `ProjectAnchor` plus `line` (1-based, read from disk at the call), `range` (`[startLine, startColumn, endLine, endColumn]`, 1-based, end column exclusive), `hash` (sha1 of the bytes; equals a files `version`), `broken?: true` (the file does not parse now: write no style edit). |
+| `ProjectMove` | `{ key, from, to }`: a key that left one file for another in one batch. |
+| `ProjectChange` | `{ files, moved, removed }` of one watch batch. |
+| `ProjectState` | `{ state: "off", reason }`, or `{ state: "on", revision, previous?, manifest?, defs, uses, broken, change? }`. `defs`: every key except `jsx:` to its def paths in def order (a conflict lists both). `uses`: `node:` and `style:` keys with uses to the paths of the uses. `broken`: broken file to its first parse error. Its readonly maps make it not assignable to `Json`: the hub sends it through `toWireValue`. |
+| `ProjectDelta` | `{ all, files, moved, removed }`: what a view drops. `all` when either state is off, there was none before, or `next.previous` is not the held revision. |
+| `FindParams` | `{ key }`: the files-channel `find` request. Its result is `ProjectFound[]`. |
+
+| Helper | Answers |
+|---|---|
+| `projectDelta(held, next)` | `all: true` with empty lists on a gap; else the lists of `next.change`, empty when absent. |
+| `firstDefinition(state, key)` | The first def path of a key; `undefined` when the index is off or does not know the key. |
+| `anchorKey(ref, path)` | `{ kind: "const", name }` to `style:<path>#<name>`; `{ kind: "text", key }` to `textStyle:<key>`. |
+
+```ts
+projectDelta(undefined, arrived); // { all: true, files: [], moved: [], removed: [] }
+firstDefinition(link.project(), "node:board/merge"); // "nodes/merge.ts"
+anchorKey({ kind: "const", name: "popupScreen" }, "features/ui/popup.tsx");
+// "style:features/ui/popup.tsx#popupScreen"
+parseFoundList([{ path: "nodes/merge.ts", line: 17, range: [17, 1, 30], hash: "a1" }]); // undefined
+```
+
 Editor-channel methods:
 
 | Kind | Method | Params | Result | Between |
@@ -250,6 +278,7 @@ Editor-channel methods:
 | notification | `sessions` | `SessionsParams`: `{ list: SessionInfo[] }`. Each `SessionInfo` carries `id`, `game`, `page`, `embedded`, `connectedAt`, the optional `heartbeat` and the optional `manifestHash` (`commandsHash` of its manifest, set by the hub; old clients ignore it). | | hub to tools |
 | notification | `hotReload` | `HotReload` | | hub to tools (published) |
 | notification | `selection` | `SelectionInfo \| null` | | editor page to hub, hub to tools (published) |
+| notification | `project` | `ProjectState` | | hub to tools (published, from the files event `files:project`) |
 | request | `selection` | `{}` | `SelectionInfo \| null` | tools to hub |
 | request | `select` | `SelectParams` | `SelectionInfo` | tools to hub, hub to the editor page |
 

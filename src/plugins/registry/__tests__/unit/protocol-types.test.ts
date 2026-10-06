@@ -8,6 +8,8 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  ProjectState,
+  PublishParams,
   RunResult,
   SessionInfo,
   SubId,
@@ -188,5 +190,17 @@ describe("protocol types", () => {
     const tap: Tap = { x: 206, y: 640, at: 15_234.5 };
     const json: Json = tap;
     expect(json).toEqual({ x: 206, y: 640, at: 15_234.5 });
+  });
+
+  it("PublishParams keeps hotReload, selection and project", () => {
+    expectTypeOf<keyof PublishParams>().toEqualTypeOf<"hotReload" | "selection" | "project">();
+    expectTypeOf<PublishParams["project"]>().toEqualTypeOf<ProjectState>();
+
+    const kept: PublishParams = {
+      hotReload: { hmr: true, owner: "bin" },
+      selection: null, // eslint-disable-line unicorn/no-null -- the wire value of "nothing is selected"
+      project: { state: "off", reason: "not opened" }
+    };
+    expect(Object.keys(kept)).toEqual(["hotReload", "selection", "project"]);
   });
 });

@@ -11,7 +11,7 @@
  * its fake clock, maps to the checkout's source: the built testing bundle carries the
  * playwright-core loader, which a browser bundle cannot hold.
  *
- * The fixture page of game v0.5.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
+ * The fixture page of game v0.6.0 also imports `@moku-labs/system` and `@moku-labs/native`, which
  * the editor does not depend on. They are linked from the checkout's node_modules into the copy's
  * own node_modules, so the bundler finds them and still takes `@moku-labs/game` from the editor.
  *
@@ -22,7 +22,7 @@
  * The bin serves the copy with Bun hot reload on (D-23): a spec that writes a game source sees the
  * game page reload and restore its checkpoint, and restores the file it wrote.
  *
- * The copy keeps the fixture's `bunfig.toml` (game v0.5.0 ships one): its `[serve.static]` loads
+ * The copy keeps the fixture's `bunfig.toml` (game v0.6.0 ships one): its `[serve.static]` loads
  * the hot swap plugin `@moku-labs/game/hot`, so a save of a view module swaps in place without a
  * reload (U10). A fixture without one gets that file written here (B3). The bin, started from the
  * editor root with `--root dist-e2e/game`, re-runs itself in the copy, where Bun reads it.
