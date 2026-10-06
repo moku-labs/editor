@@ -17,13 +17,9 @@
  */
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
-import { expect, type Tools, test } from "./fixtures";
+import { expect, gameRoot, type Tools, test } from "./fixtures";
 import { closeMore, isCompact, moreMenu, openMore, topBar } from "./top-bar";
-
-/** The project root the bin serves. */
-const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /**
  * A game source the save checks touch: an appended comment changes nothing the game shows. A
@@ -419,7 +415,7 @@ async function errorTones(page: Page): Promise<string[]> {
  * @returns Writes the original text again.
  */
 async function saveSource(): Promise<() => Promise<void>> {
-  const file = path.join(GAME_ROOT, SAVED_SOURCE);
+  const file = path.join(gameRoot(), SAVED_SOURCE);
   const original = await readFile(file, "utf8");
   await writeFile(file, `${original}\n// e2e save ${Date.now()}\n`);
   return () => writeFile(file, original);

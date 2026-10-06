@@ -15,9 +15,8 @@
  */
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Frame, Locator, Page } from "@playwright/test";
-import { expect, type Tools, test } from "./fixtures";
+import { expect, gameRoot, type Tools, test } from "./fixtures";
 import { barChecked, flipBarToggle, showPreview } from "./top-bar";
 
 /**
@@ -29,12 +28,6 @@ import { barChecked, flipBarToggle, showPreview } from "./top-bar";
 function withoutClock(text: string): string {
   return text.replace(/ · \d\d:\d\d:\d\d · /, " · ");
 }
-
-/** The captures folder of the game copy the bin serves. */
-const CAPTURES = fileURLToPath(new URL("../dist-e2e/game/.moku/captures/", import.meta.url));
-
-/** The project root the bin serves. */
-const GAME_ROOT = fileURLToPath(new URL("../dist-e2e/game/", import.meta.url));
 
 /** The view module of the tiny game, root-relative: it defines every keyed element. */
 const VIEW_FILE = "features/tiny/view.tsx";
@@ -49,7 +42,7 @@ const PANEL_KEY = "levelPanel";
  * @returns The line.
  */
 async function viewLine(key: string): Promise<number> {
-  const text = await readFile(path.join(GAME_ROOT, VIEW_FILE), "utf8");
+  const text = await readFile(path.join(gameRoot(), VIEW_FILE), "utf8");
   const line = text.split("\n").findIndex(row => row.includes(`key="${key}"`)) + 1;
   expect(line, `${VIEW_FILE} writes ${key}`).toBeGreaterThan(0);
   return line;
@@ -80,7 +73,7 @@ const TEXT_FENCE = /^```text\n([\s\S]*?)\n```$/m;
 async function cardBlock(line: string, pattern: RegExp): Promise<string> {
   const card = pattern.exec(line)?.[1] ?? "";
   expect(card, line).not.toBe("");
-  const text = await readFile(path.join(GAME_ROOT, card), "utf8");
+  const text = await readFile(path.join(gameRoot(), card), "utf8");
   return TEXT_FENCE.exec(text)?.[1] ?? "";
 }
 
@@ -722,7 +715,7 @@ async function pulses(page: Page): Promise<string[]> {
 // ---------------------------------------------------------------------------------------------
 
 test.afterEach(async () => {
-  await rm(CAPTURES, { recursive: true, force: true });
+  await rm(path.join(gameRoot(), ".moku", "captures"), { recursive: true, force: true });
 });
 
 test.describe("pane · the pinned preview plays the game", () => {
