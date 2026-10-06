@@ -16,9 +16,10 @@ afterEach(() => {
 });
 
 describe("createHandlers", () => {
-  it("hooks the three global events", () => {
+  it("hooks the four global events", () => {
     expect(Object.keys(createHandlers(createCtx()))).toEqual([
       "link:status",
+      "link:project",
       "workspace:changed",
       "workspace:open-file"
     ]);

@@ -7,7 +7,7 @@ import { mountWorkspace, prepared, settle } from "../render";
 
 const fixture = fixtureText("ui-styles.txt");
 
-/** The text styles file (flowView config `stylesFile`). */
+/** The text styles file (the one the fake project index names). */
 const STYLES = "features/ui/styles.ts";
 
 afterEach(() => {
@@ -142,13 +142,13 @@ describe("Code tab (C3)", () => {
     unmount();
   });
 
-  it("shows the placeholder of a node without a file", async () => {
+  it("shows the placeholder of a node the project index does not know", async () => {
     const { ctx, actions } = await prepared();
     actions.focus.select("main/settings");
     const { host, unmount } = await mountWorkspace(ctx);
     await settle(() => actions.inspector.setTab("code"));
     await settle();
-    expect(inspectorOf(host).textContent).toContain("This node has no file of its own.");
+    expect(inspectorOf(host).textContent).toContain("Not in the project index: node:main/settings");
     unmount();
   });
 });
@@ -219,9 +219,7 @@ describe("Styles tab (C4, M10)", () => {
       actions.inspector.openStyles().catch(() => {});
     });
     await settle();
-    expect(inspectorOf(host).textContent).toContain(
-      "No text styles at features/ui/styles.ts · set flowView.stylesFile"
-    );
+    expect(inspectorOf(host).textContent).toContain("No text styles at features/ui/styles.ts");
     unmount();
   });
 });

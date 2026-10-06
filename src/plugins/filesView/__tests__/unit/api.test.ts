@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFilesViewApi } from "../../api";
-import { rebuildUsedBy } from "../../links/used-by";
 import { createFilesViewState } from "../../state";
 import { notify, subscribe } from "../../store";
-import { createCtx } from "../helpers";
+import { createCtx, PROJECT } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The api, member by member, over a mock ctx with the fake files; the state
@@ -11,7 +10,7 @@ import { createCtx } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A ctx and its api with the index built and the graph loaded.
+ * A ctx and its api with the file tree built and the graph loaded.
  *
  * @returns Both.
  */
@@ -32,9 +31,8 @@ describe("createFilesViewState", () => {
       tabs: [],
       active: undefined,
       graph: undefined,
-      overrides: {},
-      usedBy: undefined,
       confirmClose: undefined,
+      following: undefined,
       removers: [],
       paletteRemover: undefined
     });
@@ -129,7 +127,7 @@ describe("createFilesViewApi", () => {
     expect(api.files().map(entry => entry.path)).toEqual([
       ".moku/captures/series-2026-09-24-1015/index.json",
       ".moku/captures/a.png",
-      ".moku/editor/files.json",
+      ".moku/editor/layout.json",
       ".moku/notes/2026-09-24-first.md",
       "features/settings/nodes.ts",
       "flows/board.ts",
@@ -141,39 +139,43 @@ describe("createFilesViewApi", () => {
     expect(createFilesViewApi(createCtx()).files()).toEqual([]);
   });
 
-  it("fileOf, flowFileOf and usedBy follow the protocol rule against the index", async () => {
+  it("fileOf, flowFileOf and usedBy answer from the project index", async () => {
     const { api } = await ready();
     expect(api.fileOf({ flow: "board", node: "awaitIntent" })).toBe("nodes/await-intent.ts");
-    expect(api.fileOf({ flow: "main", node: "board" })).toBeUndefined();
     expect(api.fileOf({ flow: "settingsPopup", node: "open" })).toBe("features/settings/nodes.ts");
+    expect(api.fileOf({ flow: "main", node: "board" })).toBeUndefined();
     expect(api.flowFileOf("board")).toBe("flows/board.ts");
     expect(api.flowFileOf("rewardPopup")).toBeUndefined();
     expect(api.usedBy("nodes/merge.ts")).toEqual({
       flows: [],
-      nodes: [{ flow: "board", node: "merge" }]
+      nodes: [{ flow: "board", node: "merge" }],
+      usedIn: ["flows/board.ts"]
     });
-    expect(api.usedBy("flows/board.ts")).toEqual({ flows: ["board"], nodes: [] });
-    expect(api.usedBy("README.md")).toEqual({ flows: [], nodes: [] });
+    expect(api.usedBy("flows/board.ts")).toEqual({ flows: ["board"], nodes: [], usedIn: [] });
+    expect(api.usedBy("README.md")).toEqual({ flows: [], nodes: [], usedIn: [] });
   });
 
-  it("fileOf and usedBy prefer a graph node's own file (F-H2), like flowView", async () => {
-    const { ctx, api } = await ready();
-    ctx.state.graph = {
-      main: "board",
-      flows: { board: { start: "merge", edges: {}, nodes: { merge: { file: "features/x.ts" } } } }
+  it("answers the newest project state, with no file tree and no graph", () => {
+    const ctx = createCtx();
+    const api = createFilesViewApi(ctx);
+    expect(api.fileOf({ flow: "board", node: "merge" })).toBe("nodes/merge.ts");
+    ctx.link.projectValue = {
+      ...PROJECT,
+      revision: "r2",
+      defs: { ...PROJECT.defs, "node:board/merge": ["nodes/board/merge.ts"] }
     };
-    rebuildUsedBy(ctx);
-    expect(api.fileOf({ flow: "board", node: "merge" })).toBe("features/x.ts");
-    expect(api.usedBy("features/x.ts")).toEqual({
-      flows: [],
-      nodes: [{ flow: "board", node: "merge" }]
-    });
-    expect(api.usedBy("nodes/merge.ts").nodes).toEqual([]);
+    expect(api.fileOf({ flow: "board", node: "merge" })).toBe("nodes/board/merge.ts");
+    expect(api.usedBy("nodes/board/merge.ts").nodes).toEqual([{ flow: "board", node: "merge" }]);
   });
 
-  it("usedBy and fileOf work without a graph or an index", () => {
-    const api = createFilesViewApi(createCtx());
-    expect(api.usedBy("nodes/merge.ts")).toEqual({ flows: [], nodes: [] });
+  it("has no file while the index is off or before its first state", () => {
+    const ctx = createCtx();
+    const api = createFilesViewApi(ctx);
+    ctx.link.projectValue = { state: "off", reason: "typescript is not installed" };
+    expect(api.fileOf({ flow: "board", node: "merge" })).toBeUndefined();
+    expect(api.flowFileOf("board")).toBeUndefined();
+    expect(api.usedBy("nodes/merge.ts")).toEqual({ flows: [], nodes: [], usedIn: [] });
+    ctx.link.projectValue = undefined;
     expect(api.fileOf({ flow: "board", node: "merge" })).toBeUndefined();
   });
 

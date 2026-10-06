@@ -3,7 +3,7 @@ import { createFilesViewState } from "../../state";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createFilesViewState: every field of the spec's FilesViewState, empty
-// collections, overrides {}, undefined elsewhere, a fresh object per call.
+// collections, undefined elsewhere, a fresh object per call.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("createFilesViewState", () => {
@@ -16,9 +16,8 @@ describe("createFilesViewState", () => {
         "tabs",
         "active",
         "graph",
-        "overrides",
-        "usedBy",
         "confirmClose",
+        "following",
         "listeners",
         "removers",
         "paletteRemover"
@@ -26,13 +25,13 @@ describe("createFilesViewState", () => {
     );
   });
 
-  it("starts with empty collections, overrides {} and undefined elsewhere", () => {
+  it("starts with empty collections and undefined elsewhere", () => {
     const state = createFilesViewState();
     expect(state.index).toBeUndefined();
     expect(state.indexing).toBeUndefined();
     expect(state.active).toBeUndefined();
     expect(state.graph).toBeUndefined();
-    expect(state.usedBy).toBeUndefined();
+    expect(state.following).toBeUndefined();
     expect(state.confirmClose).toBeUndefined();
     expect(state.paletteRemover).toBeUndefined();
     expect(state.expanded).toBeInstanceOf(Set);
@@ -41,7 +40,6 @@ describe("createFilesViewState", () => {
     expect(state.listeners.size).toBe(0);
     expect(state.tabs).toEqual([]);
     expect(state.removers).toEqual([]);
-    expect(state.overrides).toEqual({});
   });
 
   it("returns a fresh object with fresh collections on every call", () => {
@@ -52,7 +50,6 @@ describe("createFilesViewState", () => {
     expect(second.expanded).not.toBe(first.expanded);
     expect(second.listeners).not.toBe(first.listeners);
     expect(second.removers).not.toBe(first.removers);
-    expect(second.overrides).not.toBe(first.overrides);
     first.tabs.push({} as never);
     first.expanded.add("flows");
     expect(second.tabs).toEqual([]);

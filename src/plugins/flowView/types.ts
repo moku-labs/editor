@@ -9,7 +9,7 @@ import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
 import type { FilesClient } from "../link/types";
-import type { Json, LinkStatus, RunResult, ToolsBoot } from "../registry/protocol";
+import type { Json, LinkStatus, ProjectState, RunResult, ToolsBoot } from "../registry/protocol";
 import type { PreviewState, ReloadResult } from "../workspace/types";
 import type { CameraActions, CameraApi, CameraState } from "./camera/types";
 import type { FocusActions, FocusApi, FocusState } from "./focus/types";
@@ -81,7 +81,8 @@ export type FlowHubConfig = {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { flowView: { stylesFile: "src/ui/styles.ts" } } });
+ * createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
+ * // a stepper burst is written 300 ms after the last press
  * ```
  */
 export type FlowViewConfig = {
@@ -91,11 +92,6 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /**
-   * The text-styles file the Styles tab reads and edits. Default undefined: found once per session
-   * as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(`.
-   */
-  stylesFile: string | undefined;
   /** Debounce before a style stepper burst is written. Default 600. */
   styleSaveDelayMs: number;
   /** The layout file and the ELK engine. */
@@ -117,7 +113,7 @@ export type NodeId = string; // eslint-disable-line sonarjs/redundant-type-alias
 export type ItemKey = string; // eslint-disable-line sonarjs/redundant-type-aliases -- the spec names instance keys
 
 /**
- * One graph node on the wire (game.graph). `file` arrives with game follow-up F-H2 (dev only).
+ * One graph node on the wire (game.graph). Its file comes from the project index (`node:<id>`).
  */
 export type GraphNodeJson = {
   flow: string;
@@ -131,7 +127,6 @@ export type GraphNodeJson = {
   slot?: string;
   subFlow?: string;
   owner?: string;
-  file?: string;
 };
 
 /**
@@ -421,6 +416,8 @@ export type FlowServices = {
   readonly status: () => LinkStatus;
   /** link.boot(). */
   readonly boot: () => ToolsBoot | undefined;
+  /** link.project(): the project index state; undefined before the first. */
+  readonly project: () => ProjectState | undefined;
   /** workspace.show("flow"). */
   readonly show: () => void;
   /** Whether Flow is the shown workspace (workspace.active()). */
@@ -463,4 +460,5 @@ export type FlowHooks = {
   readonly "workspace:select-node": (payload: ToolsEvents["workspace:select-node"]) => void;
   readonly "workspace:focus-frame": (payload: ToolsEvents["workspace:focus-frame"]) => void;
   readonly "workspace:density": (payload: ToolsEvents["workspace:density"]) => void;
+  readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
 };

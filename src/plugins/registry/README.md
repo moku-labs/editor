@@ -198,7 +198,6 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `session-choice.ts` | `pickSession(sessions, requested?)`: the one session rule of a game request. The asked id, else the only session, else the one embedded session; `undefined` when none or several fit. An unknown asked id never falls back. Generic over `{ id, embedded }`, so it returns the caller's own type. The hub's `chooseSession` wraps it and throws -32003; the MCP bridge's `chooseSession` uses it as is. |
 | `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
-| `source-files.ts` | The node to file rule: `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`. |
 | `devices.ts` | The 21 device presets and their rules, shared by workspace and gameView: `DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `deviceById`, `presetOf`, `isDevicePresetId`, `screenOf`, `resolveDevice`. Types `DevicePresetId`, `Orientation`, `DeviceSize` are in `types.ts`. |
 | `overlay-host.ts` | `HOST_ATTRIBUTE`: the marker overlay sets on its host; the bridge's tap watch skips events whose path holds it. |
 | `reload.ts` | The two reload signals (U9, U10): `isReloading(status)`, true for the neutral `lost` of an expected reload (`reloading: true`); `isHotSwapEntry(entry)`, a type guard to `HotSwapEntry`, true for the game.log entry of an applied dev hot swap (game 0.5.0: event `ui:hot-swap`, numeric `ts`, `data.file`). A refused swap logs `ui:hot-refused` and the page reloads. The game.log value is the whole trace, so a caller tests its entries. |
@@ -255,12 +254,17 @@ Shapes of the project index (change project-index). They mirror the game's types
 | `ProjectState` | `{ state: "off", reason }`, or `{ state: "on", revision, previous?, manifest?, defs, uses, broken, change? }`. `defs`: every key except `jsx:` to its def paths in def order (a conflict lists both). `uses`: `node:` and `style:` keys with uses to the paths of the uses. `broken`: broken file to its first parse error. Its readonly maps make it not assignable to `Json`: the hub sends it through `toWireValue`. |
 | `ProjectDelta` | `{ all, files, moved, removed }`: what a view drops. `all` when either state is off, there was none before, or `next.previous` is not the held revision. |
 | `FindParams` | `{ key }`: the files-channel `find` request. Its result is `ProjectFound[]`. |
+| `NodeRef` | `{ flow, node }`: a graph node, the `node:<flow>/<node>` key of the index. |
+
+The node to file rule is gone (amendment N1): `nodeFile`, `flowFile`, `kebab`, `parseOverrides`,
+`SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH` and `SourceOverrides` are removed, and
+`.moku/editor/files.json` is not read. The index is the only source of code locations.
 
 | Helper | Answers |
 |---|---|
 | `projectDelta(held, next)` | `all: true` with empty lists on a gap; else the lists of `next.change`, empty when absent. |
 | `firstDefinition(state, key)` | The first def path of a key; `undefined` when the index is off or does not know the key. |
-| `anchorKey(ref, path)` | `{ kind: "const", name }` to `style:<path>#<name>`; `{ kind: "text", key }` to `textStyle:<key>`. |
+| `anchorKey(ref, path)` | `{ kind: "const", name }` and `{ kind: "call", name }` (a style function's call, G2: `name` is `<function>` or `<function>.<property>`) to `style:<path>#<name>`; `{ kind: "text", key }` to `textStyle:<key>`. |
 
 ```ts
 projectDelta(undefined, arrived); // { all: true, files: [], moved: [], removed: [] }

@@ -7,7 +7,6 @@ import { linkPlugin } from "../../link";
 import type { FilesClient } from "../../link/types";
 import type { FileEntry, LinkStatus } from "../../registry/protocol";
 import { codeOf, messageOf } from "../errors";
-import { loadOverrides, rebuildUsedBy } from "../links/used-by";
 import { notify } from "../store";
 import type { FileIndex, FilesViewCtx } from "../types";
 import { WALK_CONCURRENCY, WALK_MAX_DEPTH } from "../types";
@@ -173,9 +172,8 @@ async function walk(ctx: FilesViewCtx): Promise<FileIndex | undefined> {
 }
 
 /**
- * Builds the file index (single flight: a running build is shared), then loads the overrides,
- * rebuilds Used by, replaces the palette items and notifies. A failing root list leaves the
- * index as it was. Never rejects.
+ * Builds the file index (single flight: a running build is shared), then replaces the palette
+ * items and notifies. A failing root list leaves the index as it was. Never rejects.
  *
  * @param ctx - Domain context of filesView.
  * @returns When the build is done.
@@ -188,8 +186,6 @@ export function buildIndex(ctx: FilesViewCtx): Promise<void> {
     const index = await walk(ctx);
     if (index === undefined) return;
     state.index = index;
-    state.overrides = await loadOverrides(ctx);
-    rebuildUsedBy(ctx);
     replacePaletteItems(ctx);
   })()
     .catch((error: unknown) => {

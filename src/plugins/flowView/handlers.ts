@@ -1,6 +1,7 @@
 /**
  * @file flowView plugin — hooks of the global tools events (R4): link:status (stale marking, none
- * in an expected reload; first-live loads, empty reset), workspace:changed (active flag, default camera),
+ * in an expected reload; first-live loads, empty reset), link:project (the inspector follows the
+ * project index), workspace:changed (active flag, default camera),
  * workspace:density (the layout spacing), and the intents of other views: workspace:select-node,
  * workspace:focus-frame. The handler of an intent shows its own workspace; an intent that comes
  * before the first flow values waits for them (intents.ts).
@@ -176,14 +177,28 @@ export function onDensity(ctx: FlowCtx): (payload: ToolsEvents["workspace:densit
 }
 
 /**
+ * link:project — the inspector follows an agent's edits and moves (D-46): the Code tab reads its
+ * node again, the Styles group the text styles, the Info tab re-renders with the indexed file.
+ *
+ * @param ctx - Domain context of flowView.
+ * @returns The handler.
+ */
+export function onProject(ctx: FlowCtx): (payload: ToolsEvents["link:project"]) => void {
+  return change => {
+    actionsOf(ctx).inspector.followProject(change);
+  };
+}
+
+/**
  * flowView's hooks factory (`hooks: createHandlers`).
  *
  * @param ctx - Domain context of flowView.
- * @returns The five hooks.
+ * @returns The six hooks.
  */
 export function createHandlers(ctx: FlowCtx): FlowHooks {
   return {
     "link:status": onLinkStatus(ctx),
+    "link:project": onProject(ctx),
     "workspace:changed": onWorkspaceChanged(ctx),
     "workspace:select-node": onSelectNode(ctx),
     "workspace:focus-frame": onFocusFrame(ctx),

@@ -3,6 +3,8 @@
  * sort arrows, aria-sort) and the row hover that rings the first scene node drawing the texture.
  */
 import type { JSX } from "preact";
+import { linkPlugin } from "../../link";
+import { manifestOf, projectOffText } from "../../panels/shared/project";
 import { filterTo, hoverTexture, sortBy } from "../actions";
 import { bundleCounts, firstNodeWithTexture, textureRowsOf } from "../derive";
 import { fixed, tagOfUse } from "../format";
@@ -72,6 +74,23 @@ export function BundleChip(props: BundleChipProps): JSX.Element {
 }
 
 /**
+ * Why there is no catalogue: the index is off, it names no manifest, or the named file holds no
+ * version-1 asset manifest.
+ *
+ * @param ctx - Domain context of renderView.
+ * @returns The reason.
+ */
+function noManifestText(ctx: RenderViewCtx): string {
+  const project = ctx.require(linkPlugin).project();
+  const path = manifestOf(project);
+  const offText = projectOffText(project);
+  if (offText !== undefined) return offText;
+  return path === undefined
+    ? "The project index found no asset manifest"
+    : `No asset manifest of version 1 at ${path}`;
+}
+
+/**
  * The line under the head when the table has no rows.
  *
  * @param ctx - Domain context of renderView.
@@ -80,8 +99,7 @@ export function BundleChip(props: BundleChipProps): JSX.Element {
 function emptyLine(ctx: RenderViewCtx): string | undefined {
   const { catalogue, assets } = ctx.state;
   if (catalogue === null) {
-    const paths = ctx.config.manifestPaths.join(", ");
-    return `No asset manifest found at ${paths} · per-texture data needs game.textures (follow-up F-R2)`;
+    return `${noManifestText(ctx)} · per-texture data needs game.textures (follow-up F-R2)`;
   }
   if (catalogue === undefined) return "The asset manifest is read when Render opens.";
   if (assets === undefined) return "Waiting for game.assets.";

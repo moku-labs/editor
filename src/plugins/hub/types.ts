@@ -275,8 +275,8 @@ export type SharedSub = {
 };
 
 /**
- * A method `publish` sends to the tools pages (R6, A5): `"hotReload"` or `"selection"`, the keys of
- * the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
+ * A method `publish` sends to the tools pages (R6, A5): `"hotReload"`, `"selection"` or
+ * `"project"`, the keys of the protocol's PublishParams. The protocol's PublishMethod, re-exported under hub's name.
  */
 export type { PublishMethod } from "../registry/protocol";
 
@@ -437,8 +437,9 @@ export type HubApi = {
    * is stored through `toWireValue`. A `null` selection goes out as a `selection` notification
    * without params (the wire refuses null params).
    *
-   * @param method - The state: `"hotReload"` or `"selection"`.
-   * @param params - Its value: a HotReload, or a SelectionInfo or null for the selection.
+   * @param method - The state: `"hotReload"`, `"selection"` or `"project"`.
+   * @param params - Its value: a HotReload, a SelectionInfo or null for the selection, or a
+   * ProjectState (the hub publishes `project` itself from `files:project`).
    * @example
    * ```ts
    * // pages tells every tools page whether Bun reloads the game page on a save.
@@ -475,6 +476,13 @@ export type HubApi = {
    * ```
    */
   path(): string;
+};
+
+/**
+ * The hooks of the hub: the files plugin's project state, published as `editor.project`.
+ */
+export type HubHooks = {
+  readonly "files:project": (state: ServerEvents["files:project"]) => void;
 };
 
 /**

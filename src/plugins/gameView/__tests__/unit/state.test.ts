@@ -38,14 +38,13 @@ describe("createGameViewState", () => {
     expect(state.listeners.size).toBe(0);
   });
 
-  it("starts without pick bookmarks, a last pick, searches or found style blocks", () => {
+  it("starts without pick bookmarks, a last pick, index answers or found style blocks", () => {
     const state = createGameViewState();
     expect(state.bookmarks).toEqual([]);
     expect(state.pick).toBeUndefined();
-    expect(state.searches.size).toBe(0);
+    expect(state.found.size).toBe(0);
     expect(state.blocks.size).toBe(0);
     expect(state.spawns.size).toBe(0);
-    expect(state.missedDefinitions.size).toBe(0);
     expect(state.cards.size).toBe(0);
   });
 

@@ -1,17 +1,19 @@
 /**
  * @file flowView inspector module — the inspector actions behind the Inspector tabs, the palette
- * items and the hooks: tabs, the Code tab (read, edit, save, reload), the Styles tab (the styles
- * file, cards, steppers, keys for the palette), node files, "Open in Files" (R4) and "Open in
- * editor" (D-08).
+ * items and the hooks: tabs, the Code tab (read, edit, save, reload), the Styles tab (cards,
+ * steppers, keys for the palette), node files from the project index, the link:project follow,
+ * "Open in Files" (R4) and "Open in editor" (D-08).
  */
 import { editorUrlOf } from "../../panels/shared/editor-url";
+import { findFresh, textStylesFile } from "../../panels/shared/project";
 import { isStyleEditError, loadStyleFile } from "../../panels/shared/style-edit";
+import { firstDefinition } from "../../registry/protocol";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
-import { lookupOf, openCode, reloadCode, saveCode } from "./code";
-import { fileOfNode, lineOf } from "./files";
+import { openCode, reloadCode, saveCode, showCode } from "./code";
+import { nodeKey } from "./files";
+import { codeToFollow, textStylesChanged } from "./follow";
 import { keysOf, openStyles, stepStyle } from "./styles";
-import { stylesFileOf } from "./styles-file";
 import type { InspectorActions } from "./types";
 
 /**
@@ -41,6 +43,17 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
   const { inspector } = ctx.state;
   let request = 0;
 
+  /**
+   * Starts a new Code tab request; older ones drop their result.
+   *
+   * @returns The check that this request is still the newest.
+   */
+  const nextRequest = (): (() => boolean) => {
+    request += 1;
+    const mine = request;
+    return () => mine === request;
+  };
+
   const actions: InspectorActions = {
     setTab: tab => {
       inspector.tab = tab;
@@ -51,9 +64,7 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
     },
 
     openCode: async id => {
-      request += 1;
-      const mine = request;
-      await openCode(ctx, env, id, () => mine === request);
+      await openCode(ctx, env, id, nextRequest());
     },
 
     edit: () => {
@@ -119,7 +130,8 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
 
     readStyleKeys: async () => {
       try {
-        const file = await stylesFileOf(ctx, env);
+        const file = textStylesFile(env.project());
+        inspector.keysFile = file;
         const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
         const isReadable = loaded !== undefined && !isStyleEditError(loaded);
         env.setStyleItems(isReadable ? keysOf(loaded.file.blocks) : []);
@@ -129,19 +141,13 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
       }
     },
 
-    stylesFile: () => stylesFileOf(ctx, env),
-
     fileOf: async id => {
-      const { graph } = ctx.state.data;
-      if (graph === undefined) return;
-      const path = fileOfNode(await lookupOf(ctx, env), graph, id);
-      if (path === undefined) return;
-      try {
-        const file = await env.files().read(path);
-        return { path, line: lineOf(file.text, id.slice(id.indexOf("/") + 1)) };
-      } catch {
-        return { path, line: 1 };
-      }
+      const fresh = await findFresh(env.files(), nodeKey(id));
+      if (fresh !== undefined) return { path: fresh.found.path, line: fresh.found.line };
+
+      // The index knows the node but its file was not read: open it at the top.
+      const path = firstDefinition(env.project(), nodeKey(id));
+      return path === undefined ? undefined : { path, line: 1 };
     },
 
     openInFiles: (path, line) => {
@@ -151,6 +157,14 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
     editorUrl: (path, line) => {
       const boot = env.boot();
       return boot === undefined ? undefined : editorUrlOf(boot.editorUrl, boot.root, path, line);
+    },
+
+    followProject: ({ state, delta }) => {
+      const node = codeToFollow(inspector, delta);
+      if (node !== undefined) showCode(ctx, env, node, nextRequest()).catch(() => {});
+      if (textStylesChanged(inspector.keysFile, state, delta))
+        actions.readStyleKeys().catch(() => {});
+      notify(ctx.state);
     }
   };
   return actions;

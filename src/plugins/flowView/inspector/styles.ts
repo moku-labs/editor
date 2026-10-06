@@ -1,46 +1,56 @@
 /**
  * @file flowView inspector module — the Styles tab controller over the shared style edit
- * (panels/shared/style-edit, R4, R8): load the text-style cards of the styles file (configured or
- * found), no card chosen until the person picks one, stepper bursts debounced into one
- * version-checked write of one numeric literal, then the D-07 reload. flowView owns only the
- * texts of the shared error codes.
+ * (panels/shared/style-edit, R4, R8): load the text-style cards of the file the project index
+ * names, no card chosen until the person picks one, stepper bursts debounced into one
+ * version-checked write of one numeric literal (none while the file does not parse, D-44), then
+ * the D-07 reload. flowView owns only the texts of the shared error codes.
  */
+import { NOT_IN_INDEX_TEXT, projectOffText, textStylesFile } from "../../panels/shared/project";
 import type { StyleBlock, StyleEditError } from "../../panels/shared/style-edit";
 import {
   fieldRule,
   isStyleEditError,
   loadStyleFile,
   parseStyleFile,
+  STYLE_BROKEN_TEXT,
   stepValue,
   writeNumber
 } from "../../panels/shared/style-edit";
+import type { ProjectState } from "../../registry/protocol";
 import { bareMessage } from "../../registry/protocol";
 import type { ReloadResult } from "../../workspace/types";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment } from "../types";
-import { stylesFileOf } from "./styles-file";
 import type { StylesState } from "./types";
 
 /**
  * flowView's text for a refused style edit (one row per shared code).
  *
  * @param error - The shared error.
- * @param file - The styles file; undefined when none was found.
+ * @param file - The styles file; undefined when the index names none.
+ * @param project - The project state (`link.project()`): why there is no styles file.
  * @returns The text shown on the card.
  * @example
  * ```ts
- * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts"); // "lineHeight has no edit rule · edit it in Files"
- * styleErrorText({ error: "no-file" }, undefined); // "No file calls defineTextStyles( · set flowView.stylesFile"
+ * styleErrorText({ error: "read-only", path: "lineHeight" }, "features/ui/styles.ts", project); // "lineHeight has no edit rule · edit it in Files"
+ * styleErrorText({ error: "no-file" }, undefined, { state: "off", reason: "typescript is not installed" });
+ * // "Project index is off: typescript is not installed"
  * ```
  */
-export function styleErrorText(error: StyleEditError, file: string | undefined): string {
+export function styleErrorText(
+  error: StyleEditError,
+  file: string | undefined,
+  project: ProjectState | undefined
+): string {
   const path = error.path ?? "the field";
   const key = error.key ?? "the style";
   switch (error.error) {
     case "no-file": {
-      return file === undefined
-        ? "No file calls defineTextStyles( · set flowView.stylesFile"
-        : `No text styles at ${file} · set flowView.stylesFile`;
+      if (file !== undefined) return `No text styles at ${file}`;
+      return projectOffText(project) ?? `${NOT_IN_INDEX_TEXT}: text styles`;
+    }
+    case "broken": {
+      return STYLE_BROKEN_TEXT;
     }
     case "parse": {
       return `Can't read ${file} safely · Open in Files`;
@@ -98,7 +108,7 @@ export function keysOf(blocks: readonly StyleBlock[]): string[] {
 }
 
 /**
- * The Styles tab with no cards: no styles file, or one that cannot be read.
+ * The Styles tab with no cards: no text-styles file in the index, or one that cannot be read.
  *
  * @param file - The styles file, if one was found.
  * @param error - Why there are no cards.
@@ -122,7 +132,8 @@ function emptyStyles(file: string | undefined, error: StyleEditError): StylesSta
 }
 
 /**
- * Loads the styles file into the Styles tab and replaces the palette group Styles. No card is
+ * Loads the index's text-styles file into the Styles tab and replaces the palette group Styles
+ * (remembered as the file the group was read from). No card is
  * chosen unless asked for (no preselect); a load that lands after the user chose a card or pressed
  * a stepper keeps that card and the pending step.
  *
@@ -133,7 +144,8 @@ function emptyStyles(file: string | undefined, error: StyleEditError): StylesSta
  */
 export async function openStyles(ctx: FlowCtx, env: FlowEnvironment, key?: string): Promise<void> {
   const { inspector } = ctx.state;
-  const file = await stylesFileOf(ctx, env);
+  const file = textStylesFile(env.project());
+  inspector.keysFile = file;
   const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
   if (loaded === undefined || isStyleEditError(loaded)) {
     inspector.styles = emptyStyles(file, loaded ?? { error: "no-file" });
@@ -229,7 +241,7 @@ export async function writeStyle(ctx: FlowCtx, env: FlowEnvironment): Promise<vo
   // A refusal of the shared style edit shows on the card; nothing was written.
   if (isStyleEditError(written)) {
     styles.error = written;
-    styles.result = { ok: false, text: styleErrorText(written, file) };
+    styles.result = { ok: false, text: styleErrorText(written, file, env.project()) };
     notify(ctx.state);
     return;
   }
@@ -274,7 +286,10 @@ export function stepStyle(
   const rule = fieldRule({ kind: "text", key }, path);
   if (rule === undefined) {
     styles.error = { error: "read-only", path };
-    styles.result = { ok: false, text: styleErrorText(styles.error, styles.file) };
+    styles.result = {
+      ok: false,
+      text: styleErrorText(styles.error, styles.file, env.project())
+    };
     notify(ctx.state);
     return;
   }

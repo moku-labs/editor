@@ -1,13 +1,19 @@
-/* filesView · UsedBy. "Used by" and its chips on the shared [data-chip] atom (mono; flow chips teal), and the muted lines without a game or without a match. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* filesView · UsedBy. A "Used by" row of chips (flow, node) on the shared [data-chip] atom (mono; flow chips teal), a "Used in" row of file chips, and the muted line when the index is off or knows nothing of the file. Data attributes and elements only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-panel="files"] [data-part="used-by"]) {
   :scope {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line-1);
+    font-size: var(--font-size-12);
+  }
+
+  [data-row] {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--line-1);
-    font-size: var(--font-size-12);
   }
 
   [data-label],

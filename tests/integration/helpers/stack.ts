@@ -104,7 +104,8 @@ export type Stack = {
 /**
  * Starts the whole stack: `__MOKU_GAME_DEV__ = true`, `createProject("tiny")`, `startServer`,
  * `installPage`, `startAgent(createTinyGame())`, `bootTools`, then waits until the link is `live`
- * with a manifest.
+ * with a manifest and holds the first project state (the index opens on the server's start, not
+ * awaited).
  *
  * @param options - What each part takes.
  * @returns The live stack.
@@ -119,8 +120,11 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
   const tools = await bootTools(server, options.tools);
   const { link } = tools.app;
   await until(
-    () => link.status().kind === "live" && link.manifest() !== undefined,
-    "a live link with a manifest"
+    () =>
+      link.status().kind === "live" &&
+      link.manifest() !== undefined &&
+      link.project() !== undefined,
+    "a live link with a manifest and a project state"
   );
   return { kind: "stack", root, server, page, game, agent, tools };
 }

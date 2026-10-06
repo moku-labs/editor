@@ -4,8 +4,8 @@
 import type { FilesViewState } from "./types";
 
 /**
- * Creates the initial filesView state: empty collections, overrides `{}`, nothing indexed,
- * no graph, no tab.
+ * Creates the initial filesView state: empty collections, nothing indexed, no graph, no tab,
+ * no project delta in flight.
  *
  * @returns A fresh state.
  */
@@ -17,9 +17,8 @@ export function createFilesViewState(): FilesViewState {
     tabs: [],
     active: undefined,
     graph: undefined,
-    overrides: {},
-    usedBy: undefined,
     confirmClose: undefined,
+    following: undefined,
     listeners: new Set(),
     removers: [],
     paletteRemover: undefined

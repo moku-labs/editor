@@ -40,7 +40,7 @@ function factsOf(node: SceneNode, extra: Partial<ReferenceFacts> = {}): Referenc
     parents: [],
     position: { path: "board/awaitIntent", flow: "board", node: "awaitIntent" },
     last: undefined,
-    source: { kind: "defined", path: "src/hud/Hud.tsx", line: 2 },
+    source: { kind: "defined", path: "src/hud/Hud.tsx", line: 2, range: [2, 1, 2, 42] },
     block: undefined,
     flags: [],
     value: undefined,
@@ -97,12 +97,12 @@ describe("referenceLine (round 2b R13)", () => {
     );
   });
 
-  it("leaves out what is not known; marks a loop key", () => {
+  it("leaves out what is not known; a key answered by a pattern names its element's line", () => {
     const loose = factsOf(
       { ...COIN, refRect: undefined },
-      { position: {}, source: { kind: "defined", path: "a.tsx", line: 9, loop: true } }
+      { position: {}, source: { kind: "defined", path: "a.tsx", line: 9, range: [8, 5, 20, 14] } }
     );
-    expect(referenceLine(loose, undefined, undefined)).toBe("@moku coinPill row · a.tsx:9 (loop)");
+    expect(referenceLine(loose, undefined, undefined)).toBe("@moku coinPill row · a.tsx:9");
     expect(referenceLine(factsOf(COIN, { source: undefined }), undefined, undefined)).toMatch(
       /^@moku coinPill row · board\/awaitIntent · ref \d+,\d+ \d+×\d+$/
     );

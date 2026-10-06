@@ -4,16 +4,17 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkStatus } from "../../../registry/protocol";
 import { createFilesViewApi } from "../../api";
+import { onLinkProject } from "../../handlers";
 import { createFilesPanel } from "../../panel";
 import { findTab } from "../../tabs/model";
 import type { FilesViewApi } from "../../types";
 import { FilesView } from "../../view/FilesView";
-import { createCtx, settle, type TestCtx } from "../helpers";
+import { createCtx, PROJECT, settle, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The Files view: tree roles and keys, tabs with the modified dot and the
-// discard popover, the file bar and the conflict bar, Used-by chips, empty
-// texts, no class attribute anywhere.
+// discard popover, the file bar and the conflict bar, Used-by and Used-in
+// chips from the project index, empty texts, no class attribute anywhere.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -43,7 +44,7 @@ afterEach(() => {
  */
 function mount(): void {
   act(() => {
-    render(h(FilesView, { ctx, api, status }), root);
+    render(h(FilesView, { ctx, api }), root);
   });
 }
 
@@ -586,15 +587,13 @@ describe("file bar", () => {
 });
 
 describe("used by", () => {
-  it("shows chips that emit workspace:select-node without showing a workspace", async () => {
-    ctx.state.graph = ctx.link.graph;
+  it("shows chips from the index without a game; a click emits workspace:select-node", async () => {
     mount();
     await act(async () => {
-      await api.refresh();
       await api.open("nodes/merge.ts");
     });
     ctx.workspace.show.mockClear();
-    const chips = [...root.querySelectorAll<HTMLButtonElement>("[data-chip]")];
+    const chips = [...root.querySelectorAll<HTMLButtonElement>('[data-chip][data-kind="node"]')];
     expect(chips.map(chip => chip.textContent)).toEqual(["board/merge"]);
     act(() => {
       chips[0]?.click();
@@ -608,25 +607,68 @@ describe("used by", () => {
     act(() => {
       button("flow board").click();
     });
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:select-node", { id: "board/awaitIntent" });
+    expect(ctx.emit).toHaveBeenLastCalledWith("workspace:select-node", { id: "board" });
+    ctx.state.graph = ctx.link.graph;
+    act(() => {
+      button("flow board").click();
+    });
+    expect(ctx.emit).toHaveBeenLastCalledWith("workspace:select-node", { id: "board/awaitIntent" });
+  });
+
+  it("lists the files that use the file; a file chip opens it", async () => {
+    mount();
+    await act(async () => {
+      await api.open("nodes/merge.ts");
+    });
+    expect(get('[data-row="used-in"]').textContent).toBe("Used inflows/board.ts");
+    await act(async () => {
+      get<HTMLButtonElement>('[data-chip][data-kind="file"]').click();
+      await settle();
+    });
+    expect(api.active()).toBe("flows/board.ts");
+    expect(findTab(ctx.state, "flows/board.ts")?.status).toBe("ready");
+  });
+
+  it("follows a new project state", async () => {
+    mount();
+    await act(async () => {
+      await api.open("nodes/merge.ts");
+    });
+    const state = { ...PROJECT, revision: "r2", previous: "r1", uses: {} };
+    act(() => {
+      ctx.link.projectValue = state;
+      onLinkProject(ctx)({
+        state,
+        delta: { all: false, files: ["flows/board.ts"], moved: [], removed: [] }
+      });
+    });
+    expect(root.querySelector('[data-row="used-in"]')).toBeNull();
+    await flush();
   });
 
   it("says why there are no chips, and hides itself under .moku/", async () => {
+    ctx.link.projectValue = { state: "off", reason: "typescript is not installed" };
     mount();
     await act(async () => {
-      await api.refresh();
       await api.open("nodes/merge.ts");
     });
-    expect(get('[data-part="used-by"]').textContent).toBe("Used by · connect a game to see nodes");
-    act(() => {
-      ctx.state.graph = ctx.link.graph;
-      api.setBuffer("nodes/merge.ts", "export const merge = 1;\n");
-      ctx.state.usedBy = new Map();
-      api.setBuffer("nodes/merge.ts", "export const merge = 1;\n");
-    });
-    expect(get('[data-part="used-by"]').textContent).toBe("Used by · no node or flow");
+    expect(get('[data-part="used-by"]').textContent).toBe(
+      "Used by · Project index is off: typescript is not installed"
+    );
+    ctx.link.projectValue = undefined;
     await act(async () => {
-      await api.open(".moku/editor/files.json");
+      await api.open("flows/main.ts");
+    });
+    expect(get('[data-part="used-by"]').textContent).toBe(
+      "Used by · Project index is off: no state from the server yet"
+    );
+    ctx.link.projectValue = PROJECT;
+    await act(async () => {
+      await api.open("README.md");
+    });
+    expect(get('[data-part="used-by"]').textContent).toBe("Used by · no node, flow or file");
+    await act(async () => {
+      await api.open(".moku/editor/layout.json");
     });
     expect(root.querySelector('[data-part="used-by"]')).toBeNull();
   });

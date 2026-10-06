@@ -6,7 +6,8 @@ Checks Host, Origin and a per-start token before any upgrade. Runs the one webso
 Bun allows per server, with two connection kinds: `agent` (a game page) and `tools` (a tools
 page). A tools connection with `role=page` is the editor page. Keeps the game sessions. Routes
 game-channel requests from tools to the chosen session and files-channel requests to `files`.
-Keeps the editor page's selection and relays `editor.select` to the page. Wraps the game's
+Keeps the editor page's selection and relays `editor.select` to the page. Publishes the project
+index state of `files` as `editor.project` and answers `files.find`. Wraps the game's
 `Bun.serve` options with `serve`.
 
 ## Configuration
@@ -44,7 +45,7 @@ createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
 | `websocket` | `HubWebSocketHandler` | The one websocket handler. 32 MiB frames, 60 s idle, no deflate. |
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` merges them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
-| `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`. A tools page that connects later gets it right after `sessions {list}`. |
+| `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`, `project` a `ProjectState`. A tools page that connects later gets it right after `sessions {list}`. |
 | `closeAll` | `(code: number, reason: string) => void` | Closes every agent and tools socket with one code and reason. The hub keeps running and keeps its token. |
 | `path` | `() => string` | `config.path`. |
 
@@ -166,6 +167,7 @@ editor.hub.publish("selection", null);
 |---|---|---|
 | `hotReload` | `HotReload` `{ hmr, owner }` | pages, from `attachServer` and after `setHotReload` (R6) |
 | `selection` | `SelectionInfo \| null` | the hub, from the editor page's `selection` notification; `null` when the last page closes |
+| `project` | `ProjectState` | the hub, from the files event `files:project`: the project index on (revision, key maps, broken files, last change) or off with its reason |
 
 The value is stored through `toWireValue` in `state.published`, also before start. A
 `SelectionInfo` with readonly `items` is not `Json`; the conversion makes it plain. `null` goes
@@ -226,6 +228,7 @@ Tools connection requests:
 | `files` | `write` | `{ path, text, version? }` | `WriteResult` |
 | `files` | `writeBinary` | `{ path, data }` (a data URL) | `WriteResult` |
 | `files` | `readBinary` | `{ path }` | `FileBinary` |
+| `files` | `find` | `{ key }` (a project-index key, e.g. `node:board/merge`) | `ProjectFound[]`, lines read from disk now. -32008 `not_installed` while the index is off. |
 | `editor` | `selection` | `{}` | the kept `SelectionInfo`, or `null`. Answered by the hub. |
 | `editor` | `select` | `SelectParams` `{ key?, ref?, rect?, card? }` | `SelectionInfo`, relayed to the editor page |
 | other | any | | -32601 |
@@ -260,9 +263,9 @@ When the last editor page closes, the hub publishes `selection: null`. On `onSto
 selection becomes `null` too.
 
 What a tools connection gets on channel `editor`: `sessions {list}` at open, then every published
-value (`hotReload {hmr, owner}`, `selection`); `session {…}` and `sessions {list}` on each session
+value (`hotReload {hmr, owner}`, `selection`, `project`); `session {…}` and `sessions {list}` on each session
 change; `sessions {list}` again when a session's `paused` or `silent` flips (not on every frame);
-`hotReload` and `selection` again on each publish.
+`hotReload`, `selection` and `project` again on each publish.
 
 Errors the hub builds (message prefix `[moku-editor]`):
 
@@ -306,7 +309,9 @@ notifications are still sent.
 |---|---|---|---|
 | `hub:session` | emitted (global, `ServerEvents`) | `HubSession` `{ id, game, open, reason? }`, `reason` is `"bye"` or `"game_reloaded"` | a valid `hello` (`open: true`) and an agent close (`open: false`) |
 
-Hooks nothing. Not emitted from `onStop`. A throwing emit is logged as `hub:emit-failed`.
+| `files:project` | hooked (global, `ServerEvents`) | `ProjectState` | published as `editor.project` (kept, replayed to each tools page that opens) |
+
+`hub:session` is not emitted from `onStop`. A throwing emit is logged as `hub:emit-failed`.
 
 Log events (`ctx.log`):
 
@@ -328,9 +333,10 @@ Log events (`ctx.log`):
 
 | Kind | Name | Use |
 |---|---|---|
-| depends | `filesPlugin` | `list`, `read`, `write`, `writeDataUrl`, `readBinary` for the files channel. `writeBinary {path, data}` calls `writeDataUrl(path, data)`: a mime that does not match the path is -32602, a non-image path is -32004 |
+| depends | `filesPlugin` | `list`, `read`, `write`, `writeDataUrl`, `readBinary`, `find` for the files channel. `writeBinary {path, data}` calls `writeDataUrl(path, data)`: a mime that does not match the path is -32602, a non-image path is -32004 |
 | global event | `hub:session` | emitted |
-| protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
+| global event | `files:project` | hooked, published as `editor.project` |
+| protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `ProjectFound`, `ProjectState`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
 
 ## Usage
 

@@ -73,7 +73,6 @@ describe("flowView types", () => {
       | "historyLast"
       | "trailLength"
       | "rejectedOutcomes"
-      | "stylesFile"
       | "styleSaveDelayMs"
       | "layout"
       | "zoom"
@@ -86,7 +85,6 @@ describe("flowView types", () => {
       historyLast: 20,
       trailLength: 6,
       rejectedOutcomes: ["rejected"],
-      stylesFile: undefined,
       styleSaveDelayMs: 600,
       layout: { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 },
       zoom: { min: 0.08, max: 3, defaultMin: 0.8 },

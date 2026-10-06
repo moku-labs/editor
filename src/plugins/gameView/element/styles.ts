@@ -1,10 +1,15 @@
 /**
  * @file gameView plugin — the layout style card of the selected element (C7): the block found
- * through element/source and the shared style edit (panels/shared/style-edit, R4, R8), steppers
- * bounded only by `fieldRule`, one debounced `writeNumber` per burst (version checked, one retry
- * on a conflict), then a toast and the D-07 reload with restore. A refusal writes nothing.
+ * through element/source (the project index) and the shared style edit
+ * (panels/shared/style-edit, R4, R8), steppers bounded only by `fieldRule`, one debounced
+ * `writeNumber` per burst (version checked, one retry on a conflict, refused as `broken` while the
+ * index says the file does not parse, D-44), then a toast and the D-07 reload with restore. A
+ * refusal writes nothing. The block is a `defineStyle` const (`style={ident}`), or the
+ * `defineStyle({ … })` call a style function makes (`style={fn(…)}` whose `style:` key the index
+ * knows, G2), found at the place the index answers.
  */
 import { linkPlugin } from "../../link";
+import { findAllFresh } from "../../panels/shared/project";
 import type { ElementRef } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
 import type {
@@ -19,6 +24,7 @@ import {
   isStyleEditError,
   loadStyleFile,
   parseStyleFile,
+  STYLE_BROKEN_TEXT,
   stepValue,
   writeNumber
 } from "../../panels/shared/style-edit";
@@ -35,7 +41,7 @@ import { findStyleSource } from "./source";
 const STYLE_SAVE_MS = 400;
 
 /**
- * A source search result with `style={ident}`: the block lives in one of its files.
+ * An index answer with `style={ident}`: the block lives in one of its files.
  */
 export type IdentSource = Extract<StyleSource, { readonly kind: "ident" }>;
 
@@ -58,8 +64,21 @@ function isSelected(state: GameViewState, ref: ElementRef): boolean {
 }
 
 /**
- * Loads the block of a const ref from the candidate files in order: the key file, then the files
- * the ident is imported from. The first real refusal is kept for the card.
+ * The `broken` refusal of a file the project index says does not parse now (D-44).
+ *
+ * @param ctx - Domain context of gameView.
+ * @param path - A root-relative file.
+ * @returns `{ error: "broken", path }`, undefined while the file parses or the index is off.
+ */
+export function brokenError(ctx: GameViewCtx, path: string): StyleEditError | undefined {
+  const project = ctx.require(linkPlugin).project();
+  const isBroken = project?.state === "on" && Object.hasOwn(project.broken, path);
+  return isBroken ? { error: "broken", path } : undefined;
+}
+
+/**
+ * Loads the block of a const ref from the candidate files in order: the files the index defines
+ * the style in, the key file first. The first real refusal is kept for the card.
  *
  * @param ctx - Domain context of gameView.
  * @param source - Where the key was found.
@@ -78,8 +97,58 @@ export async function loadBlock(ctx: GameViewCtx, source: IdentSource): Promise<
 }
 
 /**
+ * Loads the block of a style a function builds (G2): every answer of its `style:` key in the file
+ * of the first one, as a call ref at the answer's range start; the first call with an object to
+ * edit is the block. `#<function>` answers each call of the function, `#<function>.<property>`
+ * the one call of that property.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param styleKey - `style:<file>#<function>[.<property>]`.
+ * @returns The file and block, the refusal (`no-key` when no call has an object), or undefined
+ * when the index has no answer.
+ */
+async function loadCallBlock(ctx: GameViewCtx, styleKey: string): Promise<BlockResult | undefined> {
+  const fresh = await findAllFresh(ctx.require(linkPlugin).files, styleKey);
+  if (fresh === undefined) return undefined;
+
+  const { answers, text, version } = fresh;
+  const { path } = answers[0];
+  const file = parseStyleFile(text);
+  if (isStyleEditError(file)) return { path, error: file };
+
+  const name = styleKey.slice(styleKey.lastIndexOf("#") + 1);
+  for (const found of answers) {
+    const [line, column] = found.range;
+    const block = findBlock(file, { kind: "call", name, line, column });
+    if (!isStyleEditError(block)) return { path, loaded: { text, version, file }, block };
+  }
+  return { path, error: { error: "no-key", key: name } };
+}
+
+/**
+ * The block of a style call the index knows (G2): the card to edit, or the refusal to show.
+ * A call without such a block stays the read-only call card.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param source - Where the key was found.
+ * @returns The block result, undefined for another source, a call the index has no answer for,
+ * or a call with no object to edit.
+ */
+async function callBlockOf(
+  ctx: GameViewCtx,
+  source: StyleSource | undefined
+): Promise<BlockResult | undefined> {
+  if (source?.kind !== "call" || source.styleKey === undefined) return undefined;
+
+  const result = await loadCallBlock(ctx, source.styleKey);
+  const hasNoBlock = result !== undefined && "error" in result && result.error.error === "no-key";
+  return hasNoBlock ? undefined : result;
+}
+
+/**
  * Remembers where the block of the key is (the reference block and the proxies read it), then
- * shows the found block, or the refusal, unless the selection changed meanwhile.
+ * shows the found block, or the refusal, unless the selection changed meanwhile. A file the index
+ * says does not parse now shows the `broken` text, on the card or instead of the refusal.
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The element.
@@ -91,7 +160,8 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
   if (!("error" in result)) state.blocks.set(key, { path: result.path, line: result.block.line });
   if (!isSelected(state, ref)) return;
   if ("error" in result) {
-    state.lookup = { key, status: "failed", path: result.path, error: result.error };
+    const error = brokenError(ctx, result.path) ?? result.error;
+    state.lookup = { key, status: "failed", path: result.path, error };
   } else {
     const { path, loaded, block } = result;
     state.lookup = undefined;
@@ -101,7 +171,7 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
       ref: block.ref,
       block,
       pending: undefined,
-      error: undefined
+      error: brokenError(ctx, path)
     };
   }
   notify(state);
@@ -113,7 +183,7 @@ function applyBlock(ctx: GameViewCtx, ref: ElementRef, key: string, result: Bloc
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
- * @param source - The source search result with `style={ident}`.
+ * @param source - The index answer with `style={ident}`.
  * @returns The file and line of the block, undefined when no candidate file has it.
  */
 export async function blockOf(
@@ -133,14 +203,14 @@ export async function blockOf(
 
 /**
  * What the style section says for a source without an editable block: the call (read-only, at
- * the line of the call), the line that defines the key (or builds it in a loop), or nothing found.
+ * the line of the call), the line that defines the key, or that the index has no answer.
  *
  * @param key - The ui key.
- * @param source - The search result, undefined when no file names the key.
+ * @param source - The index answer, undefined when the index does not know the key.
  * @returns The lookup to show.
  * @example
  * ```ts
- * lookupOf("settingsBoard", { kind: "defined", path: "settings.tsx", line: 301 }); // { key: "settingsBoard", status: "defined", path: "settings.tsx", line: 301 }
+ * lookupOf("settingsBoard", { kind: "defined", path: "settings.tsx", line: 301, range: [300, 7, 321, 19] }); // { key: "settingsBoard", status: "defined", path: "settings.tsx", line: 301 }
  * ```
  */
 function lookupOf(key: string, source: Exclude<StyleSource, IdentSource> | undefined): StyleLookup {
@@ -148,14 +218,14 @@ function lookupOf(key: string, source: Exclude<StyleSource, IdentSource> | undef
   if (source.kind === "call") {
     return { key, status: "call", path: source.path, line: source.callLine, call: source.call };
   }
-  const defined = { key, status: "defined", path: source.path, line: source.line } as const;
-  return source.loop === true ? { ...defined, loop: true } : defined;
+  return { key, status: "defined", path: source.path, line: source.line };
 }
 
 /**
  * Finds and shows the layout style card of a ui element with a key; anything else has none.
- * A style computed by a call shows read-only; an element without a style shows where it is
- * defined.
+ * A style a function builds is a card at its `defineStyle` call when the index knows the
+ * function's key and the call has an object (G2); another call shows read-only; an element
+ * without a style shows where it is defined; a key the index does not know shows "missing".
  *
  * @param ctx - Domain context of gameView.
  * @param ref - The selected element.
@@ -173,6 +243,11 @@ export async function openStyleCard(ctx: GameViewCtx, ref: ElementRef): Promise<
     const source = await findStyleSource(ctx, key);
     if (source?.kind === "ident") {
       applyBlock(ctx, ref, key, await loadBlock(ctx, source));
+      return;
+    }
+    const called = await callBlockOf(ctx, source);
+    if (called !== undefined) {
+      applyBlock(ctx, ref, key, called);
       return;
     }
     if (isSelected(state, ref)) state.lookup = lookupOf(key, source);
@@ -282,6 +357,9 @@ export function stepStyle(ctx: GameViewCtx, path: string, direction: 1 | -1, big
  */
 export function styleErrorText(error: StyleEditError): string {
   switch (error.error) {
+    case "broken": {
+      return STYLE_BROKEN_TEXT;
+    }
     case "no-file": {
       return "The style file is gone.";
     }

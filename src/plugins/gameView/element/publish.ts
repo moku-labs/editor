@@ -1,8 +1,9 @@
 /**
  * @file gameView plugin — the editor page publishes its selection (U4, D-33): every change of
  * `state.selected` sends its SelectionInfo through `link.notify("selection", …)`, null when
- * nothing is selected. A source the search still looks for follows in a second publish. A pick
- * and an area publish their own info (card, crop, line). The last published info stays in
+ * nothing is selected. A source the project index still answers follows in a second publish; a
+ * key the index does not know is published without one. A pick and an area publish their own
+ * info (card, crop, line). The last published info stays in
  * `state.selection`; a late follow-up of an older one is dropped.
  */
 import { linkPlugin } from "../../link";
@@ -53,7 +54,7 @@ export function selectionContext(ctx: GameViewCtx, frame: number | undefined): S
  *
  * @param ctx - Domain context of gameView.
  * @param frame - The frame the selection shows.
- * @param source - The node's source search result, undefined when not known.
+ * @param source - The node's index answer, undefined when not known.
  * @returns The facts.
  */
 export function selectionFacts(
@@ -65,7 +66,7 @@ export function selectionFacts(
 }
 
 /**
- * The source search result already known for a node's key.
+ * The index answer already known for a node's key.
  *
  * @param ctx - Domain context of gameView.
  * @param node - The node.
@@ -87,12 +88,12 @@ export function isCurrent(ctx: GameViewCtx, info: SelectionInfo): boolean {
 }
 
 /**
- * Publishes the selection again with the source of its key once the search finds it, unless
- * another publish came first. A failed search is logged at debug.
+ * Publishes the selection again with the source of its key once the index answers it, unless
+ * another publish came first. A failed lookup is logged at debug.
  *
  * @param ctx - Domain context of gameView.
  * @param published - The selection published without a source.
- * @param key - The ui key searched for.
+ * @param key - The ui key asked for.
  */
 function followSource(ctx: GameViewCtx, published: SelectionInfo, key: string): void {
   findStyleSource(ctx, key).then(
@@ -108,7 +109,7 @@ function followSource(ctx: GameViewCtx, published: SelectionInfo, key: string): 
 
 /**
  * Publishes `state.selected`: null for none, its node's info from the scene there is (a ref the
- * scene does not have, bare), then its source when the search still runs.
+ * scene does not have, bare), then its source when the index still answers it.
  *
  * @param ctx - Domain context of gameView.
  */

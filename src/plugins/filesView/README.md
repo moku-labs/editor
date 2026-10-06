@@ -7,12 +7,13 @@ The Files workspace has five parts:
 - A project tree ("Project · 24 files") built from `link.files.list`, in the SidePanel `files.tree`.
 - Open-file tabs with a modified dot.
 - A file bar: crumb, Open in editor, Edit here.
-- A **Used by** row of flow and node chips.
+- A **Used by** row from the project index: flow and node chips of what the file defines, and a "Used in" row of the files that use it.
 - The file body: code with line numbers and syntax colour, an in-place editor, and previews for Markdown, JSON, images and series `index.json` (`.moku/captures/<yyyy-mm-dd>/series-*/index.json`, and the older flat `.moku/captures/series-*/index.json`).
 
 A save with a stale version shows "The file changed on disk · Reload / Overwrite".
 A game source saved outside `.moku/` while a game is linked reloads the game frame and restores the state (D-07).
 Every indexed file is a palette item (⌘K, group Files).
+Where code lives comes only from the project index (`link.project()`, `link.files.find`). There is no naming rule and no `.moku/editor/files.json`.
 
 ### The tree panel
 
@@ -63,17 +64,18 @@ The panel view and `app.filesView` share one state: `createFilesPanel` builds a 
 | `resolveConflict` | `(path, choice: "reload" \| "overwrite") => Promise<SaveResult>` | `reload` drops the buffer and returns `unchanged`. `overwrite` writes the buffer over the fresh version. |
 | `refresh` | `() => Promise<void>` | Rebuilds the index (single flight), then Used by and the palette items. |
 | `files` | `() => readonly FileEntry[]` | Indexed entries in tree order. Empty before the first index. |
-| `fileOf` | `(ref: NodeRef) => string \| undefined` | The source file of a graph node: its own graph `file` (F-H2) first, else the protocol rule (R1) against the index. Same rule as flowView. |
-| `flowFileOf` | `(flow: string) => string \| undefined` | The source file of a flow by the same rule. |
-| `usedBy` | `(path) => UsedBy` | `{ flows, nodes }` whose file is `path`. Empty without a graph. |
+| `fileOf` | `(ref: NodeRef) => string \| undefined` | The file that defines a graph node: the first def of `node:<flow>/<node>` in the project index. `undefined` while the index is off or does not know the node. |
+| `flowFileOf` | `(flow: string) => string \| undefined` | The file that defines a flow: the first def of `flow:<name>`. |
+| `usedBy` | `(path) => UsedBy` | `{ flows, nodes, usedIn }`: the flows and nodes defined in `path`, and the files that use them (`usedIn` of `panels/shared/project`). No game needed. Empty while the index is off. |
 | `editorUrl` | `(path, line?) => string \| undefined` | The "Open in editor" link from the boot data (D-08). `undefined` without boot data. |
 | `subscribe` | `(fn: () => void) => () => void` | Change listener. Returns an idempotent unsubscribe. |
 
 ```ts
 await app.filesView.open("nodes/merge.ts", { line: 12 });
 app.filesView.active(); // "nodes/merge.ts"
-app.filesView.usedBy("nodes/merge.ts").nodes; // [{ flow: "board", node: "merge" }]
-app.filesView.fileOf({ flow: "board", node: "awaitIntent" }); // "nodes/await-intent.ts"
+app.filesView.usedBy("nodes/merge.ts");
+// { flows: [], nodes: [{ flow: "board", node: "merge" }], usedIn: ["flows/board.ts"] }
+app.filesView.fileOf({ flow: "settingsPopup", node: "open" }); // "features/settings/nodes.ts"
 app.filesView.flowFileOf("board"); // "flows/board.ts"
 
 app.filesView.setBuffer("nodes/merge.ts", "export const merge = 2;\n");
@@ -83,6 +85,23 @@ app.filesView.setBuffer("nodes/merge.ts", "export const merge = 2;\n");
 app.filesView.close("nodes/merge.ts"); // false when modified: the popover opens
 app.filesView.close("nodes/merge.ts", { discard: true }); // true
 ```
+
+### Used by
+
+| Index | Shown |
+|---|---|
+| on, the file defines flows or nodes | "Used by" with `flow <name>` and `<flow>/<node>` chips. A chip emits `workspace:select-node`. |
+| on, other files use what it defines | "Used in" with a chip per file. A chip opens the file. |
+| on, neither | "Used by · no node, flow or file" |
+| off, or no state yet | "Used by · Project index is off: <reason>" (`projectOffText`) |
+
+### Tabs follow the project index
+
+Each `link:project` delta is applied after the one before it (`state.following`).
+
+- **Moved file.** A text tab at `moved[].from` whose file is gone is replaced at the same place by a tab at the first `to`. Buffer, edit mode, mode and saved text stay. The active tab and the discard popover follow. The line comes from `files.find(key)`. The status line reads "Moved from <from>". The same bytes keep the tab as it was; other bytes replace a clean tab and put a modified one in conflict. A tab that loads or saves, a file still on disk, and a path that already has a tab are left alone.
+- **Changed file.** Tabs of `delta.files` are re-read at once, without waiting `revalidateMs`. All tabs after a revision gap (`delta.all`). A gone file shows missing; a missing tab whose file is back is ready again.
+- **Tree.** A move, a gone key, a path the tree does not have, or a gone file still in the tree rebuilds the tree.
 
 ### Read and save errors
 
@@ -103,16 +122,17 @@ filesView declares no events. It uses the global tools events of `src/config.ts`
 | Emits | `workspace:select-node` | `{ id }` | A Used-by chip is clicked. A node chip sends `"board/merge"`. A flow chip sends `"<flow>/<start>"`, or the flow name when it has no start. |
 | Emits | `workspace:open-sheet` | `{ index }` | "Open contact sheet" on a series `index.json`. |
 | Hooks | `link:status` | `{ status, session? }` | Builds the index when there is none, no build runs and the socket is open (not `connecting`, not `lost`). Notifies. |
+| Hooks | `link:project` | `{ state, delta }` | Notifies (Used by reads the new state). The open tabs follow the delta (see above). |
 | Hooks | `workspace:changed` | `{ ws }` | `ws === "files"`: rebuilds an index older than `INDEX_STALE_MS`, re-reads the active tab. |
 | Hooks | `workspace:open-file` | `{ path, line? }` | Opens the file for another view. A failure logs `filesView:open-failed`. |
 
-Log events: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:overrides-invalid` (warn); `filesView:save-failed` (error); `filesView:overrides-missing` (debug).
+Log events: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:follow-failed` (warn); `filesView:save-failed` (error).
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `files.list`, `files.read`, `files.write`, `files.readBinary`, `read("game.graph")`, `status()`, `onManifest`, `boot()` |
+| `linkPlugin` | `project()`, `files.find`, `files.list`, `files.read`, `files.write`, `files.readBinary`, `read("game.graph")` (the start node of a flow chip), `status()`, `onManifest`, `boot()` |
 | `workspacePlugin` | `show("files")`, `active()`, `toast`, `gameFrame().reload`, `palette.add` (files, "Show Files tree"), `keys.bind` (⌘S, `\`), `keys.escape` |
 | `panelsPlugin` | `register` the `files` panel |
 
@@ -120,7 +140,8 @@ Shared modules, imported as plain modules:
 
 | Module | Used for |
 |---|---|
-| `registry/protocol` (`source-files.ts`) | The node → file rule (R1): `nodeFile`, `flowFile`, overrides of `.moku/editor/files.json`. |
+| `registry/protocol` (`project.ts`) | `firstDefinition` for `fileOf` and `flowFileOf`. |
+| `panels/shared/project.ts` | `usedIn`, `projectOffText`. |
 | `panels/shared/highlight.ts` | `langOf`, `tokenizeLines`, `renderTokens`. |
 | `panels/shared/side-panel/` | `SidePanel`, `useSidePanel`, `showSidePanel`, `toggleSidePanel`, `sidePanelState` for the tree panel. |
 | `panels/shared/editor-url.ts` | `editorUrlOf` (R9). |
@@ -152,7 +173,7 @@ ctx.emit("workspace:open-file", { path: "nodes/merge.ts", line: 12 });
 
 ## Integration
 
-- **flowView** hooks `workspace:select-node` from the Used-by chips. It emits `workspace:open-file` from the Inspector. Both views use the same node → file rule.
+- **flowView** hooks `workspace:select-node` from the Used-by chips. It emits `workspace:open-file` from the Inspector. Both views ask the project index.
 - **gameView** hooks `workspace:open-sheet` and opens the contact sheet of a series. gameView writes the series `index.json` that filesView previews.
 - **workspace** serialises the D-07 reload (`gameFrame().reload({ restore: true, afterSave: true, since })`, `since` taken before the write). It runs only for `reloadExtensions` outside `.moku/` while the link is live or paused.
 - A Markdown front matter shows as one plain block (`<pre data-front-matter>`) of its raw lines, cut at the `---` fences. filesView parses no front matter.
@@ -170,6 +191,6 @@ Markdown renders as VNodes, never `innerHTML`. Links only for http(s) and relati
 
 | Limit | Follow-up |
 |---|---|
-| Most graph nodes carry no file. A node `file` wins when the game sends it; else the file comes from the naming rule and `.moku/editor/files.json` overrides. flowView's Inspector uses the same order. | F-H2: a dev-only `file` on graph nodes. |
+| Without the project index (game < 0.6.0, no `typescript`, open failed) there is no Used by and no node file. Nothing is guessed. | None. Install the requirements. |
 | Files over 2 MB do not open here. | None. Open in editor. |
 | The walk stops at `maxFiles` and `WALK_MAX_DEPTH`. | None. |

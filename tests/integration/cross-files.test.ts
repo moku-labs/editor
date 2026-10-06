@@ -276,17 +276,15 @@ describe("cross-files: views write through the stack", () => {
     filesView.activate("flows/main.ts");
     expect(filesView.active()).toBe("flows/main.ts");
 
+    // The project index answers where a node and a flow are defined, and who uses the node.
+    await until(() => link.project()?.state === "on", "the project index on");
     expect(filesView.fileOf({ flow: "main", node: "home" })).toBe("nodes/home.ts");
     expect(filesView.flowFileOf("visit")).toBe("flows/visit.ts");
-    await until(
-      () => filesView.usedBy("nodes/home.ts").nodes.some(ref => ref.node === "home"),
-      "Used by naming node home"
-    );
+    expect(filesView.fileOf({ flow: "main", node: "nowhere" })).toBeUndefined();
+    const usedBy = filesView.usedBy("nodes/home.ts");
+    expect(usedBy.nodes).toEqual([{ flow: "main", node: "home" }]);
+    expect(usedBy.usedIn).toEqual(["flows/main.ts"]);
     expect(filesView.editorUrl("nodes/home.ts", 3)).toBe(`vscode://file${root}/nodes/home.ts:3`);
-
-    await link.files.write(".moku/editor/files.json", '{ "main/home": "flows/main.ts" }\n');
-    await filesView.refresh();
-    expect(filesView.fileOf({ flow: "main", node: "home" })).toBe("flows/main.ts");
 
     const srcBefore = frameSrc(live);
     expect(srcBefore).not.toBe("");

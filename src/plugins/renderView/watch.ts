@@ -3,12 +3,15 @@
  * for the session, and game.effects while the manifest lists it as available; the scene watches game.ui, game.entities and game.projections only while
  * Render is shown and build one scene per animation frame; the calibration reads the page rect
  * of one keyed element once per session and device (`game.locate` on game 0.4, `game.rect` on game
- * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest. No timer
+ * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest the project
+ * index names (`manifestOf(link.project())`, the only source) and reads it again when a project
+ * change makes it stale. No timer
  * reads a frame source. Each entry point resolves link once and passes it down: no delivered value
  * resolves it again.
  */
 import { linkPlugin } from "../link";
 import type { LinkApi } from "../link/types";
+import { manifestOf } from "../panels/shared/project";
 import type { TextureCatalogue } from "../panels/shared/scene";
 import {
   buildScene,
@@ -18,7 +21,7 @@ import {
   rectSourceOf
 } from "../panels/shared/scene";
 import { rectOf } from "../panels/shared/scene/wire";
-import type { Json, LinkStatus, Manifest } from "../registry/protocol";
+import type { Json, LinkStatus, Manifest, ProjectDelta, ProjectState } from "../registry/protocol";
 import { applyPendingReveal, setTexturePalette } from "./actions";
 import { releasesOf, updateTextureUse } from "./derive";
 import { asAssetsUsage, asEffectsStats, asRenderStats } from "./guards";
@@ -404,13 +407,13 @@ export function recalibrate(ctx: RenderViewCtx): void {
 }
 
 /**
- * Reads one manifest candidate; a missing or unreadable file is undefined.
+ * Reads the manifest file; a missing or unreadable file is undefined.
  *
  * @param link - The link API, resolved once by the caller.
- * @param path - A candidate path.
+ * @param path - The manifest path the project index names.
  * @returns The catalogue, or undefined.
  */
-async function readCandidate(link: LinkApi, path: string): Promise<TextureCatalogue | undefined> {
+async function readManifest(link: LinkApi, path: string): Promise<TextureCatalogue | undefined> {
   try {
     const file = await link.files.read(path);
     return parseTextureManifest(file.text, path);
@@ -420,23 +423,69 @@ async function readCandidate(link: LinkApi, path: string): Promise<TextureCatalo
 }
 
 /**
- * The game's texture catalogue: the first `manifestPaths` entry that holds a version-1 asset
- * manifest, read through link.files.
+ * The game's texture catalogue: the asset manifest the project index names, read through
+ * link.files. Nothing is read while the index is off or names no manifest.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API; resolved from ctx when left out.
- * @returns The catalogue, or null when no path holds one.
+ * @returns The catalogue, or null when the index names no manifest or the file holds no version-1
+ * asset manifest.
  */
 export async function readCatalogue(
   ctx: RenderViewCtx,
   link: LinkApi = ctx.require(linkPlugin)
 ): Promise<TextureCatalogue | null> {
-  for (const path of ctx.config.manifestPaths) {
-    const catalogue = await readCandidate(link, path);
-    if (catalogue !== undefined) return catalogue;
-  }
+  const path = manifestOf(link.project());
+  const catalogue = path === undefined ? undefined : await readManifest(link, path);
   // eslint-disable-next-line unicorn/no-null -- null is the spec's "looked, not found" marker
-  return null;
+  return catalogue ?? null;
+}
+
+/**
+ * True when a project change makes the catalogue stale: a revision gap (a reconnect, the first
+ * state, the index turned off), another manifest named or none any more, or an edit of the
+ * manifest file. A catalogue not read yet is never stale: Render reads it when shown.
+ *
+ * @param catalogue - The catalogue renderView holds: undefined not read, null read and none.
+ * @param project - The new project state.
+ * @param delta - What the index changed.
+ * @returns Whether the catalogue is read again.
+ * @example
+ * ```ts
+ * // An agent re-ran the asset scanner: manifest.json changed on disk.
+ * isCatalogueStale(catalogue, project, { all: false, files: ["manifest.json"], moved: [], removed: [] }); // true
+ * // Render was shown before the first project state named a manifest.
+ * isCatalogueStale(null, { ...project, manifest: "manifest.json" }, { all: false, files: [], moved: [], removed: [] }); // true
+ * ```
+ */
+export function isCatalogueStale(
+  catalogue: TextureCatalogue | null | undefined,
+  project: ProjectState,
+  delta: ProjectDelta
+): boolean {
+  if (catalogue === undefined) return false;
+  if (delta.all) return true;
+
+  const named = manifestOf(project);
+  if (catalogue === null) return named !== undefined;
+  return catalogue.path !== named || delta.files.includes(catalogue.path);
+}
+
+/**
+ * Reads the catalogue again; the texture rows and the Textures palette follow. Never rejects.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param link - The link API; resolved from ctx when left out.
+ * @returns Resolves when the catalogue is in the state.
+ */
+export async function rereadCatalogue(
+  ctx: RenderViewCtx,
+  link: LinkApi = ctx.require(linkPlugin)
+): Promise<void> {
+  const { state } = ctx;
+  state.catalogue = await readCatalogue(ctx, link);
+  setTexturePalette(ctx);
+  notify(state);
 }
 
 /**
@@ -451,10 +500,7 @@ export async function refreshRenderView(ctx: RenderViewCtx): Promise<void> {
   const { kind } = link.status();
   if (kind !== "live" && kind !== "paused") return;
 
-  const { state } = ctx;
-  state.catalogue = await readCatalogue(ctx, link);
-  setTexturePalette(ctx);
-  notify(state);
-  state.calibrationAsked = false;
+  await rereadCatalogue(ctx, link);
+  ctx.state.calibrationAsked = false;
   await calibrate(ctx, link);
 }

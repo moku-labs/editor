@@ -154,7 +154,8 @@ describe("pages integration", () => {
       const seen: string[] = [];
       const timer = setTimeout(() => reject(new Error(`only ${seen.join(",")}`)), 3000);
       socket.addEventListener("message", event => {
-        seen.push(JSON.parse(String(event.data)).method);
+        const method: string = JSON.parse(String(event.data)).method;
+        if (method !== "project") seen.push(method);
         if (seen.length < 2) return;
         clearTimeout(timer);
         socket.close();

@@ -18,6 +18,7 @@ import {
   type FrameQueue,
   flush,
   manifestOf,
+  projectWith,
   RENDER,
   serveManifest,
   stubFrames,
@@ -361,9 +362,20 @@ describe("textures card", () => {
     expect(pill?.title).toBe("");
 
     ctx.state.catalogue = null;
+    ctx.link.api.project = () => undefined;
     show();
     expect(q("[data-render='textures']")?.textContent).toContain(
-      "No asset manifest found at manifest.json, public/manifest.json, web/manifest.json"
+      "Project index is off: no state from the server yet · per-texture data needs game.textures"
+    );
+    ctx.link.api.project = () => projectWith();
+    show();
+    expect(q("[data-render='textures']")?.textContent).toContain(
+      "The project index found no asset manifest · per-texture"
+    );
+    ctx.link.api.project = () => projectWith("web/manifest.json");
+    show();
+    expect(q("[data-render='textures']")?.textContent).toContain(
+      "No asset manifest of version 1 at web/manifest.json · per-texture"
     );
   });
 

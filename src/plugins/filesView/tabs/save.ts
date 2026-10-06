@@ -5,10 +5,9 @@
  * frame and restores).
  */
 import { linkPlugin } from "../../link";
-import { errorCode, SOURCE_OVERRIDES_PATH } from "../../registry/protocol";
+import { errorCode } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import { codeOf, messageOf, reasonOf } from "../errors";
-import { loadOverrides, rebuildUsedBy } from "../links/used-by";
 import { notify } from "../store";
 import type { Config, FilesViewCtx, OpenTab, SaveResult } from "../types";
 import { extensionOf } from "./kind";
@@ -58,8 +57,8 @@ function isLinked(ctx: FilesViewCtx): boolean {
 }
 
 /**
- * After a write: the index entry size, the toast, the overrides when the override file was
- * saved, and the D-07 reload after a save (not awaited; a failure is warned).
+ * After a write: the index entry size, the toast and the D-07 reload after a save (not awaited;
+ * a failure is warned).
  *
  * @param ctx - Domain context of filesView.
  * @param path - The written path.
@@ -68,22 +67,13 @@ function isLinked(ctx: FilesViewCtx): boolean {
  * from then on.
  * @returns Whether the reload ran.
  */
-async function afterWrite(
-  ctx: FilesViewCtx,
-  path: string,
-  bytes: number,
-  savedAt: number
-): Promise<boolean> {
+function afterWrite(ctx: FilesViewCtx, path: string, bytes: number, savedAt: number): boolean {
   const { state } = ctx;
   const workspace = ctx.require(workspacePlugin);
   const entry = state.index?.files.get(path);
   if (entry !== undefined) state.index?.files.set(path, { ...entry, size: bytes });
 
   workspace.toast("✓ Saved", path);
-  if (path === SOURCE_OVERRIDES_PATH) {
-    state.overrides = await loadOverrides(ctx);
-    rebuildUsedBy(ctx);
-  }
 
   const reload = shouldReload(path, ctx.config) && isLinked(ctx);
   if (reload) {
@@ -123,7 +113,7 @@ async function write(
     tab.version = result.version;
     tab.checkedAt = Date.now();
     tab.status = "ready";
-    const reload = await afterWrite(ctx, tab.path, result.bytes, savedAt);
+    const reload = afterWrite(ctx, tab.path, result.bytes, savedAt);
     notify(ctx.state);
     return { kind: "saved", path: tab.path, bytes: result.bytes, version: result.version, reload };
   } catch (error) {

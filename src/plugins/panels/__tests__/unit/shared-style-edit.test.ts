@@ -6,6 +6,7 @@ import type {
   EditTarget,
   NumberField,
   StyleBlock,
+  StyleBlockRef,
   StyleEditError,
   StyleField,
   StyleFile,
@@ -832,6 +833,155 @@ describe("writeNumber broken guard (D-44)", () => {
 
   it("has one shared text for the views", () => {
     expect(STYLE_BROKEN_TEXT).toBe("The file does not parse now · fix it, then edit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles built in a function (G2): a `defineStyle({ … })` call no const binds,
+// found at the place the project index answers for `style:<path>#<fn>[.<prop>]`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const KIT_PATH = "features/ui/kit.tsx";
+
+/** Style functions as merge-game writes them (features/ui/kit.tsx), cut down. */
+const KIT = [
+  'import { defineStyle } from "../../kit";',
+  "",
+  "function roundStylesOf(size: number) {",
+  "  return {",
+  "    disc: defineStyle({",
+  "      width: size,",
+  "      radius: size / 2,",
+  "      strokeWidth: 6",
+  "    }),",
+  "    icon: defineStyle({ width: 40, height: 40 })",
+  "  };",
+  "}",
+  "",
+  "function signboardStyle(hung: boolean) {",
+  "  if (!hung) return defineStyle(board);",
+  "  return kit.defineStyle({",
+  "    ...board,",
+  "    gap: 12,",
+  "    padding: { top: 266, left: 72 }",
+  "  });",
+  "}",
+  "",
+  "export const plain = defineStyle({ gap: 4 });",
+  ""
+].join("\n");
+
+/** The icon call: `#roundStylesOf.icon` answers the property with the call as its range. */
+const ICON: StyleBlockRef = { kind: "call", name: "roundStylesOf.icon", line: 10, column: 11 };
+
+/** The board call: `#signboardStyle` answers each call; the range starts at `kit`. */
+const BOARD: StyleBlockRef = { kind: "call", name: "signboardStyle", line: 16, column: 10 };
+
+describe("call blocks (G2)", () => {
+  it("lists every defineStyle call with an object no const binds, with its place and fields", () => {
+    const file = parsed(KIT);
+
+    expect(file.calls.map(call => [call.line, call.column, call.endLine])).toEqual([
+      [5, 11, 9],
+      [10, 11, 10],
+      [16, 14, 20]
+    ]);
+    expect(file.calls[2]?.fields.map(item => `${item.kind}:${item.path}=${item.raw}`)).toEqual([
+      "other:...board=...board",
+      "number:gap=12",
+      "number:padding.top=266",
+      "number:padding.left=72"
+    ]);
+    expect(file.blocks.map(entry => entry.ref)).toEqual([{ kind: "const", name: "plain" }]);
+  });
+
+  it("finds the call at the place the index answers, under the asked ref", () => {
+    const file = parsed(KIT);
+
+    const icon = block(file, ICON);
+    expect(icon).toMatchObject({ ref: ICON, line: 10, endLine: 10 });
+    expect(summary(icon)).toEqual(["number:width=40", "number:height=40"]);
+    // The range of `kit.defineStyle(` starts at `kit`, before the callee.
+    expect(block(file, BOARD)).toMatchObject({ ref: BOARD, line: 16, endLine: 20 });
+  });
+
+  it("returns no-key with the name when no call with an object starts there", () => {
+    const file = parsed(KIT);
+
+    expect(findBlock(file, { ...BOARD, line: 15, column: 21 })).toEqual({
+      error: "no-key",
+      key: "signboardStyle"
+    });
+    expect(findBlock(file, { ...ICON, column: 12 })).toEqual({
+      error: "no-key",
+      key: "roundStylesOf.icon"
+    });
+  });
+
+  it("gives a call the layout bounds", () => {
+    expect(fieldRule(ICON, "width")).toEqual(fieldRule({ kind: "const", name: "plain" }, "width"));
+    expect(fieldRule(ICON, "size")).toBeUndefined();
+  });
+
+  it("edits one literal of the call and nothing else", () => {
+    const edited = editNumber(KIT, { ref: ICON, path: "height", raw: "40" }, 44);
+    if (isStyleEditError(edited)) throw new Error(edited.error);
+
+    expect(edited.line).toBe(10);
+    expect(lines(KIT).filter((line, index) => line !== lines(edited.text)[index])).toEqual([
+      "    icon: defineStyle({ width: 40, height: 40 })"
+    ]);
+    expect(lines(edited.text)[9]).toBe("    icon: defineStyle({ width: 40, height: 44 })");
+  });
+
+  it("edits a nested literal of a call on the lines after it", () => {
+    const edited = editNumber(KIT, { ref: BOARD, path: "padding.left", raw: "72" }, 80);
+    if (isStyleEditError(edited)) throw new Error(edited.error);
+    expect(edited.line).toBe(19);
+    expect(lines(edited.text)[18]).toBe("    padding: { top: 266, left: 80 }");
+  });
+
+  it("writes with the read version and asks the index the style: key of the function", async () => {
+    const fake = fakeFiles({ [KIT_PATH]: KIT });
+    const find = vi.fn(async () => [found(KIT_PATH, false)]);
+
+    const done = await writeNumber(
+      { ...fake.files, find },
+      KIT_PATH,
+      { text: KIT, version: "v1" },
+      { ref: ICON, path: "width", raw: "40" },
+      41
+    );
+
+    expect(done).toMatchObject({ ok: true, line: 10, version: "v2" });
+    expect(find).toHaveBeenCalledWith("style:features/ui/kit.tsx#roundStylesOf.icon");
+    expect(fake.texts.get(KIT_PATH)).toContain("icon: defineStyle({ width: 41, height: 40 })");
+  });
+
+  it("writes nothing while the index says the file does not parse now", async () => {
+    const fake = fakeFiles({ [KIT_PATH]: KIT });
+    const find = vi.fn(async () => [found(KIT_PATH, true)]);
+
+    const done = await writeNumber(
+      { ...fake.files, find },
+      KIT_PATH,
+      { text: KIT, version: "v1" },
+      { ref: BOARD, path: "gap", raw: "12" },
+      13
+    );
+
+    expect(done).toEqual({ error: "broken", path: KIT_PATH });
+    expect(find).toHaveBeenCalledWith("style:features/ui/kit.tsx#signboardStyle");
+    expect(fake.files.write).not.toHaveBeenCalled();
+  });
+
+  it("fails the parse at a call whose brace never closes", () => {
+    expect(
+      parseStyleFile("const a = 1;\nfunction f() {\n  return defineStyle({ gap: 4 ;\n")
+    ).toEqual({
+      error: "parse",
+      line: 3
+    });
   });
 });
 

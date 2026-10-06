@@ -208,7 +208,12 @@ describe("copySelectedReference", () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
-    ctx.state.found.set("coinPill", { kind: "defined", path: "src/hud/Hud.tsx", line: 2 });
+    ctx.state.found.set("coinPill", {
+      kind: "defined",
+      path: "src/hud/Hud.tsx",
+      line: 2,
+      range: [2, 1, 2, 42]
+    });
 
     const line = await copySelectedReference(ctx);
     expect(line).toMatch(

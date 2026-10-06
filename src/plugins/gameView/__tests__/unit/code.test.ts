@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SceneNode } from "../../../panels/shared/scene";
 import { elementCode, shortValue } from "../../element/code";
-import { matchProjection } from "../../element/spawn";
-import { missing } from "../files-store";
-import { createCtx, sceneCapture, type TestCtx } from "../helpers";
+import { answer, createCtx, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
 import { boardScene } from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
@@ -39,18 +37,26 @@ function coinPill(): SceneNode {
 }
 
 /**
- * A ctx whose files hold the coin pill and the board items projection.
+ * A ctx whose files hold the coin pill and the board items projection, and whose index answers
+ * them.
  *
  * @param files - Extra or other files.
  * @returns The ctx.
  */
 function ctxWith(files: Readonly<Record<string, string>> = {}): TestCtx {
-  return createCtx({
+  const ctx = createCtx({
     "src/hud/Hud.tsx": HUD,
     "src/hud/styles.ts": STYLES,
     "features/board/items.tsx": ITEMS,
     ...files
   });
+  ctx.link.projectValue = projectOn({
+    "style:src/hud/styles.ts#coinPill": ["src/hud/styles.ts"],
+    "projection:board.items": ["features/board/items.tsx"]
+  });
+  answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 1, 2, 42]));
+  answer(ctx, "projection:board.items", place("features/board/items.tsx", [4, 3, 4, 22]));
+  return ctx;
 }
 
 describe("shortValue (round 2b R12)", () => {
@@ -62,19 +68,8 @@ describe("shortValue (round 2b R12)", () => {
   });
 });
 
-describe("matchProjection (round 2b R12)", () => {
-  it("prefers the name inside a projection({…}) call, else the first line that names it", () => {
-    expect(matchProjection(ITEMS, "board.items")).toEqual({ line: 4, inCall: true });
-    expect(matchProjection('const a = { name: "board.items" };', "board.items")).toEqual({
-      line: 1,
-      inCall: false
-    });
-    expect(matchProjection('name: "board-items"', "board.items")).toBeUndefined();
-  });
-});
-
 describe("elementCode of a ui element (round 2b R12)", () => {
-  it("reads the JSX of the element and the defineStyle block of style={ident}", async () => {
+  it("reads the JSX of the element's range and the defineStyle block of style={ident}", async () => {
     const code = await elementCode(ctxWith(), coinPill());
     expect(code).toEqual({
       kind: "ui",
@@ -92,17 +87,55 @@ describe("elementCode of a ui element (round 2b R12)", () => {
     });
   });
 
-  it("has no style block for an element without a style", async () => {
-    const ctx = ctxWith({ "src/hud/Hud.tsx": '<Pill key="coinPill" />\n' });
+  it("starts the JSX at the range start, the line before the key attribute", async () => {
+    const ctx = ctxWith({
+      "src/hud/Hud.tsx": '<Row>\n  <HudPill\n    id="coinPill"\n  />\n</Row>'
+    });
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 3, 4, 5], { line: 3 }));
     expect(await elementCode(ctx, coinPill())).toEqual({
       kind: "ui",
-      jsx: { path: "src/hud/Hud.tsx", line: 1, lines: ['<Pill key="coinPill" />'] },
+      jsx: { path: "src/hud/Hud.tsx", line: 2, lines: ["  <HudPill", '    id="coinPill"', "  />"] },
       style: undefined
     });
   });
 
-  it("is undefined when no file names the key or the node has no key", async () => {
-    const ctx = ctxWith({ "src/hud/Hud.tsx": "nothing\n" });
+  it("shows the defineStyle call of a style function the index knows (G2)", async () => {
+    const kit = [
+      "function boardStyle(width: number) {",
+      "  return defineStyle({ width, gap: 4 });",
+      "}",
+      '<panel key="coinPill" style={boardStyle(950)} />'
+    ].join("\n");
+    const ctx = ctxWith({ "features/ui/kit.tsx": kit });
+    ctx.link.projectValue = projectOn({
+      "style:features/ui/kit.tsx#boardStyle": ["features/ui/kit.tsx"]
+    });
+    answer(ctx, "jsx:coinPill", place("features/ui/kit.tsx", [4, 1, 4, 49]));
+    answer(
+      ctx,
+      "style:features/ui/kit.tsx#boardStyle",
+      place("features/ui/kit.tsx", [2, 10, 2, 41])
+    );
+    const code = await elementCode(ctx, coinPill());
+    expect(code?.kind === "ui" ? code.style : "?").toEqual({
+      path: "features/ui/kit.tsx",
+      line: 2,
+      lines: ["  return defineStyle({ width, gap: 4 });"],
+      name: "boardStyle"
+    });
+  });
+
+  it("has no style block for a call the index has no style key for", async () => {
+    const ctx = ctxWith({ "src/hud/Hud.tsx": '<Pill key="coinPill" style={pillOf(2)} />\n' });
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 1, 42]));
+    const code = await elementCode(ctx, coinPill());
+    expect(code?.kind === "ui" ? code.style : "?").toBeUndefined();
+    expect(code?.kind === "ui" ? code.jsx?.line : "?").toBe(1);
+  });
+
+  it("is undefined for a key the index does not know or a node without a key", async () => {
+    const ctx = ctxWith();
+    ctx.link.files.answers.delete("jsx:coinPill");
     expect(await elementCode(ctx, coinPill())).toBeUndefined();
     const unkeyed = { ...coinPill(), key: undefined };
     expect(await elementCode(ctxWith(), unkeyed)).toBeUndefined();
@@ -110,14 +143,12 @@ describe("elementCode of a ui element (round 2b R12)", () => {
 });
 
 describe("elementCode of an entity (round 2b R12)", () => {
-  it("searches a found projection once", async () => {
+  it("asks the index for a found projection once", async () => {
     const ctx = ctxWith();
-    const list = vi.spyOn(ctx.link.files, "list");
+    const find = vi.spyOn(ctx.link.files, "find");
     await elementCode(ctx, nodeOf("entity:1048628"));
-    const lists = list.mock.calls.length;
     await elementCode(ctx, nodeOf("entity:1048628"));
-    expect(lists).toBeGreaterThan(0);
-    expect(list.mock.calls.length).toBe(lists);
+    expect(find.mock.calls).toEqual([["projection:board.items"]]);
   });
 
   it("names the projection, the line that defines it and the components with their values", async () => {
@@ -136,18 +167,26 @@ describe("elementCode of an entity (round 2b R12)", () => {
     ]);
   });
 
-  it("leaves the spawn line out when no source defines the projection; looks again next time", async () => {
-    const ctx = ctxWith({ "features/board/items.tsx": "nothing\n" });
+  it("leaves the spawn line out when the index does not know the projection; asks again next time", async () => {
+    const ctx = ctxWith();
+    ctx.link.files.answers.delete("projection:board.items");
     const first = await elementCode(ctx, nodeOf("entity:1048628"));
     expect(first?.kind === "entity" ? first.spawn : "?").toBeUndefined();
 
-    ctx.link.files.put("features/board/items.tsx", ITEMS);
+    answer(ctx, "projection:board.items", place("features/board/items.tsx", [4, 3, 4, 22]));
     const second = await elementCode(ctx, nodeOf("entity:1048628"));
     expect(second?.kind === "entity" ? second.spawn : "?").toEqual({
       path: "features/board/items.tsx",
       line: 4
     });
     expect(first?.kind === "entity" ? first.components.map(row => row.value)[0] : "?").toBe("");
+  });
+
+  it("leaves the spawn line out when the index is off (find rejects)", async () => {
+    const ctx = ctxWith();
+    vi.spyOn(ctx.link.files, "find").mockRejectedValue(new Error("project index off: disabled"));
+    const code = await elementCode(ctx, nodeOf("entity:1048628"));
+    expect(code?.kind === "entity" ? code.spawn : "?").toBeUndefined();
   });
 });
 
@@ -164,8 +203,21 @@ describe("elementCode of a text node (round 2b R17)", () => {
     "});"
   ].join("\n");
 
-  it("shows the text style key block from the file that calls defineTextStyles", async () => {
+  /**
+   * A ctx with the text node and the text styles, answered by the index.
+   *
+   * @returns The ctx.
+   */
+  function textCtx(): TestCtx {
     const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
+    answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [1, 1, 1, 63]));
+    answer(ctx, "textStyle:ui.link", place("features/ui/styles.ts", [4, 3, 7, 4]));
+    return ctx;
+  }
+
+  it("shows the block of the text style key where the index answers it", async () => {
+    const ctx = textCtx();
+    const find = vi.spyOn(ctx.link.files, "find");
     expect(await elementCode(ctx, coinPill())).toEqual({
       kind: "ui",
       jsx: { path: "src/hud/Hud.tsx", line: 1, lines: [TEXT_HUD.trim()] },
@@ -176,43 +228,14 @@ describe("elementCode of a text node (round 2b R17)", () => {
         name: "ui.link"
       }
     });
+    expect(find).toHaveBeenCalledWith("textStyle:ui.link");
   });
 
-  it("searches the styles file once", async () => {
-    const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
-    await elementCode(ctx, coinPill());
-    const read = vi.spyOn(ctx.link.files, "read");
-    const list = vi.spyOn(ctx.link.files, "list");
+  it("has no style block when the index does not know the text style key", async () => {
+    const ctx = textCtx();
+    ctx.link.files.answers.delete("textStyle:ui.link");
     const code = await elementCode(ctx, coinPill());
-    expect(code?.kind === "ui" ? code.style?.name : "?").toBe("ui.link");
-    expect(list).not.toHaveBeenCalled();
-    expect(read.mock.calls.map(call => call[0])).toEqual([
-      "src/hud/Hud.tsx",
-      "features/ui/styles.ts"
-    ]);
-  });
-
-  it("has no style block when no file defines the key or calls defineTextStyles", async () => {
-    const other = TEXT_STYLES.replace('"ui.link"', '"ui.other"');
-    const noKey = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": other });
-    const code = await elementCode(noKey, coinPill());
     expect(code?.kind === "ui" ? code.style : "?").toBeUndefined();
     expect(code?.kind === "ui" ? code.jsx?.line : "?").toBe(1);
-
-    const none = createCtx({ "src/hud/Hud.tsx": TEXT_HUD });
-    const bare = await elementCode(none, coinPill());
-    expect(bare?.kind === "ui" ? bare.style : "?").toBeUndefined();
-  });
-
-  it("looks for the styles file again when the remembered one is gone", async () => {
-    const ctx = createCtx({ "src/hud/Hud.tsx": TEXT_HUD, "features/ui/styles.ts": TEXT_STYLES });
-    await elementCode(ctx, coinPill());
-    ctx.link.files.put("features/text/styles.ts", TEXT_STYLES);
-    const read = ctx.link.files.read.bind(ctx.link.files);
-    vi.spyOn(ctx.link.files, "read").mockImplementation(path =>
-      path === "features/ui/styles.ts" ? Promise.reject(missing(path)) : read(path)
-    );
-    const code = await elementCode(ctx, coinPill());
-    expect(code?.kind === "ui" ? code.style?.path : "?").toBe("features/text/styles.ts");
   });
 });

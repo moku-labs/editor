@@ -1,11 +1,12 @@
 /**
- * @file gameView plugin — hooks of the global tools events: link:status, workspace:changed,
- * workspace:open-sheet, workspace:inspect (R9), workspace:reference (D-27).
+ * @file gameView plugin — hooks of the global tools events: link:status, link:project (D-46),
+ * workspace:changed, workspace:open-sheet, workspace:inspect (R9), workspace:reference (D-27).
  */
 import type { ToolsEvents } from "../../config";
 import { isReloading } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { openSheet } from "./capture/sheet";
+import { applyProjectChange } from "./element/project";
 import { inspectElement } from "./element/select";
 import { setReferenceMode } from "./reference/mode";
 import { startSceneWatches, stopSceneWatches } from "./scene/watch";
@@ -16,11 +17,12 @@ import type { GameViewCtx, GameViewHooks } from "./types";
  * gameView's hooks factory (`hooks: createHandlers`).
  *
  * @param ctx - Domain context of gameView.
- * @returns The five hooks.
+ * @returns The six hooks.
  */
 export function createHandlers(ctx: GameViewCtx): GameViewHooks {
   return {
     "link:status": onLinkStatus(ctx),
+    "link:project": onProjectChange(ctx),
     "workspace:changed": onWorkspaceChanged(ctx),
     "workspace:open-sheet": onOpenSheet(ctx),
     "workspace:inspect": onInspect(ctx),
@@ -81,6 +83,17 @@ function applyLinkStatus(ctx: GameViewCtx, payload: ToolsEvents["link:status"]):
  */
 export function onLinkStatus(ctx: GameViewCtx): (payload: ToolsEvents["link:status"]) => void {
   return payload => applyLinkStatus(ctx, payload);
+}
+
+/**
+ * The link:project hook (D-46): a new project state drops what gameView remembered of the files
+ * it changed, and looks the selected element up again when it was touched.
+ *
+ * @param ctx - Domain context of gameView.
+ * @returns The handler.
+ */
+export function onProjectChange(ctx: GameViewCtx): (payload: ToolsEvents["link:project"]) => void {
+  return payload => applyProjectChange(ctx, payload);
 }
 
 /**

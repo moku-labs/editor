@@ -250,4 +250,14 @@ describe("anchorKey", () => {
       "textStyle:ui.number"
     );
   });
+
+  it("a call of a style function is the style key of the function or its property (G2)", () => {
+    const icon = { kind: "call", name: "roundStylesOf.icon", line: 358, column: 11 } as const;
+    expect(anchorKey(icon, "features/ui/kit.tsx")).toBe(
+      "style:features/ui/kit.tsx#roundStylesOf.icon"
+    );
+    expect(anchorKey({ kind: "call", name: "plankStyle" }, "features/ui/kit.tsx")).toBe(
+      "style:features/ui/kit.tsx#plankStyle"
+    );
+  });
 });

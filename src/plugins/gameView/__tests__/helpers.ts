@@ -8,7 +8,14 @@ import type { LinkApi } from "../../link/types";
 import { panelsPlugin } from "../../panels";
 import type { PageRect } from "../../panels/shared/scene";
 import type { PanelSpec, PanelsApi } from "../../panels/types";
-import type { Json, LinkStatus, Manifest, RunResult, WireError } from "../../registry/protocol";
+import type {
+  Json,
+  LinkStatus,
+  Manifest,
+  ProjectState,
+  RunResult,
+  WireError
+} from "../../registry/protocol";
 import { DEVICES, presetOf, screenOf } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type {
@@ -24,15 +31,16 @@ import type {
   WorkspaceId
 } from "../../workspace/types";
 import { createGameViewState } from "../state";
-import type { GameViewConfig, GameViewCtx } from "../types";
-import { createFilesStore, type FilesStore } from "./files-store";
+import type { GameViewConfig, GameViewCtx, SourceRange } from "../types";
+import { createFilesStore, type FilesStore, type FoundAt } from "./files-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared test helpers of gameView: a log mock, a scripted link over an
 // in-memory files store, a workspace mock with a real overlay element, a
 // panels mock whose run answers by command id, and a domain ctx with a real
-// state. The scene fixtures of panels (real merge-game captures) are reused
-// read-only.
+// state. The project index is scripted: `answer` sets what `find` answers for a
+// key, `projectOn` builds the state `link.project()` returns. The scene
+// fixtures of panels (real merge-game captures) are reused read-only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Does nothing (the remover of a mock that keeps nothing). */
@@ -41,13 +49,53 @@ function noop(): void {}
 /** The default config of gameView (index.ts). */
 export const CONFIG: GameViewConfig = {
   capturesDir: ".moku/captures",
-  manifestPaths: ["manifest.json", "public/manifest.json", "web/manifest.json"],
   captureCardMs: 10_000,
   seriesDurationsMs: [1000, 2000, 5000, 10_000, 20_000],
   seriesIntervalsMs: [16, 50, 100, 250, 500, 1000],
-  seriesWarnShots: 200,
-  sourceSearch: { maxFiles: 1500, skip: ["node_modules", "dist", ".git", ".moku"] }
+  seriesWarnShots: 200
 };
+
+/**
+ * An on project state: the def paths per key (every key but `jsx:`), and the other fields.
+ *
+ * @param defs - Key → def paths, e.g. `{ "style:src/hud/styles.ts#coinPill": ["src/hud/styles.ts"] }`.
+ * @param rest - Revision, previous, manifest, uses, broken, change.
+ * @returns The state.
+ */
+export function projectOn(
+  defs: Readonly<Record<string, readonly string[]>> = {},
+  rest: Partial<Omit<Extract<ProjectState, { state: "on" }>, "state" | "defs">> = {}
+): ProjectState {
+  return { state: "on", revision: "r1", uses: {}, broken: {}, ...rest, defs };
+}
+
+/**
+ * One place the scripted index answers: the path, the range and the line (the range start unless
+ * given).
+ *
+ * @param path - The root-relative file.
+ * @param range - Start line, start column, end line, end column (1-based).
+ * @param extra - The line and any other field of the answer.
+ * @returns The answer without its hash (the store fills it at the call).
+ */
+export function place(
+  path: string,
+  range: SourceRange,
+  extra: Partial<Omit<FoundAt, "path" | "range">> = {}
+): FoundAt {
+  return { path, line: range[0], range, ...extra };
+}
+
+/**
+ * Makes the scripted index answer a key with these places, in order.
+ *
+ * @param ctx - The test ctx.
+ * @param key - The project-index key, e.g. `"jsx:coinPill"`.
+ * @param places - The answers.
+ */
+export function answer(ctx: TestCtx, key: string, ...places: readonly FoundAt[]): void {
+  ctx.link.files.answers.set(key, places);
+}
 
 /** A 1×1 PNG data URL. */
 export const PNG =
@@ -70,7 +118,8 @@ export const DAY = ".moku/captures/2026-10-05";
 const PLACEHOLDER = ["$", "{"].join("");
 
 /**
- * The source text of a template literal that builds a key in a loop: `` `card${slot}` ``.
+ * The source text of a template literal: `` `card${slot}` ``, without a placeholder in a string
+ * literal of the test.
  *
  * @param stem - The text before the placeholder ("card").
  * @param variable - The expression inside it ("slot").
@@ -180,6 +229,8 @@ export type LinkMock = {
   readonly values: Map<string, Json | ((input: Json | undefined) => Json)>;
   current: LinkStatus;
   manifestValue: Manifest | undefined;
+  /** What `project()` answers: on with no keys by default. */
+  projectValue: ProjectState | undefined;
   /** Delivers a value to every active watch of a source id. */
   send(id: string, value: Json): void;
   /** Active watches, optionally of one id. */
@@ -222,6 +273,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
     values,
     current: { kind: "live", frame: 1841 },
     manifestValue: manifestOf(),
+    projectValue: projectOn(),
     api: {
       read,
       watch,
@@ -248,6 +300,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       selection: vi.fn(() => undefined),
       notify,
       handle,
+      project: () => link.projectValue,
       files: store
     },
     send(id, value) {

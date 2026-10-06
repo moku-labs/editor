@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import type { ElementRef } from "../../../panels/shared/scene";
+import type { ProjectDelta } from "../../../registry/protocol";
 import { createHandlers } from "../../handlers";
 import { startTracker } from "../../watch";
 import {
@@ -10,6 +11,8 @@ import {
   deliverBoard,
   type FrameQueue,
   flush,
+  MANIFEST_TEXT,
+  projectWith,
   RENDER,
   serveManifest,
   stubFrames,
@@ -18,7 +21,8 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // handlers.ts: workspace:changed starts and stops the scene watches, link:status
-// keeps or clears the session data, workspace:reveal reveals.
+// keeps or clears the session data, link:project reads a stale catalogue again,
+// workspace:reveal reveals.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -200,5 +204,115 @@ describe("workspace:reveal", () => {
     expect(ctx.workspace.show).toHaveBeenCalledWith("render");
     expect(ctx.state.tree.selected).toBe("entity:3145728");
     expectTypeOf<ToolsEvents["workspace:reveal"]>().toEqualTypeOf<{ ref: ElementRef }>();
+  });
+});
+
+/**
+ * A delta with only the given fields set.
+ *
+ * @param change - The fields that differ from "nothing changed".
+ * @returns The delta.
+ */
+function deltaOf(change: Partial<ProjectDelta> = {}): ProjectDelta {
+  return { all: false, files: [], moved: [], removed: [], ...change };
+}
+
+/**
+ * How many times the manifest was read through link.files.
+ *
+ * @returns The read count.
+ */
+function reads(): number {
+  return vi.mocked(ctx.link.api.files.read).mock.calls.length;
+}
+
+describe("link:project", () => {
+  it("Render shown before the first project state reads the manifest once the index names it", async () => {
+    ctx.link.api.project = () => undefined;
+    hooks["workspace:changed"]({ ws: "render" });
+    await flush();
+    expect(ctx.state.catalogue).toBeNull();
+
+    serveManifest(ctx);
+    hooks["link:project"]({ state: projectWith("manifest.json"), delta: deltaOf({ all: true }) });
+    await flush();
+
+    expect(ctx.state.catalogue?.path).toBe("manifest.json");
+    expect(ctx.state.catalogue?.textures.size).toBeGreaterThan(0);
+  });
+
+  it("an edit of the manifest reads it again; a change of another file does not", async () => {
+    hooks["workspace:changed"]({ ws: "render" });
+    await flush();
+    expect(reads()).toBe(1);
+
+    hooks["link:project"]({
+      state: projectWith("manifest.json"),
+      delta: deltaOf({ files: ["nodes/merge.ts"] })
+    });
+    await flush();
+    expect(reads()).toBe(1);
+
+    hooks["link:project"]({
+      state: projectWith("manifest.json"),
+      delta: deltaOf({ files: ["manifest.json"] })
+    });
+    await flush();
+    expect(reads()).toBe(2);
+    expect(ctx.state.catalogue?.path).toBe("manifest.json");
+  });
+
+  it("another manifest in the index is read from its path", async () => {
+    hooks["workspace:changed"]({ ws: "render" });
+    await flush();
+    expect(ctx.state.catalogue?.path).toBe("manifest.json");
+
+    serveManifest(ctx, "public/manifest.json", MANIFEST_TEXT);
+    hooks["link:project"]({ state: projectWith("public/manifest.json"), delta: deltaOf() });
+    await flush();
+
+    expect(ctx.state.catalogue?.path).toBe("public/manifest.json");
+  });
+
+  it("an index that turns off forgets the catalogue", async () => {
+    hooks["workspace:changed"]({ ws: "render" });
+    await flush();
+
+    ctx.link.api.project = () => ({ state: "off", reason: "disabled" });
+    hooks["link:project"]({
+      state: { state: "off", reason: "disabled" },
+      delta: deltaOf({ all: true })
+    });
+    await flush();
+
+    expect(ctx.state.catalogue).toBeNull();
+    expect(reads()).toBe(1);
+  });
+
+  it("reads nothing before Render read the catalogue", async () => {
+    hooks["link:project"]({ state: projectWith("manifest.json"), delta: deltaOf({ all: true }) });
+    await flush();
+
+    expect(reads()).toBe(0);
+    expect(ctx.state.catalogue).toBeUndefined();
+  });
+
+  it("while Render is hidden a stale catalogue is read too: the Textures palette follows", async () => {
+    hooks["workspace:changed"]({ ws: "render" });
+    await flush();
+    hooks["workspace:changed"]({ ws: "flow" });
+    const [first] = ctx.workspace.items;
+    expect(first?.group).toBe("Textures");
+
+    hooks["link:project"]({
+      state: projectWith("manifest.json"),
+      delta: deltaOf({ files: ["manifest.json"] })
+    });
+    await flush();
+
+    expect(reads()).toBe(2);
+    expect(ctx.state.catalogue?.path).toBe("manifest.json");
+    expect(ctx.workspace.items[0]?.label).toBe(first?.label);
+    expect(ctx.workspace.items[0]).not.toBe(first);
   });
 });

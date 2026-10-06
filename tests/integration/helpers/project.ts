@@ -7,7 +7,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { MERGE_GAME_DIR } from "../../fixtures/game-dir";
 
-/** The merge-game styles text (flowView `stylesFile` default), copied into the tiny project. */
+/**
+ * The merge-game text styles (`defineTextStyles` from `../../kit`), copied into the tiny project as
+ * features/ui/styles.ts: the text-styles file the project index names.
+ */
 export const STYLES_FIXTURE = new URL(
   "../../../src/plugins/flowView/__tests__/fixtures/ui-styles.txt",
   import.meta.url
@@ -45,10 +48,28 @@ async function put(root: string, relative: string, text: string): Promise<void> 
   await writeFile(file, text);
 }
 
-/** The small source files of the tiny project, by path. */
+/**
+ * The small source files of the tiny project, by path. They are never run: the files plugin's
+ * project index reads them (amendment N5). The kit hands out `defineFlow`, `defineNode` and
+ * `defineTextStyles` from `defineGame()` of "@moku-labs/game", the way a game binds them; the
+ * projection and the style import `projection` and `defineStyle` from the package itself. So the
+ * index knows `flow:main`, `flow:visit`, `node:main/home`, `node:main/visit`, `node:visit/enter`,
+ * `node:visit/leave`, the `textStyle:` keys of features/ui/styles.ts, `projection:tiny.coins` and
+ * `style:features/ui/hud.ts#pillStyle`. A node answers the line of its `export const`.
+ */
 const TINY_SOURCES: Readonly<Record<string, string>> = {
+  "kit.ts": [
+    "// The authoring helpers of the tiny game, bound once.",
+    'import { defineGame } from "@moku-labs/game";',
+    "",
+    "export const { defineNode, defineFlow, defineTextStyles } = defineGame();",
+    ""
+  ].join("\n"),
   "nodes/home.ts": [
     "// The rest node of main: the player taps Play.",
+    'import { type } from "@moku-labs/game";',
+    'import { defineNode } from "../kit";',
+    "",
     "export const home = defineNode({",
     "  outcomes: { play: type() },",
     "  rest: true,",
@@ -58,6 +79,9 @@ const TINY_SOURCES: Readonly<Record<string, string>> = {
   ].join("\n"),
   "nodes/enter.ts": [
     "// First node of visit: five coins and one visit.",
+    'import { type } from "@moku-labs/game";',
+    'import { defineNode } from "../kit";',
+    "",
     "export const enter = defineNode({",
     "  outcomes: { done: type() },",
     "  run: ({ player, out }) => {",
@@ -70,11 +94,18 @@ const TINY_SOURCES: Readonly<Record<string, string>> = {
   ].join("\n"),
   "nodes/leave.ts": [
     "// Last node of visit.",
+    'import { type } from "@moku-labs/game";',
+    'import { defineNode } from "../kit";',
+    "",
     "export const leave = defineNode({ outcomes: { done: type() }, run: ({ out }) => out.done() });",
     ""
   ].join("\n"),
   "flows/main.ts": [
     "// The top-level flow.",
+    'import { defineFlow } from "../kit";',
+    'import { home } from "../nodes/home";',
+    'import { visit } from "./visit";',
+    "",
     'export const mainFlow = defineFlow("main", {',
     "  nodes: { home, visit },",
     '  start: "home",',
@@ -84,6 +115,11 @@ const TINY_SOURCES: Readonly<Record<string, string>> = {
   ].join("\n"),
   "flows/visit.ts": [
     "// The visit sub-flow.",
+    'import { exit, type } from "@moku-labs/game";',
+    'import { defineFlow } from "../kit";',
+    'import { enter } from "../nodes/enter";',
+    'import { leave } from "../nodes/leave";',
+    "",
     'export const visit = defineFlow("visit", {',
     "  nodes: { enter, leave },",
     '  start: "enter",',
@@ -91,10 +127,30 @@ const TINY_SOURCES: Readonly<Record<string, string>> = {
     '  edges: { enter: { done: "leave" }, leave: { done: exit("done") } }',
     "});",
     ""
+  ].join("\n"),
+  "view/projections.ts": [
+    "// The coin pills: one per five coins.",
+    'import { projection } from "@moku-labs/game";',
+    "",
+    "export const coinPills = projection({",
+    '  name: "tiny.coins",',
+    '  layer: "hud",',
+    "  from: player => Array.from({ length: Math.floor(player.coins / 5) }, (_, slot) => slot),",
+    "  key: slot => slot,",
+    "  view: () => []",
+    "});",
+    ""
+  ].join("\n"),
+  "features/ui/hud.ts": [
+    "// The style of a coin pill.",
+    'import { defineStyle } from "@moku-labs/game";',
+    "",
+    'export const pillStyle = defineStyle({ width: 160, height: 48, nineSlice: "ui.hud-pill" });',
+    ""
   ].join("\n")
 };
 
-/** The two-bundle asset manifest of the tiny project (renderView and gameView `manifestPaths`). */
+/** The two-bundle asset manifest of the tiny project: `manifest.json`, the one the index names. */
 export const TINY_MANIFEST = {
   version: 1,
   bundles: {
@@ -134,8 +190,9 @@ const FIRST_NOTE_TEXT = [
 ].join("\n");
 
 /**
- * Fills a tiny project root: node and flow files, the styles file, the asset manifest, one
- * markdown file, and two files that must never show in a list (`node_modules/x/index.ts`, `.env`).
+ * Fills a tiny project root: the kit, node and flow files, a projection, a style, the text styles
+ * file, the asset manifest, one markdown file, and two files that must never show in a list
+ * (`node_modules/x/index.ts`, `.env`).
  *
  * @param root - The empty project root.
  * @returns Resolves when every file is written.

@@ -2,13 +2,15 @@
  * Complex tier — the editor's websocket switchboard: token + Origin/Host checks before upgrade,
  * one websocket handler (agent, tools), sessions, routing, pending calls, fan-out, published
  * server state, serve().
- * Emits the global server event `hub:session`.
+ * Emits the global server event `hub:session`; hooks `files:project` (published as
+ * `editor.project`).
  *
  * @see README.md
  */
 import { createServerPlugin } from "../../config";
 import { filesPlugin } from "../files";
 import { createHubApi } from "./api";
+import { createHandlers } from "./handlers";
 import { validateHubConfig } from "./init";
 import { startHub, stopHub } from "./lifecycle";
 import { createHubState } from "./state";
@@ -36,6 +38,7 @@ export const hubPlugin = createServerPlugin("hub", {
   config: defaultConfig,
   createState: createHubState,
   api: createHubApi,
+  hooks: createHandlers,
   onInit: validateHubConfig,
   // @no-resource-check — onStart creates the token and the silent interval; onStop closes sockets and timers
   onStart: startHub,

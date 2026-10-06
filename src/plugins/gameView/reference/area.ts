@@ -5,8 +5,8 @@
  * path with the area: bookmark, full shot, crop to the area plus 8 px, the card
  * `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md`, the area line on the clipboard and the capture
  * card. The card prints the child tree, the texts, the layout lines, the nodes partly in the area
- * and the components the area uses (captures-by-day U5). The selection is published first without
- * the sources, then again with the sources (at most 10 new searches, A18) and the files.
+ * and the components the area uses (captures-by-day U5). The selection is published first with the
+ * sources already known, then again with the project index's answers for the rest and the files.
  */
 import { linkPlugin } from "../../link";
 import type { Calibration, PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
@@ -30,7 +30,7 @@ import {
   areaCardText,
   areaHead
 } from "./area-block";
-import { type AreaComponent, areaComponents, type SearchBudget } from "./area-components";
+import { type AreaComponent, areaComponents } from "./area-components";
 import {
   areaBranches,
   inside,
@@ -47,11 +47,6 @@ import { pickToast, saveShots, showPickCard, takeBookmark } from "./pick";
  * The most elements an area keeps; the card says how many more there were.
  */
 export const AREA_ITEMS = 40;
-
-/**
- * The most new source searches one area starts (A18); remembered sources are free.
- */
-const AREA_SEARCHES = 10;
 
 /**
  * Without a node fully inside, a node joins when the area covers this share of its own area.
@@ -176,46 +171,31 @@ function areaInfo(
 }
 
 /**
- * Searches the source of a key; a failure is logged at debug and found nothing.
+ * The source of a node: remembered, else the index answer for its key, one after the other.
  *
  * @param ctx - Domain context of gameView.
- * @param key - The ui key.
- * @returns The source, or undefined.
+ * @param node - A node of the group.
+ * @returns The source, undefined for an entity, an unkeyed node or a key the index does not know.
  */
-async function searchQuietly(ctx: GameViewCtx, key: string): Promise<StyleSource | undefined> {
-  try {
-    return await findStyleSource(ctx, key);
-  } catch (error) {
-    ctx.log.debug("gameView: area source failed", { message: messageOf(error) });
-    return undefined;
-  }
+async function sourceOfNode(ctx: GameViewCtx, node: SceneNode): Promise<StyleSource | undefined> {
+  const known = knownSource(ctx, node);
+  if (known !== undefined || node.key === undefined) return known;
+  return findStyleSource(ctx, node.key);
 }
 
 /**
- * The group with the sources of its keys: remembered ones, then new searches one after the other
- * while the budget lasts (10 per area, A18).
+ * The group with the sources of its keys.
  *
  * @param ctx - Domain context of gameView.
  * @param nodes - The group.
- * @param budget - The searches the area may still start.
  * @returns Each node with its source.
  */
 async function withSources(
   ctx: GameViewCtx,
-  nodes: readonly SceneNode[],
-  budget: SearchBudget
+  nodes: readonly SceneNode[]
 ): Promise<readonly AreaItem[]> {
   const items: AreaItem[] = [];
-  for (const node of nodes) {
-    const known = knownSource(ctx, node);
-    const needsNoSearch = known !== undefined || node.key === undefined || budget.left <= 0;
-    if (needsNoSearch) {
-      items.push({ node, source: known });
-      continue;
-    }
-    budget.left -= 1;
-    items.push({ node, source: await searchQuietly(ctx, node.key) });
-  }
+  for (const node of nodes) items.push({ node, source: await sourceOfNode(ctx, node) });
   return items;
 }
 
@@ -244,7 +224,7 @@ function knownItems(ctx: GameViewCtx, nodes: readonly SceneNode[]): readonly Are
 
 /**
  * The code of every element whose source is known, for the card; one that fails is left out.
- * A known source is remembered in `state.found`, so no code starts a new search.
+ * A known source is remembered in `state.found`, so no code asks the index for it again.
  *
  * @param ctx - Domain context of gameView.
  * @param items - The group with its sources.
@@ -292,8 +272,8 @@ async function writeAreaCard(
 }
 
 /**
- * Publishes the area again once the sources of its keys are searched, when a source was found
- * and no other selection came first.
+ * Publishes the area again once the index answered the sources of its keys, when a source was
+ * found and no other selection came first.
  *
  * @param ctx - Domain context of gameView.
  * @param first - The area as first published.
@@ -308,7 +288,7 @@ async function followSources(
   group: AreaGroup,
   frame: number
 ): Promise<void> {
-  const items = await withSources(ctx, group.nodes, { left: AREA_SEARCHES });
+  const items = await withSources(ctx, group.nodes);
   const known = first.items ?? [];
   const found = items.some(
     (item, index) => item.source !== undefined && known[index]?.source === undefined
@@ -341,8 +321,7 @@ async function completeArea(
   const shots = await saveShots(ctx, AREA_NAME, area, scene);
 
   // The sources of the group, then everything the block prints.
-  const budget: SearchBudget = { left: AREA_SEARCHES };
-  const items = await withSources(ctx, group.nodes, budget);
+  const items = await withSources(ctx, group.nodes);
   const frame = shots?.frame ?? taken?.bookmark.frame ?? scene.frame;
   const pick = { bookmark: taken?.bookmark.id, crop: shots?.crop, full: shots?.full };
   const branches = areaBranches(scene, group.nodes, textReader(ctx));
@@ -359,7 +338,7 @@ async function completeArea(
 
   // The code of every element with a source, then the components the roots and children are instances of.
   const codes = await areaCodes(ctx, items);
-  const components = await areaComponents(ctx, group.nodes, branches, budget);
+  const components = await areaComponents(ctx, group.nodes, branches);
   const card = await writeAreaCard(ctx, facts, codes, components);
   const line = areaHead(facts, card);
 

@@ -111,7 +111,7 @@ const BOARD_OUTCOMES = [
 /** The scene id of the board slot, the parent of every board entity. */
 const BOARD_SLOT = "ui:boardScreen/boardSlot";
 
-/** The text styles file flowView edits (its `stylesFile` default). */
+/** The text styles file flowView edits: the file with the most `textStyle:` keys in the index. */
 const STYLES_FILE = "features/ui/styles.ts";
 
 /** The toast of a reload that restored the bookmark. */
@@ -169,7 +169,8 @@ function keep<Part extends Stoppable>(part: Part): Part {
 
 /**
  * Starts the stack on the merge project (`createProject("merge")`) and a merge game, then waits
- * until the link is live with the merge manifest. Tracks unhandled rejections.
+ * until the link is live with the merge manifest and holds the first project state (the index
+ * opens on the server's start, not awaited). Tracks unhandled rejections.
  *
  * @param choice - Which game, and a renderer answer for the capture door.
  * @returns The live stack.
@@ -193,8 +194,11 @@ async function mergeStack(choice: StackChoice = {}): Promise<MergeStack> {
   );
   const { link } = tools.app;
   await until(
-    () => link.status().kind === "live" && link.manifest()?.game === MERGE_NAME,
-    "a live link with the merge manifest"
+    () =>
+      link.status().kind === "live" &&
+      link.manifest()?.game === MERGE_NAME &&
+      link.project() !== undefined,
+    "a live link with the merge manifest and a project state"
   );
   return { root, server, page, tools, game, agent };
 }
@@ -584,11 +588,8 @@ describe("journey-merge: open the editor on merge-game", () => {
       ]);
       await until(() => workspace.active() === "files", "Files shown");
       await until(() => filesView.active() === "nodes/merge.ts", "nodes/merge.ts the active tab");
-      // fileOf answers from the files index, which filesView loads on its own.
-      await until(
-        () => filesView.fileOf({ flow: "board", node: "merge" }) === "nodes/merge.ts",
-        "fileOf board/merge from the files index"
-      );
+      // fileOf answers from the project index state link holds.
+      expect(filesView.fileOf({ flow: "board", node: "merge" })).toBe("nodes/merge.ts");
       expect(unhandled?.list).toEqual([]);
     },
     TIMEOUT_MS

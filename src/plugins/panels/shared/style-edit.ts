@@ -7,11 +7,22 @@ import type { FileText, ProjectFound, WriteResult } from "../../registry/protoco
 import { anchorKey, errorCode, isVersionConflict, isWireError } from "../../registry/protocol";
 
 /**
- * Which block of a style file: a text-style table entry or a `defineStyle` constant (R8, R9).
+ * Which block of a style file: a text-style table entry, a `defineStyle` constant (R8, R9), or a
+ * `defineStyle({ … })` call a style function makes (G2), found at the place the project index
+ * answers for its `style:<path>#<function>[.<property>]` key.
  */
 export type StyleBlockRef =
   | { readonly kind: "text"; readonly key: string }
-  | { readonly kind: "const"; readonly name: string };
+  | { readonly kind: "const"; readonly name: string }
+  | {
+      readonly kind: "call";
+      /** The part of the style key after `#`: `roundStylesOf.icon`, `signboardStyle`. */
+      readonly name: string;
+      /** 1-based line where the call starts: the first number of the answer's range. */
+      readonly line: number;
+      /** 1-based column where the call starts; the callee may come later (`kit.defineStyle`). */
+      readonly column: number;
+    };
 
 /**
  * A numeric literal field with its exact columns.
@@ -56,10 +67,25 @@ export type StyleBlock = {
 };
 
 /**
+ * A `defineStyle({ … })` call no const binds: a style built in a function (G2). `findBlock` finds
+ * it by the place of a call ref.
+ */
+export type CallBlock = {
+  /** 1-based line of `defineStyle`. */
+  readonly line: number;
+  /** 1-based column of `defineStyle`. */
+  readonly column: number;
+  readonly endLine: number;
+  readonly fields: readonly StyleField[];
+};
+
+/**
  * A parsed style file.
  */
 export type StyleFile = {
   readonly blocks: readonly StyleBlock[];
+  /** The calls of style functions, in source order. */
+  readonly calls: readonly CallBlock[];
   /** Identifier → "#rrggbb", for read-only swatches. */
   readonly colours: ReadonlyMap<string, string>;
   readonly eol: "\n" | "\r\n";
@@ -689,6 +715,9 @@ const TEXT_BLOCK = /^\s*(["'])([\w.-]+)\1\s*:\s*\{/;
 /** A layout style constant: `export const hudRow = defineStyle({`. */
 const CONST_BLOCK = /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*defineStyle\s*\(\s*\{/;
 
+/** The start of a style call with an object: `defineStyle({`, also after `kit.`. */
+const STYLE_CALL = /\bdefineStyle\s*\(\s*\{/g;
+
 /** A colour constant: `const sky = "#aabbcc"` or `const cream = 0xff_f3_d6`. */
 const COLOUR =
   /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:(["'])#([\dA-Fa-f]{6})\2|0x([\dA-Fa-f_]+))/;
@@ -751,10 +780,50 @@ function colourOf(scan: Scan, line: number): [string, string] | undefined {
 }
 
 /**
- * Parses the style blocks and colour constants of a file.
+ * Reads every `defineStyle({` call that no block of the file holds: the calls of style functions.
+ *
+ * @param scan - The scan.
+ * @param read - The `[open, close]` brace indexes of the blocks read already.
+ * @returns The calls in source order, or `{ error: "parse", line }` when one never closes.
+ * @example
+ * ```ts
+ * // `    icon: defineStyle({ width: 40, height: 40 })` on line 10.
+ * readCalls(scan, []); // [{ line: 10, column: 11, endLine: 10, fields: [width, height] }]
+ * ```
+ */
+function readCalls(
+  scan: Scan,
+  read: readonly (readonly [number, number])[]
+): CallBlock[] | StyleEditError {
+  const calls: CallBlock[] = [];
+
+  for (const match of scan.text.matchAll(STYLE_CALL)) {
+    // A call in a comment or a string, or inside a block already read, is no call block.
+    const start = match.index;
+    const open = start + match[0].length - 1;
+    const isInside = read.some(([from, to]) => open >= from && open <= to);
+    if (scan.kinds[start] !== CODE || scan.kinds[open] !== CODE || isInside) continue;
+
+    // A call whose brace never closes fails the parse at its line.
+    const line = lineOf(scan, start);
+    const close = scan.partners[open] ?? -1;
+    if (close === -1) return { error: "parse", line };
+
+    const fields: StyleField[] = [];
+    readMembers(scan, open + 1, close, "", fields);
+    const column = start - (scan.lineStarts[line - 1] ?? 0) + 1;
+    calls.push({ line, column, endLine: lineOf(scan, close), fields });
+  }
+
+  return calls;
+}
+
+/**
+ * Parses the style blocks, the calls of style functions and the colour constants of a file.
  *
  * @param text - The file text.
- * @returns The style file, or `{ error: "parse", line }` when a block or the braces never close.
+ * @returns The style file, or `{ error: "parse", line }` when a block, a call or the braces never
+ * close.
  * @example
  * ```ts
  * const file = parseStyleFile(text);
@@ -764,6 +833,7 @@ function colourOf(scan: Scan, line: number): [string, string] | undefined {
 export function parseStyleFile(text: string): StyleFile | StyleEditError {
   const scan = scanText(text);
   const blocks: StyleBlock[] = [];
+  const read: [number, number][] = [];
   const colours = new Map<string, string>();
   let line = 1;
 
@@ -788,8 +858,13 @@ export function parseStyleFile(text: string): StyleFile | StyleEditError {
     readMembers(scan, start.open + 1, close, "", fields);
     const endLine = lineOf(scan, close);
     blocks.push({ ref: start.ref, line, endLine, fields });
+    read.push([start.open, close]);
     line = endLine + 1;
   }
+
+  // The calls of style functions: every other `defineStyle({`.
+  const calls = readCalls(scan, read);
+  if (isStyleEditError(calls)) return calls;
 
   // Any other unbalanced brace fails the parse at its line.
   if (scan.unbalanced !== -1) return { error: "parse", line: lineOf(scan, scan.unbalanced) };
@@ -798,14 +873,14 @@ export function parseStyleFile(text: string): StyleFile | StyleEditError {
   const lineBreak = text.indexOf("\n");
   const eol = lineBreak > 0 && text[lineBreak - 1] === "\r" ? "\r\n" : "\n";
 
-  return { blocks, colours, eol };
+  return { blocks, calls, colours, eol };
 }
 
 /**
  * The key or name of a block ref.
  *
  * @param ref - The block ref.
- * @returns `ref.key` for a text block, `ref.name` for a const block.
+ * @returns `ref.key` for a text block, `ref.name` for a const block or a call.
  * @example
  * ```ts
  * refKey({ kind: "const", name: "hudRow" }); // "hudRow"
@@ -816,7 +891,31 @@ function refKey(ref: StyleBlockRef): string {
 }
 
 /**
- * Finds one block by ref: `no-key` or `ambiguous` when not exactly one.
+ * The call block a call ref points to: the first call on its line that starts at or after its
+ * column (the index answers the start of the call expression, `kit` of `kit.defineStyle`).
+ *
+ * @param file - A parsed style file.
+ * @param ref - The call ref.
+ * @returns The block under the asked ref, or `{ error: "no-key", key }` when no call with an
+ * object starts there.
+ * @example
+ * ```ts
+ * findCall(file, { kind: "call", name: "roundStylesOf.icon", line: 10, column: 11 }); // { ref, line: 10, endLine: 10, fields }
+ * ```
+ */
+function findCall(
+  file: StyleFile,
+  ref: Extract<StyleBlockRef, { readonly kind: "call" }>
+): StyleBlock | StyleEditError {
+  const call = file.calls.find(entry => entry.line === ref.line && entry.column >= ref.column);
+  if (call === undefined) return { error: "no-key", key: ref.name };
+
+  return { ref, line: call.line, endLine: call.endLine, fields: call.fields };
+}
+
+/**
+ * Finds one block by ref: `no-key` or `ambiguous` when not exactly one. A call ref is found by its
+ * place, and the block comes back under that ref.
  *
  * @param file - A parsed style file.
  * @param ref - The block ref.
@@ -825,9 +924,12 @@ function refKey(ref: StyleBlockRef): string {
  * @example
  * ```ts
  * findBlock(file, { kind: "text", key: "ui.number" }); // { ref, line: 72, endLine: 80, fields }
+ * findBlock(file, { kind: "call", name: "roundStylesOf.icon", line: 10, column: 11 }); // { ref, line: 10, … }
  * ```
  */
 export function findBlock(file: StyleFile, ref: StyleBlockRef): StyleBlock | StyleEditError {
+  if (ref.kind === "call") return findCall(file, ref);
+
   const key = refKey(ref);
   const found = file.blocks.filter(
     block => block.ref.kind === ref.kind && refKey(block.ref) === key

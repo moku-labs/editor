@@ -1,14 +1,13 @@
 /**
  * Standard tier — the Render workspace: metric tiles, render tree, textures, bundles, pools and
  * the release log, from watched frame sources (R6). Emits the global `workspace:inspect` (R9);
- * hooks `workspace:changed`, `link:status`, `workspace:reveal`.
+ * hooks `workspace:changed`, `link:status`, `link:project`, `workspace:reveal`.
  *
  * @see README.md
  */
 import { createToolsPlugin } from "../../config";
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
-import { DEFAULT_MANIFEST_PATHS } from "../panels/shared/manifest-paths";
 import { workspacePlugin } from "../workspace";
 import { createRenderViewApi } from "./api";
 import { createHandlers } from "./handlers";
@@ -18,8 +17,7 @@ import type { RenderViewConfig } from "./types";
 
 const defaultConfig: RenderViewConfig = {
   fpsSamples: 60,
-  releaseLogMax: 50,
-  manifestPaths: DEFAULT_MANIFEST_PATHS
+  releaseLogMax: 50
 };
 
 /**

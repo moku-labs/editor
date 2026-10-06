@@ -37,12 +37,14 @@ A save writes the file and runs the D-07 reload/restore flow.
 > is `hub.minReturns`. The kernel merges config shallowly, so an object you pass replaces the
 > default object as a whole: give every field of it.
 
+> **Breaking (project index, D-40, D-48).** `stylesFile` is removed. The Styles tab edits the
+> text-styles file the project index names: the file that defines the most `textStyle:` keys.
+
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `historyLast` | `number` | `20` | Entries of `game.history` flowView watches. |
 | `trailLength` | `number` | `6` | Edges drawn as the trail, newest strongest. |
 | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| `stylesFile` | `string \| undefined` | `undefined` | The text styles the Styles tab edits. Unset: found once per session as the first `.ts`/`.tsx` file under the link root that calls `defineTextStyles(` on a line of code (breadth-first; `node_modules`, `dist`, `.git`, `.moku` skipped; the search is `panels/shared/styles-file`, shared with gameView). |
 | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
 | `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
@@ -62,8 +64,24 @@ createApp({
 });
 ```
 
-The node → file rule has no option here. It is `registry/protocol/source-files.ts` (R1), with its
-override file `.moku/editor/files.json`. filesView uses the same rule.
+### Where the code is
+
+The project index of the server is the only source of code locations (D-40). There is no rule, no
+override file and no search. `.moku/editor/files.json` is ignored.
+
+| What | Asked as | No answer |
+|---|---|---|
+| The Code tab, ⇧↵ of a Nodes item | `files.find("node:<flow>/<node>")`, through `findFresh`: the file at the line of the def | `Not in the project index: node:<id>` |
+| The Info tab file | `firstDefinition(link.project(), "node:<id>")` | the link "Open the Code tab" |
+| The Styles tab, the Styles group | `textStylesFile(link.project())` | `Not in the project index: text styles` |
+
+A sub-flow or slot node shows its index anchor like any node (D-41). While the index is off, or
+before the first `editor.project` state, each of these shows one line:
+`Project index is off: <reason>` (D-48). A node the index knows whose file cannot be read shows
+"Source loads from the dev server.".
+
+A style step on a file that does not parse now writes nothing. The card shows
+"The file does not parse now · fix it, then edit" (D-44).
 
 ## API
 
@@ -118,6 +136,7 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 |---|---|---|---|
 | Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code and Styles tabs, and ⇧↵ of a Nodes palette item. filesView hooks it. |
 | Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13); the `lost` of an expected reload (`isReloading`, U9) marks nothing. The first `live`/`paused` of a session loads `layout.file` and the style keys; pins equal to the ones on screen lay out nothing again (B9). `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
+| Hooks | `link:project` | `{ state, delta }` | The index changed (D-46). The Code tab reads its node again when the delta touches its file (edited, moved away, removed, or `all` after a gap), never over a draft; a tab that shows a note asks again on any change. The same file at the same version keeps the tab and its result line, and moves only the line. The Styles group is read again when the text styles changed: `all`, a moved `textStyle:` key, another text-styles file, or a change of that file. The Info tab re-renders with the indexed file. |
 | Hooks | `workspace:changed` | `{ ws }` | `flow`: the default camera. Leaving Flow closes the menu and cancels the camera move. |
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. Before the first flow values the selection waits for them. When Flow shows for the first time, the first canvas measure frames the selection, not the current node. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. Before the first flow values it waits for them. |
@@ -129,19 +148,20 @@ Commands run through `ctx.require(panelsPlugin).run(id, input)` (R9). That call 
 flowView never calls `link.run` and never emits `workspace:ran` itself.
 
 Log events use the prefix `flowView: ` (for example `flowView: layout failed`, `flowView: save failed`,
-`flowView: the layout worker cannot start, ELK runs inline`), plus `flowView:unknown-node` and `flowView:overrides-invalid`.
+`flowView: the layout worker cannot start, ELK runs inline`, `flowView: source not read`), plus
+`flowView:unknown-node`.
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of `game.graph`, `game.position` and `game.history { last: historyLast }` for the session; `status()`, `boot()` ("Open in editor"), `files.list`, `files.read`, `files.write`. No `run`. |
+| `linkPlugin` | `watch` of `game.graph`, `game.position` and `game.history { last: historyLast }` for the session; `status()`, `boot()` ("Open in editor"), `project()` (the index state), `files.find`, `files.read`, `files.write`. No `run`. |
 | `workspacePlugin` | `active()`, `show("flow")`, `toast`, `gameFrame().reload({ restore: true, afterSave: true, since })` (after a save; `since` taken before the write), `preview("flow")`, `density()`, `previewZone`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Flow panel; `run(id, input)` for every command |
 
 Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared/style-edit`
-(Styles tab), `panels/shared/highlight` (Code tab), `registry/protocol` `source-files.ts`
-(node → file rule).
+(Styles tab), `panels/shared/highlight` (Code tab), `panels/shared/project` (`findFresh`,
+`textStylesFile`, the off and not-found texts), `registry/protocol` (`firstDefinition`).
 
 ## Lifecycle
 
@@ -152,7 +172,7 @@ Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared
 | `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches among them. |
 
 Palette: Commands "Fit all", "Fit selection", "Follow the game", "Reset layout", "Go to current node", "Show where the game is", "Show Inspector".
-The Nodes group is replaced when the graph hash changes. The Styles group is replaced whenever the styles file is read.
+The Nodes group is replaced when the graph hash changes. The Styles group is replaced whenever the text-styles file is read.
 
 | Keys (workspace `flow`) | What |
 |---|---|
@@ -186,7 +206,7 @@ resizes it; min 220, max 560; it floats as a drawer when the workspace is narrow
 ## Usage
 
 ```ts
-const app = createApp({ pluginConfigs: { flowView: { stylesFile: "src/ui/styles.ts" } } });
+const app = createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
 await app.start();
 app.flowView.focus.select("board/merge");
 await app.flowView.focus.step();
@@ -224,7 +244,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 | `camera/` | Pure camera math, the chrome geometry (preview zone, focus reveal), input interpretation, the rAF tween (reduced motion jumps), the zoom bar and the minimap. Camera moves write the world transform directly and never re-render node cards. |
 | `layout/` | Hub detection, the hub-lane layout and its label pass, DFS back edges, the ELK input (labels, spacing by density) and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, instance edges (`edges.ts`: the edge of an Info row, the other end of an edge). |
-| `inspector/` | The node → file lookup, the Code tab controller, the styles file search, the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
+| `inspector/` | The node key and the Code tab texts (`files.ts`), the Code tab controller, the link:project follow (`follow.ts`), the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
 | `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. Icons come from `panels/shared/icons`. |
 
 ### Layout engine (elkjs)
@@ -259,5 +279,4 @@ budgets. The layout checks of both files always run.
 | Limit | Follow-up in `@moku-labs/game` |
 |---|---|
 | History entries have no frame. A row shows `f<frame>` only when flowView saw it arrive live, else `#<index>`. `focusFrame` toasts "Frames are not recorded in this history" when no row has a frame. | F-H1: `frame` on history entries. |
-| The graph has no file per node. The Inspector uses the shared rule; a graph node `file` wins when present. | F-H2: a dev-only `file` on graph nodes. |
 | The Styles tab cannot know which text style an element uses. It preselects no card ("Pick a text style") and shows no "Used by". | F-G1 / brief §2: the game reports the text style key per ui node. |

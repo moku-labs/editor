@@ -1,13 +1,14 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { FilesClient } from "../../link/types";
-import type { FileEntry } from "../../registry/protocol";
+import type { FileEntry, ProjectFound } from "../../registry/protocol";
 import { wireError } from "../../registry/protocol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // An in-memory FilesClient: a flat path → text map, versions = a content hash,
 // readBinary for images (the stored text is the data URL), folders derived from
-// the paths, injectable errors (Error & WireError) and a list concurrency gauge.
+// the paths, injectable errors (Error & WireError), a list concurrency gauge and
+// the project-index answers of `find` by key.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The fake files channel plus test controls. */
@@ -17,11 +18,14 @@ export type FakeFiles = {
     readonly read: Mock<FilesClient["read"]>;
     readonly write: Mock<FilesClient["write"]>;
     readonly readBinary: Mock<FilesClient["readBinary"]>;
+    readonly find: Mock<FilesClient["find"]>;
   };
   /** Path → text (data URL for images). */
   readonly contents: Map<string, string>;
   /** Errors to throw, by `<method>:<path or dir>`; kept until deleted. */
   readonly failures: Map<string, Error>;
+  /** What `find` answers, by key; an unknown key answers []. */
+  readonly found: Map<string, readonly ProjectFound[]>;
   /** Folders listed, in call order. */
   readonly listed: string[];
   /** Highest number of list calls in flight at once. */
@@ -79,6 +83,7 @@ export const tooLargeError = (path: string): Error =>
 export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): FakeFiles {
   const contents = new Map(Object.entries(seed));
   const failures = new Map<string, Error>();
+  const found = new Map<string, readonly ProjectFound[]>();
   const listed: string[] = [];
   let inFlight = 0;
 
@@ -105,6 +110,7 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
   const fake: FakeFiles = {
     contents,
     failures,
+    found,
     listed,
     maxInFlight: 0,
     client: {
@@ -148,6 +154,11 @@ export function createFakeFiles(seed: Readonly<Record<string, string>> = {}): Fa
         const dataUrl = contents.get(path);
         if (dataUrl === undefined) throw notFoundError(path);
         return { dataUrl, version: hashOf(dataUrl) };
+      }),
+      find: vi.fn(async (key: string) => {
+        await Promise.resolve();
+        fail(`find:${key}`);
+        return found.get(key) ?? [];
       })
     },
     set(path, text) {

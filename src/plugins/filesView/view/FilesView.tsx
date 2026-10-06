@@ -7,7 +7,6 @@
 import type { VNode } from "preact";
 import { langOf } from "../../panels/shared/highlight";
 import { SidePanel, useSidePanel } from "../../panels/shared/side-panel";
-import type { LinkStatus } from "../../registry/protocol";
 import { parseSeriesIndex } from "../preview/series";
 import { TOO_LARGE_MESSAGE } from "../tabs/load";
 import { activeTab } from "../tabs/model";
@@ -32,7 +31,6 @@ import { useFiles } from "./useFiles";
 export type FilesViewProps = {
   readonly ctx: FilesViewCtx;
   readonly api: FilesViewApi;
-  readonly status: LinkStatus;
 };
 
 /**
@@ -171,11 +169,11 @@ function ReopenTree(): VNode | undefined {
 /**
  * The Files workspace view.
  *
- * @param props - Context, api and the link status of this render.
+ * @param props - Context and api.
  * @returns The row: tree panel (or its reopen button) | editor column.
  */
 export function FilesView(props: FilesViewProps): VNode {
-  const { ctx, api, status } = props;
+  const { ctx, api } = props;
   const tab = useFiles(api, () => activeTab(ctx.state));
 
   return (
@@ -191,7 +189,7 @@ export function FilesView(props: FilesViewProps): VNode {
           <>
             <Tabs ctx={ctx} />
             <FileBar ctx={ctx} api={api} tab={tab} />
-            <UsedBy ctx={ctx} api={api} tab={tab} status={status} />
+            <UsedBy ctx={ctx} api={api} tab={tab} />
             <div data-files-body>
               <Body ctx={ctx} api={api} tab={tab} />
             </div>

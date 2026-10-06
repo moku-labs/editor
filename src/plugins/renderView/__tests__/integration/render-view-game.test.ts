@@ -119,7 +119,15 @@ beforeEach(async () => {
 
   hub = createAgentHub({
     channel: agent.channel,
-    files: new Map([["manifest.json", manifestText]])
+    files: new Map([["manifest.json", manifestText]]),
+    project: {
+      state: "on",
+      revision: "r1",
+      manifest: "manifest.json",
+      defs: {},
+      uses: {},
+      broken: {}
+    }
   });
   vi.stubGlobal("WebSocket", hub.Socket);
   // Node environment (the fixture loads by a file URL): a happy-dom document holds the boot.

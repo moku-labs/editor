@@ -28,8 +28,6 @@ export type RenderViewConfig = {
   fpsSamples: number;
   /** Release log entries kept, newest first. */
   releaseLogMax: number;
-  /** Where the game's asset manifest may live, tried in order through link.files.read. */
-  manifestPaths: readonly string[];
 };
 
 /**
@@ -397,5 +395,6 @@ export type RenderViewCtx = {
 export type RenderViewHooks = {
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
+  readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
   readonly "workspace:reveal": (payload: ToolsEvents["workspace:reveal"]) => void;
 };

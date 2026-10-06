@@ -109,7 +109,7 @@ function readNode(value: unknown): GraphNodeJson | undefined {
   if (typeof flow !== "string" || typeof node !== "string" || !flags || !isStrings(outcomes)) {
     return undefined;
   }
-  const optional = ["scene", "slot", "subFlow", "owner", "file"] as const;
+  const optional = ["scene", "slot", "subFlow", "owner"] as const;
   if (!optional.every(key => optionalString(value[key]))) return undefined;
 
   const result: GraphNodeJson = {

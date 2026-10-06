@@ -1,14 +1,13 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is a JSON value */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FileEntry } from "../../../registry/protocol";
 import { errorCode, wireError } from "../../../registry/protocol";
 import { recordSeries, seriesValueOf } from "../../capture/series";
 import { openSheet, seriesIndexOf, showShot, stepSheet } from "../../capture/sheet";
 import { deviceOf, shotOf } from "../../capture/shot";
 import { hasCommand } from "../../commands";
 import { highlightElement, hoverAt, selectElement } from "../../element/select";
-import { findStyleSource, importCandidates, matchKey } from "../../element/source";
+import { importCandidates, styleInRange } from "../../element/source";
 import { openStyleCard, stepStyle } from "../../element/styles";
 import { stopGameView } from "../../lifecycle";
 import { chooseDevice } from "../../palette";
@@ -16,7 +15,7 @@ import { messageOf, uiMessage } from "../../report";
 import { calibrate, pageRectOf } from "../../scene/calibrate";
 import { frameOf } from "../../scene/rebuild";
 import { reloadGame } from "../../stage/reload";
-import { createCtx, flush, type TestCtx, useScene } from "../helpers";
+import { answer, createCtx, flush, place, type TestCtx, useScene } from "../helpers";
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,8 +80,9 @@ describe("value readers", () => {
     expect(seriesIndexOf({ ...base, device: "phone" })).toEqual(base);
   });
 
-  it("matchKey and importCandidates handle the edges", () => {
-    expect(matchKey("", "a")).toBeUndefined();
+  it("styleInRange and importCandidates handle the edges", () => {
+    expect(styleInRange([], [1, 1, 1, 2])).toBeUndefined();
+    expect(styleInRange(['<A key="a" style />'], [1, 1, 1, 20])).toBeUndefined();
     expect(importCandidates('import type { a } from "./styles";', "a", "Hud.tsx")).toEqual([
       "styles.ts",
       "styles.tsx",
@@ -111,26 +111,9 @@ describe("failure paths", () => {
     expect(ctx.workspace.api.setDevice).not.toHaveBeenCalled();
   });
 
-  it("findStyleSource skips a folder that cannot be listed", async () => {
-    ctx = createCtx({ "src/a.tsx": '<A key="hudRow" style={row} />', "lib/b.tsx": "" });
-    const list = vi.spyOn(ctx.link.files, "list");
-    const listings: Record<string, FileEntry[]> = {
-      "": [
-        { path: "lib", kind: "dir", size: 0 },
-        { path: "src", kind: "dir", size: 0 }
-      ],
-      src: [{ path: "src/a.tsx", kind: "file", size: 1 }]
-    };
-    list.mockImplementation(dir => {
-      const entries = listings[dir];
-      return entries === undefined ? Promise.reject(new Error("denied")) : Promise.resolve(entries);
-    });
-    const found = await findStyleSource(ctx, "hudRow");
-    expect(found?.path).toBe("src/a.tsx");
-  });
-
   it("openStyleCard logs a failing load and reports missing", async () => {
     ctx = createCtx({ "src/Hud.tsx": '<Pill key="coinPill" style={coinPill} />' });
+    answer(ctx, "jsx:coinPill", place("src/Hud.tsx", [1, 1, 1, 42], { hash: "v-src/Hud.tsx" }));
     ctx.state.scene = boardScene();
     const ref = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
     ctx.state.selected = ref;
@@ -156,6 +139,7 @@ describe("failure paths", () => {
       "src/Hud.tsx":
         '<Pill key="coinPill" style={coinPill} />\nconst coinPill = defineStyle({\n  height: 76\n});\n'
     });
+    answer(ctx, "jsx:coinPill", place("src/Hud.tsx", [1, 1, 1, 42]));
     ctx.state.scene = boardScene();
     const ref = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
     ctx.state.selected = ref;

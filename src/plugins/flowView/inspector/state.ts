@@ -13,8 +13,8 @@ export function createInspectorState(): InspectorState {
     tab: "info",
     code: undefined,
     codeNote: undefined,
+    codeNode: undefined,
     styles: undefined,
-    sources: undefined,
-    found: undefined
+    keysFile: undefined
   };
 }

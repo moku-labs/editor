@@ -26,6 +26,18 @@ export type FreshFound = {
 };
 
 /**
+ * Every answer of a key in the file of its first answer, with the text and version of that file
+ * read after the answers.
+ */
+export type FreshAnswers = {
+  /** The answers in the file of the first one, in the index's order; never empty. */
+  readonly answers: readonly [ProjectFound, ...ProjectFound[]];
+  readonly text: string;
+  /** The version of the read: the one a write passes. */
+  readonly version: string;
+};
+
+/**
  * The shared text of a key the index does not know (amendment N3).
  */
 export const NOT_IN_INDEX_TEXT = "Not in the project index";
@@ -42,18 +54,17 @@ const NO_STATE_REASON = "no state from the server yet";
 const TRIES = 2;
 
 /**
- * The first answer of a key, or undefined when there is none or `find` rejects.
+ * The answers of a key; none when `find` is missing or rejects.
  *
  * @param files - The files client.
  * @param key - A project-index key.
- * @returns The first Found, or undefined.
+ * @returns The answers, in the index's order.
  */
-async function firstFound(files: FindFiles, key: string): Promise<ProjectFound | undefined> {
+async function answersOf(files: FindFiles, key: string): Promise<readonly ProjectFound[]> {
   try {
-    const answers = await files.find?.(key);
-    return answers?.[0];
+    return (await files.find?.(key)) ?? [];
   } catch {
-    return undefined;
+    return [];
   }
 }
 
@@ -94,17 +105,49 @@ export async function findFresh(
   files: FindReadFiles,
   key: string
 ): Promise<FreshFound | undefined> {
-  let fresh: FreshFound | undefined;
+  const fresh = await findAllFresh(files, key);
+  if (fresh === undefined) return undefined;
+
+  const { answers, text, version } = fresh;
+  return { found: answers[0], text, version };
+}
+
+/**
+ * Finds a key and reads the file of its first answer, like `findFresh`, but keeps every answer in
+ * that file: the calls of a style function (`style:<path>#<function>`, G2) answer one Found each.
+ * When the read version is not the `hash` of the first answer, the index is asked once more. Never
+ * throws.
+ *
+ * @param files - The files client (link.files).
+ * @param key - A project-index key.
+ * @returns The answers in the first answer's file with its text and version, or undefined when the
+ * index does not know the key, `find` is missing or rejects, or the read rejects.
+ * @example
+ * ```ts
+ * // The style card of a picked element styled by a call of `signboardStyle`.
+ * const fresh = await findAllFresh(link.files, "style:features/ui/kit.tsx#signboardStyle");
+ * fresh?.answers.map(found => found.line); // [666, 668]: `defineStyle(board)`, `defineStyle({ … })`
+ * ```
+ */
+export async function findAllFresh(
+  files: FindReadFiles,
+  key: string
+): Promise<FreshAnswers | undefined> {
+  let fresh: FreshAnswers | undefined;
 
   for (let attempt = 0; attempt < TRIES; attempt += 1) {
-    const found = await firstFound(files, key);
-    if (found === undefined) return undefined;
+    const [first, ...rest] = await answersOf(files, key);
+    if (first === undefined) return undefined;
 
-    const read = await readOrNothing(files, found.path);
+    const read = await readOrNothing(files, first.path);
     if (read === undefined) return undefined;
 
-    fresh = { found, text: read.text, version: read.version };
-    if (read.version === found.hash) return fresh;
+    const answers: FreshAnswers["answers"] = [
+      first,
+      ...rest.filter(found => found.path === first.path)
+    ];
+    fresh = { answers, text: read.text, version: read.version };
+    if (read.version === first.hash) return fresh;
   }
 
   return fresh;

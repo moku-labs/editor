@@ -1,12 +1,13 @@
 /**
  * @file flowView inspector module — the Styles tab (C4): "Scene <scene> uses text styles from
- * <file> · Open in Files" (the configured or found styles file), the text-style select with no
+ * <file> · Open in Files" (the text-styles file of the project index), the text-style select with no
  * card chosen until the person picks one ("Pick a text style"), read-only font, steppers only for
  * fields with a shared rule (R8), read-only swatches, the applied bar, the block excerpt with the
  * changed line. Fields shrink (M10).
  */
 import type { VNode } from "preact";
 import { useMemo } from "preact/hooks";
+import { linkPlugin } from "../../link";
 import type { StyleField } from "../../panels/shared/style-edit";
 import {
   fieldRule,
@@ -102,6 +103,7 @@ export function StylesTab(props: StylesTabProps): VNode {
   const styles = ctx.state.inspector.styles;
   const file = styles?.file;
   const key = styles?.key;
+  const project = ctx.require(linkPlugin).project();
   const colours = useMemo(() => {
     const parsed = parseStyleFile(styles?.text ?? "");
     return isStyleEditError(parsed) ? new Map<string, string>() : parsed.colours;
@@ -134,7 +136,9 @@ export function StylesTab(props: StylesTabProps): VNode {
     return (
       <div data-flow="styles-tab" data-part="body">
         {header}
-        <p data-part="reason">{styleErrorText(styles.error ?? { error: "no-file" }, file)}</p>
+        <p data-part="reason">
+          {styleErrorText(styles.error ?? { error: "no-file" }, file, project)}
+        </p>
       </div>
     );
   }
@@ -177,7 +181,7 @@ export function StylesTab(props: StylesTabProps): VNode {
       <p data-part="applied" data-ok={styles.result?.ok === false ? undefined : ""}>
         {styles.error === undefined
           ? (styles.result?.text ?? "Edits write to the file and reload the game.")
-          : styleErrorText(styles.error, file)}
+          : styleErrorText(styles.error, file, project)}
       </p>
       {block !== undefined && (
         <div data-part="excerpt">

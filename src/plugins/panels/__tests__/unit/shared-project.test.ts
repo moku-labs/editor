@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { FileText, ProjectFound, ProjectState } from "../../../registry/protocol";
 import { wireError } from "../../../registry/protocol";
 import {
+  findAllFresh,
   findFresh,
   manifestOf,
   NOT_IN_INDEX_TEXT,
@@ -172,6 +173,58 @@ describe("findFresh", () => {
 
     expect(await findFresh({ find, read }, "node:board/merge")).toBeUndefined();
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("findAllFresh", () => {
+  const KIT = "features/ui/kit.tsx";
+
+  /**
+   * One answer of `find` for a style call of the kit.
+   *
+   * @param line - The line of the call.
+   * @param hash - The sha1 of the bytes at the call.
+   * @returns The Found.
+   */
+  function callAt(line: number, hash: string): ProjectFound {
+    return { path: KIT, binding: "signboardStyle", line, range: [line, 10, line + 4, 5], hash };
+  }
+
+  it("answers every Found in the file of the first one, with its text and version", async () => {
+    const elsewhere = { ...callAt(9, "v1"), path: "features/ui/other.tsx" };
+    const find = vi.fn(async () => [callAt(666, "v1"), elsewhere, callAt(668, "v1")]);
+    const read = vi.fn(async (): Promise<FileText> => ({ text: "kit", version: "v1" }));
+
+    expect(await findAllFresh({ find, read }, "style:features/ui/kit.tsx#signboardStyle")).toEqual({
+      answers: [callAt(666, "v1"), callAt(668, "v1")],
+      text: "kit",
+      version: "v1"
+    });
+    expect(read).toHaveBeenCalledWith(KIT);
+  });
+
+  it("asks once more when the file changed between find and read", async () => {
+    const find = vi
+      .fn<(key: string) => Promise<readonly ProjectFound[]>>()
+      .mockResolvedValueOnce([callAt(666, "v1")])
+      .mockResolvedValueOnce([callAt(669, "v2"), callAt(671, "v2")]);
+    const read = vi.fn(async (): Promise<FileText> => ({ text: "moved", version: "v2" }));
+
+    expect(await findAllFresh({ find, read }, "style:features/ui/kit.tsx#signboardStyle")).toEqual({
+      answers: [callAt(669, "v2"), callAt(671, "v2")],
+      text: "moved",
+      version: "v2"
+    });
+    expect(find).toHaveBeenCalledTimes(2);
+  });
+
+  it("never throws: no answer, a rejected find or read answer undefined", async () => {
+    const key = "style:features/ui/kit.tsx#signboardStyle";
+
+    expect(await findAllFresh({ find: findNothing, read: readEmpty }, key)).toBeUndefined();
+    expect(await findAllFresh({ find: findLost, read: readEmpty }, key)).toBeUndefined();
+    expect(await findAllFresh({ find: findMerge, read: readGone }, key)).toBeUndefined();
+    expect(await findAllFresh({ read: readEmpty }, key)).toBeUndefined();
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * @file hub plugin — the files channel: params checked with checkInput, then list, read, write,
- * writeBinary (the data URL goes to writeDataUrl, which decodes it with its path, R1) and
- * readBinary of the files plugin. Files errors are wire errors already and pass through unchanged.
+ * writeBinary (the data URL goes to writeDataUrl, which decodes it with its path, R1), readBinary
+ * and find (where a project-index key lives) of the files plugin. Files errors are wire errors already and pass through unchanged.
  */
 import type { FilesApi } from "../../files/types";
 import type {
@@ -10,6 +10,7 @@ import type {
   FileText,
   InputSchema,
   Json,
+  ProjectFound,
   WriteResult
 } from "../../registry/protocol";
 import { checkInput, errorCode, toWireValue, wireError } from "../../registry/protocol";
@@ -35,9 +36,14 @@ const WRITE = { path: "string", text: "string", version: "string?" } satisfies I
 const WRITE_BINARY = { path: "string", data: "string" } satisfies InputSchema;
 
 /**
+ * Params of `find` (a project-index key such as `node:board/merge`).
+ */
+const FIND = { key: "string" } satisfies InputSchema;
+
+/**
  * What a files call answers.
  */
-type FilesResult = FileEntry[] | FileText | WriteResult | FileBinary;
+type FilesResult = FileEntry[] | FileText | WriteResult | FileBinary | ProjectFound[];
 
 /**
  * Runs one files method with checked params.
@@ -72,6 +78,10 @@ async function callFiles(files: FilesApi, method: string, params: Json): Promise
     case "readBinary": {
       return files.readBinary(checkInput(PATH, params).path);
     }
+    case "find": {
+      // await: unicorn reads `.find(key)` as Array#find otherwise
+      return await files.find(checkInput(FIND, params).key);
+    }
     default: {
       throw wireError(errorCode.unknownMethod, `unknown method files.${method}`, {
         retryable: false
@@ -88,7 +98,7 @@ async function callFiles(files: FilesApi, method: string, params: Json): Promise
  * @param method - The files-channel method.
  * @param params - The request params.
  * @returns The Json result.
- * @throws {Error} Rejects with -32602, -32601 or the files wire error (-32004, -32005 …).
+ * @throws {Error} Rejects with -32602, -32601 or the files wire error (-32004, -32005, -32008 …).
  * @example
  * ```ts
  * const result = await dispatchFiles(files, "list", { dir: "src" });

@@ -21,11 +21,21 @@ import {
 // integration: the game channel answers watches with values the test sends,
 // runs with a RunResult, reads from a value map; the files channel works on an
 // in-memory project (folders listed, versions, -32005 conflicts, -32601 for a
-// missing file).
+// missing file) with a project index (`find`, the published `editor.project`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** What a socket listener receives. */
 type SocketEvent = { readonly data?: string; readonly code?: number; readonly reason?: string };
+
+/** Where the hub's project index says a key is defined. */
+export type HubAnswer = { readonly path: string; readonly line: number };
+
+/** What one batch of the project index changed. */
+export type HubChange = {
+  readonly files: readonly string[];
+  readonly moved: readonly { readonly key: string; readonly from: string; readonly to: string }[];
+  readonly removed: readonly string[];
+};
 
 /** One fake socket. */
 type HubSocket = { closed: boolean; deliver(text: string): void };
@@ -38,6 +48,10 @@ export type FlowHub = {
   readonly files: Map<string, { text: string; version: string }>;
   /** Values of one-shot reads by source id. */
   readonly reads: Map<string, Json>;
+  /** The project index: key → its defs. Published as `editor.project` on every socket open. */
+  readonly index: Map<string, readonly HubAnswer[]>;
+  /** Publishes a new revision of the project state with what changed (a watch batch). */
+  project(change: HubChange): void;
   frame: number;
   open(info: SessionInfo, manifest: Manifest): void;
   close(id: string, reason: string): void;
@@ -76,6 +90,40 @@ export function createFlowHub(): FlowHub {
     broadcast(encode(notification(channel, method, params, session)));
   };
   const sessions: SessionInfo[] = [];
+  let revision = 1;
+  let change: HubChange | undefined;
+
+  /** The project state of the index now: on, every key a def. */
+  const projectState = (): Json => {
+    const defs: { [key: string]: Json } = {};
+    for (const [key, answers] of hub.index) defs[key] = answers.map(answer => answer.path);
+    const state: { [key: string]: Json } = {
+      state: "on",
+      revision: `r${revision}`,
+      defs,
+      uses: {},
+      broken: {}
+    };
+    if (change === undefined) return state;
+    return {
+      ...state,
+      previous: `r${revision - 1}`,
+      change: toWireValue({
+        files: [...change.files],
+        moved: change.moved.map(move => ({ ...move })),
+        removed: [...change.removed]
+      })
+    };
+  };
+
+  /** The answers of `find`: each def with its line and the version of its file. */
+  const findOf = (key: string): Json[] =>
+    (hub.index.get(key) ?? []).map(answer => ({
+      path: answer.path,
+      line: answer.line,
+      range: [answer.line, 1, answer.line + 1, 1],
+      hash: hub.files.get(answer.path)?.version ?? ""
+    }));
   const manifests = new Map<string, Manifest>();
 
   /** The entries of a folder: its files and the folders under it. */
@@ -136,6 +184,10 @@ export function createFlowHub(): FlowHub {
       return encode(success(request.id, { text: file.text, version: file.version }));
     }
     if (request.method === "write") return writeAnswer(request, path, params);
+    if (request.method === "find") {
+      const key = typeof params.key === "string" ? params.key : "";
+      return encode(success(request.id, findOf(key)));
+    }
     if (request.method === "readBinary") {
       return encode(success(request.id, { dataUrl: "data:image/png;base64,AA==", version: "b1" }));
     }
@@ -171,6 +223,7 @@ export function createFlowHub(): FlowHub {
       queueMicrotask(() => {
         this.#fire("open", {});
         notify("editor", "sessions", { list: toWireValue(sessions) });
+        this.deliver(encode(notification("editor", "project", projectState())));
       });
     }
 
@@ -203,6 +256,12 @@ export function createFlowHub(): FlowHub {
     received: [],
     files: new Map(),
     reads: new Map(),
+    index: new Map(),
+    project(next) {
+      revision += 1;
+      change = next;
+      notify("editor", "project", projectState());
+    },
     frame: 1,
     open(info, manifest) {
       sessions.push(info);

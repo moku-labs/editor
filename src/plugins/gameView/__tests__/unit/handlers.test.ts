@@ -46,8 +46,9 @@ afterEach(() => {
 });
 
 describe("createHandlers", () => {
-  it("hooks link:status, workspace:changed, workspace:open-sheet, workspace:inspect and workspace:reference", () => {
+  it("hooks link:status, link:project, workspace:changed, workspace:open-sheet, workspace:inspect and workspace:reference", () => {
     expect(Object.keys(createHandlers(ctx)).toSorted()).toEqual([
+      "link:project",
       "link:status",
       "workspace:changed",
       "workspace:inspect",

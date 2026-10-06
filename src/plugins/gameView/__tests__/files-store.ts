@@ -2,6 +2,7 @@ import type {
   FileBinary,
   FileEntry,
   FileText,
+  ProjectFound,
   WireError,
   WriteResult
 } from "../../registry/protocol";
@@ -10,9 +11,13 @@ import { errorCode, wireError } from "../../registry/protocol";
 // ─────────────────────────────────────────────────────────────────────────────
 // An in-memory files sandbox with the files channel's behaviour: direct-child
 // listing (folders first), versions, version conflicts (-32005), missing files
-// (-32601) and parent folders created by a write. Used by the unit mocks and by
-// the integration hub.
+// (-32601) and parent folders created by a write, and a scripted project index
+// (`find` answers what a test set per key). Used by the unit mocks and by the
+// integration hub.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** One answer of the scripted index: its `hash` is the stored version of its path at the call when left out. */
+export type FoundAt = Omit<ProjectFound, "hash"> & { readonly hash?: string };
 
 /** One stored file: text or a data URL, with its version. */
 type Stored = { text: string; dataUrl: string | undefined; version: string };
@@ -24,6 +29,10 @@ export type FilesStore = {
   write(path: string, text: string, version?: string): Promise<WriteResult>;
   writeBinary(path: string, dataUrl: string): Promise<WriteResult>;
   readBinary(path: string): Promise<FileBinary>;
+  /** The project index: the answers set for the key, `[]` for a key without any. */
+  find(key: string): Promise<readonly ProjectFound[]>;
+  /** The answers of `find` by key. */
+  readonly answers: Map<string, readonly FoundAt[]>;
   /** Every stored path. */
   paths(): string[];
   /** Text of a stored file (throws when missing). */
@@ -79,6 +88,7 @@ export function createFilesStore(initial: Readonly<Record<string, string>> = {})
     files.set(path, { text, dataUrl: undefined, version: nextVersion() });
   }
   const writes: { path: string; kind: "text" | "binary" }[] = [];
+  const answers = new Map<string, readonly FoundAt[]>();
 
   const children = (dir: string): FileEntry[] | undefined => {
     const prefix = dir === "" || dir === "." ? "" : `${dir.replace(/\/$/, "")}/`;
@@ -105,6 +115,7 @@ export function createFilesStore(initial: Readonly<Record<string, string>> = {})
 
   const store: FilesStore = {
     writes,
+    answers,
     list(dir) {
       const entries = children(dir);
       return entries === undefined ? Promise.reject(missing(dir)) : Promise.resolve(entries);
@@ -140,6 +151,13 @@ export function createFilesStore(initial: Readonly<Record<string, string>> = {})
       return stored?.dataUrl === undefined
         ? Promise.reject(missing(path))
         : Promise.resolve({ dataUrl: stored.dataUrl, version: stored.version });
+    },
+    find(key) {
+      const found = (answers.get(key) ?? []).map(answer => ({
+        ...answer,
+        hash: answer.hash ?? files.get(answer.path)?.version ?? "gone"
+      }));
+      return Promise.resolve(found);
     },
     paths: () => [...files.keys()],
     text(path) {

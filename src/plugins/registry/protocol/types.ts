@@ -409,6 +409,17 @@ export type WriteBinaryParams = { path: string; data: string };
 export type FindParams = { key: string };
 
 /**
+ * A graph node by flow and node name: the `node:<flow>/<node>` key of the project index.
+ *
+ * @example
+ * ```ts
+ * // filesView's Used by card lists the nodes a file defines.
+ * const ref: NodeRef = { flow: "board", node: "merge" }; // node:board/merge
+ * ```
+ */
+export type NodeRef = { readonly flow: string; readonly node: string };
+
+/**
  * One game session the way a tools client sees it: the five R1 fields, the hub's liveness readout
  * once the game has sent a heartbeat (M4), and the hash of the session's command doors (D-37).
  * Old clients ignore `heartbeat` and `manifestHash`.

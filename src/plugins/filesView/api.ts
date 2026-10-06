@@ -2,9 +2,10 @@
  * @file filesView plugin — api factory: composes the tree, tabs, links and store modules. The
  * contract of every member lives on `FilesViewApi` in types.ts.
  */
-import { flowFile } from "../registry/protocol";
+import { linkPlugin } from "../link";
+import { firstDefinition } from "../registry/protocol";
 import { editorUrlFor } from "./links/editor-link";
-import { existsIn, graphNodeOf, nodeFileOf } from "./links/used-by";
+import { usedByOf } from "./links/used-by";
 import { subscribe } from "./store";
 import { setBuffer, setEditing, setMode } from "./tabs/edit";
 import { tabInfo } from "./tabs/model";
@@ -12,12 +13,7 @@ import { activateTab, closeTab, openTab } from "./tabs/open";
 import { resolveConflict, saveTab } from "./tabs/save";
 import { filesInTreeOrder } from "./tree/model";
 import { buildIndex } from "./tree/walk";
-import type { FilesViewApi, FilesViewCtx, UsedBy } from "./types";
-
-/**
- * Used by of a path that no flow or node uses.
- */
-const UNUSED: UsedBy = Object.freeze({ flows: [], nodes: [] });
+import type { FilesViewApi, FilesViewCtx } from "./types";
 
 /**
  * Creates the filesView api over the plugin state (all state lives in `ctx.state`, so the panel
@@ -28,6 +24,14 @@ const UNUSED: UsedBy = Object.freeze({ flows: [], nodes: [] });
  */
 export function createFilesViewApi(ctx: FilesViewCtx): FilesViewApi {
   const { state } = ctx;
+
+  /**
+   * The newest project state link holds: every lookup asks it again, so a move is seen at once.
+   *
+   * @returns The project state, or undefined before the first.
+   */
+  const project = () => ctx.require(linkPlugin).project();
+
   return {
     open: (path, options) => openTab(ctx, path, options ?? {}),
     close: (path, options) => closeTab(ctx, path, options?.discard === true),
@@ -41,9 +45,9 @@ export function createFilesViewApi(ctx: FilesViewCtx): FilesViewApi {
     resolveConflict: (path, choice) => resolveConflict(ctx, path, choice),
     refresh: () => buildIndex(ctx),
     files: () => (state.index === undefined ? [] : filesInTreeOrder(state.index)),
-    fileOf: ref => nodeFileOf(ref, graphNodeOf(state.graph, ref), state.overrides, existsIn(state)),
-    flowFileOf: flow => flowFile(flow, state.overrides, existsIn(state)),
-    usedBy: path => state.usedBy?.get(path) ?? UNUSED,
+    fileOf: ref => firstDefinition(project(), `node:${ref.flow}/${ref.node}`),
+    flowFileOf: flow => firstDefinition(project(), `flow:${flow}`),
+    usedBy: path => usedByOf(project(), path),
     editorUrl: (path, line) => editorUrlFor(ctx, path, line),
     subscribe: fn => subscribe(state, fn)
   };

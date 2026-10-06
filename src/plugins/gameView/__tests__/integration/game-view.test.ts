@@ -9,7 +9,14 @@ import { createToolsCore, createToolsPlugin, toolsCoreConfig } from "../../../..
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { ElementRef, SceneSnapshot } from "../../../panels/shared/scene";
-import type { Json, Manifest, RunResult, SessionInfo, ToolsBoot } from "../../../registry/protocol";
+import type {
+  Json,
+  Manifest,
+  ProjectState,
+  RunResult,
+  SessionInfo,
+  ToolsBoot
+} from "../../../registry/protocol";
 import { errorCode, wireError } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import type { RanEvent } from "../../../workspace/types";
@@ -322,6 +329,42 @@ describe("gameView integration", () => {
     // The click reads the scene once more through the hub before it picks.
     await until(() => app.gameView.selected() !== undefined, "the picked element");
     expect(app.gameView.selected()).toEqual(ITEM);
+    await app.stop();
+  });
+
+  it("names the source the project index answers, and follows a move (link:project)", async () => {
+    const { app } = await startInGame();
+    const first: ProjectState = { state: "on", revision: "r1", defs: {}, uses: {}, broken: {} };
+    hub.project(first);
+    await until(() => app.link.project()?.state === "on", "the project state");
+    files.put("features/board/view.tsx", '<stack key="boardSlot" />');
+    files.answers.set("jsx:boardSlot", [
+      { path: "features/board/view.tsx", line: 1, range: [1, 1, 1, 27] }
+    ]);
+    act(() => app.gameView.select({ kind: "ui", path: "boardScreen/boardSlot" }));
+    expect(await app.gameView.copyReference()).toContain(" · features/board/view.tsx:1 · ");
+
+    // An agent moves the element; the index's next batch says so.
+    files.put("features/board/slot.tsx", '\n<stack key="boardSlot" />');
+    files.answers.set("jsx:boardSlot", [
+      { path: "features/board/slot.tsx", line: 2, range: [2, 1, 2, 27] }
+    ]);
+    const moved = {
+      key: "jsx:boardSlot",
+      from: "features/board/view.tsx",
+      to: "features/board/slot.tsx"
+    };
+    hub.project({
+      ...first,
+      revision: "r2",
+      previous: "r1",
+      change: { files: [moved.to, moved.from], moved: [moved], removed: [] }
+    });
+    await until(() => {
+      const project = app.link.project();
+      return project?.state === "on" && project.revision === "r2";
+    }, "the next project state");
+    expect(await app.gameView.copyReference()).toContain(" · features/board/slot.tsx:2 · ");
     await app.stop();
   });
 

@@ -416,23 +416,27 @@ export function firstDefinition(state: ProjectState | undefined, key: string): s
 
 /**
  * The project-index key of a style block: a `defineStyle` const is a `style:` key of its file, a
- * text-style entry a `textStyle:` key of the game.
+ * call of a style function the `style:` key of the function or of its property (G2), a text-style
+ * entry a `textStyle:` key of the game.
  *
- * @param ref - The block: `{ kind: "const", name }` or `{ kind: "text", key }`.
+ * @param ref - The block: `{ kind: "const", name }`, `{ kind: "call", name }` (the part of the key
+ * after `#`) or `{ kind: "text", key }`.
  * @param path - The root-relative file the block is in.
  * @returns The key to `find`.
  * @example
  * ```ts
  * anchorKey({ kind: "const", name: "popupScreen" }, "features/ui/popup.tsx");
  * // "style:features/ui/popup.tsx#popupScreen"
+ * anchorKey({ kind: "call", name: "roundStylesOf.icon" }, "features/ui/kit.tsx");
+ * // "style:features/ui/kit.tsx#roundStylesOf.icon"
  * anchorKey({ kind: "text", key: "ui.number" }, "features/ui/text-styles.ts"); // "textStyle:ui.number"
  * ```
  */
 export function anchorKey(
   ref:
     | { readonly kind: "text"; readonly key: string }
-    | { readonly kind: "const"; readonly name: string },
+    | { readonly kind: "const" | "call"; readonly name: string },
   path: string
 ): string {
-  return ref.kind === "const" ? `style:${path}#${ref.name}` : `textStyle:${ref.key}`;
+  return ref.kind === "text" ? `textStyle:${ref.key}` : `style:${path}#${ref.name}`;
 }

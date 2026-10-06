@@ -112,7 +112,9 @@ export function createFiles(root = "/projects/merge-game"): FilesApi {
     writeDataUrl: vi.fn(),
     readBinary: vi.fn(),
     resolve: vi.fn(),
-    root: () => root
+    root: () => root,
+    find: vi.fn(),
+    project: () => ({ state: "off", reason: "not opened" })
   };
 }
 

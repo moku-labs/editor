@@ -52,15 +52,6 @@ export type { HotSwapEntry } from "./reload";
 export { isHotSwapEntry, isReloading } from "./reload";
 export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
 export { pickSession } from "./session-choice";
-export type { NodeRef, SourceOverrides } from "./source-files";
-export {
-  flowFile,
-  kebab,
-  nodeFile,
-  parseOverrides,
-  SOURCE_OVERRIDES_PATH,
-  SOURCE_ROOTS
-} from "./source-files";
 export type {
   Changes,
   Channel,
@@ -92,6 +83,7 @@ export type {
   ListParams,
   Manifest,
   Message,
+  NodeRef,
   Notification,
   Orientation,
   PathParams,

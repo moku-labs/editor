@@ -36,6 +36,7 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
     run: (id, input) => ctx.require(panelsPlugin).run(id, input),
     status: () => ctx.require(linkPlugin).status(),
     boot: () => ctx.require(linkPlugin).boot(),
+    project: () => ctx.require(linkPlugin).project(),
     show: () => {
       ctx.require(workspacePlugin).show("flow");
     },

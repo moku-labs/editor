@@ -1,45 +1,83 @@
 /**
- * @file gameView plugin — the JSX of a picked element in its source (round 2b R12), pure: the
- * column of its key on the key line, and the lines of the element around it: from the line that
- * opens its tag to the line that closes the element (its `/>` or its closing tag). Braces are
- * skipped whole (attribute values, expression children with their own JSX), so arrows and
- * comparisons inside them close nothing; strings, template literals and comments inside braces
- * are skipped too. A key line that is not inside a tag (the template line of a loop key in a
- * helper) is the element's only line.
+ * @file gameView plugin — the source text of a project-index answer, pure (round 2b R12, D-38):
+ * the lines of its range (a JSX element from the line that opens its tag to the line that closes
+ * it, a component definition, a text style key, a `defineStyle` call), and the opening tag at the
+ * start of a JSX range: its name and its attributes. Braces are skipped whole (attribute values,
+ * spreads), with the strings, template literals and comments inside them, so an arrow or a
+ * comparison in a value never ends the tag.
  */
-import { keyPattern, loopKeyPattern } from "./source";
+import type { CodeSnippet, SourceRange } from "../types";
 
 /**
- * The first character of a tag name.
+ * The `<` and the name of an opening tag, read where the range starts (`<Signboard`, `<Kit.Button`).
  */
-const TAG_START = /[$A-Z_a-z]/;
+const OPENING_TAG = /<([$A-Z_a-z][\w$.:-]*)/y;
 
 /**
- * The lines above the key line searched for the `<` that opens its tag.
+ * A character of an attribute name (`style`, `data-style`, `xlink:href`).
  */
-const TAG_LOOKBACK = 8;
+const NAME_CHAR = /[\w$:-]/;
 
 /**
- * The first and the last 1-based line of an element.
+ * White space between the parts of an attribute.
  */
-export type LineRange = { readonly start: number; readonly end: number };
+const SPACE = /\s/;
 
 /**
- * The column of a key on its line: the `key=` / `id=` attribute, else the template literal that
- * builds a loop key; 0 when neither is on the line.
+ * One attribute of an opening tag: its name, the 1-based line it starts on, and its value: the
+ * text inside the quotes of a string, or inside the braces of an expression (trimmed). A boolean
+ * attribute (`hung`) has no value.
  *
- * @param line - The key line.
- * @param key - The ui key.
- * @returns The 0-based column.
  * @example
  * ```ts
- * keyColumn('        id="settingsBoard"', "settingsBoard"); // 8
+ * const style: TagAttribute = { name: "style", line: 218, value: { braced: true, text: "orderCardStyle(card.slot)" } };
  * ```
  */
-export function keyColumn(line: string, key: string): number {
-  const literal = keyPattern(key).exec(line);
-  if (literal !== null) return literal.index;
-  return loopKeyPattern(key)?.exec(line)?.index ?? 0;
+export type TagAttribute = {
+  readonly name: string;
+  readonly line: number;
+  readonly value?: { readonly braced: boolean; readonly text: string };
+};
+
+/**
+ * The lines of a range as a snippet, at most `max` of them.
+ *
+ * @param path - The file of the range.
+ * @param text - Its text.
+ * @param range - The answer's range; its start and end lines are used.
+ * @param max - The most lines kept; all by default.
+ * @returns The snippet from the start line.
+ * @example
+ * ```ts
+ * // The JSX of the settings board: settings.tsx from line 300 to line 321.
+ * snippetOf("features/settings/settings.tsx", text, [300, 7, 321, 19]).lines.length; // 22
+ * ```
+ */
+export function snippetOf(
+  path: string,
+  text: string,
+  range: SourceRange,
+  max = Number.POSITIVE_INFINITY
+): CodeSnippet {
+  const start = range[0];
+  const end = Math.min(range[2], start - 1 + max);
+  return { path, line: start, lines: text.split("\n").slice(start - 1, end) };
+}
+
+/**
+ * The name of the tag that opens where a range starts.
+ *
+ * @param lines - The file lines.
+ * @param range - A JSX answer's range.
+ * @returns The tag name, undefined when no tag opens there.
+ * @example
+ * ```ts
+ * tagNameAt(['      <Signboard', '        id="settingsBoard"'], [1, 7, 2, 25]); // "Signboard"
+ * ```
+ */
+export function tagNameAt(lines: readonly string[], range: SourceRange): string | undefined {
+  OPENING_TAG.lastIndex = range[1] - 1;
+  return OPENING_TAG.exec(lines[range[0] - 1] ?? "")?.[1];
 }
 
 /**
@@ -59,34 +97,17 @@ function lineStarts(lines: readonly string[]): readonly number[] {
 }
 
 /**
- * The 1-based line of an offset.
+ * The 1-based line of an offset, searched from a line known to be at or before it.
  *
  * @param starts - The line starts.
  * @param offset - An offset in the joined text.
+ * @param from - A 0-based line at or before the offset.
  * @returns The line.
  */
-function lineOf(starts: readonly number[], offset: number): number {
-  let line = 0;
+function lineOf(starts: readonly number[], offset: number, from: number): number {
+  let line = from;
   while (line + 1 < starts.length && (starts[line + 1] ?? 0) <= offset) line += 1;
   return line + 1;
-}
-
-/**
- * The `<` of the tag a position is inside: searched backwards, stopped by a `>` that ends a tag
- * (not the one of `=>`), by a `;`, or at the floor.
- *
- * @param text - The joined text.
- * @param at - The position (the key).
- * @param floor - The lowest offset searched.
- * @returns The offset of the `<`, undefined when the position is in no tag.
- */
-function openingTag(text: string, at: number, floor: number): number | undefined {
-  for (let index = at - 1; index >= floor; index -= 1) {
-    const char = text.charAt(index);
-    if (char === "<" && TAG_START.test(text.charAt(index + 1))) return index;
-    if (char === ";" || (char === ">" && text.charAt(index - 1) !== "=")) return undefined;
-  }
-  return undefined;
 }
 
 /**
@@ -160,81 +181,98 @@ function skipBraces(text: string, start: number): number {
 }
 
 /**
- * The `>` that ends a tag opened just before `start`: attribute values in braces and quotes are
- * skipped.
+ * The first offset at or after `start` that is not white space.
  *
  * @param text - The joined text.
- * @param start - The offset after the `<`.
- * @returns The offset of the `>`, undefined when the tag never ends.
+ * @param start - An offset.
+ * @returns The offset.
  */
-function tagEnd(text: string, start: number): number | undefined {
+function skipSpaces(text: string, start: number): number {
   let index = start;
-  while (index < text.length) {
-    const char = text.charAt(index);
-    if (char === ">") return index;
-    if (char === "{") index = skipBraces(text, index);
-    else if (char === '"' || char === "'") index = skipLiteral(text, index) ?? index + 1;
-    else index += 1;
-  }
-  return undefined;
+  while (index < text.length && SPACE.test(text.charAt(index))) index += 1;
+  return index;
 }
 
 /**
- * The offset where the element that opens at `open` ends: its `/>`, or the `>` of its closing
- * tag. Nested elements and fragments are counted; braced children are skipped whole.
+ * Reads one attribute whose name starts at an offset: its name, line and value.
  *
  * @param text - The joined text.
- * @param open - The `<` of the element's tag.
- * @returns The end offset, undefined when the element never closes.
+ * @param starts - The line starts.
+ * @param start - The first character of the name.
+ * @param from - A 0-based line at or before `start`.
+ * @returns The attribute and the offset after it.
  */
-function elementEnd(text: string, open: number): number | undefined {
-  let depth = 0;
-  let index = open;
-  while (index < text.length) {
-    const char = text.charAt(index);
-    const next = text.charAt(index + 1);
-    if (char === "{" && depth > 0) {
-      index = skipBraces(text, index);
-      continue;
-    }
-    if (char !== "<" || !(next === "/" || next === ">" || TAG_START.test(next))) {
-      index += 1;
-      continue;
-    }
+function readAttribute(
+  text: string,
+  starts: readonly number[],
+  start: number,
+  from: number
+): { readonly attribute: TagAttribute; readonly end: number } {
+  let index = start;
+  while (index < text.length && NAME_CHAR.test(text.charAt(index))) index += 1;
+  const name = text.slice(start, index);
+  const line = lineOf(starts, start, from);
 
-    const end = tagEnd(text, index + 1);
-    if (end === undefined) return undefined;
-    if (next === "/") depth -= 1;
-    else if (text.charAt(end - 1) !== "/") depth += 1;
-    if (depth === 0) return end;
-    index = end + 1;
+  // A boolean attribute: no `=` follows the name.
+  const equals = skipSpaces(text, index);
+  if (text.charAt(equals) !== "=") return { attribute: { name, line }, end: index };
+
+  const open = skipSpaces(text, equals + 1);
+  const quote = text.charAt(open);
+  if (quote === "{") {
+    const end = skipBraces(text, open);
+    const value = { braced: true, text: text.slice(open + 1, end - 1).trim() };
+    return { attribute: { name, line, value }, end };
   }
-  return undefined;
+  if (quote === '"' || quote === "'") {
+    const end = skipLiteral(text, open) ?? open + 1;
+    return {
+      attribute: { name, line, value: { braced: false, text: text.slice(open + 1, end - 1) } },
+      end
+    };
+  }
+  return { attribute: { name, line }, end: open };
 }
 
 /**
- * The lines of the element whose key sits at a line and column: from the line of the `<` that
- * opens its tag (up to eight lines above) to the line where it closes. A key in no tag, or an
- * element that never closes, gives the key line alone (or the tag line to the key line).
+ * The attributes of the tag that opens where a JSX range starts, up to the `>` or `/>` that ends
+ * it. A spread (`{...props}`) is skipped.
  *
  * @param lines - The file lines.
- * @param line - The 1-based key line.
- * @param column - The 0-based column of the key on it.
- * @returns The first and the last line of the element.
+ * @param range - A JSX answer's range.
+ * @returns The attributes in order; empty when no tag opens there.
  * @example
  * ```ts
- * elementLines(['<Pill key="coinPill" style={coinPill} />'], 1, 6); // { start: 1, end: 1 }
+ * // merge-game's order card: <column key={id} state={…} style={orderCardStyle(card.slot)} …>
+ * tagAttributes(stripLines, [215, 5, 247, 14]).find(attribute => attribute.name === "style");
+ * // { name: "style", line: 218, value: { braced: true, text: "orderCardStyle(card.slot)" } }
  * ```
  */
-export function elementLines(lines: readonly string[], line: number, column: number): LineRange {
+export function tagAttributes(
+  lines: readonly string[],
+  range: SourceRange
+): readonly TagAttribute[] {
   const text = lines.join("\n");
   const starts = lineStarts(lines);
-  const at = (starts[line - 1] ?? 0) + column;
-  const floor = starts[Math.max(0, line - 1 - TAG_LOOKBACK)] ?? 0;
+  const from = range[0] - 1;
+  OPENING_TAG.lastIndex = (starts[from] ?? text.length) + range[1] - 1;
+  const tag = OPENING_TAG.exec(text);
+  if (tag === null) return [];
 
-  const open = openingTag(text, at, floor);
-  if (open === undefined) return { start: line, end: line };
-  const start = lineOf(starts, open);
-  const end = elementEnd(text, open);
-  return { start, end: end === undefined ? line : lineOf(starts, end) };
+  const attributes: TagAttribute[] = [];
+  let index = tag.index + tag[0].length;
+  while (index < text.length) {
+    const char = text.charAt(index);
+    if (char === ">" || text.startsWith("/>", index)) break;
+    if (char === "{") {
+      index = skipBraces(text, index);
+    } else if (NAME_CHAR.test(char)) {
+      const read = readAttribute(text, starts, index, from);
+      attributes.push(read.attribute);
+      index = read.end;
+    } else {
+      index += 1;
+    }
+  }
+  return attributes;
 }

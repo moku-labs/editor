@@ -61,7 +61,7 @@ export function nameOf(node: SceneNode): string {
 }
 
 /**
- * Where the element is in the source: the key's `file:line` (`(loop)` for a loop key), else the
+ * Where the element is in the source: the key's `file:line` from the project index, else the
  * line that defines an entity's projection.
  *
  * @param facts - The facts.

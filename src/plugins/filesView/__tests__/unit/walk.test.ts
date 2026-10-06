@@ -8,7 +8,7 @@ import { createCtx, settle } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 // buildIndex: breadth-first, at most 4 lists in flight, maxFiles truncation,
 // the depth cap, a failing folder skipped with a warn, a failing root, single
-// flight; then overrides, Used by, palette items and a notify.
+// flight; then the palette items and a notify.
 // ─────────────────────────────────────────────────────────────────────────────
 
 afterEach(() => {
@@ -120,19 +120,14 @@ describe("buildIndex", () => {
     expect(ctx.state.indexing).toBeUndefined();
   });
 
-  it("then loads overrides, builds Used by, replaces the palette items and notifies", async () => {
+  it("then replaces the palette items and notifies", async () => {
     const ctx = createCtx();
-    ctx.state.graph = ctx.link.graph;
     const listener = vi.fn();
     ctx.state.listeners.add(listener);
     const previous = vi.fn();
     ctx.state.paletteRemover = previous;
     await buildIndex(ctx);
-    expect(ctx.state.overrides).toEqual({ "settingsPopup/*": "features/settings/nodes.ts" });
-    expect(ctx.state.usedBy?.get("features/settings/nodes.ts")?.nodes).toEqual([
-      { flow: "settingsPopup", node: "enter" },
-      { flow: "settingsPopup", node: "open" }
-    ]);
+    expect(ctx.files.client.read).not.toHaveBeenCalled();
     expect(previous).toHaveBeenCalledTimes(1);
     expect(ctx.workspace.paletteAdd).toHaveBeenCalledTimes(1);
     expect(ctx.workspace.items.map(item => item.id)).toContain("file:nodes/merge.ts");

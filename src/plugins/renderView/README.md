@@ -13,7 +13,8 @@ The box lives in renderView's own root inside `workspace.gameFrame().overlay()`,
 |---|---|---|---|
 | `fpsSamples` | `number` | `60` | FPS samples kept for the sparkline, one per changed `game.render` value. |
 | `releaseLogMax` | `number` | `50` | Release log entries kept, newest first. |
-| `manifestPaths` | `readonly string[]` | `["manifest.json", "public/manifest.json", "web/manifest.json"]` | Where the asset manifest may live, tried in order through `link.files.read`. |
+
+The asset manifest has no config: it is the one the project index names (`ProjectState.manifest`). The config `manifestPaths` is removed.
 
 ## API
 
@@ -71,6 +72,7 @@ renderView declares no events. It uses the global tools events (R4, R9).
 | Emits | `workspace:inspect` | `{ ref }` | The C9 "Inspect in Game" button. gameView hooks it. |
 | Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches on, refresh once per session. Other: scene watches off, box cleared. |
 | Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept. A new session while live or paused: session data and effects cleared. `empty`: everything cleared. |
+| Hooks | `link:project` | `{ state, delta }` | Reads the catalogue again when it is stale: a gap (`delta.all`: the first state, a reconnect, the index turned off), another manifest named or none any more, or `delta.files` holds the manifest. A catalogue not read yet stays unread until Render is shown. The Textures palette follows. |
 | Hooks | `workspace:reveal` | `{ ref }` | gameView's "Show in render tree": `reveal(ref)`. |
 
 Log events: `renderView: unexpected source shape` (warn, once per wrong value), `renderView: calibration failed` (warn).
@@ -79,11 +81,11 @@ Log events: `renderView: unexpected source shape` (warn, once per wrong value), 
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the game sources, `read("game.locate")` or `read("game.rect")`, `manifest()`, `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
+| `linkPlugin` | `watch` of the game sources, `read("game.locate")` or `read("game.rect")`, `manifest()`, `project()` (the asset manifest path), `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
 | `workspacePlugin` | `show("render")`, `active()`, `onPrefs` (device change), `gameFrame().overlay()`, `palette.add` |
 | `panelsPlugin` | `register` the Render panel |
 
-Shared module: `panels/shared/scene` builds the scene from `game.ui`, `game.entities` and `game.projections` (R8).
+Shared modules: `panels/shared/scene` builds the scene from `game.ui`, `game.entities` and `game.projections` (R8). `panels/shared/project` gives `manifestOf` and `projectOffText`.
 renderView depends on no other view (R4).
 
 ### Data path (R6)
@@ -98,7 +100,7 @@ renderView depends on no other view (R4).
 - A burst of scene values builds one scene per animation frame.
 - The page rect of the first keyed ui element calibrates the scene once per session and again after a device change.
 - That rect is read with `{ key }` from `game.locate` when the manifest lists it (game 0.4), else from `game.rect` (game 0.1). A manifest that lists neither reports no element rects: nothing is read, nothing is warned, and the scene stays uncalibrated.
-- The asset manifest is read from the first `manifestPaths` entry that holds a version-1 manifest.
+- The asset manifest is the file the project index names (`manifestOf(link.project())`), read through `link.files.read`. Nothing is read while the index is off or names none. The textures card then says why: "Project index is off: <reason>", "The project index found no asset manifest", or "No asset manifest of version 1 at <path>". A project change that makes the catalogue stale reads it again (`link:project`), shown or hidden, so Render opened before the first project state still gets its rows.
 - `game.effects` follows `link.onManifest`. A manifest that lists it starts one watch. A manifest without it stops the watch and clears the value. A lost session keeps it.
 - A game without the effects plugin lists the source with `available: false` (the agent's probe). renderView sends no watch, sets `effectsInstalled: false` on the tiles and the Scene tile reads "Effects not installed in this game". Nothing is logged. `empty` forgets the flag.
 - A value of the wrong shape warns once and the last good value stays.
@@ -147,7 +149,7 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `guards.ts` | `asRenderStats`, `asAssetsUsage`, `asEffectsStats`. |
 | `actions.ts` | Reveal, select, open, sort, filter, highlight, inspect, palette items. |
 | `overlay.ts` | The box root in the game frame's overlay. |
-| `handlers.ts` | The three hooks. |
+| `handlers.ts` | The four hooks. |
 | `lifecycle.ts` | onInit, onStart, onStop. |
 | `panel.tsx`, `components/` | The Render panel and its Preact components. |
 | `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7). |

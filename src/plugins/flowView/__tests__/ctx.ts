@@ -5,7 +5,15 @@ import { linkPlugin } from "../../link";
 import type { FilesClient } from "../../link/types";
 import { panelsPlugin } from "../../panels";
 import type { PanelSpec } from "../../panels/types";
-import type { FileEntry, Json, LinkStatus, RunResult, ToolsBoot } from "../../registry/protocol";
+import type {
+  FileEntry,
+  Json,
+  LinkStatus,
+  ProjectFound,
+  ProjectState,
+  RunResult,
+  ToolsBoot
+} from "../../registry/protocol";
 import { wireError } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type {
@@ -22,14 +30,27 @@ import { testConfig } from "./helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A mock flowView context: real state, vi.fn() emit and log, and fakes of the
-// three plugins flowView requires (link with an in-memory files channel,
-// workspace, panels).
+// three plugins flowView requires (link with an in-memory files channel and
+// project index, workspace, panels).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Does nothing (a remover). */
 const noop = (): void => {};
 
-/** An in-memory files channel with versions and injectable conflicts. */
+/** Where the fake project index says a key is defined. */
+export type IndexAnswer = { readonly path: string; readonly line: number; readonly broken?: true };
+
+/**
+ * The index of the test project: the merge node and the text styles of the ui-styles fixture
+ * (so the Styles tab reads `features/ui/styles.ts`).
+ */
+export const DEFAULT_INDEX: Readonly<Record<string, readonly IndexAnswer[]>> = {
+  "node:board/merge": [{ path: "nodes/merge.ts", line: 3 }],
+  "textStyle:ui.title": [{ path: "features/ui/styles.ts", line: 33 }],
+  "textStyle:ui.number": [{ path: "features/ui/styles.ts", line: 73 }]
+};
+
+/** An in-memory files channel with versions, injectable conflicts and a project index. */
 export type MemoryFiles = FilesClient & {
   readonly store: Map<string, { text: string; version: string }>;
   /** Extra directories that list as empty. */
@@ -39,10 +60,34 @@ export type MemoryFiles = FilesClient & {
   /** Paths whose read fails with this error. */
   readonly failing: Map<string, Error>;
   readonly writes: { path: string; text: string; version: string | undefined }[];
+  /** The project index `find` answers from: key → its defs; the `hash` is the stored version. */
+  readonly index: Map<string, readonly IndexAnswer[]>;
+  /** While set, `find` rejects -32008 like the files plugin with the index off. */
+  off: string | undefined;
 };
 
+/**
+ * One `find` answer of the fake index.
+ *
+ * @param answer - Where the key is.
+ * @param version - The stored version of its file ("" when the file is missing).
+ * @returns The Found.
+ */
+function foundOf(answer: IndexAnswer, version: string): ProjectFound {
+  const found: ProjectFound = {
+    path: answer.path,
+    line: answer.line,
+    range: [answer.line, 1, answer.line + 1, 1],
+    hash: version
+  };
+  return answer.broken === true ? { ...found, broken: true } : found;
+}
+
 /** Creates an in-memory files channel. */
-export function memoryFiles(initial: Record<string, string> = {}): MemoryFiles {
+export function memoryFiles(
+  initial: Record<string, string> = {},
+  index: Readonly<Record<string, readonly IndexAnswer[]>> = {}
+): MemoryFiles {
   let next = 1;
   const store = new Map<string, { text: string; version: string }>();
   for (const [path, text] of Object.entries(initial))
@@ -53,6 +98,18 @@ export function memoryFiles(initial: Record<string, string> = {}): MemoryFiles {
     conflicts: 0,
     failing: new Map(),
     writes: [],
+    index: new Map(Object.entries(index)),
+    off: undefined,
+    find: vi.fn(async (key: string): Promise<readonly ProjectFound[]> => {
+      if (files.off !== undefined) {
+        throw wireError(-32_008, `[moku-editor] project index off: ${files.off}`, {
+          reason: "not_installed"
+        });
+      }
+      return (files.index.get(key) ?? []).map(answer =>
+        foundOf(answer, store.get(answer.path)?.version ?? "")
+      );
+    }),
     list: vi.fn(async (dir: string): Promise<readonly FileEntry[]> => {
       const prefix = dir === "" ? "" : `${dir}/`;
       const entries: FileEntry[] = [];
@@ -122,9 +179,24 @@ export type FakeWatch = {
   active: boolean;
 };
 
+/**
+ * The project state of the fake index: on, one revision, every key of the index as a def.
+ *
+ * @param files - The in-memory files channel.
+ * @returns The state `link.project()` answers.
+ */
+export function projectOf(files: MemoryFiles): ProjectState {
+  if (files.off !== undefined) return { state: "off", reason: files.off };
+  const defs: Record<string, readonly string[]> = {};
+  for (const [key, answers] of files.index) defs[key] = answers.map(answer => answer.path);
+  return { state: "on", revision: "r1", defs, uses: {}, broken: {} };
+}
+
 /** The fakes behind ctx.require. */
 export type Fakes = {
   readonly files: MemoryFiles;
+  /** What `link.project()` answers; "index" follows the fake index (`projectOf`). */
+  project: ProjectState | undefined | "index";
   status: LinkStatus;
   boot: ToolsBoot | undefined;
   readonly link: {
@@ -132,6 +204,7 @@ export type Fakes = {
     read: ReturnType<typeof vi.fn>;
     watch: (id: string, input: Json | undefined, onValue: (value: Json) => void) => () => void;
     boot: () => ToolsBoot | undefined;
+    project: () => ProjectState | undefined;
     files: MemoryFiles;
   };
   /** Every watch the fake link took, stopped ones included. */
@@ -184,10 +257,14 @@ export const BOOT: ToolsBoot = {
 
 /** Creates a flowView test context. */
 export function createTestCtx(
-  options: { config?: Partial<FlowViewConfig>; files?: Record<string, string> } = {}
+  options: {
+    config?: Partial<FlowViewConfig>;
+    files?: Record<string, string>;
+    index?: Readonly<Record<string, readonly IndexAnswer[]>>;
+  } = {}
 ): TestCtx {
   const config = testConfig(options.config);
-  const files = memoryFiles(options.files);
+  const files = memoryFiles(options.files, options.index ?? DEFAULT_INDEX);
   const reload = vi.fn(async (): Promise<ReloadResult> => ({ restored: true }));
   const run = vi.fn(
     async (id: string): Promise<RunResult> => ({
@@ -201,6 +278,7 @@ export function createTestCtx(
   );
   const fakes: Fakes = {
     files,
+    project: "index",
     status: { kind: "live", frame: 1840 },
     boot: BOOT,
     link: {
@@ -214,6 +292,7 @@ export function createTestCtx(
         };
       },
       boot: () => fakes.boot,
+      project: () => (fakes.project === "index" ? projectOf(files) : fakes.project),
       files
     },
     watches: [],

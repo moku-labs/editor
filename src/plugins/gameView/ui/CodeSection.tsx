@@ -1,13 +1,15 @@
 /**
  * @file gameView plugin — the Code section of the Element tab (round 2b R12): a ui element's JSX
  * and the style block it uses, each with `file:line`, Open in Files and the shared highlighter
- * (20 lines, then "Show all"); an entity's projection with the line that defines it, and its
- * components with their values. Read again when the element, its source or its style file
- * changes.
+ * (20 lines, then "Show all"); an entity's projection with the line that defines it (or why the
+ * project index has none), and its components with their values. Read again when the element,
+ * its source or its style file changes.
  */
 import type { VNode } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
+import { linkPlugin } from "../../link";
 import { langOf, renderTokens, tokenizeLines } from "../../panels/shared/highlight";
+import { notFoundText } from "../../panels/shared/project";
 import type { SceneNode } from "../../panels/shared/scene";
 import { elementCode } from "../element/code";
 import { openInFiles } from "../element/select";
@@ -80,7 +82,8 @@ function SnippetView(props: {
 }
 
 /**
- * The entity part: the projection that spawns it with its definition, and its components.
+ * The entity part: the projection that spawns it with its definition (or why the index has
+ * none), and its components.
  *
  * @param props - The context and the entity code.
  * @param props.ctx - Domain context of gameView.
@@ -97,18 +100,20 @@ function EntityCode(props: {
     <>
       <p data-part="spawn">
         Spawned by <code>{code.projection}</code>
-        {spawn !== undefined && (
-          <>
-            {" · "}
-            <button
-              type="button"
-              data-variant="ghost"
-              title="Open in Files"
-              onClick={() => openInFiles(ctx, spawn.path, spawn.line)}
-            >
-              {spawn.path}:{spawn.line}
-            </button>
-          </>
+        {" · "}
+        {spawn === undefined ? (
+          <span data-part="not-found">
+            {notFoundText(ctx.require(linkPlugin).project(), `projection:${code.projection}`)}
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-variant="ghost"
+            title="Open in Files"
+            onClick={() => openInFiles(ctx, spawn.path, spawn.line)}
+          >
+            {spawn.path}:{spawn.line}
+          </button>
         )}
       </p>
       <dl data-part="components">

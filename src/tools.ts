@@ -21,15 +21,17 @@
  * | flowView | historyLast | 20 |
  * | flowView | trailLength | 6 |
  * | flowView | rejectedOutcomes | ["rejected"] |
- * | flowView | stylesFile | undefined (found once per session) |
  * | flowView | styleSaveDelayMs | 600 |
  * | flowView | layout | { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 } |
  * | flowView | zoom | { min: 0.08, max: 3, defaultMin: 0.8 } |
  * | flowView | hub | { minOutcomes: 6, minReturns: 4 } |
- * | gameView | capturesDir, manifestPaths, sourceSearch … | see src/plugins/gameView/README.md |
+ * | gameView | capturesDir | ".moku/captures" |
+ * | gameView | captureCardMs | 10000 |
+ * | gameView | seriesDurationsMs | [1000, 2000, 5000, 10000, 20000] |
+ * | gameView | seriesIntervalsMs | [16, 50, 100, 250, 500, 1000] |
+ * | gameView | seriesWarnShots | 200 |
  * | renderView | fpsSamples | 60 |
  * | renderView | releaseLogMax | 50 |
- * | renderView | manifestPaths | ["manifest.json", "public/manifest.json", "web/manifest.json"] |
  * | stateView | expandDepth | 2 |
  * | stateView | maxPatches | 200 |
  * | stateView | pageSize | 100 |
@@ -42,7 +44,9 @@
  * | consoleView | freshMs | 1200 |
  * | consoleView | summaryChars | 160 |
  *
- * An object option (flowView `layout`, `zoom`, `hub`) replaces its default as a whole.
+ * An object option (flowView `layout`, `zoom`, `hub`) replaces its default as a whole. Where the
+ * game's code, text styles and asset manifest live is not an option: the files plugin's project
+ * index answers it (`link.project()`, `link.files.find`).
  *
  * @file The tools page entry: the tools core and its plugins.
  * @example

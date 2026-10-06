@@ -188,12 +188,13 @@ describe("palette items", () => {
     expect(ctx.log.warn).toHaveBeenCalled();
   });
 
-  it("Nodes items focus a node; ⇧↵ opens its file in Files or toasts that there is none", async () => {
+  it("Nodes items focus a node; ⇧↵ opens its index place in Files or toasts that there is none", async () => {
     const { ctx, fakes } = await prepared();
     fakes.files.store.set("nodes/merge.ts", {
       text: "x\nexport const merge = 1;\n",
       version: "v1"
     });
+    fakes.files.index.set("node:board/merge", [{ path: "nodes/merge.ts", line: 2 }]);
     setNodeItems(ctx, actionsOf(ctx));
     const items = fakes.palette.at(-1) ?? [];
     const merge = items.find(item => item.label === "board/merge");
@@ -208,7 +209,9 @@ describe("palette items", () => {
     });
     items.find(item => item.label === "board/catchUp")?.alt?.run();
     await flush(5);
-    expect(fakes.workspace.toast).toHaveBeenCalledWith("No file found for this node");
+    expect(fakes.workspace.toast).toHaveBeenCalledWith(
+      "Not in the project index: node:board/catchUp"
+    );
     setNodeItems(ctx, actionsOf(ctx));
     expect(fakes.removed).toContain(fakes.palette.length - 2);
   });

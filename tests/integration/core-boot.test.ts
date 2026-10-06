@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createApp as createAgentApp,
@@ -7,14 +5,14 @@ import {
   registryPlugin
 } from "../../src/agent";
 import {
+  anchorKey,
   bareMessage,
   checkInput,
   definePanel,
-  flowFile,
+  firstDefinition,
   isHotSwapEntry,
   isReloading,
   isSelectionInfo,
-  nodeFile,
   parseSelectionInfo,
   parseSelectParams,
   type SelectionInfo,
@@ -151,8 +149,8 @@ describe("core boot", () => {
       definePanel,
       checkInput,
       toWireValue,
-      nodeFile,
-      flowFile,
+      firstDefinition,
+      anchorKey,
       wireError,
       bareMessage,
       isSelectionInfo,
@@ -182,9 +180,11 @@ describe("core boot", () => {
       key: "infoBar",
       card: false
     });
-    const exists = (file: string): boolean => existsSync(path.join(root, file));
-    expect(nodeFile({ flow: "main", node: "home" }, undefined, {}, exists)).toBe("nodes/home.ts");
-    expect(flowFile("visit", {}, exists)).toBe("flows/visit.ts");
+    // The project index of the tiny project is the only source of code locations (amendment N).
+    const { link } = tools.app;
+    await until(() => link.project()?.state === "on", "the project index on");
+    expect(firstDefinition(link.project(), "node:main/home")).toBe("nodes/home.ts");
+    expect(firstDefinition(link.project(), "flow:visit")).toBe("flows/visit.ts");
 
     expect(logErrors(server.app, agent.app, tools.app, game.app)).toEqual([]);
     expect(unhandled.list).toEqual([]);
