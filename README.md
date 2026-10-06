@@ -35,7 +35,7 @@ bun add -d @moku-labs/editor @moku-labs/game typescript
 ```
 
 > [!NOTE]
-> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.6.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index).
+> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index).
 >
 > **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
 >
@@ -220,8 +220,9 @@ Moves and edits by agents while the editor is open are followed. A watch batch n
 moved and removed files: open Files tabs follow a move ("Moved from nodes/catch-up.ts"), Used by and
 the Code tab read again, and the views drop the caches the batch names.
 
-**Requirements.** `@moku-labs/game >= 0.6.0` and `typescript >= 5.5` in the game repository (a game
-already has `typescript` as a dev dependency). The index needs no `bunfig.toml`: that file only
+**Requirements.** `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` in the game repository (a game
+already has `typescript` as a dev dependency). 0.7.0 brings the component, style and static JSX
+keys the views ask for. The index needs no `bunfig.toml`: that file only
 loads the hot swap plugin.
 
 **What a view says:**
@@ -239,7 +240,7 @@ between that check and the rename is still overwritten: the window is narrowed, 
 
 ### Breaking: the project index
 
-- `@moku-labs/game >= 0.6.0` and `typescript >= 5.5` are required peers.
+- `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are required peers.
 - The index is the only source of code locations. Removed: the kebab node → file rule and its root
   exports `nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`
   and the type `SourceOverrides`; the source crawls of the style block, the projection, the text
@@ -839,20 +840,20 @@ bun run test:e2e           # Playwright on the merge-game copy, 480–1440 px wi
 
 **Tests.** Plugin tests sit next to each plugin in `src/plugins/<name>/__tests__/unit/` and `__tests__/integration/`. Root tests in `tests/integration/` run the whole stack over the real wire: `startStack()` (`tests/integration/helpers/stack.ts`) creates a tiny project, starts the server core on a real `Bun.serve`, installs the page, starts an agent on a **tiny game** built from the `@moku-labs/game` dev dependency, boots the tools app and waits for a live link with a manifest. The tiny-game journeys run in CI. `tests/integration/mcp-bridge.test.ts` runs the bin and `moku-editor mcp` as real processes and drives the bridge over stdin and stdout, the way Claude Code does.
 
-**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a worktree at `../game-fixture`, on the commit that matches the `@moku-labs/game` dev dependency in `package.json`. Until the game release that is game PR #32 (the preview `https://pkg.pr.new/@moku-labs/game@32`, branch `pr-32` at `9a5fa48`). Create it once, with its dependencies:
+**Local merge-game tests.** The merge-game tests load the fixture from a pinned checkout of the game repository, not from the live `../game`. The checkout is a worktree at `../game-fixture`, on the commit that matches the `@moku-labs/game` dev dependency in `package.json`. That is the tag `v0.7.0` (dev dependency `@moku-labs/game` `0.7.0`). Create it once, with its dependencies:
 
 ```sh
-git -C ../game fetch origin feat/static-jsx-keys && git -C ../game worktree add ../game-fixture -b pr-32 9a5fa48
+git -C ../game fetch --tags && git -C ../game worktree add --detach ../game-fixture v0.7.0
 bun install --cwd ../game-fixture --frozen-lockfile --ignore-scripts
 ```
 
-When `package.json` moves to the release, move it and install again: `git -C ../game-fixture checkout --detach vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
+When `package.json` moves to a newer release, move it and install again: `git -C ../game fetch --tags && git -C ../game-fixture checkout --detach vX.Y.Z`, then the `bun install` line. To use another checkout, set `MOKU_GAME_DIR` (absolute, or relative to this repository): `MOKU_GAME_DIR=../my-game bun run test`. The rule lives in `tests/fixtures/game-dir.ts`. CI has no checkout, so `vitest.config.ts` skips those test files there with a warning.
 
 ## Requirements
 
 - **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.6.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives.
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.7.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives.
 - **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 
