@@ -55,19 +55,6 @@ const SWITCH_WARNINGS: readonly RegExp[] = [
   /event: assets: the node waited for a bundle/
 ];
 
-/**
- * What a game reload can provoke on the tools page while the tools page talks to the old page:
- * a watch or the manifest fetch it sent in that moment is refused with -32001 `game_reloaded`,
- * which link logs at error when it did not expect the reload (a save under Bun HMR), and the Files
- * graph read in flight fails. The tiny game reloads fast enough to hit that window about one run in
- * three. Allowed only in the tests that switch hot reload or save a game source.
- */
-const RELOAD_RACE_LOGS: readonly RegExp[] = [
-  /event: link:watch-failed/,
-  /event: link:manifest-failed/,
-  /event: filesView:graph-failed/
-];
-
 /** How long one switch may take: the restart, both reconnects and the frame reload. */
 const SWITCH_MS = 30_000;
 
@@ -570,7 +557,7 @@ test.describe("top bar · round 2", () => {
 
     // The icon switches hot reload off, the ⋯ row on again; each switch reloads the game frame
     // with its state (D-32). Once, at 600 px: a switch restarts the bin's server.
-    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
     await resize(tools, 600);
     await expect.poll(() => gamePath(page)).toBe("home");
     await answer(page, "play");
@@ -818,7 +805,7 @@ test.describe("top bar · round 2", () => {
     tools,
     errors
   }) => {
-    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
     const page = tools.page;
     await resize(tools, 1440);
     await tools.show("game");
@@ -876,7 +863,7 @@ test.describe("top bar · round 2", () => {
     tools,
     errors
   }) => {
-    for (const pattern of [...SWITCH_WARNINGS, ...RELOAD_RACE_LOGS]) errors.allow(pattern);
+    for (const pattern of SWITCH_WARNINGS) errors.allow(pattern);
     const page = tools.page;
     await resize(tools, 1440);
     await tools.show("game");

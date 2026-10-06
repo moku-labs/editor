@@ -2693,7 +2693,7 @@ export type AttachedServer = { reload(options: BunServeOptions): void };
 - Editor page role (D-33, A12): config `role: "page"` (default) adds `&role=page` to the socket URL; a headless client passes `"tools"`. `notify("selection", info | null)` publishes the selection (dropped while closed, the last value sent again on each open); `handle("select", handler)` answers the `select` requests the hub relays (params checked with `parseSelectParams`, no handler -32601); `selection()` is the last `editor.selection` notification.
 - A game-side resume (round 2 R8): the next heartbeat (`paused: false`) turns the status live; the pill follows within one heartbeat.
 - Project index: `project()` is the last `editor.project` state, frozen, kept across reconnects (`undefined` before the first). A new state emits `link:project` with its delta; the same state again (the hub's replay) emits nothing; a same-revision state with another `manifest` (the game revision hashes sources only) emits `{ all: false, files: [old, new manifest] }`. A malformed state logs `link:bad-project` (warn) and changes nothing. `files.find(key)` sends the files-channel `find`.
-- Events: emits `link:status`, `link:project`. Logs: `link:bad-project` (warn), `link:source-missing` (warn), `link:watch-failed` (error), `link:watch-deferred` (debug, a watch refused with `no_session` while its session closed; sent again on the next attach), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
+- Events: emits `link:status`, `link:project`. Logs: `link:bad-project` (warn), `link:source-missing` (warn), `link:watch-failed` (error), `link:watch-deferred` (debug, a watch refused with `no_session` or -32001 `game_reloaded` while its session closed in a reload; sent again on the next attach), `link:source-unavailable` (debug), `link:tap-listener-failed` (error).
 
 ~~~ts
 /**
@@ -5218,7 +5218,7 @@ export type StateViewApi = {
 ### 7.16 filesView — tools, Complex
 
 - depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Files panel, `mod+s`, `fileEdit` Esc layer), `onStart` (`game.graph` per manifest, index build, `beforeunload` guard), `onStop`.
-- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-file`. Logs: `filesView:graph-failed`, `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed` (warn); `filesView:save-failed` (error).
+- Events: emits `workspace:select-node`, `workspace:open-sheet`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-file`. Logs: `filesView:read-failed`, `filesView:revalidate-failed`, `filesView:open-failed`, `filesView:list-failed`, `filesView:index-failed`, `filesView:reload-failed`, `filesView:graph-failed` (warn; debug when the read was lost to a reload); `filesView:save-failed` (error).
 
 ~~~ts
 /**
