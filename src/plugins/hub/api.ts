@@ -34,9 +34,7 @@ export function createHubApi(ctx: HubCtx): HubApi {
     publish: (method, params) => {
       publish(ctx, method, params);
     },
-    closeAll: (code, reason) => {
-      closeAll(ctx, code, reason);
-    },
+    closeAll: (code, reason) => closeAll(ctx, code, reason),
     path: () => ctx.config.path
   };
 }

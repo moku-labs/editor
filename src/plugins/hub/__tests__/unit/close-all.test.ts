@@ -58,6 +58,33 @@ describe("closeAll", () => {
     expect(again.notes("editor", "sessions")).toHaveLength(1);
   });
 
+  it("resolves once Bun reported every close, not before", async () => {
+    const harness = createHarness();
+    const tools = harness.connect("tools");
+    let done = false;
+
+    const closing = closeAll(harness.ctx, 1012, "editor restarting").then(() => {
+      done = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(done).toBe(false);
+
+    harness.close(tools, 1012);
+    await closing;
+    expect(done).toBe(true);
+  });
+
+  it("stops waiting after waitMs when a socket never reports its close", async () => {
+    const harness = createHarness();
+    harness.connect("tools");
+    const started = Date.now();
+
+    await closeAll(harness.ctx, 1012, "editor restarting", 50);
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(45);
+    expect(harness.ctx.state.conns.size).toBe(1);
+  });
+
   it("does nothing to a hub without sockets", () => {
     const harness = createHarness();
 

@@ -25,9 +25,10 @@ export const SERVICE_RESTART = 1012;
 const RESTARTING = "editor restarting";
 
 /**
- * Closes every editor socket with a code and a reason: `hub.closeAll` in the bin.
+ * Closes every editor socket with a code and a reason, and resolves when they closed:
+ * `hub.closeAll` in the bin.
  */
-export type CloseSockets = (code: number, reason: string) => void;
+export type CloseSockets = (code: number, reason: string) => Promise<void>;
 
 /**
  * Starts a server: Bun.serve in the bin, a fake in tests. Throws when the port is taken.
@@ -157,7 +158,8 @@ export function createGameServer(
     restart: next =>
       enqueue(async () => {
         if (stopped) return;
-        closeAll(SERVICE_RESTART, RESTARTING);
+        // The close frames go out before the stop: a client sees 1012, not a dropped socket.
+        await closeAll(SERVICE_RESTART, RESTARTING);
         await stopBounded(current);
         current = serve(onPort(next, port));
       }),

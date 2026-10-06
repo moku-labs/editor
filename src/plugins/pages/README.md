@@ -51,8 +51,9 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
    answers 200 with it.
 3. On the next macrotask, after the answer went out (A1), `restart(next)` runs. `next` is the
    current options with `development.hmr` flipped; the other `development` fields stay.
-4. The restart (`serve.ts`) first calls `hub.closeAll(1012, "editor restarting")`: every agent
-   and tools socket gets a clean close 1012 instead of a dropped socket (1006). Then it stops the
+4. The restart (`serve.ts`) first awaits `hub.closeAll(1012, "editor restarting")`: every agent
+   and tools socket gets a clean close 1012 instead of a dropped socket (1006), and the stop
+   waits until Bun reported the closes, at most 500 ms, so the close frames go out. Then it stops the
    current server with its open connections, waiting at most 500 ms, and serves `next` on the same
    port. A bin started with `--port 0` keeps its port.
 5. The hub plugin is not stopped. The token and `.moku/editor.json` stay. The tools page's link
