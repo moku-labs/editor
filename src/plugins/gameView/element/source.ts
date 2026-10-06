@@ -181,7 +181,9 @@ function stylePaths(project: ProjectState | undefined, name: string): readonly s
 
 /**
  * The files the index defines a style in, nearest first: the element's own file, then the files
- * the element imports `binding` from, then every other file that defines it.
+ * the element imports `binding` from by a relative path, then every other file that defines it.
+ * A style imported through a tsconfig alias (`@shared`) is among those: the index follows the
+ * aliases, and its `style:<file>#<name>` key names the file it resolved.
  *
  * @param project - The project state (`link.project()`).
  * @param element - The element's file and text.

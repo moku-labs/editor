@@ -146,6 +146,17 @@ describe("styleFilesOf", () => {
     ]);
   });
 
+  it("finds a style imported through a tsconfig alias: the index key names the file it resolved", () => {
+    const board = {
+      path: "features/board/views/board.tsx",
+      text: 'import { coinPill } from "@shared";'
+    };
+    const project = projectOn({
+      "style:shared/styles/text.ts#coinPill": ["shared/styles/text.ts"]
+    });
+    expect(styleFilesOf(project, board, "coinPill", "coinPill")).toEqual(["shared/styles/text.ts"]);
+  });
+
   it("is empty when the index is off, has no state yet, or defines no such style", () => {
     expect(styleFilesOf({ state: "off", reason: "disabled" }, HUD, "coinPill", "coinPill")).toEqual(
       []
