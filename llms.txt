@@ -3,10 +3,11 @@
 > Editor, devtools and MCP layer for @moku-labs/game, built on @moku-labs/core. Three Moku cores in one package: `editor-agent` on the game page, `editor-server` in Bun, `editor-tools` on the tools page. One registry of sources and commands feeds the in-game overlay, the tools page and headless tests. The editor reaches the game only through `@moku-labs/game/inspect` and `@moku-labs/game/control` (plus the game's `.dev` modules). ESM only. Bun for the server; browser for the agent and the tools page.
 
 - Package: `@moku-labs/editor` (MIT)
-- Peer dependencies: `@moku-labs/game >= 0.7.0` and `typescript >= 5.5`, both required (the project index, `@moku-labs/game/project`, needs `typescript`)
+- Peer dependencies: `@moku-labs/game >= 0.10.0` and `typescript >= 5.5`, both required (the project index, `@moku-labs/game/project`, needs `typescript`; the engine page, `@moku-labs/game/cli` `preparePage`, needs game 0.10.0)
 - Doors: element rects come from `game.locate { key }` when the manifest lists it (0.4), else `game.rect { key }` (0.1); neither listed: nothing is read and the picker says "This game reports no element rects". `game.capture` answers a PNG data URL (0.1) or `{ png, legend? }` (0.4); capture takes both. The contact sheet (`editor.sheet`, MCP `moku_series`) needs game 0.4.
 - Runtime dependencies: `@moku-labs/core`, `@moku-labs/common`, `preact`, `elkjs`
-- Bin: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` starts it off, and the Hot reload switch flips it while the bin runs (D-32). Bun reads `[serve.static]` of `bunfig.toml` from the process cwd only, so when `--root` holds such a bunfig and the cwd is another folder the bin re-runs itself in the root: run it from anywhere. `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` is the stdio MCP server for Claude Code; `moku-editor mcp-config [<game-html>] [--port N]` prints its `.mcp.json` snippet and `claude mcp add` line.
+- Bin, engine page (B5): `moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…` with no html, in a moku-game folder (`index.ts` + `config.ts`): the bin imports `@moku-labs/game/cli` from the game root, calls `preparePage(root, { agents: ["@moku-labs/editor/agent/page"], preload, servePlugins })` (paths resolved against the cwd), and always re-runs itself as `bun --config=<root>/.moku/bunfig.toml <bin> <root>/.moku/index.html --root <root>` in the root (D-51), so Bun loads the engine's hot plugin. Not a moku-game folder: exit 2; the engine refuses: its `[game] …` message, exit 1. From an editor working tree the bin appends `<tree>/scripts/tree/bundle.ts` to the serve plugins (D-50): the page bundles the tree's `dist/` on the game's one engine copy. `--preload` and `--serve-plugin` with an html file, or on `mcp` / `mcp-config`, are errors.
+- Bin, html: `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]` (Bun only). Serves with Bun hot reload on (D-23); `--no-hmr` starts it off, and the Hot reload switch flips it while the bin runs (D-32). Bun reads `[serve.static]` of `bunfig.toml` from the process cwd only, so when `--root` holds such a bunfig and the cwd is another folder the bin re-runs itself in the root: run it from anywhere. `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` is the stdio MCP server for Claude Code; `moku-editor mcp-config [<game-html>] [--port N]` prints its `.mcp.json` snippet and `claude mcp add` line.
 - Full reference: llms-full.txt (every Config, Api and event type verbatim). Both llms files ship in the package.
 - Built for a narrow pane: Claude's browser pane at 1/3 (480 px) or 1/2 (720 px) of the screen; every workspace works at 480 px.
 
@@ -16,6 +17,7 @@
 |---|---|
 | `@moku-labs/editor` | Runtime-free: wire protocol types and pure helpers, `definePanel` and panel types. Imports no plugin and no core. |
 | `@moku-labs/editor/agent` | Agent core for the game page. `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`; namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
+| `@moku-labs/editor/agent/page` | Default export only: the engine's `PageAgent` (D-49). `moku-game dev` and the bin's engine page call it after the game started: it stops a previous `globalThis.editor`, starts the agent core with `bridgePlugin` and `capturePlugin` on `{ app, name, modules }` and sets `globalThis.editor`. No side effect on import. |
 | `@moku-labs/editor/server` | Server core for Bun. `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`; namespaces `Files`, `Hub`, `Pages`. |
 | `@moku-labs/editor/tools` | Tools core for the tools page. `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`; namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
 
@@ -98,7 +100,7 @@ Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAss
 // tools page: http://127.0.0.1:3000/__editor/
 ```
 
-Or the bin: `bunx moku-editor web/index.html --port 3000 --root .`
+Or the bin: `bunx moku-editor --root .` in a moku-game folder (the engine writes the page with the editor's agent), or `bunx moku-editor web/index.html --port 3000 --root .` for a game HTML file.
 
 Tools page (what the prebuilt page does):
 
@@ -357,21 +359,25 @@ src/
   config.ts          three createCoreConfig calls, AgentEvents/ServerEvents/ToolsEvents, createAgentPlugin/createServerPlugin/createToolsPlugin
   index.ts           package root: protocol types and helpers, definePanel
   agent.ts           @moku-labs/editor/agent
+  agent-page.ts      @moku-labs/editor/agent/page (default export: the engine's PageAgent)
   server.ts          @moku-labs/editor/server
   tools.ts           @moku-labs/editor/tools
   plugins/
     index.ts         barrel of all 17 instances and type namespaces (imported by no entry)
     registry/        + protocol/ (types, errors, check, wire-value, messages, project, devices, overlay-host)
     channel/ overlay/ bridge/ capture/
-    files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor, mcp/ = the stdio MCP bridge)
+    files/ hub/ pages/   (pages: page/ = the tools page source, bin.ts + cli.ts = moku-editor, engine-page.ts = the engine page, mcp/ = the stdio MCP bridge)
     link/ workspace/ (styles/ = shared CSS layer) panels/ (shared/ = view modules, icons, workspaces)
     flowView/ gameView/ renderView/ stateView/ filesView/ consoleView/
     <name>/__tests__/unit, __tests__/integration
 tests/
   unit/              framework-level unit tests
   integration/       root stack tests (helpers/stack.ts: startStack, shutdown); tiny game in CI, merge-game locally;
-                     agent-bundle.test.ts (needs `bun run build`), not-installed.test.ts, mcp-bridge.test.ts (bin + bridge processes)
+                     agent-bundle.test.ts (needs `bun run build`), not-installed.test.ts, mcp-bridge.test.ts (bin + bridge processes),
+                     agent-page.test.ts, tree-bundle.test.ts (tsdown once when dist/agent-page.mjs is missing)
+  fixtures/          tiny-screen-game.tsx; moku-game.ts (a moku-game folder for the engine page tests)
 scripts/build-tools.ts   bundles the tools page into dist/tools
+scripts/tree/bundle.ts   the editor tree's serve plugin for the engine page (D-50); repo only, not in the package
 ```
 
 ## Scripts

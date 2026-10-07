@@ -8,7 +8,9 @@ describe("parseBinArgs", () => {
       html: "web/index.html",
       port: 3000,
       root: ".",
-      hmr: true
+      hmr: true,
+      preload: [],
+      servePlugins: []
     });
   });
 
@@ -18,14 +20,18 @@ describe("parseBinArgs", () => {
       html: "web/index.html",
       port: 0,
       root: "..",
-      hmr: true
+      hmr: true,
+      preload: [],
+      servePlugins: []
     });
     expect(parseBinArgs(["-p", "65535", "-r", "game", "INDEX.HTML"])).toEqual({
       kind: "run",
       html: "INDEX.HTML",
       port: 65_535,
       root: "game",
-      hmr: true
+      hmr: true,
+      preload: [],
+      servePlugins: []
     });
   });
 
@@ -35,7 +41,9 @@ describe("parseBinArgs", () => {
       html: "web/index.html",
       port: 3000,
       root: ".",
-      hmr: false
+      hmr: false,
+      preload: [],
+      servePlugins: []
     });
     const first = parseBinArgs(["--no-hmr", "-p", "0", "web/index.html"]);
     expect(first.kind === "run" && first.hmr).toBe(false);
@@ -52,10 +60,12 @@ describe("parseBinArgs", () => {
     expect(parseBinArgs(["--bogus", "--help"])).toEqual({ kind: "help" });
   });
 
-  it.each([[[]], [["a.html", "b.html"]]])("refuses %j: expected one game HTML file", argv => {
-    const result = parseBinArgs(argv);
+  it("refuses two positionals: expected at most one game HTML file", () => {
+    const result = parseBinArgs(["a.html", "b.html"]);
     expect(result.kind).toBe("error");
-    expect(result.kind === "error" && result.message).toContain("expected one game HTML file");
+    expect(result.kind === "error" && result.message).toContain(
+      "expected at most one game HTML file"
+    );
   });
 
   it("refuses a positional that is not an .html file", () => {
@@ -85,11 +95,13 @@ describe("parseBinArgs", () => {
 
   it("starts every error message with [moku-editor]", () => {
     for (const argv of [
-      [],
+      ["a.html", "b.html"],
       ["a.ts"],
       ["a.html", "--port=x"],
       ["a.html", "--root="],
-      ["a.html", "--host=x"]
+      ["a.html", "--host=x"],
+      ["a.html", "--preload", "p.ts"],
+      ["mcp", "--serve-plugin", "p.ts"]
     ]) {
       const result = parseBinArgs(argv);
       expect(result.kind === "error" && result.message.startsWith("[moku-editor] ")).toBe(true);
@@ -161,6 +173,77 @@ describe("parseBinArgs mcp-config (M8)", () => {
 
   it("treats a subcommand only in first position: `a.html mcp` is two positionals", () => {
     const result = parseBinArgs(["a.html", "mcp"]);
-    expect(result.kind === "error" && result.message).toContain("expected one game HTML file");
+    expect(result.kind === "error" && result.message).toContain(
+      "expected at most one game HTML file"
+    );
+  });
+});
+
+describe("parseBinArgs engine page (B5)", () => {
+  it("parses no positional as the engine page: no html key, the defaults and two empty lists", () => {
+    const result = parseBinArgs([]);
+    expect(result).toEqual({
+      kind: "run",
+      port: 3000,
+      root: ".",
+      hmr: true,
+      preload: [],
+      servePlugins: []
+    });
+    expect("html" in result).toBe(false);
+  });
+
+  it("reads --root, --port and --no-hmr without an html file", () => {
+    expect(parseBinArgs(["--root", "games/timber", "-p", "0", "--no-hmr"])).toEqual({
+      kind: "run",
+      port: 0,
+      root: "games/timber",
+      hmr: false,
+      preload: [],
+      servePlugins: []
+    });
+  });
+
+  it("collects every --preload and --serve-plugin in order, paths as given", () => {
+    const result = parseBinArgs([
+      "--preload",
+      "a.ts",
+      "--serve-plugin",
+      "../engine/scripts/tree/bundle.ts",
+      "--preload",
+      "b.ts"
+    ]);
+    expect(result.kind === "run" && result.preload).toEqual(["a.ts", "b.ts"]);
+    expect(result.kind === "run" && result.servePlugins).toEqual([
+      "../engine/scripts/tree/bundle.ts"
+    ]);
+    expect(parseBinArgs(["--serve-plugin", "p.ts"])).toMatchObject({ servePlugins: ["p.ts"] });
+  });
+
+  it.each([
+    [["web/index.html", "--preload", "a.ts"]],
+    [["--serve-plugin", "p.ts", "web/index.html"]]
+  ])("refuses %j: the two flags need the engine page", argv => {
+    const result = parseBinArgs(argv);
+    expect(result).toEqual({
+      kind: "error",
+      message: "[moku-editor] --preload and --serve-plugin need the engine page: drop the html file"
+    });
+  });
+
+  it("refuses --preload without its value", () => {
+    expect(parseBinArgs(["--preload"]).kind).toBe("error");
+  });
+
+  it.each([
+    [["mcp", "--preload", "a.ts"]],
+    [["mcp", "web/index.html", "--serve-plugin", "p.ts"]],
+    [["mcp-config", "--preload", "a.ts"]],
+    [["mcp-config", "--serve-plugin", "p.ts"]]
+  ])("refuses %j: the two flags belong to the serving bin", argv => {
+    expect(parseBinArgs(argv)).toEqual({
+      kind: "error",
+      message: "[moku-editor] --preload and --serve-plugin belong to the serving bin"
+    });
   });
 });

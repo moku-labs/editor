@@ -9,7 +9,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 [![npm](https://img.shields.io/npm/v/@moku-labs/editor?logo=npm&color=cb3837&label=npm)](https://www.npmjs.com/package/@moku-labs/editor)
 [![types](https://img.shields.io/badge/types-included-3178c6?logo=typescript&logoColor=white)](#requirements)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](#requirements)
-[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.1.0-0b7285)](#install)
+[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.10.0-0b7285)](#install)
 [![for](https://img.shields.io/badge/for-%40moku--labs%2Fcore-1864ab)](https://github.com/moku-labs/core)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -34,8 +34,16 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 bun add -d @moku-labs/editor @moku-labs/game typescript
 ```
 
+In a moku-game folder (`index.ts` and `config.ts`, the game `moku-game dev` runs), that is all. Run the editor in the folder:
+
+```sh
+bunx moku-editor --root .
+```
+
+The engine writes the dev page with the editor's page agent on it, so the game needs no HTML file, no dev entry and no `bunfig.toml` of its own (see [Quick start](#quick-start)). A game with its own HTML page wires the agent itself and passes the file.
+
 > [!NOTE]
-> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index).
+> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.10.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index), and the bin takes a moku-game's page from the engine's `@moku-labs/game/cli`.
 >
 > **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
 >
@@ -50,7 +58,31 @@ bun add -d @moku-labs/editor @moku-labs/game typescript
 
 ## Quick start
 
-Three pieces: the **agent** on the game page, the **server** in Bun, the **tools page** in a browser tab.
+**A moku-game folder** (`index.ts` and `config.ts`, no `web/`) needs one command, run in the folder:
+
+```sh
+bunx moku-editor --root .
+```
+
+```
+Game   http://127.0.0.1:3000/
+Tools  http://127.0.0.1:3000/__editor/
+Root   /home/dev/timber
+```
+
+The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`, resolved from the game folder) with the editor's page agent `@moku-labs/editor/agent/page` on it. Then it runs again under the page's `.moku/bunfig.toml`, so Bun loads the engine's hot plugin. The page starts the agent with bridge and capture after the game started and sets `globalThis.editor`. There is nothing to wire.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--root`, `-r` | `.` | The game folder, or the project root the editor reads and writes. |
+| `--port`, `-p` | `3000` | Port on 127.0.0.1. `0` picks a free port. |
+| `--no-hmr` | hot reload on | Serves the game without Bun hot reload. |
+| `--preload FILE` | | A file Bun preloads in the serving process. Repeatable. Engine page only. |
+| `--serve-plugin FILE` | | A Bun plugin the engine page bundles with, after the engine's hot plugin. Repeatable. Engine page only. |
+
+`--preload` and `--serve-plugin` paths are relative to the working directory. An editor working tree adds its own `scripts/tree/bundle.ts` to the serve plugins: the page bundles the tree's build on the game's one copy of the engine. An installed editor never adds it.
+
+**A game with its own HTML page** has three pieces: the **agent** on the game page, the **server** in Bun, the **tools page** in a browser tab.
 
 **1. Wire the agent into the game page — dev only.** The default agent plugins are `registry`, `channel` and `overlay`. The websocket `bridgePlugin` and the screenshot `capturePlugin` are opt-in, so a dev entry adds them behind the engine's dev flag:
 
@@ -67,7 +99,7 @@ await editor.start(); // never waits for the editor server
 
 `app` is the game made with `createApp` from `@moku-labs/game`; `modules` are the game's `.dev` modules (extra sources and commands). `__MOKU_GAME_DEV__` is the engine's dev flag: a dev build defines it `true`. Start the editor after the game: the registry probes the game's sources at start. For a game that ships, use the entry in [Production builds](#production-builds), which keeps the whole agent out of the production bundle.
 
-**2. Run the server.** The quickest way is the bin — it serves one game HTML file with the editor mounted:
+**2. Run the server.** The quickest way is the bin with the game HTML file — it serves it with the editor mounted:
 
 ```sh
 bunx moku-editor web/index.html --port 3000 --root .
@@ -500,6 +532,9 @@ pinned preview, and in the dark theme the bezel (`#2c2c34`, 1 px outline) stands
 
 ## Production builds
 
+A moku-game folder needs nothing here: the engine's production page names no agents, so
+`@moku-labs/editor/agent/page` never reaches it.
+
 The agent is a dev tool. Import it only behind the engine's dev flag, with a dynamic import, so a
 production build (`__MOKU_GAME_DEV__` defined `false`) drops it whole:
 
@@ -611,8 +646,9 @@ flowchart LR
 | `@moku-labs/editor/server` | `editor-server` | Bun | `files`, `hub`, `pages` | — |
 | `@moku-labs/editor/tools` | `editor-tools` | tools page (browser) | `link`, `workspace`, `panels`, `flowView`, `gameView`, `renderView`, `stateView`, `filesView`, `consoleView` | — |
 | `@moku-labs/editor` | — | anywhere | Runtime-free: the wire protocol (types and pure helpers) and `definePanel` | — |
+| `@moku-labs/editor/agent/page` | `editor-agent` | the engine's dev page | The default export is the engine's `PageAgent`: it starts the agent core with `bridgePlugin` and `capturePlugin` and sets `globalThis.editor` | — |
 
-Each entry exports `createApp`, `createPlugin`, its plugin instances and their types as namespaces (`Registry.RegistryApi`, `Hub.HubSession`, `Workspace.WorkspaceId`, …).
+Each core entry exports `createApp`, `createPlugin`, its plugin instances and their types as namespaces (`Registry.RegistryApi`, `Hub.HubSession`, `Workspace.WorkspaceId`, …). `@moku-labs/editor/agent/page` exports only its default: importing it starts nothing, and a second call (a hot re-run of the page) stops the previous editor first.
 
 ### `createApp` and `pluginConfigs`
 
@@ -699,7 +735,7 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop`, `editor.sheet` |
 | [`files`](src/plugins/files/README.md) | server | Standard | The project-root sandbox: list, read, atomic write with version check, image captures. | `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root` |
 | [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification, the editor page's selection and the `editor.select` relay to it. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
-| [`pages`](src/plugins/pages/README.md) | server | Complex | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (Bun hot reload on, switched by restarting its server; `--no-hmr` starts it off) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
+| [`pages`](src/plugins/pages/README.md) | server | Complex | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (the engine page of a moku-game folder, or a game HTML file; Bun hot reload on, switched by restarting its server; `--no-hmr` starts it off) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
 | [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state, the editor page role (publishes the selection, answers `editor.select`). | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload`, `selection`, `notify`, `handle` |
 | [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
@@ -851,7 +887,7 @@ cd <demos>/merge-game && bun install && bun run test:editor --e2e --editor <edit
 
 - **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.7.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives.
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.10.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder.
 - **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 

@@ -154,16 +154,33 @@ export type PagesApi = {
 };
 
 /**
- * Arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr]`: serve the game.
+ * Arguments of `moku-editor [<game-html>] [--port 3000] [--root .] [--no-hmr] [--preload FILE]…
+ * [--serve-plugin FILE]…`: serve the game. Without `html` the engine writes the page of the
+ * moku-game folder at `root` (the engine page); the two lists feed only that page.
  */
 export type RunArgs = {
   readonly kind: "run";
-  readonly html: string;
+  /** The game HTML file, when given; the key is left out for the engine page. */
+  readonly html?: string;
   readonly port: number;
   readonly root: string;
   /** False with `--no-hmr`: Bun serves the game without hot reload. */
   readonly hmr: boolean;
+  /** Every `--preload`, as given: files Bun preloads in the serving process (engine page only). */
+  readonly preload: readonly string[];
+  /** Every `--serve-plugin`, as given: Bun plugins the page bundles with (engine page only). */
+  readonly servePlugins: readonly string[];
 };
+
+/**
+ * `run` arguments with the game HTML file: what the bin serves, itself or from a re-spawned bin.
+ *
+ * @example
+ * ```ts
+ * const args: ServeArgs = { kind: "run", html: "/g/.moku/index.html", port: 0, root: "/g", hmr: true, preload: [], servePlugins: [] };
+ * ```
+ */
+export type ServeArgs = RunArgs & { readonly html: string };
 
 /**
  * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`: the stdio MCP
@@ -229,7 +246,10 @@ export type ReexecDeps = {
   readonly cwd: () => string;
   /** The process environment, handed on to the child with the loop marker. */
   readonly env: Readonly<Record<string, string | undefined>>;
-  /** The command words before the bin arguments: `[bun, bin script]`. */
+  /**
+   * The command words before the bin arguments: `[bun, bin script]`. The engine page inserts
+   * `--config=<bunfig>` after bun.
+   */
   readonly command: readonly string[];
   /** Starts the child with stdio inherited, in its own process group. */
   readonly spawn: (

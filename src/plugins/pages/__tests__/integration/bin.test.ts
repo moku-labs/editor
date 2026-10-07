@@ -4,12 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  buildEditorOnce,
+  createMokuGame,
+  MOKU_GAME_MARKER,
+  MOKU_GAME_TITLE
+} from "../../../../../tests/fixtures/moku-game";
 import { bootJsonOf, rawGet } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The moku-editor bin as a real process: a tiny game folder and an engine game
 // page (a game on the npm @moku-labs/game that Bun bundles), served next to the
-// editor on a random port.
+// editor on a random port; and a moku-game folder with no html at all, whose
+// page the engine writes (B5).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = fileURLToPath(new URL("../../../../../", import.meta.url));
@@ -229,8 +236,11 @@ document.title = "ENGINE_GAME " + typeof app.flow.run;
 let game: string;
 let bunfigGame: string;
 let engineGame: string;
+let mokuGame: string;
 
 beforeAll(async () => {
+  // The engine page bundles the agent from dist/agent-page.mjs through the tree's serve plugin.
+  await buildEditorOnce();
   if (!existsSync(join(REPO, "dist", "tools", "index.html"))) {
     const build = Bun.spawn(["bun", "scripts/build-tools.ts"], {
       cwd: REPO,
@@ -272,12 +282,14 @@ beforeAll(async () => {
   await writeFile(join(engineGame, "web", "main.ts"), ENGINE_MAIN);
   await writeFile(join(engineGame, "manifest.json"), '{"version":1,"bundles":{}}');
   await symlink(join(REPO, "node_modules"), join(engineGame, "node_modules"), "dir");
+  mokuGame = await createMokuGame();
 }, 120_000);
 
 afterAll(async () => {
   await rm(game, { recursive: true, force: true });
   await rm(bunfigGame, { recursive: true, force: true });
   await rm(engineGame, { recursive: true, force: true });
+  await rm(mokuGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -448,6 +460,41 @@ describe("moku-editor bin", () => {
     }
     expect(await bin.child.exited).toBe(0);
   }, 60_000);
+
+  it("serves a moku-game folder with no html: the engine writes .moku/, a bin re-run under its bunfig serves the page with the editor's agent, and stops on SIGINT with 0 (B5, D-51)", async () => {
+    const html = join(mokuGame, ".moku", "index.html");
+    const path = join(mokuGame, ".moku", "editor.json");
+    const bin = await spawnBin(["--root", mokuGame, "--port", "0"]);
+    try {
+      expect(bin.port).toBeGreaterThan(0);
+      expect(existsSync(html)).toBe(true);
+      expect(existsSync(join(mokuGame, ".moku", "bunfig.toml"))).toBe(true);
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const page = await firstOk(`${origin}/`);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain(`<title>${MOKU_GAME_TITLE}</title>`);
+      const js = await pageScripts(origin);
+      expect(js).toContain(MOKU_GAME_MARKER);
+      // The editor's page agent, bundled from this tree's dist through scripts/tree/bundle.ts.
+      expect(js).toContain("/__editor/hello");
+      await expect(fetch(`${origin}/.moku/index.html`)).resolves.toHaveProperty("status", 404);
+      await expect(fetch(`${origin}/__editor/`)).resolves.toHaveProperty("status", 200);
+      const discovery = JSON.parse(await readFile(path, "utf8"));
+      expect(discovery).toMatchObject({ port: bin.port, root: mokuGame, html });
+      expect(discovery.pid).not.toBe(bin.child.pid);
+    } finally {
+      bin.child.kill("SIGINT");
+    }
+    expect(await bin.child.exited).toBe(0);
+    expect(bin.output().match(/stopped/g)).toHaveLength(1);
+    expect(existsSync(path)).toBe(false);
+  }, 60_000);
+
+  it("exits 2 without an html file for a root that is not a moku-game folder (B5)", async () => {
+    const result = await runBin(["--root", game, "--port", "0"]);
+    expect(result.code).toBe(2);
+    expect(result.output).toContain("has no index.ts and config.ts");
+  }, 30_000);
 
   it("prints usage on --help (0) and refuses bad arguments with 2 (P14)", async () => {
     const help = await runBin(["--help"]);

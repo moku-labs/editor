@@ -1,11 +1,12 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
+import type { PreparePage } from "../../engine-page";
 import { runBridge } from "../../mcp/bridge";
 import { REEXEC_ENV } from "../../reexec";
 import type { ReexecDeps } from "../../types";
@@ -57,6 +58,12 @@ describe("startBin", () => {
     expect(lines.join("\n")).toContain("--no-hmr");
     expect(lines.join("\n")).toContain("moku-editor mcp [<game-html>]");
     expect(lines.join("\n")).toContain("moku-editor mcp-config [<game-html>] [--port N]");
+    expect(lines.join("\n")).toContain(
+      "moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…"
+    );
+    expect(lines.join("\n")).toContain(
+      "without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine"
+    );
   });
 
   it("prints the error and usage with 2 for bad arguments", async () => {
@@ -478,5 +485,137 @@ describe("startBin re-spawn in the game root (B2)", () => {
     } finally {
       await started.stop?.();
     }
+  });
+});
+
+/**
+ * A preparePage that refuses the game's config, as the engine does.
+ *
+ * @returns Never: rejects with the engine's `[game]` error.
+ */
+function refusePage(): Promise<never> {
+  return Promise.reject(new Error("[game] config.ts: page.title is refused."));
+}
+
+describe("startBin engine page (B5)", () => {
+  let base: string;
+  let moku: string;
+
+  beforeAll(async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-engine-")));
+    moku = join(base, "games", "timber");
+    await mkdir(moku, { recursive: true });
+    await writeFile(join(moku, "index.ts"), "export default {};");
+    await writeFile(join(moku, "config.ts"), "export default {};");
+  });
+
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  /** The page the stubbed engine writes. */
+  const page = () => ({
+    html: join(moku, ".moku", "index.html"),
+    bunfig: join(moku, ".moku", "bunfig.toml")
+  });
+
+  /**
+   * Bin deps for the engine page: the reexec deps with the cwd `base`, and an importCli whose
+   * preparePage answers the page (or the given stub).
+   *
+   * @param prepare - The preparePage stub.
+   * @param code - The exit code of the re-spawned bin.
+   * @returns The deps, the lines, the spawn and the preparePage mocks.
+   */
+  function engineDeps(prepare: PreparePage = () => Promise.resolve(page()), code = 0) {
+    const { deps, lines } = createDeps();
+    const { reexec, spawn } = reexecDeps(code);
+    const preparePage = vi.fn<PreparePage>(prepare);
+    const importCli = vi.fn(() => Promise.resolve({ preparePage }));
+    return {
+      deps: { ...deps, reexec: { ...reexec, cwd: () => base }, importCli },
+      lines,
+      spawn,
+      preparePage,
+      importCli
+    };
+  }
+
+  it("answers 1 without the real process (no reexec dep): the page needs a re-run", async () => {
+    const { deps, lines } = createDeps();
+    await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 1 });
+    expect(lines.join("\n")).toContain(
+      "[moku-editor] the engine page needs the real process: pass the game HTML file"
+    );
+  });
+
+  it("answers 2 for a root that is not a moku-game folder", async () => {
+    const { deps, lines, importCli } = engineDeps();
+    await expect(startBin(["--root", "games"], deps)).resolves.toEqual({ code: 2 });
+    expect(lines.join("\n")).toContain(
+      `[moku-editor] ${join(base, "games")} has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder`
+    );
+    expect(importCli).not.toHaveBeenCalled();
+  });
+
+  it("answers 1 with the install hint when @moku-labs/game/cli does not resolve", async () => {
+    const { deps, lines } = engineDeps();
+    const failing = { ...deps, importCli: () => Promise.reject(new Error("Cannot find module")) };
+    await expect(startBin(["--root", moku], failing)).resolves.toEqual({ code: 1 });
+    expect(lines.join("\n")).toContain(
+      `[moku-editor] @moku-labs/game/cli does not resolve from ${moku}: install @moku-labs/game >=0.10.0 in the game`
+    );
+  });
+
+  it("imports the engine's cli from the root by default: none resolves here, so the install hint", async () => {
+    // An empty node_modules above the game keeps Bun from resolving through its global cache.
+    await mkdir(join(base, "node_modules"), { recursive: true });
+    const { deps, lines, spawn } = engineDeps();
+    const withDefault: CliDeps = {
+      ui: deps.ui,
+      importPage: deps.importPage,
+      exit: deps.exit,
+      reexec: deps.reexec
+    };
+    await expect(startBin(["--root", moku], withDefault)).resolves.toEqual({ code: 1 });
+    expect(lines.join("\n")).toContain(`@moku-labs/game/cli does not resolve from ${moku}`);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("answers 1 with the engine's [game] text when preparePage throws, and re-runs nothing", async () => {
+    const { deps, lines, spawn } = engineDeps(refusePage);
+    await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 1 });
+    expect(lines.join("\n")).toContain("[game] config.ts: page.title is refused.");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("prepares the page from the root, re-runs the bin under its bunfig and answers the child's code", async () => {
+    const { deps, spawn, preparePage, importCli } = engineDeps(undefined, 7);
+    const argv = ["--root", "games/timber", "--port", "0", "--no-hmr", "--preload", "p.ts"];
+    const withPlugin = [...argv, "--serve-plugin", "plugins/marker.ts"];
+    await expect(startBin(withPlugin, deps)).resolves.toEqual({ code: 7 });
+
+    expect(importCli).toHaveBeenCalledWith(moku);
+    const [root, options] = preparePage.mock.calls[0] ?? [];
+    expect(root).toBe(moku);
+    expect(options?.agents).toEqual(["@moku-labs/editor/agent/page"]);
+    expect(options?.preload).toEqual([join(base, "p.ts")]);
+    expect(options?.servePlugins?.[0]).toBe(join(base, "plugins", "marker.ts"));
+
+    expect(spawn).toHaveBeenCalledWith(
+      [
+        "bun",
+        `--config=${page().bunfig}`,
+        "bin.ts",
+        page().html,
+        "--root",
+        moku,
+        "--port",
+        "0",
+        "--no-hmr"
+      ],
+      { cwd: moku, env: { [REEXEC_ENV]: "1" } }
+    );
+    expect(deps.importPage).not.toHaveBeenCalled();
   });
 });

@@ -8,10 +8,15 @@
  * the discovery file with its own pid. The child runs in its own process group, so a terminal
  * Ctrl+C reaches it once, through the parent. A parent killed by SIGKILL forwards nothing: the
  * child checks its parent pid every second and stops itself once the parent is gone (A4).
+ *
+ * The engine page (B5) always re-spawns (D-51): Bun reads `--config=<root>/.moku/bunfig.toml`
+ * only at process start, so `reexecEngine` runs `bun --config=<bunfig> <bin> <root>/.moku/index.html`
+ * in the game root, with the same signal forwarding and loop marker.
  */
 import { readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path/posix";
-import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs } from "./types";
+import type { PreparedPage } from "@moku-labs/game/cli";
+import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs, ServeArgs } from "./types";
 
 /**
  * The environment marker of a re-spawned bin: it never re-spawns again.
@@ -104,12 +109,12 @@ function textOrUndefined(path: string): string | undefined {
  * @returns The absolute root (resolved against the cwd), or undefined.
  * @example
  * ```ts
- * reexecRoot({ kind: "run", html: "../game/index.html", port: 3000, root: "../game", hmr: true }, deps);
+ * reexecRoot({ kind: "run", html: "../game/index.html", port: 3000, root: "../game", hmr: true, preload: [], servePlugins: [] }, deps);
  * // "/work/game" when /work/game/bunfig.toml has [serve.static] and the cwd is /work/editor
  * ```
  */
 export function reexecRoot(
-  args: RunArgs,
+  args: ServeArgs,
   deps: Pick<ReexecDeps, "cwd" | "env">
 ): string | undefined {
   if (deps.env[REEXEC_ENV] === REEXEC_ON) return undefined;
@@ -135,11 +140,11 @@ export function reexecRoot(
  * @returns The argument words.
  * @example
  * ```ts
- * childArgv({ kind: "run", html: "web/index.html", port: 0, root: ".", hmr: false }, "/g", "/g");
+ * childArgv({ kind: "run", html: "web/index.html", port: 0, root: ".", hmr: false, preload: [], servePlugins: [] }, "/g", "/g");
  * // ["/g/web/index.html", "--port", "0", "--root", "/g", "--no-hmr"]
  * ```
  */
-function childArgv(args: RunArgs, cwd: string, root: string): string[] {
+function childArgv(args: ServeArgs, cwd: string, root: string): string[] {
   const words = [resolve(cwd, args.html), "--port", String(args.port), "--root", root];
   return args.hmr ? words : [...words, "--no-hmr"];
 }
@@ -168,23 +173,15 @@ function forwardSignals(child: ReexecChild, onSignal: ReexecDeps["onSignal"]): (
 }
 
 /**
- * Re-spawns the bin in the game root when its `bunfig.toml` has `[serve.static]` and the cwd is
- * elsewhere, and waits for it.
+ * Spawns the bin's child in the game root with the loop marker, hands the stop signals on to it
+ * until it exits, and answers its exit code.
  *
- * @param args - The `run` arguments.
- * @param deps - Cwd, environment, command, spawn and signal handlers.
- * @returns The child's exit code, or undefined when this process serves the game itself.
- * @example
- * ```ts
- * // Started in /work/editor for a game whose bunfig.toml has [serve.static]: the child serves it.
- * await reexecBin({ kind: "run", html: "../game/index.html", port: 3000, root: "../game", hmr: true }, processReexec()); // 0 after Ctrl+C
- * ```
+ * @param cmd - The whole command.
+ * @param root - The absolute game root: the child's cwd.
+ * @param deps - Environment, spawn and signal handlers.
+ * @returns The child's exit code.
  */
-export async function reexecBin(args: RunArgs, deps: ReexecDeps): Promise<number | undefined> {
-  const root = reexecRoot(args, deps);
-  if (root === undefined) return undefined;
-
-  const cmd = [...deps.command, ...childArgv(args, deps.cwd(), root)];
+async function runChild(cmd: readonly string[], root: string, deps: ReexecDeps): Promise<number> {
   const child = deps.spawn(cmd, { cwd: root, env: { ...deps.env, [REEXEC_ENV]: REEXEC_ON } });
   const release = forwardSignals(child, deps.onSignal);
   try {
@@ -192,6 +189,49 @@ export async function reexecBin(args: RunArgs, deps: ReexecDeps): Promise<number
   } finally {
     release();
   }
+}
+
+/**
+ * Re-spawns the bin in the game root when its `bunfig.toml` has `[serve.static]` and the cwd is
+ * elsewhere, and waits for it.
+ *
+ * @param args - The `run` arguments with the game HTML file.
+ * @param deps - Cwd, environment, command, spawn and signal handlers.
+ * @returns The child's exit code, or undefined when this process serves the game itself.
+ * @example
+ * ```ts
+ * // Started in /work/editor for a game whose bunfig.toml has [serve.static]: the child serves it.
+ * await reexecBin({ kind: "run", html: "../game/index.html", port: 3000, root: "../game", hmr: true, preload: [], servePlugins: [] }, processReexec()); // 0 after Ctrl+C
+ * ```
+ */
+export async function reexecBin(args: ServeArgs, deps: ReexecDeps): Promise<number | undefined> {
+  const root = reexecRoot(args, deps);
+  if (root === undefined) return undefined;
+
+  return runChild([...deps.command, ...childArgv(args, deps.cwd(), root)], root, deps);
+}
+
+/**
+ * Re-runs the bin under the engine page's bunfig (D-51), always: Bun reads `--config=` only at
+ * process start. The child serves `<root>/.moku/index.html` as any re-spawned bin, in the root.
+ *
+ * @param page - The page the engine wrote: its HTML and its bunfig.
+ * @param args - The `run` arguments of the engine page (root, port, hmr).
+ * @param deps - Cwd, environment, command, spawn and signal handlers.
+ * @returns The child's exit code.
+ * @example
+ * ```ts
+ * // moku-editor --root games/timber: bun --config=/w/games/timber/.moku/bunfig.toml bin.mjs /w/games/timber/.moku/index.html --root /w/games/timber --port 3000
+ * await reexecEngine(page, { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: [] }, processReexec()); // 0 after Ctrl+C
+ * ```
+ */
+export function reexecEngine(page: PreparedPage, args: RunArgs, deps: ReexecDeps): Promise<number> {
+  const root = resolve(deps.cwd(), args.root);
+  const bun = deps.command.slice(0, 1);
+  const bin = deps.command.slice(1);
+  const words = [page.html, "--root", root, "--port", String(args.port)];
+  const binArgs = args.hmr ? words : [...words, "--no-hmr"];
+  return runChild([...bun, `--config=${page.bunfig}`, ...bin, ...binArgs], root, deps);
 }
 
 /**

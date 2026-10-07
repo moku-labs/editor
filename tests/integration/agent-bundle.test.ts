@@ -129,6 +129,21 @@ async function bundle(entry: string, dev: "true" | "false"): Promise<Bundle> {
 }
 
 /**
+ * The built agent: `dist/agent.mjs` and the chunks it imports. tsdown puts the agent core in a
+ * chunk it shares with `dist/agent-page.mjs` (D-49), so the entry itself only re-exports.
+ *
+ * @returns The joined text.
+ */
+async function builtAgent(): Promise<string> {
+  const entry = await Bun.file(AGENT).text();
+  const chunks = [...entry.matchAll(/from "\.\/([^"]+\.mjs)"/g)].map(match => match[1] ?? "");
+  const texts = await Promise.all(
+    chunks.map(chunk => Bun.file(path.join(REPO, "dist", chunk)).text())
+  );
+  return [entry, ...texts].join("\n");
+}
+
+/**
  * The agent marks a bundle contains.
  *
  * @param output - A bundle.
@@ -179,8 +194,8 @@ describe.skipIf(!existsSync(AGENT))("the agent in a game bundle", () => {
     );
   });
 
-  it("keeps the pure annotations on the agent core and plugins in dist/agent.mjs", async () => {
-    const built = await Bun.file(AGENT).text();
+  it("keeps the pure annotations on the agent core and plugins in dist/agent.mjs and its chunks", async () => {
+    const built = await builtAgent();
 
     expect(built).toContain("/* @__PURE__ */ createAgentCore(");
     for (const name of ["registry", "channel", "overlay", "bridge", "capture"]) {
