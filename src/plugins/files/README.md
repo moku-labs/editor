@@ -214,7 +214,7 @@ The editor's own writes are not fed to the index. The other tabs hear them throu
 |---|---|---|
 | 1 | starts with `.moku/captures/` | `capture` |
 | 2 | equals `.moku/editor/layout.json` | `layout` |
-| 3 | ends with `.css`, basename `styles.ts` or `styles.tsx`, or ends with `.styles.ts` or `.styles.tsx` | `style` |
+| 3 | ends with `.css`, basename `styles.ts` or `styles.tsx`, ends with `.styles.ts` or `.styles.tsx`, or a `.ts`/`.tsx` module directly in a `styles/` folder (`shared/styles/text.ts`, the layered game layout) | `style` |
 | 4 | other `.ts` and `.tsx` | `code` |
 | 5 | everything else | `other` |
 

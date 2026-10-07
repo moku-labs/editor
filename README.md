@@ -411,8 +411,9 @@ agent writing the file, goes like this:
 plugins = ["@moku-labs/game/hot"]
 ```
 
-A view module is a `.tsx` file, a `styles.ts`, a `view.ts`, an `animations.ts`, an `effects.ts` or
-a generated `generated/strings.<locale>.ts`. Its save reaches the running game: the same session,
+A view module is a `.tsx` file, a `styles.ts`, a `view.ts`, an `animations.ts`, an `effects.ts`,
+a generated `generated/strings.<locale>.ts`, or (game 0.9.0, the layered layout) a `.ts` directly
+in `styles/`, `motion/`, `effects/`, `views/`, `world/projections/` or `world/layout/`. Its save reaches the running game: the same session,
 the same page, the new style or component on screen, and the toast "Game updated". The game writes
 `ui:hot-swap` to its log; `workspace.gameFrame().reload()` after a save ends on it with
 `{ restored: false, reason: "hot_swap" }`, reloads nothing and restores nothing. A logic module
