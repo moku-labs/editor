@@ -4,12 +4,10 @@
  * linked to this repository's, so the game resolves the engine the editor is built against. No
  * `web/`, no html, no bunfig: the engine writes the page.
  *
- * Also the editor build those tests bundle from (`dist/agent-page.mjs`, through the tree's serve
- * plugin): tsdown runs once across test files when it is missing, under a lock folder, without
- * cleaning `dist/` (the tools page and the other entries stay for the tests that read them).
+ * The editor build those tests bundle from (`dist/agent-page.mjs`, through the tree's serve
+ * plugin) is made once before all test files by tests/global-build.ts.
  */
-import { existsSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,15 +46,6 @@ const CONFIG = `export default { page: { title: "${MOKU_GAME_TITLE}" } };\n`;
 /** One prepared save, so the written `main.ts` has a scenario. */
 const SCENARIO = `export default (now: number) => ({ player: { coins: now > 0 ? 1 : 0, marker: "ready" } });\n`;
 
-/** The lock folder of the build: one test file builds, the others wait for it. */
-const BUILD_LOCK = path.join(REPO, "node_modules", ".moku-editor-build.lock");
-
-/** How long a build may take, and how old a lock may get before it counts as left behind. */
-const BUILD_TIMEOUT_MS = 60_000;
-
-/** How often a waiting test file checks whether the build released its lock. */
-const LOCK_POLL_MS = 200;
-
 /**
  * Writes the fixture game into a fresh temp folder. The caller removes it with
  * `rm(root, { recursive: true, force: true })`: the recursive rm unlinks the `node_modules`
@@ -78,86 +67,4 @@ export async function createMokuGame(): Promise<string> {
   await writeFile(path.join(root, "tests", "scenarios", "ready.ts"), SCENARIO);
   await symlink(path.join(REPO, "node_modules"), path.join(root, "node_modules"), "dir");
   return root;
-}
-
-/**
- * Takes the build lock. A lock older than the build timeout was left by a run that died: it is
- * removed and taken.
- *
- * @returns True when this process builds; false when another one does.
- */
-async function takeBuildLock(): Promise<boolean> {
-  try {
-    await mkdir(BUILD_LOCK);
-    return true;
-  } catch {
-    // Taken by another build, or released by it a moment ago: wait for it.
-    const lock = statSync(BUILD_LOCK, { throwIfNoEntry: false });
-    const isLeftBehind = lock !== undefined && Date.now() - lock.mtimeMs > BUILD_TIMEOUT_MS;
-    if (!isLeftBehind) return false;
-
-    await rm(BUILD_LOCK, { recursive: true, force: true });
-    return takeBuildLock();
-  }
-}
-
-/**
- * Waits until the other build released its lock, at most the build timeout.
- */
-async function waitForBuild(): Promise<void> {
-  const deadline = Date.now() + BUILD_TIMEOUT_MS;
-  while (existsSync(BUILD_LOCK) && Date.now() < deadline) await Bun.sleep(LOCK_POLL_MS);
-}
-
-/**
- * Whether the build is done: `dist/agent-page.mjs` exists and no build is writing it.
- *
- * @returns True when the tests can bundle from `dist/`.
- */
-function isBuilt(): boolean {
-  return existsSync(AGENT_PAGE_BUILD) && !existsSync(BUILD_LOCK);
-}
-
-/**
- * Runs tsdown on the repository without cleaning `dist/`, then releases the build lock.
- *
- * @throws {Error} When tsdown exits with another code than 0.
- */
-async function buildUnderLock(): Promise<void> {
-  try {
-    const build = Bun.spawn(["bun", "x", "tsdown", "--no-clean"], {
-      cwd: REPO,
-      stdout: "ignore",
-      stderr: "pipe"
-    });
-    const [code, errors] = await Promise.all([build.exited, new Response(build.stderr).text()]);
-    if (code !== 0) throw new Error(`tsdown exited with ${code}: ${errors}`);
-  } finally {
-    await rm(BUILD_LOCK, { recursive: true, force: true });
-  }
-}
-
-/**
- * Builds the editor's entries with tsdown when `dist/agent-page.mjs` is missing, once across the
- * test files that need it. `dist/` is not cleaned. A test file that finds the lock taken waits for
- * that build; when the build failed or outlived the timeout, it takes the lock and builds itself.
- *
- * @throws {Error} When tsdown exits with another code than 0, or the lock stays held by another
- * build.
- * @example
- * ```ts
- * beforeAll(buildEditorOnce, 120_000); // then dist/agent-page.mjs exists
- * ```
- */
-export async function buildEditorOnce(): Promise<void> {
-  if (isBuilt()) return;
-
-  // Another test file builds: wait for it, and build here when it failed or timed out.
-  if (!(await takeBuildLock())) {
-    await waitForBuild();
-    if (isBuilt()) return;
-    if (!(await takeBuildLock())) throw new Error("tsdown build lock is held");
-  }
-
-  await buildUnderLock();
 }

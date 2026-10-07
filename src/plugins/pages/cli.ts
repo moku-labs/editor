@@ -483,16 +483,55 @@ function processDeps(): CliDeps {
  *
  * @param stop - The stop function of the running bin.
  * @param deps - The bin deps.
+ * @returns The handler, so a signal caught during the start can run it.
  */
-function stopOnSignals(stop: () => Promise<void>, deps: CliDeps): void {
+function stopOnSignals(stop: () => Promise<void>, deps: CliDeps): () => Promise<void> {
   const onSignal = stopOnce(stop, deps);
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
-  if (deps.reexec === undefined) return;
+  if (deps.reexec !== undefined) {
+    stopWithParent(deps.reexec, () => {
+      void onSignal();
+    });
+  }
+  return onSignal;
+}
 
-  stopWithParent(deps.reexec, () => {
-    void onSignal();
-  });
+/** A SIGINT or SIGTERM caught while the bin starts. */
+type EarlySignals = {
+  /** Whether a signal came before the bin served. */
+  readonly caught: () => boolean;
+  /** Removes the early handlers. */
+  readonly release: () => void;
+};
+
+/**
+ * Catches SIGINT and SIGTERM from the start of a serving bin, so a signal that lands while it
+ * starts is remembered instead of killing the process with the default action (exit 143).
+ *
+ * @returns Whether a signal came, and the removal of the handlers.
+ * @example
+ * ```ts
+ * const early = catchSignalsEarly();
+ * // … the bin starts …
+ * early.release();
+ * early.caught(); // true when Ctrl+C came during the start
+ * ```
+ */
+function catchSignalsEarly(): EarlySignals {
+  let caught = false;
+  const onSignal = (): void => {
+    caught = true;
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  return {
+    caught: () => caught,
+    release: () => {
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+    }
+  };
 }
 
 /**
@@ -512,7 +551,16 @@ export async function main(
   argv: readonly string[],
   deps: CliDeps = processDeps()
 ): Promise<number> {
-  const { code, stop } = await startBin(argv, deps);
-  if (stop !== undefined) stopOnSignals(stop, deps);
+  // A serving bin owns its signals from the start; other commands keep the default action.
+  const early = parseBinArgs(argv).kind === "run" ? catchSignalsEarly() : undefined;
+  const { code, stop } = await startBin(argv, deps).catch((error: unknown) => {
+    early?.release();
+    throw error;
+  });
+
+  // The real handlers go on before the early ones come off: no gap for a signal.
+  const onSignal = stop === undefined ? undefined : stopOnSignals(stop, deps);
+  early?.release();
+  if (onSignal !== undefined && early?.caught() === true) await onSignal();
   return code;
 }

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { h, render } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

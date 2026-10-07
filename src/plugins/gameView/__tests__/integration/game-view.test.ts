@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"url":"http://127.0.0.1:3000/__editor","settings":{"disableIframePageLoading":true}}
+// @vitest-environment-options {"url":"http://127.0.0.1:3000/__editor","settings":{"navigation":{"disableChildFrameNavigation":true}}}
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { readFileSync } from "node:fs";
 import { act } from "preact/test-utils";

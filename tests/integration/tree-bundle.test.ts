@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import treeBundle, { createTreeBundle, treeRoot } from "../../scripts/tree/bundle";
-import { buildEditorOnce, REPO } from "../fixtures/moku-game";
+import { REPO } from "../fixtures/moku-game";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The editor tree's serve plugin (D-50): a game page that imports
@@ -53,7 +53,6 @@ async function fillModules(modules: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  await buildEditorOnce();
   game = await realpath(await mkdtemp(path.join(tmpdir(), "moku-tree-bundle-")));
   await fillModules(path.join(game, "node_modules"));
   await writeFile(path.join(game, "main.ts"), ENTRY);
