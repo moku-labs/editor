@@ -261,6 +261,7 @@ describe("main", () => {
   });
 
   it("a SIGTERM that lands while the bin starts stops it once it serves, with exit 0", async () => {
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
     const { deps, lines } = createDeps();
     const importPage = deps.importPage;
     const started = main([join(game, "index.html"), "--port", "0", "--root", game], {
@@ -279,6 +280,29 @@ describe("main", () => {
     process.emit("SIGINT");
     process.emit("SIGTERM");
     expect(deps.exit).toHaveBeenCalledTimes(1);
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
+  });
+
+  it("a start that throws releases the early signal handlers", async () => {
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    const { deps } = createDeps();
+    // The re-exec check reads the cwd first, before anything serves: a throw there leaves nothing running.
+    const { reexec } = reexecDeps(0);
+    const failing: CliDeps = {
+      ...deps,
+      reexec: {
+        ...reexec,
+        cwd: () => {
+          throw new Error("boom");
+        }
+      }
+    };
+    await expect(
+      main([join(game, "index.html"), "--port", "0", "--root", game], failing)
+    ).rejects.toThrow("boom");
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
   });
 
   it("a command that does not serve leaves the signals alone", async () => {

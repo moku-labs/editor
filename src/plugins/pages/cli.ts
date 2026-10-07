@@ -553,7 +553,10 @@ export async function main(
 ): Promise<number> {
   // A serving bin owns its signals from the start; other commands keep the default action.
   const early = parseBinArgs(argv).kind === "run" ? catchSignalsEarly() : undefined;
-  const { code, stop } = await startBin(argv, deps);
+  const { code, stop } = await startBin(argv, deps).catch((error: unknown) => {
+    early?.release();
+    throw error;
+  });
 
   // The real handlers go on before the early ones come off: no gap for a signal.
   const onSignal = stop === undefined ? undefined : stopOnSignals(stop, deps);
