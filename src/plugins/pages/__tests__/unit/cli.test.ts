@@ -6,6 +6,7 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
+import type { E2eDeps } from "../../e2e";
 import type { PreparePage } from "../../engine-page";
 import { runBridge } from "../../mcp/bridge";
 import { REEXEC_ENV } from "../../reexec";
@@ -58,6 +59,7 @@ describe("startBin", () => {
     expect(lines.join("\n")).toContain("--no-hmr");
     expect(lines.join("\n")).toContain("moku-editor mcp [<game-html>]");
     expect(lines.join("\n")).toContain("moku-editor mcp-config [<game-html>] [--port N]");
+    expect(lines.join("\n")).toContain("moku-editor e2e -c <playwright config>");
     expect(lines.join("\n")).toContain(
       "moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…"
     );
@@ -402,6 +404,51 @@ describe("startBin mcp (U4)", () => {
     });
     expect(lines).toEqual([]);
     expect(deps.importPage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Stub e2e deps: one project in the list, every run answers `code`.
+ *
+ * @param code - The exit code of each run.
+ * @returns The deps.
+ */
+function e2eStub(code: number) {
+  return {
+    env: {},
+    run: vi.fn<E2eDeps["run"]>(() => Promise.resolve(code)),
+    capture: vi.fn<E2eDeps["capture"]>(() =>
+      Promise.resolve({ code: 0, stdout: '{"config":{"projects":[{"name":"desktop"}]}}' })
+    )
+  };
+}
+
+describe("startBin e2e (D-52)", () => {
+  it("dispatches to the e2e runner and answers its code", async () => {
+    const { deps } = createDeps();
+    const e2e = e2eStub(3);
+    await expect(startBin(["e2e", "-c", "x.ts"], { ...deps, e2e })).resolves.toEqual({ code: 3 });
+    expect(e2e.run).toHaveBeenCalledWith(
+      ["playwright", "test", "-c", "x.ts", "--project", "desktop", "--pass-with-no-tests"],
+      { PORT: "4417" }
+    );
+    expect(deps.importPage).not.toHaveBeenCalled();
+  });
+
+  it("prints the missing config with the usage, exit 2", async () => {
+    const { deps, lines } = createDeps();
+    const e2e = e2eStub(0);
+    await expect(startBin(["e2e", "-g", "x"], { ...deps, e2e })).resolves.toEqual({ code: 2 });
+    expect(lines.join("\n")).toContain("[moku-editor] e2e needs the Playwright config: -c <file>");
+    expect(e2e.run).not.toHaveBeenCalled();
+  });
+
+  it("resolves main with the code and leaves the signals alone", async () => {
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    const { deps } = createDeps();
+    expect(await main(["e2e", "-c", "x.ts"], { ...deps, e2e: e2eStub(0) })).toBe(0);
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
   });
 });
 

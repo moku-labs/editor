@@ -82,6 +82,8 @@ The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`
 
 `--preload` and `--serve-plugin` paths are relative to the working directory. An editor working tree adds its own `scripts/tree/bundle.ts` to the serve plugins: the page bundles the tree's build on the game's one copy of the engine. An installed editor never adds it.
 
+`bunx moku-editor e2e -c <playwright config> [playwright args…]` runs a game's editor Playwright specs with one Playwright process, so one fresh editor bin, per project, because Bun 1.3.14's dev server crashes after many hot reloads in one process. Each project gets its own `PORT` (`PORT`, else 4417, plus the project's index); an explicit `--project` or a `--list` runs once as given, a project with no test for the filter passes (`--pass-with-no-tests`), and every other word goes to Playwright.
+
 **A game with its own HTML page** has three pieces: the **agent** on the game page, the **server** in Bun, the **tools page** in a browser tab.
 
 **1. Wire the agent into the game page — dev only.** The default agent plugins are `registry`, `channel` and `overlay`. The websocket `bridgePlugin` and the screenshot `capturePlugin` are opt-in, so a dev entry adds them behind the engine's dev flag:

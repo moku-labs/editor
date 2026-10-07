@@ -7,7 +7,8 @@
  * re-spawned bin with that cwd (`reexec.ts`). Without a game HTML file, a moku-game folder gets
  * its page from the engine (`engine-page.ts`, B5) and is served from a bin re-run under the page's
  * bunfig. `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
- * prints the Claude Code setup. The token is never printed.
+ * prints the Claude Code setup; `e2e` runs a Playwright config once per project, each on its own
+ * PORT (`e2e.ts`, D-52). The token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -17,6 +18,8 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { createApp } from "../../server";
 import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
+import type { E2eDeps } from "./e2e";
+import { processE2eDeps, runE2e } from "./e2e";
 import type { EnginePageDeps } from "./engine-page";
 import { gameFolderProblem, importGameCli, messageOf, prepareEnginePage } from "./engine-page";
 import { runBridge } from "./mcp/bridge";
@@ -35,9 +38,11 @@ const USAGE = [
   "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
   "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
+  "       moku-editor e2e -c <playwright config> [playwright args…]",
   "  without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine",
   "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
   "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
+  "  e2e         one Playwright run per project of the config, each on its own PORT",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)"
@@ -50,7 +55,7 @@ export type PageModule = { readonly default?: unknown };
 
 /**
  * What the bin talks to: the console, the HTML import, the process exit, the re-spawn of the real
- * process and the import of the engine's cli.
+ * process, the import of the engine's cli and the Playwright runs of `e2e`.
  *
  * @example
  * ```ts
@@ -75,6 +80,8 @@ export type CliDeps = {
   readonly reexec?: ReexecDeps;
   /** Imports `@moku-labs/game/cli` from a game root; default `importGameCli`; tests pass a stub. */
   readonly importCli?: EnginePageDeps["importCli"];
+  /** The `bun x` runs of `e2e`; default `processE2eDeps()`; tests pass a stub. */
+  readonly e2e?: E2eDeps;
 };
 
 /**
@@ -381,15 +388,15 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
 }
 
 /**
- * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, the engine page when no
- * game HTML file is given, or serving the game HTML file (from a re-spawned bin when
+ * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, `e2e`, the engine page when
+ * no game HTML file is given, or serving the game HTML file (from a re-spawned bin when
  * `deps.reexec` asks for one: then the child's exit code).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps.
  * @returns The exit code (0 help, mcp-config, the mcp bridge after stdin ended, or serving; 1
- * runtime error; 2 bad arguments or a root that is not a moku-game folder) and, while serving,
- * the stop function.
+ * runtime error; 2 bad arguments or a root that is not a moku-game folder; for `e2e` the code of
+ * its Playwright runs) and, while serving, the stop function.
  */
 export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
   const { ui } = deps;
@@ -412,6 +419,7 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
     return { code: 0 };
   }
   if (args.kind === "mcp") return { code: await runBridge(args) };
+  if (args.kind === "e2e") return { code: await runE2e(args, deps.e2e ?? processE2eDeps(), ui) };
 
   // Without a game HTML file the engine writes the page; with one the bin serves it.
   if (args.html === undefined) return runEngine(args, deps);
@@ -535,9 +543,12 @@ function catchSignalsEarly(): EarlySignals {
 }
 
 /**
- * Runs the bin; resolves with the exit code (0 help or serving, 1 runtime error, 2 bad arguments).
- * A serving bin stops once on SIGINT or SIGTERM; a re-spawned one also when its parent is gone
- * (A4: a parent killed by SIGKILL forwards no signal).
+ * Runs the bin; resolves with the exit code (0 help or serving, 1 runtime error, 2 bad arguments;
+ * `e2e`: a failed Chromium install's code, 1 when the projects cannot be listed, else the first
+ * failing code of its Playwright runs, or 0). A serving bin stops once on SIGINT or SIGTERM; a
+ * re-spawned one also when its parent is gone (A4: a parent killed by SIGKILL forwards no signal).
+ * `e2e` keeps the default signal action: a Ctrl+C reaches its Playwright child through the
+ * terminal's process group.
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps (default: this process).
