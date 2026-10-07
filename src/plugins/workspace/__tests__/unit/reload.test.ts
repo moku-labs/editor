@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";

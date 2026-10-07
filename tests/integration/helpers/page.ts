@@ -98,7 +98,7 @@ export function installPage(origin: string, path = "/__editor"): Page {
   // `window.Error` and `window.Date` for the inline flowView layout) finds them.
   const window = new GlobalWindow({
     url: `${origin}${path}/`,
-    settings: { disableIframePageLoading: true }
+    settings: { navigation: { disableChildFrameNavigation: true } }
   });
   window.document.body.innerHTML = "<div data-game-page></div><div data-editor-root></div>";
   for (const [name, value] of Object.entries(pageGlobals(window))) vi.stubGlobal(name, value);

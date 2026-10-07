@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { bridgePlugin, capturePlugin, createApp } from "../../src/agent";
 import type { RpcFrame } from "../../src/plugins/pages/__tests__/rpc-frame";
 import {
@@ -333,17 +333,6 @@ function onlyFrames(bridge: Bridge): boolean {
     }
   });
 }
-
-beforeAll(async () => {
-  if (!existsSync(path.join(REPO, "dist", "tools", "index.html"))) {
-    const build = Bun.spawn(["bun", "scripts/build-tools.ts"], {
-      cwd: REPO,
-      stdout: "ignore",
-      stderr: "ignore"
-    });
-    expect(await build.exited).toBe(0);
-  }
-}, 120_000);
 
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.stop().catch(() => undefined);

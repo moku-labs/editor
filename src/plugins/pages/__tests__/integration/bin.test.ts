@@ -5,7 +5,6 @@ import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  buildEditorOnce,
   createMokuGame,
   MOKU_GAME_MARKER,
   MOKU_GAME_TITLE
@@ -239,16 +238,7 @@ let engineGame: string;
 let mokuGame: string;
 
 beforeAll(async () => {
-  // The engine page bundles the agent from dist/agent-page.mjs through the tree's serve plugin.
-  await buildEditorOnce();
-  if (!existsSync(join(REPO, "dist", "tools", "index.html"))) {
-    const build = Bun.spawn(["bun", "scripts/build-tools.ts"], {
-      cwd: REPO,
-      stdout: "ignore",
-      stderr: "ignore"
-    });
-    expect(await build.exited).toBe(0);
-  }
+  // dist/ (the agent page and the tools page) is built once by tests/global-build.ts.
   game = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-")));
   await writeFile(
     join(game, "index.html"),

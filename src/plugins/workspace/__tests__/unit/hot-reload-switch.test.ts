@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setHotReload, toggleHotReload } from "../../hot-reload";
 import { CONFIG, createCtx, flush, manifestOf, resultOf, type TestCtx } from "../helpers";

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// @vitest-environment-options {"settings":{"disableIframePageLoading":true}}
+// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFrameLayer, removeFrameLayer } from "../../frame/frame";
 import { closeReference, setReference, toggleReference } from "../../reference";
