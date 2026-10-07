@@ -9,6 +9,35 @@ import type { Registry } from "./agent";
 import { bridgePlugin, capturePlugin, createApp } from "./agent";
 
 /**
+ * Whether a field of a `.dev` module is absent or an array: the shape of `sources` and `commands`.
+ *
+ * @param value - The module.
+ * @param key - The field.
+ * @returns True when the field is absent or an array.
+ */
+function isAbsentOrArray(value: object, key: "sources" | "commands"): boolean {
+  const field: unknown = Reflect.get(value, key);
+  return field === undefined || Array.isArray(field);
+}
+
+/**
+ * Whether a module the engine hands over is a `.dev` module: its `sources` and `commands` are
+ * each absent or an array. One with neither is still a `.dev` module; the registry ignores it.
+ *
+ * @param value - One of the game's `.dev` modules, as the engine hands it over.
+ * @returns True for a `.dev` module.
+ * @example
+ * ```ts
+ * isDevModule({ commands: [addCoins] }); // true
+ * isDevModule({ helper: () => 1 }); // true: no sources, no commands
+ * isDevModule({ sources: "board" }); // false
+ * ```
+ */
+function isDevModule(value: object): value is Registry.DevModule {
+  return isAbsentOrArray(value, "sources") && isAbsentOrArray(value, "commands");
+}
+
+/**
  * The editor's dev agent for a page the engine writes (moku-game dev, preparePage): starts the
  * agent core with bridge and capture on the running game and sets `globalThis.editor`.
  * No side effect on import: the engine calls it after the game app started, in dev only.
@@ -32,7 +61,7 @@ const editorAgent: PageAgent<Registry.GameLike> = async ({ app, name, modules })
   const editor = createApp({
     plugins: [bridgePlugin, capturePlugin],
     pluginConfigs: {
-      registry: { game: app, name, modules: modules as readonly Registry.DevModule[] }
+      registry: { game: app, name, modules: modules.filter(module => isDevModule(module)) }
     }
   });
   Reflect.set(globalThis, "editor", editor);

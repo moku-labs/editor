@@ -202,9 +202,8 @@ function mcpArgs(parsed: Parsed): BinArgs {
 function mcpConfigArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
   if (hasPageFlags(values)) return failed(SERVING_ONLY);
-  if (values.root !== undefined || values["no-hmr"] !== undefined) {
-    return failed("mcp-config takes only <game-html> and --port");
-  }
+  const hasServeFlags = values.root !== undefined || values["no-hmr"] !== undefined;
+  if (hasServeFlags) return failed("mcp-config takes only <game-html> and --port");
 
   const game = optionalGame(positionals.slice(1), values.port);
   if (typeof game === "string") return failed(game);
@@ -226,21 +225,28 @@ function mcpConfigArgs(parsed: Parsed): BinArgs {
  */
 function runArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
+
+  // At most one positional, and it must be a `.html` file.
   const [html] = positionals;
   if (positionals.length > 1) return failed("expected at most one game HTML file");
-
   const problem = html === undefined ? undefined : htmlProblem(html);
   if (problem !== undefined) return failed(problem);
-  if (html !== undefined && hasPageFlags(values)) {
+
+  // The page flags feed only the engine page, so an html file refuses them.
+  const hasHtmlWithPageFlags = html !== undefined && hasPageFlags(values);
+  if (hasHtmlWithPageFlags) {
     return failed("--preload and --serve-plugin need the engine page: drop the html file");
   }
 
+  // The port defaults to 3000 and must be a valid TCP port.
   const port = values.port === undefined ? DEFAULT_PORT : portOf(values.port);
   if (port === undefined) return failed("--port must be an integer 0-65535");
 
+  // The root defaults to the cwd and must not be empty.
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
+  // The html key is left out for the engine page.
   return {
     kind: "run",
     ...(html === undefined ? {} : { html }),

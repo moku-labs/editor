@@ -106,6 +106,15 @@ describe("agent/page (D-49)", () => {
     ).toContain("tiny.page");
   });
 
+  it("drops a module whose sources or commands is not an array, and starts with the others", async () => {
+    const agent = await loadAgent();
+    const broken = [{ sources: "board" }, { commands: { id: "x" } }];
+    await agent({ app: game.app, name: "tiny", modules: [...broken, tinyDev] });
+    const manifest = editorOnPage().registry.manifest();
+    expect(manifest.game).toBe("tiny");
+    expect(manifest.sources.map(source => source.id)).toContain("tiny.page");
+  });
+
   it("stop() ends the bridge's retries", async () => {
     vi.useFakeTimers();
     const agent = await loadAgent();

@@ -226,9 +226,14 @@ export async function reexecBin(args: ServeArgs, deps: ReexecDeps): Promise<numb
  * ```
  */
 export function reexecEngine(page: PreparedPage, args: RunArgs, deps: ReexecDeps): Promise<number> {
+  // The child runs in the game root.
   const root = resolve(deps.cwd(), args.root);
+
+  // Split the command so `--config=` goes between bun and the bin.
   const bun = deps.command.slice(0, 1);
   const bin = deps.command.slice(1);
+
+  // Build the bin arguments, then run.
   const words = [page.html, "--root", root, "--port", String(args.port)];
   const binArgs = args.hmr ? words : [...words, "--no-hmr"];
   return runChild([...bun, `--config=${page.bunfig}`, ...bin, ...binArgs], root, deps);

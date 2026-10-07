@@ -157,12 +157,20 @@ export type PagesApi = {
  * Arguments of `moku-editor [<game-html>] [--port 3000] [--root .] [--no-hmr] [--preload FILE]…
  * [--serve-plugin FILE]…`: serve the game. Without `html` the engine writes the page of the
  * moku-game folder at `root` (the engine page); the two lists feed only that page.
+ *
+ * @example
+ * ```ts
+ * // moku-editor --root games/timber --serve-plugin plugins/marker.ts
+ * const args: RunArgs = { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: ["plugins/marker.ts"] };
+ * ```
  */
 export type RunArgs = {
   readonly kind: "run";
   /** The game HTML file, when given; the key is left out for the engine page. */
   readonly html?: string;
+  /** The port on 127.0.0.1: 3000 by default, 0 for a random free port. */
   readonly port: number;
+  /** The project root as given (default "."): the editor reads and writes there. */
   readonly root: string;
   /** False with `--no-hmr`: Bun serves the game without hot reload. */
   readonly hmr: boolean;

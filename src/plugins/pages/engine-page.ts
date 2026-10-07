@@ -67,7 +67,10 @@ export type EnginePageOptions = {
  *
  * @example
  * ```ts
- * const deps: EnginePageDeps = { importCli: importGameCli };
+ * // A unit test: a stub engine that writes nothing (/games/timber holds index.ts and config.ts).
+ * const page = { html: "/games/timber/.moku/index.html", bunfig: "/games/timber/.moku/bunfig.toml" };
+ * const deps: EnginePageDeps = { importCli: () => Promise.resolve({ preparePage: () => Promise.resolve(page) }) };
+ * await prepareEnginePage("/games/timber", { preload: [], servePlugins: [], cwd: "/games", main: Bun.main }, deps); // page
  * ```
  */
 export type EnginePageDeps = {
@@ -76,12 +79,17 @@ export type EnginePageDeps = {
 };
 
 /**
- * The message of any thrown value.
+ * The message of any thrown value: the bin prints it without a stack.
  *
  * @param error - The thrown value.
  * @returns Its message.
+ * @example
+ * ```ts
+ * messageOf(new Error("x")); // "x"
+ * messageOf("plain text"); // "plain text"
+ * ```
  */
-function messageOf(error: unknown): string {
+export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -301,6 +309,7 @@ export async function prepareEnginePage(
     return `[moku-editor] ${GAME_CLI} does not resolve from ${rootPath}: install @moku-labs/game >=0.10.0 in the game`;
   }
 
+  // Resolve the given files against the cwd, and add the tree plugin of an editor working tree.
   const preload = options.preload.map(file => resolve(options.cwd, file));
   const given = options.servePlugins.map(file => resolve(options.cwd, file));
   const servePlugins = withTreePlugin(given, treePlugin(packageRoot(options.main), rootPath));
