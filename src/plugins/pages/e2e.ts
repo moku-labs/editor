@@ -5,7 +5,8 @@
  * process. Each project runs on its own `PORT` (the base, else 4417, plus the project's index),
  * because the bin of the previous project can still hold its port for a moment.
  *
- * An explicit `--project` runs once as given; every other word goes to Playwright. With `CI=true`
+ * An explicit `--project` or a `--list` runs once as given; each per-project run adds
+ * `--pass-with-no-tests`; every other word goes to Playwright. With `CI=true`
  * the Chromium of the game's Playwright is installed first. Playwright resolves from the game
  * through `bun x`: the editor has no Playwright dependency at run time. The bin installs no signal
  * handler here: a Ctrl+C reaches the Playwright child through the terminal's process group.
@@ -119,7 +120,8 @@ export function projectNames(json: string): readonly string[] {
 }
 
 /**
- * The port of the first project: `PORT` when it is an integer 1-65535, else 4417.
+ * The port of the first project: `PORT` when it is an integer 1-65535, else 4417. Later projects
+ * add their index, so a base near 65535 leaves no room for them.
  *
  * @param env - The bin's environment.
  * @returns The base port.
@@ -179,8 +181,9 @@ async function listProjects(config: string, deps: E2eDeps): Promise<readonly str
 
 /**
  * Runs the specs of a Playwright config: in CI the Chromium install first, then one run per
- * project, one after another, each with `PORT` = base + index. An explicit `--project`, or a
- * config without named projects, runs once as given.
+ * project, one after another, each with `PORT` = base + index and `--pass-with-no-tests` (a
+ * project with no test for the filter passes). An explicit `--project`, a `--list`, or a config
+ * without named projects, runs once as given.
  *
  * @param args - The `e2e` arguments.
  * @param deps - The environment and the `bun x` runs.
