@@ -4,8 +4,10 @@
  * on (off with `--no-hmr`), attach it to pages with its restart (the Hot reload switch, D-32),
  * write the discovery file `.moku/editor.json` (removed on stop and exit), print the URLs through
  * the branded console (MC1). A root whose `bunfig.toml` has `[serve.static]` is served from a
- * re-spawned bin with that cwd (`reexec.ts`). `mcp` runs the stdio MCP bridge (`mcp/`, stdout for
- * protocol frames only); `mcp-config` prints the Claude Code setup. The token is never printed.
+ * re-spawned bin with that cwd (`reexec.ts`). Without a game HTML file, a moku-game folder gets
+ * its page from the engine (`engine-page.ts`, B5) and is served from a bin re-run under the page's
+ * bunfig. `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
+ * prints the Claude Code setup. The token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -15,21 +17,25 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { createApp } from "../../server";
 import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
+import type { EnginePageDeps } from "./engine-page";
+import { gameFolderProblem, importGameCli, messageOf, prepareEnginePage } from "./engine-page";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
-import { processReexec, reexecBin, stopWithParent } from "./reexec";
+import { processReexec, reexecBin, reexecEngine, stopWithParent } from "./reexec";
 import type { GameServer } from "./serve";
 import { createGameServer } from "./serve";
 import { createStaticFetch } from "./static";
-import type { McpConfigArgs, ReexecDeps, RunArgs } from "./types";
+import type { McpConfigArgs, ReexecDeps, RunArgs, ServeArgs } from "./types";
 
 /**
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
-  "Usage: moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
+  "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…",
+  "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
   "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
+  "  without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine",
   "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
   "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
@@ -43,14 +49,32 @@ const USAGE = [
 export type PageModule = { readonly default?: unknown };
 
 /**
- * What the bin talks to: the console, the HTML import, the process exit and, for the real
- * process, the re-spawn in the game root (without it the bin always serves itself).
+ * What the bin talks to: the console, the HTML import, the process exit, the re-spawn of the real
+ * process and the import of the engine's cli.
+ *
+ * @example
+ * ```ts
+ * // A unit test: a recording console, a stub HTML import, no real process.
+ * const lines: string[] = [];
+ * const deps: CliDeps = {
+ *   ui: createBrandConsole({ write: line => lines.push(line), writeError: line => lines.push(line), color: false }),
+ *   importPage: () => Promise.resolve({ default: { index: "web/index.html" } }),
+ *   exit: () => undefined
+ * };
+ * await startBin(["--help"], deps); // { code: 0 }, lines hold the usage
+ * ```
  */
 export type CliDeps = {
+  /** The branded console every line goes to (MC1). */
   readonly ui: BrandConsole;
+  /** Imports the game HTML file from its file: URL, as a Bun HTML bundle. */
   readonly importPage: (url: string) => Promise<PageModule>;
+  /** Exits the process, after a stop on SIGINT or SIGTERM. */
   readonly exit: (code: number) => void;
+  /** The re-spawn of the real process; without it the bin serves itself and refuses the engine page. */
   readonly reexec?: ReexecDeps;
+  /** Imports `@moku-labs/game/cli` from a game root; default `importGameCli`; tests pass a stub. */
+  readonly importCli?: EnginePageDeps["importCli"];
 };
 
 /**
@@ -62,20 +86,6 @@ export type Started = { readonly code: number; readonly stop?: () => Promise<voi
  * The editor server app of the bin.
  */
 type EditorApp = ReturnType<typeof createApp>;
-
-/**
- * The message of any thrown value.
- *
- * @param error - The thrown value.
- * @returns Its message.
- * @example
- * ```ts
- * messageOf(new Error("x")); // "x"
- * ```
- */
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * True for the error Bun.serve throws when the port is taken.
@@ -272,11 +282,11 @@ function printMcpConfig(ui: BrandConsole, args: McpConfigArgs): void {
  * Imports the game, starts the editor, serves and writes the discovery file; resolves while the
  * server runs.
  *
- * @param args - The `run` arguments.
+ * @param args - The `run` arguments with the game HTML file.
  * @param deps - The bin deps.
  * @returns 0 with the stop function while serving, or 1 on a runtime error.
  */
-async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
+async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
   const { ui } = deps;
   const htmlPath = resolve(args.html);
   const rootPath = resolve(args.root);
@@ -316,18 +326,76 @@ async function serveGame(args: RunArgs, deps: CliDeps): Promise<Started> {
 }
 
 /**
- * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, or serving the game (from a
- * re-spawned bin when `deps.reexec` asks for one: then the child's exit code).
+ * Serves the game HTML file: from a re-spawned bin when `deps.reexec` asks for one (then the
+ * child's exit code), here otherwise.
+ *
+ * @param args - The `run` arguments with the game HTML file.
+ * @param deps - The bin deps.
+ * @returns The child's code, or what serving here started.
+ */
+async function serveOrReexec(args: ServeArgs, deps: CliDeps): Promise<Started> {
+  const reexecCode = deps.reexec === undefined ? undefined : await reexecBin(args, deps.reexec);
+  return reexecCode === undefined ? serveGame(args, deps) : { code: reexecCode };
+}
+
+/**
+ * Serves the engine page of a moku-game folder (B5): the engine writes the page with the editor's
+ * agent (`engine-page.ts`), then the bin re-runs itself under the page's bunfig and serves its
+ * HTML (D-51). Only the real process re-runs, so unit seams without `deps.reexec` are refused.
+ *
+ * @param args - The `run` arguments without a game HTML file.
+ * @param deps - The bin deps.
+ * @returns The child's exit code; 2 when the root is not a moku-game folder; 1 when the page
+ * cannot be written or there is no real process.
+ */
+async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
+  const { ui, reexec } = deps;
+
+  // Only the real process can re-run itself: a seam without reexec is refused.
+  if (reexec === undefined) {
+    ui.error("[moku-editor] the engine page needs the real process: pass the game HTML file");
+    return { code: 1 };
+  }
+
+  // The root must be a moku-game folder: index.ts and config.ts.
+  const cwd = reexec.cwd();
+  const rootPath = resolve(cwd, args.root);
+  const problem = gameFolderProblem(rootPath);
+  if (problem !== undefined) {
+    ui.error(problem);
+    return { code: 2 };
+  }
+
+  // The engine writes the page with the editor's agent; its error line is printed as is.
+  const options = { preload: args.preload, servePlugins: args.servePlugins, cwd, main: Bun.main };
+  const page = await prepareEnginePage(rootPath, options, {
+    importCli: deps.importCli ?? importGameCli
+  });
+  if (typeof page === "string") {
+    ui.error(page);
+    return { code: 1 };
+  }
+
+  // Re-run the bin under the page's bunfig and answer the child's code.
+  return { code: await reexecEngine(page, args, reexec) };
+}
+
+/**
+ * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, the engine page when no
+ * game HTML file is given, or serving the game HTML file (from a re-spawned bin when
+ * `deps.reexec` asks for one: then the child's exit code).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps.
  * @returns The exit code (0 help, mcp-config, the mcp bridge after stdin ended, or serving; 1
- * runtime error; 2 bad arguments) and,
- * while serving, the stop function.
+ * runtime error; 2 bad arguments or a root that is not a moku-game folder) and, while serving,
+ * the stop function.
  */
 export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
   const { ui } = deps;
   const args = parseBinArgs(argv);
+
+  // Help and argument errors print the usage.
   if (args.kind === "help") {
     printUsage(ui);
     return { code: 0 };
@@ -337,14 +405,17 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
     printUsage(ui);
     return { code: 2 };
   }
+
+  // The two MCP subcommands.
   if (args.kind === "mcp-config") {
     printMcpConfig(ui, args);
     return { code: 0 };
   }
   if (args.kind === "mcp") return { code: await runBridge(args) };
 
-  const reexecCode = deps.reexec === undefined ? undefined : await reexecBin(args, deps.reexec);
-  return reexecCode === undefined ? serveGame(args, deps) : { code: reexecCode };
+  // Without a game HTML file the engine writes the page; with one the bin serves it.
+  if (args.html === undefined) return runEngine(args, deps);
+  return serveOrReexec({ ...args, html: args.html }, deps);
 }
 
 /**

@@ -1,8 +1,11 @@
 /**
- * @file pages plugin — the arguments of `moku-editor <game-html> [--port 3000] [--root .]
- * [--no-hmr] [--help]` and of the subcommands `moku-editor mcp [<game-html>] [--port N] [--root DIR]
- * [--no-hmr]` and `moku-editor mcp-config [<game-html>] [--port N]`. Pure: no I/O. Unknown flags
- * are errors (strict), so `--host` cannot exist: the server always binds 127.0.0.1.
+ * @file pages plugin — the arguments of `moku-editor [<game-html>] [--port 3000] [--root .]
+ * [--no-hmr] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of the subcommands
+ * `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` and
+ * `moku-editor mcp-config [<game-html>] [--port N]`. Without a game HTML file the bin serves the
+ * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
+ * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
+ * 127.0.0.1.
  */
 import { parseArgs } from "node:util";
 import type { BinArgs } from "./types";
@@ -18,7 +21,12 @@ const DEFAULT_PORT = 3000;
 const PORT_MAX = 65_535;
 
 /**
- * Parses argv strictly with the four flags of the bin.
+ * Why `mcp` and `mcp-config` refuse `--preload` and `--serve-plugin`.
+ */
+const SERVING_ONLY = "--preload and --serve-plugin belong to the serving bin";
+
+/**
+ * Parses argv strictly with the six flags of the bin; `--preload` and `--serve-plugin` repeat.
  *
  * @param argv - Arguments after the script name.
  * @returns The positionals and flag values.
@@ -37,6 +45,8 @@ function parse(argv: readonly string[]) {
       port: { type: "string", short: "p" },
       root: { type: "string", short: "r" },
       "no-hmr": { type: "boolean" },
+      preload: { type: "string", multiple: true },
+      "serve-plugin": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" }
     }
   });
@@ -77,6 +87,20 @@ function tryParse(argv: readonly string[]): Parsed | string {
  */
 function failed(message: string): BinArgs {
   return { kind: "error", message: `[moku-editor] ${message}` };
+}
+
+/**
+ * Whether argv has a `--preload` or a `--serve-plugin`: flags of the engine page only.
+ *
+ * @param values - The parsed flag values.
+ * @returns True when either flag was given.
+ * @example
+ * ```ts
+ * hasPageFlags(parse(["mcp", "--preload", "a.ts"]).values); // true
+ * ```
+ */
+function hasPageFlags(values: Parsed["values"]): boolean {
+  return values.preload !== undefined || values["serve-plugin"] !== undefined;
 }
 
 /**
@@ -154,6 +178,8 @@ function optionalGame(
  */
 function mcpArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
+  if (hasPageFlags(values)) return failed(SERVING_ONLY);
+
   const game = optionalGame(positionals.slice(1), values.port);
   if (typeof game === "string") return failed(game);
 
@@ -175,9 +201,9 @@ function mcpArgs(parsed: Parsed): BinArgs {
  */
 function mcpConfigArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
-  if (values.root !== undefined || values["no-hmr"] !== undefined) {
-    return failed("mcp-config takes only <game-html> and --port");
-  }
+  if (hasPageFlags(values)) return failed(SERVING_ONLY);
+  const hasServeFlags = values.root !== undefined || values["no-hmr"] !== undefined;
+  if (hasServeFlags) return failed("mcp-config takes only <game-html> and --port");
 
   const game = optionalGame(positionals.slice(1), values.port);
   if (typeof game === "string") return failed(game);
@@ -186,41 +212,62 @@ function mcpConfigArgs(parsed: Parsed): BinArgs {
 }
 
 /**
- * The arguments of the serving bin: exactly one `.html` positional.
+ * The arguments of the serving bin: at most one `.html` positional. Without it the engine writes
+ * the page (no `html` key); with it, `--preload` and `--serve-plugin` are refused.
  *
  * @param parsed - The parsed argv.
  * @returns `run` args, or an error.
  * @example
  * ```ts
- * runArgs(parse(["web/index.html"])); // { kind: "run", html: "web/index.html", port: 3000, root: ".", hmr: true }
+ * runArgs(parse(["web/index.html"])); // { kind: "run", html: "web/index.html", port: 3000, root: ".", hmr: true, preload: [], servePlugins: [] }
+ * runArgs(parse(["--root", "games/timber"])); // { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: [] }
  * ```
  */
 function runArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
-  const [html] = positionals;
-  if (positionals.length !== 1 || html === undefined) return failed("expected one game HTML file");
 
-  const problem = htmlProblem(html);
+  // At most one positional, and it must be a `.html` file.
+  const [html] = positionals;
+  if (positionals.length > 1) return failed("expected at most one game HTML file");
+  const problem = html === undefined ? undefined : htmlProblem(html);
   if (problem !== undefined) return failed(problem);
 
+  // The page flags feed only the engine page, so an html file refuses them.
+  const hasHtmlWithPageFlags = html !== undefined && hasPageFlags(values);
+  if (hasHtmlWithPageFlags) {
+    return failed("--preload and --serve-plugin need the engine page: drop the html file");
+  }
+
+  // The port defaults to 3000 and must be a valid TCP port.
   const port = values.port === undefined ? DEFAULT_PORT : portOf(values.port);
   if (port === undefined) return failed("--port must be an integer 0-65535");
 
+  // The root defaults to the cwd and must not be empty.
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
-  return { kind: "run", html, port, root, hmr: values["no-hmr"] !== true };
+  // The html key is left out for the engine page.
+  return {
+    kind: "run",
+    ...(html === undefined ? {} : { html }),
+    port,
+    root,
+    hmr: values["no-hmr"] !== true,
+    preload: values.preload ?? [],
+    servePlugins: values["serve-plugin"] ?? []
+  };
 }
 
 /**
  * Parses the bin arguments. A first positional `mcp` or `mcp-config` picks that subcommand.
  *
  * @param argv - Arguments after the script name.
- * @returns `run` with html, port, root and hmr; `mcp`; `mcp-config`; `help`; or `error` with a
- * message.
+ * @returns `run` with html (left out for the engine page), port, root, hmr, preload and
+ * servePlugins; `mcp`; `mcp-config`; `help`; or `error` with a message.
  * @example
  * ```ts
- * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true }
+ * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true, preload: [], servePlugins: [] }
+ * parseBinArgs(["--root", "games/timber"]); // { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: [] }
  * parseBinArgs(["mcp", "web/index.html"]); // { kind: "mcp", html: "web/index.html", root: ".", hmr: true }
  * ```
  */

@@ -10,11 +10,12 @@ import {
   processReexec,
   REEXEC_ENV,
   reexecBin,
+  reexecEngine,
   reexecRoot,
   spawnInherited,
   stopWithParent
 } from "../../reexec";
-import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs } from "../../types";
+import type { ForwardedSignal, ReexecChild, ReexecDeps, RunArgs, ServeArgs } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages reexec (B2): Bun reads `[serve.static] plugins` once, from the
@@ -47,8 +48,16 @@ afterEach(async () => {
  * @param hmr - Hot reload on.
  * @returns The arguments.
  */
-function runArgs(hmr = true): RunArgs {
-  return { kind: "run", html: "../game/index.html", port: 0, root: "../game", hmr };
+function runArgs(hmr = true): ServeArgs {
+  return {
+    kind: "run",
+    html: "../game/index.html",
+    port: 0,
+    root: "../game",
+    hmr,
+    preload: [],
+    servePlugins: []
+  };
 }
 
 /**
@@ -129,7 +138,7 @@ describe("reexecRoot", () => {
     const link = join(base, "link");
     await symlink(root, link);
     expect(reexecRoot(runArgs(), createDeps({ cwd: () => root }).deps)).toBeUndefined();
-    const viaLink: RunArgs = { ...runArgs(), root: link };
+    const viaLink: ServeArgs = { ...runArgs(), root: link };
     expect(reexecRoot(viaLink, createDeps({ cwd: () => root }).deps)).toBeUndefined();
   });
 
@@ -137,7 +146,7 @@ describe("reexecRoot", () => {
     await writeFile(join(root, "bunfig.toml"), BUNFIG);
     const env = { [REEXEC_ENV]: "1" };
     expect(reexecRoot(runArgs(), createDeps({ env }).deps)).toBeUndefined();
-    const missing: RunArgs = { ...runArgs(), root: "../nope" };
+    const missing: ServeArgs = { ...runArgs(), root: "../nope" };
     expect(reexecRoot(missing, createDeps().deps)).toBeUndefined();
   });
 });
@@ -207,6 +216,69 @@ describe("reexecBin", () => {
     expect(() => handlers.get("SIGINT")?.()).not.toThrow();
     exit(0);
     await expect(running).resolves.toBe(0);
+  });
+});
+
+/**
+ * The page the engine wrote into the game root.
+ *
+ * @returns Its HTML and bunfig paths.
+ */
+function enginePage(): { html: string; bunfig: string } {
+  return { html: join(root, ".moku", "index.html"), bunfig: join(root, ".moku", "bunfig.toml") };
+}
+
+/**
+ * The engine-page `run` arguments: no html, root relative to `elsewhere`.
+ *
+ * @param hmr - Hot reload on.
+ * @returns The arguments.
+ */
+function engineArgs(hmr = true): RunArgs {
+  return { kind: "run", port: 0, root: "../game", hmr, preload: [], servePlugins: [] };
+}
+
+describe("reexecEngine (B5, D-51)", () => {
+  it("re-runs the bin under the page's bunfig: --config= after bun, then the html, root, port and --no-hmr", async () => {
+    const { deps, fake, spawn } = createDeps();
+    const running = reexecEngine(enginePage(), engineArgs(false), deps);
+    fake.exit(0);
+    await expect(running).resolves.toBe(0);
+    expect(spawn).toHaveBeenCalledWith(
+      [
+        "/usr/bin/bun",
+        `--config=${join(root, ".moku", "bunfig.toml")}`,
+        "/editor/bin.ts",
+        join(root, ".moku", "index.html"),
+        "--root",
+        root,
+        "--port",
+        "0",
+        "--no-hmr"
+      ],
+      { cwd: root, env: { PATH: "/bin", [REEXEC_ENV]: "1" } }
+    );
+  });
+
+  it("always re-runs, also when the cwd is the root; keeps hot reload on and answers the child's code", async () => {
+    const { deps, fake, spawn } = createDeps({ cwd: () => root });
+    const running = reexecEngine(enginePage(), { ...engineArgs(true), root: "." }, deps);
+    fake.exit(3);
+    await expect(running).resolves.toBe(3);
+    const cmd = spawn.mock.calls[0]?.[0];
+    expect(cmd).not.toContain("--no-hmr");
+    expect(cmd?.slice(4, 6)).toEqual(["--root", root]);
+  });
+
+  it("forwards SIGINT, SIGTERM and SIGHUP to the child until it exits", async () => {
+    const { deps, fake, handlers } = createDeps();
+    const running = reexecEngine(enginePage(), engineArgs(), deps);
+    expect([...handlers.keys()]).toEqual(["SIGINT", "SIGTERM", "SIGHUP"]);
+    handlers.get("SIGINT")?.();
+    expect(fake.signals).toEqual(["SIGINT"]);
+    fake.exit(0);
+    await running;
+    expect(handlers.size).toBe(0);
   });
 });
 

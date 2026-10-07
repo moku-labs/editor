@@ -23,7 +23,7 @@ Contents:
 ## 1. Package and entry points
 
 - Name: `@moku-labs/editor`, MIT, ESM only (`"type": "module"`).
-- Peer dependencies: `@moku-labs/game >= 0.7.0` and `typescript >= 5.5`, both required. The server opens the game's project index (`@moku-labs/game/project`), which needs `typescript`. Without them the index is off and every view that needs a code location says `Project index is off: <reason>` (see the next item).
+- Peer dependencies: `@moku-labs/game >= 0.10.0` and `typescript >= 5.5`, both required. The bin's engine page needs `@moku-labs/game/cli` `preparePage` (0.10.0). The server opens the game's project index (`@moku-labs/game/project`), which needs `typescript`. Without them the index is off and every view that needs a code location says `Project index is off: <reason>` (see the next item).
 - Project index (D-38 … D-48): the server core's `files` plugin opens the project index of its root on start and keeps it fresh with its watch; the tools page asks it through the files-channel `find { key }` (lines read from disk at the call) and reads the key maps from the published `editor.project` state (`link.project()`, event `link:project`). The index is the only source of code locations: Flow node and flow files, the Code tab, Used by, the picked element's JSX and style block, projections, text styles, the asset manifest. A key the index does not know shows `Not in the project index: <key>`; no guess, no crawl. The index needs no `bunfig.toml` (that is only for the hot swap plugin). Moves and edits by agents while the editor is open are followed: open tabs, Used by, Code tab lines, caches.
 - Breaking (project index): removed the node → file rule exports (`nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`, types `SourceOverrides`) and the protocol file `source-files.ts`; the configs `flowView.stylesFile`, `gameView.manifestPaths`, `gameView.sourceSearch`, `renderView.manifestPaths`; `.moku/editor/files.json` is ignored; the graph node `file` field (F-H2) is gone; `UsedBy.usedIn` is new; `StyleEditCode` gains `"broken"` (no style write while the file does not parse) and `"index-off"` (no style write while the index is off); a key built in a loop answers the element line. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are required.
 - Doors: game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
@@ -31,12 +31,13 @@ Contents:
 - Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 77.6 KB minified (26.7 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
 - Dependencies: `@moku-labs/common`, `@moku-labs/core`, `elkjs`, `preact`.
 - Engines: node >= 24, bun >= 1.3.14. The server core and the bin need Bun (`Bun.serve`, HTML imports).
-- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`). It serves with Bun hot reload on (D-23); `--no-hmr` turns it off. `moku-editor mcp` is the stdio MCP server for Claude Code; `moku-editor mcp-config` prints its setup (see "Bin" in section 6).
+- Bin: `moku-editor` → `./dist/bin.mjs` (source `src/plugins/pages/bin.ts`). Without an html file, in a moku-game folder (`index.ts` + `config.ts`), it serves the engine page: `preparePage` of `@moku-labs/game/cli` with the editor's page agent, then a re-run under `<root>/.moku/bunfig.toml` (see "Engine page" in section 6). It serves with Bun hot reload on (D-23); `--no-hmr` turns it off. `moku-editor mcp` is the stdio MCP server for Claude Code; `moku-editor mcp-config` prints its setup (see "Bin" in section 6).
 
 | Import | File | Exports |
 |---|---|---|
 | `@moku-labs/editor` | `src/index.ts` | Protocol types (`Json`, `Manifest`, `LinkStatus`, `EditorChannel`, `RunResult`, `WireError`, `SessionInfo`, `ToolsBoot`, `FileEntry`, …), protocol helpers (`checkInput`, `toWireValue`, `encode`, `decode`, `request`, `notification`, `success`, `failure`, `isRequest`, `isResponse`, `isNotification`, `isFailure`, `isJson`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `bareMessage`, `isReloading`, `isHotSwapEntry`, `errorCode`, `ERROR_PREFIX`, `ProtocolError`, `parseProjectState`, `parseFoundList`, `projectDelta`, `firstDefinition`, `anchorKey`), project types (`ProjectState`, `ProjectFound`, `ProjectAnchor`, `ProjectDelta`, `ProjectChange`, `ProjectMove`, `FindParams`), `definePanel`, `SourceValue`, `CompactTools`, `PanelInput`, `PanelSpec`, `PanelTools`, `PanelValues`, `SourceRef`. Runtime-free: no plugin, no core. |
 | `@moku-labs/editor/agent` | `src/agent.ts` | `createApp`, `createPlugin`, `registryPlugin`, `channelPlugin`, `overlayPlugin`, `bridgePlugin`, `capturePlugin`, namespaces `Registry`, `Channel`, `Overlay`, `Bridge`, `Capture`. |
+| `@moku-labs/editor/agent/page` | `src/agent-page.ts` | Default export only: `editorAgent`, a `PageAgent<Registry.GameLike>` of `@moku-labs/game/app` (D-49). The engine's dev page calls it after the game started with `{ app, name, modules }`: it stops a previous `globalThis.editor`, then `createApp({ plugins: [bridgePlugin, capturePlugin], pluginConfigs: { registry: { game: app, name, modules } } })`, sets `globalThis.editor` and starts it. No side effect on import. |
 | `@moku-labs/editor/server` | `src/server.ts` | `createApp`, `createPlugin`, `filesPlugin`, `hubPlugin`, `pagesPlugin`, namespaces `Files`, `Hub`, `Pages`. |
 | `@moku-labs/editor/tools` | `src/tools.ts` | `createApp`, `createPlugin`, `linkPlugin`, `workspacePlugin`, `panelsPlugin`, `flowViewPlugin`, `gameViewPlugin`, `renderViewPlugin`, `stateViewPlugin`, `filesViewPlugin`, `consoleViewPlugin`, namespaces `Link`, `Workspace`, `Panels`, `FlowView`, `GameView`, `RenderView`, `StateView`, `FilesView`, `ConsoleView`. |
 
@@ -1442,6 +1443,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 ### Bin
 
 ```
+moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--port 3000] [--no-hmr]
 moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
 moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
 moku-editor mcp-config [<game-html>] [--port N]
@@ -1450,13 +1452,17 @@ moku-editor mcp-config [<game-html>] [--port N]
 | Flag | Short | Default | Rule |
 |---|---|---|---|
 | `--port` | `-p` | `3000` | Digits, 0–65535. `0` picks a free port. |
-| `--root` | `-r` | `.` | Project root the editor reads and writes. Not empty. |
+| `--root` | `-r` | `.` | Project root the editor reads and writes; the moku-game folder of the engine page. Not empty. |
 | `--no-hmr` | | hot reload on | Serves with `development: { hmr: false, console: true }`; `hotReload()` reports `{ hmr: false, owner: "bin" }`. |
+| `--preload` | | none | A file Bun preloads in the serving process. Repeatable. Engine page only. |
+| `--serve-plugin` | | none | A Bun plugin the engine page bundles with, after the engine's hot plugin. Repeatable. Engine page only. |
 | `--help` | `-h` | | Prints usage, exit 0. |
+
+Engine page (B5, D-49 … D-51): without an html file the bin serves a moku-game folder (`index.ts` + `config.ts`). (0) Checked first: without the real process (`deps.reexec`, unit seams): "[moku-editor] the engine page needs the real process: pass the game HTML file", exit 1. (1) Not a moku-game folder: "[moku-editor] <root> has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder", exit 2. (2) It imports `@moku-labs/game/cli` as the game root resolves it; when it does not: "[moku-editor] @moku-labs/game/cli does not resolve from <root>: install @moku-labs/game >=0.10.0 in the game", exit 1. (3) `preparePage(root, { agents: ["@moku-labs/editor/agent/page"], preload, servePlugins })`, the flag paths resolved against the cwd; a throw prints the engine's `[game] …` text, exit 1. (4) From an editor working tree (its package root, found from `Bun.main`, is not under `realpath(<root>)/node_modules` and has `scripts/tree/bundle.ts`) that plugin is appended to `servePlugins`: `@moku-labs/editor`, `/agent`, `/agent/page` and `/tools` bundle from the tree's `dist/`, whose imports of the engine, Pixi, core, common and preact are rewritten in `onLoad` to the game's copies (never `onResolve`, demos#46). (5) The bin always re-runs itself (D-51): `[execPath, "--config=<root>/.moku/bunfig.toml", Bun.main, "<root>/.moku/index.html", "--root", root, "--port", port, "--no-hmr"?]`, `cwd: root`, `MOKU_EDITOR_REEXEC=1`, signals forwarded, the parent exits with the child's code. The child serves that html as any re-spawned bin; the discovery file's `html` is `<root>/.moku/index.html`. `--preload` and `--serve-plugin` with an html file: "--preload and --serve-plugin need the engine page: drop the html file"; on `mcp` and `mcp-config`: "--preload and --serve-plugin belong to the serving bin". Limit: the MCP launcher restarts a gone bin from the discovery html without `--config=`, so that page has no hot plugin (follow-up).
 
 Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so the bin gives `attachServer` its restart and the Hot reload switch restarts the server with HMR flipped on the same port (D-32): `POST {P}/hmr` answers 200 with the asked state, then the server restarts (A1); the token, the sessions table and `.moku/editor.json` stay, every socket drops for about a second, and the tools page reloads the game frame with its checkpoint so the page gains or drops `/_bun/client`. While HMR is off a save on disk does not reload the game. A failed restart publishes the old state and serves the old options again. Hot swap (game 0.5.0): with `[serve.static] plugins = ["@moku-labs/game/hot"]` in the game root's `bunfig.toml`, a save of a view module (`.tsx`, `styles.ts`, `view.ts`, `animations.ts`, `effects.ts`, `generated/strings.<locale>.ts`) swaps in place: same session, no reload, toast "Game updated"; a logic module still reloads and restores. Bun reads that bunfig once at process start from the process cwd, so a `run` whose `--root` has a `[serve.static]` bunfig and whose cwd is another folder re-spawns the bin in the root (`reexec.ts`: absolute html and root, `MOKU_EDITOR_REEXEC=1` loop guard, SIGINT/SIGTERM/SIGHUP forwarded, the parent exits with the child's code, the discovery file names the child). The MCP launcher spawns the bin with `cwd: root`.
 
-Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; 1 missing or bad HTML file, start failed, port in use; 2 bad arguments. Binds 127.0.0.1 only; the token is never printed.
+Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; the child's code after a re-spawn or the engine page's re-run; 1 missing or bad HTML file, start failed, port in use, the engine page not written; 2 bad arguments, or no html file and a root that is not a moku-game folder. Binds 127.0.0.1 only; the token is never printed.
 
 Discovery file: after `Bun.serve` the bin writes `<root>/.moku/editor.json` `{ version: 1, pid, port, url, ws, token, root, html, startedAt }` (type `EditorDiscovery`, mode 0600, temp file then rename) and removes it on SIGINT/SIGTERM and in an `exit` listener, only while it still carries this pid. A bin killed with SIGKILL leaves it; the MCP bridge treats a dead pid as no bin. Add `.moku/` to the game's `.gitignore`.
 
@@ -2602,16 +2608,33 @@ export type PagesApi = {
 };
 
 /**
- * Arguments of `moku-editor <game-html> [--port 3000] [--root .] [--no-hmr]`: serve the game.
+ * Arguments of `moku-editor [<game-html>] [--port 3000] [--root .] [--no-hmr] [--preload FILE]…
+ * [--serve-plugin FILE]…`: serve the game. Without `html` the engine writes the page of the
+ * moku-game folder at `root` (the engine page); the two lists feed only that page.
  */
 export type RunArgs = {
   readonly kind: "run";
-  readonly html: string;
+  /** The game HTML file, when given; the key is left out for the engine page. */
+  readonly html?: string;
   readonly port: number;
   readonly root: string;
   /** False with `--no-hmr`: Bun serves the game without hot reload. */
   readonly hmr: boolean;
+  /** Every `--preload`, as given: files Bun preloads in the serving process (engine page only). */
+  readonly preload: readonly string[];
+  /** Every `--serve-plugin`, as given: Bun plugins the page bundles with (engine page only). */
+  readonly servePlugins: readonly string[];
 };
+
+/**
+ * `run` arguments with the game HTML file: what the bin serves, itself or from a re-spawned bin.
+ *
+ * @example
+ * ```ts
+ * const args: ServeArgs = { kind: "run", html: "/g/.moku/index.html", port: 0, root: "/g", hmr: true, preload: [], servePlugins: [] };
+ * ```
+ */
+export type ServeArgs = RunArgs & { readonly html: string };
 
 /**
  * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`: the stdio MCP
