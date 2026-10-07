@@ -220,12 +220,32 @@ export type McpConfigArgs = {
 };
 
 /**
- * Parsed arguments of the bin: serve, the two MCP subcommands, help, or an error.
+ * Arguments of `moku-editor e2e -c <playwright config> [playwright args…]`: one Playwright run per
+ * project of the config, each on its own `PORT` (D-52). Only `-c` / `--config` is read; every
+ * other word goes to Playwright as given.
+ *
+ * @example
+ * ```ts
+ * // moku-editor e2e -c tests/browser/playwright.config.ts -g pick --headed
+ * const args: E2eArgs = { kind: "e2e", config: "tests/browser/playwright.config.ts", rest: ["-g", "pick", "--headed"] };
+ * ```
+ */
+export type E2eArgs = {
+  readonly kind: "e2e";
+  /** The Playwright config, as given after `-c` or `--config`. */
+  readonly config: string;
+  /** The other words, in order: Playwright's arguments. */
+  readonly rest: readonly string[];
+};
+
+/**
+ * Parsed arguments of the bin: serve, the two MCP subcommands, `e2e`, help, or an error.
  */
 export type BinArgs =
   | RunArgs
   | McpArgs
   | McpConfigArgs
+  | E2eArgs
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 

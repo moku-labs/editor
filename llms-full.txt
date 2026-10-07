@@ -1447,6 +1447,7 @@ moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--port 30
 moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
 moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
 moku-editor mcp-config [<game-html>] [--port N]
+moku-editor e2e -c <playwright config> [playwright args…]
 ```
 
 | Flag | Short | Default | Rule |
@@ -1461,6 +1462,8 @@ moku-editor mcp-config [<game-html>] [--port N]
 Engine page (B5, D-49 … D-51): without an html file the bin serves a moku-game folder (`index.ts` + `config.ts`). (0) Checked first: without the real process (`deps.reexec`, unit seams): "[moku-editor] the engine page needs the real process: pass the game HTML file", exit 1. (1) Not a moku-game folder: "[moku-editor] <root> has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder", exit 2. (2) It imports `@moku-labs/game/cli` as the game root resolves it; when it does not: "[moku-editor] @moku-labs/game/cli does not resolve from <root>: install @moku-labs/game >=0.10.0 in the game", exit 1. (3) `preparePage(root, { agents: ["@moku-labs/editor/agent/page"], preload, servePlugins })`, the flag paths resolved against the cwd; a throw prints the engine's `[game] …` text, exit 1. (4) From an editor working tree (its package root, found from `Bun.main`, is not under `realpath(<root>)/node_modules` and has `scripts/tree/bundle.ts`) that plugin is appended to `servePlugins`: `@moku-labs/editor`, `/agent`, `/agent/page` and `/tools` bundle from the tree's `dist/`, whose imports of the engine, Pixi, core, common and preact are rewritten in `onLoad` to the game's copies (never `onResolve`, demos#46). (5) The bin always re-runs itself (D-51): `[execPath, "--config=<root>/.moku/bunfig.toml", Bun.main, "<root>/.moku/index.html", "--root", root, "--port", port, "--no-hmr"?]`, `cwd: root`, `MOKU_EDITOR_REEXEC=1`, signals forwarded, the parent exits with the child's code. The child serves that html as any re-spawned bin; the discovery file's `html` is `<root>/.moku/index.html`. `--preload` and `--serve-plugin` with an html file: "--preload and --serve-plugin need the engine page: drop the html file"; on `mcp` and `mcp-config`: "--preload and --serve-plugin belong to the serving bin". Limit: the MCP launcher restarts a gone bin from the discovery html without `--config=`, so that page has no hot plugin (follow-up).
 
 Hot reload (D-23, round 2 R6): by default the bin serves with `development: { hmr: true, console: true }` and calls `pages.attachServer(options)` right after `Bun.serve`. A save of a game source makes Bun reload the game page; before it reloads, the bridge stores a `game.bookmark` checkpoint in `sessionStorage`, and the new page restores it (and pauses again when it was paused) and says so in its hello (`manifest.restored`). Bun 1.3.14 cannot switch HMR on a running server, so the bin gives `attachServer` its restart and the Hot reload switch restarts the server with HMR flipped on the same port (D-32): `POST {P}/hmr` answers 200 with the asked state, then the server restarts (A1); the token, the sessions table and `.moku/editor.json` stay, every socket drops for about a second, and the tools page reloads the game frame with its checkpoint so the page gains or drops `/_bun/client`. While HMR is off a save on disk does not reload the game. A failed restart publishes the old state and serves the old options again. Hot swap (game 0.5.0): with `[serve.static] plugins = ["@moku-labs/game/hot"]` in the game root's `bunfig.toml`, a save of a view module (`.tsx`, `styles.ts`, `view.ts`, `animations.ts`, `effects.ts`, `generated/strings.<locale>.ts`) swaps in place: same session, no reload, toast "Game updated"; a logic module still reloads and restores. Bun reads that bunfig once at process start from the process cwd, so a `run` whose `--root` has a `[serve.static]` bunfig and whose cwd is another folder re-spawns the bin in the root (`reexec.ts`: absolute html and root, `MOKU_EDITOR_REEXEC=1` loop guard, SIGINT/SIGTERM/SIGHUP forwarded, the parent exits with the child's code, the discovery file names the child). The MCP launcher spawns the bin with `cwd: root`.
+
+e2e (D-52, `e2e.ts`): one Playwright process, so one fresh editor bin, per project, because Bun 1.3.14's dev server crashes after many hot reloads in one process. Projects come from `bun x playwright test -c <config> --list --reporter=json` (`config.projects[].name`, unnamed skipped; a failed or unparsable list: "[moku-editor] could not list the projects of <config>: <reason>", exit 1); each runs as `bun x playwright test -c <config> --project <name> --pass-with-no-tests <rest…>` (a project with no test for the filter passes) with `PORT` = `PORT` (an integer 1-65535, else 4417) + its index, one after another, all of them; exit = the first non-zero code, else 0. An explicit `--project`, a `--list`, or no named project runs once as given. `CI=true` runs `bun x playwright install chromium` first. Only `-c X` / `--config X` / `--config=X` is read, before `--help` (missing: "[moku-editor] e2e needs the Playwright config: -c <file>", exit 2); no signal handlers, a Ctrl+C reaches Playwright through the process group.
 
 Exit codes: 0 help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving; the child's code after a re-spawn or the engine page's re-run; 1 missing or bad HTML file, start failed, port in use, the engine page not written; 2 bad arguments, or no html file and a root that is not a moku-game folder. Binds 127.0.0.1 only; the token is never printed.
 
@@ -2666,12 +2669,26 @@ export type McpConfigArgs = {
 };
 
 /**
- * Parsed arguments of the bin: serve, the two MCP subcommands, help, or an error.
+ * Arguments of `moku-editor e2e -c <playwright config> [playwright args…]`: one Playwright run per
+ * project of the config, each on its own `PORT` (D-52). Only `-c` / `--config` is read; every
+ * other word goes to Playwright as given.
+ */
+export type E2eArgs = {
+  readonly kind: "e2e";
+  /** The Playwright config, as given after `-c` or `--config`. */
+  readonly config: string;
+  /** The other words, in order: Playwright's arguments. */
+  readonly rest: readonly string[];
+};
+
+/**
+ * Parsed arguments of the bin: serve, the two MCP subcommands, `e2e`, help, or an error.
  */
 export type BinArgs =
   | RunArgs
   | McpArgs
   | McpConfigArgs
+  | E2eArgs
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 

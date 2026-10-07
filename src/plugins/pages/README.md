@@ -208,6 +208,7 @@ moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--port 30
 moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
 moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
 moku-editor mcp-config [<game-html>] [--port N]
+moku-editor e2e -c <playwright config> [playwright args…]
 ```
 
 `package.json` maps `moku-editor` to `./dist/bin.mjs` (from `bin.ts`). Bun only.
@@ -254,12 +255,13 @@ Started from the game root, or from the MCP launcher (it spawns with `cwd: root`
 
 ### Subcommands
 
-A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywhere else it is a second positional and an error.
+A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywhere else it is a second positional and an error. A first word `e2e` picks `e2e` before any other check, so its `--help` goes to Playwright.
 
 | Subcommand | `BinArgs` | What it does |
 |---|---|---|
 | `mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` | `{ kind: "mcp", html?, port?, root, hmr }` | The stdio MCP server for Claude Code (`mcp/`). A live `.moku/editor.json` under `root` (default `.`) wins; `html`, `port` and `hmr` only feed the bin it starts when none runs. `port` is absent unless `--port` is given. |
 | `mcp-config [<game-html>] [--port N]` | `{ kind: "mcp-config", html?, port? }` | Prints the `.mcp.json` snippet, a blank line and the `claude mcp add` line to stdout, verbatim, then exits 0. `--root` and `--no-hmr` are errors here. |
+| `e2e -c <playwright config> [playwright args…]` | `{ kind: "e2e", config, rest }` | `e2e.ts`, D-52: one Playwright process, so one fresh editor bin, per project, because Bun 1.3.14's dev server crashes after many hot reloads in one process. Projects come from `bun x playwright test -c <config> --list --reporter=json`; each runs as `--project <name> --pass-with-no-tests <rest…>` (a project with no test for the filter passes) with `PORT` = `PORT` (else 4417) + its index, one after another. An explicit `--project`, a `--list`, or no named project runs once as given. `CI=true` installs Chromium first. Only `-c` / `--config` is read (missing: "[moku-editor] e2e needs the Playwright config: -c <file>", exit 2); exit: the first failing code, 1 when the list fails, else 0. |
 
 Both take at most one `.html` positional and the same `--port` rule. Both refuse `--preload` and `--serve-plugin`: "--preload and --serve-plugin belong to the serving bin". `mcp-config` writes only what was given:
 

@@ -5,7 +5,8 @@
  * `moku-editor mcp-config [<game-html>] [--port N]`. Without a game HTML file the bin serves the
  * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
  * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
- * 127.0.0.1.
+ * 127.0.0.1. `moku-editor e2e -c <playwright config> [playwright args…]` is the exception: only
+ * its config is read, every other word belongs to Playwright.
  */
 import { parseArgs } from "node:util";
 import type { BinArgs } from "./types";
@@ -24,6 +25,16 @@ const PORT_MAX = 65_535;
  * Why `mcp` and `mcp-config` refuse `--preload` and `--serve-plugin`.
  */
 const SERVING_ONLY = "--preload and --serve-plugin belong to the serving bin";
+
+/**
+ * Why `e2e` is refused without its Playwright config.
+ */
+const E2E_NO_CONFIG = "e2e needs the Playwright config: -c <file>";
+
+/**
+ * The prefix of the joined config flag, `--config=<path>`.
+ */
+const CONFIG_JOINED = "--config=";
 
 /**
  * Parses argv strictly with the six flags of the bin; `--preload` and `--serve-plugin` repeat.
@@ -259,19 +270,53 @@ function runArgs(parsed: Parsed): BinArgs {
 }
 
 /**
- * Parses the bin arguments. A first positional `mcp` or `mcp-config` picks that subcommand.
+ * The arguments of `moku-editor e2e -c <playwright config> [playwright args…]`: the first `-c X`,
+ * `--config X` or `--config=X` is the config; the other words stay, in order, for Playwright.
+ *
+ * @param words - The words after `e2e`.
+ * @returns `e2e` args, or the error when the config is missing or empty.
+ * @example
+ * ```ts
+ * e2eArgs(["--config=a.ts", "-g", "pick"]); // { kind: "e2e", config: "a.ts", rest: ["-g", "pick"] }
+ * e2eArgs(["-g", "pick"]); // { kind: "error", message: "[moku-editor] e2e needs the Playwright config: -c <file>" }
+ * ```
+ */
+function e2eArgs(words: readonly string[]): BinArgs {
+  const at = words.findIndex(
+    word => word === "-c" || word === "--config" || word.startsWith(CONFIG_JOINED)
+  );
+  const flag = at === -1 ? undefined : words[at];
+  if (flag === undefined) return failed(E2E_NO_CONFIG);
+
+  // `--config=X` is one word; `-c X` and `--config X` take the next word too.
+  const isJoined = flag.startsWith(CONFIG_JOINED);
+  const config = isJoined ? flag.slice(CONFIG_JOINED.length) : words[at + 1];
+  if (config === undefined || config === "") return failed(E2E_NO_CONFIG);
+
+  const taken = isJoined ? 1 : 2;
+  const rest = [...words.slice(0, at), ...words.slice(at + taken)];
+  return { kind: "e2e", config, rest };
+}
+
+/**
+ * Parses the bin arguments. A first word `e2e` picks that subcommand before anything else (its
+ * words belong to Playwright, `--help` too); a first positional `mcp` or `mcp-config` picks that
+ * subcommand.
  *
  * @param argv - Arguments after the script name.
  * @returns `run` with html (left out for the engine page), port, root, hmr, preload and
- * servePlugins; `mcp`; `mcp-config`; `help`; or `error` with a message.
+ * servePlugins; `mcp`; `mcp-config`; `e2e` with the config and Playwright's words; `help`; or
+ * `error` with a message.
  * @example
  * ```ts
  * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true, preload: [], servePlugins: [] }
  * parseBinArgs(["--root", "games/timber"]); // { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: [] }
  * parseBinArgs(["mcp", "web/index.html"]); // { kind: "mcp", html: "web/index.html", root: ".", hmr: true }
+ * parseBinArgs(["e2e", "-c", "pw.config.ts", "--headed"]); // { kind: "e2e", config: "pw.config.ts", rest: ["--headed"] }
  * ```
  */
 export function parseBinArgs(argv: readonly string[]): BinArgs {
+  if (argv[0] === "e2e") return e2eArgs(argv.slice(1));
   if (argv.includes("--help") || argv.includes("-h")) return { kind: "help" };
 
   const parsed = tryParse(argv);

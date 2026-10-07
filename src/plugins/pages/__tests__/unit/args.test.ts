@@ -101,7 +101,8 @@ describe("parseBinArgs", () => {
       ["a.html", "--root="],
       ["a.html", "--host=x"],
       ["a.html", "--preload", "p.ts"],
-      ["mcp", "--serve-plugin", "p.ts"]
+      ["mcp", "--serve-plugin", "p.ts"],
+      ["e2e", "-g", "x"]
     ]) {
       const result = parseBinArgs(argv);
       expect(result.kind === "error" && result.message.startsWith("[moku-editor] ")).toBe(true);
@@ -245,5 +246,54 @@ describe("parseBinArgs engine page (B5)", () => {
       kind: "error",
       message: "[moku-editor] --preload and --serve-plugin belong to the serving bin"
     });
+  });
+});
+
+describe("parseBinArgs e2e (D-52)", () => {
+  /** The error of an e2e without its Playwright config. */
+  const NO_CONFIG = {
+    kind: "error",
+    message: "[moku-editor] e2e needs the Playwright config: -c <file>"
+  };
+
+  it("takes the config of -c and leaves nothing else", () => {
+    expect(parseBinArgs(["e2e", "-c", "a.ts"])).toEqual({ kind: "e2e", config: "a.ts", rest: [] });
+  });
+
+  it("takes --config=<path> and hands the other words to Playwright in order", () => {
+    expect(parseBinArgs(["e2e", "--config=a.ts", "-g", "pick", "--headed"])).toEqual({
+      kind: "e2e",
+      config: "a.ts",
+      rest: ["-g", "pick", "--headed"]
+    });
+  });
+
+  it("takes --config <path> anywhere, and only the first one", () => {
+    expect(parseBinArgs(["e2e", "-g", "pick", "--config", "a.ts", "-c", "b.ts"])).toEqual({
+      kind: "e2e",
+      config: "a.ts",
+      rest: ["-g", "pick", "-c", "b.ts"]
+    });
+  });
+
+  it("passes --help to Playwright: the e2e words are not the bin's flags", () => {
+    expect(parseBinArgs(["e2e", "--help", "-c", "a.ts"])).toEqual({
+      kind: "e2e",
+      config: "a.ts",
+      rest: ["--help"]
+    });
+  });
+
+  it.each([
+    [["e2e"]],
+    [["e2e", "-g", "x"]],
+    [["e2e", "-c"]],
+    [["e2e", "--config="]]
+  ])("refuses %j: the Playwright config is required", argv => {
+    expect(parseBinArgs(argv)).toEqual(NO_CONFIG);
+  });
+
+  it("treats e2e only in first position", () => {
+    expect(parseBinArgs(["a.html", "e2e"]).kind).toBe("error");
   });
 });

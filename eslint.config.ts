@@ -88,7 +88,13 @@ export default [
             req: true,
             res: true,
             opts: true,
-            attr: true
+            attr: true,
+            // The `e2e` bin command (D-52): the rule splits `E2e` into `E2` + `e` (error/event).
+            E2eArgs: true,
+            E2eDeps: true,
+            e2eArgs: true,
+            runE2e: true,
+            processE2eDeps: true
           }
         }
       ]
