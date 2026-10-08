@@ -5,7 +5,7 @@
       "/repo/node_modules/.bin/playwright",
       "test",
       "-c",
-      "playwright.config.ts",
+      "/repo/playwright.config.ts",
       "--list",
       "--reporter=json"
     ],
@@ -14,8 +14,8 @@
     "failOnFlakyTests": false,
     "forbidOnly": false,
     "fullyParallel": true,
-    "globalSetup": "/repo/e2e/global-setup.ts",
-    "globalTeardown": "/repo/e2e/global-teardown.ts",
+    "globalSetup": null,
+    "globalTeardown": null,
     "globalTimeout": 0,
     "grep": {},
     "grepInvert": null,
@@ -44,7 +44,19 @@
         "name": "",
         "testDir": "/repo/e2e",
         "testIgnore": [],
-        "testMatch": ["/no-js-errors\\.spec\\.ts$/"],
+        "testMatch": ["/layout\\.spec\\.ts$/"],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/repo/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium-half",
+        "name": "chromium-half",
+        "testDir": "/repo/e2e",
+        "testIgnore": [],
+        "testMatch": ["/(baseline|layout|half-screen|pane)\\.spec\\.ts$/"],
         "timeout": 60000
       },
       {
@@ -75,6 +87,143 @@
     "webServer": null
   },
   "suites": [
+    {
+      "title": "layout.spec.ts",
+      "file": "layout.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "layout",
+          "file": "layout.spec.ts",
+          "line": 25,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Game: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-64729dcd89415332060e",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            },
+            {
+              "title": "Flow: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-6a195e720e467e70a226",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            },
+            {
+              "title": "Game: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-82037df4ceeb23c13c0b",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            },
+            {
+              "title": "Flow: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-537298d3ebd50c4c432a",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            },
+            {
+              "title": "Game: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-713fd8e8e21df9268aef",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            },
+            {
+              "title": "Flow: host and panel fill main",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "9f98fd8c8d1538f5ebbb-b963889fbaebd8c24dd0",
+              "file": "layout.spec.ts",
+              "line": 27,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
     {
       "title": "no-js-errors.spec.ts",
       "file": "no-js-errors.spec.ts",
@@ -107,6 +256,377 @@
               "file": "no-js-errors.spec.ts",
               "line": 10,
               "column": 5
+            },
+            {
+              "title": "Flow workspace shows with zero errors",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "02277d6b0c8c93e45e4d-740533ab1998a1844337",
+              "file": "no-js-errors.spec.ts",
+              "line": 10,
+              "column": 5
+            },
+            {
+              "title": "Game workspace shows with zero errors",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-mobile",
+                  "projectName": "chromium-mobile",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "02277d6b0c8c93e45e4d-01fbf74b9f59687cc8c3",
+              "file": "no-js-errors.spec.ts",
+              "line": 10,
+              "column": 5
+            },
+            {
+              "title": "Flow workspace shows with zero errors",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-mobile",
+                  "projectName": "chromium-mobile",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "02277d6b0c8c93e45e4d-d8d3f19393d8b20023d4",
+              "file": "no-js-errors.spec.ts",
+              "line": 10,
+              "column": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "pane.spec.ts",
+      "file": "pane.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "pane · the pinned preview plays the game",
+          "file": "pane.spec.ts",
+          "line": 721,
+          "column": 6,
+          "specs": [
+            {
+              "title": "a tap on Play in the preview walks the game off home; the preview keeps its size",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-52120842d411e32f110f",
+              "file": "pane.spec.ts",
+              "line": 722,
+              "column": 3
+            },
+            {
+              "title": "a tap draws a ripple at the tap point, on the stage and in the preview",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-51feff296881559db457",
+              "file": "pane.spec.ts",
+              "line": 741,
+              "column": 3
+            },
+            {
+              "title": "a tap on Play in the preview walks the game off home; the preview keeps its size",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-cd011b442be91a2970fc",
+              "file": "pane.spec.ts",
+              "line": 722,
+              "column": 3
+            },
+            {
+              "title": "a tap draws a ripple at the tap point, on the stage and in the preview",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-204f1fbb883a9a0340a7",
+              "file": "pane.spec.ts",
+              "line": 741,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "pane · reference mode",
+          "file": "pane.spec.ts",
+          "line": 767,
+          "column": 6,
+          "specs": [
+            {
+              "title": "R lays named proxies over the game; the game gets no tap; off removes them",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-89151012a8650199465f",
+              "file": "pane.spec.ts",
+              "line": 768,
+              "column": 3
+            },
+            {
+              "title": "levelPanel: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-31391cbced3724854481",
+              "file": "pane.spec.ts",
+              "line": 814,
+              "column": 3
+            },
+            {
+              "title": "R lays named proxies over the game; the game gets no tap; off removes them",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-206b702534d38bb3cdce",
+              "file": "pane.spec.ts",
+              "line": 768,
+              "column": 3
+            },
+            {
+              "title": "levelPanel: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-half",
+                  "projectName": "chromium-half",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f4780e5b6c309050c78e-06fbb05512f6fd1608ea",
+              "file": "pane.spec.ts",
+              "line": 814,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "shell.spec.ts",
+      "file": "shell.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the tools page title and a fresh load land on Game, ⌘1 in the rail",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 60000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-desktop",
+              "projectName": "chromium-desktop",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "3420664513cb0bae123e-fa49f5530b8dedca71ae",
+          "file": "shell.spec.ts",
+          "line": 465,
+          "column": 1
+        }
+      ],
+      "suites": [
+        {
+          "title": "top bar",
+          "file": "shell.spec.ts",
+          "line": 64,
+          "column": 6,
+          "specs": [
+            {
+              "title": "shows the game, the session, a live link and the registry counts",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3420664513cb0bae123e-55ed256c600836a5a792",
+              "file": "shell.spec.ts",
+              "line": 65,
+              "column": 3
+            },
+            {
+              "title": "pause, step one frame, resume",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3420664513cb0bae123e-d1a2b0a4a4db22fce23d",
+              "file": "shell.spec.ts",
+              "line": 91,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "rail",
+          "file": "shell.spec.ts",
+          "line": 171,
+          "column": 6,
+          "specs": [
+            {
+              "title": "switches all six workspaces and the URL hash",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3420664513cb0bae123e-9b9dc36f78cdb540237b",
+              "file": "shell.spec.ts",
+              "line": 172,
+              "column": 3
+            },
+            {
+              "title": "a reload keeps the workspace of the hash; switching adds no history entry",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3420664513cb0bae123e-4fe3a5fa54fe2733d17b",
+              "file": "shell.spec.ts",
+              "line": 186,
+              "column": 3
             }
           ]
         }
@@ -115,10 +635,10 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-10-07T19:49:50.381Z",
-    "duration": 138.12600000000003,
+    "startTime": "2026-10-08T18:51:26.823Z",
+    "duration": 184.211,
     "expected": 0,
-    "skipped": 240,
+    "skipped": 163,
     "unexpected": 0,
     "flaky": 0
   }

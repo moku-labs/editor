@@ -7,8 +7,8 @@
  * re-spawned bin with that cwd (`reexec.ts`). Without a game HTML file, a moku-game folder gets
  * its page from the engine (`engine-page.ts`, B5) and is served from a bin re-run under the page's
  * bunfig. `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
- * prints the Claude Code setup; `e2e` runs a Playwright config once per project, each on its own
- * PORT (`e2e.ts`, D-52). The token is never printed.
+ * prints the Claude Code setup; `e2e` runs a Playwright config once per project and spec file,
+ * each on its own PORT (`e2e.ts`, D-52, D-53). The token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -42,7 +42,7 @@ const USAGE = [
   "  without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine",
   "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
   "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
-  "  e2e         one Playwright run per project of the config, each on its own PORT",
+  "  e2e         one Playwright run per project and spec file, each on its own PORT",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)"
@@ -544,7 +544,7 @@ function catchSignalsEarly(): EarlySignals {
 
 /**
  * Runs the bin; resolves with the exit code (0 help or serving, 1 runtime error, 2 bad arguments;
- * `e2e`: a failed Chromium install's code, 1 when the projects cannot be listed, else the first
+ * `e2e`: a failed Chromium install's code, 1 when the tests cannot be listed, else the first
  * failing code of its Playwright runs, or 0). A serving bin stops once on SIGINT or SIGTERM; a
  * re-spawned one also when its parent is gone (A4: a parent killed by SIGKILL forwards no signal).
  * `e2e` keeps the default signal action: a Ctrl+C reaches its Playwright child through the

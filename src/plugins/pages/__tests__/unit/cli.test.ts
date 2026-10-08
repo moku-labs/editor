@@ -408,7 +408,7 @@ describe("startBin mcp (U4)", () => {
 });
 
 /**
- * Stub e2e deps: one project in the list, every run answers `code`.
+ * Stub e2e deps: one project with one spec file in the list, every run answers `code`.
  *
  * @param code - The exit code of each run.
  * @returns The deps.
@@ -418,18 +418,32 @@ function e2eStub(code: number) {
     env: {},
     run: vi.fn<E2eDeps["run"]>(() => Promise.resolve(code)),
     capture: vi.fn<E2eDeps["capture"]>(() =>
-      Promise.resolve({ code: 0, stdout: '{"config":{"projects":[{"name":"desktop"}]}}' })
+      Promise.resolve({
+        code: 0,
+        stdout: JSON.stringify({
+          config: { rootDir: "/game/e2e", projects: [{ name: "desktop" }] },
+          suites: [{ specs: [{ file: "a.spec.ts", tests: [{ projectName: "desktop" }] }] }]
+        })
+      })
     )
   };
 }
 
-describe("startBin e2e (D-52)", () => {
+describe("startBin e2e (D-52, D-53)", () => {
   it("dispatches to the e2e runner and answers its code", async () => {
     const { deps } = createDeps();
     const e2e = e2eStub(3);
     await expect(startBin(["e2e", "-c", "x.ts"], { ...deps, e2e })).resolves.toEqual({ code: 3 });
     expect(e2e.run).toHaveBeenCalledWith(
-      ["playwright", "test", "-c", "x.ts", "--project", "desktop", "--pass-with-no-tests"],
+      [
+        "playwright",
+        "test",
+        "-c",
+        "x.ts",
+        "--project=desktop",
+        String.raw`^/game/e2e/a\.spec\.ts$`,
+        "--pass-with-no-tests"
+      ],
       { PORT: "4417" }
     );
     expect(deps.importPage).not.toHaveBeenCalled();
