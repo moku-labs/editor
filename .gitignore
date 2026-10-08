@@ -9,6 +9,8 @@ dist-e2e
 # e2e artifacts
 test-results
 playwright-report
+# the editor's state in a root: discovery, captures, the e2e run lock
+.moku
 *.tgz
 
 # code coverage
