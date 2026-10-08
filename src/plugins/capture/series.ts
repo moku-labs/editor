@@ -170,8 +170,8 @@ async function collectShot(
 
 /**
  * How long a series may run late past its durationMs, in ms. It stays under the 5 s the bridge,
- * the hub and the link add to a series call (`callTimeoutMs` on top of durationMs), leaving room
- * for the last shot and the answer.
+ * the hub and the link add to a series call (`callTimeoutMs` on top of `min(durationMs, 60 s)`),
+ * leaving room for the last shot and the answer while `maxDurationMs` stays at most 60 s.
  */
 const LATE_GRACE_MS = 3000;
 
