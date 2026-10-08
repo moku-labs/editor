@@ -411,7 +411,7 @@ What `main` (`cli.ts`) does:
 >
 > **Note: `"sideEffects": false` in a game.** Only without HMR does Bun bundle the page like `Bun.build` and honour the game's `"sideEffects": false`, dropping a bare `import "./x"`. The bin serves with HMR by default, so this applies to the bin with `--no-hmr` and to a game's own server with HMR off: such a page must not declare `"sideEffects": false` in the nearest `package.json`, or must list that file: `"sideEffects": ["./src/x.ts"]`.
 
-`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400.
+`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400. `/manifest.json` answers with `generated/manifest.json` when the game has one (game 0.13+, where `moku-game keys` writes it), else with the root's.
 
 | Exit code | When |
 |---|---|

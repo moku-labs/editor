@@ -75,6 +75,32 @@ async function realInside(rootReal: string, relativePath: string): Promise<strin
   return real?.startsWith(`${rootReal}/`) ? real : undefined;
 }
 
+/** The dev manifest the page asks for next to it. */
+const MANIFEST = "manifest.json";
+
+/** Where `moku-game keys` writes the dev manifest since game 0.13 (game#45). */
+const GENERATED_MANIFEST = "generated/manifest.json";
+
+/**
+ * The real file a checked path answers with: `/manifest.json` comes from `generated/manifest.json`
+ * when that file exists (game 0.13+), else from the root (older games); any other path is itself.
+ *
+ * @param rootReal - The real root.
+ * @param relativePath - The checked relative path.
+ * @returns The real path, or undefined.
+ * @example
+ * ```ts
+ * await servedFile("/game", "manifest.json"); // "/game/generated/manifest.json" in a game 0.13 folder
+ * ```
+ */
+async function servedFile(rootReal: string, relativePath: string): Promise<string | undefined> {
+  if (relativePath === MANIFEST) {
+    const generated = await realInside(rootReal, GENERATED_MANIFEST);
+    if (generated !== undefined) return generated;
+  }
+  return realInside(rootReal, relativePath);
+}
+
 /**
  * The real root, resolved once; undefined when the root does not exist.
  *
@@ -95,7 +121,8 @@ function realRoot(root: string): () => Promise<string | undefined> {
 }
 
 /**
- * Creates the bin's fetch for the game's files under `root`.
+ * Creates the bin's fetch for the game's files under `root`. `/manifest.json` answers with
+ * `generated/manifest.json` when the game has one (game 0.13+), else with the root's.
  *
  * @param root - The project root (`--root`).
  * @param guard - hub.guard: the navigate check runs first.
@@ -121,7 +148,7 @@ export function createStaticFetch(
     if (!isServable(relativePath)) return notFound(req);
 
     const base = await rootReal();
-    const real = base === undefined ? undefined : await realInside(base, relativePath);
+    const real = base === undefined ? undefined : await servedFile(base, relativePath);
     const body = real === undefined ? undefined : await readRegularFile(real);
     if (body === undefined) return notFound(req);
 
