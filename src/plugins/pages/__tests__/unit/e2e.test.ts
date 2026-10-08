@@ -102,12 +102,16 @@ function stubDeps(
     now: () => (times.length > 1 ? (times.shift() ?? 0) : (times[0] ?? 0))
   };
   const lines: string[] = [];
+  const errorLines: string[] = [];
   const ui = createBrandConsole({
     write: line => lines.push(line),
-    writeError: line => lines.push(line),
+    writeError: line => {
+      lines.push(line);
+      errorLines.push(line);
+    },
     color: false
   });
-  return { deps, ui, lines };
+  return { deps, ui, lines, errorLines };
 }
 
 /** The words of a Playwright test run of the stub config. */
@@ -232,7 +236,7 @@ describe("runE2e", () => {
         ]
       )
     };
-    const { deps, ui, lines } = stubDeps({
+    const { deps, ui, lines, errorLines } = stubDeps({
       list,
       codes: [0, 3],
       times: [0, 1000, 3500, 3500, 4000]
@@ -243,6 +247,17 @@ describe("runE2e", () => {
       expect.stringContaining("half · a.spec.ts · failed (code 3) · 0.5 s"),
       expect.stringContaining("e2e: 2 runs · 1 failed · 4.0 s")
     ]);
+    // A failed run and a failing summary are errors; a passed run is not.
+    expect(errorLines).toEqual([
+      expect.stringContaining("half · a.spec.ts · failed (code 3)"),
+      expect.stringContaining("e2e: 2 runs · 1 failed")
+    ]);
+  });
+
+  it("says how many tests of an unnamed project did not run", async () => {
+    const { deps, ui, lines } = stubDeps({ list: { code: 0, stdout: LIST_SAMPLE } });
+    await runE2e(e2eArgs(), deps, ui);
+    expect(lines.join("\n")).toContain("e2e: 2 tests of an unnamed project did not run");
   });
 
   it("runs once as given, without --pass-with-no-tests, when the list has no test", async () => {
@@ -321,7 +336,8 @@ describe("listPlan", () => {
         { project: "chromium-half", file: "layout.spec.ts" },
         { project: "chromium-half", file: "pane.spec.ts" },
         { project: "chromium-mobile", file: "no-js-errors.spec.ts" }
-      ]
+      ],
+      skipped: 2
     });
   });
 
@@ -354,7 +370,7 @@ describe("listPlan", () => {
   });
 
   it("answers no pair for a list without tests", () => {
-    expect(listPlan(listOf(["desktop"], []))).toEqual({ rootDir: ROOT, pairs: [] });
+    expect(listPlan(listOf(["desktop"], []))).toEqual({ rootDir: ROOT, pairs: [], skipped: 0 });
   });
 
   it.each([

@@ -163,7 +163,8 @@ export type PlanPair = {
  * ```ts
  * const plan: ListPlan = {
  *   rootDir: "/game/e2e",
- *   pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }]
+ *   pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }],
+ *   skipped: 0
  * };
  * ```
  */
@@ -172,6 +173,8 @@ export type ListPlan = {
   readonly rootDir: string;
   /** The runs, in order. */
   readonly pairs: readonly PlanPair[];
+  /** The listed tests of an unnamed project: `--project` cannot pick them, so they do not run. */
+  readonly skipped: number;
 };
 
 /**
@@ -283,13 +286,26 @@ function filesByProject(suites: readonly ListedSuite[]): Map<string, Set<string>
   const files = new Map<string, Set<string>>();
   for (const spec of specsOf(suites)) {
     for (const { projectName } of spec.tests) {
-      if (projectName === "") continue;
+      if (projectName === "") continue; // counted by unnamedTests
       const listed = files.get(projectName) ?? new Set<string>();
       listed.add(spec.file);
       files.set(projectName, listed);
     }
   }
   return files;
+}
+
+/**
+ * The number of listed tests of an unnamed project.
+ *
+ * @param suites - The listed suites.
+ * @returns The count.
+ */
+function unnamedTests(suites: readonly ListedSuite[]): number {
+  return specsOf(suites).reduce(
+    (count, spec) => count + spec.tests.filter(({ projectName }) => projectName === "").length,
+    0
+  );
 }
 
 /**
@@ -305,7 +321,7 @@ function filesByProject(suites: readonly ListedSuite[]): Map<string, Set<string>
  * ```ts
  * const listed = await deps.capture(["playwright", "test", "-c", "pw.config.ts", "--list", "--reporter=json"]);
  * listPlan(listed.stdout);
- * // { rootDir: "/game/e2e", pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }] }
+ * // { rootDir: "/game/e2e", pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }], skipped: 0 }
  * ```
  */
 export function listPlan(json: string): ListPlan {
@@ -318,7 +334,7 @@ export function listPlan(json: string): ListPlan {
   const pairs = report.config.projects.flatMap(({ name }) =>
     [...(files.get(name) ?? [])].map(file => ({ project: name, file }))
   );
-  return { rootDir: report.config.rootDir, pairs };
+  return { rootDir: report.config.rootDir, pairs, skipped: unnamedTests(report.suites) };
 }
 
 /**
@@ -527,10 +543,20 @@ async function listTests(
 }
 
 /**
- * Seconds with one decimal.
+ * The clock of the report lines: `deps.now`, else `performance.now`.
+ *
+ * @param deps - The e2e deps.
+ * @returns A function that answers the time in milliseconds.
+ */
+function clockOf(deps: E2eDeps): () => number {
+  return deps.now ?? (() => performance.now());
+}
+
+/**
+ * Milliseconds as seconds with one decimal.
  *
  * @param milliseconds - A duration.
- * @returns The text, like "2.5".
+ * @returns The seconds, such as "12.4".
  */
 function seconds(milliseconds: number): string {
   return (milliseconds / 1000).toFixed(1);
@@ -554,7 +580,7 @@ async function runPairs(
   deps: E2eDeps,
   ui: BrandConsole
 ): Promise<readonly number[]> {
-  const now = deps.now ?? (() => performance.now());
+  const now = clockOf(deps);
   const base = basePort(deps.env);
   const codes: number[] = [];
   for (const [index, { project, file }] of plan.pairs.entries()) {
@@ -565,7 +591,9 @@ async function runPairs(
       { PORT: String(base + index) }
     );
     const outcome = code === 0 ? "passed" : `failed (code ${code})`;
-    ui.info(`${project} · ${file} · ${outcome} · ${seconds(now() - started)} s`);
+    const line = `${project} · ${file} · ${outcome} · ${seconds(now() - started)} s`;
+    if (code === 0) ui.info(line);
+    else ui.error(line);
     codes.push(code);
   }
   return codes;
@@ -590,7 +618,7 @@ async function runPairs(
  * ```
  */
 export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Promise<number> {
-  const now = deps.now ?? (() => performance.now());
+  const now = clockOf(deps);
   const started = now();
   const test = ["playwright", "test", "-c", args.config];
 
@@ -616,7 +644,10 @@ export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Pr
 
   const codes = await runPairs(test, plan, [...parts.other, ...parts.reporters], deps, ui);
   const failed = codes.filter(code => code !== 0);
-  ui.info(`e2e: ${codes.length} runs · ${failed.length} failed · ${seconds(now() - started)} s`);
+  const summary = `e2e: ${codes.length} runs · ${failed.length} failed · ${seconds(now() - started)} s`;
+  if (failed.length === 0) ui.info(summary);
+  else ui.error(summary);
+  if (plan.skipped > 0) ui.warn(`e2e: ${plan.skipped} tests of an unnamed project did not run`);
   return failed[0] ?? 0;
 }
 
