@@ -169,7 +169,32 @@ async function collectShot(
 }
 
 /**
- * The recording loop: waits for each due time, stops on a stop request or at durationMs.
+ * How long a series may run late past its durationMs, in ms. It stays under the 5 s the bridge,
+ * the hub and the link add to a series call (`callTimeoutMs` on top of durationMs), leaving room
+ * for the last shot and the answer.
+ */
+const LATE_GRACE_MS = 3000;
+
+/**
+ * The time after which a series stops even with planned shots left: its length plus three
+ * seconds. Slow shots (the first capture after a page load warms the GPU readback) are taken late;
+ * only a renderer far slower than planned ends a series early.
+ *
+ * @param plan - The series plan.
+ * @returns The ceiling in ms since the series start.
+ * @example
+ * ```ts
+ * lateCeilingMs({ count: 4, durationMs: 1000, intervalMs: 250 }); // 4000
+ * lateCeilingMs({ count: 1250, durationMs: 20_000, intervalMs: 16 }); // 23000
+ * ```
+ */
+export function lateCeilingMs(plan: SeriesPlan): number {
+  return plan.durationMs + LATE_GRACE_MS;
+}
+
+/**
+ * The recording loop: takes the planned count of shots, each at its due time or late; stops on a
+ * stop request or at the late ceiling.
  *
  * @param plan - The series plan.
  * @param registry - The registry slice.
@@ -185,6 +210,7 @@ async function loop(
 ): Promise<Collected> {
   const collected: Collected = { shots: [], state: undefined, skipped: 0 };
   const start = clock.now();
+  const ceiling = lateCeilingMs(plan);
 
   for (let shot = 0; shot < plan.count && !run.stopRequested; shot += 1) {
     const delay = start + shot * plan.intervalMs - clock.now();
@@ -193,7 +219,7 @@ async function loop(
 
     const elapsed = clock.now() - start;
 
-    if (run.stopRequested || elapsed >= plan.durationMs) break;
+    if (run.stopRequested || elapsed >= ceiling) break;
     await collectShot(registry, collected, elapsed);
   }
 
@@ -201,8 +227,8 @@ async function loop(
 }
 
 /**
- * Records the planned shots one after the other; late shots are taken late, never dropped for
- * lateness; shots that would start after durationMs are dropped; failed shots are skipped and
+ * Records the planned count of shots one after the other; late shots are taken late, never
+ * dropped for lateness, up to the late ceiling (`lateCeilingMs`); failed shots are skipped and
  * logged once (`capture:shots-skipped`). The run sits in `state.series` while recording.
  *
  * @param plan - The series plan.
