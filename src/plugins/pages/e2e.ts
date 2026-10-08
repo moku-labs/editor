@@ -135,7 +135,8 @@ export type RunLock = {
    */
   readonly take: () => Promise<number | undefined>;
   /**
-   * Releases a lock this run took: removes the file while it still holds this run's pid.
+   * Releases a lock this lock object took: removes the file only while it still holds this process's
+   * pid.
    *
    * @returns Resolves when the file is gone or belongs to another run.
    */
@@ -799,16 +800,21 @@ async function liveHolder(file: string): Promise<number | undefined> {
 
 /**
  * Takes the lock file: creates it, or answers its live holder, or removes a stale one and tries
- * again.
+ * again. The stale file is removed only while it still holds the text read as stale, so a run that
+ * took it over in the meantime keeps its lock; two runs that start in the same instant on a stale
+ * lock can still both pass, which the lock accepts as rare.
  *
  * @param file - The lock file.
  * @returns The pid of the live holder, or undefined when this process took it.
  */
 async function acquire(file: string): Promise<number | undefined> {
   if (await createLockFile(file)) return undefined;
+  const stale = await lockText(file);
   const holder = await liveHolder(file);
   if (holder !== undefined) return holder;
-  await rm(file, { force: true }); // a dead or unreadable holder: take the lock over
+
+  // A dead or unreadable holder: take the lock over, unless another run already did.
+  if ((await lockText(file)) === stale) await rm(file, { force: true });
   return acquire(file);
 }
 
