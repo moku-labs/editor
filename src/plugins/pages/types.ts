@@ -221,8 +221,8 @@ export type McpConfigArgs = {
 
 /**
  * Arguments of `moku-editor e2e -c <playwright config> [playwright args…]`: one Playwright run per
- * project of the config, each on its own `PORT` (D-52). Only `-c` / `--config` is read; every
- * other word goes to Playwright as given.
+ * project and spec file of the config, each on its own `PORT` (D-52, D-53). Only `-c` / `--config`
+ * is read here; `e2e.ts` sorts the other words for the list run and the runs.
  *
  * @example
  * ```ts

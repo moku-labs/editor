@@ -1,15 +1,19 @@
 /**
- * @file pages plugin — `moku-editor e2e -c <playwright config> [playwright args…]` (D-52): runs a
- * game's editor Playwright specs with one Playwright process per project of the config, so each
- * project gets a fresh editor bin. Bun 1.3.14's dev server crashes after many hot reloads in one
- * process. Each project runs on its own `PORT` (the base, else 4417, plus the project's index),
- * because the bin of the previous project can still hold its port for a moment.
+ * @file pages plugin — `moku-editor e2e -c <playwright config> [playwright args…]` (D-52, D-53):
+ * runs a game's editor Playwright specs with one Playwright process per project and spec file, so
+ * each spec file gets a fresh editor bin. Bun's dev server degrades after many hot reloads in one
+ * process, also within one project (D-53). Each run gets its own `PORT` (the base, else 4417, plus
+ * the run's index), because the bin of the previous run can still hold its port for a moment.
  *
- * An explicit `--project` or a `--list` runs once as given; each per-project run adds
- * `--pass-with-no-tests`; every other word goes to Playwright. With `CI=true`
- * the Chromium of the game's Playwright is installed first. Playwright resolves from the game
- * through `bun x`: the editor has no Playwright dependency at run time. The bin installs no signal
- * handler here: a Ctrl+C reaches the Playwright child through the terminal's process group.
+ * The plan of runs comes from one `playwright test --list --reporter=json` run with the user's
+ * filters: `--project`, file arguments, `-g` and `-G` narrow it. Each (project, file) pair then runs
+ * with `--project=<p>`, an anchored file regex and `--pass-with-no-tests`, without the user's
+ * `--project` and file words (Playwright would union them with the file regex). One report line
+ * per run and a summary go through the brand console. A `--list`, an empty plan, or a config without
+ * named projects runs once as given. With `CI=true` the Chromium of the game's Playwright is
+ * installed first. Playwright resolves from the game through `bun x`: the editor has no Playwright
+ * dependency at run time. The bin installs no signal handler here: a Ctrl+C reaches the Playwright
+ * child through the terminal's process group.
  */
 import type { BrandConsole } from "@moku-labs/common/cli";
 import { messageOf } from "./engine-page";
@@ -36,15 +40,73 @@ const JSON_OUTPUT_ENV = new Set([
 ]);
 
 /**
- * What the e2e runner talks to: the environment and the two ways to run `bun x`.
+ * Playwright test flags whose next word is always their value.
+ */
+const VALUE_FLAGS = new Set([
+  "-c",
+  "--config",
+  "-g",
+  "--grep",
+  "-G",
+  "--grep-invert",
+  "--global-timeout",
+  "-j",
+  "--workers",
+  "--last-failed-file",
+  "--max-failures",
+  "--output",
+  "--repeat-each",
+  "--reporter",
+  "--add-reporter",
+  "--retries",
+  "--run-agents",
+  "--shard",
+  "--test-list",
+  "--test-list-invert",
+  "--timeout",
+  "--trace",
+  "--tsconfig",
+  "--ui-host",
+  "--ui-port",
+  "--update-source-method",
+  "--browser"
+]);
+
+/**
+ * The modes of `-u` / `--update-snapshots`.
+ */
+const UPDATE_MODES = new Set(["all", "changed", "missing", "none"]);
+
+/**
+ * The modes of `--debug`.
+ */
+const DEBUG_MODES = new Set(["inspector", "cli"]);
+
+/**
+ * The reporter flags: the list run drops them, the pair runs keep them.
+ */
+const REPORTER_FLAGS = new Set(["--reporter", "--add-reporter"]);
+
+/**
+ * Flags that pick tests across files: the list run gets them, the pair runs do not.
+ */
+const LIST_ONLY_FLAGS = new Set(["--shard", "--last-failed"]);
+
+/**
+ * What the e2e runner talks to: the environment, the two ways to run `bun x`, and the clock.
  *
  * @example
  * ```ts
- * // A unit test: every run passes, the config has one project.
+ * // A unit test: every run passes, the list has one test of desktop in a.spec.ts.
+ * const list = {
+ *   config: { rootDir: "/game/e2e", projects: [{ name: "desktop" }] },
+ *   suites: [{ specs: [{ file: "a.spec.ts", tests: [{ projectName: "desktop" }] }] }]
+ * };
  * const deps: E2eDeps = {
  *   env: {},
  *   run: () => Promise.resolve(0),
- *   capture: () => Promise.resolve({ code: 0, stdout: '{"config":{"projects":[{"name":"desktop"}]}}' })
+ *   capture: () => Promise.resolve({ code: 0, stdout: JSON.stringify(list) }),
+ *   now: () => 0
  * };
  * await runE2e({ kind: "e2e", config: "pw.config.ts", rest: [] }, deps, ui); // 0
  * ```
@@ -70,58 +132,346 @@ export type E2eDeps = {
    * @returns The exit code and the stdout text.
    */
   readonly capture: (args: readonly string[]) => Promise<{ code: number; stdout: string }>;
+  /**
+   * The clock of the report lines, in milliseconds; default `performance.now`.
+   *
+   * @returns The current time.
+   */
+  readonly now?: () => number;
 };
 
 /**
- * Playwright's JSON report as far as the runner reads it: the projects of the config.
+ * One run of the plan: a project of the config and a spec file it has tests in.
+ *
+ * @example
+ * ```ts
+ * const pair: PlanPair = { project: "chromium-desktop", file: "layout.spec.ts" };
+ * ```
  */
-type ListReport = { readonly config: { readonly projects: readonly unknown[] } };
+export type PlanPair = {
+  /** The project name. */
+  readonly project: string;
+  /** The spec file, relative to the config's `rootDir`. */
+  readonly file: string;
+};
 
 /**
- * Whether a parsed JSON value has a `config.projects` array.
+ * The plan of a list run: the config's `rootDir` and the (project, file) pairs, projects in config
+ * order, files in list order.
+ *
+ * @example
+ * ```ts
+ * const plan: ListPlan = {
+ *   rootDir: "/game/e2e",
+ *   pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }]
+ * };
+ * ```
+ */
+export type ListPlan = {
+  /** The absolute folder the spec files are relative to. */
+  readonly rootDir: string;
+  /** The runs, in order. */
+  readonly pairs: readonly PlanPair[];
+};
+
+/**
+ * The user's Playwright words, sorted by what the runner does with them.
+ *
+ * @example
+ * ```ts
+ * // moku-editor e2e -c pw.config.ts reload --project desktop -g pick --reporter line --shard 1/2
+ * const parts: RestParts = {
+ *   projects: ["desktop"],
+ *   files: ["reload"],
+ *   reporters: ["--reporter", "line"],
+ *   listOnly: ["--shard", "1/2"],
+ *   other: ["-g", "pick"]
+ * };
+ * ```
+ */
+export type RestParts = {
+  /** The project names of `--project`: they narrow the list run. */
+  readonly projects: string[];
+  /** The file filters: they narrow the list run. */
+  readonly files: string[];
+  /** `--reporter` and `--add-reporter` words: pair runs only. */
+  readonly reporters: string[];
+  /** `--shard` and `--last-failed` words: the list run only. */
+  readonly listOnly: string[];
+  /** Every other word: the list run and the pair runs. */
+  readonly other: string[];
+};
+
+/**
+ * One listed test: the project it runs in, "" for an unnamed project.
+ */
+type ListedTest = { readonly projectName: string };
+
+/**
+ * One listed spec: its file, relative to the config's `rootDir`, and its tests, one per project.
+ */
+type ListedSpec = { readonly file: string; readonly tests: readonly ListedTest[] };
+
+/**
+ * A listed suite: a spec file, or a describe inside one.
+ */
+type ListedSuite = {
+  readonly specs?: readonly ListedSpec[];
+  readonly suites?: readonly ListedSuite[];
+};
+
+/**
+ * Playwright's JSON report as far as the runner reads it.
+ */
+type ListReport = {
+  readonly config: {
+    readonly rootDir: string;
+    readonly projects: readonly { readonly name: string }[];
+  };
+  readonly suites: readonly ListedSuite[];
+};
+
+/**
+ * Whether a value is an object with a string `name`.
+ *
+ * @param value - One entry of `config.projects`.
+ * @returns True for a named entry.
+ */
+function hasName(value: unknown): value is { readonly name: string } {
+  return (
+    typeof value === "object" && value !== null && "name" in value && typeof value.name === "string"
+  );
+}
+
+/**
+ * Whether a parsed JSON value has a `config.rootDir`, named `config.projects` and a `suites` array.
+ * The suites inside follow Playwright's JSON reporter contract.
  *
  * @param value - The parsed JSON.
  * @returns True for a list report.
  */
 function isListReport(value: unknown): value is ListReport {
-  if (typeof value !== "object" || value === null || !("config" in value)) return false;
+  if (typeof value !== "object" || value === null) return false;
+  if (!("config" in value) || !("suites" in value) || !Array.isArray(value.suites)) return false;
   const { config } = value;
-  if (typeof config !== "object" || config === null || !("projects" in config)) return false;
-  return Array.isArray(config.projects);
+  if (typeof config !== "object" || config === null) return false;
+  if (!("rootDir" in config) || typeof config.rootDir !== "string") return false;
+  return (
+    "projects" in config &&
+    Array.isArray(config.projects) &&
+    config.projects.every(project => hasName(project))
+  );
 }
 
 /**
- * The name of one listed project, or "" when it has none.
+ * Every spec of the suites and their nested suites, in list order.
  *
- * @param project - One entry of `config.projects`.
- * @returns The name.
+ * @param suites - The listed suites.
+ * @returns The specs.
  */
-function nameOf(project: unknown): string {
-  if (typeof project !== "object" || project === null || !("name" in project)) return "";
-  return typeof project.name === "string" ? project.name : "";
+function specsOf(suites: readonly ListedSuite[]): readonly ListedSpec[] {
+  return suites.flatMap(suite => [...(suite.specs ?? []), ...specsOf(suite.suites ?? [])]);
 }
 
 /**
- * The project names of a `playwright test --list --reporter=json` output, in config order. A
- * project without a name is skipped.
+ * The spec files of each named project, in list order, each once.
+ *
+ * @param suites - The listed suites.
+ * @returns The files by project name.
+ */
+function filesByProject(suites: readonly ListedSuite[]): Map<string, Set<string>> {
+  const files = new Map<string, Set<string>>();
+  for (const spec of specsOf(suites)) {
+    for (const { projectName } of spec.tests) {
+      if (projectName === "") continue;
+      const listed = files.get(projectName) ?? new Set<string>();
+      listed.add(spec.file);
+      files.set(projectName, listed);
+    }
+  }
+  return files;
+}
+
+/**
+ * The plan of runs of a `playwright test --list --reporter=json` output: one (project, file) pair
+ * per project and spec file with at least one listed test. Projects come in config order, files in
+ * list order. Tests of an unnamed project are skipped: `--project` cannot pick it.
  *
  * @param json - The stdout of the list run.
- * @returns The names.
- * @throws {Error} When the text is not JSON or has no `config.projects` array.
+ * @returns The config's `rootDir` and the pairs.
+ * @throws {Error} When the text is not JSON or has no `config.rootDir`, `config.projects` or
+ * `suites`.
  * @example
  * ```ts
- * projectNames('{"config":{"projects":[{"name":"desktop"},{"name":""},{"name":"mobile"}]}}'); // ["desktop", "mobile"]
+ * const listed = await deps.capture(["playwright", "test", "-c", "pw.config.ts", "--list", "--reporter=json"]);
+ * listPlan(listed.stdout);
+ * // { rootDir: "/game/e2e", pairs: [{ project: "desktop", file: "a.spec.ts" }, { project: "mobile", file: "a.spec.ts" }] }
  * ```
  */
-export function projectNames(json: string): readonly string[] {
+export function listPlan(json: string): ListPlan {
   const report: unknown = JSON.parse(json);
-  if (!isListReport(report)) throw new Error("the JSON has no config.projects");
-  return report.config.projects.map(project => nameOf(project)).filter(name => name !== "");
+  if (!isListReport(report)) {
+    throw new Error("the JSON has no config.rootDir, config.projects or suites");
+  }
+
+  const files = filesByProject(report.suites);
+  const pairs = report.config.projects.flatMap(({ name }) =>
+    [...(files.get(name) ?? [])].map(file => ({ project: name, file }))
+  );
+  return { rootDir: report.config.rootDir, pairs };
 }
 
 /**
- * The port of the first project: `PORT` when it is an integer 1-65535, else 4417. Later projects
- * add their index, so a base near 65535 leaves no room for them.
+ * Takes the values of a variadic `--project`: every next word up to the first that starts with `-`.
+ *
+ * @param words - The words after `--project`; the values are removed.
+ * @returns The values.
+ */
+function takeValues(words: string[]): string[] {
+  const end = words.findIndex(word => word.startsWith("-"));
+  return words.splice(0, end === -1 ? words.length : end);
+}
+
+/**
+ * The bucket of a flag.
+ *
+ * @param flag - The flag, without an `=value`.
+ * @param parts - The buckets.
+ * @returns The reporters, the list-only words, or the other words.
+ */
+function bucketOf(flag: string, parts: RestParts): string[] {
+  if (REPORTER_FLAGS.has(flag)) return parts.reporters;
+  if (LIST_ONLY_FLAGS.has(flag)) return parts.listOnly;
+  return parts.other;
+}
+
+/**
+ * Whether the next word is the value of a flag whose value is optional: `-u` /
+ * `--update-snapshots` and `--debug` take one of their modes, `--only-changed` a word that is not a
+ * flag and not a spec file.
+ *
+ * @param flag - The flag, written without `=`.
+ * @param next - The next word.
+ * @returns True when the next word is the flag's value.
+ */
+function isOptionalValue(flag: string, next: string): boolean {
+  switch (flag) {
+    case "-u":
+    case "--update-snapshots": {
+      return UPDATE_MODES.has(next);
+    }
+    case "--debug": {
+      return DEBUG_MODES.has(next);
+    }
+    case "--only-changed": {
+      return !next.startsWith("-") && !/\.(?:tsx?|js)$/.test(next);
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+/**
+ * Whether a flag takes the next word as its value.
+ *
+ * @param flag - The flag, written without `=`.
+ * @param next - The next word.
+ * @returns True for a required value, or an optional value it knows.
+ */
+function takesValue(flag: string, next: string): boolean {
+  return VALUE_FLAGS.has(flag) || isOptionalValue(flag, next);
+}
+
+/**
+ * Puts a flag into its bucket, with its next word when that is its value.
+ *
+ * @param word - The flag, maybe with an `=value`.
+ * @param words - The words after it; a value taken is removed.
+ * @param parts - The buckets.
+ */
+function takeFlag(word: string, words: string[], parts: RestParts): void {
+  const [flag = word] = word.split("=", 1);
+  const bucket = bucketOf(flag, parts);
+  bucket.push(word);
+
+  const next = words[0];
+  if (word === flag && next !== undefined && takesValue(flag, next)) {
+    bucket.push(next);
+    words.shift();
+  }
+}
+
+/**
+ * Sorts the user's Playwright words into the runner's buckets. `--project X Y…` takes every next
+ * word that does not start with `-` (Playwright's variadic rule), `--project=X` one. A flag with a
+ * required value keeps its next word; `-u` / `--update-snapshots`, `--debug` and `--only-changed`
+ * keep it only when it is one of their values. `--flag=value` is one word. Any other word not
+ * starting with `-` is a file filter.
+ *
+ * @param rest - The words for Playwright, without `-c`.
+ * @returns The buckets, each in the order given.
+ * @example
+ * ```ts
+ * splitRest(["reload", "--project", "desktop", "-g", "pick", "--reporter=line", "--shard", "1/2"]);
+ * // { projects: ["desktop"], files: ["reload"], reporters: ["--reporter=line"],
+ * //   listOnly: ["--shard", "1/2"], other: ["-g", "pick"] }
+ * ```
+ */
+export function splitRest(rest: readonly string[]): RestParts {
+  const parts: RestParts = { projects: [], files: [], reporters: [], listOnly: [], other: [] };
+  const words = [...rest];
+  for (let word = words.shift(); word !== undefined; word = words.shift()) {
+    if (!word.startsWith("-")) parts.files.push(word);
+    else if (word === "--project") parts.projects.push(...takeValues(words));
+    else if (word.startsWith("--project=")) parts.projects.push(word.slice("--project=".length));
+    else takeFlag(word, words, parts);
+  }
+  return parts;
+}
+
+/**
+ * A path with forward slashes, as Playwright tests file regexes on Windows too.
+ *
+ * @param path - A path.
+ * @returns The path with `/` separators.
+ */
+function posix(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+/**
+ * A text with every regex character escaped.
+ *
+ * @param text - The literal text.
+ * @returns The regex source that matches exactly the text.
+ */
+function escapeRegExp(text: string): string {
+  return text.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
+}
+
+/**
+ * The Playwright file argument that picks one spec file: an anchored regex of its absolute path.
+ * Playwright tests a file argument as a regex against the absolute path, so a bare `a.spec.ts`
+ * would also pick `xa.spec.ts` and `sub/a.spec.ts`.
+ *
+ * @param file - The spec file, relative to `rootDir`.
+ * @param rootDir - The config's `rootDir`.
+ * @returns The regex source.
+ * @example
+ * ```ts
+ * fileFilter("layout.spec.ts", "/game/e2e"); // "^/game/e2e/layout\\.spec\\.ts$"
+ * fileFilter("a.spec.ts", "C:\\game\\e2e"); // "^C:/game/e2e/a\\.spec\\.ts$"
+ * ```
+ */
+export function fileFilter(file: string, rootDir: string): string {
+  const root = posix(rootDir).replace(/\/$/, "");
+  return `^${escapeRegExp(root)}/${escapeRegExp(posix(file))}$`;
+}
+
+/**
+ * The port of the first run: `PORT` when it is an integer 1-65535, else 4417. Later runs add their
+ * index, so a base near 65535 leaves no room for them.
  *
  * @param env - The bin's environment.
  * @returns The base port.
@@ -140,29 +490,21 @@ export function basePort(env: E2eDeps["env"]): number {
 }
 
 /**
- * Whether Playwright's words pick a project themselves: `--project x` or `--project=x`.
- *
- * @param rest - The words for Playwright.
- * @returns True when one of them is `--project` or starts with `--project=`.
- * @example
- * ```ts
- * hasProject(["--project=chromium-desktop", "-g", "pick"]); // true
- * hasProject(["-g", "pick"]); // false
- * ```
- */
-export function hasProject(rest: readonly string[]): boolean {
-  return rest.some(word => word === "--project" || word.startsWith("--project="));
-}
-
-/**
- * The project names of the config, or the error line when they cannot be listed.
+ * The plan of the user's tests, or the error line when they cannot be listed. The list run gets
+ * the user's filters and list-only flags, not the reporters; `--pass-with-no-tests` makes a filter
+ * that matches nothing an empty plan instead of a failed list.
  *
  * @param config - The Playwright config.
+ * @param parts - The user's words.
  * @param deps - The e2e deps.
- * @returns The names, or the `[moku-editor]` message.
+ * @returns The plan, or the `[moku-editor]` message.
  */
-async function listProjects(config: string, deps: E2eDeps): Promise<readonly string[] | string> {
-  const failed = `[moku-editor] could not list the projects of ${config}`;
+async function listTests(
+  config: string,
+  parts: RestParts,
+  deps: E2eDeps
+): Promise<ListPlan | string> {
+  const failed = `[moku-editor] could not list the tests of ${config}`;
   try {
     const listed = await deps.capture([
       "playwright",
@@ -170,25 +512,75 @@ async function listProjects(config: string, deps: E2eDeps): Promise<readonly str
       "-c",
       config,
       "--list",
-      "--reporter=json"
+      "--reporter=json",
+      "--pass-with-no-tests",
+      ...parts.files,
+      ...parts.projects.map(project => `--project=${project}`),
+      ...parts.other,
+      ...parts.listOnly
     ]);
     if (listed.code !== 0) return `${failed}: playwright test --list exited with ${listed.code}`;
-    return projectNames(listed.stdout);
+    return listPlan(listed.stdout);
   } catch (error) {
     return `${failed}: ${messageOf(error)}`;
   }
 }
 
 /**
- * Runs the specs of a Playwright config: in CI the Chromium install first, then one run per
- * project, one after another, each with `PORT` = base + index and `--pass-with-no-tests` (a
- * project with no test for the filter passes). An explicit `--project`, a `--list`, or a config
- * without named projects, runs once as given.
+ * Seconds with one decimal.
+ *
+ * @param milliseconds - A duration.
+ * @returns The text, like "2.5".
+ */
+function seconds(milliseconds: number): string {
+  return (milliseconds / 1000).toFixed(1);
+}
+
+/**
+ * Runs every pair of the plan, one after another, each with its `PORT` = base + index, and prints
+ * one line per run. Every pair runs, also after a failure.
+ *
+ * @param test - The words of a test run of the config.
+ * @param plan - The plan.
+ * @param rest - The user's words for each run: no projects, files or list-only flags.
+ * @param deps - The e2e deps.
+ * @param ui - The branded console.
+ * @returns The exit codes, in plan order.
+ */
+async function runPairs(
+  test: readonly string[],
+  plan: ListPlan,
+  rest: readonly string[],
+  deps: E2eDeps,
+  ui: BrandConsole
+): Promise<readonly number[]> {
+  const now = deps.now ?? (() => performance.now());
+  const base = basePort(deps.env);
+  const codes: number[] = [];
+  for (const [index, { project, file }] of plan.pairs.entries()) {
+    const filter = fileFilter(file, plan.rootDir);
+    const started = now();
+    const code = await deps.run(
+      [...test, `--project=${project}`, filter, "--pass-with-no-tests", ...rest],
+      { PORT: String(base + index) }
+    );
+    const outcome = code === 0 ? "passed" : `failed (code ${code})`;
+    ui.info(`${project} · ${file} · ${outcome} · ${seconds(now() - started)} s`);
+    codes.push(code);
+  }
+  return codes;
+}
+
+/**
+ * Runs the specs of a Playwright config: in CI the Chromium install first, then one list run with
+ * the user's filters, then one run per (project, file) pair of the list, one after another, each
+ * with `PORT` = base + index and `--pass-with-no-tests`. A `--list`, a list without tests, or a
+ * config without named projects runs once as given. Prints one line per run and a summary.
  *
  * @param args - The `e2e` arguments.
- * @param deps - The environment and the `bun x` runs.
- * @param ui - The branded console, for the error line.
- * @returns The exit code: a failed install's code; 1 when the projects cannot be listed; else the
+ * @param deps - The environment, the `bun x` runs and the clock.
+ * @param ui - The branded console, for the report and the error line.
+ * @returns The exit code: a failed install's code; 1 when the tests cannot be listed; else the
  * first non-zero code of the runs, or 0.
  * @example
  * ```ts
@@ -198,6 +590,8 @@ async function listProjects(config: string, deps: E2eDeps): Promise<readonly str
  * ```
  */
 export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Promise<number> {
+  const now = deps.now ?? (() => performance.now());
+  const started = now();
   const test = ["playwright", "test", "-c", args.config];
 
   // In CI the game's Playwright needs its Chromium first.
@@ -206,32 +600,24 @@ export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Pr
     if (installed !== 0) return installed;
   }
 
-  // An explicit project, or a list of the tests, runs once as given.
-  if (hasProject(args.rest) || args.rest.includes("--list"))
-    return deps.run([...test, ...args.rest]);
+  // A list of the tests runs once as given.
+  if (args.rest.includes("--list")) return deps.run([...test, ...args.rest]);
 
-  const projects = await listProjects(args.config, deps);
-  if (typeof projects === "string") {
-    ui.error(projects);
+  const parts = splitRest(args.rest);
+  const plan = await listTests(args.config, parts, deps);
+  if (typeof plan === "string") {
+    ui.error(plan);
     return 1;
   }
-  if (projects.length === 0) return deps.run([...test, ...args.rest]);
 
-  // Every project runs, also after a failure; the first failure decides the code. A project with
-  // no test for the filter (a layout-only project under `-g`) passes instead of failing the run.
-  const base = basePort(deps.env);
-  let code = 0;
-  for (const [index, project] of projects.entries()) {
-    const port = String(base + index);
-    const ran = await deps.run(
-      [...test, "--project", project, "--pass-with-no-tests", ...args.rest],
-      {
-        PORT: port
-      }
-    );
-    if (code === 0) code = ran;
-  }
-  return code;
+  // Nothing matched, or only an unnamed project has tests: one run as given, and Playwright
+  // reports "No tests found" itself.
+  if (plan.pairs.length === 0) return deps.run([...test, ...args.rest]);
+
+  const codes = await runPairs(test, plan, [...parts.other, ...parts.reporters], deps, ui);
+  const failed = codes.filter(code => code !== 0);
+  ui.info(`e2e: ${codes.length} runs · ${failed.length} failed · ${seconds(now() - started)} s`);
+  return failed[0] ?? 0;
 }
 
 /**
@@ -246,9 +632,10 @@ function listEnvironment(): Record<string, string | undefined> {
 }
 
 /**
- * The deps of the real process: `Bun.spawn(["bun", "x", …])` in the cwd, env = this process's.
+ * The deps of the real process: `Bun.spawn(["bun", "x", …])` in the cwd, env = this process's,
+ * clock = `performance.now`.
  *
- * @returns The environment and the two `bun x` runs.
+ * @returns The environment, the two `bun x` runs and the clock.
  * @example
  * ```ts
  * const code = await runE2e(args, processE2eDeps(), createBrandConsole());
@@ -271,6 +658,7 @@ export function processE2eDeps(): E2eDeps {
       });
       const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
       return { code, stdout };
-    }
+    },
+    now: () => performance.now()
   };
 }
