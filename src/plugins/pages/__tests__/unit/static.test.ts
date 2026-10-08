@@ -33,6 +33,24 @@ afterAll(async () => {
   await rm(base, { recursive: true, force: true });
 });
 
+/**
+ * A game folder with the manifests asked for, and the fetch over it.
+ *
+ * @param manifests - The files to write, by path relative to the game.
+ * @param folders - Folders to make, by path relative to the game.
+ * @returns The fetch.
+ */
+async function gameWith(
+  manifests: Record<string, string>,
+  folders: readonly string[] = []
+): Promise<ReturnType<typeof createStaticFetch>> {
+  const game = await realpath(await mkdtemp(join(base, "manifest-")));
+  await mkdir(join(game, "generated"), { recursive: true });
+  for (const folder of folders) await mkdir(join(game, folder), { recursive: true });
+  for (const [file, text] of Object.entries(manifests)) await writeFile(join(game, file), text);
+  return createStaticFetch(game, (req, server, mode) => guard(req, server, mode, new Set()));
+}
+
 describe("createStaticFetch", () => {
   it("serves a real file with type, no-cache and nosniff", async () => {
     const response = await fetchStatic(request("/manifest.json"), SERVER);
@@ -104,6 +122,47 @@ describe("createStaticFetch", () => {
     const manifest = request("/manifest.json");
     await fetcher(manifest, SERVER);
     expect(spy).toHaveBeenCalledWith(manifest, SERVER, "navigate");
+  });
+
+  describe("/manifest.json (game 0.13: generated/manifest.json)", () => {
+    it("answers from generated/manifest.json when only that one exists", async () => {
+      const serve = await gameWith({ "generated/manifest.json": '{"at":"generated"}' });
+      const response = await serve(request("/manifest.json"), SERVER);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+      expect(await response.text()).toBe('{"at":"generated"}');
+    });
+
+    it("falls back to the root's manifest.json in an older game", async () => {
+      const serve = await gameWith({ "manifest.json": '{"at":"root"}' });
+      const response = await serve(request("/manifest.json"), SERVER);
+      expect(await response.text()).toBe('{"at":"root"}');
+    });
+
+    it("prefers generated/manifest.json when both exist; the generated path still serves itself", async () => {
+      const serve = await gameWith({
+        "manifest.json": '{"at":"root"}',
+        "generated/manifest.json": '{"at":"generated"}'
+      });
+      const response = await serve(request("/manifest.json"), SERVER);
+      expect(await response.text()).toBe('{"at":"generated"}');
+      const direct = await serve(request("/generated/manifest.json"), SERVER);
+      expect(await direct.text()).toBe('{"at":"generated"}');
+    });
+
+    it("falls back to the root's manifest when generated/manifest.json is not a file", async () => {
+      const serve = await gameWith({ "manifest.json": '{"at":"root"}' }, [
+        "generated/manifest.json"
+      ]);
+      const response = await serve(request("/manifest.json"), SERVER);
+      expect(await response.text()).toBe('{"at":"root"}');
+    });
+
+    it("answers 404 when neither exists", async () => {
+      const serve = await gameWith({});
+      const response = await serve(request("/manifest.json"), SERVER);
+      expect(response.status).toBe(404);
+    });
   });
 
   it("answers 404 for every path when the root does not exist", async () => {
