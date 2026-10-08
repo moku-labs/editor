@@ -103,8 +103,9 @@ bar.value.image; // a PNG of the info bar plus 8 px around it
 
 - Plans `max(1, floor(durationMs / intervalMs))` shots. Shot k is due at `k × intervalMs`.
 - Shots run one after the other, never overlapping.
-- A late shot is taken late, never dropped for lateness.
-- Shots that would start at or after `durationMs` are dropped.
+- A series takes its planned count, `floor(durationMs / intervalMs)` shots (the popover's "4 shots · 1 s at 250 ms").
+- A late shot is taken late, never dropped for lateness; `index.json` keeps each shot's real `atMs`. A slow first capture after a page load (the GPU readback warms up) no longer ends a short series after one shot.
+- A series stops early only at the late ceiling, `durationMs + 3 s` since its start (`lateCeilingMs`; inside the 5 s a series call gets on top of `min(durationMs, 60 s)`; the default `maxDurationMs` is 20 s), or on Stop.
 - A shot that fails is skipped. Skipped shots are logged once per series as `capture:shots-skipped`.
 - Each shot carries its real `atMs` (rounded ms since the series start) and its real frame.
 - `state` is the state of the last good shot.

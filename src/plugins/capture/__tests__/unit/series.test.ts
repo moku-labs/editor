@@ -1,6 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the wire value the door answers when inert */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { browserClock, planSeries, recordSeries, stopSeries } from "../../series";
+import { browserClock, lateCeilingMs, planSeries, recordSeries, stopSeries } from "../../series";
 import type { SeriesRun } from "../../types";
 import {
   CONFIG,
@@ -127,15 +127,35 @@ describe("recordSeries", () => {
       createDeps(clock)
     );
 
-    expect(result.shots.map(shot => shot.atMs)).toEqual([0, 150, 300]);
+    // All 4 planned shots, the fourth at 450 ms although the series is 400 ms long.
+    expect(result.shots.map(shot => shot.atMs)).toEqual([0, 150, 300, 450]);
     expect(clock.wait).not.toHaveBeenCalled();
   });
 
-  it("drops the shots that would start after durationMs", async () => {
+  it("takes the planned count even when a slow first shot ends past durationMs", async () => {
+    const clock = fakeClock();
+    let call = 0;
+    const registry = fakeRegistry(undefined, {
+      onRun: () => {
+        call += 1;
+        clock.time += call === 1 ? 1200 : 10;
+      }
+    });
+
+    const result = await recordSeries(
+      planSeries({ durationMs: 1000, intervalMs: 250 }, CONFIG),
+      registry,
+      createDeps(clock)
+    );
+
+    expect(result.shots.map(shot => shot.atMs)).toEqual([0, 1200, 1210, 1220]);
+  });
+
+  it("stops at the late ceiling when the shots are far slower than planned", async () => {
     const clock = fakeClock();
     const registry = fakeRegistry(undefined, {
       onRun: () => {
-        clock.time += 250;
+        clock.time += 2500;
       }
     });
 
@@ -145,8 +165,14 @@ describe("recordSeries", () => {
       createDeps(clock)
     );
 
-    expect(result.shots.map(shot => shot.atMs)).toEqual([0, 250]);
+    // Ceiling: 500 + 3000 = 3500 ms.
+    expect(result.shots.map(shot => shot.atMs)).toEqual([0, 2500]);
     expect(registry.capture).toHaveBeenCalledTimes(2);
+  });
+
+  it("lateCeilingMs is the length plus three seconds, inside the 5 s call slack", () => {
+    expect(lateCeilingMs({ count: 4, durationMs: 1000, intervalMs: 250 })).toBe(4000);
+    expect(lateCeilingMs({ count: 1250, durationMs: 20_000, intervalMs: 16 })).toBe(23_000);
   });
 
   it("skips a shot that throws or gives no picture and logs the count once", async () => {
