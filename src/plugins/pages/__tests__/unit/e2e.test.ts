@@ -1,8 +1,18 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createBrandConsole } from "@moku-labs/common/cli";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { E2eDeps } from "../../e2e";
-import { basePort, fileFilter, listPlan, processE2eDeps, runE2e, splitRest } from "../../e2e";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { E2eDeps, RunLock } from "../../e2e";
+import {
+  basePort,
+  fileFilter,
+  fileLock,
+  listPlan,
+  processE2eDeps,
+  runE2e,
+  splitRest
+} from "../../e2e";
 import type { E2eArgs } from "../../types";
 
 /**
@@ -73,14 +83,16 @@ function e2eArgs(...rest: readonly string[]): E2eArgs {
 
 /**
  * Stub deps: every run answers its code in turn (then 0), the list answers `list`, the clock
- * answers `times` in turn (then the last one).
+ * answers `times` in turn (then the last one), the lock answers `holder`. `calls` records the
+ * order of the lock, the runs and the list run.
  *
- * @param options - The environment, the run codes, the list answer and the clock.
+ * @param options - The environment, the run codes, the list answer, the clock and the lock.
  * @param options.env - The environment the runner reads.
  * @param options.codes - The exit codes of the runs, in order.
  * @param options.list - What the list run answers, or the error it throws.
  * @param options.times - What `now` answers, in order, in milliseconds.
- * @returns The deps, the console, the recorded console lines.
+ * @param options.holder - The pid of a live run that holds the lock; absent: the lock is free.
+ * @returns The deps, the console, the recorded console lines, the recorded calls.
  */
 function stubDeps(
   options: {
@@ -88,18 +100,34 @@ function stubDeps(
     readonly codes?: readonly number[];
     readonly list?: { code: number; stdout: string } | Error;
     readonly times?: readonly number[];
+    readonly holder?: number;
   } = {}
 ) {
   const codes = [...(options.codes ?? [])];
   const times = [...(options.times ?? [0])];
   const list = options.list ?? { code: 0, stdout: DEFAULT_LIST };
+  const calls: string[] = [];
   const deps = {
     env: options.env ?? {},
-    run: vi.fn<E2eDeps["run"]>(() => Promise.resolve(codes.shift() ?? 0)),
-    capture: vi.fn<E2eDeps["capture"]>(() =>
-      list instanceof Error ? Promise.reject(list) : Promise.resolve(list)
-    ),
-    now: () => (times.length > 1 ? (times.shift() ?? 0) : (times[0] ?? 0))
+    run: vi.fn<E2eDeps["run"]>(args => {
+      calls.push(`run ${args[1] ?? ""}`);
+      return Promise.resolve(codes.shift() ?? 0);
+    }),
+    capture: vi.fn<E2eDeps["capture"]>(() => {
+      calls.push("list");
+      return list instanceof Error ? Promise.reject(list) : Promise.resolve(list);
+    }),
+    now: () => (times.length > 1 ? (times.shift() ?? 0) : (times[0] ?? 0)),
+    lock: {
+      take: vi.fn<RunLock["take"]>(() => {
+        calls.push("take");
+        return Promise.resolve(options.holder);
+      }),
+      release: vi.fn<RunLock["release"]>(() => {
+        calls.push("release");
+        return Promise.resolve();
+      })
+    }
   };
   const lines: string[] = [];
   const errorLines: string[] = [];
@@ -111,7 +139,7 @@ function stubDeps(
     },
     color: false
   });
-  return { deps, ui, lines, errorLines };
+  return { deps, ui, lines, errorLines, calls };
 }
 
 /** The words of a Playwright test run of the stub config. */
@@ -173,6 +201,14 @@ describe("runE2e", () => {
     await runE2e(e2eArgs("--project", "desktop", "half", "-g", "x"), deps, ui);
     expect(deps.capture.mock.calls).toEqual([
       [[...LIST, "--project=desktop", "--project=half", "-g", "x"]]
+    ]);
+  });
+
+  it("reads a path after --project as a file filter, not as a project", async () => {
+    const { deps, ui } = stubDeps();
+    await runE2e(e2eArgs("--project", "desktop", "tests/browser/files.browser.ts"), deps, ui);
+    expect(deps.capture.mock.calls).toEqual([
+      [[...LIST, "tests/browser/files.browser.ts", "--project=desktop"]]
     ]);
   });
 
@@ -302,6 +338,52 @@ describe("runE2e", () => {
     expect(deps.run.mock.calls.map(call => call[0][1])).toEqual(["test", "test", "test", "test"]);
   });
 
+  it("takes the lock before the CI install and releases it after the last run", async () => {
+    const list = { code: 0, stdout: listOf(["desktop"], [["desktop", "a.spec.ts"]]) };
+    const { deps, ui, calls } = stubDeps({ env: { CI: "true" }, list });
+    await expect(runE2e(e2eArgs(), deps, ui)).resolves.toBe(0);
+    expect(calls).toEqual(["take", "run install", "list", "run test", "release"]);
+  });
+
+  it("refuses with exit 1 and runs nothing while another live run holds the lock", async () => {
+    const { deps, ui, errorLines, calls } = stubDeps({ env: { CI: "true" }, holder: 4242 });
+    await expect(runE2e(e2eArgs(), deps, ui)).resolves.toBe(1);
+    expect(calls).toEqual(["take"]);
+    expect(errorLines).toEqual([
+      expect.stringContaining(
+        "[moku-editor] another e2e run (pid 4242) holds .moku/e2e.lock: wait for it, or delete the file when no run is left"
+      )
+    ]);
+  });
+
+  it("releases the lock after a failed run, a failed install and a failed list", async () => {
+    const failedRun = stubDeps({ codes: [0, 3] });
+    await expect(runE2e(e2eArgs(), failedRun.deps, failedRun.ui)).resolves.toBe(3);
+    expect(failedRun.calls.at(-1)).toBe("release");
+
+    const failedInstall = stubDeps({ env: { CI: "true" }, codes: [7] });
+    await expect(runE2e(e2eArgs(), failedInstall.deps, failedInstall.ui)).resolves.toBe(7);
+    expect(failedInstall.calls).toEqual(["take", "run install", "release"]);
+
+    const failedList = stubDeps({ list: { code: 1, stdout: "" } });
+    await expect(runE2e(e2eArgs(), failedList.deps, failedList.ui)).resolves.toBe(1);
+    expect(failedList.calls).toEqual(["take", "list", "release"]);
+  });
+
+  it("releases the lock when a run throws", async () => {
+    const { deps, ui, calls } = stubDeps();
+    deps.run.mockRejectedValueOnce(new Error("spawn bun ENOENT"));
+    await expect(runE2e(e2eArgs(), deps, ui)).rejects.toThrow("spawn bun ENOENT");
+    expect(deps.run).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["take", "list", "release"]);
+  });
+
+  it("takes no lock for a --list", async () => {
+    const { deps, ui, calls } = stubDeps({ env: { CI: "true" }, holder: 4242 });
+    await expect(runE2e(e2eArgs("--list"), deps, ui)).resolves.toBe(0);
+    expect(calls).toEqual(["run install", "run test"]);
+  });
+
   it("answers 1 with the message when the list run fails", async () => {
     const { deps, ui, lines } = stubDeps({ list: { code: 1, stdout: "" } });
     await expect(runE2e(e2eArgs(), deps, ui)).resolves.toBe(1);
@@ -389,7 +471,19 @@ describe("splitRest", () => {
     [["--project", "a"], { projects: ["a"] }],
     [["--project=a"], { projects: ["a"] }],
     [["--project", "a", "b", "-g", "pick"], { projects: ["a", "b"], other: ["-g", "pick"] }],
-    [["--project", "a", "reload.ts"], { projects: ["a", "reload.ts"] }],
+    [["--project", "a", "b"], { projects: ["a", "b"] }],
+    [["--project", "a", "reload.ts"], { projects: ["a"], files: ["reload.ts"] }],
+    [["--project", "a", "x.mjs"], { projects: ["a"], files: ["x.mjs"] }],
+    [["--project", "a", "b.tsx", "c"], { projects: ["a"], files: ["b.tsx", "c"] }],
+    [
+      ["--project", "a", "tests/browser/files.browser.ts"],
+      { projects: ["a"], files: ["tests/browser/files.browser.ts"] }
+    ],
+    [["--project", "a", "tests/browser"], { projects: ["a"], files: ["tests/browser"] }],
+    [
+      ["--project", "a", "b.js", "-g", "x"],
+      { projects: ["a"], files: ["b.js"], other: ["-g", "x"] }
+    ],
     [["--project=a", "reload.ts"], { projects: ["a"], files: ["reload.ts"] }],
     [["-g", "pick"], { other: ["-g", "pick"] }],
     [["-g=pick"], { other: ["-g=pick"] }],
@@ -474,6 +568,21 @@ describe("processE2eDeps", () => {
     expect(processE2eDeps().env.MOKU_E2E_PROBE).toBe("on");
   });
 
+  it("locks .moku/e2e.lock in the cwd", async () => {
+    const cwd = mkdtempSync(path.join(tmpdir(), "moku-e2e-deps-"));
+    try {
+      vi.spyOn(process, "cwd").mockReturnValue(cwd);
+      const lock = processE2eDeps().lock;
+      await expect(lock?.take()).resolves.toBeUndefined();
+      expect(readFileSync(path.join(cwd, ".moku", "e2e.lock"), "utf8")).toBe(String(process.pid));
+      await lock?.release();
+      expect(existsSync(path.join(cwd, ".moku", "e2e.lock"))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("reads the clock in milliseconds", () => {
     const now = processE2eDeps().now;
     const before = performance.now();
@@ -503,5 +612,77 @@ describe("processE2eDeps", () => {
     const { code, stdout } = await processE2eDeps().capture(["bun", "-e", script]);
     expect(code).toBe(2);
     expect(stdout.trim()).toBe("kept - - -");
+  });
+});
+
+/**
+ * The pid of a process that has exited.
+ *
+ * @returns The pid.
+ */
+async function deadPid(): Promise<number> {
+  const child = Bun.spawn([process.execPath, "-e", ""]);
+  await child.exited;
+  return child.pid;
+}
+
+describe("fileLock", () => {
+  let cwd = "";
+  let lockFile = "";
+
+  beforeEach(() => {
+    cwd = mkdtempSync(path.join(tmpdir(), "moku-e2e-lock-"));
+    lockFile = path.join(cwd, ".moku", "e2e.lock");
+  });
+
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("takes the lock with the bin's pid, creating .moku", async () => {
+    await expect(fileLock(cwd).take()).resolves.toBeUndefined();
+    expect(readFileSync(lockFile, "utf8")).toBe(String(process.pid));
+  });
+
+  it("answers the pid of the first holder to a second take", async () => {
+    const first = fileLock(cwd);
+    await first.take();
+    const second = fileLock(cwd);
+    await expect(second.take()).resolves.toBe(process.pid);
+    // The second never owned it: its release leaves the file of the first.
+    await second.release();
+    expect(existsSync(lockFile)).toBe(true);
+    await first.release();
+    expect(existsSync(lockFile)).toBe(false);
+  });
+
+  it("takes over a stale file with a dead pid", async () => {
+    mkdirSync(path.join(cwd, ".moku"));
+    writeFileSync(lockFile, String(await deadPid()));
+    await expect(fileLock(cwd).take()).resolves.toBeUndefined();
+    expect(readFileSync(lockFile, "utf8")).toBe(String(process.pid));
+  });
+
+  it.each(["", "not a pid", "12abc", "-5"])("takes over a file that reads %j", async text => {
+    mkdirSync(path.join(cwd, ".moku"));
+    writeFileSync(lockFile, text);
+    await expect(fileLock(cwd).take()).resolves.toBeUndefined();
+    expect(readFileSync(lockFile, "utf8")).toBe(String(process.pid));
+  });
+
+  it("leaves the file when another run took it over meanwhile", async () => {
+    const lock = fileLock(cwd);
+    await lock.take();
+    writeFileSync(lockFile, "4242");
+    await lock.release();
+    expect(readFileSync(lockFile, "utf8")).toBe("4242");
+  });
+
+  it("releases quietly when the file is gone, and without a take", async () => {
+    const lock = fileLock(cwd);
+    await expect(lock.release()).resolves.toBeUndefined();
+    await lock.take();
+    rmSync(lockFile);
+    await expect(lock.release()).resolves.toBeUndefined();
   });
 });

@@ -14,9 +14,15 @@
  * installed first. Playwright resolves from the game through `bun x`: the editor has no Playwright
  * dependency at run time. The bin installs no signal handler here: a Ctrl+C reaches the Playwright
  * child through the terminal's process group.
+ *
+ * Two runs in one folder share ports and the game's dev state, so a run takes `.moku/e2e.lock` in
+ * the cwd first and a second run refuses while the first lives. A `--list` takes no lock.
  */
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { BrandConsole } from "@moku-labs/common/cli";
 import { messageOf } from "./engine-page";
+import { isProcessAlive } from "./mcp/discovery";
 import type { E2eArgs } from "./types";
 
 /**
@@ -93,6 +99,50 @@ const REPORTER_FLAGS = new Set(["--reporter", "--add-reporter"]);
 const LIST_ONLY_FLAGS = new Set(["--shard", "--last-failed"]);
 
 /**
+ * A word that names a path: it has a `/` or ends in `.ts`, `.tsx`, `.js` or `.mjs`.
+ */
+const PATH_LIKE = /(?:\/|\.(?:tsx?|m?js)$)/;
+
+/**
+ * The lock file of a run, relative to the cwd.
+ */
+const LOCK_FILE = ".moku/e2e.lock";
+
+/**
+ * The lock that keeps a second e2e run in the same folder from starting while the first lives.
+ *
+ * @example
+ * ```ts
+ * // runE2e takes it before anything runs, and releases it after the last run.
+ * const lock = fileLock(process.cwd());
+ * const holder = await lock.take();
+ * if (holder === undefined) {
+ *   try {
+ *     await deps.run(["playwright", "test", "-c", "pw.config.ts"]);
+ *   } finally {
+ *     await lock.release();
+ *   }
+ * } else {
+ *   ui.error(`another e2e run (pid ${holder}) holds .moku/e2e.lock`);
+ * }
+ * ```
+ */
+export type RunLock = {
+  /**
+   * Takes the lock, unless a live run holds it. A lock of a dead or unreadable pid is taken over.
+   *
+   * @returns The pid of the live holder, or undefined when this run took the lock.
+   */
+  readonly take: () => Promise<number | undefined>;
+  /**
+   * Releases a lock this run took: removes the file while it still holds this run's pid.
+   *
+   * @returns Resolves when the file is gone or belongs to another run.
+   */
+  readonly release: () => Promise<void>;
+};
+
+/**
  * What the e2e runner talks to: the environment, the two ways to run `bun x`, and the clock.
  *
  * @example
@@ -138,6 +188,8 @@ export type E2eDeps = {
    * @returns The current time.
    */
   readonly now?: () => number;
+  /** The lock of the run; absent: no lock. `processE2eDeps` sets `.moku/e2e.lock` in the cwd. */
+  readonly lock?: RunLock;
 };
 
 /**
@@ -338,13 +390,14 @@ export function listPlan(json: string): ListPlan {
 }
 
 /**
- * Takes the values of a variadic `--project`: every next word up to the first that starts with `-`.
+ * Takes the values of a variadic `--project`: every next word up to the first that starts with `-`
+ * or looks like a path. That word is a flag or a file filter.
  *
  * @param words - The words after `--project`; the values are removed.
  * @returns The values.
  */
 function takeValues(words: string[]): string[] {
-  const end = words.findIndex(word => word.startsWith("-"));
+  const end = words.findIndex(word => word.startsWith("-") || PATH_LIKE.test(word));
   return words.splice(0, end === -1 ? words.length : end);
 }
 
@@ -420,7 +473,9 @@ function takeFlag(word: string, words: string[], parts: RestParts): void {
 
 /**
  * Sorts the user's Playwright words into the runner's buckets. `--project X Y…` takes every next
- * word that does not start with `-` (Playwright's variadic rule), `--project=X` one. A flag with a
+ * word that does not start with `-` (Playwright's variadic rule) up to a word that looks like a path
+ * (a `/`, or `.ts`, `.tsx`, `.js`, `.mjs` at the end): that one is a file filter, so a project
+ * named like a path needs `--project=X`. `--project=X` takes one. A flag with a
  * required value keeps its next word; `-u` / `--update-snapshots`, `--debug` and `--only-changed`
  * keep it only when it is one of their values. `--flag=value` is one word. Any other word not
  * starting with `-` is a file filter.
@@ -600,36 +655,31 @@ async function runPairs(
 }
 
 /**
- * Runs the specs of a Playwright config: in CI the Chromium install first, then one list run with
- * the user's filters, then one run per (project, file) pair of the list, one after another, each
- * with `PORT` = base + index and `--pass-with-no-tests`. A `--list`, a list without tests, or a
- * config without named projects runs once as given. Prints one line per run and a summary.
+ * In CI, installs the Chromium of the game's Playwright; elsewhere does nothing.
  *
- * @param args - The `e2e` arguments.
- * @param deps - The environment, the `bun x` runs and the clock.
- * @param ui - The branded console, for the report and the error line.
- * @returns The exit code: a failed install's code; 1 when the tests cannot be listed; else the
- * first non-zero code of the runs, or 0.
- * @example
- * ```ts
- * // moku-editor e2e -c tests/browser/playwright.config.ts -g pick
- * const args: E2eArgs = { kind: "e2e", config: "tests/browser/playwright.config.ts", rest: ["-g", "pick"] };
- * process.exitCode = await runE2e(args, processE2eDeps(), createBrandConsole());
- * ```
+ * @param deps - The e2e deps.
+ * @returns The install's exit code, or 0 outside CI.
  */
-export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Promise<number> {
+async function installChromium(deps: E2eDeps): Promise<number> {
+  if (deps.env.CI !== "true") return 0;
+  return deps.run(["playwright", "install", "chromium"]);
+}
+
+/**
+ * The CI install, the list run and the runs of the plan, under the lock.
+ *
+ * @param args - The `e2e` arguments, without `--list`.
+ * @param deps - The e2e deps.
+ * @param ui - The branded console.
+ * @returns The exit code of `runE2e`.
+ */
+async function runPlan(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Promise<number> {
   const now = clockOf(deps);
   const started = now();
   const test = ["playwright", "test", "-c", args.config];
 
-  // In CI the game's Playwright needs its Chromium first.
-  if (deps.env.CI === "true") {
-    const installed = await deps.run(["playwright", "install", "chromium"]);
-    if (installed !== 0) return installed;
-  }
-
-  // A list of the tests runs once as given.
-  if (args.rest.includes("--list")) return deps.run([...test, ...args.rest]);
+  const installed = await installChromium(deps);
+  if (installed !== 0) return installed;
 
   const parts = splitRest(args.rest);
   const plan = await listTests(args.config, parts, deps);
@@ -652,6 +702,151 @@ export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Pr
 }
 
 /**
+ * Runs the specs of a Playwright config. First it takes `.moku/e2e.lock` (`deps.lock`): while
+ * another live run holds it, it refuses with exit 1 and runs nothing. Then in CI the Chromium
+ * install, one list run with the user's filters, and one run per (project, file) pair of the list,
+ * one after another, each with `PORT` = base + index and `--pass-with-no-tests`. The lock is
+ * released after the last run, also after a failure. A `--list` takes no lock and runs once as
+ * given, as does a list without tests or a config without named projects. Prints one line per run
+ * and a summary.
+ *
+ * @param args - The `e2e` arguments.
+ * @param deps - The environment, the `bun x` runs, the clock and the lock.
+ * @param ui - The branded console, for the report and the error line.
+ * @returns The exit code: 1 while another run holds the lock; a failed install's code; 1 when the
+ * tests cannot be listed; else the first non-zero code of the runs, or 0.
+ * @example
+ * ```ts
+ * // moku-editor e2e -c tests/browser/playwright.config.ts -g pick
+ * const args: E2eArgs = { kind: "e2e", config: "tests/browser/playwright.config.ts", rest: ["-g", "pick"] };
+ * process.exitCode = await runE2e(args, processE2eDeps(), createBrandConsole());
+ * ```
+ */
+export async function runE2e(args: E2eArgs, deps: E2eDeps, ui: BrandConsole): Promise<number> {
+  // A list of the tests runs once as given, without the lock.
+  if (args.rest.includes("--list")) {
+    const installed = await installChromium(deps);
+    if (installed !== 0) return installed;
+    return deps.run(["playwright", "test", "-c", args.config, ...args.rest]);
+  }
+
+  const holder = await deps.lock?.take();
+  if (holder !== undefined) {
+    ui.error(
+      `[moku-editor] another e2e run (pid ${holder}) holds ${LOCK_FILE}: wait for it, or delete the file when no run is left`
+    );
+    return 1;
+  }
+  try {
+    return await runPlan(args, deps, ui);
+  } finally {
+    await deps.lock?.release();
+  }
+}
+
+/**
+ * The error code of a failed file call, such as `EEXIST`.
+ *
+ * @param error - The thrown value.
+ * @returns The code, or undefined.
+ */
+function codeOf(error: unknown): unknown {
+  return error instanceof Error && "code" in error ? error.code : undefined;
+}
+
+/**
+ * Creates the lock file with this process's pid, only when no file is there (`wx`).
+ *
+ * @param file - The lock file.
+ * @returns True when this call created it, false when it was there.
+ */
+async function createLockFile(file: string): Promise<boolean> {
+  try {
+    await writeFile(file, String(process.pid), { flag: "wx" });
+    return true;
+  } catch (error) {
+    if (codeOf(error) === "EEXIST") return false;
+    throw error;
+  }
+}
+
+/**
+ * The text of the lock file, or "" when it cannot be read.
+ *
+ * @param file - The lock file.
+ * @returns The text.
+ */
+async function lockText(file: string): Promise<string> {
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The pid in the lock file when that process lives.
+ *
+ * @param file - The lock file.
+ * @returns The live pid, or undefined for a dead, unreadable or missing one.
+ */
+async function liveHolder(file: string): Promise<number | undefined> {
+  const read = await lockText(file);
+  const text = read.trim();
+  const pid = /^\d+$/.test(text) ? Number(text) : 0;
+  return isProcessAlive(pid) ? pid : undefined;
+}
+
+/**
+ * Takes the lock file: creates it, or answers its live holder, or removes a stale one and tries
+ * again.
+ *
+ * @param file - The lock file.
+ * @returns The pid of the live holder, or undefined when this process took it.
+ */
+async function acquire(file: string): Promise<number | undefined> {
+  if (await createLockFile(file)) return undefined;
+  const holder = await liveHolder(file);
+  if (holder !== undefined) return holder;
+  await rm(file, { force: true }); // a dead or unreadable holder: take the lock over
+  return acquire(file);
+}
+
+/**
+ * The lock of e2e runs in a folder: the file `.moku/e2e.lock` holds the pid of the run that took
+ * it. `take` creates the folder and the file exclusively; `release` removes the file only when this
+ * lock took it and the file still holds this pid.
+ *
+ * @param cwd - The folder of the run.
+ * @returns The lock.
+ * @example
+ * ```ts
+ * const lock = fileLock("/games/merge");
+ * await lock.take(); // undefined: /games/merge/.moku/e2e.lock holds this pid
+ * await fileLock("/games/merge").take(); // this pid: a live run holds it
+ * await lock.release(); // the file is gone
+ * ```
+ */
+export function fileLock(cwd: string): RunLock {
+  const file = path.join(cwd, LOCK_FILE);
+  let owned = false;
+  return {
+    take: async () => {
+      await mkdir(path.dirname(file), { recursive: true });
+      const holder = await acquire(file);
+      owned = holder === undefined;
+      return holder;
+    },
+    release: async () => {
+      if (!owned) return;
+      owned = false;
+      const text = await lockText(file);
+      if (text.trim() === String(process.pid)) await rm(file, { force: true });
+    }
+  };
+}
+
+/**
  * The environment of the list run: the bin's, without the variables that send the JSON report to
  * a file.
  *
@@ -664,9 +859,9 @@ function listEnvironment(): Record<string, string | undefined> {
 
 /**
  * The deps of the real process: `Bun.spawn(["bun", "x", …])` in the cwd, env = this process's,
- * clock = `performance.now`.
+ * clock = `performance.now`, lock = `.moku/e2e.lock` in the cwd.
  *
- * @returns The environment, the two `bun x` runs and the clock.
+ * @returns The environment, the two `bun x` runs, the clock and the lock.
  * @example
  * ```ts
  * const code = await runE2e(args, processE2eDeps(), createBrandConsole());
@@ -690,6 +885,7 @@ export function processE2eDeps(): E2eDeps {
       const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
       return { code, stdout };
     },
-    now: () => performance.now()
+    now: () => performance.now(),
+    lock: fileLock(process.cwd())
   };
 }
