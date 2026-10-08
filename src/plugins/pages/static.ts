@@ -3,7 +3,7 @@
  * (manifest, tiles, sounds) from the project root. Guarded like a page (navigate), GET and HEAD
  * only, dotfiles and node_modules refused, and the real path must stay inside the real root.
  */
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path/posix";
 import type { GuardMode, HubServer } from "../hub/types";
 import {
@@ -82,6 +82,19 @@ const MANIFEST = "manifest.json";
 const GENERATED_MANIFEST = "generated/manifest.json";
 
 /**
+ * Whether a real path is a regular file; false when it is gone or another kind of entry.
+ *
+ * @param path - A real path.
+ * @returns True for a regular file.
+ */
+async function isFile(path: string): Promise<boolean> {
+  return stat(path).then(
+    entry => entry.isFile(),
+    () => false
+  );
+}
+
+/**
  * The real file a checked path answers with: `/manifest.json` comes from `generated/manifest.json`
  * when that file exists (game 0.13+), else from the root (older games); any other path is itself.
  *
@@ -96,7 +109,7 @@ const GENERATED_MANIFEST = "generated/manifest.json";
 async function servedFile(rootReal: string, relativePath: string): Promise<string | undefined> {
   if (relativePath === MANIFEST) {
     const generated = await realInside(rootReal, GENERATED_MANIFEST);
-    if (generated !== undefined) return generated;
+    if (generated !== undefined && (await isFile(generated))) return generated;
   }
   return realInside(rootReal, relativePath);
 }
