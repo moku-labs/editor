@@ -318,7 +318,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 | `server.ts` | `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`, `notifications/cancelled`. |
 | `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, `hotReload`, game, files and editor requests, `watch`/`value`/`unwatch`. The bridge is a plain tools client, never `role=page`. |
 | `discovery.ts` | Reads `.moku/editor.json`; `process.kill(pid, 0)` tells a live bin from a stale file. |
-| `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. |
+| `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. The html `<root>/.moku/index.html` is left out: the engine form `moku-editor --port <port> --root <root> [--no-hmr]`. |
 | `connection.ts` | The bin side: startup, reconnect once, start, stop only an owned bin. Reports each open and each lost connection (`onConnected`, `onDisconnected`). |
 | `tools.ts` and `*-tools.ts` | The generic tool table. `schema.ts` checks arguments, `results.ts` builds content, `shapes.ts` reads hub answers. |
 | `door-tools.ts` | One tool per command door of the selected session (D-35), rebuilt only when the session's `manifestHash` moves (D-37). `follow(client)` listens to the sessions of each hub client the link opens; `unfollow()` starts the 5 s grace. |
@@ -342,7 +342,7 @@ The handshake of the installed Claude Code (2.1.280) is recorded in `__tests__/f
 Which bin:
 
 1. A live `.moku/editor.json` under `--root` (default the working directory) wins: its port, token and socket URL. A different `--port` prints one stderr line.
-2. Without one, the bridge starts the bin when it knows a game html: the argv `<html>`, else the html of the last discovery file it saw (a stale one counts). Port: `--port`, else the last port, else 3000. The bridge then owns that bin.
+2. Without one, the bridge starts the bin when it knows a game html: the argv `<html>`, else the html of the last discovery file it saw (a stale one counts). Port: `--port`, else the last port, else 3000. The bridge then owns that bin. When the html is exactly `<root>/.moku/index.html` (the engine page, as an engine bin records it), the launcher passes no html: `moku-editor --port <port> --root <root> [--no-hmr]`. The bin then writes the page again and re-runs itself under `--config=<root>/.moku/bunfig.toml` (D-51, see Engine page), so the page keeps the hot plugin. Any other html starts the html form.
 3. Without an html, tools answer `isError`: "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." `moku_status` answers `running: false` with that hint instead.
 4. When the hub socket closes, the bridge reads the discovery file again and reconnects once. Every later tool call tries one connect to a live bin; `moku_start` starts one.
 5. On stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes. An owned bin gets SIGTERM, then SIGKILL after 2 s. A bin the bridge did not start keeps running. The signal handlers stay until the teardown is done, so a second Ctrl+C cannot leave an owned bin behind. After a signal the bridge lets go of stdin, so the process exits 0 even while the client keeps the pipe open. Lines that arrive after a signal are not handled.
@@ -433,7 +433,7 @@ What `main` (`cli.ts`) does:
 
 ## Limits
 
-- Engine page and MCP: the discovery file's `html` is `<root>/.moku/index.html`. When that bin is gone, the MCP launcher reuses it (`mcp/connection.ts`) and starts `moku-editor <root>/.moku/index.html --root <root>` without `--config=<root>/.moku/bunfig.toml`, so the page has no hot plugin. `moku-editor mcp` without an html file does not start the engine page yet. Follow-up: the launcher re-runs the engine form when the html ends in `/.moku/index.html`.
+- Engine page and MCP: the discovery file's `html` is `<root>/.moku/index.html`. When that bin is gone, the MCP launcher starts the engine form again (see Which bin). `--preload` and `--serve-plugin` are not in the discovery file, so that bin starts without them. Without an html file and without a discovery file, `moku-editor mcp` does not start the engine page yet.
 - The page must be built first. In a source checkout without `dist/tools`, `P/` answers 503 "tools page not built · run bun run build:tools".
 - The template is read once per app. A rebuild needs a restart.
 - `gameUrl` must be same-origin. The game's bridge fetches `hello` from this server.

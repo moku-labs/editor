@@ -197,21 +197,55 @@ describe("findAllFresh", () => {
 
     expect(await findAllFresh({ find, read }, "style:features/ui/kit.tsx#signboardStyle")).toEqual({
       answers: [callAt(666, "v1"), callAt(668, "v1")],
+      others: [elsewhere],
       text: "kit",
       version: "v1"
     });
     expect(read).toHaveBeenCalledWith(KIT);
   });
 
+  it("keeps the later answers of other files as `others`, in the index's order, without reading them", async () => {
+    const panels = { ...callAt(830, "p1"), path: "shared/views/panels.tsx" };
+    const buttons = { ...callAt(12, "b1"), path: "shared/views/buttons.tsx" };
+    const panelsAgain = { ...callAt(900, "p1"), path: "shared/views/panels.tsx" };
+    const find = vi.fn(async () => [
+      callAt(666, "v1"),
+      panels,
+      callAt(668, "v1"),
+      buttons,
+      panelsAgain
+    ]);
+    const read = vi.fn(async (): Promise<FileText> => ({ text: "kit", version: "v1" }));
+
+    const fresh = await findAllFresh({ find, read }, "jsx:settingsBoard");
+
+    expect(fresh?.others).toEqual([panels, buttons, panelsAgain]);
+    expect(fresh?.answers).toEqual([callAt(666, "v1"), callAt(668, "v1")]);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no `others` when every answer is in the file of the first one", async () => {
+    const find = vi.fn(async () => [callAt(666, "v1"), callAt(668, "v1")]);
+    const read = vi.fn(async (): Promise<FileText> => ({ text: "kit", version: "v1" }));
+
+    const fresh = await findAllFresh({ find, read }, "jsx:settingsBoard");
+
+    expect(fresh?.others).toEqual([]);
+  });
+
   it("asks once more when the file changed between find and read", async () => {
+    const before = { ...callAt(9, "o1"), path: "features/ui/other.tsx" };
+    const after = { ...callAt(11, "o2"), path: "features/ui/other.tsx" };
     const find = vi
       .fn<(key: string) => Promise<readonly ProjectFound[]>>()
-      .mockResolvedValueOnce([callAt(666, "v1")])
-      .mockResolvedValueOnce([callAt(669, "v2"), callAt(671, "v2")]);
+      .mockResolvedValueOnce([callAt(666, "v1"), before])
+      .mockResolvedValueOnce([callAt(669, "v2"), after, callAt(671, "v2")]);
     const read = vi.fn(async (): Promise<FileText> => ({ text: "moved", version: "v2" }));
 
+    // The answers of the second ask are kept whole: `others` too.
     expect(await findAllFresh({ find, read }, "style:features/ui/kit.tsx#signboardStyle")).toEqual({
       answers: [callAt(669, "v2"), callAt(671, "v2")],
+      others: [after],
       text: "moved",
       version: "v2"
     });

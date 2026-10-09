@@ -8,6 +8,7 @@
 
 import type { PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { isLayoutOnly } from "../../panels/shared/scene";
+import { stylePathOf, writtenStyle } from "../element/style-path";
 import type { BlockAt, StyleSource } from "../types";
 import { sourceText } from "./block";
 
@@ -80,10 +81,8 @@ function rounded(rect: PageRect): readonly [number, number, number, number] {
  * @returns The style text, or undefined.
  */
 function styleName(node: SceneNode, source: StyleSource | undefined): string | undefined {
-  if (source?.kind === "ident") return source.ref.name;
-  if (source?.kind === "call") return source.call;
   const nineSlice = node.style?.nineSlice;
-  return typeof nineSlice === "string" ? nineSlice : undefined;
+  return writtenStyle(source) ?? (typeof nineSlice === "string" ? nineSlice : undefined);
 }
 
 /**
@@ -97,7 +96,7 @@ function styleSource(
   source: StyleSource | undefined,
   block: BlockAt | undefined
 ): string | undefined {
-  if (source?.kind === "call") return `${source.path}:${source.callLine}`;
+  if (source?.kind === "call") return `${stylePathOf(source)}:${source.callLine}`;
   if (source?.kind === "ident" && block !== undefined) return `${block.path}:${block.line}`;
   return undefined;
 }

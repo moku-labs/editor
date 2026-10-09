@@ -172,6 +172,38 @@ describe("openStyleCard", () => {
     expect(ctx.state.styles).toBeUndefined();
   });
 
+  it("shows the style call of an id prop's component read-only, at the file and line of the call", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", '<Pill\n  id="coinPill"\n/>');
+    ctx.link.files.put(
+      "src/kit/pill.tsx",
+      "<row\n  key={props.id}\n  style={pillOf(props.width)}\n/>"
+    );
+    answer(
+      ctx,
+      "jsx:coinPill",
+      place("src/hud/Hud.tsx", [1, 1, 3, 3], {
+        line: 2,
+        kind: "idProp",
+        component: "Pill",
+        prop: "id"
+      }),
+      place("src/kit/pill.tsx", [1, 1, 4, 3], {
+        line: 2,
+        kind: "ident",
+        key: "{id}",
+        component: "Pill"
+      })
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.lookup).toEqual({
+      key: "coinPill",
+      status: "call",
+      path: "src/kit/pill.tsx",
+      line: 3,
+      call: "pillOf(props.width)"
+    });
+  });
+
   it("says where the key is defined when its element has no style", async () => {
     ctx.link.files.put("src/hud/Hud.tsx", '<Row>\n  <HudPill id="coinPill" />\n</Row>');
     answer(ctx, "jsx:coinPill", place("src/hud/Hud.tsx", [2, 3, 2, 27], { kind: "idProp" }));

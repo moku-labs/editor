@@ -145,11 +145,22 @@ export type SourceRange = ProjectFound["range"];
  * attribute), `range` the whole element. A `defined` with `textStyle` is a text node with
  * `style="ui.link"`: the Code section shows that key's block (round 2b R17).
  *
+ * `path`, `line` and `range` are always the first answer (D-47). When that answer is an id prop
+ * (`amountKey="giftReward"` on `<Amount>`) with no style on its own tag, the style is read from
+ * the element the component draws for it (the `{amountKey}` pattern the prop fills in the
+ * component of its name), and `stylePath` names that component file when it is another file. A
+ * component file that was looked at and gave no style is kept in `stylelessPaths`: the answer is
+ * stale once that file changes.
+ *
  * @example
  * ```ts
- * const board: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 290, range: [289, 7, 310, 19] };
+ * const row: StyleSource = { kind: "defined", path: "features/ui/view.tsx", line: 51, range: [51, 5, 54, 11] };
  * const card: StyleSource = { kind: "call", path: "features/orders/strip.tsx", line: 216, range: [215, 5, 247, 14], call: "orderCardStyle(card.slot)", callLine: 218 };
  * const link: StyleSource = { kind: "defined", path: "features/settings/settings.tsx", line: 318, range: [318, 11, 318, 92], textStyle: "ui.link" };
+ * const reward: StyleSource = { kind: "defined", path: "features/gift/popups/daily-gift.tsx", line: 25, range: [23, 9, 29, 11], textStyle: "ui.amount", stylePath: "shared/views/amount.tsx" };
+ * const board: StyleSource = { kind: "call", path: "features/settings/settings.tsx", line: 290, range: [289, 7, 310, 19], call: "boardOf(props.width, props.height, props.top ?? BOARD_TOP, hung)", callLine: 833, stylePath: "features/ui/kit.tsx" };
+ * // An id prop whose component draws its element without a style: looked at, nothing found.
+ * const bare: StyleSource = { kind: "defined", path: "src/hud/Hud.tsx", line: 2, range: [1, 1, 3, 3], stylelessPaths: ["src/kit/pill.tsx"] };
  * ```
  */
 export type StyleSource =
@@ -161,9 +172,21 @@ export type StyleSource =
       readonly ref: Extract<StyleBlockRef, { readonly kind: "const" }>;
       /**
        * Files that may hold the block, in order: the ones the index defines `style:<file>#<name>`
-       * in (the key file first, then the file it is imported from); the key file alone when none.
+       * in (the file of the style first, then the file it is imported from); the file of the
+       * style alone when none.
        */
       readonly files: readonly string[];
+      /**
+       * The component file the style was read from, when the first answer is an id prop without a
+       * style of its own and its component is in another file. Absent: the style is in `path`.
+       */
+      readonly stylePath?: string;
+      /**
+       * The other component files looked at for the style of an id prop that gave none: no style
+       * on the tag the pattern keys, a file that changed since the index answered, or one that
+       * cannot be read. A project change to one of them drops the answer. Absent: there is none.
+       */
+      readonly stylelessPaths?: readonly string[];
     }
   | {
       readonly kind: "call";
@@ -172,7 +195,7 @@ export type StyleSource =
       readonly range: SourceRange;
       /** The call as written: `boardOf(props.width, props.height)`. */
       readonly call: string;
-      /** 1-based line of the `style={…}` attribute. */
+      /** 1-based line of the `style={…}` attribute, in `stylePath` when there is one. */
       readonly callLine: number;
       /**
        * The project-index key of the style the called function builds (G2):
@@ -180,6 +203,17 @@ export type StyleSource =
        * the index has none.
        */
       readonly styleKey?: string;
+      /**
+       * The component file the style was read from, when the first answer is an id prop without a
+       * style of its own and its component is in another file. Absent: the style is in `path`.
+       */
+      readonly stylePath?: string;
+      /**
+       * The other component files looked at for the style of an id prop that gave none: no style
+       * on the tag the pattern keys, a file that changed since the index answered, or one that
+       * cannot be read. A project change to one of them drops the answer. Absent: there is none.
+       */
+      readonly stylelessPaths?: readonly string[];
     }
   | {
       readonly kind: "defined";
@@ -188,6 +222,17 @@ export type StyleSource =
       readonly range: SourceRange;
       /** The text style key of a text node (`style="ui.link"`): the index answers its block. */
       readonly textStyle?: string;
+      /**
+       * The component file the style was read from, when the first answer is an id prop without a
+       * style of its own and its component is in another file. Absent: the style is in `path`.
+       */
+      readonly stylePath?: string;
+      /**
+       * The other component files looked at for the style of an id prop that gave none: no style
+       * on the tag the pattern keys, a file that changed since the index answered, or one that
+       * cannot be read. A project change to one of them drops the answer. Absent: there is none.
+       */
+      readonly stylelessPaths?: readonly string[];
     };
 
 /**

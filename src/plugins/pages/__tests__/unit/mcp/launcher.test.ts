@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseBinArgs } from "../../../args";
 import { discoveryOf, writeDiscovery } from "../../../discovery";
 import {
   LOG_FILE,
@@ -16,7 +17,9 @@ import type { ChildProcess, SpawnProcess } from "../../../mcp/types";
 // ─────────────────────────────────────────────────────────────────────────────
 // pages/mcp launcher (M3): `moku-editor <html> --port <port> --root <root>
 // [--no-hmr]` detached with output in .moku/editor.log, then a wait for the
-// discovery file; an owned child is stopped with SIGTERM, then SIGKILL.
+// discovery file; an owned child is stopped with SIGTERM, then SIGKILL. The
+// html `<root>/.moku/index.html` (the engine page) is left out: the bin then
+// writes the page again and re-runs under its bunfig (D-51).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: string;
@@ -81,6 +84,52 @@ describe("launchCommand", () => {
       root
     ]);
     expect(launchCommand(["bun", "bin"], options(false)).at(-1)).toBe("--no-hmr");
+  });
+
+  it("starts the engine form, without the html, when the html is the root's engine page", () => {
+    const engine = { html: join(root, ".moku", "index.html"), port: 4100, root, hmr: true };
+
+    expect(launchCommand(["bun", "/pkg/dist/bin.mjs"], engine)).toEqual([
+      "bun",
+      "/pkg/dist/bin.mjs",
+      "--port",
+      "4100",
+      "--root",
+      root
+    ]);
+    expect(launchCommand(["bun", "bin"], { ...engine, hmr: false })).toEqual([
+      "bun",
+      "bin",
+      "--port",
+      "4100",
+      "--root",
+      root,
+      "--no-hmr"
+    ]);
+
+    // The bin reads these words as the engine page: a `run` without an html (D-51).
+    expect(parseBinArgs(launchCommand([], engine))).toEqual({
+      kind: "run",
+      port: 4100,
+      root,
+      hmr: true,
+      preload: [],
+      servePlugins: []
+    });
+  });
+
+  it("keeps the html form for an engine page of another folder", () => {
+    const html = join(root, "games", "timber", ".moku", "index.html");
+
+    expect(launchCommand(["bun", "bin"], { html, port: 4100, root, hmr: true })).toEqual([
+      "bun",
+      "bin",
+      html,
+      "--port",
+      "4100",
+      "--root",
+      root
+    ]);
   });
 });
 

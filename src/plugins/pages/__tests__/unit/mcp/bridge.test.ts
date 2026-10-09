@@ -425,7 +425,9 @@ describe("door tools (D-35, D-36, D-37)", () => {
       method: "tools/call",
       params: { name: "game_tap", arguments: { x: 0.5 } }
     });
-    await until(() => run.answer(3) !== undefined, "the door calls");
+    // Answer 3 is refused before the hub is asked, so it comes first. The stdin end aborts a call
+    // still in flight and sends no answer for it: wait for answer 2 as well.
+    await until(() => run.answer(2) !== undefined && run.answer(3) !== undefined, "the door calls");
     run.stdin.end();
     await run.done;
 

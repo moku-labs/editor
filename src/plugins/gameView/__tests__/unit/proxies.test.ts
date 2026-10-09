@@ -95,6 +95,14 @@ describe("proxyList", () => {
     expect(withCall?.attributes["data-moku-style"]).toBe("pillOf(2)");
     expect(withCall?.attributes["data-moku-source"]).toBe("kit.tsx:9");
     expect(withCall?.attributes["data-moku-style-source"]).toBe("kit.tsx:10");
+
+    const inComponent = proxyList(boardScene(), {
+      node: undefined,
+      found: new Map([["energyPill", { ...call, path: "hud.tsx", line: 4, stylePath: "kit.tsx" }]]),
+      blocks: new Map()
+    }).find(proxy => proxy.id === "ui:boardScreen/hudRow/energyPill");
+    expect(inComponent?.attributes["data-moku-source"]).toBe("hud.tsx:4");
+    expect(inComponent?.attributes["data-moku-style-source"]).toBe("kit.tsx:10");
   });
 
   it("names the element line of a pattern answer; an identifier without a found block has no style source", () => {

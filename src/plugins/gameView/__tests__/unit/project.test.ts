@@ -24,6 +24,18 @@ const CATALOGUE: TextureCatalogue = {
 };
 const MANIFEST = JSON.stringify({ version: 1, bundles: {} });
 
+/** The id prop `id="coinPill"` on <Pill>, on line 2 of its element. */
+const PILL_PROP = {
+  line: 2,
+  key: "coinPill",
+  kind: "idProp",
+  component: "Pill",
+  prop: "id"
+} as const;
+
+/** The text Pill draws for its `id`: the `{id}` pattern in the component. */
+const PILL_TEXT = { key: "{id}", kind: "ident", component: "Pill" } as const;
+
 let ctx: TestCtx;
 
 /**
@@ -127,6 +139,22 @@ describe("link:project: what gameView remembered", () => {
     expect(ctx.state.spawns.size).toBe(0);
   });
 
+  it("drops the answer of an id prop when the file of its component's style changed", () => {
+    ctx.state.found.set("giftReward", { ...sourceIn("gift.tsx"), stylePath: "amount.tsx" });
+    ctx.state.found.set("giftNote", { ...sourceIn("gift.tsx"), stylePath: "note.tsx" });
+    change(deltaOf({ files: ["amount.tsx"] }));
+    expect([...ctx.state.found.keys()]).toEqual(["giftNote"]);
+  });
+
+  it("drops the answer of an id prop when a component file that gave it no style changed", () => {
+    ctx.state.found.set("giftReward", { ...sourceIn("gift.tsx"), stylelessPaths: ["amount.tsx"] });
+    ctx.state.found.set("giftNote", { ...sourceIn("gift.tsx"), stylelessPaths: ["note.tsx"] });
+    ctx.state.blocks.set("giftReward", { path: "kept-styles.ts", line: 1 });
+    change(deltaOf({ files: ["amount.tsx"] }));
+    expect([...ctx.state.found.keys()]).toEqual(["giftNote"]);
+    expect(ctx.state.blocks.size).toBe(0);
+  });
+
   it("drops a projection answer in a changed or moved-from file, of a removed key, or still asked", () => {
     ctx.state.spawns.set("board.items", spawnIn("features/board/items.tsx"));
     ctx.state.spawns.set("board.moved", spawnIn("old.tsx"));
@@ -219,6 +247,59 @@ describe("link:project: the selected element", () => {
     await flush();
     expect(ctx.state.styles?.block.line).toBe(2);
     expect(ctx.state.styles?.current.version).toBe(ctx.link.files.version("src/hud/styles.ts"));
+  });
+
+  it("looks the style up again when the component file of an id prop's style changed", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", '<Pill\n  id="coinPill"\n/>');
+    ctx.link.files.put("src/kit/pill.tsx", '<text key={props.id} style="ui.amount" />');
+    answer(
+      ctx,
+      "jsx:coinPill",
+      place("src/hud/Hud.tsx", [1, 1, 3, 3], PILL_PROP),
+      place("src/kit/pill.tsx", [1, 1, 1, 42], PILL_TEXT)
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.found.get("coinPill")).toMatchObject({ textStyle: "ui.amount" });
+
+    ctx.link.files.put("src/kit/pill.tsx", '<text key={props.id} style="ui.title" />');
+    change(deltaOf({ files: ["src/kit/pill.tsx"] }));
+    await flush();
+    expect(ctx.state.found.get("coinPill")).toMatchObject({
+      path: "src/hud/Hud.tsx",
+      line: 2,
+      textStyle: "ui.title"
+    });
+  });
+
+  it("looks the style up again when the component of an id prop gains a style", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", '<Pill\n  id="coinPill"\n/>');
+    ctx.link.files.put("src/kit/pill.tsx", "<text key={props.id} />");
+    answer(
+      ctx,
+      "jsx:coinPill",
+      place("src/hud/Hud.tsx", [1, 1, 3, 3], PILL_PROP),
+      place("src/kit/pill.tsx", [1, 1, 1, 24], PILL_TEXT)
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.found.get("coinPill")).toEqual({
+      kind: "defined",
+      path: "src/hud/Hud.tsx",
+      line: 2,
+      range: [1, 1, 3, 3],
+      stylelessPaths: ["src/kit/pill.tsx"]
+    });
+
+    ctx.link.files.put("src/kit/pill.tsx", '<text key={props.id} style="ui.title" />');
+    change(deltaOf({ files: ["src/kit/pill.tsx"] }));
+    await flush();
+    expect(ctx.state.found.get("coinPill")).toEqual({
+      kind: "defined",
+      path: "src/hud/Hud.tsx",
+      line: 2,
+      range: [1, 1, 3, 3],
+      textStyle: "ui.title",
+      stylePath: "src/kit/pill.tsx"
+    });
   });
 
   it("does not look again for an untouched file or during a stepper burst", () => {
