@@ -267,6 +267,26 @@ describe("the default window and a restart that keeps the port closed for 6 s (D
     expect(ctx.state.reload).toBeUndefined();
   });
 
+  it("a bye with no new session: reloading to 8 s, a plain lost to 10 s, then empty", async () => {
+    ctx = createCtx(shippedConfig());
+    const socket = await liveAt(310);
+    socket.notify("editor", "session", { id: "s-1", game: "g", open: false, reason: "bye" });
+    sendSessions(socket, []);
+
+    await vi.advanceTimersByTimeAsync(7999);
+    expect(ctx.state.status).toMatchObject({ kind: "lost", reloading: true });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.state.status).toMatchObject({ kind: "lost" });
+    expect(ctx.state.status).not.toHaveProperty("reloading");
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(ctx.state.status).toMatchObject({ kind: "lost" });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+  });
+
   it("the default is past the first retry after the longest restart and under EMPTY_AFTER_LOST_MS", () => {
     const { retryMs, reloadGraceMs } = shippedConfig();
 
