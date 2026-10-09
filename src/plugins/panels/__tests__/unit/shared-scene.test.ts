@@ -365,7 +365,7 @@ describe("buildScene: ui nodes", () => {
     expect(nodeOf(scene, "ui:root/slot/icon").rect).toEqual(rect(225, 225, 50, 50));
   });
 
-  it("unwraps the synthetic screen root: its children are the roots, painted in reverse", () => {
+  it("unwraps the synthetic screen root: its children are the roots, the popup painted last", () => {
     const scene = sceneOf({
       ui: SETTINGS.ui,
       entities: SETTINGS.entities,
