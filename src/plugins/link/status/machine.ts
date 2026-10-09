@@ -113,8 +113,9 @@ function sameStatus(left: LinkStatus, right: LinkStatus): boolean {
  * Applies the expected reload window (U7) to a new status. In a window a `lost` (not `no_boot`)
  * gets `reloading: true` and the frame of before the reload when it carries none; a heartbeat
  * after that loss ends the window. After its loss the window keeps the neutral `lost` through the
- * reconnect (`connecting`, `empty`). A plain `lost` of before the window stays plain. Without a
- * window the status is unchanged.
+ * reconnect (`connecting`, `empty`); a step to `empty` it hid is taken when the window ends
+ * (status/reload.ts). A plain `lost` of before the window stays plain. Without a window the status
+ * is unchanged.
  *
  * @param state - Link state (its window is updated).
  * @param next - The new status.

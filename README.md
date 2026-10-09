@@ -216,7 +216,7 @@ After the 17 generic tools, `tools/list` holds one tool per command door of the 
 - **Answer.** The same as `moku_run { id, input }`: `effect: <effect>`, then `{ value, frame, state }`.
 - **Selected session.** The one `moku_run` uses without `session`: the only one, else the embedded one. Several sessions and none embedded: no door tools.
 - **No tool.** The doors the generic tools cover: `game.capture`, `editor.capture`, `editor.sheet`, `editor.series`, `editor.seriesStop`, `editor.reload`. Screenshots go only through `moku_screenshot`: JPEG by default, about 300 KB at most. Also no tool for a name that starts with `moku_` or is longer than 40 characters, an id outside `[A-Za-z0-9._-]`, a field named `_session` or outside `[A-Za-z0-9_-]{1,64}`, or two doors with the same name. The bridge logs each one once on stderr; `moku_run` still runs it.
-- **Change.** The hub stamps `manifestHash` (the hash of the game's commands) on every session. The bridge rebuilds the door tools, and sends `notifications/tools/list_changed`, only when that hash moves. A hot reload of the same game keeps the list: it stays 5 s while no session is chosen. The first `tools/list` waits at most 3 s for the door tools.
+- **Change.** The hub stamps `manifestHash` (the hash of the game's commands) on every session. The bridge rebuilds the door tools, and sends `notifications/tools/list_changed`, only when that hash moves. A hot reload of the same game and the bin's restart (the Hot reload switch) keep the list: it stays 8 s while no session is chosen or the hub socket is closed, and the bridge reconnects 0, 1, 3 and 7 s after the close. The first `tools/list` waits at most 3 s for the door tools.
 
 Deny the cheat and raw doors in Claude Code settings:
 

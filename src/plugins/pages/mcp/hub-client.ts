@@ -358,7 +358,7 @@ function ignore(): void {
  *   before the first list.
  * @example
  * ```ts
- * const hub = await connectHub(found.live, { onClose: () => reconnectOnce() });
+ * const hub = await connectHub(found.live, { onClose: () => reconnect() });
  * hub.sessions(); // [{ id: "s-7f3a", game: "merge-game 0.0.0", …, heartbeat: { frame: 1840, paused: false, silent: false } }]
  * ```
  */

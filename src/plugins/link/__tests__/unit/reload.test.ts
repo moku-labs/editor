@@ -300,8 +300,129 @@ describe("the default window and a restart that keeps the port closed for 6 s (D
     expect(retryAt).toBe(7000);
     expect(reloadGraceMs).toBeGreaterThan(retryAt);
 
-    // A window still open when lost turns into empty would swallow that step.
+    // A window still open when lost turns into empty hides that step to its end: no plain lost.
     expect(reloadGraceMs).toBeLessThan(EMPTY_AFTER_LOST_MS);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A window still open 10 s after a bye (a reloadGraceMs of EMPTY_AFTER_LOST_MS or
+// more, or a renewed window): the step from lost to empty falls inside it, where
+// it does not show. The end of the window takes that step.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A game that said bye under a reloadGraceMs the config check accepts, and a hub that lists no
+ * session after it.
+ *
+ * @param reloadGraceMs - The window of the config.
+ * @returns The open socket.
+ */
+async function byeWithGrace(reloadGraceMs: number): Promise<FakeWebSocket> {
+  ctx = createCtx({ ...shippedConfig(), reloadGraceMs });
+  expect(() => checkLinkConfig(ctx)).not.toThrow();
+  const socket = await liveAt(310);
+  socket.notify("editor", "session", { id: "s-1", game: "g", open: false, reason: "bye" });
+  sendSessions(socket, []);
+  return socket;
+}
+
+/**
+ * Every plain (red) lost link emitted.
+ *
+ * @returns The lost statuses without `reloading`.
+ */
+function plainLosses(): LinkStatus[] {
+  return emitted().filter(status => status.kind === "lost" && status.reloading !== true);
+}
+
+/** Long after the last timer of a session loss. */
+const MUCH_LATER_MS = 60_000;
+
+describe("a window still open 10 s after a bye with no new session", () => {
+  it.each([
+    10_000, 12_000
+  ])("reloadGraceMs %i: reloading to the end of the window, then empty", async reloadGraceMs => {
+    await byeWithGrace(reloadGraceMs);
+
+    await vi.advanceTimersByTimeAsync(reloadGraceMs - 1);
+    expect(ctx.state.status).toMatchObject({
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 310,
+      reloading: true
+    });
+
+    await vi.advanceTimersByTimeAsync(MUCH_LATER_MS);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+    expect(ctx.state.reload).toBeUndefined();
+    expect(plainLosses()).toEqual([]);
+  });
+
+  it("reloadGraceMs 12000: empty in the ms the window ends", async () => {
+    await byeWithGrace(12_000);
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+    expect(ctx.emit).toHaveBeenLastCalledWith("link:status", { status: { kind: "empty" } });
+  });
+
+  it("reloadGraceMs 9999: reloading to 9999 ms, a plain lost for 1 ms, then empty", async () => {
+    await byeWithGrace(9999);
+
+    await vi.advanceTimersByTimeAsync(9998);
+    expect(ctx.state.status).toMatchObject({ kind: "lost", reloading: true });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.state.status).toMatchObject({ kind: "lost", reason: "bye", lastFrame: 310 });
+    expect(ctx.state.status).not.toHaveProperty("reloading");
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+  });
+
+  it("the default window renewed 3 s after the bye: reloading to 11 s, then empty", async () => {
+    await byeWithGrace(shippedConfig().reloadGraceMs);
+    await vi.advanceTimersByTimeAsync(3000);
+    expectReload(ctx);
+
+    await vi.advanceTimersByTimeAsync(7999);
+    expect(ctx.state.status).toMatchObject({ kind: "lost", lastFrame: 310, reloading: true });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+    expect(plainLosses()).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(MUCH_LATER_MS);
+    expect(ctx.state.status).toEqual({ kind: "empty" });
+  });
+
+  it("a socket that closed inside the window ends it as a plain lost: empty needs an open socket", async () => {
+    const socket = await byeWithGrace(12_000);
+    await vi.advanceTimersByTimeAsync(11_500);
+    socket.drop(1006);
+    expect(ctx.state.status).toMatchObject({ reason: "socket_closed", reloading: true });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(ctx.state.status).toEqual({
+      kind: "lost",
+      reason: "socket_closed",
+      lastFrame: 310,
+      retryInMs: 1000
+    });
+  });
+
+  it("a new session that does not beat ends the window as a plain lost: its lost clock is off", async () => {
+    const socket = await byeWithGrace(12_000);
+    await vi.advanceTimersByTimeAsync(11_000);
+    sendSessions(socket, [sessionOf("s-2")]);
+    socket.answer(socket.last("manifest"), AFTER_RESTART);
+    await flush();
+    expect(ctx.state.status).toMatchObject({ kind: "lost", reloading: true });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ctx.state.status).toMatchObject({ kind: "lost", reason: "bye", lastFrame: 310 });
+    expect(ctx.state.status).not.toHaveProperty("reloading");
   });
 });
 

@@ -4,9 +4,10 @@ import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../../registry/protocol";
-import { writeDiscovery } from "../../../discovery";
+import { removeDiscovery, writeDiscovery } from "../../../discovery";
 import { processBridgeDeps, runBridge } from "../../../mcp/bridge";
-import { NOT_RUNNING } from "../../../mcp/connection";
+import { NOT_RUNNING, RECONNECT_WAITS_MS } from "../../../mcp/connection";
+import { GRACE_MS } from "../../../mcp/door-tools";
 import { SESSION_PROPERTY } from "../../../mcp/schema";
 import { TOOLS } from "../../../mcp/tools";
 import type { BridgeDeps, ChildProcess, SpawnProcess } from "../../../mcp/types";
@@ -19,11 +20,16 @@ import type { RpcFrame } from "../../rpc-frame";
 // ─────────────────────────────────────────────────────────────────────────────
 // pages/mcp bridge (D-31): runBridge over fake stdio and a fake hub. stdout
 // carries only JSON-RPC frames; stdin end aborts pending calls, closes the
-// socket, stops a bin the bridge started (never another one) and exits 0.
+// socket, stops a bin the bridge started (never another one) and exits 0. A
+// restart of the bin (close 1012, then a closed port) keeps the door tools and
+// prints no warning.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: string;
 let hub: FakeHub;
+
+/** How far the bridge's clock runs ahead of real time, in ms: a test moves it to age a connection. */
+let ahead = 0;
 
 /** The manifest of a game with the given commands. */
 function gameWith(commands: Json[]): Json {
@@ -54,6 +60,7 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "moku-mcp-bridge-"));
   hub = startFakeHub({ sessions: [session("s-1")], hotReload: { hmr: true, owner: "bin" } });
   hub.handle("game.manifest", () => GAME_A);
+  ahead = 0;
 });
 
 afterEach(async () => {
@@ -148,7 +155,7 @@ function bridge(args: Partial<McpArgs> = {}) {
     spawn,
     isAlive: pid => alive.has(pid),
     command: ["bun", "bin.mjs"],
-    now: Date.now,
+    now: () => Date.now() + ahead,
     onSignal,
     releaseInput
   };
@@ -161,6 +168,20 @@ function bridge(args: Partial<McpArgs> = {}) {
   const frames = (): RpcFrame[] => writes.map(text => JSON.parse(text));
   /** The frame answering `id`. */
   const answer = (id: number) => frames().find(frame => frame.id === id);
+  let lastId = 100;
+  /** Sends a request with a fresh id and waits for its answer. */
+  const ask = async (method: string, params?: object): Promise<RpcFrame | undefined> => {
+    lastId += 1;
+    const id = lastId;
+    stdin.send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
+    await until(() => answer(id) !== undefined, `the answer of ${method}`);
+    return answer(id);
+  };
+  /** How many `list_changed` notifications went out. */
+  const changes = (): number =>
+    frames().filter(frame => frame.method === "notifications/tools/list_changed").length;
+  /** How many stderr lines hold a text. */
+  const logged = (text: string): number => stderr.filter(line => line.includes(text)).length;
   return {
     stdin,
     writes,
@@ -170,6 +191,9 @@ function bridge(args: Partial<McpArgs> = {}) {
     done,
     frames,
     answer,
+    ask,
+    changes,
+    logged,
     signal,
     stops,
     releaseInput
@@ -443,6 +467,387 @@ describe("door tools (D-35, D-36, D-37)", () => {
       id: 3,
       result: { content: [{ type: "text", text: "target is required" }], isError: true }
     });
+  });
+});
+
+/** The text of a connect that failed, and of the stderr line of each connect and each close. */
+const NO_CONNECT = "could not connect to moku-editor";
+const CONNECTED = "connected to";
+const CLOSED = "connection closed";
+
+/** The stderr line of a close that starts the reconnect tries, and of one without a bin. */
+const CLOSED_LINE = "  › moku-editor mcp: the moku-editor connection closed; reconnecting";
+const CLOSED_NO_BIN_LINE =
+  "  › moku-editor mcp: the moku-editor connection closed; no running moku-editor";
+
+/** The stderr line of a connect to the fake hub. */
+function connectedLine(): string {
+  return `  › moku-editor mcp: connected to ${hub.url}`;
+}
+
+/** The one warning of reconnect tries that ended on the closed port of the fake hub. */
+function gaveUpLine(): string {
+  return `  ⚠ [moku-editor] mcp: could not reconnect to moku-editor; the next tool call tries again.\n  Last attempt: [moku-editor] ${NO_CONNECT} at ${hub.url}: the socket closed.`;
+}
+
+/** The hashes of game A and game B, and the door tools of game A. */
+const HASH_A = "aaaa0001";
+const HASH_B = "bbbb0002";
+const DOORS_A = ["game_tap", "cheat_game_fill"];
+
+/** The door tools a client sees now: a fresh tools/list without the generic tools. */
+async function doorsOf(run: ReturnType<typeof bridge>): Promise<string[]> {
+  const names = toolsOf(await run.ask("tools/list")).map(tool => tool.name);
+  return names.filter(name => !name.startsWith("moku_"));
+}
+
+/** The first line of the answer of a tool call. */
+async function callOf(run: ReturnType<typeof bridge>, name: string, args: Json): Promise<string> {
+  const frame = await run.ask("tools/call", { name, arguments: args });
+  return toolText(frame).split("\n")[0] ?? "";
+}
+
+/** Whether a check passes within 2 s: a wait that reads false instead of throwing. */
+async function comes(check: () => boolean): Promise<boolean> {
+  return until(check, "").then(
+    () => true,
+    () => false
+  );
+}
+
+/** Lets the pending promise callbacks run (real setImmediate, also under fake timeouts). */
+async function settle(): Promise<void> {
+  for (let round = 0; round < 5; round++) {
+    await new Promise<void>(resolve => {
+      setImmediate(resolve);
+    });
+  }
+}
+
+/** What moku_status answers: the hint while no connection is open, the sessions while one is. */
+type Status = {
+  readonly running: boolean;
+  readonly hint?: string;
+  readonly sessions?: readonly { readonly id: string }[];
+};
+
+/** The answer of moku_status. */
+async function statusOf(run: ReturnType<typeof bridge>): Promise<Status> {
+  const frame = await run.ask("tools/call", { name: "moku_status", arguments: {} });
+  return JSON.parse(toolText(frame));
+}
+
+/**
+ * Whether the reconnect try in flight ended without a connection. A failed try prints nothing, but
+ * a tool call answers after it: moku_status waits for the try, then finds the port closed itself.
+ */
+async function tryFailed(run: ReturnType<typeof bridge>): Promise<boolean> {
+  const { running, hint = "" } = await statusOf(run);
+  return !running && hint.includes(NO_CONNECT);
+}
+
+/** Whether the bridge lists exactly these sessions within 2 s: its hub client got the push. */
+async function lists(run: ReturnType<typeof bridge>, ids: readonly string[]): Promise<boolean> {
+  const deadline = performance.now() + 2000;
+  while (performance.now() < deadline) {
+    const { sessions = [] } = await statusOf(run);
+    if (sessions.map(entry => entry.id).join(",") === ids.join(",")) return true;
+    await Bun.sleep(10);
+  }
+  return false;
+}
+
+/**
+ * The bin's restart begins: every socket closes with 1012, then the port. Resolves once the bridge
+ * saw the close and its try at the close ended.
+ *
+ * @returns Whether that try failed.
+ */
+async function portCloses(run: ReturnType<typeof bridge>): Promise<boolean> {
+  await hub.goAway();
+  await until(() => run.logged(CLOSED) === 1, "the close");
+  return tryFailed(run);
+}
+
+/**
+ * The first 5.5 s of a restart: the port is closed, and the bridge's tries at the close and 1 and
+ * 3 s after it fail.
+ *
+ * @returns Whether each of the three tries failed.
+ */
+async function closedPort(run: ReturnType<typeof bridge>): Promise<boolean[]> {
+  const tries = [await portCloses(run)];
+  for (const wait of [1000, 2000]) {
+    await vi.advanceTimersByTimeAsync(wait);
+    tries.push(await tryFailed(run));
+  }
+  await vi.advanceTimersByTimeAsync(2500);
+  return tries;
+}
+
+/**
+ * The end of a restart, after `closedPort`: the port opens 6 s after the close, and the bridge's
+ * try at 7 s connects.
+ *
+ * @returns Whether the bridge connected again.
+ */
+async function openPort(run: ReturnType<typeof bridge>): Promise<boolean> {
+  await vi.advanceTimersByTimeAsync(500);
+  hub.comeBack();
+  await vi.advanceTimersByTimeAsync(1000);
+  return comes(() => run.logged(CONNECTED) === 2);
+}
+
+/**
+ * A bridge on the running bin whose client listed the doors of game A (session s-1; s-2 is game
+ * B). Its connection is a minute old, so a close starts the reconnect tries at once.
+ */
+async function listedBridge() {
+  hub.setSessions([session("s-1", { manifestHash: HASH_A })]);
+  hub.handle("game.manifest", (_params, asked) => (asked === "s-2" ? GAME_B : GAME_A));
+  hub.handle("game.run", () => ({
+    value: true,
+    state: { path: "home", frame: 12, tainted: false }
+  }));
+  writeDiscovery(root, hub.discovery(root));
+  const run = bridge();
+  await run.ask("initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "t" }
+  });
+  run.stdin.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  expect(await doorsOf(run)).toEqual(DOORS_A);
+  ahead += 60_000;
+  return run;
+}
+
+describe("a restart of the bin (D-32, D-57, D-59)", () => {
+  // The grace of the doors and the waits between the reconnect tries run on fake time; the
+  // sockets and `until` on real time. A failed try prints nothing, so a test waits for it with a
+  // tool call (`tryFailed`).
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("has a grace of the doors that outlasts the last reconnect try: 8 s, the tries 0, 1, 3 and 7 s after the close", () => {
+    const lastTry = RECONNECT_WAITS_MS.reduce((sum, wait) => sum + wait, 0);
+    expect({ lastTry, grace: GRACE_MS }).toEqual({ lastTry: 7000, grace: 8000 });
+  });
+
+  it("keeps the doors over a restart that closes the port for 6 s: no list_changed, no warning, and the doors run right after", async () => {
+    const run = await listedBridge();
+    const before = run.stderr.length;
+
+    // The restart closes every socket with 1012, then the port. The bridge tries at the close,
+    // then 1 s and 3 s after it: all three find the port closed.
+    const tries = await closedPort(run);
+    const closed = { doors: await doorsOf(run), changes: run.changes() };
+
+    // The port opens 6 s after the close, with the same game. The try at 7 s connects.
+    const reconnected = await openPort(run);
+    const open = {
+      doors: await doorsOf(run),
+      door: await callOf(run, "game_tap", { target: "play" }),
+      generic: await callOf(run, "moku_manifest", {}),
+      changes: run.changes(),
+      timers: vi.getTimerCount()
+    };
+
+    expect({ tries, closed, reconnected, open }).toEqual({
+      tries: [true, true, true],
+      closed: { doors: DOORS_A, changes: 0 },
+      reconnected: true,
+      open: { doors: DOORS_A, door: "effect: route", generic: "{", changes: 0, timers: 0 }
+    });
+    // An expected restart prints the close and the connect, and no warning.
+    expect(run.stderr.slice(before)).toEqual([CLOSED_LINE, connectedLine()]);
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+  }, 20_000);
+
+  it("gives the doors a full grace from the reconnect that found no session: the game back 8.4 s after the close sends no list_changed", async () => {
+    const run = await listedBridge();
+
+    // The bridge is back 7 s after the close, before the game page: the hub has no session yet.
+    await closedPort(run);
+    hub.setSessions([]);
+    const reconnected = await openPort(run);
+
+    // The third try of the game page lands up to 8.4 s after the close, past 8 s from the close.
+    await vi.advanceTimersByTimeAsync(1400);
+    const waiting = { doors: await doorsOf(run), changes: run.changes() };
+    hub.setSessions([session("s-3", { manifestHash: HASH_A })]);
+    const listed = await lists(run, ["s-3"]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const back = {
+      doors: await doorsOf(run),
+      door: await callOf(run, "game_tap", { target: "play" }),
+      changes: run.changes(),
+      timers: vi.getTimerCount()
+    };
+
+    expect({ reconnected, waiting, listed, back }).toEqual({
+      reconnected: true,
+      waiting: { doors: DOORS_A, changes: 0 },
+      listed: true,
+      back: { doors: DOORS_A, door: "effect: route", changes: 0, timers: 0 }
+    });
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+  }, 20_000);
+
+  it("empties the doors once, 8 s after the reconnect that found no session, when the game never comes back: one list_changed, no timer left", async () => {
+    const run = await listedBridge();
+
+    await closedPort(run);
+    hub.setSessions([]);
+    const reconnected = await openPort(run);
+
+    // The reconnect was 7 s after the close: the doors stay until 15 s after it.
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
+    const kept = { doors: await doorsOf(run), changes: run.changes() };
+    await vi.advanceTimersByTimeAsync(1);
+    const gone = { doors: await doorsOf(run), changes: run.changes(), timers: vi.getTimerCount() };
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect({ reconnected, kept, gone, changes: run.changes() }).toEqual({
+      reconnected: true,
+      kept: { doors: DOORS_A, changes: 0 },
+      gone: { doors: [], changes: 1, timers: 0 },
+      changes: 1
+    });
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+  }, 20_000);
+
+  it("sends one list_changed when the bin comes back with another game", async () => {
+    const run = await listedBridge();
+
+    await portCloses(run);
+    hub.setSessions([session("s-2", { manifestHash: HASH_B })]);
+    hub.comeBack();
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => run.changes() === 1, "the list change");
+
+    expect(await doorsOf(run)).toEqual(["raw_game_restore"]);
+    expect(await callOf(run, "game_tap", { target: "play" })).toBe(
+      "game_tap is gone: the game changed. Call moku_manifest, or moku_run { id }."
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run.changes()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+  });
+
+  it("empties the doors once, 8 s after the bin is gone: one list_changed, no try, no warning, no timer left, and stdin end exits 0", async () => {
+    const run = await listedBridge();
+    const before = run.stderr.length;
+
+    // A bin that stops removes its discovery file first, then closes its sockets (1001).
+    removeDiscovery(root, process.pid);
+    hub.dropClients();
+    await until(() => run.logged(CLOSED) === 1, "the close");
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
+    expect({ doors: await doorsOf(run), changes: run.changes() }).toEqual({
+      doors: DOORS_A,
+      changes: 0
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect({ doors: await doorsOf(run), changes: run.changes() }).toEqual({
+      doors: [],
+      changes: 1
+    });
+    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run.changes()).toBe(1);
+    // A bin that stopped is one line: nothing was tried, so nothing failed.
+    expect(run.stderr.slice(before)).toEqual([CLOSED_NO_BIN_LINE]);
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops after the try at 7 s when the port stays closed: one warning with the last error, the doors go once at 8 s, and no timer is left", async () => {
+    const run = await listedBridge();
+    const before = run.stderr.length;
+
+    const tries = [await portCloses(run)];
+    for (const wait of RECONNECT_WAITS_MS) {
+      await vi.advanceTimersByTimeAsync(wait);
+      tries.push(await tryFailed(run));
+    }
+    expect({ tries, timers: vi.getTimerCount(), changes: run.changes() }).toEqual({
+      tries: [true, true, true, true],
+      timers: 1,
+      changes: 0
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect({ doors: await doorsOf(run), changes: run.changes() }).toEqual({
+      doors: [],
+      changes: 1
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(run.changes()).toBe(1);
+    // Four failed tries print one warning: the close, then that the tries ended.
+    expect(run.stderr.slice(before)).toEqual([CLOSED_LINE, gaveUpLine()]);
+    run.stdin.end();
+    await expect(run.done).resolves.toBe(0);
+  });
+
+  it("leaves no timer when a signal stops the bridge between two tries", async () => {
+    const run = await listedBridge();
+
+    await portCloses(run);
+    // The next try and the grace of the doors.
+    expect(vi.getTimerCount()).toBe(2);
+
+    run.signal();
+    await expect(run.done).resolves.toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    hub.comeBack();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect({ connects: run.logged(CONNECTED), changes: run.changes() }).toEqual({
+      connects: 1,
+      changes: 0
+    });
+  });
+
+  it("closes a connection that opens while a signal stops the bridge: no connect line, no list_changed, no timer left", async () => {
+    const run = await listedBridge();
+
+    // The bin is back with another game, but its hub holds the first sessions list: the try 1 s
+    // after the close stays in flight.
+    await portCloses(run);
+    hub.setSessions([session("s-2", { manifestHash: HASH_B })]);
+    hub.hold();
+    hub.comeBack();
+    const upgrades = hub.origins.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => hub.origins.length === upgrades + 1, "the socket of the try");
+
+    // The teardown waits for that try; its connect opens only then.
+    run.signal();
+    await settle();
+    hub.release();
+    await expect(run.done).resolves.toBe(0);
+
+    expect({
+      connects: run.logged(CONNECTED),
+      changes: run.changes(),
+      manifests: hub.requests.filter(request => request.session === "s-2").length,
+      timers: vi.getTimerCount()
+    }).toEqual({ connects: 1, changes: 0, manifests: 0, timers: 0 });
   });
 });
 

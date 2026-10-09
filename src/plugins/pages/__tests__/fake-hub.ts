@@ -15,11 +15,17 @@ import type { EditorDiscovery } from "../types";
 // A fake hub for the MCP bridge tests: a real Bun websocket server on
 // 127.0.0.1 that checks the token, kind=tools and the Origin header like the
 // hub guard, sends `sessions {list}` (and `hotReload`) on open, answers game
-// and files requests from per-method handlers and records every request.
+// and files requests from per-method handlers and records every request. It
+// can go away like the bin's restart (close 1012, then a closed port) and come
+// back on the same port, and it can hold its first `sessions` list, so a
+// connect stays in flight.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The token of the fake hub. */
 export const FAKE_TOKEN = "t".repeat(43);
+
+/** The close code and reason of the bin's restart (pages serve.ts). */
+const RESTART_CLOSE = { code: 1012, reason: "editor restarting" } as const;
 
 /** One request the fake hub received. */
 export type Received = {
@@ -54,6 +60,18 @@ export type FakeHub = {
   watched(): number[];
   /** Closes every client socket. */
   dropClients(): void;
+  /**
+   * The bin's restart (D-32): refuses every new socket, closes every client with 1012 "editor
+   * restarting", waits for the closes and stops listening. The port stays closed until
+   * `comeBack()`.
+   */
+  goAway(): Promise<void>;
+  /** Listens again on the same port, with the sessions and the handlers set meanwhile. */
+  comeBack(): void;
+  /** A socket that opens from now on gets no `sessions` list: its connect stays in flight. */
+  hold(): void;
+  /** Ends the hold and sends the `sessions` list to every client. */
+  release(): void;
   /** A discovery record pointing at this hub. */
   discovery(root: string, pid?: number): EditorDiscovery;
   stop(): Promise<void>;
@@ -87,6 +105,8 @@ export function startFakeHub(
   const origins: string[] = [];
   const subs = new Set<number>();
   let sessions: SessionInfo[] = options.sessions ?? [];
+  let away = false;
+  let holding = false;
 
   handlers.set("game.watch", params => {
     const sub = typeof params === "object" && params !== null && "sub" in params ? params.sub : -1;
@@ -102,49 +122,64 @@ export function startFakeHub(
   const sessionsNote = (): string =>
     encode(notification("editor", "sessions", { list: sessions.map(entry => ({ ...entry })) }));
 
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch(req, srv) {
-      const url = new URL(req.url);
-      if (url.pathname !== "/__editor/ws") return new Response("missing", { status: 404 });
-      const origin = req.headers.get("origin") ?? "";
-      origins.push(origin);
-      if (origin !== `http://127.0.0.1:${srv.port}`)
-        return new Response("forbidden", { status: 403 });
-      if (url.searchParams.get("token") !== FAKE_TOKEN) {
-        return new Response("unauthorized", { status: 401 });
-      }
-      if (url.searchParams.get("kind") !== "tools") return new Response("invalid", { status: 400 });
-      return srv.upgrade(req) ? undefined : new Response("invalid", { status: 400 });
-    },
-    websocket: {
-      open(ws) {
-        clients.add(ws);
-        ws.send(sessionsNote());
-        if (options.hotReload !== undefined) {
-          ws.send(encode(notification("editor", "hotReload", options.hotReload)));
+  /** Listens on a port (0: any free one). */
+  const listen = (onPort: number) =>
+    Bun.serve({
+      hostname: "127.0.0.1",
+      port: onPort,
+      fetch(req, srv) {
+        const url = new URL(req.url);
+        if (url.pathname !== "/__editor/ws") return new Response("missing", { status: 404 });
+        const origin = req.headers.get("origin") ?? "";
+        origins.push(origin);
+        // A socket that arrives while the restart closes the old ones is refused.
+        if (away) return new Response("restarting", { status: 503 });
+        if (origin !== `http://127.0.0.1:${srv.port}`)
+          return new Response("forbidden", { status: 403 });
+        if (url.searchParams.get("token") !== FAKE_TOKEN) {
+          return new Response("unauthorized", { status: 401 });
         }
+        if (url.searchParams.get("kind") !== "tools")
+          return new Response("invalid", { status: 400 });
+        return srv.upgrade(req) ? undefined : new Response("invalid", { status: 400 });
       },
-      async message(ws, text) {
-        const message = decode(String(text));
-        if (!("id" in message) || !("method" in message)) return;
-        const { id, channel, method, params, session: asked } = message;
-        requests.push({ channel, method, params, session: asked });
-        const handler = handlers.get(`${channel}.${method}`);
-        try {
-          if (handler === undefined) throw new Error(`no handler for ${channel}.${method}`);
-          ws.send(encode(success(id, await handler(params, asked))));
-        } catch (error) {
-          ws.send(encode(failure(id, toWireError(error))));
+      websocket: {
+        open(ws) {
+          clients.add(ws);
+          if (holding) return;
+          ws.send(sessionsNote());
+          if (options.hotReload !== undefined) {
+            ws.send(encode(notification("editor", "hotReload", options.hotReload)));
+          }
+        },
+        async message(ws, text) {
+          const message = decode(String(text));
+          if (!("id" in message) || !("method" in message)) return;
+          const { id, channel, method, params, session: asked } = message;
+          requests.push({ channel, method, params, session: asked });
+          const handler = handlers.get(`${channel}.${method}`);
+          try {
+            if (handler === undefined) throw new Error(`no handler for ${channel}.${method}`);
+            ws.send(encode(success(id, await handler(params, asked))));
+          } catch (error) {
+            ws.send(encode(failure(id, toWireError(error))));
+          }
+        },
+        close(ws) {
+          clients.delete(ws);
         }
-      },
-      close(ws) {
-        clients.delete(ws);
       }
-    }
-  });
+    });
+
+  let server: ReturnType<typeof listen> | undefined = listen(0);
   const port = server.port ?? 0;
+
+  /** Stops listening, if it listens. Bun's stop does not resolve while a close is in flight (as in cli.ts): bounded. */
+  const stopListening = async (): Promise<void> => {
+    const stopping = server;
+    server = undefined;
+    if (stopping !== undefined) await Promise.race([stopping.stop(true), Bun.sleep(100)]);
+  };
 
   return {
     port,
@@ -168,6 +203,24 @@ export function startFakeHub(
     dropClients: () => {
       for (const client of clients) client.close(1001, "editor stopping");
     },
+    goAway: async () => {
+      away = true;
+      for (const client of clients) client.close(RESTART_CLOSE.code, RESTART_CLOSE.reason);
+      // Like the bin (hub closeAll): the close frames go out before the stop.
+      await until(() => clients.size === 0, "the closes of the restart");
+      await stopListening();
+    },
+    comeBack: () => {
+      server = listen(port);
+      away = false;
+    },
+    hold: () => {
+      holding = true;
+    },
+    release: () => {
+      holding = false;
+      for (const client of clients) client.send(sessionsNote());
+    },
     discovery: (root, pid = process.pid) => ({
       version: 1,
       pid,
@@ -181,8 +234,7 @@ export function startFakeHub(
     }),
     stop: async () => {
       for (const client of clients) client.close(1001, "stop");
-      // Bun's stop does not resolve while a close is in flight (as in cli.ts): bounded.
-      await Promise.race([server.stop(true), Bun.sleep(100)]);
+      await stopListening();
     }
   };
 }

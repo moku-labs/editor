@@ -3,6 +3,7 @@
  */
 import { createFrameId } from "./sessions/frame";
 import type { Config, LinkState } from "./types";
+import { EMPTY_AFTER_LOST_MS } from "./types";
 
 /**
  * Creates the initial link state: status connecting, nothing attached, ids from 1, a new random
@@ -60,6 +61,17 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
 export function isAttached(state: LinkState): boolean {
   const { chosen } = state;
   return state.open && chosen !== undefined && state.sessions.some(({ id }) => id === chosen);
+}
+
+/**
+ * True when the lost clock ran out: the chosen session closed EMPTY_AFTER_LOST_MS ago or longer and
+ * none was attached since. From then on a `lost` with an open socket is `empty`.
+ *
+ * @param state - Link state.
+ * @returns Whether `lost` is due to turn into `empty`.
+ */
+export function hasLostExpired(state: LinkState): boolean {
+  return state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS;
 }
 
 /**
