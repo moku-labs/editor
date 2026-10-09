@@ -29,6 +29,12 @@ import { tagAttributes } from "./jsx";
 const SOURCE_FILE = /\.tsx?$/;
 
 /**
+ * The extension of a relative import that names the built file (NodeNext): `./board.js`,
+ * `./board.jsx`.
+ */
+const BUILT_FILE = /\.jsx?$/;
+
+/**
  * A plain identifier: the whole text of a `style={ident}`.
  */
 const IDENT = /^[$A-Z_a-z][\w$]*$/;
@@ -54,9 +60,23 @@ const CALLED_FUNCTION = /^([$A-Z_a-z][\w$]*)\s*\(/;
 const RESULT_PROPERTY = /\)\s*\.\s*([$A-Z_a-z][\w$]*)$/;
 
 /**
- * A named import list and its module specifier.
+ * A named import list and its module specifier, also after a default name: `import { a } from`,
+ * `import type { a } from`, `import Board, { a } from`.
  */
-const NAMED_IMPORT = /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
+const NAMED_IMPORT =
+  /import\s+(?:type\s+)?(?:[$\w]+\s*,\s*)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+
+/**
+ * A default import and its module specifier, also before a named list: `import Board from`,
+ * `import type Board from`, `import Board, { a } from`.
+ */
+const DEFAULT_IMPORT =
+  /import\s+(?:type\s+)?([$\w]+)\s*(?:,\s*\{[^}]*\}\s*)?\bfrom\s*["']([^"']+)["']/g;
+
+/**
+ * The space between the words of one entry of an import list.
+ */
+const SPACE = /\s+/;
 
 /**
  * The prefix of a style key of the project index: `style:<file>#<name>`.
@@ -159,28 +179,88 @@ function joinRelative(from: string, specifier: string): string {
 }
 
 /**
- * The files an imported style ident may come from: the relative import's `.ts`, `.tsx` and
- * `/index.ts`, or the path itself when it names its extension.
+ * The source files a joined import path may be: the path itself when it names a source file
+ * (`.ts`, `.tsx`); the `.ts` and `.tsx` of a built `.js`, the `.tsx` of a built `.jsx`; else the
+ * file of that name, then the index file of a folder of that name.
  *
- * @param text - The importing file's text.
- * @param ident - The local name of the style.
- * @param from - The importing file.
- * @returns Candidate paths; empty for a package import or an ident that is not imported.
+ * @param base - The joined path, as the import writes it.
+ * @returns The candidate files, nearest first.
  * @example
  * ```ts
- * importCandidates('import { coinPill } from "./styles";', "coinPill", "src/hud/Hud.tsx"); // ["src/hud/styles.ts", "src/hud/styles.tsx", "src/hud/styles/index.ts"]
+ * sourceFilesOf("features/ui/board"); // ["features/ui/board.ts", "features/ui/board.tsx", "features/ui/board/index.ts", "features/ui/board/index.tsx"]
+ * sourceFilesOf("features/ui/board.js"); // ["features/ui/board.ts", "features/ui/board.tsx"]
+ * sourceFilesOf("features/ui/board.jsx"); // ["features/ui/board.tsx"]
+ * sourceFilesOf("features/ui/board.tsx"); // ["features/ui/board.tsx"]
+ * ```
+ */
+function sourceFilesOf(base: string): readonly string[] {
+  if (SOURCE_FILE.test(base)) return [base];
+  if (!BUILT_FILE.test(base)) {
+    return [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
+  }
+
+  const stem = base.replace(BUILT_FILE, "");
+  return base.endsWith("x") ? [`${stem}.tsx`] : [`${stem}.ts`, `${stem}.tsx`];
+}
+
+/**
+ * The local name of one entry of an import list, the name the importing file writes: the last
+ * word of the entry, after an inline `type` and after `as`.
+ *
+ * @param entry - One entry, as written between the commas.
+ * @returns The local name; empty for an empty entry.
+ * @example
+ * ```ts
+ * localNameOf(" type Board "); // "Board"
+ * localNameOf("coinPill as pill"); // "pill"
+ * ```
+ */
+function localNameOf(entry: string): string | undefined {
+  return entry.trim().split(SPACE).at(-1);
+}
+
+/**
+ * The relative module specifier of the first import of one form that binds a local name.
+ *
+ * @param text - The importing file's text.
+ * @param form - `NAMED_IMPORT` or `DEFAULT_IMPORT`: the names, then the specifier.
+ * @param ident - The local name.
+ * @returns The specifier, undefined when no relative import of that form binds the name.
+ * @example
+ * ```ts
+ * relativeImportOf('import { type Board } from "../ui/board";', NAMED_IMPORT, "Board"); // "../ui/board"
+ * relativeImportOf('import Board from "pkg";', DEFAULT_IMPORT, "Board"); // undefined
+ * ```
+ */
+function relativeImportOf(text: string, form: RegExp, ident: string): string | undefined {
+  for (const match of text.matchAll(form)) {
+    const [, names = "", specifier = ""] = match;
+    const isBound = names.split(",").some(entry => localNameOf(entry) === ident);
+    if (isBound && specifier.startsWith(".")) return specifier;
+  }
+  return undefined;
+}
+
+/**
+ * The files a name a file imports may come from: the source files (`sourceFilesOf`) of the
+ * relative import that binds it. The name is the local one, the one the file writes: the alias of
+ * `Name as Alias`, the name after an inline `type`, the name of a default import.
+ *
+ * @param text - The importing file's text.
+ * @param ident - The local name: a style, or the component of a tag.
+ * @param from - The importing file.
+ * @returns Candidate paths; empty for a package import, a namespace import or a name that is not
+ * imported.
+ * @example
+ * ```ts
+ * importCandidates('import { coinPill } from "./styles";', "coinPill", "src/hud/Hud.tsx"); // ["src/hud/styles.ts", "src/hud/styles.tsx", "src/hud/styles/index.ts", "src/hud/styles/index.tsx"]
+ * importCandidates('import { type Board as Panel } from "../ui/board.js";', "Panel", "src/hud/Hud.tsx"); // ["src/ui/board.ts", "src/ui/board.tsx"]
  * ```
  */
 export function importCandidates(text: string, ident: string, from: string): readonly string[] {
-  for (const match of text.matchAll(NAMED_IMPORT)) {
-    const names = (match[1] ?? "").split(",").map(name => name.split(" as ").at(-1)?.trim());
-    const specifier = match[2] ?? "";
-    if (!names.includes(ident) || !specifier.startsWith(".")) continue;
-
-    const base = joinRelative(from, specifier);
-    return SOURCE_FILE.test(base) ? [base] : [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`];
-  }
-  return [];
+  const specifier =
+    relativeImportOf(text, NAMED_IMPORT, ident) ?? relativeImportOf(text, DEFAULT_IMPORT, ident);
+  return specifier === undefined ? [] : sourceFilesOf(joinRelative(from, specifier));
 }
 
 /**
@@ -326,9 +406,15 @@ function fillsPattern(first: ProjectFound, later: ProjectFound): boolean {
  * @returns The answers of the component the prop is passed to.
  * @example
  * ```ts
- * // settings.tsx: `import { Board } from "../ui/board";` and `<Board id="settingsBoard" />`.
- * // The index answers the `{id}` panel of Board in features/shop/board.tsx and features/ui/board.tsx.
- * componentAnswers(fresh).map(later => later.path); // ["features/ui/board.tsx"]
+ * // settings.tsx passes the id to the Board it imports from "../ui/board"; the shop has a Board too.
+ * const prop = { path: "features/settings/settings.tsx", key: "settingsBoard", kind: "idProp", component: "Board", prop: "id", line: 2, range: [2, 1, 2, 29], hash: "0f3c" } as const;
+ * const panel = { key: "{id}", kind: "ident", component: "Board", line: 1, range: [1, 1, 1, 43], hash: "9a1e" } as const;
+ * componentAnswers({
+ *   answers: [prop],
+ *   others: [{ ...panel, path: "features/shop/board.tsx" }, { ...panel, path: "features/ui/board.tsx" }],
+ *   text: 'import { Board } from "../ui/board";\n<Board id="settingsBoard" />',
+ *   version: "0f3c"
+ * }).map(later => later.path); // ["features/ui/board.tsx"]
  * ```
  */
 function componentAnswers(fresh: FreshAnswers): readonly ProjectFound[] {
@@ -417,8 +503,10 @@ async function styleOf(ctx: GameViewCtx, fresh: FreshAnswers): Promise<StyleFoun
  * @example
  * ```ts
  * // The component of an id prop in daily-gift.tsx draws its text without a style.
- * componentFiles(giftProp, { styled: undefined, looked: ["shared/views/amount.tsx"] });
- * // { stylelessPaths: ["shared/views/amount.tsx"] }
+ * componentFiles(
+ *   { path: "features/gift/popups/daily-gift.tsx", key: "giftReward", kind: "idProp", component: "Amount", prop: "amountKey", line: 25, range: [23, 9, 29, 11], hash: "0f3c" },
+ *   { styled: undefined, looked: ["shared/views/amount.tsx"] }
+ * ); // { stylelessPaths: ["shared/views/amount.tsx"] }
  * ```
  */
 function componentFiles(

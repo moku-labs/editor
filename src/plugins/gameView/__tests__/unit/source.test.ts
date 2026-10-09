@@ -102,20 +102,21 @@ const BOARD_PROP = place("features/settings/settings.tsx", [2, 1, 2, 29], {
  *
  * @param firstLine - Line 1 of the settings file: its import of Board, or the panel of a Board
  * written in the file itself.
+ * @param uiBoard - The file of the ui Board: a file, or the index file of a folder.
  * @returns The ctx.
  */
-function twoBoards(firstLine: string): TestCtx {
+function twoBoards(firstLine: string, uiBoard = "features/ui/board.tsx"): TestCtx {
   const ctx = createCtx({
     "features/settings/settings.tsx": [firstLine, '<Board id="settingsBoard" />'].join("\n"),
     "features/shop/board.tsx": "<panel key={props.id} style={shopBoard} />",
-    "features/ui/board.tsx": "<panel key={props.id} style={uiBoard} />"
+    [uiBoard]: "<panel key={props.id} style={uiBoard} />"
   });
   answer(
     ctx,
     "jsx:settingsBoard",
     BOARD_PROP,
     place("features/shop/board.tsx", [1, 1, 1, 43], BOARD_PANEL),
-    place("features/ui/board.tsx", [1, 1, 1, 41], BOARD_PANEL)
+    place(uiBoard, [1, 1, 1, 41], BOARD_PANEL)
   );
   return ctx;
 }
@@ -192,12 +193,81 @@ describe("importCandidates", () => {
     expect(importCandidates(text, "pill", "src/hud/Hud.tsx")).toEqual([
       "src/hud/styles.ts",
       "src/hud/styles.tsx",
-      "src/hud/styles/index.ts"
+      "src/hud/styles/index.ts",
+      "src/hud/styles/index.tsx"
     ]);
     expect(importCandidates(text, "hudRow", "src/hud/Hud.tsx")[0]).toBe("src/hud/styles.ts");
     expect(
       importCandidates('import { a } from "../kit/styles.ts";', "a", "src/hud/Hud.tsx")
     ).toEqual(["src/kit/styles.ts"]);
+  });
+
+  it("offers the index.tsx of a folder: a component folder is imported by its name", () => {
+    const text = 'import { Board } from "../ui/board";';
+    expect(importCandidates(text, "Board", "features/settings/settings.tsx")).toContain(
+      "features/ui/board/index.tsx"
+    );
+  });
+
+  it("maps a specifier that names its extension to the source file, never to board.js.ts", () => {
+    const from = "features/settings/settings.tsx";
+    const candidates = (specifier: string) =>
+      importCandidates(`import { Board } from "${specifier}";`, "Board", from);
+
+    // NodeNext names the output: `.js` is written as `.ts` or `.tsx`, `.jsx` as `.tsx`.
+    expect(candidates("../ui/board.js")).toEqual(["features/ui/board.ts", "features/ui/board.tsx"]);
+    expect(candidates("../ui/board.jsx")).toEqual(["features/ui/board.tsx"]);
+    expect(candidates("../ui/board/index.js")).toEqual([
+      "features/ui/board/index.ts",
+      "features/ui/board/index.tsx"
+    ]);
+
+    // A source extension is the file itself.
+    expect(candidates("../ui/board.ts")).toEqual(["features/ui/board.ts"]);
+    expect(candidates("../ui/board.tsx")).toEqual(["features/ui/board.tsx"]);
+
+    // A dot that is no extension stays in the name.
+    expect(candidates("../ui/board.styles")[0]).toBe("features/ui/board.styles.ts");
+  });
+
+  it("matches an inline `type` import by its name", () => {
+    const from = "src/hud/Hud.tsx";
+    expect(importCandidates('import { type Board } from "./board";', "Board", from)[0]).toBe(
+      "src/hud/board.ts"
+    );
+    const mixed = 'import {\n  hudRow,\n  type Board,\n  type Pill as Chip\n} from "./kit";';
+    expect(importCandidates(mixed, "Board", from)[0]).toBe("src/hud/kit.ts");
+    expect(importCandidates(mixed, "Chip", from)[0]).toBe("src/hud/kit.ts");
+    expect(importCandidates(mixed, "hudRow", from)[0]).toBe("src/hud/kit.ts");
+
+    // `type` is the modifier, not a name of the list.
+    expect(importCandidates(mixed, "type", from)).toEqual([]);
+    expect(importCandidates(mixed, "type Board", from)).toEqual([]);
+  });
+
+  it("matches `Name as Alias` by the alias: the name the file writes", () => {
+    const text = 'import { Board as Panel } from "./board";';
+    expect(importCandidates(text, "Panel", "src/hud/Hud.tsx")[0]).toBe("src/hud/board.ts");
+    expect(importCandidates(text, "Board", "src/hud/Hud.tsx")).toEqual([]);
+  });
+
+  it("matches a default import, alone, as a type, or before a named list", () => {
+    const from = "src/hud/Hud.tsx";
+    expect(importCandidates('import Board from "./board";', "Board", from)[0]).toBe(
+      "src/hud/board.ts"
+    );
+    expect(importCandidates('import type Board from "./board";', "Board", from)[0]).toBe(
+      "src/hud/board.ts"
+    );
+
+    const both = 'import Board, { type Pill, hudRow as row } from "./kit";';
+    expect(importCandidates(both, "Board", from)[0]).toBe("src/hud/kit.ts");
+    expect(importCandidates(both, "Pill", from)[0]).toBe("src/hud/kit.ts");
+    expect(importCandidates(both, "row", from)[0]).toBe("src/hud/kit.ts");
+
+    // A namespace import and a package are not followed.
+    expect(importCandidates('import * as Board from "./board";', "Board", from)).toEqual([]);
+    expect(importCandidates('import Board from "pkg";', "Board", from)).toEqual([]);
   });
 
   it("is empty for a package import or an ident that is not imported", () => {
@@ -470,6 +540,35 @@ describe("findStyleSource", () => {
       files: ["features/ui/board.tsx"],
       stylePath: "features/ui/board.tsx"
     });
+  });
+
+  it("takes the same-named component of a folder: the import names the folder, the component is its index.tsx", async () => {
+    const ctx = twoBoards('import { Board } from "../ui/board";', "features/ui/board/index.tsx");
+
+    expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
+      kind: "ident",
+      path: "features/settings/settings.tsx",
+      line: 2,
+      range: [2, 1, 2, 29],
+      ref: { kind: "const", name: "uiBoard" },
+      files: ["features/ui/board/index.tsx"],
+      stylePath: "features/ui/board/index.tsx"
+    });
+  });
+
+  it("takes the same-named component a `type` import, a default import or a `.js` specifier names", async () => {
+    const lines = [
+      'import { type Board } from "../ui/board";',
+      'import Board from "../ui/board";',
+      'import { Board } from "../ui/board.js";'
+    ];
+    for (const line of lines) {
+      const source = await findStyleSource(twoBoards(line), "settingsBoard");
+      expect(source, line).toMatchObject({
+        ref: { kind: "const", name: "uiBoard" },
+        stylePath: "features/ui/board.tsx"
+      });
+    }
   });
 
   it("takes no style when two files write a component of that name and the import does not say which", async () => {

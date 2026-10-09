@@ -86,7 +86,8 @@ describe("value readers", () => {
     expect(importCandidates('import type { a } from "./styles";', "a", "Hud.tsx")).toEqual([
       "styles.ts",
       "styles.tsx",
-      "styles/index.ts"
+      "styles/index.ts",
+      "styles/index.tsx"
     ]);
   });
 });
