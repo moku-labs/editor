@@ -141,6 +141,77 @@ describe("ElementTab", () => {
     expect(view.root.textContent).toContain("No style of its own.");
   });
 
+  it("Styles: a text node with an empty scene style shows the text style key the index knows", async () => {
+    // The game sends `style: {}` for every text node; the index knows `style="ui.amount"`.
+    ctx.link.files.put("src/hud/Text.tsx", '<text key="coinPillText" style="ui.amount" />');
+    answer(ctx, "jsx:coinPillText", place("src/hud/Text.tsx", [1, 1, 1, 46]));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+
+    const styles = find(view.root, "section[data-part='style']");
+    expect(find(styles, "[data-part='style-name']").textContent).toBe("Style · ui.amount");
+    expect(styles.textContent).not.toContain("No style of its own.");
+    expect(styles.querySelector("dl")).toBeNull();
+  });
+
+  it("Styles: an empty scene style shows the style call or the style identifier of the source", async () => {
+    ctx.link.files.put("src/hud/Text.tsx", '<Label id="coinPillText" style={labelOf(3)} />');
+    answer(ctx, "jsx:coinPillText", place("src/hud/Text.tsx", [1, 1, 1, 47]));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+    expect(find(view.root, "section[data-part='style'] [data-part='style-name']").textContent).toBe(
+      "Style · labelOf(3)"
+    );
+
+    ctx.link.files.put("src/hud/Text.tsx", '<Label id="coinPillText" style={pillLabel} />');
+    answer(ctx, "jsx:coinPillText", place("src/hud/Text.tsx", [1, 1, 1, 46]));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+    expect(find(view.root, "section[data-part='style'] [data-part='style-name']").textContent).toBe(
+      "Style · pillLabel"
+    );
+  });
+
+  it('Styles: an empty scene style without a style in the index keeps "No style of its own."', async () => {
+    // The index does not know the key.
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+    const missing = find(view.root, "section[data-part='style']");
+    expect(find(missing, "p").textContent).toBe("No style of its own.");
+    expect(missing.querySelector("[data-part='style-name']")).toBeNull();
+
+    // The index knows the key, its tag has no style.
+    ctx.link.files.put("src/hud/Text.tsx", '<text key="coinPillText" />');
+    answer(ctx, "jsx:coinPillText", place("src/hud/Text.tsx", [1, 1, 1, 28]));
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+    expect(ctx.state.found.get("coinPillText")?.kind).toBe("defined");
+    const plain = find(view.root, "section[data-part='style']");
+    expect(find(plain, "p").textContent).toBe("No style of its own.");
+    expect(plain.querySelector("[data-part='style-name']")).toBeNull();
+  });
+
+  it("Styles: a non-empty scene style still lists its props, not the style of the index", async () => {
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await settle();
+    expect(ctx.state.found.get("coinPill")?.kind).toBe("ident");
+    const styles = find(view.root, "section[data-part='style']");
+    expect(findAll(styles, "dt").map(term => term.textContent)).toEqual([
+      "width",
+      "height",
+      "direction",
+      "align",
+      "justify",
+      "margin",
+      "padding",
+      "nineSlice"
+    ]);
+    expect(styles.querySelector("[data-part='style-name']")).toBeNull();
+    expect(styles.textContent).not.toContain("No style of its own.");
+  });
+
   it("entity: id, owner, component chips and the texture with its manifest data", async () => {
     await select({ kind: "entity", id: 1_048_628 });
     const entity = find(view.root, "[data-part='entity']");
@@ -225,6 +296,50 @@ describe("ElementTab", () => {
       path: "src/hud/Orders.tsx",
       line: 1
     });
+  });
+
+  it("an id prop is defined at its own line and shows the style of the element its component draws", async () => {
+    // merge-game's giftReward: `amountKey="giftReward"` on <Amount>, the text is in the component.
+    ctx.link.files.put(
+      "features/gift/daily-gift.tsx",
+      '<Amount\n  id="coinPill"\n  amountKey="coinPillText"\n/>'
+    );
+    ctx.link.files.put(
+      "shared/views/amount.tsx",
+      '<row key={props.id}>\n  <text key={props.amountKey} style="ui.amount" content={props.amount} />\n</row>'
+    );
+    ctx.link.files.put(
+      "features/ui/text-styles.ts",
+      'export const uiStyles = defineTextStyles({\n  "ui.amount": { size: 96 }\n});'
+    );
+    answer(
+      ctx,
+      "jsx:coinPillText",
+      place("features/gift/daily-gift.tsx", [1, 1, 4, 3], {
+        line: 3,
+        key: "coinPillText",
+        kind: "idProp",
+        component: "Amount",
+        prop: "amountKey"
+      }),
+      place("shared/views/amount.tsx", [2, 3, 2, 74], {
+        key: "{amountKey}",
+        kind: "ident",
+        component: "Amount"
+      })
+    );
+    answer(ctx, "textStyle:ui.amount", place("features/ui/text-styles.ts", [2, 3, 2, 28]));
+
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill/coinPillText" });
+    await settle();
+
+    const card = find(view.root, "[data-part='style-card']");
+    expect(card.textContent).toContain("Defined at features/gift/daily-gift.tsx:3");
+    const [jsx, style] = findAll(view.root, "section[data-part='code'] [data-part='snippet']");
+    if (jsx === undefined || style === undefined) throw new Error("two snippets");
+    expect(find(jsx, "[data-part='where']").textContent).toBe("features/gift/daily-gift.tsx:1");
+    expect(find(style, "[data-part='title']").textContent).toBe("Style · ui.amount");
+    expect(find(style, "[data-part='where']").textContent).toBe("features/ui/text-styles.ts:2");
   });
 
   it("shows the reference block read-only; Copy puts its one line on the clipboard", async () => {

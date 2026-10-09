@@ -8,6 +8,7 @@
 
 import type { PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { isLayoutOnly } from "../../panels/shared/scene";
+import { stylePathOf } from "../element/source";
 import type { BlockAt, StyleSource } from "../types";
 import { sourceText } from "./block";
 
@@ -97,7 +98,7 @@ function styleSource(
   source: StyleSource | undefined,
   block: BlockAt | undefined
 ): string | undefined {
-  if (source?.kind === "call") return `${source.path}:${source.callLine}`;
+  if (source?.kind === "call") return `${stylePathOf(source)}:${source.callLine}`;
   if (source?.kind === "ident" && block !== undefined) return `${block.path}:${block.line}`;
   return undefined;
 }

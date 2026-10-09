@@ -1,7 +1,8 @@
 /**
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
- * children, the resolved style, the layout style card with its steppers (or the read-only call,
+ * children, the resolved style (or the style the project index knows when the scene sends none),
+ * the layout style card with its steppers (or the read-only call,
  * or where the key is defined, or why the project index has no answer), the Code section (round
  * 2b R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
  * (workspace:reveal) and "Pick another".
@@ -27,7 +28,7 @@ import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
 import { referenceText } from "../reference/facts";
 import { copySelectedReference } from "../reference/pick";
 import { readManifest } from "../scene/manifest";
-import type { GameViewCtx, StyleCard, StyleLookup } from "../types";
+import type { GameViewCtx, StyleCard, StyleLookup, StyleSource } from "../types";
 import { CodeSection } from "./CodeSection";
 import { styleValue } from "./text";
 import { useGameView } from "./useGameView";
@@ -278,6 +279,38 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
 }
 
 /**
+ * The style the project index knows for a ui key: the identifier of `style={ident}`, the call of
+ * `style={call(…)}` as written, the text style key of `style="ui.link"`.
+ *
+ * @param source - The index answer of the element's key (`state.found`).
+ * @returns The name, undefined without an answer or without a style.
+ * @example
+ * ```ts
+ * styleNameOf({ kind: "defined", path: "features/gift/popups/daily-gift.tsx", line: 25, range: [23, 9, 29, 11], textStyle: "ui.amount", stylePath: "shared/views/amount.tsx" }); // "ui.amount"
+ * ```
+ */
+function styleNameOf(source: StyleSource | undefined): string | undefined {
+  if (source?.kind === "ident") return source.ref.name;
+  if (source?.kind === "call") return source.call;
+  return source?.textStyle;
+}
+
+/**
+ * What the Styles section says for an empty scene style (the game sends `style: {}` for every
+ * text node): the style the index knows for the element's key, titled like the Code section
+ * ("Style · ui.amount"), else that the element has none.
+ *
+ * @param props - The index answer.
+ * @param props.source - The index answer of the element's key, undefined when there is none.
+ * @returns The line.
+ */
+function EmptyStyle(props: { readonly source: StyleSource | undefined }): VNode {
+  const name = styleNameOf(props.source);
+  if (name === undefined) return <p>No style of its own.</p>;
+  return <p data-part="style-name">Style · {name}</p>;
+}
+
+/**
  * The full reference block of the node, read-only, with Copy (round 2 R2): Copy writes the card
  * and puts its one line on the clipboard (round 2b R13). It is gathered again when the node, its
  * style lookup, its style block, its bounds, the flow node or the last pick changes; not on every
@@ -360,6 +393,7 @@ function NodeDetails(props: {
   const ancestors = ancestorsOf(scene, node.id).flatMap(id => scene.nodes.get(id) ?? []);
   const children = node.children.flatMap(id => scene.nodes.get(id) ?? []);
   const style = node.style === undefined ? [] : Object.entries(node.style);
+  const found = node.key === undefined ? undefined : ctx.state.found.get(node.key);
 
   return (
     <div data-part="element">
@@ -424,7 +458,7 @@ function NodeDetails(props: {
       <section data-part="style" aria-label="Styles">
         <h4>Styles</h4>
         {style.length === 0 ? (
-          <p>No style of its own.</p>
+          <EmptyStyle source={found} />
         ) : (
           <dl data-props="">
             {style.map(([key, value]) => (

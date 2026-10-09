@@ -127,6 +127,13 @@ describe("link:project: what gameView remembered", () => {
     expect(ctx.state.spawns.size).toBe(0);
   });
 
+  it("drops the answer of an id prop when the file of its component's style changed", () => {
+    ctx.state.found.set("giftReward", { ...sourceIn("gift.tsx"), stylePath: "amount.tsx" });
+    ctx.state.found.set("giftNote", { ...sourceIn("gift.tsx"), stylePath: "note.tsx" });
+    change(deltaOf({ files: ["amount.tsx"] }));
+    expect([...ctx.state.found.keys()]).toEqual(["giftNote"]);
+  });
+
   it("drops a projection answer in a changed or moved-from file, of a removed key, or still asked", () => {
     ctx.state.spawns.set("board.items", spawnIn("features/board/items.tsx"));
     ctx.state.spawns.set("board.moved", spawnIn("old.tsx"));
@@ -219,6 +226,28 @@ describe("link:project: the selected element", () => {
     await flush();
     expect(ctx.state.styles?.block.line).toBe(2);
     expect(ctx.state.styles?.current.version).toBe(ctx.link.files.version("src/hud/styles.ts"));
+  });
+
+  it("looks the style up again when the component file of an id prop's style changed", async () => {
+    ctx.link.files.put("src/hud/Hud.tsx", '<Pill\n  id="coinPill"\n/>');
+    ctx.link.files.put("src/kit/pill.tsx", '<text key={props.id} style="ui.amount" />');
+    answer(
+      ctx,
+      "jsx:coinPill",
+      place("src/hud/Hud.tsx", [1, 1, 3, 3], { line: 2, kind: "idProp" }),
+      place("src/kit/pill.tsx", [1, 1, 1, 42], { kind: "ident", key: "{id}" })
+    );
+    await openStyleCard(ctx, COIN);
+    expect(ctx.state.found.get("coinPill")).toMatchObject({ textStyle: "ui.amount" });
+
+    ctx.link.files.put("src/kit/pill.tsx", '<text key={props.id} style="ui.title" />');
+    change(deltaOf({ files: ["src/kit/pill.tsx"] }));
+    await flush();
+    expect(ctx.state.found.get("coinPill")).toMatchObject({
+      path: "src/hud/Hud.tsx",
+      line: 2,
+      textStyle: "ui.title"
+    });
   });
 
   it("does not look again for an untouched file or during a stepper burst", () => {

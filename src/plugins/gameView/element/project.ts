@@ -1,10 +1,11 @@
 /**
  * @file gameView plugin — a new project state (`link:project`, D-46): what gameView remembered of
  * the files a batch changed is dropped, so the next ask goes to the index again. `all` (a gap, the
- * first state, off) drops every key answer; else the answers in a changed or moved-from file and
- * of a removed `jsx:` key, with their style blocks (the blocks of style calls too), and the
- * projection answers in a changed or moved-from file, of a removed `projection:` key, or still
- * asked. The manifest is read again when it was read and the index names another or it changed.
+ * first state, off) drops every key answer; else the answers in a changed or moved-from file (the
+ * key file, or the component file an id prop's style was read from) and of a removed `jsx:` key,
+ * with their style blocks (the blocks of style calls too), and the projection answers in a
+ * changed or moved-from file, of a removed `projection:` key, or still asked. The manifest is
+ * read again when it was read and the index names another or it changed.
  * The selected element looks its style up again when its file, its style file or the file of its
  * refusal changed, or the index did not know it (never during a stepper burst), and the style
  * card says when its file does not parse now.
@@ -16,6 +17,7 @@ import type { ProjectDelta, ProjectState } from "../../registry/protocol";
 import { readManifest } from "../scene/manifest";
 import { notify } from "../state";
 import type { GameViewCtx, GameViewState, TextureCatalogue } from "../types";
+import { stylePathOf } from "./source";
 import { brokenError, openStyleCard } from "./styles";
 
 /**
@@ -46,7 +48,8 @@ function selectedKey(state: GameViewState): string | undefined {
 
 /**
  * True when the style lookup of the selected element must run again: the index had no answer for
- * its key, or its key file, its style file or the file of its refusal changed.
+ * its key, or its key file, the component file its style was read from, its style file or the
+ * file of its refusal changed.
  *
  * @param state - gameView state, before the answers are dropped.
  * @param changed - The files the batch touched.
@@ -59,7 +62,8 @@ function touchesSelected(state: GameViewState, changed: ReadonlySet<string>): bo
   if (lookup?.status === "missing") return true;
 
   const lookupPath = lookup !== undefined && "path" in lookup ? lookup.path : undefined;
-  const paths = [state.found.get(key)?.path, styles?.path, lookupPath];
+  const found = state.found.get(key);
+  const paths = [found?.path, found?.stylePath, styles?.path, lookupPath];
   return paths.some(path => path !== undefined && changed.has(path));
 }
 
@@ -83,7 +87,8 @@ function dropAnswers(
 
   const removed = new Set(delta.removed);
   for (const [key, source] of state.found) {
-    if (!changed.has(source.path) && !removed.has(`jsx:${key}`)) continue;
+    const isStale = changed.has(source.path) || changed.has(stylePathOf(source));
+    if (!isStale && !removed.has(`jsx:${key}`)) continue;
     state.found.delete(key);
     state.blocks.delete(key);
   }

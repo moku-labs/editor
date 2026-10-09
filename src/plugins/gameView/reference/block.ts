@@ -8,6 +8,7 @@
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
 import type { Json, Orientation } from "../../registry/protocol";
 import type { PositionInfo } from "../capture/naming";
+import { stylePathOf } from "../element/source";
 import type { BlockAt, StyleSource } from "../types";
 
 /**
@@ -180,7 +181,9 @@ function styleField(
   source: StyleSource | undefined,
   block: BlockAt | undefined
 ): string | undefined {
-  if (source?.kind === "call") return `style: ${source.call} ${source.path}:${source.callLine}`;
+  if (source?.kind === "call") {
+    return `style: ${source.call} ${stylePathOf(source)}:${source.callLine}`;
+  }
   if (source?.kind !== "ident") return undefined;
   const at = block === undefined ? "" : ` ${block.path}:${block.line}`;
   return `style: ${source.ref.name}${at}`;

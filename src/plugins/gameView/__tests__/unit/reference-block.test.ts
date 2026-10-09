@@ -187,6 +187,24 @@ describe("referenceBlock", () => {
     expect(lines).toContain("game: merge-game 0.0.0 · s-1 · f12 · 09:05:07 · live · tainted");
   });
 
+  it("prints the style call of an id prop's component with the file of the call", () => {
+    const facts: ReferenceFacts = {
+      ...bare(BOARD),
+      source: {
+        kind: "call",
+        path: "settings.tsx",
+        line: 290,
+        range: [289, 7, 310, 19],
+        call: "boardOf(950, 1060)",
+        callLine: 833,
+        stylePath: "kit.tsx"
+      }
+    };
+    expect(referenceBlock(facts).split("\n")).toContain(
+      "source: settings.tsx:290 · style: boardOf(950, 1060) kit.tsx:833 · texture: ui.panel-signboard"
+    );
+  });
+
   it("prints a call as the style, and the last edge without a frame", () => {
     const facts: ReferenceFacts = {
       ...bare(BOARD),
