@@ -465,7 +465,7 @@ starts the bin in the root already.
 **The editor stands still.** During an expected reload (Reload, the Hot reload switch, Bun's reload
 after a save) the top bar keeps the game name, the session id and the pill text, the panels keep
 their data, and one spinner on the game frame shows the reload. Only when the game has not come
-back within `reloadGraceMs` (link, 5 s) does the red bar show, over the workspace, never pushing
+back within `reloadGraceMs` (link, 8 s) does the red bar show, over the workspace, never pushing
 it down.
 
 The edit-loop scenario of the merge-game demo (moku-labs/demos, `merge-game/tests/editor/`) measures it: five edits made only from the reference line
@@ -794,7 +794,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 |---|---|---|---|
 | link | `retryMs` | `1000` | Base of the reconnect backoff, capped at 8 s. |
 | link | `boot` | `"#moku-editor-boot"` | Selector of the boot JSON tag. |
-| link | `reloadGraceMs` | `5000` | How long an expected reload reads as "reloading" (neutral, the spinner on the frame) before a game that has not come back reads as lost (red). |
+| link | `reloadGraceMs` | `8000` | How long an expected reload reads as "reloading" (neutral, the spinner on the frame) before a game that has not come back reads as lost (red). |
 | workspace | `defaultWorkspace` | `"game"` | Shown at start when the hash names none. |
 | workspace | `storageKey` | `"moku-editor"` | localStorage key of the preferences. |
 | workspace | `reloadTimeoutMs` | `15000` | How long `reload()` waits for the new session. |
