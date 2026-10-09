@@ -147,6 +147,23 @@ function projected(id: number, name: string, components: { [key: string]: Json }
   return entity(id, { kind: "projection", name }, components);
 }
 
+/** The root entity of a popup: owned by the ui plugin, on layer ui, with an Order and a Tree. */
+function popupRoot(id: number, order: number, tree: "skipped" | "components" = "skipped"): Json {
+  const components: { [key: string]: Json } = { Layer: { name: "ui" }, Order: { value: order } };
+  if (tree === "components") components.Tree = {};
+  return entity(id, { kind: "plugin", name: "ui" }, components, tree === "skipped" ? ["Tree"] : []);
+}
+
+/** The root entity of a projection view that returned a tree: it carries Tree too. */
+function viewRoot(id: number, name: string, layer: string): Json {
+  return entity(id, { kind: "projection", name }, { Layer: { name: layer } }, ["Tree"]);
+}
+
+/** Several mounted roots the way game.ui sends them: under the keyless screen with a zero rect. */
+function mounted(...roots: Json[]): Json {
+  return ui(undefined, "screen", rect(0, 0, 0, 0), roots);
+}
+
 function transform(x: number, y: number, scale = 1): Json {
   return { x, y, rotation: 0, scale, pivot: { x: 0, y: 0 } };
 }
@@ -220,6 +237,42 @@ function fitScene(calibration?: Calibration): SceneSnapshot {
     projections: FIT_PROJECTIONS,
     calibration
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Several roots, the way game 0.13 lists them (sortedRoots): the popup roots
+// first, the topmost first, then the screen roots by scene layer, the bottom
+// first. A sky on a lower layer under the home screen, and popups over both.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WINDOW = rect(0, 0, 100, 200);
+
+const STAGE_SKY = ui("stageSky", "screen", WINDOW, [ui("skyArt", "image", WINDOW)]);
+
+const HOME_SCREEN = ui("homeScreen", "screen", WINDOW, [
+  ui("play", "button", rect(30, 150, 40, 20))
+]);
+
+/** A popup without a backdrop: one drawn panel. */
+function popupUi(key: string, panel: string, box: PageRect): Json {
+  return ui(key, "screen", WINDOW, [
+    ui(panel, "image", box, [], { style: { nineSlice: "ui.panel" } })
+  ]);
+}
+
+const CONFIRM_POPUP = popupUi("confirmPopup", "panel", rect(20, 100, 60, 60));
+const POPUP_A = popupUi("popupA", "panelA", rect(20, 100, 60, 60));
+const POPUP_B = popupUi("popupB", "panelB", rect(40, 140, 40, 40));
+
+/** Inside the play button and under every popup panel. */
+const PLAY_COVERED = { x: 50, y: 155 };
+/** Inside the play button, under no popup panel. */
+const PLAY_OPEN = { x: 50, y: 165 };
+/** Inside the window, outside the button and every panel. */
+const SKY_OPEN = { x: 50, y: 50 };
+
+function rootsScene(tree: Json, entities: Json[]): SceneSnapshot {
+  return sceneOf({ ui: tree, entities, projections: {} });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -312,7 +365,7 @@ describe("buildScene: ui nodes", () => {
     expect(nodeOf(scene, "ui:root/slot/icon").rect).toEqual(rect(225, 225, 50, 50));
   });
 
-  it("unwraps the synthetic screen root: its children are the roots, painted in reverse", () => {
+  it("unwraps the synthetic screen root: its children are the roots, the popup painted last", () => {
     const scene = sceneOf({
       ui: SETTINGS.ui,
       entities: SETTINGS.entities,
@@ -334,7 +387,7 @@ describe("buildScene: ui nodes", () => {
       ui("popup", "screen", rect(0, 0, 100, 100)),
       ui(undefined, "screen", rect(0, 0, 100, 100))
     ]);
-    const scene = sceneOf({ ui: tree, entities: [], projections: {} });
+    const scene = sceneOf({ ui: tree, entities: [popupRoot(900, 1)], projections: {} });
 
     expect(scene.roots).toEqual(["ui:popup", "ui:screen#1"]);
     expect(scene.paintOrder).toEqual(["ui:screen#1", "ui:popup"]);
@@ -534,6 +587,75 @@ describe("buildScene: paint order and textures", () => {
     expect(paintOrder).toHaveLength(nodes.size);
     expect(nodeOf(sceneOf(), "ui:boardScreen/boardSlot").children[0]).toBe("entity:3145728");
     expect(nodeOf(sceneOf(), "ui:boardScreen/boardSlot").children.at(-1)).toBe("entity:1048638");
+  });
+
+  it("paints the screen roots in the game's order, then the popup roots reversed", () => {
+    const scene = rootsScene(mounted(POPUP_B, POPUP_A, STAGE_SKY, HOME_SCREEN), [
+      popupRoot(900, 1),
+      popupRoot(901, 2)
+    ]);
+
+    expect(scene.paintOrder).toEqual([
+      "ui:stageSky",
+      "ui:stageSky/skyArt",
+      "ui:homeScreen",
+      "ui:homeScreen/play",
+      "ui:popupA",
+      "ui:popupA/panelA",
+      "ui:popupB",
+      "ui:popupB/panelB"
+    ]);
+  });
+
+  it("keeps the roots of the snapshot in reader order, whatever the paint order", () => {
+    const scene = rootsScene(mounted(POPUP_B, POPUP_A, STAGE_SKY, HOME_SCREEN), [
+      popupRoot(900, 1),
+      popupRoot(901, 2)
+    ]);
+
+    expect(scene.roots).toEqual(["ui:popupB", "ui:popupA", "ui:stageSky", "ui:homeScreen"]);
+  });
+
+  it("counts as popups only ui-owned entities with Tree, not a view root or a ui node", () => {
+    const scene = rootsScene(mounted(STAGE_SKY, HOME_SCREEN), [
+      viewRoot(1, "stageSky", "stage"),
+      viewRoot(2, "homeScreen", "ui"),
+      uiEntity(3, WINDOW)
+    ]);
+
+    expect(scene.paintOrder).toEqual([
+      "ui:stageSky",
+      "ui:stageSky/skyArt",
+      "ui:homeScreen",
+      "ui:homeScreen/play",
+      "entity:1",
+      "entity:2"
+    ]);
+  });
+
+  it("paints every root as the game lists it when no entity is a popup root", () => {
+    const scene = rootsScene(mounted(STAGE_SKY, HOME_SCREEN), []);
+
+    expect(scene.paintOrder).toEqual([
+      "ui:stageSky",
+      "ui:stageSky/skyArt",
+      "ui:homeScreen",
+      "ui:homeScreen/play"
+    ]);
+  });
+
+  it("clamps the popup count to the number of ui roots: two roots, then one root", () => {
+    const entities = [popupRoot(900, 1), popupRoot(901, 2), popupRoot(902, 3)];
+    const two = rootsScene(mounted(POPUP_B, POPUP_A), entities);
+    const one = rootsScene(HOME_SCREEN, entities);
+
+    expect(two.paintOrder).toEqual([
+      "ui:popupA",
+      "ui:popupA/panelA",
+      "ui:popupB",
+      "ui:popupB/panelB"
+    ]);
+    expect(one.paintOrder).toEqual(["ui:homeScreen", "ui:homeScreen/play"]);
   });
 
   it("collects every texture in use: ui nine-slices and all entities, ui-owned included", () => {
@@ -843,6 +965,55 @@ describe("elementAt", () => {
   it("finds nothing outside every rect", () => {
     expect(elementAt(sceneOf(), { x: 2000, y: 3000 })).toBeUndefined();
     expect(elementAt(fitScene(), { x: 0, y: 0 })?.id).toBe("ui:root");
+  });
+});
+
+describe("elementAt: several ui roots", () => {
+  it("gives the button of the upper screen root, not the full-window image of the root under it", () => {
+    const scene = rootsScene(mounted(STAGE_SKY, HOME_SCREEN), [
+      viewRoot(1, "stageSky", "stage"),
+      viewRoot(2, "homeScreen", "ui")
+    ]);
+
+    expect(elementAt(scene, PLAY_OPEN)?.id).toBe("ui:homeScreen/play");
+  });
+
+  it("looks through the upper screen root where it only lays out: the image under it wins", () => {
+    const scene = rootsScene(mounted(STAGE_SKY, HOME_SCREEN), []);
+
+    expect(isLayoutOnly(nodeOf(scene, "ui:homeScreen"))).toBe(true);
+    expect(elementAt(scene, SKY_OPEN)?.id).toBe("ui:stageSky/skyArt");
+  });
+
+  it("gives the popup's panel over the button and the sky (Tree in skipped)", () => {
+    const scene = rootsScene(mounted(CONFIRM_POPUP, STAGE_SKY, HOME_SCREEN), [popupRoot(900, 1)]);
+
+    expect(elementAt(scene, PLAY_COVERED)?.id).toBe("ui:confirmPopup/panel");
+  });
+
+  it("gives the popup's panel over the button and the sky (Tree in components)", () => {
+    const scene = rootsScene(mounted(CONFIRM_POPUP, STAGE_SKY, HOME_SCREEN), [
+      popupRoot(900, 1, "components")
+    ]);
+
+    expect(elementAt(scene, PLAY_COVERED)?.id).toBe("ui:confirmPopup/panel");
+  });
+
+  it("gives the button beside the popup's panel, not the sky: the screens keep their order", () => {
+    const scene = rootsScene(mounted(CONFIRM_POPUP, STAGE_SKY, HOME_SCREEN), [popupRoot(900, 1)]);
+
+    expect(elementAt(scene, PLAY_OPEN)?.id).toBe("ui:homeScreen/play");
+    expect(elementAt(scene, SKY_OPEN)?.id).toBe("ui:stageSky/skyArt");
+  });
+
+  it("gives the element of the topmost of two popups where both cover the point", () => {
+    const scene = rootsScene(mounted(POPUP_B, POPUP_A, STAGE_SKY, HOME_SCREEN), [
+      popupRoot(900, 1),
+      popupRoot(901, 2)
+    ]);
+
+    expect(elementAt(scene, PLAY_COVERED)?.id).toBe("ui:popupB/panelB");
+    expect(elementAt(scene, { x: 25, y: 110 })?.id).toBe("ui:popupA/panelA");
   });
 });
 

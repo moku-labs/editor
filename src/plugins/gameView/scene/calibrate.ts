@@ -81,7 +81,7 @@ function sameTarget(a: CalibrationTarget | undefined, b: CalibrationTarget | und
 /**
  * The calibration target of a game.ui value: the first keyed node whose drawn rect covers the
  * ui root (the most precise scale), else the shared `calibrationTarget` (the first keyed node
- * with a width). The root rect is the first root's: the topmost popup under the synthetic root.
+ * with a width). The root rect is the first root's: the topmost popup when one is mounted.
  *
  * @param ui - The game.ui value.
  * @returns The key, its drawn rect and the root rect, undefined without a keyed node.
