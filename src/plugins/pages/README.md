@@ -170,7 +170,7 @@ Log lines (not events):
 | `hubPlugin` | `addRoutes` (in `onInit`), `guard`, `path`, `token`, `publish` |
 | Global events | none |
 | Protocol types | `ToolsBoot`, `HelloBody`, `HotReload` from `registry/protocol` |
-| Engine page (bin) | `preparePage` of `@moku-labs/game/cli` (game `>= 0.10.0`), imported from the game root at run time; the source imports only its types |
+| Engine page (bin) | `preparePage` and `watchKeys` of `@moku-labs/game/cli` (game `>= 0.13.1`, D-54), imported once from the game root at run time; the source imports only their types |
 
 ## Usage
 
@@ -226,14 +226,15 @@ The positional is optional: at most one file ending in `.html`. Without it the b
 
 ### Engine page
 
-A game written for `moku-game` (a folder with `index.ts` and `config.ts`, no `web/`) runs with `moku-editor --root <game>` and no html (`runEngine` in `cli.ts`, `engine-page.ts`, B5). The game needs no `web/index.html`, no dev entry, no `[serve.static]` in its own `bunfig.toml` and no agent wiring.
+A game written for `moku-game` (a folder with `index.ts` and `config.ts`, no `web/`) runs with `moku-editor --root <game>` and no html (`runEngine` in `cli.ts`, `engine-page.ts`, B5). The game needs no `web/index.html`, no dev entry, no `[serve.static]` in its own `bunfig.toml`, no agent wiring and no `moku-game keys` run: the bin keeps `generated/` fresh with the engine's keys watch (step 5).
 
 1. First the real process. Without it (`deps.reexec`, unit seams) the bin prints "[moku-editor] the engine page needs the real process: pass the game HTML file" and exits 1. Then the folder: `rootPath = resolve(cwd, root)`. A folder without `index.ts` or `config.ts` prints "[moku-editor] <root> has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder" and exits 2.
-2. The bin imports `@moku-labs/game/cli` as the game root resolves it (`Bun.resolveSync`), never from the editor's own `node_modules`. When it does not resolve, or has no `preparePage`: "[moku-editor] @moku-labs/game/cli does not resolve from <root>: install @moku-labs/game >=0.10.0 in the game", exit 1.
+2. The bin imports `@moku-labs/game/cli` as the game root resolves it (`Bun.resolveSync`), never from the editor's own `node_modules`. The one import gives `preparePage` and `watchKeys`, and both are required (D-54, no feature detection). When it does not resolve, or has no `preparePage` (before 0.10.0) or no `watchKeys` (before 0.13.1): "[moku-editor] @moku-labs/game/cli does not resolve from <root>: install @moku-labs/game >=0.13.1 in the game", exit 1.
 3. `preparePage(rootPath, { agents: ["@moku-labs/editor/agent/page"], preload, servePlugins })` writes `<root>/.moku/index.html`, `main.ts`, `dev.ts` and `bunfig.toml`. `preload` and `servePlugins` are the flags resolved against the cwd. A throw prints the engine's `[game] …` message as is, exit 1.
 4. Editor working tree (D-50): `packageRoot(Bun.main)` is the nearest folder above the bin's real path whose `package.json` is named `@moku-labs/editor` (`dist/bin.mjs` and `src/plugins/pages/bin.ts` both find it). When that folder is not inside `realpath(<root>)/node_modules` and `<packageRoot>/scripts/tree/bundle.ts` exists, that file is appended to `servePlugins` (once). The plugin sends `@moku-labs/editor`, `/agent`, `/agent/page` and `/tools` to the tree's `dist/`, and rewrites the shared imports of those files (engine, Pixi, core, common, preact) to the game's copies when they load (never in `onResolve`: demos#46). The published package has no `scripts/`, so an installed editor never adds it.
-5. The bin always re-runs itself (D-51): Bun reads `--config=` only at process start. `reexecEngine` (`reexec.ts`) spawns `[process.execPath, "--config=<root>/.moku/bunfig.toml", Bun.main, <root>/.moku/index.html, "--root", <root>, "--port", <port>]` (plus `--no-hmr`), with `cwd: root`, `MOKU_EDITOR_REEXEC=1`, detached, SIGINT/SIGTERM/SIGHUP forwarded, and exits with the child's code.
-6. The child serves `<root>/.moku/index.html` as any re-spawned bin (the html path below): the engine's hot plugin, `[serve.static]`, the dev define and the preloads come from that bunfig. The static fallback refuses dot segments, so `.moku/` is never served as files; the page is the `/` route bundle. The discovery file's `html` is `<root>/.moku/index.html`.
+5. Keys watch (D-54, D-55): after the page is written, the bin calls `watchKeys(rootPath, { onError })` of the same cli import (`watchEngineKeys` in `engine-page.ts`). It resolves after the engine's first scan, so `generated/` is fresh before the child serves. After that a save of an asset file or of a `strings/<locale>.json` scans again. The engine prints its own lines through its branded console (the scanner's `wrote …` lines of the first scan, then `keys: <file>` per scan); the bin adds nothing. A failed scan, the first one too, does not stop anything: `onError` is one warning per call (`ui.warn` with the engine's message, for example a broken strings JSON) and the bin and the page keep running. A rejection (the engine refuses the game's `config.ts`) prints the engine's `[game] …` message as is, exit 1, and no child is spawned. The watch lives in this bin, the parent, which lives as long as the served game. The child never imports the engine's cli, and the html form never watches keys.
+6. The bin always re-runs itself (D-51): Bun reads `--config=` only at process start. `reexecEngine` (`reexec.ts`) spawns `[process.execPath, "--config=<root>/.moku/bunfig.toml", Bun.main, <root>/.moku/index.html, "--root", <root>, "--port", <port>]` (plus `--no-hmr`), with `cwd: root`, `MOKU_EDITOR_REEXEC=1`, detached, SIGINT/SIGTERM/SIGHUP forwarded, and exits with the child's code. The keys watch is closed in a `finally` around the child, so it stops when the child ends for any reason: its own exit, a forwarded Ctrl+C or SIGTERM, a crash, a throw of the spawn. A throw of `close()` is one warning and the child's code is still the exit code.
+7. The child serves `<root>/.moku/index.html` as any re-spawned bin (the html path below): the engine's hot plugin, `[serve.static]`, the dev define and the preloads come from that bunfig. The static fallback refuses dot segments, so `.moku/` is never served as files; the page is the `/` route bundle. The discovery file's `html` is `<root>/.moku/index.html`.
 
 ### bunfig.toml of the game root
 
@@ -398,7 +399,7 @@ Safety: `.moku/editor.json` holds the token. The bridge never prints or logs it,
 What `main` (`cli.ts`) does:
 
 1. `parseBinArgs(argv)`. Help prints usage. An error prints it and usage. `mcp-config` prints the Claude Code setup and exits 0. `mcp` runs `runBridge(args)`, which catches SIGINT and SIGTERM itself, and exits with its code (0) when stdin ends or a signal arrives.
-   A `run` without an html file gets the engine page and re-runs the bin under its bunfig (see Engine page). A `run` whose root has a `[serve.static]` bunfig, started elsewhere, re-spawns the bin there and exits with its code (see bunfig.toml of the game root). The steps below run in that child.
+   A `run` without an html file gets the engine page, starts the engine's keys watch and re-runs the bin under its bunfig; the watch is closed when that child exits (see Engine page). A `run` whose root has a `[serve.static]` bunfig, started elsewhere, re-spawns the bin there and exits with its code (see bunfig.toml of the game root). The steps below run in that child.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console, and the info line `files:project-on { files, keys, ms }`, so the server log shows the project index is on.
 4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, waits until Bun reported the closes (at most 500 ms), stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
@@ -411,13 +412,13 @@ What `main` (`cli.ts`) does:
 >
 > **Note: `"sideEffects": false` in a game.** Only without HMR does Bun bundle the page like `Bun.build` and honour the game's `"sideEffects": false`, dropping a bare `import "./x"`. The bin serves with HMR by default, so this applies to the bin with `--no-hmr` and to a game's own server with HMR off: such a page must not declare `"sideEffects": false` in the nearest `package.json`, or must list that file: `"sideEffects": ["./src/x.ts"]`.
 
-`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-cache`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400. `/manifest.json` answers with `generated/manifest.json` when the game has one (game 0.13+, where `moku-game keys` writes it), else with the root's.
+`createStaticFetch` (`static.ts`) serves the root's files: `navigate` guard, GET and HEAD only, `cache-control: no-store` (D-56, as the engine's dev server answers them: the new bytes of an edited image show after the one reload the engine asks for), `x-content-type-options: nosniff`. It answers 404 for a NUL, a `\`, a segment starting with `.`, a `node_modules` segment, a missing file, or a real path outside the real root. A malformed escape gets 400. `/manifest.json` answers with `generated/manifest.json` when the game has one (game 0.13+, where `moku-game keys` writes it), else with the root's.
 
 | Exit code | When |
 |---|---|
 | 0 | Help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving |
 | child's code | A bin re-spawned in the game root, or re-run under the engine page's bunfig, ended |
-| 1 | Runtime error: missing or bad HTML file, start failed, port in use; the engine page could not be written |
+| 1 | Runtime error: missing or bad HTML file, start failed, port in use; the engine page could not be written or its keys watch could not start |
 | 2 | Bad arguments; without an html file, a root that is not a moku-game folder |
 
 ## Integration notes

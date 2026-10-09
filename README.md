@@ -9,7 +9,7 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 [![npm](https://img.shields.io/npm/v/@moku-labs/editor?logo=npm&color=cb3837&label=npm)](https://www.npmjs.com/package/@moku-labs/editor)
 [![types](https://img.shields.io/badge/types-included-3178c6?logo=typescript&logoColor=white)](#requirements)
 [![node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](#requirements)
-[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.10.0-0b7285)](#install)
+[![peer](https://img.shields.io/badge/peer-%40moku--labs%2Fgame%20%3E%3D0.13.1-0b7285)](#install)
 [![for](https://img.shields.io/badge/for-%40moku--labs%2Fcore-1864ab)](https://github.com/moku-labs/core)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
@@ -43,7 +43,7 @@ bunx moku-editor --root .
 The engine writes the dev page with the editor's page agent on it, so the game needs no HTML file, no dev entry and no `bunfig.toml` of its own (see [Quick start](#quick-start)). A game with its own HTML page wires the agent itself and passes the file.
 
 > [!NOTE]
-> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.10.0` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index), and the bin takes a moku-game's page from the engine's `@moku-labs/game/cli`.
+> **Status: `0.x` — early.** The API can change between minor versions. `@moku-labs/game >= 0.13.1` and `typescript >= 5.5` are **required peer dependencies**: the editor finds game code through the game's [project index](#project-index), and the bin takes a moku-game's page and its keys watch from the engine's `@moku-labs/game/cli`.
 >
 > **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
 >
@@ -70,7 +70,7 @@ Tools  http://127.0.0.1:3000/__editor/
 Root   /home/dev/timber
 ```
 
-The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`, resolved from the game folder) with the editor's page agent `@moku-labs/editor/agent/page` on it. Then it runs again under the page's `.moku/bunfig.toml`, so Bun loads the engine's hot plugin. The page starts the agent with bridge and capture after the game started and sets `globalThis.editor`. There is nothing to wire.
+The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`, resolved from the game folder) with the editor's page agent `@moku-labs/editor/agent/page` on it. It also starts the engine's keys watch (`watchKeys` of the same `cli`), so `generated/` is fresh before the page is served and stays fresh: a saved string shows without a `moku-game keys` run, and a failed scan is one warning. Then it runs again under the page's `.moku/bunfig.toml`, so Bun loads the engine's hot plugin; the watch stops when that run ends. The page starts the agent with bridge and capture after the game started and sets `globalThis.editor`. There is nothing to wire.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -891,7 +891,7 @@ cd <demos>/merge-game && bun install && bun run test:editor --e2e --editor <edit
 
 - **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.10.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder.
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.13.1`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder and watches its keys.
 - **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 

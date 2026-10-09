@@ -135,7 +135,7 @@ describe("cross-files: the files channel through the stack", () => {
     const entries = await files.list("");
     const top = entries.map(entry => entry.path);
     expect(top).toEqual(
-      expect.arrayContaining(["nodes", "flows", "features", "manifest.json", ".moku"])
+      expect.arrayContaining(["nodes", "flows", "features", "generated", ".moku"])
     );
     expect(top).not.toContain("node_modules");
     expect(top).not.toContain(".env");

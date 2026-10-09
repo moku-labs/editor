@@ -460,7 +460,7 @@ describe("cross-plugin panels", () => {
     await renderView.refresh();
     const manifestReads = server.tap
       .requests("tools", "read", "files")
-      .filter(message => paramsOf(message)?.path === "manifest.json");
+      .filter(message => paramsOf(message)?.path === "generated/manifest.json");
     expect(manifestReads.length).toBeGreaterThan(0);
 
     // The tiny game has no effects plugin: the tiles carry `effectsInstalled: false`.

@@ -3,11 +3,12 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
+import type { KeysWatcher } from "@moku-labs/game/cli";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
 import type { E2eDeps } from "../../e2e";
-import type { PreparePage } from "../../engine-page";
+import type { PreparePage, WatchKeys } from "../../engine-page";
 import { runBridge } from "../../mcp/bridge";
 import { REEXEC_ENV } from "../../reexec";
 import type { ReexecDeps } from "../../types";
@@ -633,22 +634,27 @@ describe("startBin engine page (B5)", () => {
 
   /**
    * Bin deps for the engine page: the reexec deps with the cwd `base`, and an importCli whose
-   * preparePage answers the page (or the given stub).
+   * preparePage answers the page (or the given stub) and whose watchKeys answers a watcher with a
+   * recorded `close`.
    *
    * @param prepare - The preparePage stub.
    * @param code - The exit code of the re-spawned bin.
-   * @returns The deps, the lines, the spawn and the preparePage mocks.
+   * @returns The deps, the lines, and the spawn, preparePage, watchKeys and close mocks.
    */
   function engineDeps(prepare: PreparePage = () => Promise.resolve(page()), code = 0) {
     const { deps, lines } = createDeps();
     const { reexec, spawn } = reexecDeps(code);
     const preparePage = vi.fn<PreparePage>(prepare);
-    const importCli = vi.fn(() => Promise.resolve({ preparePage }));
+    const close = vi.fn<KeysWatcher["close"]>();
+    const watchKeys = vi.fn<WatchKeys>(() => Promise.resolve({ close }));
+    const importCli = vi.fn(() => Promise.resolve({ preparePage, watchKeys }));
     return {
       deps: { ...deps, reexec: { ...reexec, cwd: () => base }, importCli },
       lines,
       spawn,
       preparePage,
+      watchKeys,
+      close,
       importCli
     };
   }
@@ -675,7 +681,7 @@ describe("startBin engine page (B5)", () => {
     const failing = { ...deps, importCli: () => Promise.reject(new Error("Cannot find module")) };
     await expect(startBin(["--root", moku], failing)).resolves.toEqual({ code: 1 });
     expect(lines.join("\n")).toContain(
-      `[moku-editor] @moku-labs/game/cli does not resolve from ${moku}: install @moku-labs/game >=0.10.0 in the game`
+      `[moku-editor] @moku-labs/game/cli does not resolve from ${moku}: install @moku-labs/game >=0.13.1 in the game`
     );
   });
 
@@ -695,10 +701,11 @@ describe("startBin engine page (B5)", () => {
   });
 
   it("answers 1 with the engine's [game] text when preparePage throws, and re-runs nothing", async () => {
-    const { deps, lines, spawn } = engineDeps(refusePage);
+    const { deps, lines, spawn, watchKeys } = engineDeps(refusePage);
     await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 1 });
     expect(lines.join("\n")).toContain("[game] config.ts: page.title is refused.");
     expect(spawn).not.toHaveBeenCalled();
+    expect(watchKeys).not.toHaveBeenCalled();
   });
 
   it("prepares the page from the root, re-runs the bin under its bunfig and answers the child's code", async () => {
@@ -729,5 +736,148 @@ describe("startBin engine page (B5)", () => {
       { cwd: moku, env: { [REEXEC_ENV]: "1" } }
     );
     expect(deps.importPage).not.toHaveBeenCalled();
+  });
+
+  describe("keys watch (D-54, D-55)", () => {
+    /** The message of a failed scan, as the engine hands it to `onError`. */
+    const BROKEN = "[game] i18n: features/home/strings/en.json could not be read.";
+
+    /** The engine's refusal of a game config, as `watchKeys` rejects with it. */
+    const REFUSED = "[game] config.ts: page.title is refused.";
+
+    it("starts the engine's watch for the root after preparePage, and spawns only after its first scan", async () => {
+      const { deps, spawn, preparePage, watchKeys, close, importCli } = engineDeps();
+      const scan = Promise.withResolvers<KeysWatcher>();
+      watchKeys.mockImplementation(() => scan.promise);
+      const started = startBin(["--root", "games/timber"], deps);
+
+      await vi.waitFor(() => expect(watchKeys).toHaveBeenCalledTimes(1));
+      expect(watchKeys).toHaveBeenCalledWith(moku, { onError: expect.any(Function) });
+      expect(preparePage).toHaveBeenCalledTimes(1);
+      // The first scan still runs: generated/ is not fresh yet, so no child serves.
+      await new Promise(resolve => setImmediate(resolve));
+      expect(spawn).not.toHaveBeenCalled();
+
+      scan.resolve({ close });
+      await expect(started).resolves.toEqual({ code: 0 });
+      expect(spawn).toHaveBeenCalledTimes(1);
+      // The same import gives both functions: the engine is imported once.
+      expect(importCli).toHaveBeenCalledTimes(1);
+      const prepared = preparePage.mock.invocationCallOrder[0] ?? Number.NaN;
+      const watched = watchKeys.mock.invocationCallOrder[0] ?? Number.NaN;
+      const spawned = spawn.mock.invocationCallOrder[0] ?? Number.NaN;
+      expect(prepared).toBeLessThan(watched);
+      expect(watched).toBeLessThan(spawned);
+    });
+
+    it("keeps the watch open while the child runs and closes it once when the child exits with 0", async () => {
+      const { deps, spawn, close } = engineDeps();
+      const child = Promise.withResolvers<number>();
+      spawn.mockImplementation(() => ({ exited: child.promise, kill: vi.fn() }));
+      const started = startBin(["--root", moku], deps);
+
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+      expect(close).not.toHaveBeenCalled();
+
+      child.resolve(0);
+      await expect(started).resolves.toEqual({ code: 0 });
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes the watch once when the child exits with a non-zero code, and answers that code", async () => {
+      const { deps, close } = engineDeps(undefined, 7);
+      await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 7 });
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes the watch once when the spawn throws", async () => {
+      const { deps, spawn, close } = engineDeps();
+      spawn.mockImplementation(() => {
+        throw new Error("spawn failed");
+      });
+      await expect(startBin(["--root", moku], deps)).rejects.toThrow("spawn failed");
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("prints one warning per failed scan, on the first scan and during the run, and the child still runs", async () => {
+      const { deps, lines, spawn, watchKeys, close } = engineDeps();
+      const warn = vi.spyOn(deps.ui, "warn");
+      const error = vi.spyOn(deps.ui, "error");
+      const child = Promise.withResolvers<number>();
+      spawn.mockImplementation(() => ({ exited: child.promise, kill: vi.fn() }));
+      watchKeys.mockImplementation((_root, watch) => {
+        // A failed first scan does not reject: the engine reports it and the watch goes on.
+        watch?.onError?.(BROKEN);
+        return Promise.resolve({ close });
+      });
+      const started = startBin(["--root", moku], deps);
+
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+      expect(warn.mock.calls).toEqual([[BROKEN]]);
+
+      // A broken strings JSON saved while the child serves: one more warning, nothing stops.
+      watchKeys.mock.calls[0]?.[1]?.onError?.(BROKEN);
+      expect(warn.mock.calls).toEqual([[BROKEN], [BROKEN]]);
+      expect(close).not.toHaveBeenCalled();
+
+      child.resolve(0);
+      await expect(started).resolves.toEqual({ code: 0 });
+      expect(error).not.toHaveBeenCalled();
+      expect(lines.filter(line => line.includes(BROKEN))).toHaveLength(2);
+    });
+
+    it("prints the engine's message, answers 1 and spawns nothing when watchKeys rejects", async () => {
+      const { deps, lines, spawn, watchKeys, close } = engineDeps();
+      const error = vi.spyOn(deps.ui, "error");
+      watchKeys.mockImplementation(() => Promise.reject(new Error(REFUSED)));
+
+      await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 1 });
+      expect(error.mock.calls).toEqual([[REFUSED]]);
+      expect(lines.join("\n")).toContain(REFUSED);
+      expect(spawn).not.toHaveBeenCalled();
+      // A rejected watchKeys leaves no watcher: there is nothing to close.
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it("prints one warning when close throws and still answers the child's code", async () => {
+      const { deps, close } = engineDeps(undefined, 7);
+      const warn = vi.spyOn(deps.ui, "warn");
+      close.mockImplementation(() => {
+        throw new Error("close failed");
+      });
+
+      await expect(startBin(["--root", moku], deps)).resolves.toEqual({ code: 7 });
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls).toEqual([["close failed"]]);
+    });
+
+    it("the html form never imports the engine's cli and starts no watch, served here or re-spawned", async () => {
+      const { deps, spawn, watchKeys, importCli } = engineDeps();
+
+      // Served by this process: the root has no [serve.static] bunfig.
+      const html = join(game, "index.html");
+      const started = await startBin([html, "--port", "0", "--root", game], deps);
+      try {
+        expect(started.code).toBe(0);
+        expect(spawn).not.toHaveBeenCalled();
+      } finally {
+        await started.stop?.();
+      }
+
+      // Re-spawned in a root whose bunfig has [serve.static].
+      const root = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-html-")));
+      await writeFile(join(root, "index.html"), "<html></html>");
+      await writeFile(join(root, "bunfig.toml"), '[serve.static]\nplugins = ["./p.ts"]\n');
+      try {
+        const respawned = await startBin([join(root, "index.html"), "--root", root], deps);
+        expect(respawned).toEqual({ code: 0 });
+        expect(spawn).toHaveBeenCalledTimes(1);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+
+      expect(importCli).not.toHaveBeenCalled();
+      expect(watchKeys).not.toHaveBeenCalled();
+    });
   });
 });

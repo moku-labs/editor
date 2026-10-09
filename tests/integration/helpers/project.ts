@@ -149,7 +149,10 @@ const TINY_SOURCES: Readonly<Record<string, string>> = {
   ].join("\n")
 };
 
-/** The two-bundle asset manifest of the tiny project: `manifest.json`, the one the index names. */
+/**
+ * The two-bundle asset manifest of the tiny project: `generated/manifest.json`, where the engine's
+ * keys scan writes it (game 0.13) and the one the index names.
+ */
 export const TINY_MANIFEST = {
   version: 1,
   bundles: {
@@ -190,8 +193,8 @@ const FIRST_NOTE_TEXT = [
 
 /**
  * Fills a tiny project root: the kit, node and flow files, a projection, a style, the text styles
- * file, the asset manifest, one markdown file, and two files that must never show in a list
- * (`node_modules/x/index.ts`, `.env`).
+ * file, the asset manifest (`generated/manifest.json`), one markdown file, and two files that must
+ * never show in a list (`node_modules/x/index.ts`, `.env`).
  *
  * @param root - The empty project root.
  * @returns Resolves when every file is written.
@@ -199,7 +202,7 @@ const FIRST_NOTE_TEXT = [
 async function fillTinyProject(root: string): Promise<void> {
   for (const [file, text] of Object.entries(TINY_SOURCES)) await put(root, file, text);
   await put(root, "features/ui/styles.ts", await readFile(STYLES_FIXTURE, "utf8"));
-  await put(root, "manifest.json", `${JSON.stringify(TINY_MANIFEST, undefined, 2)}\n`);
+  await put(root, "generated/manifest.json", `${JSON.stringify(TINY_MANIFEST, undefined, 2)}\n`);
   await put(root, FIRST_NOTE, FIRST_NOTE_TEXT);
   await put(root, "node_modules/x/index.ts", "export const x = 1;\n");
   await put(root, ".env", "SECRET=1\n");
