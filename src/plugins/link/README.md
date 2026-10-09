@@ -18,7 +18,7 @@ nothing.
 |---|---|---|---|
 | `retryMs` | `number` | `1000` | Base delay of the reconnect backoff: `min(retryMs × 2^n, 8000)`. |
 | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the JSON script tag `pages` injects. |
-| `reloadGraceMs` | `number` | `5000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
+| `reloadGraceMs` | `number` | `8000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. The default outlasts the bin's longest restart: its port is closed for up to 6 s (D-57) and link reconnects 1 s, 3 s and 7 s after the close. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
 | `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays `editor.select` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
 
 Fixed constants in `types.ts` (not config):

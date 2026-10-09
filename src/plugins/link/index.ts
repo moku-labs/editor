@@ -15,7 +15,7 @@ const defaultConfig: Config = {
   retryMs: 1000,
   boot: "#moku-editor-boot",
   role: "page",
-  reloadGraceMs: 5000
+  reloadGraceMs: 8000
 };
 
 /**
