@@ -31,6 +31,9 @@ type Running = {
 /** The stdout line of a serving bin. */
 const TOOLS_LINE = /Tools\s+http/;
 
+/** How long a test waits for a signalled bin to exit: with the 20 s deadline of `spawnBin` it stays under the 30 s test timeout. */
+const EXIT_WAIT_MS = 5000;
+
 /**
  * Spawns the bin and waits for a line of its stdout: the Tools line of a serving bin by default.
  *
@@ -544,12 +547,15 @@ describe("moku-editor bin", () => {
         bin.child.kill(signal);
         const ended = await Promise.race([
           bin.child.exited,
-          Bun.sleep(10_000).then(() => "the bin still runs")
+          Bun.sleep(EXIT_WAIT_MS).then(() => "the bin still runs")
         ]);
         expect(ended).toBe(code);
       } finally {
         bin.child.kill("SIGKILL");
       }
+      // The exit is awaited above; one tick lets the output pump take the last bytes.
+      await bin.child.exited;
+      await Bun.sleep(0);
       expect(bin.output()).not.toMatch(TOOLS_LINE);
       expect(existsSync(path)).toBe(false);
     },
