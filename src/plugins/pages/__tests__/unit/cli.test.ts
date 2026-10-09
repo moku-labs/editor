@@ -219,6 +219,42 @@ describe("startBin hot reload switch (D-32)", () => {
     }
     await expect(fetch(`${origin}/`)).rejects.toThrow();
   });
+
+  it("waits for Bun's bundler before it serves with HMR; a failed wait is one warning and the server still restarts (D-57)", async () => {
+    const serve = vi.spyOn(Bun, "serve");
+    const build = vi.spyOn(Bun, "build").mockRejectedValue(new Error("no bundler"));
+    const { deps, lines } = createDeps();
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game, "--no-hmr"];
+    const started = await startBin(argv, deps);
+    const port = Number(/127\.0\.0\.1:(\d+)\//.exec(lines.join("\n"))?.[1]);
+    const origin = `http://127.0.0.1:${port}`;
+    try {
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const { token } = (await hello.json()) as { token: string };
+
+      const answer = await fetch(`${origin}/__editor/hmr`, {
+        method: "POST",
+        headers: { origin, authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ hmr: true })
+      });
+      expect(answer.status).toBe(200);
+
+      await vi.waitFor(() => expect(serve).toHaveBeenCalledTimes(2), { timeout: 5000 });
+      const options: { development?: unknown } | undefined = serve.mock.calls[1]?.[0];
+      expect(options?.development).toEqual({ hmr: true, console: true });
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(build.mock.invocationCallOrder[0]).toBeLessThan(
+        serve.mock.invocationCallOrder[1] ?? 0
+      );
+      const warnings = lines.filter(line => line.includes("Bun's bundler"));
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("no bundler");
+    } finally {
+      build.mockRestore();
+      serve.mockRestore();
+      await started.stop?.();
+    }
+  });
 });
 
 describe("startBin --no-hmr (R6)", () => {

@@ -387,11 +387,55 @@ async function createHeldScanGame(): Promise<string> {
   return root;
 }
 
+/** The modules of the big game, and the functions each of them exports. */
+const BIG_MODULES = 300;
+const BIG_FUNCTIONS = 300;
+
+/**
+ * The source of one module of the big game.
+ *
+ * @param module - The module's number.
+ * @returns `BIG_FUNCTIONS` exported functions.
+ */
+function bigModule(module: number): string {
+  let text = "";
+  for (let index = 0; index < BIG_FUNCTIONS; index += 1) {
+    text += `export function f${module}_${index}(a: number, b: number): number { const c = a * ${index} + b; return c % 7 === 0 ? c + ${module} : c - ${index}; }\n`;
+  }
+  return text;
+}
+
+/**
+ * Writes a game whose page is a bundle of about 10 MB: Bun needs about 100 ms for it, so a
+ * rebundle a page request started is still running when the bin's next server starts.
+ *
+ * @returns The real path of the game folder.
+ */
+async function createBigGame(): Promise<string> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-big-")));
+  const modules = Array.from({ length: BIG_MODULES }, (_unused, module) => module);
+  await Promise.all(
+    modules.map(module => writeFile(join(root, `m${module}.ts`), bigModule(module)))
+  );
+  const imports = modules.map(module => `import * as m${module} from "./m${module}.ts";`);
+  const counts = modules.map(module => `total += Object.keys(m${module}).length;`);
+  await writeFile(
+    join(root, "main.ts"),
+    `${imports.join("\n")}\nlet total = 0;\n${counts.join("\n")}\ndocument.title = "big game " + total;\n`
+  );
+  await writeFile(
+    join(root, "index.html"),
+    '<!doctype html><html><head><title>big game</title></head><body><div id="big"></div><script type="module" src="./main.ts"></script></body></html>'
+  );
+  return root;
+}
+
 let game: string;
 let bunfigGame: string;
 let engineGame: string;
 let mokuGame: string;
 let heldScanGame: string;
+let bigGame: string;
 
 beforeAll(async () => {
   // dist/ (the agent page and the tools page) is built once by tests/global-build.ts.
@@ -430,6 +474,7 @@ beforeAll(async () => {
   await symlink(join(REPO, "node_modules"), join(engineGame, "node_modules"), "dir");
   mokuGame = await createMokuGame();
   heldScanGame = await createHeldScanGame();
+  bigGame = await createBigGame();
 }, 120_000);
 
 afterEach(async () => {
@@ -446,6 +491,7 @@ afterAll(async () => {
   await rm(engineGame, { recursive: true, force: true });
   await rm(mokuGame, { recursive: true, force: true });
   await rm(heldScanGame, { recursive: true, force: true });
+  await rm(bigGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -506,9 +552,7 @@ describe("moku-editor bin", () => {
         expect(answer.status).toBe(200);
         expect(await answer.json()).toEqual({ hmr, owner: "bin" });
         // The page is asked for once the dev server is up, as the editor does: it reloads the
-        // game frame after the game is back. A page request that still reaches the server
-        // without HMR starts a rebundle there (Bun rebundles that page on every request), and
-        // Bun 1.3.14 can freeze when that bundle and the dev server's first one run at once.
+        // game frame after the game is back. The next case asks for it at once.
         if (hmr) expect(await devServerUp(origin)).toBe(true);
         const html = await gamePageWith(origin, hmr);
         expect(html).toContain('id="tiny"');
@@ -525,6 +569,32 @@ describe("moku-editor bin", () => {
       expect(helloAgain.token).toBe(token);
       const discovery = JSON.parse(await readFile(join(game, ".moku", "editor.json"), "utf8"));
       expect(discovery).toMatchObject({ port: bin.port, token });
+    } finally {
+      bin.child.kill("SIGINT");
+    }
+    expect(await exitOf(bin)).toBe(0);
+  }, 60_000);
+
+  it("answers a page request made right after the switch to hot reload on with Bun's HMR client, twice, and stops on SIGINT with 0: the restart waits for Bun's bundler (D-57)", async () => {
+    const html = join(bigGame, "index.html");
+    const bin = await spawnBin([html, "--port", "0", "--root", bigGame, "--no-hmr"]);
+    try {
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const { token } = await hello.json();
+      expect(await gamePageWith(origin, false)).toContain('id="big"');
+
+      for (const hmr of [true, false, true, false]) {
+        const answer = await postHmr(origin, token, hmr);
+        expect(answer.status).toBe(200);
+        // No wait for the dev server here. On the switch to on the first request still reaches
+        // the server without HMR, and Bun rebundles that page on every request. Bun 1.3.14
+        // freezes or crashes when that rebundle and the dev server's first bundle run at once,
+        // so the bin lets the rebundle end before it serves with HMR.
+        const page = await gamePageWith(origin, hmr);
+        expect(page).toContain('id="big"');
+        expect(page.includes(HMR_CLIENT)).toBe(hmr);
+      }
     } finally {
       bin.child.kill("SIGINT");
     }
