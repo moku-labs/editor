@@ -5,7 +5,12 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeDiscovery } from "../../../discovery";
 import type { ConnectHub } from "../../../mcp/connection";
-import { createEditorLink, NOT_RUNNING, RECONNECT_WAITS_MS } from "../../../mcp/connection";
+import {
+  createEditorLink,
+  NOT_RUNNING,
+  RECONNECT_WAITS_MS,
+  STABLE_MS
+} from "../../../mcp/connection";
 import type { HubClientOptions } from "../../../mcp/hub-client";
 import type { ChildProcess, HubClient, SpawnProcess } from "../../../mcp/types";
 import type { EditorDiscovery, McpArgs } from "../../../types";
@@ -16,17 +21,25 @@ import { session, startFakeHub, until } from "../../fake-hub";
 // pages/mcp connection (M3): a live discovery file wins; without one the
 // bridge starts the bin when it knows the html; a closed socket reconnects at
 // the close and, while the bin lives, 1, 3 and 7 s after it (the bin's restart,
-// D-57); the bridge stops only the bin it started.
+// D-57, D-59); a connection dropped within 5 s counts as a failed try; the
+// bridge stops only the bin it started.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: string;
 let hub: FakeHub;
 const children: { child: ChildProcess; signals: string[] }[] = [];
 
+/** The clock of the bin side, in ms: a test moves it by hand to let a connection grow old. */
+let clock = 0;
+
+/** How old a connection is when a test closes it without saying: a minute, so it held. */
+const OLD_MS = 60_000;
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "moku-mcp-link-"));
   hub = startFakeHub({ sessions: [session("s-1")] });
   children.length = 0;
+  clock = 0;
 });
 
 afterEach(async () => {
@@ -53,8 +66,8 @@ function fakeChild(pid: number) {
 }
 
 /**
- * The bin side over the temp root and the fake hub. The fake spawn "starts" a bin: it writes the
- * fake hub's discovery file with the child's pid.
+ * The bin side over the temp root and the fake hub, on the clock of the test. The fake spawn
+ * "starts" a bin: it writes the fake hub's discovery file with the child's pid.
  *
  * @param args - The mcp arguments (root is the temp root).
  * @param startBin - Whether the spawned child writes its discovery file.
@@ -79,7 +92,13 @@ function link(args: Partial<McpArgs> = {}, startBin = true, connect?: ConnectHub
   const editor = createEditorLink({
     root,
     args: { kind: "mcp", root, hmr: true, ...args },
-    deps: { ui, spawn, isAlive: pid => alive.has(pid), command: ["bun", "bin.mjs"], now: Date.now },
+    deps: {
+      ui,
+      spawn,
+      isAlive: pid => alive.has(pid),
+      command: ["bun", "bin.mjs"],
+      now: () => clock
+    },
     onConnected,
     onDisconnected,
     ...(connect === undefined ? {} : { connect })
@@ -173,6 +192,7 @@ describe("reconnect", () => {
     await editor.start();
     const first = await editor.hub();
     expect(onConnected.mock.calls).toEqual([[first]]);
+    clock += OLD_MS;
     hub.dropClients();
     await until(() => !first.isOpen(), "the close");
     const second = await editor.hub();
@@ -199,6 +219,7 @@ describe("reconnect", () => {
     await editor.start();
     const first = await editor.hub();
     alive.delete(4242);
+    clock += OLD_MS;
     hub.dropClients();
     await until(() => !first.isOpen(), "the close");
     await expect(editor.hub()).rejects.toThrow(NOT_RUNNING);
@@ -207,6 +228,36 @@ describe("reconnect", () => {
 
 /** What a scripted connect answers when the port is closed. */
 const REFUSED = "[moku-editor] could not connect to moku-editor: the socket closed.";
+
+/** The stderr line of a close that starts the tries, of one without a bin and of an early one. */
+const CLOSED = "  › moku-editor mcp: the moku-editor connection closed; reconnecting";
+const CLOSED_NO_BIN =
+  "  › moku-editor mcp: the moku-editor connection closed; no running moku-editor";
+const CLOSED_EARLY = "  › moku-editor mcp: the moku-editor connection closed after less than 5 s";
+
+/** The stderr line of a connect to the fake hub. */
+function connectedLine(): string {
+  return `  › moku-editor mcp: connected to ${hub.url}`;
+}
+
+/** What the bin side remembers of a connection the hub dropped within 5 s. */
+function droppedEarly(): string {
+  return `[moku-editor] moku-editor at ${hub.url} closed the connection after less than 5 s.`;
+}
+
+/**
+ * The one warning of tries that ended without a connection.
+ *
+ * @param last - The last failure it carries.
+ */
+function gaveUp(last: string): string {
+  return `  ⚠ [moku-editor] mcp: could not reconnect to moku-editor; the next tool call tries again.\n  Last attempt: ${last}`;
+}
+
+/** The warnings among stderr lines. */
+function warningsOf(lines: readonly string[]): string[] {
+  return lines.filter(line => line.includes("⚠"));
+}
 
 /** One step of a scripted connect: an open client, a closed port, or a promise the test settles. */
 type Step = "open" | "refuse" | Promise<void>;
@@ -237,8 +288,14 @@ function handClient(bin: EditorDiscovery, options: HubClientOptions) {
     isOpen: () => open,
     close
   };
-  /** The hub closes the socket. */
-  const drop = (): void => {
+  /**
+   * The hub closes the socket.
+   *
+   * @param after - How long the connection lived, in ms on the clock of the test (a minute: it
+   *   held).
+   */
+  const drop = (after = OLD_MS): void => {
+    clock += after;
     open = false;
     options.onClose?.();
   };
@@ -274,15 +331,16 @@ async function settle(): Promise<void> {
   }
 }
 
-describe("reconnect tries (the bin's restart, D-57)", () => {
+describe("reconnect tries (the bin's restart, D-57, D-59)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   });
 
-  it("tries at the close, then 1, 2 and 4 s after each failed try, and stops: no timer is left", async () => {
+  it("tries at the close, then 1, 2 and 4 s after each failed try, and stops with one warning: no timer is left", async () => {
     writeDiscovery(root, hub.discovery(root));
     const { editor, connect, made, onDisconnected, lines } = scripted(["open"]);
     await editor.start();
+    const before = lines.length;
 
     made[0]?.drop();
     await settle();
@@ -291,6 +349,7 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     for (const [index, wait] of RECONNECT_WAITS_MS.entries()) {
       await vi.advanceTimersByTimeAsync(wait - 1);
       expect(connect).toHaveBeenCalledTimes(index + 2);
+      expect(warningsOf(lines)).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       await settle();
       expect(connect).toHaveBeenCalledTimes(index + 3);
@@ -300,18 +359,26 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(connect).toHaveBeenCalledTimes(5);
     expect(onDisconnected).toHaveBeenCalledOnce();
-    expect(lines.filter(line => line.includes("the socket closed"))).toHaveLength(4);
+    // A failed try prints nothing: the close, then the one warning with the last failure.
+    expect(lines.slice(before)).toEqual([CLOSED, gaveUp(REFUSED)]);
 
     // A tool call still tries one connect, as before.
     await expect(editor.hub()).rejects.toThrow(REFUSED);
     expect(connect).toHaveBeenCalledTimes(6);
     expect(vi.getTimerCount()).toBe(0);
+    expect(warningsOf(lines)).toHaveLength(1);
   });
 
-  it("connects on the try that finds the port open again, reports it and ends the tries", async () => {
+  it("connects on the try that finds the port open again, reports it without a warning and ends the tries", async () => {
     writeDiscovery(root, hub.discovery(root));
-    const { editor, connect, made, onConnected } = scripted(["open", "refuse", "refuse", "open"]);
+    const { editor, connect, made, onConnected, lines } = scripted([
+      "open",
+      "refuse",
+      "refuse",
+      "open"
+    ]);
     await editor.start();
+    const before = lines.length;
 
     made[0]?.drop();
     await settle();
@@ -328,34 +395,140 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     await expect(editor.hub()).resolves.toBe(back);
     expect(connect).toHaveBeenCalledTimes(4);
+    expect(lines.slice(before)).toEqual([CLOSED, connectedLine()]);
   });
 
-  it("starts over when a connection that just opened is dropped again (the old server took it)", async () => {
+  it("counts a connection dropped right after it opened as a failed try (the old server took it): the next try waits 1 s", async () => {
     writeDiscovery(root, hub.discovery(root));
-    const { editor, connect, made, onDisconnected } = scripted(["open", "open", "refuse", "open"]);
+    const { editor, connect, made, onDisconnected } = scripted(["open", "open", "open"]);
     await editor.start();
 
     made[0]?.drop();
     await settle();
     expect(editor.connected()).toBe(made[1]?.client);
-    made[1]?.drop();
+    made[1]?.drop(0);
     await settle();
-    expect(connect).toHaveBeenCalledTimes(3);
+    expect(connect).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(999);
-    expect(connect).toHaveBeenCalledTimes(3);
+    expect(connect).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     await settle();
 
+    expect(connect).toHaveBeenCalledTimes(3);
     expect(editor.connected()).toBe(made[2]?.client);
     expect(onDisconnected).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("ends the tries when the bin is gone between two of them", async () => {
+  it("walks the same waits when the bin drops every connection at once: tries 0, 1, 3 and 7 s after the close, then one warning and no timer", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, connect, made, onConnected, onDisconnected, lines } = scripted([
+      "open",
+      "open",
+      "open",
+      "open",
+      "open"
+    ]);
+    await editor.start();
+    const before = lines.length;
+
+    // The connection that held closes: the try at the close connects.
+    made[0]?.drop();
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(2);
+    // The bin drops each new connection at once: no try before the wait is over.
+    for (const [index, wait] of RECONNECT_WAITS_MS.entries()) {
+      made[index + 1]?.drop(0);
+      await settle();
+      await vi.advanceTimersByTimeAsync(wait - 1);
+      expect(connect).toHaveBeenCalledTimes(index + 2);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(connect).toHaveBeenCalledTimes(index + 3);
+    }
+    // The connection of the last try is dropped too: no wait is left.
+    made[4]?.drop(0);
+    await settle();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(5);
+    expect(onConnected).toHaveBeenCalledTimes(5);
+    expect(onDisconnected).toHaveBeenCalledTimes(5);
+    expect(editor.connected()).toBeUndefined();
+    expect(lines.slice(before)).toEqual([
+      CLOSED,
+      connectedLine(),
+      CLOSED_EARLY,
+      connectedLine(),
+      CLOSED_EARLY,
+      connectedLine(),
+      CLOSED_EARLY,
+      connectedLine(),
+      CLOSED_EARLY,
+      gaveUp(droppedEarly())
+    ]);
+  });
+
+  it("starts over at the close of a connection that lived 6 s: a try at once, then the 1 s wait again", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, connect, made } = scripted(["open", "refuse", "open"]);
+    await editor.start();
+
+    // The first walk: the try at the close fails, the one after 1 s connects.
+    made[0]?.drop();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(editor.connected()).toBe(made[1]?.client);
+    expect(connect).toHaveBeenCalledTimes(3);
+
+    made[1]?.drop(6000);
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(connect).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(5);
+
+    await editor.shutdown();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the count at the close of a connection that lived just under 5 s: no try at the close, the next wait is 2 s", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, connect, made } = scripted(["open", "refuse", "open", "open"]);
+    await editor.start();
+
+    made[0]?.drop();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    await settle();
+    expect(editor.connected()).toBe(made[1]?.client);
+    expect(connect).toHaveBeenCalledTimes(3);
+
+    expect(STABLE_MS).toBe(5000);
+    made[1]?.drop(STABLE_MS - 1);
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(connect).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+
+    expect(connect).toHaveBeenCalledTimes(4);
+    expect(editor.connected()).toBe(made[2]?.client);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ends the tries with one warning when the bin is gone between two of them", async () => {
     writeDiscovery(root, hub.discovery(root, 4242));
-    const { editor, connect, made, alive } = scripted(["open"]);
+    const { editor, connect, made, alive, lines } = scripted(["open"]);
     alive.add(4242);
     await editor.start();
+    const before = lines.length;
 
     made[0]?.drop();
     await settle();
@@ -366,14 +539,16 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
 
     expect(connect).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+    expect(lines.slice(before)).toEqual([CLOSED, gaveUp(REFUSED)]);
     await expect(editor.hub()).rejects.toThrow(NOT_RUNNING);
   });
 
-  it("makes no try when the bin is gone at the close", async () => {
+  it("makes no try and prints no warning when the bin is gone at the close", async () => {
     writeDiscovery(root, hub.discovery(root, 4242));
-    const { editor, connect, made, alive } = scripted(["open"]);
+    const { editor, connect, made, alive, lines } = scripted(["open"]);
     alive.add(4242);
     await editor.start();
+    const before = lines.length;
 
     alive.delete(4242);
     made[0]?.drop();
@@ -382,6 +557,24 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
 
     expect(connect).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
+    expect(lines.slice(before)).toEqual([CLOSED_NO_BIN]);
+  });
+
+  it("starts no wait when the bin is gone at the close of a connection dropped at once", async () => {
+    writeDiscovery(root, hub.discovery(root, 4242));
+    const { editor, connect, made, alive, lines } = scripted(["open"]);
+    alive.add(4242);
+    await editor.start();
+    const before = lines.length;
+
+    alive.delete(4242);
+    made[0]?.drop(0);
+    await settle();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(lines.slice(before)).toEqual([CLOSED_NO_BIN]);
   });
 
   it("ends the tries when a tool call connects between two of them", async () => {
@@ -433,11 +626,11 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("starts no wait when a try fails after a tool call connected", async () => {
+  it("starts no wait and prints no warning when a try fails after a tool call connected", async () => {
     writeDiscovery(root, hub.discovery(root));
     const ofCall = Promise.withResolvers<void>();
     const ofTry = Promise.withResolvers<void>();
-    const { editor, made } = scripted(["open", "refuse", ofCall.promise, ofTry.promise]);
+    const { editor, made, lines } = scripted(["open", "refuse", ofCall.promise, ofTry.promise]);
     await editor.start();
 
     made[0]?.drop();
@@ -453,6 +646,7 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
 
     expect(editor.connected()).toBe(made[1]?.client);
     expect(vi.getTimerCount()).toBe(0);
+    expect(warningsOf(lines)).toEqual([]);
   });
 
   it("runs one wait at most when the tries of two closes overlap, and shutdown ends it", async () => {
@@ -507,10 +701,10 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     expect(connect).toHaveBeenCalledTimes(2);
   });
 
-  it("starts no wait when a try fails while the bridge shuts down", async () => {
+  it("starts no wait and prints no warning when a try fails while the bridge shuts down", async () => {
     writeDiscovery(root, hub.discovery(root));
     const port = Promise.withResolvers<void>();
-    const { editor, connect, made } = scripted(["open", port.promise]);
+    const { editor, connect, made, lines } = scripted(["open", port.promise]);
     await editor.start();
 
     made[0]?.drop();
@@ -522,6 +716,51 @@ describe("reconnect tries (the bin's restart, D-57)", () => {
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(connect).toHaveBeenCalledTimes(2);
+    expect(warningsOf(lines)).toEqual([]);
+  });
+
+  it("closes a connection that opens while the bridge shuts down: it is not reported, and no timer is left", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const port = Promise.withResolvers<void>();
+    const { editor, made, onConnected, onDisconnected, lines } = scripted(["open", port.promise]);
+    await editor.start();
+
+    // A try is in flight when shutdown starts, and its connect opens during the shutdown.
+    made[0]?.drop();
+    await settle();
+    const down = editor.shutdown();
+    port.resolve();
+    await down;
+
+    expect(made[1]?.close).toHaveBeenCalledOnce();
+    expect(made[1]?.client.isOpen()).toBe(false);
+    expect(onConnected).toHaveBeenCalledOnce();
+    expect(onDisconnected).toHaveBeenCalledOnce();
+    expect(editor.connected()).toBeUndefined();
+    expect(lines.filter(line => line === connectedLine())).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("closes the connection of a tool call that opens after the shutdown", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const ofCall = Promise.withResolvers<void>();
+    const { editor, made, onConnected } = scripted(["open", "refuse", ofCall.promise]);
+    await editor.start();
+
+    // The connect of a tool call is in flight over the whole shutdown.
+    made[0]?.drop();
+    await settle();
+    const call = editor.hub();
+    await settle();
+    await editor.shutdown();
+    ofCall.resolve();
+    const client = await call;
+
+    expect(client.isOpen()).toBe(false);
+    expect(made[1]?.close).toHaveBeenCalledOnce();
+    expect(onConnected).toHaveBeenCalledOnce();
+    expect(editor.connected()).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

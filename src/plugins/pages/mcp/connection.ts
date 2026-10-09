@@ -3,7 +3,8 @@
  * wins; without one the bridge starts the bin when it knows the game html (argv or the last
  * discovery file it saw). A hub socket that closes is reconnected: one try at the close, then at
  * most three more, 1, 2 and 4 s apart, each after the discovery file was read again, so the
- * bridge is back after the bin's restart (D-32, D-57). The bridge stops only a bin it started.
+ * bridge is back after the bin's restart (D-32, D-57, D-59). A connection the hub drops within
+ * 5 s counts as a failed try. The bridge stops only a bin it started.
  */
 import { resolve } from "node:path/posix";
 import type { EditorDiscovery, McpArgs } from "../types";
@@ -29,10 +30,26 @@ const DEFAULT_PORT = 3000;
 export const RECONNECT_WAITS_MS: readonly number[] = [1000, 2000, 4000];
 
 /**
+ * How long a connection has to stay open to count as back, in ms. One the hub drops sooner counts
+ * as a failed reconnect try: the next try waits (`RECONNECT_WAITS_MS`), and the tries still end
+ * after the last wait. So a bin that accepts every socket and drops it at once is tried at most
+ * four times in 7 s, not in a loop. The old server of a restarting bin can accept a socket too,
+ * and drops it when it stops, at most about 1 s later (D-57).
+ */
+export const STABLE_MS = 5000;
+
+/**
  * What a tool answers while no bin runs.
  */
 export const NOT_RUNNING =
   "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start.";
+
+/**
+ * The stderr warning of reconnect tries that ended without a connection; the last failure follows
+ * it.
+ */
+const NO_RECONNECT =
+  "[moku-editor] mcp: could not reconnect to moku-editor; the next tool call tries again.";
 
 /**
  * Opens a hub connection (the seam of the tests).
@@ -61,6 +78,13 @@ export type EditorLinkOptions = {
  */
 type LinkState = {
   client: HubClient | undefined;
+  /** When the connection last opened (`deps.now`). */
+  openedAt: number;
+  /**
+   * How many reconnect tries failed, or connected and were dropped within `STABLE_MS`, since a
+   * connection last held: the index of the next wait in `RECONNECT_WAITS_MS`.
+   */
+  failedTries: number;
   owned: { readonly child: ChildProcess; readonly bin: EditorDiscovery } | undefined;
   seen: EditorDiscovery | undefined;
   startup: Promise<void> | undefined;
@@ -142,66 +166,120 @@ function stopRetry(state: LinkState): void {
 }
 
 /**
- * One reconnect try: reads the discovery file again and connects to its live bin. A failed try is
- * remembered, and the next one runs after its wait (`RECONNECT_WAITS_MS`). The tries end with a
- * connection (of a try or of a tool call), without a live bin, after the last wait, and on
- * shutdown. One wait runs at most, and none while a connection is open.
+ * The reconnect tries ended without a connection: one stderr warning with the last failure. From
+ * here on only a tool call connects.
  *
  * @param ctx - The bin side.
- * @param attempt - The zero-based number of this try since the connection closed.
+ * @param failure - The message of the last failed try.
  */
-function reconnect(ctx: LinkCtx, attempt: number): void {
-  const { state } = ctx;
-  const { live } = findEditor(ctx.root, ctx.deps.isAlive);
-  if (live === undefined) return;
+function warnNoReconnect(ctx: LinkCtx, failure: string): void {
+  ctx.deps.ui.warn(`${NO_RECONNECT}\n  Last attempt: ${failure}`);
+}
 
-  state.reconnect = connectTo(ctx, live).then(noop, (error: unknown) => {
-    noteFailure(ctx, error);
-    const wait = RECONNECT_WAITS_MS[attempt];
-    if (wait === undefined || state.closing || state.client?.isOpen() === true) return;
-
-    // The tries of an earlier close may still wait: this wait replaces theirs.
-    stopRetry(state);
-    state.retryTimer = setTimeout(() => {
-      state.retryTimer = undefined;
-      reconnect(ctx, attempt + 1);
-    }, wait);
+/**
+ * One reconnect try: connects to the live bin of the discovery file. A failed try plans the next
+ * one (`retryLater`).
+ *
+ * @param ctx - The bin side.
+ * @param live - The live discovery record, read right before.
+ */
+function tryReconnect(ctx: LinkCtx, live: EditorDiscovery): void {
+  ctx.state.reconnect = connectTo(ctx, live).then(noop, (error: unknown) => {
+    retryLater(ctx, error);
   });
 }
 
 /**
- * The connection closed without the bridge closing it: the door tools hear it, then the bridge
- * reconnects (`reconnect`), from the first try. A bin that is gone leaves the tools answering
+ * A reconnect try failed, or the hub dropped its connection within `STABLE_MS`: the failure is
+ * remembered for the "not running" answer and printed nowhere, and the next try runs after its
+ * wait (`RECONNECT_WAITS_MS`), once the discovery file was read again. The tries end with a
+ * connection (of a try or of a tool call), on shutdown, and with one warning after the last wait
+ * or when the bin is gone at a try. One wait runs at most, and none while a connection is open.
+ *
+ * @param ctx - The bin side.
+ * @param error - The failure.
+ */
+function retryLater(ctx: LinkCtx, error: unknown): void {
+  const { state } = ctx;
+  const failure = messageOf(error);
+  state.lastError = failure;
+  // Nothing is planned on shutdown, while a connection is open, or next to a wait that runs.
+  if (state.closing || state.client?.isOpen() === true || state.retryTimer !== undefined) return;
+
+  const wait = RECONNECT_WAITS_MS[state.failedTries];
+  if (wait === undefined) {
+    warnNoReconnect(ctx, failure);
+    return;
+  }
+
+  state.failedTries += 1;
+  state.retryTimer = setTimeout(() => {
+    state.retryTimer = undefined;
+    const { live } = findEditor(ctx.root, ctx.deps.isAlive);
+    if (live === undefined) warnNoReconnect(ctx, failure);
+    else tryReconnect(ctx, live);
+  }, wait);
+}
+
+/**
+ * The connection closed without the bridge closing it: the door tools hear it, one stderr line
+ * says what follows, then the bridge reconnects while the discovery file names a live bin. A
+ * connection that held (`STABLE_MS`) starts the tries over, with one at once. One the hub dropped
+ * sooner counts as a failed try (`retryLater`). A bin that is gone gets no try: the tools answer
  * "not running".
  *
  * @param ctx - The bin side.
+ * @param bin - The bin the lost connection talked to.
  */
-function onLost(ctx: LinkCtx): void {
-  const { state } = ctx;
+function onLost(ctx: LinkCtx, bin: EditorDiscovery): void {
+  const { state, deps } = ctx;
+  const held = deps.now() - state.openedAt >= STABLE_MS;
   state.client = undefined;
   ctx.onDisconnected();
   if (state.closing) return;
 
-  ctx.deps.ui.warn("[moku-editor] mcp: the moku-editor connection closed; reconnecting");
-  reconnect(ctx, 0);
+  const { live } = findEditor(ctx.root, deps.isAlive);
+  if (live === undefined) {
+    deps.ui.info("moku-editor mcp: the moku-editor connection closed; no running moku-editor");
+    return;
+  }
+  if (held) {
+    deps.ui.info("moku-editor mcp: the moku-editor connection closed; reconnecting");
+    state.failedTries = 0;
+    tryReconnect(ctx, live);
+    return;
+  }
+
+  const early = `less than ${String(STABLE_MS / 1000)} s`;
+  deps.ui.info(`moku-editor mcp: the moku-editor connection closed after ${early}`);
+  retryLater(
+    ctx,
+    new Error(`[moku-editor] moku-editor at ${bin.url} closed the connection after ${early}.`)
+  );
 }
 
 /**
  * Connects to a live bin and hands the open client to `onConnected` (the door tools follow its
  * sessions). The reconnect tries end here. When a reconnect try and a tool call connect at once,
- * the first connection stays and the second one is closed.
+ * the first connection stays and the second one is closed. A connection that opens after
+ * shutdown began is closed and never reported.
  *
  * @param ctx - The bin side.
  * @param bin - The live discovery record.
- * @returns The open client.
+ * @returns The open client; a closed one when shutdown began meanwhile.
  */
 async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient> {
   const { state } = ctx;
   const client: HubClient = await ctx.connect(bin, {
     onClose: () => {
-      if (state.client === client) onLost(ctx);
+      if (state.client === client) onLost(ctx, bin);
     }
   });
+  // Shutdown began while the connect was in flight: nothing follows this connection.
+  if (state.closing) {
+    client.close();
+    return client;
+  }
   const first = state.client;
   if (first?.isOpen() === true) {
     client.close();
@@ -210,6 +288,7 @@ async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient>
 
   stopRetry(state);
   state.client = client;
+  state.openedAt = ctx.deps.now();
   state.seen = bin;
   state.lastError = undefined;
   ctx.onConnected(client);
@@ -433,6 +512,8 @@ export function createEditorLink(options: EditorLinkOptions): EditorLink {
     connect: options.connect ?? connectHub,
     state: {
       client: undefined,
+      openedAt: 0,
+      failedTries: 0,
       owned: undefined,
       seen: undefined,
       startup: undefined,

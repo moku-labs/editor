@@ -17,7 +17,8 @@ import type { EditorDiscovery } from "../types";
 // hub guard, sends `sessions {list}` (and `hotReload`) on open, answers game
 // and files requests from per-method handlers and records every request. It
 // can go away like the bin's restart (close 1012, then a closed port) and come
-// back on the same port.
+// back on the same port, and it can hold its first `sessions` list, so a
+// connect stays in flight.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The token of the fake hub. */
@@ -67,6 +68,10 @@ export type FakeHub = {
   goAway(): Promise<void>;
   /** Listens again on the same port, with the sessions and the handlers set meanwhile. */
   comeBack(): void;
+  /** A socket that opens from now on gets no `sessions` list: its connect stays in flight. */
+  hold(): void;
+  /** Ends the hold and sends the `sessions` list to every client. */
+  release(): void;
   /** A discovery record pointing at this hub. */
   discovery(root: string, pid?: number): EditorDiscovery;
   stop(): Promise<void>;
@@ -101,6 +106,7 @@ export function startFakeHub(
   const subs = new Set<number>();
   let sessions: SessionInfo[] = options.sessions ?? [];
   let away = false;
+  let holding = false;
 
   handlers.set("game.watch", params => {
     const sub = typeof params === "object" && params !== null && "sub" in params ? params.sub : -1;
@@ -140,6 +146,7 @@ export function startFakeHub(
       websocket: {
         open(ws) {
           clients.add(ws);
+          if (holding) return;
           ws.send(sessionsNote());
           if (options.hotReload !== undefined) {
             ws.send(encode(notification("editor", "hotReload", options.hotReload)));
@@ -206,6 +213,13 @@ export function startFakeHub(
     comeBack: () => {
       server = listen(port);
       away = false;
+    },
+    hold: () => {
+      holding = true;
+    },
+    release: () => {
+      holding = false;
+      for (const client of clients) client.send(sessionsNote());
     },
     discovery: (root, pid = process.pid) => ({
       version: 1,

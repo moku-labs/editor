@@ -4,7 +4,8 @@
  * doors carry their effect as a name prefix, so one permission rule denies them. The door set
  * follows the hub's `sessions` by their `manifestHash`: it is rebuilt, and `onChange` sends
  * `tools/list_changed`, only when the hash of the selected session moves. An 8 s grace keeps the
- * set while no session is chosen, so a hot reload and the bin's restart do not blink the list.
+ * set while no session is chosen, so a hot reload and the bin's restart do not blink the list. A
+ * new hub connection without a session starts the grace again (D-59).
  */
 import type { BrandConsole } from "@moku-labs/common/cli";
 import type { CommandDescriptor, Effect, InputKind, InputSchema } from "../../registry/protocol";
@@ -81,6 +82,11 @@ const SESSION_ARGUMENT = "_session";
  * page and the bin's restart: the restart keeps the port closed for up to about 6 s (D-57), and
  * the bridge's last reconnect try lands 7 s after the close (`RECONNECT_WAITS_MS` in
  * connection.ts). The link reads `reloading` for the same 8 s (`reloadGraceMs`).
+ *
+ * The time counts from the loss of the session or of the hub connection, and again from every
+ * new hub connection that has no session yet (`follow`): the game page reconnects on its own
+ * backoff with ±20 % jitter, so its third try lands 5.6 to 8.4 s after the close, which can be
+ * after the bridge is back (D-59). A sessions list without a session does not start it again.
  */
 export const GRACE_MS = 8000;
 
@@ -172,7 +178,9 @@ export type DoorTools = {
   readonly ready: Promise<void>;
   /**
    * Follows an open hub client: listens to its sessions instead of the last client's and decides
-   * at once. A fetch of the last client still in flight no longer holds back the same hash.
+   * at once. A fetch of the last client still in flight no longer holds back the same hash. A
+   * grace that runs since the close ends: a client without a session starts a full one, so the
+   * set stays `graceMs` after the last follow that found no session.
    */
   follow(client: HubClient): void;
   /** Stops following (the client closed or the bin stopped): starts the grace. */
@@ -637,6 +645,8 @@ export function createDoorTools(options: DoorToolsOptions): DoorTools {
     follow: client => {
       state.unsubscribe?.();
       state.fetching = undefined;
+      // A grace that runs since the close ends here: without a session, `decide` starts a full one.
+      stopGrace(state);
       state.unsubscribe = client.onSessions(list => decide(ctx, client, list));
       decide(ctx, client, client.sessions());
     },

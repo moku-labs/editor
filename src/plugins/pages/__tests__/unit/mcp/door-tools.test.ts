@@ -663,6 +663,76 @@ describe("createDoorTools", () => {
     expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
   });
 
+  it("gives a full grace from a follow that finds no session: the game back 8.4 s after the close keeps the doors", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { doors, onChange } = doorSet();
+    const first = fakeClient([live("s-1", "h1")]);
+    first.answer("s-1", manifestOf([TAP]));
+    doors.follow(first.client);
+    await doors.ready;
+
+    // The bridge is back 7 s after the close, before the game page: its hub has no session yet.
+    doors.unfollow();
+    await vi.advanceTimersByTimeAsync(7000);
+    const back = fakeClient([]);
+    doors.follow(back.client);
+    await vi.advanceTimersByTimeAsync(1400);
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
+
+    back.push([live("s-2", "h1")]);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(back.fetches()).toBe(0);
+    expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
+  });
+
+  it("empties the doors once, 8 s after the last follow that found no session", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { doors, onChange } = doorSet();
+    const first = fakeClient([live("s-1", "h1")]);
+    first.answer("s-1", manifestOf([TAP]));
+    doors.follow(first.client);
+    await doors.ready;
+
+    doors.unfollow();
+    await vi.advanceTimersByTimeAsync(7000);
+    doors.follow(fakeClient([]).client);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(doors.tools()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start the grace again on a sessions push without a session: only a follow does", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { doors, onChange } = doorSet();
+    const first = fakeClient([live("s-1", "h1")]);
+    first.answer("s-1", manifestOf([TAP]));
+    doors.follow(first.client);
+    await doors.ready;
+
+    doors.unfollow();
+    const back = fakeClient([]);
+    doors.follow(back.client);
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
+    back.push([]);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(doors.tools()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("warns once per hash for each door without a tool", async () => {
     const { doors, warnings } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
