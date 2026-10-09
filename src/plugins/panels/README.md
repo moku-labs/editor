@@ -360,7 +360,7 @@ Findings of the scene spike on merge-game (fixtures `__tests__/fixtures/scene-bo
 
 | Finding | What `scene/` does |
 |---|---|
-| Several roots come under a synthetic `screen` root (no key, rect 0,0,0,0, popups first). | The synthetic root is no node. Its children are the roots. Paint order reverses them. |
+| Several roots come under a synthetic `screen` root (no key, rect 0,0,0,0): popups first, topmost first, then the screens, bottom layer first. | The synthetic root is no node. Its children are the roots. Paint order: the screens as listed, then the popups reversed. A popup root is a ui-owned entity with `Tree` in `game.entities`. |
 | Two hosts share one rect, so one `Box` matches two. | The parent ui key from `game.projections` picks the host. A tie without a key leaves the entity unplaced. |
 | Projection roots have no `Transform` and no `Parent`. | Roots with `rect: undefined`. |
 | Text-only views have no size component. | Listed under their host with `rect: undefined`. |

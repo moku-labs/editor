@@ -303,7 +303,7 @@ describe("scene on the live board (board/awaitIntent)", () => {
 });
 
 describe("scene on the live settings popup (board/settings/open)", () => {
-  it("unwraps the synthetic root: the popup and the board are roots, painted in reverse", () => {
+  it("unwraps the synthetic root: the popup and the board are roots, the popup painted last", () => {
     const scene = sceneOf(settings);
     const root = objectOf(settings.ui);
     const at = (id: string): number => scene.paintOrder.indexOf(id);
