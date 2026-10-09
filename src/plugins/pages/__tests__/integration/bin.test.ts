@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createMokuGame,
   MOKU_GAME_MARKER,
@@ -34,8 +34,71 @@ const TOOLS_LINE = /Tools\s+http/;
 /** How long a test waits for a signalled bin to exit: with the 20 s deadline of `spawnBin` it stays under the 30 s test timeout. */
 const EXIT_WAIT_MS = 5000;
 
+/** How long `spawnBin` waits for the line of a starting bin. */
+const READY_WAIT_MS = 20_000;
+
+/**
+ * How long a test waits for a serving bin to exit after its signal. The bin's own stop is bounded:
+ * about a second, and up to about 6 s more when a restart with a switch to HMR on is under way
+ * (D-57). So a bin that still runs after this is stuck; the wait ends under the 60 s test timeout,
+ * and the test fails with its own message.
+ */
+const STOP_WAIT_MS = 30_000;
+
+/** What a test says instead of an exit code when a signalled bin does not exit. */
+const STILL_RUNS = "the bin still runs";
+
+/** What the cleanup needs of a spawned bin. */
+type Spawned = Pick<Running["child"], "exited" | "kill">;
+
+/** Every bin a test spawned that has not exited: `afterEach` ends the ones a test left behind. */
+const spawned = new Set<Spawned>();
+
+/**
+ * Remembers a spawned bin until it exits.
+ *
+ * @param child - The bin.
+ */
+async function track(child: Spawned): Promise<void> {
+  spawned.add(child);
+  await child.exited;
+  spawned.delete(child);
+}
+
+/**
+ * Waits for a promise, at most `ms`; the timer does not outlive the wait.
+ *
+ * @param promise - What is waited for.
+ * @param ms - The longest wait.
+ * @returns The value, or undefined after `ms`.
+ */
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>(resolve => {
+    timer = setTimeout(resolve, ms, undefined);
+  });
+  try {
+    return await Promise.race([promise, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The exit code of a signalled bin.
+ *
+ * @param bin - The bin.
+ * @param ms - The longest wait for its exit.
+ * @returns Its exit code, or `STILL_RUNS` when it has not exited after `ms`.
+ */
+async function exitOf(bin: Running, ms = STOP_WAIT_MS): Promise<number | string> {
+  return (await within(bin.child.exited, ms)) ?? STILL_RUNS;
+}
+
 /**
  * Spawns the bin and waits for a line of its stdout: the Tools line of a serving bin by default.
+ * The wait ends with the line, with the end of the bin's stdout, or after `READY_WAIT_MS`: by the
+ * clock, not by the next read, which a bin that prints nothing and does not exit never answers.
  *
  * @param args - Bin arguments.
  * @param detached - Start it as the leader of its own process group, as a shell does.
@@ -50,23 +113,22 @@ async function spawnBin(args: string[], detached = false, ready = TOOLS_LINE): P
     stdout: "pipe",
     stderr: "pipe"
   });
+  void track(child);
   let text = "";
   const reader = child.stdout.getReader();
   const decoder = new TextDecoder();
-  const deadline = Date.now() + 20_000;
-  while (!ready.test(text) && Date.now() < deadline) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value);
-  }
+  const seen = Promise.withResolvers<void>();
   const pump = async (): Promise<void> => {
     for (;;) {
       const { value, done } = await reader.read();
-      if (done) return;
+      if (done) break;
       text += decoder.decode(value);
+      if (ready.test(text)) seen.resolve();
     }
+    seen.resolve();
   };
   void pump();
+  await within(seen.promise, READY_WAIT_MS);
   const port = Number(/Game\s+http:\/\/127\.0\.0\.1:(\d+)\//.exec(text)?.[1] ?? 0);
   return { child, port, output: () => text };
 }
@@ -79,6 +141,7 @@ async function spawnBin(args: string[], detached = false, ready = TOOLS_LINE): P
  */
 async function runBin(args: string[]): Promise<{ code: number; output: string }> {
   const child = Bun.spawn(["bun", BIN, ...args], { cwd: REPO, stdout: "pipe", stderr: "pipe" });
+  void track(child);
   const [out, error] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text()
@@ -135,9 +198,15 @@ function postHmr(origin: string, token: string, hmr: boolean): Promise<Response>
   });
 }
 
+/** The path of Bun's HMR socket: only its dev server, the one with hot reload on, upgrades it. */
+const HMR_SOCKET = "/_bun/hmr";
+
+/** How long one request or one socket open of a wait loop may take before it is tried again. */
+const TRY_MS = 5000;
+
 /**
  * Reads the game page until it carries Bun's HMR client or not, as asked; requests that fail
- * while the server restarts are tried again.
+ * while the server restarts, or get no answer in `TRY_MS`, are tried again.
  *
  * @param origin - The bin's origin.
  * @param hmr - Whether the page should carry the HMR client.
@@ -148,14 +217,55 @@ async function gamePageWith(origin: string, hmr: boolean): Promise<string> {
   let html = "";
   while (Date.now() < deadline) {
     try {
-      html = await fetch(`${origin}/`).then(response => response.text());
+      const response = await fetch(`${origin}/`, { signal: AbortSignal.timeout(TRY_MS) });
+      html = await response.text();
       if (html.includes(HMR_CLIENT) === hmr) return html;
     } catch {
-      // The server is between its stop and its next serve.
+      // The server is between its stop and its next serve, or did not answer in time.
     }
     await Bun.sleep(50);
   }
   return html;
+}
+
+/**
+ * Tries once to open Bun's HMR socket on a bin, and closes it again.
+ *
+ * @param origin - The bin's origin.
+ * @returns True when the socket opened; false when it was refused or did not open in `TRY_MS`.
+ */
+async function opensHmrSocket(origin: string): Promise<boolean> {
+  const socket = new WebSocket(`${origin.replace("http:", "ws:")}${HMR_SOCKET}`);
+  const opened = new Promise<boolean>(resolve => {
+    socket.addEventListener("open", () => {
+      resolve(true);
+    });
+    socket.addEventListener("error", () => {
+      resolve(false);
+    });
+    socket.addEventListener("close", () => {
+      resolve(false);
+    });
+  });
+  const result = await within(opened, TRY_MS);
+  socket.close();
+  return result === true;
+}
+
+/**
+ * Waits until Bun's dev server answers on a bin: its HMR socket opens. The server without HMR
+ * refuses the socket, and so does a server between its stop and its next serve.
+ *
+ * @param origin - The bin's origin.
+ * @returns True once the dev server is up, false after 15 s.
+ */
+async function devServerUp(origin: string): Promise<boolean> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await opensHmrSocket(origin)) return true;
+    await Bun.sleep(50);
+  }
+  return false;
 }
 
 /** How a client socket closed. */
@@ -278,11 +388,55 @@ async function createHeldScanGame(): Promise<string> {
   return root;
 }
 
+/** The modules of the big game, and the functions each of them exports. */
+const BIG_MODULES = 300;
+const BIG_FUNCTIONS = 300;
+
+/**
+ * The source of one module of the big game.
+ *
+ * @param module - The module's number.
+ * @returns `BIG_FUNCTIONS` exported functions.
+ */
+function bigModule(module: number): string {
+  let text = "";
+  for (let index = 0; index < BIG_FUNCTIONS; index += 1) {
+    text += `export function f${module}_${index}(a: number, b: number): number { const c = a * ${index} + b; return c % 7 === 0 ? c + ${module} : c - ${index}; }\n`;
+  }
+  return text;
+}
+
+/**
+ * Writes a game whose page is a bundle of about 10 MB: Bun needs about 100 ms for it, so a
+ * rebundle a page request started is still running when the bin's next server starts.
+ *
+ * @returns The real path of the game folder.
+ */
+async function createBigGame(): Promise<string> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-big-")));
+  const modules = Array.from({ length: BIG_MODULES }, (_unused, module) => module);
+  await Promise.all(
+    modules.map(module => writeFile(join(root, `m${module}.ts`), bigModule(module)))
+  );
+  const imports = modules.map(module => `import * as m${module} from "./m${module}.ts";`);
+  const counts = modules.map(module => `total += Object.keys(m${module}).length;`);
+  await writeFile(
+    join(root, "main.ts"),
+    `${imports.join("\n")}\nlet total = 0;\n${counts.join("\n")}\ndocument.title = "big game " + total;\n`
+  );
+  await writeFile(
+    join(root, "index.html"),
+    '<!doctype html><html><head><title>big game</title></head><body><div id="big"></div><script type="module" src="./main.ts"></script></body></html>'
+  );
+  return root;
+}
+
 let game: string;
 let bunfigGame: string;
 let engineGame: string;
 let mokuGame: string;
 let heldScanGame: string;
+let bigGame: string;
 
 beforeAll(async () => {
   // dist/ (the agent page and the tools page) is built once by tests/global-build.ts.
@@ -321,7 +475,16 @@ beforeAll(async () => {
   await symlink(join(REPO, "node_modules"), join(engineGame, "node_modules"), "dir");
   mokuGame = await createMokuGame();
   heldScanGame = await createHeldScanGame();
+  bigGame = await createBigGame();
 }, 120_000);
+
+afterEach(async () => {
+  // A test that failed or timed out before its bin exited leaves it running, or stopping. No bin
+  // outlives its test: SIGKILL, because a stuck bin answers no other signal.
+  const left = [...spawned];
+  for (const child of left) child.kill("SIGKILL");
+  await Promise.all(left.map(child => child.exited));
+});
 
 afterAll(async () => {
   await rm(game, { recursive: true, force: true });
@@ -329,6 +492,7 @@ afterAll(async () => {
   await rm(engineGame, { recursive: true, force: true });
   await rm(mokuGame, { recursive: true, force: true });
   await rm(heldScanGame, { recursive: true, force: true });
+  await rm(bigGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -369,7 +533,7 @@ describe("moku-editor bin", () => {
     } finally {
       bin.child.kill("SIGINT");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
     expect(bin.output()).toContain("stopped");
     expect(existsSync(join(game, ".moku", "editor.json"))).toBe(false);
   }, 60_000);
@@ -388,6 +552,9 @@ describe("moku-editor bin", () => {
         const answer = await postHmr(origin, token, hmr);
         expect(answer.status).toBe(200);
         expect(await answer.json()).toEqual({ hmr, owner: "bin" });
+        // The page is asked for once the dev server is up, as the editor does: it reloads the
+        // game frame after the game is back. The next case asks for it at once.
+        if (hmr) expect(await devServerUp(origin)).toBe(true);
         const html = await gamePageWith(origin, hmr);
         expect(html).toContain('id="tiny"');
         expect(html.includes(HMR_CLIENT)).toBe(hmr);
@@ -406,7 +573,33 @@ describe("moku-editor bin", () => {
     } finally {
       bin.child.kill("SIGINT");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
+  }, 60_000);
+
+  it("answers a page request made right after the switch to hot reload on with Bun's HMR client, twice, and stops on SIGINT with 0: the restart waits for Bun's bundler (D-57)", async () => {
+    const html = join(bigGame, "index.html");
+    const bin = await spawnBin([html, "--port", "0", "--root", bigGame, "--no-hmr"]);
+    try {
+      const origin = `http://127.0.0.1:${bin.port}`;
+      const hello = await fetch(`${origin}/__editor/hello`, { headers: { origin } });
+      const { token } = await hello.json();
+      expect(await gamePageWith(origin, false)).toContain('id="big"');
+
+      for (const hmr of [true, false, true, false]) {
+        const answer = await postHmr(origin, token, hmr);
+        expect(answer.status).toBe(200);
+        // No wait for the dev server here. On the switch to on the first request still reaches
+        // the server without HMR, and Bun rebundles that page on every request. Bun 1.3.14
+        // freezes or crashes when that rebundle and the dev server's first bundle run at once,
+        // so the bin lets the rebundle end before it serves with HMR.
+        const page = await gamePageWith(origin, hmr);
+        expect(page).toContain('id="big"');
+        expect(page.includes(HMR_CLIENT)).toBe(hmr);
+      }
+    } finally {
+      bin.child.kill("SIGINT");
+    }
+    expect(await exitOf(bin)).toBe(0);
   }, 60_000);
 
   it("writes .moku/editor.json 0600 and removes it on SIGTERM (M3)", async () => {
@@ -418,7 +611,7 @@ describe("moku-editor bin", () => {
     } finally {
       bin.child.kill("SIGTERM");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
     expect(existsSync(path)).toBe(false);
   }, 60_000);
 
@@ -440,7 +633,7 @@ describe("moku-editor bin", () => {
       // A terminal Ctrl+C: SIGINT to the whole process group of the bin.
       process.kill(-bin.child.pid, "SIGINT");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
     expect(bin.output().match(/stopped/g)).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
   }, 60_000);
@@ -497,7 +690,7 @@ describe("moku-editor bin", () => {
     } finally {
       bin.child.kill("SIGINT");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
   }, 60_000);
 
   it("serves a moku-game folder with no html: the engine writes .moku/, a bin re-run under its bunfig serves the page with the editor's agent, and stops on SIGINT with 0 (B5, D-51)", async () => {
@@ -524,7 +717,7 @@ describe("moku-editor bin", () => {
     } finally {
       bin.child.kill("SIGINT");
     }
-    expect(await bin.child.exited).toBe(0);
+    expect(await exitOf(bin)).toBe(0);
     expect(bin.output().match(/stopped/g)).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
   }, 60_000);
@@ -545,11 +738,7 @@ describe("moku-editor bin", () => {
         // The page is written and the first scan is open: the child comes only after it.
         expect(bin.output()).toContain(SCAN_OPEN);
         bin.child.kill(signal);
-        const ended = await Promise.race([
-          bin.child.exited,
-          Bun.sleep(EXIT_WAIT_MS).then(() => "the bin still runs")
-        ]);
-        expect(ended).toBe(code);
+        expect(await exitOf(bin, EXIT_WAIT_MS)).toBe(code);
       } finally {
         bin.child.kill("SIGKILL");
       }

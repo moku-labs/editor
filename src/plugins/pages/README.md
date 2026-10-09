@@ -54,8 +54,9 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
 4. The restart (`serve.ts`) first awaits `hub.closeAll(1012, "editor restarting")`: every agent
    and tools socket gets a clean close 1012 instead of a dropped socket (1006), and the stop
    waits until Bun reported the closes, at most 500 ms, so the close frames go out. Then it stops the
-   current server with its open connections, waiting at most 500 ms, and serves `next` on the same
-   port. A bin started with `--port 0` keeps its port.
+   current server with its open connections, waiting at most 500 ms. When `next` has HMR on, it
+   then waits until Bun's bundler is idle, at most 5 s (D-57, below). Then it serves `next` on the
+   same port. A bin started with `--port 0` keeps its port.
 5. The hub plugin is not stopped. The token and `.moku/editor.json` stay. The tools page's link
    and the game's bridge log the 1012 close at info and reconnect: link retries after 1 s, the
    bridge fetches `hello` again.
@@ -66,6 +67,27 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
 
 The game page has to load again to gain or drop Bun's HMR client (`/_bun/client`). workspace
 reloads the game frame with its state after an accepted switch (workspace README, Hot reload).
+
+The wait for Bun's bundler (D-57) works around a deadlock of Bun 1.3.14:
+
+- A server without HMR rebundles the page on every page request, on Bun's bundler thread. The
+  dev server bundles on the main thread.
+- When both bundles run at once, both wait on one wait group of Bun's thread pool and the main
+  thread is never woken. The bin then answers nothing, not even SIGINT or SIGTERM. Sometimes Bun
+  crashes instead.
+- A page request that still reaches the server without HMR during the switch to on sets this up.
+- So before a server with HMR starts, `waitForBundler` (`serve.ts`) runs an empty `Bun.build`
+  that lives in memory. Bun queues it on the same bundler thread, so it ends only after a
+  rebundle still in flight. It takes about 1 ms when the bundler is idle.
+- The wait is bounded to `BUNDLER_IDLE_MS`, 5 s. A wait that is cut or that fails prints one
+  warning (`[moku-editor] Bun's bundler was still busy after 5000 ms: …` or `[moku-editor] the
+  wait for Bun's bundler failed (…): …`) and the restart goes on.
+- It does not run before a server without HMR: there the empty build could itself run next to a
+  bundle of the stopped dev server.
+- Remove the wait when Bun no longer freezes there.
+
+Measured 2026-10-09 with the real bin and a page bundle of 10.8 MB, the page asked for right after
+each `POST P/hmr`: without the wait 15 of 20 bins froze, with it 0 of 40.
 
 | `setHotReload(on)` | Answer | What happens |
 |---|---|---|
@@ -403,11 +425,11 @@ What `main` (`cli.ts`) does:
    A `run` without an html file gets the engine page, starts the engine's keys watch and re-runs the bin under its bunfig; the watch is closed when that child exits (see Engine page). A `run` whose root has a `[serve.static]` bunfig, started elsewhere, re-spawns the bin there and exits with its code (see bunfig.toml of the game root). The steps below run in that child.
 2. Imports the game HTML at run time as a Bun HTML bundle.
 3. `createApp({ pluginConfigs: { files: { root }, pages: { gameUrl: "/" } } })` and `start()`. Warn and error log lines go to the branded console, and the info line `files:project-on { files, keys, ms }`, so the server log shows the project index is on.
-4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll)` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, waits until Bun reported the closes (at most 500 ms), stops it, bounded to 500 ms, and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
+4. `createGameServer(editor.hub.serve(...), editor.hub.closeAll, { warn })` (`serve.ts`) runs `Bun.serve` with `development: { hmr: true, console: true }` (`hmr: false` with `--no-hmr`), the game at `/`, and `createStaticFetch(root, editor.hub.guard)` for every other path. Bun HMR reloads the game page on a save (D-23, superseding D-22); `console: true` forwards the browser console to the terminal over the HMR socket. The game server keeps one mutable current server (A9): a restart closes every editor socket with 1012 `editor restarting`, waits until Bun reported the closes (at most 500 ms), stops it, bounded to 500 ms, waits for Bun's bundler to be idle before a server with HMR (at most 5 s, D-57; a wait that is cut or fails is one `ui.warn` line through `warn`), and serves the next options on the same port. Restarts and the final stop run one after another and always reach the current server.
 5. `editor.pages.attachServer(options, next => game.restart(next))`: the bin owns hot reload, `P/hmr` answers `{ hmr: true, owner: "bin" }` (`hmr: false` with `--no-hmr`), every tools page gets the `hotReload` notification, and the Hot reload switch can restart the server (see Hot reload).
 6. Writes `.moku/editor.json` (see Discovery file).
 7. Prints the Game, Tools and Root lines. The token is never printed.
-8. On `SIGINT` or `SIGTERM`, once: removes `.moku/editor.json`, `editor.stop()`, then stops the current game server (after a restart under way) with `stop(true)` bounded to 500 ms, prints `stopped`, exits 0. A signal that lands during steps 2 to 7 is remembered by early handlers (`catchSignalsEarly`, on from the first line of `main`) and runs the same stop once the bin serves, exit 0. Only a `run` with an html file has them. The engine form never serves in this process, so it keeps the default action until its child is spawned (see Engine page).
+8. On `SIGINT` or `SIGTERM`, once: removes `.moku/editor.json`, `editor.stop()`, then stops the current game server (after a restart under way) with `stop(true)` bounded to 500 ms, prints `stopped`, exits 0. A restart under way that switches to HMR on can take up to about 6 s more before that stop (D-57: at most 500 ms for the socket closes, 500 ms for the stop and 5 s for Bun's bundler). A signal that lands during steps 2 to 7 is remembered by early handlers (`catchSignalsEarly`, on from the first line of `main`) and runs the same stop once the bin serves, exit 0. Only a `run` with an html file has them. The engine form never serves in this process, so it keeps the default action until its child is spawned (see Engine page).
 
 > **Note: Bun stability.** D-22 saw Bun 1.3.14 crash after about 23 HMR reloads (1.13 GB RSS). D-23 accepts it as a Bun issue: restart the bin when it happens.
 >
@@ -442,6 +464,7 @@ What `main` (`cli.ts`) does:
 - `gameUrl` must be same-origin. The game's bridge fetches `hello` from this server.
 - The bin serves one game HTML file at `/` and binds 127.0.0.1 only.
 - Hot reload is switched by restarting the bin's server (D-32): every socket closes with 1012 and reconnects within about a second, and the game page has to load again. A game's own server cannot be switched.
+- Bun 1.3.14 freezes its main thread, or crashes, when the page rebundle of a server without HMR and the first bundle of the dev server run at once. The restart works around it: before it serves with HMR it waits until Bun's bundler is idle, at most 5 s (D-57, see Hot reload). Not covered: a rebundle that takes longer than 5 s, and a switch to off while the dev server is still bundling. A frozen bin needs `kill -9`.
 - MCP: screenshots and series need the game page visible (a hidden tab stops heartbeats). Frame sources reach `moku_wait` about once per second (D-15).
 - MCP: `moku_series` is one forwarded `run`. A run of `editor.sheet` waits `frames × everyMs` on top of the call deadline (capped at +60 s) in bridge, hub and link, so 12 frames every 5000 ms fit. The `game.capture { sheet }` fallback keeps the plain deadline (`callTimeoutMs`, 5 s by default): a longer sheet there answers -32002 `timeout`.
 - MCP: game pictures compress poorly. On merge-game in a 393 × 852 page a full shot is about 890 KB of base64, so the default screenshot comes back about 200 px wide. A 4-frame sheet is about 2 MB at full size; `editor.sheet` shrinks it to 1080 px wide in the page, and a sheet still above 300 KB is sent with the size note.

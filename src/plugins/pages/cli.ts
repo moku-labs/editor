@@ -325,7 +325,10 @@ async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
       routes: { "/": bundle },
       fetch: createStaticFetch(rootPath, editor.hub.guard)
     });
-    game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason));
+    // A wait for Bun's bundler that was cut or failed is one warning; the restart goes on (D-57).
+    game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason), {
+      warn: message => ui.warn(message)
+    });
   } catch (error) {
     const portTaken = `[moku-editor] port ${args.port} is in use · try --port ${args.port + 1}`;
     const message = isPortInUse(error) ? portTaken : `[moku-editor] ${messageOf(error)}`;
