@@ -34,7 +34,8 @@ import { messageOf, reportFailure } from "../report";
 import { reloadGame } from "../stage/reload";
 import { notify } from "../state";
 import type { BlockAt, GameViewCtx, GameViewState, StyleLookup, StyleSource } from "../types";
-import { findStyleSource, stylePathOf } from "./source";
+import { findStyleSource } from "./source";
+import { stylePathOf } from "./style-path";
 
 /**
  * Debounce of a stepper burst before the one write.

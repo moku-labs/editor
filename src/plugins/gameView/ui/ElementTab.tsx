@@ -24,6 +24,7 @@ import {
   selectElement,
   setPicker
 } from "../element/select";
+import { writtenStyle } from "../element/style-path";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
 import { referenceText } from "../reference/facts";
 import { copySelectedReference } from "../reference/pick";
@@ -290,9 +291,7 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
  * ```
  */
 function styleNameOf(source: StyleSource | undefined): string | undefined {
-  if (source?.kind === "ident") return source.ref.name;
-  if (source?.kind === "call") return source.call;
-  return source?.textStyle;
+  return writtenStyle(source) ?? (source?.kind === "defined" ? source.textStyle : undefined);
 }
 
 /**

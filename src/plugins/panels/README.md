@@ -250,7 +250,7 @@ The index is the only source of code locations (amendment N). No crawl, no kebab
 | Export | Signature | What |
 |---|---|---|
 | `findFresh` | `(files, key) => Promise<FreshFound \| undefined>` | `find(key)[0]`, then `read(path)`. A read version other than `hash` asks once more. Never throws. |
-| `findAllFresh` | `(files, key) => Promise<FreshAnswers \| undefined>` | Like `findFresh`, with every answer in the file of the first one: the calls of a style function (G2). |
+| `findAllFresh` | `(files, key) => Promise<FreshAnswers \| undefined>` | Like `findFresh`, with every answer of the one ask. `answers`: the ones in the file of the first one, the calls of a style function (G2). `others`: the later ones in other files, in the index's order, not read; the patterns an id prop fills in its component. |
 | `textStylesFile` | `(state) => string \| undefined` | The file with the most `textStyle:` keys; a tie takes the first sorted path. |
 | `usedIn` | `(state, path) => readonly string[]` | The use paths of every key defined in `path`: once each, sorted, without `path`. |
 | `manifestOf` | `(state) => string \| undefined` | `ProjectState.manifest` when on. The manifest has no other source. |

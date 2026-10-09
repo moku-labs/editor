@@ -1,23 +1,25 @@
 /**
  * @file gameView plugin — the source of a picked element, from the project index only (D-38,
- * amendment N): `find("jsx:<key>")` through link.files, and its first answer (the index orders
+ * amendment N): one `find("jsx:<key>")` through link.files, and its first answer (the index orders
  * them: exact keys, then `{id}` patterns filled from an `id=` prop, then `*` patterns). The first
  * answer is the source line (D-47). The style is the `style` attribute of the tag that opens the
  * answer's range; when the first answer is an id prop with no style on its tag
  * (`amountKey="giftReward"` on `<Amount>`), it is the style of the element the component draws
- * for it: the first later answer whose pattern the prop fills (`{amountKey}`) and whose tag has a
- * style. A `*` pattern that only reads as the key is never taken. `style={ident}` is the
- * StyleBlockRef `{ kind: "const", name: ident }` (R8) in the files the index defines
- * `style:<file>#<ident>` in, the file of the style first, then the file the ident is imported
- * from; `style={call(...)}` is shown read-only, with the `style:` key of the called function when
- * the index has one (G2); `style="ui.link"` names the text style key of a text node (round 2b
- * R17); an element with no style is still "defined at" the key line. A key the index does not
- * know has no source. Every answer is remembered per key in `state.found` until a project change
- * drops it.
+ * for it: the first later answer of the same ask whose pattern the prop fills (`{amountKey}`) in
+ * the component of its name, whose file is still the version the index answered from, and whose
+ * tag has a style. A pattern in a helper names no component and is never taken; neither is a `*`
+ * pattern that only reads as the key. The component files that gave no style are kept on the
+ * source, so a change to one of them asks again. `style={ident}` is the StyleBlockRef
+ * `{ kind: "const", name: ident }` (R8) in the files the index defines `style:<file>#<ident>` in,
+ * the file of the style first, then the file the ident is imported from; `style={call(...)}` is
+ * shown read-only, with the `style:` key of the called function when the index has one (G2);
+ * `style="ui.link"` names the text style key of a text node (round 2b R17); an element with no
+ * style is still "defined at" the key line. A key the index does not know has no source. Every
+ * answer is remembered per key in `state.found` until a project change drops it.
  */
 import { linkPlugin } from "../../link";
-import { type FreshFound, findFresh } from "../../panels/shared/project";
-import type { ProjectFound, ProjectState } from "../../registry/protocol";
+import { type FreshAnswers, findAllFresh } from "../../panels/shared/project";
+import type { FileText, ProjectFound, ProjectState } from "../../registry/protocol";
 import type { GameViewCtx, SourceRange, StyleSource } from "../types";
 import { tagAttributes } from "./jsx";
 
@@ -80,6 +82,17 @@ type ElementFile = { readonly path: string; readonly text: string };
  * an id prop.
  */
 type StyledFile = ElementFile & { readonly style: KeyStyle };
+
+/**
+ * What looking for the style of a key gave: the style with its file, and the files of the
+ * component answers that were looked at for it.
+ */
+type StyleFound = {
+  /** The style and the file it is written in; undefined for an element without a style. */
+  readonly styled: StyledFile | undefined;
+  /** The file of each component answer looked at, in order; empty when none was. */
+  readonly looked: readonly string[];
+};
 
 /**
  * A call on one line: its first line and `…` when it goes on.
@@ -250,6 +263,21 @@ export function callStyleKey(
 }
 
 /**
+ * Reads one file with its version; a file that cannot be read is undefined.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param path - The file.
+ * @returns Its text and version, or undefined.
+ */
+async function readFile(ctx: GameViewCtx, path: string): Promise<FileText | undefined> {
+  try {
+    return await ctx.require(linkPlugin).files.read(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Reads one file's text; a file that cannot be read is undefined.
  *
  * @param ctx - Domain context of gameView.
@@ -257,92 +285,107 @@ export function callStyleKey(
  * @returns Its text, or undefined.
  */
 export async function readText(ctx: GameViewCtx, path: string): Promise<string | undefined> {
-  try {
-    const file = await ctx.require(linkPlugin).files.read(path);
-    return file.text;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The file the style of a source was read from: the component file of an id prop whose own tag
- * has no style, else the file of the key.
- *
- * @param source - Where the index found a ui key.
- * @returns The root-relative file the `style` attribute is written in.
- * @example
- * ```ts
- * // merge-game's giftReward: `amountKey="giftReward"` in daily-gift.tsx, the text in <Amount>.
- * stylePathOf({ kind: "defined", path: "features/gift/popups/daily-gift.tsx", line: 25, range: [23, 9, 29, 11], textStyle: "ui.amount", stylePath: "shared/views/amount.tsx" });
- * // "shared/views/amount.tsx"
- * ```
- */
-export function stylePathOf(source: StyleSource): string {
-  return source.stylePath ?? source.path;
+  const file = await readFile(ctx, path);
+  return file?.text;
 }
 
 /**
  * True when a later answer is the element a component draws for an id prop: its pattern has the
- * hole of the prop (`{id}` for `id=`, `{amountKey}` for `amountKey=`) and is written in the
- * component the prop sits on, or in a helper. A `*` pattern has no hole: it only reads as the key.
+ * hole of the prop (`{id}` for `id=`, `{amountKey}` for `amountKey=`) and is written in a
+ * component of the name the prop sits on. A pattern in a lower-case helper names no component:
+ * the index cannot say which component calls it, so it is never taken. A `*` pattern has no hole:
+ * it only reads as the key.
  *
  * @param first - The first answer: an id prop.
  * @param later - A later answer of the same key.
- * @returns Whether the prop fills the pattern.
+ * @returns Whether the prop fills the pattern in its component.
  * @example
  * ```ts
  * const first = { path: "daily-gift.tsx", key: "giftReward", kind: "idProp", component: "Amount", prop: "amountKey", line: 25, range: [23, 9, 29, 11], hash: "0f3c" } as const;
  * fillsPattern(first, { path: "amount.tsx", key: "{amountKey}", kind: "ident", component: "Amount", line: 35, range: [35, 7, 35, 78], hash: "9a1e" }); // true
+ * fillsPattern(first, { path: "hud-pill.tsx", key: "{amountKey}", kind: "ident", line: 12, range: [12, 5, 12, 60], hash: "41c0" }); // false: a helper
  * fillsPattern(first, { path: "strip.tsx", key: "gift*", kind: "ident", stem: "gift", line: 216, range: [215, 5, 247, 14], hash: "77b2" }); // false
  * ```
  */
 function fillsPattern(first: ProjectFound, later: ProjectFound): boolean {
-  const isSameComponent = later.component === undefined || later.component === first.component;
-  return isSameComponent && (later.key ?? "").includes(`{${first.prop ?? "id"}}`);
+  const { component } = first;
+  const hole = `{${first.prop ?? "id"}}`;
+  const isOfComponent = component !== undefined && later.component === component;
+  return isOfComponent && (later.key?.includes(hole) ?? false);
 }
 
 /**
- * The later answers of a key, after its first one; none when the index does not answer now.
+ * The later answers to look at for the style of an id prop: the patterns its prop fills in a
+ * component of its name (`fillsPattern`), those in the file of the prop first, then those in
+ * other files, each group in the index's order. When components of that name answer from more
+ * than one file, the name does not say which one the prop is passed to: only the one in the file
+ * of the prop, or in a file it imports the component from by a relative path, is taken. An import
+ * that cannot be followed here (a tsconfig alias, a barrel) then takes none.
  *
- * @param ctx - Domain context of gameView.
- * @param key - The ui key.
- * @returns The answers after the first, in the index's order.
+ * @param fresh - Every answer of `jsx:<key>`, the first one an id prop, with its file's text.
+ * @returns The answers of the component the prop is passed to.
+ * @example
+ * ```ts
+ * // settings.tsx: `import { Board } from "../ui/board";` and `<Board id="settingsBoard" />`.
+ * // The index answers the `{id}` panel of Board in features/shop/board.tsx and features/ui/board.tsx.
+ * componentAnswers(fresh).map(later => later.path); // ["features/ui/board.tsx"]
+ * ```
  */
-async function laterAnswers(ctx: GameViewCtx, key: string): Promise<readonly ProjectFound[]> {
-  try {
-    const answers = await ctx.require(linkPlugin).files.find(`jsx:${key}`);
-    return answers.slice(1);
-  } catch {
-    return [];
-  }
+function componentAnswers(fresh: FreshAnswers): readonly ProjectFound[] {
+  const [found, ...inFile] = fresh.answers;
+  const filled = [...inFile, ...fresh.others].filter(later => fillsPattern(found, later));
+
+  // One file writes a component of that name: the name says which one it is.
+  const files = new Set(filled.map(later => later.path));
+  const { component } = found;
+  if (component === undefined || files.size < 2) return filled;
+
+  const near = new Set([found.path, ...importCandidates(fresh.text, component, found.path)]);
+  return filled.filter(later => near.has(later.path));
 }
 
 /**
- * The style of the element a component draws for an id prop: the first later answer whose pattern
- * the prop fills and whose tag has a style, with the component file it is written in.
+ * The text a later answer was answered from: the text of the key file when the answer is in it,
+ * else its own file, read now. Only the version the index answered from (the `hash` of the
+ * answer) counts: in any other text the range of the answer is of other lines.
  *
  * @param ctx - Domain context of gameView.
- * @param key - The ui key.
- * @param fresh - The first answer of `jsx:<key>`, an id prop, with its file's text.
- * @returns The style and its file, undefined when no such answer has a style.
+ * @param fresh - The answers of the key with the text and version of the key file.
+ * @param later - A later answer of the key.
+ * @returns The text, undefined when the file cannot be read or is another version now.
  */
-async function componentStyle(
+async function answeredText(
   ctx: GameViewCtx,
-  key: string,
-  fresh: FreshFound
-): Promise<StyledFile | undefined> {
-  const { found } = fresh;
-  for (const later of await laterAnswers(ctx, key)) {
-    if (!fillsPattern(found, later)) continue;
+  fresh: FreshAnswers,
+  later: ProjectFound
+): Promise<string | undefined> {
+  const file = later.path === fresh.answers[0].path ? fresh : await readFile(ctx, later.path);
+  return file?.version === later.hash ? file.text : undefined;
+}
 
-    // The component may be written in the file of the prop: its text is read already.
+/**
+ * The style of the element a component draws for an id prop: the first answer of its component
+ * (`componentAnswers`) whose file is the version the index answered from and whose tag has a
+ * style, with the component file it is written in and the file of every answer looked at.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param fresh - Every answer of `jsx:<key>`, the first one an id prop, with its file's text.
+ * @returns The style and its file (undefined when no such answer has a style) and the files
+ * looked at.
+ */
+async function componentStyle(ctx: GameViewCtx, fresh: FreshAnswers): Promise<StyleFound> {
+  const looked: string[] = [];
+  for (const later of componentAnswers(fresh)) {
     const { path } = later;
-    const text = path === found.path ? fresh.text : await readText(ctx, path);
-    const style = text === undefined ? undefined : styleInRange(text.split("\n"), later.range);
-    if (text !== undefined && style !== undefined) return { path, text, style };
+    looked.push(path);
+
+    const text = await answeredText(ctx, fresh, later);
+    if (text === undefined) continue;
+
+    const style = styleInRange(text.split("\n"), later.range);
+    if (style !== undefined) return { styled: { path, text, style }, looked };
   }
-  return undefined;
+  return { styled: undefined, looked };
 }
 
 /**
@@ -350,59 +393,111 @@ async function componentStyle(
  * its component draws for it.
  *
  * @param ctx - Domain context of gameView.
- * @param key - The ui key.
- * @param fresh - The first answer of `jsx:<key>` with its file's text.
- * @returns The style and the file it is written in, undefined for an element without a style.
+ * @param fresh - Every answer of `jsx:<key>` with the text of the first answer's file.
+ * @returns The style and the file it is written in (undefined for an element without a style)
+ * and the component files looked at.
  */
-async function styledFile(
-  ctx: GameViewCtx,
-  key: string,
-  fresh: FreshFound
-): Promise<StyledFile | undefined> {
-  const { found, text } = fresh;
+async function styleOf(ctx: GameViewCtx, fresh: FreshAnswers): Promise<StyleFound> {
+  const [found] = fresh.answers;
+  const { text } = fresh;
   const style = styleInRange(text.split("\n"), found.range);
-  if (style !== undefined) return { path: found.path, text, style };
+  if (style !== undefined) return { styled: { path: found.path, text, style }, looked: [] };
+  if (found.kind !== "idProp") return { styled: undefined, looked: [] };
 
-  return found.kind === "idProp" ? componentStyle(ctx, key, fresh) : undefined;
+  return componentStyle(ctx, fresh);
 }
 
 /**
- * The source of a ui key: the place of its first answer (D-47) with the style found for it.
+ * The component files a source keeps: `stylePath` when the style was read from another file than
+ * the key's, `stylelessPaths` for the other files looked at that gave none, each once.
  *
  * @param found - The first answer of `jsx:<key>`.
- * @param styled - The style and the file it is written in, undefined without a style.
+ * @param lookup - The style found for it and the component files looked at.
+ * @returns The two fields; one that has nothing to say is left out.
+ * @example
+ * ```ts
+ * // The component of an id prop in daily-gift.tsx draws its text without a style.
+ * componentFiles(giftProp, { styled: undefined, looked: ["shared/views/amount.tsx"] });
+ * // { stylelessPaths: ["shared/views/amount.tsx"] }
+ * ```
+ */
+function componentFiles(
+  found: ProjectFound,
+  lookup: StyleFound
+): Pick<StyleSource, "stylePath" | "stylelessPaths"> {
+  const { styled, looked } = lookup;
+  const stylePath = styled?.path === found.path ? undefined : styled?.path;
+  const styleless = [...new Set(looked)].filter(
+    path => path !== found.path && path !== styled?.path
+  );
+  return {
+    ...(stylePath === undefined ? {} : { stylePath }),
+    ...(styleless.length === 0 ? {} : { stylelessPaths: styleless })
+  };
+}
+
+/**
+ * The files that may hold the block of a style ident, in order: the ones the index defines it in
+ * (`styleFilesOf`); the file the style is written in alone when the index defines none.
+ *
+ * @param project - The project state (`link.project()`).
+ * @param styled - The style and the file it is written in.
+ * @param name - The ident.
+ * @returns The files; never empty.
+ * @example
+ * ```ts
+ * // <Pill key="coinPill" style={coinPill} /> in src/hud/Hud.tsx, a style the index does not define.
+ * blockFiles(project, { path: "src/hud/Hud.tsx", text, style }, "coinPill"); // ["src/hud/Hud.tsx"]
+ * ```
+ */
+function blockFiles(
+  project: ProjectState | undefined,
+  styled: StyledFile,
+  name: string
+): readonly string[] {
+  const files = styleFilesOf(project, styled, name, name);
+  return files.length > 0 ? files : [styled.path];
+}
+
+/**
+ * The source of a ui key: the place of its first answer (D-47) with the style found for it and
+ * the component files that were read for it.
+ *
+ * @param found - The first answer of `jsx:<key>`.
+ * @param lookup - The style and the file it is written in (undefined without a style), and the
+ * component files looked at.
  * @param project - The project state (`link.project()`).
  * @returns The style source.
  */
 function sourceOf(
   found: ProjectFound,
-  styled: StyledFile | undefined,
+  lookup: StyleFound,
   project: ProjectState | undefined
 ): StyleSource {
-  const at = { path: found.path, line: found.line, range: found.range };
+  // The files of the component are kept for the line of its style and for its changes.
+  const component = componentFiles(found, lookup);
+  const at = { path: found.path, line: found.line, range: found.range, ...component };
+  const { styled } = lookup;
   if (styled === undefined) return { kind: "defined", ...at };
 
-  // The style of a component in another file: the file is kept for its line and its changes.
-  const { style, path } = styled;
-  const from = path === found.path ? {} : { stylePath: path };
+  const { style } = styled;
   if (style.kind === "ident") {
-    const files = styleFilesOf(project, styled, style.name, style.name);
     const ref = { kind: "const", name: style.name } as const;
-    return { kind: "ident", ...at, ...from, ref, files: files.length > 0 ? files : [path] };
+    return { kind: "ident", ...at, ref, files: blockFiles(project, styled, style.name) };
   }
   if (style.kind === "call") {
-    const call = { kind: "call", ...at, ...from, call: style.text, callLine: style.line } as const;
+    const call = { kind: "call", ...at, call: style.text, callLine: style.line } as const;
     const styleKey = callStyleKey(project, styled, style.text);
     return styleKey === undefined ? call : { ...call, styleKey };
   }
-  return { kind: "defined", ...at, ...from, textStyle: style.key };
+  return { kind: "defined", ...at, textStyle: style.key };
 }
 
 /**
- * Asks the project index where a ui key is: its first answer, the style of that element (for an
- * id prop without one, the style of the element its component draws) and the files of the style.
- * The result is remembered in `state.found`; a key the index does not know (or an index that is
- * off or unreachable) is forgotten there. Never rejects.
+ * Asks the project index once where a ui key is: its first answer, the style of that element (for
+ * an id prop without one, the style of the element its component draws, from the later answers of
+ * the same ask) and the files of the style. The result is remembered in `state.found`; a key the
+ * index does not know (or an index that is off or unreachable) is forgotten there. Never rejects.
  *
  * @param ctx - Domain context of gameView.
  * @param key - The ui key.
@@ -413,15 +508,15 @@ export async function findStyleSource(
   key: string
 ): Promise<StyleSource | undefined> {
   const link = ctx.require(linkPlugin);
-  const fresh = await findFresh(link.files, `jsx:${key}`);
+  const fresh = await findAllFresh(link.files, `jsx:${key}`);
   const { found } = ctx.state;
   if (fresh === undefined) {
     found.delete(key);
     return undefined;
   }
 
-  const styled = await styledFile(ctx, key, fresh);
-  const source = sourceOf(fresh.found, styled, link.project());
+  const lookup = await styleOf(ctx, fresh);
+  const source = sourceOf(fresh.answers[0], lookup, link.project());
   found.set(key, source);
   return source;
 }

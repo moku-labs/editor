@@ -7,8 +7,7 @@ import {
   findStyleSource,
   importCandidates,
   styleFilesOf,
-  styleInRange,
-  stylePathOf
+  styleInRange
 } from "../../element/source";
 import { answer, createCtx, place, projectOn, type TestCtx, templateOf } from "../helpers";
 
@@ -16,7 +15,8 @@ import { answer, createCtx, place, projectOn, type TestCtx, templateOf } from ".
 // The source of a picked element comes from the project index only (D-38,
 // amendment N): the first answer of `jsx:<key>`, the style attribute of the tag
 // that opens its range, and the files the index defines the style in. An id prop
-// has its style on the element its component draws: the pattern its prop fills.
+// has its style on the element its component draws: the pattern its prop fills
+// in the component of its name, taken from the same answer of the index.
 // No crawl.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,49 @@ const AMOUNT_TEXT = place("shared/views/amount.tsx", [2, 7, 2, 78], {
   kind: "ident",
   component: "Amount"
 });
+
+/** The answer of `jsx:giftReward` without its style: the id prop is defined at its line. */
+const GIFT_DEFINED = {
+  kind: "defined",
+  path: "features/gift/popups/daily-gift.tsx",
+  line: 3,
+  range: [1, 9, 5, 11]
+};
+
+/** The `{id}` pattern of a component named Board: the panel it draws. */
+const BOARD_PANEL = { key: "{id}", kind: "ident", component: "Board" } as const;
+
+/** The id prop of the settings board, on line 2 of its file. */
+const BOARD_PROP = place("features/settings/settings.tsx", [2, 1, 2, 29], {
+  key: "settingsBoard",
+  kind: "idProp",
+  component: "Board",
+  prop: "id"
+});
+
+/**
+ * A ctx with two files that each write a component named Board, and the settings file that
+ * passes `id="settingsBoard"` to one of them. The index answers the shop's Board first.
+ *
+ * @param firstLine - Line 1 of the settings file: its import of Board, or the panel of a Board
+ * written in the file itself.
+ * @returns The ctx.
+ */
+function twoBoards(firstLine: string): TestCtx {
+  const ctx = createCtx({
+    "features/settings/settings.tsx": [firstLine, '<Board id="settingsBoard" />'].join("\n"),
+    "features/shop/board.tsx": "<panel key={props.id} style={shopBoard} />",
+    "features/ui/board.tsx": "<panel key={props.id} style={uiBoard} />"
+  });
+  answer(
+    ctx,
+    "jsx:settingsBoard",
+    BOARD_PROP,
+    place("features/shop/board.tsx", [1, 1, 1, 43], BOARD_PANEL),
+    place("features/ui/board.tsx", [1, 1, 1, 41], BOARD_PANEL)
+  );
+  return ctx;
+}
 
 describe("styleInRange", () => {
   it("reads style={ident} on the tag that opens the range, with the line of the attribute", () => {
@@ -228,30 +271,6 @@ describe("callStyleKey (G2)", () => {
   });
 });
 
-describe("stylePathOf", () => {
-  it("is the file the style was read from: the component of an id prop, else the key file", () => {
-    expect(
-      stylePathOf({
-        kind: "defined",
-        path: "features/gift/popups/daily-gift.tsx",
-        line: 25,
-        range: [23, 9, 29, 11],
-        textStyle: "ui.amount",
-        stylePath: "shared/views/amount.tsx"
-      })
-    ).toBe("shared/views/amount.tsx");
-    expect(
-      stylePathOf({
-        kind: "defined",
-        path: "a.tsx",
-        line: 1,
-        range: [1, 1, 1, 54],
-        textStyle: "ui.link"
-      })
-    ).toBe("a.tsx");
-  });
-});
-
 describe("findStyleSource", () => {
   const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
 
@@ -294,17 +313,29 @@ describe("findStyleSource", () => {
     const source = await findStyleSource(ctx, "giftReward");
 
     expect(source).toEqual({
-      kind: "defined",
-      path: "features/gift/popups/daily-gift.tsx",
-      line: 3,
-      range: [1, 9, 5, 11],
+      ...GIFT_DEFINED,
       textStyle: "ui.amount",
-      stylePath: "shared/views/amount.tsx"
+      stylePath: AMOUNT_TEXT.path
     });
     expect(ctx.state.found.get("giftReward")).toBe(source);
   });
 
-  it("keeps the id prop line and takes the style call of its component, with the file of the call", async () => {
+  it("asks the index once for an id prop: the answers of its component come with the first one", async () => {
+    const ctx = createCtx({
+      "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
+      "shared/views/amount.tsx": AMOUNT.join("\n")
+    });
+    answer(ctx, "jsx:giftReward", GIFT_PROP, AMOUNT_TEXT);
+    const find = vi.spyOn(ctx.link.files, "find");
+
+    const source = await findStyleSource(ctx, "giftReward");
+
+    expect(source).toMatchObject({ textStyle: "ui.amount", stylePath: AMOUNT_TEXT.path });
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(find).toHaveBeenCalledWith("jsx:giftReward");
+  });
+
+  it("keeps the id prop line and takes the style call of the component it is passed to (Signboard), with the file of the call", async () => {
     const ctx = createCtx({
       "features/settings/settings.tsx": SETTINGS.join("\n"),
       "features/ui/kit.tsx": KIT.join("\n")
@@ -315,8 +346,19 @@ describe("findStyleSource", () => {
     answer(
       ctx,
       "jsx:settingsBoard",
-      place("features/settings/settings.tsx", [1, 7, 9, 19], { line: 2, kind: "idProp" }),
-      place("features/ui/kit.tsx", [2, 5, 8, 13], { line: 3, kind: "ident", key: "{id}" })
+      place("features/settings/settings.tsx", [1, 7, 9, 19], {
+        line: 2,
+        key: "settingsBoard",
+        kind: "idProp",
+        component: "Signboard",
+        prop: "id"
+      }),
+      place("features/ui/kit.tsx", [2, 5, 8, 13], {
+        line: 3,
+        key: "{id}",
+        kind: "ident",
+        component: "Signboard"
+      })
     );
     expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
       kind: "call",
@@ -342,7 +384,11 @@ describe("findStyleSource", () => {
       ctx,
       "jsx:giftAmount",
       { ...GIFT_PROP, line: 2, key: "giftAmount", prop: "id" },
-      place("shared/views/amount.tsx", [2, 5, 4, 11], { key: "{id}", kind: "ident" })
+      place("shared/views/amount.tsx", [2, 5, 4, 11], {
+        key: "{id}",
+        kind: "ident",
+        component: "Amount"
+      })
     );
     expect(await findStyleSource(ctx, "giftAmount")).toEqual({
       kind: "ident",
@@ -364,12 +410,6 @@ describe("findStyleSource", () => {
       "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
       "shared/views/amount.tsx": AMOUNT.join("\n")
     });
-    const defined = {
-      kind: "defined",
-      path: "features/gift/popups/daily-gift.tsx",
-      line: 3,
-      range: [1, 9, 5, 11]
-    };
 
     // `{id}` is not the hole of `amountKey=`; another component's pattern is not this element.
     answer(
@@ -380,23 +420,173 @@ describe("findStyleSource", () => {
       { ...AMOUNT_TEXT, component: "Prize" },
       { ...AMOUNT_TEXT, key: "gift*", stem: "gift" }
     );
-    expect(await findStyleSource(ctx, "giftReward")).toEqual(defined);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual(GIFT_DEFINED);
+  });
+
+  it("never takes a pattern written in a helper: a later answer with no component", async () => {
+    const ctx = createCtx({
+      "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
+      "shared/views/amount.tsx": AMOUNT.join("\n")
+    });
+    const helper = place(AMOUNT_TEXT.path, AMOUNT_TEXT.range, {
+      key: "{amountKey}",
+      kind: "ident"
+    });
+
+    // The index does not say which component calls the helper: any id prop would fill it.
+    answer(ctx, "jsx:giftReward", GIFT_PROP, helper);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual(GIFT_DEFINED);
+
+    // An id prop the index names no component for fills no pattern either.
+    const { range } = GIFT_PROP;
+    const bare = place(GIFT_PROP.path, range, { line: 3, kind: "idProp", prop: "amountKey" });
+    answer(ctx, "jsx:giftReward", bare, helper);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual(GIFT_DEFINED);
+  });
+
+  it("never takes a later answer with an undefined key", async () => {
+    const ctx = createCtx({
+      "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
+      "shared/views/amount.tsx": AMOUNT.join("\n")
+    });
+    const keyless = place(AMOUNT_TEXT.path, AMOUNT_TEXT.range, {
+      kind: "ident",
+      component: "Amount"
+    });
+    answer(ctx, "jsx:giftReward", GIFT_PROP, keyless);
+
+    expect(await findStyleSource(ctx, "giftReward")).toEqual(GIFT_DEFINED);
+  });
+
+  it("takes the same-named component the id prop's file imports by a relative path, not the first one answered", async () => {
+    const ctx = twoBoards('import { Board } from "../ui/board";');
+
+    expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
+      kind: "ident",
+      path: "features/settings/settings.tsx",
+      line: 2,
+      range: [2, 1, 2, 29],
+      ref: { kind: "const", name: "uiBoard" },
+      files: ["features/ui/board.tsx"],
+      stylePath: "features/ui/board.tsx"
+    });
+  });
+
+  it("takes no style when two files write a component of that name and the import does not say which", async () => {
+    const ctx = twoBoards('import { Board } from "@ui";');
+
+    // An alias cannot be followed here: no style is better than the style of another Board.
+    expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
+      kind: "defined",
+      path: "features/settings/settings.tsx",
+      line: 2,
+      range: [2, 1, 2, 29]
+    });
+  });
+
+  it("takes the component written in the file of the id prop over a same-named one in another file", async () => {
+    const ctx = twoBoards("<panel key={props.id} style={ownBoard} />");
+    answer(
+      ctx,
+      "jsx:settingsBoard",
+      BOARD_PROP,
+      place("features/shop/board.tsx", [1, 1, 1, 43], BOARD_PANEL),
+      place("features/settings/settings.tsx", [1, 1, 1, 42], BOARD_PANEL)
+    );
+
+    const source = await findStyleSource(ctx, "settingsBoard");
+
+    expect(source?.kind === "ident" ? source.ref.name : undefined).toBe("ownBoard");
+    expect(source).not.toHaveProperty("stylePath");
+    expect(source).not.toHaveProperty("stylelessPaths");
+  });
+
+  it("keeps the component files that gave no style: no style on the tag, or a file that cannot be read", async () => {
+    const ctx = createCtx({
+      "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
+      "shared/views/amount.tsx": AMOUNT.join("\n")
+    });
 
     // The pattern of the component has no style on its tag: the id prop is defined at its line.
     answer(ctx, "jsx:giftReward", GIFT_PROP, { ...AMOUNT_TEXT, range: [3, 5, 3, 11] });
-    expect(await findStyleSource(ctx, "giftReward")).toEqual(defined);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      stylelessPaths: ["shared/views/amount.tsx"]
+    });
 
     // A component file that cannot be read has no style to show.
     answer(ctx, "jsx:giftReward", GIFT_PROP, { ...AMOUNT_TEXT, path: "gone.tsx" });
-    expect(await findStyleSource(ctx, "giftReward")).toEqual(defined);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      stylelessPaths: ["gone.tsx"]
+    });
 
-    // The index stops answering between the two asks.
-    answer(ctx, "jsx:giftReward", GIFT_PROP, AMOUNT_TEXT);
-    const answers = await ctx.link.files.find("jsx:giftReward");
-    vi.spyOn(ctx.link.files, "find")
-      .mockResolvedValueOnce(answers)
-      .mockRejectedValueOnce(new Error("project index off: disabled"));
-    expect(await findStyleSource(ctx, "giftReward")).toEqual(defined);
+    // Two answers of the component in one file, none with a style: the file is kept once.
+    const bare = { ...AMOUNT_TEXT, range: [3, 5, 3, 11] } as const;
+    answer(ctx, "jsx:giftReward", GIFT_PROP, bare, { ...bare, line: 3 });
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      stylelessPaths: ["shared/views/amount.tsx"]
+    });
+
+    // The second answer has the style: its file gave it, so it is not a file without one.
+    answer(ctx, "jsx:giftReward", GIFT_PROP, bare, AMOUNT_TEXT);
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      textStyle: "ui.amount",
+      stylePath: "shared/views/amount.tsx"
+    });
+  });
+
+  it("skips a component file that changed since the index answered: the range is of other lines", async () => {
+    const ctx = createCtx({
+      "features/gift/popups/daily-gift.tsx": GIFT.join("\n"),
+      "shared/views/amount.tsx": ['<text key="other" style="ui.title" />', ...AMOUNT].join("\n")
+    });
+
+    // The answer is of the bytes before a line was added: its range now opens the row.
+    answer(ctx, "jsx:giftReward", GIFT_PROP, { ...AMOUNT_TEXT, hash: "before-the-edit" });
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      stylelessPaths: ["shared/views/amount.tsx"]
+    });
+
+    // The index answers from the bytes on disk again: the range is of the text read.
+    answer(ctx, "jsx:giftReward", GIFT_PROP, { ...AMOUNT_TEXT, range: [3, 7, 3, 78] });
+    expect(await findStyleSource(ctx, "giftReward")).toEqual({
+      ...GIFT_DEFINED,
+      textStyle: "ui.amount",
+      stylePath: "shared/views/amount.tsx"
+    });
+  });
+
+  it("skips a later answer in the key file when the text read is not its version", async () => {
+    const view = ['<Amount amountKey="giftReward" />', ...AMOUNT];
+    const ctx = createCtx({ "features/gift/view.tsx": view.join("\n") });
+    const prop = place("features/gift/view.tsx", [1, 1, 1, 34], {
+      key: "giftReward",
+      kind: "idProp",
+      component: "Amount",
+      prop: "amountKey"
+    });
+    const text = place("features/gift/view.tsx", [3, 7, 3, 78], {
+      key: "{amountKey}",
+      kind: "ident",
+      component: "Amount"
+    });
+
+    // The file changed twice between the answers and the reads: the last answers stay, stale.
+    answer(ctx, "jsx:giftReward", { ...prop, hash: "stale" }, { ...text, hash: "stale" });
+    const source = await findStyleSource(ctx, "giftReward");
+    expect(source).toEqual({
+      kind: "defined",
+      path: "features/gift/view.tsx",
+      line: 1,
+      range: [1, 1, 1, 34]
+    });
+
+    answer(ctx, "jsx:giftReward", prop, text);
+    expect(await findStyleSource(ctx, "giftReward")).toMatchObject({ textStyle: "ui.amount" });
   });
 
   it("never gives a literal key the style of a `*` pattern that reads as it (cardRow is not a card)", async () => {
@@ -423,7 +613,7 @@ describe("findStyleSource", () => {
     expect(find).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the style of the id prop's own tag: the component is not asked", async () => {
+  it("keeps the style of the id prop's own tag: the component file is not read", async () => {
     const ctx = createCtx({
       "features/gift/popups/daily-gift.tsx": [
         '<Amount amountKey="giftReward" style={giftRow} />'
@@ -432,12 +622,15 @@ describe("findStyleSource", () => {
     });
     answer(ctx, "jsx:giftReward", { ...GIFT_PROP, line: 1, range: [1, 1, 1, 50] }, AMOUNT_TEXT);
     const find = vi.spyOn(ctx.link.files, "find");
+    const read = vi.spyOn(ctx.link.files, "read");
 
     const source = await findStyleSource(ctx, "giftReward");
 
     expect(source?.kind === "ident" ? source.ref.name : undefined).toBe("giftRow");
     expect(source).not.toHaveProperty("stylePath");
+    expect(source).not.toHaveProperty("stylelessPaths");
     expect(find).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls).toEqual([["features/gift/popups/daily-gift.tsx"]]);
   });
 
   it("returns a style call with the line of the call and the style key the index has (G2)", async () => {
@@ -536,6 +729,15 @@ describe("findStyleSource on the tiny project index", () => {
   });
 
   it("answers settingsBoard with view.tsx:36, the board from line 35, and the style of the panel Board draws", async () => {
+    // The real index names the component on both answers: the prop on <Board>, the panel in Board.
+    const answers = await ctx.link.files.find("jsx:settingsBoard");
+    expect(
+      answers.map(({ kind, component, prop, key }) => ({ kind, component, prop, key }))
+    ).toEqual([
+      { kind: "idProp", component: "Board", prop: "id", key: "settingsBoard" },
+      { kind: "ident", component: "Board", prop: undefined, key: "{id}" }
+    ]);
+
     expect(await findStyleSource(ctx, "settingsBoard")).toEqual({
       kind: "ident",
       path: "features/ui/view.tsx",

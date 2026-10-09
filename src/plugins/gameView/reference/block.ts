@@ -8,7 +8,7 @@
 import type { PageRect, SceneNode } from "../../panels/shared/scene";
 import type { Json, Orientation } from "../../registry/protocol";
 import type { PositionInfo } from "../capture/naming";
-import { stylePathOf } from "../element/source";
+import { stylePathOf } from "../element/style-path";
 import type { BlockAt, StyleSource } from "../types";
 
 /**
