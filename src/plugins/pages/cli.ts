@@ -6,7 +6,8 @@
  * the branded console (MC1). A root whose `bunfig.toml` has `[serve.static]` is served from a
  * re-spawned bin with that cwd (`reexec.ts`). Without a game HTML file, a moku-game folder gets
  * its page from the engine (`engine-page.ts`, B5) and is served from a bin re-run under the page's
- * bunfig. `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
+ * bunfig; this bin, the parent, runs the engine's keys watch until that child exits (D-55).
+ * `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
  * prints the Claude Code setup; `e2e` runs a Playwright config once per project and spec file,
  * each on its own PORT (`e2e.ts`, D-52, D-53). The token is never printed.
  */
@@ -15,13 +16,20 @@ import { resolve } from "node:path/posix";
 import { pathToFileURL } from "node:url";
 import type { BrandConsole } from "@moku-labs/common/cli";
 import { createBrandConsole } from "@moku-labs/common/cli";
+import type { KeysWatcher } from "@moku-labs/game/cli";
 import { createApp } from "../../server";
 import { parseBinArgs } from "./args";
 import { discoveryOf, publishDiscovery } from "./discovery";
 import type { E2eDeps } from "./e2e";
 import { processE2eDeps, runE2e } from "./e2e";
 import type { EnginePageDeps } from "./engine-page";
-import { gameFolderProblem, importGameCli, messageOf, prepareEnginePage } from "./engine-page";
+import {
+  gameFolderProblem,
+  importGameCli,
+  messageOf,
+  prepareEnginePage,
+  watchEngineKeys
+} from "./engine-page";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
 import { processReexec, reexecBin, reexecEngine, stopWithParent } from "./reexec";
@@ -78,7 +86,10 @@ export type CliDeps = {
   readonly exit: (code: number) => void;
   /** The re-spawn of the real process; without it the bin serves itself and refuses the engine page. */
   readonly reexec?: ReexecDeps;
-  /** Imports `@moku-labs/game/cli` from a game root; default `importGameCli`; tests pass a stub. */
+  /**
+   * Imports `@moku-labs/game/cli` (`preparePage` and `watchKeys`) from a game root; default
+   * `importGameCli`; tests pass a stub.
+   */
   readonly importCli?: EnginePageDeps["importCli"];
   /** The `bun x` runs of `e2e`; default `processE2eDeps()`; tests pass a stub. */
   readonly e2e?: E2eDeps;
@@ -346,14 +357,31 @@ async function serveOrReexec(args: ServeArgs, deps: CliDeps): Promise<Started> {
 }
 
 /**
+ * Stops the engine's keys watch. A throw of `close()` is one warning: the child's exit code is
+ * still answered.
+ *
+ * @param keys - The running watch.
+ * @param ui - The branded console.
+ */
+function closeKeys(keys: KeysWatcher, ui: BrandConsole): void {
+  try {
+    keys.close();
+  } catch (error) {
+    ui.warn(messageOf(error));
+  }
+}
+
+/**
  * Serves the engine page of a moku-game folder (B5): the engine writes the page with the editor's
- * agent (`engine-page.ts`), then the bin re-runs itself under the page's bunfig and serves its
- * HTML (D-51). Only the real process re-runs, so unit seams without `deps.reexec` are refused.
+ * agent (`engine-page.ts`), this bin starts the engine's keys watch (D-54, D-55), then re-runs
+ * itself under the page's bunfig and serves its HTML (D-51). The watch runs here, in the parent,
+ * until the child exits. Only the real process re-runs, so unit seams without `deps.reexec` are
+ * refused.
  *
  * @param args - The `run` arguments without a game HTML file.
  * @param deps - The bin deps.
  * @returns The child's exit code; 2 when the root is not a moku-game folder; 1 when the page
- * cannot be written or there is no real process.
+ * cannot be written, the keys watch cannot start, or there is no real process.
  */
 async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
   const { ui, reexec } = deps;
@@ -375,16 +403,29 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
 
   // The engine writes the page with the editor's agent; its error line is printed as is.
   const options = { preload: args.preload, servePlugins: args.servePlugins, cwd, main: Bun.main };
-  const page = await prepareEnginePage(rootPath, options, {
+  const prepared = await prepareEnginePage(rootPath, options, {
     importCli: deps.importCli ?? importGameCli
   });
-  if (typeof page === "string") {
-    ui.error(page);
+  if (typeof prepared === "string") {
+    ui.error(prepared);
     return { code: 1 };
   }
 
-  // Re-run the bin under the page's bunfig and answer the child's code.
-  return { code: await reexecEngine(page, args, reexec) };
+  // The engine's keys watch resolves after its first scan: generated/ is fresh before the child
+  // serves. A failed scan is one warning and the bin goes on; a refused game is the error line.
+  const keys = await watchEngineKeys(rootPath, prepared.cli, message => ui.warn(message));
+  if (typeof keys === "string") {
+    ui.error(keys);
+    return { code: 1 };
+  }
+
+  // Re-run the bin under the page's bunfig and answer the child's code. The watch stops with the
+  // child, however it ends: its exit, a forwarded signal, or a throw of the spawn.
+  try {
+    return { code: await reexecEngine(prepared.page, args, reexec) };
+  } finally {
+    closeKeys(keys, ui);
+  }
 }
 
 /**

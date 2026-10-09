@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path/posix";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EnginePageDeps, EnginePageOptions, PreparePage } from "../../engine-page";
+import type {
+  EnginePageDeps,
+  EnginePageOptions,
+  GameCli,
+  PreparePage,
+  WatchKeys
+} from "../../engine-page";
 import {
   AGENT_SPECIFIER,
   gameFolderProblem,
@@ -11,13 +17,15 @@ import {
   isGameFolder,
   packageRoot,
   prepareEnginePage,
-  treePlugin
+  treePlugin,
+  watchEngineKeys
 } from "../../engine-page";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages engine page (B5): a moku-game folder (index.ts + config.ts) gets its
 // dev page from the engine's preparePage, with the editor's page agent on it,
-// and an editor working tree adds its own serve plugin (D-50).
+// and an editor working tree adds its own serve plugin (D-50). The same cli
+// import gives watchKeys: the bin's keys watch (D-54, D-55).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = fileURLToPath(new URL("../../../../../", import.meta.url)).replace(/\/$/, "");
@@ -67,15 +75,46 @@ afterEach(async () => {
 });
 
 /**
- * Engine page deps whose preparePage answers PAGE, or throws.
+ * A stub engine cli: preparePage answers PAGE (or throws), watchKeys answers a watcher whose
+ * `close` is recorded.
  *
  * @param prepare - The preparePage stub.
- * @returns The deps and the stub.
+ * @returns The cli, its two stubs and the watcher's close.
+ */
+function createCli(prepare: PreparePage = () => Promise.resolve(PAGE)) {
+  const preparePage = vi.fn<PreparePage>(prepare);
+  const close = vi.fn<() => void>();
+  const watchKeys = vi.fn<WatchKeys>(() => Promise.resolve({ close }));
+  const cli: GameCli = { preparePage, watchKeys };
+  return { cli, preparePage, watchKeys, close };
+}
+
+/**
+ * Engine page deps whose import answers a stub cli (`createCli`).
+ *
+ * @param prepare - The preparePage stub.
+ * @returns The deps, the cli and its stubs.
  */
 function createDeps(prepare: PreparePage = () => Promise.resolve(PAGE)) {
-  const preparePage = vi.fn<PreparePage>(prepare);
-  const deps: EnginePageDeps = { importCli: vi.fn(() => Promise.resolve({ preparePage })) };
-  return { deps, preparePage };
+  const stub = createCli(prepare);
+  const deps: EnginePageDeps = { importCli: vi.fn(() => Promise.resolve(stub.cli)) };
+  return { deps, ...stub };
+}
+
+/**
+ * A fake engine package in a folder's node_modules whose cli exports only the names given.
+ *
+ * @param root - The folder that resolves the engine.
+ * @param names - The functions the cli exports.
+ */
+async function fakeEngine(root: string, names: readonly string[]): Promise<void> {
+  const engine = join(root, "node_modules", "@moku-labs", "game");
+  await put(
+    join(engine, "package.json"),
+    '{ "name": "@moku-labs/game", "type": "module", "exports": { "./cli": "./cli.mjs" } }'
+  );
+  const lines = names.map(name => `export const ${name} = () => 0;`);
+  await put(join(engine, "cli.mjs"), `${lines.join("\n")}\n`);
 }
 
 /**
@@ -177,10 +216,15 @@ describe("treePlugin (D-50)", () => {
 });
 
 describe("prepareEnginePage", () => {
-  it("prepares the page with the editor's agent and answers the engine's paths", async () => {
-    const { deps, preparePage } = createDeps();
-    await expect(prepareEnginePage(game, options(), deps)).resolves.toEqual(PAGE);
+  it("prepares the page with the editor's agent and answers the engine's paths with the cli", async () => {
+    const { deps, cli, preparePage, watchKeys } = createDeps();
+    const prepared = await prepareEnginePage(game, options(), deps);
+    expect(prepared).toEqual({ page: PAGE, cli });
+    // The very cli of the one import: the caller starts the keys watch with it.
+    expect(typeof prepared === "string" ? undefined : prepared.cli).toBe(cli);
+    expect(deps.importCli).toHaveBeenCalledTimes(1);
     expect(deps.importCli).toHaveBeenCalledWith(game);
+    expect(watchKeys).not.toHaveBeenCalled();
     expect(preparePage).toHaveBeenCalledWith(game, {
       agents: [AGENT_SPECIFIER],
       preload: [],
@@ -236,7 +280,23 @@ describe("prepareEnginePage", () => {
   it("answers the install hint when @moku-labs/game/cli does not import", async () => {
     const deps: EnginePageDeps = { importCli: () => Promise.reject(new Error("not found")) };
     await expect(prepareEnginePage(game, options(), deps)).resolves.toBe(
-      `[moku-editor] @moku-labs/game/cli does not resolve from ${game}: install @moku-labs/game >=0.10.0 in the game`
+      `[moku-editor] @moku-labs/game/cli does not resolve from ${game}: install @moku-labs/game >=0.13.1 in the game`
+    );
+  });
+
+  it("answers the >=0.13.1 install hint for an engine without watchKeys (0.10.0 to 0.13.0), and for one without preparePage", async () => {
+    const deps: EnginePageDeps = { importCli: importGameCli };
+    await fakeEngine(game, ["runCli", "preparePage"]);
+    await expect(prepareEnginePage(game, options(), deps)).resolves.toBe(
+      `[moku-editor] @moku-labs/game/cli does not resolve from ${game}: install @moku-labs/game >=0.13.1 in the game`
+    );
+
+    const older = join(base, "older");
+    await put(join(older, "index.ts"), "export default {};");
+    await put(join(older, "config.ts"), "export default {};");
+    await fakeEngine(older, ["runCli", "watchKeys"]);
+    await expect(prepareEnginePage(older, options(), deps)).resolves.toBe(
+      `[moku-editor] @moku-labs/game/cli does not resolve from ${older}: install @moku-labs/game >=0.13.1 in the game`
     );
   });
 
@@ -253,9 +313,10 @@ describe("prepareEnginePage", () => {
 });
 
 describe("importGameCli", () => {
-  it("imports the engine's cli the game resolves, with preparePage", async () => {
+  it("imports the engine's cli the game resolves, with preparePage and watchKeys", async () => {
     const cli = await importGameCli(REPO);
     expect(typeof cli.preparePage).toBe("function");
+    expect(typeof cli.watchKeys).toBe("function");
   });
 
   it("rejects for a root that does not resolve @moku-labs/game/cli", async () => {
@@ -265,12 +326,75 @@ describe("importGameCli", () => {
   });
 
   it("rejects for a cli without preparePage (an engine before 0.10.0)", async () => {
-    const old = join(work, "node_modules", "@moku-labs", "game");
-    await put(
-      join(old, "package.json"),
-      '{ "name": "@moku-labs/game", "type": "module", "exports": { "./cli": "./cli.mjs" } }'
+    await fakeEngine(work, ["runCli"]);
+    await expect(importGameCli(work)).rejects.toThrow(
+      "[moku-editor] @moku-labs/game/cli has no preparePage"
     );
-    await put(join(old, "cli.mjs"), "export const runCli = () => 0;\n");
-    await expect(importGameCli(work)).rejects.toThrow("[moku-editor] ");
+  });
+
+  it("rejects for a cli without watchKeys (an engine before 0.13.1)", async () => {
+    await fakeEngine(work, ["runCli", "preparePage"]);
+    await expect(importGameCli(work)).rejects.toThrow(
+      "[moku-editor] @moku-labs/game/cli has no watchKeys"
+    );
+  });
+
+  it("answers a cli that has both functions", async () => {
+    await fakeEngine(work, ["runCli", "preparePage", "watchKeys"]);
+    const cli = await importGameCli(work);
+    expect(typeof cli.preparePage).toBe("function");
+    expect(typeof cli.watchKeys).toBe("function");
+  });
+});
+
+describe("watchEngineKeys (D-54, D-55)", () => {
+  it("starts the engine's watch for the root with the given onError and answers the watcher", async () => {
+    const { cli, watchKeys, preparePage } = createCli();
+    const onError = vi.fn<(message: string) => void>();
+    const keys = await watchEngineKeys(game, cli, onError);
+
+    expect(watchKeys).toHaveBeenCalledTimes(1);
+    expect(watchKeys).toHaveBeenCalledWith(game, { onError });
+    expect(keys).toBe(await watchKeys.mock.results[0]?.value);
+    expect(preparePage).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("hands a failed scan of the engine to onError and still answers the watcher", async () => {
+    const { cli, watchKeys, close } = createCli();
+    const broken = "[game] i18n: features/home/strings/en.json could not be read.";
+    watchKeys.mockImplementation((_root, watch) => {
+      // The engine reports a failed first scan and resolves: the watch goes on.
+      watch?.onError?.(broken);
+      return Promise.resolve({ close });
+    });
+    const onError = vi.fn<(message: string) => void>();
+
+    await expect(watchEngineKeys(game, cli, onError)).resolves.toEqual({ close });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(broken);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("answers the engine's own [game] message when watchKeys rejects or throws", async () => {
+    const refused = createCli();
+    refused.watchKeys.mockImplementation(() =>
+      Promise.reject(new Error("[game] games/timber has no config.ts."))
+    );
+    await expect(watchEngineKeys(game, refused.cli, vi.fn())).resolves.toBe(
+      "[game] games/timber has no config.ts."
+    );
+
+    const odd = createCli();
+    odd.watchKeys.mockImplementation(() => Promise.reject("plain text"));
+    await expect(watchEngineKeys(game, odd.cli, vi.fn())).resolves.toBe("plain text");
+
+    const thrown = createCli();
+    thrown.watchKeys.mockImplementation(() => {
+      throw new Error("[game] config.ts: page.title must be a string, got 1.");
+    });
+    await expect(watchEngineKeys(game, thrown.cli, vi.fn())).resolves.toBe(
+      "[game] config.ts: page.title must be a string, got 1."
+    );
   });
 });

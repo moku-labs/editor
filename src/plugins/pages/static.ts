@@ -135,7 +135,9 @@ function realRoot(root: string): () => Promise<string | undefined> {
 
 /**
  * Creates the bin's fetch for the game's files under `root`. `/manifest.json` answers with
- * `generated/manifest.json` when the game has one (game 0.13+), else with the root's.
+ * `generated/manifest.json` when the game has one (game 0.13+), else with the root's. A file is
+ * answered `cache-control: no-store` (D-56), as the engine's dev server answers it: the new bytes
+ * of an edited image show after the one reload the engine asks for.
  *
  * @param root - The project root (`--root`).
  * @param guard - hub.guard: the navigate check runs first.
@@ -167,7 +169,7 @@ export function createStaticFetch(
 
     return respond(req, body, 200, {
       "content-type": contentType(relativePath),
-      "cache-control": "no-cache",
+      "cache-control": "no-store",
       "x-content-type-options": "nosniff"
     });
   };

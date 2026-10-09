@@ -52,20 +52,41 @@ async function gameWith(
 }
 
 describe("createStaticFetch", () => {
-  it("serves a real file with type, no-cache and nosniff", async () => {
+  it("serves a real file with type, no-store and nosniff (D-56)", async () => {
     const response = await fetchStatic(request("/manifest.json"), SERVER);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
-    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await response.text()).toBe('{"a":1}');
   });
 
-  it("decodes the path and serves binary files", async () => {
+  it("decodes the path and serves binary files, no-store as well: an edited image shows its new bytes", async () => {
     const response = await fetchStatic(request("/features/board/tile%201.png"), SERVER);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("answers HEAD with the same no-store header", async () => {
+    const response = await fetchStatic(request("/manifest.json", { method: "HEAD" }), SERVER);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("keeps the headers of every refusal: 404, 400 and 405 are plain text, no-store, nosniff", async () => {
+    const refusals = [
+      await fetchStatic(request("/missing.json"), SERVER),
+      await fetchStatic(request("/.env"), SERVER),
+      await fetchStatic(request("/%E0%A4%A"), SERVER),
+      await fetchStatic(request("/manifest.json", { method: "POST" }), SERVER)
+    ];
+    expect(refusals.map(response => response.status)).toEqual([404, 404, 400, 405]);
+    for (const response of refusals) {
+      expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    }
   });
 
   it("follows a symlink that stays inside the root", async () => {
