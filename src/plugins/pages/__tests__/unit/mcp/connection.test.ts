@@ -523,6 +523,91 @@ describe("reconnect tries (the bin's restart, D-57, D-59)", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("starts over at the close of a tool call's connection that lived 6 s after the tries ended: a try at once, no new warning, the next wait is 1 s", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, connect, made, lines } = scripted([
+      "open",
+      "refuse",
+      "refuse",
+      "refuse",
+      "refuse",
+      "open",
+      "refuse"
+    ]);
+    await editor.start();
+
+    // The tries end without a connection: one warning, no timer.
+    made[0]?.drop();
+    await settle();
+    for (const wait of RECONNECT_WAITS_MS) {
+      await vi.advanceTimersByTimeAsync(wait);
+      await settle();
+    }
+    expect(connect).toHaveBeenCalledTimes(5);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(warningsOf(lines)).toHaveLength(1);
+
+    // A tool call connects lazily, and that connection holds past 5 s before it closes.
+    const lazy = await editor.hub();
+    expect(lazy).toBe(made[1]?.client);
+    expect(connect).toHaveBeenCalledTimes(6);
+    made[1]?.drop(6000);
+    await settle();
+
+    expect(connect).toHaveBeenCalledTimes(7);
+    expect(warningsOf(lines)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(connect).toHaveBeenCalledTimes(7);
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(connect).toHaveBeenCalledTimes(8);
+
+    await editor.shutdown();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("makes no try at the close of a tool call's connection that lived under 5 s after the tries ended: one more warning, no timer, the next tool call connects", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, connect, made, lines } = scripted([
+      "open",
+      "refuse",
+      "refuse",
+      "refuse",
+      "refuse",
+      "open",
+      "open"
+    ]);
+    await editor.start();
+
+    made[0]?.drop();
+    await settle();
+    for (const wait of RECONNECT_WAITS_MS) {
+      await vi.advanceTimersByTimeAsync(wait);
+      await settle();
+    }
+    expect(connect).toHaveBeenCalledTimes(5);
+    expect(warningsOf(lines)).toHaveLength(1);
+
+    // The lazy connection is dropped before 5 s: no try, one more warning.
+    const lazy = await editor.hub();
+    expect(lazy).toBe(made[1]?.client);
+    made[1]?.drop(1000);
+    await settle();
+
+    expect(connect).toHaveBeenCalledTimes(6);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(warningsOf(lines)).toHaveLength(2);
+    expect(warningsOf(lines)[1]).toBe(gaveUp(droppedEarly()));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(connect).toHaveBeenCalledTimes(6);
+
+    // The next tool call connects again.
+    const again = await editor.hub();
+    expect(again).toBe(made[2]?.client);
+    expect(connect).toHaveBeenCalledTimes(7);
+    await editor.shutdown();
+  });
+
   it("ends the tries with one warning when the bin is gone between two of them", async () => {
     writeDiscovery(root, hub.discovery(root, 4242));
     const { editor, connect, made, alive, lines } = scripted(["open"]);
