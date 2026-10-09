@@ -132,6 +132,12 @@ const CONTAINER = "Container";
 const PROJECTION = "projection";
 
 /**
+ * The component the game puts on the root entity of a mounted ui tree: the entity of a projection
+ * view that returned a tree, and the root entity of a popup.
+ */
+const TREE = "Tree";
+
+/**
  * The node id of a ref: "ui:<path>" or "entity:<id>".
  *
  * @param ref - An element ref.
@@ -660,9 +666,52 @@ function appendPainted(
 }
 
 /**
+ * Tells the root entity of a popup: an entity of the ui plugin that carries `Tree`. The only other
+ * entity with a `Tree` is a projection view, owned by its projection. The value of `Tree` is no
+ * JSON, so the wire names it in `skipped`.
+ *
+ * @param entity - The entity.
+ * @returns True for a popup root.
+ * @example
+ * ```ts
+ * isPopupRoot(settingsRoot); // true: owner plugin "ui", Layer ui, Order 1, skipped ["Tree"]
+ * isPopupRoot(hudRoot); // false: owner projection "hud"
+ * ```
+ */
+function isPopupRoot(entity: EntityWire): boolean {
+  const hasTree = Object.hasOwn(entity.components, TREE) || entity.skipped.includes(TREE);
+
+  return hasTree && isUiOwned(entity);
+}
+
+/**
+ * The ui roots back to front. game.ui lists the popup roots first, the topmost first, then the
+ * screen roots by scene layer, the bottom first. So the screens keep their order and the popups
+ * come after them, reversed. The ui nodes do not say which root is a popup: the first roots are,
+ * as many as game.entities has popup roots, never more than there are roots.
+ *
+ * @param roots - The ui root ids in reader order.
+ * @param entities - game.entities.
+ * @returns The same ids in paint order.
+ * @example
+ * ```ts
+ * paintedRoots(["ui:popupB", "ui:popupA", "ui:stageSky", "ui:homeScreen"], entities);
+ * // ["ui:stageSky", "ui:homeScreen", "ui:popupA", "ui:popupB"] with two popup roots in entities
+ * ```
+ */
+function paintedRoots(roots: readonly string[], entities: readonly EntityWire[]): string[] {
+  const popupCount = Math.min(entities.filter(entity => isPopupRoot(entity)).length, roots.length);
+  const popups = roots.slice(0, popupCount);
+  const screens = roots.slice(popupCount);
+
+  return [...screens, ...popups.toReversed()];
+}
+
+/**
  * Builds the snapshot from the values read: the ui pass, the entity pass, the links and the
- * paint order (ui roots reversed, since the game lists the topmost popup first; then the
- * entities without a host).
+ * paint order: the screen roots as the game lists them (bottom layer first), then the popup roots
+ * reversed (the game lists the topmost popup first), then the entities without a host. `roots`
+ * keeps the reader order.
  *
  * @param top - The top node of game.ui.
  * @param entities - game.entities.
@@ -701,11 +750,11 @@ function assemble(
     if (entity.owner.kind === PROJECTION) placed.push(addEntityNode(builder, entity, world));
   }
 
-  // The tree links and the paint order, back to front.
+  // The tree links and the paint order, back to front: screens, popups, unhosted entities.
   const entityRoots = linkEntities(builder, placed);
   const paintOrder: string[] = [];
 
-  for (const root of [...builder.uiRoots.toReversed(), ...entityRoots]) {
+  for (const root of [...paintedRoots(builder.uiRoots, entities), ...entityRoots]) {
     appendPainted(root, builder.children, paintOrder);
   }
 
