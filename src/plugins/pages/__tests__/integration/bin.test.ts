@@ -28,14 +28,21 @@ type Running = {
   output: () => string;
 };
 
+/** The stdout line of a serving bin. */
+const TOOLS_LINE = /Tools\s+http/;
+
+/** How long a test waits for a signalled bin to exit: with the 20 s deadline of `spawnBin` it stays under the 30 s test timeout. */
+const EXIT_WAIT_MS = 5000;
+
 /**
- * Spawns the bin and waits for its Tools line.
+ * Spawns the bin and waits for a line of its stdout: the Tools line of a serving bin by default.
  *
  * @param args - Bin arguments.
  * @param detached - Start it as the leader of its own process group, as a shell does.
- * @returns The running bin with its real port.
+ * @param ready - The stdout text to wait for.
+ * @returns The running bin with its real port (0 before it serves).
  */
-async function spawnBin(args: string[], detached = false): Promise<Running> {
+async function spawnBin(args: string[], detached = false, ready = TOOLS_LINE): Promise<Running> {
   const child = Bun.spawn(["bun", BIN, ...args], {
     cwd: REPO,
     detached,
@@ -47,7 +54,7 @@ async function spawnBin(args: string[], detached = false): Promise<Running> {
   const reader = child.stdout.getReader();
   const decoder = new TextDecoder();
   const deadline = Date.now() + 20_000;
-  while (!/Tools\s+http/.test(text) && Date.now() < deadline) {
+  while (!ready.test(text) && Date.now() < deadline) {
     const { value, done } = await reader.read();
     if (done) break;
     text += decoder.decode(value);
@@ -232,10 +239,50 @@ const app = createApp({
 document.title = "ENGINE_GAME " + typeof app.flow.run;
 `;
 
+/** The line the stub engine prints when its first keys scan starts. */
+const SCAN_OPEN = "STUB_FIRST_SCAN_OPEN";
+
+/**
+ * A stand-in for `@moku-labs/game/cli` in the game's own node_modules: the page is "written" at
+ * once, and the first keys scan stays open for a minute, so a signal lands before any child.
+ */
+const HELD_SCAN_CLI = `import path from "node:path";
+
+export async function preparePage(root) {
+  const folder = path.join(root, ".moku");
+  return { html: path.join(folder, "index.html"), bunfig: path.join(folder, "bunfig.toml") };
+}
+
+export function watchKeys() {
+  console.log("${SCAN_OPEN}");
+  return new Promise(resolve => setTimeout(() => resolve({ close() {} }), 60_000));
+}
+`;
+
+/**
+ * Writes a moku-game folder whose engine cli is `HELD_SCAN_CLI`.
+ *
+ * @returns The real path of the game folder.
+ */
+async function createHeldScanGame(): Promise<string> {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "moku-bin-held-")));
+  const engine = join(root, "node_modules", "@moku-labs", "game");
+  await mkdir(engine, { recursive: true });
+  await writeFile(join(root, "index.ts"), "export default {};\n");
+  await writeFile(join(root, "config.ts"), "export default {};\n");
+  await writeFile(
+    join(engine, "package.json"),
+    '{"name":"@moku-labs/game","version":"0.13.1","type":"module","exports":{"./cli":"./cli.mjs"}}'
+  );
+  await writeFile(join(engine, "cli.mjs"), HELD_SCAN_CLI);
+  return root;
+}
+
 let game: string;
 let bunfigGame: string;
 let engineGame: string;
 let mokuGame: string;
+let heldScanGame: string;
 
 beforeAll(async () => {
   // dist/ (the agent page and the tools page) is built once by tests/global-build.ts.
@@ -273,6 +320,7 @@ beforeAll(async () => {
   await writeFile(join(engineGame, "manifest.json"), '{"version":1,"bundles":{}}');
   await symlink(join(REPO, "node_modules"), join(engineGame, "node_modules"), "dir");
   mokuGame = await createMokuGame();
+  heldScanGame = await createHeldScanGame();
 }, 120_000);
 
 afterAll(async () => {
@@ -280,6 +328,7 @@ afterAll(async () => {
   await rm(bunfigGame, { recursive: true, force: true });
   await rm(engineGame, { recursive: true, force: true });
   await rm(mokuGame, { recursive: true, force: true });
+  await rm(heldScanGame, { recursive: true, force: true });
 });
 
 describe("moku-editor bin", () => {
@@ -479,6 +528,39 @@ describe("moku-editor bin", () => {
     expect(bin.output().match(/stopped/g)).toHaveLength(1);
     expect(existsSync(path)).toBe(false);
   }, 60_000);
+
+  it.each([
+    ["SIGINT", 130],
+    ["SIGTERM", 143]
+  ] as const)(
+    "a %s during the engine's first keys scan ends the bin at once with %i: no child is spawned and nothing serves (B5)",
+    async (signal, code) => {
+      const path = join(heldScanGame, ".moku", "editor.json");
+      const bin = await spawnBin(
+        ["--root", heldScanGame, "--port", "0"],
+        false,
+        /STUB_FIRST_SCAN_OPEN/
+      );
+      try {
+        // The page is written and the first scan is open: the child comes only after it.
+        expect(bin.output()).toContain(SCAN_OPEN);
+        bin.child.kill(signal);
+        const ended = await Promise.race([
+          bin.child.exited,
+          Bun.sleep(EXIT_WAIT_MS).then(() => "the bin still runs")
+        ]);
+        expect(ended).toBe(code);
+      } finally {
+        bin.child.kill("SIGKILL");
+      }
+      // The exit is awaited above; one tick lets the output pump take the last bytes.
+      await bin.child.exited;
+      await Bun.sleep(0);
+      expect(bin.output()).not.toMatch(TOOLS_LINE);
+      expect(existsSync(path)).toBe(false);
+    },
+    30_000
+  );
 
   it("exits 2 without an html file for a root that is not a moku-game folder (B5)", async () => {
     const result = await runBin(["--root", game, "--port", "0"]);
