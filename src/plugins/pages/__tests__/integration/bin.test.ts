@@ -38,9 +38,10 @@ const EXIT_WAIT_MS = 5000;
 const READY_WAIT_MS = 20_000;
 
 /**
- * How long a test waits for a serving bin to exit after its signal. The bin's own stop is bounded
- * (about a second), so a bin that still runs after this is stuck; the wait ends under the 60 s
- * test timeout, and the test fails with its own message.
+ * How long a test waits for a serving bin to exit after its signal. The bin's own stop is bounded:
+ * about a second, and up to about 6 s more when a restart with a switch to HMR on is under way
+ * (D-57). So a bin that still runs after this is stuck; the wait ends under the 60 s test timeout,
+ * and the test fails with its own message.
  */
 const STOP_WAIT_MS = 30_000;
 

@@ -236,6 +236,7 @@ describe("restart", () => {
 
 describe("restart: the wait for Bun's bundler (D-57)", () => {
   it("waits for the bundler after the stop and before the next serve, when the next server has HMR", async () => {
+    vi.useFakeTimers();
     const { serve, served } = fakeServe();
     const idle = Promise.withResolvers<void>();
     const bundlerIdle = vi.fn<BundlerIdle>(() => idle.promise);
@@ -243,13 +244,14 @@ describe("restart: the wait for Bun's bundler (D-57)", () => {
     const game = createGameServer(optionsOf(0, false), keepSockets, { serve, bundlerIdle, warn });
 
     const restarted = game.restart(optionsOf(0, true));
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await vi.advanceTimersByTimeAsync(0);
     expect(at(served, 0).stop).toHaveBeenCalledWith(true);
     expect(bundlerIdle).toHaveBeenCalledTimes(1);
     expect(serve).toHaveBeenCalledTimes(1);
 
     idle.resolve();
     await restarted;
+    expect(vi.getTimerCount()).toBe(0);
     expect(serve).toHaveBeenCalledTimes(2);
     expect(at(served, 1).options).toEqual(optionsOf(REAL_PORT, true));
     expect(at(served, 0).stop.mock.invocationCallOrder[0]).toBeLessThan(
@@ -296,6 +298,7 @@ describe("restart: the wait for Bun's bundler (D-57)", () => {
     expect(warn).toHaveBeenCalledExactlyOnceWith(
       expect.stringContaining(`still busy after ${BUNDLER_IDLE_MS} ms`)
     );
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("serves when the wait rejects, and warns once with its message", async () => {
@@ -387,6 +390,32 @@ describe("stop", () => {
     await restarted;
 
     expect(at(served, 1).stop).toHaveBeenCalledWith(true);
+  });
+
+  it("waits for a restart that waits for the bundler (D-57), then stops the server it served; nothing is served after", async () => {
+    const { serve, served } = fakeServe();
+    const idle = Promise.withResolvers<void>();
+    const bundlerIdle = vi.fn<BundlerIdle>(() => idle.promise);
+    const game = createGameServer(optionsOf(0, false), keepSockets, { serve, bundlerIdle });
+
+    const restarted = game.restart(optionsOf(0, true));
+    const stopped = vi.fn();
+    const stopping = game.stop().then(stopped);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(bundlerIdle).toHaveBeenCalledTimes(1);
+    expect(serve).toHaveBeenCalledTimes(1);
+    expect(stopped).not.toHaveBeenCalled();
+
+    idle.resolve();
+    await Promise.all([restarted, stopping]);
+    expect(serve).toHaveBeenCalledTimes(2);
+    expect(at(served, 1).options).toEqual(optionsOf(REAL_PORT, true));
+    expect(at(served, 0).stop).toHaveBeenCalledTimes(1);
+    expect(at(served, 1).stop).toHaveBeenCalledExactlyOnceWith(true);
+    expect(stopped).toHaveBeenCalledTimes(1);
+
+    await game.restart(optionsOf(0, false));
+    expect(serve).toHaveBeenCalledTimes(2);
   });
 
   it("is bounded by STOP_GRACE_MS", async () => {

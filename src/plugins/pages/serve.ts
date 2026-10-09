@@ -58,7 +58,7 @@ export type StartServer = (options: BunServeOptions) => AttachedServer;
  * Resolves once Bun's bundler finished the work it had: `waitForBundler` in the bin, a fake in
  * tests.
  */
-export type BundlerIdle = () => Promise<unknown>;
+export type BundlerIdle = () => Promise<void>;
 
 /**
  * What the bin and the tests give the game server besides its sockets.
@@ -110,7 +110,7 @@ export type GameServer = {
   /**
    * Stops the current server, bounded, after a restart under way.
    *
-   * @returns Resolves once stopped, or after STOP_GRACE_MS.
+   * @returns Resolves once stopped, or after STOP_GRACE_MS; a restart under way runs first.
    */
   stop(): Promise<void>;
 };
@@ -139,8 +139,8 @@ function serveWithBun(options: BunServeOptions): AttachedServer {
  *
  * @returns Resolves once the bundler finished what it had; rejects when the build fails.
  */
-function waitForBundler(): Promise<unknown> {
-  return Bun.build({ entrypoints: [IDLE_ENTRY], files: { [IDLE_ENTRY]: "" } });
+async function waitForBundler(): Promise<void> {
+  await Bun.build({ entrypoints: [IDLE_ENTRY], files: { [IDLE_ENTRY]: "" } });
 }
 
 /**

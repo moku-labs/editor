@@ -2571,7 +2571,9 @@ export type PagesApi = {
    * ```ts
    * // The bin, after it started the game server.
    * const options = editor.hub.serve({ port, development: { hmr: true, console: true }, routes });
-   * const game = createGameServer(options);
+   * const game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason), {
+   *   warn: message => ui.warn(message)
+   * });
    * editor.pages.attachServer(options, next => game.restart(next));
    * editor.pages.hotReload(); // { hmr: true, owner: "bin" }
    * ```
