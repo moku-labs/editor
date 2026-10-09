@@ -267,7 +267,7 @@ The stale bar is an overlay: absolute over the top of the workspace area, never 
 flow. The pill text keeps a 19ch minimum width, so a status change never moves the top bar.
 "Retry now" is in the stale bar only.
 
-When the game is not back within link's `reloadGraceMs` (5000 ms), link sends a plain `lost` and
+When the game is not back within link's `reloadGraceMs` (8000 ms), link sends a plain `lost` and
 the red texts show.
 
 `gameFrame().reload(opts)` takes `ReloadOptions`: `restore`, `afterSave` (default false) and

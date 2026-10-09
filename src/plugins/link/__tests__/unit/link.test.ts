@@ -14,7 +14,7 @@ describe("linkPlugin", () => {
       retryMs: 1000,
       boot: "#moku-editor-boot",
       role: "page",
-      reloadGraceMs: 5000
+      reloadGraceMs: 8000
     });
   });
 
@@ -27,7 +27,7 @@ describe("linkPlugin", () => {
 describe("createLinkState", () => {
   it("starts connecting with nothing attached and ids from 1", () => {
     const state = createLinkState({
-      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 5000 }
+      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 8000 }
     });
 
     expect(state.status).toEqual({ kind: "connecting" });
@@ -60,12 +60,12 @@ describe("createLinkState", () => {
   });
 
   it("returns a fresh state each time", () => {
-    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 5000 };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 8000 };
     expect(createLinkState({ config }).pending).not.toBe(createLinkState({ config }).pending);
   });
 
   it("makes one random frame id per state", () => {
-    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 5000 };
+    const config = { retryMs: 1000, boot: "#b", role: "page" as const, reloadGraceMs: 8000 };
     const state = createLinkState({ config });
     expect(state.frame).toMatch(/^[\da-f]{12}$/);
     expect(createLinkState({ config }).frame).not.toBe(state.frame);
@@ -75,7 +75,7 @@ describe("createLinkState", () => {
 describe("isAttached", () => {
   it("is true only with an open socket and the chosen id in the current list", () => {
     const state = createLinkState({
-      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 5000 }
+      config: { retryMs: 1000, boot: "#b", role: "page", reloadGraceMs: 8000 }
     });
     expect(isAttached(state)).toBe(false);
 

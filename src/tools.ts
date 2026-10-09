@@ -12,7 +12,7 @@
  * | link | retryMs | 1000 |
  * | link | boot | "#moku-editor-boot" |
  * | link | role | "page" |
- * | link | reloadGraceMs | 5000 |
+ * | link | reloadGraceMs | 8000 |
  * | workspace | defaultWorkspace | "game" |
  * | workspace | storageKey | "moku-editor" |
  * | workspace | reloadTimeoutMs | 15000 |
