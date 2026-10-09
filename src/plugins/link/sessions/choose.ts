@@ -9,7 +9,7 @@ import { errorCode, isRetryable, wireError } from "../../registry/protocol";
 import { describeError, request } from "../rpc/calls";
 import { expectShape, readManifest } from "../rpc/shapes";
 import { backoffDelay } from "../socket/backoff";
-import { clearRetry, isAttached } from "../state";
+import { clearRetry, hasLostExpired, isAttached } from "../state";
 import { applyStatus, emitStatus } from "../status/machine";
 import { expectReload } from "../status/reload";
 import { detachAll, resubscribeAll, unwatchAll } from "../subscriptions/watch";
@@ -128,7 +128,8 @@ function attachLater(ctx: LinkCtx, sessionId: string): void {
 
 /**
  * Re-runs the session pick: attaches a pick; without one, turns lost into empty after
- * EMPTY_AFTER_LOST_MS, or schedules the next retry with a longer delay.
+ * EMPTY_AFTER_LOST_MS, or schedules the next retry with a longer delay. Inside an expected reload
+ * window that step does not show; the end of the window takes it (status/reload.ts).
  *
  * @param ctx - Domain context of link.
  */
@@ -143,8 +144,7 @@ export function retrySession(ctx: LinkCtx): void {
     attachLater(ctx, pick);
     return;
   }
-  const hasExpired = state.lostAt !== undefined && Date.now() - state.lostAt >= EMPTY_AFTER_LOST_MS;
-  if (hasExpired) {
+  if (hasLostExpired(state)) {
     applyStatus(ctx, { type: "lost-expired" });
     return;
   }

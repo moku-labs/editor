@@ -93,7 +93,8 @@ export type Config = {
    * editor started, a game that said bye. Without a heartbeat of the game by then, the status is a
    * plain `lost`. A positive number of ms. Default 8000: the bin's restart keeps its port closed
    * for up to 6 s (D-57) and the reconnects land 1 s, 3 s and 7 s after the close, so the window
-   * outlasts the one at 7 s.
+   * outlasts the one at 7 s. No upper bound: a window still open EMPTY_AFTER_LOST_MS (10 s) after
+   * a session loss ends as `empty` when no session came back, with no plain `lost` before it.
    */
   reloadGraceMs: number;
 };

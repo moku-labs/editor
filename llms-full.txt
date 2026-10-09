@@ -1352,7 +1352,7 @@ Global events only; no plugin declares its own `events` field. Payload types are
 
 `files:written` kind rules (`classifyWrite`, first match wins): starts with `.moku/captures/` → `capture`; equals `.moku/editor/layout.json` → `layout`; ends with `.css`, basename `styles.ts`/`styles.tsx`, ends with `.styles.ts`/`.styles.tsx`, or a `.ts`/`.tsx` module directly in a `styles/` folder (`shared/styles/text.ts`) → `style`; other `.ts`/`.tsx` → `code`; else `other`.
 
-`LinkStatus` semantics: `connecting` (socket open or session attached, no heartbeat yet); `live`/`paused` (the chosen session beats; `paused` from the heartbeat flag); `silent` (no heartbeat for 6 s, or 65 s after a `paused: true` beat); `lost` (socket closed, chosen session closed, or no boot tag `no_boot`); `empty` (connected, no game session, also 10 s after a lost session). The bridge reports only `connecting`, `live`, `paused`, `lost`.
+`LinkStatus` semantics: `connecting` (socket open or session attached, no heartbeat yet); `live`/`paused` (the chosen session beats; `paused` from the heartbeat flag); `silent` (no heartbeat for 6 s, or 65 s after a `paused: true` beat); `lost` (socket closed, chosen session closed, or no boot tag `no_boot`); `empty` (connected, no game session, also 10 s after a lost session; inside an expected reload window, at the end of the window). The bridge reports only `connecting`, `live`, `paused`, `lost`.
 
 Not events: heartbeats are a callback api (`channel.onHeartbeat`), and so are taps (`link.onTap`); `ctx.log` lines such as `hub:refused`, `bridge:lost`, `registry:watch-failed`, `registry:source-unavailable`, `link:watch-failed`, `panels:view-failed` are log events, listed in each plugin README.
 
@@ -1402,7 +1402,7 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 |---|---|---|---|---|
 | link | `retryMs` | `number` | `1000` | Base of the reconnect backoff `min(retryMs × 2^n, 8000)`. |
 | link | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the boot JSON tag `pages` injects. |
-| link | `reloadGraceMs` | `number` | `8000` | How long an expected reload (U7: close 1012, a reload the editor started, a game that said bye) reads `lost` with `reloading: true`. Without a heartbeat of the game by then the status is a plain `lost`. Positive; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
+| link | `reloadGraceMs` | `number` | `8000` | How long an expected reload (U7: close 1012, a reload the editor started, a game that said bye) reads `lost` with `reloading: true`. Without a heartbeat of the game by then the status is a plain `lost`, or `empty` when the window is still open 10 s after a session loss and no session came back (no upper bound). Positive; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
 | workspace | `defaultWorkspace` | `WorkspaceId` | `"game"` | Shown at start when the URL hash names none. |
 | workspace | `storageKey` | `string` | `"moku-editor"` | localStorage key of the preferences record. |
 | workspace | `reloadTimeoutMs` | `number` | `15000` | How long `reload()` waits for the new session. |
@@ -2798,7 +2798,8 @@ export type Config = {
    * editor started, a game that said bye. Without a heartbeat of the game by then, the status is a
    * plain `lost`. A positive number of ms. Default 8000: the bin's restart keeps its port closed
    * for up to 6 s (D-57) and the reconnects land 1 s, 3 s and 7 s after the close, so the window
-   * outlasts the one at 7 s.
+   * outlasts the one at 7 s. No upper bound: a window still open EMPTY_AFTER_LOST_MS (10 s) after
+   * a session loss ends as `empty` when no session came back, with no plain `lost` before it.
    */
   reloadGraceMs: number;
 };

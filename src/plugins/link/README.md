@@ -18,7 +18,7 @@ nothing.
 |---|---|---|---|
 | `retryMs` | `number` | `1000` | Base delay of the reconnect backoff: `min(retryMs × 2^n, 8000)`. |
 | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the JSON script tag `pages` injects. |
-| `reloadGraceMs` | `number` | `8000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. The default outlasts the bin's longest restart: its port is closed for up to 6 s (D-57) and link reconnects 1 s, 3 s and 7 s after the close. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
+| `reloadGraceMs` | `number` | `8000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. The default outlasts the bin's longest restart: its port is closed for up to 6 s (D-57) and link reconnects 1 s, 3 s and 7 s after the close. No upper bound: a window still open 10 s after a session loss (a value of 10000 or more, or a renewed window) ends as `empty` when no session came back, with no plain `lost` before it. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
 | `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays `editor.select` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
 
 Fixed constants in `types.ts` (not config):
@@ -145,10 +145,12 @@ After the loss the reconnect (`connecting`, `empty`) keeps the neutral `lost` un
 beats. A plain `lost` of before the window stays plain, also when a retry applies it again.
 A heartbeat after the loss ends the window. A window that saw no loss yet is not ended by a
 heartbeat (the old page may beat once more before it goes). After `reloadGraceMs` the window ends:
-a `lost` with `reloading: true` is sent again as a plain `lost`. A second trigger renews the timer and waits for its own loss: workspace may reload the frame right
+a `lost` with `reloading: true` is sent again as a plain `lost`. When the socket is open and the
+session was lost `EMPTY_AFTER_LOST_MS` ago or longer, it turns into `empty` instead: the window
+hid that step. A second trigger renews the timer and waits for its own loss: workspace may reload the frame right
 after the reconnect, before the game beat, and the old page may beat once more.
 A loss outside a window is a plain `lost` at once.
-| `empty` | Connected, no game session. Also 10 s after a lost session when none came back. |
+| `empty` | Connected, no game session. Also 10 s after a lost session when none came back; inside an expected reload window, at the end of the window. |
 
 Hooks: none. Inputs are socket messages and timers.
 
