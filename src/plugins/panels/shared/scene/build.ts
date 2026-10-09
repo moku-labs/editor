@@ -674,8 +674,8 @@ function appendPainted(
  * @returns True for a popup root.
  * @example
  * ```ts
- * isPopupRoot(settingsRoot); // true: owner plugin "ui", Layer ui, Order 1, skipped ["Tree"]
- * isPopupRoot(hudRoot); // false: owner projection "hud"
+ * isPopupRoot({ ...entity, owner: { kind: "plugin", name: "ui" }, skipped: ["Tree"] }); // true
+ * isPopupRoot({ ...entity, owner: { kind: "projection", name: "hud" }, skipped: ["Tree"] }); // false
  * ```
  */
 function isPopupRoot(entity: EntityWire): boolean {
@@ -709,9 +709,9 @@ function paintedRoots(roots: readonly string[], entities: readonly EntityWire[])
 
 /**
  * Builds the snapshot from the values read: the ui pass, the entity pass, the links and the
- * paint order: the screen roots as the game lists them (bottom layer first), then the popup roots
- * reversed (the game lists the topmost popup first), then the entities without a host. `roots`
- * keeps the reader order.
+ * paint order. The paint order is the screen roots as the game lists them (bottom layer first),
+ * then the popup roots reversed (the game lists the topmost popup first), then the entities
+ * without a host. `roots` keeps the reader order.
  *
  * @param top - The top node of game.ui.
  * @param entities - game.entities.

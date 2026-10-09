@@ -633,7 +633,18 @@ describe("buildScene: paint order and textures", () => {
     ]);
   });
 
-  it("counts no more popups than there are ui roots", () => {
+  it("paints every root as the game lists it when no entity is a popup root", () => {
+    const scene = rootsScene(mounted(STAGE_SKY, HOME_SCREEN), []);
+
+    expect(scene.paintOrder).toEqual([
+      "ui:stageSky",
+      "ui:stageSky/skyArt",
+      "ui:homeScreen",
+      "ui:homeScreen/play"
+    ]);
+  });
+
+  it("clamps the popup count to the number of ui roots: two roots, then one root", () => {
     const entities = [popupRoot(900, 1), popupRoot(901, 2), popupRoot(902, 3)];
     const two = rootsScene(mounted(POPUP_B, POPUP_A), entities);
     const one = rootsScene(HOME_SCREEN, entities);
