@@ -134,8 +134,8 @@ function serveWithBun(options: BunServeOptions): AttachedServer {
  * It works around a deadlock of Bun 1.3.14: when that rebundle (Bun starts one on every page
  * request without HMR) and the first bundle of the dev server run at once, both wait on one
  * wait group of Bun's thread pool and the main thread is never woken, so the bin answers nothing,
- * not even SIGINT; sometimes Bun crashes instead. Remove this wait and its call in `restart` once
- * Bun no longer freezes there.
+ * not even SIGINT; sometimes Bun crashes instead. Kept on Bun 1.4.2 as a guard (D-58): it did not
+ * reproduce there, and no release note names the fix.
  *
  * @returns Resolves once the bundler finished what it had; rejects when the build fails.
  */

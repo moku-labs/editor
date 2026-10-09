@@ -34,3 +34,5 @@ jobs:
       id-token: write # publish job: tokenless OIDC Trusted Publishing
     with:
       release_type: ${{ inputs.release_type }}
+      # The floor of package.json `engines.bun` (D-58): the release checks run on the Bun CI uses.
+      bun_version: "1.4.2"

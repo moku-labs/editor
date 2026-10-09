@@ -889,7 +889,7 @@ cd <demos>/merge-game && bun install && bun run test:editor --e2e --editor <edit
 
 ## Requirements
 
-- **Node `>= 24`** and **Bun `>= 1.3.14`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
+- **Node `>= 24`** and **Bun `>= 1.4.2`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
 - **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.13.1`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder and watches its keys.
 - **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
