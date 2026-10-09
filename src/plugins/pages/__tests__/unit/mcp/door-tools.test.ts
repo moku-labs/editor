@@ -8,7 +8,8 @@ import {
   doorAnnotations,
   doorInputSchema,
   doorToolName,
-  doorTools
+  doorTools,
+  GRACE_MS
 } from "../../../mcp/door-tools";
 import { runTool } from "../../../mcp/game-tools";
 import { checkArguments, SESSION_PROPERTY } from "../../../mcp/schema";
@@ -21,7 +22,7 @@ import { textAt, toolSetup } from "../../mcp-tools";
 // pages/mcp door tools (D-35, D-36, D-37): one MCP tool per command door of
 // the selected session. The pure parts (name, input schema, annotations, the
 // tool list of a manifest), the door set that follows the sessions by their
-// manifestHash with a 5 s grace, and a door tool call through the fake hub.
+// manifestHash with an 8 s grace, and a door tool call through the fake hub.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A command door. */
@@ -434,7 +435,7 @@ describe("createDoorTools", () => {
     expect(doors.retired()).toEqual(new Set(["cheat_game_fill"]));
   });
 
-  it("keeps the doors when the session comes back with the same hash within 5 s", async () => {
+  it("keeps the doors when the session comes back with the same hash within the grace (8 s)", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
@@ -442,8 +443,9 @@ describe("createDoorTools", () => {
     doors.follow(hub.client);
     await doors.ready;
 
+    expect(GRACE_MS).toBe(8000);
     hub.push([]);
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
     hub.push([live("s-2", "h1")]);
     await vi.advanceTimersByTimeAsync(10_000);
     await flush();
@@ -452,7 +454,7 @@ describe("createDoorTools", () => {
     expect(doors.tools().map(tool => tool.name)).toEqual(["game_tap"]);
   });
 
-  it("empties the doors after 5 s without a session: one onChange, the names retired", async () => {
+  it("empties the doors after 8 s without a session: one onChange, the names retired", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { doors, onChange } = doorSet();
     const hub = fakeClient([live("s-1", "h1")]);
@@ -461,7 +463,7 @@ describe("createDoorTools", () => {
     await doors.ready;
 
     hub.push([]);
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
     expect(onChange).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
     expect(onChange).toHaveBeenCalledTimes(2);
@@ -482,7 +484,7 @@ describe("createDoorTools", () => {
     const isReady = settled(doors.ready);
     doors.follow(fakeClient([]).client);
 
-    await vi.advanceTimersByTimeAsync(4999);
+    await vi.advanceTimersByTimeAsync(GRACE_MS - 1);
     expect(isReady()).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(isReady()).toBe(true);
@@ -499,7 +501,7 @@ describe("createDoorTools", () => {
     const isReady = settled(doors.ready);
     doors.follow(hub.client);
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(GRACE_MS);
     expect(isReady()).toBe(true);
     expect(hub.fetches()).toBe(0);
     expect(doors.tools()).toEqual([]);
@@ -645,7 +647,7 @@ describe("createDoorTools", () => {
     expect(onChange).toHaveBeenCalledOnce();
   });
 
-  it("starts the grace on unfollow and keeps the doors when the same hash is followed again", async () => {
+  it("starts the grace on unfollow and keeps the doors when the same hash is followed again 7 s later (the bridge's last reconnect try)", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { doors, onChange } = doorSet();
     const first = fakeClient([live("s-1", "h1")]);
@@ -654,7 +656,7 @@ describe("createDoorTools", () => {
     await doors.ready;
 
     doors.unfollow();
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(7000);
     doors.follow(fakeClient([live("s-1", "h1")]).client);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(onChange).toHaveBeenCalledOnce();

@@ -3,8 +3,8 @@
  * selected session, with a typed input schema built from the door's `InputSchema`. Cheat and raw
  * doors carry their effect as a name prefix, so one permission rule denies them. The door set
  * follows the hub's `sessions` by their `manifestHash`: it is rebuilt, and `onChange` sends
- * `tools/list_changed`, only when the hash of the selected session moves. A 5 s grace keeps the set
- * while no session is chosen, so a hot reload does not blink the list.
+ * `tools/list_changed`, only when the hash of the selected session moves. An 8 s grace keeps the
+ * set while no session is chosen, so a hot reload and the bin's restart do not blink the list.
  */
 import type { BrandConsole } from "@moku-labs/common/cli";
 import type { CommandDescriptor, Effect, InputKind, InputSchema } from "../../registry/protocol";
@@ -77,9 +77,12 @@ const MAX_NAME_LENGTH = 40;
 const SESSION_ARGUMENT = "_session";
 
 /**
- * How long the door set stays while no session is chosen.
+ * How long the door set stays while no session is chosen, in ms. It covers a reload of the game
+ * page and the bin's restart: the restart keeps the port closed for up to about 6 s (D-57), and
+ * the bridge's last reconnect try lands 7 s after the close (`RECONNECT_WAITS_MS` in
+ * connection.ts). The link reads `reloading` for the same 8 s (`reloadGraceMs`).
  */
-const GRACE_MS = 5000;
+export const GRACE_MS = 8000;
 
 /**
  * The name prefix of each effect (D-36): only cheat and raw doors carry one.
@@ -141,7 +144,7 @@ const FIELD_PROPERTY: Readonly<Record<InputKind | `${InputKind}?`, PropertySchem
 export type DoorToolsOptions = {
   /** Warns once per hash about each door that gets no tool. */
   readonly ui: Pick<BrandConsole, "warn">;
-  /** How long the set stays while no session is chosen (default 5000 ms). */
+  /** How long the set stays while no session is chosen (default `GRACE_MS`, 8000 ms). */
   readonly graceMs?: number;
   /** Called on every change of the door set: the bridge sends `tools/list_changed`. */
   readonly onChange: () => void;

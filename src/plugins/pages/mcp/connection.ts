@@ -1,8 +1,9 @@
 /**
  * @file pages/mcp — the bin side of the bridge (M3): a live `.moku/editor.json` under the root
  * wins; without one the bridge starts the bin when it knows the game html (argv or the last
- * discovery file it saw). A hub socket that closes is re-read and reconnected once. The bridge
- * stops only a bin it started.
+ * discovery file it saw). A hub socket that closes is reconnected: one try at the close, then at
+ * most three more, 1, 2 and 4 s apart, each after the discovery file was read again, so the
+ * bridge is back after the bin's restart (D-32, D-57). The bridge stops only a bin it started.
  */
 import { resolve } from "node:path/posix";
 import type { EditorDiscovery, McpArgs } from "../types";
@@ -17,6 +18,15 @@ import type { BridgeDeps, ChildProcess, EditorLink, EditorStatus, HubClient } fr
  * names one.
  */
 const DEFAULT_PORT = 3000;
+
+/**
+ * The waits before the second, third and fourth reconnect try, in ms. With the try at the close
+ * the tries land 0, 1, 3 and 7 s after it, like the link's. The bin's restart keeps its port
+ * closed for up to about 6 s (D-57: 500 ms for the socket closes, 500 ms for the stop and 5 s for
+ * Bun's bundler), so the last try finds it open again. The grace of the door tools (`GRACE_MS`
+ * in door-tools.ts) outlasts that try.
+ */
+export const RECONNECT_WAITS_MS: readonly number[] = [1000, 2000, 4000];
 
 /**
  * What a tool answers while no bin runs.
@@ -54,7 +64,10 @@ type LinkState = {
   owned: { readonly child: ChildProcess; readonly bin: EditorDiscovery } | undefined;
   seen: EditorDiscovery | undefined;
   startup: Promise<void> | undefined;
+  /** The reconnect try in flight, or the last one. */
   reconnect: Promise<void> | undefined;
+  /** Runs between two reconnect tries. */
+  retryTimer: ReturnType<typeof setTimeout> | undefined;
   launching: Promise<EditorStatus> | undefined;
   launchAbort: AbortController | undefined;
   closing: boolean;
@@ -119,8 +132,47 @@ function statusOf(state: LinkState): EditorStatus {
 }
 
 /**
- * The connection closed without the bridge closing it: re-read the discovery file and reconnect
- * once. A bin that is gone leaves the tools answering "not running".
+ * Stops the wait for the next reconnect try, if one runs.
+ *
+ * @param state - The bin side state.
+ */
+function stopRetry(state: LinkState): void {
+  clearTimeout(state.retryTimer);
+  state.retryTimer = undefined;
+}
+
+/**
+ * One reconnect try: reads the discovery file again and connects to its live bin. A failed try is
+ * remembered, and the next one runs after its wait (`RECONNECT_WAITS_MS`). The tries end with a
+ * connection (of a try or of a tool call), without a live bin, after the last wait, and on
+ * shutdown. One wait runs at most, and none while a connection is open.
+ *
+ * @param ctx - The bin side.
+ * @param attempt - The zero-based number of this try since the connection closed.
+ */
+function reconnect(ctx: LinkCtx, attempt: number): void {
+  const { state } = ctx;
+  const { live } = findEditor(ctx.root, ctx.deps.isAlive);
+  if (live === undefined) return;
+
+  state.reconnect = connectTo(ctx, live).then(noop, (error: unknown) => {
+    noteFailure(ctx, error);
+    const wait = RECONNECT_WAITS_MS[attempt];
+    if (wait === undefined || state.closing || state.client?.isOpen() === true) return;
+
+    // The tries of an earlier close may still wait: this wait replaces theirs.
+    stopRetry(state);
+    state.retryTimer = setTimeout(() => {
+      state.retryTimer = undefined;
+      reconnect(ctx, attempt + 1);
+    }, wait);
+  });
+}
+
+/**
+ * The connection closed without the bridge closing it: the door tools hear it, then the bridge
+ * reconnects (`reconnect`), from the first try. A bin that is gone leaves the tools answering
+ * "not running".
  *
  * @param ctx - The bin side.
  */
@@ -130,15 +182,14 @@ function onLost(ctx: LinkCtx): void {
   ctx.onDisconnected();
   if (state.closing) return;
 
-  ctx.deps.ui.warn("[moku-editor] mcp: the moku-editor connection closed; reconnecting once");
-  const { live } = findEditor(ctx.root, ctx.deps.isAlive);
-  if (live === undefined) return;
-  state.reconnect = connectTo(ctx, live).then(noop, (error: unknown) => noteFailure(ctx, error));
+  ctx.deps.ui.warn("[moku-editor] mcp: the moku-editor connection closed; reconnecting");
+  reconnect(ctx, 0);
 }
 
 /**
  * Connects to a live bin and hands the open client to `onConnected` (the door tools follow its
- * sessions).
+ * sessions). The reconnect tries end here. When a reconnect try and a tool call connect at once,
+ * the first connection stays and the second one is closed.
  *
  * @param ctx - The bin side.
  * @param bin - The live discovery record.
@@ -151,6 +202,13 @@ async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient>
       if (state.client === client) onLost(ctx);
     }
   });
+  const first = state.client;
+  if (first?.isOpen() === true) {
+    client.close();
+    return first;
+  }
+
+  stopRetry(state);
   state.client = client;
   state.seen = bin;
   state.lastError = undefined;
@@ -274,7 +332,8 @@ async function startup(ctx: LinkCtx): Promise<void> {
 }
 
 /**
- * The open client, after the startup and a reconnect settled; else one connect to a live bin.
+ * The open client, after the startup and a reconnect try in flight settled; else one connect to a
+ * live bin (a tool call does not wait for the next try).
  *
  * @param ctx - The bin side.
  * @returns The open client.
@@ -307,6 +366,8 @@ async function stopOwnedBin(
   const { owned } = state;
   if (owned === undefined) return { stopped: false, status: statusOf(state) };
 
+  // Nothing reconnects to a bin the bridge stops.
+  stopRetry(state);
   if (state.client?.bin.pid === owned.bin.pid) {
     state.client.close();
     state.client = undefined;
@@ -319,13 +380,15 @@ async function stopOwnedBin(
 }
 
 /**
- * The stdin end: cancels a start in progress, closes the connection and stops an owned bin.
+ * The stdin end: ends the reconnect tries, cancels a start in progress, closes the connection and
+ * stops an owned bin.
  *
  * @param ctx - The bin side.
  */
 async function shutdown(ctx: LinkCtx): Promise<void> {
   const { state } = ctx;
   state.closing = true;
+  stopRetry(state);
   state.launchAbort?.abort();
   await Promise.allSettled([state.startup, state.reconnect, state.launching]);
 
@@ -374,6 +437,7 @@ export function createEditorLink(options: EditorLinkOptions): EditorLink {
       seen: undefined,
       startup: undefined,
       reconnect: undefined,
+      retryTimer: undefined,
       launching: undefined,
       launchAbort: undefined,
       closing: false,
