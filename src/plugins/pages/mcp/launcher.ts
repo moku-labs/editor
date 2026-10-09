@@ -3,6 +3,12 @@
  * <port> --root <root> [--no-hmr]`, detached, stdout and stderr to `.moku/editor.log`, then waits
  * at most 15 s for its discovery file. Stops only a bin it started: SIGTERM, at most 2 s, then
  * SIGKILL.
+ *
+ * The html `<root>/.moku/index.html` is the engine page (B5): the bin wrote it and served it from a
+ * re-run under `--config=<root>/.moku/bunfig.toml` (D-51). The launcher leaves that html out, so
+ * the bin starts in the engine form again (`moku-editor --port <port> --root <root> [--no-hmr]`),
+ * writes the page and re-runs under the bunfig, with the hot plugin. The html form would serve the
+ * page without it.
  */
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path/posix";
@@ -36,7 +42,13 @@ const STOP_GRACE_MS = 2000;
 const LOG_MODE = 0o600;
 
 /**
- * What the bin is started with: absolute html and root, the port and hot reload.
+ * The page the engine writes for a moku-game folder, relative to the root (`engine-page.ts`).
+ */
+const ENGINE_PAGE = ".moku/index.html";
+
+/**
+ * What the bin is started with: absolute html and root, the port and hot reload. The html
+ * `<root>/.moku/index.html` starts the engine form.
  */
 export type LaunchOptions = {
   readonly html: string;
@@ -78,7 +90,8 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * The command line of the bin: the prefix, the html, the port, the root and `--no-hmr` when hot
- * reload is off.
+ * reload is off. The engine page `<root>/.moku/index.html` is left out: without an html the bin
+ * writes the page again and re-runs itself under the page's bunfig (D-51).
  *
  * @param command - The runtime and the bin script.
  * @param options - The launch options.
@@ -87,11 +100,22 @@ function sleep(ms: number): Promise<void> {
  * ```ts
  * launchCommand(["bun", "/pkg/dist/bin.mjs"], { html: "/g/web/index.html", port: 3000, root: "/g", hmr: false });
  * // ["bun", "/pkg/dist/bin.mjs", "/g/web/index.html", "--port", "3000", "--root", "/g", "--no-hmr"]
+ * launchCommand(["bun", "/pkg/dist/bin.mjs"], { html: "/g/.moku/index.html", port: 3000, root: "/g", hmr: true });
+ * // ["bun", "/pkg/dist/bin.mjs", "--port", "3000", "--root", "/g"]
  * ```
  */
 export function launchCommand(command: readonly string[], options: LaunchOptions): string[] {
   const { html, port, root, hmr } = options;
-  return [...command, html, "--port", String(port), "--root", root, ...(hmr ? [] : ["--no-hmr"])];
+  const page = html === join(root, ENGINE_PAGE) ? [] : [html];
+  return [
+    ...command,
+    ...page,
+    "--port",
+    String(port),
+    "--root",
+    root,
+    ...(hmr ? [] : ["--no-hmr"])
+  ];
 }
 
 /**
