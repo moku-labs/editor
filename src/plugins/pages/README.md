@@ -68,7 +68,9 @@ The Hot reload switch changes it while the bin runs. Bun cannot switch HMR on a 
 The game page has to load again to gain or drop Bun's HMR client (`/_bun/client`). workspace
 reloads the game frame with its state after an accepted switch (workspace README, Hot reload).
 
-The wait for Bun's bundler (D-57) works around a deadlock of Bun 1.3.14:
+The wait for Bun's bundler (D-57) guards against a deadlock seen on Bun 1.3.14. The floor is now
+Bun 1.4.2 (D-58): the deadlock did not reproduce there in 241 runs, and the wait stays in the code
+as a guard. What was seen on 1.3.14:
 
 - A server without HMR rebundles the page on every page request, on Bun's bundler thread. The
   dev server bundles on the main thread.
@@ -78,16 +80,18 @@ The wait for Bun's bundler (D-57) works around a deadlock of Bun 1.3.14:
 - A page request that still reaches the server without HMR during the switch to on sets this up.
 - So before a server with HMR starts, `waitForBundler` (`serve.ts`) runs an empty `Bun.build`
   that lives in memory. Bun queues it on the same bundler thread, so it ends only after a
-  rebundle still in flight. It takes about 1 ms when the bundler is idle.
+  rebundle still in flight. It takes about 2 ms when the bundler is idle.
 - The wait is bounded to `BUNDLER_IDLE_MS`, 5 s. A wait that is cut or that fails prints one
   warning (`[moku-editor] Bun's bundler was still busy after 5000 ms: …` or `[moku-editor] the
   wait for Bun's bundler failed (…): …`) and the restart goes on.
 - It does not run before a server without HMR: there the empty build could itself run next to a
   bundle of the stopped dev server.
-- Remove the wait when Bun no longer freezes there.
+- The wait stays on Bun 1.4.2 (D-58): no Bun release note names a fix for the deadlock, and the
+  wait costs about 2 ms.
 
-Measured 2026-10-09 with the real bin and a page bundle of 10.8 MB, the page asked for right after
-each `POST P/hmr`: without the wait 15 of 20 bins froze, with it 0 of 40.
+Measured 2026-10-09 on Bun 1.3.14 with the real bin and a page bundle of 10.8 MB, the page asked
+for right after each `POST P/hmr`: without the wait 15 of 20 bins froze, with it 0 of 40. On Bun
+1.4.2 the deadlock did not reproduce in 241 runs.
 
 | `setHotReload(on)` | Answer | What happens |
 |---|---|---|
@@ -464,7 +468,7 @@ What `main` (`cli.ts`) does:
 - `gameUrl` must be same-origin. The game's bridge fetches `hello` from this server.
 - The bin serves one game HTML file at `/` and binds 127.0.0.1 only.
 - Hot reload is switched by restarting the bin's server (D-32): every socket closes with 1012 and reconnects within about a second, and the game page has to load again. A game's own server cannot be switched.
-- Bun 1.3.14 freezes its main thread, or crashes, when the page rebundle of a server without HMR and the first bundle of the dev server run at once. The restart works around it: before it serves with HMR it waits until Bun's bundler is idle, at most 5 s (D-57, see Hot reload). Not covered: a rebundle that takes longer than 5 s, and a switch to off while the dev server is still bundling. A frozen bin needs `kill -9`.
+- Bun 1.3.14 froze its main thread, or crashed, when the page rebundle of a server without HMR and the first bundle of the dev server ran at once. The restart guards against it: before it serves with HMR it waits until Bun's bundler is idle, at most 5 s (D-57, see Hot reload). On Bun 1.4.2, the floor since D-58, the freeze did not reproduce in 241 runs; the wait stays. Not covered: a rebundle that takes longer than 5 s, and a switch to off while the dev server is still bundling. A frozen bin needs `kill -9`.
 - MCP: screenshots and series need the game page visible (a hidden tab stops heartbeats). Frame sources reach `moku_wait` about once per second (D-15).
 - MCP: `moku_series` is one forwarded `run`. A run of `editor.sheet` waits `frames × everyMs` on top of the call deadline (capped at +60 s) in bridge, hub and link, so 12 frames every 5000 ms fit. The `game.capture { sheet }` fallback keeps the plain deadline (`callTimeoutMs`, 5 s by default): a longer sheet there answers -32002 `timeout`.
 - MCP: game pictures compress poorly. On merge-game in a 393 × 852 page a full shot is about 890 KB of base64, so the default screenshot comes back about 200 px wide. A 4-frame sheet is about 2 MB at full size; `editor.sheet` shrinks it to 1080 px wide in the page, and a sheet still above 300 KB is sent with the size note.

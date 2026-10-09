@@ -21,6 +21,9 @@ permissions:
 jobs:
   ci:
     uses: moku-labs/ci/.github/workflows/package-ci.yml@v1
+    with:
+      # The floor of package.json `engines.bun` (D-58). Without it the checks run on `latest`.
+      bun_version: "1.4.2"
 
   # The moku demos (moku-labs/demos) against this PR's editor preview, published by `ci`. The label
   # `demos:full` adds the full tier. Its checks land as "demos / fast" or "demos / full";
@@ -32,3 +35,4 @@ jobs:
     with:
       editor: https://pkg.pr.new/@moku-labs/editor@${{ github.event.pull_request.head.sha }}
       tier: ${{ contains(github.event.pull_request.labels.*.name, 'demos:full') && 'full' || 'fast' }}
+      bun_version: "1.4.2"
