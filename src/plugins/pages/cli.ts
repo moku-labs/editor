@@ -376,7 +376,9 @@ function closeKeys(keys: KeysWatcher, ui: BrandConsole): void {
  * agent (`engine-page.ts`), this bin starts the engine's keys watch (D-54, D-55), then re-runs
  * itself under the page's bunfig and serves its HTML (D-51). The watch runs here, in the parent,
  * until the child exits. Only the real process re-runs, so unit seams without `deps.reexec` are
- * refused.
+ * refused. This bin catches no signal before the spawn (`main`): a SIGINT or SIGTERM while the page
+ * is written or the first scan runs ends the process, so no child is spawned and the watch, which
+ * lives in this process, ends with it.
  *
  * @param args - The `run` arguments without a game HTML file.
  * @param deps - The bin deps.
@@ -555,8 +557,9 @@ type EarlySignals = {
 };
 
 /**
- * Catches SIGINT and SIGTERM from the start of a serving bin, so a signal that lands while it
- * starts is remembered instead of killing the process with the default action (exit 143).
+ * Catches SIGINT and SIGTERM from the start of a bin that serves a game HTML file, so a signal
+ * that lands while it starts is remembered instead of killing the process with the default action
+ * (exit 143).
  *
  * @returns Whether a signal came, and the removal of the handlers.
  * @example
@@ -589,7 +592,9 @@ function catchSignalsEarly(): EarlySignals {
  * failing code of its Playwright runs, or 0). A serving bin stops once on SIGINT or SIGTERM; a
  * re-spawned one also when its parent is gone (A4: a parent killed by SIGKILL forwards no signal).
  * `e2e` keeps the default signal action: a Ctrl+C reaches its Playwright child through the
- * terminal's process group.
+ * terminal's process group. The engine form (no game HTML file) keeps it too, until its child is
+ * spawned: that bin never serves, so a signal before the spawn ends it (130 for SIGINT, 143 for
+ * SIGTERM) and no child is spawned; from the spawn on the signals are forwarded (`reexec.ts`).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps (default: this process).
@@ -603,8 +608,11 @@ export async function main(
   argv: readonly string[],
   deps: CliDeps = processDeps()
 ): Promise<number> {
-  // A serving bin owns its signals from the start; other commands keep the default action.
-  const early = parseBinArgs(argv).kind === "run" ? catchSignalsEarly() : undefined;
+  // A bin given a game HTML file owns its signals from the start. Other commands keep the default
+  // action, the engine form too: it never serves here, so a caught signal would be lost.
+  const parsed = parseBinArgs(argv);
+  const servesHtml = parsed.kind === "run" && parsed.html !== undefined;
+  const early = servesHtml ? catchSignalsEarly() : undefined;
   const { code, stop } = await startBin(argv, deps).catch((error: unknown) => {
     early?.release();
     throw error;

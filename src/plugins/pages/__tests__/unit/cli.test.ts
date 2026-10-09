@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
-import type { KeysWatcher } from "@moku-labs/game/cli";
+import type { KeysWatcher, PreparedPage } from "@moku-labs/game/cli";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CliDeps, PageModule } from "../../cli";
 import { main, startBin, stopOnce } from "../../cli";
@@ -610,6 +610,16 @@ function refusePage(): Promise<never> {
   return Promise.reject(new Error("[game] config.ts: page.title is refused."));
 }
 
+/**
+ * How many SIGINT and SIGTERM handlers this process has. With none of the bin's own, a signal
+ * takes the default action and ends the process.
+ *
+ * @returns The two counts.
+ */
+function handlerCounts() {
+  return { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+}
+
 describe("startBin engine page (B5)", () => {
   let base: string;
   let moku: string;
@@ -878,6 +888,61 @@ describe("startBin engine page (B5)", () => {
 
       expect(importCli).not.toHaveBeenCalled();
       expect(watchKeys).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("signals before the spawn", () => {
+    it("main catches no SIGINT or SIGTERM while the page is written and the first scan runs, so the signal ends the bin before any child", async () => {
+      const before = handlerCounts();
+      const writing = Promise.withResolvers<PreparedPage>();
+      const { deps, spawn, preparePage, watchKeys, close } = engineDeps(() => writing.promise);
+      const scan = Promise.withResolvers<KeysWatcher>();
+      watchKeys.mockImplementation(() => scan.promise);
+      const atSpawn: ReturnType<typeof handlerCounts>[] = [];
+      spawn.mockImplementation(() => {
+        atSpawn.push(handlerCounts());
+        return { exited: Promise.resolve(7), kill: vi.fn() };
+      });
+
+      const running = main(["--root", moku], deps);
+
+      // The engine writes the page: no handler of the bin would swallow a Ctrl+C.
+      await vi.waitFor(() => expect(preparePage).toHaveBeenCalledTimes(1));
+      expect(handlerCounts()).toEqual(before);
+
+      // The first keys scan runs, which can be long: still none, and no child yet.
+      writing.resolve(page());
+      await vi.waitFor(() => expect(watchKeys).toHaveBeenCalledTimes(1));
+      expect(handlerCounts()).toEqual(before);
+      expect(spawn).not.toHaveBeenCalled();
+
+      // From the spawn on the forwarders of the re-run own the signals (deps.reexec.onSignal).
+      scan.resolve({ close });
+      await expect(running).resolves.toBe(7);
+      expect(atSpawn).toEqual([before]);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(handlerCounts()).toEqual(before);
+      expect(deps.exit).not.toHaveBeenCalled();
+    });
+
+    it("the html form keeps its early handlers, also when it is re-spawned: they are on at the spawn and off after the child", async () => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-early-")));
+      await writeFile(join(root, "index.html"), "<html></html>");
+      await writeFile(join(root, "bunfig.toml"), '[serve.static]\nplugins = ["./p.ts"]\n');
+      const before = handlerCounts();
+      const { deps, spawn } = engineDeps();
+      const atSpawn: ReturnType<typeof handlerCounts>[] = [];
+      spawn.mockImplementation(() => {
+        atSpawn.push(handlerCounts());
+        return { exited: Promise.resolve(0), kill: vi.fn() };
+      });
+      try {
+        expect(await main([join(root, "index.html"), "--root", root], deps)).toBe(0);
+        expect(atSpawn).toEqual([{ int: before.int + 1, term: before.term + 1 }]);
+        expect(handlerCounts()).toEqual(before);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     });
   });
 });
