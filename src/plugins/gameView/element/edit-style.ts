@@ -6,19 +6,27 @@
  * it (`resolveEdits`), and a new game session drops the entries kept by node id
  * (`dropSessionEdits`). Every change of the selected element's edits publishes the selection
  * again. The game does not change: no file is written and no command is sent.
+ *
+ * A text style key has pending edits too (D-73): `editTextStyle` records one under
+ * `textStyle:<key>` (`from` is the value its block has in the file), `editValue` records for
+ * either owner, and the block read again drops the edits it shows (`resolveTextStyleEdits`). The
+ * list names the keys after the elements.
  */
 import type { SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
 import type { StyleEdit, StyleValue } from "../../registry/protocol";
 import { copyText } from "../clipboard";
 import { notify } from "../state";
-import type { ElementEdits, GameViewCtx, GameViewState } from "../types";
+import type { ElementEdits, GameViewCtx, GameViewState, TextStyleCard } from "../types";
 import {
+  type EditOwner,
   editCountText,
   editKey,
   editsText,
+  isTextStyleEditKey,
   selectedEditKey,
   styleValueAt,
+  textStyleEditKey,
   unresolved,
   withEdit
 } from "./edits";
@@ -72,6 +80,56 @@ function keep(state: Pick<GameViewState, "edits">, key: string, entry: ElementEd
 }
 
 /**
+ * The text style block that was read: the `found` state of the card.
+ */
+type ReadTextStyle = Extract<TextStyleCard, { readonly status: "found" }>;
+
+/**
+ * The entry of a text style key with its edits (D-73): labelled `textStyle <key>`, at the place
+ * of its block, never by id.
+ *
+ * @param card - The block of the key as read.
+ * @param edits - Its edits.
+ * @returns The entry.
+ */
+function textStyleEntry(card: ReadTextStyle, edits: readonly StyleEdit[]): ElementEdits {
+  return {
+    label: `textStyle ${card.key}`,
+    source: { path: card.path, line: card.line },
+    byId: false,
+    edits
+  };
+}
+
+/**
+ * Records one edit under a key of the pending edits, publishes the selection again and tells the
+ * UI. Nothing happens when the edit changes nothing.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param key - The map key: of an element, or of a text style key.
+ * @param edit - The path, the value there is now and the wanted value.
+ * @param edit.path - The style path.
+ * @param edit.now - The value the scene, or the file, has for the path.
+ * @param edit.to - The wanted value.
+ * @param entryWith - Builds the entry of the key around its edits.
+ */
+function record(
+  ctx: GameViewCtx,
+  key: string,
+  edit: { readonly path: string; readonly now: StyleValue; readonly to: StyleValue },
+  entryWith: (edits: readonly StyleEdit[]) => ElementEdits
+): void {
+  const { state } = ctx;
+  const before = state.edits.get(key)?.edits ?? [];
+  const after = withEdit(before, edit.path, edit.now, edit.to);
+  if (after === before) return;
+
+  keep(state, key, entryWith(after));
+  publishEdits(ctx);
+  notify(state);
+}
+
+/**
  * Records a pending style edit of the selected element and publishes the selection again.
  *
  * @param ctx - Domain context of gameView.
@@ -84,19 +142,63 @@ export function editStyle(ctx: GameViewCtx, path: string, to: StyleValue): void 
   const now = styleValueAt(node?.style, path);
   if (node === undefined || now === undefined) return;
 
-  const key = editKey(node);
-  const before = state.edits.get(key)?.edits ?? [];
-  const after = withEdit(before, path, now, to);
-  if (after === before) return;
-
-  keep(state, key, entryOf(state, node, after));
-  publishEdits(ctx);
-  notify(state);
+  record(ctx, editKey(node), { path, now, to }, edits => entryOf(state, node, edits));
 }
 
 /**
- * Drops the pending edits of the selected element, or all of them; the selection is published
- * again when the selected element lost some.
+ * Records a pending edit of a text style key (D-73) and publishes the selection again. `from` is
+ * the value the block of the key has in the file. Nothing happens unless the block of this key is
+ * the one read for the selected text node and the field is a number or a quoted string there.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param key - The text style key ("ui.button").
+ * @param path - The field of its block (`size`, `shadow.dy`).
+ * @param to - The wanted value.
+ */
+export function editTextStyle(ctx: GameViewCtx, key: string, path: string, to: StyleValue): void {
+  const card = ctx.state.textStyle;
+  if (card?.status !== "found" || card.key !== key) return;
+  const now = card.rows.find(row => row.path === path)?.value;
+  if (now === undefined) return;
+
+  record(ctx, textStyleEditKey(key), { path, now, to }, edits => textStyleEntry(card, edits));
+}
+
+/**
+ * Records a pending edit for its owner: the selected element, or a text style key. The fields of
+ * the Element tab commit through it.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param owner - What the edit belongs to.
+ * @param path - The style path, or the field of the text style block.
+ * @param to - The wanted value.
+ */
+export function editValue(ctx: GameViewCtx, owner: EditOwner, path: string, to: StyleValue): void {
+  if (owner.kind === "textStyle") editTextStyle(ctx, owner.key, path, to);
+  else editStyle(ctx, path, to);
+}
+
+/**
+ * The keys the pending edits of the selected element are kept under: its own and, for a text
+ * node, the one of its text style key (D-73).
+ *
+ * @param state - The selection, the scene and the selection published last.
+ * @returns The keys, none without a selection.
+ */
+function selectedEditKeys(
+  state: Pick<GameViewState, "selected" | "scene" | "selection">
+): readonly string[] {
+  const own = selectedEditKey(state);
+  const textStyle = selectedNode(state)?.textStyle;
+  return [
+    ...(own === undefined ? [] : [own]),
+    ...(textStyle === undefined ? [] : [textStyleEditKey(textStyle)])
+  ];
+}
+
+/**
+ * Drops the pending edits of the selected element (its own and the ones of its text style key),
+ * or all of them; the selection is published again when the selected element lost some.
  *
  * @param ctx - Domain context of gameView.
  * @param scope - `"selected"` or `"all"`.
@@ -105,20 +207,20 @@ export function clearEdits(ctx: GameViewCtx, scope: "selected" | "all" = "all"):
   const { state } = ctx;
   if (state.edits.size === 0) return;
 
-  const selected = selectedEditKey(state);
-  const hadSelected = selected !== undefined && state.edits.has(selected);
-  if (scope === "selected" && !hadSelected) return;
+  const selected = selectedEditKeys(state).filter(key => state.edits.has(key));
+  if (scope === "selected" && selected.length === 0) return;
 
   // Drop first, then publish: the selection goes out again only when its element lost edits.
   if (scope === "all") state.edits.clear();
-  else if (selected !== undefined) state.edits.delete(selected);
-  if (hadSelected) publishEdits(ctx);
+  else for (const key of selected) state.edits.delete(key);
+  if (selected.length > 0) publishEdits(ctx);
   notify(state);
 }
 
 /**
- * Every pending edit, one entry per element, the selected element first. A keyed element names
- * the source the index answers now (the line may have moved since the edit was made).
+ * Every pending edit, one entry per element, the selected element first, then one entry per text
+ * style key (D-73). A keyed element names the source the index answers now (the line may have
+ * moved since the edit was made).
  *
  * @param ctx - Domain context of gameView.
  * @returns A copy of the list.
@@ -128,15 +230,22 @@ export function listEdits(ctx: Pick<GameViewCtx, "state">): readonly ElementEdit
   const selected = selectedEditKey(state);
   const first: ElementEdits[] = [];
   const rest: ElementEdits[] = [];
+  const textStyles: ElementEdits[] = [];
 
-  // A keyed entry takes the source the index answers now, not the one kept with the edit.
   for (const [key, entry] of state.edits) {
+    // A text style key: its place is the one of its block, kept fresh by every read of it.
+    if (isTextStyleEditKey(key)) {
+      textStyles.push(entry);
+      continue;
+    }
+
+    // A keyed entry takes the source the index answers now, not the one kept with the edit.
     const found = entry.byId ? undefined : state.found.get(key);
     const listed = found === undefined ? entry : { ...entry, source: sourceAt(found) };
     (key === selected ? first : rest).push(listed);
   }
 
-  return [...first, ...rest];
+  return [...first, ...rest, ...textStyles];
 }
 
 /**
@@ -155,7 +264,8 @@ export async function copyEdits(ctx: GameViewCtx): Promise<string | undefined> {
 
 /**
  * The first node of every ui key the pending edits hold, from one pass over a scene. The entries
- * kept by node id are not in it: the scene answers those by id.
+ * kept by node id are not in it: the scene answers those by id. Neither are the text style keys:
+ * no node answers them.
  *
  * @param scene - The scene.
  * @param edits - The pending edits.
@@ -166,7 +276,9 @@ function keyedNodes(
   edits: ReadonlyMap<string, ElementEdits>
 ): ReadonlyMap<string, SceneNode> {
   const wanted = new Set<string>();
-  for (const [key, entry] of edits) if (!entry.byId) wanted.add(key);
+  for (const [key, entry] of edits) {
+    if (!entry.byId && !isTextStyleEditKey(key)) wanted.add(key);
+  }
 
   // A found key leaves `wanted`, so the first node of a key wins and the pass ends early.
   const byKey = new Map<string, SceneNode>();
@@ -181,7 +293,8 @@ function keyedNodes(
 /**
  * The self-resolve of the pending edits on a new scene snapshot: for every element the scene
  * has, an edit whose scene value equals its `to` is dropped; an element without edits left is
- * forgotten. The selection is published again when the selected element lost an edit.
+ * forgotten. The selection is published again when the selected element lost an edit. The edits
+ * of a text style key stay: the scene has no value of a text style (`resolveTextStyleEdits`).
  *
  * @param ctx - Domain context of gameView.
  * @param scene - The new scene.
@@ -202,6 +315,29 @@ export function resolveEdits(ctx: GameViewCtx, scene: SceneSnapshot): void {
     if (key === selected) isSelectedChanged = true;
   }
   if (isSelectedChanged) publishEdits(ctx);
+}
+
+/**
+ * The self-resolve of the pending edits of a text style key on a read of its block (D-73): an
+ * edit whose field has its `to` value in the file is dropped (the agent wrote the code); a key
+ * without edits left is forgotten. The entry follows the place of the block. The selection is
+ * published again when the selected text node has the key and it lost an edit.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param card - The block of the key as read.
+ */
+export function resolveTextStyleEdits(ctx: GameViewCtx, card: ReadTextStyle): void {
+  const { state } = ctx;
+  const key = textStyleEditKey(card.key);
+  const entry = state.edits.get(key);
+  if (entry === undefined) return;
+
+  const left = entry.edits.filter(
+    edit => card.rows.find(row => row.path === edit.path)?.value !== edit.to
+  );
+  const isResolved = left.length < entry.edits.length;
+  keep(state, key, textStyleEntry(card, isResolved ? left : entry.edits));
+  if (isResolved && selectedNode(state)?.textStyle === card.key) publishEdits(ctx);
 }
 
 /**

@@ -312,7 +312,7 @@ The barrel `scene/index.ts` exports:
 
 | Export | Signature | What |
 |---|---|---|
-| `buildScene` | `(input: SceneInput) => SceneSnapshot \| SceneError` | Element tree with stable refs, roots, paint order, referenced textures. |
+| `buildScene` | `(input: SceneInput) => SceneSnapshot \| SceneError` | Element tree with stable refs, roots, paint order, referenced textures. A ui node keeps the text style key of a `text` as `SceneNode.textStyle` when the raw `game.ui` node has `textStyle` as a non-empty string (`UiNode.textStyle`, `@moku-labs/game` 0.14.11); anything else is dropped, and an older engine sends none. |
 | `refId` | `(ref: ElementRef) => string` | `"ui:<path>"` or `"entity:<id>"`. |
 | `calibrationTarget` | `(ui: Json) => { key, drawn } \| undefined` | The first keyed ui element and its drawn rect, to calibrate from. |
 | `calibrationFrom` | `(page, drawn) => Calibration` | Reference units → page px. |

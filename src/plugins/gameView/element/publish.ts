@@ -3,8 +3,9 @@
  * `state.selected` sends its SelectionInfo through `link.notify("selection", …)`, null when
  * nothing is selected. A source the project index still answers follows in a second publish; a
  * key the index does not know is published without one. A pick and an area publish their own
- * info (card, crop, line). The pending style edits of the element go with every one of them, and
- * a change of those edits publishes again (U8). The last published info stays in
+ * info (card, crop, line). The pending style edits of the element go with every one of them (the
+ * ones of a text node's style key as `textStyle:<key>.<field>`, D-73), and a change of those
+ * edits publishes again (U8). The last published info stays in
  * `state.selection`; a late follow-up of an older one is dropped.
  */
 import { linkPlugin } from "../../link";
@@ -13,7 +14,7 @@ import { refId } from "../../panels/shared/scene";
 import type { SelectionInfo } from "../../registry/protocol";
 import { messageOf } from "../report";
 import type { GameViewCtx, StyleSource } from "../types";
-import { editKey, editsOf, selectedEditKey } from "./edits";
+import { editsOf, selectedEditKey, selectionEdits } from "./edits";
 import {
   bareSelection,
   type SelectionContext,
@@ -54,7 +55,7 @@ export function selectionContext(ctx: GameViewCtx, frame: number | undefined): S
 
 /**
  * The facts of a node's selection: the context, the projections read last, a source and the
- * pending style edits of the node (U8).
+ * pending style edits of the node (U8), with the ones of its text style key (D-73).
  *
  * @param ctx - Domain context of gameView.
  * @param node - The node.
@@ -73,7 +74,7 @@ export function selectionFacts(
     ...selectionContext(ctx, frame),
     projections: state.sources.projections,
     source,
-    edits: editsOf(state.edits, editKey(node))
+    edits: selectionEdits(state.edits, node)
   };
 }
 
@@ -164,7 +165,12 @@ export function publishEdits(ctx: GameViewCtx): void {
     publishSelected(ctx);
     return;
   }
-  const edits = editsOf(state.edits, selectedEditKey(state));
+  // The scene may be gone (a reload): the element then keeps the edits of its own key.
+  const node = state.scene?.nodes.get(refId(selected));
+  const edits =
+    node === undefined
+      ? editsOf(state.edits, selectedEditKey(state))
+      : selectionEdits(state.edits, node);
   publishSelection(ctx, { ...withEdits(selection, edits), at: Date.now() });
 }
 

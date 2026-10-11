@@ -3,7 +3,8 @@
  * section and the reference card: a ui element's JSX (the range the project index answered for
  * its key) and the `defineStyle` block of `style={ident}` (the style card's loader), the
  * `defineStyle` call a style function builds (`style={call(…)}` with a `style:` key, G2), or the
- * text style key block of a text node's `style="ui.link"` (element/text-styles, round 2b R17); an
+ * text style key block of a text node's `style="ui.link"` (element/text-styles, round 2b R17; of
+ * the key the engine sends for the node when the JSX gave none, D-73); an
  * entity's projection, the line that defines it (element/spawn) and its components with their
  * values from the raw `game.entities`. Nothing here throws: what cannot be read is left out.
  */
@@ -165,12 +166,30 @@ function componentsOf(
 }
 
 /**
- * The code of a picked element: a ui element's JSX and style block, an entity's projection, its
- * definition and its components.
+ * The block of the text style key the engine sent for a node (D-73): what a text shows when its
+ * JSX gave no style block (a key built in code, an element the index does not know).
  *
  * @param ctx - Domain context of gameView.
  * @param node - The scene node.
- * @returns The code, undefined for an unkeyed ui node or a key the index does not know.
+ * @returns The block, undefined for a node without a text style key or a key the index does not
+ * know.
+ */
+async function nodeTextStyleOf(
+  ctx: GameViewCtx,
+  node: SceneNode
+): Promise<StyleSnippet | undefined> {
+  return node.textStyle === undefined ? undefined : textStyleOf(ctx, node.textStyle);
+}
+
+/**
+ * The code of a picked element: a ui element's JSX and style block, an entity's projection, its
+ * definition and its components. A text whose JSX gave no style block shows the block of the
+ * text style key the engine sent for it.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param node - The scene node.
+ * @returns The code, undefined for an unkeyed ui node or a key the index does not know, unless
+ * the node has a text style key the index knows.
  */
 export async function elementCode(
   ctx: GameViewCtx,
@@ -182,10 +201,14 @@ export async function elementCode(
     const components = componentsOf(ctx.state.sources.entities, entity.id, entity.components);
     return { kind: "entity", projection: entity.owner, spawn, components };
   }
-  if (node.key === undefined) return undefined;
 
-  const source = await sourceOfKey(ctx, node.key);
-  if (source === undefined) return undefined;
-  const [jsx, style] = await Promise.all([jsxOf(ctx, source), styleBlockOf(ctx, source)]);
-  return { kind: "ui", jsx, style };
+  // No JSX of the element: the block of its text style key alone, when it has one.
+  const source = node.key === undefined ? undefined : await sourceOfKey(ctx, node.key);
+  if (source === undefined) {
+    const style = await nodeTextStyleOf(ctx, node);
+    return style === undefined ? undefined : { kind: "ui", jsx: undefined, style };
+  }
+
+  const [jsx, written] = await Promise.all([jsxOf(ctx, source), styleBlockOf(ctx, source)]);
+  return { kind: "ui", jsx, style: written ?? (await nodeTextStyleOf(ctx, node)) };
 }

@@ -1,4 +1,4 @@
-/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, the Styles fields with the edits bar (U8), the layout style card with its steppers (or the read-only call, or "Defined at"), the Code section (round 2b R12), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, the Styles fields with the Text style section of a text node (D-73) and the edits bar (U8), the layout style card with its steppers (or the read-only call, or "Defined at"), the Code section (round 2b R12), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="side"]) {
   :scope {
     display: flex;
@@ -323,6 +323,30 @@
   [data-action="reset-edit"]:hover {
     background: var(--surface-panel-2);
     color: var(--text-ink);
+  }
+
+  /* The Text style section of a text node (D-73), inside Styles above the edits bar: the block of its style key as rows of the same fields. The key keeps its case in the heading. In a narrow panel "Open in Files" wraps under the place, so the line number is never cut. */
+  [data-part="text-style"] [data-part="key"] {
+    font-family: var(--font-mono);
+    text-transform: none;
+  }
+
+  [data-part="text-style"] header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  [data-part="text-style"] [data-part="where"] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  [data-part="text-style"] header button {
+    flex: none;
   }
 
   /* The edits bar under the rows: the count, "Copy for agent" and "Clear"; it wraps in a narrow panel. */

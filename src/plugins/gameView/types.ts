@@ -1,6 +1,7 @@
 /**
  * @file gameView plugin — type definitions: config, state, recording, contact sheet, style card,
- * pending style edits (U8), capture and series shapes, the api, the domain context and the hooks.
+ * pending style edits (U8), the text style block of a text node (D-73), capture and series
+ * shapes, the api, the domain context and the hooks.
  * The scene types are declared once in panels/shared/scene (R8) and re-exported here for
  * `GameView.ElementRef`.
  */
@@ -274,6 +275,58 @@ export type StyleLookup =
     };
 
 /**
+ * One row of the Element tab's Text style section (D-73): a field of the key's block in the text
+ * styles file. A number literal and a quoted string are values a field edits; anything else (an
+ * identifier, a token such as `colors.cream`, a boolean, a call) is read-only and shows `raw`.
+ *
+ * @example
+ * ```ts
+ * const size: TextStyleRow = { path: "size", raw: "105", value: 105 };
+ * const fill: TextStyleRow = { path: "fill", raw: "colors.cream", value: undefined };
+ * const dy: TextStyleRow = { path: "shadow.dy", raw: "6", value: 6 };
+ * ```
+ */
+export type TextStyleRow = {
+  /** The field of the block: "size", "shadow.dy". */
+  readonly path: string;
+  /** The value as written in the file. */
+  readonly raw: string;
+  /** The value a field edits; undefined for a read-only row. */
+  readonly value: number | string | undefined;
+};
+
+/**
+ * The text style block of the selected text node (D-73): the project index is asked for
+ * `textStyle:<key>`, does not know it (or is off), or answered and the block was read. A block the
+ * shared style edit cannot read keeps its place and has no rows.
+ *
+ * @example
+ * ```ts
+ * const button: TextStyleCard = {
+ *   key: "ui.button",
+ *   status: "found",
+ *   path: "shared/styles/text.ts",
+ *   line: 88,
+ *   version: "1f3a",
+ *   rows: [{ path: "size", raw: "105", value: 105 }]
+ * };
+ * ```
+ */
+export type TextStyleCard =
+  | { readonly key: string; readonly status: "searching" }
+  | { readonly key: string; readonly status: "missing" }
+  | {
+      readonly key: string;
+      readonly status: "found";
+      readonly path: string;
+      /** The 1-based line of the block. */
+      readonly line: number;
+      /** The version of the file as read: another one means the file changed. */
+      readonly version: string;
+      readonly rows: readonly TextStyleRow[];
+    };
+
+/**
  * The keyed ui node the calibration reads `game.rect` for: its key, its drawn rect and the ui
  * root rect, in reference units.
  */
@@ -333,7 +386,8 @@ export type ReferenceState = {
  * The pending style edits of one element (U8, D-67): values the person changed in the Styles
  * fields of the Element tab and the source file does not have yet. They go to the agent as text
  * (`copyEdits`) and in the published selection (`SelectionInfo.edits`); the editor writes no code
- * for them.
+ * for them. The pending edits of a text style key (D-73) are an entry of the same shape: the key
+ * styles many text nodes, so the edit belongs to the key, not to a node.
  *
  * @example
  * ```ts
@@ -343,12 +397,24 @@ export type ReferenceState = {
  *   byId: false,
  *   edits: [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
  * };
+ * const button: ElementEdits = {
+ *   label: "textStyle ui.button",
+ *   source: { path: "shared/styles/text.ts", line: 88 },
+ *   byId: false,
+ *   edits: [{ path: "size", from: 105, to: 96 }]
+ * };
  * ```
  */
 export type ElementEdits = {
-  /** The ui key, else the node name: the head of the element's block in the agent text. */
+  /**
+   * The head of the block in the agent text: the ui key, else the node name; `textStyle <key>`
+   * for a text style key.
+   */
   readonly label: string;
-  /** Where the index says the element is written; absent without an answer. */
+  /**
+   * Where the index says the element is written, or where the block of the text style key is;
+   * absent without an answer.
+   */
   readonly source?: { readonly path: string; readonly line: number };
   /** True when the map key is a node id: such an entry does not survive a game reload. */
   readonly byId: boolean;
@@ -467,7 +533,8 @@ export type CodeSnippet = {
 
 /**
  * The style block a ui element uses: the `defineStyle` block of `style={ident}` named by the
- * identifier, or the text style key block of `style="ui.link"` named by the key (round 2b R17).
+ * identifier, or the text style key block of `style="ui.link"` named by the key (round 2b R17;
+ * the key the engine sends for the node when the JSX did not give one, D-73).
  */
 export type StyleSnippet = CodeSnippet & { readonly name: string };
 
@@ -637,9 +704,12 @@ export type GameViewState = {
   selection: SelectionInfo | undefined;
   /**
    * The pending style edits per element (U8): the key is the ui key when the node has one, else
-   * the node id. Not persisted: a page load starts without any.
+   * the node id; `textStyle:<key>` for the edits of a text style key (D-73). Not persisted: a page
+   * load starts without any.
    */
   edits: Map<string, ElementEdits>;
+  /** The text style block of the selected text node (D-73); undefined for any other element. */
+  textStyle: TextStyleCard | undefined;
 };
 
 /**
@@ -925,8 +995,9 @@ export type GameViewApi = {
   editStyle(path: string, to: StyleValue): void;
 
   /**
-   * Drops pending style edits: the ones of the selected element, or all of them. The selection
-   * is published again without them.
+   * Drops pending style edits: the ones of the selected element, or all of them. The edits of a
+   * selected text node are its own and the ones of its text style key (D-73). The selection is
+   * published again without them.
    *
    * @param scope - `"selected"` for the selected element only; `"all"` (the default) for every element.
    * @example
@@ -940,9 +1011,11 @@ export type GameViewApi = {
   clearEdits(scope?: "selected" | "all"): void;
 
   /**
-   * Every pending style edit, one entry per element, the selected element first. An edit leaves
-   * by itself when a scene snapshot shows its `to` value: the agent wrote the code and hot reload
-   * brought it in. A game reload drops the entries of elements without a ui key.
+   * Every pending style edit, one entry per element, the selected element first, then one entry
+   * per text style key (label `textStyle <key>`, D-73). An edit leaves by itself when a scene
+   * snapshot shows its `to` value: the agent wrote the code and hot reload brought it in. The
+   * edit of a text style key leaves when its block, read again, has the `to` value. A game
+   * reload drops the entries of elements without a ui key.
    *
    * @returns A copy of the list.
    * @example
@@ -951,15 +1024,19 @@ export type GameViewApi = {
    * const count = app.gameView.edits().reduce((sum, entry) => sum + entry.edits.length, 0);
    * app.gameView.edits()[0];
    * // { label: "homePlay", source: { path: "features/stage/views/home-screen.tsx", line: 199 }, byId: false, edits: [ … ] }
+   * // After the size of the text style key ui.button was changed in the Element tab:
+   * app.gameView.edits().at(-1);
+   * // { label: "textStyle ui.button", source: { path: "shared/styles/text.ts", line: 88 }, byId: false, edits: [{ path: "size", from: 105, to: 96 }] }
    * ```
    */
   edits(): readonly ElementEdits[];
 
   /**
    * Puts the pending edits on the clipboard as text for the agent, toast "✓ 2 edits copied": one
-   * block per element, the selected one first, blocks separated by one empty line. The head is
-   * `@moku <label>` plus ` · <path>:<line>` when the source is known; then one line per edit.
-   * Strings are written in double quotes, numbers and booleans bare.
+   * block per element, the selected one first, then one block per text style key (D-73), blocks
+   * separated by one empty line. The head is `@moku <label>` plus ` · <path>:<line>` when the
+   * source is known; then one line per edit. Strings are written in double quotes, numbers and
+   * booleans bare.
    *
    * @returns The text; undefined without edits, or when the clipboard refused (toasted).
    * @example
@@ -967,6 +1044,8 @@ export type GameViewApi = {
    * // "Copy for agent" in the Element tab, after the two edits of homePlay.
    * await app.gameView.copyEdits();
    * // "@moku homePlay · features/stage/views/home-screen.tsx:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30"
+   * // With the size of the text style key ui.button changed too, its block comes last:
+   * // "@moku homePlay · …:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30\n\n@moku textStyle ui.button · shared/styles/text.ts:88\nsize: 105 -> 96"
    * ```
    */
   copyEdits(): Promise<string | undefined>;

@@ -18,7 +18,9 @@ export type JsonObject = { readonly [key: string]: Json };
 export type ShapePath = { readonly wrongAt: string };
 
 /**
- * One node of game.ui: natural rect in root units, fit scale (1 when absent), children in order.
+ * One node of game.ui: natural rect in root units, fit scale (1 when absent), children in order,
+ * and the text style key a `text` was given (`UiNode.textStyle` of `@moku-labs/game` 0.14.11;
+ * absent on any other node and on an older engine).
  */
 export type UiWire = {
   readonly key: string | undefined;
@@ -26,6 +28,7 @@ export type UiWire = {
   readonly rect: PageRect;
   readonly style: JsonObject | undefined;
   readonly fitScale: number;
+  readonly textStyle?: string;
   readonly children: readonly UiWire[];
 };
 
@@ -117,6 +120,21 @@ export function stringOf(value: Json | undefined): string | undefined {
 }
 
 /**
+ * A string with at least one character, or undefined.
+ *
+ * @param value - A JSON value.
+ * @returns The string, or undefined for an empty string and for anything else.
+ * @example
+ * ```ts
+ * filledStringOf("ui.button"); // "ui.button"
+ * filledStringOf(""); // undefined
+ * ```
+ */
+function filledStringOf(value: Json | undefined): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
  * A rect `{ x, y, w, h }` of four numbers, or undefined.
  *
  * @param value - A JSON value.
@@ -164,7 +182,8 @@ function readUiChildren(children: readonly Json[], path: string): UiWire[] | Sha
 }
 
 /**
- * Reads game.ui: `{ key?, type, rect, style?, fitScale?, children }` at every level.
+ * Reads game.ui: `{ key?, type, rect, style?, fitScale?, textStyle?, children }` at every level.
+ * A `textStyle` that is not a non-empty string is dropped.
  *
  * @param value - The game.ui value (or one node of it).
  * @param path - The path of the value, `$` at the top.
@@ -190,12 +209,15 @@ export function readUi(value: Json | undefined, path = "$"): UiWire | ShapePath 
 
   if (isShapePath(children)) return children;
 
+  const textStyle = filledStringOf(value.textStyle);
+
   return {
     key,
     type,
     rect,
     style: isJsonObject(style) ? style : undefined,
     fitScale: numberOf(value.fitScale) ?? 1,
+    ...(textStyle === undefined ? {} : { textStyle }),
     children
   };
 }

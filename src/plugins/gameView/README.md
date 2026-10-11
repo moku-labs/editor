@@ -55,8 +55,8 @@ createApp({ pluginConfigs: { gameView: { captureCardMs: 5000 } } });
 | `fold` | `(inner?: boolean) => void` | Foldable presets: the cover or the inner screen, toggled without an argument (`workspace.setDevice({ folded })`). No-op for a preset without `fold`. |
 | `bookmarks` | `() => readonly PickBookmark[]` | The bookmarks of the picks, newest first, at most 20: `{ id, frame, key, at, value }`. `game.restore { bookmark: value }` goes back to one. |
 | `editStyle` | `(path: string, to: StyleValue) => void` | Records a pending style edit of the selected element (see "Styles fields and pending edits"). `from` is the value the scene has now. A second edit of a path replaces `to` and keeps the first `from`. A `to` equal to the scene value removes the edit of that path. Nothing without a selected element in the scene, or for a path that is no number, string or boolean. |
-| `clearEdits` | `(scope?: "selected" \| "all") => void` | Drops the pending edits of the selected element, or all of them (the default). |
-| `edits` | `() => readonly ElementEdits[]` | Every pending edit, one entry per element, the selected element first: `{ label, source?, byId, edits }`. A copy. |
+| `clearEdits` | `(scope?: "selected" \| "all") => void` | Drops the pending edits of the selected element, or all of them (the default). The edits of a selected text node are its own and the ones of its text style key. |
+| `edits` | `() => readonly ElementEdits[]` | Every pending edit, one entry per element, the selected element first, then one entry per text style key (`label` `textStyle <key>`): `{ label, source?, byId, edits }`. A copy. |
 | `copyEdits` | `() => Promise<string \| undefined>` | Puts the agent text on the clipboard, toast "✓ N edits copied". Returns the text. `undefined` without edits, or when the clipboard refused (the refusal is toasted). |
 
 ```ts
@@ -153,7 +153,7 @@ gameView declares no events. It uses the global tools events (R4).
 | Hooks | `workspace:open-sheet` | `{ index }` | Opens that contact sheet. |
 | Hooks | `workspace:inspect` | `{ ref }` | Shows Game and inspects the element. |
 
-Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: projections read failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed` (the style file of an index answer cannot be loaded). `gameView: calibration failed`, `gameView: projections read failed` and `gameView: highlight failed` log at debug instead when the read failed with reason `link_closed` or `game_reloaded`, or failed with any reason while the link status is an expected reload (`isReloading`: the Hot reload switch, a server restart; e.g. -32003 before the game is back). A server restart or a game reload heals on its own (U11). `gameView: copy reference failed` is also the log of a refused "Copy for agent". Debug: `gameView: area read failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
+Log events (warn): `gameView: area card failed`, `gameView: calibration failed`, `gameView: copy reference failed`, `gameView: element code failed`, `gameView: highlight failed`, `gameView: manifest failed`, `gameView: mute failed`, `gameView: pick bookmark failed`, `gameView: pick crop failed`, `gameView: pick shot failed`, `gameView: projections read failed`, `gameView: reference card failed`, `gameView: reload failed`, `gameView: scene shape`, `gameView: selection publish failed`, `gameView: series stop failed`, `gameView: style card failed`, `gameView: style search failed` (the style file of an index answer cannot be loaded), `gameView: text style failed` (the block of a text style key cannot be read). `gameView: calibration failed`, `gameView: projections read failed` and `gameView: highlight failed` log at debug instead when the read failed with reason `link_closed` or `game_reloaded`, or failed with any reason while the link status is an expected reload (`isReloading`: the Hot reload switch, a server restart; e.g. -32003 before the game is back). A server restart or a game reload heals on its own (U11). `gameView: copy reference failed` is also the log of a refused "Copy for agent". Debug: `gameView: area read failed`, `gameView: clipboard refused` (the `shot:` and `series:` lines), `gameView: copy reference read failed`, `gameView: pointer capture refused`, `gameView: selection source failed`.
 
 ## Dependencies
 
@@ -288,23 +288,49 @@ The Styles section (`section[data-part="style"]`) shows every entry of the eleme
 - The name is looked up by the style key, or by the leaf name inside a record: a leaf named like an enum is a select too. A scene value the table does not list is added as the last option. A free string (a texture key such as `nineSlice`, `reason`) stays a text field. `origin` given as `{ x, y }` is a record of two number fields.
 - What is being typed stays in the field while the tab renders again: a live game sends a new scene on every heartbeat.
 - A row with a pending edit carries `data-edited` (`[data-row]`, and the field `[data-part="field"]`). The field shows the edited value, the scene value struck before it (`<s>556</s>`) and a reset button (`×`, `data-action="reset-edit"`, title "Reset to 556") that removes that edit.
-- Under the rows, while any element has an edit, the edits bar `div[data-part="edits"]` shows "N edits · M elements" (the elements only above one), the primary button "Copy for agent" (`data-action="copy-edits"`, `copyEdits()`) and the ghost "Clear" (`clearEdits("all")`). It also shows on an element without edits of its own.
+- Under the rows, while any element or text style key has an edit, the edits bar `div[data-part="edits"]` shows "N edits · M elements" (the elements only above one; a text style key counts as one), the primary button "Copy for agent" (`data-action="copy-edits"`, `copyEdits()`) and the ghost "Clear" (`clearEdits("all")`). It also shows on an element without edits of its own.
 - The game does not change (D-67). The edit is kept in `state.edits`, per element: the key is the ui key, else the node id (`byId`). Edits are not persisted across a page load.
 - An edit resolves by itself. On every new scene snapshot (`storeScene` in `scene/rebuild.ts`: a watched rebuild and a fresh read), for each element the scene has, an edit whose scene value equals `to` is dropped: the agent wrote the code and hot reload brought it in. An element without edits left is forgotten.
 - A new game session drops the entries kept by node id; the keyed ones stay.
 - Fields shrink with the panel (M10): a number field is 9 ch at most, a select is as wide as its value and no wider than its row, the leaves of a record wrap, nothing forces the side panel wider. A select has the box of the inputs: the same height, border, radius and font, and the accent with a pending edit.
 
-The agent text (`copyEdits`, the pure `editsText` in `element/edits.ts`): one block per element, the selected one first, blocks separated by one empty line. The head is `@moku <label>` (the ui key, else the node name) plus ` · <path>:<line>` when the index answered the key. Strings are written in double quotes (`justify: "center" -> "start"`), numbers and booleans bare.
+The agent text (`copyEdits`, the pure `editsText` in `element/edits.ts`): one block per element, the selected one first, then one block per text style key (below), blocks separated by one empty line. The head is `@moku <label>` (the ui key, else the node name; `textStyle <key>` for a text style key) plus ` · <path>:<line>` when the index answered the key. Strings are written in double quotes (`justify: "center" -> "start"`), numbers and booleans bare.
 
 ```text
 @moku homePlay · features/stage/views/home-screen.tsx:199
 minWidth: 556 -> 600
 padding.top: 25 -> 30
+
+@moku textStyle ui.button · shared/styles/text.ts:88
+size: 105 -> 96
 ```
 
 The selected element's edits also go out in the published selection (`SelectionInfo.edits`, see "Selection for MCP"): `editStyle`, `clearEdits`, a resolve and a session drop publish again when they changed them. The selection of a pick keeps its `card`, `crop`, `line` and frame; only `edits` changes.
 
-The game sends `style: {}` for every text node. For an empty scene style the Styles section shows the style the index knows for the element's key (the answer kept in point 9), titled like the Code section: "Style · ui.amount" (`data-part="style-name"`). It is the text style key, the identifier of `style={ident}`, or the call as written. "No style of its own." stays for a key the index does not know and for a tag without a style.
+The game sends `style: {}` for every text node. For an empty scene style the Styles section shows the style of the element by its name, titled like the Code section: "Style · ui.amount" (`data-part="style-name"`). It is the text style key the index knows for the element's key (the answer kept in point 9); else the text style key the engine sent for the node (`SceneNode.textStyle`: a key built in code, such as `style={toneStyle(props.style, props.tone)}`, or an element the index does not know); else the identifier of `style={ident}` or the call as written. "No style of its own." stays for a node without any of them.
+
+### Text style section
+
+A text node with a text style key shows the fields of that key (D-73, `ui/TextStyleSection.tsx`, `element/text-styles.ts`). The key is the one the engine sends for the node: `UiNode.textStyle` of `@moku-labs/game` 0.14.11, kept by the scene as `SceneNode.textStyle`. With an older engine the field is absent and the section is not shown.
+
+- The section is `section[data-part="text-style"]`, inside the Styles section and above the edits bar. Its title is "Text style · <key>".
+- The block of the key is read through the project index: `find("textStyle:<key>")` (`findFresh`), then `parseStyleFile` and `findBlock` (kind `text`) of `panels/shared/style-edit`. When two entries of the file have the key, the one on the line the index answers is taken. `state.textStyle` holds what is shown (`TextStyleCard`).
+- Under the title: `<path>:<line>` of the block and "Open in Files" (`workspace:open-file`).
+- One row per field of the block, in source order. A nested object gives one row per leaf (`shadow.dy`).
+
+  | Value in the file | Row |
+  |---|---|
+  | a number literal (`size: 105`) | a number field |
+  | a quoted string (`align: "center"`) | a text field |
+  | anything else (`font`, `colors.cream`, `true`, a call) | read-only text, as written |
+
+- A field is the field of the Styles rows (the same component): Enter or blur commits, Esc restores, the row and the field carry `data-edited`, the value in the file stands struck before the field, the reset `×` removes the edit. A string is always a text field here: the enum table is the one of an element's style.
+- An edit is a pending edit of the style key, not of the node. One key styles many nodes, and the agent must change the block, not the node. The entry of `state.edits` has the map key `textStyle:<key>`, the `label` `textStyle <key>`, the `source` of the block (`path`, `line`) and `byId: false`. `from` is the value in the file. Every text node with the same key shows the same pending edits.
+- It resolves when the block, read again, has the `to` value. The block is read on selection and on a `link:project` change that touches its file. A key with pending edits is read on such a change too while another element is selected.
+- A key the index does not know shows `Not in the project index: textStyle:<key>` (`data-part="not-found"`; or why the index is off) and no fields. A block the shared parser cannot read keeps its place and has no rows.
+- `SelectionInfo.edits` of a selected text node also carries the edits of its style key, each with the path `textStyle:<key>.<field>` (`textStyle:ui.button.size`).
+- The edits bar counts them like any other edit. `clearEdits("selected")` on a text node drops its own edits and the ones of its style key.
+- The game does not change: nothing is written and no command runs.
 
 ### Element panel
 
@@ -314,10 +340,10 @@ The side panel of the Game workspace is the shared `SidePanel` (D-29): id `game.
 
 The Element tab's `data-part="code"` section (round 2b R12) shows where the element is written:
 
-- A ui element: its JSX, the lines of the range the index answered for its key (from the line that opens its tag to the line that closes it), and the `defineStyle` block of `style={ident}`, or the `defineStyle` call of a style function the index knows (G2). A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17): the lines the index answers for `textStyle:ui.link`. Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
+- A ui element: its JSX, the lines of the range the index answered for its key (from the line that opens its tag to the line that closes it), and the `defineStyle` block of `style={ident}`, or the `defineStyle` call of a style function the index knows (G2). A text node with `style="ui.link"` shows the block of that text style key instead, titled "Style · ui.link" (round 2b R17): the lines the index answers for `textStyle:ui.link`. When the JSX gave no style block (a key built in code, or an element the index does not know), the block is the one of the key the engine sent for the node (`SceneNode.textStyle`, D-73). Each comes with `file:line`, "Open in Files" and the shared highlighter. A snippet shows 20 lines, then "Show all N lines".
 - The element is the style card's index answer. A key the index does not know shows no Code section; the style card says why.
 - An entity: "Spawned by <projection> · <file:line>", the index's answer for `projection:<key>` (the line of its `name: "board.items"`), or `Not in the project index: projection:<key>`; asked again on every new project state, so an entity picked before the first state or before the index knew its projection follows. Then its components with a short value (48 characters) from `game.entities`.
-- It reads again when the element, its source or its style file changes.
+- It reads again when the element, its source, its style file or the file of its text style key changes.
 
 ### Pick for the chat
 
@@ -442,7 +468,7 @@ The editor page publishes its selection to the hub (U4, D-33) with `link.notify(
 
 - Every change of the selection publishes: a picker click, `select`, `inspect`, a tree row. `select(undefined)` publishes null.
 - The info (`SelectionInfo` of the protocol): `ref`, `key`, `projection`, `name`, `type`, `rect` (page CSS px), `source` (`file:line` of the key), `edits`, `session`, `frame`, `at`. Unknown fields are left out.
-- `edits`: the pending style edits of the element, `{ path, from, to }` each (U8). Absent when it has none. A change of them publishes the selection again, so `moku_selection` answers the edits the Element tab shows.
+- `edits`: the pending style edits of the element, `{ path, from, to }` each (U8). A text node also carries the edits of its text style key, each with the path `textStyle:<key>.<field>` (D-73). Absent when it has none. A change of them publishes the selection again, so `moku_selection` answers the edits the Element tab shows.
 - `projection`: an entity's owner. A ui node: the projection of `game.projections` that holds its key (and its root key when two hold it).
 - A key the index has not answered yet is published without `source` first, then again with it. A key the index does not know stays without `source`. A newer selection drops the late one.
 - After a completed pick: `card`, `crop`, `line` and the frame of the pick. A picker click with "Copy on select" off publishes none of the three. An area: `type: "area"`, `name: "area"`, `rect` and `area` the area, `items` the group, `ref` the first item's (`{ kind: "ui", path: "" }` when empty). First without sources, then with them and the files.

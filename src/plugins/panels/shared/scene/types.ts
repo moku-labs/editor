@@ -48,6 +48,12 @@ export type SceneNode = {
   readonly texture: string | undefined;
   readonly key: string | undefined;
   readonly style: Readonly<Record<string, Json>> | undefined;
+  /**
+   * The text style key a `text` was given, the key of its `style` prop: "ui.button". The engine
+   * sends it as `UiNode.textStyle` from `@moku-labs/game` 0.14.11. Absent on any other node, on a
+   * text styled by a `Style` object, and on every node of an older engine.
+   */
+  readonly textStyle?: string;
   /** false: the node draws nothing (alpha 0 or `visible: false`); the picker looks through it. */
   readonly visible: boolean;
   readonly entity:

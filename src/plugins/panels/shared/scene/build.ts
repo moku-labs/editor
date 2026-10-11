@@ -265,8 +265,8 @@ function restOf(
 /**
  * Adds one ui node (rule 1): path id, name key ?? type, drawn rect through the fit chain with the
  * rest transform of its style and its ancestors' on top (kept as `refRect` in reference units,
- * then calibrated to `rect`), texture = style.nineSlice; registers it as a possible host under its
- * natural rect.
+ * then calibrated to `rect`), texture = style.nineSlice, the text style key of a text when the
+ * engine sent one; registers it as a possible host under its natural rect.
  *
  * @param builder - The scene under construction.
  * @param visit - The ui node with its path and fit chain.
@@ -299,6 +299,7 @@ function addUiNode(builder: Builder, visit: UiVisit): void {
     texture,
     key: node.key,
     style: node.style,
+    ...(node.textStyle === undefined ? {} : { textStyle: node.textStyle }),
     visible: isShown(node.style),
     entity: undefined
   });

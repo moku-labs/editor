@@ -9,7 +9,9 @@
  * names another or it changed.
  * The selected element looks its style up again when its file, a component file of its id prop,
  * its style file or the file of its refusal changed, or the index did not know it (never during a
- * stepper burst), and the style card says when its file does not parse now.
+ * stepper burst), and the style card says when its file does not parse now. The text style block
+ * of the selected text node, and of every key with pending edits, is read again when the batch
+ * touched its file (D-73, element/text-styles).
  */
 import type { ToolsEvents } from "../../../config";
 import { manifestOf } from "../../panels/shared/project";
@@ -20,6 +22,7 @@ import { notify } from "../state";
 import type { GameViewCtx, GameViewState, TextureCatalogue } from "../types";
 import { sourcePaths } from "./style-path";
 import { brokenError, openStyleCard } from "./styles";
+import { refreshTextStyles } from "./text-styles";
 
 /**
  * The files a batch touched: changed, appeared or vanished, and the files keys moved away from.
@@ -178,8 +181,8 @@ function markBroken(ctx: GameViewCtx): void {
 
 /**
  * Applies a new project state: drops the stale answers, the stale projection answers and a stale
- * manifest, marks a broken style card, and looks the selected element's style up again when the
- * batch touched it and no stepper burst waits.
+ * manifest, marks a broken style card, reads the touched text style blocks again, and looks the
+ * selected element's style up again when the batch touched it and no stepper burst waits.
  *
  * @param ctx - Domain context of gameView.
  * @param payload - The `link:project` payload: the state and its delta.
@@ -194,6 +197,7 @@ export function applyProjectChange(ctx: GameViewCtx, payload: ToolsEvents["link:
   dropSpawns(state, delta, changed);
   refreshManifest(ctx, payload.state, delta);
   markBroken(ctx);
+  refreshTextStyles(ctx, delta, changed);
 
   const { selected, styles } = state;
   // openStyleCard never rejects: a failed lookup shows "missing" and is logged there.
