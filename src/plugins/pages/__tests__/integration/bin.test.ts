@@ -103,11 +103,18 @@ async function exitOf(bin: Running, ms = STOP_WAIT_MS): Promise<number | string>
  * @param args - Bin arguments.
  * @param detached - Start it as the leader of its own process group, as a shell does.
  * @param ready - The stdout text to wait for.
+ * @param env - Environment variables on top of this process's; a re-spawning bin hands them on.
  * @returns The running bin with its real port (0 before it serves).
  */
-async function spawnBin(args: string[], detached = false, ready = TOOLS_LINE): Promise<Running> {
+async function spawnBin(
+  args: string[],
+  detached = false,
+  ready = TOOLS_LINE,
+  env: Readonly<Record<string, string>> = {}
+): Promise<Running> {
   const child = Bun.spawn(["bun", BIN, ...args], {
     cwd: REPO,
+    env: { ...process.env, ...env },
     detached,
     stdin: "ignore",
     stdout: "pipe",
@@ -640,7 +647,9 @@ describe("moku-editor bin", () => {
 
   it("a re-spawned child stops by itself when its parent dies by SIGKILL, which forwards no signal (A4)", async () => {
     const html = join(bunfigGame, "index.html");
-    const bin = await spawnBin([html, "--port", "0", "--root", bunfigGame], true);
+    const bin = await spawnBin([html, "--port", "0", "--root", bunfigGame], true, TOOLS_LINE, {
+      MOKU_EDITOR_PARENT_CHECK_MS: "50"
+    });
     const path = join(bunfigGame, ".moku", "editor.json");
     const { pid } = JSON.parse(await readFile(path, "utf8")) as { pid: number };
     try {
@@ -648,9 +657,10 @@ describe("moku-editor bin", () => {
       bin.child.kill("SIGKILL");
       await bin.child.exited;
 
-      // The child sees its parent pid change within a second, stops and exits.
+      // The child checks its parent pid every 50 ms here (every second by default): it sees the
+      // change, stops and exits.
       const deadline = Date.now() + 10_000;
-      while (isAlive(pid) && Date.now() < deadline) await Bun.sleep(100);
+      while (isAlive(pid) && Date.now() < deadline) await Bun.sleep(10);
       expect(isAlive(pid)).toBe(false);
       expect(existsSync(path)).toBe(false);
     } finally {
