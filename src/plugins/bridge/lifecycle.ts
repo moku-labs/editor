@@ -1,13 +1,14 @@
 /**
- * @file bridge plugin — config check and the editor.reload command (onInit), the domain deps, start (onStart: heartbeat
- * listener, page and reload listeners, the checkpoint restore, connect — not awaited) and stop
- * (onStop: bye, close, clear timers).
+ * @file bridge plugin — config check and the editor.reload and editor.clock commands (onInit), the
+ * domain deps, start (onStart: heartbeat listener, page and reload listeners, the checkpoint
+ * restore, connect — not awaited) and stop (onStop: bye, close, clear timers).
  */
 import { channelPlugin } from "../channel";
 import { registryPlugin } from "../registry";
 import { encode, notification } from "../registry/protocol";
 import { restoreCheckpoint, takeStoredCheckpoint, watchReload } from "./checkpoint/checkpoint";
 import { defaultReload } from "./checkpoint/hot";
+import { clockEntry } from "./clock";
 import { connectInBackground, onBeat } from "./connection/loop";
 import { defaultNet } from "./connection/socket";
 import { asError } from "./dispatch/dispatch";
@@ -76,18 +77,20 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
 }
 
 /**
- * onInit: checks the config, then adds `editor.reload` to the registry. Runs in init because the
- * registry builds its manifest from the entries added before start.
+ * onInit: checks the config, then adds `editor.reload` and `editor.clock` to the registry, in that
+ * order. Runs in init because the registry builds its manifest from the entries added before
+ * start.
  *
  * @param ctx - Plugin context of the bridge.
- * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`, or when `editor.reload` is
- *   already in the registry (createApp fails loudly).
+ * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`, or when `editor.reload` or
+ *   `editor.clock` is already in the registry (createApp fails loudly).
  */
 export function initBridge(ctx: BridgeCtx): void {
   checkConfig(ctx);
 
   const registry = ctx.require(registryPlugin);
   registry.add(reloadEntry({ registry, reload: defaultReload(), state: ctx.state, log: ctx.log }));
+  registry.add(clockEntry(registry));
 }
 
 /**

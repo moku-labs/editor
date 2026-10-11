@@ -12,7 +12,7 @@ import type {
   SourceDescriptor
 } from "../../registry/protocol";
 import { decode, encode, request, wireError } from "../../registry/protocol";
-import type { CommandEntry, SourceEntry } from "../../registry/types";
+import type { Clock, CommandEntry, SourceEntry } from "../../registry/types";
 import { createBridgeState } from "../state";
 import type {
   BridgeConfig,
@@ -192,8 +192,8 @@ export const ENVELOPE: RunState = { path: "board/awaitIntent", frame: 12, tainte
 export type FakeRegistry = BridgeDeps["registry"] & {
   /** Command entries by id; empty unless a test adds one. */
   readonly commands: Map<string, CommandEntry>;
-  /** What `clock()` answers. */
-  clockValue: { frame: number; paused: boolean };
+  /** What `clock()` answers: a running clock nobody holds, until a test sets another. */
+  clockValue: Clock;
 };
 
 /**
@@ -204,7 +204,7 @@ export type FakeRegistry = BridgeDeps["registry"] & {
 export function fakeRegistry(): FakeRegistry {
   const registry: FakeRegistry = {
     commands: new Map(),
-    clockValue: { frame: 12, paused: false },
+    clockValue: { frame: 12, paused: false, held: false, reasons: [] },
     manifest: () => MANIFEST,
     source: (id: string): SourceEntry | undefined => {
       const descriptor = SOURCES.find(source => source.id === id);

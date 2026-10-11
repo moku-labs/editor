@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-null -- null is the JSON value the wire carries */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, RunResult } from "../../../registry/protocol";
+import type { Clock } from "../../../registry/types";
 import {
   CHECKPOINT_KEY,
   CHECKPOINT_MAX_AGE_MS,
@@ -11,7 +12,7 @@ import {
   watchReload
 } from "../../checkpoint/checkpoint";
 import { storageOf } from "../../checkpoint/hot";
-import type { CheckpointStorage } from "../../types";
+import type { CheckpointStorage, TakenCheckpoint } from "../../types";
 import type { TestDeps } from "../helpers";
 import { commandEntry, createDeps, FakeSocket, flush, MANIFEST } from "../helpers";
 
@@ -23,6 +24,9 @@ import { commandEntry, createDeps, FakeSocket, flush, MANIFEST } from "../helper
 
 /** The bookmark value the fake game answers. */
 const BOOKMARK: Json = { path: "board/awaitIntent", state: { coins: 7 } };
+
+/** What a test restores when nothing was stored: its bookmark never equals BOOKMARK. */
+const NOTHING_STORED: TakenCheckpoint = { frame: -1, paused: true, bookmark: "nothing stored" };
 
 /** A run result around a value. */
 function ranWith(value: Json): RunResult {
@@ -76,7 +80,7 @@ afterEach(() => {
 describe("takeCheckpoint", () => {
   it("runs game.bookmark through the registry at once and stores it with the clock", async () => {
     const { deps, bookmark } = depsWithCommands();
-    deps.registry.clockValue = { frame: 1840, paused: true };
+    deps.registry.clockValue = { frame: 1840, paused: true, held: true, reasons: ["devtools"] };
 
     takeCheckpoint(deps);
     expect(bookmark).toHaveBeenCalledTimes(1);
@@ -144,6 +148,84 @@ describe("takeCheckpoint", () => {
     expect(deps.log.warn).toHaveBeenCalledWith("bridge:checkpoint-failed", {
       message: "[moku-editor] registry.game is missing."
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Change reload-background-pause: `paused` of a checkpoint is the devtools pause
+// (clock.held), never the pause of a hidden tab. The stored shape stays the same.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One clock the checkpoint is taken at, and how often its restore pauses the game again. */
+type PauseCase = { readonly name: string; readonly clock: Clock; readonly pauses: number };
+
+/** The clocks of `registry.clock()` a reload can meet. */
+const PAUSE_CASES: readonly PauseCase[] = [
+  {
+    name: "a running game",
+    clock: { frame: 1840, paused: false, held: false, reasons: [] },
+    pauses: 0
+  },
+  {
+    name: "a hidden tab",
+    clock: { frame: 1840, paused: true, held: false, reasons: ["background"] },
+    pauses: 0
+  },
+  {
+    name: "a devtools pause",
+    clock: { frame: 1840, paused: true, held: true, reasons: ["devtools"] },
+    pauses: 1
+  },
+  {
+    name: "a devtools pause in a hidden tab",
+    clock: { frame: 1840, paused: true, held: true, reasons: ["background", "devtools"] },
+    pauses: 1
+  },
+  {
+    name: "a paused game without lifecycle.reasons",
+    clock: { frame: 1840, paused: true, held: true, reasons: [] },
+    pauses: 1
+  }
+];
+
+describe("the pause a checkpoint keeps", () => {
+  it.each(PAUSE_CASES)("stores paused = held for $name", async ({ clock }) => {
+    const { deps } = depsWithCommands();
+    deps.registry.clockValue = clock;
+
+    await takeCheckpoint(deps);
+
+    // The stored shape is the one of version 1: no `held`, no `reasons`.
+    expect(JSON.parse(deps.reload.storage.getItem(CHECKPOINT_KEY) ?? "null")).toEqual({
+      v: 1,
+      doc: 5000,
+      at: 1_790_000_000_000,
+      frame: 1840,
+      paused: clock.held,
+      bookmark: BOOKMARK
+    });
+  });
+
+  it.each(
+    PAUSE_CASES
+  )("the next document restores $name and runs game.pause $pauses time(s)", async ({
+    clock,
+    pauses
+  }) => {
+    const { deps, restore, pause } = depsWithCommands();
+    deps.registry.clockValue = clock;
+    await takeCheckpoint(deps);
+
+    // The next document: another timeOrigin, the same sessionStorage.
+    const next = { ...deps, reload: { ...deps.reload, doc: 6000 } };
+    const taken = takeStoredCheckpoint(next) ?? NOTHING_STORED;
+    await restoreCheckpoint(next, taken);
+
+    expect(taken).toEqual({ frame: 1840, paused: clock.held, bookmark: BOOKMARK });
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledWith({ bookmark: BOOKMARK });
+    expect(pause).toHaveBeenCalledTimes(pauses);
+    expect(deps.state.restored).toEqual({ bookmark: JSON.stringify(BOOKMARK), frame: 1840 });
   });
 });
 

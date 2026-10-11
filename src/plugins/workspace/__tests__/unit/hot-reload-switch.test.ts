@@ -97,6 +97,33 @@ describe("an accepted switch", () => {
     expect(toasts()).toEqual(["Hot reload off", RESTORED]);
   });
 
+  it("a game paused only by a hidden tab is restored and not paused again", async () => {
+    const withClock = [...COMMANDS, "game.pause", "editor.clock"];
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    ctx.link.manifestValue = manifestOf(withClock);
+    ctx.link.run.mockImplementation(id => {
+      if (id === "editor.clock") {
+        return Promise.resolve(
+          resultOf({ frame: 1840, paused: true, held: false, reasons: ["background"] })
+        );
+      }
+      return Promise.resolve(id === "game.bookmark" ? resultOf(BOOKMARK) : resultOf());
+    });
+
+    await expect(setHotReload(ctx, false)).resolves.toBe(true);
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark"]);
+    expect(ctx.link.run.mock.invocationCallOrder[1]).toBeLessThan(
+      ctx.link.setHotReload.mock.invocationCallOrder[0] ?? 0
+    );
+
+    ctx.link.attach(manifestOf(withClock));
+    await flush();
+    ctx.link.attach(manifestOf(withClock));
+    await flush();
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark", "game.restore"]);
+    expect(toasts()).toEqual(["Hot reload off", RESTORED]);
+  });
+
   it("key H flips through the same path", async () => {
     toggleHotReload(ctx);
     await flush();

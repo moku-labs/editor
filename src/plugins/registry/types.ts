@@ -24,10 +24,14 @@ import type {
 export const ID_PATTERN = /^[a-z][\dA-Za-z]*(?:\.[a-z][\dA-Za-z]*)+$/;
 
 /**
- * What the doors need of an app: the headless app plus the committed model (the game's WatchApp).
+ * What the doors need of an app: the headless app plus the committed model (the game's WatchApp),
+ * and the pause stack when the game has one. `lifecycle` is optional: `HeadlessApp` has no such
+ * member and the engine exports no type for it.
  */
 export type GameLike = HeadlessApp & {
   readonly model: { readonly store: { snapshot(): Model.Snapshot } };
+  /** The game's pause stack: the reasons why the clock stands, in push order. */
+  readonly lifecycle?: { reasons(): readonly string[] };
 };
 
 /**
@@ -101,9 +105,30 @@ export type CommandEntry = {
 };
 
 /**
- * The game clock, in the shape the channel heartbeat needs (R6).
+ * The game clock and why it stands. The channel heartbeat sends `frame` and `paused` only (R6);
+ * the reload checkpoints read `held`.
+ *
+ * @example
+ * ```ts
+ * // The game tab is hidden: the clock stands, but nobody paused the game.
+ * const hidden: Clock = { frame: 1840, paused: true, held: false, reasons: ["background"] };
+ * // The developer paused it in the editor, in a hidden tab.
+ * const kept: Clock = { frame: 1840, paused: true, held: true, reasons: ["background", "devtools"] };
+ * ```
  */
-export type Clock = { readonly frame: number; readonly paused: boolean };
+export type Clock = {
+  /** The frame of the game clock. */
+  readonly frame: number;
+  /** True while the clock does not run, for any pause reason. */
+  readonly paused: boolean;
+  /**
+   * True while the developer holds the pause: the reasons include `"devtools"`, the one `game.pause`
+   * pushes. A game without `lifecycle.reasons` answers `paused` here.
+   */
+  readonly held: boolean;
+  /** A copy of `game.lifecycle.reasons()`, in push order; empty for a game without it. */
+  readonly reasons: readonly string[];
+};
 
 /**
  * Registry state: entries by id in manifest order, one id namespace, the manifest cache, and the
@@ -199,14 +224,19 @@ export type RegistryApi = {
    */
   envelope(): RunState;
   /**
-   * The frame and the pause flag of the game clock (R6). The channel heartbeat reads it.
+   * The game clock and why it stands (R6). `paused` is true for any pause reason; `held` only
+   * while the reasons include `"devtools"`, the pause of `game.pause`. The channel heartbeat reads
+   * `frame` and `paused`; a reload checkpoint reads `held`, so a hidden tab's `"background"` pause
+   * is not restored. A game without `lifecycle.reasons` answers `reasons: []` and `held` equal to
+   * `paused`.
    *
-   * @returns `{ frame, paused }`.
+   * @returns `{ frame, paused, held, reasons }`; `reasons` is a copy.
    * @throws {Error} `[moku-editor] registry.game is missing.` when no game is configured.
    * @example
    * ```ts
-   * // The channel builds each heartbeat from the clock.
-   * ctx.require(registryPlugin).clock(); // { frame: 1840, paused: false }
+   * // The developer paused in the editor: a reload brings this pause back.
+   * await registry.command("game.pause")?.run(null);
+   * registry.clock(); // { frame: 1840, paused: true, held: true, reasons: ["devtools"] }
    * ```
    */
   clock(): Clock;

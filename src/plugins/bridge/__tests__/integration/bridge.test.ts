@@ -2,6 +2,7 @@
 import { defineCommand } from "@moku-labs/game/control";
 import { defineSource } from "@moku-labs/game/inspect";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import type { TinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
@@ -24,6 +25,7 @@ import {
 } from "../../../registry/protocol";
 import type { DevModule, GameLike } from "../../../registry/types";
 import { bridgePlugin } from "../..";
+import { CHECKPOINT_KEY } from "../../checkpoint/checkpoint";
 import type { BridgeApi } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,10 +56,8 @@ type Hub = {
   stop(): Promise<void>;
 };
 
-/** A started headless tiny game. */
-type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
-
-let game: StartedGame;
+/** The started headless tiny game, with its whole api: the pause stack included. */
+let game: TinyHeadless;
 let hub: Hub;
 let count = 0;
 let nextId = 100;
@@ -227,6 +227,38 @@ function listOf(value: Json | undefined): Json[] {
 }
 
 /**
+ * Stubs the page of the game: a `location` whose reload is a mock and a Map-backed sessionStorage.
+ * Call it before the agent is created: the bridge reads both in onInit.
+ *
+ * @returns The reload mock and the stored items.
+ */
+function stubPage() {
+  const reload = vi.fn();
+  const items = new Map<string, string>();
+  vi.stubGlobal("location", { href: "http://127.0.0.1:3000/game.html", reload });
+  vi.stubGlobal("sessionStorage", {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => items.set(key, value),
+    removeItem: (key: string) => items.delete(key)
+  });
+  return { reload, items };
+}
+
+/**
+ * A copy of the game without the pause stack, as an engine without `lifecycle` gives it. A copy,
+ * because the app is frozen and a Proxy cannot answer another value for a frozen property.
+ *
+ * @param app - The game app.
+ * @returns The proxied copy.
+ */
+function withoutLifecycle(app: GameLike): GameLike {
+  return new Proxy(
+    { ...app },
+    { get: (target, key) => (key === "lifecycle" ? undefined : Reflect.get(target, key)) }
+  );
+}
+
+/**
  * Sleeps.
  *
  * @param ms - Milliseconds.
@@ -365,7 +397,7 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
       20
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(20);
+    expect(listOf(field(manifest, "commands"))).toHaveLength(21);
     expect(field(manifest, "game")).toBe("tiny-screen 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
@@ -494,6 +526,122 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     expect(stored.bookmark).toBeDefined();
     await waitFor(() => (reload.mock.calls.length > 0 ? true : undefined));
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("lists editor.clock right after editor.reload, as a read command without input", () => {
+    const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
+
+    const editor = app.registry
+      .manifest()
+      .commands.filter(command => command.id.startsWith("editor."));
+
+    expect(editor).toEqual([
+      {
+        id: "editor.reload",
+        title: "Reload the page",
+        input: { restore: "boolean?" },
+        effect: "route"
+      },
+      { id: "editor.clock", title: "Clock", input: {}, effect: "read" }
+    ]);
+  });
+
+  it("runs editor.clock: a running game, a hidden tab, then a devtools pause on top", async () => {
+    const { app, connection } = await linked();
+    const frame = game.app.time.snapshot().frame;
+
+    const running = await call(connection, "run", { id: "editor.clock" });
+    expect(running).toEqual({
+      jsonrpc: "2.0",
+      id: nextId,
+      result: {
+        value: { frame, paused: false, held: false, reasons: [] },
+        state: { path: app.registry.envelope().path, frame, tainted: false }
+      }
+    });
+
+    // What the game's renderer host does for a hidden document.
+    game.app.lifecycle.push("background");
+    const hidden = await call(connection, "run", { id: "editor.clock" });
+    expect(hidden).toMatchObject({
+      result: { value: { frame, paused: true, held: false, reasons: ["background"] } }
+    });
+
+    await call(connection, "run", { id: "game.pause" });
+    const held = await call(connection, "run", { id: "editor.clock" });
+    expect(held).toMatchObject({
+      result: { value: { paused: true, held: true, reasons: ["background", "devtools"] } }
+    });
+  });
+
+  it("answers editor.clock for a game without the pause stack: no reasons, held follows paused", async () => {
+    const app = framework.createApp({
+      pluginConfigs: { registry: { game: withoutLifecycle(game.app) } }
+    });
+    const frame = game.app.time.snapshot().frame;
+    const clock = app.registry.command("editor.clock");
+
+    const running = await clock?.run(null);
+    game.app.lifecycle.push("background");
+    const paused = await clock?.run(null);
+
+    expect(running?.value).toEqual({ frame, paused: false, held: false, reasons: [] });
+    expect(paused?.value).toEqual({ frame, paused: true, held: true, reasons: [] });
+  });
+
+  it.each([
+    { name: "a hidden tab", hidden: true, held: false },
+    { name: "a devtools pause", hidden: false, held: true },
+    { name: "a devtools pause in a hidden tab", hidden: true, held: true }
+  ])("a reload under $name stores paused: $held, and the next document comes back so", async ({
+    hidden,
+    held
+  }) => {
+    const { reload, items } = stubPage();
+    const first = await linked();
+    if (hidden) game.app.lifecycle.push("background");
+    if (held) await call(first.connection, "run", { id: "game.pause" });
+
+    // The clock stands either way; only the devtools pause is held.
+    const clock = await call(first.connection, "run", { id: "editor.clock" });
+    expect(clock).toMatchObject({ result: { value: { paused: true, held } } });
+
+    await call(first.connection, "run", { id: "editor.reload" });
+    await waitFor(() => (reload.mock.calls.length > 0 ? true : undefined));
+    const stored = JSON.parse(items.get(CHECKPOINT_KEY) ?? "null");
+    expect(stored).toMatchObject({ v: 1, paused: held });
+    expect(Object.keys(stored).toSorted()).toEqual([
+      "at",
+      "bookmark",
+      "doc",
+      "frame",
+      "paused",
+      "v"
+    ]);
+
+    // The next document: a fresh game, another timeOrigin, the same sessionStorage.
+    await first.stop();
+    await game.stop();
+    game = await startTinyHeadless();
+    items.set(CHECKPOINT_KEY, JSON.stringify({ ...stored, doc: stored.doc - 1 }));
+    const next = await startAgent();
+    const second = await waitFor(() => hub.connections[1]);
+    const hello = await waitFor(() => second.messages[0]);
+
+    // The restore ran: the first hello says so. Only the devtools pause came back.
+    expect(
+      field(field(isNotification(hello) ? hello.params : undefined, "manifest"), "restored")
+    ).toEqual({
+      bookmark: JSON.stringify(stored.bookmark),
+      frame: stored.frame
+    });
+    expect(items.has(CHECKPOINT_KEY)).toBe(false);
+    expect(next.app.registry.clock()).toEqual({
+      frame: game.app.time.snapshot().frame,
+      paused: held,
+      held,
+      reasons: held ? ["devtools"] : []
+    });
   });
 
   it("reconnects after the hub closes the socket: lost, a new hello fetch, a new hello", async () => {

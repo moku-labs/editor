@@ -1,8 +1,8 @@
 /**
  * Complex tier — opt-in, dev only. Websocket client from the game page to the editor hub: hello,
  * JSON-RPC dispatch into the channel, value and heartbeat pushes, reconnect with backoff, bye on
- * stop, the game checkpoint across Bun's full reload and the editor.reload command. Emits the
- * global agent event `bridge:status`.
+ * stop, the game checkpoint across Bun's full reload and the editor.reload and editor.clock
+ * commands. Emits the global agent event `bridge:status`.
  *
  * @see README.md
  */

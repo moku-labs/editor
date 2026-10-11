@@ -1,10 +1,17 @@
 /**
- * @file workspace plugin — the D-07 reload of the game frame: bookmark the game and note whether
- * it is paused, reload the frame in place (`iframe.src` reassigned; the element never moves), wait
- * for the manifest of this tab's own new session, restore the bookmark, pause again when it was
- * paused, toast the outcome. Concurrent calls share one run; a call during a run schedules exactly
- * one more run after it. The internal bookmark/restore/pause runs are not user runs: they emit no
- * `workspace:ran`. Reload never writes files (the caller does, contracts §6).
+ * @file workspace plugin — the D-07 reload of the game frame: note whether the developer paused
+ * the game and bookmark it, reload the frame in place (`iframe.src` reassigned; the element never
+ * moves), wait for the manifest of this tab's own new session, restore the bookmark, pause again
+ * when the developer had paused it, toast the outcome. Concurrent calls share one run; a call
+ * during a run schedules exactly one more run after it. The internal clock/bookmark/restore/pause
+ * runs are not user runs: they emit no `workspace:ran`. Reload never writes files (the caller
+ * does, contracts §6).
+ *
+ * Only a pause the developer made is kept. A hidden tab pauses the game as well (the reason
+ * `background`), and that pause ends by itself when the tab shows; `game.pause` after the restore
+ * would add the reason `devtools`, which stays until someone resumes the game. So a paused link
+ * asks `editor.clock` for `held` before the bookmark. An agent without that command, a failed run
+ * or an answer without a boolean `held` keeps the older rule: paused is paused.
  *
  * After a save (`afterSave`) with Bun hot reload on (round 2 R6), Bun reloads the page itself: the
  * run first waits up to `hotReloadWaitMs` for that new session and reloads the frame only when
@@ -19,7 +26,7 @@
 import { linkPlugin } from "../../link";
 import type { LinkApi } from "../../link/types";
 import type { Json, Manifest } from "../../registry/protocol";
-import { bareMessage, isHotSwapEntry, toWireError } from "../../registry/protocol";
+import { bareMessage, ERROR_PREFIX, isHotSwapEntry, toWireError } from "../../registry/protocol";
 import { trackCleanup } from "../state";
 import { showToast } from "../toasts";
 import type { PendingReload, ReloadOptions, ReloadResult, WorkspaceCtx } from "../types";
@@ -32,7 +39,8 @@ import { RESTORED_TOAST, takeRestore } from "./restored";
 type Reason = NonNullable<ReloadResult["reason"]>;
 
 /**
- * What the reload keeps of the game before it: the bookmark, and whether the game was paused.
+ * What the reload keeps of the game before it: the bookmark, and whether the developer had paused
+ * the game (a pause of a hidden tab is not kept).
  */
 type Checkpoint = { readonly bookmark: Json; readonly paused: boolean };
 
@@ -61,6 +69,17 @@ const TIMED_OUT: ReloadResult = Object.freeze({ restored: false, reason: "timeou
  * Milliseconds in a second, for the timeout toast.
  */
 const MS_PER_SECOND = 1000;
+
+/**
+ * The command that answers the game's clock: `{ frame, paused, held, reasons }`. `held` is true
+ * when the developer paused the game.
+ */
+const CLOCK_COMMAND = "editor.clock";
+
+/**
+ * The debug message for an `editor.clock` answer without a boolean `held`.
+ */
+const HELD_NOT_BOOLEAN = `${ERROR_PREFIX}${CLOCK_COMMAND}: held must be a boolean`;
 
 /**
  * What ends the wait for Bun's reload after a save: the new session's manifest, the game's hot
@@ -169,8 +188,53 @@ export function nextManifest(
 }
 
 /**
- * Takes the checkpoint before a restore reload, when the game is connected: the bookmark, and
- * whether the link says paused. A failed bookmark is reported in `failure`, not logged here.
+ * The `held` of an `editor.clock` answer: the value must be an object with a boolean `held`.
+ *
+ * @param value - The value of the run.
+ * @returns `held`, or undefined for any other shape.
+ * @example
+ * ```ts
+ * heldIn({ frame: 1840, paused: true, held: false, reasons: ["background"] }); // false
+ * heldIn({ frame: 1840, paused: true }); // undefined
+ * ```
+ */
+function heldIn(value: Json): boolean | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return typeof value.held === "boolean" ? value.held : undefined;
+}
+
+/**
+ * Whether the developer paused a game whose link says paused, asked of the game's clock
+ * (`editor.clock`). An older agent does not list the command: then any pause counts, as before.
+ * A failed run or an answer without a boolean `held` counts as well, with one debug log.
+ *
+ * @param ctx - Domain context of workspace.
+ * @param link - The link api.
+ * @param manifest - The manifest of the session that is paused, if any.
+ * @returns True when the pause is kept across the reload.
+ */
+async function heldOf(
+  ctx: WorkspaceCtx,
+  link: LinkApi,
+  manifest: Manifest | undefined
+): Promise<boolean> {
+  if (manifest === undefined || !hasCommand(manifest, CLOCK_COMMAND)) return true;
+
+  try {
+    const ran = await link.run(CLOCK_COMMAND);
+    const held = heldIn(ran.value);
+    if (held !== undefined) return held;
+    ctx.log.debug("workspace:clock-failed", { message: HELD_NOT_BOOLEAN });
+  } catch (error) {
+    ctx.log.debug("workspace:clock-failed", { message: messageOf(error) });
+  }
+  return true;
+}
+
+/**
+ * Takes the checkpoint before a restore reload, when the game is connected: whether the developer
+ * paused the game (asked before the bookmark, only when the link says paused), and the bookmark.
+ * A failed bookmark is reported in `failure`, not logged here.
  *
  * @param ctx - Domain context of workspace.
  * @param link - The link api.
@@ -180,9 +244,12 @@ export async function takeCheckpoint(ctx: WorkspaceCtx, link: LinkApi): Promise<
   const { kind } = ctx.state.link;
   if (kind !== "live" && kind !== "paused") return { checkpoint: undefined, reason: "no_session" };
 
+  // A live game is not asked: its bookmark runs at once.
+  const paused = kind === "paused" && (await heldOf(ctx, link, link.manifest()));
+
   try {
     const ran = await link.run("game.bookmark");
-    return { checkpoint: { bookmark: ran.value, paused: kind === "paused" }, reason: undefined };
+    return { checkpoint: { bookmark: ran.value, paused }, reason: undefined };
   } catch (error) {
     return { checkpoint: undefined, reason: "bookmark_failed", failure: messageOf(error) };
   }
