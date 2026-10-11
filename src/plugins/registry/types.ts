@@ -234,13 +234,9 @@ export type RegistryApi = {
    * @throws {Error} `[moku-editor] registry.game is missing.` when no game is configured.
    * @example
    * ```ts
-   * const registry = ctx.require(registryPlugin);
-   * registry.clock(); // { frame: 1840, paused: false, held: false, reasons: [] }
-   * // The game tab is hidden: the clock stands, the developer did not pause.
-   * registry.clock(); // { frame: 1840, paused: true, held: false, reasons: ["background"] }
-   * // After game.pause: this is the pause a reload brings back.
+   * // The developer paused in the editor: a reload brings this pause back.
    * await registry.command("game.pause")?.run(null);
-   * registry.clock().held; // true
+   * registry.clock(); // { frame: 1840, paused: true, held: true, reasons: ["devtools"] }
    * ```
    */
   clock(): Clock;

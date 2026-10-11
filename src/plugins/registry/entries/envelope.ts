@@ -34,10 +34,8 @@ const DEVTOOLS_REASON = "devtools";
  * @returns `{ frame, paused, held, reasons }`; `reasons` is a copy.
  * @example
  * ```ts
- * app.lifecycle.push("background");
- * clockOf(app); // { frame: 1840, paused: true, held: false, reasons: ["background"] }
- * app.lifecycle.push("devtools");
- * clockOf(app).held; // true
+ * // After game.pause, the devtools pause:
+ * clockOf(game); // { frame: 1840, paused: true, held: true, reasons: ["devtools"] }
  * ```
  */
 export function clockOf(game: GameLike): Clock {
