@@ -47,6 +47,8 @@ The engine writes the dev page with the editor's page agent on it, so the game n
 >
 > **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
 >
+> **Breaking (editor UI cleanup):** Reference mode is gone: key R, the top-bar toggle, `workspace.reference()` and `setReference()`, the event `workspace:reference` and the `data-moku-*` proxies over the game. The element picker (the Select button of the Game toolbar, ⇧⌘C, I) is the one way to pick. A click of the picker writes the reference and copies its line only while the "Copy Ref" switch of the Game toolbar is on (the default; the preference "Copy reference on select"). With it off the click only selects the element and writes nothing. The Flow Inspector has two tabs, Info and Code: its Styles tab, the palette group "Styles" and the config key `flowView.styleSaveDelayMs` are removed. A series no longer opens the contact sheet when it ends.
+>
 > **Doors:** the views read element rects from `game.locate` when the game lists it (0.4), else from `game.rect` (0.1); a game with neither makes the picker say "This game reports no element rects". `game.capture` may answer the PNG data URL (0.1) or `{ png, legend? }` (0.4): `editor.capture`, `editor.series` and the Game Shot and Series take both. The contact sheet `editor.sheet` (MCP `moku_series`) needs game 0.4.
 >
 > **Breaking in this release:** Notes are gone (`flowView.notes`, the gameView attach api, the `notesDir` options of flowView and gameView, the `workspace:new-note` event). Game is the default workspace, and ⌘1 to ⌘6 follow the new rail order. `hub.allow` is now `hub.allowOrigins` (`files.allow` keeps its name). The flowView layout, zoom and hub options moved into the objects `layout`, `zoom` and `hub` (for example `layoutWorker` is `layout.worker`); an object you pass replaces the default object as a whole. Captures go into day folders `<capturesDir>/<yyyy-mm-dd>/` (local date): a Shot is `0846-board.jpg` there (was `2026-10-05-0846-board.jpg`), a series `series-1015/` (was `series-2026-10-05-1015/`); picks and cards keep their names. Old flat files stay where they are; `moku_reference` finds cards in both.
@@ -134,12 +136,13 @@ Bun.serve(editor.hub.serve({ port: 3000, routes: { "/": index }, fetch: serveAss
 1/2 (720 px) or 1/3 (480 px) of the screen. Game is the first workspace and the default
 (⌘1 Game, ⌘2 Flow, then Render, State, Files, Console). Density is `auto` (compact below 820 px of
 window width), `compact` or `comfortable`, chosen in the palette or the ⋯ menu ("Density: …") and
-saved with the theme. Below 900 px the [top bar](#the-top-bar) is compact. **Reference mode**
-(key R) lays `data-moku-*` proxies over the game elements, so whoever reads the page can name
-them; the game gets no input while it is on. A click on an element (the picker, or a proxy in
-Reference mode) copies its [reference line](#the-reference-line-and-card) for the chat and writes
-the card file that line names. In Reference mode the cursor over the game is a crosshair, and a
-drag picks [an area](#an-area) with every element inside it.
+saved with the theme. Below 900 px the [top bar](#the-top-bar) is compact. **The element picker**
+(the Select button of the Game toolbar, ⇧⌘C or I) is the one way to pick. While it is on, the
+cursor over the game is a crosshair. A click on an element copies its
+[reference line](#the-reference-line-and-card) for the chat and writes the card file that line
+names, and a drag picks [an area](#an-area) with every element inside it. Turn the **Copy Ref**
+switch of the Game toolbar off to only look: a click then selects the element for the Element tab
+and writes nothing.
 
 > [!TIP]
 > The tools page is itself a Moku app (`src/plugins/pages/page/main.tsx`). To compose your own, start the tools core and mount the shell:
@@ -196,7 +199,7 @@ Which editor the bridge uses:
 | `moku_screenshot` | A JPEG of the game, at most 1080 px wide by default. `key` crops it to one ui element; `format: "png"` keeps it lossless. Over 300 KB it is taken once more at half the width. |
 | `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one JPEG at most 1080 px wide. Game 0.4. |
 | `moku_reference` | The newest or a named reference card with its crop: the day folders `.moku/captures/<yyyy-mm-dd>/` and the older flat `.moku/captures/`. |
-| `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. |
+| `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. `edits` lists the pending style edits of the element, `{ path, from, to }` each, to apply in the source. An edit of a text's style key has the path `textStyle:<key>#<field>`. |
 | `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. With `node` it selects a node of the flow graph: the page opens the Flow workspace and focuses the node; the answer is `{ id, selected, places }`, the places being the node's files and lines. Needs the tools page open. |
 | `moku_device` | Reads or sets the device of the tools page: `preset`, `orientation`, `folded`. The answer carries the game viewport `w` × `h` after the change and the presets to choose from. Needs the tools page open. |
 | `moku_show` | Switches the tools page to a workspace: `flow`, `game`, `render`, `state`, `files` or `console`. Without one it reads the active one. Needs the tools page open. |
@@ -252,7 +255,7 @@ Every view asks the index first and only the index:
 
 | View | Keys |
 |---|---|
-| Flow | `node:<flow>/<node>` (Code tab, file of a node), the file with the most `textStyle:` keys (Styles tab) |
+| Flow | `node:<flow>/<node>` (Code tab, file of a node) |
 | Game | `jsx:<key>` (picked element and its JSX), `style:` (its style block), `projection:` (an entity), `textStyle:`, `component:` (area card) |
 | Files | `flow:` and `node:` defs and their uses (Used by) |
 | Game, Render | `ProjectState.manifest` (the asset manifest) |
@@ -303,29 +306,38 @@ controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.
 
 | Width | The bar shows |
 |---|---|
-| 900 px and wider | Logo, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Reference mode, Registry (an icon; the counts are in its title, "Registry · 20 sources · 23 commands"), theme. |
-| Below 900 px | Logo, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Reference mode** icon (target, R), the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
-| 560 px and narrower | As below 900 px, without the game name and the Hot reload icon. |
+| 900 px and wider | The game mark, game name, session chip, link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Registry (an icon; the counts are in its title, "Registry · 20 sources · 23 commands"), theme. |
+| Below 900 px | The game mark, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
+| 560 px and narrower | As below 900 px, without the game name. |
 
-In the compact bar Pause and Step keep their labels as the accessible name and the tooltip. The two
-icon toggles use `aria-pressed`; Hot reload is inert with its reason in the tooltip when the
+The bar starts with the **game mark**: the initials of the game name on a small tile coloured from
+the name (`TT` for "Tic Tac Toe", `ME` for "Merge"), so two games in two panes are told apart at a
+glance. The same name always gets the same colour. Without a game the tile shows `·`.
+
+In the compact bar Pause and Step keep their labels as the accessible name and the tooltip. The
+Hot reload icon toggle uses `aria-pressed`; it is inert with its reason in the tooltip when the
 editor cannot change it.
 
-The **⋯** menu (`data-action="more"`) holds, each row with its state and key: Game preview (G),
-Overlay in game (O), Reference mode (R), Hot reload (H), then Registry (counts; opens the registry
-popover), Density (auto → compact → comfortable) and Theme. Reference mode and Hot reload stay in
-the menu while the bar shows their icons. A toggle row keeps the menu open. Esc, a second ⋯ click
-or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no Overlay switch of
-its own.
+The **⋯** menu (`data-action="more"`) holds, each toggle row with its state and its key: Game
+preview (G), Overlay in game (O), Hot reload (H), then Registry (counts; opens the registry
+popover), Density (auto → compact → comfortable) and Theme. Hot reload
+stays in the menu while the bar shows its icon. A toggle row keeps the menu open. Esc, a second ⋯
+click or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no Overlay
+switch of its own.
+
+The preference **Copy reference on select** has no control in the top bar: it is the **Copy Ref**
+switch of the Game toolbar (see [The Game workspace](#the-game-workspace)).
 
 ### The reference line and card
 
-A pick (a picker click, or a click on a Reference mode proxy) bookmarks the game
+A pick (a click with the element picker: the Select button of the Game toolbar, ⇧⌘C or I)
+bookmarks the game
 (`game.bookmark`), saves the element and the whole frame as JPEGs in today's folder
 `<capturesDir>/<yyyy-mm-dd>/`, writes a card file next to them,
 puts one line on the clipboard and toasts "Reference, shot and bookmark copied". Paste the line
 into the chat: it names the element, its flow node, its code, its place, and the card that holds
-the rest.
+the rest. With the Copy Ref switch of the Game toolbar off, a click only selects the element:
+nothing of this happens until you press "Copy reference" in the Element tab.
 
 ```text
 @moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md
@@ -371,18 +383,19 @@ shot: .moku/captures/2026-10-05/settingsBoard-f212-crop.jpg · frame: .moku/capt
 | `shot` | The crop (`<key>-f<frame>-crop.jpg`, the element plus 8 px) and the full frame (`f<frame>-full.jpg`) in the day folder `<capturesDir>/<yyyy-mm-dd>/`. |
 
 A line or a field that is not known is left out; a card that cannot be written leaves its path out
-of the line. The Element tab shows the full block read-only. Its "Copy reference" writes the card
+of the line. The Element tab does not show the block: it is in the card file. The footer of the
+tab has two buttons, "Copy reference" and "Show in render tree". "Copy reference" writes the card
 of the selection and copies its line; the same node and frame write the same card again. Shot and
 Series copy `shot: <path>` and `series: <folder>/ (<n> frames)`.
 
 #### An area
 
-In Reference mode, and in Select mode, a press that moves 4 px or more drags a dashed marquee over
+With the picker on, a press that moves 4 px or more drags a dashed marquee over
 the game. The release
 picks the area: the elements fully inside it (else the ones it covers by at least half of their own
 area), group roots only, top to bottom then left to right, at most 40. The pick goes as for one
 element: a bookmark, the area plus 8 px as `area-f<frame>-crop.jpg`, the full frame, the card
-`area-f<frame>.md` in today's folder and one line on the clipboard. In Select mode the picker then
+`area-f<frame>.md` in today's folder and one line on the clipboard. The picker then
 turns off, like a click pick:
 
 ```text
@@ -412,7 +425,8 @@ The tools page publishes what is selected (a pick, an area, nothing after Esc) t
 server, and Claude reads it with `moku_selection`. `moku_select { key }` or
 `moku_select { rect }` selects from the chat: the tools page shows the element in the Game
 workspace, picks it like a click (bookmark, crop, card, without the clipboard) and answers the
-selection.
+selection. The selection carries the pending style edits of the element (`edits`, see
+[The Game workspace](#the-game-workspace)), so Claude reads what to change in the source.
 
 ### The Game workspace
 
@@ -421,6 +435,56 @@ selection.
   game that connects while the sound is off is muted again, so the flag survives a hot reload.
   A game without `game.mute` (before @moku-labs/game 0.4.4) dims the switch, title "Needs
   @moku-labs/game with game.mute".
+- **Copy Ref**: a switch in the Game toolbar, after Safe area and Sound. It is the control of the
+  preference "Copy reference on select", on by default and saved with the others
+  (`workspace.copyOnSelect()`, `setCopyOnSelect(on)`). A palette command flips it too; it has no
+  key. With it off, **Copy reference** in the Element tab still writes the card and copies its
+  line on demand.
+
+  | Copy Ref | A click of the picker | A drag of the picker |
+  |---|---|---|
+  | On (default) | Selects the element, writes the pictures and the card, copies the [reference line](#the-reference-line-and-card). | Picks [an area](#an-area). |
+  | Off | Only selects the element for the Element tab. No file, no capture card, no clipboard. | Picks nothing. |
+- **Select** (⇧⌘C or I): an icon button in the Game toolbar. It is lit while the picker is on: from
+  the click until the pick completes, Esc or a second click.
+- **Styles** in the Element tab: every value of the element's style is a field (a number, a text or
+  a checkbox; one field per leaf of a record, such as `padding.top`). A change is kept as a pending
+  edit. The editor does not write the file, and the game does not change until the source is
+  edited. An edited row shows the old value struck through and a reset ×. Under the rows the edits
+  bar counts them ("2 edits") and has "Copy for agent" and "Clear". "Copy for agent" puts one text
+  block per element on the clipboard, the selected one first:
+
+  ```text
+  @moku homePlay · features/stage/views/home-screen.tsx:199
+  minWidth: 556 -> 600
+  padding.top: 25 -> 30
+  ```
+
+  The edits of the selected element also reach Claude through `moku_selection`
+  (`SelectionInfo.edits`: each a `StyleEdit` `{ path, from, to }`, the values a `StyleValue`). An
+  edit leaves by itself once the game shows its new value: the agent wrote the code and hot reload
+  brought it in. From code: `gameView.editStyle(path, to)`, `clearEdits(scope?)`, `edits()` and
+  `copyEdits()`.
+- **Text style** in the Element tab: a text shows a second list, "Text style · ui.button", with
+  the fields of its text style key, read from the game's text styles file. Under the title stand
+  the `file:line` of the block and "Open in Files". A number and a quoted string are fields, like
+  the Styles rows. Any other value, such as `colors.cream`, is read-only text. A change is a
+  pending edit of the style key, not of the element: one key styles many texts, so every text with
+  that key shows the edit. The edits bar counts it. "Copy for agent" writes it as a block of its
+  own, after the element blocks:
+
+  ```text
+  @moku textStyle ui.button · shared/styles/text.ts:88
+  size: 105 -> 96
+  ```
+
+  In `moku_selection` such an edit has the path `textStyle:<key>#<field>`, for example
+  `textStyle:ui.button#size` or `textStyle:ui.button#shadow.dy`. It leaves by itself once the file
+  has the new value, or once its field is no number or quoted string any more. Another value in
+  the file becomes the `from` of the edit. The list needs
+  @moku-labs/game 0.14.11 or newer, which sends the key of a text (`UiNode.textStyle`); with an
+  older game it is not shown. A key the project index does not know shows
+  `Not in the project index: textStyle:<key>`.
 - **Code** in the Element tab: the JSX of the picked ui element, from the line that opens its tag
   to the line that closes it, and the `defineStyle` block of its `style={ident}`. Each snippet has
   its `file:line`, "Open in Files" and the shared highlighter; after 20 lines it shows "Show all N
@@ -430,7 +494,10 @@ selection.
 - **The capture card** after a Shot, a pick or a Series: a 56 px thumbnail, one line each for the
   title ("✓ Screenshot saved"), the path (cut in the middle, the whole path in its tooltip) and
   `f<frame> · <device>`, then Copy link (`shot: <path>`), Open and, after a pick, Reference (the
-  line again). At most 360 × 120 px; in a 480 px window it takes the width less 24.
+  line again). At most 360 × 120 px; in a 480 px window it takes the width less 24. A Series ends
+  like a Shot: the card of its first shot, `series: <folder>/ (<n> frames)` on the clipboard and
+  the toast "✓ N shots saved". The contact sheet of a series opens only on request: "Open contact
+  sheet" in Files, or Open on the series card.
 
 ### Hot reload
 
@@ -746,10 +813,10 @@ All 17, in core order. Tiers follow the Moku plugin tiers. Each name links to it
 | [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` notification, the editor page's selection and the `editor.select` relay to it. Wraps `Bun.serve`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `path` |
 | [`pages`](src/plugins/pages/README.md) | server | Complex | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (the engine page of a moku-game folder, or a game HTML file; Bun hot reload on, switched by restarting its server; `--no-hmr` starts it off) and of `moku-editor mcp`, the MCP bridge for Claude Code. | `routes`, `attachServer`, `hotReload`, `setHotReload` |
 | [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state, the editor page role (publishes the selection, answers `editor.select`). | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `files`, `hotReload`, `setHotReload`, `selection`, `notify`, `handle` |
-| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with its icon toggles and ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload` |
+| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with the game mark, the Hot reload icon toggle and the ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag and Copy on select), the twenty-one devices, the one game iframe, the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload`, `copyOnSelect`, `setCopyOnSelect` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
-| [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, code and style inspector. | `camera`, `focus`, `flows`, `layout` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound switch, element picker, style card, the Code section, Reference mode proxies and area drags, the pick for the chat (bookmark, two JPEGs, the card file, one line), the selection published to MCP and `editor.select`, screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks` |
+| [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, the Inspector with its Info and Code tabs. | `camera`, `focus`, `flows`, `layout` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound and Copy Ref switches, element picker, style card, the Code section, the Styles fields with their pending edits for the agent, area drags, the pick for the chat (bookmark, two JPEGs, the card file, one line), the selection published to MCP and `editor.select`, screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks`, `editStyle`, `clearEdits`, `edits`, `copyEdits` |
 | [`renderView`](src/plugins/renderView/README.md) | tools | Standard | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |
@@ -807,7 +874,6 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | workspace | `toastMs` | `2600` | How long one toast stays. |
 | panels | — | `{}` | No options. |
 | flowView | `historyLast` · `trailLength` · `rejectedOutcomes` | `20` · `6` · `["rejected"]` | History watched, trail edges, rejection outcomes. |
-| flowView | `styleSaveDelayMs` | `600` | Style save debounce. |
 | flowView | `layout` | `{ file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 }` | Saved positions, ELK in a worker, layout save debounce. Replaced as a whole. |
 | flowView | `zoom` | `{ min: 0.08, max: 3, defaultMin: 0.8 }` | Zoom range and default camera floor. Replaced as a whole. |
 | flowView | `hub` | `{ minOutcomes: 6, minReturns: 4 }` | The hub rule. Replaced as a whole. |
@@ -836,7 +902,6 @@ Global events are declared per core in `src/config.ts`. No plugin declares its o
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` = `{ id, input, origin, at } & ({ ok: true, result } \| { ok: false, error })` | workspace, panels | stateView, consoleView |
 | tools | `workspace:density` | `{ density: "compact" \| "comfortable" }` | workspace | flowView |
-| tools | `workspace:reference` | `{ on: boolean }` | workspace | gameView |
 | tools | `workspace:open-file` | `{ path: string; line?: number }` | flowView, gameView | filesView |
 | tools | `workspace:select-node` | `{ id: string }` | filesView | flowView |
 | tools | `workspace:focus-frame` | `{ frame: number }` | consoleView | flowView |

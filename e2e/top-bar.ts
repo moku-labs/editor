@@ -1,15 +1,16 @@
 /**
  * @file The top bar as the e2e specs drive it (round 2 R1). From 900 px of window width the bar
- * shows every control: the Preview (G), Overlay (O) and Hot reload (H) switches with their labels,
- * Reference mode, Registry and theme. Below 900 px it is compact: those controls are rows of the ⋯
- * menu (`data-action="more"`), a top-layer `role="menu"` popover that renders its rows only while
- * it is open. The helpers find a control in either place by its `data-action`, which the switch
- * and its menu row share.
+ * shows every control: the Preview (G), Overlay (O) and Hot reload (H) switches with their
+ * labels, Registry and theme. Below 900 px it is compact: those controls are rows of the ⋯ menu
+ * (`data-action="more"`), a top-layer `role="menu"` popover that renders its rows only while it is
+ * open. The helpers find a control in either place by its `data-action`, which the switch and its
+ * menu row share. "Copy on select" is not a control of the bar: it is the Copy Ref switch of the
+ * Game toolbar (D-72).
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /** The data-action names of the toggles that move into the ⋯ menu below 900 px. */
-export type BarToggle = "game" | "overlay" | "reference" | "hot-reload";
+export type BarToggle = "game" | "overlay" | "hot-reload";
 
 /** Below this window width the top bar is compact. */
 export const COMPACT_BELOW = 900;
@@ -88,7 +89,7 @@ export async function barControl(page: Page, action: string): Promise<Locator> {
 
 /**
  * Whether a toggle of the top bar is on (`aria-checked` of the switch or the menu row, or
- * `aria-pressed` of the Reference button). Shuts the ⋯ menu again when it opened it.
+ * `aria-pressed` of an icon toggle). Shuts the ⋯ menu again when it opened it.
  *
  * @param page - The tools page.
  * @param action - The toggle.
