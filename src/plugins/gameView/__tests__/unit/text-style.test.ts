@@ -10,7 +10,12 @@ import {
   editTextStyle,
   listEdits
 } from "../../element/edit-style";
-import { editsText, isTextStyleEditKey, textStyleEditKey } from "../../element/edits";
+import {
+  editsText,
+  isTextStyleEditKey,
+  selectionEdits,
+  textStyleEditKey
+} from "../../element/edits";
 import { selectElement } from "../../element/select";
 import { openTextStyle, rowsOf } from "../../element/text-styles";
 import { onProjectChange } from "../../handlers";
@@ -302,13 +307,13 @@ describe("editTextStyle: a pending edit of the style key", () => {
     expect(ctx.state.edits.size).toBe(0);
   });
 
-  it("the selection of the text node carries them as textStyle:<key>.<field>", () => {
+  it("the selection of the text node carries them as textStyle:<key>#<field>", () => {
     editTextStyle(ctx, "ui.amount", "size", 96);
     editTextStyle(ctx, "ui.amount", "shadow.dy", 8);
 
     expect(published().at(-1)?.edits).toEqual([
-      { path: "textStyle:ui.amount.size", from: 105, to: 96 },
-      { path: "textStyle:ui.amount.shadow.dy", from: 6, to: 8 }
+      { path: "textStyle:ui.amount#size", from: 105, to: 96 },
+      { path: "textStyle:ui.amount#shadow.dy", from: 6, to: 8 }
     ]);
     // Another element has none of them.
     selectElement(ctx, COIN);
@@ -320,7 +325,7 @@ describe("editTextStyle: a pending edit of the style key", () => {
 
   it("the edits of the api (`editStyle`) stay the node's: a text style path is none of its style", () => {
     editStyle(ctx, "size", 96);
-    editStyle(ctx, "textStyle:ui.amount.size", 96);
+    editStyle(ctx, "textStyle:ui.amount#size", 96);
     expect(ctx.state.edits.size).toBe(0);
   });
 
@@ -346,6 +351,54 @@ describe("editTextStyle: a pending edit of the style key", () => {
     clearEdits(ctx, "selected");
     expect([...ctx.state.edits.keys()]).toEqual(["coinPill"]);
     expect(published().at(-1)?.edits).toBeUndefined();
+  });
+});
+
+/** A text of the Play button with the `ui.button` style key and no ui key of its own. */
+const LABEL = {
+  id: "ui:homeScreen/homePlay/homePlayLabel",
+  key: undefined,
+  textStyle: "ui.button"
+};
+
+/**
+ * The pending edits with one entry of the `ui.button` style key.
+ *
+ * @param edits - The edits of the key.
+ * @returns The map of `state.edits`.
+ */
+function keptFor(edits: ElementEdits["edits"]): Map<string, ElementEdits> {
+  const entry = { label: "textStyle ui.button", byId: false, edits };
+  return new Map([["textStyle:ui.button", entry]]);
+}
+
+describe("selectionEdits: the path of a style key edit", () => {
+  it("a plain field is textStyle:<key>#<field>: `#` ends the key, which has dots itself", () => {
+    expect(selectionEdits(keptFor([{ path: "size", from: 105, to: 96 }]), LABEL)).toEqual([
+      { path: "textStyle:ui.button#size", from: 105, to: 96 }
+    ]);
+  });
+
+  it("a nested field keeps its own dots after the `#`", () => {
+    const [edit] = selectionEdits(keptFor([{ path: "shadow.dy", from: 6, to: 8 }]), LABEL);
+    expect(edit).toEqual({ path: "textStyle:ui.button#shadow.dy", from: 6, to: 8 });
+
+    // One split at the first `#` gives the key and the field back.
+    const [owner, field] = edit?.path.split("#") ?? [];
+    expect([owner, field]).toEqual(["textStyle:ui.button", "shadow.dy"]);
+  });
+
+  it("the node's own edits come first and keep their path", () => {
+    const kept = keptFor([{ path: "size", from: 105, to: 96 }]);
+    kept.set(LABEL.id, {
+      label: "homePlayLabel",
+      byId: true,
+      edits: [{ path: "opacity", from: 1, to: 0.5 }]
+    });
+    expect(selectionEdits(kept, LABEL).map(edit => edit.path)).toEqual([
+      "opacity",
+      "textStyle:ui.button#size"
+    ]);
   });
 });
 
@@ -397,7 +450,7 @@ describe("resolve: the block read again shows the wanted value", () => {
     const card = ctx.state.textStyle;
     expect(card?.status === "found" && card.rows.find(row => row.path === "size")?.value).toBe(96);
     expect(published().at(-1)?.edits).toEqual([
-      { path: "textStyle:ui.amount.align", from: "center", to: "left" }
+      { path: "textStyle:ui.amount#align", from: "center", to: "left" }
     ]);
   });
 
@@ -447,5 +500,110 @@ describe("resolve: the block read again shows the wanted value", () => {
     await agentWrites(`// a note\n// another\n${TEXT}`);
 
     expect(listEdits(ctx)[0]?.source).toEqual({ path: FILE, line: 5 });
+  });
+
+  it("a third value in the file: `from` follows it and the selection is published again", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    editTextStyle(ctx, "ui.amount", "align", "left");
+    ctx.link.notify.mockClear();
+
+    // Somebody else changed the size: neither the wanted value nor the one the edit started from.
+    await agentWrites(TEXT.replace("size: 105", "size: 100"));
+
+    expect(kept("textStyle:ui.amount")?.edits).toEqual([
+      { path: "size", from: 100, to: 96 },
+      { path: "align", from: "center", to: "left" }
+    ]);
+    expect(published().at(-1)?.edits).toEqual([
+      { path: "textStyle:ui.amount#size", from: 100, to: 96 },
+      { path: "textStyle:ui.amount#align", from: "center", to: "left" }
+    ]);
+  });
+
+  it("after `from` followed the file, typing the old value is a real edit", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    await agentWrites(TEXT.replace("size: 105", "size: 100"));
+
+    // 105 is no longer what the file has: it is a wanted value like any other.
+    editTextStyle(ctx, "ui.amount", "size", 105);
+    expect(kept("textStyle:ui.amount")?.edits).toEqual([{ path: "size", from: 100, to: 105 }]);
+
+    // And the value the file has now removes the edit.
+    editTextStyle(ctx, "ui.amount", "size", 100);
+    expect(ctx.state.edits.size).toBe(0);
+  });
+
+  it("a read that shows the same values publishes nothing and keeps the edits as they are", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    const before = kept("textStyle:ui.amount")?.edits;
+    ctx.link.notify.mockClear();
+
+    await agentWrites(`${TEXT}// a note\n`);
+
+    expect(kept("textStyle:ui.amount")?.edits).toBe(before);
+    expect(published()).toEqual([]);
+  });
+
+  it("a field that is no literal any more in a parsed block drops its edit", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    editTextStyle(ctx, "ui.amount", "align", "left");
+    ctx.link.notify.mockClear();
+
+    // The size is a token now: a read-only row, no field edits it.
+    await agentWrites(TEXT.replace("size: 105", "size: sizes.amount"));
+
+    const card = ctx.state.textStyle;
+    expect(card?.status === "found" && card.rows.find(row => row.path === "size")).toEqual({
+      path: "size",
+      raw: "sizes.amount",
+      value: undefined
+    });
+    expect(kept("textStyle:ui.amount")?.edits).toEqual([
+      { path: "align", from: "center", to: "left" }
+    ]);
+    expect(published().at(-1)?.edits).toEqual([
+      { path: "textStyle:ui.amount#align", from: "center", to: "left" }
+    ]);
+  });
+
+  it("a field that left a parsed block drops its edit too", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    editTextStyle(ctx, "ui.amount", "align", "left");
+
+    await agentWrites(TEXT.replace('    align: "center",\n', ""));
+
+    expect(kept("textStyle:ui.amount")?.edits).toEqual([{ path: "size", from: 105, to: 96 }]);
+  });
+
+  it("the last edit dropped that way forgets the key", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    ctx.link.notify.mockClear();
+
+    await agentWrites(TEXT.replace("size: 105", "size: sizes.amount"));
+
+    expect(ctx.state.edits.size).toBe(0);
+    expect(published().at(-1)?.edits).toBeUndefined();
+    expect(published()).not.toEqual([]);
+  });
+
+  it("a block that cannot be parsed (no rows) keeps every edit as it is", async () => {
+    editTextStyle(ctx, "ui.amount", "size", 96);
+    editTextStyle(ctx, "ui.amount", "align", "left");
+    ctx.link.notify.mockClear();
+
+    answer(ctx, "textStyle:ui.amount", place(FILE, [2, 3, 2, 22]));
+    await agentWrites("export const uiStyles = defineTextStyles({\n  amount: { size: 1 }\n});");
+
+    expect(ctx.state.textStyle).toMatchObject({ status: "found", line: 2, rows: [] });
+    expect(kept("textStyle:ui.amount")).toEqual({
+      label: "textStyle ui.amount",
+      source: { path: FILE, line: 2 },
+      byId: false,
+      edits: [
+        { path: "size", from: 105, to: 96 },
+        { path: "align", from: "center", to: "left" }
+      ]
+    });
+    expect(published()).toEqual([]);
   });
 });
