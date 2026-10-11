@@ -34,6 +34,11 @@ import type {
 } from "./types";
 
 /**
+ * The milliseconds of one second: a wait in ms reads as seconds in a message.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
  * How long moku_reload waits for the game to connect again.
  */
 const RELOAD_WAIT_MS = 15_000;
@@ -69,10 +74,13 @@ const POST_TIMEOUT_MS = 5000;
 const HTTP_OK = 200;
 
 /**
- * What a tool answers when the editor page does not know an editor request: a page loaded before
- * the bin was updated.
+ * What a tool answers to a -32601 of an editor request. It comes from the hub of a bin older than
+ * the bridge, which does not relay the method, or from an editor page loaded before the bin was
+ * updated, which has no handler for it. The bridge cannot tell the two apart, so the text names
+ * both fixes.
  */
-const PAGE_OLDER = "[moku-editor] this editor page is older than the bridge; reload it";
+const PAGE_OLDER =
+  "[moku-editor] moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page";
 
 /**
  * What moku_hot_reload answers for a game's own server: only the moku-editor bin can restart with
@@ -109,9 +117,10 @@ type HmrAnswer =
  * @param params - The checked params.
  * @param parse - The protocol parser of the answer.
  * @returns The checked answer.
- * @throws {Error} "this editor page is older than the bridge; reload it" for a -32601 (the page
- *   has no handler for the method), `editor.<method> answered an unexpected value.` for an answer
- *   the parser refuses.
+ * @throws {Error} "moku-editor or its editor page is older than the bridge; restart moku-editor
+ *   and reload the page" for a -32601 (the hub of an older bin does not relay the method, or the
+ *   page has no handler for it), `editor.<method> answered an unexpected value.` for an answer the
+ *   parser refuses.
  * @example
  * ```ts
  * const device = await askPage(hub, "device", { orientation: "landscape" }, parseDeviceInfo);
@@ -368,7 +377,9 @@ function switchWatch(
   return (): HotReload | undefined => {
     const current = context.editor.connected();
     const state = switchedState(current, before, on);
-    if (state === undefined || current !== held) {
+    // Not back yet, or another connection than the one counted so far: the count starts again.
+    const isStillWaiting = state === undefined || current !== held;
+    if (isStillWaiting) {
       held = state === undefined ? undefined : current;
       since = context.now();
       return undefined;
@@ -408,7 +419,7 @@ async function hotReload(call: ToolCall, context: ToolContext): Promise<ToolResu
   const state = await pollFor(switchWatch(context, hub, on), isOver, SWITCH_POLL_MS);
   if (state === undefined) {
     return errorResult(
-      `moku-editor did not come back with hot reload ${wordOf(on)} within ${String(SWITCH_WAIT_MS / 1000)} s; call moku_status`
+      `moku-editor did not come back with hot reload ${wordOf(on)} within ${String(SWITCH_WAIT_MS / MS_PER_SECOND)} s; call moku_status`
     );
   }
   return jsonResult({ ...state, restarted: true });

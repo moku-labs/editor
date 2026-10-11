@@ -421,7 +421,7 @@ Editor requests (D-60). `moku_device`, `moku_show` and the `node` of `moku_selec
 | Hub answer | The tool prints |
 |---|---|
 | -32003 `no_editor_page` | `isError` with the hub's text: "no editor page is open. Open the editor page: <url>" |
-| -32601 (the page has no handler: it was loaded before the bin was updated) | `isError` "this editor page is older than the bridge; reload it" |
+| -32601 (the hub of a bin older than the bridge does not relay the method, or the page has no handler: it was loaded before the bin was updated) | `isError` "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page". The bridge cannot tell the two apart, so the text names both fixes |
 | -32602 (an unknown preset, an unknown node) | `isError` with the page's text |
 
 `moku_hot_reload { on }` (D-62). The switch restarts the bin's server and closes the hub socket (Hot reload, D-32), so it cannot be a hub request: the bridge posts the route itself.
@@ -509,7 +509,7 @@ What `main` (`cli.ts`) does:
 - MCP: the door tools stay 8 s without a session, counted from the bridge's last reconnect that found none. After the bin's restart that is at most about 15 s after the close (the bridge's last try lands at 7 s). A game that connects again later than that (its bridge retries about 1, 3, 7 and 15 s after the close, ±20 %, so its fourth try lands 12 to 18 s after it) empties the set and lists it again: two `list_changed`.
 - MCP: every reconnect that finds no session starts the 8 s again. The bridge's own tries are bounded (at most four per close, and a new count only after a connection held 5 s). Two cases still keep the door tools of a game that is gone for as long as they go on: a bin that drops the bridge's socket again and again, each time 5 to 8 s after it opened, and tool calls that reconnect less than 8 s apart to a bin that drops each connection.
 - MCP: screenshots and series need the game page visible (a hidden tab stops heartbeats). Frame sources reach `moku_wait` about once per second (D-15).
-- MCP: `moku_device`, `moku_show` and `moku_select` need the tools page open: they change that page. A page loaded before the bin was updated answers "this editor page is older than the bridge; reload it".
+- MCP: `moku_device`, `moku_show` and `moku_select` need the tools page open: they change that page. A bin older than the bridge, or a page loaded before the bin was updated, answers "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page".
 - MCP: `moku_hot_reload` waits for the bridge's own reconnect tries, which end 7 s after the close. A bin that needs longer to serve again is not back within the 15 s: the tool answers `isError`, and the next tool call connects. It reloads no game page: `moku_reload` follows it.
 - MCP: `moku_project` reads the state as the hub last published it; `jsx:` keys are not in it. A bin that is still opening its index, or has none to publish, answers the "not published yet" text.
 - MCP: `moku_series` is one forwarded `run`. A run of `editor.sheet` waits `frames × everyMs` on top of the call deadline (capped at +60 s) in bridge, hub and link, so 12 frames every 5000 ms fit. The `game.capture { sheet }` fallback keeps the plain deadline (`callTimeoutMs`, 5 s by default): a longer sheet there answers -32002 `timeout`.

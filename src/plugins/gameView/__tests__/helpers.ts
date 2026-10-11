@@ -13,6 +13,7 @@ import type {
   LinkStatus,
   Manifest,
   ProjectState,
+  RelayedEditorMethod,
   RunResult,
   WireError
 } from "../../registry/protocol";
@@ -213,6 +214,12 @@ export function manifestOf(
   };
 }
 
+/**
+ * `handle` of link as a mock records it. The params and the result of a handler follow its method,
+ * so the mock keeps it as a function of unknown params; a test reads it back as `RequestHandler<M>`.
+ */
+type HandleCall = (method: RelayedEditorMethod, handler: (params: never) => unknown) => () => void;
+
 /** A scripted link: the api plus test controls. */
 export type LinkMock = {
   readonly api: LinkApi;
@@ -223,7 +230,7 @@ export type LinkMock = {
   /** The editor-channel notifications gameView sent (`notify("selection", …)`). */
   readonly notify: Mock<LinkApi["notify"]>;
   /** The editor-channel request handlers gameView added (`handle("select", …)`). */
-  readonly handle: Mock<LinkApi["handle"]>;
+  readonly handle: Mock<HandleCall>;
   readonly watches: WatchRecord[];
   /** Answers of read by source id. */
   readonly values: Map<string, Json | ((input: Json | undefined) => Json)>;
@@ -261,7 +268,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
   });
   const run = vi.fn<LinkApi["run"]>(() => Promise.reject(new Error("link.run is not for views")));
   const notify = vi.fn<LinkApi["notify"]>();
-  const handle = vi.fn<LinkApi["handle"]>(() => vi.fn());
+  const handle = vi.fn<HandleCall>(() => vi.fn());
   const link: LinkMock = {
     files: store,
     watch,

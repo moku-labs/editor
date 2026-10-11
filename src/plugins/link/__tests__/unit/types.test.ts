@@ -63,10 +63,7 @@ describe("link types", () => {
     expectTypeOf(app.link.selection).returns.toEqualTypeOf<SelectionInfo | undefined>();
     expectTypeOf(app.link.notify).parameter(0).toEqualTypeOf<"selection">();
     expectTypeOf(app.link.notify).parameter(1).toEqualTypeOf<SelectionInfo | null>();
-    // `Parameters` reads the last signature of `handle`: the select one, as before D-60.
-    expectTypeOf<Parameters<typeof app.link.handle>>().toEqualTypeOf<
-      [method: "select", handler: (params: SelectParams) => Promise<SelectionInfo>]
-    >();
+    expectTypeOf(app.link.handle).parameter(0).toEqualTypeOf<RelayedEditorMethod>();
     expectTypeOf(app.link.handle).returns.toEqualTypeOf<() => void>();
     expect(app.link.selection()).toBeUndefined();
   });

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RequestHandler } from "../../../link/types";
 import type { SelectParams } from "../../../registry/protocol";
 import { answerSelect } from "../../element/select-request";
 import { initGameView, stopGameView } from "../../lifecycle";
@@ -155,7 +156,8 @@ describe("the select handler of link", () => {
   it("onInit adds it; it answers; stop removes it", async () => {
     initGameView(ctx);
     expect(ctx.link.handle).toHaveBeenCalledWith("select", expect.any(Function));
-    const handler = ctx.link.handle.mock.calls[0]?.[1];
+    // The mock keeps a handler as a function of unknown params: read it back as the select one.
+    const handler = ctx.link.handle.mock.calls[0]?.[1] as RequestHandler<"select"> | undefined;
     const info = await handler?.({ key: "infoBar", card: false });
     expect(info?.key).toBe("infoBar");
 

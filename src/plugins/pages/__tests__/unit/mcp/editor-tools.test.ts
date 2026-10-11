@@ -176,9 +176,19 @@ function unknownMethod(method: string): Error {
   });
 }
 
-/** What every tool answers for an editor page older than the bridge. */
+/** The answer of a hub that does not relay a method: the hub of an older bin. */
+function unknownToHub(method: string): Error {
+  return wireError(-32_601, `unknown method editor.${method}`, { retryable: false });
+}
+
+/** What every tool answers to a -32601: the bin or its editor page is older than the bridge. */
 const OLDER_PAGE = {
-  content: [{ type: "text", text: "this editor page is older than the bridge; reload it" }],
+  content: [
+    {
+      type: "text",
+      text: "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page"
+    }
+  ],
   isError: true
 };
 
@@ -264,13 +274,19 @@ describe("moku_device", () => {
     });
   });
 
-  it("tells an editor page older than the bridge to reload", async () => {
+  it("tells to restart moku-editor and reload the page when the page or the hub of an older bin does not know the method", async () => {
     const { run, hub } = await ready();
     hub.handle("editor.device", () => {
       throw unknownMethod("device");
     });
-    const { result } = await run(deviceTool);
-    expect(result).toEqual(OLDER_PAGE);
+    const page = await run(deviceTool);
+    expect(page.result).toEqual(OLDER_PAGE);
+
+    hub.handle("editor.device", () => {
+      throw unknownToHub("device");
+    });
+    const bin = await run(deviceTool);
+    expect(bin.result).toEqual(OLDER_PAGE);
   });
 
   it("answers isError for an answer that is not a device", async () => {
@@ -324,7 +340,7 @@ describe("moku_show", () => {
     expect(jsonOf(result)).toEqual({ workspace: "game", workspaces: WORKSPACES });
   });
 
-  it("answers no_editor_page with the URL to open, and an older page with the reload hint", async () => {
+  it("answers no_editor_page with the URL to open, and an older page with the restart and reload hint", async () => {
     const { run, hub } = await ready();
     hub.handle("editor.show", () => {
       throw noEditorPage();

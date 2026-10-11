@@ -546,30 +546,15 @@ export type LinkApi = EditorChannel & {
    * @returns An idempotent remover; it removes only this handler.
    * @example
    * ```ts
-   * // gameView selects the element MCP asks for and answers its selection.
-   * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
-   * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/captures/2026-10-05/coins-f1840.md", … }
-   * remove();
+   * // gameView answers `select` with a promise; flowView answers `node` at once.
+   * const link = ctx.require(linkPlugin);
+   * const offSelect = link.handle("select", params => selectByKey(params));
+   * // editor.select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/captures/2026-10-05/coins-f1840.md", … }
+   * const offNode = link.handle("node", ({ id }) => ({ id, selected: id }));
+   * // editor.node { id: "main/home" } → { id: "main/home", selected: "main/home" }
    * ```
    */
   handle<M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>): () => void;
-  /**
-   * The `select` signature of `handle` as it was before `device`, `show` and `node` (D-60), kept
-   * as the last one: `Parameters<LinkApi["handle"]>` and a mock typed by this member read the last
-   * signature, so they still read `select`. A call never needs it: the signature above takes
-   * every `select` handler.
-   *
-   * @param method - "select".
-   * @param handler - Gets the checked SelectParams; resolves the selection after the select.
-   * @returns An idempotent remover; it removes only this handler.
-   * @example
-   * ```ts
-   * // A view test reads the select handler back from its link mock, typed as before.
-   * const handle = vi.fn<LinkApi["handle"]>(() => vi.fn());
-   * const select = handle.mock.calls[0]?.[1]; // (params: SelectParams) => Promise<SelectionInfo>
-   * ```
-   */
-  handle(method: "select", handler: SelectHandler): () => void;
   /**
    * The project index the hub last sent (`editor.project`): on with its key maps, or off with the
    * reason. Kept across reconnects. Each new state is also the tools event `link:project`, with

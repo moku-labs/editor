@@ -429,7 +429,7 @@ describe("moku_select { node }", () => {
     });
   });
 
-  it("stops at the first step without an editor page, and tells an older page to reload", async () => {
+  it("stops at the first step without an editor page, and names the fix for an older bin or page", async () => {
     const current = await ready();
     serveNode(current);
     current.hub.handle("editor.show", () => {
@@ -454,7 +454,12 @@ describe("moku_select { node }", () => {
     });
     const older = await current.run(selectTool, { node: "main/home" });
     expect(older.result).toEqual({
-      content: [{ type: "text", text: "this editor page is older than the bridge; reload it" }],
+      content: [
+        {
+          type: "text",
+          text: "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page"
+        }
+      ],
       isError: true
     });
   });

@@ -119,7 +119,6 @@ offShow();
 - The remover removes only its own handler. A second call does nothing.
 - The params are checked with the parser of the method before the handler runs. Missing params are `{}`: `device {}` and `show {}` are reads, `node {}` is bad params.
 - The handler's result goes back through `toWireValue` with the hub's id. A thrown error goes back through `toWireError` and is logged as `link:request-failed`: at debug for invalid input (-32602, such as an unknown key; the caller gets the error), at warn otherwise.
-- `handle` has two signatures. The generic one takes all four methods. The second is the `select` signature from before D-60, `(method: "select", handler: SelectHandler) => () => void`, kept last: `Parameters<LinkApi["handle"]>` and a mock typed `vi.fn<LinkApi["handle"]>()` read the last signature, so they still read `select`. A call never needs it.
 
 ### Errors
 

@@ -58,8 +58,8 @@ function thrownBy(run: () => unknown): unknown {
 }
 
 /**
- * The handler onInit gave link for a method. The mock of `handle` is typed by its last overload
- * (`select`), so the captured handler is read back as the handler of its own method.
+ * The handler onInit gave link for a method. The mock of `handle` keeps a handler as a function
+ * of unknown params, so the captured handler is read back as the handler of its own method.
  *
  * @param method - "device" or "show".
  * @returns The handler.
