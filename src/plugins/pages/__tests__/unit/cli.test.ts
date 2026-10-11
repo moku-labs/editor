@@ -375,6 +375,34 @@ describe("main in a re-spawned bin (A4)", () => {
     expect(deps.exit).toHaveBeenCalledTimes(1);
   });
 
+  it("reads its parent pid before the start: a parent that died while the bin started stops it on the first check", async () => {
+    const { deps, lines } = createDeps();
+    const { reexec, orphan, tick } = reexecDeps(0, { [REEXEC_ENV]: "1" });
+    const importPage = deps.importPage;
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game];
+    const code = await main(argv, {
+      ...deps,
+      reexec,
+      importPage: async url => {
+        // The parent dies mid-start, before the bin serves: the system adopts the child.
+        orphan();
+        return importPage(url);
+      }
+    });
+    expect(code).toBe(0);
+    expect(deps.exit).not.toHaveBeenCalled();
+
+    tick();
+    await vi.waitFor(() => expect(deps.exit).toHaveBeenCalledWith(0));
+    expect(lines.join("\n")).toContain("stopped");
+    expect(existsSync(join(game, ".moku", "editor.json"))).toBe(false);
+
+    // The once-handlers of the stopped bin are no-ops now; emitting removes them.
+    process.emit("SIGINT");
+    process.emit("SIGTERM");
+    expect(deps.exit).toHaveBeenCalledTimes(1);
+  });
+
   it("a bin started by hand watches no parent", async () => {
     const { deps } = createDeps();
     const { reexec, interval } = reexecDeps(0);
@@ -586,7 +614,8 @@ function reexecDeps(code: number, env: ReexecDeps["env"] = {}) {
     spawn,
     onSignal: () => keepHandlers,
     ppid: () => parent,
-    interval
+    interval,
+    parentCheckMs: 1000
   };
   const orphan = (): void => {
     parent = 1;

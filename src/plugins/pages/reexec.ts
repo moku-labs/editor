@@ -7,7 +7,11 @@
  * forwards SIGINT, SIGTERM and SIGHUP and exits with the child's code; the child serves and writes
  * the discovery file with its own pid. The child runs in its own process group, so a terminal
  * Ctrl+C reaches it once, through the parent. A parent killed by SIGKILL forwards nothing: the
- * child checks its parent pid every second and stops itself once the parent is gone (A4).
+ * child checks its parent pid every second and stops itself once the parent is gone (A4). The pid
+ * it compares with is read at process start (`main` in `cli.ts`), before the bin serves: a parent
+ * that dies while the child starts is seen on the first check. Read after the start, the pid would
+ * already be the adopter's, and the child would serve on alone. The period is
+ * `MOKU_EDITOR_PARENT_CHECK_MS` when that is a positive integer (tests shorten it).
  *
  * The engine page (B5) always re-spawns (D-51): Bun reads `--config=<root>/.moku/bunfig.toml`
  * only at process start, so `reexecEngine` runs `bun --config=<bunfig> <bin> <root>/.moku/index.html`
@@ -29,9 +33,19 @@ export const REEXEC_ENV = "MOKU_EDITOR_REEXEC";
 const REEXEC_ON = "1";
 
 /**
- * How often a re-spawned bin checks that its parent is still there, in ms.
+ * The environment variable that sets how often a re-spawned bin checks its parent, in ms.
+ */
+export const PARENT_CHECK_ENV = "MOKU_EDITOR_PARENT_CHECK_MS";
+
+/**
+ * How often a re-spawned bin checks that its parent is still there, in ms: the default.
  */
 export const PARENT_CHECK_MS = 1000;
+
+/**
+ * A positive integer in plain digits.
+ */
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 /**
  * The bunfig file Bun reads from the process cwd.
@@ -311,23 +325,53 @@ export function everyUnref(ms: number, tick: () => void): () => void {
 }
 
 /**
- * In a re-spawned bin, stops it once its parent is gone: a parent killed by SIGKILL forwards no
- * signal, and the child would serve on alone. Every `PARENT_CHECK_MS` the parent pid is read
- * again; when it changed (the system adopted the orphan), the checks end and `stop` runs once. A
- * bin started by hand watches nothing.
+ * How often a re-spawned bin checks its parent, in ms: `MOKU_EDITOR_PARENT_CHECK_MS` when it is a
+ * positive integer in plain digits, else `PARENT_CHECK_MS`.
  *
- * @param deps - The environment, the parent pid and the interval.
+ * @param env - The process environment.
+ * @returns The check period in ms.
+ * @example
+ * ```ts
+ * parentCheckMsOf({ MOKU_EDITOR_PARENT_CHECK_MS: "50" }); // 50
+ * parentCheckMsOf({ MOKU_EDITOR_PARENT_CHECK_MS: "1.5" }); // 1000
+ * parentCheckMsOf({}); // 1000
+ * ```
+ */
+export function parentCheckMsOf(env: ReexecDeps["env"]): number {
+  const value = env[PARENT_CHECK_ENV];
+  return value !== undefined && POSITIVE_INTEGER.test(value) ? Number(value) : PARENT_CHECK_MS;
+}
+
+/**
+ * In a re-spawned bin, stops it once its parent is gone: a parent killed by SIGKILL forwards no
+ * signal, and the child would serve on alone. Every `deps.parentCheckMs` the parent pid is read
+ * again; when it differs from `parent` (the system adopted the orphan), the checks end and `stop`
+ * runs once. A bin started by hand watches nothing.
+ *
+ * The bin passes the `parent` it read at process start. The watch starts only after the bin
+ * serves, and a parent can die before that: a pid read here would then be the adopter's, it would
+ * never change, and the child would serve on alone. With the pid of the start, the first check
+ * sees that death.
+ *
+ * @param deps - The environment, the parent pid, the interval and its period.
  * @param stop - The graceful stop of the bin (it exits 0 after it).
+ * @param parent - The parent pid to compare with; default: the parent pid now.
  * @returns Cancels the checks; undefined when this is not a re-spawned bin.
+ * @example
+ * ```ts
+ * const parent = process.ppid; // read at process start
+ * // … the bin starts and serves …
+ * stopWithParent(processReexec(), () => void stopBin(), parent);
+ * ```
  */
 export function stopWithParent(
-  deps: Pick<ReexecDeps, "env" | "ppid" | "interval">,
-  stop: () => void
+  deps: Pick<ReexecDeps, "env" | "ppid" | "interval" | "parentCheckMs">,
+  stop: () => void,
+  parent: number = deps.ppid()
 ): (() => void) | undefined {
   if (deps.env[REEXEC_ENV] !== REEXEC_ON) return undefined;
 
-  const parent = deps.ppid();
-  const cancel = deps.interval(PARENT_CHECK_MS, () => {
+  const cancel = deps.interval(deps.parentCheckMs, () => {
     if (deps.ppid() === parent) return;
     cancel();
     stop();
@@ -337,8 +381,9 @@ export function stopWithParent(
 
 /**
  * The reexec deps of the real process: its cwd and environment, `[bun, Bun.main]`, the real spawn,
- * process signal handlers, the live parent pid and an unref'd interval. The environment is handed
- * on whole to the re-spawned bin.
+ * process signal handlers, the live parent pid, an unref'd interval and its period for the parent
+ * check (`MOKU_EDITOR_PARENT_CHECK_MS`, default a second). The environment is handed on whole to
+ * the re-spawned bin.
  *
  * @returns The deps.
  */
@@ -350,6 +395,7 @@ export function processReexec(): ReexecDeps {
     spawn: spawnInherited,
     onSignal: addSignalHandler,
     ppid: () => process.ppid,
-    interval: everyUnref
+    interval: everyUnref,
+    parentCheckMs: parentCheckMsOf(process.env) // @env-allow — the period of the parent check (A4)
   };
 }

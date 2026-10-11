@@ -295,6 +295,11 @@ export type ReexecDeps = {
   readonly ppid: () => number;
   /** Calls `tick` every `ms` without keeping the process alive; returns the cancel. */
   readonly interval: (ms: number, tick: () => void) => () => void;
+  /**
+   * How often the re-spawned bin checks its parent pid, in ms: `MOKU_EDITOR_PARENT_CHECK_MS` when
+   * set to a positive integer, else 1000.
+   */
+  readonly parentCheckMs: number;
 };
 
 /**

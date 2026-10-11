@@ -537,16 +537,22 @@ function processDeps(): CliDeps {
  *
  * @param stop - The stop function of the running bin.
  * @param deps - The bin deps.
+ * @param parent - The parent pid read at process start (`main`); undefined without `deps.reexec`.
  * @returns The handler, so a signal caught during the start can run it.
  */
-function stopOnSignals(stop: () => Promise<void>, deps: CliDeps): () => Promise<void> {
+function stopOnSignals(
+  stop: () => Promise<void>,
+  deps: CliDeps,
+  parent: number | undefined
+): () => Promise<void> {
   const onSignal = stopOnce(stop, deps);
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
   if (deps.reexec !== undefined) {
-    stopWithParent(deps.reexec, () => {
+    const onOrphan = (): void => {
       void onSignal();
-    });
+    };
+    stopWithParent(deps.reexec, onOrphan, parent);
   }
   return onSignal;
 }
@@ -594,6 +600,9 @@ function catchSignalsEarly(): EarlySignals {
  * `e2e`: a failed Chromium install's code, 1 when the tests cannot be listed, else the first
  * failing code of its Playwright runs, or 0). A serving bin stops once on SIGINT or SIGTERM; a
  * re-spawned one also when its parent is gone (A4: a parent killed by SIGKILL forwards no signal).
+ * The parent pid is read first thing, before the start: the bin prints its ready lines and writes
+ * the discovery file while it starts, so a parent can die before the watch begins; read after the
+ * start, the pid would be the adopter's and the bin would serve on alone.
  * `e2e` keeps the default signal action: a Ctrl+C reaches its Playwright child through the
  * terminal's process group. The engine form (no game HTML file) keeps it too, until its child is
  * spawned: that bin never serves, so a signal before the spawn ends it (130 for SIGINT, 143 for
@@ -611,6 +620,9 @@ export async function main(
   argv: readonly string[],
   deps: CliDeps = processDeps()
 ): Promise<number> {
+  // The parent pid at process start: a parent that dies while the bin starts is still seen (A4).
+  const parent = deps.reexec?.ppid();
+
   // A bin given a game HTML file owns its signals from the start. Other commands keep the default
   // action, the engine form too: it never serves here, so a caught signal would be lost.
   const parsed = parseBinArgs(argv);
@@ -622,7 +634,7 @@ export async function main(
   });
 
   // The real handlers go on before the early ones come off: no gap for a signal.
-  const onSignal = stop === undefined ? undefined : stopOnSignals(stop, deps);
+  const onSignal = stop === undefined ? undefined : stopOnSignals(stop, deps, parent);
   early?.release();
   if (onSignal !== undefined && early?.caught() === true) await onSignal();
   return code;

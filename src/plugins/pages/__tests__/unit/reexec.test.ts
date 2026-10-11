@@ -6,7 +6,9 @@ import {
   addSignalHandler,
   everyUnref,
   hasServeStatic,
+  PARENT_CHECK_ENV,
   PARENT_CHECK_MS,
+  parentCheckMsOf,
   processReexec,
   REEXEC_ENV,
   reexecBin,
@@ -100,6 +102,7 @@ function createDeps(overrides: Partial<ReexecDeps> = {}) {
     },
     ppid: () => 4000,
     interval: () => vi.fn(),
+    parentCheckMs: 1000,
     ...overrides
   };
   return { deps, fake, handlers, spawn };
@@ -296,7 +299,7 @@ function parentWatch(env: ReexecDeps["env"]) {
     ticks.push(tick);
     return cancel;
   });
-  const deps = { env, ppid: () => parent, interval };
+  const deps = { env, ppid: () => parent, interval, parentCheckMs: 1000 };
   const orphan = (): void => {
     parent = 1;
   };
@@ -337,6 +340,44 @@ describe("stopWithParent (A4: a parent killed by SIGKILL forwards no signal)", (
     cancel?.();
     expect(watch.cancel).toHaveBeenCalledTimes(1);
   });
+
+  it("stops on the first check when the parent died before the watch started", () => {
+    const watch = parentWatch({ [REEXEC_ENV]: "1" });
+    const stop = vi.fn();
+
+    // The parent pid was read at process start; the parent died while the bin started.
+    watch.orphan();
+    stopWithParent(watch.deps, stop, 4000);
+    expect(stop).not.toHaveBeenCalled();
+
+    watch.tick();
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(watch.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks with the period of the deps", () => {
+    const watch = parentWatch({ [REEXEC_ENV]: "1" });
+    stopWithParent({ ...watch.deps, parentCheckMs: 50 }, vi.fn());
+    expect(watch.interval).toHaveBeenCalledWith(50, expect.any(Function));
+  });
+});
+
+describe("parentCheckMsOf", () => {
+  it("names the environment variable of the check period", () => {
+    expect(PARENT_CHECK_ENV).toBe("MOKU_EDITOR_PARENT_CHECK_MS");
+  });
+
+  it("answers the default second when the variable is unset", () => {
+    expect(parentCheckMsOf({ PATH: "/bin" })).toBe(PARENT_CHECK_MS);
+  });
+
+  it("answers a positive integer of the variable", () => {
+    expect(parentCheckMsOf({ [PARENT_CHECK_ENV]: "50" })).toBe(50);
+  });
+
+  it.each(["0", "-5", "abc", "1.5", ""])("answers the default second for %j", value => {
+    expect(parentCheckMsOf({ [PARENT_CHECK_ENV]: value })).toBe(PARENT_CHECK_MS);
+  });
 });
 
 describe("everyUnref", () => {
@@ -369,6 +410,10 @@ describe("everyUnref", () => {
 });
 
 describe("the real process deps", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("spawns with the given cwd and environment and resolves the exit code", async () => {
     const script =
       "process.exit(process.cwd().endsWith('/game') && process.env.MARK === 'x' ? 3 : 4)";
@@ -406,5 +451,11 @@ describe("the real process deps", () => {
     expect(deps.onSignal).toBe(addSignalHandler);
     expect(deps.ppid()).toBe(process.ppid);
     expect(deps.interval).toBe(everyUnref);
+    expect(deps.parentCheckMs).toBe(PARENT_CHECK_MS);
+  });
+
+  it("reads the check period of the parent from MOKU_EDITOR_PARENT_CHECK_MS", () => {
+    vi.stubEnv(PARENT_CHECK_ENV, "50");
+    expect(processReexec().parentCheckMs).toBe(50);
   });
 });
