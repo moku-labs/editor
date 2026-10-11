@@ -1,4 +1,4 @@
-/* workspace · Frame. The one game frame layer in document.body (R4, D-14): fixed over the viewport, above the workspace content and the preview chrome, below the browser top layer. Docking is a transform on the box; the docked iframe (preview and Game stage) takes the pointer, so the pinned preview plays the game. Reference mode gives the overlay the pointer instead and outlines the frame. Tap ripples draw in the overlay in device px. The overlay holds the one indicator of an expected reload (U9): a spinner centred on the game, counter-scaled to 24 px on screen, no layout. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Frame. The one game frame layer in document.body (R4, D-14): fixed over the viewport, above the workspace content and the preview chrome, below the browser top layer. Docking is a transform on the box; the docked iframe (preview and Game stage) takes the pointer, so the pinned preview plays the game. Tap ripples draw in the overlay in device px. The overlay holds the one indicator of an expected reload (U9): a spinner centred on the game, counter-scaled to 24 px on screen, no layout. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-frame-layer]) {
   :scope {
     position: fixed;
@@ -33,16 +33,6 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-  }
-
-  /* Reference mode: the game gets no input; a 1 px accent outline on screen (the box is scaled, so the width divides by the scale), drawn inside the clip. */
-  [data-frame-box][data-reference] {
-    outline: calc(1px / var(--frame-scale, 1)) solid var(--accent);
-    outline-offset: calc(-1px / var(--frame-scale, 1));
-  }
-
-  [data-frame-box][data-reference] [data-frame-overlay] {
-    pointer-events: auto;
   }
 
   /* An expected reload: a 24 px ring on screen in the middle of the game (the box is scaled, so the sizes divide by the scale). */

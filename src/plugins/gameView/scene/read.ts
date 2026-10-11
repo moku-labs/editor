@@ -7,10 +7,9 @@
 import { linkPlugin } from "../../link";
 import type { ElementRef, PageRect, SceneError, SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene, refId } from "../../panels/shared/scene";
-import { notify } from "../state";
 import type { GameViewCtx } from "../types";
 import { calibrate, targetChanged } from "./calibrate";
-import { frameOf } from "./rebuild";
+import { frameOf, storeScene } from "./rebuild";
 
 /**
  * The startup-style error of a scene value of the wrong shape.
@@ -93,8 +92,7 @@ export async function readFreshScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
     calibration: state.calibration
   });
   if ("error" in built) throw shapeError(built);
-  state.scene = built;
-  notify(state);
+  storeScene(ctx, built);
   return built;
 }
 

@@ -102,16 +102,16 @@ describe("groupedItems", () => {
   it("falls back to fuzzy only when no item of any group matches as a substring", () => {
     const items = new Map<string, PaletteItem>([
       ["a", itemOf("a", "Nodes", "board/merge")],
-      ["b", itemOf("b", "Styles", "ui.number")]
+      ["b", itemOf("b", "Textures", "ui.number")]
     ]);
 
     expect(groupedItems(items, "bmg").map(group => group.group)).toEqual(["Nodes"]);
-    expect(groupedItems(items, "number").map(group => group.group)).toEqual(["Styles"]);
+    expect(groupedItems(items, "number").map(group => group.group)).toEqual(["Textures"]);
     expect(groupedItems(items, "zzz")).toEqual([]);
   });
 
-  it("knows the fixed group order", () => {
-    expect(GROUP_ORDER).toEqual(["Commands", "Nodes", "Files", "Styles", "Panels", "Textures"]);
+  it("knows the fixed group order, which has no Styles group", () => {
+    expect(GROUP_ORDER).toEqual(["Commands", "Nodes", "Files", "Panels", "Textures"]);
   });
 
   it("flattens the shown items for the arrow keys", () => {
@@ -183,13 +183,13 @@ describe("builtInCommands", () => {
       "cmd:step",
       "cmd:pause",
       "cmd:overlay",
-      "cmd:reference",
       "cmd:preview",
       "cmd:theme",
       "workspace:density-auto",
       "workspace:density-compact",
       "workspace:density-comfortable",
       "cmd:taps",
+      "cmd:copy-on-select",
       "cmd:go:game",
       "cmd:go:flow",
       "cmd:go:render",
@@ -284,15 +284,30 @@ describe("builtInCommands", () => {
     expect(ctx.link.retry).toHaveBeenCalledTimes(1);
   });
 
-  it("the Reference mode item toggles it, with R as its shortcut", () => {
+  it("Copy reference on select flips the preference and persists it; it has no key (U5)", () => {
+    localStorage.clear();
     const ctx = createCtx();
-    const reference = find(builtInCommands(ctx), "cmd:reference");
-    expect(reference.label).toBe("Reference mode on");
-    expect(reference.shortcut).toBe("R");
-    reference.run();
-    expect(ctx.state.reference).toBe(true);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
-    expect(reference.label).toBe("Reference mode off");
+    const listener = vi.fn();
+    ctx.state.listeners.add(listener);
+    const copy = find(builtInCommands(ctx), "cmd:copy-on-select");
+    expect(copy.label).toBe("Copy reference on select: turn off");
+    expect(copy.shortcut).toBeUndefined();
+
+    copy.run();
+    expect(ctx.state.copyOnSelect).toBe(false);
+    expect(copy.label).toBe("Copy reference on select: turn on");
+    expect(JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}").copyOnSelect).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    copy.run();
+    expect(ctx.state.copyOnSelect).toBe(true);
+    expect(copy.label).toBe("Copy reference on select: turn off");
+  });
+
+  it("no built-in command carries the key R, and none is about Reference mode (D-65)", () => {
+    const items = builtInCommands(createCtx());
+    expect(items.some(item => item.shortcut === "R")).toBe(false);
+    expect(items.some(item => item.label.includes("Reference mode"))).toBe(false);
   });
 
   it("the density items choose a density; the one in use is dimmed with its reason", () => {

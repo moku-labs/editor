@@ -96,16 +96,12 @@ function nodeItems(ctx: FlowCtx, actions: FlowActions, key: string): MenuItem[] 
   const { flow, node: name } = splitId(id);
   const node = ctx.state.data.graph?.flows[flow]?.nodes[name];
 
-  // Every node: focus it, or focus it and open the Code or Styles tab.
+  // Every node: focus it, or focus it and open the Code tab.
   const items = [
     menuItem("Focus", () => actions.focus.select(key)),
     menuItem("Open code", () => {
       actions.focus.select(key);
       actions.inspector.setTab("code");
-    }),
-    menuItem("Open styles", () => {
-      actions.focus.select(key);
-      actions.inspector.setTab("styles");
     })
   ];
 

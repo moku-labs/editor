@@ -44,6 +44,10 @@ names, themed with `light-dark()`:
   canvas), `--border-strong` (the 1 px outline of the bezel; the edge grey of each theme),
   `--device-black`. The docked game frame itself is clipped to the preset's corner radius
   (`frame/frame.ts`), not by a token.
+- Game mark: `--mark-l-bg` and `--mark-l-fg`, the OKLCH lightness of the top-bar tile and of its
+  letters (0.92 / 0.38 light, 0.30 / 0.88 dark). They are numbers, so they follow the scheme with
+  `:root[data-theme="dark"]` and a `prefers-color-scheme` rule, not with `light-dark()`. The hue
+  is `--mark-hue`, set inline by TopBar from the game name.
 - Code colours: `--code-<kind>` for every highlighter `TokenKind`.
 - Motion: `--duration-camera` 420, `--duration-zoom` 200, `--duration-follow` 500,
   `--duration-walk` 220, `--duration-resize` 210, `--duration-toast` 180.
@@ -69,7 +73,7 @@ The top bar has two layouts, picked by the component from the window width and w
 |---|---|---|
 | 1180 px and up | `wide` | Every label visible. The search box grows to 380 px. |
 | 900–1179 px | `wide` | Pause and Step show icons only; the Preview, Overlay and Hot reload switches keep their labels in a tighter box (gap 4 px). |
-| 561–899 px | `compact` | Logo, game name (120 px at most, no version), link pill, Pause, Step, a 28 px search icon and the ⋯ button. |
+| 561–899 px | `compact` | The game mark, game name (120 px at most, no version), link pill, Pause, Step, the Hot reload icon toggle, a 28 px search icon and the ⋯ button. |
 | 560 px and below | `compact` | The game name hides too; gaps and padding use the density tokens. |
 
 Every control keeps its size (`flex-shrink: 0`). Only the game name and the wide search box shrink.

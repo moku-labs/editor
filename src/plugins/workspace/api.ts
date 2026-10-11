@@ -15,6 +15,7 @@ import { setOverlayInGame } from "./overlay";
 import { addPaletteItems, openPalette } from "./palette/items";
 import {
   addPrefsListener,
+  chooseCopyOnSelect,
   chooseDensity,
   chooseMuted,
   chooseTheme,
@@ -23,7 +24,6 @@ import {
   previewState
 } from "./prefs/apply";
 import { effectiveTheme } from "./prefs/theme";
-import { setReference } from "./reference";
 import { showToast } from "./toasts";
 import type { PreviewZone, WorkspaceApi, WorkspaceCtx } from "./types";
 import { mountShell } from "./ui/mount";
@@ -129,12 +129,6 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
 
     setOverlayInGame: on => setOverlayInGame(ctx, on, "panel"),
 
-    reference: () => state.reference,
-
-    setReference: on => {
-      setReference(ctx, on);
-    },
-
     hotReload: () => ctx.require(linkPlugin).hotReload(),
 
     setHotReload: on => setHotReload(ctx, on),
@@ -143,6 +137,12 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
 
     setMuted: on => {
       chooseMuted(ctx, on);
+    },
+
+    copyOnSelect: () => state.copyOnSelect,
+
+    setCopyOnSelect: on => {
+      chooseCopyOnSelect(ctx, on);
     },
 
     onPrefs: fn => addPrefsListener(state, fn)

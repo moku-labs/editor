@@ -72,7 +72,8 @@ describe("initWorkspace", () => {
         device: { preset: "pixel-8", orientation: "landscape" },
         density: "auto",
         showTaps: false,
-        muted: true
+        muted: true,
+        copyOnSelect: false
       })
     );
     vi.stubGlobal("innerWidth", 720);
@@ -91,12 +92,29 @@ describe("initWorkspace", () => {
     expect(ctx.state.density).toEqual({ chosen: "auto", applied: "compact" });
     expect(ctx.state.showTaps).toBe(false);
     expect(ctx.state.muted).toBe(true);
-    expect(ctx.state.reference).toBe(false);
+    expect(ctx.state.copyOnSelect).toBe(false);
   });
 
-  it("starts in Game without a hash", () => {
+  it("starts in Game without a hash, with Copy on select on", () => {
     initWorkspace(ctx);
     expect(ctx.state.active).toBe("game");
+    expect(ctx.state.copyOnSelect).toBe(true);
+  });
+
+  it("a stored record without copyOnSelect loads it as on (U5)", () => {
+    localStorage.setItem(
+      "moku-editor-test",
+      JSON.stringify({
+        v: 1,
+        previews: {},
+        device: { preset: "pixel-8", orientation: "portrait" },
+        muted: true
+      })
+    );
+    initWorkspace(ctx);
+    expect(ctx.state.muted).toBe(true);
+    expect(ctx.state.copyOnSelect).toBe(true);
+    expect(ctx.log.warn).not.toHaveBeenCalled();
   });
 
   it("ignores an unknown hash and keeps defaultWorkspace", () => {
@@ -113,12 +131,12 @@ describe("initWorkspace", () => {
       "contextMenu",
       "contextMenu",
       "palette",
-      "reference",
       "registry",
       "stepPopover"
     ]);
     expect(ctx.state.palette.items.has("cmd:step")).toBe(true);
-    expect(ctx.state.palette.items.has("cmd:reference")).toBe(true);
+    expect(ctx.state.palette.items.has("cmd:copy-on-select")).toBe(true);
+    expect(ctx.state.palette.items.has("cmd:reference")).toBe(false);
     expect(ctx.state.palette.items.has("workspace:density-compact")).toBe(true);
   });
 
@@ -181,32 +199,22 @@ describe("startWorkspace — keys", () => {
     expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { on: true });
   });
 
-  it("R turns Reference mode on and off, not while typing; Esc turns it off", () => {
-    press("r");
-    expect(ctx.state.reference).toBe(true);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
-    press("r");
-    expect(ctx.state.reference).toBe(false);
-
-    const field = document.createElement("input");
-    document.body.append(field);
-    field.dispatchEvent(keyEvent("r"));
-    expect(ctx.state.reference).toBe(false);
-
-    press("r");
-    press("Escape");
-    expect(ctx.state.reference).toBe(false);
-    expect(ctx.emit).toHaveBeenLastCalledWith("workspace:reference", { on: false });
+  it("R is a free key (D-65): the press runs nothing, emits nothing and is left to the page", () => {
+    const version = ctx.state.ui.version;
+    const event = press("r");
+    expect(event.defaultPrevented).toBe(false);
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(ctx.state.ui.version).toBe(version);
+    const bound = ctx.state.keys.bindings.flatMap(entry => entry.combos.map(combo => combo.key));
+    expect(bound).not.toContain("r");
+    expect(bound).toContain("h");
   });
 
-  it("Esc closes the step popover before Reference mode", () => {
-    press("r");
-    ctx.state.popover = "step";
-    press("Escape");
-    expect(ctx.state.popover).toBeUndefined();
-    expect(ctx.state.reference).toBe(true);
-    press("Escape");
-    expect(ctx.state.reference).toBe(false);
+  it("Esc with nothing open closes nothing: no layer is left over from Reference mode", () => {
+    const event = press("Escape");
+    expect(event.defaultPrevented).toBe(false);
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(ctx.state.keys.escape.map(entry => entry.layer)).not.toContain("reference");
   });
 
   it("G shows and hides the preview of the current workspace and is a no-op in Game", () => {

@@ -64,7 +64,7 @@ describe("followPreviewZone", () => {
     updateSidePanel(INSPECTOR, { overlay: true, drawer: true });
     expect(fake.insets()).toEqual({ ...CHROME, right: 320 });
 
-    // The Code and Styles tabs open it at 400 px; a drawer is never wider than 92 % of the view.
+    // The Code tab opens it at 400 px; a drawer is never wider than 92 % of the view.
     ctx.state.inspector.tab = "code";
     expect(fake.insets()).toEqual({ ...CHROME, right: 400 });
     updateSidePanel(INSPECTOR, { width: 560 });

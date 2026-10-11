@@ -1,8 +1,8 @@
 /**
- * @file gameView plugin — the pointer handlers of the area gesture (U9, captures-by-day U4), one
- * factory for both layers that take the pointer over the game: the Reference mode proxy layer and
- * the Select picker layer. A press, a move past 4 px that starts the drag (then the layer holds
- * the pointer), the release and a cancel; a release without a drag is a click.
+ * @file gameView plugin — the pointer handlers of the area gesture (U9, captures-by-day U4) for
+ * the layer that takes the pointer over the game: the Select picker layer. A press, a move past
+ * 4 px that starts the drag (then the layer holds the pointer), the release and a cancel; a
+ * release without a drag is a click.
  */
 import type { JSX } from "preact";
 import { dropPress, moveArea, type PointerAt, pressArea, releaseArea } from "../reference/gesture";
@@ -57,11 +57,10 @@ function holdPointer(ctx: GameViewCtx, layer: Element, pointerId: number): void 
  * ends no drag is a click and goes to `onClick`.
  *
  * @param ctx - Domain context of gameView.
- * @param onClick - What a click does at its point; omitted where the targets pick themselves (the
- *   Reference mode proxies).
+ * @param onClick - What a click does at its point.
  * @returns The four handlers.
  */
-export function layerHandlers(ctx: GameViewCtx, onClick?: (at: PointerAt) => void): LayerHandlers {
+export function layerHandlers(ctx: GameViewCtx, onClick: (at: PointerAt) => void): LayerHandlers {
   return {
     onPointerDown: event => {
       if (event.button === 0) pressArea(ctx, pointerOf(event));
@@ -72,7 +71,7 @@ export function layerHandlers(ctx: GameViewCtx, onClick?: (at: PointerAt) => voi
     },
     onPointerUp: event => {
       const at = pointerOf(event);
-      if (releaseArea(ctx, at)) onClick?.(at);
+      if (releaseArea(ctx, at)) onClick(at);
     },
     onPointerCancel: event => dropPress(ctx, event.pointerId)
   };

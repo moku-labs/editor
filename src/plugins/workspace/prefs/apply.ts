@@ -1,8 +1,8 @@
 /**
  * @file workspace plugin — preference changes (theme, preview per workspace, device and fold,
- * density, Show taps, sound): apply to the state, persist to localStorage, tell the `onPrefs`
- * listeners (theme, preview, device and sound only), re-render and re-dock the frame. Visibility
- * changes of a preview toast the workspace name.
+ * density, Show taps, sound, Copy on select): apply to the state, persist to localStorage, tell
+ * the `onPrefs` listeners (theme, preview, device, sound and Copy on select only), re-render and
+ * re-dock the frame. Visibility changes of a preview toast the workspace name.
  */
 import { WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { DEVICES, ERROR_PREFIX, isDevicePresetId } from "../../registry/protocol";
@@ -36,15 +36,16 @@ export type PrefsCtx = Pick<WorkspaceCtx, "state" | "config" | "log">;
  * The preferences `onPrefs` listeners receive.
  *
  * @param state - Workspace state.
- * @returns Effective theme, a copy of the previews, the device choice (the screen in use) and
- * the sound flag.
+ * @returns Effective theme, a copy of the previews, the device choice (the screen in use), the
+ * sound flag and the Copy on select flag.
  */
 export function currentPrefs(state: WorkspaceState): Prefs {
   return {
     theme: effectiveTheme(state.theme),
     previews: structuredClone(state.previews),
     device: deviceChoiceOf(state.device),
-    muted: state.muted
+    muted: state.muted,
+    copyOnSelect: state.copyOnSelect
   };
 }
 
@@ -63,7 +64,8 @@ export function persistPrefs(ctx: PrefsCtx): void {
       device: state.device,
       density: state.density.chosen,
       showTaps: state.showTaps,
-      muted: state.muted
+      muted: state.muted,
+      copyOnSelect: state.copyOnSelect
     },
     ctx.log
   );
@@ -165,6 +167,21 @@ export function chooseMuted(ctx: PrefsCtx, on: boolean): void {
   if (ctx.state.muted === on) return;
 
   ctx.state.muted = on;
+  commitPrefs(ctx);
+}
+
+/**
+ * Sets the Copy on select flag (U5): persists it, tells the `onPrefs` listeners and re-renders
+ * the shell. The same value again does nothing.
+ *
+ * @param ctx - State, config and log.
+ * @param on - True when a pick writes the reference and copies its line, false when it only
+ *   selects the element (D-70).
+ */
+export function chooseCopyOnSelect(ctx: PrefsCtx, on: boolean): void {
+  if (ctx.state.copyOnSelect === on) return;
+
+  ctx.state.copyOnSelect = on;
   commitPrefs(ctx);
 }
 

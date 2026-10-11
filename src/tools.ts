@@ -21,7 +21,6 @@
  * | flowView | historyLast | 20 |
  * | flowView | trailLength | 6 |
  * | flowView | rejectedOutcomes | ["rejected"] |
- * | flowView | styleSaveDelayMs | 600 |
  * | flowView | layout | { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 } |
  * | flowView | zoom | { min: 0.08, max: 3, defaultMin: 0.8 } |
  * | flowView | hub | { minOutcomes: 6, minReturns: 4 } |

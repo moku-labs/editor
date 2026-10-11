@@ -1,10 +1,9 @@
 /**
  * @file gameView plugin — gameView's root inside `workspace.gameFrame().overlay()` (device space,
- * game CSS px, scaled with the frame, above the iframe, R4): the Reference mode proxy layer, the
- * picker layer, the hover, selected and tree boxes with the hover label, the marquee of a
- * Reference mode area drag (U9), the safe-area bands, the dynamic island, the home bar and the
- * shutter flash. Foreign DOM with its own Preact root,
- * created once, removed on stop.
+ * game CSS px, scaled with the frame, above the iframe, R4): the picker layer, the hover box of
+ * the picker with its label, the selected and tree boxes, the marquee of an area drag (U9), the
+ * safe-area bands, the dynamic island, the home bar and the shutter flash. Foreign DOM with its
+ * own Preact root, created once, removed on stop.
  */
 import type { VNode } from "preact";
 import { render } from "preact";
@@ -24,7 +23,6 @@ import {
 import { counterScale, labelPlacement, labelSize, labelText } from "../stage/label";
 import type { GameViewCtx } from "../types";
 import { PickerLayer } from "./PickerLayer";
-import { ProxyLayer } from "./ProxyLayer";
 import { useGameView } from "./useGameView";
 
 /**
@@ -128,7 +126,7 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
   const scale = workspace.gameFrame().box()?.scale ?? 1;
   const nodes = state.scene?.nodes;
   const { reference } = state;
-  const hoverId = state.picker.on ? state.picker.hover : reference.hover;
+  const hoverId = state.picker.on ? state.picker.hover : undefined;
   const hover = hoverId === undefined ? undefined : nodes?.get(hoverId);
   const { selected: selectedRef } = state;
   const isSelectedActive = active && selectedRef !== undefined;
@@ -138,7 +136,6 @@ export function OverlayRoot(props: OverlayRootProps): VNode {
 
   return (
     <>
-      {reference.on && <ProxyLayer ctx={ctx} />}
       {guides && (
         <SafeGuides
           device={device}

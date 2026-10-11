@@ -84,7 +84,9 @@ export async function answerSelect(ctx: GameViewCtx, params: SelectParams): Prom
 
   const node = targetOf(ctx, scene, params);
   inspectElement(ctx, node.ref);
-  if (!card) return selectionOf(node, selectionFacts(ctx, scene.frame, knownSource(ctx, node)));
+  if (!card) {
+    return selectionOf(node, selectionFacts(ctx, node, scene.frame, knownSource(ctx, node)));
+  }
 
   const picked = await completePick(ctx, node, scene, { copy: false });
   return picked.info;

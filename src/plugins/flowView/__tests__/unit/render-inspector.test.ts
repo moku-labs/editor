@@ -1,14 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHandlers } from "../../handlers";
-import { holdReads } from "../ctx";
-import { fixtureText } from "../helpers";
 import { mountWorkspace, prepared, settle } from "../render";
-
-const fixture = fixtureText("ui-styles.txt");
-
-/** The text styles file (the one the fake project index names). */
-const STYLES = "features/ui/styles.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -31,7 +24,7 @@ describe("Inspector head and Info (C1, C2)", () => {
     expect(inspector.textContent).toContain("showing current · click a node");
     const tabs = inspector.querySelector('[role="tablist"]');
     expect([...(tabs?.querySelectorAll('[role="tab"]') ?? [])].map(tab => tab.textContent)).toEqual(
-      ["Info", "Code", "Styles"]
+      ["Info", "Code"]
     );
     expect(inspector.textContent).toContain("Outcomes");
     expect(inspector.textContent).toContain("tap → tapGenerator");
@@ -62,7 +55,24 @@ describe("Inspector head and Info (C1, C2)", () => {
     unmount();
   });
 
-  it("←/→ move between tabs; Code and Styles widen the Inspector panel until the person resizes it", async () => {
+  it("has two tabs: → from Code wraps back to Info, and no Styles body shows (D-66)", async () => {
+    const { ctx, actions } = await prepared();
+    const { host, unmount } = await mountWorkspace(ctx);
+    await settle(() => actions.inspector.setTab("code"));
+    const selected = () =>
+      inspectorOf(host).querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    expect(selected()?.textContent).toBe("Code");
+    await settle(() =>
+      selected()?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+    );
+    expect(ctx.state.inspector.tab).toBe("info");
+    expect(selected()?.textContent).toBe("Info");
+    expect(inspectorOf(host).dataset.wide).toBeUndefined();
+    expect(host.querySelector('[data-flow="styles-tab"]')).toBeNull();
+    unmount();
+  });
+
+  it("←/→ move between tabs; Code widens the Inspector panel until the person resizes it", async () => {
     localStorage.removeItem("moku-editor:panel:flow.inspector");
     const { updateSidePanel } = await import("../../../panels/shared/side-panel/store");
     updateSidePanel("flow.inspector", { width: undefined, closed: false, collapsed: false });
@@ -149,77 +159,6 @@ describe("Code tab (C3)", () => {
     await settle(() => actions.inspector.setTab("code"));
     await settle();
     expect(inspectorOf(host).textContent).toContain("Not in the project index: node:main/settings");
-    unmount();
-  });
-});
-
-describe("Styles tab (C4, M10)", () => {
-  it("shows a card per key with steppers only for fields with a shared rule", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    fakes.files.store.set("features/ui/styles.ts", { text: fixture, version: "v1" });
-    const { host, unmount } = await mountWorkspace(ctx);
-    await settle(() => {
-      actions.inspector.openStyles("ui.number").catch(() => {});
-    });
-    await settle();
-    const inspector = inspectorOf(host);
-    expect(inspector.textContent).toContain("uses text styles from features/ui/styles.ts");
-    const fields = inspector.querySelectorAll<HTMLElement>("[data-field]");
-    const byPath = new Map([...fields].map(field => [field.dataset.field, field]));
-    expect(byPath.get("size")?.querySelector('[data-action="step-up"]')).not.toBeNull();
-    expect(byPath.get("font")?.querySelector('[data-action="step-up"]')).toBeNull();
-    expect(inspector.textContent).not.toContain("Used by");
-    await settle(() =>
-      byPath.get("size")?.querySelector<HTMLElement>('[data-action="step-up"]')?.click()
-    );
-    expect(ctx.state.inspector.styles?.pending?.next).toBe(61);
-    expect(inspector.textContent).toContain("Writing…");
-    unmount();
-  });
-
-  it("opening the tab reads the styles file once, even when the read is slow", async () => {
-    const { ctx, fakes } = await prepared();
-    fakes.files.store.set(STYLES, { text: fixture, version: "v1" });
-    const release = holdReads(fakes.files, STYLES);
-    const { host, unmount } = await mountWorkspace(ctx);
-    const tab = [...inspectorOf(host).querySelectorAll<HTMLElement>('[role="tab"]')].find(
-      candidate => candidate.textContent === "Styles"
-    );
-    await settle(() => tab?.click());
-    await settle();
-    release();
-    await settle();
-    const reads = vi.mocked(fakes.files.read).mock.calls.filter(([path]) => path === STYLES);
-    expect(reads).toHaveLength(1);
-    expect(ctx.state.inspector.tab).toBe("styles");
-    expect(inspectorOf(host).querySelector('[data-flow="styles-tab"] select')).not.toBeNull();
-    unmount();
-  });
-
-  it("chooses no card until the person picks one: the select shows its empty option (finding 9)", async () => {
-    const { ctx, actions, fakes } = await prepared();
-    fakes.files.store.set(STYLES, { text: fixture, version: "v1" });
-    const { host, unmount } = await mountWorkspace(ctx);
-    await settle(() => actions.inspector.setTab("styles"));
-    await settle();
-    const select = inspectorOf(host).querySelector<HTMLSelectElement>(
-      '[data-flow="styles-tab"] select'
-    );
-    expect(select?.value).toBe("");
-    expect(select?.options[0]?.textContent).toBe("Pick a text style");
-    expect(inspectorOf(host).querySelector('[data-part="card"]')).toBeNull();
-    expect(inspectorOf(host).textContent).toContain("Pick a text style");
-    unmount();
-  });
-
-  it("shows the no-file reason", async () => {
-    const { ctx, actions } = await prepared();
-    const { host, unmount } = await mountWorkspace(ctx);
-    await settle(() => {
-      actions.inspector.openStyles().catch(() => {});
-    });
-    await settle();
-    expect(inspectorOf(host).textContent).toContain("No text styles at features/ui/styles.ts");
     unmount();
   });
 });

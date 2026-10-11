@@ -373,6 +373,57 @@ describe("workspace integration", () => {
     await app.stop();
   });
 
+  it("Copy on select is on by default, persists when turned off and is read back at the next start (U5)", async () => {
+    const app = createApp();
+    await app.start();
+    expect(app.workspace.copyOnSelect()).toBe(true);
+    const seen: boolean[] = [];
+    app.workspace.onPrefs(prefs => seen.push(prefs.copyOnSelect));
+
+    app.workspace.setCopyOnSelect(false);
+    app.workspace.setCopyOnSelect(false);
+    expect(app.workspace.copyOnSelect()).toBe(false);
+    expect(seen).toEqual([false]);
+    expect(JSON.parse(localStorage.getItem("moku-editor") ?? "{}").copyOnSelect).toBe(false);
+    await app.stop();
+
+    const next = createApp();
+    await next.start();
+    expect(next.workspace.copyOnSelect()).toBe(false);
+    await next.stop();
+  });
+
+  it("the compact bar shows the game mark; the ⋯ menu has no Copy on select row; R and Reference mode are gone", async () => {
+    vi.stubGlobal("innerWidth", 480);
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    expect(root.querySelector("[data-mark]")?.textContent).toBe("·");
+    hub.open(sessionOf("s-1"), manifestOf());
+    await until(() => app.link.manifest() !== undefined, "attach");
+    await until(() => root.querySelector("[data-mark]")?.textContent === "MG", "the mark");
+    expect(
+      root.querySelector<HTMLElement>("[data-mark]")?.style.getPropertyValue("--mark-hue")
+    ).toBe("288");
+    expect(root.querySelector("[data-logo]")).toBeNull();
+
+    // R is a free key: nothing marks the frame, no control answers to it.
+    act(() => {
+      globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "r" }));
+    });
+    expect(document.querySelector("[data-frame-box]")?.hasAttribute("data-reference")).toBe(false);
+    expect(root.querySelector("[data-action='reference']")).toBeNull();
+
+    act(() => root.querySelector<HTMLButtonElement>("[data-action='more']")?.click());
+    const menu = root.querySelector<HTMLElement>("[data-ui='more-menu']");
+    expect(menu?.querySelector("[data-action='reference']")).toBeNull();
+    // Copy on select left the top bar (D-72): the preference stays, its control is gameView's.
+    expect(menu?.querySelectorAll("[role^='menuitem']")).toHaveLength(6);
+    expect(root.querySelector("[data-action='copy-on-select']")).toBeNull();
+    expect(app.workspace.copyOnSelect()).toBe(true);
+    await app.stop();
+  });
+
   it("stop() removes the shell, the iframe and every listener", async () => {
     const add = vi.spyOn(globalThis, "addEventListener");
     const remove = vi.spyOn(globalThis, "removeEventListener");

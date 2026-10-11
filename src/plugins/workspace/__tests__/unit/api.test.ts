@@ -96,16 +96,48 @@ describe("density / setDensity", () => {
   });
 });
 
-describe("reference / setReference", () => {
-  it("is off at load; setReference emits workspace:reference on a change only", () => {
-    expect(api.reference()).toBe(false);
-    api.setReference(true);
-    api.setReference(true);
-    expect(api.reference()).toBe(true);
-    expect(ctx.emit).toHaveBeenCalledTimes(1);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
-    api.setReference(false);
-    expect(api.reference()).toBe(false);
+describe("copyOnSelect / setCopyOnSelect", () => {
+  it("is on for a fresh viewer; setCopyOnSelect(false) persists and calls onPrefs once", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    expect(api.copyOnSelect()).toBe(true);
+
+    api.setCopyOnSelect(false);
+    expect(api.copyOnSelect()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0]?.[0].copyOnSelect).toBe(false);
+    expect(JSON.parse(localStorage.getItem("moku-editor-test") ?? "{}").copyOnSelect).toBe(false);
+
+    api.setCopyOnSelect(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("setting the value it already has stores nothing and re-renders nothing", () => {
+    const version = ctx.state.ui.version;
+    api.setCopyOnSelect(true);
+    expect(localStorage.getItem("moku-editor-test")).toBeNull();
+    expect(ctx.state.ui.version).toBe(version);
+  });
+
+  it("a change re-renders the shell and emits no event", () => {
+    const version = ctx.state.ui.version;
+    api.setCopyOnSelect(false);
+    expect(ctx.state.ui.version).toBeGreaterThan(version);
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("every onPrefs call carries the flag", () => {
+    const listener = vi.fn();
+    api.onPrefs(listener);
+    api.setTheme("dark");
+    expect(listener.mock.calls.at(-1)?.[0]).toMatchObject({ theme: "dark", copyOnSelect: true });
+  });
+});
+
+describe("Reference mode (D-65)", () => {
+  it("left the api", () => {
+    expect(api).not.toHaveProperty("reference");
+    expect(api).not.toHaveProperty("setReference");
   });
 });
 

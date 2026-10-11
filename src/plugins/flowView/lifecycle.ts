@@ -85,7 +85,6 @@ export async function stopFlowView(ctx: { readonly state: FlowViewState }): Prom
   layout.engine?.dispose();
   layout.engine = undefined;
   view.palette.nodes?.();
-  view.palette.styles?.();
-  view.palette = { nodes: undefined, styles: undefined };
+  view.palette = { nodes: undefined };
   for (const remove of view.removers.splice(0)) remove();
 }

@@ -743,6 +743,35 @@ export type SelectionItem = {
 };
 
 /**
+ * The value of one style property a pending edit carries (U8): a number, a string or a boolean.
+ *
+ * @example
+ * ```ts
+ * const width: StyleValue = 600;
+ * const justify: StyleValue = "center";
+ * ```
+ */
+export type StyleValue = number | string | boolean;
+
+/**
+ * One pending style edit of an element (U8): a value the person changed in the Element tab and
+ * the file does not have yet. `path` is the style property, dotted for a nested one
+ * (`padding.top`); `from` is the value the scene had, `to` the wanted one.
+ *
+ * @example
+ * ```ts
+ * // homePlay (features/stage/views/home-screen.tsx:199) is to become 600 wide, with more room on top.
+ * const width: StyleEdit = { path: "minWidth", from: 556, to: 600 };
+ * const top: StyleEdit = { path: "padding.top", from: 25, to: 30 };
+ * ```
+ */
+export type StyleEdit = {
+  readonly path: string;
+  readonly from: StyleValue;
+  readonly to: StyleValue;
+};
+
+/**
  * The element selected in the editor page, as the page publishes it (editor-channel notification
  * `selection`) and as the hub answers `editor.selection` and `editor.select`. Check a received
  * value with `parseSelectionInfo`. Its readonly `items` make it not assignable to the mutable
@@ -798,6 +827,18 @@ export type SelectionInfo = {
   readonly area?: SelectionRect;
   /** The elements of an area selection, top to bottom then left to right; at most 40. */
   readonly items?: readonly SelectionItem[];
+  /**
+   * The pending style edits of the element (U8). Absent when it has none: `parseSelectionInfo`
+   * drops an empty list.
+   *
+   * @example
+   * ```ts
+   * // The agent read the selection of homePlay: two edits to write in home-screen.tsx:199.
+   * const lines = (info.edits ?? []).map(edit => `${edit.path}: ${edit.from} -> ${edit.to}`);
+   * // ["minWidth: 556 -> 600", "padding.top: 25 -> 30"]
+   * ```
+   */
+  readonly edits?: readonly StyleEdit[];
   /** Epoch ms of the publish (`Date.now()`). */
   readonly at: number;
 };
@@ -854,7 +895,7 @@ export type PictureFormat = "jpeg" | "png";
 export type SelectParams = {
   readonly key?: string;
   readonly ref?: SelectionRef;
-  /** An area in page CSS px, picked like a Reference-mode drag (U9). It wins over key and ref. */
+  /** An area in page CSS px, picked like an area drag of the picker (U9). It wins over key and ref. */
   readonly rect?: SelectionRect;
   readonly card?: boolean;
 };

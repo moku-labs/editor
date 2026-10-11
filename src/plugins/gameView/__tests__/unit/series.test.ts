@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, RunResult } from "../../../registry/protocol";
 import { errorCode, wireError } from "../../../registry/protocol";
 import { recordSeries, setPopover, stopRecording } from "../../capture/series";
+import { openSheet } from "../../capture/sheet";
 import type { SeriesIndex } from "../../types";
 import { createCtx, flush, manifestOf, PNG, resultOf, type TestCtx, useScene } from "../helpers";
 
@@ -41,6 +42,10 @@ afterEach(() => {
 });
 
 describe("recordSeries", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("makes one editor.series call through panels.run with the chosen input", async () => {
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
 
@@ -84,31 +89,48 @@ describe("recordSeries", () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
-    vi.unstubAllGlobals();
     expect(writeText).toHaveBeenCalledWith(`series: ${FOLDER} (4 frames)`);
   });
 
   it("shows the series card: the shots saved, the folder, the first shot (round 2b R14)", async () => {
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
-    expect(ctx.state.card).toMatchObject({
+    expect(ctx.state.card).toEqual({
       path: FOLDER,
-      frame: ctx.state.series.sheet?.index.fromFrame,
+      frame: 1777,
       device: "iPhone 15 portrait",
-      image: ctx.state.series.sheet?.images[0],
+      image: `${PNG}#0`,
       series: { indexPath: INDEX, shots: 4 }
     });
   });
 
-  it("opens the contact sheet with the in-memory images", async () => {
+  it("ends like a screenshot (D-69): the card, the clipboard line and the toast; no contact sheet", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    ctx.state.series.popover = true;
     await recordSeries(ctx, { durationMs: 200, intervalMs: 50, label: "merge refused shake" });
 
-    const sheet = ctx.state.series.sheet;
-    expect(sheet?.indexPath).toBe(INDEX);
-    expect(sheet?.index.label).toBe("merge refused shake");
-    expect(sheet?.images).toHaveLength(4);
-    expect(sheet?.version).toBe(ctx.link.files.version(INDEX));
+    expect(ctx.state.series.sheet).toBeUndefined();
     expect(ctx.state.series.recording).toBeUndefined();
     expect(ctx.state.series.popover).toBe(false);
+    expect(ctx.state.card?.series).toEqual({ indexPath: INDEX, shots: 4 });
+    expect(writeText).toHaveBeenCalledWith(`series: ${FOLDER} (4 frames)`);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ 4 shots saved", FOLDER);
+    const index: SeriesIndex = JSON.parse(ctx.link.files.text(INDEX));
+    expect(index.label).toBe("merge refused shake");
+  });
+
+  it("leaves a contact sheet that is already open alone; the sheet of the series opens on request", async () => {
+    const result = await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
+    expect(ctx.state.series.sheet).toBeUndefined();
+
+    await openSheet(ctx, result?.indexPath ?? "");
+    const opened = ctx.state.series.sheet;
+    expect(opened?.indexPath).toBe(INDEX);
+    expect(opened?.images).toHaveLength(4);
+
+    vi.setSystemTime(new Date(2026, 8, 24, 10, 16));
+    await recordSeries(ctx, { durationMs: 200, intervalMs: 50 });
+    expect(ctx.state.series.sheet).toBe(opened);
   });
 
   it("shows the recording while the call runs, then the writing phase", async () => {

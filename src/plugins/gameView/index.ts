@@ -1,10 +1,10 @@
 /**
  * Complex tier — the Game workspace: device stage, element picker, Element and Device tabs,
- * screenshots, series, the contact sheet, the Reference mode proxies and the reference block a
- * pick puts on the clipboard (with its bookmark and shots). Code locations come from the project
- * index only (D-38). Declares no events; emits the global `workspace:reveal`,
- * `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`,
- * `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
+ * screenshots, series, the contact sheet, the reference card and line a pick writes for the chat
+ * (with its bookmark and shots) and the pending style edits of an element that go to the agent
+ * (U8). Code locations come from the project index only (D-38). Declares no events; emits the
+ * global `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `link:project`,
+ * `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
  *
  * @see README.md
  */

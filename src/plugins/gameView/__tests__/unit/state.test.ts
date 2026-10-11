@@ -48,6 +48,14 @@ describe("createGameViewState", () => {
     expect(state.cards.size).toBe(0);
   });
 
+  it("starts without pending style edits and without an area press (U8, U2)", () => {
+    const state = createGameViewState();
+    expect(state.edits).toBeInstanceOf(Map);
+    expect(state.edits.size).toBe(0);
+    expect(state.reference).toEqual({ press: undefined, area: undefined });
+    expect(createGameViewState().edits).not.toBe(state.edits);
+  });
+
   it("gives every app its own state", () => {
     expect(createGameViewState().watching).not.toBe(createGameViewState().watching);
   });

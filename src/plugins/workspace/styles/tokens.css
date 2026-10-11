@@ -191,6 +191,10 @@
   --phase-4: var(--color-phase-4);
   --phase-5: var(--color-phase-5);
 
+  /* ─── Semantics: the game mark of the top bar. OKLCH lightness of its tile and of its letters; the hue comes from the game name (--mark-hue, set inline by TopBar). light-dark() takes colours only, so these are the light values and the dark ones follow the scheme at the end of this sheet. ─── */
+  --mark-l-bg: 0.92;
+  --mark-l-fg: 0.38;
+
   /* ─── Semantics: floats (shadows only on floating things) ─── */
   --shadow-float: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.12);
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.08), 0 12px 32px rgb(0 0 0 / 0.16);
@@ -221,4 +225,14 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --mark-l-bg: 0.3;
+  --mark-l-fg: 0.88;
+}
+
+/* The dark lightness of the game mark while the OS decides the scheme (no forced light theme). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --mark-l-bg: 0.3;
+    --mark-l-fg: 0.88;
+  }
 }

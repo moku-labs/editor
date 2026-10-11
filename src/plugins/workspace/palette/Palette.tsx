@@ -193,7 +193,7 @@ export function Palette(props: PaletteProps): VNode {
               aria-autocomplete="list"
               aria-activedescendant={shown.length === 0 ? undefined : optionId(index)}
               aria-label="Search"
-              placeholder="Jump to a node, file, style, texture, panel or run a command"
+              placeholder="Jump to a node, file, texture, panel or run a command"
               value={query}
               onInput={event => {
                 state.palette.query = event.currentTarget.value;

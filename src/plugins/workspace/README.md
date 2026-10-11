@@ -2,19 +2,18 @@
 
 > Complex plugin, tools core (`@moku-labs/editor/tools`). The tools shell and the one game frame.
 
-The shell of the tools page: top bar (B1) with its ⋯ menu, rail with badges (B2), pinned game
-preview (B3), step and registry popovers (D1, D2), link pill note (D7), command palette (E1),
-toasts (F1), stale bar (F3) and the connecting and no-game cards (F4). It owns the single game
-iframe, the device presets, the per-viewer preferences (theme, density, preview per workspace,
-device and fold, Show taps, sound), the key map with the Esc unwinding, the overlay-in-game switch,
-Reference mode, the Hot reload switch, the tap ripples and the D-07 reload. It also ships the
-shared CSS layer every view uses (`styles/`).
+The shell of the tools page: top bar (B1) with the game mark and its ⋯ menu, rail with badges
+(B2), pinned game preview (B3), step and registry popovers (D1, D2), link pill note (D7), command
+palette (E1), toasts (F1), stale bar (F3) and the connecting and no-game cards (F4). It owns the
+single game iframe, the device presets, the per-viewer preferences (theme, density, preview per
+workspace, device and fold, Show taps, sound, Copy on select), the key map with the Esc unwinding,
+the overlay-in-game switch, the Hot reload switch, the tap ripples and the D-07 reload. It also
+ships the shared CSS layer every view uses (`styles/`).
 
 The shell is built narrow first: it runs in a browser pane at a third (480 px) or half (720 px)
-of the screen. Below 900 px the top bar is compact: Reference mode and Hot reload stay as icons
-and the rest moves into a ⋯ menu. At 560 px and narrower it also hides the game name and keeps
-only Reference, and the rail is 44 px of icons. No workspace scrolls the page
-sideways.
+of the screen. Below 900 px the top bar is compact: Hot reload stays as an icon and the rest
+moves into a ⋯ menu. At 560 px and narrower it also hides the game name, and the rail is 44 px of
+icons. No workspace scrolls the page sideways.
 
 ## Configuration
 
@@ -58,19 +57,20 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `keys.escape` | `(layer, close) => () => void` | Adds an Esc closer to a layer. |
 | `overlayInGame` | `() => boolean` | The overlay-in-game switch. Always `false` at load. |
 | `setOverlayInGame` | `(on) => Promise<void>` | Runs `editor.overlay`, toasts, re-applies on every new session. A failure puts the flag back. |
-| `reference` | `() => boolean` | Reference mode. Always `false` at load. Never persisted. |
-| `setReference` | `(on) => void` | Turns Reference mode on or off. Emits `workspace:reference` on a change. |
 | `hotReload` | `() => HotReload \| undefined` | link's `{ hmr, owner }`: whether Bun reloads the game after a save, and who owns the server. `undefined` until the hub reported it. |
 | `setHotReload` | `(on) => Promise<boolean>` | Asks the server through `link.setHotReload`. An accepted switch reloads the game frame with its state once the restarted server serves again (D-32). A refusal or a failed switch toasts how to change it and keeps that hint in the switch tooltip. Never rejects. |
 | `muted` | `() => boolean` | The sound flag (R11): `true` while the viewer muted the game. Persisted; `false` for a fresh viewer. |
 | `setMuted` | `(on) => void` | Sets and persists the sound flag; `onPrefs` listeners get the new `muted`. The same value again does nothing. gameView sends `game.mute`; workspace never touches the game. |
-| `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device or sound change with `{ theme, previews, device, muted }`. |
+| `copyOnSelect` | `() => boolean` | The Copy on select preference (U5, D-70): what a click of gameView's element picker does. On: the pick writes the reference (crop, full frame, card) and copies its line. Off: the pick only selects the element and writes nothing. Persisted; `true` for a fresh viewer and for a stored record without the field. |
+| `setCopyOnSelect` | `(on) => void` | Sets and persists the preference; `onPrefs` listeners get the new `copyOnSelect` (the Copy Ref switch of gameView's game toolbar follows them). The same value again does nothing. No event: gameView reads `copyOnSelect()` at a pick. |
+| `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device, sound or Copy on select change with `{ theme, previews, device, muted, copyOnSelect }`. |
 
 ```ts
 workspace.show("flow");
 workspace.setDensity("compact");
 workspace.density(); // "compact"
-workspace.setReference(true); // the game gets no input; gameView draws its proxies
+workspace.setCopyOnSelect(false); // persisted; a pick only selects the element, nothing is written
+workspace.copyOnSelect(); // false
 workspace.preview("flow").size; // "S"
 workspace.setPreview("render", { visible: false });
 workspace.device().preset.w; // 402: the iPhone 18 Pro of a fresh viewer
@@ -97,32 +97,80 @@ const off = workspace.onPrefs(prefs => rerender(prefs));
 The bar picks its layout from the window width and writes it as `data-layout` on
 `[data-ui="top-bar"]`. A window resize re-renders it.
 
-- **900 px and wider (`wide`)**: logo, game name, session chip, link pill, Pause, Step, the search
-  box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference
-  mode, Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
+- **900 px and wider (`wide`)**: the game mark, game name, session chip, link pill, Pause, Step,
+  the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels,
+  Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
   theme. Under 1180 px Pause and Step show their icons only.
-- **Below 900 px (`compact`)**: logo, game name (hidden at 560 px and narrower), link pill, Pause
-  and Step as icons (the label is their accessible name, the title says the key), then at the end
-  the icon toggles Reference mode (`data-action="reference"`, target icon) and Hot reload
-  (`data-action="hot-reload"`, flame icon with a dot while on), a search icon and the ⋯ button
-  (`data-action="more"`). Both toggles carry `aria-pressed`; Hot reload is inert with the hint
-  in its title when the bin does not own it. At 560 px and narrower only Reference stays; Hot
-  reload is a ⋯ row then (`barToggles(width)` in `ui/TopBar.tsx`). The session chip is gone: the
-  pill's tooltip names the session ("… · session s-7f3a · connected 22:41:07"), and with more
-  than one session the pill opens the session menu.
+- **Below 900 px (`compact`)**: the game mark, game name (hidden at 560 px and narrower), link
+  pill, Pause and Step as icons (the label is their accessible name, the title says the key), then
+  at the end the icon toggle Hot reload (`data-action="hot-reload"`, flame icon with a dot while
+  on), a search icon and the ⋯ button (`data-action="more"`). The toggle carries `aria-pressed`;
+  it is inert with the hint in its title when the bin does not own it. It is the one toggle of the
+  bar at every compact width: `barToggles(width)` in `ui/TopBar.tsx` answers `["hot-reload"]`
+  below 900 px and `[]` from there. The session chip is gone: the pill's tooltip names the session
+  ("… · session s-7f3a · connected 22:41:07"), and with more than one session the pill opens the
+  session menu.
 - **The ⋯ menu** is a top-layer `role="menu"` popover. Rows: Game preview (G), Overlay in game
-  (O), Reference mode (R), Hot reload (H), each with its state and key (Reference and Hot reload
-  are rows even when the bar shows them as icons); then Registry (counts),
-  Density (cycles auto → compact → comfortable) and Theme. A toggle row keeps the menu open;
-  Registry opens the registry popover under the ⋯ button. A second ⋯ click, Esc or a press
-  outside closes it. ↑/↓ move through the rows; opening it from the keyboard focuses the first
-  row. Rows keep the `data-action` names of the wide controls (`game`, `overlay`, `reference`,
-  `hot-reload`, `registry`, `theme`) plus `density`. In the compact bar `reference` and
-  `hot-reload` name both the bar icon and the menu row: select the icon with
-  `[data-ui="top-bar"] > [data-action]`, the row inside `[data-ui="more-menu"]`.
+  (O), Hot reload (H), each with its state and its key (Hot reload is a row even though the bar
+  shows it as an icon); then Registry (counts), Density (cycles auto → compact → comfortable) and
+  Theme. A toggle row keeps the menu open; Registry opens the registry popover
+  under the ⋯ button. A second ⋯ click, Esc or a press outside closes it. ↑/↓ move through the
+  rows; opening it from the keyboard focuses the first row. Rows keep the `data-action` names of
+  the wide controls (`game`, `overlay`, `hot-reload`, `registry`, `theme`) plus
+  `density`. In the compact bar `hot-reload` names both the bar icon and the menu row: select the
+  icon with `[data-ui="top-bar"] > [data-action]`, the row inside `[data-ui="more-menu"]`.
 
 Every control keeps its size; only the game name and the wide search box shrink, and the search
 box clips its own content, so no control runs over another.
+
+### The game mark (U1)
+
+`span[data-mark]` (`aria-hidden`) is the first thing in both layouts: a 24 px tile with the
+initials of the game on a colour from its name, so two games in two panes are told apart at a
+glance. `markOf(name)` in `mark.ts` is a pure function that gives both:
+
+| Name | `text` | `hue` |
+|---|---|---|
+| Two words or more, split on whitespace, `-` and `_`: "Tic Tac Toe", "merge-game" | The first letters of the first two words, upper case: `TT`, `MG` | From the name |
+| One word: "Merge", "x" | Its first two letters, upper case: `ME`. One letter stays one: `X` | From the name |
+| No game: `undefined`, empty, or no word in it | `·` | `undefined` |
+
+- The name is the manifest game string without its version, so a new version keeps the colour.
+- The hue is the sum of every character code times its position (from 1), modulo 360, over the
+  trimmed lower-case name. "merge-game" is 288, "Tic Tac Toe" is 7. The same game always gets the
+  same colour.
+- TopBar writes the hue as the inline custom property `--mark-hue`. It is the only inline style.
+- `ui/TopBar.css` builds the colours from it: background `oklch(var(--mark-l-bg) 0.07
+  var(--mark-hue))`, text `oklch(var(--mark-l-fg) 0.11 var(--mark-hue))`. The tile is mono, 11 px,
+  weight 600, radius 6 px.
+- `--mark-l-bg` and `--mark-l-fg` are tokens (`styles/tokens.css`): 0.92 and 0.38 in the light
+  theme, 0.30 and 0.88 in the dark one.
+- Without a game there is no `--mark-hue`: the tile uses `--surface-panel-2` and `--text-muted`.
+- While the link reloads the mark holds the last name, as the game name does (U9).
+
+### Preferences
+
+One record per viewer in localStorage under `storageKey`:
+`{ v: 1, theme?, previews, device, density, showTaps, muted, copyOnSelect }`. `onInit` loads it. A
+field an older record does not have takes its default silently; a value of the wrong kind takes
+its default with one `workspace:prefs` warn.
+
+| Preference | Field | Default | Changed by | `onPrefs` |
+|---|---|---|---|---|
+| Theme | `theme` | none: the OS theme | `setTheme`, the theme button, the ⋯ row, the palette | yes |
+| Preview per workspace | `previews` | visible, size S, bottom-right | `setPreview`, key G, the Preview switch or ⋯ row, the float header, the palette | yes |
+| Device and fold | `device` | `iphone-18-pro`, portrait, folded | `setDevice`, the hub's `device` request | yes |
+| Density | `density` | `auto` | `setDensity`, the ⋯ row, the palette | no; emits `workspace:density` |
+| Show taps | `showTaps` | on | The palette item "Show taps in the game" | no |
+| Sound | `muted` | `false` (sound on) | `setMuted` (gameView's Sound switch) | yes |
+| Copy on select | `copyOnSelect` | `true` | `setCopyOnSelect` (the Copy Ref switch of gameView's game toolbar), the palette command "Copy reference on select: turn off" / "… turn on". No key | yes |
+
+Copy on select (U5, D-68, D-70) decides what a click of gameView's element picker does. On: the
+pick writes the reference (the crop, the full frame, the card) and copies its line. Off: the pick
+only selects the element for the Element tab, and an area drag picks nothing. workspace only
+keeps the flag and has no control for it in the top bar (D-72): the control is the Reference
+switch of the game toolbar, beside Safe area and Sound. gameView reads `copyOnSelect()` at a
+picker click.
 
 ### Devices
 
@@ -199,14 +247,6 @@ the rail and an open drawer. A size the zone has no room for is fitted: it scale
 aspect kept, never below the height of S. When the fitted width is below 96 px (a wide Inspector
 in the 480 px pane), the float collapses to its header (`data-collapsed`): title, S/M/L, Open in
 Game and Hide. The body hides and the game frame with it.
-
-### Reference mode (D-27)
-
-The top-bar button (`data-action="reference"`, `aria-pressed`), key R, the palette item
-"Reference mode on/off" and `setReference` drive it. While it is on, the frame box carries
-`data-reference`: the overlay takes the pointer, so the game gets no input, and a 1 px accent
-outline marks the frame. gameView draws its element proxies into `gameFrame().overlay()`. Esc
-turns it off (layer `reference`, just before `selection`).
 
 ### Reload spinner (U9)
 
@@ -365,9 +405,8 @@ toasts "Game reloaded · state restored" once per restore; workspace does not re
 | P | Pause / resume |
 | O | Overlay in game on / off |
 | G | Show / hide the preview of the current workspace |
-| R | Reference mode on / off |
 | H | Hot reload on / off (asks the server). In Flow, flowView's H (History) wins. |
-| Esc | Closes one thing, in this order: palette → contactSheet → contextMenu → registry → seriesPopover → captureCard → picker → fileEdit → codeEdit → stepPopover → reference → selection |
+| Esc | Closes one thing, in this order: palette → contactSheet → contextMenu → registry → seriesPopover → captureCard → picker → fileEdit → codeEdit → stepPopover → selection |
 
 - `mod` is ⌘ on Apple platforms, Ctrl elsewhere.
 - Single keys are ignored in fields unless the binding sets `inInputs`.
@@ -375,7 +414,7 @@ toasts "Game reloaded · state restored" once per restore; workspace does not re
 - Bindings of the active workspace win over global ones.
 - `keys.bind` throws `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash where neither binding has `when`.
 - Within one Esc layer, the latest registration is asked first.
-- workspace registers the Esc layers `palette`, `contextMenu` (the session menu and the ⋯ menu), `registry`, `stepPopover` and `reference`. The views register the rest.
+- workspace registers the Esc layers `palette`, `contextMenu` (the session menu and the ⋯ menu), `registry` and `stepPopover`. The views register the rest.
 
 ## Events
 
@@ -386,7 +425,6 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 | emits | `workspace:changed` | `{ ws: WorkspaceId }` | `show()` changed the workspace. |
 | emits | `workspace:ran` | `RanEvent` | A command the shell ran for the user settled. Origins `topbar`, `key`, `palette`. |
 | emits | `workspace:density` | `{ density: "compact" \| "comfortable" }` | The applied density changed: a choice, or `auto` crossing 820 px on a resize. |
-| emits | `workspace:reference` | `{ on: boolean }` | Reference mode turned on or off. |
 | hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards. Shows the frame spinner while the link reloads on purpose (U9). Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
 
 `RanEvent` = `{ id, input, origin, at }` plus `{ ok: true, result }` or `{ ok: false, error }`.
@@ -437,7 +475,7 @@ differ.
 | Kind | What |
 |---|---|
 | `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`, `handle`. |
-| Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`. |
+| Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`; hooks `link:status`. |
 | Packages | `preact`, `preact/hooks`. Dev: `happy-dom` for the component tests. |
 
 ## Usage
@@ -488,7 +526,25 @@ in `styles/tokens.css`. TypeScript names for them are in `../panels/shared/token
 - Keys pressed while the game iframe has focus go to the game. A click in the preview or on the Game stage gives the game the keys; a click outside the device returns them.
 - The browser may keep ⌘1–⌘6. Bare 1–6, the rail and the palette are the fallback.
 - A hidden iframe can be throttled by the browser. The link pill shows the frame number stop.
-- localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density, Show taps and sound loads them as their defaults.
+- localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density, Show taps, sound and Copy on select loads them as their defaults.
+
+## Breaking changes (editor UI cleanup)
+
+- Reference mode is gone (D-65): `reference()`, `setReference()`, the event `workspace:reference`,
+  key R, the Esc layer `reference`, the palette item "Reference mode on/off", the top-bar toggle
+  and the ⋯ row, `data-reference` on the frame box. gameView's picker is the one way to pick. The
+  key R is free.
+- `PaletteGroup` has no `"Styles"` (D-66): nothing adds items to it.
+- `Prefs` (the `onPrefs` payload) gains `copyOnSelect`; `WorkspaceApi` gains `copyOnSelect()` and
+  `setCopyOnSelect()`.
+- The top bar starts with `span[data-mark]` (was `span[data-logo]`); the icon `logo` left
+  `panels/shared/icons`.
+- The compact bar keeps one icon toggle, Hot reload, at every width. `NARROW_BAR_MAX` is gone;
+  `barToggles(width)` answers `["hot-reload"]` or `[]`.
+- The ⋯ menu has no row where "Reference mode" was, and the ⋯ button title no longer names
+  Reference mode: "More: preview, overlay, hot reload, registry, density, theme". The wide bar
+  keeps three switches. Copy on select has no control in the top bar (D-72): its switch is
+  "Copy Ref" in gameView's game toolbar.
 
 ## Breaking changes (round 2b)
 

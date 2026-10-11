@@ -18,23 +18,16 @@ import { notify } from "./state";
 import type { FlowCtx, FlowHooks, FlowViewState, GraphJson, NodeId } from "./types";
 
 /**
- * Loads what a session needs once: layout.json and the style keys (errors → warn).
+ * Loads what a session needs once: layout.json (an error → warn).
  *
  * @param ctx - Domain context of flowView.
- * @returns Resolves when both loads settled.
+ * @returns Resolves when the load settled.
  */
 async function loadSession(ctx: FlowCtx): Promise<void> {
-  const actions = actionsOf(ctx);
-  const loads: [string, Promise<void>][] = [
-    ["layout.json", actions.layout.loadPins()],
-    ["style keys", actions.inspector.readStyleKeys()]
-  ];
-  for (const [what, load] of loads) {
-    try {
-      await load;
-    } catch (error) {
-      ctx.log.warn("flowView: load failed", { what, message: String(error) });
-    }
+  try {
+    await actionsOf(ctx).layout.loadPins();
+  } catch (error) {
+    ctx.log.warn("flowView: load failed", { what: "layout.json", message: String(error) });
   }
 }
 
@@ -180,7 +173,7 @@ export function onDensity(ctx: FlowCtx): (payload: ToolsEvents["workspace:densit
 
 /**
  * link:project — the inspector follows an agent's edits and moves (D-46): the Code tab reads its
- * node again, the Styles group the text styles, the Info tab re-renders with the indexed file.
+ * node again, the Info tab re-renders with the indexed file.
  *
  * @param ctx - Domain context of flowView.
  * @returns The handler.

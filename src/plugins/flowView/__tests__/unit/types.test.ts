@@ -6,10 +6,13 @@ import { panelsPlugin } from "../../../panels";
 import type { RunResult } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import { flowViewPlugin } from "../..";
+import { createInspectorState } from "../../inspector/state";
+import type { InspectorActions, InspectorState, InspectorTab } from "../../inspector/types";
 import type {
   Camera,
   FlowHubConfig,
   FlowLayoutConfig,
+  FlowServices,
   FlowViewApi,
   FlowViewConfig,
   FlowZoomConfig,
@@ -68,15 +71,21 @@ describe("flowView types", () => {
     }>();
   });
 
+  it("the inspector has two tabs, and no style slice, style action or Styles palette service (D-66)", () => {
+    expectTypeOf<InspectorTab>().toEqualTypeOf<"info" | "code">();
+    expectTypeOf<InspectorState>().not.toHaveProperty("styles");
+    expectTypeOf<InspectorState>().not.toHaveProperty("keysFile");
+    expectTypeOf<InspectorActions>().not.toHaveProperty("openStyles");
+    expectTypeOf<InspectorActions>().not.toHaveProperty("selectStyle");
+    expectTypeOf<InspectorActions>().not.toHaveProperty("stepStyle");
+    expectTypeOf<InspectorActions>().not.toHaveProperty("readStyleKeys");
+    expectTypeOf<FlowServices>().not.toHaveProperty("setStyleItems");
+    expect(createInspectorState().tab).toBe("info");
+  });
+
   it("groups the layout, zoom and hub options into one-level objects with the defaults (D-30)", () => {
     expectTypeOf<keyof FlowViewConfig>().toEqualTypeOf<
-      | "historyLast"
-      | "trailLength"
-      | "rejectedOutcomes"
-      | "styleSaveDelayMs"
-      | "layout"
-      | "zoom"
-      | "hub"
+      "historyLast" | "trailLength" | "rejectedOutcomes" | "layout" | "zoom" | "hub"
     >();
     expectTypeOf<FlowViewConfig["layout"]>().toEqualTypeOf<FlowLayoutConfig>();
     expectTypeOf<FlowViewConfig["zoom"]>().toEqualTypeOf<FlowZoomConfig>();
@@ -85,7 +94,6 @@ describe("flowView types", () => {
       historyLast: 20,
       trailLength: 6,
       rejectedOutcomes: ["rejected"],
-      styleSaveDelayMs: 600,
       layout: { file: ".moku/editor/layout.json", worker: true, saveDelayMs: 400 },
       zoom: { min: 0.08, max: 3, defaultMin: 0.8 },
       hub: { minOutcomes: 6, minReturns: 4 }

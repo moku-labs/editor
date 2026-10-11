@@ -1,19 +1,16 @@
 /**
  * @file flowView inspector module — the inspector actions behind the Inspector tabs, the palette
- * items and the hooks: tabs, the Code tab (read, edit, save, reload), the Styles tab (cards,
- * steppers, keys for the palette), node files from the project index, the link:project follow,
- * "Open in Files" (R4) and "Open in editor" (D-08).
+ * items and the hooks: tabs, the Code tab (read, edit, save, reload), node files from the project
+ * index, the link:project follow, "Open in Files" (R4) and "Open in editor" (D-08).
  */
 import { editorUrlOf } from "../../panels/shared/editor-url";
-import { findFresh, textStylesFile } from "../../panels/shared/project";
-import { isStyleEditError, loadStyleFile } from "../../panels/shared/style-edit";
+import { findFresh } from "../../panels/shared/project";
 import { firstDefinition } from "../../registry/protocol";
 import { notify } from "../state";
 import type { FlowCtx, FlowEnvironment, NodeId } from "../types";
 import { openCode, reloadCode, saveCode, showCode } from "./code";
 import { nodeKey } from "./files";
-import { codeToFollow, stylesToFollow, textStylesChanged } from "./follow";
-import { followStyles, keysOf, openStyles, stepStyle } from "./styles";
+import { codeToFollow } from "./follow";
 import type { InspectorActions } from "./types";
 
 /**
@@ -60,7 +57,6 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
       notify(ctx.state);
       const node = shownNode(ctx, env);
       if (tab === "code" && node !== undefined) actions.openCode(node).catch(() => {});
-      if (tab === "styles" && inspector.styles === undefined) actions.openStyles().catch(() => {});
     },
 
     openCode: async id => {
@@ -112,35 +108,6 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
       await reloadCode(ctx, env);
     },
 
-    openStyles: async key => {
-      inspector.tab = "styles";
-      await openStyles(ctx, env, key);
-    },
-
-    selectStyle: key => {
-      if (inspector.styles === undefined) return;
-      inspector.styles.key = key === "" ? undefined : key;
-      inspector.styles.error = undefined;
-      notify(ctx.state);
-    },
-
-    stepStyle: (path, direction, big) => {
-      stepStyle(ctx, env, path, direction, big);
-    },
-
-    readStyleKeys: async () => {
-      try {
-        const file = textStylesFile(env.project());
-        inspector.keysFile = file;
-        const loaded = file === undefined ? undefined : await loadStyleFile(env.files(), file);
-        const isReadable = loaded !== undefined && !isStyleEditError(loaded);
-        env.setStyleItems(isReadable ? keysOf(loaded.file.blocks) : []);
-      } catch (error) {
-        ctx.log.debug("flowView: style keys not read", { reason: String(error) });
-        env.setStyleItems([]);
-      }
-    },
-
     fileOf: async id => {
       const fresh = await findFresh(env.files(), nodeKey(id));
       if (fresh !== undefined) return { path: fresh.found.path, line: fresh.found.line };
@@ -159,16 +126,9 @@ export function createInspectorApi(ctx: FlowCtx, env: FlowEnvironment): Inspecto
       return boot === undefined ? undefined : editorUrlOf(boot.editorUrl, boot.root, path, line);
     },
 
-    followProject: ({ state, delta }) => {
+    followProject: ({ delta }) => {
       const node = codeToFollow(inspector, delta);
       if (node !== undefined) showCode(ctx, env, node, nextRequest()).catch(() => {});
-      // The Styles tab reads its file and the palette group Styles with it; without a tab only
-      // the group is read again.
-      if (stylesToFollow(inspector, state, delta)) {
-        followStyles(ctx, env).catch(() => {});
-      } else if (textStylesChanged(inspector.keysFile, state, delta)) {
-        actions.readStyleKeys().catch(() => {});
-      }
       notify(ctx.state);
     }
   };

@@ -1,10 +1,12 @@
 /**
  * @file gameView plugin — a completed pick (round 2 R2) and "Copy reference". A pick (the picker
- * click, a Reference mode proxy click or MCP `moku_select`) bookmarks the game (`game.bookmark`,
- * kept newest first, 20 at most), captures the frame (`editor.capture`), saves the crop (JPEG,
- * A19) and the full frame under `capturesDir`, writes the card file with the full reference block
- * (round 2b R13), then puts the one reference line on the clipboard with one toast (not for MCP:
- * `copy: false`, A8), shows the capture card and publishes the selection with its files (U4).
+ * click while the workspace preference "Copy on select" is on, or MCP `moku_select`) bookmarks
+ * the game (`game.bookmark`, kept newest first, 20 at most), captures the frame
+ * (`editor.capture`), saves the crop (JPEG, A19) and the full frame under `capturesDir`, writes
+ * the card file with the full reference block (round 2b R13), then puts the one reference line
+ * on the clipboard with one toast (not for MCP: `copy: false`, A8), shows the capture card and
+ * publishes the selection with its files (U4). With "Copy on select" off a picker click never
+ * gets here: it only selects the element (D-70, `pickAt`).
  * Every command runs through panels.run (R9); a game without the command, or a step that fails,
  * leaves its lines out of the block and its word out of the toast. An area pick (U9) reuses the
  * bookmark and the shots.
@@ -215,7 +217,8 @@ export function showPickCard(ctx: GameViewCtx, shots: Shots | undefined, line: s
  * A completed pick: bookmark, shot, crop and full frame, the card file, then the one reference
  * line on the clipboard and one toast (`copy`, A8), the capture card of the shot with its
  * Reference action (round 2b R14), and the selection with its files published while the node is
- * still selected (U4). The block also stays the Element tab's while the node is selected.
+ * still selected (U4). The preference "Copy on select" is the caller's question: a picker click
+ * asks it before it completes a pick (D-70), MCP select does not.
  *
  * @param ctx - Domain context of gameView.
  * @param node - The picked node.
@@ -244,7 +247,7 @@ export async function completePick(
   };
   notify(ctx.state);
 
-  // The card file, then the line on the clipboard and the capture card.
+  // The card file, then the line on the clipboard (not for MCP) and the capture card.
   const shared = await shareReference(ctx, node, scene, true);
   if (options.copy) {
     await copyText(ctx, shared.line, pickToast(shots !== undefined, taken !== undefined));
@@ -276,7 +279,8 @@ async function sceneNow(ctx: GameViewCtx): Promise<SceneSnapshot | undefined> {
 
 /**
  * "Copy reference": writes the card of the selected element and puts its one line on the
- * clipboard (a refusal is toasted).
+ * clipboard (a refusal is toasted). It always writes and copies: "Copy on select" is about a
+ * picker click only, so with it off this is the way to make a reference (D-70).
  *
  * @param ctx - Domain context of gameView.
  * @returns The line, undefined without a selection in the scene.

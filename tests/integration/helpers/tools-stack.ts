@@ -85,9 +85,6 @@ function createToolsProbe(events: ToolsEvent[]) {
       "workspace:density": (payload: ToolsEvents["workspace:density"]) => {
         events.push({ name: "workspace:density", payload });
       },
-      "workspace:reference": (payload: ToolsEvents["workspace:reference"]) => {
-        events.push({ name: "workspace:reference", payload });
-      },
       "workspace:open-file": (payload: ToolsEvents["workspace:open-file"]) => {
         events.push({ name: "workspace:open-file", payload });
       },

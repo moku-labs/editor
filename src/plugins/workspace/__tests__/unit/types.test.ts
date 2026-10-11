@@ -6,12 +6,15 @@ import { WORKSPACE_IDS } from "../../../panels/shared/workspaces";
 import type { DeviceSpec, HotReload, WorkspaceName } from "../../../registry/protocol";
 import { WORKSPACE_NAMES } from "../../../registry/protocol";
 import { workspacePlugin } from "../..";
+import { ESC_RANK } from "../../keys/escape";
 import type {
   Density,
   DensityChoice,
   DeviceChoice,
   DevicePresetId,
+  EscLayer,
   GameFrame,
+  PaletteGroup,
   Prefs,
   PreviewState,
   RanEvent,
@@ -41,8 +44,10 @@ describe("workspace types", () => {
     expectTypeOf(app.workspace.setOverlayInGame).returns.toEqualTypeOf<Promise<void>>();
     expectTypeOf(app.workspace.density()).toEqualTypeOf<Density>();
     expectTypeOf(app.workspace.setDensity).parameter(0).toEqualTypeOf<DensityChoice>();
-    expectTypeOf(app.workspace.reference()).toEqualTypeOf<boolean>();
-    expectTypeOf(app.workspace.setReference).parameter(0).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.copyOnSelect()).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.setCopyOnSelect).parameter(0).toEqualTypeOf<boolean>();
+    expectTypeOf(app.workspace.setCopyOnSelect).returns.toEqualTypeOf<void>();
+    expectTypeOf<Prefs["copyOnSelect"]>().toEqualTypeOf<boolean>();
     expectTypeOf(app.workspace.device().folded).toEqualTypeOf<boolean>();
     expectTypeOf(app.workspace.hotReload()).toEqualTypeOf<HotReload | undefined>();
     expectTypeOf(app.workspace.setHotReload).returns.toEqualTypeOf<Promise<boolean>>();
@@ -102,10 +107,37 @@ describe("workspace types", () => {
     expectTypeOf<ToolsEvents["workspace:ran"]>().toEqualTypeOf<RanEvent>();
     expectTypeOf<ToolsEvents["workspace:changed"]>().toEqualTypeOf<{ ws: WorkspaceId }>();
     expectTypeOf<ToolsEvents["workspace:density"]>().toEqualTypeOf<{ density: Density }>();
-    expectTypeOf<ToolsEvents["workspace:reference"]>().toEqualTypeOf<{ on: boolean }>();
     // @ts-expect-error — density is compact or comfortable, never auto
     app.emit("workspace:density", { density: "auto" });
     expect(typeof app.emit).toBe("function");
+  });
+
+  it("Reference mode left the surface (D-65): no api member, no event, no Esc layer", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.workspace).not.toHaveProperty("reference");
+    expectTypeOf(app.workspace).not.toHaveProperty("setReference");
+    expectTypeOf<ToolsEvents>().not.toHaveProperty("workspace:reference");
+    /** Never called: the line under it must not compile. */
+    const emitGone = (): void => {
+      // @ts-expect-error — the event workspace:reference is gone
+      app.emit("workspace:reference", { on: true });
+    };
+    // @ts-expect-error — the Esc layer `reference` is gone
+    const layer: EscLayer = "reference";
+    expect(typeof emitGone).toBe("function");
+    expect(ESC_RANK).not.toContain(layer);
+    expect(Object.keys(app.workspace)).not.toContain("reference");
+    expect(Object.keys(app.workspace)).not.toContain("setReference");
+  });
+
+  it("the palette has no Styles group", () => {
+    const groups: PaletteGroup[] = ["Commands", "Nodes", "Files", "Panels", "Textures"];
+    // @ts-expect-error — the group Styles is gone with flowView's Styles tab (D-66)
+    const gone: PaletteGroup = "Styles";
+    expectTypeOf<PaletteGroup>().toEqualTypeOf<
+      "Commands" | "Nodes" | "Files" | "Panels" | "Textures"
+    >();
+    expect(groups).not.toContain(gone);
   });
 
   it("a tools plugin without a depends edge hooks the typed workspace events", () => {

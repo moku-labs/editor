@@ -1,20 +1,21 @@
 /**
- * @file gameView plugin — the 16 px stroke icons of the device toolbar's Shot and Series buttons
- * (round 2b R17), drawn like the workspace's own icons. Below a 1000 px workspace the buttons
- * show only these (toolbar.css); the button's title and aria-label carry the name. Decorative:
- * every icon is `aria-hidden`.
+ * @file gameView plugin — the 16 px stroke icons of the device toolbar: Select (U4, an icon
+ * button at every width), Shot and Series (round 2b R17), drawn like the workspace's own icons.
+ * Below a 1000 px workspace Shot and Series show only these (toolbar.css); the button's title and
+ * aria-label carry the name. Decorative: every icon is `aria-hidden`.
  */
 import type { VNode } from "preact";
 
 /**
- * The icon names: the camera of Shot, the stacked frames of Series.
+ * The icon names: the pointer arrow of Select, the camera of Shot, the stacked frames of Series.
  */
-export type ToolIconName = "camera" | "series";
+export type ToolIconName = "select" | "camera" | "series";
 
 /**
  * Path data of each icon on a 16×16 grid.
  */
 const PATHS: Readonly<Record<ToolIconName, string>> = {
+  select: "M3 3l10 4-4.4 1.6L7 13z",
   camera:
     "M2.5 5.5h2.5l1.2-2h3.6l1.2 2h2.5v7.5h-11zM8 7a2.25 2.25 0 1 0 0 4.5A2.25 2.25 0 0 0 8 7z",
   series: "M5.5 2.5h8v7h-8zM3.5 4.5v7h8M1.5 6.5v7h8"

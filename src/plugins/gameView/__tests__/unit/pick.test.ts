@@ -2,8 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SceneNode } from "../../../panels/shared/scene";
 import type { Json, RunResult } from "../../../registry/protocol";
-import { pickAt, pickProxy } from "../../element/select";
-import { completePick, listBookmarks, pickToast } from "../../reference/pick";
+import { pickAt } from "../../element/select";
+import {
+  completePick,
+  copySelectedReference,
+  listBookmarks,
+  pickToast
+} from "../../reference/pick";
 import { CROP_JPEG, stubCanvas } from "../canvas";
 import { createCtx, DAY, JPEG, manifestOf, PNG, type TestCtx, TODAY, useScene } from "../helpers";
 import { boardScene } from "../ui";
@@ -12,8 +17,10 @@ import { boardScene } from "../ui";
 // A completed pick (round 2 R2): game.bookmark (kept, newest first, 20 at
 // most), editor.capture, the crop and the full frame under capturesDir, the
 // card file with the full block (round 2b R13), then one reference line on the
-// clipboard with one toast. A game without a command or a failing step leaves
-// its lines and its toast word out.
+// clipboard with one toast (not for MCP: copy false). A game without a command
+// or a failing step leaves its lines and its toast word out. A click of the
+// person completes a pick only while "Copy on select" is on: with it off the
+// click selects the element and writes nothing (D-70).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The commands of a game that can bookmark and capture. */
@@ -258,6 +265,29 @@ describe("completePick contract (A8, A19)", () => {
     expect(ctx.state.card).toMatchObject({ path: result.crop, reference: result.line });
   });
 
+  it("copy false with Copy on select off (MCP select, D-70): the files, the card and the selection as ever", async () => {
+    ctx.workspace.copyOnSelectValue = false;
+    ctx.state.selected = { kind: "ui", path: "boardScreen/hudRow/coinPill" };
+    const result = await completePick(ctx, coinPill(), boardScene(), { copy: false });
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(ctx.workspace.toast).not.toHaveBeenCalled();
+    expect(ctx.link.files.dataUrl(`${DAY}/coinPill-f1842-crop.jpg`)).toBe(CROP_JPEG);
+    expect(ctx.link.files.dataUrl(`${DAY}/f1842-full.jpg`)).toBe(JPEG);
+    expect(ctx.link.files.paths()).toContain(`${DAY}/coinPill-f1842.md`);
+    expect(ctx.state.card).toMatchObject({ path: result.crop, reference: result.line });
+    expect(listBookmarks(ctx)).toHaveLength(1);
+    expect(ctx.link.notify).toHaveBeenLastCalledWith("selection", result.info);
+    expect(result.info).toMatchObject({ card: `${DAY}/coinPill-f1842.md`, line: result.line });
+  });
+
+  it("Copy on select on (the default): the line is on the clipboard with the toast", async () => {
+    expect(ctx.workspace.api.copyOnSelect()).toBe(true);
+    const result = await completePick(ctx, coinPill(), boardScene());
+    expect(writeText).toHaveBeenCalledWith(result.line);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
+  });
+
   it("names the full frame after the picture the game answered: a PNG stays .png", async () => {
     ctx.panels.answers.set("editor.capture", () =>
       ran({ image: PNG, frame: 1842, device: { w: 393, h: 852, orientation: "portrait" } }, 1842)
@@ -292,7 +322,7 @@ describe("pickToast", () => {
   });
 });
 
-describe("the two ways to pick", () => {
+describe("a pick of the person", () => {
   it("a picker click selects the element and completes the pick", async () => {
     ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
     ctx.state.picker.on = true;
@@ -303,12 +333,48 @@ describe("the two ways to pick", () => {
     expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
   });
 
-  it("a proxy click selects its node and completes the pick; an unknown id does nothing", async () => {
-    await pickProxy(ctx, "ui:boardScreen/hudRow/coinPill");
-    expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
-    expect(ctx.state.pick?.bookmark).toBe("coinPill-f1841");
+  it("a picker click with Copy on select off only selects the element: no command, no file, no card, no clipboard (D-70)", async () => {
+    ctx.workspace.copyOnSelectValue = false;
+    ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
+    ctx.state.picker.on = true;
+    await pickAt(ctx, { x: 540, y: 990 });
 
-    await pickProxy(ctx, "ui:nowhere");
-    expect(writeText).toHaveBeenCalledTimes(1);
+    // The element is selected for the Element tab; the picker went off.
+    expect(ctx.state.selected).toEqual({ kind: "entity", id: 1_048_628 });
+    expect(ctx.state.tab).toBe("element");
+    expect(ctx.state.picker.on).toBe(false);
+
+    // No reference at all: no bookmark, no shot, no file, no capture card, no clipboard, no toast.
+    const commands = ctx.panels.run.mock.calls.map(call => call[0]);
+    expect(commands).not.toContain("game.bookmark");
+    expect(commands).not.toContain("editor.capture");
+    expect(ctx.link.files.paths()).toEqual([]);
+    expect(ctx.state.pick).toBeUndefined();
+    expect(ctx.state.card).toBeUndefined();
+    expect(listBookmarks(ctx)).toEqual([]);
+    expect(writeText).not.toHaveBeenCalled();
+    expect(ctx.workspace.toast).not.toHaveBeenCalled();
+
+    // The selection is published without the files of a pick.
+    const published = ctx.state.selection;
+    expect(published).toMatchObject({ ref: { kind: "entity", id: 1_048_628 }, session: "s-1" });
+    expect(published).not.toHaveProperty("card");
+    expect(published).not.toHaveProperty("crop");
+    expect(published).not.toHaveProperty("line");
+    expect(ctx.link.notify).toHaveBeenLastCalledWith("selection", published);
+  });
+
+  it("Copy reference after such a click still writes the card and copies its line (D-70)", async () => {
+    ctx.workspace.copyOnSelectValue = false;
+    ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 1440, scale: 1, docked: "stage" };
+    ctx.state.picker.on = true;
+    await pickAt(ctx, { x: 540, y: 990 });
+    expect(ctx.link.files.paths()).toEqual([]);
+
+    const line = await copySelectedReference(ctx);
+    expect(line).toMatch(/^@moku /);
+    expect(writeText).toHaveBeenCalledWith(line);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
+    expect(ctx.link.files.paths().filter(path => path.endsWith(".md"))).toHaveLength(1);
   });
 });

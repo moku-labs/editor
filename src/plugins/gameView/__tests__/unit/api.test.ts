@@ -41,11 +41,15 @@ afterEach(() => {
 });
 
 describe("createGameViewApi", () => {
-  it("has the fifteen members of GameViewApi", () => {
+  it("has the nineteen members of GameViewApi", () => {
     expect(Object.keys(createGameViewApi(ctx)).toSorted()).toEqual([
       "bookmarks",
       "capture",
+      "clearEdits",
+      "copyEdits",
       "copyReference",
+      "editStyle",
+      "edits",
       "fold",
       "highlight",
       "inspect",
@@ -114,6 +118,39 @@ describe("createGameViewApi", () => {
   });
 });
 
+describe("editStyle, edits, clearEdits and copyEdits (U8)", () => {
+  it("record, list, copy and drop the pending style edits of the selected element", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const api = createGameViewApi(ctx);
+    await api.scene();
+    api.select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+
+    api.editStyle("width", 320);
+    api.editStyle("padding.left", 90);
+    expect(api.edits()).toEqual([
+      {
+        label: "coinPill",
+        byId: false,
+        edits: [
+          { path: "width", from: 290, to: 320 },
+          { path: "padding.left", from: 84, to: 90 }
+        ]
+      }
+    ]);
+    expect(api.edits()).not.toBe(api.edits());
+
+    expect(await api.copyEdits()).toBe("@moku coinPill\nwidth: 290 -> 320\npadding.left: 84 -> 90");
+    expect(writeText).toHaveBeenCalledWith(
+      "@moku coinPill\nwidth: 290 -> 320\npadding.left: 84 -> 90"
+    );
+
+    api.clearEdits("selected");
+    expect(api.edits()).toEqual([]);
+    expect(await api.copyEdits()).toBeUndefined();
+  });
+});
+
 describe("copyReference, bookmarks and fold", () => {
   it("copyReference writes the card and returns its one line; bookmarks lists the pick bookmarks", async () => {
     vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn(() => Promise.resolve()) } });
@@ -171,6 +208,20 @@ describe("no auto-capture", () => {
     const ran = ctx.panels.run.mock.calls.map(call => call[0]);
     expect(ran).not.toContain("editor.capture");
     expect(ran).not.toContain("editor.series");
+  });
+
+  it("Reference mode left no file behind: no mode, no proxies, no proxy layer (D-65)", () => {
+    const root = `${process.cwd()}/src/plugins/gameView/`;
+    const sources = readdirSync(root, { recursive: true, encoding: "utf8" }).filter(
+      file => !file.startsWith("__tests__")
+    );
+    expect(sources).not.toContain("reference/mode.ts");
+    expect(sources).not.toContain("reference/proxies.ts");
+    expect(sources).not.toContain("ui/ProxyLayer.tsx");
+    for (const file of sources.filter(name => /\.(tsx?|css)$/.test(name))) {
+      const text = readFileSync(`${root}${file}`, "utf8");
+      expect(text, file).not.toMatch(/data-moku-prox|workspace:reference|pickProxy/);
+    }
   });
 
   it("no source file of gameView calls link.run, polls with setInterval or logs with console", () => {

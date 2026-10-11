@@ -1,10 +1,13 @@
 /**
  * @file gameView plugin — one build of the scene from the stored sources (the shared
- * `buildScene`, R8) and the frame a link status reports. The watches and the calibration both
- * rebuild through here.
+ * `buildScene`, R8), the frame a link status reports, and the one place a new scene snapshot is
+ * stored (`storeScene`: the pending style edits resolve against it, U8). The watches and the
+ * calibration both rebuild through here.
  */
+import type { SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene } from "../../panels/shared/scene";
 import type { LinkStatus } from "../../registry/protocol";
+import { resolveEdits } from "../element/edit-style";
 import { notify } from "../state";
 import type { GameViewCtx } from "../types";
 
@@ -26,6 +29,19 @@ export function frameOf(status: LinkStatus, fallback: number): number {
 }
 
 /**
+ * Stores a new scene snapshot: it becomes `state.scene`, the pending style edits it shows are
+ * dropped (U8) and the views re-render.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param scene - The scene just built.
+ */
+export function storeScene(ctx: GameViewCtx, scene: SceneSnapshot): void {
+  ctx.state.scene = scene;
+  resolveEdits(ctx, scene);
+  notify(ctx.state);
+}
+
+/**
  * Builds the scene from the stored sources (all three needed); a shape error keeps the last
  * scene and warns.
  *
@@ -42,6 +58,5 @@ export function rebuildScene(ctx: GameViewCtx, frame: number): void {
     ctx.log.warn("gameView: scene shape", built);
     return;
   }
-  state.scene = built;
-  notify(state);
+  storeScene(ctx, built);
 }

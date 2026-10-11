@@ -1,15 +1,17 @@
 /**
  * @file Protocol — the checks of the selection wire values (A5, A10, A15): `isSelectionInfo`, and
  * the parsers `parseSelectionInfo` and `parseSelectParams`, which return a fresh copy without the
- * unknown fields. An area selection (U9) adds `area` and `items`. Pure: a value from the wire is
- * narrowed field by field, never cast.
+ * unknown fields. An area selection (U9) adds `area` and `items`, pending style edits (U8) add
+ * `edits`. Pure: a value from the wire is narrowed field by field, never cast.
  */
 import type {
   SelectionInfo,
   SelectionItem,
   SelectionRect,
   SelectionRef,
-  SelectParams
+  SelectParams,
+  StyleEdit,
+  StyleValue
 } from "./types";
 
 /**
@@ -92,6 +94,20 @@ function optional(record: object, field: string, check: (value: unknown) => bool
  */
 function isText(value: unknown): boolean {
   return typeof value === "string";
+}
+
+/**
+ * True for a string that is not empty.
+ *
+ * @param value - Anything.
+ * @returns Whether `value` is a non-empty string.
+ * @example
+ * ```ts
+ * isFilledText(""); // false
+ * ```
+ */
+function isFilledText(value: unknown): boolean {
+  return typeof value === "string" && value !== "";
 }
 
 /**
@@ -224,6 +240,55 @@ function isItemList(value: unknown): boolean {
 }
 
 /**
+ * True for a style value: a finite number, a string or a boolean. NaN and ±Infinity are wrong:
+ * they are null on the wire.
+ *
+ * @param value - Anything.
+ * @returns Whether `value` is a StyleValue.
+ * @example
+ * ```ts
+ * isStyleValue("center"); // true
+ * isStyleValue({ top: 30 }); // false
+ * ```
+ */
+function isStyleValue(value: unknown): value is StyleValue {
+  return isFiniteNumber(value) || isText(value) || isBoolean(value);
+}
+
+/**
+ * True for a StyleEdit: a non-empty text path, and a style value in `from` and in `to`.
+ *
+ * @param value - Anything.
+ * @returns Whether `value` is a StyleEdit.
+ * @example
+ * ```ts
+ * isStyleEdit({ path: "minWidth", from: 556, to: 600 }); // true
+ * ```
+ */
+function isStyleEdit(value: unknown): value is StyleEdit {
+  return (
+    isRecord(value) &&
+    required(value, "path", isFilledText) &&
+    required(value, "from", isStyleValue) &&
+    required(value, "to", isStyleValue)
+  );
+}
+
+/**
+ * True for an array of StyleEdit.
+ *
+ * @param value - Anything.
+ * @returns Whether `value` is a StyleEdit list.
+ * @example
+ * ```ts
+ * isEditList([]); // true
+ * ```
+ */
+function isEditList(value: unknown): boolean {
+  return Array.isArray(value) && value.every(edit => isStyleEdit(edit));
+}
+
+/**
  * A fresh copy of a ref with its two fields only.
  *
  * @param ref - A checked ref.
@@ -273,9 +338,24 @@ function itemCopy(item: SelectionItem): Writable<SelectionItem> {
 }
 
 /**
+ * A fresh copy of a checked edit with its three fields only.
+ *
+ * @param edit - A checked edit.
+ * @returns The copy.
+ * @example
+ * ```ts
+ * editCopy({ path: "minWidth", from: 556, to: 600 }); // { path: "minWidth", from: 556, to: 600 }
+ * ```
+ */
+function editCopy(edit: StyleEdit): StyleEdit {
+  return { path: edit.path, from: edit.from, to: edit.to };
+}
+
+/**
  * True for a SelectionInfo: the ref, name, type and at are present, and every optional field is
  * absent or of its type; an area selection's `area` is a rect and its `items` a list of
- * SelectionItem. Unknown fields are ignored, inside the items too.
+ * SelectionItem; `edits` is a list of StyleEdit. Unknown fields are ignored, inside the items and
+ * the edits too.
  *
  * @param value - Anything, e.g. the params of an editor-channel `selection` notification.
  * @returns Whether `value` is a SelectionInfo.
@@ -294,13 +374,15 @@ export function isSelectionInfo(value: unknown): value is SelectionInfo {
     TEXT_FIELDS.every(field => optional(value, field, isText)) &&
     optional(value, "frame", Number.isInteger) &&
     optional(value, "area", isRect) &&
-    optional(value, "items", isItemList)
+    optional(value, "items", isItemList) &&
+    optional(value, "edits", isEditList)
   );
 }
 
 /**
  * Checks a received selection and copies its known fields; unknown fields, at the top, in the
- * nested ref, rect, source and area, and in every item, are dropped.
+ * nested ref, rect, source and area, in every item and in every edit, are dropped. A malformed
+ * edit makes the whole value wrong, like every other field; an empty `edits` is dropped.
  *
  * @param value - Anything, e.g. the params of a page's `selection` notification.
  * @returns A fresh SelectionInfo, or undefined when `value` is not one.
@@ -308,12 +390,14 @@ export function isSelectionInfo(value: unknown): value is SelectionInfo {
  * ```ts
  * parseSelectionInfo({ ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1, zoom: 2 });
  * // { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1 }
+ * parseSelectionInfo({ ...homePlay, edits: [{ path: "minWidth", from: 556, to: { px: 600 } }] });
+ * // undefined
  * ```
  */
 export function parseSelectionInfo(value: unknown): SelectionInfo | undefined {
   if (!isSelectionInfo(value)) return undefined;
 
-  const { at, frame, area, items } = value;
+  const { at, frame, area, items, edits } = value;
   const copy: Writable<SelectionInfo> = { ...itemCopy(value), at };
 
   for (const field of TEXT_FIELDS) {
@@ -323,6 +407,7 @@ export function parseSelectionInfo(value: unknown): SelectionInfo | undefined {
   if (frame !== undefined) copy.frame = frame;
   if (area !== undefined) copy.area = rectCopy(area);
   if (items !== undefined) copy.items = items.map(item => itemCopy(item));
+  if (edits !== undefined && edits.length > 0) copy.edits = edits.map(edit => editCopy(edit));
 
   return copy;
 }

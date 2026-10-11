@@ -34,25 +34,24 @@ describe("link:status (M4, M13)", () => {
     expect(ctx.state.data.staleFrame).toBeUndefined();
   });
 
-  it("loads layout.json and the style keys on the first live status of a session", async () => {
+  it("loads layout.json on the first live status of a session; the text-styles file is not read (D-66)", async () => {
     const { ctx, fakes } = createTestCtx({
       files: {
         ".moku/editor/layout.json":
           '{ "version": 1, "nodes": { "main/home": { "x": 0, "y": 0 } } }\n',
         "features/ui/styles.ts":
           'export const textStyles = defineTextStyles({\n  "ui.number": { size: 60 }\n});\n'
-      }
+      },
+      index: { "textStyle:ui.number": [{ path: "features/ui/styles.ts", line: 2 }] }
     });
     const hooks = createHandlers(ctx);
     hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
     await flush(10);
     expect(ctx.state.layout.pins.nodes["main/home"]).toEqual({ x: 0, y: 0 });
-    expect(
-      fakes.palette
-        .flat()
-        .filter(item => item.group === "Styles")
-        .map(item => item.label)
-    ).toEqual(["ui.number"]);
+    expect(vi.mocked(fakes.files.read).mock.calls.map(([path]) => path)).not.toContain(
+      "features/ui/styles.ts"
+    );
+    expect(fakes.palette.flat().map(item => item.group)).not.toContain("Styles");
     const reads = vi.mocked(fakes.files.read).mock.calls.length;
     hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
     await flush(5);

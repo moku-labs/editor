@@ -102,6 +102,7 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
   };
   state.showTaps = prefs.showTaps;
   state.muted = prefs.muted;
+  state.copyOnSelect = prefs.copyOnSelect;
 
   const hash = globalThis.location?.hash.slice(1);
   if (isWorkspaceId(hash)) state.active = hash;

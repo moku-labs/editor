@@ -1,9 +1,10 @@
 /**
  * @file workspace plugin — the per-viewer preferences record in localStorage:
- * `{ v: 1, theme?, previews, device: { preset, orientation, folded? }, density, showTaps, muted }`.
- * Invalid JSON, another version or a throwing storage → the defaults; an unknown value → the
- * default of that value; one `workspace:prefs` warn either way. A field added after the first
- * records (density, showTaps, muted, device.folded) that is missing takes its default silently.
+ * `{ v: 1, theme?, previews, device: { preset, orientation, folded? }, density, showTaps, muted,
+ * copyOnSelect }`. Invalid JSON, another version or a throwing storage → the defaults; an unknown
+ * value → the default of that value; one `workspace:prefs` warn either way. A field added after
+ * the first records (density, showTaps, muted, copyOnSelect, device.folded) that is missing takes
+ * its default silently.
  * Writes are wrapped in try/catch (quota). Nothing essential is stored here.
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -39,7 +40,7 @@ type JsonObject = { readonly [key: string]: unknown };
  * The preferences of a fresh viewer.
  *
  * @returns No chosen theme, default previews, iPhone 18 Pro portrait, auto density, taps shown,
- * sound on.
+ * sound on, Copy on select on.
  * @example
  * ```ts
  * defaultStoredPrefs().device; // { preset: "iphone-18-pro", orientation: "portrait" }
@@ -52,7 +53,8 @@ export function defaultStoredPrefs(): StoredPrefs {
     device: { preset: DEFAULT_DEVICE, orientation: "portrait" },
     density: "auto",
     showTaps: true,
-    muted: false
+    muted: false,
+    copyOnSelect: true
   };
 }
 
@@ -206,7 +208,7 @@ function readDevice(device: unknown, prefs: StoredPrefs, invalid: string[]): voi
  */
 function readFlag(
   value: unknown,
-  field: "showTaps" | "muted",
+  field: "showTaps" | "muted" | "copyOnSelect",
   fallback: boolean,
   invalid: string[]
 ): boolean {
@@ -243,6 +245,7 @@ function readRecord(record: JsonObject, invalid: string[]): StoredPrefs {
   else if (record.density !== undefined) invalid.push("density");
   prefs.showTaps = readFlag(record.showTaps, "showTaps", prefs.showTaps, invalid);
   prefs.muted = readFlag(record.muted, "muted", prefs.muted, invalid);
+  prefs.copyOnSelect = readFlag(record.copyOnSelect, "copyOnSelect", prefs.copyOnSelect, invalid);
 
   return prefs;
 }
@@ -322,7 +325,8 @@ export function savePrefs(key: string, prefs: StoredPrefs, log: Log.LogApi): voi
     device: prefs.device,
     density: prefs.density,
     showTaps: prefs.showTaps,
-    muted: prefs.muted
+    muted: prefs.muted,
+    copyOnSelect: prefs.copyOnSelect
   };
   try {
     storage.setItem(key, JSON.stringify(record));

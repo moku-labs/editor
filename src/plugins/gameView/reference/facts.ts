@@ -18,14 +18,7 @@ import { isObject } from "../capture/shot";
 import { findStyleSource } from "../element/source";
 import { blockOf } from "../element/styles";
 import type { BlockAt, GameViewCtx, StyleSource } from "../types";
-import {
-  type DeviceFacts,
-  type LastEdge,
-  type PickFacts,
-  type ReferenceFacts,
-  referenceBlock,
-  type TailFacts
-} from "./block";
+import type { DeviceFacts, LastEdge, PickFacts, ReferenceFacts, TailFacts } from "./block";
 
 /**
  * A JSON object of the wire.
@@ -293,20 +286,4 @@ export async function referenceFacts(
     flags: flagsOf(node, raw),
     value: contentOf(node, raw)
   };
-}
-
-/**
- * The reference block of one scene node.
- *
- * @param ctx - Domain context of gameView.
- * @param node - The node.
- * @param scene - The scene it is in.
- * @returns The block text.
- */
-export async function referenceText(
-  ctx: GameViewCtx,
-  node: SceneNode,
-  scene: SceneSnapshot
-): Promise<string> {
-  return referenceBlock(await referenceFacts(ctx, node, scene));
 }

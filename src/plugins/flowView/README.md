@@ -17,7 +17,7 @@ Clicking a node focuses it:
   (`data-holds-current`) and a "here" tag, and the trail edge into it is drawn 2 px accent at full
   strength (`data-here`). A collapsed card the current node sits inside is never `data-current`:
   it holds the current node;
-- the Inspector (C1–C4) shows the node, in the `flow.inspector` side panel.
+- the Inspector (C1–C3) shows the node, in the `flow.inspector` side panel. Its tabs are Info and Code.
 
 The Info tab is the one place for the neighbours of a node (D-25). A click on a *Comes from* or
 *Outcomes* row follows its edge (`focus.followEdge`): the other end is selected, the camera frames
@@ -25,7 +25,7 @@ both ends, a 600 ms pulse plays on the reached node, and Back (Alt+←) returns.
 ← → walk, ↑ ↓ move the highlight through the rows and Enter follows it.
 
 Nodes can be dragged. They snap to a 12-unit grid and are saved to `layout.file`.
-The Inspector reads and edits the node's code and the text styles of the game.
+The Inspector reads and edits the node's code.
 A save writes the file and runs the D-07 reload/restore flow.
 
 ## Configuration
@@ -37,15 +37,15 @@ A save writes the file and runs the D-07 reload/restore flow.
 > is `hub.minReturns`. The kernel merges config shallowly, so an object you pass replaces the
 > default object as a whole: give every field of it.
 
-> **Breaking (project index, D-40, D-48).** `stylesFile` is removed. The Styles tab edits the
-> text-styles file the project index names: the file that defines the most `textStyle:` keys.
+> **Breaking (D-66, pre-1.0).** The Styles tab of the Inspector and the palette group Styles are
+> removed. The Inspector has two tabs, Info and Code. Text styles are edited in their file or
+> through the agent. The config key of the style save delay is removed with them.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `historyLast` | `number` | `20` | Entries of `game.history` flowView watches. |
 | `trailLength` | `number` | `6` | Edges drawn as the trail, newest strongest. |
 | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
 | `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker. `false` runs it inline. |
 | `layout.saveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
@@ -73,16 +73,11 @@ override file and no search. `.moku/editor/files.json` is ignored.
 |---|---|---|
 | The Code tab, ⇧↵ of a Nodes item | `files.find("node:<flow>/<node>")`, through `findFresh`: the file at the line of the def | `Not in the project index: node:<id>` |
 | The Info tab file | `firstDefinition(link.project(), "node:<id>")` | the link "Open the Code tab" |
-| The Styles tab, the Styles group | `textStylesFile(link.project())` | `Not in the project index: text styles` |
 
 A sub-flow or slot node shows its index anchor like any node (D-41). While the index is off, or
 before the first `editor.project` state, each of these shows one line:
 `Project index is off: <reason>` (D-48). A node the index knows whose file cannot be read shows
 "Source loads from the dev server.".
-
-A style step on a file that does not parse now writes nothing. The card shows
-"The file does not parse now · fix it, then edit" (D-44). With the index off it writes nothing
-either; the card shows `Project index is off: <reason>` (D-48).
 
 ## API
 
@@ -135,9 +130,9 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 
 | Kind | Name | Payload | When |
 |---|---|---|---|
-| Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code and Styles tabs, and ⇧↵ of a Nodes palette item. filesView hooks it. |
-| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13); the `lost` of an expected reload (`isReloading`, U9) marks nothing. The first `live`/`paused` of a session loads `layout.file` and the style keys; pins equal to the ones on screen lay out nothing again (B9). `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
-| Hooks | `link:project` | `{ state, delta }` | The index changed (D-46). The Code tab reads its node again when the delta touches its file (edited, moved away, removed, or `all` after a gap), never over a draft; a tab that shows a note asks again on any change. The same file at the same version keeps the tab and its result line, and moves only the line. An opened Styles tab is read again when it shows no styles (it was opened before the first state, while the index was off or named no text-styles file) or its file changed (another text-styles file, or a change of that file), never during a stepper burst or its write; the same file at the same version keeps the tab and its "✓ Written to …" line. Without a Styles tab the palette group Styles is read again when the text styles changed: `all`, a moved `textStyle:` key, another text-styles file, or a change of that file. The Info tab re-renders with the indexed file. |
+| Emits | `workspace:open-file` | `{ path, line? }` | "Open in Files" in the Code tab, and ⇧↵ of a Nodes palette item. filesView hooks it. |
+| Hooks | `link:status` | `{ status, session? }` | `silent`/`lost`: stale marking (M13); the `lost` of an expected reload (`isReloading`, U9) marks nothing. The first `live`/`paused` of a session loads `layout.file`; pins equal to the ones on screen lay out nothing again (B9). `empty`: clears the selection, the Back stack and the menu (M4), and drops an intent still waiting for the flow values. |
+| Hooks | `link:project` | `{ state, delta }` | The index changed (D-46). The Code tab reads its node again when the delta touches its file (edited, moved away, removed, or `all` after a gap), never over a draft; a tab that shows a note asks again on any change. The same file at the same version keeps the tab and its result line, and moves only the line. The Info tab re-renders with the indexed file. |
 | Hooks | `workspace:changed` | `{ ws }` | `flow`: the default camera. Leaving Flow closes the menu and cancels the camera move. |
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. Before the first flow values the selection waits for them. When Flow shows for the first time, the first canvas measure frames the selection, not the current node. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. Before the first flow values it waits for them. |
@@ -161,20 +156,20 @@ Log events use the prefix `flowView: ` (for example `flowView: layout failed`, `
 | `workspacePlugin` | `active()`, `show("flow")`, `toast`, `gameFrame().reload({ restore: true, afterSave: true, since })` (after a save; `since` taken before the write), `preview("flow")`, `density()`, `previewZone`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Flow panel; `run(id, input)` for every command |
 
-Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared/style-edit`
-(Styles tab), `panels/shared/highlight` (Code tab), `panels/shared/project` (`findFresh`,
-`textStylesFile`, the off and not-found texts), `registry/protocol` (`firstDefinition`).
+Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared/highlight`
+(Code tab), `panels/shared/project` (`findFresh`, the off and not-found texts),
+`registry/protocol` (`firstDefinition`).
 
 ## Lifecycle
 
 | Phase | What |
 |---|---|
 | `onInit` | Registers the Flow panel: no sources; commands `step: "game.step"`, `pause: "game.pause"`, `resume: "game.resume"`. Adds the palette Commands. Binds the Flow keys. Binds the Esc layers `contextMenu`, `codeEdit`, `selection`. Captures `link.files`. Takes `workspace.density()`. Gives link the handler of the `node` request. No I/O. |
-| `onStart` | Watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session (R6), whatever workspace shows. The values go in once all three arrived, then one by one: the Nodes palette group, the layout, the intents of other views and the live history frames work before Flow is shown. The Flow canvas renders when Flow is first shown. Loading `layout.file` and the style keys starts on the first `live`/`paused` status. |
-| `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches and the `node` handler among them. |
+| `onStart` | Watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session (R6), whatever workspace shows. The values go in once all three arrived, then one by one: the Nodes palette group, the layout, the intents of other views and the live history frames work before Flow is shown. The Flow canvas renders when Flow is first shown. Loading `layout.file` starts on the first `live`/`paused` status. |
+| `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes palette group. Runs every remover, the three watches and the `node` handler among them. |
 
 Palette: Commands "Fit all", "Fit selection", "Follow the game", "Reset layout", "Go to current node", "Show where the game is", "Show Inspector".
-The Nodes group is replaced when the graph hash changes. The Styles group is replaced whenever the text-styles file is read.
+The Nodes group is replaced when the graph hash changes.
 
 | Keys (workspace `flow`) | What |
 |---|---|
@@ -202,13 +197,13 @@ filled accent dot and draws the trail. While the Inspector panel is closed, the 
 Inspector (`data-action="reopen-flow.inspector"`).
 
 The Inspector lives in `SidePanel id="flow.inspector" side="end"` (panels/shared/side-panel):
-default width the `--inspector-w` token, 400 px while Code or Styles shows, until the person
+default width the `--inspector-w` token, 400 px while Code shows, until the person
 resizes it; min 220, max 560; it floats as a drawer when the workspace is narrower than 600 px.
 
 ## Usage
 
 ```ts
-const app = createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
+const app = createApp({ pluginConfigs: { flowView: { historyLast: 40 } } });
 await app.start();
 app.flowView.focus.select("board/merge");
 await app.flowView.focus.step();
@@ -246,7 +241,7 @@ The six module folders do not import each other (spec/15 §2.5). Types that cros
 | `camera/` | Pure camera math, the chrome geometry (preview zone, focus reveal), input interpretation, the rAF tween (reduced motion jumps), the zoom bar and the minimap. Camera moves write the world transform directly and never re-render node cards. |
 | `layout/` | Hub detection, the hub-lane layout and its label pass, DFS back edges, the ELK input (labels, spacing by density) and output, composition with instance keys, pins, routes, the engines. |
 | `focus/` | Graph queries, the trail, walking, instance edges (`edges.ts`: the edge of an Info row, the other end of an edge). |
-| `inspector/` | The node key and the Code tab texts (`files.ts`), the Code tab controller, the link:project follow (`follow.ts`), the Styles tab controller over `panels/shared/style-edit`, the tabs, the side panel size (`size.ts`). |
+| `inspector/` | The node key and the Code tab texts (`files.ts`), the Code tab controller, the link:project follow (`follow.ts`), the tabs, the side panel size (`size.ts`). |
 | `render/` | The canvas and the world components, the breadcrumb, the toolbar, the context menus, the history strip, You are here, the off-screen chevron. Icons come from `panels/shared/icons`. |
 
 ### Layout engine (elkjs)
@@ -281,4 +276,3 @@ budgets. The layout checks of both files always run.
 | Limit | Follow-up in `@moku-labs/game` |
 |---|---|
 | History entries have no frame. A row shows `f<frame>` only when flowView saw it arrive live, else `#<index>`. `focusFrame` toasts "Frames are not recorded in this history" when no row has a frame. | F-H1: `frame` on history entries. |
-| The Styles tab cannot know which text style an element uses. It preselects no card ("Pick a text style") and shows no "Used by". | F-G1 / brief §2: the game reports the text style key per ui node. |

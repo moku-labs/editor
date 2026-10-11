@@ -3,49 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
 import { actionsOf } from "../../actions";
 import { createTestCtx, flush, jumpCamera, prepare } from "../ctx";
-import { fixtureText, testLayout } from "../helpers";
+import { testLayout } from "../helpers";
 
-const STYLES = "features/ui/styles.ts";
 const LAYOUT = ".moku/editor/layout.json";
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
-});
-
-describe("style write failures", () => {
-  it("shows a failed write without the prefix, and a reload that did not restore", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { ctx, fakes } = createTestCtx({ files: { [STYLES]: fixtureText("ui-styles.txt") } });
-    const inspector = actionsOf(ctx).inspector;
-    await inspector.openStyles("ui.number");
-    vi.mocked(fakes.files.write).mockRejectedValueOnce(
-      new Error("[moku-editor] forbidden path: x")
-    );
-    inspector.stepStyle("size", 1, false);
-    await vi.advanceTimersByTimeAsync(600);
-    for (let index = 0; index < 5; index += 1) await Promise.resolve();
-    expect(ctx.state.inspector.styles?.result).toEqual({ ok: false, text: "! forbidden path: x" });
-
-    fakes.reload.mockResolvedValueOnce({ restored: false, reason: "no_session" });
-    inspector.stepStyle("size", 1, false);
-    inspector.stepStyle("strokeWidth", 1, false);
-    await vi.advanceTimersByTimeAsync(600);
-    for (let index = 0; index < 10; index += 1) await Promise.resolve();
-    expect(fakes.files.writes.length).toBeGreaterThanOrEqual(2);
-    expect(fakes.reload).toHaveBeenCalled();
-  });
-
-  it("a missing style key is no-op; a read failure of the keys clears the palette group", async () => {
-    const { ctx, fakes } = createTestCtx();
-    const inspector = actionsOf(ctx).inspector;
-    inspector.stepStyle("size", 1, false);
-    inspector.selectStyle("ui.number");
-    fakes.files.failing.set(STYLES, new Error("boom"));
-    await inspector.readStyleKeys();
-    expect(ctx.log.debug).toHaveBeenCalled();
-    expect(fakes.palette).toEqual([]);
-  });
 });
 
 describe("layout failures", () => {

@@ -334,9 +334,12 @@ export type WorkspaceMock = {
   readonly reload: Mock<GameFrame["reload"]>;
   readonly setOverlayInGame: Mock<WorkspaceApi["setOverlayInGame"]>;
   readonly setMuted: Mock<WorkspaceApi["setMuted"]>;
+  readonly setCopyOnSelect: Mock<WorkspaceApi["setCopyOnSelect"]>;
   activeValue: WorkspaceId;
   /** The sound flag `muted()` answers. */
   mutedValue: boolean;
+  /** The "Copy on select" flag `copyOnSelect()` answers (on by default, U5). */
+  copyOnSelectValue: boolean;
   /** `folded` absent = folded (the cover screen), as workspace stores it. */
   device: { preset: DevicePresetId; orientation: Orientation; folded?: boolean };
   overlayOn: boolean;
@@ -373,6 +376,12 @@ export function createWorkspaceMock(): WorkspaceMock {
   const setMuted = vi.fn<WorkspaceApi["setMuted"]>((on: boolean) => {
     workspace.mutedValue = on;
   });
+  // Like the real one: the same value again does nothing, a new one tells the onPrefs listeners.
+  const setCopyOnSelect = vi.fn<WorkspaceApi["setCopyOnSelect"]>((on: boolean) => {
+    if (workspace.copyOnSelectValue === on) return;
+    workspace.copyOnSelectValue = on;
+    for (const fn of prefsListeners) fn(prefs());
+  });
   const prefs = (): Prefs => ({
     theme: "light",
     previews: {
@@ -387,7 +396,8 @@ export function createWorkspaceMock(): WorkspaceMock {
       orientation: workspace.device.orientation,
       folded: workspace.device.folded ?? true
     },
-    muted: workspace.mutedValue
+    muted: workspace.mutedValue,
+    copyOnSelect: workspace.copyOnSelectValue
   });
   const workspace: WorkspaceMock = {
     items,
@@ -401,8 +411,10 @@ export function createWorkspaceMock(): WorkspaceMock {
     reload,
     setOverlayInGame,
     setMuted,
+    setCopyOnSelect,
     activeValue: "flow",
     mutedValue: false,
+    copyOnSelectValue: true,
     device: { preset: "iphone-15", orientation: "portrait", folded: true },
     overlayOn: false,
     box: { left: 100, top: 50, width: 393, height: 852, scale: 1, docked: "stage" },
@@ -490,8 +502,8 @@ export function createWorkspaceMock(): WorkspaceMock {
       },
       overlayInGame: () => workspace.overlayOn,
       setOverlayInGame,
-      reference: () => false,
-      setReference: vi.fn(),
+      copyOnSelect: () => workspace.copyOnSelectValue,
+      setCopyOnSelect,
       hotReload: () => undefined,
       setHotReload: vi.fn(() => Promise.resolve(false)),
       muted: () => workspace.mutedValue,

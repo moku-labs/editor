@@ -3,7 +3,8 @@
  * and the style block it uses, each with `file:line`, Open in Files and the shared highlighter
  * (20 lines, then "Show all"); an entity's projection with the line that defines it (or why the
  * project index has none), and its components with their values. Read again when the element,
- * its source or its style file changes, and for an entity on every new project state.
+ * its source, its style file or the file of its text style key changes, and for an entity on
+ * every new project state.
  */
 import type { VNode } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
@@ -60,7 +61,8 @@ function SnippetView(props: {
           Open in Files
         </button>
       </header>
-      <div data-part="code-lines">
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region is keyboard-scrollable only when it can take focus */}
+      <div data-part="code-lines" tabIndex={0}>
         {shown.map((tokens, index) => (
           <div key={`${line + index}`} data-line={line + index}>
             <span data-part="gutter">{line + index}</span>
@@ -160,6 +162,7 @@ export function CodeSection(props: CodeSectionProps): VNode | undefined {
   const found = node.key === undefined ? undefined : state.found.get(node.key);
   const source = found === undefined ? undefined : `${found.path}:${found.line}`;
   const version = state.styles?.current.version;
+  const textVersion = state.textStyle?.status === "found" ? state.textStyle.version : undefined;
   const stamp =
     node.entity === undefined ? undefined : projectStamp(ctx.require(linkPlugin).project());
   useEffect(() => {
@@ -175,7 +178,7 @@ export function CodeSection(props: CodeSectionProps): VNode | undefined {
     return () => {
       alive = false;
     };
-  }, [node.id, state.lookup?.status, source, version, stamp]);
+  }, [node.id, state.lookup?.status, source, version, stamp, node.textStyle, textVersion]);
 
   if (code === undefined) return undefined;
   if (code.kind === "ui" && code.jsx === undefined && code.style === undefined) return undefined;

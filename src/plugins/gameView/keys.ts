@@ -3,9 +3,9 @@
  * (R4, design §4): ⇧⌘C and I toggle the picker (global, shows Game); \ collapses or expands the
  * Element panel in Game; M switches the game's sound in Game when the game has `game.mute` (round
  * 2b R11); ← → step and B marks a bug in Game while the contact sheet is open; Esc
- * layers contactSheet, seriesPopover, captureCard, picker (an area drag of Reference mode too),
- * selection (U10: last, clears the element or area selection in Game), each `false` when gameView
- * has nothing open there.
+ * layers contactSheet, seriesPopover, captureCard, picker (an area drag first), selection (U10:
+ * last, clears the element or area selection in Game), each `false` when gameView has nothing
+ * open there.
  */
 import { isEditableTarget } from "../panels/shared/editable";
 import { toggleSidePanel } from "../panels/shared/side-panel";
@@ -66,7 +66,7 @@ function markShownShot(ctx: GameViewCtx): void {
 }
 
 /**
- * Esc on the picker layer: cancels a Reference mode area drag (U9), else turns the picker off.
+ * Esc on the picker layer: cancels an area drag (U9), else turns the picker off.
  *
  * @param ctx - Domain context of gameView.
  * @returns True when a drag was cancelled or the picker was on.

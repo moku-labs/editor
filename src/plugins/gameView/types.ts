@@ -1,7 +1,9 @@
 /**
  * @file gameView plugin — type definitions: config, state, recording, contact sheet, style card,
- * capture and series shapes, the api, the domain context and the hooks. The scene types are
- * declared once in panels/shared/scene (R8) and re-exported here for `GameView.ElementRef`.
+ * pending style edits (U8), the text style block of a text node (D-73), capture and series
+ * shapes, the api, the domain context and the hooks.
+ * The scene types are declared once in panels/shared/scene (R8) and re-exported here for
+ * `GameView.ElementRef`.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -14,7 +16,15 @@ import type {
   TextureCatalogue
 } from "../panels/shared/scene";
 import type { StyleBlock, StyleBlockRef, StyleEditError } from "../panels/shared/style-edit";
-import type { FileText, Json, LinkStatus, ProjectFound, SelectionInfo } from "../registry/protocol";
+import type {
+  FileText,
+  Json,
+  LinkStatus,
+  ProjectFound,
+  SelectionInfo,
+  StyleEdit,
+  StyleValue
+} from "../registry/protocol";
 import type { FrameBox } from "../workspace/types";
 
 export type {
@@ -265,6 +275,58 @@ export type StyleLookup =
     };
 
 /**
+ * One row of the Element tab's Text style section (D-73): a field of the key's block in the text
+ * styles file. A number literal and a quoted string are values a field edits; anything else (an
+ * identifier, a token such as `colors.cream`, a boolean, a call) is read-only and shows `raw`.
+ *
+ * @example
+ * ```ts
+ * const size: TextStyleRow = { path: "size", raw: "105", value: 105 };
+ * const fill: TextStyleRow = { path: "fill", raw: "colors.cream", value: undefined };
+ * const dy: TextStyleRow = { path: "shadow.dy", raw: "6", value: 6 };
+ * ```
+ */
+export type TextStyleRow = {
+  /** The field of the block: "size", "shadow.dy". */
+  readonly path: string;
+  /** The value as written in the file. */
+  readonly raw: string;
+  /** The value a field edits; undefined for a read-only row. */
+  readonly value: number | string | undefined;
+};
+
+/**
+ * The text style block of the selected text node (D-73): the project index is asked for
+ * `textStyle:<key>`, does not know it (or is off), or answered and the block was read. A block the
+ * shared style edit cannot read keeps its place and has no rows.
+ *
+ * @example
+ * ```ts
+ * const button: TextStyleCard = {
+ *   key: "ui.button",
+ *   status: "found",
+ *   path: "shared/styles/text.ts",
+ *   line: 88,
+ *   version: "1f3a",
+ *   rows: [{ path: "size", raw: "105", value: 105 }]
+ * };
+ * ```
+ */
+export type TextStyleCard =
+  | { readonly key: string; readonly status: "searching" }
+  | { readonly key: string; readonly status: "missing" }
+  | {
+      readonly key: string;
+      readonly status: "found";
+      readonly path: string;
+      /** The 1-based line of the block. */
+      readonly line: number;
+      /** The version of the file as read: another one means the file changed. */
+      readonly version: string;
+      readonly rows: readonly TextStyleRow[];
+    };
+
+/**
  * The keyed ui node the calibration reads `game.rect` for: its key, its drawn rect and the ui
  * root rect, in reference units.
  */
@@ -296,8 +358,8 @@ export type CalibrationRun = {
 export type ClientPoint = { readonly x: number; readonly y: number };
 
 /**
- * A press on the Reference mode proxy layer (U9, A16): where it started, whether it became an area
- * drag (the pointer moved 4 client px or more) and whether Esc cancelled that drag.
+ * A press on the picker layer (U9, A16): where it started, whether it became an area drag (the
+ * pointer moved 4 client px or more) and whether Esc cancelled that drag.
  */
 export type AreaPress = {
   readonly pointerId: number;
@@ -311,21 +373,53 @@ export type AreaPress = {
 };
 
 /**
- * Reference mode as gameView sees it (D-27): proxies of the scene nodes in the frame overlay.
+ * The area gesture of the picker (U9): the press it started with and the marquee it draws.
  */
 export type ReferenceState = {
-  /** workspace:reference said on. */
-  on: boolean;
-  /** The node id of the proxy under the pointer: the overlay draws the picker hover box. */
-  hover: string | undefined;
-  /** "<flow>/<node>" of the watched game.position while on. */
-  node: string | undefined;
-  /** Unwatches game.position; undefined while off. */
-  unwatch: (() => void) | undefined;
-  /** The press on the proxy layer until its release (U9). */
+  /** The press on the picker layer until its release (U9). */
   press: AreaPress | undefined;
   /** The marquee of an area drag in device px; undefined while no drag runs (A16). */
   area: PageRect | undefined;
+};
+
+/**
+ * The pending style edits of one element (U8, D-67): values the person changed in the Styles
+ * fields of the Element tab and the source file does not have yet. They go to the agent as text
+ * (`copyEdits`) and in the published selection (`SelectionInfo.edits`); the editor writes no code
+ * for them. The pending edits of a text style key (D-73) are an entry of the same shape: the key
+ * styles many text nodes, so the edit belongs to the key, not to a node.
+ *
+ * @example
+ * ```ts
+ * const homePlay: ElementEdits = {
+ *   label: "homePlay",
+ *   source: { path: "features/stage/views/home-screen.tsx", line: 199 },
+ *   byId: false,
+ *   edits: [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
+ * };
+ * const button: ElementEdits = {
+ *   label: "textStyle ui.button",
+ *   source: { path: "shared/styles/text.ts", line: 88 },
+ *   byId: false,
+ *   edits: [{ path: "size", from: 105, to: 96 }]
+ * };
+ * ```
+ */
+export type ElementEdits = {
+  /**
+   * The head of the block in the agent text: the ui key, else the node name; `textStyle <key>`
+   * for a text style key.
+   */
+  readonly label: string;
+  /**
+   * Where the index says the element is written, or where the block of the text style key is;
+   * absent without an answer.
+   */
+  readonly source?: { readonly path: string; readonly line: number };
+  /** True when the map key is a node id: such an entry does not survive a game reload. */
+  readonly byId: boolean;
+  /** The edits, in the order the person made them; one per path. */
+  readonly edits: readonly StyleEdit[];
 };
 
 /**
@@ -365,8 +459,9 @@ export type LastPick = {
 };
 
 /**
- * How a pick ends (A8): `copy` puts the reference line on the clipboard with a toast; MCP
- * `moku_select` passes false. The capture card shows either way.
+ * How a completed pick ends (A8): `copy` puts the reference line on the clipboard with a toast;
+ * MCP `moku_select` passes false. The capture card shows either way. A picker click completes a
+ * pick only while the workspace preference "Copy on select" is on (D-70).
  */
 export type PickOptions = { readonly copy: boolean };
 
@@ -438,7 +533,8 @@ export type CodeSnippet = {
 
 /**
  * The style block a ui element uses: the `defineStyle` block of `style={ident}` named by the
- * identifier, or the text style key block of `style="ui.link"` named by the key (round 2b R17).
+ * identifier, or the text style key block of `style="ui.link"` named by the key (round 2b R17;
+ * the key the engine sends for the node when the JSX did not give one, D-73).
  */
 export type StyleSnippet = CodeSnippet & { readonly name: string };
 
@@ -580,14 +676,14 @@ export type GameViewState = {
   /** The calibration's target, revision and pending reads. */
   calibrationRun: CalibrationRun;
   /**
-   * The last index answer per ui key (proxies and Copy reference read it); a project change drops
-   * the answers in the files it changed (D-46).
+   * The last index answer per ui key (Copy reference and the pending edits read it); a project
+   * change drops the answers in the files it changed (D-46).
    */
   found: Map<string, StyleSource>;
   /**
-   * The style block found per ui key (the reference block's `style:` and the proxies), and the
-   * call of a style function per `style:` key (the Code section, G2); a project change drops the
-   * blocks in the files it changed (D-46).
+   * The style block found per ui key (the reference block's `style:`), and the call of a style
+   * function per `style:` key (the Code section, G2); a project change drops the blocks in the
+   * files it changed (D-46).
    */
   blocks: Map<string, BlockAt>;
   /**
@@ -598,7 +694,7 @@ export type GameViewState = {
   spawns: Map<string, SpawnAsk>;
   /** The reference card written last per `<node id>@<frame>` (round 2b R13). */
   cards: Map<string, string>;
-  /** Reference mode: the proxy layer in the frame overlay. */
+  /** The area gesture of the picker: its press and its marquee. */
   reference: ReferenceState;
   /** The bookmarks of the completed picks, newest first, at most 20. */
   bookmarks: PickBookmark[];
@@ -606,6 +702,14 @@ export type GameViewState = {
   pick: LastPick | undefined;
   /** The selection published last (`link.notify("selection")`, U4); undefined after a null. */
   selection: SelectionInfo | undefined;
+  /**
+   * The pending style edits per element (U8): the key is the ui key when the node has one, else
+   * the node id; `textStyle:<key>` for the edits of a text style key (D-73). Not persisted: a page
+   * load starts without any.
+   */
+  edits: Map<string, ElementEdits>;
+  /** The text style block of the selected text node (D-73); undefined for any other element. */
+  textStyle: TextStyleCard | undefined;
 };
 
 /**
@@ -619,18 +723,31 @@ export type GameViewState = {
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
-   * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
-   * element bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full frame
-   * (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the reference
-   * card next to them, puts its one reference line on the clipboard (see `copyReference`), shows
-   * the capture card with a Reference action and publishes the selection for MCP
-   * `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
+   * workspace, the Element tab and the hint pill; off clears the hover box. What a click on an
+   * element does next is the workspace preference "Copy on select" (the Copy Ref switch of the
+   * game toolbar, on by default).
+   *
+   * On: the click bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full
+   * frame (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the
+   * reference card next to them, puts its one reference line on the clipboard, shows the capture
+   * card with a Reference action and publishes the selection with its `card`, `crop` and `line`
+   * for MCP `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
+   *
+   * Off: the click only selects the element for the Element tab and publishes the selection
+   * without `card`, `crop` and `line`. Nothing is bookmarked, captured, written or copied, and a
+   * drag picks nothing. `copyReference` writes the card and copies its line on demand.
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
    * ```ts
-   * // The developer wants to pick an element in the running game.
+   * // The developer wants a reference of an element of the running game for the chat.
    * app.gameView.pick(true); // app.workspace.active() === "game", picker on
+   * // After a click on the coin pill: the card is written and its line is on the clipboard.
+   *
+   * // The developer only wants to look at elements in the Element tab.
+   * app.workspace.setCopyOnSelect(false);
+   * app.gameView.pick(true);
+   * // After a click on the coin pill: app.gameView.selected() names it, no file is written.
    * ```
    */
   pick(on?: boolean): void;
@@ -754,8 +871,9 @@ export type GameViewApi = {
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
    * new `<capturesDir>/<yyyy-mm-dd>/series-<hhmm>/` folder, puts `series: <folder> (<n> frames)`
-   * on the clipboard, then opens the contact sheet. Shows Game first. Refuses while another
-   * series runs.
+   * on the clipboard, toasts and shows the capture card of its first shot, like a screenshot
+   * (D-69). The contact sheet opens only on request (`openSheet`). Shows Game first. Refuses
+   * while another series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -790,7 +908,8 @@ export type GameViewApi = {
 
   /**
    * Opens a saved series' contact sheet: reads its index.json and every PNG. Shows Game. The
-   * `workspace:open-sheet` hook calls it (filesView "Open contact sheet").
+   * `workspace:open-sheet` hook calls it (filesView "Open contact sheet"), and so does "Open" on
+   * the capture card of a series.
    *
    * @param indexPath - Path of the series' index.json.
    * @returns Resolves when the sheet is open (or a toast said why not).
@@ -851,6 +970,85 @@ export type GameViewApi = {
    * ```
    */
   bookmarks(): readonly PickBookmark[];
+
+  /**
+   * Records a pending style edit of the selected element (U8, D-67). `from` is the value the
+   * scene has for `path` now. A second edit of the same path replaces `to` and keeps the first
+   * `from`. A `to` equal to the scene value removes the edit of that path. Nothing is written to
+   * a file and no command is sent: the edit goes to the agent (`copyEdits`, and `edits` of the
+   * published selection). Does nothing without a selected element in the scene, or for a path
+   * the element's style does not have as a number, a string or a boolean.
+   *
+   * @param path - The style property, dotted for a nested one (`padding.top`).
+   * @param to - The wanted value.
+   * @example
+   * ```ts
+   * // homePlay is 556 wide in the game; the person wants 600 and more room on top.
+   * app.gameView.select({ kind: "ui", path: "homeScreen/homePlay" });
+   * app.gameView.editStyle("minWidth", 600);
+   * app.gameView.editStyle("padding.top", 30);
+   * app.gameView.edits()[0]?.edits;
+   * // [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
+   * app.gameView.editStyle("minWidth", 556); // back to the scene value: that edit is gone
+   * ```
+   */
+  editStyle(path: string, to: StyleValue): void;
+
+  /**
+   * Drops pending style edits: the ones of the selected element, or all of them. The edits of a
+   * selected text node are its own and the ones of its text style key (D-73). The selection is
+   * published again without them.
+   *
+   * @param scope - `"selected"` for the selected element only; `"all"` (the default) for every element.
+   * @example
+   * ```ts
+   * // The person changed their mind about homePlay; the edits of the other elements stay.
+   * app.gameView.clearEdits("selected");
+   * app.gameView.edits().some(entry => entry.label === "homePlay"); // false
+   * app.gameView.clearEdits(); // every pending edit is gone
+   * ```
+   */
+  clearEdits(scope?: "selected" | "all"): void;
+
+  /**
+   * Every pending style edit, one entry per element, the selected element first, then one entry
+   * per text style key (label `textStyle <key>`, D-73). An edit leaves by itself when a scene
+   * snapshot shows its `to` value: the agent wrote the code and hot reload brought it in. The
+   * edit of a text style key leaves when its block, read again, has the `to` value. A game
+   * reload drops the entries of elements without a ui key.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // The edits bar of the Element tab counts them: "2 edits".
+   * const count = app.gameView.edits().reduce((sum, entry) => sum + entry.edits.length, 0);
+   * app.gameView.edits()[0];
+   * // { label: "homePlay", source: { path: "features/stage/views/home-screen.tsx", line: 199 }, byId: false, edits: [ … ] }
+   * // After the size of the text style key ui.button was changed in the Element tab:
+   * app.gameView.edits().at(-1);
+   * // { label: "textStyle ui.button", source: { path: "shared/styles/text.ts", line: 88 }, byId: false, edits: [{ path: "size", from: 105, to: 96 }] }
+   * ```
+   */
+  edits(): readonly ElementEdits[];
+
+  /**
+   * Puts the pending edits on the clipboard as text for the agent, toast "✓ 2 edits copied": one
+   * block per element, the selected one first, then one block per text style key (D-73), blocks
+   * separated by one empty line. The head is `@moku <label>` plus ` · <path>:<line>` when the
+   * source is known; then one line per edit. Strings are written in double quotes, numbers and
+   * booleans bare.
+   *
+   * @returns The text; undefined without edits, or when the clipboard refused (toasted).
+   * @example
+   * ```ts
+   * // "Copy for agent" in the Element tab, after the two edits of homePlay.
+   * await app.gameView.copyEdits();
+   * // "@moku homePlay · features/stage/views/home-screen.tsx:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30"
+   * // With the size of the text style key ui.button changed too, its block comes last:
+   * // "@moku homePlay · …:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30\n\n@moku textStyle ui.button · shared/styles/text.ts:88\nsize: 105 -> 96"
+   * ```
+   */
+  copyEdits(): Promise<string | undefined>;
 };
 
 /**
@@ -872,6 +1070,5 @@ export type GameViewHooks = {
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "workspace:open-sheet": (payload: ToolsEvents["workspace:open-sheet"]) => void;
   readonly "workspace:inspect": (payload: ToolsEvents["workspace:inspect"]) => void;
-  readonly "workspace:reference": (payload: ToolsEvents["workspace:reference"]) => void;
   readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
 };

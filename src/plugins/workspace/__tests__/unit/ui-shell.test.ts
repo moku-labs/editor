@@ -258,9 +258,7 @@ describe("Palette", () => {
     const dialog = root.querySelector<HTMLDialogElement>("dialog[data-ui='palette']");
     expect(dialog?.open).toBe(true);
     expect(input().getAttribute("role")).toBe("combobox");
-    expect(input().placeholder).toBe(
-      "Jump to a node, file, style, texture, panel or run a command"
-    );
+    expect(input().placeholder).toBe("Jump to a node, file, texture, panel or run a command");
     const heads = [...root.querySelectorAll("[role='listbox'] h3")].map(head => head.textContent);
     expect(heads).toEqual(["Commands 20", "Nodes 25"]);
     expect(root.querySelectorAll("[role='option']")).toHaveLength(6);
@@ -320,7 +318,7 @@ describe("Palette", () => {
 
   it("a click runs an option; ⌘K and cancel close the palette", () => {
     const run = vi.fn();
-    api.palette.add({ id: "style:a", group: "Styles", label: "ui.number", run });
+    api.palette.add({ id: "texture:a", group: "Textures", label: "ui.number", run });
     type("ui.number");
     act(() => root.querySelector<HTMLElement>("[role='option']")?.click());
     expect(run).toHaveBeenCalledTimes(1);

@@ -7,12 +7,13 @@ import { createCtx } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("ESC_RANK", () => {
-  it("puts the modals first, Reference mode just before the selection and the selection last", () => {
+  it("puts the modals first and the selection last, with no Reference mode layer (D-65)", () => {
     expect(ESC_RANK[0]).toBe("palette");
     expect(ESC_RANK[1]).toBe("contactSheet");
-    expect(ESC_RANK.at(-2)).toBe("reference");
+    expect(ESC_RANK.at(-2)).toBe("stepPopover");
     expect(ESC_RANK.at(-1)).toBe("selection");
-    expect(ESC_RANK).toHaveLength(12);
+    expect(ESC_RANK).toHaveLength(11);
+    expect(ESC_RANK).not.toContain("reference");
     expect(ESC_RANK).not.toContain("noteEditor");
   });
 });

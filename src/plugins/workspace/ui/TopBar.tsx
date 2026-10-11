@@ -1,23 +1,27 @@
 /**
  * @file workspace plugin — B1, the top bar, in two layouts by window width (round 2 R1).
  *
- * 900 px and wider (`data-layout="wide"`), left to right: logo, game name, session chip, link
- * pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O) and Hot
- * reload (H) switches with visible labels, Reference mode, Registry (icon; counts in its title),
- * theme toggle.
+ * 900 px and wider (`data-layout="wide"`), left to right: the game mark, game name, session chip,
+ * link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O)
+ * and Hot reload (H) switches with visible labels, Registry (icon; counts in its title), theme
+ * toggle.
  *
- * Below 900 px (`data-layout="compact"`): logo, game name, link pill (the session id in its title;
- * it opens the session menu), Pause/Resume and Step as icons (the label is their accessible name),
- * the Reference mode (R) and Hot reload (H) icon toggles (round 2b R15), the search icon and the ⋯
- * menu holding the rest; the two toggles stay in the menu too. At 560 px and narrower only the
- * Reference toggle stays in the bar and the game name hides (TopBar.css). Controls that cannot act
- * now are `aria-disabled` so their tooltip still explains why.
+ * Below 900 px (`data-layout="compact"`): the game mark, game name, link pill (the session id in
+ * its title; it opens the session menu), Pause/Resume and Step as icons (the label is their
+ * accessible name), the Hot reload (H) icon toggle (round 2b R15), the search icon and the ⋯ menu
+ * holding the rest; the toggle stays in the menu too. At 560 px and narrower the game name hides
+ * (TopBar.css). Controls that cannot act now are `aria-disabled` so their tooltip still explains
+ * why.
+ *
+ * The game mark (U1) is a tile with the initials of the game name, tinted by a hue from the name
+ * (`markOf`); without a game it is a neutral dot.
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
 import { Icon, type IconName } from "../../panels/shared/icons";
 import { closePopover, openPopover, stepOnce, togglePause } from "../actions";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
+import { markOf } from "../mark";
 import { openPalette } from "../palette/items";
 import { chooseTheme } from "../prefs/apply";
 import { viewportWidth } from "../prefs/density";
@@ -28,7 +32,6 @@ import {
   hotReloadControl,
   overlayControl,
   previewControl,
-  referenceControl,
   registryTitle,
   type ToggleControl
 } from "./controls";
@@ -56,32 +59,20 @@ export type TopBarProps = { readonly ctx: WorkspaceCtx };
 export const COMPACT_BAR_BELOW = 900;
 
 /**
- * At this window width and narrower the compact bar keeps only the Reference toggle; Hot reload
- * is a ⋯ row then (R15), in px. TopBar.css hides the game name from the same width.
- *
- * @example
- * ```ts
- * barToggles(NARROW_BAR_MAX); // ["reference"]
- * ```
- */
-export const NARROW_BAR_MAX = 560;
-
-/**
- * The icon toggles the compact bar shows before the search (R15): Reference mode and Hot reload,
- * only Reference at 560 px and narrower, none in the wide bar (it has its own switches).
+ * The icon toggles the compact bar shows before the search (R15): Hot reload at every compact
+ * width, none in the wide bar (it has its own switches).
  *
  * @param width - The window width in CSS px.
  * @returns The data-action names, in bar order.
  * @example
  * ```ts
- * barToggles(720); // ["reference", "hot-reload"]
- * barToggles(480); // ["reference"]
+ * barToggles(720); // ["hot-reload"]
+ * barToggles(480); // ["hot-reload"]
  * barToggles(960); // []
  * ```
  */
-export function barToggles(width: number): readonly ("reference" | "hot-reload")[] {
-  if (barLayout(width) === "wide") return [];
-  return width <= NARROW_BAR_MAX ? ["reference"] : ["reference", "hot-reload"];
+export function barToggles(width: number): readonly "hot-reload"[] {
+  return barLayout(width) === "wide" ? [] : ["hot-reload"];
 }
 
 /**
@@ -114,6 +105,30 @@ function splitGameName(game: string): { name: string; version: string | undefine
   const match = /^(.*\S)\s+(v?\d[\w.+-]*)$/.exec(game);
   if (match?.[1] === undefined || match[2] === undefined) return { name: game, version: undefined };
   return { name: match[1], version: match[2] };
+}
+
+/**
+ * The game mark (U1): a tile with the initials of the game, tinted by the hue of its name. The
+ * version is left out, so a new version keeps the colour. The hue goes out as the inline custom
+ * property `--mark-hue`, the only inline style; without a game there is none and TopBar.css keeps
+ * the tile neutral.
+ *
+ * @param props - The manifest game string.
+ * @param props.game - E.g. "merge-game 0.0.0"; undefined without a game.
+ * @returns The tile.
+ */
+function MarkTile(props: { readonly game: string | undefined }): VNode {
+  const { game } = props;
+  const mark = markOf(game === undefined ? undefined : splitGameName(game).name);
+  return (
+    <span
+      data-mark
+      aria-hidden="true"
+      style={mark.hue === undefined ? undefined : { "--mark-hue": String(mark.hue) }}
+    >
+      {mark.text}
+    </span>
+  );
 }
 
 /**
@@ -151,7 +166,7 @@ function GameName(props: { readonly game: string }): VNode {
  */
 function SearchButton(props: { readonly ctx: WorkspaceCtx; readonly compact: boolean }): VNode {
   const combo = formatCombo("mod+k", isApplePlatform(globalThis.navigator));
-  const placeholder = "Jump to node, file, style, texture";
+  const placeholder = "Jump to node, file, texture";
   if (props.compact) {
     return (
       <button
@@ -188,20 +203,16 @@ function ButtonLabel(props: { readonly text: string; readonly compact: boolean }
 }
 
 /**
- * A toggle as an icon button: `aria-pressed` carries its state, the label is its accessible
- * name, the title names its key and, when it cannot act, why.
+ * A toggle as an icon button of the compact bar (R15): `aria-pressed` carries its state and a dot
+ * marks it while on, the label is its accessible name, the title names its key and, when it
+ * cannot act, why.
  *
- * @param props - The control, its icon and whether a dot marks it on.
+ * @param props - The control and its icon.
  * @param props.control - What the button shows and does.
  * @param props.icon - The icon.
- * @param props.dot - Whether a dot shows while it is on (Hot reload).
  * @returns The button.
  */
-function IconToggle(props: {
-  readonly control: ToggleControl;
-  readonly icon: IconName;
-  readonly dot?: boolean;
-}): VNode {
+function IconToggle(props: { readonly control: ToggleControl; readonly icon: IconName }): VNode {
   const { control } = props;
   return (
     <BarButton
@@ -212,32 +223,9 @@ function IconToggle(props: {
       onClick={control.toggle}
     >
       <Icon name={props.icon} />
-      {props.dot === true && control.checked && <span data-part="dot" aria-hidden="true" />}
+      {control.checked && <span data-part="dot" aria-hidden="true" />}
       <span data-sr-only>{control.label}</span>
     </BarButton>
-  );
-}
-
-/**
- * The icon toggles of the compact bar (R15), placed before the search.
- *
- * @param props - The workspace domain context and the window width.
- * @param props.ctx - Domain context of workspace.
- * @param props.width - The window width in CSS px.
- * @returns The toggles.
- */
-function CompactToggles(props: { readonly ctx: WorkspaceCtx; readonly width: number }): VNode {
-  const { ctx } = props;
-  const toggles = barToggles(props.width);
-  return (
-    <>
-      {toggles.includes("reference") && (
-        <IconToggle control={referenceControl(ctx)} icon="target" />
-      )}
-      {toggles.includes("hot-reload") && (
-        <IconToggle control={hotReloadControl(ctx)} icon="flame" dot />
-      )}
-    </>
   );
 }
 
@@ -263,7 +251,7 @@ function ControlSwitch(props: { readonly control: ToggleControl }): VNode {
 }
 
 /**
- * The right part of the wide bar: the three switches, Reference mode, Registry, theme.
+ * The right part of the wide bar: the three switches, Registry, theme.
  *
  * @param props - The workspace domain context.
  * @param props.ctx - Domain context of workspace.
@@ -280,7 +268,6 @@ function WideControls(props: { readonly ctx: WorkspaceCtx }): VNode {
       <ControlSwitch control={previewControl(ctx)} />
       <ControlSwitch control={overlayControl(ctx)} />
       <ControlSwitch control={hotReloadControl(ctx)} />
-      <IconToggle control={referenceControl(ctx)} icon="target" />
       <BarButton
         name="registry"
         anchor="registry"
@@ -318,15 +305,14 @@ export function TopBar(props: TopBarProps): VNode {
   const { kind } = state.link;
   const paused = kind === "paused";
   const running = kind === "live" || paused;
-  // While the link reloads the bar keeps the last name (U9: nothing moves sideways).
-  const held = heldNames(state.link, state.shown).game;
+  // While the link reloads the bar keeps the last name (U9: nothing moves sideways); the mark
+  // holds the same name.
+  const game = manifest?.game ?? heldNames(state.link, state.shown).game;
 
   return (
     <header data-ui="top-bar" data-layout={layout}>
-      <span data-logo aria-hidden="true">
-        <Icon name="logo" />
-      </span>
-      <GameName game={manifest?.game ?? held ?? "No game"} />
+      <MarkTile game={game} />
+      <GameName game={game ?? "No game"} />
       {!compact && <SessionChip ctx={ctx} />}
       <LinkPill ctx={ctx} session={compact} />
       <BarButton
@@ -348,7 +334,9 @@ export function TopBar(props: TopBarProps): VNode {
         <Icon name="step" />
         <ButtonLabel text="Step 1 frame" compact={compact} />
       </BarButton>
-      {compact && <CompactToggles ctx={ctx} width={width} />}
+      {barToggles(width).includes("hot-reload") && (
+        <IconToggle control={hotReloadControl(ctx)} icon="flame" />
+      )}
       <SearchButton ctx={ctx} compact={compact} />
       {compact ? <MoreMenu ctx={ctx} /> : <WideControls ctx={ctx} />}
       {compact && sessionsView(ctx).many && <SessionMenu ctx={ctx} />}

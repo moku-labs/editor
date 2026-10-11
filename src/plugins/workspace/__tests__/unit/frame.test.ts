@@ -124,16 +124,6 @@ describe("syncFrame — docking table", () => {
     expect(ctx.state.frame.iframe?.tabIndex).toBe(0);
   });
 
-  it("marks the frame box while Reference mode is on", () => {
-    ctx.state.frame.previewBody = document.createElement("div");
-    ctx.state.reference = true;
-    syncFrame(ctx);
-    expect(boxElement().dataset.reference).toBe("");
-    ctx.state.reference = false;
-    syncFrame(ctx);
-    expect(boxElement().dataset.reference).toBeUndefined();
-  });
-
   it("outside Game with the preview hidden: hidden", () => {
     ctx.state.frame.previewBody = document.createElement("div");
     ctx.state.previews.flow.visible = false;

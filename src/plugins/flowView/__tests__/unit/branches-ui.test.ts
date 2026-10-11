@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("Inspector variants", () => {
-  it("shows a hint when nothing is shown while live; ←/→ cycle the three tabs", async () => {
+  it("shows a hint when nothing is shown while live; ←/→ cycle the two tabs", async () => {
     const { ctx, actions } = await prepared();
     const empty = mount(h(Inspector, { ctx, actions, shown: undefined, info: undefined }));
     expect(empty.host.textContent).toContain("Select a node to inspect it.");
@@ -36,7 +36,7 @@ describe("Inspector variants", () => {
         .querySelector<HTMLElement>('[role="tab"]')
         ?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
     );
-    expect(ctx.state.inspector.tab).toBe("styles");
+    expect(ctx.state.inspector.tab).toBe("code");
     await settle(() =>
       tabs.host
         .querySelector<HTMLElement>('[role="tab"]')

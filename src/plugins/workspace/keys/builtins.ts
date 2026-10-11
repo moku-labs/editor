@@ -1,14 +1,13 @@
 /**
  * @file workspace plugin — the built-in keys of design §4 (⌘1–⌘6 and bare 1–6, ⌘K, `.`, P, O,
- * G, R, H) and the Esc layers the shell owns (palette, the session and ⋯ menus, registry, step
- * popover, Reference mode). In Flow, flowView's H (History) wins over the global Hot reload key.
+ * G, H) and the Esc layers the shell owns (palette, the session and ⋯ menus, registry, step
+ * popover). In Flow, flowView's H (History) wins over the global Hot reload key.
  */
 import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
 import { closePopover, showWorkspace, stepOnce, togglePause, togglePreview } from "../actions";
 import { toggleHotReload } from "../hot-reload";
 import { setOverlayInGame } from "../overlay";
 import { closePalette, togglePalette } from "../palette/items";
-import { closeReference, toggleReference } from "../reference";
 import type { KeyBinding, WorkspaceCtx } from "../types";
 import { addEscapeLayer } from "./escape";
 import { bindKey } from "./keymap";
@@ -52,7 +51,6 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
     void setOverlayInGame(ctx, !state.overlayInGame, "key");
   });
   bind(ctx, "g", "Game preview", () => togglePreview(ctx));
-  bind(ctx, "r", "Reference mode", () => toggleReference(ctx));
   bind(ctx, "h", "Hot reload", () => toggleHotReload(ctx));
 
   addEscapeLayer(ctx, "palette", () => {
@@ -64,5 +62,4 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
   addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "more"));
   addEscapeLayer(ctx, "registry", () => closePopover(state, "registry"));
   addEscapeLayer(ctx, "stepPopover", () => closePopover(state, "step"));
-  addEscapeLayer(ctx, "reference", () => closeReference(ctx));
 }

@@ -1,14 +1,15 @@
 /**
  * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
- * children, the resolved style (or the style the project index knows when the scene sends none),
- * the layout style card with its steppers (or the read-only call,
- * or where the key is defined, or why the project index has no answer), the Code section (round
- * 2b R12), the reference block for the chat with Copy (round 2 R2), "Show in render tree"
- * (workspace:reveal) and "Pick another".
+ * children, the resolved style as fields that record pending edits for the agent (U8; or the
+ * style the project index knows when the scene sends none), the fields of a text node's text
+ * style key (D-73, `TextStyleSection`) and the edits bar, the layout style card with its steppers
+ * (or the read-only call, or where the key is defined, or why the project index has no answer),
+ * the Code section (round 2b R12), and the footer: "Copy reference" (the card and its one line,
+ * round 2b R13) and "Show in render tree" (workspace:reveal).
  */
 import type { VNode } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 import { linkPlugin } from "../../link";
 import { notFoundText } from "../../panels/shared/project";
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
@@ -26,19 +27,19 @@ import {
 } from "../element/select";
 import { writtenStyle } from "../element/style-path";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
-import { referenceText } from "../reference/facts";
+import { openTextStyle } from "../element/text-styles";
 import { copySelectedReference } from "../reference/pick";
 import { readManifest } from "../scene/manifest";
 import type { GameViewCtx, StyleCard, StyleLookup, StyleSource } from "../types";
 import { CodeSection } from "./CodeSection";
-import { styleValue } from "./text";
+import { EditsBar, StyleRows } from "./StyleFields";
+import { TextStyleSection } from "./TextStyleSection";
 import { useGameView } from "./useGameView";
 
 /**
- * Props of `ElementTab`: the context and "<flow>/<node>" of the game position (the panel's
- * `game.position`), undefined when not known.
+ * Props of `ElementTab`.
  */
-export type ElementTabProps = { readonly ctx: GameViewCtx; readonly flowNode?: string | undefined };
+export type ElementTabProps = { readonly ctx: GameViewCtx };
 
 /**
  * A chip that selects an element and draws the pink box while hovered.
@@ -134,7 +135,12 @@ function StyleCardView(props: { readonly ctx: GameViewCtx; readonly card: StyleC
           Open in Files
         </button>
       </header>
-      <ol data-part="lines" aria-label="Style block">
+      <ol
+        data-part="lines"
+        aria-label="Style block"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region is keyboard-scrollable only when it can take focus
+        tabIndex={0}
+      >
         {lines.map((text, index) => (
           <li key={block.line + index} data-part="line">
             <span data-part="gutter">{block.line + index}</span>
@@ -280,118 +286,68 @@ function TextureBox(props: { readonly ctx: GameViewCtx; readonly texture: string
 }
 
 /**
- * The style the project index knows for a ui key: the identifier of `style={ident}`, the call of
- * `style={call(…)}` as written, the text style key of `style="ui.link"`.
+ * The style of an element by its name: the text style key of `style="ui.link"` the project index
+ * knows; else the text style key the engine sent for the node (a key built in code, D-73); else
+ * the identifier of `style={ident}` or the call of `style={call(…)}` as written.
  *
  * @param source - The index answer of the element's key (`state.found`).
+ * @param textStyle - The text style key of the node (`SceneNode.textStyle`).
  * @returns The name, undefined without an answer or without a style.
  * @example
  * ```ts
- * styleNameOf({ kind: "defined", path: "features/gift/popups/daily-gift.tsx", line: 25, range: [23, 9, 29, 11], textStyle: "ui.amount", stylePath: "shared/views/amount.tsx" }); // "ui.amount"
+ * styleNameOf({ kind: "defined", path: "features/gift/popups/daily-gift.tsx", line: 25, range: [23, 9, 29, 11], textStyle: "ui.amount", stylePath: "shared/views/amount.tsx" }, undefined); // "ui.amount"
+ * // ticktoe's `style={toneStyle(props.style, props.tone)}`: the engine says which key it gave.
+ * styleNameOf({ kind: "call", path: "shared/views/panels.tsx", line: 130, range: [130, 10, 130, 96], call: "toneStyle(props.style, props.tone)", callLine: 130 }, "ui.button.coral"); // "ui.button.coral"
  * ```
  */
-function styleNameOf(source: StyleSource | undefined): string | undefined {
-  return writtenStyle(source) ?? (source?.kind === "defined" ? source.textStyle : undefined);
+function styleNameOf(
+  source: StyleSource | undefined,
+  textStyle: string | undefined
+): string | undefined {
+  const written = source?.kind === "defined" ? source.textStyle : undefined;
+  return written ?? textStyle ?? writtenStyle(source);
 }
 
 /**
  * What the Styles section says for an empty scene style (the game sends `style: {}` for every
- * text node): the style the index knows for the element's key, titled like the Code section
- * ("Style · ui.amount"), else that the element has none.
+ * text node): the style the index knows for the element's key, or the text style key the engine
+ * sent for it, titled like the Code section ("Style · ui.amount"), else that the element has
+ * none.
  *
- * @param props - The index answer.
+ * @param props - The index answer and the text style key.
  * @param props.source - The index answer of the element's key, undefined when there is none.
+ * @param props.textStyle - The text style key of the node, undefined when it has none.
  * @returns The line.
  */
-function EmptyStyle(props: { readonly source: StyleSource | undefined }): VNode {
-  const name = styleNameOf(props.source);
+function EmptyStyle(props: {
+  readonly source: StyleSource | undefined;
+  readonly textStyle: string | undefined;
+}): VNode {
+  const name = styleNameOf(props.source, props.textStyle);
   if (name === undefined) return <p>No style of its own.</p>;
   return <p data-part="style-name">Style · {name}</p>;
 }
 
 /**
- * The full reference block of the node, read-only, with Copy (round 2 R2): Copy writes the card
- * and puts its one line on the clipboard (round 2b R13). It is gathered again when the node, its
- * style lookup, its style block, its bounds, the flow node or the last pick changes; not on every
- * scene frame.
- *
- * @param props - The context, the scene, the node and the flow node.
- * @param props.ctx - Domain context of gameView.
- * @param props.scene - The scene.
- * @param props.node - The selected node.
- * @param props.flowNode - "<flow>/<node>" of the game position (a change gathers again).
- * @returns The section.
- */
-function ReferenceSection(props: {
-  readonly ctx: GameViewCtx;
-  readonly scene: SceneSnapshot;
-  readonly node: SceneNode;
-  readonly flowNode: string | undefined;
-}): VNode {
-  const { ctx, scene, node, flowNode } = props;
-  const { state } = ctx;
-  const [text, setText] = useState<string | undefined>();
-  const block = node.key === undefined ? undefined : state.blocks.get(node.key);
-  const where = block === undefined ? undefined : `${block.path}:${block.line}`;
-  const bounds = node.rect === undefined ? undefined : Object.values(node.rect).join(",");
-  useEffect(() => {
-    let alive = true;
-    referenceText(ctx, node, scene).then(
-      next => {
-        if (alive) setText(next);
-      },
-      (error: unknown) => {
-        ctx.log.warn("gameView: reference block failed", { error });
-      }
-    );
-    return () => {
-      alive = false;
-    };
-  }, [node.id, state.lookup?.status, where, bounds, flowNode, state.pick]);
-
-  return (
-    <section data-part="reference-block" aria-label="Reference">
-      <header>
-        <h4>Reference</h4>
-        <button
-          type="button"
-          data-variant="ghost"
-          data-action="copy-reference"
-          title="Write the reference card and copy its line for the chat"
-          onClick={() => void copySelectedReference(ctx)}
-        >
-          Copy
-        </button>
-      </header>
-      <pre data-part="reference" aria-busy={text === undefined}>
-        {text ?? "Gathering the reference…"}
-      </pre>
-    </section>
-  );
-}
-
-/**
  * The filled tab for one node.
  *
- * @param props - The context, the scene, the node and the flow node.
+ * @param props - The context, the scene and the node.
  * @param props.ctx - Domain context of gameView.
  * @param props.scene - The scene.
  * @param props.node - The selected node.
- * @param props.flowNode - "<flow>/<node>" of the game position.
  * @returns The tab body.
  */
 function NodeDetails(props: {
   readonly ctx: GameViewCtx;
   readonly scene: SceneSnapshot;
   readonly node: SceneNode;
-  readonly flowNode: string | undefined;
 }): VNode {
-  const { ctx, scene, node, flowNode } = props;
+  const { ctx, scene, node } = props;
   const choice = ctx.require(workspacePlugin).device();
   const size = resolveDevice(choice.preset, choice.orientation);
   const ancestors = ancestorsOf(scene, node.id).flatMap(id => scene.nodes.get(id) ?? []);
   const children = node.children.flatMap(id => scene.nodes.get(id) ?? []);
-  const style = node.style === undefined ? [] : Object.entries(node.style);
+  const hasStyle = node.style !== undefined && Object.keys(node.style).length > 0;
   const found = node.key === undefined ? undefined : ctx.state.found.get(node.key);
 
   return (
@@ -456,30 +412,30 @@ function NodeDetails(props: {
       )}
       <section data-part="style" aria-label="Styles">
         <h4>Styles</h4>
-        {style.length === 0 ? (
-          <EmptyStyle source={found} />
+        {hasStyle ? (
+          <StyleRows ctx={ctx} node={node} />
         ) : (
-          <dl data-props="">
-            {style.map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{styleValue(value)}</dd>
-              </div>
-            ))}
-          </dl>
+          <EmptyStyle source={found} textStyle={node.textStyle} />
         )}
+        {node.textStyle !== undefined && <TextStyleSection ctx={ctx} textStyle={node.textStyle} />}
+        <EditsBar ctx={ctx} />
       </section>
       {node.ref.kind === "ui" && node.key !== undefined && (
         <StyleSection ctx={ctx} nodeKey={node.key} />
       )}
       <CodeSection key={node.id} ctx={ctx} node={node} />
-      <ReferenceSection ctx={ctx} scene={scene} node={node} flowNode={flowNode} />
       <footer>
+        <button
+          type="button"
+          data-variant="ghost"
+          data-action="copy-reference"
+          title="Write the reference card and copy its line for the chat"
+          onClick={() => void copySelectedReference(ctx)}
+        >
+          Copy reference
+        </button>
         <button type="button" data-variant="ghost" onClick={() => revealElement(ctx, node.ref)}>
           Show in render tree
-        </button>
-        <button type="button" data-variant="ghost" onClick={() => setPicker(ctx, true)}>
-          Pick another
         </button>
       </footer>
     </div>
@@ -518,14 +474,18 @@ function loadDetails(
  */
 export function ElementTab(props: ElementTabProps): VNode {
   const { ctx } = props;
-  const flowNode = props.flowNode ?? ctx.state.reference.node;
   const { state } = ctx;
   useGameView(state, () => state.selected);
   const { selected, scene } = state;
   const id = selected === undefined ? undefined : refId(selected);
   const node = id === undefined ? undefined : scene?.nodes.get(id);
   const placed = node !== undefined;
+  const textStyle = node?.textStyle;
   useEffect(() => loadDetails(ctx, selected, node?.texture), [id, placed]);
+  // The block of the text style key (D-73): read for the element, and again when its key changes.
+  useEffect(() => {
+    void openTextStyle(ctx);
+  }, [id, textStyle]);
 
   if (selected === undefined) {
     return (
@@ -547,5 +507,5 @@ export function ElementTab(props: ElementTabProps): VNode {
       </div>
     );
   }
-  return <NodeDetails ctx={ctx} scene={scene} node={node} flowNode={flowNode} />;
+  return <NodeDetails ctx={ctx} scene={scene} node={node} />;
 }

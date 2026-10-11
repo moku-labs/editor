@@ -2,9 +2,9 @@
  * @file gameView plugin — the picker layer (F11): a transparent layer in gameView's overlay root
  * that takes pointer events only while picking (the iframe gets none then). Hover shows the box
  * of the element under the pointer; a click selects it. A press that moves 4 px or more drags an
- * area instead, with the gesture of the Reference mode proxy layer (captures-by-day U4): the
- * marquee follows, the hover box stays, the release picks the area and turns the picker off, Esc
- * cancels the drag. The render tree (renderView) is the keyboard path to an element.
+ * area instead (U9, captures-by-day U4): the marquee follows, the hover box stays, the release
+ * picks the area and turns the picker off, Esc cancels the drag. The render tree (renderView) is
+ * the keyboard path to an element.
  */
 import type { VNode } from "preact";
 import { hoverAt, pickAt } from "../element/select";

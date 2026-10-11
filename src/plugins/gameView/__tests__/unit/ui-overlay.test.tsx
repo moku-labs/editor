@@ -78,6 +78,22 @@ describe("OverlayRoot", () => {
     expect(find(root, "[data-part='label']").dataset.flipped).toBe("");
   });
 
+  it("draws the hover box of the picker only: no hover while the picker is off, no proxy layer", () => {
+    update(() => {
+      ctx.state.picker = { on: false, hover: "ui:boardScreen/hudRow/coinPill" };
+    });
+    expect(root.querySelector("[data-box='hover']")).toBeNull();
+    expect(root.querySelector("[data-moku-proxies]")).toBeNull();
+    expect(root.querySelector("[data-moku-proxy]")).toBeNull();
+  });
+
+  it("draws the marquee of an area drag", () => {
+    update(() => {
+      ctx.state.reference.area = { x: 30, y: 45, w: 520, h: 135 };
+    });
+    expect(find(root, "[data-box='area']").style.width).toBe("520px");
+  });
+
   it("counter-scales the label by 1 / frame scale", () => {
     update(() => {
       ctx.workspace.box = {

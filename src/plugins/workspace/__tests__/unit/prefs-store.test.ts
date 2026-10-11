@@ -31,6 +31,54 @@ describe("defaultStoredPrefs", () => {
   });
 });
 
+/**
+ * Stores a version-1 record with a device and the given extra fields.
+ *
+ * @param extra - Fields beside `v`, `previews` and `device`.
+ * @param extra.muted - A stored sound flag.
+ * @param extra.copyOnSelect - A stored Copy on select value that is not a boolean.
+ */
+function store(extra: { readonly muted?: boolean; readonly copyOnSelect?: string }): void {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      v: 1,
+      previews: {},
+      device: { preset: "iphone-15", orientation: "portrait" },
+      ...extra
+    })
+  );
+}
+
+describe("copyOnSelect (U5)", () => {
+  it("is on for a fresh viewer", () => {
+    expect(defaultStoredPrefs().copyOnSelect).toBe(true);
+  });
+
+  it("a stored record without the field reads as on, silently", () => {
+    const log = createLog();
+    store({ muted: true });
+    expect(loadPrefs(KEY, log)).toMatchObject({ muted: true, copyOnSelect: true });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("round-trips off", () => {
+    const log = createLog();
+    savePrefs(KEY, { ...defaultStoredPrefs(), copyOnSelect: false }, log);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}").copyOnSelect).toBe(false);
+    expect(loadPrefs(KEY, log).copyOnSelect).toBe(false);
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a value that is not a boolean reads as on, with one warn naming it", () => {
+    const log = createLog();
+    store({ copyOnSelect: "no" });
+    expect(loadPrefs(KEY, log).copyOnSelect).toBe(true);
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith("workspace:prefs", { invalid: ["copyOnSelect"] });
+  });
+});
+
 describe("loadPrefs / savePrefs", () => {
   it("round-trips a record under the key with v: 1", () => {
     const log = createLog();

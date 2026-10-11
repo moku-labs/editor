@@ -23,7 +23,8 @@ describe("ContextMenu (D4, M5, M7, M8)", () => {
       y: 0
     });
     const labels = items.map(entry => entry.label);
-    expect(labels.slice(0, 3)).toEqual(["Focus", "Open code", "Open styles"]);
+    expect(labels.slice(0, 2)).toEqual(["Focus", "Open code"]);
+    expect(labels).not.toContain("Open styles");
     expect(labels.some(label => label.includes("note"))).toBe(false);
     expect(labels).toContain("Step 1 frame");
     expect(labels).toContain("Pause game");
@@ -204,14 +205,14 @@ describe("HistoryStrip (B4, M3)", () => {
   });
 });
 
-describe("styles of flowView (M6, M10, M14, R5, R7)", () => {
+describe("styles of flowView (M6, M14, R5, R7)", () => {
   it("has no backdrop-filter, no class selector, no @layer wrapper; @scope per sheet; tokens only", async () => {
     const { readdirSync } = await import("node:fs");
     const root = PLUGIN_DIR;
     const sheets = readdirSync(root, { recursive: true, encoding: "utf8" }).filter(
       file => file.endsWith(".css") && !file.includes("__tests__")
     );
-    expect(sheets.length).toBe(19);
+    expect(sheets.length).toBe(18);
     for (const sheet of sheets) {
       const text = readFileSync(`${root}${sheet}`, "utf8");
       const code = text.replaceAll(/\/\*[\s\S]*?\*\//g, "");
@@ -223,8 +224,6 @@ describe("styles of flowView (M6, M10, M14, R5, R7)", () => {
         /#[\da-fA-F]{3,8}\b|rgba?\(/
       );
     }
-    const styles = readFileSync(`${root}inspector/StylesTab.css`, "utf8");
-    expect(styles).toMatch(/min-width: 0/);
     const canvas = readFileSync(`${root}render/canvas.css`, "utf8");
     expect(canvas).toMatch(/--flow-label-min: 11px/);
     expect(canvas).toMatch(/\[data-stale\][^{]*\{[^}]*filter: saturate\(0\.2\)/);

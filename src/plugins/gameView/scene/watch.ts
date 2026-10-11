@@ -1,8 +1,7 @@
 /**
- * @file gameView plugin — the scene inputs while Game is shown (R6) or Reference mode is on:
- * watches of game.ui, game.entities and game.projections, one buildScene per animation frame for
- * a burst of values, and the calibration (scene/calibrate) told of every ui snapshot. No timer
- * reads a frame source.
+ * @file gameView plugin — the scene inputs while Game is shown (R6): watches of game.ui,
+ * game.entities and game.projections, one buildScene per animation frame for a burst of values,
+ * and the calibration (scene/calibrate) told of every ui snapshot. No timer reads a frame source.
  */
 import { linkPlugin } from "../../link";
 import type { Json } from "../../registry/protocol";
@@ -139,8 +138,8 @@ function onSceneValue(
 }
 
 /**
- * Watches the three scene sources while Game is shown or Reference mode is on (a second call
- * does nothing). The unwatch functions go into `state.watching`.
+ * Watches the three scene sources while Game is shown (a second call does nothing). The unwatch
+ * functions go into `state.watching`.
  *
  * @param ctx - Domain context of gameView.
  */

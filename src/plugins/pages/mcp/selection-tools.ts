@@ -2,7 +2,7 @@
  * @file pages/mcp — the selection tools (U7, D-33): moku_selection reads what is selected in the
  * editor page (`editor.selection`, answered by the hub from the page's last publish) and
  * moku_select selects an element by key or every element inside an area (`editor.select`, relayed
- * by the hub to the editor page, which picks like the Reference picker). Both answer the
+ * by the hub to the editor page, which picks like the element picker). Both answer the
  * SelectionInfo as JSON and, when the page wrote one, its crop picture. Hub errors, such as
  * -32003 `no_editor_page` with the URL to open, pass through as readable `isError` results.
  *
@@ -242,15 +242,17 @@ async function select(call: ToolCall, context: ToolContext): Promise<ToolResult>
 }
 
 /**
- * moku_selection: tells an MCP client what is selected in the editor page now (by the Reference
- * picker or by moku_select), as SelectionInfo JSON plus its crop picture. Read-only; a session
- * argument limits the answer to that session.
+ * moku_selection: tells an MCP client what is selected in the editor page now (by the element
+ * picker or by moku_select), as SelectionInfo JSON plus its crop picture. The JSON carries the
+ * pending style edits of the element (`edits`, U8): the values the person changed in the Element
+ * tab, for the agent to write in the source. Read-only; a session argument limits the answer to
+ * that session.
  */
 export const selectionTool: Tool = {
   name: "moku_selection",
   title: "Editor selection",
   description:
-    "What is selected in the editor page now (picked with the Reference picker, or by moku_select): ref, key, name, type, rect in game page CSS px, source file and line, the reference card and its one-line @moku reference, as JSON, and the element's crop picture when one was taken. An area selection lists its elements in items.",
+    "What is selected in the editor page now (picked with the element picker, or by moku_select): ref, key, name, type, rect in game page CSS px, source file and line, the reference card and its one-line @moku reference, as JSON, and the element's crop picture when one was taken. An area selection lists its elements in items. edits lists the pending style edits of the element, { path, from, to }: apply them in the source.",
   inputSchema: {
     type: "object",
     properties: { session: SESSION_PROPERTY },
@@ -262,7 +264,7 @@ export const selectionTool: Tool = {
 
 /**
  * moku_select: lets an MCP client select an element by ui key, or every element inside a rect,
- * in the editor page, the way the Reference picker does. With `card` (the default) the page writes
+ * in the editor page, the way the element picker does. With `card` (the default) the page writes
  * the reference card and the crop; the answer is the selection as JSON plus the crop picture. With
  * `node` it selects a node of the flow graph: the page opens the Flow workspace and focuses the
  * node, and the answer names the node's source places.
@@ -271,7 +273,7 @@ export const selectTool: Tool = {
   name: "moku_select",
   title: "Select in the editor",
   description:
-    "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
+    "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the element picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
   inputSchema: {
     type: "object",
     properties: {

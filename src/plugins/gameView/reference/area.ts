@@ -1,10 +1,12 @@
 /**
- * @file gameView plugin — the area pick of Reference mode (U9) and of MCP `moku_select { rect }`:
+ * @file gameView plugin — the area pick of the picker's drag (U9) and of MCP `moku_select { rect }`:
  * the group of an area (visible placed nodes fully inside it, else the ones it covers by half of
  * their own area; group roots only; top to bottom, then left to right; at most 40), then the pick
  * path with the area: bookmark, full shot, crop to the area plus 8 px, the card
- * `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md`, the area line on the clipboard and the capture
- * card. The card prints the child tree, the texts, the layout lines, the nodes partly in the area
+ * `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md`, the area line on the clipboard (not for MCP:
+ * `copy: false`) and the capture card. A drag gets here only while the workspace preference
+ * "Copy on select" is on: with it off the gesture picks nothing (D-70, gesture.ts).
+ * The card prints the child tree, the texts, the layout lines, the nodes partly in the area
  * and the components the area uses (captures-by-day U5). The selection is published first with the
  * sources already known, then again with the project index's answers for the rest and the files.
  */
@@ -64,13 +66,14 @@ const AREA_NAME = "area";
 export type AreaGroup = { readonly nodes: readonly SceneNode[]; readonly total: number };
 
 /**
- * How an area pick ends: `copy` puts the line on the clipboard with a toast; `card` takes the
- * bookmark and the shots and writes the card (MCP passes `card: false` to only select).
+ * How an area pick ends: `copy` puts the line on the clipboard with a toast (MCP passes false);
+ * `card` takes the bookmark and the shots and writes the card (MCP passes `card: false` to only
+ * select).
  */
 export type AreaOptions = { readonly copy: boolean; readonly card: boolean };
 
 /**
- * A drag in Reference mode: the line on the clipboard, the bookmark, the shots and the card.
+ * A drag of the picker: the line on the clipboard, the bookmark, the shots and the card.
  */
 const DRAG_PICK: AreaOptions = { copy: true, card: true };
 
@@ -342,7 +345,7 @@ async function completeArea(
   const card = await writeAreaCard(ctx, facts, codes, components);
   const line = areaHead(facts, card);
 
-  // Tell the user: the line on the clipboard, the capture card.
+  // Tell the user: the line on the clipboard (not for MCP), the capture card.
   if (copy) await copyText(ctx, line, pickToast(shots !== undefined, taken !== undefined));
   showPickCard(ctx, shots, line);
 
@@ -366,7 +369,7 @@ async function completeArea(
  * @param ctx - Domain context of gameView.
  * @param scene - The scene the area is in.
  * @param area - The area in device CSS px.
- * @param options - `copy` and `card`; both true for a drag in Reference mode.
+ * @param options - `copy` and `card`; both true for a drag of the picker.
  * @returns The area selection, with its card, crop and line after a card.
  */
 export async function pickArea(
@@ -388,8 +391,8 @@ export async function pickArea(
 }
 
 /**
- * The area a drag in Reference mode ended with: reads the scene once more (the watched one can be
- * a heartbeat behind, R6), the one there is when that read fails, then picks the area. Nothing
+ * The area a drag of the picker ended with: reads the scene once more (the watched one can be a
+ * heartbeat behind, R6), the one there is when that read fails, then picks the area. Nothing
  * without any scene. Never rejects.
  *
  * @param ctx - Domain context of gameView.

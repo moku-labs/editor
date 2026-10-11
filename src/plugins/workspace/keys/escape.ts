@@ -24,7 +24,6 @@ export const ESC_RANK: readonly EscLayer[] = [
   "fileEdit",
   "codeEdit",
   "stepPopover",
-  "reference",
   "selection"
 ];
 

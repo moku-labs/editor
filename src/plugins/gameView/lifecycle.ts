@@ -1,8 +1,8 @@
 /**
  * @file gameView plugin — onInit (the capturesDir check, panel, palette, key bindings, Esc layers,
- * device listener, the `select` handler of MCP `moku_select`; sync, no I/O), onStart (scene watches when Game is already active, Reference
- * mode when already on, the sound flag applied to every game that connects) and onStop
- * (disposers, watches, the game.position watch, timers, a running recording).
+ * device listener, the `select` handler of MCP `moku_select`; sync, no I/O), onStart (scene
+ * watches when Game is already active, the sound flag applied to every game that connects) and
+ * onStop (disposers, watches, timers, a running recording).
  */
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
@@ -11,7 +11,6 @@ import type { DeviceChoice } from "../workspace/types";
 import { answerSelect } from "./element/select-request";
 import { escapeClosers, keyBindings } from "./keys";
 import { paletteItems } from "./palette";
-import { dropReference, setReferenceMode } from "./reference/mode";
 import { recalibrate } from "./scene/calibrate";
 import { startSceneWatches } from "./scene/watch";
 import { reapplyMute } from "./sound";
@@ -99,23 +98,21 @@ export function initGameView(ctx: GameViewCtx): void {
 
 /**
  * onStart: a restored `#game` hash emits no workspace:changed, so start the scene watches here
- * when Game is already the active workspace; likewise Reference mode when workspace has it on.
- * Every game that connects (a hot reload too) is muted again while the viewer has the sound off.
+ * when Game is already the active workspace. Every game that connects (a hot reload too) is muted
+ * again while the viewer has the sound off.
  *
  * @param ctx - Domain context of gameView.
  */
 export function startGameView(ctx: GameViewCtx): void {
   const workspace = ctx.require(workspacePlugin);
   if (workspace.active() === "game") startSceneWatches(ctx);
-  if (workspace.reference()) setReferenceMode(ctx, true);
   const link = ctx.require(linkPlugin);
   ctx.state.disposers.push(link.onManifest(manifest => reapplyMute(ctx, manifest)));
 }
 
 /**
- * onStop: runs the disposers (newest first), every unwatch and the game.position watch of
- * Reference mode, clears the timers and stops a running recording. Uses the teardown context
- * only.
+ * onStop: runs the disposers (newest first) and every unwatch, clears the timers and stops a
+ * running recording. Uses the teardown context only.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -124,7 +121,6 @@ export function stopGameView(ctx: { readonly state: GameViewState }): void {
   const { state } = ctx;
   for (const dispose of state.disposers.splice(0).toReversed()) dispose();
   for (const unwatch of state.watching.splice(0)) unwatch();
-  dropReference(state);
   for (const timer of Object.values(state.timers)) clearTimeout(timer);
   state.timers = {};
   if (state.series.recording !== undefined) state.series.recording.stopRequested = true;

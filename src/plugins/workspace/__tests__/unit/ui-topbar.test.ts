@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wireError } from "../../../registry/protocol";
 import { runCommand } from "../../commands";
 import { LinkPill, pillText } from "../../ui/LinkPill";
-import { TopBar } from "../../ui/TopBar";
+import { barToggles, TopBar } from "../../ui/TopBar";
 import { createCtx, flush, manifestOf, resultOf, type TestCtx } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ describe("TopBar", () => {
     expect(control("registry").textContent).toBe("Registry");
     expect(control("registry").querySelector("[data-icon='registry']")).not.toBeNull();
     expect(root.querySelector("[data-search]")?.textContent).toContain(
-      "Jump to node, file, style, texture…"
+      "Jump to node, file, texture…"
     );
   });
 
@@ -214,18 +214,72 @@ describe("TopBar", () => {
     );
   });
 
-  it("the Reference mode button toggles it and shows its state", () => {
+  it("starts with the game mark: the initials of the name tinted by its hue, no logo (U1)", () => {
+    ctx.link.manifestValue = manifestOf();
     mount();
-    const reference = control("reference");
-    expect(reference.title).toBe("Reference mode (R) — pick game elements for the chat");
-    expect(reference.getAttribute("aria-pressed")).toBe("false");
-    expect(reference.textContent).toBe("Reference mode");
-    expect(reference.querySelector("[data-icon='target']")).not.toBeNull();
+    const mark = root.querySelector<HTMLElement>("[data-ui='top-bar'] > [data-mark]");
+    expect(root.querySelector("[data-ui='top-bar']")?.firstElementChild).toBe(mark);
+    expect(mark?.nextElementSibling?.hasAttribute("data-game-name")).toBe(true);
+    expect(mark?.tagName).toBe("SPAN");
+    expect(mark?.textContent).toBe("MG");
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark?.style.getPropertyValue("--mark-hue")).toBe("288");
+    expect(mark?.style).toHaveLength(1);
+    expect(root.querySelector("[data-logo]")).toBeNull();
+    expect(root.querySelector("[data-icon='logo']")).toBeNull();
+  });
 
-    act(() => reference.click());
-    expect(ctx.state.reference).toBe(true);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
-    expect(control("reference").getAttribute("aria-pressed")).toBe("true");
+  it("the mark reads the name without its version: another version keeps the colour (U1)", () => {
+    ctx.link.manifestValue = { ...manifestOf(), game: "merge-game 1.4.2" };
+    mount();
+    const mark = root.querySelector<HTMLElement>("[data-mark]");
+    expect(mark?.textContent).toBe("MG");
+    expect(mark?.style.getPropertyValue("--mark-hue")).toBe("288");
+
+    ctx.link.manifestValue = { ...manifestOf(), game: "Tic Tac Toe" };
+    bump();
+    expect(root.querySelector("[data-mark]")?.textContent).toBe("TT");
+    expect(
+      root.querySelector<HTMLElement>("[data-mark]")?.style.getPropertyValue("--mark-hue")
+    ).toBe("7");
+  });
+
+  it("without a game the mark is a dot with no hue (U1)", () => {
+    mount();
+    const mark = root.querySelector<HTMLElement>("[data-mark]");
+    expect(mark?.textContent).toBe("·");
+    expect(mark?.style.getPropertyValue("--mark-hue")).toBe("");
+    expect(root.querySelector("[data-game-name]")?.textContent).toBe("No game");
+  });
+
+  it("while the link reloads the mark holds the last name; a real loss shows the dot (U1, U9)", () => {
+    ctx.state.shown = { game: "merge-game 0.0.0", session: "s-7f3a" };
+    ctx.state.link = {
+      kind: "lost",
+      reason: "bye",
+      lastFrame: 310,
+      retryInMs: 1000,
+      reloading: true
+    };
+    mount();
+    expect(root.querySelector("[data-mark]")?.textContent).toBe("MG");
+    expect(
+      root.querySelector<HTMLElement>("[data-mark]")?.style.getPropertyValue("--mark-hue")
+    ).toBe("288");
+
+    ctx.state.link = { kind: "lost", reason: "socket_closed", lastFrame: 310, retryInMs: 1000 };
+    bump();
+    expect(root.querySelector("[data-mark]")?.textContent).toBe("·");
+    expect(
+      root.querySelector<HTMLElement>("[data-mark]")?.style.getPropertyValue("--mark-hue")
+    ).toBe("");
+  });
+
+  it("has no Reference mode control and no target icon (D-65)", () => {
+    mount();
+    expect(root.querySelector("[data-action='reference']")).toBeNull();
+    expect(root.querySelector("[data-icon='target']")).toBeNull();
+    expect(root.textContent).not.toContain("Reference mode");
   });
 
   it("splits the game name from its version", () => {
@@ -437,6 +491,16 @@ describe("SessionChip", () => {
   });
 });
 
+describe("barToggles", () => {
+  it("answers Hot reload for every compact width and nothing for the wide bar (U2)", () => {
+    for (const width of [320, 480, 560, 561, 720, 899]) {
+      expect(barToggles(width)).toEqual(["hot-reload"]);
+    }
+    expect(barToggles(900)).toEqual([]);
+    expect(barToggles(1440)).toEqual([]);
+  });
+});
+
 describe("TopBar at 900 px and wider", () => {
   beforeEach(() => {
     vi.stubGlobal("innerWidth", 960);
@@ -453,7 +517,7 @@ describe("TopBar at 900 px and wider", () => {
     expect(control("game").title).toBe("Game preview (G)");
     expect(root.querySelector("[data-action='more']")).toBeNull();
     expect(root.querySelector("[data-search] > span")?.textContent).toBe(
-      "Jump to node, file, style, texture…"
+      "Jump to node, file, texture…"
     );
   });
 
@@ -491,6 +555,31 @@ describe("TopBar at 900 px and wider", () => {
     ]);
   });
 
+  it("the wide bar has no Copy on select switch: Preview, Overlay and Hot reload only (D-72)", () => {
+    mount();
+    const switches = [
+      ...root.querySelectorAll<HTMLElement>("[data-ui='top-bar'] > [data-switch]")
+    ].map(element => element.dataset.action);
+    expect(switches).toEqual(["game", "overlay", "hot-reload"]);
+    expect(root.querySelector("[data-action='copy-on-select']")).toBeNull();
+    expect(root.querySelector("[data-ui='top-bar']")?.textContent).not.toContain("Copy on select");
+  });
+
+  it("the wide bar has no Reference mode control between Hot reload and Registry (D-65)", () => {
+    mount();
+    expect(root.querySelector("[data-action='reference']")).toBeNull();
+    expect(barActions()).toEqual([
+      "pause",
+      "step",
+      "search",
+      "game",
+      "overlay",
+      "hot-reload",
+      "registry",
+      "theme"
+    ]);
+  });
+
   it("switches to the compact bar when the window narrows below 900 px", () => {
     mount();
     vi.stubGlobal("innerWidth", 899);
@@ -505,19 +594,19 @@ describe("TopBar below 900 px (compact)", () => {
     ctx.link.manifestValue = manifestOf();
   });
 
-  it("keeps logo, game name, link pill, pause, step, Reference, Hot reload, the search icon and the ⋯ menu button only", () => {
+  it("keeps the mark, game name, link pill, pause, step, Hot reload, the search icon and the ⋯ menu button only", () => {
     mount();
     const bar = root.querySelector<HTMLElement>("[data-ui='top-bar']");
     expect(bar?.dataset.layout).toBe("compact");
-    expect(barActions()).toEqual(["pause", "step", "reference", "hot-reload", "search", "more"]);
-    expect(root.querySelector("[data-logo]")).not.toBeNull();
+    expect(barActions()).toEqual(["pause", "step", "hot-reload", "search", "more"]);
+    expect(root.querySelector("[data-mark]")?.textContent).toBe("MG");
+    expect(root.querySelector("[data-logo]")).toBeNull();
+    expect(root.querySelector("[data-switch]")).toBeNull();
     expect(root.querySelector("[data-game-name]")?.textContent).toContain("merge-game");
     expect(root.querySelector("[data-ui='link-pill']")).not.toBeNull();
     expect(root.querySelector("[data-ui='session-chip']")).toBeNull();
     const search = root.querySelector<HTMLButtonElement>("[data-search]");
-    expect(search?.getAttribute("aria-label")).toMatch(
-      /^Jump to node, file, style, texture \(.+K\)$/
-    );
+    expect(search?.getAttribute("aria-label")).toMatch(/^Jump to node, file, texture \(.+K\)$/);
     expect(search?.textContent).toBe("");
     act(() => search?.click());
     expect(ctx.state.palette.open).toBe(true);
@@ -563,20 +652,6 @@ describe("TopBar below 900 px (compact)", () => {
     expect(control("step").title).toBe("Step 1 frame (.)");
   });
 
-  it("Reference mode is an icon toggle before the search: target icon, aria-pressed, key R in its title", () => {
-    mount();
-    const reference = control("reference");
-    expect(reference.querySelector("[data-icon='target']")).not.toBeNull();
-    expect(reference.textContent).toBe("Reference mode");
-    expect(reference.title).toBe("Reference mode (R) — pick game elements for the chat");
-    expect(reference.getAttribute("aria-pressed")).toBe("false");
-
-    act(() => reference.click());
-    expect(ctx.state.reference).toBe(true);
-    expect(ctx.emit).toHaveBeenCalledWith("workspace:reference", { on: true });
-    expect(control("reference").getAttribute("aria-pressed")).toBe("true");
-  });
-
   it("Hot reload is an icon toggle with a dot while on; it asks link when the bin owns it", async () => {
     ctx.link.hotReload.mockReturnValue({ hmr: true, owner: "bin" });
     mount();
@@ -618,17 +693,31 @@ describe("TopBar below 900 px (compact)", () => {
     expect(ctx.link.setHotReload).not.toHaveBeenCalled();
   });
 
-  it("at 560 px and narrower only Reference stays in the bar; Hot reload is a ⋯ row", () => {
+  it("at 560 px and narrower Hot reload holds the one toggle slot of the bar; it is a ⋯ row too", () => {
     vi.stubGlobal("innerWidth", 560);
     mount();
-    expect(barActions()).toEqual(["pause", "step", "reference", "search", "more"]);
+    expect(barActions()).toEqual(["pause", "step", "hot-reload", "search", "more"]);
     act(() => control("more").click());
     expect(row("hot-reload").getAttribute("role")).toBe("menuitemcheckbox");
-    expect(row("reference").getAttribute("role")).toBe("menuitemcheckbox");
+    expect(root.querySelector("[data-action='reference']")).toBeNull();
+
+    vi.stubGlobal("innerWidth", 320);
+    bump();
+    expect(barActions()).toEqual(["pause", "step", "hot-reload", "search", "more"]);
 
     vi.stubGlobal("innerWidth", 561);
     bump();
-    expect(barActions()).toEqual(["pause", "step", "reference", "hot-reload", "search", "more"]);
+    expect(barActions()).toEqual(["pause", "step", "hot-reload", "search", "more"]);
+  });
+
+  it("neither the compact bar nor its ⋯ menu has a Copy on select control (D-72)", () => {
+    mount();
+    expect(root.querySelector("[data-action='copy-on-select']")).toBeNull();
+    act(() => control("more").click());
+    const menu = root.querySelector<HTMLElement>("[data-ui='more-menu']");
+    expect(menu?.querySelectorAll("[role^='menuitem']").length).toBeGreaterThan(0);
+    expect(menu?.querySelector("[data-action='copy-on-select']")).toBeNull();
+    expect(menu?.textContent).not.toContain("Copy reference on select");
   });
 
   it("with one session the pill only names it", () => {
@@ -680,29 +769,53 @@ describe("the ⋯ menu", () => {
     expect(rows.map(row => rowText(row))).toEqual([
       "Game preview · on · G",
       "Overlay in game · off · O",
-      "Reference mode · off · R",
       "Hot reload · unknown · H",
       "Registry · 1 · 4",
       "Density · auto",
       "Theme · light"
     ]);
-    expect(rows.slice(0, 4).map(row => row.getAttribute("role"))).toEqual([
-      "menuitemcheckbox",
+    expect(rows.slice(0, 3).map(row => row.getAttribute("role"))).toEqual([
       "menuitemcheckbox",
       "menuitemcheckbox",
       "menuitemcheckbox"
+    ]);
+    expect(rows.slice(3).map(row => row.getAttribute("role"))).toEqual([
+      "menuitem",
+      "menuitem",
+      "menuitem"
     ]);
   });
 
   it("a toggle row switches its action and the menu stays open", () => {
     ctx.state.active = "flow";
     openMenu();
-    act(() => row("reference").click());
-    expect(ctx.state.reference).toBe(true);
-    expect(row("reference").getAttribute("aria-checked")).toBe("true");
     act(() => row("game").click());
     expect(ctx.state.previews.flow.visible).toBe(false);
+    expect(row("game").getAttribute("aria-checked")).toBe("false");
+    expect(rowText(row("game"))).toBe("Game preview · off · G");
     expect(ctx.state.popover).toBe("more");
+  });
+
+  it("every toggle row shows its key: label, state, kbd", () => {
+    openMenu();
+    for (const [action, key] of [
+      ["game", "G"],
+      ["overlay", "O"],
+      ["hot-reload", "H"]
+    ] as const) {
+      expect(row(action).querySelector("kbd")?.textContent).toBe(key);
+      expect(row(action).children).toHaveLength(3);
+    }
+  });
+
+  it("the ⋯ button title and the menu name no Reference mode (D-65)", () => {
+    openMenu();
+    expect(control("more").title).toBe(
+      "More: preview, overlay, hot reload, registry, density, theme"
+    );
+    const menu = root.querySelector<HTMLElement>("[data-ui='more-menu']");
+    expect(menu?.querySelector("[data-action='reference']")).toBeNull();
+    expect(menu?.textContent).not.toContain("Reference mode");
   });
 
   it("a row that cannot act now is inert with its reason", () => {
@@ -746,7 +859,7 @@ describe("the ⋯ menu", () => {
     act(() => control("more").click());
     expect(ctx.state.popover).toBe("more");
     act(() => {
-      row("reference").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      row("hot-reload").dispatchEvent(new Event("pointerdown", { bubbles: true }));
     });
     expect(ctx.state.popover).toBe("more");
     act(() => {

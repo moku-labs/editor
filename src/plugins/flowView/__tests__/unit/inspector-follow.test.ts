@@ -5,12 +5,11 @@ import { actionsOf } from "../../actions";
 import { createHandlers } from "../../handlers";
 import { infoView } from "../../view-model";
 import { createTestCtx, flush, jumpCamera, prepare, projectOf, type TestCtx } from "../ctx";
-import { fixtureText } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The link:project hook: an agent edits, moves or breaks game files while the
-// editor is open. The Code tab follows its node, the Styles group re-reads the
-// text styles, the Info tab shows the file the index names now.
+// editor is open. The Code tab follows its node, the Info tab shows the file
+// the index names now. The text-styles file is not followed (D-66).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SOURCE = "import { node } from '../kit';\n\nexport const merge = node({});\n";
@@ -62,6 +61,11 @@ async function codeOpen(): Promise<TestCtx> {
 /** How many times the fake index was asked. */
 function finds(test: TestCtx): number {
   return vi.mocked(test.fakes.files.find).mock.calls.length;
+}
+
+/** How many files were read. */
+function reads(test: TestCtx): number {
+  return vi.mocked(test.fakes.files.read).mock.calls.length;
 }
 
 describe("link:project and the Code tab", () => {
@@ -166,140 +170,54 @@ describe("link:project and the Code tab", () => {
   });
 });
 
-/** The labels of the last palette group added. */
-function styleItems(test: TestCtx): string[] {
-  return (test.fakes.palette.at(-1) ?? []).map(item => item.label);
-}
-
-describe("link:project and the text styles", () => {
+describe("link:project and the text-styles file (D-66)", () => {
   const STYLES = "features/ui/styles.ts";
-
-  it("a change of the text-styles file re-reads the Styles group; other changes do not", async () => {
-    const test = createTestCtx({ files: { [STYLES]: fixtureText("ui-styles.txt") } });
-    await actionsOf(test.ctx).inspector.readStyleKeys();
-    const groups = test.fakes.palette.length;
-    expect(styleItems(test)).toContain("ui.number");
-
-    await announce(test, { files: ["nodes/merge.ts"] });
-    expect(test.fakes.palette.length).toBe(groups);
-
-    await announce(test, { files: [STYLES] });
-    expect(test.fakes.palette.length).toBe(groups + 1);
-
-    await announce(test, {
-      moved: [{ key: "textStyle:ui.number", from: STYLES, to: "features/ui/text.ts" }]
-    });
-    expect(test.fakes.palette.length).toBe(groups + 2);
-  });
-
-  it("a new text-styles file in the index re-reads the group from it", async () => {
-    const test = createTestCtx({
-      files: {
-        [STYLES]: fixtureText("ui-styles.txt"),
-        "game/text.ts":
-          'export const textStyles = defineTextStyles({\n  "hud.coins": { size: 40 }\n});\n'
-      }
-    });
-    await actionsOf(test.ctx).inspector.readStyleKeys();
-    const { index } = test.fakes.files;
-    index.delete("textStyle:ui.title");
-    index.delete("textStyle:ui.number");
-    index.set("textStyle:hud.coins", [{ path: "game/text.ts", line: 2 }]);
-    await announce(test, { files: ["game/text.ts"] });
-    expect(styleItems(test)).toEqual(["hud.coins"]);
-  });
-});
-
-describe("link:project and the Styles tab", () => {
-  const STYLES = "features/ui/styles.ts";
-  const FIXTURE = fixtureText("ui-styles.txt");
-
-  /** The fixture after an agent changed the size of ui.number to 62. */
-  const AGENT_EDIT = FIXTURE.replace(
-    '"ui.number": {\n    font: "ui.font-display",\n    size: 60',
-    '"ui.number": {\n    font: "ui.font-display",\n    size: 62'
-  );
 
   /** A game file that defines one text style. */
   const DEFINES =
-    'export const textStyles = defineTextStyles({\n  "hud.coins": { size: 40 }\n});\n';
+    'export const textStyles = defineTextStyles({\n  "ui.number": { size: 60 }\n});\n';
 
-  it("a Styles tab opened before the first project state reads the styles when it arrives", async () => {
-    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
-    test.fakes.project = undefined;
-    await actionsOf(test.ctx).inspector.openStyles();
-    expect(test.ctx.state.inspector.styles).toMatchObject({ file: undefined, blocks: [] });
+  /** The index of a game with the merge node and one text style. */
+  const INDEX = {
+    "node:board/merge": [{ path: "nodes/merge.ts", line: 3 }],
+    "textStyle:ui.number": [{ path: STYLES, line: 2 }]
+  };
 
-    test.fakes.project = "index";
+  it("a change of the text-styles file reads nothing and adds no palette group", async () => {
+    const test = createTestCtx({ files: { [STYLES]: DEFINES }, index: INDEX });
+    await announce(test, { files: [STYLES] });
     await announce(test, { all: true });
-    const styles = test.ctx.state.inspector.styles;
-    expect(styles?.file).toBe(STYLES);
-    expect(styles?.blocks.length).toBeGreaterThan(10);
-    expect(styles?.error).toBeUndefined();
-    expect(styleItems(test)).toContain("ui.number");
-  });
-
-  it("a tab that said the index has no text styles reads them once the index learns them", async () => {
-    const test = createTestCtx({ files: { "game/text.ts": DEFINES }, index: {} });
-    await actionsOf(test.ctx).inspector.openStyles();
-    expect(test.ctx.state.inspector.styles?.file).toBeUndefined();
-
-    test.fakes.files.index.set("textStyle:hud.coins", [{ path: "game/text.ts", line: 2 }]);
-    await announce(test, { files: ["game/text.ts"] });
-    expect(test.ctx.state.inspector.styles?.file).toBe("game/text.ts");
-    expect(test.ctx.state.inspector.styles?.blocks.map(block => block.ref)).toEqual([
-      { kind: "text", key: "hud.coins" }
-    ]);
-  });
-
-  it("an agent's edit of the styles file re-reads the tab and keeps the chosen card", async () => {
-    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
-    await actionsOf(test.ctx).inspector.openStyles("ui.number");
-    test.fakes.files.store.set(STYLES, { text: AGENT_EDIT, version: "v9" });
-    await announce(test, { files: [STYLES] });
-    expect(test.ctx.state.inspector.styles).toMatchObject({
-      file: STYLES,
-      text: AGENT_EDIT,
-      version: "v9",
-      key: "ui.number"
+    await announce(test, {
+      moved: [{ key: "textStyle:ui.number", from: STYLES, to: "features/ui/text.ts" }]
     });
+    expect(reads(test)).toBe(0);
+    expect(finds(test)).toBe(0);
+    expect(test.fakes.palette).toEqual([]);
   });
 
-  it("a change elsewhere does not read the tab again", async () => {
-    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
-    await actionsOf(test.ctx).inspector.openStyles("ui.number");
-    const reads = vi.mocked(test.fakes.files.read).mock.calls.length;
+  it("the Code tab stays on a change of the text-styles file, and follows its node's file as before", async () => {
+    const test = createTestCtx({
+      files: { "nodes/merge.ts": SOURCE, [STYLES]: DEFINES },
+      index: INDEX
+    });
+    await prepare(test.ctx);
+    await actionsOf(test.ctx).inspector.openCode("board/merge");
+    test.ctx.state.inspector.tab = "code";
+    const shown = test.ctx.state.inspector.code;
+    const asked = finds(test);
+    const read = reads(test);
+    const groups = test.fakes.palette.length;
+
+    await announce(test, { files: [STYLES] });
+    expect(reads(test)).toBe(read);
+    expect(finds(test)).toBe(asked);
+    expect(test.fakes.palette.length).toBe(groups);
+    expect(test.ctx.state.inspector.code).toBe(shown);
+
+    test.fakes.files.store.set("nodes/merge.ts", { text: EDITED, version: "v9" });
+    test.fakes.files.index.set("node:board/merge", [{ path: "nodes/merge.ts", line: 6 }]);
     await announce(test, { files: ["nodes/merge.ts"] });
-    expect(vi.mocked(test.fakes.files.read).mock.calls.length).toBe(reads);
-  });
-
-  it("after its own write the result line stays: the file on disk is the written version", async () => {
-    const test = createTestCtx({ files: { [STYLES]: FIXTURE }, config: { styleSaveDelayMs: 0 } });
-    const inspector = actionsOf(test.ctx).inspector;
-    await inspector.openStyles("ui.number");
-    inspector.stepStyle("size", 1, false);
-    await flush(10);
-    const written = test.ctx.state.inspector.styles;
-    expect(written?.result?.text).toBe(
-      "✓ Written to features/ui/styles.ts:74 · game reloaded · state restored"
-    );
-
-    await announce(test, { files: [STYLES] });
-    expect(test.ctx.state.inspector.styles).toBe(written);
-    expect(test.ctx.state.inspector.styles?.result).toEqual(written?.result);
-  });
-
-  it("a stepper burst waiting for its write is never re-read", async () => {
-    const test = createTestCtx({ files: { [STYLES]: FIXTURE } });
-    const inspector = actionsOf(test.ctx).inspector;
-    await inspector.openStyles("ui.number");
-    inspector.stepStyle("size", 1, false);
-    test.fakes.files.store.set(STYLES, { text: AGENT_EDIT, version: "v9" });
-    await announce(test, { files: [STYLES] });
-    const styles = test.ctx.state.inspector.styles;
-    expect(styles).toMatchObject({ version: "v1", text: FIXTURE });
-    expect(styles?.pending?.next).toBe(61);
-    clearTimeout(styles?.pending?.timer);
+    expect(test.ctx.state.inspector.code).toMatchObject({ text: EDITED, version: "v9", line: 6 });
   });
 });
 
