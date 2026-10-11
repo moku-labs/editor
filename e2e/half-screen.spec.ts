@@ -2,19 +2,21 @@
  * @file Narrow-window usability (D-21, the Claude pane): in the 480×900 (a third of the screen),
  * 720×900 and 960×1080 windows every workspace fits. The page never scrolls sideways; the top bar
  * keeps every control on screen, unsqueezed and unoverlapped (below 900 px it is compact: the
- * switches, Reference mode, Registry and theme move into the ⋯ menu and the session into the link
+ * switches, Registry and theme move into the ⋯ menu and the session into the link
  * pill's tooltip; under 560 px the game name goes too; labels collapse to accessible names; the
- * full width loop is e2e/top-bar.spec.ts); the rail is reachable; the
+ * full width loop is e2e/top-bar.spec.ts); the game mark shows the initials of the game on a tile
+ * tinted by the name's hue; the rail is reachable; the
  * pinned preview stays inside main; nothing in a workspace is cut off by a box that does not
- * scroll (wide content scrolls inside its panel); the Game toolbar wraps (at 960 px it keeps one
- * row: Shot and Series are icons below a 1000 px workspace) and its Element panel stays in view
+ * scroll (wide content scrolls inside its panel); the Game toolbar wraps with its three switches
+ * (Safe area, Sound, Copy Ref) and never scrolls sideways (Shot and Series are icons below a
+ * 1000 px workspace; at 960 px the toolbar has two rows since the Copy Ref switch, D-72) and its Element panel stays in view
  * (a drawer below 600 px); the Flow chrome never overlaps; the State columns stack
  * below 760 px; the palette and the Registry popover fit the window. Each workspace leaves a
  * screenshot in .planning/e2e/shots/half/ for review. The palette and popover check also runs on
  * desktop. All geometry is getBoundingClientRect, measured in the page and judged here.
  */
 import type { Page } from "@playwright/test";
-import { expect, type Tools, test, WORKSPACES } from "./fixtures";
+import { expect, GAME_NAME, type Tools, test, WORKSPACES } from "./fixtures";
 import { clickBarControl, closeMore, isCompact, moreMenu, openMore } from "./top-bar";
 
 /** A plain rect. */
@@ -54,6 +56,21 @@ const HALF_PROJECTS = new Set(["chromium-third", "chromium-half", "chromium-half
 
 /** The window of the Claude pane at a third of the screen. */
 const THIRD = "chromium-third";
+
+/**
+ * The hue of a game mark as the delta spec of the editor UI cleanup defines it (U1): the sum over
+ * the characters of `code × (index + 1)`, mod 360, of the trimmed lower-case name.
+ *
+ * @param name - The game name without its version.
+ * @returns The hue in degrees.
+ */
+function markHue(name: string): number {
+  let sum = 0;
+  for (const [index, char] of [...name.trim().toLowerCase()].entries()) {
+    sum += (char.codePointAt(0) ?? 0) * (index + 1);
+  }
+  return sum % 360;
+}
 
 /**
  * Shows a side panel's content: below 600 px it is a drawer that starts collapsed, so its rail
@@ -388,18 +405,27 @@ test.describe("half-screen", () => {
     for (const name of ["Pause", "Step 1 frame"]) {
       await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
     }
-    await expect(bar.locator("[data-logo]")).toBeVisible();
+    await expect(bar.locator("[data-mark]")).toBeVisible();
+    await expect(bar.locator("[data-logo]")).toHaveCount(0);
     await expect(bar.locator("[data-counts]")).toHaveCount(0);
 
     if (await isCompact(page)) {
       // Below 900 px: the search icon and ⋯ keep names; the ⋯ rows name every moved control.
       await expect(bar.locator("[data-ui=session-chip]")).toHaveCount(0);
       await expect(
-        bar.getByRole("button", { name: "Jump to node, file, style, texture (⌘K)" })
+        bar.getByRole("button", { name: "Jump to node, file, texture (⌘K)" })
       ).toBeVisible();
       await expect(bar.getByRole("button", { name: "More", exact: true })).toBeVisible();
+      // The one icon toggle left in the compact bar is Hot reload.
+      await expect(bar.getByRole("button", { name: "Hot reload", exact: true })).toBeVisible();
+      await expect(bar.getByRole("button", { name: "More", exact: true })).toHaveAttribute(
+        "title",
+        "More: preview, overlay, hot reload, registry, density, theme"
+      );
       await openMore(page);
-      for (const name of ["Game preview", "Overlay in game", "Reference mode", "Hot reload"]) {
+      await expect(moreMenu(page)).not.toContainText("Reference mode");
+      await expect(moreMenu(page)).not.toContainText("Copy reference on select");
+      for (const name of ["Game preview", "Overlay in game", "Hot reload"]) {
         await expect(
           moreMenu(page).getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) })
         ).toBeVisible();
@@ -411,20 +437,55 @@ test.describe("half-screen", () => {
       }
       await closeMore(page);
     } else {
-      for (const name of ["Reference mode", "Registry"]) {
-        await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
-      }
+      await expect(bar.getByRole("button", { name: "Registry", exact: true })).toBeVisible();
+      await expect(bar.getByRole("button", { name: "Reference mode" })).toHaveCount(0);
       for (const name of ["Preview", "Overlay", "Hot reload"]) {
         await expect(bar.getByRole("switch", { name, exact: true })).toBeVisible();
       }
+      await expect(bar.getByRole("switch")).toHaveCount(3);
     }
     // Under 560 px the game name leaves the bar too.
-    if (third) {
-      await expect(bar.locator("[data-game-name]")).toBeHidden();
-      return;
-    }
-    const gameName = await bar.locator("[data-game-name]").boundingBox();
+    await expect(bar.locator("[data-game-name]")).toBeVisible({ visible: !third });
+  });
+
+  test("top bar: the game name keeps a readable width", async ({ tools }, testInfo) => {
+    test.skip(testInfo.project.name === THIRD, "under 560 px the game name leaves the bar");
+    const gameName = await tools.page.locator("[data-ui=top-bar] [data-game-name]").boundingBox();
     expect(gameName?.width ?? 0, "game name keeps a readable width").toBeGreaterThanOrEqual(48);
+  });
+
+  test("top bar: the game mark shows the initials on a tile tinted by the name; no logo", async ({
+    tools
+  }) => {
+    const bar = tools.page.locator("[data-ui=top-bar]");
+    const mark = bar.locator(":scope > [data-mark]");
+    // "tiny-game 0.0.0": the first letters of the first two words; the version is left out.
+    const [name = ""] = GAME_NAME.split(" ");
+    await expect(mark).toBeVisible();
+    await expect(mark).toHaveText("TG");
+    await expect(mark).toHaveAttribute("aria-hidden", "true");
+    await expect(bar.locator("[data-logo]")).toHaveCount(0);
+    const tile = await mark.evaluate((element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        hue: element.style.getPropertyValue("--mark-hue"),
+        width: rect.width,
+        height: rect.height,
+        background: style.backgroundColor,
+        color: style.color
+      };
+    });
+    expect(tile.hue).toBe(String(markHue(name)));
+    expect([tile.width, tile.height], "a 24 px square").toEqual([24, 24]);
+    // The hue tints the tile: both colours are oklch with that hue.
+    expect(tile.background).toContain("oklch(");
+    expect(tile.background).toMatch(new RegExp(String.raw`\b${tile.hue}\)$`));
+    expect(tile.color).toMatch(new RegExp(String.raw`\b${tile.hue}\)$`));
+    // The mark is the first thing in the bar, left of the name when the name shows.
+    expect(await bar.evaluate(element => element.firstElementChild?.matches("[data-mark]"))).toBe(
+      true
+    );
   });
 
   test("Game: toolbar wraps, the Element panel and the frame stay inside main", async ({
@@ -459,6 +520,31 @@ test.describe("half-screen", () => {
     for (const control of controls) {
       expect(control.right, `${control.text} on screen`).toBeLessThanOrEqual(main.right + 1);
     }
+    // The three switches (Safe area, Sound, Copy Ref) wrap with the toolbar: at every narrow
+    // width, the 480 px pane too, the toolbar does not scroll sideways and Copy Ref sits whole
+    // inside it.
+    const width = page.viewportSize()?.width ?? 0;
+    const switches = page.locator("[data-game=toolbar]").getByRole("switch");
+    await expect(switches).toHaveText(["Safe area", "Sound", "Copy Ref"]);
+    const fit = await page.locator("[data-game=toolbar]").evaluate(element => {
+      const box = element.getBoundingClientRect();
+      const copyRef = element.querySelector("[data-part=copy-on-select]")?.getBoundingClientRect();
+      const root = document.documentElement;
+      return {
+        overflow: element.scrollWidth - element.clientWidth,
+        pageOverflow: root.scrollWidth - root.clientWidth,
+        height: Math.round(box.height),
+        left: box.left,
+        right: box.right,
+        copyRefLeft: copyRef?.left ?? -1,
+        copyRefRight: copyRef?.right ?? Number.POSITIVE_INFINITY
+      };
+    });
+    console.info(`[game toolbar ${width}] ${JSON.stringify(fit)}`);
+    expect(fit.overflow, `toolbar scrollWidth - clientWidth at ${width} px`).toBeLessThanOrEqual(0);
+    expect(fit.pageOverflow, `page overflow at ${width} px`).toBe(0);
+    expect(fit.copyRefLeft, `Copy Ref left at ${width} px`).toBeGreaterThanOrEqual(fit.left);
+    expect(fit.copyRefRight, `Copy Ref right at ${width} px`).toBeLessThanOrEqual(fit.right + 0.5);
     // The game frame docks over the bezel's screen slot below the (taller) toolbar.
     await expect
       .poll(async () => {
@@ -470,29 +556,13 @@ test.describe("half-screen", () => {
       .toBeLessThanOrEqual(2);
   });
 
-  test("Game: at 960 px the toolbar keeps one row; Shot and Series are icons", async ({
-    tools
-  }, testInfo) => {
+  test("Game: at 960 px Shot and Series are icons", async ({ tools }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium-half-wide", "the 960 px window only");
     const page = tools.page;
     await tools.show("game");
     const toolbar = page.locator("[data-game=toolbar]");
     await expect(toolbar).toBeVisible();
     await tools.settle();
-    const rows = await toolbar.locator(":is(button, select)").evaluateAll(elements =>
-      elements.map(element => {
-        const rect = element.getBoundingClientRect();
-        return { text: element.textContent?.trim() ?? "", middle: (rect.top + rect.bottom) / 2 };
-      })
-    );
-    expect(rows.length).toBeGreaterThan(5);
-    // One row: every control is centred on the same line (a segment sits inside its group).
-    const first = rows[0];
-    for (const row of rows) {
-      expect(Math.abs(row.middle - (first?.middle ?? 0)), `${row.text} on the row`).toBeLessThan(2);
-    }
-    const box = await toolbar.boundingBox();
-    expect(box?.height ?? 0, "one-row toolbar").toBeLessThanOrEqual(44);
     // The labels moved into the names: the buttons show their icons, 28 px square.
     for (const name of ["Take a screenshot", "Record a series"]) {
       const control = toolbar.getByRole("button", { name, exact: true });
@@ -675,10 +745,11 @@ test.describe("half-screen and desktop", () => {
     for (const text of ["Pause", "Step 1 frame", "Preview", "Overlay", "Hot reload"]) {
       await expect(bar.getByText(text, { exact: true })).toBeVisible();
     }
+    await expect(bar.getByText("Copy on select", { exact: true })).toHaveCount(0);
     // Registry is an icon; its counts are in the title.
     await expect(bar.getByRole("button", { name: "Registry", exact: true })).toHaveAttribute(
       "title",
-      "Registry · 20 sources · 23 commands"
+      "Registry · 20 sources · 24 commands"
     );
     const gameName = await bar.locator("[data-game-name]").boundingBox();
     expect(gameName?.width ?? 0).toBeGreaterThan(100);

@@ -1,39 +1,42 @@
 /**
  * @file The Claude-pane round (delta spec "the Claude-pane round", U1-U8) in a real browser, on
  * every window from the 480 px Claude pane to the desktop: the pinned preview plays the game (a
- * tap on Play walks it, the size stays), a tap draws a ripple at the tap point, Reference mode
- * (proxies named for the game elements at their Element tab bounds, no input reaches the game,
- * Copy reference with the one line of round 2b R13 that names the card holding the reference
- * block of round 2), the Element tab bounds of homeBackground after a reload and after a device
- * change, the source of levelPanel, Flow following a Comes from edge (both ends framed,
- * the pulse, Alt+← back), find current (C), the Styles tab without a preselected style, and the
+ * tap on Play walks it, the size stays), a tap draws a ripple at the tap point, the element picker
+ * (the Select icon button of the Game toolbar lit while it is on; with the Copy Ref switch of the
+ * toolbar off a pick only selects the element and writes nothing, and an area drag picks nothing,
+ * D-70; Copy reference with the one line of round 2b R13 that names the card
+ * holding the reference block of round 2; the Styles fields of the Element tab with their pending
+ * edits and "Copy for agent"), the Element tab bounds of homeBackground after a reload and after a
+ * device change, the source of levelPanel, Flow following a Comes from edge (both ends framed,
+ * the pulse, Alt+← back), find current (C), the Info and Code tabs of the Flow inspector, and the
  * side panels of Flow, Game and Files (collapse, resize, close, reopen; a drawer below 600 px).
+ * Reference mode and the Flow Styles tab are gone (editor UI cleanup, D-65, D-66).
  *
  * Geometry is the browser's: the iframe box, the overlay boxes and `game.locate` of the game page
  * are compared in client px. Ground truth is read from the game page (`globalThis.editor`). A pick
- * saves two PNGs under .moku/captures of the game copy (round 2 R2); each test removes them.
+ * saves two pictures and a card under .moku/captures of the game copy (round 2 R2); each test
+ * removes them.
  */
-import { readFile, rm } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, gameRoot, type Tools, test } from "./fixtures";
-import { barChecked, flipBarToggle, showPreview } from "./top-bar";
-
-/**
- * A reference block without its clock (the HH:MM:SS of its game line).
- *
- * @param text - The block.
- * @returns The block without the time.
- */
-function withoutClock(text: string): string {
-  return text.replace(/ · \d\d:\d\d:\d\d · /, " · ");
-}
+import { showPreview } from "./top-bar";
 
 /** The view module of the tiny game, root-relative: it defines every keyed element. */
 const VIEW_FILE = "features/tiny/view.tsx";
 
 /** The level panel the source and reference checks pick. */
 const PANEL_KEY = "levelPanel";
+
+/** The Play button of home: the element the style edits change (a width, a justify). */
+const PLAY_KEY = "play";
+
+/** What a test puts on the clipboard to prove a pick left it alone. */
+const SENTINEL = "e2e sentinel: not a reference";
+
+/** The values of `justify` in the engine, as the select of the Styles section lists them. */
+const JUSTIFY_VALUES = ["start", "center", "end", "between", "around", "evenly"];
 
 /**
  * The one-based line of the view module that writes a key, as the project index reports it.
@@ -571,6 +574,89 @@ async function tabBounds(page: Page): Promise<number[]> {
 }
 
 /**
+ * The capture card of the Game workspace: what a pick, a shot or a series leaves bottom right.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function captureCard(page: Page): Locator {
+  return page.locator("[data-game=card]");
+}
+
+/**
+ * The clipboard text of the tools page.
+ *
+ * @param page - The test page.
+ * @returns The text.
+ */
+async function clipboardText(page: Page): Promise<string> {
+  return page.evaluate(() => navigator.clipboard.readText());
+}
+
+/**
+ * Sets "Copy reference on select" with its control: the Copy Ref switch of the Game toolbar,
+ * beside Safe area and Sound (D-72).
+ *
+ * @param page - The test page.
+ * @param on - The wanted state.
+ */
+async function setCopyOnSelect(page: Page, on: boolean): Promise<void> {
+  const toggle = game(page)
+    .locator("[data-game=toolbar]")
+    .getByRole("switch", { name: "Copy Ref", exact: true });
+  await expect(toggle).toHaveAttribute("data-part", "copy-on-select");
+  await expect(toggle).toHaveAttribute(
+    "title",
+    "On: a pick writes the reference and copies its line. Off: a pick only selects the element"
+  );
+  await expect(toggle).toHaveAttribute("aria-checked", String(!on));
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", String(on));
+}
+
+/**
+ * The files under the captures folder of the worker's game root, relative to it and sorted; none
+ * while the folder does not exist.
+ *
+ * @returns E.g. `["2026-10-11/homeLogo-f212-crop.jpg", "2026-10-11/homeLogo-f212.md"]`.
+ */
+async function captureFiles(): Promise<string[]> {
+  const folder = path.join(gameRoot(), ".moku", "captures");
+  try {
+    const entries = await readdir(folder, { recursive: true, withFileTypes: true });
+    return entries
+      .filter(entry => entry.isFile())
+      .map(entry => path.relative(folder, path.join(entry.parentPath, entry.name)))
+      .map(file => file.split(path.sep).join("/"))
+      .toSorted();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+/**
+ * A field of the Styles section of the Element tab.
+ *
+ * @param page - The test page.
+ * @param path - The style path, e.g. "width" or "padding.top".
+ * @returns The field: its control, its struck scene value and its reset button are inside.
+ */
+function styleField(page: Page, path: string): Locator {
+  return elementTab(page).locator(`[data-part=style] [data-part=field][data-path="${path}"]`);
+}
+
+/**
+ * The bar of the pending edits under the Styles rows.
+ *
+ * @param page - The test page.
+ * @returns The locator.
+ */
+function editsBar(page: Page): Locator {
+  return elementTab(page).locator("[data-part=style] [data-part=edits]");
+}
+
+/**
  * Tells whether two number lists are equal within a tolerance.
  *
  * @param actual - The measured numbers.
@@ -764,54 +850,300 @@ test.describe("pane · the pinned preview plays the game", () => {
   });
 });
 
-test.describe("pane · reference mode", () => {
-  test("R lays named proxies over the game; the game gets no tap; off removes them", async ({
+test.describe("pane · element picker", () => {
+  test("Select is an icon button, lit from the click until the pick ends, Esc or a second click", async ({
     tools
   }) => {
     const page = tools.page;
     await showGame(tools);
     await expect.poll(() => gamePath(page)).toBe("home");
-    // The Reference mode toggle: a button of the wide bar, a ⋯ menu row below 900 px.
-    expect(await barChecked(page, "reference")).toBe(false);
-    await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
+    const select = bar(page, "pick");
 
-    // R (focus is on the rail button, not in an input) turns it on.
-    await page.keyboard.press("r");
-    await expect.poll(() => barChecked(page, "reference")).toBe(true);
-    await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
-    const background = page.locator('[data-moku-proxy][data-moku-key="homeBackground"]');
-    await expect(background).toHaveCount(1);
-    await expect(page.getByLabel("homeBackground", { exact: true })).toHaveCount(1);
-    await expect(background).toHaveAttribute("title", /^homeBackground · \S+$/);
-    await expect(background).toHaveAttribute("data-moku-name", "homeBackground");
-    await expect(background).toHaveAttribute("data-moku-path", /homeBackground$/);
-    await expect(background).toHaveAttribute("data-moku-node", "home");
-    const rect = await gameRect(page, "homeBackground");
-    await expect(background).toHaveAttribute(
-      "data-moku-bounds",
-      [rect.x, rect.y, rect.w, rect.h].map(value => String(Math.round(value))).join(" ")
-    );
-    // Every proxy names its element for assistive tech and tools.
-    const unnamed = await page
-      .locator("[data-moku-proxy]")
-      .evaluateAll(proxies => proxies.filter(proxy => !proxy.getAttribute("aria-label")).length);
-    expect(unnamed).toBe(0);
+    // An icon button: the pointer icon, the label only as the accessible name, 28 px square.
+    await expect(select).toHaveAccessibleName("Select element");
+    await expect(select).toHaveAttribute("title", "Select element ⇧⌘C");
+    await expect(select.locator("[data-part=tool-icon]")).toBeVisible();
+    await expect(select.locator("[data-sr-only]")).toHaveText("Select element");
+    const size = await select.boundingBox();
+    expect([size?.width, size?.height], "a square of the toolbar height").toEqual([28, 28]);
+    const hidden = await select.locator("[data-sr-only]").boundingBox();
+    expect(hidden?.width ?? 0, "the label takes no room").toBeLessThanOrEqual(1);
 
-    // A tap on Play lands on the proxies: the game stays on home.
-    await tapGame(page, "play");
-    await page.waitForTimeout(600);
+    // Dark, lit by a click, dark again after Esc.
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    const dark = await select.evaluate(element => getComputedStyle(element).backgroundColor);
+    await select.click();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await expect(overlay(page).locator("[data-part=picker]")).toBeVisible();
+    await expect
+      .poll(() => select.evaluate(element => getComputedStyle(element).backgroundColor))
+      .not.toBe(dark);
+    await page.keyboard.press("Escape");
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await expect(overlay(page).locator("[data-part=picker]")).toHaveCount(0);
+
+    // A second click turns it off as well.
+    await select.click();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await select.click();
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+
+    // The key I lights it too; the pick puts it out (pickIn waits for that) and the game got no
+    // tap from the picking click.
+    await page.keyboard.press("i");
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await pickIn(page, await toClient(page, await gameRect(page, PLAY_KEY)), /^play · /);
+    await expect(select).toHaveAttribute("aria-pressed", "false");
+    await expect(captureCard(page)).toBeVisible();
     expect(await gamePath(page)).toBe("home");
 
-    // Off: no proxy left, and the game takes the tap again.
-    await flipBarToggle(page, "reference");
-    await expect.poll(() => barChecked(page, "reference")).toBe(false);
+    // No Reference mode: no proxy over the game, and the game takes a tap again.
     await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
-    await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
-    await tapGame(page, "play");
+    await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference");
+    await page.keyboard.press("Escape");
+    await expect(captureCard(page)).toHaveCount(0);
+    await shutDrawer(page, "game.side");
+    await tapGame(page, PLAY_KEY);
     await expect.poll(() => gamePath(page)).toBe("level");
   });
 
-  test("levelPanel: the frame matches game.locate, the source is found, the proxy and Copy reference carry the bounds", async ({
+  test("Copy Ref off: a pick only selects the element and an area drag picks nothing, no file, no card, no clipboard; Copy reference still writes and copies; on: the pick copies its @moku line", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    const copied = page.locator("[data-ui=toasts] [data-toast]").filter({ hasText: "copied" });
+    const logo = async (): Promise<Rect> => toClient(page, await settledRect(page, "homeLogo"));
+    const name = elementTab(page).locator("[data-part=name]");
+
+    // Off, with the Copy Ref switch of the Game toolbar.
+    await setCopyOnSelect(page, false);
+    await page.evaluate(text => navigator.clipboard.writeText(text), SENTINEL);
+    // The folder may hold files of an earlier spec of this worker: only new ones count.
+    const before = await captureFiles();
+    const added = async (): Promise<string[]> => {
+      const files = await captureFiles();
+      return files.filter(file => !before.includes(file));
+    };
+
+    // A pick only selects: the Element tab shows the element. No capture card, no file under the
+    // captures folder, no clipboard, no toast.
+    await pickIn(page, await logo(), /^homeLogo · /);
+    await expandSide(page, "game.side");
+    await expect(name).toHaveText("homeLogo");
+    await page.waitForTimeout(1000);
+    await expect(captureCard(page)).toHaveCount(0);
+    expect(await captureFiles(), "no file written by a pick").toEqual(before);
+    expect(await clipboardText(page)).toBe(SENTINEL);
+    await expect(copied).toHaveCount(0);
+
+    // An area drag over the logo picks nothing: the marquee goes, nothing is written, the
+    // selection stays and Select stays on for a click.
+    await shutDrawer(page, "game.side");
+    const area = await logo();
+    await pickerOn(page);
+    await page.mouse.move(area.x - 6, area.y - 6);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.w + 6, area.y + area.h + 6, { steps: 6 });
+    await expect(page.locator("[data-box=area]")).toBeVisible();
+    await page.mouse.up();
+    await expect(page.locator("[data-box=area]")).toHaveCount(0);
+    await page.waitForTimeout(1000);
+    await expect(captureCard(page)).toHaveCount(0);
+    expect(await captureFiles(), "no file written by an area drag").toEqual(before);
+    expect(await clipboardText(page)).toBe(SENTINEL);
+    await expect(copied).toHaveCount(0);
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(bar(page, "pick")).toHaveAttribute("aria-pressed", "false");
+    await expandSide(page, "game.side");
+    await expect(name).toHaveText("homeLogo");
+
+    // Copy reference of the Element tab makes the reference on demand: the card and its line.
+    await elementTab(page).locator("[data-action=copy-reference]").click();
+    await expect.poll(() => clipboardText(page)).toMatch(/^@moku homeLogo /);
+    await expect
+      .poll(added)
+      .toEqual([expect.stringMatching(/^\d{4}-\d{2}-\d{2}\/homeLogo-f\d+\.md$/)]);
+    await expect(captureCard(page)).toHaveCount(0);
+
+    // On again: the pick writes its pictures and its card, shows the capture card and puts its
+    // line on the clipboard, with the toast.
+    await shutDrawer(page, "game.side");
+    await setCopyOnSelect(page, true);
+    await page.evaluate(text => navigator.clipboard.writeText(text), SENTINEL);
+    await pickIn(page, await logo(), /^homeLogo · /);
+    await expect.poll(() => clipboardText(page)).toMatch(/^@moku homeLogo /);
+    await expect(copied.last()).toBeVisible();
+    await expect(captureCard(page)).toBeVisible();
+    await expect(captureCard(page).locator("[data-part=path]")).toHaveAttribute(
+      "title",
+      /\/homeLogo-f\d+/
+    );
+    const written = await added();
+    expect(
+      written.some(file => /\/homeLogo-f\d+(-\d+)?-crop\.jpg$/.test(file)),
+      `the crop of the pick in ${written.join(", ")}`
+    ).toBe(true);
+    expect(written.some(file => /\/f\d+(-\d+)?-full\.jpg$/.test(file))).toBe(true);
+  });
+
+  test("style edits: a field marks its row, the bar counts, Copy for agent writes the block, Clear drops it; an enum is a select", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    const playAt = await viewLine(PLAY_KEY);
+    await showGame(tools);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    const drawn = await settledRect(page, PLAY_KEY);
+    await pickIn(page, await toClient(page, drawn), /^play · /);
+    await expandSide(page, "game.side");
+    const tab = elementTab(page);
+    await expect(tab.locator("[data-part=name]")).toHaveText(PLAY_KEY);
+    const head = new RegExp(String.raw`^@moku play · features/tiny/view\.tsx:${playAt}$`);
+
+    // The rows are fields; nothing is pending, so there is no bar.
+    const width = styleField(page, "width");
+    const input = width.locator("input[type=number]");
+    await expect(input).toHaveAttribute("step", "1");
+    await expect(tab.locator("[data-part=style] [data-edited]")).toHaveCount(0);
+    await expect(editsBar(page)).toHaveCount(0);
+    const before = Number(await input.inputValue());
+    expect(before, "the width the view module writes").toBe(320);
+    const after = before + 40;
+
+    // A number field never forces the panel wider (M10): it stays inside the tab.
+    const field = await input.boundingBox();
+    const panel = await tab.boundingBox();
+    expect((field?.x ?? 0) + (field?.width ?? 0), "the field inside the tab").toBeLessThanOrEqual(
+      (panel?.x ?? 0) + (panel?.width ?? 0)
+    );
+
+    // An edit: the row and the field are marked, the scene value is struck, the bar says 1 edit.
+    await input.fill(String(after));
+    await input.press("Enter");
+    await expect(width).toHaveAttribute("data-edited", "");
+    await expect(tab.locator('[data-part=style] [data-row="width"]')).toHaveAttribute(
+      "data-edited",
+      ""
+    );
+    await expect(input).toHaveValue(String(after));
+    await expect(width.locator("s")).toHaveText(String(before));
+    await expect(width.locator("[data-action=reset-edit]")).toHaveAttribute(
+      "title",
+      `Reset to ${before}`
+    );
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("1 edit");
+    // The game is not changed (D-67): the button keeps its rect.
+    await page.waitForTimeout(300);
+    expect(await gameRect(page, PLAY_KEY)).toEqual(drawn);
+
+    // Copy for agent: the block of the element, its head line first.
+    await page.evaluate(text => navigator.clipboard.writeText(text), SENTINEL);
+    await editsBar(page).locator("[data-action=copy-edits]").click();
+    await expect.poll(() => clipboardText(page)).toMatch(/^@moku /);
+    const one = await clipboardText(page);
+    const block = one.split("\n");
+    expect(block[0], one).toMatch(head);
+    expect(block).toContain(`width: ${before} -> ${after}`);
+    expect(block).toHaveLength(2);
+    await expect(page.locator("[data-ui=toasts] [data-toast]").last()).toHaveText(
+      "✓ 1 edit copied"
+    );
+
+    // An enum property is a select with the engine's values; its edit is written in quotes.
+    const justify = styleField(page, "justify").locator("select");
+    await expect(justify).toHaveValue("center");
+    await expect(justify.locator("option")).toHaveText(JUSTIFY_VALUES);
+    await expect(styleField(page, "align").locator("select")).toHaveValue("center");
+    await justify.selectOption("start");
+    await expect(styleField(page, "justify")).toHaveAttribute("data-edited", "");
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("2 edits");
+    await editsBar(page).locator("[data-action=copy-edits]").click();
+    await expect.poll(() => clipboardText(page)).toContain('justify: "center" -> "start"');
+    const two = await clipboardText(page);
+    expect(two.split("\n")).toEqual([
+      expect.stringMatching(head),
+      `width: ${before} -> ${after}`,
+      'justify: "center" -> "start"'
+    ]);
+
+    // The reset button of a field removes that edit only.
+    await styleField(page, "justify").locator("[data-action=reset-edit]").click();
+    await expect(styleField(page, "justify")).not.toHaveAttribute("data-edited");
+    await expect(justify).toHaveValue("center");
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("1 edit");
+
+    // Clear drops what is left: no mark, no bar, no struck value. (The field showing the scene
+    // value again is in the next test.)
+    await editsBar(page).locator("[data-action=clear-edits]").click();
+    await expect(editsBar(page)).toHaveCount(0);
+    await expect(tab.locator("[data-part=style] [data-edited]")).toHaveCount(0);
+    await expect(width.locator("s")).toHaveCount(0);
+    await expect(width.locator("[data-action=reset-edit]")).toHaveCount(0);
+  });
+
+  // The page loads preact/compat, where `onChange` of a typed input fires on every keystroke. A
+  // Styles field commits by its own Enter and blur handlers: typing commits nothing, Esc drops
+  // what was typed, an emptied field stays empty, and Clear puts the scene value back.
+  test("a Styles field commits on Enter or blur only, and Esc restores the shown value", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    await showGame(tools);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    await pickIn(page, await toClient(page, await settledRect(page, PLAY_KEY)), /^play · /);
+    // The capture card of the pick is the first Esc layer: shut it, so Esc reaches the field.
+    await expect(captureCard(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(captureCard(page)).toHaveCount(0);
+    await expandSide(page, "game.side");
+    const input = styleField(page, "width").locator("input[type=number]");
+    const before = await input.inputValue();
+
+    // Typing commits nothing; an emptied field stays empty while it has the focus.
+    await input.click();
+    await input.press("ControlOrMeta+a");
+    await input.press("Backspace");
+    await expect(input).toHaveValue("");
+    await input.pressSequentially("999");
+    await expect(input).toHaveValue("999");
+    await expect(editsBar(page)).toHaveCount(0);
+
+    // Esc drops what was typed: the scene value is back and nothing is pending, after a blur too.
+    await input.press("Escape");
+    await expect(input).toHaveValue(before);
+    await expect(editsBar(page)).toHaveCount(0);
+    await elementTab(page).locator("[data-part=name]").click();
+    await expect(editsBar(page)).toHaveCount(0);
+    await expect(elementTab(page).locator("[data-part=name]")).toHaveText(PLAY_KEY);
+
+    // Enter commits.
+    await input.fill("999");
+    await expect(editsBar(page)).toHaveCount(0);
+    await input.press("Enter");
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("1 edit");
+
+    // Clear puts the scene value back in the field.
+    await editsBar(page).locator("[data-action=clear-edits]").click();
+    await expect(editsBar(page)).toHaveCount(0);
+    await expect(input).toHaveValue(before);
+
+    // A blur commits too, and Clear resets the field again.
+    await input.fill("998");
+    await expect(editsBar(page)).toHaveCount(0);
+    await elementTab(page).locator("[data-part=name]").click();
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("1 edit");
+    await expect(input).toHaveValue("998");
+    await editsBar(page).locator("[data-action=clear-edits]").click();
+    await expect(editsBar(page)).toHaveCount(0);
+    await expect(input).toHaveValue(before);
+  });
+
+  test("levelPanel: the frame matches game.locate, the source is found, Copy reference carries the bounds", async ({
     tools
   }) => {
     const page = tools.page;
@@ -860,16 +1192,16 @@ test.describe("pane · reference mode", () => {
         )
       : expect(source.locator("[data-part=where]").first()).toHaveText(/\.tsx?:\d+$/));
 
-    // Reference mode: the levelPanel proxy has the Element tab bounds (2 px).
+    // The Element tab holds no reference text and no "Pick another": its footer is Copy
+    // reference, then Show in render tree.
+    await expect(tab.locator("[data-part=reference-block]")).toHaveCount(0);
+    await expect(tab.locator("pre[data-part=reference]")).toHaveCount(0);
+    await expect(tab.getByRole("button", { name: "Pick another" })).toHaveCount(0);
+    await expect(tab.locator("footer button")).toHaveText([
+      "Copy reference",
+      "Show in render tree"
+    ]);
     const bounds = await tabBounds(page);
-    await flipBarToggle(page, "reference");
-    const proxy = page.locator(`[data-moku-proxy][data-moku-key="${PANEL_KEY}"]`);
-    await expect(proxy).toHaveCount(1);
-    await expect(proxy).toHaveAttribute("aria-label", PANEL_KEY);
-    const proxyBounds = ((await proxy.getAttribute("data-moku-bounds")) ?? "")
-      .split(" ")
-      .map(Number);
-    expect(near(proxyBounds, bounds, 2), `${proxyBounds} near ${bounds}`).toBe(true);
 
     // Copy reference writes the card again and copies its one line, the pick's line (the same
     // node and frame name the same card); the card holds eleven lines in a fixed order.
@@ -914,13 +1246,6 @@ test.describe("pane · reference mode", () => {
     expect(lines[10], block).toMatch(
       /^shot: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/levelPanel-f\d+-crop\.jpg · frame: \.moku\/captures\/\d{4}-\d{2}-\d{2}\/f\d+-full\.jpg$/
     );
-    // Copy reference and the pick give the same facts (only the clock may differ): the card's
-    // block is the one the Element tab shows.
-    const shown = (await tab.locator("pre[data-part=reference]").textContent()) ?? "";
-    expect(withoutClock(block)).toBe(withoutClock(shown));
-
-    await flipBarToggle(page, "reference");
-    await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
   });
 });
 
@@ -1026,24 +1351,34 @@ test.describe("pane · flow", () => {
     await expect.poll(() => insideCanvas(page, "main/home")).toBe(true);
   });
 
-  test("the Styles tab preselects no text style until one is picked", async ({ tools }) => {
+  test("the inspector has the Info and Code tabs only; the palette has no Styles group", async ({
+    tools
+  }) => {
     const page = tools.page;
     await showFlow(tools);
     await clickCard(page, "main/home");
     await expandSide(page, "flow.inspector");
-    await inspector(page).getByRole("tab", { name: "Styles" }).click();
-    const tab = inspector(page).locator("[data-flow=styles-tab]");
-    const select = tab.getByRole("combobox");
-    await expect(select).toBeVisible();
-    await expect(select).toHaveValue("");
-    await expect(select.locator("option:checked")).toHaveText("Pick a text style");
-    await expect(tab.locator("[data-part=card]")).toHaveCount(0);
-    await expect(tab).not.toContainText("Used by appears");
+    await expect(inspector(page).getByRole("tab")).toHaveText(["Info", "Code"]);
+    await expect(inspector(page).locator("[data-flow=styles-tab]")).toHaveCount(0);
+    for (const name of ["Info", "Code"]) {
+      await inspector(page).getByRole("tab", { name, exact: true }).click();
+      await expect(inspector(page).getByRole("tab", { name, exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      );
+    }
 
-    await select.selectOption("tiny.title");
-    await expect(select).toHaveValue("tiny.title");
-    await expect(tab.locator("[data-part=card]")).toBeVisible();
-    await expect(tab.getByRole("button", { name: /^Increase / }).first()).toBeVisible();
+    // The palette lists no text style: neither without a query nor for a style key.
+    const palette = page.locator("dialog[data-ui=palette]");
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(palette).toBeVisible();
+    await expect(palette.locator("fieldset").first()).toBeVisible();
+    await expect(palette.locator('fieldset[aria-label^="Styles"]')).toHaveCount(0);
+    await palette.getByRole("combobox", { name: "Search" }).fill("tiny.title");
+    await expect(palette.locator('fieldset[aria-label^="Styles"]')).toHaveCount(0);
+    await expect(palette.getByRole("option", { name: /^tiny\.title/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(palette).toBeHidden();
   });
 });
 

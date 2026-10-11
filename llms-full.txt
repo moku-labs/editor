@@ -26,6 +26,7 @@ Contents:
 - Peer dependencies: `@moku-labs/game >= 0.13.1` and `typescript >= 5.5`, both required. The bin's engine page needs `@moku-labs/game/cli` `preparePage` and `watchKeys` (0.13.1). The server opens the game's project index (`@moku-labs/game/project`), which needs `typescript`. Without them the index is off and every view that needs a code location says `Project index is off: <reason>` (see the next item).
 - Project index (D-38 … D-48): the server core's `files` plugin opens the project index of its root on start and keeps it fresh with its watch; the tools page asks it through the files-channel `find { key }` (lines read from disk at the call) and reads the key maps from the published `editor.project` state (`link.project()`, event `link:project`). The index is the only source of code locations: Flow node and flow files, the Code tab, Used by, the picked element's JSX and style block, projections, text styles, the asset manifest. A key the index does not know shows `Not in the project index: <key>`; no guess, no crawl. The index needs no `bunfig.toml` (that is only for the hot swap plugin). Moves and edits by agents while the editor is open are followed: open tabs, Used by, Code tab lines, caches.
 - Breaking (project index): removed the node → file rule exports (`nodeFile`, `flowFile`, `kebab`, `parseOverrides`, `SOURCE_ROOTS`, `SOURCE_OVERRIDES_PATH`, types `SourceOverrides`) and the protocol file `source-files.ts`; the configs `flowView.stylesFile`, `gameView.manifestPaths`, `gameView.sourceSearch`, `renderView.manifestPaths`; `.moku/editor/files.json` is ignored; the graph node `file` field (F-H2) is gone; `UsedBy.usedIn` is new; `StyleEditCode` gains `"broken"` (no style write while the file does not parse) and `"index-off"` (no style write while the index is off); a key built in a loop answers the element line. `@moku-labs/game >= 0.7.0` and `typescript >= 5.5` are required.
+- Breaking (editor UI cleanup, D-65 … D-69): Reference mode is gone (`workspace.reference()`, `setReference()`, the event `workspace:reference`, key R, the Esc layer `reference`, the top-bar toggle and its ⋯ row, gameView's `data-moku-*` proxy layer); the element picker (the Select button of the Game toolbar, ⇧⌘C, I, the area drag) is the one way to pick. `workspace` gains `copyOnSelect()` and `setCopyOnSelect(on)`, and `Prefs` gains `copyOnSelect`: a picker click writes the reference and copies its line only while the preference is on (the default; the "Copy Ref" switch of the Game toolbar); with it off the click only selects the element and writes nothing (D-70, D-72). The top bar starts with `span[data-mark]` (was `span[data-logo]`). The Flow Inspector has the tabs Info and Code: the Styles tab, the palette group "Styles" (`PaletteGroup` has no `"Styles"`) and the config key `flowView.styleSaveDelayMs` are removed. A series no longer opens the contact sheet when it ends. `gameView` gains `editStyle`, `clearEdits`, `edits` and `copyEdits`; the protocol gains `StyleEdit`, `StyleValue` and `SelectionInfo.edits`.
 - Doors: game 0.4 replaced `game.rect` with `game.locate` (input `{ key?: string; target?: json }`, answers `Rect | undefined`) and makes `game.capture` answer `{ png: string, legend? }` instead of the data URL itself. The calibration of gameView and renderView reads `{ key }` from `game.locate` when the manifest lists it, else from `game.rect` (`rectSourceOf` in `panels/shared/scene`); with neither, nothing is read, nothing is warned, and the picker says "This game reports no element rects". The capture plugin takes a data URL or an object with a string `png` (`pictureOf`); anything else is still "game.capture gave no picture".
 - `files` in the package: `dist`, `LICENSE`, `README.md`, `llms.txt`, `llms-full.txt`. `"sideEffects": false`.
 - Production builds: import the agent only inside `if (__MOKU_GAME_DEV__) { await import("@moku-labs/editor/agent") … }`. With the flag defined `false` the bundle keeps no editor code (0 B); with `true` the agent with bridge and capture adds 77.6 KB minified (26.7 KB gzip). The agent core in `src/agent.ts` is created `/* @__PURE__ */`. See README "Production builds" and `tests/integration/agent-bundle.test.ts`.
@@ -153,8 +154,6 @@ export type ToolsEvents = {
   "workspace:ran": RanEvent;
   /** The applied density changed (a choice, or `auto` crossing 820 px of window width). */
   "workspace:density": { density: Density };
-  /** Reference mode turned on or off (gameView shows its element proxies while on). */
-  "workspace:reference": { on: boolean };
   /** Open a file in the Files workspace (filesView hooks it). */
   "workspace:open-file": { path: string; line?: number };
   /** Focus a node in the Flow workspace (flowView hooks it). */
@@ -1126,6 +1125,35 @@ export type SelectionItem = {
 };
 
 /**
+ * The value of one style property a pending edit carries (U8): a number, a string or a boolean.
+ *
+ * @example
+ * ```ts
+ * const width: StyleValue = 600;
+ * const justify: StyleValue = "center";
+ * ```
+ */
+export type StyleValue = number | string | boolean;
+
+/**
+ * One pending style edit of an element (U8): a value the person changed in the Element tab and
+ * the file does not have yet. `path` is the style property, dotted for a nested one
+ * (`padding.top`); `from` is the value the scene had, `to` the wanted one.
+ *
+ * @example
+ * ```ts
+ * // homePlay (features/stage/views/home-screen.tsx:199) is to become 600 wide, with more room on top.
+ * const width: StyleEdit = { path: "minWidth", from: 556, to: 600 };
+ * const top: StyleEdit = { path: "padding.top", from: 25, to: 30 };
+ * ```
+ */
+export type StyleEdit = {
+  readonly path: string;
+  readonly from: StyleValue;
+  readonly to: StyleValue;
+};
+
+/**
  * The element selected in the editor page, as the page publishes it (editor-channel notification
  * `selection`) and as the hub answers `editor.selection` and `editor.select`. Check a received
  * value with `parseSelectionInfo`. Its readonly `items` make it not assignable to the mutable
@@ -1181,6 +1209,18 @@ export type SelectionInfo = {
   readonly area?: SelectionRect;
   /** The elements of an area selection, top to bottom then left to right; at most 40. */
   readonly items?: readonly SelectionItem[];
+  /**
+   * The pending style edits of the element (U8). Absent when it has none: `parseSelectionInfo`
+   * drops an empty list.
+   *
+   * @example
+   * ```ts
+   * // The agent read the selection of homePlay: two edits to write in home-screen.tsx:199.
+   * const lines = (info.edits ?? []).map(edit => `${edit.path}: ${edit.from} -> ${edit.to}`);
+   * // ["minWidth: 556 -> 600", "padding.top: 25 -> 30"]
+   * ```
+   */
+  readonly edits?: readonly StyleEdit[];
   /** Epoch ms of the publish (`Date.now()`). */
   readonly at: number;
 };
@@ -1237,7 +1277,7 @@ export type PictureFormat = "jpeg" | "png";
 export type SelectParams = {
   readonly key?: string;
   readonly ref?: SelectionRef;
-  /** An area in page CSS px, picked like a Reference-mode drag (U9). It wins over key and ref. */
+  /** An area in page CSS px, picked like an area drag of the picker (U9). It wins over key and ref. */
   readonly rect?: SelectionRect;
   readonly card?: boolean;
 };
@@ -1342,7 +1382,6 @@ Global events only; no plugin declares its own `events` field. Payload types are
 | tools | `workspace:changed` | `{ ws: WorkspaceId }` | workspace | `show()` changed the workspace | panels, flowView, gameView, renderView, filesView |
 | tools | `workspace:ran` | `RanEvent` | workspace (origins `topbar`, `key`, `palette`), panels (origin `panel`, or the api `run` origin) | a command run from the tools page settled | stateView (taint), consoleView (error lines) |
 | tools | `workspace:density` | `{ density: Density }` (`"compact" \| "comfortable"`) | workspace | the applied density changed: a choice in the palette, or `auto` crossing 820 px of window width | flowView (ELK spacing) |
-| tools | `workspace:reference` | `{ on: boolean }` | workspace | Reference mode turned on or off (key R, the top-bar target button, `setReference`) | gameView (element proxies) |
 | tools | `workspace:open-file` | `{ path: string; line?: number }` | flowView, gameView | "Open in Files" | filesView |
 | tools | `workspace:select-node` | `{ id: string }` | filesView | a Used-by chip | flowView |
 | tools | `workspace:focus-frame` | `{ frame: number }` | consoleView | a frame link, `focusFrame()` | flowView |
@@ -1412,7 +1451,6 @@ All options are set per plugin through `createApp({ pluginConfigs: { <plugin>: {
 | flowView | `historyLast` | `number` | `20` | Entries of `game.history` the panel watches. |
 | flowView | `trailLength` | `number` | `6` | Edges drawn as the trail. |
 | flowView | `rejectedOutcomes` | `readonly string[]` | `["rejected"]` | Outcomes drawn as rejections. |
-| flowView | `styleSaveDelayMs` | `number` | `600` | Debounce of a style stepper burst. |
 | flowView | `layout.file` | `string` | `".moku/editor/layout.json"` | Saved positions. |
 | flowView | `layout.worker` | `boolean` | `true` | Run ELK in a Blob Web Worker; `false` runs it inline. |
 | flowView | `layout.saveDelayMs` | `number` | `400` | Debounce of the layout save after a drop. |
@@ -1491,7 +1529,7 @@ MCP bridge (`moku-editor mcp`, `src/plugins/pages/mcp/`, D-31): a separate proce
 - Claude Code 2.1.280 (recorded in `src/plugins/pages/__tests__/fixtures/claude-*.json`): it sends `server/discover` (draft protocol 2026-07-28) first, gets -32601, then `initialize` with `protocolVersion: "2025-11-25"` and id 0, `notifications/initialized` and `tools/list`.
 - Which bin: a live `.moku/editor.json` under `--root` (default the working directory) wins. Without one the bridge starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached (output in `.moku/editor.log`, 0600), when it knows a game html (argv, else the last discovery file it saw, else, in a moku-game folder, the engine page `<root>/.moku/index.html`: a root with `index.ts` and `config.ts`, `isGameFolder` of `pages/discovery.ts`, D-63; so `moku-editor mcp --root <game>` with no html and no `.moku/` starts the engine page, at startup and on `moku_start {}`); the html `<root>/.moku/index.html` (the engine page) is left out, so the bin starts in the engine form `moku-editor --port <port> --root <root> [--no-hmr]` and re-runs under `--config=<root>/.moku/bunfig.toml` (D-51); port `--port`, else the last port, else 3000; it waits at most 15 s for the discovery file and owns that bin. Without an html, in a root that is no moku-game folder, tools answer `isError` "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." After a closed hub socket the bridge reads the discovery file again and reconnects: one try at the close, then at most three more, 1, 2 and 4 s apart (0, 1, 3 and 7 s after the close, like the link), while the file names a live bin; the bin's restart keeps its port closed for up to about 6 s (D-57). A connection the hub drops within 5 s of opening (`STABLE_MS`) counts as a failed try: the next try waits, and the count starts over only after a connection held 5 s, so a bin that accepts and drops every socket is tried at most four times in 7 s, not in a loop. The tries end with a connection, without a live bin, after the last wait, on `moku_stop` and on stdin end or a signal; a tool call in between tries one connect. A connect that opens after the teardown began is closed and not followed. stderr (D-59): a close prints one info line (`moku-editor mcp: the moku-editor connection closed; reconnecting`, `… closed after less than 5 s`, or `… closed; no running moku-editor` when no bin runs), a failed try prints nothing (its message is kept for the "not running" answer), a connect prints `moku-editor mcp: connected to <url>`, and tries that end without a connection print exactly one warning: `[moku-editor] mcp: could not reconnect to moku-editor; the next tool call tries again.` with `Last attempt: <error>` on the next line.
 - Teardown on stdin end, SIGINT or SIGTERM (the same steps): pending calls are aborted, every watch is dropped, the socket closes, an owned bin gets SIGTERM, then SIGKILL after 2 s; a bin the bridge did not start keeps running. After a signal it lets go of stdin, so the process exits 0 while the client keeps the pipe open.
-- Generic tools (22, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }` and `manifestHash`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a card and its crop: `"latest"` is the newest card of `.moku/captures/<yyyy-mm-dd>/*.md` (only `YYYY-MM-DD` folder names, newest day first) and the older flat `.moku/captures/*.md`; a name is the newest card with that name; a path is that card), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, node?, card? }`, exactly one of `key`, `rect` or `node`; `key` and `rect`: hub `editor.select` relayed to the editor page, which picks it like the Reference picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`; `node` (1–256 chars, D-61): `editor.show { workspace: "flow" }`, then `editor.node { id }`, then `files.find { key: "node:<id>" }`, skipped while the project index is off; text JSON `{ id, selected, places }`, no crop and no card (`card` with `node` is an `isError`); -32003 `no_graph` reads `isError` "the Flow view has no graph yet; try again in a moment"), `moku_device` (`{ preset?, orientation? ("portrait" | "landscape"), folded? }`: hub `editor.device`, relayed to the editor page; only the given fields change, `{}` reads; text JSON `DeviceInfo` `{ preset, orientation, folded, w, h, presets }`; not destructive, idempotent), `moku_show` (`{ workspace? }`, one of `flow`, `game`, `render`, `state`, `files`, `console`: hub `editor.show`; `{ workspace, workspaces }`; not destructive, idempotent), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_files_find` (`{ key }`, 1–512 chars, such as `node:board/merge`, `flow:board`, `jsx:coins`, `textStyle:ui.title`, `style:features/ui/popup.tsx#popupScreen`: hub `files.find { key }`; the places as JSON `{ path, binding?, line, hash, broken? }`; none: "No place for <key>."; index off: the hub's -32008 as `isError` "project index off: <reason>"; read-only), `moku_project` (`{ path?, prefix? }`, at most one: the project state the hub published as `editor.project`, kept by the hub client, no request; no argument: `{ state, revision, manifest?, keys, broken, prefixes }` with the key count and the count per prefix; `prefix`: the keys that start with it → def paths, and for `jsx:` the text "jsx keys are not in the index state; use moku_files_find"; `path`: `{ defines, uses, broken? }` of that file; off: `{ state: "off", reason }`; read-only), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_hot_reload` (`{ on }`, D-62: already in that state → `{ hmr, owner, restarted: false }` with no POST; owner `"server"` → `isError` "hot reload is owned by the game's server; it cannot be switched"; else `POST <tools page>hmr` with `Authorization: Bearer <token>` of the discovery file and the body `{ "hmr": <on> }`, where another status than 200 is `isError` with the status and an answer the restart cut off counts as sent; then it polls the bridge's connection at most 15 s until a connection opened after the POST carries the asked state and held 1.5 s (the old server of the restarting bin can take the first reconnect try and drops it when it stops): `{ hmr, owner, restarted: true }`; the token is in no result and on no stderr line; the game page loads again only with `moku_reload`; not destructive, idempotent), `moku_start` (`{ html?, port? }`; no html needed in a moku-game folder), `moku_stop` (owned bin only). Editor requests (D-60): `editor.device`, `editor.show` and `editor.node` ride the relay of `editor.select`; a -32601 (the hub of an older bin does not relay the method, or the page was loaded before the bin was updated and has no handler) reads `isError` "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page".
+- Generic tools (22, all `moku_*`, closed input schemas, optional `session` on every game tool, static annotations): `moku_status`, `moku_sessions` (heartbeat `{ frame, paused, silent }` and `manifestHash`), `moku_manifest`, `moku_read`, `moku_wait` (`until` / `changedFrom` / first change, `timeoutMs` 100–25000, default 10000), `moku_run` (text starts `effect: <effect>`), `moku_screenshot` (`{ maxWidth?, key?, format? }`: `editor.capture { maxWidth, format, key? }`, default 1080 px and JPEG, `key` crops to one ui element plus 8 px; above 300 KB taken once more at half width; the image `mimeType` follows the data URL), `moku_series` (`editor.sheet { frames, everyMs, maxWidth: 1080, format: "jpeg" }`, or `game.capture { sheet }` at full size when the agent has no `editor.sheet`; needs game ≥ 0.4), `moku_reference` (a card and its crop: `"latest"` is the newest card of `.moku/captures/<yyyy-mm-dd>/*.md` (only `YYYY-MM-DD` folder names, newest day first) and the older flat `.moku/captures/*.md`; a name is the newest card with that name; a path is that card), `moku_selection` (hub `editor.selection`: the editor page's `SelectionInfo` and its crop; the JSON has `edits` when the element has pending style edits, `{ path, from, to }` each, for the agent to apply in the source; null answers "Nothing is selected in the editor."), `moku_select` (`{ key?, rect?, node?, card? }`, exactly one of `key`, `rect` or `node`; `key` and `rect`: hub `editor.select` relayed to the editor page, which picks it like the element picker without the clipboard; the selection and its crop; no editor page: -32003 `no_editor_page`; `node` (1–256 chars, D-61): `editor.show { workspace: "flow" }`, then `editor.node { id }`, then `files.find { key: "node:<id>" }`, skipped while the project index is off; text JSON `{ id, selected, places }`, no crop and no card (`card` with `node` is an `isError`); -32003 `no_graph` reads `isError` "the Flow view has no graph yet; try again in a moment"), `moku_device` (`{ preset?, orientation? ("portrait" | "landscape"), folded? }`: hub `editor.device`, relayed to the editor page; only the given fields change, `{}` reads; text JSON `DeviceInfo` `{ preset, orientation, folded, w, h, presets }`; not destructive, idempotent), `moku_show` (`{ workspace? }`, one of `flow`, `game`, `render`, `state`, `files`, `console`: hub `editor.show`; `{ workspace, workspaces }`; not destructive, idempotent), `moku_files_list`, `moku_files_read`, `moku_files_write` (`.moku/editor.json` and `.moku/editor.log` are hidden and refused), `moku_files_find` (`{ key }`, 1–512 chars, such as `node:board/merge`, `flow:board`, `jsx:coins`, `textStyle:ui.title`, `style:features/ui/popup.tsx#popupScreen`: hub `files.find { key }`; the places as JSON `{ path, binding?, line, hash, broken? }`; none: "No place for <key>."; index off: the hub's -32008 as `isError` "project index off: <reason>"; read-only), `moku_project` (`{ path?, prefix? }`, at most one: the project state the hub published as `editor.project`, kept by the hub client, no request; no argument: `{ state, revision, manifest?, keys, broken, prefixes }` with the key count and the count per prefix; `prefix`: the keys that start with it → def paths, and for `jsx:` the text "jsx keys are not in the index state; use moku_files_find"; `path`: `{ defines, uses, broken? }` of that file; off: `{ state: "off", reason }`; read-only), `moku_reload` (`editor.reload { restore }`, waits ≤ 15 s for the game to reconnect), `moku_hot_reload` (`{ on }`, D-62: already in that state → `{ hmr, owner, restarted: false }` with no POST; owner `"server"` → `isError` "hot reload is owned by the game's server; it cannot be switched"; else `POST <tools page>hmr` with `Authorization: Bearer <token>` of the discovery file and the body `{ "hmr": <on> }`, where another status than 200 is `isError` with the status and an answer the restart cut off counts as sent; then it polls the bridge's connection at most 15 s until a connection opened after the POST carries the asked state and held 1.5 s (the old server of the restarting bin can take the first reconnect try and drops it when it stops): `{ hmr, owner, restarted: true }`; the token is in no result and on no stderr line; the game page loads again only with `moku_reload`; not destructive, idempotent), `moku_start` (`{ html?, port? }`; no html needed in a moku-game folder), `moku_stop` (owned bin only). Editor requests (D-60): `editor.device`, `editor.show` and `editor.node` ride the relay of `editor.select`; a -32601 (the hub of an older bin does not relay the method, or the page was loaded before the bin was updated and has no handler) reads `isError` "moku-editor or its editor page is older than the bridge; restart moku-editor and reload the page".
 - Door tools (`door-tools.ts`, D-35, D-36, D-37): one tool per command door of the selected session (the one `moku_run` uses without `session`: the only one, else the embedded one; several sessions and none embedded: no door tools). Sources stay behind `moku_read`.
   - Name: the id with `.` as `_` (`game.tap` → `game_tap`, `timber.openShop` → `timber_openShop`); `cheat` and `raw` doors get the prefix `cheat_` / `raw_` (`cheat_game_fill`, `raw_game_restore`).
   - No tool (logged once per hash on stderr as `[moku-editor] mcp: no tool for <id>: <reason>; use moku_run`): `COVERED_DOORS` = `game.capture`, `editor.capture`, `editor.sheet`, `editor.series`, `editor.seriesStop`, `editor.reload` (screenshots go only through `moku_screenshot`, JPEG by default, about 300 KB at most; data URL answers and the `game_reloaded` end of a reload stay with the generic tools); a final name starting with `moku_`; a name longer than 40 characters (so `mcp__moku-editor__<name>` fits 64); an id outside `[A-Za-z0-9._-]`; an input field `_session` or outside `[A-Za-z0-9_-]{1,64}`; two doors whose names collide (`a.b` and `a_b`: both dropped).
@@ -3221,12 +3259,13 @@ export type LinkApi = EditorChannel & {
 
 - depends: `[linkPlugin]`. Lifecycle: `onInit` (config, prefs, theme, hash, keys, Esc layers, palette), `onStart` (window listeners, `link.onManifest`), `mount(el)` (renders the shell, creates the frame layer once), `onStop`.
 - Workspaces in rail order: Game (the default, ⌘1), Flow (⌘2), Render, State, Files, Console.
-- Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; R Reference mode; H hot reload; Esc unwinds layers in `EscLayer` order.
-- Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) logo, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Reference mode, Registry (icon only; counts in its title "Registry · 20 sources · 23 commands"), theme. Below 900 px (`compact`) logo, game name (hidden at 560 px and narrower), link pill (session id in its title; it opens the session menu), Pause and Step as icons (the labels are their accessible names, round 2b R15), the icon toggles Reference mode (`data-action="reference"`, target, `aria-pressed`) and Hot reload (`data-action="hot-reload"`, flame with a dot while on; only above 560 px; inert with its reason in the title when the editor cannot change it), a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Reference mode, Hot reload (each with its state and key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls; Reference mode and Hot reload stay in the menu while their icons show. No two controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (e2e/top-bar.spec.ts).
+- Keys: ⌘1–⌘6 and 1–6 switch workspaces in that order; ⌘K palette; `.` step while paused; P pause/resume; O overlay in game; G preview; H hot reload; Esc unwinds layers in `EscLayer` order.
+- Top bar (round 2 R1), `data-layout` on `[data-ui="top-bar"]`: from 900 px (`wide`) the game mark, game name, session chip, link pill, Pause, Step, the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels, Registry (icon only; counts in its title "Registry · 20 sources · 23 commands"), theme. Below 900 px (`compact`) the game mark, game name (hidden at 560 px and narrower), link pill (session id in its title; it opens the session menu), Pause and Step as icons (the labels are their accessible names, round 2b R15), the icon toggle Hot reload (`data-action="hot-reload"`, flame with a dot while on, `aria-pressed`; the one toggle of the bar at every compact width: `barToggles(width)` answers `["hot-reload"]` below 900 px and `[]` from there; inert with its reason in the title when the editor cannot change it), a search icon and the ⋯ button (`data-action="more"`): a top-layer `role="menu"` popover with Game preview, Overlay in game, Hot reload (each with its state and its key; a toggle row keeps the menu open), Registry (counts; opens the registry popover), Density (cycles auto → compact → comfortable) and Theme. Rows keep the `data-action` of the wide controls (`game`, `overlay`, `hot-reload`, `registry`, `theme`) plus `density`; Hot reload stays in the menu while its icon shows. No two controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (e2e/top-bar.spec.ts).
 - Hot reload switch (D-32): mirrors `link.hotReload()`. Owner `"bin"`: a click (the switch, the ⋯ row or key H) bookmarks the game, asks `setHotReload`, toasts "Hot reload off" or "Hot reload on", waits for this tab's game on the restarted server and reloads the frame with the bookmark ("Game reloaded · state restored from the last checkpoint"), so the page gains or drops Bun's HMR client. A failed switch toasts "Could not switch · start the bin with --no-hmr to turn hot reload off" (or "…without --no-hmr to turn hot reload on") and keeps that hint in the title. Owner `"server"`: "The game's own server sets hot reload"; owner unknown: inert, the reason in the title.
 - Narrow first: built for Claude's browser pane at 1/3 (480 px) and 1/2 (720 px) of the screen; every workspace works at 480 px without horizontal page scroll.
 - Density: `auto` (default; compact below 820 px of window width, comfortable from there), `compact` or `comfortable`. Palette items "Density: …"; saved with the theme; `data-density` on `<html>`; `workspace:density` when the applied value changes.
-- Reference mode (D-27): key R, the top-bar target button, the palette or `setReference`. The frame takes no game input while it is on; gameView draws `data-moku-*` proxies at the element bounds. Never persisted; Esc turns it off.
+- The game mark (U1): `span[data-mark]` (`aria-hidden`) is first in both layouts: a 24 px tile with the initials of the game name on a colour from the name. `markOf(name)` (`mark.ts`, pure): two words or more (split on whitespace, `-` and `_`) give the first letters of the first two words in upper case ("Tic Tac Toe" → `TT`, "merge-game" → `MG`); one word gives its first two letters ("Merge" → `ME`); no game gives `·` and no hue. The hue is the sum of every character code times its position (from 1), modulo 360, over the trimmed lower-case name, written as the inline custom property `--mark-hue`; without it the tile is neutral. While the link reloads the mark holds the last name.
+- Copy on select (U5, D-68, D-70, D-72): `copyOnSelect()` and `setCopyOnSelect(on)` keep the flag in the prefs record (`copyOnSelect`, default true, also for a stored record without the field; `onPrefs` gets it). On: a picker click writes the reference and copies its line. Off: a picker click only selects the element. The palette command "Copy reference on select: turn off" / "… turn on" flips it; no key, no event. The top bar has no control for it (no ⋯ row, no switch of the wide bar): the control is the "Copy Ref" switch of gameView's game toolbar, which calls `setCopyOnSelect` and follows `onPrefs`. workspace only keeps the flag: gameView reads it at a picker click.
 - Pinned preview: the header drags it (snaps to a corner); the body plays the game (taps and keys reach it); the size changes only through S/M/L.
 - Tap ripples: `link.onTap` draws a ring at the tap point over the docked frame while "Show taps in the game" is on.
 - Devices (round 2 R4, round 2b R9 R10, `devices()`): the presets live in `registry/protocol/devices.ts` (`DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `resolveDevice`, `screenOf`, `deviceById`, `presetOf`, `isDevicePresetId`); workspace and gameView both read them there. Twenty-one presets in `<optgroup>` groups. iPhone: SE 3 · small, 2022 (`iphone-se`, 375×667, safe 20/0, `frame: "home-button"`), 15 (`iphone-15`, 393×852, 59/34), 17e (`iphone-17e`, 390×844, 47/34, approx), Air (`iphone-air`, 420×912, 68/34, approx), 18 Pro (`iphone-18-pro`, default, 402×874, 62/34, approx), 18 Pro Max (`iphone-18-pro-max`, 440×956, 62/34, approx), then 15 Pro Max (430×932, 59/34), 16 Pro (402×874, 62/34), 16 Pro Max (440×956, 62/34) at the end so a stored choice keeps working. Android (no insets): Galaxy S24 (360×780), Galaxy A55 (412×892), Redmi Note 13 (393×873, approx), Pixel 8 (412×915), Xperia 1 V 21:9 (411×960). Foldable: Galaxy Z Fold 6 (cover 369×905 ⇄ inner 707×823, approx), Galaxy Z Flip 6 (412×1005), Pixel 9 Pro Fold (cover 411×923 ⇄ inner 791×820, approx), iPhone Duo (`iphone-duo`, cover 466×678 ⇄ inner 890×626, a book that opens landscape-wide; Apple's pixels divided by 3, approx). Tablet: iPad mini 7 (744×1133), iPad Air 11" (820×1180). Desktop (1440×900). Each has `dpr`, `radius`, `group` and `frame` (`"modern"` | `"home-button"`); `approx: true` marks estimated sizes or insets. `setDevice({ folded })` switches a foldable live (the game sees a resize); a new preset starts folded. An unknown stored id falls back to the iPhone 18 Pro.
@@ -3234,7 +3273,7 @@ export type LinkApi = EditorChannel & {
 - Dark theme bezel `--color-bezel: #2c2c34` with a 1 px `--border-strong` outline; the docked frame's clip-path is `inset(… round <radius>px)` in the frame's own px, on the stage and in the pinned preview.
 - D-07 reload: `game.bookmark` → `iframe.src` reassigned → first manifest of an embedded session → `game.restore { bookmark }`. With Bun hot reload on, `gameFrame().reload()` after a save first waits up to `hotReloadWaitMs` (1500) for the page Bun reloads: its hello with `manifest.restored` ends the run with the toast "Game reloaded · state restored" (no second reload, restore or pause); without `restored` workspace restores its bookmark; no new session in time → the frame reloads itself. A session with `restored` after an outside edit (an agent writing a file) toasts "Game reloaded · state restored" once. Hot swap (game 0.5.0, U10): in the same wait, a `ui:hot-swap` entry of the game's `game.log` (`isHotSwapEntry`) logged after the save ends the run with `{ restored: false, reason: "hot_swap" }` and the toast "Game updated": no frame reload, no restore.
 - Only the game reloads (U9): `link.expectReload()` before a frame reload; while `isReloading(status)` (a `lost` with `reloading: true`) the top bar keeps the last game name, session id and the pill text `Live · f<lastFrame>` (fixed width), the StaleBar is hidden, the panels keep their data, and the one indicator is the spinner `[data-frame-reloading]` on the game frame (counter-scaled, no layout). A real loss, or one past `reloadGraceMs`, shows the red StaleBar as an overlay at the top of the workspace, never in the layout flow. e2e/reload-quiet.spec.ts measures 0 layout shift on the tools page across Reload, Hot reload off/on and a rules save.
-- Events: emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`.
+- Events: emits `workspace:changed`, `workspace:ran`, `workspace:density`; hooks `link:status`.
 
 ~~~ts
 /**
@@ -3482,7 +3521,6 @@ export type EscLayer =
   | "fileEdit"
   | "codeEdit"
   | "stepPopover"
-  | "reference"
   | "selection";
 
 /**
@@ -3830,30 +3868,6 @@ export type WorkspaceApi = {
   setOverlayInGame(on: boolean): Promise<void>;
 
   /**
-   * The Reference mode flag: while on, the frame overlay takes the pointer, so the game gets no
-   * input. Always false at load; never persisted.
-   *
-   * @returns Whether it is on.
-   * @example
-   * ```ts
-   * app.workspace.reference(); // false
-   * ```
-   */
-  reference(): boolean;
-
-  /**
-   * Turns Reference mode on or off; emits `workspace:reference` when it changes. Esc turns it off.
-   *
-   * @param on - The new flag.
-   * @example
-   * ```ts
-   * app.workspace.setReference(true); // emits workspace:reference { on: true }
-   * app.workspace.reference(); // true
-   * ```
-   */
-  setReference(on: boolean): void;
-
-  /**
    * The hot reload state of the game server, as link reports it: whether Bun reloads the game
    * page after a save, and who owns the server.
    *
@@ -3914,8 +3928,43 @@ export type WorkspaceApi = {
   setMuted(on: boolean): void;
 
   /**
-   * Listens to preference changes (theme, preview, device, sound). A throwing listener is logged
-   * and does not stop the others.
+   * The "Copy on select" preference (U5, D-70): what a click of the element picker does. On: the
+   * pick writes the reference (the crop, the full frame and the card) and copies its line. Off:
+   * the pick only selects the element for the Element tab and writes nothing. Kept in the
+   * preferences, so it survives a reload of the tools page; true for a fresh viewer and for a
+   * stored record from before the preference. Its control is the Copy Ref switch of gameView's
+   * game toolbar; the palette command "Copy reference on select" flips it too.
+   *
+   * @returns Whether a pick writes the reference and copies its line.
+   * @example
+   * ```ts
+   * // gameView handles a picker click: the element is selected either way, and the pick is
+   * // completed (shots, card, clipboard) only while the preference is on.
+   * const workspace = ctx.require(workspacePlugin);
+   * if (!workspace.copyOnSelect()) return; // false after setCopyOnSelect(false): inspect only
+   * ```
+   */
+  copyOnSelect(): boolean;
+
+  /**
+   * Turns "Copy on select" on or off: stores the flag in the preferences and calls the `onPrefs`
+   * listeners (the Copy Ref switch of gameView's game toolbar follows them). The same value
+   * again does nothing. No event is emitted: gameView reads the flag at the next pick.
+   *
+   * @param on - True for a pick that writes the reference and copies its line, false for a pick
+   *   that only selects the element.
+   * @example
+   * ```ts
+   * // The person only wants to look at elements in the Element tab: no files, no clipboard.
+   * app.workspace.setCopyOnSelect(false);
+   * app.workspace.copyOnSelect(); // false; onPrefs listeners got { …, copyOnSelect: false }
+   * ```
+   */
+  setCopyOnSelect(on: boolean): void;
+
+  /**
+   * Listens to preference changes (theme, preview, device, sound, Copy on select). A throwing
+   * listener is logged and does not stop the others.
    *
    * @param fn - The listener.
    * @returns Removes it.
@@ -4098,6 +4147,7 @@ export type PanelsApi = {
 - Density: ELK spacing follows `workspace:density` (comfortable 120 / 20, compact 96 / 14), edge labels take their own layer so they never overlap.
 - A `workspace:select-node` that shows Flow for the first time is framed by the first canvas measure, not the current node.
 - Notes are gone: no `notes` namespace, no `notesDir`, no `workspace:new-note`.
+- The Inspector has two tabs, Info and Code (D-66). The Styles tab, the palette group "Styles" and the config key `styleSaveDelayMs` are gone: text styles are edited in their file or through the agent.
 - Events: emits `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:select-node`, `workspace:focus-frame`, `workspace:density`.
 
 ~~~ts
@@ -4166,8 +4216,8 @@ export type FlowHubConfig = {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
- * // a stepper burst is written 300 ms after the last press
+ * createApp({ pluginConfigs: { flowView: { historyLast: 40 } } });
+ * // flowView watches the last 40 entries of game.history
  * ```
  */
 export type FlowViewConfig = {
@@ -4177,8 +4227,6 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /** Debounce before a style stepper burst is written. Default 600. */
-  styleSaveDelayMs: number;
   /** The layout file and the ELK engine. */
   layout: FlowLayoutConfig;
   /** The zoom range of the camera. */
@@ -4509,21 +4557,22 @@ export type LayoutApi = {
 
 ### 7.13 gameView — tools, Complex
 
-- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active; Reference mode on when workspace has it on), `onStop`.
-- Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown or Reference mode is on. Runs `editor.*` commands through `panels.run`. Never captures on its own.
+- depends: `[linkPlugin, workspacePlugin, panelsPlugin]`. Lifecycle: `onInit` (Game panel, palette, keys, Esc layers), `onStart` (scene watches when Game is already active), `onStop`.
+- Game is the default workspace (⌘1). Watches `game.ui`, `game.entities`, `game.projections` only while Game is shown. Runs `editor.*` commands through `panels.run`. Never captures on its own.
 - Calibration: reads `{ key }` of one keyed ui node from `game.locate` when the manifest lists it (game 0.4), else `game.rect` (game 0.1). A manifest with neither: no read, no warn, and the picker hint says "This game reports no element rects".
-- Reference mode (D-27, owned by workspace): gameView draws `<div data-moku-proxies>` in the frame overlay, one invisible `data-moku-proxy role="img"` per visible scene node at its rect, with `aria-label`, `title`, `data-moku-key`, `data-moku-name`, `data-moku-type`, `data-moku-path`, `data-moku-node`, `data-moku-source`, `data-moku-style`, `data-moku-style-source`, `data-moku-bounds`, `data-moku-ref-bounds` (reference units), `data-moku-frame`. The cursor over the layer and every proxy is a crosshair. A click (`pointerup`) on a proxy is a pick. A press that moves 4 client px or more drags an area (U9; in Select mode the picker layer does the same and turns off after the pick, U4): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`. Each element line is `- <name> <type> · key <key> · text "…" · <file:line> · x,y w×h px · ref x,y w×h` (U5; `text` when the game reports `content`, 40 characters at most), followed by its child tree (visible descendants, two spaces per level, 3 levels, 60 lines in the whole tree, then `+N more`); then one `layout: <roots> < <parent> (…) < …` line per parent chain (up to 3 parents), `partly in the area: <name> <type> x,y w×h px · …` (overlapping nodes not inside, largest overlap first, at most 8), the tail lines; the card adds `## <key> · component <Name> · <file:line>` for each component instance (within the 10 new source searches of an area, A18).
-- Selection over MCP (U4, D-33): every change of the selection (a pick, an area, select, Esc) is published through `link.notify("selection", …)` (first without the style source, then again with it; after a pick with `card`, `crop`, `line`). `link.handle("select", …)` answers MCP `moku_select`: `rect` picks an area; `key` (first ui node with it, `"hud/infoBar"` allowed) or `ref` is inspected in the Game workspace and, unless `card: false`, picked without the clipboard; an unknown key is -32602 "No element with key <key>".
-- A pick (round 2 R2; a picker click or a proxy click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<day>/<key>-f<frame>-crop.jpg` and `<day>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<day>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken that day); `<day>` is `<capturesDir>/<yyyy-mm-dd>` (local date; old flat files are not moved), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out), then the capture card of the shot with a Reference action that copies the line again. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
+- Picker and area pick: the element picker (the toolbar's Select button, ⇧⌘C, I, `pick()`) is the one way to pick, in the Game workspace; Reference mode and its `data-moku-*` proxy layer are gone (D-65). Select (`button[data-part="pick"]`, U4) is an icon button: the `select` tool icon and the screen-reader label "Select element", title "Select element ⇧⌘C"; `aria-pressed` follows the picker, so it is lit from the click until the pick completes, Esc or a second click. The cursor over the picker layer is a crosshair. A click (`pointerup`) picks the element at the point. A press that moves 4 client px or more drags an area (U9, A16): the layer takes the pointer, a dashed `<div data-box="area">` follows, the release picks the area and turns the picker off (Esc cancels): the elements fully inside (else the ones covered by half of their own area), group roots only, top to bottom then left to right, at most 40; the card `<capturesDir>/<yyyy-mm-dd>/area-f<frame>.md` lists them under the head `@moku area <w>×<h> · <flow node> · <N> elements · ref x,y w×h · <card path>`, which goes to the clipboard; the crop is `area-f<frame>-crop.jpg`. Each element line is `- <name> <type> · key <key> · text "…" · <file:line> · x,y w×h px · ref x,y w×h` (U5; `text` when the game reports `content`, 40 characters at most), followed by its child tree (visible descendants, two spaces per level, 3 levels, 60 lines in the whole tree, then `+N more`); then one `layout: <roots> < <parent> (…) < …` line per parent chain (up to 3 parents), `partly in the area: <name> <type> x,y w×h px · …` (overlapping nodes not inside, largest overlap first, at most 8), the tail lines; the card adds `## <key> · component <Name> · <file:line>` for each component instance (within the 10 new source searches of an area, A18).
+- Selection over MCP (U4, D-33): every change of the selection (a pick, an area, select, Esc) is published through `link.notify("selection", …)` (first without the style source, then again with it; after a pick with `card`, `crop`, `line`). `edits` carries the pending style edits of the element (`{ path, from, to }` each, absent without any, U8); a change of them publishes the selection again, so `moku_selection` answers the edits the Element tab shows. `link.handle("select", …)` answers MCP `moku_select`: `rect` picks an area; `key` (first ui node with it, `"hud/infoBar"` allowed) or `ref` is inspected in the Game workspace and, unless `card: false`, picked without the clipboard; an unknown key is -32602 "No element with key <key>".
+- A pick (round 2 R2; a picker click): `game.bookmark` (kept in `bookmarks()`, newest first, 20 at most, id `<key>-f<frame>`), `editor.capture`, the crop (the element rect + 8 px, scaled by the shot's pixel ratio) and the full frame saved through `files.writeBinary` as `<day>/<key>-f<frame>-crop.jpg` and `<day>/f<frame>-full.jpg` (JPEG 0.8, D-34, A19; the extension follows the picture type), then the card file `<day>/<key>-f<frame>.md` (round 2b R13; `-2`, `-3` … when taken that day); `<day>` is `<capturesDir>/<yyyy-mm-dd>` (local date; old flat files are not moved), ONE line on the clipboard and the toast "Reference, shot and bookmark copied" (a missing step leaves its word and its lines out; MCP `moku_select` passes `copy: false`: no clipboard, no toast), then the capture card of the shot with a Reference action that copies the line again. A picker click completes a pick only while the workspace preference "Copy on select" is on (U5, D-70; `pickAt` asks `workspace.copyOnSelect()`): with it off the click only selects the element, opens the Element tab and publishes the selection without `card`, `crop` and `line`, with no `game.bookmark`, no `editor.capture`, no file, no capture card, no toast and no clipboard, and the release of an area drag picks nothing (the marquee goes, the picker stays on). "Copy reference" in the Element tab writes the card and copies its line on demand. The MCP pick does not ask the preference. Shot and Series copy `shot: <path>` and `series: <dir>/ (<n> frames)`.
 - The reference line (round 2b R13): `@moku <name> <type> · <flow/node> · <file:line> · ref <x>,<y> <w>×<h> · <card path>`, e.g. `@moku settingsBoard panel · settingsPopup/open · features/settings/settings.tsx:290 · ref 65,641 950×1060 · .moku/captures/2026-10-05/settingsBoard-f212.md`. `<file:line>` is the index's answer for the key (`jsx:<key>`; a key built in a loop answers the line of the element that builds it, `card0` → `features/orders/strip.tsx:216`, D-47), or for an entity the line that defines its projection; a field that is not known is left out, and a card that could not be written leaves its path out (`gameView: reference card failed`).
 - The card file, Markdown: `# @moku <name> <type>`; the full reference block in a `text` fence (a fence one backtick longer than any run inside); `## JSX · <file:line>` and `## Style · <name> · <file:line>` with fenced snippets (language from the extension); an entity: `## Spawned by <projection> · <file:line>` and `- <component>: <short value>` rows; then `![element](<key>-f<frame>-crop.jpg)` `![frame](f<frame>-full.jpg)`. "Copy reference" writes the card of the same node and frame again (one file), or a new one.
-- The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab shows it in `<pre data-part="reference">`; its Copy (`data-action="copy-reference"`, `copyReference()`) writes the card and copies the one line. A key built in a loop (`card${slot}` for `card0`) answers the line of the element that builds it (`features/orders/strip.tsx:216`, D-47); a key the index does not know leaves `source` out.
-- Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title, "… · approx: estimated values"); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1). The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run` when the manifest lists it and keeps the flag with `workspace.setMuted`; a game that connects while muted is muted again (a hot reload connects a new page); without `game.mute` it is `aria-disabled` with the title "Needs @moku-labs/game with game.mute"; a refusal toasts "Sound switch failed · <message>".
+- The reference block, one fact per line, fixed order, unknown lines and fields left out: `@moku <name> · <type> · <flow/node> · f<frame>`, `path: <ui path> | entity #<id> (<components>)`, `source: <file:line> · style: <identifier> <file:line> · texture: <key>`, `layout: <parent (direction, padding t/r/b/l, margin, gap)> < … (3 at most)`, `bounds: <x>,<y> <w>×<h> px · ref <x>,<y> <w>×<h>`, `state: <visible|hidden>, <flags> · value "<text>" · alpha <a>`, `flow: <stack joined by " > "> · last: <from> → <outcome> (f<frame>)`, `game: <name> <version> · <session> · f<frame> · <HH:MM:SS> · <live|paused> · <clean|tainted>`, `device: <preset> <w>×<h> <orientation> · dpr <n> · safe <t>/<r>/<b>/<l>`, `restore: bookmark <id>`, `shot: <crop> · frame: <full>`. It sits in the card file; the Element tab does not show it (U3). The footer of the filled tab holds two ghost buttons: "Copy reference" (`data-action="copy-reference"`, `copyReference()`), which writes the card and copies the one line, and "Show in render tree"; there is no "Pick another". A key built in a loop (`card${slot}` for `card0`) answers the line of the element that builds it (`features/orders/strip.tsx:216`, D-47); a key the index does not know leaves `source` out.
+- Device toolbar: the select is grouped by `<optgroup>` (an estimated preset says so in its option title, "… · approx: estimated values"); a foldable shows Fold / Unfold (`data-action="fold"`, `fold(inner?)`); the overlay-in-game switch moved to the top bar (round 2 R1). The Copy Ref switch (`data-part="copy-on-select"`, `role="switch"`, D-72) stands after Safe area and Sound: `aria-checked` is `workspace.copyOnSelect()`, a click calls `workspace.setCopyOnSelect(!on)`, the title is "On: a pick writes the reference and copies its line. Off: a pick only selects the element", and it follows `workspace.onPrefs` (the palette command moves it too); no key, never dimmed. The Sound switch (`data-part="sound"`, key M in Game, round 2b R11) runs `game.mute { muted }` through `panels.run` when the manifest lists it and keeps the flag with `workspace.setMuted`; a game that connects while muted is muted again (a hot reload connects a new page); without `game.mute` it is `aria-disabled` with the title "Needs @moku-labs/game with game.mute"; a refusal toasts "Sound switch failed · <message>".
 - Stage (round 2b R9): Fit is one scale per device kind, the scale that fits the tallest preset of the kind with its bezel (phones include foldables; tablets and the desktop have their own), and the screen shown always fits; 100 % is 1 CSS px per px. The bezel (`data-frame` on `[data-part="bezel"]`) follows `DeviceSpec.frame`: `modern` 10 px all round with the island and home bar guides; `home-button` 64 px above and below, 10 px at the sides, a square screen (`--screen-radius: 0px`) and a 44 px round `[data-part="home-button"]` in the bottom bezel (the right one in landscape), no island and no home bar.
 - Code section (round 2b R12, `data-part="code"` in the Element tab): a ui element's JSX (the range the index answers for its key, from the line that opens its tag to the one that closes it) and the `defineStyle` block of `style={ident}`, each with `file:line`, Open in Files and the shared highlighter, 20 lines then "Show all N lines"; an entity: "Spawned by <projection> · <file:line>" (the `name: "<key>"` line inside a `projection({…})` call) and its components with short values (48 characters). A text style key (`style="ui.link"`) and a style call get no style snippet.
-- Capture card (round 2b R14, `[data-game="card"]`): grid `56px minmax(0, 1fr) auto`; the thumbnail, one line each for the title ("✓ Screenshot saved", "✓ 20 shots saved"), the path cut in the middle (36 characters; the whole path in `title`) and `f<frame> · <device>`, then Copy link (`shot: <path>` / `series: <dir>/ (<n> frames)`), Open (Files, or the contact sheet of a series) and, after a pick, Reference; × closes. At most 360 px wide and 120 px tall; at 480 px of window it takes the width less 24. A screenshot, a pick and a series each show it; it hides after `captureCardMs` unless hovered or focused, and it is an Esc layer above the picker.
+- Capture card (round 2b R14, `[data-game="card"]`): grid `56px minmax(0, 1fr) auto`; the thumbnail, one line each for the title ("✓ Screenshot saved", "✓ 20 shots saved"), the path cut in the middle (36 characters; the whole path in `title`) and `f<frame> · <device>`, then Copy link (`shot: <path>` / `series: <dir>/ (<n> frames)`), Open (Files, or the contact sheet of a series) and, after a pick, Reference; × closes. At most 360 px wide and 120 px tall; at 480 px of window it takes the width less 24. A screenshot, a pick and a series each show it; it hides after `captureCardMs` unless hovered or focused, and it is an Esc layer above the picker. A series ends like a screenshot (D-69): the recording popover closes, the card shows its first shot, `series: <folder> (<n> frames)` is on the clipboard and the toast says "✓ N shots saved"; the contact sheet opens only on request: `openSheet(indexPath)`, the `workspace:open-sheet` hook (Files) or Open on the series card.
+- Styles fields and pending edits (U8, D-67; `section[data-part="style"]` in the Element tab): every entry of the element's scene style is a row of fields: a number is `<input type="number" step="1">`, a string `<input type="text">`, a boolean a checkbox, a record of those three (padding) one field per leaf with the path `<key>.<leaf>`; anything else is read-only text. A number or text field commits on Enter or on blur, a select and a checkbox on `change`, through `editStyle(path, to)`; Esc restores the shown value and commits nothing; an empty or non-numeric number field commits nothing. A row with a pending edit carries `data-edited` and shows the edited value, the scene value struck before it (`<s>556</s>`) and a reset button (`×`, `data-action="reset-edit"`). While any element has an edit, the edits bar `div[data-part="edits"]` shows "N edits · M elements" (the elements only above one), "Copy for agent" (`data-action="copy-edits"`, `copyEdits()`) and "Clear" (`clearEdits("all")`). The game does not change: no file is written and no command is sent; the edit is kept per element (the ui key, else the node id) and not persisted across a page load. An edit resolves by itself: on every new scene snapshot an edit whose scene value equals `to` is dropped (the agent wrote the code and hot reload brought it in). A new game session drops the entries kept by node id. The agent text (`editsText` in `element/edits.ts`): one block per element, the selected one first, blocks separated by one empty line; the head is `@moku <label>` plus ` · <path>:<line>` when the index answered the key (`@moku homePlay · features/stage/views/home-screen.tsx:199`), then one line per edit (`minWidth: 556 -> 600`, `padding.top: 25 -> 30`); strings in double quotes, numbers and booleans bare. The selected element's edits also go out as `SelectionInfo.edits`.
 - The Element panel is a `SidePanel` (panels/shared/side-panel). Notes and the attach api are gone (no `attach`, `notes`, `notesDir`, `workspace:new-note`).
-- Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`, `workspace:reference`.
+- Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
 
 ~~~ts
 /**
@@ -4589,18 +4638,31 @@ export type SeriesResult = {
 export type GameViewApi = {
   /**
    * Turns the element picker on or off; without an argument it toggles. On shows the Game
-   * workspace, the Element tab and the hint pill; off clears the hover box. A click that picks an
-   * element bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full frame
-   * (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the reference
-   * card next to them, puts its one reference line on the clipboard (see `copyReference`), shows
-   * the capture card with a Reference action and publishes the selection for MCP
-   * `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
+   * workspace, the Element tab and the hint pill; off clears the hover box. What a click on an
+   * element does next is the workspace preference "Copy on select" (the Copy Ref switch of the
+   * game toolbar, on by default).
+   *
+   * On: the click bookmarks the game, saves the crop (`<key>-f<frame>-crop.jpg`) and the full
+   * frame (`f<frame>-full.jpg`) in today's folder `<capturesDir>/<yyyy-mm-dd>/`, writes the
+   * reference card next to them, puts its one reference line on the clipboard, shows the capture
+   * card with a Reference action and publishes the selection with its `card`, `crop` and `line`
+   * for MCP `moku_selection`. A drag of 4 px or more picks an area instead (`area-f<frame>.md`).
+   *
+   * Off: the click only selects the element for the Element tab and publishes the selection
+   * without `card`, `crop` and `line`. Nothing is bookmarked, captured, written or copied, and a
+   * drag picks nothing. `copyReference` writes the card and copies its line on demand.
    *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
    * ```ts
-   * // The developer wants to pick an element in the running game.
+   * // The developer wants a reference of an element of the running game for the chat.
    * app.gameView.pick(true); // app.workspace.active() === "game", picker on
+   * // After a click on the coin pill: the card is written and its line is on the clipboard.
+   *
+   * // The developer only wants to look at elements in the Element tab.
+   * app.workspace.setCopyOnSelect(false);
+   * app.gameView.pick(true);
+   * // After a click on the coin pill: app.gameView.selected() names it, no file is written.
    * ```
    */
   pick(on?: boolean): void;
@@ -4724,8 +4786,9 @@ export type GameViewApi = {
   /**
    * Records a series with one `editor.series` call (R1, R9): numbered PNGs and `index.json` in a
    * new `<capturesDir>/<yyyy-mm-dd>/series-<hhmm>/` folder, puts `series: <folder> (<n> frames)`
-   * on the clipboard, then opens the contact sheet. Shows Game first. Refuses while another
-   * series runs.
+   * on the clipboard, toasts and shows the capture card of its first shot, like a screenshot
+   * (D-69). The contact sheet opens only on request (`openSheet`). Shows Game first. Refuses
+   * while another series runs.
    *
    * @param options - Length and spacing in ms, and an optional label (default: the flow path).
    * @param options.durationMs - Length of the series.
@@ -4760,7 +4823,8 @@ export type GameViewApi = {
 
   /**
    * Opens a saved series' contact sheet: reads its index.json and every PNG. Shows Game. The
-   * `workspace:open-sheet` hook calls it (filesView "Open contact sheet").
+   * `workspace:open-sheet` hook calls it (filesView "Open contact sheet"), and so does "Open" on
+   * the capture card of a series.
    *
    * @param indexPath - Path of the series' index.json.
    * @returns Resolves when the sheet is open (or a toast said why not).
@@ -4821,6 +4885,76 @@ export type GameViewApi = {
    * ```
    */
   bookmarks(): readonly PickBookmark[];
+
+  /**
+   * Records a pending style edit of the selected element (U8, D-67). `from` is the value the
+   * scene has for `path` now. A second edit of the same path replaces `to` and keeps the first
+   * `from`. A `to` equal to the scene value removes the edit of that path. Nothing is written to
+   * a file and no command is sent: the edit goes to the agent (`copyEdits`, and `edits` of the
+   * published selection). Does nothing without a selected element in the scene, or for a path
+   * the element's style does not have as a number, a string or a boolean.
+   *
+   * @param path - The style property, dotted for a nested one (`padding.top`).
+   * @param to - The wanted value.
+   * @example
+   * ```ts
+   * // homePlay is 556 wide in the game; the person wants 600 and more room on top.
+   * app.gameView.select({ kind: "ui", path: "homeScreen/homePlay" });
+   * app.gameView.editStyle("minWidth", 600);
+   * app.gameView.editStyle("padding.top", 30);
+   * app.gameView.edits()[0]?.edits;
+   * // [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
+   * app.gameView.editStyle("minWidth", 556); // back to the scene value: that edit is gone
+   * ```
+   */
+  editStyle(path: string, to: StyleValue): void;
+
+  /**
+   * Drops pending style edits: the ones of the selected element, or all of them. The selection
+   * is published again without them.
+   *
+   * @param scope - `"selected"` for the selected element only; `"all"` (the default) for every element.
+   * @example
+   * ```ts
+   * // The person changed their mind about homePlay; the edits of the other elements stay.
+   * app.gameView.clearEdits("selected");
+   * app.gameView.edits().some(entry => entry.label === "homePlay"); // false
+   * app.gameView.clearEdits(); // every pending edit is gone
+   * ```
+   */
+  clearEdits(scope?: "selected" | "all"): void;
+
+  /**
+   * Every pending style edit, one entry per element, the selected element first. An edit leaves
+   * by itself when a scene snapshot shows its `to` value: the agent wrote the code and hot reload
+   * brought it in. A game reload drops the entries of elements without a ui key.
+   *
+   * @returns A copy of the list.
+   * @example
+   * ```ts
+   * // The edits bar of the Element tab counts them: "2 edits".
+   * const count = app.gameView.edits().reduce((sum, entry) => sum + entry.edits.length, 0);
+   * app.gameView.edits()[0];
+   * // { label: "homePlay", source: { path: "features/stage/views/home-screen.tsx", line: 199 }, byId: false, edits: [ … ] }
+   * ```
+   */
+  edits(): readonly ElementEdits[];
+
+  /**
+   * Puts the pending edits on the clipboard as text for the agent, toast "✓ 2 edits copied": one
+   * block per element, the selected one first, blocks separated by one empty line. The head is
+   * `@moku <label>` plus ` · <path>:<line>` when the source is known; then one line per edit.
+   * Strings are written in double quotes, numbers and booleans bare.
+   *
+   * @returns The text; undefined without edits, or when the clipboard refused (toasted).
+   * @example
+   * ```ts
+   * // "Copy for agent" in the Element tab, after the two edits of homePlay.
+   * await app.gameView.copyEdits();
+   * // "@moku homePlay · features/stage/views/home-screen.tsx:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30"
+   * ```
+   */
+  copyEdits(): Promise<string | undefined>;
 };
 
 /**
@@ -4842,6 +4976,33 @@ export type PickBookmark = {
   /** Date.now() when it was taken. */
   readonly at: number;
   readonly value: Json;
+};
+
+/**
+ * The pending style edits of one element (U8, D-67): values the person changed in the Styles
+ * fields of the Element tab and the source file does not have yet. They go to the agent as text
+ * (`copyEdits`) and in the published selection (`SelectionInfo.edits`); the editor writes no code
+ * for them.
+ *
+ * @example
+ * ```ts
+ * const homePlay: ElementEdits = {
+ *   label: "homePlay",
+ *   source: { path: "features/stage/views/home-screen.tsx", line: 199 },
+ *   byId: false,
+ *   edits: [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
+ * };
+ * ```
+ */
+export type ElementEdits = {
+  /** The ui key, else the node name: the head of the element's block in the agent text. */
+  readonly label: string;
+  /** Where the index says the element is written; absent without an answer. */
+  readonly source?: { readonly path: string; readonly line: number };
+  /** True when the map key is a node id: such an entry does not survive a game reload. */
+  readonly byId: boolean;
+  /** The edits, in the order the person made them; one per path. */
+  readonly edits: readonly StyleEdit[];
 };
 ~~~
 
@@ -5953,7 +6114,7 @@ tools.link.status(); // { kind: "live", frame: 1840 }
 await tools.link.run("game.step", { frames: 1 });
 tools.flowView.focus.select("board/merge"); // true, the Inspector shows board/merge
 tools.workspace.setDensity("compact");
-tools.workspace.setReference(true); // gameView draws data-moku-* proxies over the game
+tools.workspace.setCopyOnSelect(false); // persisted; a pick leaves the clipboard as it was
 const shot = await tools.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-main.jpg", frame, device, image }
 tools.renderView.snapshot().tiles.effectsInstalled; // false on a game without effectsPlugin
 await tools.filesView.open("nodes/merge.ts", { line: 12 });

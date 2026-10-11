@@ -1,14 +1,17 @@
 /**
  * @file The compact top bar (round 2 R1, round 2b R15) at every window width the editor runs in:
- * 480, 600, 640, 720 and 899 px show the compact bar (logo, game name above 560 px, link pill,
- * Pause and Step as icons, the Reference mode icon toggle, above 560 px the Hot reload icon
- * toggle, the search icon and the ⋯ menu), 960 and 1440 px the wide one (session chip, the
- * labelled Preview, Overlay and Hot reload switches, Reference mode, Registry as an icon with its
- * counts in the title, theme). The test loops `page.setViewportSize` itself, so it runs once, in
- * the desktop project. At each width no two controls of the bar overlap (bounding boxes), every
- * control is on screen and takes the pointer at its centre, and every action works: from the bar
- * icons and the ⋯ menu below 900 px, from the bar from 900 px. The Game toolbar has no overlay
- * switch of its own any more; its switches are Safe area and Sound.
+ * 480, 600, 640, 720 and 899 px show the compact bar (the game mark, game name above 560 px, link
+ * pill, Pause and Step as icons, the Hot reload icon toggle, the search icon and the ⋯ menu), 960
+ * and 1440 px the wide one (session chip, the labelled Preview, Overlay and Hot reload switches,
+ * Registry as an icon with its counts in the title, theme). The test loops
+ * `page.setViewportSize` itself, so it runs once, in the desktop project. At each width no two
+ * controls of the bar overlap (bounding boxes), every control is on screen and takes the pointer
+ * at its centre, and every action works: from the bar icons and the ⋯ menu below 900 px, from the
+ * bar from 900 px. At 900, 930 and 960 px, where the wide bar is tightest, it holds its controls
+ * on one row without overflow. The Game toolbar has no overlay switch of its own any more; its
+ * switches are Safe area, Sound and Copy Ref (the "Copy on select" preference, which has no
+ * control in the top bar, D-72). Reference mode is gone (editor UI cleanup, D-65): no control
+ * named `reference` in either layout, and the key R does nothing.
  *
  * Hot reload is a real switch (D-32): the bin restarts its server with Bun HMR flipped on the same
  * port, and the tools page reloads the game frame with the checkpoint it took first. Off: the page
@@ -61,8 +64,8 @@ const SWITCH_MS = 30_000;
 /** The window widths of the spec, in px; the height stays 900. */
 const WIDTHS = [480, 600, 640, 720, 899, 960, 1440] as const;
 
-/** At this width and narrower the compact bar keeps only the Reference icon toggle (R15). */
-const NARROW_BAR_MAX = 560;
+/** The first widths of the wide bar: where its controls are tightest. */
+const TIGHT_WIDE_WIDTHS = [900, 930, 960] as const;
 
 /** The compact widths. */
 const COMPACT_WIDTHS = WIDTHS.filter(width => width < 900);
@@ -74,7 +77,6 @@ const WIDE_WIDTHS = WIDTHS.filter(width => width >= 900);
 const MENU_ROWS = [
   { action: "game", label: "Game preview", key: "G" },
   { action: "overlay", label: "Overlay in game", key: "O" },
-  { action: "reference", label: "Reference mode", key: "R" },
   { action: "hot-reload", label: "Hot reload", key: "H" },
   { action: "registry", label: "Registry", key: undefined },
   { action: "density", label: "Density", key: undefined },
@@ -117,7 +119,7 @@ async function measureBar(page: Page): Promise<{ overflow: number; items: BarIte
           data.ui ??
           (data.search === undefined ? undefined : "search") ??
           (data.gameName === undefined ? undefined : "game-name") ??
-          (data.logo === undefined ? undefined : "logo") ??
+          (data.mark === undefined ? undefined : "mark") ??
           element.tagName.toLowerCase();
         return {
           name,
@@ -158,6 +160,124 @@ async function judgeBar(
     }
   }
   return { names: items.map(item => item.name), findings };
+}
+
+/** One visible child of the bar as the fit check reads it. */
+type FitItem = {
+  readonly name: string;
+  readonly left: number;
+  readonly right: number;
+  readonly middle: number;
+  readonly height: number;
+  /** The texts of the child whose line boxes sit at more than one height. */
+  readonly wrapped: string[];
+};
+
+/** What the fit check reads of the bar at one width. */
+type BarFit = {
+  /** `scrollWidth - clientWidth` of the bar, in px. */
+  readonly overflow: number;
+  /** `scrollWidth - clientWidth` of the page, in px. */
+  readonly pageOverflow: number;
+  /** The right edge of the last control, in px from the window's left edge. */
+  readonly lastRight: number;
+  /** The width of the game name, in px. */
+  readonly gameName: number;
+  /** The controls that leave the bar's box, sit off its row or wrap their text. */
+  readonly findings: string[];
+};
+
+/**
+ * Judges the children of the bar: none crosses its left or right edge, none sits off the row of
+ * the first one or is taller than the bar, none wraps a text.
+ *
+ * @param items - The visible children, left to right.
+ * @param box - The bar: its left and right edges and its inner height.
+ * @param box.left - The left edge in px.
+ * @param box.right - The right edge in px.
+ * @param box.height - The inner height in px.
+ * @returns One line per defect.
+ */
+function fitFindings(
+  items: readonly FitItem[],
+  box: { readonly left: number; readonly right: number; readonly height: number }
+): string[] {
+  const row = items[0]?.middle ?? 0;
+  return items.flatMap(item => [
+    ...(item.left < box.left - 0.5 || item.right > box.right + 0.5
+      ? [`${item.name} is clipped: ${item.left.toFixed(1)}–${item.right.toFixed(1)}`]
+      : []),
+    ...(Math.abs(item.middle - row) > 2 || item.height > box.height
+      ? [`${item.name} is off the row`]
+      : []),
+    ...item.wrapped.map(text => `${item.name} wraps "${text}"`)
+  ]);
+}
+
+/**
+ * Measures whether the bar holds its controls on one row inside its own box: the bar does not
+ * scroll sideways, no visible child crosses its left or right edge or sits off the row of the
+ * first one, and no text of a child wraps to a second line.
+ *
+ * @param page - The tools page.
+ * @returns The numbers and the findings.
+ */
+async function measureFit(page: Page): Promise<BarFit> {
+  const read = await page.evaluate(() => {
+    const bar = document.querySelector<HTMLElement>("[data-ui=top-bar]");
+    if (bar === null) throw new Error("no top bar");
+    const items = [...bar.children]
+      .filter(
+        (child): child is HTMLElement =>
+          child instanceof HTMLElement && child.checkVisibility() && !child.matches("[popover]")
+      )
+      .map(child => {
+        const rect = child.getBoundingClientRect();
+        const data = child.dataset;
+        // A text that wraps has line boxes at more than one height.
+        const wrapped: string[] = [];
+        const walker = document.createTreeWalker(child, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode() !== null) {
+          const text = walker.currentNode as Text;
+          if (text.data.trim() === "" || text.parentElement?.closest("[data-sr-only]")) continue;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          const tops = new Set<number>();
+          for (const line of range.getClientRects()) tops.add(Math.round(line.top));
+          if (tops.size > 1) wrapped.push(text.data.trim());
+        }
+        return {
+          name:
+            data.action ??
+            data.ui ??
+            (data.gameName === undefined ? undefined : "game-name") ??
+            (data.mark === undefined ? undefined : "mark") ??
+            (data.search === undefined ? undefined : "search") ??
+            child.tagName.toLowerCase(),
+          left: rect.left,
+          right: rect.right,
+          middle: (rect.top + rect.bottom) / 2,
+          height: rect.height,
+          wrapped
+        };
+      });
+    const box = bar.getBoundingClientRect();
+    const root = document.documentElement;
+    return {
+      overflow: bar.scrollWidth - bar.clientWidth,
+      pageOverflow: root.scrollWidth - root.clientWidth,
+      gameName: bar.querySelector("[data-game-name]")?.getBoundingClientRect().width ?? 0,
+      box: { left: box.left, right: box.right, height: bar.clientHeight },
+      items
+    };
+  });
+  return {
+    overflow: read.overflow,
+    pageOverflow: read.pageOverflow,
+    lastRight: Math.round(Math.max(0, ...read.items.map(item => item.right)) * 10) / 10,
+    gameName: Math.round(read.gameName * 10) / 10,
+    findings: fitFindings(read.items, read.box)
+  };
 }
 
 /**
@@ -464,18 +584,17 @@ test.describe("top bar · round 2", () => {
       const compact = width < 900;
       const expected = compact
         ? [
-            "logo",
+            "mark",
             ...(width > 560 ? ["game-name"] : []),
             "link-pill",
             "pause",
             "step",
-            "reference",
-            ...(width > NARROW_BAR_MAX ? ["hot-reload"] : []),
+            "hot-reload",
             "search",
             "more"
           ]
         : [
-            "logo",
+            "mark",
             "game-name",
             "session-chip",
             "link-pill",
@@ -485,7 +604,6 @@ test.describe("top bar · round 2", () => {
             "game",
             "overlay",
             "hot-reload",
-            "reference",
             "registry",
             "theme"
           ];
@@ -509,10 +627,34 @@ test.describe("top bar · round 2", () => {
     const toolbar = page.locator("[data-workspace-host=game] [data-game=toolbar]");
     await expect(toolbar).toBeVisible();
     await expect(toolbar.locator("[data-part=overlay]")).toHaveCount(0);
-    await expect(toolbar.getByRole("switch")).toHaveText(["Safe area", "Sound"]);
+    await expect(toolbar.getByRole("switch")).toHaveText(["Safe area", "Sound", "Copy Ref"]);
+    await expect(toolbar.getByRole("switch", { name: "Copy Ref", exact: true })).toHaveAttribute(
+      "data-part",
+      "copy-on-select"
+    );
   });
 
-  test("below 900 px the Reference and Hot reload icons act from the bar, and stay in the ⋯ menu", async ({
+  // The wide bar holds three switches (D-72: Copy on select is a switch of the Game toolbar), so
+  // it fits from 900 px, where it starts.
+  test("900 / 930 / 960: the bar is wide, has no horizontal overflow, no control is clipped or on a second line", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    for (const width of TIGHT_WIDE_WIDTHS) {
+      await resize(tools, width);
+      await expect(topBar(page)).toHaveAttribute("data-layout", "wide");
+      await expect(topBar(page).locator(":scope > [data-switch]")).toHaveCount(3);
+      const fit = await measureFit(page);
+      console.info(`[top bar ${width}] ${JSON.stringify(fit)}`);
+      expect
+        .soft(fit.overflow, `bar scrollWidth - clientWidth at ${width} px`)
+        .toBeLessThanOrEqual(0);
+      expect.soft(fit.pageOverflow, `page overflow at ${width} px`).toBe(0);
+      expect.soft(fit.findings, `controls at ${width} px`).toEqual([]);
+    }
+  });
+
+  test("below 900 px the Hot reload icon acts from the bar at every width, and stays in the ⋯ menu; no Reference control, R does nothing", async ({
     tools,
     errors
   }) => {
@@ -522,34 +664,24 @@ test.describe("top bar · round 2", () => {
       await tools.show("game");
       const bar = topBar(page);
 
-      // Reference mode: a target icon, aria-pressed, the key in its title.
-      const reference = bar.locator(":scope > [data-action=reference]");
-      await expect(reference).toBeVisible();
-      await expect(reference).toHaveAccessibleName("Reference mode");
-      await expect(reference).toHaveAttribute("title", /\(R\)/);
-      await expect(reference).toHaveAttribute("aria-pressed", "false");
-      await reference.click();
-      await expect(reference).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
-      // The ⋯ row mirrors it.
+      // Reference mode is gone: no control in the bar or the ⋯ menu, and R is a free key.
+      await expect(page.locator("[data-action=reference]")).toHaveCount(0);
+      await page.keyboard.press("r");
+      await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference");
+      await expect(page.locator("[data-moku-proxy]")).toHaveCount(0);
       await openMore(page);
-      await expect(menuRow(page, "reference")).toHaveAttribute("aria-checked", "true");
+      await expect(menuRow(page, "reference")).toHaveCount(0);
+      await expect(moreMenu(page)).not.toContainText("Reference mode");
       await closeMore(page);
-      await reference.click();
-      await expect(reference).toHaveAttribute("aria-pressed", "false");
-      await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
 
-      // Hot reload: a bar icon with a dot while on, above 560 px; a ⋯ row always.
+      // Hot reload: the one icon toggle of the compact bar, with a dot while on; a ⋯ row too.
       const hot = bar.locator(":scope > [data-action=hot-reload]");
-      if (width <= NARROW_BAR_MAX) {
-        await expect(hot).toHaveCount(0);
-      } else {
-        await expect(hot).toBeVisible();
-        await expect(hot).toHaveAccessibleName("Hot reload");
-        await expect(hot).toHaveAttribute("aria-pressed", "true");
-        await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
-        await expect(hot.locator("[data-part=dot]")).toHaveCount(1);
-      }
+      await expect(hot).toBeVisible();
+      await expect(hot).toHaveAccessibleName("Hot reload");
+      await expect(hot).toHaveAttribute("aria-pressed", "true");
+      await expect(hot).toHaveAttribute("title", HOT_ON_TITLE);
+      await expect(hot.locator("[data-part=dot]")).toHaveCount(1);
+      await expect(bar.locator(":scope > [aria-pressed]")).toHaveCount(1);
       await openMore(page);
       await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
       await closeMore(page);
@@ -589,6 +721,10 @@ test.describe("top bar · round 2", () => {
       await tools.show("game");
       expect(await isCompact(page)).toBe(true);
       const menu = moreMenu(page);
+      await expect(topBar(page).locator("[data-action=more]")).toHaveAttribute(
+        "title",
+        "More: preview, overlay, hot reload, registry, density, theme"
+      );
 
       // The rows in order, each with its label, its state and (a toggle) its key.
       await openMore(page);
@@ -625,13 +761,12 @@ test.describe("top bar · round 2", () => {
       await expect(lastToast(page)).toContainText("Overlay in game off");
       await expect(card).toBeHidden();
 
-      // Reference mode: the frame box takes the pointer while it is on.
-      await menuRow(page, "reference").click();
-      await expect(menuRow(page, "reference")).toHaveAttribute("aria-checked", "true");
-      await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
-      await menuRow(page, "reference").click();
-      await expect(menuRow(page, "reference")).toHaveAttribute("aria-checked", "false");
-      await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference", "");
+      // Copy on select has no row (D-72: it is the Copy Ref switch of the Game toolbar), and
+      // Reference mode has none either. Every toggle row shows its key.
+      await expect(menuRow(page, "copy-on-select")).toHaveCount(0);
+      await expect(menu).not.toContainText("Copy reference on select");
+      await expect(menuRow(page, "reference")).toHaveCount(0);
+      await expect(menu.locator("[role=menuitemcheckbox] kbd")).toHaveText(["G", "O", "H"]);
 
       // Hot reload: the bin serves with Bun HMR on (the row switches it: the icon test above).
       await expect(menuRow(page, "hot-reload")).toHaveAttribute("aria-checked", "true");
@@ -666,7 +801,7 @@ test.describe("top bar · round 2", () => {
 
       // Registry opens the registry popover under ⋯, inside the window.
       await openMore(page);
-      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("20 · 23");
+      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("20 · 24");
       await menuRow(page, "registry").click();
       const registry = page.locator("[data-ui=registry-popover]");
       await expect(registry).toBeVisible();
@@ -752,7 +887,7 @@ test.describe("top bar · round 2", () => {
       }
       // Registry: the icon only, the counts in its title.
       const registryButton = bar.locator(":scope > [data-action=registry]");
-      await expect(registryButton).toHaveAttribute("title", "Registry · 20 sources · 23 commands");
+      await expect(registryButton).toHaveAttribute("title", "Registry · 20 sources · 24 commands");
       await expect(registryButton).toHaveAccessibleName("Registry");
 
       const overlay = bar.getByRole("switch", { name: "Overlay", exact: true });
@@ -764,12 +899,14 @@ test.describe("top bar · round 2", () => {
       await expect(overlay).toHaveAttribute("aria-checked", "false");
       await expect(card).toBeHidden();
 
-      const reference = bar.locator(":scope > [data-action=reference]");
-      await reference.click();
-      await expect(reference).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator("[data-frame-box]")).toHaveAttribute("data-reference", "");
-      await reference.click();
-      await expect(reference).toHaveAttribute("aria-pressed", "false");
+      // Three switches: Copy on select is the Copy Ref switch of the Game toolbar (D-72), and
+      // there is no Reference control.
+      await expect(bar.getByRole("switch")).toHaveCount(3);
+      await expect(bar.locator("[data-action=copy-on-select]")).toHaveCount(0);
+      await expect(bar).not.toContainText("Copy on select");
+      await expect(page.locator("[data-action=reference]")).toHaveCount(0);
+      await page.keyboard.press("r");
+      await expect(page.locator("[data-frame-box]")).not.toHaveAttribute("data-reference");
 
       // Hot reload is on (the switch acts: the Hot reload test below).
       const hot = bar.getByRole("switch", { name: "Hot reload", exact: true });
