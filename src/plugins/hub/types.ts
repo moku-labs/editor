@@ -53,7 +53,7 @@ export type ConnKind = "agent" | "tools";
 
 /**
  * Data attached to a socket at upgrade. `page` is set for a tools upgrade with `role=page`: the
- * editor page, which publishes the selection and answers `editor.select` (A11).
+ * editor page, which publishes the selection and answers the relayed editor requests (A11).
  */
 export type HubSocketData = {
   readonly kind: ConnKind;
@@ -243,7 +243,7 @@ export type Reply =
 
 /**
  * Who answers a forwarded call: the agent of a session (game calls) or one editor page connection
- * (`editor.select`, A3). Only that side may settle it.
+ * (the relayed editor requests, A3). Only that side may settle it.
  */
 export type CallTarget =
   | { readonly kind: "agent"; readonly session: string }
@@ -300,7 +300,7 @@ export type HubState = {
   silentTimer: ReturnType<typeof setInterval> | undefined;
   /** The last value of each published method, replayed to every tools connection that opens. */
   published: Map<PublishMethod, Json>;
-  /** The page connection that published the kept selection: `editor.select` goes there (A7). */
+  /** The page connection that published the kept selection: relayed requests go there (A7). */
   selectionConn: number | undefined;
   /** The server port of the last accepted upgrade, for the editor page URL of `no_editor_page`. */
   editorPort: number | undefined;

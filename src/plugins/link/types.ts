@@ -1,13 +1,15 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
- * taps, the page heap, hot reload, the editor page's selection and select handler, and the project
- * index), the files client, state and the domain context. Wire shapes come from the protocol (R1).
+ * taps, the page heap, hot reload, the editor page's selection and request handlers, and the
+ * project index), the files client, state and the domain context. Wire shapes come from the
+ * protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { ToolsEvents } from "../../config";
 import type {
   EditorChannel,
+  EditorRequests,
   FileBinary,
   FileEntry,
   FileText,
@@ -18,6 +20,9 @@ import type {
   ProjectFound,
   ProjectState,
   PublishParams,
+  RelayedEditorMethod,
+  Request as RpcRequest,
+  Response as RpcResponse,
   SelectionInfo,
   SelectParams,
   SessionInfo,
@@ -85,7 +90,8 @@ export type Config = {
   boot: string;
   /**
    * "page": the editor page (`&role=page` on the upgrade, D-33): the hub takes its selection and
-   * relays `editor.select` to it. "tools": a plain tools client (no role sent). Default "page".
+   * relays the editor requests `select`, `device`, `show` and `node` to it. "tools": a plain tools
+   * client (no role sent). Default "page".
    */
   role: "page" | "tools";
   /**
@@ -121,6 +127,32 @@ export type NotifyMethod = "selection";
  * The handler of the editor-channel request `select` the hub relays to the editor page.
  */
 export type SelectHandler = (params: SelectParams) => Promise<SelectionInfo>;
+
+/**
+ * The handler of an editor-channel request the hub relays to the editor page (`select`, `device`,
+ * `show` or `node`). It gets the checked params of its method and answers the result of that
+ * method, at once or as a promise. An error it throws is the failure the caller gets.
+ *
+ * @example
+ * ```ts
+ * // A view answers `show`: it opens the asked workspace, then reads the rail back.
+ * const answerShow: RequestHandler<"show"> = params => {
+ *   if (params.workspace !== undefined) open(params.workspace);
+ *   return { workspace: active(), workspaces: WORKSPACE_NAMES };
+ * };
+ * const remove = ctx.require(linkPlugin).handle("show", answerShow);
+ * ```
+ */
+export type RequestHandler<M extends RelayedEditorMethod> = (
+  params: EditorRequests[M]["params"]
+) => EditorRequests[M]["result"] | Promise<EditorRequests[M]["result"]>;
+
+/**
+ * A handler `handle` added, bound to the params parser of its method: it answers one request of
+ * that method. Bad params are the -32602 response, a throwing handler its failure; it never
+ * rejects.
+ */
+export type RequestEntry = (ctx: LinkCtx, request: RpcRequest) => Promise<RpcResponse>;
 
 /**
  * A `setHotReload` call whose POST may fail while the bin restarts the server (A1). `before` is the
@@ -503,13 +535,14 @@ export type LinkApi = EditorChannel & {
    */
   notify(method: NotifyMethod, params: PublishParams["selection"]): void;
   /**
-   * Handles an editor-channel request the hub relays to this page: `select` (MCP `moku_select`).
-   * The params are checked first (-32602 `invalid_input`); the handler's result is the answer, a
-   * thrown error the failure. Without a handler the hub gets -32601. A later handler replaces an
-   * earlier one.
+   * Handles an editor-channel request the hub relays to this page: `select` (MCP `moku_select`),
+   * `device`, `show` or `node`. One handler per method: a later handler replaces the earlier one
+   * of the same method and leaves the other methods alone. The params are checked first with the
+   * parser of the method (-32602 `invalid_input`); the handler's result is the answer, a thrown
+   * error the failure. Without a handler of the method the hub gets -32601.
    *
-   * @param method - "select".
-   * @param handler - Gets the checked SelectParams; resolves the selection after the select.
+   * @param method - "select", "device", "show" or "node".
+   * @param handler - Gets the checked params of the method; returns or resolves its result.
    * @returns An idempotent remover; it removes only this handler.
    * @example
    * ```ts
@@ -517,6 +550,23 @@ export type LinkApi = EditorChannel & {
    * const remove = ctx.require(linkPlugin).handle("select", params => selectByKey(params));
    * // moku_select { key: "coins" } → { key: "coins", name: "coins", card: ".moku/captures/2026-10-05/coins-f1840.md", … }
    * remove();
+   * ```
+   */
+  handle<M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>): () => void;
+  /**
+   * The `select` signature of `handle` as it was before `device`, `show` and `node` (D-60), kept
+   * as the last one: `Parameters<LinkApi["handle"]>` and a mock typed by this member read the last
+   * signature, so they still read `select`. A call never needs it: the signature above takes
+   * every `select` handler.
+   *
+   * @param method - "select".
+   * @param handler - Gets the checked SelectParams; resolves the selection after the select.
+   * @returns An idempotent remover; it removes only this handler.
+   * @example
+   * ```ts
+   * // A view test reads the select handler back from its link mock, typed as before.
+   * const handle = vi.fn<LinkApi["handle"]>(() => vi.fn());
+   * const select = handle.mock.calls[0]?.[1]; // (params: SelectParams) => Promise<SelectionInfo>
    * ```
    */
   handle(method: "select", handler: SelectHandler): () => void;
@@ -614,8 +664,11 @@ export type LinkState = {
   project: ProjectState | undefined;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
-  /** The handler of each editor-channel request the hub relays to this page. */
-  handlers: Map<"select", SelectHandler>;
+  /**
+   * The handlers of the editor-channel requests the hub relays to this page, one per method, each
+   * with the params parser of its method.
+   */
+  handlers: Map<RelayedEditorMethod, RequestEntry>;
   subs: Map<number, Subscription>;
   wire: Map<SubId, Subscription>;
   /** Only grows: a sub number is never reused, so late values of an old sub are dropped. */

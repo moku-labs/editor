@@ -1,8 +1,9 @@
 /**
  * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
- * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and select
- * handler, the project index and the files client, composed from the sub-modules.
+ * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and request
+ * handlers, the project index and the files client, composed from the sub-modules.
  */
+import type { RelayedEditorMethod } from "../registry/protocol";
 import { createFilesClient } from "./files/client";
 import { addHandler } from "./page/requests";
 import { currentSelection, notifyEditor } from "./page/selection";
@@ -16,7 +17,7 @@ import { retryNow } from "./socket/connect";
 import { expectReload } from "./status/reload";
 import { addTapListener } from "./subscriptions/taps";
 import { addWatch } from "./subscriptions/watch";
-import type { LinkApi, LinkCtx } from "./types";
+import type { LinkApi, LinkCtx, RequestHandler } from "./types";
 
 /**
  * Creates the link api. The contract of each member is on `LinkApi` in `types.ts`.
@@ -82,7 +83,8 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
       notifyEditor(ctx, method, params);
     },
 
-    handle: (method, handler) => addHandler(ctx, method, handler),
+    handle: <M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>) =>
+      addHandler(ctx, method, handler),
 
     project: () => state.project,
 

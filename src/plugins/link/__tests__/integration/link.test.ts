@@ -12,7 +12,7 @@ import type {
   Tap,
   ToolsBoot
 } from "../../../registry/protocol";
-import { toWireValue } from "../../../registry/protocol";
+import { toWireValue, WORKSPACE_NAMES } from "../../../registry/protocol";
 import { linkPlugin } from "../..";
 import { type FakeHub, startFakeHub } from "./fake-hub";
 
@@ -381,6 +381,38 @@ describe("link integration", () => {
     hub.notify("editor", "selection", toWireValue(info));
     await until(() => app.link.selection() !== undefined, "the hub's selection");
     expect(app.link.selection()).toEqual(info);
+    await app.stop();
+  });
+
+  it("the editor page: a hub device and show request reach their handlers; node without one is -32601", async () => {
+    const app = createApp();
+    app.link.handle("device", params => ({
+      preset: "pixel-8",
+      orientation: params.orientation ?? "portrait",
+      folded: true,
+      w: 915,
+      h: 412,
+      presets: []
+    }));
+    app.link.handle("show", async params => ({
+      workspace: params.workspace ?? "flow",
+      workspaces: WORKSPACE_NAMES
+    }));
+    await app.start();
+    await until(() => app.link.status().kind === "empty", "empty");
+
+    await expect(hub.ask("device", { orientation: "landscape" })).resolves.toMatchObject({
+      result: { preset: "pixel-8", orientation: "landscape", w: 915, h: 412 }
+    });
+    await expect(hub.ask("show", { workspace: "state" })).resolves.toMatchObject({
+      result: { workspace: "state", workspaces: [...WORKSPACE_NAMES] }
+    });
+    await expect(hub.ask("show", { workspace: "settings" })).resolves.toMatchObject({
+      error: { code: -32_602, data: { reason: "invalid_input" } }
+    });
+    await expect(hub.ask("node", { id: "main/home" })).resolves.toMatchObject({
+      error: { code: -32_601 }
+    });
     await app.stop();
   });
 
