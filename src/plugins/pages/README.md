@@ -279,7 +279,7 @@ Bun reads `[serve.static] plugins` once, at process start, from the `bunfig.toml
 | Loop guard | The child gets `MOKU_EDITOR_REEXEC=1` and never re-spawns. |
 | Signals | The parent forwards SIGINT, SIGTERM and SIGHUP. The child runs in its own process group, so a terminal Ctrl+C reaches it once. |
 | Exit | The parent exits with the child's code. |
-| Orphan | A parent killed by SIGKILL forwards nothing. The child reads `process.ppid` every second (an unref'd timer). Once it changed, the child stops gracefully (discovery file, editor, game server), prints "stopped" and exits 0. |
+| Orphan | A parent killed by SIGKILL forwards nothing. The child reads `process.ppid` every second by default (an unref'd timer). Once it changed, the child stops gracefully (discovery file, editor, game server), prints "stopped" and exits 0. |
 | Orphan check | The child compares with the parent pid it read at process start, so a parent that died while the child started is seen on the first check. `MOKU_EDITOR_PARENT_CHECK_MS` sets the period in ms (a positive integer, default 1000). |
 | Discovery | The child writes `.moku/editor.json`, so `pid` is the child's. |
 

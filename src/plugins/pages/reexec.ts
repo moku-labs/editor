@@ -339,7 +339,8 @@ export function everyUnref(ms: number, tick: () => void): () => void {
  */
 export function parentCheckMsOf(env: ReexecDeps["env"]): number {
   const value = env[PARENT_CHECK_ENV];
-  return value !== undefined && POSITIVE_INTEGER.test(value) ? Number(value) : PARENT_CHECK_MS;
+  const isPositiveInteger = value !== undefined && POSITIVE_INTEGER.test(value);
+  return isPositiveInteger ? Number(value) : PARENT_CHECK_MS;
 }
 
 /**

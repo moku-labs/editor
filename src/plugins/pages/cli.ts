@@ -548,6 +548,8 @@ function stopOnSignals(
   const onSignal = stopOnce(stop, deps);
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
+
+  // A re-spawned bin also stops once its parent is gone (A4).
   if (deps.reexec !== undefined) {
     const onOrphan = (): void => {
       void onSignal();
