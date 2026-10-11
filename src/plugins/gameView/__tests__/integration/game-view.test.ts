@@ -14,16 +14,19 @@ import type {
   Manifest,
   ProjectState,
   RunResult,
+  SelectionInfo,
   SessionInfo,
+  StyleValue,
   ToolsBoot
 } from "../../../registry/protocol";
-import { errorCode, wireError } from "../../../registry/protocol";
+import { errorCode, isSelectionInfo, wireError } from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import type { RanEvent } from "../../../workspace/types";
 import { gameViewPlugin } from "../..";
-import type { SeriesIndex } from "../../types";
+import type { ElementEdits, GameViewHooks, SeriesIndex } from "../../types";
 import { createFilesStore, type FilesStore } from "../files-store";
 import { PNG, sceneCapture } from "../helpers";
+import { boardCaptureWith } from "../ui";
 import { createTestHub, paramsOf, type TestHub } from "./test-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,8 +79,10 @@ const MANIFEST: Manifest = {
   }))
 };
 
+/** What the scripted game answers for `game.ui`: the board, until a test puts another screen in. */
+let uiValue: Json = BOARD.ui;
+
 const VALUES: ReadonlyMap<string, Json> = new Map<string, Json>([
-  ["game.ui", BOARD.ui],
   ["game.entities", BOARD.entities],
   ["game.projections", BOARD.projections],
   [
@@ -91,6 +96,37 @@ const STATE = { path: "board/awaitIntent", frame: 1841, tainted: false };
 
 /** Does nothing (the unwatch of a scripted watch). */
 function noop(): void {}
+
+/**
+ * The value the scripted game has for a source now.
+ *
+ * @param id - The source id.
+ * @returns The value, undefined for a source it does not have.
+ */
+function sourceValue(id: string): Json | undefined {
+  return id === "game.ui" ? uiValue : VALUES.get(id);
+}
+
+/**
+ * The board with the coin pill turned into the element of the intake's example: `homePlay` with a
+ * `minWidth` and a `padding.top`.
+ *
+ * @param minWidth - Its `minWidth`.
+ * @param top - Its `padding.top`.
+ * @returns The `game.ui` value.
+ */
+function homePlayUi(minWidth: number, top: number): Json {
+  return boardCaptureWith("coinPill", node => {
+    node.key = "homePlay";
+    node.style = {
+      width: 290,
+      height: 76,
+      minWidth,
+      padding: { top, right: 24, left: 84 },
+      nineSlice: "ui.hud-pill"
+    };
+  }).ui;
+}
 
 /**
  * The scripted game side.
@@ -107,13 +143,13 @@ function scriptedGame() {
             : undefined;
         return Promise.resolve(typeof key === "string" ? (BOARD.rects[key] ?? null) : null);
       }
-      const value = VALUES.get(id);
+      const value = sourceValue(id);
       return value === undefined
         ? Promise.reject(wireError(errorCode.unknownMethod, `[moku-editor] Unknown source ${id}.`))
         : Promise.resolve(value);
     },
     watch(id: string, _input: Json | undefined, onValue: (value: Json) => void): () => void {
-      queueMicrotask(() => onValue(VALUES.get(id) ?? null));
+      queueMicrotask(() => onValue(sourceValue(id) ?? null));
       return noop;
     },
     run(id: string): Promise<RunResult> {
@@ -240,7 +276,30 @@ function sceneUnwatches(): string[] {
     .filter(id => SCENE_IDS.includes(id));
 }
 
+/**
+ * The `minWidth` field of the Element tab's Styles section.
+ *
+ * @returns The input, null while the tab does not show it.
+ */
+function minWidthField(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>(
+    "section[data-part='style'] input[aria-label='minWidth']"
+  );
+}
+
+/**
+ * Every selection the editor page published to the hub, in order (null: nothing selected).
+ *
+ * @returns The params of each editor-channel `selection` notification.
+ */
+function selections(): (SelectionInfo | null)[] {
+  return hub.notes
+    .filter(note => note.method === "selection")
+    .map(note => (isSelectionInfo(note.params) ? note.params : null));
+}
+
 beforeEach(() => {
+  uiValue = BOARD.ui;
   files = createFilesStore();
   hub = createTestHub(scriptedGame(), files);
   vi.stubGlobal("WebSocket", hub.Socket);
@@ -264,6 +323,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The clipboard a test put on the navigator goes; the one of happy-dom shows again.
+  Reflect.deleteProperty(navigator, "clipboard");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -285,6 +346,19 @@ describe("gameView integration", () => {
       return ref.path;
     };
     expect(narrow(ITEM)).toBe(1_048_628);
+    expectTypeOf(app.gameView.editStyle).parameters.toEqualTypeOf<[path: string, to: StyleValue]>();
+    expectTypeOf(app.gameView.clearEdits)
+      .parameter(0)
+      .toEqualTypeOf<"selected" | "all" | undefined>();
+    expectTypeOf(app.gameView.edits).returns.toEqualTypeOf<readonly ElementEdits[]>();
+    expectTypeOf(app.gameView.copyEdits).returns.resolves.toEqualTypeOf<string | undefined>();
+    const wrongEdit = (): void => {
+      // @ts-expect-error — a style value is a number, a string or a boolean, not a record
+      app.gameView.editStyle("padding", { top: 30 });
+    };
+    expectTypeOf(wrongEdit).toBeFunction();
+    // Reference mode is gone (D-65): gameView hooks no such event.
+    expectTypeOf<GameViewHooks>().not.toHaveProperty("workspace:reference");
     const source = readFileSync(`${process.cwd()}/src/plugins/gameView/index.ts`, "utf8");
     expect(source).toMatch(/createToolsPlugin\("gameView", \{/);
     expect(source).not.toMatch(/createToolsPlugin</);
@@ -412,7 +486,21 @@ describe("gameView integration", () => {
       ],
       device: { name: app.workspace.device().preset.name, w: 393, h: 852, orientation: "portrait" }
     });
-    await until(() => document.querySelector("dialog[data-game='sheet']") !== null, "sheet");
+    // A series ends like a screenshot (D-69): the capture card, no contact sheet by itself.
+    await until(() => document.querySelector("[data-game='card']") !== null, "the series card");
+    expect(document.querySelector("[data-game='card'] [data-part='saved']")?.textContent).toBe(
+      "✓ 4 shots saved"
+    );
+    expect(document.querySelector("dialog[data-game='sheet']")).toBeNull();
+
+    // The sheet opens on request.
+    await act(async () => {
+      await app.gameView.openSheet(result?.indexPath ?? "");
+    });
+    await until(
+      () => document.querySelectorAll("dialog[data-game='sheet'] [data-part='tile']").length === 4,
+      "the sheet on request"
+    );
     await app.stop();
   });
 
@@ -452,29 +540,88 @@ describe("gameView integration", () => {
     await app.stop();
   });
 
-  it("Reference mode: proxies in the frame overlay in any workspace; off removes them", async () => {
-    const { app } = await startInGame();
-    act(() => app.workspace.setReference(true));
-    await until(
-      () => document.querySelector("[data-moku-proxy][data-moku-key='boardSlot']") !== null,
-      "proxies"
-    );
-    const slot = document.querySelector<HTMLElement>("[data-moku-key='boardSlot']");
-    expect(slot?.dataset.mokuBounds).toBe("55 801 970 970");
-    expect(slot?.closest("[data-frame-overlay]")).not.toBeNull();
-    await until(
-      () => slot?.dataset.mokuNode === "board/awaitIntent",
-      "the flow node of the proxies"
-    );
+  it("pending style edits: pick, edit, copy for the agent, publish, and resolve on the scene that has them (U8)", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    uiValue = homePlayUi(556, 25);
+    const { app, scene } = await startInGame();
+    hub.project({ state: "on", revision: "r1", defs: {}, uses: {}, broken: {} });
+    await until(() => app.link.project()?.state === "on", "the project state");
+    const file = "features/stage/views/home-screen.tsx";
+    files.put(file, `${"\n".repeat(198)}<button key="homePlay" />`);
+    files.answers.set("jsx:homePlay", [{ path: file, line: 199, range: [199, 1, 199, 26] }]);
 
+    // 1. the person picks homePlay in the game
+    const rect = scene.nodes.get("ui:boardScreen/hudRow/homePlay")?.rect;
+    if (rect === undefined) throw new Error("fixture: homePlay is not placed");
+    act(() => app.gameView.pick(true));
+    await until(() => document.querySelector("[data-part='picker']") !== null, "picker layer");
+    const box = app.workspace.gameFrame().box();
+    if (box === undefined) throw new Error("no frame box");
+    act(() => {
+      document.querySelector("[data-part='picker']")?.dispatchEvent(
+        new PointerEvent("pointerup", {
+          clientX: box.left + (rect.x + rect.w - 6) * box.scale,
+          clientY: box.top + (rect.y + rect.h / 2) * box.scale,
+          bubbles: true
+        })
+      );
+    });
+    await until(() => selections().at(-1)?.line !== undefined, "the selection of the pick");
+    expect(app.gameView.selected()).toEqual({ kind: "ui", path: "boardScreen/hudRow/homePlay" });
+    expect(selections().at(-1)).not.toHaveProperty("edits");
+
+    // 2. two edits in the Styles fields
+    await until(() => minWidthField() !== null, "the minWidth field");
+    act(() => {
+      const input = minWidthField();
+      if (input === null) throw new Error("no minWidth field");
+      input.value = "600";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    act(() => app.gameView.editStyle("padding.top", 30));
+    const edits = [
+      { path: "minWidth", from: 556, to: 600 },
+      { path: "padding.top", from: 25, to: 30 }
+    ];
+    expect(app.gameView.edits()).toEqual([
+      { label: "homePlay", source: { path: file, line: 199 }, byId: false, edits }
+    ]);
+
+    // 3. "Copy for agent": the block of the intake's example
+    const text = await app.gameView.copyEdits();
+    expect(text).toBe(
+      [`@moku homePlay · ${file}:199`, "minWidth: 556 -> 600", "padding.top: 25 -> 30"].join("\n")
+    );
+    expect(writeText).toHaveBeenLastCalledWith(text);
+
+    // 4. the published selection carries both edits, beside the files of the pick
+    await until(() => selections().at(-1)?.edits?.length === 2, "the edits in the selection");
+    expect(selections().at(-1)).toMatchObject({
+      key: "homePlay",
+      source: { path: file, line: 199 },
+      card: expect.stringMatching(/\/homePlay-f1841\.md$/),
+      edits
+    });
+
+    // 5. the agent wrote the values and hot reload brought them in: the scene has them now
+    uiValue = homePlayUi(600, 30);
     act(() => app.workspace.show("flow"));
-    await until(() => app.workspace.active() === "flow", "flow");
-    expect(sceneUnwatches()).toEqual([]);
-    expect(document.querySelector("[data-moku-key='boardSlot']")).not.toBeNull();
-
-    act(() => app.workspace.setReference(false));
     await until(() => sceneUnwatches().length === 3, "three unwatch");
-    expect(document.querySelector("[data-moku-proxies]")).toBeNull();
+    await act(async () => {
+      await app.gameView.scene();
+    });
+    expect(app.gameView.edits()).toEqual([]);
+    await until(() => selections().at(-1)?.edits === undefined, "the selection without edits");
+    expect(selections().at(-1)).toMatchObject({ key: "homePlay" });
+    expect(selections().at(-1)).not.toHaveProperty("edits");
+
+    // The game was never told: the edits ran no command and wrote no source file.
+    expect(hub.requests("run", "game").map(request => paramsOf(request).id)).toEqual([
+      "editor.capture"
+    ]);
+    expect(files.text(file)).toBe(`${"\n".repeat(198)}<button key="homePlay" />`);
     await app.stop();
   });
 

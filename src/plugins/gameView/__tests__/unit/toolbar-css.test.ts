@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 // ─────────────────────────────────────────────────────────────────────────────
 // The Game toolbar under a 1000 px workspace (round 2b R17): the workspace is
 // a named inline-size container; below 1000 px Shot and Series show their
-// icon only (the label stays for screen readers), so a 960 px window keeps the
-// toolbar on one row. Wider, they show the label only.
+// icon only (the label stays for screen readers). Wider, they show the label
+// only. With the Copy Ref switch (D-72) a 960 px window has two rows.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -51,6 +51,20 @@ describe("Game toolbar sheet (round 2b R17)", () => {
       /\[data-part="tool-label"\] \{[^}]*position: absolute;[^}]*clip-path: inset\(50%\);/
     );
     expect(narrow).toMatch(/:has\(> \[data-part="tool-icon"\]\) \{[^}]*width: 28px;/);
+  });
+
+  it("Select is a square icon button at every width: its icon always shows (U4)", () => {
+    const css = sheet("toolbar.css");
+    const wide = css.slice(0, css.indexOf(NARROW));
+    expect(wide).toMatch(/\[data-part="pick"\] \{[^}]*width: 28px;[^}]*padding: 0;/);
+    expect(wide).toMatch(/\[data-part="pick"\] \[data-part="tool-icon"\] \{[^}]*display: block;/);
+  });
+
+  it("Select stays lit while pressed, under the pointer too: accent-soft with the accent ink (U4)", () => {
+    const css = sheet("toolbar.css");
+    expect(css).toMatch(
+      /\[data-part="pick"\]\[aria-pressed="true"\],\s*\[data-part="pick"\]\[aria-pressed="true"\]:hover \{[^}]*background: var\(--accent-soft\);[^}]*color: var\(--accent-ink\);/
+    );
   });
 
   it("Reload keeps its width while busy: a hidden Reload sizer shares the label cell (U11)", () => {

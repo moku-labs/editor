@@ -1,10 +1,10 @@
 /**
  * @file workspace plugin — the ⋯ menu of the compact top bar (below 900 px, round 2 R1): the ⋯
  * button (`data-action="more"`) and a top-layer `role="menu"` popover holding the controls the
- * narrow bar has no room for. Toggle rows (Game preview G, Overlay in game O, Reference mode R,
- * Hot reload H) show their state and key and keep the menu open; Registry opens the registry
- * popover; Density cycles auto → compact → comfortable; Theme flips the theme. A second ⋯ click,
- * Esc (layer `contextMenu`) or a press outside closes it; ↑/↓ move through the rows.
+ * narrow bar has no room for. Toggle rows (Game preview G, Overlay in game O, Hot reload H) show
+ * their state and key and keep the menu open; Registry opens the registry popover; Density cycles
+ * auto → compact → comfortable; Theme flips the theme. A second ⋯ click, Esc (layer
+ * `contextMenu`) or a press outside closes it; ↑/↓ move through the rows.
  */
 import type { VNode } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
@@ -19,7 +19,6 @@ import {
   hotReloadControl,
   overlayControl,
   previewControl,
-  referenceControl,
   registryCounts,
   registryTitle,
   type ToggleControl
@@ -45,7 +44,7 @@ const ROWS = "[role^='menuitem']";
  * @returns The row.
  * @example
  * ```tsx
- * <ToggleRow control={referenceControl(ctx)} />
+ * <ToggleRow control={hotReloadControl(ctx)} />
  * ```
  */
 function ToggleRow(props: { readonly control: ToggleControl }): VNode {
@@ -181,7 +180,6 @@ function MenuRows(props: { readonly ctx: WorkspaceCtx }): VNode {
     <>
       <ToggleRow control={previewControl(ctx)} />
       <ToggleRow control={overlayControl(ctx)} />
-      <ToggleRow control={referenceControl(ctx)} />
       <ToggleRow control={hotReloadControl(ctx)} />
       <hr data-part="separator" />
       <ValueRow
@@ -243,7 +241,7 @@ export function MoreMenu(props: MoreMenuProps): VNode {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="More"
-        title="More: preview, overlay, Reference mode, hot reload, registry, density, theme"
+        title="More: preview, overlay, hot reload, registry, density, theme"
         ref={button.ref}
         onClick={event => {
           if (open) {

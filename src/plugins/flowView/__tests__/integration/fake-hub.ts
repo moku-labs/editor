@@ -67,6 +67,8 @@ export type FlowHub = {
   watches(id: string): number[];
   runs(id?: string): RpcRequest[];
   writes(path?: string): RpcRequest[];
+  /** The files-channel reads of one path the hub received. */
+  fileReads(path: string): RpcRequest[];
 };
 
 /**
@@ -321,6 +323,14 @@ export function createFlowHub(): FlowHub {
           request.channel === "files" &&
           request.method === "write" &&
           (path === undefined || paramsOf(request).path === path)
+      );
+    },
+    fileReads(path) {
+      return hub.received.filter(
+        request =>
+          request.channel === "files" &&
+          request.method === "read" &&
+          paramsOf(request).path === path
       );
     }
   };

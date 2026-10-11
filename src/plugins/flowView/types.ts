@@ -81,8 +81,8 @@ export type FlowHubConfig = {
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { flowView: { styleSaveDelayMs: 300 } } });
- * // a stepper burst is written 300 ms after the last press
+ * createApp({ pluginConfigs: { flowView: { historyLast: 40 } } });
+ * // flowView watches the last 40 entries of game.history
  * ```
  */
 export type FlowViewConfig = {
@@ -92,8 +92,6 @@ export type FlowViewConfig = {
   trailLength: number;
   /** Outcome names drawn as rejections. Default ["rejected"]. */
   rejectedOutcomes: readonly string[];
-  /** Debounce before a style stepper burst is written. Default 600. */
-  styleSaveDelayMs: number;
   /** The layout file and the ELK engine. */
   layout: FlowLayoutConfig;
   /** The zoom range of the camera. */
@@ -310,7 +308,7 @@ export type FlowViewState = {
     staleFrame: number | undefined;
     /** Session of the last link:status. */
     session: string | undefined;
-    /** The session whose layout and style keys were loaded; undefined before the first load. */
+    /** The session whose layout was loaded; undefined before the first load. */
     loaded: { session: string | undefined } | undefined;
     /** The latest value of each session watch; they go in once all three arrived. */
     values: { -readonly [K in keyof FlowValues]: Json | undefined };
@@ -331,8 +329,8 @@ export type FlowViewState = {
     timers: Set<ReturnType<typeof setTimeout>>;
     files: FilesClient | undefined;
     removers: (() => void)[];
-    /** Removers of the replaceable palette groups (Nodes, Styles). */
-    palette: { nodes: (() => void) | undefined; styles: (() => void) | undefined };
+    /** The remover of the replaceable palette group Nodes. */
+    palette: { nodes: (() => void) | undefined };
   };
 };
 
@@ -431,8 +429,6 @@ export type FlowServices = {
   readonly preview: () => PreviewState;
   /** Emits the global workspace:open-file (R4). */
   readonly openFile: (path: string, line?: number) => void;
-  /** Replaces the palette group "Styles" with one item per text-style key. */
-  readonly setStyleItems: (keys: readonly string[]) => void;
 };
 
 /**

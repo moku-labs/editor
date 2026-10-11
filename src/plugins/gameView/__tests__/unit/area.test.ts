@@ -22,12 +22,13 @@ import {
 import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reference mode area pick (U9): the group of an area (visible placed nodes
+// The area pick of the picker's drag (U9): the group of an area (visible placed nodes
 // fully inside, else the ones it covers by half; group roots only; top to
 // bottom, then left to right; at most 40), then the pick path with the area:
 // bookmark, full shot, crop, the card area-f<frame>.md, the area line on the
 // clipboard, the capture card, and the selection published twice. Sources and
-// component definitions are the project index's answers.
+// component definitions are the project index's answers. A drag with "Copy on
+// select" off never gets here: the gesture picks nothing (D-70, gesture.test).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The left of the hud row: the home button and the coin pill. */
@@ -436,6 +437,17 @@ describe("pickArea", () => {
     expect(ctx.state.card?.path).toBe(`${DAY}/area-f1842-crop.jpg`);
   });
 
+  it("copy false with Copy on select off (MCP, D-70): the files, the card and the capture card as ever", async () => {
+    ctx.workspace.copyOnSelectValue = false;
+    const info = await pickArea(ctx, boardScene(), HUD_AREA, { copy: false, card: true });
+    expect(writeText).not.toHaveBeenCalled();
+    expect(ctx.workspace.toast).not.toHaveBeenCalled();
+    expect(info.card).toBe(`${DAY}/area-f1842.md`);
+    expect(ctx.link.files.dataUrl(`${DAY}/area-f1842-crop.jpg`)).toBe(CROP_JPEG);
+    expect(ctx.link.files.dataUrl(`${DAY}/f1842-full.jpg`)).toBe(JPEG);
+    expect(ctx.state.card?.path).toBe(`${DAY}/area-f1842-crop.jpg`);
+  });
+
   it("card false: no bookmark, no shot, no card; the sources follow in a second publish", async () => {
     const info = await pickArea(ctx, boardScene(), HUD_AREA, { copy: false, card: false });
     expect(ctx.panels.run).not.toHaveBeenCalled();
@@ -472,6 +484,14 @@ describe("pickDraggedArea", () => {
     await pickDraggedArea(ctx, HUD_AREA);
     expect(ctx.link.read).toHaveBeenCalledWith("game.ui");
     expect(ctx.link.files.paths()).toContain(`${DAY}/area-f1842.md`);
+  });
+
+  it("Copy on select on (the default): the area line is on the clipboard with the toast", async () => {
+    expect(ctx.workspace.api.copyOnSelect()).toBe(true);
+    await pickDraggedArea(ctx, HUD_AREA);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(ctx.state.selection?.line);
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("Reference, shot and bookmark copied");
   });
 
   it("picks from the scene there is when the read fails; nothing without any scene", async () => {

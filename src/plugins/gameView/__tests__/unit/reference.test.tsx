@@ -1,46 +1,17 @@
 // @vitest-environment happy-dom
-import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHandlers } from "../../handlers";
-import { startGameView, stopGameView } from "../../lifecycle";
-import { hoverProxy, setReferenceMode } from "../../reference/mode";
+import { stopGameView } from "../../lifecycle";
 import { copySelectedReference } from "../../reference/pick";
-import { notify } from "../../state";
-import { createCtx, DAY, flush, type TestCtx, TODAY, useScene } from "../helpers";
-import { boardScene, find, findAll, fire } from "../ui";
+import { createCtx, DAY, type TestCtx, TODAY, useScene } from "../helpers";
+import { boardScene } from "../ui";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reference mode in gameView (finding 17, D-27): the scene watch stays alive
-// while on in every workspace, game.position is watched for the flow node, the
-// proxy layer lives in gameView's overlay root and updates by key, hover draws
-// the picker box, a click picks, off removes the layer. Copy reference writes
-// the reference block of the selection (round 2 R2).
+// Copy reference (round 2 R2, round 2b R13): writes the reference card of the
+// selection and puts its one line on the clipboard. The Element tab's footer
+// and the api run it; it copies whatever "Copy on select" says (U5).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
-
-/**
- * Runs a change inside act() and notifies.
- *
- * @param change - The state change.
- */
-function update(change: () => void): void {
-  act(() => {
-    change();
-    notify(ctx.state);
-  });
-}
-
-/**
- * The proxy layer in the overlay.
- *
- * @returns The layer element, undefined when there is none.
- */
-function layer(): HTMLElement | undefined {
-  return (
-    ctx.workspace.overlayElement?.querySelector<HTMLElement>("[data-moku-proxies]") ?? undefined
-  );
-}
 
 beforeEach(() => {
   vi.setSystemTime(TODAY);
@@ -58,149 +29,6 @@ afterEach(() => {
   stopGameView(ctx);
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
-});
-
-describe("setReferenceMode", () => {
-  it("on: watches the scene sources and game.position, outside Game too", () => {
-    ctx.workspace.activeValue = "render";
-    act(() => setReferenceMode(ctx, true));
-
-    expect(ctx.state.reference.on).toBe(true);
-    expect(ctx.link.active().map(watch => watch.id)).toEqual([
-      "game.ui",
-      "game.entities",
-      "game.projections",
-      "game.position"
-    ]);
-    act(() => ctx.link.send("game.position", { path: "board/merge", flow: "board" }));
-    expect(ctx.state.reference.node).toBe("board/merge");
-  });
-
-  it("keeps the scene watch when Game is left while on; off outside Game stops it", () => {
-    ctx.workspace.activeValue = "game";
-    const hooks = createHandlers(ctx);
-    hooks["workspace:changed"]({ ws: "game" });
-    act(() => hooks["workspace:reference"]({ on: true }));
-
-    hooks["workspace:changed"]({ ws: "flow" });
-    ctx.workspace.activeValue = "flow";
-    expect(ctx.link.active("game.ui")).toHaveLength(1);
-
-    act(() => hooks["workspace:reference"]({ on: false }));
-    expect(ctx.link.active()).toEqual([]);
-    expect(ctx.state.reference).toEqual({
-      on: false,
-      hover: undefined,
-      node: undefined,
-      unwatch: undefined
-    });
-  });
-
-  it("off inside Game keeps the scene watch and drops only game.position", () => {
-    ctx.workspace.activeValue = "game";
-    act(() => setReferenceMode(ctx, true));
-    act(() => setReferenceMode(ctx, true));
-    act(() => setReferenceMode(ctx, false));
-    expect(ctx.link.active().map(watch => watch.id)).toEqual([
-      "game.ui",
-      "game.entities",
-      "game.projections"
-    ]);
-  });
-
-  it("onStart turns it on when workspace already says on; onStop drops the position watch", () => {
-    ctx.workspace.api.reference = () => true;
-    act(() => startGameView(ctx));
-    expect(ctx.state.reference.on).toBe(true);
-    stopGameView(ctx);
-    expect(ctx.link.active("game.position")).toEqual([]);
-  });
-});
-
-describe("the proxy layer", () => {
-  it("renders one proxy per placed visible node into the frame overlay, at its bounds", () => {
-    act(() => setReferenceMode(ctx, true));
-    const proxies = layer();
-    expect(proxies?.parentElement?.dataset.game).toBe("overlay");
-
-    const coin = find(proxies ?? document.body, "[data-moku-key='coinPill']");
-    expect(coin.getAttribute("role")).toBe("img");
-    expect(coin.getAttribute("aria-label")).toBe("coinPill");
-    expect(coin.getAttribute("title")).toBe("coinPill · row");
-    expect(coin.dataset.mokuBounds).toBe("235 74 290 76");
-    expect(coin.style.left).toBe("235px");
-    expect(coin.style.width).toBe("290px");
-    expect(findAll(proxies ?? document.body, "[data-moku-proxy]").length).toBeGreaterThan(90);
-  });
-
-  it("updates a proxy by its key: the same element, new attributes", () => {
-    act(() => setReferenceMode(ctx, true));
-    const before = find(layer() ?? document.body, "[data-moku-key='coinPill']");
-    expect(before.dataset.mokuNode).toBeUndefined();
-
-    act(() => ctx.link.send("game.position", { path: "board/awaitIntent" }));
-    update(() => {
-      ctx.state.scene = boardScene();
-    });
-    const after = find(layer() ?? document.body, "[data-moku-key='coinPill']");
-    expect(after).toBe(before);
-    expect(after.dataset.mokuNode).toBe("board/awaitIntent");
-  });
-
-  it("hover draws the picker box with its label; leaving the layer clears it", () => {
-    act(() => setReferenceMode(ctx, true));
-    const coin = find(layer() ?? document.body, "[data-moku-key='coinPill']");
-    fire(coin, new PointerEvent("pointerenter"));
-    expect(ctx.state.reference.hover).toBe("ui:boardScreen/hudRow/coinPill");
-    const overlay = ctx.workspace.overlayElement ?? document.body;
-    expect(find(overlay, "[data-box='hover']").style.left).toBe("235px");
-    expect(find(overlay, "[data-part='label']").textContent).toBe("coinPill · row · 290×76");
-
-    fire(layer() ?? document.body, new PointerEvent("pointerleave"));
-    expect(ctx.state.reference.hover).toBeUndefined();
-    expect(overlay.querySelector("[data-box='hover']")).toBeNull();
-    act(() => hoverProxy(ctx));
-    expect(ctx.state.reference.hover).toBeUndefined();
-  });
-
-  it("is empty before the first scene, and the same position twice renders once", () => {
-    ctx.state.scene = undefined;
-    act(() => setReferenceMode(ctx, true));
-    expect(layer()?.children).toHaveLength(0);
-
-    act(() => ctx.link.send("game.position", { path: "home" }));
-    const node = ctx.state.reference.node;
-    act(() => ctx.link.send("game.position", { path: "home" }));
-    expect(ctx.state.reference.node).toBe(node);
-  });
-
-  it("off removes the layer", () => {
-    act(() => setReferenceMode(ctx, true));
-    expect(layer()).toBeDefined();
-    act(() => setReferenceMode(ctx, false));
-    expect(layer()).toBeUndefined();
-  });
-});
-
-describe("a click on a proxy", () => {
-  it("selects its node and puts its reference line on the clipboard", async () => {
-    const writeText = vi.fn(() => Promise.resolve());
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-    act(() => setReferenceMode(ctx, true));
-    const coin = find(layer() ?? document.body, "[data-moku-key='coinPill']");
-
-    fire(coin, new PointerEvent("pointerup"));
-    await act(async () => {
-      await flush();
-    });
-
-    expect(ctx.state.selected).toEqual({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
-    expect(writeText).toHaveBeenCalledTimes(1);
-    expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
-      /^@moku coinPill row · board\/awaitIntent · .* · \.moku\/captures\/\d{4}-\d{2}-\d{2}\/coinPill-f1841\.md$/
-    );
-    expect(ctx.state.pick?.nodeId).toBe("ui:boardScreen/hudRow/coinPill");
-  });
 });
 
 describe("copySelectedReference", () => {
@@ -221,6 +49,11 @@ describe("copySelectedReference", () => {
     );
     expect(writeText).toHaveBeenCalledWith(line);
     expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ Reference copied");
+
+    // "Copy reference" always copies: the Copy on select preference is about a pick (U5).
+    ctx.workspace.copyOnSelectValue = false;
+    await copySelectedReference(ctx);
+    expect(writeText).toHaveBeenCalledTimes(2);
     const card = ctx.link.files.text(`${DAY}/coinPill-f1841.md`);
     expect(card.split("\n").slice(0, 6)).toEqual([
       "# @moku coinPill row",

@@ -1,4 +1,4 @@
-/* gameView · toolbar (A2). 44 px row: picker, device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload (keeps its width while busy, U11), camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. Below a 1000 px workspace (the `game` container, stage.css) Shot and Series show their icon only, the label kept for screen readers, so a 960 px window keeps one row (round 2b R17). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · toolbar (A2). 44 px row: Select (a 28 px icon button, lit while the picker is on, U4), device (grouped), Fold / Unfold for a foldable, orientation, zoom, safe area, reload (keeps its width while busy, U11), camera, series (the overlay switch lives in the top bar, round 2 R1); in a half-screen window (≤ 1180 px) it wraps to a second row instead of running off the workspace. Below a 1000 px workspace (the `game` container, stage.css) Shot and Series show their icon only, the label kept for screen readers, which keeps the rows short (round 2b R17); with the Copy Ref switch (D-72) a 960 px window has two rows. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="toolbar"]) {
   :scope {
     display: flex;
@@ -76,6 +76,26 @@
 
   [data-part="tool-icon"] {
     display: none;
+  }
+
+  /* Select (U4): an icon button at every width, square at the toolbar height; its label is for screen readers ([data-sr-only]). */
+  [data-part="pick"] {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    padding: 0;
+  }
+
+  [data-part="pick"] [data-part="tool-icon"] {
+    display: block;
+  }
+
+  /* Lit for as long as the picker is on, under the pointer too (the click leaves it there). */
+  [data-part="pick"][aria-pressed="true"],
+  [data-part="pick"][aria-pressed="true"]:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
   }
 
   [data-part="series"][data-recording] {

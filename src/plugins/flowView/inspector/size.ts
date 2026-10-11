@@ -21,13 +21,13 @@ export const INSPECTOR_MAX_W = 560;
 const INSPECTOR_W = 320;
 
 /**
- * The Inspector width for the Code and Styles tabs, until the person resizes it.
+ * The Inspector width for the Code tab, until the person resizes it.
  */
 const INSPECTOR_WIDE = 400;
 
 /**
  * The Inspector's default width: the `--inspector-w` token (it follows the window), 400 px for
- * the Code and Styles tabs. The person's own width, once resized, wins over both (SidePanel).
+ * the Code tab. The person's own width, once resized, wins over both (SidePanel).
  *
  * @param tab - The tab the Inspector shows.
  * @returns The width in px.
@@ -38,7 +38,7 @@ const INSPECTOR_WIDE = 400;
  * ```
  */
 export function inspectorWidth(tab: InspectorTab): number {
-  if (tab === "code" || tab === "styles") return INSPECTOR_WIDE;
+  if (tab === "code") return INSPECTOR_WIDE;
 
   const root = globalThis.document?.documentElement;
   const token = root === undefined ? "" : getComputedStyle(root).getPropertyValue("--inspector-w");

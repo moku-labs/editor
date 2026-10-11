@@ -1,16 +1,15 @@
 /**
  * @file flowView inspector module — the Inspector (C1) inside the `flow.inspector` SidePanel:
  * Back (after a followed edge), kind glyph, path, clear ×, tags (kinds, "current", "showing
- * current · click a node"), the tabs Info, Code, Styles with ←/→ (`data-wide` while Code or
- * Styles shows: the panel's default width is 400 then), the tab bodies; the F5 string "Nothing to
- * inspect. Connect a game first." while no game is connected.
+ * current · click a node"), the tabs Info and Code with ←/→ (`data-wide` while Code shows: the
+ * panel's default width is 400 then), the tab bodies; the F5 string "Nothing to inspect. Connect
+ * a game first." while no game is connected.
  */
 import type { VNode } from "preact";
 import type { FlowActions, FlowCtx, NodeId } from "../types";
 import { useFlowStore } from "../useFlowStore";
 import { CodeTab } from "./CodeTab";
 import { InfoTab } from "./InfoTab";
-import { StylesTab } from "./StylesTab";
 import type { InfoView, InspectorTab } from "./types";
 
 /**
@@ -28,15 +27,14 @@ export type InspectorProps = {
 /**
  * The tabs in order.
  */
-const TABS: readonly InspectorTab[] = ["info", "code", "styles"];
+const TABS: readonly InspectorTab[] = ["info", "code"];
 
 /**
  * The tab labels.
  */
 const LABELS: Readonly<Record<InspectorTab, string>> = {
   info: "Info",
-  code: "Code",
-  styles: "Styles"
+  code: "Code"
 };
 
 /**
@@ -67,7 +65,7 @@ export function Inspector(props: InspectorProps): VNode {
     <div
       data-flow="inspector"
       data-stale={stale ? "" : undefined}
-      data-wide={tab === "code" || tab === "styles" ? "" : undefined}
+      data-wide={tab === "code" ? "" : undefined}
     >
       <header data-part="head">
         {focus.back.length > 0 && (
@@ -137,7 +135,6 @@ export function Inspector(props: InspectorProps): VNode {
       </div>
       {tab === "info" && <InfoTab ctx={ctx} actions={actions} info={info} />}
       {tab === "code" && <CodeTab ctx={ctx} actions={actions} id={shown} />}
-      {tab === "styles" && <StylesTab ctx={ctx} actions={actions} scene={info.scene} />}
     </div>
   );
 }

@@ -11,7 +11,7 @@ import path from "node:path";
  * features/ui/styles.ts: the text-styles file the project index names.
  */
 export const STYLES_FIXTURE = new URL(
-  "../../../src/plugins/flowView/__tests__/fixtures/ui-styles.txt",
+  "../../../src/plugins/panels/__tests__/fixtures/ui-styles.txt",
   import.meta.url
 ).pathname;
 

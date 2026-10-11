@@ -1,7 +1,6 @@
 /**
  * @file flowView plugin — the palette items flowView adds to the workspace palette (E1): the static
- * Commands, the Nodes group (replaced when the graph changes; ⇧↵ "Open in Files") and the Styles
- * group (replaced whenever the styles file is read).
+ * Commands and the Nodes group (replaced when the graph changes; ⇧↵ "Open in Files").
  */
 import { linkPlugin } from "../link";
 import { notFoundText } from "../panels/shared/project";
@@ -169,28 +168,4 @@ export function setNodeItems(ctx: FlowCtx, actions: FlowActions): void {
     }
   }
   palette.nodes = workspace.palette.add(items);
-}
-
-/**
- * Replaces the Styles group: one item per text-style key of the index's text-styles file; running one shows Flow and
- * opens the Styles tab on that key's card.
- *
- * @param ctx - Domain context of flowView.
- * @param actions - The flowView actions.
- * @param keys - The text-style keys.
- */
-export function setStyleItems(ctx: FlowCtx, actions: FlowActions, keys: readonly string[]): void {
-  const { palette } = ctx.state.view;
-  palette.styles?.();
-  palette.styles = undefined;
-  if (keys.length === 0) return;
-
-  const workspace = ctx.require(workspacePlugin);
-  const items = keys.map(key =>
-    paletteItem(`flow:style:${key}`, "Styles", key, () => {
-      workspace.show("flow");
-      actions.inspector.openStyles(key).catch(() => {});
-    })
-  );
-  palette.styles = workspace.palette.add(items);
 }

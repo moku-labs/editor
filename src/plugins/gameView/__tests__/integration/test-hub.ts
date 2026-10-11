@@ -4,6 +4,7 @@ import type {
   Json,
   Manifest,
   ProjectState,
+  Notification as RpcNote,
   Request as RpcRequest,
   SessionInfo
 } from "../../../registry/protocol";
@@ -11,6 +12,7 @@ import {
   decode,
   encode,
   failure,
+  isNotification,
   isRequest,
   notification,
   success,
@@ -37,6 +39,8 @@ export type TestHub = {
   readonly Socket: new (url: string, ...rest: unknown[]) => WebSocket;
   /** Every request link sent. */
   readonly received: RpcRequest[];
+  /** Every notification link sent (the editor-channel `selection` of gameView). */
+  readonly notes: RpcNote[];
   /** Opens a session: `session {open: true}`, then `sessions {list}`. */
   open(info: SessionInfo, manifest: Manifest): void;
   /** Sends a heartbeat of the open session. */
@@ -184,6 +188,7 @@ export function createTestHub(backend: HubBackend, files: FilesStore): TestHub {
 
     send(message: string): void {
       const decoded = decode(message);
+      if (isNotification(decoded)) hub.notes.push(decoded);
       if (!isRequest(decoded)) return;
       hub.received.push(decoded);
       answer(decoded).then(
@@ -214,6 +219,7 @@ export function createTestHub(backend: HubBackend, files: FilesStore): TestHub {
   const hub: TestHub = {
     Socket: Socket as unknown as TestHub["Socket"],
     received: [],
+    notes: [],
     subs,
     open(info, next) {
       sessions = [...sessions, info];

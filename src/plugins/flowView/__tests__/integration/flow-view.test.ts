@@ -17,15 +17,15 @@ import type {
 import { workspacePlugin } from "../../../workspace";
 import { flowViewPlugin } from "../..";
 import { parsePins } from "../../layout/pins";
-import { cloneGraph, fixtureText } from "../helpers";
+import { cloneGraph } from "../helpers";
 import { pointer } from "../render";
 import { createFlowHub, type FlowHub } from "./fake-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The real tools core (link, workspace, panels, flowView) over a scripted hub:
 // start → mount, show Flow → board hub with 8 lanes and You are here → default
-// camera → select → follow an Info tab row → drag → layout.json → style edit →
-// intents of other views → stale → stop.
+// camera → select → follow an Info tab row → drag → layout.json → intents of
+// other views → stale → stop.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
@@ -136,14 +136,7 @@ function createApp() {
   const app = framework.createApp({
     plugins: [probe],
     pluginConfigs: {
-      flowView: {
-        layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 0 },
-        styleSaveDelayMs: 0
-      },
-      workspace: { reloadTimeoutMs: 50 },
-      // The style save opens link's expected reload window; a short grace lets the later real
-      // loss read as a plain lost (U9: a loss inside the window marks nothing stale).
-      link: { reloadGraceMs: 50 }
+      flowView: { layout: { file: ".moku/editor/layout.json", worker: false, saveDelayMs: 0 } }
     }
   });
   app.log.clearSinks();
@@ -172,10 +165,8 @@ beforeEach(() => {
   root = document.createElement("div");
   root.dataset.editorRoot = "";
   document.body.append(root);
-  hub.files.set("features/ui/styles.ts", { text: fixtureText("ui-styles.txt"), version: "v1" });
   hub.files.set("nodes/merge.ts", { text: "export const merge = node({});\n", version: "v1" });
   hub.index.set("node:board/merge", [{ path: "nodes/merge.ts", line: 1 }]);
-  hub.index.set("textStyle:ui.number", [{ path: "features/ui/styles.ts", line: 73 }]);
 });
 
 afterEach(() => {
@@ -244,6 +235,12 @@ function paletteOption(label: string): HTMLElement | undefined {
   return [...root.querySelectorAll<HTMLElement>('[data-ui="palette"] [role="option"]')].find(
     element => element.querySelector("[data-label]")?.textContent === label
   );
+}
+
+/** The revision of the project state the page holds; undefined while the index is off. */
+function revisionOf(app: ReturnType<typeof createApp>): string | undefined {
+  const project = app.link.project();
+  return project?.state === "on" ? project.revision : undefined;
 }
 
 /** The warnings of an app with one event name. */
@@ -359,7 +356,7 @@ describe("flowView integration", () => {
     ]);
   });
 
-  it("start → board hub → select → follow → drag → style edit → intents → stale → stop", async () => {
+  it("start → board hub → select → follow → drag → intents → stale → stop", async () => {
     const app = createApp();
     await app.start();
     act(() => app.workspace.mount(root));
@@ -415,35 +412,6 @@ describe("flowView integration", () => {
     );
     expect(app.flowView.layout.pinnedCount()).toBe(1);
 
-    const styles = [
-      ...root.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')
-    ].find(tab => tab.textContent === "Styles");
-    act(() => styles?.click());
-    await until(
-      () => root.querySelector('[data-flow="styles-tab"] select') !== null,
-      "the styles tab"
-    );
-    const select = find('[data-flow="styles-tab"] select') as HTMLSelectElement;
-    act(() => {
-      select.value = "ui.number";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await until(
-      () => root.querySelector('[data-field="size"] [data-action="step-up"]') !== null,
-      "the size stepper"
-    );
-    act(() => find('[data-field="size"] [data-action="step-up"]').click());
-    await until(() => hub.writes("features/ui/styles.ts").length === 1, "the style write");
-    const before = fixtureText("ui-styles.txt").split("\n");
-    const after = (hub.files.get("features/ui/styles.ts")?.text ?? "").split("\n");
-    expect(before.filter((line, index) => line !== after[index])).toEqual(["    size: 60,"]);
-    await until(
-      () =>
-        root.querySelector('[data-flow="styles-tab"]')?.textContent?.includes("game reloaded") ===
-        true,
-      "the reload"
-    );
-
     act(() => emits[0]?.emit("workspace:select-node", { id: "board/toast" }));
     expect(app.workspace.active()).toBe("flow");
     expect(app.flowView.focus.selected()).toBe("main/board>board/toast");
@@ -465,6 +433,42 @@ describe("flowView integration", () => {
 
     await app.stop();
     expect(root.querySelector('[data-flow="world"]')).toBeNull();
+  });
+
+  it("the Inspector has two tabs: Info and Code (D-66)", async () => {
+    const app = await startOnGame();
+    act(() => app.workspace.show("flow"));
+    await until(() => app.flowView.focus.select("board/merge"), "the merge node");
+    await until(
+      () => root.querySelector('[data-flow="inspector"] [role="tab"]') !== null,
+      "the Inspector tabs"
+    );
+    const tabs = [...root.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')];
+    expect(tabs.map(tab => tab.textContent)).toEqual(["Info", "Code"]);
+    expect(root.querySelector('[data-flow="styles-tab"]')).toBeNull();
+    await app.stop();
+  });
+
+  it("a text-styles file in the index is never read and the palette offers no Styles item (D-66)", async () => {
+    const styles = "features/ui/styles.ts";
+    hub.files.set(styles, {
+      text: 'export const textStyles = defineTextStyles({\n  "ui.number": { size: 60 }\n});\n',
+      version: "v1"
+    });
+    hub.index.set("textStyle:ui.number", [{ path: styles, line: 2 }]);
+    const app = await startOnGame();
+    await until(() => hub.fileReads(".moku/editor/layout.json").length > 0, "the session load");
+
+    // An agent edits the text-styles file: the index publishes a new revision.
+    const before = revisionOf(app);
+    hub.project({ files: [styles], moved: [], removed: [] });
+    await until(() => revisionOf(app) !== before, "the project change");
+
+    act(() => app.workspace.palette.open("ui.number"));
+    await until(() => root.querySelector('[data-ui="palette"]') !== null, "the palette");
+    expect(hub.fileReads(styles)).toEqual([]);
+    expect(paletteOption("ui.number")).toBeUndefined();
+    await app.stop();
   });
 
   it("an agent's edit above the node: the Code tab follows the index after link:project", async () => {

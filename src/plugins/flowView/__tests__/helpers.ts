@@ -1,6 +1,5 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value */
 
-import { readFileSync } from "node:fs";
 import type { Json } from "../../registry/protocol";
 import type {
   FlowJson,
@@ -43,7 +42,6 @@ export function testConfig(overrides: Partial<FlowViewConfig> = {}): FlowViewCon
     historyLast: 20,
     trailLength: 6,
     rejectedOutcomes: ["rejected"],
-    styleSaveDelayMs: 600,
     layout: testLayout(),
     zoom: { min: 0.08, max: 3, defaultMin: 0.8 },
     hub: { minOutcomes: 6, minReturns: 4 },
@@ -87,8 +85,3 @@ export function item(overrides: Partial<Item> & { key: string }): Item {
 
 /** The plugin folder, from the repository root (tests run there). */
 export const PLUGIN_DIR = `${process.cwd()}/src/plugins/flowView/`;
-
-/** The text of a fixture file. */
-export function fixtureText(name: string): string {
-  return readFileSync(`${PLUGIN_DIR}__tests__/fixtures/${name}`, "utf8");
-}

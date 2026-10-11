@@ -46,15 +46,18 @@ afterEach(() => {
 });
 
 describe("createHandlers", () => {
-  it("hooks link:status, link:project, workspace:changed, workspace:open-sheet, workspace:inspect and workspace:reference", () => {
+  it("hooks link:status, link:project, workspace:changed, workspace:open-sheet and workspace:inspect", () => {
     expect(Object.keys(createHandlers(ctx)).toSorted()).toEqual([
       "link:project",
       "link:status",
       "workspace:changed",
       "workspace:inspect",
-      "workspace:open-sheet",
-      "workspace:reference"
+      "workspace:open-sheet"
     ]);
+  });
+
+  it("has no workspace:reference hook: Reference mode is gone (D-65)", () => {
+    expect(createHandlers(ctx)).not.toHaveProperty("workspace:reference");
   });
 });
 
@@ -95,6 +98,30 @@ describe("link:status", () => {
     hook({ status: { kind: "live", frame: 3 }, session: "s-2" });
     expect(ctx.state.scene).toBeUndefined();
     expect(ctx.state.link).toEqual({ status: "live", session: "s-2", reloading: false });
+  });
+
+  it("a new session drops the pending edits kept by node id, keeps the keyed ones (U8)", () => {
+    const hook = onLinkStatus(ctx);
+    hook({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    ctx.state.edits.set("homePlay", {
+      label: "homePlay",
+      byId: false,
+      edits: [{ path: "minWidth", from: 556, to: 600 }]
+    });
+    ctx.state.edits.set("entity:7", {
+      label: "i7",
+      byId: true,
+      edits: [{ path: "alpha", from: 1, to: 0.5 }]
+    });
+
+    hook({ status: { kind: "paused", frame: 2 }, session: "s-1" });
+    expect(ctx.state.edits.size).toBe(2);
+    hook({
+      status: { kind: "lost", reason: "game_reloaded", lastFrame: 2, retryInMs: 1000 },
+      session: "s-1"
+    });
+    hook({ status: { kind: "live", frame: 3 }, session: "s-1" });
+    expect([...ctx.state.edits.keys()]).toEqual(["homePlay"]);
   });
 
   it("empty turns the picker off, closes the popover and ends a running series early", () => {

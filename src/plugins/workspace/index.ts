@@ -1,10 +1,11 @@
 /**
- * Complex tier — the tools shell: top bar (with the ⋯ menu below 900 px), rail, pinned preview,
- * palette, toasts, stale bars, keyboard, preferences (theme, density, preview, device and fold,
- * taps), Reference mode, the Hot reload switch, tap ripples, the single game iframe and the D-07
- * reload (which leaves the reload to Bun after a save when hot reload is on). Emits the global tools events `workspace:changed`,
- * `workspace:ran`, `workspace:density` and `workspace:reference`; hooks `link:status`; answers the
- * hub's `device` and `show` requests (`requests.ts`).
+ * Complex tier — the tools shell: top bar (with the game mark, and the ⋯ menu below 900 px), rail,
+ * pinned preview, palette, toasts, stale bars, keyboard, preferences (theme, density, preview,
+ * device and fold, taps, sound, Copy on select), the Hot reload switch, tap ripples, the single
+ * game iframe and the D-07 reload (which leaves the reload to Bun after a save when hot reload is
+ * on). Emits the global tools events `workspace:changed`, `workspace:ran` and
+ * `workspace:density`; hooks `link:status`; answers the hub's `device` and `show` requests
+ * (`requests.ts`).
  *
  * @see README.md
  */

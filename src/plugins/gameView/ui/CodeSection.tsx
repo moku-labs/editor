@@ -60,7 +60,8 @@ function SnippetView(props: {
           Open in Files
         </button>
       </header>
-      <div data-part="code-lines">
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region is keyboard-scrollable only when it can take focus */}
+      <div data-part="code-lines" tabIndex={0}>
         {shown.map((tokens, index) => (
           <div key={`${line + index}`} data-line={line + index}>
             <span data-part="gutter">{line + index}</span>

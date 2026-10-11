@@ -21,7 +21,8 @@ describe("createWorkspaceState", () => {
     expect(state.device).toEqual({ preset: "iphone-18-pro", orientation: "portrait" });
     expect(state.muted).toBe(false);
     expect(state.overlayInGame).toBe(false);
-    expect(state.reference).toBe(false);
+    expect(state.copyOnSelect).toBe(true);
+    expect(state).not.toHaveProperty("reference");
     expect(state.showTaps).toBe(true);
     expect(state.taps).toEqual([]);
     expect(state.density).toEqual({ chosen: "auto", applied: "comfortable" });

@@ -4,9 +4,8 @@
  * never re-parented, because moving an iframe reloads its document. Docking is geometry only:
  * `syncFrame` reads the target rects once and writes one transform and one clip; the clip rounds
  * the screen corners by the preset radius. The docked iframe takes the pointer and the keyboard
- * in the preview and on the Game stage; Reference mode marks the box so its overlay takes the
- * pointer instead. The overlay holds the one indicator of an expected reload (U9 B6): a spinner
- * on the game, shown while the link is lost to that reload.
+ * in the preview and on the Game stage. The overlay holds the one indicator of an expected reload
+ * (U9 B6): a spinner on the game, shown while the link is lost to that reload.
  */
 import { linkPlugin } from "../../link";
 import { isReloading, resolveDevice } from "../../registry/protocol";
@@ -129,7 +128,6 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   const box = document.createElement("div");
   box.dataset.frameBox = "";
   box.dataset.docked = "hidden";
-  markReference(box, state.reference);
 
   // The game page, tagged with this tab's frame id; out of the tab order until it is docked.
   const iframe = document.createElement("iframe");
@@ -145,18 +143,6 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   document.body.append(layer);
   state.frame.layer = layer;
   state.frame.iframe = iframe;
-}
-
-/**
- * Marks the frame box while Reference mode is on (`[data-reference]` in Frame.css gives the
- * overlay the pointer and outlines the frame).
- *
- * @param element - The frame box.
- * @param on - Whether Reference mode is on.
- */
-function markReference(element: HTMLElement, on: boolean): void {
-  if (on) element.dataset.reference = "";
-  else delete element.dataset.reference;
 }
 
 /**
@@ -268,7 +254,6 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
   const size = screenSize(state);
   element.style.width = `${size.w}px`;
   element.style.height = `${size.h}px`;
-  markReference(element, state.reference);
 
   const target = dockTarget(state);
   if (target === undefined) {

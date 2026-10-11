@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { actionsOf } from "../../actions";
 import { initFlowView } from "../../lifecycle";
-import { setNodeItems, setStyleItems } from "../../palette";
+import { setNodeItems } from "../../palette";
 import { flush, prepare } from "../ctx";
 import { prepared } from "../render";
 
@@ -216,12 +216,11 @@ describe("palette items", () => {
     expect(fakes.removed).toContain(fakes.palette.length - 2);
   });
 
-  it("no graph means no Nodes items; no keys means no Styles items", async () => {
+  it("no graph means no Nodes items", async () => {
     const { ctx, actions, fakes } = await prepared();
     ctx.state.data.graph = undefined;
     const before = fakes.palette.length;
     setNodeItems(ctx, actions);
-    setStyleItems(ctx, actions, []);
     expect(fakes.palette.length).toBe(before);
     await prepare(ctx);
   });

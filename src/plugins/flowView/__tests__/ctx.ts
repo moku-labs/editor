@@ -40,14 +40,9 @@ const noop = (): void => {};
 /** Where the fake project index says a key is defined. */
 export type IndexAnswer = { readonly path: string; readonly line: number; readonly broken?: true };
 
-/**
- * The index of the test project: the merge node and the text styles of the ui-styles fixture
- * (so the Styles tab reads `features/ui/styles.ts`).
- */
+/** The index of the test project: the merge node. */
 export const DEFAULT_INDEX: Readonly<Record<string, readonly IndexAnswer[]>> = {
-  "node:board/merge": [{ path: "nodes/merge.ts", line: 3 }],
-  "textStyle:ui.title": [{ path: "features/ui/styles.ts", line: 33 }],
-  "textStyle:ui.number": [{ path: "features/ui/styles.ts", line: 73 }]
+  "node:board/merge": [{ path: "nodes/merge.ts", line: 3 }]
 };
 
 /** An in-memory files channel with versions, injectable conflicts and a project index. */
@@ -150,25 +145,6 @@ export function memoryFiles(
     readBinary: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AA==", version: "b1" }))
   };
   return files;
-}
-
-/**
- * Holds every later read of one path until the returned release is called (a slow dev server).
- *
- * @param files - The in-memory files channel.
- * @param path - The path whose reads wait.
- * @returns Lets the held reads answer.
- */
-export function holdReads(files: MemoryFiles, path: string): () => void {
-  const gate = Promise.withResolvers<void>();
-  const read = vi.mocked(files.read);
-  const original = read.getMockImplementation();
-  if (original === undefined) throw new Error("the files channel has no read");
-  read.mockImplementation(async (asked: string) => {
-    if (asked === path) await gate.promise;
-    return original(asked);
-  });
-  return () => gate.resolve();
 }
 
 /** One watch of the fake link. */

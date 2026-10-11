@@ -1,12 +1,13 @@
 /**
  * @file gameView plugin — api factory: binds the scene, element, capture, series, sheet,
- * reference and fold functions to the plugin context. The contract and the examples live on `GameViewApi` in
- * types.ts.
+ * reference, fold and pending-edit functions to the plugin context. The contract and the examples
+ * live on `GameViewApi` in types.ts.
  */
 
 import { recordSeries, stopRecording } from "./capture/series";
 import { openSheet } from "./capture/sheet";
 import { takeScreenshot } from "./capture/shot";
+import { clearEdits, copyEdits, editStyle, listEdits } from "./element/edit-style";
 import {
   highlightElement,
   inspectElement,
@@ -42,6 +43,10 @@ export function createGameViewApi(ctx: GameViewCtx): GameViewApi {
     openSheet: openSheet.bind(undefined, ctx),
     copyReference: copySelectedReference.bind(undefined, ctx),
     fold: foldDevice.bind(undefined, ctx),
-    bookmarks: listBookmarks.bind(undefined, ctx)
+    bookmarks: listBookmarks.bind(undefined, ctx),
+    editStyle: editStyle.bind(undefined, ctx),
+    clearEdits: clearEdits.bind(undefined, ctx),
+    edits: listEdits.bind(undefined, ctx),
+    copyEdits: copyEdits.bind(undefined, ctx)
   };
 }

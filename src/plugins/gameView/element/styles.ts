@@ -149,7 +149,7 @@ async function callBlockOf(
 }
 
 /**
- * Remembers where the block of the key is (the reference block and the proxies read it), then
+ * Remembers where the block of the key is (the reference block reads it), then
  * shows the found block, or the refusal, unless the selection changed meanwhile. A file the index
  * says does not parse now shows the `broken` text, on the card or instead of the refusal.
  *

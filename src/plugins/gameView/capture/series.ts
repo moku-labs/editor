@@ -1,9 +1,9 @@
 /**
  * @file gameView plugin — a series (D3, F10): one `editor.series` call through panels.run (R1,
  * R9), `editor.seriesStop` to end it early, then the numbered PNGs and index.json, the
- * `series:` line on the clipboard (round 2 R2), the series card (round 2b R14) and the contact
- * sheet with the in-memory images. A failed call writes nothing; a failed PNG write leaves a
- * partial index marked stoppedEarly.
+ * `series:` line on the clipboard (round 2 R2) and the series card (round 2b R14). It ends like a
+ * screenshot (D-69): the contact sheet opens only on request (`openSheet`). A failed call writes
+ * nothing; a failed PNG write leaves a partial index marked stoppedEarly.
  */
 import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
@@ -112,11 +112,12 @@ const BUSY_TEXT = "A series is already recording.";
 const DEFAULT_LABEL = "series";
 
 /**
- * The shots written so far and the first write failure, if any.
+ * The shots written so far, the picture of the first one (the series card shows it; the others
+ * are not kept in memory) and the first write failure, if any.
  */
 type WrittenShots = {
   readonly shots: SeriesShot[];
-  readonly images: string[];
+  readonly first: string | undefined;
   readonly failure: unknown;
 };
 
@@ -126,7 +127,7 @@ type WrittenShots = {
  * @param ctx - Domain context of gameView.
  * @param recording - The recording.
  * @param value - The editor.series value.
- * @returns The written shots, their images and the failure.
+ * @returns The written shots, the picture of the first one and the failure.
  */
 async function writeShots(
   ctx: GameViewCtx,
@@ -136,20 +137,20 @@ async function writeShots(
   const { state } = ctx;
   const link = ctx.require(linkPlugin);
   const shots: SeriesShot[] = [];
-  const images: string[] = [];
+  let first: string | undefined;
   for (const [index, shot] of value.shots.entries()) {
     const file = shotName(index, value.shots.length);
     try {
       await link.files.writeBinary(`${recording.folder}${file}`, shot.image);
     } catch (error) {
-      return { shots, images, failure: error };
+      return { shots, first, failure: error };
     }
     shots.push({ file, frame: shot.frame, atMs: shot.atMs, bug: false });
-    images.push(shot.image);
+    first ??= shot.image;
     recording.written = shots.length;
     notify(state);
   }
-  return { shots, images, failure: undefined };
+  return { shots, first, failure: undefined };
 }
 
 /**
@@ -186,7 +187,8 @@ function seriesIndex(
 
 /**
  * Writes the shots in order, then index.json; puts `series: <folder> (<n> frames)` on the
- * clipboard and shows the series card when a shot was written; opens the contact sheet.
+ * clipboard and shows the series card when a shot was written. The recording popover closes; no
+ * contact sheet opens (D-69).
  *
  * @param ctx - Domain context of gameView.
  * @param recording - The recording.
@@ -211,10 +213,8 @@ async function writeSeries(
   const index = seriesIndex(ctx, recording, value, written, elapsedMs);
   const indexPath = `${recording.folder}index.json`;
   let failure = written.failure;
-  let version: string | undefined;
   try {
-    const saved = await link.files.write(indexPath, formatIndex(index));
-    version = saved.version;
+    await link.files.write(indexPath, formatIndex(index));
   } catch (error) {
     failure ??= error;
   }
@@ -229,14 +229,13 @@ async function writeSeries(
     await copyQuietly(ctx, `series: ${recording.folder} (${written.shots.length} frames)`);
   }
 
-  // Swap the recording for the contact sheet.
+  // The recording is over: its popover closes. A sheet opens only on request (D-69).
   state.series.recording = undefined;
   state.series.popover = false;
-  state.series.sheet = { indexPath, index, images: written.images, version, big: undefined };
   notify(state);
 
   // Show the first shot on the capture card.
-  const [first] = written.images;
+  const { first } = written;
   if (first !== undefined) {
     showCard(ctx, {
       path: recording.folder,

@@ -1,12 +1,12 @@
 /**
- * @file gameView plugin — the area gesture on the Reference mode proxy layer (U9, A16) and the
- * Select picker layer (captures-by-day U4). A press
- * remembers where it started and takes nothing. A move of 4 client px or more turns it into an
- * area drag: the layer holds the pointer from then, the hover freezes and the marquee follows in
- * `state.reference.area` (device px, through the frame box with `pageFromClient`). The release
- * picks the area and turns the picker off. Under 4 px the release is a click: the proxy under it
- * picks, or the picker picks the element at the point, as before. Esc during the drag cancels it:
- * the release then picks nothing.
+ * @file gameView plugin — the area gesture on the Select picker layer (U9, A16, captures-by-day
+ * U4). A press remembers where it started and takes nothing. A move of 4 client px or more turns
+ * it into an area drag: the layer holds the pointer from then, the hover freezes and the marquee
+ * follows in `state.reference.area` (device px, through the frame box with `pageFromClient`). The
+ * release picks the area and turns the picker off. Under 4 px the release is a click: the picker
+ * picks the element at the point. Esc during the drag cancels it: the release then picks nothing.
+ * With the workspace preference "Copy on select" off a pick only inspects one element (D-70), so
+ * the release of a drag picks nothing either: the marquee goes and the picker stays on.
  */
 import type { PageRect } from "../../panels/shared/scene";
 import { pageFromClient } from "../../panels/shared/scene";
@@ -136,9 +136,9 @@ export function moveArea(ctx: GameViewCtx, at: PointerAt, pressed: boolean): boo
 }
 
 /**
- * The release on a layer: after a drag, picks the area (unless Esc cancelled it) and turns the
- * picker off like a click pick; after a click, only forgets the press and says it was a click
- * (the proxy's own pointerup picks, the picker picks at the point).
+ * The release on the layer: after a drag, picks the area (unless Esc cancelled it, or "Copy on
+ * select" is off, D-70) and turns the picker off like a click pick; after a click, only forgets
+ * the press and says it was a click (the picker picks at the point).
  *
  * @param ctx - Domain context of gameView.
  * @param at - The pointer and its client point.
@@ -158,6 +158,9 @@ export function releaseArea(ctx: GameViewCtx, at: PointerAt): boolean {
   const area = press.cancelled ? undefined : marqueeOf(press, at);
   const isEmptyArea = area === undefined || area.w <= 0 || area.h <= 0;
   if (isEmptyArea) return false;
+
+  // "Copy on select" off: a pick only inspects one element, so an area picks nothing (D-70).
+  if (!ctx.require(workspacePlugin).copyOnSelect()) return false;
 
   // Pick the area and turn the picker off, like a click pick.
   if (ctx.state.picker.on) setPicker(ctx, false);

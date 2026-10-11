@@ -274,7 +274,7 @@ export function rectArgument(args: JsonObject, name: string): SelectionRect | un
 export const RECT_PROPERTY: PropertySchema = {
   type: "object",
   description:
-    "An area of the game page in CSS px, the way the Reference picker drag draws it: { x, y, w, h }.",
+    "An area of the game page in CSS px, the way the element picker drag draws it: { x, y, w, h }.",
   properties: {
     x: { type: "number", minimum: 0, description: "Left edge, CSS px." },
     y: { type: "number", minimum: 0, description: "Top edge, CSS px." },

@@ -1,4 +1,4 @@
-/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, styles, the layout style card with its steppers (or the read-only call, or "Defined at"), the Code section (round 2b R12), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* gameView · Element panel content (C7, C8) inside the shared SidePanel `game.side` (finding 2, D-29: width, border and background are the SidePanel's): Element and Device tabs (30 px, 2 px accent underline), bounds, texture, entity, children, the Styles fields with the edits bar (U8), the layout style card with its steppers (or the read-only call, or "Defined at"), the Code section (round 2b R12), the device list and the overlay box. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-game="side"]) {
   :scope {
     display: flex;
@@ -242,29 +242,109 @@
     white-space: nowrap;
   }
 
-  /* The reference block for the chat (round 2 R2): read-only, wrapped, with Copy in its head. */
-  [data-part="reference-block"] header {
+  /* The Styles fields (U8, D-67): every style entry is a field that records a pending edit for the agent. Fields shrink with the panel (M10): a number field is 9 ch at most, a select is as wide as its value and no wider than its row, the leaves of a record (padding) wrap, nothing forces the side panel wider. */
+  [data-part="style"] dd {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
+    gap: var(--space-1) var(--space-3);
   }
 
-  [data-part="reference"] {
-    margin: var(--space-2) 0 0;
-    padding: var(--space-3);
-    border: 1px solid var(--line-1);
-    border-radius: var(--radius-6);
-    background: var(--surface-panel-2);
+  [data-part="field"] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* A text field takes the room its row has left. */
+  [data-part="field"]:has(> input[type="text"]) {
+    flex: 1 1 8ch;
+  }
+
+  [data-part="leaf"],
+  [data-part="field"] s {
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+  }
+
+  [data-part="field"] s {
+    font-family: var(--font-mono);
+  }
+
+  [data-part="field"] input:not([type="checkbox"]),
+  [data-part="field"] select {
+    min-width: 0;
+    height: 22px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-4);
+    background: var(--surface-panel);
     font-family: var(--font-mono);
     font-size: var(--font-size-11-5);
-    line-height: var(--line-height-code);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    user-select: text;
   }
 
-  [data-part="reference"][aria-busy="true"],
+  [data-part="field"] input[type="number"] {
+    flex: 0 1 9ch;
+    width: 9ch;
+    max-width: 9ch;
+  }
+
+  [data-part="field"] input[type="text"] {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  /* The select of an enum property (justify, align …): the box of the inputs, as wide as its value. */
+  [data-part="field"] select {
+    flex: 0 1 auto;
+    max-width: 100%;
+    text-overflow: ellipsis;
+  }
+
+  /* A pending edit: the field takes the accent, the scene value stands struck before it. */
+  [data-part="field"][data-edited] input:not([type="checkbox"]),
+  [data-part="field"][data-edited] select {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  [data-action="reset-edit"] {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-4);
+    color: var(--text-muted);
+    line-height: 1;
+  }
+
+  [data-action="reset-edit"]:hover {
+    background: var(--surface-panel-2);
+    color: var(--text-ink);
+  }
+
+  /* The edits bar under the rows: the count, "Copy for agent" and "Clear"; it wraps in a narrow panel. */
+  [data-part="edits"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel-2);
+  }
+
+  [data-part="edits"] [data-part="count"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
   [data-part="loop"] {
     color: var(--text-muted);
   }

@@ -1,11 +1,12 @@
 /**
  * @file gameView plugin — the selection as the editor page publishes it (U4, A10, U9), pure: the
- * SelectionInfo of a scene node (ref, key, projection, name, type, rect, source, session, frame,
- * at), of a ref the scene does not have, of an area with its items; the projection a node belongs
- * to; and the ui node a key names, plain or projection-qualified (`"hud/infoBar"`).
+ * SelectionInfo of a scene node (ref, key, projection, name, type, rect, source, its pending
+ * style edits, session, frame, at), of a ref the scene does not have, of an area with its items;
+ * the projection a node belongs to; and the ui node a key names, plain or projection-qualified
+ * (`"hud/infoBar"`).
  */
 import type { ElementRef, PageRect, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
-import type { Json, SelectionInfo, SelectionItem } from "../../registry/protocol";
+import type { Json, SelectionInfo, SelectionItem, StyleEdit } from "../../registry/protocol";
 import { isObject } from "../capture/shot";
 import type { StyleSource } from "../types";
 
@@ -27,12 +28,26 @@ export type SelectionContext = {
 };
 
 /**
- * What the info of one scene node is built from: the context, the `game.projections` value and
- * the index answer of its key.
+ * What the info of one scene node is built from: the context, the `game.projections` value, the
+ * index answer of its key and its pending style edits (U8).
+ *
+ * @example
+ * ```ts
+ * const facts: SelectionFacts = {
+ *   session: "s-1",
+ *   frame: 1841,
+ *   at: 1_790_000_000_000,
+ *   projections: { hud: { infoBar: 12 } },
+ *   source: { kind: "defined", path: "src/hud/Hud.tsx", line: 12, range: [12, 1, 12, 40] },
+ *   edits: [{ path: "minWidth", from: 556, to: 600 }]
+ * };
+ * ```
  */
 export type SelectionFacts = SelectionContext & {
   readonly projections: Json | undefined;
   readonly source: StyleSource | undefined;
+  /** The pending style edits of the element; none, or left out, when it has none. */
+  readonly edits?: readonly StyleEdit[] | undefined;
 };
 
 /**
@@ -130,8 +145,9 @@ export function itemOf(node: SceneNode, source: StyleSource | undefined): Select
  * The SelectionInfo of one scene node.
  *
  * @param node - The selected node.
- * @param facts - The projections, its source, the session, the frame and the moment.
- * @returns The info, without the fields that are not known.
+ * @param facts - The projections, its source, its pending edits, the session, the frame and the
+ *   moment.
+ * @returns The info, without the fields that are not known; `edits` only when there are some.
  * @example
  * ```ts
  * selectionOf(infoBarNode, { projections, source: undefined, session: "s-1", frame: 1841, at: Date.now() });
@@ -140,11 +156,30 @@ export function itemOf(node: SceneNode, source: StyleSource | undefined): Select
  */
 export function selectionOf(node: SceneNode, facts: SelectionFacts): SelectionInfo {
   const projection = projectionOf(facts.projections, node);
-  return {
+  const info: SelectionInfo = {
     ...itemOf(node, facts.source),
     ...(projection === undefined ? {} : { projection }),
     ...contextFields(facts)
   };
+  return withEdits(info, facts.edits ?? []);
+}
+
+/**
+ * A selection with the pending style edits of its element as they are now (U8): everything else
+ * it says stays. Without edits the field is absent.
+ *
+ * @param info - A selection, with or without edits.
+ * @param edits - The edits of its element now.
+ * @returns The selection: the same one when it has no edits and gets none.
+ * @example
+ * ```ts
+ * withEdits(picked, [{ path: "minWidth", from: 556, to: 600 }]).card; // the card of the pick, kept
+ * ```
+ */
+export function withEdits(info: SelectionInfo, edits: readonly StyleEdit[]): SelectionInfo {
+  const { edits: before, ...rest } = info;
+  if (edits.length > 0) return { ...rest, edits };
+  return before === undefined ? info : rest;
 }
 
 /**

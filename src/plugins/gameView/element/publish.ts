@@ -3,7 +3,8 @@
  * `state.selected` sends its SelectionInfo through `link.notify("selection", …)`, null when
  * nothing is selected. A source the project index still answers follows in a second publish; a
  * key the index does not know is published without one. A pick and an area publish their own
- * info (card, crop, line). The last published info stays in
+ * info (card, crop, line). The pending style edits of the element go with every one of them, and
+ * a change of those edits publishes again (U8). The last published info stays in
  * `state.selection`; a late follow-up of an older one is dropped.
  */
 import { linkPlugin } from "../../link";
@@ -12,12 +13,14 @@ import { refId } from "../../panels/shared/scene";
 import type { SelectionInfo } from "../../registry/protocol";
 import { messageOf } from "../report";
 import type { GameViewCtx, StyleSource } from "../types";
+import { editKey, editsOf, selectedEditKey } from "./edits";
 import {
   bareSelection,
   type SelectionContext,
   type SelectionFacts,
   selectionOf,
-  sourceAt
+  sourceAt,
+  withEdits
 } from "./selection";
 import { findStyleSource } from "./source";
 
@@ -50,19 +53,28 @@ export function selectionContext(ctx: GameViewCtx, frame: number | undefined): S
 }
 
 /**
- * The facts of a node's selection: the context, the projections read last and a source.
+ * The facts of a node's selection: the context, the projections read last, a source and the
+ * pending style edits of the node (U8).
  *
  * @param ctx - Domain context of gameView.
+ * @param node - The node.
  * @param frame - The frame the selection shows.
  * @param source - The node's index answer, undefined when not known.
  * @returns The facts.
  */
 export function selectionFacts(
   ctx: GameViewCtx,
+  node: SceneNode,
   frame: number | undefined,
   source: StyleSource | undefined
 ): SelectionFacts {
-  return { ...selectionContext(ctx, frame), projections: ctx.state.sources.projections, source };
+  const { state } = ctx;
+  return {
+    ...selectionContext(ctx, frame),
+    projections: state.sources.projections,
+    source,
+    edits: editsOf(state.edits, editKey(node))
+  };
 }
 
 /**
@@ -127,9 +139,33 @@ export function publishSelected(ctx: GameViewCtx): void {
   }
 
   const source = knownSource(ctx, node);
-  const info = selectionOf(node, selectionFacts(ctx, scene?.frame, source));
+  const info = selectionOf(node, selectionFacts(ctx, node, scene?.frame, source));
   publishSelection(ctx, info);
   if (source === undefined && node.key !== undefined) followSource(ctx, info, node.key);
+}
+
+/**
+ * Publishes the selected element again after its pending style edits changed (U8). The selection
+ * of a pick keeps what the pick wrote (card, crop, line, frame) and only its `edits` change; any
+ * other selection is built again from the scene.
+ *
+ * @param ctx - Domain context of gameView.
+ */
+export function publishEdits(ctx: GameViewCtx): void {
+  const { state } = ctx;
+  const { selected, selection } = state;
+  const isPick =
+    selected !== undefined &&
+    selection !== undefined &&
+    selection.line !== undefined &&
+    selection.items === undefined &&
+    refId(selection.ref) === refId(selected);
+  if (!isPick) {
+    publishSelected(ctx);
+    return;
+  }
+  const edits = editsOf(state.edits, selectedEditKey(state));
+  publishSelection(ctx, { ...withEdits(selection, edits), at: Date.now() });
 }
 
 /**
@@ -145,7 +181,8 @@ export function isSelected(ctx: GameViewCtx, node: SceneNode): boolean {
 }
 
 /**
- * The selection of a picked node: its info with the frame of the pick and the files it wrote.
+ * The selection of a picked node: its info (its pending style edits too) with the frame of the
+ * pick and the files it wrote.
  *
  * @param ctx - Domain context of gameView.
  * @param node - The picked node.
@@ -166,7 +203,7 @@ export function pickedSelection(
     readonly line: string;
   }
 ): SelectionInfo {
-  const info = selectionOf(node, selectionFacts(ctx, picked.frame, knownSource(ctx, node)));
+  const info = selectionOf(node, selectionFacts(ctx, node, picked.frame, knownSource(ctx, node)));
   return {
     ...info,
     ...(picked.card === undefined ? {} : { card: picked.card }),

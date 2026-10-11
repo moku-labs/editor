@@ -20,7 +20,6 @@
 @import "../../flowView/inspector/inspector.css" layer(components);
 @import "../../flowView/inspector/InfoTab.css" layer(components);
 @import "../../flowView/inspector/CodeTab.css" layer(components);
-@import "../../flowView/inspector/StylesTab.css" layer(components);
 @import "../../gameView/ui/styles/game.css" layer(components);
 @import "../../renderView/styles/render.css" layer(components);
 @import "../../stateView/view/StateView.css" layer(components);

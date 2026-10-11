@@ -118,6 +118,8 @@ export type Prefs = {
   device: DeviceChoice;
   /** Whether the game's sound is off (R11); gameView applies it with `game.mute`. */
   muted: boolean;
+  /** Whether a pick of the person copies its reference line (U5); gameView reads it at a pick. */
+  copyOnSelect: boolean;
 };
 
 /**
@@ -133,6 +135,8 @@ export type StoredPrefs = {
   showTaps: boolean;
   /** Whether the game's sound is off (sound on by default, R11). */
   muted: boolean;
+  /** Whether a pick copies its reference line to the clipboard (on by default, U5). */
+  copyOnSelect: boolean;
 };
 
 /**
@@ -323,7 +327,7 @@ export type GameFrame = {
 /**
  * Palette groups, in display order.
  */
-export type PaletteGroup = "Commands" | "Nodes" | "Files" | "Styles" | "Panels" | "Textures";
+export type PaletteGroup = "Commands" | "Nodes" | "Files" | "Panels" | "Textures";
 
 /**
  * One palette item.
@@ -402,7 +406,6 @@ export type EscLayer =
   | "fileEdit"
   | "codeEdit"
   | "stepPopover"
-  | "reference"
   | "selection";
 
 /**
@@ -750,30 +753,6 @@ export type WorkspaceApi = {
   setOverlayInGame(on: boolean): Promise<void>;
 
   /**
-   * The Reference mode flag: while on, the frame overlay takes the pointer, so the game gets no
-   * input. Always false at load; never persisted.
-   *
-   * @returns Whether it is on.
-   * @example
-   * ```ts
-   * app.workspace.reference(); // false
-   * ```
-   */
-  reference(): boolean;
-
-  /**
-   * Turns Reference mode on or off; emits `workspace:reference` when it changes. Esc turns it off.
-   *
-   * @param on - The new flag.
-   * @example
-   * ```ts
-   * app.workspace.setReference(true); // emits workspace:reference { on: true }
-   * app.workspace.reference(); // true
-   * ```
-   */
-  setReference(on: boolean): void;
-
-  /**
    * The hot reload state of the game server, as link reports it: whether Bun reloads the game
    * page after a save, and who owns the server.
    *
@@ -834,8 +813,43 @@ export type WorkspaceApi = {
   setMuted(on: boolean): void;
 
   /**
-   * Listens to preference changes (theme, preview, device, sound). A throwing listener is logged
-   * and does not stop the others.
+   * The "Copy on select" preference (U5, D-70): what a click of the element picker does. On: the
+   * pick writes the reference (the crop, the full frame and the card) and copies its line. Off:
+   * the pick only selects the element for the Element tab and writes nothing. Kept in the
+   * preferences, so it survives a reload of the tools page; true for a fresh viewer and for a
+   * stored record from before the preference. Its control is the Copy Ref switch of gameView's
+   * game toolbar; the palette command "Copy reference on select" flips it too.
+   *
+   * @returns Whether a pick writes the reference and copies its line.
+   * @example
+   * ```ts
+   * // gameView handles a picker click: the element is selected either way, and the pick is
+   * // completed (shots, card, clipboard) only while the preference is on.
+   * const workspace = ctx.require(workspacePlugin);
+   * if (!workspace.copyOnSelect()) return; // false after setCopyOnSelect(false): inspect only
+   * ```
+   */
+  copyOnSelect(): boolean;
+
+  /**
+   * Turns "Copy on select" on or off: stores the flag in the preferences and calls the `onPrefs`
+   * listeners (the Copy Ref switch of gameView's game toolbar follows them). The same value
+   * again does nothing. No event is emitted: gameView reads the flag at the next pick.
+   *
+   * @param on - True for a pick that writes the reference and copies its line, false for a pick
+   *   that only selects the element.
+   * @example
+   * ```ts
+   * // The person only wants to look at elements in the Element tab: no files, no clipboard.
+   * app.workspace.setCopyOnSelect(false);
+   * app.workspace.copyOnSelect(); // false; onPrefs listeners got { …, copyOnSelect: false }
+   * ```
+   */
+  setCopyOnSelect(on: boolean): void;
+
+  /**
+   * Listens to preference changes (theme, preview, device, sound, Copy on select). A throwing
+   * listener is logged and does not stop the others.
    *
    * @param fn - The listener.
    * @returns Removes it.
@@ -957,12 +971,12 @@ export type WorkspaceState = {
   device: StoredDevice;
   /** Always false at load; never persisted. */
   overlayInGame: boolean;
-  /** Reference mode: always false at load; never persisted. */
-  reference: boolean;
   /** Whether taps draw a ripple in the docked frame (persisted). */
   showTaps: boolean;
   /** Whether the game's sound is off (persisted, R11). */
   muted: boolean;
+  /** Whether a pick copies its reference line to the clipboard (persisted, U5). */
+  copyOnSelect: boolean;
   /** The tap ripples alive in the overlay, oldest first (at most 8). */
   taps: TapRipple[];
   link: LinkStatus;
@@ -1005,10 +1019,7 @@ export type WorkspaceCtx = {
   readonly config: Readonly<WorkspaceConfig>;
   state: WorkspaceState;
   readonly emit: EmitFn<
-    Pick<
-      ToolsEvents,
-      "workspace:changed" | "workspace:ran" | "workspace:density" | "workspace:reference"
-    >
+    Pick<ToolsEvents, "workspace:changed" | "workspace:ran" | "workspace:density">
   >;
   readonly log: Log.LogApi;
   readonly require: Require;

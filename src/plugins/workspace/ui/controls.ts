@@ -1,15 +1,13 @@
 /**
  * @file workspace plugin — what the top-bar toggles show and do, read once per render and shared
  * by the wide bar (switches and buttons, 900 px and wider) and the ⋯ menu rows below 900 px:
- * Game preview (G), Overlay in game (O), Reference mode (R), Hot reload (H), and the registry
- * counts.
+ * Game preview (G), Overlay in game (O), Hot reload (H), and the registry counts.
  */
 import { linkPlugin } from "../../link";
 import type { Manifest } from "../../registry/protocol";
 import { togglePreview } from "../actions";
 import { canSwitchHotReload, hotReloadTitle, toggleHotReload } from "../hot-reload";
 import { overlayAvailable, setOverlayInGame } from "../overlay";
-import { toggleReference } from "../reference";
 import type { WorkspaceCtx } from "../types";
 import { isPreviewWorkspace } from "../workspaces";
 
@@ -25,19 +23,23 @@ export type ToggleControl = {
   readonly short: string;
   /** The key that flips it. */
   readonly key: string;
+  /** Whether it is on. */
   readonly checked: boolean;
   /** The state in words for the menu row: on, off, or unknown. */
   readonly state: string;
+  /** Whether it is inert now. */
   readonly disabled: boolean;
+  /** The tooltip: what it does, or why it is inert. */
   readonly title: string;
+  /** Flips it. */
   readonly toggle: () => void;
 };
 
 /**
- * on or off.
+ * The word the menu row and the switch state show for a flag.
  *
- * @param on - A flag.
- * @returns The word.
+ * @param on - Whether the toggle is on.
+ * @returns `"on"` or `"off"`.
  * @example
  * ```ts
  * onOff(true); // "on"
@@ -91,27 +93,6 @@ export function overlayControl(ctx: WorkspaceCtx): ToggleControl {
     toggle: () => {
       void setOverlayInGame(ctx, !state.overlayInGame, "topbar");
     }
-  };
-}
-
-/**
- * The Reference mode toggle (R).
- *
- * @param ctx - Domain context of workspace.
- * @returns The control.
- */
-export function referenceControl(ctx: WorkspaceCtx): ToggleControl {
-  const { reference } = ctx.state;
-  return {
-    name: "reference",
-    label: "Reference mode",
-    short: "Reference",
-    key: "R",
-    checked: reference,
-    state: onOff(reference),
-    disabled: false,
-    title: "Reference mode (R) — pick game elements for the chat",
-    toggle: () => toggleReference(ctx)
   };
 }
 

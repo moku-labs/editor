@@ -128,6 +128,8 @@ export type {
   ShowInfo,
   ShowParams,
   SourceDescriptor,
+  StyleEdit,
+  StyleValue,
   SubId,
   Tap,
   ToolsBoot,

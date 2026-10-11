@@ -1,8 +1,10 @@
 /**
- * @file gameView plugin — the device toolbar (A2): picker, device select grouped by kind (iPhone,
+ * @file gameView plugin — the device toolbar (A2): Select (the picker, an icon button lit while
+ * it is on, U4), device select grouped by kind (iPhone,
  * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
  * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
- * (`game.mute`, dimmed with a tooltip without it, round 2b R11), Reload ("…" while busy, U11), camera,
+ * (`game.mute`, dimmed with a tooltip without it, round 2b R11), the Copy Ref switch (the
+ * workspace preference "Copy on select", D-72), Reload ("…" while busy, U11), camera,
  * Series (red with the time while recording) and, while the Element panel is closed, its reopen
  * button. Camera and Series are dimmed with a tooltip when the game lacks their command; each
  * carries an icon and a label, and below a 1000 px workspace shows the icon only, named by its
@@ -217,7 +219,45 @@ function SoundSwitch(props: { readonly ctx: GameViewCtx }): VNode {
 }
 
 /**
- * The zoom segment, the safe-area switch (off for the desktop), the Sound switch and Reload.
+ * The tooltip of the Copy Ref switch: what a pick does with it on and off (D-70).
+ */
+const COPY_REF_TITLE =
+  "On: a pick writes the reference and copies its line. Off: a pick only selects the element";
+
+/**
+ * The Copy Ref switch (D-72): the workspace preference "Copy on select". On, a pick writes the
+ * reference and copies its line; off, a pick only selects the element (D-70). It listens to
+ * `workspace.onPrefs`, so a change made elsewhere (the palette command) shows here too.
+ *
+ * @param props - The gameView domain context.
+ * @param props.ctx - Domain context of gameView.
+ * @returns The switch.
+ */
+function CopyRefSwitch(props: { readonly ctx: GameViewCtx }): VNode {
+  const workspace = props.ctx.require(workspacePlugin);
+  const [, setPrefs] = useState(0);
+  // A layout effect: a preference change right after the first render is not lost.
+  useLayoutEffect(() => workspace.onPrefs(() => setPrefs(count => count + 1)), [workspace]);
+  const on = workspace.copyOnSelect();
+  return (
+    <button
+      type="button"
+      role="switch"
+      data-switch=""
+      data-part="copy-on-select"
+      aria-checked={on}
+      title={COPY_REF_TITLE}
+      onClick={() => workspace.setCopyOnSelect(!on)}
+    >
+      <span data-track="" />
+      Copy Ref
+    </button>
+  );
+}
+
+/**
+ * The zoom segment, the safe-area switch (off for the desktop), the Sound and Copy Ref switches
+ * and Reload.
  *
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.
@@ -251,6 +291,7 @@ function ViewControls(props: { readonly ctx: GameViewCtx }): VNode {
         Safe area
       </button>
       <SoundSwitch ctx={ctx} />
+      <CopyRefSwitch ctx={ctx} />
       <ReloadButton ctx={ctx} />
     </>
   );
@@ -408,7 +449,8 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
         title="Select element ⇧⌘C"
         onClick={() => setPicker(ctx)}
       >
-        Select
+        <ToolIcon name="select" />
+        <span data-sr-only>Select element</span>
       </button>
       <DeviceControls ctx={ctx} />
       <ViewControls ctx={ctx} />

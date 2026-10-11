@@ -3,10 +3,26 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHandlers } from "../../handlers";
 import { stopGameView } from "../../lifecycle";
+import { rebuildScene } from "../../scene/rebuild";
 import { notify } from "../../state";
 import { ElementTab } from "../../ui/ElementTab";
 import { answer, createCtx, place, projectOn, sceneCapture, type TestCtx } from "../helpers";
-import { boardScene, button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
+import {
+  blurField,
+  boardCaptureStyled,
+  boardScene,
+  button,
+  click,
+  find,
+  findAll,
+  fire,
+  type Mounted,
+  mount,
+  pressKey,
+  sceneOf,
+  settle,
+  typeInto
+} from "../ui";
 
 const HUD = 'import { coinPill } from "./styles";\n<Pill key="coinPill" style={coinPill} />\n';
 const STYLES = "export const coinPill = defineStyle({\n  height: 76,\n  radius: 38\n});\n";
@@ -56,6 +72,69 @@ afterEach(() => {
   stopGameView(ctx);
   document.body.innerHTML = "";
 });
+
+/**
+ * Types a value into a field and commits it with Enter.
+ *
+ * @param input - The field.
+ * @param value - The text typed.
+ */
+function commit(input: HTMLInputElement, value: string): void {
+  typeInto(input, value);
+  pressKey(input, "Enter");
+}
+
+/**
+ * The Styles section of the tab.
+ *
+ * @returns The section.
+ */
+function styles(): HTMLElement {
+  return find(view.root, "section[data-part='style']");
+}
+
+/**
+ * The field of a style path in the Styles section.
+ *
+ * @param path - The style path ("width", "padding.left").
+ * @returns Its input.
+ */
+function field(path: string): HTMLInputElement {
+  return find<HTMLInputElement>(styles(), `input[aria-label='${path}']`);
+}
+
+/**
+ * The select of an enum style path in the Styles section.
+ *
+ * @param path - The style path ("justify", "cell.direction").
+ * @returns Its select.
+ */
+function choice(path: string): HTMLSelectElement {
+  return find<HTMLSelectElement>(styles(), `select[aria-label='${path}']`);
+}
+
+/**
+ * Chooses an option of a select and commits it (the `change` a choice fires).
+ *
+ * @param select - The select.
+ * @param value - The option chosen.
+ */
+function choose(select: HTMLSelectElement, value: string): void {
+  act(() => {
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+/**
+ * The values a select offers, in order.
+ *
+ * @param select - The select.
+ * @returns The value of each option.
+ */
+function optionsOf(select: HTMLSelectElement): string[] {
+  return findAll<HTMLOptionElement>(select, "option").map(option => option.value);
+}
 
 /**
  * Selects an element and lets the tab settle.
@@ -108,8 +187,21 @@ describe("ElementTab", () => {
     expect(ctx.emit).toHaveBeenCalledWith("workspace:reveal", {
       ref: { kind: "ui", path: "boardScreen/hudRow/coinPill" }
     });
-    click(button(view.root, "Pick another"));
-    expect(ctx.state.picker.on).toBe(true);
+  });
+
+  it("the footer holds Copy reference, then Show in render tree; Pick another is gone (U3)", async () => {
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    const footer = find(view.root, "[data-part='element'] > footer");
+    const actions = findAll<HTMLButtonElement>(footer, "button");
+    expect(actions.map(action => action.textContent)).toEqual([
+      "Copy reference",
+      "Show in render tree"
+    ]);
+    expect(actions.map(action => action.dataset.variant)).toEqual(["ghost", "ghost"]);
+    expect(findAll(view.root, "button").map(action => action.textContent)).not.toContain(
+      "Pick another"
+    );
+    expect(ctx.state.picker.on).toBe(false);
   });
 
   it("breadcrumb and children select; hovering them draws the pink box", async () => {
@@ -135,8 +227,13 @@ describe("ElementTab", () => {
       "margin",
       "padding"
     ]);
-    const values = findAll(view.root, "[data-part='style'] dd").map(value => value.textContent);
-    expect(values.slice(-2)).toEqual(["top 40", "right 40 · left 40"]);
+    // A record is one field per leaf, labelled with the leaf name (U8).
+    const leaves = (row: string): (string | null)[] =>
+      findAll(styles(), `[data-row='${row}'] [data-part='leaf']`).map(leaf => leaf.textContent);
+    expect(leaves("margin")).toEqual(["top"]);
+    expect(leaves("padding")).toEqual(["right", "left"]);
+    expect(field("margin.top").value).toBe("40");
+    expect(field("padding.left").value).toBe("40");
     await select({ kind: "entity", id: 1_048_628 });
     expect(view.root.textContent).toContain("No style of its own.");
   });
@@ -342,25 +439,22 @@ describe("ElementTab", () => {
     expect(find(style, "[data-part='where']").textContent).toBe("features/ui/text-styles.ts:2");
   });
 
-  it("shows the reference block read-only; Copy puts its one line on the clipboard", async () => {
+  it("has no reference block; Copy reference in the footer puts the one line on the clipboard (U3)", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
     await settle();
-    const pre = find(view.root, "pre[data-part='reference']");
-    const lines = (pre.textContent ?? "").split("\n");
-    expect(lines.slice(0, 3)).toEqual([
-      "@moku coinPill · row · f1841",
-      "path: boardScreen/hudRow/coinPill",
-      "source: src/hud/Hud.tsx:2 · style: coinPill src/hud/styles.ts:1 · texture: ui.hud-pill"
-    ]);
-    expect(lines).toContain(
-      "layout: hudRow (row, padding 0/40/0/40, margin 40/0/0/0) < boardScreen (column, padding 0/0/0/0)"
-    );
-    expect(pre.getAttribute("aria-busy")).toBe("false");
+    expect(view.root.querySelector("[data-part='reference-block']")).toBeNull();
+    expect(view.root.querySelector("pre[data-part='reference']")).toBeNull();
+    expect(view.root.textContent).not.toContain("Gathering the reference");
+    // Nothing gathers the block for the tab any more: no read of the flow position or the history.
+    expect(ctx.link.read).not.toHaveBeenCalledWith("game.history", { last: 1 });
 
-    const copy = find(view.root, "button[data-action='copy-reference']");
-    expect(copy.textContent).toBe("Copy");
+    const copy = find(view.root, "footer button[data-action='copy-reference']");
+    expect(copy.textContent).toBe("Copy reference");
+    expect(copy.getAttribute("title")).toBe(
+      "Write the reference card and copy its line for the chat"
+    );
     click(copy);
     await settle();
     expect(String(writeText.mock.calls[0]?.at(0))).toMatch(
@@ -389,6 +483,18 @@ describe("ElementTab", () => {
       path: "src/hud/Hud.tsx",
       line: 2
     });
+  });
+
+  it("the scroll boxes take the keyboard focus: the style block and both code snippets (F3)", async () => {
+    await select({ kind: "ui", path: "boardScreen/hudRow/coinPill" });
+    await settle();
+    const block = find(view.root, "[data-part='style-card'] ol[data-part='lines']");
+    expect(block.getAttribute("tabindex")).toBe("0");
+    expect(block.getAttribute("aria-label")).toBe("Style block");
+
+    const snippets = findAll(view.root, "section[data-part='code'] div[data-part='code-lines']");
+    expect(snippets).toHaveLength(2);
+    for (const lines of snippets) expect(lines.getAttribute("tabindex")).toBe("0");
   });
 
   it("shows 20 lines of a long element and the rest after Show all", async () => {
@@ -524,5 +630,441 @@ describe("ElementTab", () => {
     expect(ctx.state.treeHover).toEqual({ kind: "ui", path: "boardScreen" });
     fire(crumb, new FocusEvent("blur"));
     expect(ctx.state.treeHover).toBeUndefined();
+  });
+});
+
+describe("Styles fields: pending edits for the agent (U8, D-67)", () => {
+  const COIN = { kind: "ui", path: "boardScreen/hudRow/coinPill" } as const;
+
+  it("a number is a number field, a string a text field, a record one field per leaf", async () => {
+    await select(COIN);
+    const width = field("width");
+    expect(width.type).toBe("number");
+    expect(width.getAttribute("step")).toBe("1");
+    expect(width.value).toBe("290");
+    expect(field("nineSlice").type).toBe("text");
+    expect(field("nineSlice").value).toBe("ui.hud-pill");
+    expect(
+      findAll<HTMLInputElement>(styles(), "[data-row='padding'] input").map(input =>
+        input.getAttribute("aria-label")
+      )
+    ).toEqual(["padding.right", "padding.left"]);
+    expect(field("padding.left").type).toBe("number");
+    expect(styles().querySelector("[data-edited]")).toBeNull();
+    expect(styles().querySelector("[data-part='edits']")).toBeNull();
+  });
+
+  it("a boolean is a checkbox; an array and a deeper record stay read-only text", async () => {
+    act(() => {
+      ctx.state.scene = sceneOf(
+        boardCaptureStyled("coinPill", {
+          wrap: true,
+          inset: ["safeArea.top", 12],
+          shadow: { offset: { x: 0, y: 2 } }
+        })
+      );
+    });
+    await select(COIN);
+    const wrap = field("wrap");
+    expect(wrap.type).toBe("checkbox");
+    expect(wrap.checked).toBe(true);
+    expect(find(styles(), "[data-row='inset'] dd").textContent).toBe("safeArea.top, 12");
+    expect(styles().querySelector("[data-row='inset'] input")).toBeNull();
+    expect(find(styles(), "[data-row='shadow'] dd").textContent).toBe("offset x 0 · y 2");
+
+    act(() => {
+      wrap.checked = false;
+      wrap.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "wrap", from: true, to: false }
+    ]);
+    expect(field("wrap").checked).toBe(false);
+    expect(find(styles(), "[data-row='wrap'] s").textContent).toBe("true");
+  });
+
+  it("a committed field records the edit: the row is marked, shows the scene value struck and a reset", async () => {
+    await select(COIN);
+    commit(field("width"), "320");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([{ path: "width", from: 290, to: 320 }]);
+
+    const row = find(styles(), "[data-row='width']");
+    expect(row.dataset.edited).toBe("");
+    expect(field("width").value).toBe("320");
+    expect(find(row, "s").textContent).toBe("290");
+    const reset = find(row, "button[data-action='reset-edit']");
+    expect(reset.textContent).toBe("×");
+    expect(reset.getAttribute("title")).toBe("Reset to 290");
+    expect(styles().querySelectorAll("[data-row][data-edited]")).toHaveLength(1);
+
+    click(reset);
+    expect(ctx.state.edits.size).toBe(0);
+    expect(find(styles(), "[data-row='width']").dataset.edited).toBeUndefined();
+    expect(field("width").value).toBe("290");
+    expect(styles().querySelector("s")).toBeNull();
+  });
+
+  it("a leaf and a text field commit the same way; typing the scene value back removes the edit", async () => {
+    await select(COIN);
+    commit(field("padding.left"), "90");
+    commit(field("nineSlice"), "ui.hud-pill-gold");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "padding.left", from: 84, to: 90 },
+      { path: "nineSlice", from: "ui.hud-pill", to: "ui.hud-pill-gold" }
+    ]);
+    const padding = find(styles(), "[data-row='padding']");
+    expect(padding.dataset.edited).toBe("");
+    expect(find(padding, "[data-path='padding.left']").dataset.edited).toBe("");
+    expect(find(padding, "[data-path='padding.right']").dataset.edited).toBeUndefined();
+    expect(find(padding, "s").textContent).toBe("84");
+    expect(find(padding, "button[data-action='reset-edit']").getAttribute("title")).toBe(
+      "Reset to 84"
+    );
+
+    commit(field("nineSlice"), "ui.hud-pill");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "padding.left", from: 84, to: 90 }
+    ]);
+  });
+
+  it("an empty or non-numeric number field commits nothing and shows its value again", async () => {
+    await select(COIN);
+    commit(field("width"), "");
+    expect(ctx.state.edits.size).toBe(0);
+    expect(field("width").value).toBe("290");
+
+    // The same on blur.
+    typeInto(field("width"), "");
+    blurField(field("width"));
+    expect(ctx.state.edits.size).toBe(0);
+    expect(field("width").value).toBe("290");
+
+    const width = field("width");
+    Object.defineProperty(width, "value", { value: "wide", writable: true, configurable: true });
+    fire(width, new Event("input", { bubbles: true }));
+    pressKey(width, "Enter");
+    expect(ctx.state.edits.size).toBe(0);
+    expect(width.value).toBe("290");
+  });
+
+  it("Esc in a field restores the shown value: the scene value, or the pending edit", async () => {
+    await select(COIN);
+    const abandon = (input: HTMLInputElement, typed: string): void => {
+      typeInto(input, typed);
+      pressKey(input, "Escape");
+    };
+    abandon(field("width"), "999");
+    expect(field("width").value).toBe("290");
+    abandon(field("nineSlice"), "ui.hud");
+    expect(field("nineSlice").value).toBe("ui.hud-pill");
+    expect(ctx.state.edits.size).toBe(0);
+
+    commit(field("width"), "320");
+    abandon(field("width"), "5");
+    expect(field("width").value).toBe("320");
+
+    // Another key leaves what was typed, and commits nothing.
+    typeInto(field("width"), "33");
+    pressKey(field("width"), "3");
+    expect(field("width").value).toBe("33");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([{ path: "width", from: 290, to: 320 }]);
+  });
+
+  it("typing records no edit: a number or text field commits on Enter or blur only", async () => {
+    await select(COIN);
+    for (const typed of ["3", "32", "320"]) typeInto(field("width"), typed);
+    typeInto(field("nineSlice"), "ui.hud-pill-gold");
+    expect(ctx.state.edits.size).toBe(0);
+    expect(styles().querySelector("[data-part='edits']")).toBeNull();
+
+    // `change` commits nothing by itself: with preact/compat it is the `input` of a keystroke.
+    fire(field("width"), new Event("change", { bubbles: true }));
+    fire(field("nineSlice"), new Event("change", { bubbles: true }));
+    expect(ctx.state.edits.size).toBe(0);
+    expect(field("width").value).toBe("320");
+    expect(field("nineSlice").value).toBe("ui.hud-pill-gold");
+  });
+
+  it("Enter commits what was typed, once: a blur after it commits nothing", async () => {
+    await select(COIN);
+    typeInto(field("width"), "320");
+    pressKey(field("width"), "Enter");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([{ path: "width", from: 290, to: 320 }]);
+    expect(field("width").value).toBe("320");
+
+    // Clear drops the edit and the field shows the scene value; the blur does not bring it back.
+    click(button(find(styles(), "[data-part='edits']"), "Clear"));
+    expect(field("width").value).toBe("290");
+    blurField(field("width"));
+    expect(ctx.state.edits.size).toBe(0);
+    expect(field("width").value).toBe("290");
+  });
+
+  it("Enter and the blur it causes before the next render commit once", async () => {
+    await select(COIN);
+    const width = field("width");
+    typeInto(width, "320");
+    act(() => {
+      width.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(ctx.state.edits.get("coinPill")?.edits).toHaveLength(1);
+      // Emptied between the two, so a second commit would show.
+      ctx.state.edits.clear();
+      width.dispatchEvent(new FocusEvent("blur"));
+      width.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(ctx.state.edits.size).toBe(0);
+  });
+
+  it("blur commits what was typed, once; a blur without typing commits nothing", async () => {
+    await select(COIN);
+    blurField(field("width"));
+    expect(ctx.state.edits.size).toBe(0);
+
+    typeInto(field("nineSlice"), "ui.hud-pill-gold");
+    blurField(field("nineSlice"));
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "nineSlice", from: "ui.hud-pill", to: "ui.hud-pill-gold" }
+    ]);
+    expect(field("nineSlice").value).toBe("ui.hud-pill-gold");
+
+    click(button(find(styles(), "[data-part='edits']"), "Clear"));
+    blurField(field("nineSlice"));
+    expect(ctx.state.edits.size).toBe(0);
+    expect(field("nineSlice").value).toBe("ui.hud-pill");
+  });
+
+  it("Esc then blur commits nothing: the field shows the scene value", async () => {
+    await select(COIN);
+    const width = field("width");
+    typeInto(width, "999");
+    pressKey(width, "Escape");
+    blurField(width);
+    expect(ctx.state.edits.size).toBe(0);
+    expect(width.value).toBe("290");
+    expect(styles().querySelector("[data-part='edits']")).toBeNull();
+
+    // The same when the blur comes before the next render.
+    typeInto(width, "999");
+    act(() => {
+      width.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      width.dispatchEvent(new FocusEvent("blur"));
+      width.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(ctx.state.edits.size).toBe(0);
+    expect(width.value).toBe("290");
+  });
+
+  it("keeps what is being typed while the game sends new scenes: a re-render does not reset the field", async () => {
+    await select(COIN);
+    typeInto(field("width"), "32");
+    typeInto(field("nineSlice"), "ui.hud-p");
+
+    // A live game rebuilds the scene on every heartbeat: the tab renders again under the fields.
+    act(() => {
+      ctx.state.scene = boardScene();
+      notify(ctx.state);
+    });
+    expect(field("width").value).toBe("32");
+    expect(field("nineSlice").value).toBe("ui.hud-p");
+    expect(ctx.state.edits.size).toBe(0);
+
+    // The commit ends the typing: the field shows the pending value from then on.
+    commit(field("width"), "320");
+    act(() => {
+      ctx.state.scene = boardScene();
+      notify(ctx.state);
+    });
+    expect(field("width").value).toBe("320");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([{ path: "width", from: 290, to: 320 }]);
+
+    // Esc drops what was typed, also after a re-render.
+    typeInto(field("nineSlice"), "ui.hud-pill-gold");
+    pressKey(field("nineSlice"), "Escape");
+    act(() => notify(ctx.state));
+    expect(field("nineSlice").value).toBe("ui.hud-pill");
+  });
+
+  it("the edits bar counts the edits, copies them for the agent and clears them", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await select(COIN);
+    commit(field("width"), "320");
+
+    const bar = find(styles(), "div[data-part='edits']");
+    expect(find(bar, "[data-part='count']").textContent).toBe("1 edit");
+    commit(field("padding.left"), "90");
+    expect(find(styles(), "[data-part='edits'] [data-part='count']").textContent).toBe("2 edits");
+
+    const copy = find<HTMLButtonElement>(styles(), "button[data-action='copy-edits']");
+    expect(copy.textContent).toBe("Copy for agent");
+    expect(copy.dataset.variant).toBe("primary");
+    click(copy);
+    await settle();
+    expect(writeText).toHaveBeenCalledWith(
+      "@moku coinPill · src/hud/Hud.tsx:2\nwidth: 290 -> 320\npadding.left: 84 -> 90"
+    );
+    expect(ctx.workspace.toast).toHaveBeenCalledWith("✓ 2 edits copied");
+
+    const clear = button(find(styles(), "[data-part='edits']"), "Clear");
+    expect(clear.dataset.variant).toBe("ghost");
+    click(clear);
+    expect(ctx.state.edits.size).toBe(0);
+    expect(styles().querySelector("[data-part='edits']")).toBeNull();
+    expect(field("width").value).toBe("290");
+    vi.unstubAllGlobals();
+  });
+
+  it("the bar also shows on an element without edits of its own, and counts the elements above one", async () => {
+    await select(COIN);
+    commit(field("width"), "320");
+
+    await select({ kind: "ui", path: "boardScreen/hudRow/home" });
+    expect(styles().querySelector("[data-row][data-edited]")).toBeNull();
+    expect(find(styles(), "[data-part='edits'] [data-part='count']").textContent).toBe("1 edit");
+    commit(field("radius"), "40");
+    expect(find(styles(), "[data-part='edits'] [data-part='count']").textContent).toBe(
+      "2 edits · 2 elements"
+    );
+
+    // An element with no style of its own still offers the edits of the others.
+    await select({ kind: "entity", id: 1_048_628 });
+    expect(styles().textContent).toContain("No style of its own.");
+    expect(find(styles(), "[data-part='edits'] [data-part='count']").textContent).toBe(
+      "2 edits · 2 elements"
+    );
+  });
+
+  it("the game does not change: an edit writes no file and runs no command (D-67)", async () => {
+    await select(COIN);
+    await settle();
+    const writes = ctx.link.files.writes.length;
+    commit(field("width"), "320");
+    await settle();
+    expect(ctx.link.files.writes).toHaveLength(writes);
+    expect(ctx.panels.run).not.toHaveBeenCalled();
+    expect(ctx.workspace.reload).not.toHaveBeenCalled();
+  });
+
+  it("a scene that shows the edited value drops the edit from the row", async () => {
+    await select(COIN);
+    commit(field("width"), "320");
+    const next = boardCaptureStyled("coinPill", { width: 320 });
+    ctx.state.sources = { ui: next.ui, entities: next.entities, projections: next.projections };
+    act(() => rebuildScene(ctx, 1850));
+
+    expect(ctx.state.edits.size).toBe(0);
+    expect(find(styles(), "[data-row='width']").dataset.edited).toBeUndefined();
+    expect(field("width").value).toBe("320");
+    expect(styles().querySelector("[data-part='edits']")).toBeNull();
+  });
+
+  it("an enum property is a select with the engine's values; a free string stays a text field", async () => {
+    await select(COIN);
+    const justify = choice("justify");
+    expect(optionsOf(justify)).toEqual(["start", "center", "end", "between", "around", "evenly"]);
+    expect(justify.value).toBe("center");
+    expect(findAll(justify, "option").map(option => option.textContent)).toEqual(
+      optionsOf(justify)
+    );
+    expect(styles().querySelector("input[aria-label='justify']")).toBeNull();
+    expect(find(styles(), "[data-row='justify'] [data-part='field']").dataset.path).toBe("justify");
+
+    // A texture key is no enum: it stays a text field.
+    expect(field("nineSlice").type).toBe("text");
+    expect(styles().querySelector("select[aria-label='nineSlice']")).toBeNull();
+  });
+
+  it("every enum of the engine's style is a select: direction, align, position, origin and the rest", async () => {
+    const style = {
+      direction: "row",
+      align: "center",
+      alignSelf: "stretch",
+      overflow: "hidden",
+      fit: "contain",
+      position: "absolute",
+      shape: "triangle",
+      origin: "top"
+    };
+    act(() => {
+      ctx.state.scene = sceneOf(boardCaptureStyled("coinPill", style));
+    });
+    await select(COIN);
+    for (const [name, value] of Object.entries(style)) {
+      expect(choice(name).value).toBe(value);
+    }
+    expect(optionsOf(choice("direction"))).toEqual(["row", "column"]);
+    expect(optionsOf(choice("origin"))).toEqual(["center", "top", "topLeft"]);
+  });
+
+  it("a select commits on change: the row is marked, shows the scene value struck and a reset", async () => {
+    await select(COIN);
+    choose(choice("justify"), "between");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "justify", from: "center", to: "between" }
+    ]);
+
+    const row = find(styles(), "[data-row='justify']");
+    expect(row.dataset.edited).toBe("");
+    expect(find(row, "[data-part='field']").dataset.edited).toBe("");
+    expect(choice("justify").value).toBe("between");
+    expect(find(row, "s").textContent).toBe("center");
+    const reset = find(row, "button[data-action='reset-edit']");
+    expect(reset.getAttribute("title")).toBe("Reset to center");
+    expect(find(styles(), "[data-part='edits'] [data-part='count']").textContent).toBe("1 edit");
+
+    click(reset);
+    expect(ctx.state.edits.size).toBe(0);
+    expect(choice("justify").value).toBe("center");
+    expect(find(styles(), "[data-row='justify']").dataset.edited).toBeUndefined();
+
+    // Choosing the scene value again removes the edit, as typing it back does.
+    choose(choice("justify"), "end");
+    choose(choice("justify"), "center");
+    expect(ctx.state.edits.size).toBe(0);
+    expect(styles().querySelector("s")).toBeNull();
+  });
+
+  it("the scene value is added as an option when the table does not list it", async () => {
+    act(() => {
+      ctx.state.scene = sceneOf(boardCaptureStyled("coinPill", { justify: "spread" }));
+    });
+    await select(COIN);
+    expect(optionsOf(choice("justify"))).toEqual([
+      "start",
+      "center",
+      "end",
+      "between",
+      "around",
+      "evenly",
+      "spread"
+    ]);
+    expect(choice("justify").value).toBe("spread");
+
+    // It stays an option while an edit is pending, so the reset can show it again.
+    choose(choice("justify"), "start");
+    expect(optionsOf(choice("justify"))).toContain("spread");
+    expect(find(styles(), "[data-row='justify'] s").textContent).toBe("spread");
+  });
+
+  it("a nested record leaf with an enum name is a select too", async () => {
+    act(() => {
+      ctx.state.scene = sceneOf(
+        boardCaptureStyled("coinPill", { cell: { direction: "row", gap: 4 } })
+      );
+    });
+    await select(COIN);
+    const direction = choice("cell.direction");
+    expect(optionsOf(direction)).toEqual(["row", "column"]);
+    expect(direction.value).toBe("row");
+    expect(find(styles(), "[data-path='cell.direction'] [data-part='leaf']").textContent).toBe(
+      "direction"
+    );
+    expect(field("cell.gap").type).toBe("number");
+
+    choose(direction, "column");
+    expect(ctx.state.edits.get("coinPill")?.edits).toEqual([
+      { path: "cell.direction", from: "row", to: "column" }
+    ]);
+    expect(find(styles(), "[data-row='cell']").dataset.edited).toBe("");
   });
 });

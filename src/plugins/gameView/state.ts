@@ -15,7 +15,7 @@ const DEFAULT_INTERVAL_MS = 100;
 
 /**
  * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read,
- * Reference mode off (no press, no marquee), no pick bookmarks, nothing published.
+ * no area press and no marquee, no pick bookmarks, nothing published, no pending style edits.
  *
  * @returns A fresh state for one app.
  */
@@ -62,17 +62,11 @@ export function createGameViewState(): GameViewState {
     blocks: new Map(),
     spawns: new Map(),
     cards: new Map(),
-    reference: {
-      on: false,
-      hover: undefined,
-      node: undefined,
-      unwatch: undefined,
-      press: undefined,
-      area: undefined
-    },
+    reference: { press: undefined, area: undefined },
     bookmarks: [],
     pick: undefined,
-    selection: undefined
+    selection: undefined,
+    edits: new Map()
   };
 }
 

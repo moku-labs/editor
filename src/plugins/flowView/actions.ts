@@ -10,7 +10,6 @@ import { createCameraApi } from "./camera/api";
 import { createFocusApi } from "./focus/api";
 import { createInspectorApi } from "./inspector/api";
 import { createFlowsApi, createLayoutApi } from "./layout/api";
-import { setStyleItems } from "./palette";
 import type { FlowActions, FlowCtx, FlowEnvironment, FlowServices, FlowViewState } from "./types";
 
 /**
@@ -22,10 +21,9 @@ const built = new WeakMap<FlowViewState, FlowActions>();
  * The services of flowView over its three dependencies.
  *
  * @param ctx - Domain context of flowView.
- * @param actions - The late-bound actions (for the palette items).
  * @returns The services.
  */
-export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServices {
+export function servicesOf(ctx: FlowCtx): FlowServices {
   return {
     files: () => ctx.require(linkPlugin).files,
     toast: (message, file) => {
@@ -46,9 +44,6 @@ export function servicesOf(ctx: FlowCtx, actions: () => FlowActions): FlowServic
     preview: () => ctx.require(workspacePlugin).preview("flow"),
     openFile: (path, line) => {
       ctx.emit("workspace:open-file", line === undefined ? { path } : { path, line });
-    },
-    setStyleItems: keys => {
-      setStyleItems(ctx, actions(), keys);
     }
   };
 }
@@ -78,7 +73,7 @@ export function actionsOf(ctx: FlowCtx): FlowActions {
     }
     return holder.actions;
   };
-  const env: FlowEnvironment = { ...servicesOf(ctx, late), actions: late };
+  const env: FlowEnvironment = { ...servicesOf(ctx), actions: late };
   const actions: FlowActions = {
     camera: createCameraApi(ctx, env),
     focus: createFocusApi(ctx, env),

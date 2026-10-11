@@ -259,7 +259,7 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": true,
       },
-      "description": "What is selected in the editor page now (picked with the Reference picker, or by moku_select): ref, key, name, type, rect in game page CSS px, source file and line, the reference card and its one-line @moku reference, as JSON, and the element's crop picture when one was taken. An area selection lists its elements in items.",
+      "description": "What is selected in the editor page now (picked with the element picker, or by moku_select): ref, key, name, type, rect in game page CSS px, source file and line, the reference card and its one-line @moku reference, as JSON, and the element's crop picture when one was taken. An area selection lists its elements in items. edits lists the pending style edits of the element, { path, from, to }: apply them in the source.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -281,7 +281,7 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": false,
       },
-      "description": "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
+      "description": "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the element picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -303,7 +303,7 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
           },
           "rect": {
             "additionalProperties": false,
-            "description": "An area of the game page in CSS px, the way the Reference picker drag draws it: { x, y, w, h }.",
+            "description": "An area of the game page in CSS px, the way the element picker drag draws it: { x, y, w, h }.",
             "properties": {
               "h": {
                 "description": "Height, CSS px.",

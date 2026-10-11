@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
+import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { DEVICES } from "../../../registry/protocol";
+import { setPicker } from "../../element/select";
 import { onLinkStatus } from "../../handlers";
+import { escapeClosers } from "../../keys";
 import { stopGameView } from "../../lifecycle";
+import { notify } from "../../state";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
 import { button, click, find, findAll, type Mounted, mount, settle } from "../ui";
@@ -58,6 +62,42 @@ describe("DeviceToolbar", () => {
     expect(ctx.state.picker.on).toBe(true);
     expect(ctx.workspace.show).toHaveBeenCalledWith("game");
     expect(find(view.root, "[data-part='pick']").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("Select is an icon button: the select tool icon and a label for screen readers (U4)", () => {
+    const pick = find(view.root, "[data-part='pick']");
+    expect(pick.getAttribute("title")).toBe("Select element ⇧⌘C");
+    const icon = find<SVGElement>(pick, "svg[data-part='tool-icon']");
+    expect(icon.dataset.icon).toBe("select");
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+    expect(icon.querySelectorAll("path")).toHaveLength(1);
+    expect(find(pick, "[data-sr-only]").textContent).toBe("Select element");
+    expect(pick.textContent).toBe("Select element");
+  });
+
+  it("Select is lit for as long as the picker is on: it goes dark on a pick, on Esc and on a second click (U4)", () => {
+    const pressed = (): string | null =>
+      find(view.root, "[data-part='pick']").getAttribute("aria-pressed");
+    click(find(view.root, "[data-part='pick']"));
+    expect(pressed()).toBe("true");
+    click(find(view.root, "[data-part='pick']"));
+    expect(pressed()).toBe("false");
+
+    // Esc on the picker layer, and the end of a pick, turn the picker off through the state.
+    click(find(view.root, "[data-part='pick']"));
+    const closer = escapeClosers(ctx).find(entry => entry.layer === "picker");
+    act(() => {
+      closer?.close();
+    });
+    expect(pressed()).toBe("false");
+
+    act(() => setPicker(ctx, true));
+    expect(pressed()).toBe("true");
+    act(() => {
+      ctx.state.picker = { on: false, hover: undefined };
+      notify(ctx.state);
+    });
+    expect(pressed()).toBe("false");
   });
 
   it("chooses the device and shows its size; the orientation swaps it", () => {
@@ -171,6 +211,74 @@ describe("DeviceToolbar", () => {
     click(sound);
     await flush();
     expect(ctx.panels.run).not.toHaveBeenCalled();
+  });
+
+  it("the Copy Ref switch sits after Safe area and Sound and shows the Copy on select preference (D-72)", () => {
+    expect(findAll(view.root, "[role='switch']").map(element => element.dataset.part)).toEqual([
+      "safe",
+      "sound",
+      "copy-on-select"
+    ]);
+    const copyRef = find(view.root, "[data-part='copy-on-select']");
+    expect(copyRef.tagName).toBe("BUTTON");
+    expect(copyRef.dataset.switch).toBe("");
+    expect(copyRef.querySelector("[data-track]")).not.toBeNull();
+    expect(copyRef.textContent).toBe("Copy Ref");
+    expect(copyRef.getAttribute("aria-checked")).toBe("true");
+    expect(copyRef.getAttribute("aria-disabled")).toBeNull();
+    expect(copyRef.getAttribute("title")).toBe(
+      "On: a pick writes the reference and copies its line. Off: a pick only selects the element"
+    );
+    // It stands before Reload, which the sheet pushes to the right.
+    const parts = findAll(view.root, "[data-game='toolbar'] > [data-part]").map(
+      element => element.dataset.part
+    );
+    expect(parts.indexOf("copy-on-select")).toBe(parts.indexOf("sound") + 1);
+    expect(parts.indexOf("reload")).toBe(parts.indexOf("copy-on-select") + 1);
+  });
+
+  it("the Copy Ref switch starts off when the stored preference is off", () => {
+    view.unmount();
+    ctx.workspace.copyOnSelectValue = false;
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    expect(find(view.root, "[data-part='copy-on-select']").getAttribute("aria-checked")).toBe(
+      "false"
+    );
+  });
+
+  it("the Copy Ref switch flips the preference through workspace, off and on again", () => {
+    click(find(view.root, "[data-part='copy-on-select']"));
+    expect(ctx.workspace.setCopyOnSelect).toHaveBeenLastCalledWith(false);
+    expect(ctx.workspace.api.copyOnSelect()).toBe(false);
+    expect(find(view.root, "[data-part='copy-on-select']").getAttribute("aria-checked")).toBe(
+      "false"
+    );
+
+    click(find(view.root, "[data-part='copy-on-select']"));
+    expect(ctx.workspace.setCopyOnSelect).toHaveBeenLastCalledWith(true);
+    expect(find(view.root, "[data-part='copy-on-select']").getAttribute("aria-checked")).toBe(
+      "true"
+    );
+  });
+
+  it("the Copy Ref switch follows onPrefs: a change made elsewhere (the palette command) shows", () => {
+    act(() => ctx.workspace.api.setCopyOnSelect(false));
+    expect(find(view.root, "[data-part='copy-on-select']").getAttribute("aria-checked")).toBe(
+      "false"
+    );
+    act(() => ctx.workspace.api.setCopyOnSelect(true));
+    expect(find(view.root, "[data-part='copy-on-select']").getAttribute("aria-checked")).toBe(
+      "true"
+    );
+  });
+
+  it("the Copy Ref switch stops listening to onPrefs when the toolbar unmounts", () => {
+    const listening = ctx.workspace.prefsListeners.size;
+    expect(listening).toBeGreaterThan(0);
+    view.unmount();
+    expect(ctx.workspace.prefsListeners.size).toBe(listening - 1);
+    view = mount(<DeviceToolbar ctx={ctx} />);
+    expect(ctx.workspace.prefsListeners.size).toBe(listening);
   });
 
   it("Reload reloads the game without restore", async () => {

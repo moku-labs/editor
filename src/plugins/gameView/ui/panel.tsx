@@ -10,7 +10,6 @@ import { definePanel } from "../../panels/shared/define";
 import { SidePanel } from "../../panels/shared/side-panel";
 import type { PanelSpec, PanelTools } from "../../panels/types";
 import type { Json } from "../../registry/protocol";
-import { positionOf } from "../capture/naming";
 import { GAME_COMMANDS } from "../commands";
 import { SIDE_PANEL, SIDE_SIZE, SIDE_TITLE } from "../side";
 import type { GameCommands, GameViewCtx } from "../types";
@@ -64,10 +63,9 @@ export function createGamePanel(ctx: GameViewCtx): PanelSpec {
  * @returns The workspace.
  */
 export function GameWorkspace(props: GameWorkspaceProps): VNode {
-  const { ctx, position, tools } = props;
+  const { ctx, tools } = props;
   const { state } = ctx;
   const tab = useGameView(state, () => state.tab);
-  const flowNode = positionOf(position).path;
 
   return (
     <div data-game="workspace">
@@ -103,11 +101,7 @@ export function GameWorkspace(props: GameWorkspaceProps): VNode {
               id="game-tab-panel"
               aria-labelledby={tab === "element" ? "game-tab-element" : "game-tab-device"}
             >
-              {tab === "element" ? (
-                <ElementTab ctx={ctx} flowNode={flowNode} />
-              ) : (
-                <DeviceTab ctx={ctx} />
-              )}
+              {tab === "element" ? <ElementTab ctx={ctx} /> : <DeviceTab ctx={ctx} />}
             </div>
           </div>
         </SidePanel>

@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("context menu items run", () => {
-  it("node items focus, open code and styles, expand, enter, step, pause and resume", async () => {
+  it("node items focus, open code, expand, enter, step, pause and resume", async () => {
     const { ctx, actions, fakes } = await prepared();
     const enter = vi.spyOn(actions.flows, "enter").mockImplementation(() => {});
     const expand = vi.spyOn(actions.flows, "expand").mockImplementation(() => {});
@@ -27,8 +27,6 @@ describe("context menu items run", () => {
     expect(ctx.state.focus.selected).toBe("main/settings");
     run("main/settings", "Open code");
     expect(ctx.state.inspector.tab).toBe("code");
-    run("main/settings", "Open styles");
-    expect(ctx.state.inspector.tab).toBe("styles");
     run("main/settings", "Expand");
     expect(expand).toHaveBeenCalledWith("main/settings");
     run("main/settings", "Enter settingsPopup");

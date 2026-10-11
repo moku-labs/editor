@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar; under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: logo, game name, link pill, Pause and Step as icons, the Reference and Hot reload icon toggles (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too and TopBar leaves out the Hot reload toggle (it stays a ⋯ row). Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar; under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: the game mark, game name, link pill, Pause and Step as icons, the Hot reload icon toggle (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -15,14 +15,21 @@
     flex-shrink: 0;
   }
 
-  [data-logo] {
+  /* The game mark (U1): a tile with the initials of the game. TopBar sets --mark-hue inline from the game name; the two colours are built from it here with the lightness of the theme (tokens). Without a game there is no --mark-hue: a var() without a fallback then makes --mark-bg and --mark-fg invalid, so the tile falls back to the neutral surface and the muted text. */
+  [data-mark] {
+    --mark-bg: oklch(var(--mark-l-bg) 0.07 var(--mark-hue));
+    --mark-fg: oklch(var(--mark-l-fg) 0.11 var(--mark-hue));
+
     display: grid;
     place-items: center;
     width: 24px;
     height: 24px;
     border-radius: var(--radius-6);
-    background: var(--text-ink);
-    color: var(--surface-panel);
+    background: var(--mark-bg, var(--surface-panel-2));
+    color: var(--mark-fg, var(--text-muted));
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11);
+    font-weight: 600;
   }
 
   /* The name shrinks with an ellipsis; the version keeps its width beside it. */
@@ -86,7 +93,6 @@
   }
 
   [data-action="theme"],
-  [data-action="reference"],
   [data-action="registry"],
   [data-action="more"] {
     padding: 0 6px;
@@ -108,14 +114,13 @@
     box-shadow: 0 0 0 1.5px var(--surface-panel);
   }
 
-  [data-action="reference"][aria-pressed="true"],
   [data-action="more"][aria-expanded="true"] {
     background: var(--accent-soft);
     color: var(--accent-ink);
   }
 
-  /* Compact bar: the Reference toggle pushes itself, Hot reload, the search icon and ⋯ to the end; the search is a fixed icon button. Pause and Step render their label as the accessible name only (TopBar). */
-  :scope[data-layout="compact"] > [data-action="reference"] {
+  /* Compact bar: the Hot reload toggle pushes itself, the search icon and ⋯ to the end; the search is a fixed icon button. Pause and Step render their label as the accessible name only (TopBar). */
+  :scope[data-layout="compact"] > [data-action="hot-reload"] {
     margin-inline-start: auto;
   }
 
@@ -173,7 +178,7 @@
     }
   }
 
-  /* A third of the screen: the logo and the controls only. */
+  /* A third of the screen: the game mark and the controls only. */
   @media (max-width: 560px) {
     :scope {
       gap: var(--space-1);

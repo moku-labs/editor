@@ -31,10 +31,9 @@ describe("module states", () => {
       tab: "info",
       code: undefined,
       codeNote: undefined,
-      styles: undefined,
-      sources: undefined,
-      found: undefined
+      codeNode: undefined
     });
+    expect(Object.keys(createInspectorState())).toEqual(["tab", "code", "codeNote", "codeNode"]);
     const layout = createLayoutState();
     expect(layout.seq).toBe(0);
     expect(layout.result).toBeUndefined();
@@ -66,6 +65,7 @@ describe("createFlowViewState", () => {
     expect(state.view.revision).toBe(0);
     expect(state.camera.follow).toBe(false);
     expect(state.inspector.tab).toBe("info");
+    expect(Object.keys(state.view.palette)).toEqual(["nodes"]);
   });
 });
 

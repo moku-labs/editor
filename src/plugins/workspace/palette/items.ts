@@ -2,7 +2,7 @@
  * @file workspace plugin — the palette index: items by id (an existing id is replaced), groups in
  * fixed order with 3 items each without a query and up to 8 with one (fuzzy only when nothing
  * matches as a substring), open/close, running an item or its ⇧↵ alt, and the built-in Commands
- * (game, Reference mode, preview, theme, density, Show taps, go-to, reload, registry, retry).
+ * (game, preview, theme, density, Show taps, Copy on select, go-to, reload, registry, retry).
  */
 import { linkPlugin } from "../../link";
 import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
@@ -10,10 +10,9 @@ import { openPopover, showWorkspace, stepOnce, togglePause, togglePreview } from
 import { reloadFrame } from "../frame/reload";
 import { formatCombo, isApplePlatform } from "../keys/keymap";
 import { setOverlayInGame } from "../overlay";
-import { chooseDensity, chooseShowTaps, chooseTheme } from "../prefs/apply";
+import { chooseCopyOnSelect, chooseDensity, chooseShowTaps, chooseTheme } from "../prefs/apply";
 import { DENSITY_CHOICES } from "../prefs/density";
 import { effectiveTheme } from "../prefs/theme";
-import { toggleReference } from "../reference";
 import type {
   PaletteGroup,
   PaletteGroupView,
@@ -37,7 +36,6 @@ export const GROUP_ORDER: readonly PaletteGroup[] = [
   "Commands",
   "Nodes",
   "Files",
-  "Styles",
   "Panels",
   "Textures"
 ];
@@ -284,10 +282,10 @@ function needsGame(state: WorkspaceState): string | false {
 }
 
 /**
- * The game commands: step, pause/resume, overlay, Reference mode.
+ * The game commands: step, pause/resume, overlay.
  *
  * @param ctx - Domain context of workspace.
- * @returns Four items.
+ * @returns Three items.
  */
 function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -317,14 +315,6 @@ function gameCommands(ctx: WorkspaceCtx): PaletteItem[] {
         void setOverlayInGame(ctx, !state.overlayInGame, "palette");
       },
       { shortcut: "O" }
-    ),
-    command(
-      "cmd:reference",
-      () => `Reference mode ${state.reference ? "off" : "on"}`,
-      () => {
-        toggleReference(ctx);
-      },
-      { shortcut: "R", keywords: "reference pick element chat" }
     )
   ];
 }
@@ -378,10 +368,29 @@ function tapsCommand(ctx: WorkspaceCtx): PaletteItem {
 }
 
 /**
- * The shell commands: preview, theme, density, Show taps, the six go-to items.
+ * The Copy reference on select item (U5): flips the preference. Its label names what a run does;
+ * it has no key.
  *
  * @param ctx - Domain context of workspace.
- * @returns Twelve items.
+ * @returns The item.
+ */
+function copyOnSelectCommand(ctx: WorkspaceCtx): PaletteItem {
+  const { state } = ctx;
+  return command(
+    "cmd:copy-on-select",
+    () => `Copy reference on select: turn ${state.copyOnSelect ? "off" : "on"}`,
+    () => {
+      chooseCopyOnSelect(ctx, !state.copyOnSelect);
+    },
+    { keywords: "copy reference select clipboard pick element" }
+  );
+}
+
+/**
+ * The shell commands: preview, theme, density, Show taps, Copy on select, the six go-to items.
+ *
+ * @param ctx - Domain context of workspace.
+ * @returns Thirteen items.
  */
 function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
   const { state } = ctx;
@@ -420,6 +429,7 @@ function shellCommands(ctx: WorkspaceCtx): PaletteItem[] {
     ),
     ...densityCommands(ctx),
     tapsCommand(ctx),
+    copyOnSelectCommand(ctx),
     ...goTo
   ];
 }

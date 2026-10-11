@@ -18,7 +18,6 @@ import {
   paramsOf,
   reloadAgent,
   type ServerStack,
-  STYLES_FIXTURE,
   type Stack,
   type StackOptions,
   type StartedGame,
@@ -271,21 +270,6 @@ function agentRuns(tap: Tap, id: string): { conn: number; message: Message }[] {
     .filter(entry => "method" in entry.message && entry.message.method === "run")
     .filter(entry => paramsOf(entry.message)?.id === id)
     .map(entry => ({ conn: entry.conn, message: entry.message }));
-}
-
-/**
- * The `sub` of every game-channel `watch` the tools app sent, from one tap index on.
- *
- * @param tap - The wire tap.
- * @param from - The first tap entry to read.
- * @returns The subs, in order.
- */
-function watchSubs(tap: Tap, from = 0): unknown[] {
-  return tap.entries
-    .slice(from)
-    .filter(entry => entry.dir === "in" && entry.kind === "tools")
-    .filter(entry => "method" in entry.message && entry.message.method === "watch")
-    .map(entry => paramsOf(entry.message)?.sub);
 }
 
 /**
@@ -735,89 +719,6 @@ describe("journey-tiny: pause and walk", () => {
   });
 });
 
-describe("journey-tiny: edit a style", () => {
-  it("J3: a style step writes styles.ts, the game reloads and comes back restored", async () => {
-    const live = await liveStack();
-    const { tools, server, root } = live;
-    const { panels, flowView, stateView } = tools.app;
-    const flow = flowHost(live);
-    await showFlow(live);
-    await panels.run("game.answer", { intent: "play" });
-    await attached(live);
-    const subsBefore = watchSubs(server.tap);
-    const reloadFrom = server.tap.entries.length;
-
-    // 1. home, the Styles tab, ui.number, size one step up
-    expect(flowView.focus.select("main/home")).toBe(true);
-    await until(
-      () => flow.querySelector('[data-flow="inspector"] [role="tab"]') !== null,
-      "the inspector tabs"
-    );
-    const styles = [
-      ...flow.querySelectorAll<HTMLElement>('[data-flow="inspector"] [role="tab"]')
-    ].find(tab => tab.textContent === "Styles");
-    if (styles === undefined) throw new Error("no Styles tab");
-    await click(styles);
-    const stylesText = () => flow.querySelector('[data-flow="styles-tab"]')?.textContent ?? "";
-    await until(
-      () =>
-        flow.querySelector('[data-flow="styles-tab"] select option[value="ui.number"]') !== null,
-      "styles.ts read into the tab"
-    );
-    // No style is chosen until the person picks one.
-    const select = elementIn(flow, '[data-flow="styles-tab"] select');
-    expect(select instanceof HTMLSelectElement ? select.value : undefined).toBe("");
-    await act(() => {
-      if (select instanceof HTMLSelectElement) select.value = "ui.number";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await until(() => stylesText().includes('"ui.number": {'), "ui.number chosen");
-    await click(elementIn(flow, '[data-field="size"] [data-action="step-up"]'));
-
-    // 2. the bookmark answered: workspace reassigns the iframe src next, so the page reloads.
-    // The answer and a later session close travel on one socket, in order.
-    await until(() => agentRuns(server.tap, "game.bookmark").length === 1, "the bookmark run");
-    await until(() => unanswered(server.tap).length === 0, "the bookmark answered");
-    const oldConn = agentRuns(server.tap, "game.bookmark")[0]?.conn;
-    await reloadAgent(live, createTinyGame);
-
-    // 3. the toast
-    await until(
-      () => toastTexts(live).includes("Game reloaded · state restored from the last checkpoint"),
-      "the restore toast"
-    );
-
-    const fixture = await readFile(STYLES_FIXTURE, "utf8");
-    const edited = await readFile(path.join(root, "features/ui/styles.ts"), "utf8");
-    const editedLines = edited.split("\n");
-    expect(fixture.split("\n").filter((line, index) => line !== editedLines[index])).toEqual([
-      "    size: 60,"
-    ]);
-    expect(server.written).toContainEqual(
-      expect.objectContaining({ path: "features/ui/styles.ts", kind: "style" })
-    );
-    const restores = agentRuns(server.tap, "game.restore");
-    expect(restores).toHaveLength(1);
-    expect(restores[0]?.conn).not.toBe(oldConn);
-    await live.game.frames(1);
-    expect(live.game.app.model.store.snapshot().player).toEqual({ coins: 5, visits: 1 });
-    await until(() => stateView.tainted() === true, "stateView tainted after the restore");
-
-    await attached(live);
-    const subsAfter = watchSubs(server.tap, reloadFrom);
-    expect(subsAfter.length).toBeGreaterThan(0);
-    expect(subsAfter.filter(sub => subsBefore.includes(sub))).toEqual([]);
-    expect(live.page.root.querySelectorAll("[data-stale]")).toHaveLength(0);
-    expect(
-      [...live.page.root.querySelectorAll<HTMLElement>("[data-panel-state]")].map(
-        panel => panel.dataset.panelState
-      )
-    ).not.toContain("stale");
-    expect(realErrors(...appsOf(live))).toEqual([]);
-    expect(unhandled?.list).toEqual([]);
-  });
-});
-
 describe("journey-tiny: pictures", () => {
   it("J4: capture, series, stopped series, previews and the contact sheet", async () => {
     const live = await liveStack({ agent: { png: PNG_1X1 } });
@@ -858,6 +759,9 @@ describe("journey-tiny: pictures", () => {
     expect(index.shots.map(shot => shot.file)).toEqual(
       Array.from({ length: series.shots }, (_, at) => `${String(at + 1).padStart(3, "0")}.png`)
     );
+    // A series ends like a screenshot (D-69): the toast and the card, no contact sheet by itself.
+    expect(toastTexts(live)).toContain(`✓ ${series.shots} shots saved · ${series.folder}`);
+    expect(workspace.host("game").querySelector('[data-game="sheet"]')).toBeNull();
     for (const shot of index.shots) {
       expect(await readFile(path.join(root, series.folder, shot.file))).toHaveProperty(
         "length",

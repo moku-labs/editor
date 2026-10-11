@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectionInfo } from "../../../registry/protocol";
-import { pickAt, pickProxy, selectElement } from "../../element/select";
+import { pickAt, selectElement } from "../../element/select";
 import { completePick } from "../../reference/pick";
 import { stubCanvas } from "../canvas";
 import {
@@ -165,8 +165,11 @@ describe("a pick publishes its card, crop and line", () => {
     stubCanvas({ width: 1179, height: 2556 });
   });
 
-  it("a proxy click: the element first, the pick last with its files and frame", async () => {
-    await pickProxy(ctx, "ui:boardScreen/hudRow/coinPill");
+  it("a pick of the selected element: the element first, the pick last with its files and frame", async () => {
+    selectElement(ctx, COIN);
+    const node = ctx.state.scene?.nodes.get("ui:boardScreen/hudRow/coinPill");
+    if (node === undefined || ctx.state.scene === undefined) throw new Error("fixture");
+    await completePick(ctx, node, ctx.state.scene);
     const last = published().at(-1);
     expect(published()[0]?.card).toBeUndefined();
     expect(last).toMatchObject({

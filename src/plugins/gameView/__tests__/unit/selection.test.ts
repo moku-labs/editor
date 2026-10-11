@@ -8,7 +8,8 @@ import {
   itemOf,
   projectionOf,
   selectionOf,
-  sourceAt
+  sourceAt,
+  withEdits
 } from "../../element/selection";
 import { sceneCapture } from "../helpers";
 import { boardScene } from "../ui";
@@ -95,6 +96,47 @@ describe("selectionOf", () => {
       }
     );
     expect(Object.keys(info).toSorted()).toEqual(["at", "frame", "name", "ref", "type"]);
+  });
+
+  it("carries the pending style edits of the element; none leaves the field out (U8)", () => {
+    const edits = [
+      { path: "minWidth", from: 556, to: 600 },
+      { path: "padding.top", from: 25, to: 30 }
+    ];
+    const facts = { ...FACTS, projections: BOARD.projections, source: undefined };
+    const info = selectionOf(nodeOf("ui:boardScreen/hudRow/coinPill"), { ...facts, edits });
+    expect(info.edits).toEqual(edits);
+    expect(isSelectionInfo(info)).toBe(true);
+
+    const none = selectionOf(nodeOf("ui:boardScreen/hudRow/coinPill"), { ...facts, edits: [] });
+    expect(none).not.toHaveProperty("edits");
+    expect(selectionOf(nodeOf("ui:boardScreen/hudRow/coinPill"), facts)).not.toHaveProperty(
+      "edits"
+    );
+  });
+});
+
+describe("withEdits", () => {
+  const info = selectionOf(nodeOf("ui:boardScreen/hudRow/coinPill"), {
+    ...FACTS,
+    projections: BOARD.projections,
+    source: undefined
+  });
+  const picked = { ...info, card: "a.md", line: "@moku coinPill row" };
+
+  it("sets the edits of a published selection and keeps everything else it says", () => {
+    const edits = [{ path: "width", from: 290, to: 320 }];
+    expect(withEdits(picked, edits)).toEqual({ ...picked, edits });
+    expect(withEdits({ ...picked, edits }, [{ path: "height", from: 76, to: 80 }]).edits).toEqual([
+      { path: "height", from: 76, to: 80 }
+    ]);
+  });
+
+  it("without edits the field is absent; a selection that had none is answered as it is", () => {
+    const cleared = withEdits({ ...picked, edits: [{ path: "width", from: 290, to: 320 }] }, []);
+    expect(cleared).toEqual(picked);
+    expect(cleared).not.toHaveProperty("edits");
+    expect(withEdits(picked, [])).toBe(picked);
   });
 });
 

@@ -20,7 +20,6 @@ export type IconName =
   | "search"
   | "theme"
   | "close"
-  | "logo"
   | "registry"
   | "commands"
   | "open"
@@ -34,7 +33,6 @@ export type IconName =
   | "fit-selection"
   | "history"
   | "code"
-  | "styles"
   | "target"
   | "flame"
   | "more";
@@ -61,7 +59,6 @@ const PATHS: Readonly<Record<IconName, string>> = {
   search: "M7 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM10 10l3.5 3.5",
   theme: "M13 9.5A5.5 5.5 0 1 1 6.5 3a4.5 4.5 0 0 0 6.5 6.5z",
   close: "M4 4l8 8M12 4l-8 8",
-  logo: "M3 12.5v-9l5 5 5-5v9",
   registry: "M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z",
   commands:
     "M6 4.5a1.5 1.5 0 1 0-1.5 1.5H11.5A1.5 1.5 0 1 0 10 4.5v7a1.5 1.5 0 1 0 1.5-1.5h-7A1.5 1.5 0 1 0 6 11.5z",
@@ -75,7 +72,6 @@ const PATHS: Readonly<Record<IconName, string>> = {
   "fit-all": "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10",
   "fit-selection": "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10M6.5 6.5h3v3h-3z",
   code: "M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5",
-  styles: "M3 13l1-3.5L10.5 3 13 5.5 6.5 12zM9 4.5l2.5 2.5",
   history: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v3.2l2 1.3",
   target:
     "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM8 1v2M8 13v2M1 8h2M13 8h2",

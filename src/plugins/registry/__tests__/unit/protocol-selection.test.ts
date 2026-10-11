@@ -18,7 +18,9 @@ import type {
   SelectionRef,
   SelectParams,
   SessionParams,
-  SessionsParams
+  SessionsParams,
+  StyleEdit,
+  StyleValue
 } from "../../protocol";
 import {
   decode,
@@ -110,6 +112,35 @@ const entity: SelectionInfo = {
   at: 1
 };
 
+/** The homePlay button with two pending style edits (U8). */
+const edited: SelectionInfo = {
+  ref: { kind: "ui", path: "column#0/homePlay" },
+  key: "homePlay",
+  name: "homePlay",
+  type: "button",
+  source: { path: "features/stage/views/home-screen.tsx", line: 199 },
+  edits: [
+    { path: "minWidth", from: 556, to: 600 },
+    { path: "padding.top", from: 25, to: 30 }
+  ],
+  at: 1
+};
+
+/** The bad `edits` values: each one makes the whole selection wrong. */
+const badEdits: [string, unknown][] = [
+  ["not an array", { 0: { path: "minWidth", from: 556, to: 600 } }],
+  ["an entry that is not an object", ["minWidth"]],
+  ["an entry without a path", [{ from: 556, to: 600 }]],
+  ["an entry with an empty path", [{ path: "", from: 556, to: 600 }]],
+  ["an entry with a number path", [{ path: 1, from: 556, to: 600 }]],
+  ["an entry without a from", [{ path: "minWidth", to: 600 }]],
+  ["an entry whose to is an object", [{ path: "padding", from: 25, to: { top: 30 } }]],
+  ["an entry whose from is null", [{ path: "minWidth", from: null, to: 600 }]],
+  ["an entry whose to is NaN", [{ path: "minWidth", from: 556, to: Number.NaN }]],
+  ["a bad entry after a good one", [{ path: "minWidth", from: 556, to: 600 }, { path: "gap" }]],
+  ["edits present but undefined", undefined]
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // isSelectionInfo
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +231,22 @@ describe("isSelectionInfo", () => {
     expect(isSelectionInfo({ ...picked, ...patch })).toBe(false);
   });
 
+  it("accepts pending edits of number, string and boolean values, and an empty list", () => {
+    const mixed = [
+      { path: "justify", from: "center", to: "start" },
+      { path: "wrap", from: false, to: true },
+      { path: "gap", from: 0, to: "auto" }
+    ];
+
+    expect(isSelectionInfo(edited)).toBe(true);
+    expect(isSelectionInfo({ ...edited, edits: mixed })).toBe(true);
+    expect(isSelectionInfo({ ...edited, edits: [] })).toBe(true);
+  });
+
+  it.each(badEdits)("rejects edits with %s", (_label, edits) => {
+    expect(isSelectionInfo({ ...edited, edits })).toBe(false);
+  });
+
   it("narrows the value to SelectionInfo", () => {
     const value: unknown = JSON.parse(pickedText);
 
@@ -274,6 +321,47 @@ describe("parseSelectionInfo", () => {
 
   it("keeps an empty item list", () => {
     expect(parseSelectionInfo(emptyArea)).toEqual(emptyArea);
+  });
+
+  it("keeps valid edits, fresh, in their order", () => {
+    const copy = parseSelectionInfo(edited);
+
+    expect(copy).toEqual(edited);
+    expect(copy?.edits).toEqual([
+      { path: "minWidth", from: 556, to: 600 },
+      { path: "padding.top", from: 25, to: 30 }
+    ]);
+    expect(copy?.edits).not.toBe(edited.edits);
+    expect(copy?.edits?.[0]).not.toBe(edited.edits?.[0]);
+  });
+
+  it("drops the unknown fields of an edit", () => {
+    const copy = parseSelectionInfo({
+      ...edited,
+      edits: [{ path: "justify", from: "center", to: "start", unit: "px", at: 4 }]
+    });
+
+    expect(copy?.edits).toEqual([{ path: "justify", from: "center", to: "start" }]);
+  });
+
+  it("drops an empty edits list: the field is absent", () => {
+    const copy = parseSelectionInfo({ ...minimal, edits: [] });
+
+    expect(copy).toEqual(minimal);
+    expect(Object.keys(copy ?? {})).toEqual(["ref", "name", "type", "at"]);
+  });
+
+  it.each(badEdits)("returns undefined for edits with %s", (_label, edits) => {
+    expect(parseSelectionInfo({ ...edited, edits })).toBeUndefined();
+  });
+
+  it("the copy of an edited element survives toWireValue, encode and decode", () => {
+    const copy = parseSelectionInfo(edited);
+    if (copy === undefined) throw new Error("expected a selection");
+
+    const message = decode(encode(notification("editor", "selection", toWireValue(copy))));
+
+    expect("params" in message && parseSelectionInfo(message.params)).toEqual(edited);
   });
 
   it("returns undefined for a value that is not a selection", () => {
@@ -420,6 +508,24 @@ describe("selection types", () => {
     expectTypeOf<SelectionItem>().toExtend<Json>();
 
     expect(area.items).toHaveLength(2);
+  });
+
+  it("SelectionInfo carries optional edits of StyleEdit", () => {
+    expectTypeOf<StyleValue>().toEqualTypeOf<number | string | boolean>();
+    expectTypeOf<StyleEdit>().toEqualTypeOf<{
+      readonly path: string;
+      readonly from: StyleValue;
+      readonly to: StyleValue;
+    }>();
+    expectTypeOf<SelectionInfo["edits"]>().toEqualTypeOf<readonly StyleEdit[] | undefined>();
+    expectTypeOf<StyleEdit>().toExtend<Json>();
+
+    const edit: StyleEdit = { path: "minWidth", from: 556, to: 600 };
+    expect(edited.edits).toHaveLength(2);
+    // @ts-expect-error -- an edit is readonly
+    edit.to = 620;
+
+    expect(edit.to).toBe(620);
   });
 
   it("SelectParams has an optional key, ref, rect and card", () => {

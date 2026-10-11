@@ -46,7 +46,7 @@ export function createFlowViewState(_ctx: {
       timers: new Set(),
       files: undefined,
       removers: [],
-      palette: { nodes: undefined, styles: undefined }
+      palette: { nodes: undefined }
     }
   };
 }

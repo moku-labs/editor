@@ -82,8 +82,6 @@ export type ToolsEvents = {
   "workspace:ran": RanEvent;
   /** The applied density changed (a choice, or `auto` crossing 820 px of window width). */
   "workspace:density": { density: Density };
-  /** Reference mode turned on or off (gameView shows its element proxies while on). */
-  "workspace:reference": { on: boolean };
   /** Open a file in the Files workspace (filesView hooks it). */
   "workspace:open-file": { path: string; line?: number };
   /** Focus a node in the Flow workspace (flowView hooks it). */
