@@ -13,10 +13,10 @@
         "@arethetypeswrong/core": "0.18.3",
         "@axe-core/playwright": "4.13.0",
         "@biomejs/biome": "2.4.16",
-        "@moku-labs/ci": "1.5.5",
-        "@moku-labs/common": "0.3.7",
-        "@moku-labs/core": "1.7.5",
-        "@moku-labs/game": "0.14.6",
+        "@moku-labs/ci": "1.5.7",
+        "@moku-labs/common": "0.3.10",
+        "@moku-labs/core": "1.7.6",
+        "@moku-labs/game": "0.14.9",
         "@playwright/test": "1.63.0",
         "@types/bun": "1.4.2",
         "@vitest/coverage-istanbul": "4.0.18",
@@ -204,13 +204,13 @@
 
     "@loaderkit/resolve": ["@loaderkit/resolve@1.0.6", "", { "dependencies": { "@braidai/lang": "^1.0.0" } }, "sha512-G8FdIoF5CypfwmD9rl8BXod5HDn8JqB0CCNBXDTaRZ+yRYhARrrSToX1zg1zy9jX3zLqigsELwhT4gNtkdQAUg=="],
 
-    "@moku-labs/ci": ["@moku-labs/ci@1.5.5", "", { "bin": { "moku-release": "dist/release.mjs" } }, "sha512-1hIR3h8v2FisW94SQe/pbz0taVx634su5Y178cUR9uCtqbTGKUYcjjAwz9zTA9wb3T520UhPEreudGuaAOZVYQ=="],
+    "@moku-labs/ci": ["@moku-labs/ci@1.5.7", "", { "bin": { "moku-release": "dist/release.mjs" } }, "sha512-YiloZ86RVPjpFFqk7yTzlHvNArZkGv7NzURKJsc1eILrL2HSrYIZM8L/3KucuQmaiX+E+Drwyn6bIAI9OadxQQ=="],
 
-    "@moku-labs/common": ["@moku-labs/common@0.3.7", "", { "peerDependencies": { "@moku-labs/core": "^1.7.1" } }, "sha512-cbrZ8XEVC78xVzQo4Yuulmct/rEa3ov/tARtkbHQInvgN79xhxJApSQZaONmG6w2fLqK4xq5L86l6IIyTDRLTA=="],
+    "@moku-labs/common": ["@moku-labs/common@0.3.10", "", { "peerDependencies": { "@moku-labs/core": "^1.7.1" } }, "sha512-KMDbT6dAomEMM0YPQibVlY+ndDWL2JlGmaBjN3JH5Rxy5e4ZprwTqXUciEYoyPnKRciLe4Liu3/CGfV4K3z6hA=="],
 
-    "@moku-labs/core": ["@moku-labs/core@1.7.5", "", {}, "sha512-mLuHHqvEssCwO/ZkvoiPLO/SHc/xVHQ52XxQzq8IuLcMIbRZe6HfCEgB6QGdcR6PnJ8NTcDaYNRejumC03ocWw=="],
+    "@moku-labs/core": ["@moku-labs/core@1.7.6", "", {}, "sha512-CdCxX/9zwJ9Czv45I/CmDuV8sV1r9uiOSfUzckD3MZC8eumO1QcT4PY4yiSXd0zspsTgdsntFxfDHkUUYVp5Iw=="],
 
-    "@moku-labs/game": ["@moku-labs/game@0.14.6", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.2", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.0.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-wVCXRxO6oBv7ggJOeVSeTO9sKwxT/peHFuR/EuXnsnmpMOf0Tdn8IdKIMjj2sOf+v4NClAy9deK6lwZxuCKQTw=="],
+    "@moku-labs/game": ["@moku-labs/game@0.14.9", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.2", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.0.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-QyLm1KaO9324h5zKJVpV6axg92QAUZKww6q1vwiPQWfwYhG1emZyyUR0trvJ02KkDHzEnUvxHF8xgN4+zFB9SQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
