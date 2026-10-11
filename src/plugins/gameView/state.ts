@@ -15,7 +15,8 @@ const DEFAULT_INTERVAL_MS = 100;
 
 /**
  * Creates the initial gameView state: Element tab, fit, safe area on, picker off, nothing read,
- * no area press and no marquee, no pick bookmarks, nothing published, no pending style edits.
+ * no area press and no marquee, no pick bookmarks, nothing published, no pending style edits, no
+ * text style block.
  *
  * @returns A fresh state for one app.
  */
@@ -66,7 +67,8 @@ export function createGameViewState(): GameViewState {
     bookmarks: [],
     pick: undefined,
     selection: undefined,
-    edits: new Map()
+    edits: new Map(),
+    textStyle: undefined
   };
 }
 

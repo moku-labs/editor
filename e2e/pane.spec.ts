@@ -6,7 +6,8 @@
  * toolbar off a pick only selects the element and writes nothing, and an area drag picks nothing,
  * D-70; Copy reference with the one line of round 2b R13 that names the card
  * holding the reference block of round 2; the Styles fields of the Element tab with their pending
- * edits and "Copy for agent"), the Element tab bounds of homeBackground after a reload and after a
+ * edits and "Copy for agent"; the Text style section of a text with the edit of its style key,
+ * D-73), the Element tab bounds of homeBackground after a reload and after a
  * device change, the source of levelPanel, Flow following a Comes from edge (both ends framed,
  * the pulse, Alt+← back), find current (C), the Info and Code tabs of the Flow inspector, and the
  * side panels of Flow, Game and Files (collapse, resize, close, reopen; a drawer below 600 px).
@@ -25,6 +26,9 @@ import { showPreview } from "./top-bar";
 
 /** The view module of the tiny game, root-relative: it defines every keyed element. */
 const VIEW_FILE = "features/tiny/view.tsx";
+
+/** The feature module of the tiny game, root-relative: it defines the text styles. */
+const FEATURE_FILE = "features/tiny/index.ts";
 
 /** The level panel the source and reference checks pick. */
 const PANEL_KEY = "levelPanel";
@@ -1084,6 +1088,64 @@ test.describe("pane · element picker", () => {
     await expect(tab.locator("[data-part=style] [data-edited]")).toHaveCount(0);
     await expect(width.locator("s")).toHaveCount(0);
     await expect(width.locator("[data-action=reset-edit]")).toHaveCount(0);
+  });
+
+  // The engine sends the text style key of a text (`UiNode.textStyle`, game 0.14.11). The tab
+  // shows the block of that key from the text styles file; an edit there belongs to the key, not
+  // to the node, so the agent text names the key and its block (D-73).
+  test("text style: a text shows the fields of its style key; an edit is counted and copied as the block of the key", async ({
+    tools
+  }) => {
+    const page = tools.page;
+    const feature = await readFile(path.join(gameRoot(), FEATURE_FILE), "utf8");
+    const keyAt = feature.split("\n").findIndex(row => row.includes('"tiny.title":')) + 1;
+    expect(keyAt, `${FEATURE_FILE} defines tiny.title`).toBeGreaterThan(0);
+    await showGame(tools);
+    await expect.poll(() => gamePath(page)).toBe("home");
+    const drawn = await settledRect(page, "homeLogo");
+    await pickIn(page, await toClient(page, drawn), /^homeLogo · /);
+    await expandSide(page, "game.side");
+    const tab = elementTab(page);
+    await expect(tab.locator("[data-part=name]")).toHaveText("homeLogo");
+
+    // The section of the key: its title, where its block is, one row per field of the block.
+    const section = tab.locator("section[data-part=text-style]");
+    await expect(section.locator("h4")).toHaveText("Text style · tiny.title");
+    await expect(section.locator("[data-part=where]")).toHaveText(`${FEATURE_FILE}:${keyAt}`);
+    await expect(section.locator("dt")).toHaveText(["font", "size", "fill", "align"]);
+
+    // A number and a quoted string are fields; a colour constant is read-only text.
+    const size = section.locator('[data-part=field][data-path="size"]');
+    const input = size.locator("input[type=number]");
+    await expect(input).toHaveValue("96");
+    await expect(section.locator('[data-path="align"] input[type=text]')).toHaveValue("center");
+    await expect(section.locator('[data-row="fill"] dd')).toHaveText("white");
+    await expect(section.locator('[data-row="fill"] input')).toHaveCount(0);
+    await expect(editsBar(page)).toHaveCount(0);
+
+    // An edit: the field and its row are marked, the file value is struck, the bar counts it.
+    await input.fill("88");
+    await input.press("Enter");
+    await expect(size).toHaveAttribute("data-edited", "");
+    await expect(section.locator('[data-row="size"]')).toHaveAttribute("data-edited", "");
+    await expect(input).toHaveValue("88");
+    await expect(size.locator("s")).toHaveText("96");
+    await expect(editsBar(page).locator("[data-part=count]")).toHaveText("1 edit");
+
+    // Copy for agent: the block of the style key, at its block in the file.
+    await page.evaluate(text => navigator.clipboard.writeText(text), SENTINEL);
+    await editsBar(page).locator("[data-action=copy-edits]").click();
+    await expect.poll(() => clipboardText(page)).toMatch(/^@moku textStyle tiny\.title /);
+    const copied = await clipboardText(page);
+    expect(copied.split("\n")).toEqual([
+      `@moku textStyle tiny.title · ${FEATURE_FILE}:${keyAt}`,
+      "size: 96 -> 88"
+    ]);
+
+    // Clear drops it: no mark, no bar.
+    await editsBar(page).locator("[data-action=clear-edits]").click();
+    await expect(editsBar(page)).toHaveCount(0);
+    await expect(section.locator("[data-edited]")).toHaveCount(0);
   });
 
   // The page loads preact/compat, where `onChange` of a typed input fires on every keystroke. A

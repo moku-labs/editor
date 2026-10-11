@@ -4570,7 +4570,8 @@ export type LayoutApi = {
 - Stage (round 2b R9): Fit is one scale per device kind, the scale that fits the tallest preset of the kind with its bezel (phones include foldables; tablets and the desktop have their own), and the screen shown always fits; 100 % is 1 CSS px per px. The bezel (`data-frame` on `[data-part="bezel"]`) follows `DeviceSpec.frame`: `modern` 10 px all round with the island and home bar guides; `home-button` 64 px above and below, 10 px at the sides, a square screen (`--screen-radius: 0px`) and a 44 px round `[data-part="home-button"]` in the bottom bezel (the right one in landscape), no island and no home bar.
 - Code section (round 2b R12, `data-part="code"` in the Element tab): a ui element's JSX (the range the index answers for its key, from the line that opens its tag to the one that closes it) and the `defineStyle` block of `style={ident}`, each with `file:line`, Open in Files and the shared highlighter, 20 lines then "Show all N lines"; an entity: "Spawned by <projection> · <file:line>" (the `name: "<key>"` line inside a `projection({…})` call) and its components with short values (48 characters). A text style key (`style="ui.link"`) and a style call get no style snippet.
 - Capture card (round 2b R14, `[data-game="card"]`): grid `56px minmax(0, 1fr) auto`; the thumbnail, one line each for the title ("✓ Screenshot saved", "✓ 20 shots saved"), the path cut in the middle (36 characters; the whole path in `title`) and `f<frame> · <device>`, then Copy link (`shot: <path>` / `series: <dir>/ (<n> frames)`), Open (Files, or the contact sheet of a series) and, after a pick, Reference; × closes. At most 360 px wide and 120 px tall; at 480 px of window it takes the width less 24. A screenshot, a pick and a series each show it; it hides after `captureCardMs` unless hovered or focused, and it is an Esc layer above the picker. A series ends like a screenshot (D-69): the recording popover closes, the card shows its first shot, `series: <folder> (<n> frames)` is on the clipboard and the toast says "✓ N shots saved"; the contact sheet opens only on request: `openSheet(indexPath)`, the `workspace:open-sheet` hook (Files) or Open on the series card.
-- Styles fields and pending edits (U8, D-67; `section[data-part="style"]` in the Element tab): every entry of the element's scene style is a row of fields: a number is `<input type="number" step="1">`, a string `<input type="text">`, a boolean a checkbox, a record of those three (padding) one field per leaf with the path `<key>.<leaf>`; anything else is read-only text. A number or text field commits on Enter or on blur, a select and a checkbox on `change`, through `editStyle(path, to)`; Esc restores the shown value and commits nothing; an empty or non-numeric number field commits nothing. A row with a pending edit carries `data-edited` and shows the edited value, the scene value struck before it (`<s>556</s>`) and a reset button (`×`, `data-action="reset-edit"`). While any element has an edit, the edits bar `div[data-part="edits"]` shows "N edits · M elements" (the elements only above one), "Copy for agent" (`data-action="copy-edits"`, `copyEdits()`) and "Clear" (`clearEdits("all")`). The game does not change: no file is written and no command is sent; the edit is kept per element (the ui key, else the node id) and not persisted across a page load. An edit resolves by itself: on every new scene snapshot an edit whose scene value equals `to` is dropped (the agent wrote the code and hot reload brought it in). A new game session drops the entries kept by node id. The agent text (`editsText` in `element/edits.ts`): one block per element, the selected one first, blocks separated by one empty line; the head is `@moku <label>` plus ` · <path>:<line>` when the index answered the key (`@moku homePlay · features/stage/views/home-screen.tsx:199`), then one line per edit (`minWidth: 556 -> 600`, `padding.top: 25 -> 30`); strings in double quotes, numbers and booleans bare. The selected element's edits also go out as `SelectionInfo.edits`.
+- Styles fields and pending edits (U8, D-67; `section[data-part="style"]` in the Element tab): every entry of the element's scene style is a row of fields: a number is `<input type="number" step="1">`, a string `<input type="text">`, a boolean a checkbox, a record of those three (padding) one field per leaf with the path `<key>.<leaf>`; anything else is read-only text. A number or text field commits on Enter or on blur, a select and a checkbox on `change`, through `editStyle(path, to)`; Esc restores the shown value and commits nothing; an empty or non-numeric number field commits nothing. A row with a pending edit carries `data-edited` and shows the edited value, the scene value struck before it (`<s>556</s>`) and a reset button (`×`, `data-action="reset-edit"`). While any element has an edit, the edits bar `div[data-part="edits"]` shows "N edits · M elements" (the elements only above one), "Copy for agent" (`data-action="copy-edits"`, `copyEdits()`) and "Clear" (`clearEdits("all")`). The game does not change: no file is written and no command is sent; the edit is kept per element (the ui key, else the node id) and not persisted across a page load. An edit resolves by itself: on every new scene snapshot an edit whose scene value equals `to` is dropped (the agent wrote the code and hot reload brought it in). A new game session drops the entries kept by node id. The agent text (`editsText` in `element/edits.ts`): one block per element, the selected one first, then one block per text style key, blocks separated by one empty line; the head is `@moku <label>` plus ` · <path>:<line>` when the index answered the key (`@moku homePlay · features/stage/views/home-screen.tsx:199`), then one line per edit (`minWidth: 556 -> 600`, `padding.top: 25 -> 30`); strings in double quotes, numbers and booleans bare. The selected element's edits also go out as `SelectionInfo.edits`.
+- Text style section (D-73; `section[data-part="text-style"]` inside the Styles section, above the edits bar): the engine sends the text style key a `text` was given (`UiNode.textStyle`, `@moku-labs/game` 0.14.11) and the scene keeps it as `SceneNode.textStyle` (a non-empty string; anything else is dropped; absent on an older engine, which shows no section). The block of the key is read through the project index (`find("textStyle:<key>")`, `findFresh`) and parsed with `parseStyleFile` / `findBlock` (kind `text`) of `panels/shared/style-edit`; `state.textStyle` holds it (`TextStyleCard`: `searching`, `missing`, or `found` with `path`, `line`, `version` and `rows`). The section is titled "Text style · <key>", shows `<path>:<line>` with "Open in Files" and one row per field of the block: a number literal and a quoted string are fields like the Styles rows (the same component: Enter or blur commits, Esc restores, `data-edited`, the file value struck, a reset); any other value (an identifier, a token such as `colors.cream`, a boolean, a call) is read-only text. A string is always a text field here: the enum table is the one of an element's style. A key the index does not know shows `Not in the project index: textStyle:<key>` (or why the index is off) and no fields. An edit is a pending edit of the style key, not of the node: the entry of `state.edits` has the map key `textStyle:<key>`, `label` `textStyle <key>`, `source` the path and line of the block, `byId: false`, and `from` is the value in the file; every text node with the key shows the same edits. It resolves when the block read again has the `to` value: the block is read on selection and on a `link:project` delta that touches its file (also for a key with pending edits while another element is selected). The agent text gets one block per style key after the element blocks (`@moku textStyle ui.button · shared/styles/text.ts:88`, then `size: 105 -> 96`). `SelectionInfo.edits` of a selected text node also carries the edits of its key with the path `textStyle:<key>.<field>` (`textStyle:ui.button.size`); the edits bar counts them like any other edit; `clearEdits("selected")` on a text node drops its own edits and the ones of its key. The "Style · <key>" line of an empty scene style and the Code section's text style snippet use `SceneNode.textStyle` when the JSX lookup of the node gave no text style (a key built in code). Log (warn): `gameView: text style failed`.
 - The Element panel is a `SidePanel` (panels/shared/side-panel). Notes and the attach api are gone (no `attach`, `notes`, `notesDir`, `workspace:new-note`).
 - Events: emits `workspace:reveal`, `workspace:open-file`; hooks `link:status`, `link:project`, `workspace:changed`, `workspace:open-sheet`, `workspace:inspect`.
 
@@ -4910,8 +4911,9 @@ export type GameViewApi = {
   editStyle(path: string, to: StyleValue): void;
 
   /**
-   * Drops pending style edits: the ones of the selected element, or all of them. The selection
-   * is published again without them.
+   * Drops pending style edits: the ones of the selected element, or all of them. The edits of a
+   * selected text node are its own and the ones of its text style key (D-73). The selection is
+   * published again without them.
    *
    * @param scope - `"selected"` for the selected element only; `"all"` (the default) for every element.
    * @example
@@ -4925,9 +4927,11 @@ export type GameViewApi = {
   clearEdits(scope?: "selected" | "all"): void;
 
   /**
-   * Every pending style edit, one entry per element, the selected element first. An edit leaves
-   * by itself when a scene snapshot shows its `to` value: the agent wrote the code and hot reload
-   * brought it in. A game reload drops the entries of elements without a ui key.
+   * Every pending style edit, one entry per element, the selected element first, then one entry
+   * per text style key (label `textStyle <key>`, D-73). An edit leaves by itself when a scene
+   * snapshot shows its `to` value: the agent wrote the code and hot reload brought it in. The
+   * edit of a text style key leaves when its block, read again, has the `to` value. A game
+   * reload drops the entries of elements without a ui key.
    *
    * @returns A copy of the list.
    * @example
@@ -4936,15 +4940,19 @@ export type GameViewApi = {
    * const count = app.gameView.edits().reduce((sum, entry) => sum + entry.edits.length, 0);
    * app.gameView.edits()[0];
    * // { label: "homePlay", source: { path: "features/stage/views/home-screen.tsx", line: 199 }, byId: false, edits: [ … ] }
+   * // After the size of the text style key ui.button was changed in the Element tab:
+   * app.gameView.edits().at(-1);
+   * // { label: "textStyle ui.button", source: { path: "shared/styles/text.ts", line: 88 }, byId: false, edits: [{ path: "size", from: 105, to: 96 }] }
    * ```
    */
   edits(): readonly ElementEdits[];
 
   /**
    * Puts the pending edits on the clipboard as text for the agent, toast "✓ 2 edits copied": one
-   * block per element, the selected one first, blocks separated by one empty line. The head is
-   * `@moku <label>` plus ` · <path>:<line>` when the source is known; then one line per edit.
-   * Strings are written in double quotes, numbers and booleans bare.
+   * block per element, the selected one first, then one block per text style key (D-73), blocks
+   * separated by one empty line. The head is `@moku <label>` plus ` · <path>:<line>` when the
+   * source is known; then one line per edit. Strings are written in double quotes, numbers and
+   * booleans bare.
    *
    * @returns The text; undefined without edits, or when the clipboard refused (toasted).
    * @example
@@ -4952,6 +4960,8 @@ export type GameViewApi = {
    * // "Copy for agent" in the Element tab, after the two edits of homePlay.
    * await app.gameView.copyEdits();
    * // "@moku homePlay · features/stage/views/home-screen.tsx:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30"
+   * // With the size of the text style key ui.button changed too, its block comes last:
+   * // "@moku homePlay · …:199\nminWidth: 556 -> 600\npadding.top: 25 -> 30\n\n@moku textStyle ui.button · shared/styles/text.ts:88\nsize: 105 -> 96"
    * ```
    */
   copyEdits(): Promise<string | undefined>;
@@ -4982,7 +4992,8 @@ export type PickBookmark = {
  * The pending style edits of one element (U8, D-67): values the person changed in the Styles
  * fields of the Element tab and the source file does not have yet. They go to the agent as text
  * (`copyEdits`) and in the published selection (`SelectionInfo.edits`); the editor writes no code
- * for them.
+ * for them. The pending edits of a text style key (D-73) are an entry of the same shape: the key
+ * styles many text nodes, so the edit belongs to the key, not to a node.
  *
  * @example
  * ```ts
@@ -4992,12 +5003,24 @@ export type PickBookmark = {
  *   byId: false,
  *   edits: [{ path: "minWidth", from: 556, to: 600 }, { path: "padding.top", from: 25, to: 30 }]
  * };
+ * const button: ElementEdits = {
+ *   label: "textStyle ui.button",
+ *   source: { path: "shared/styles/text.ts", line: 88 },
+ *   byId: false,
+ *   edits: [{ path: "size", from: 105, to: 96 }]
+ * };
  * ```
  */
 export type ElementEdits = {
-  /** The ui key, else the node name: the head of the element's block in the agent text. */
+  /**
+   * The head of the block in the agent text: the ui key, else the node name; `textStyle <key>`
+   * for a text style key.
+   */
   readonly label: string;
-  /** Where the index says the element is written; absent without an answer. */
+  /**
+   * Where the index says the element is written, or where the block of the text style key is;
+   * absent without an answer.
+   */
   readonly source?: { readonly path: string; readonly line: number };
   /** True when the map key is a node id: such an entry does not survive a game reload. */
   readonly byId: boolean;

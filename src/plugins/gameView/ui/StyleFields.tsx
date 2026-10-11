@@ -9,15 +9,19 @@
  * the scene value struck and a reset. Under the rows the bar counts the pending edits of every
  * element, copies them for the agent and clears them. The game does not change: nothing is
  * written and no command runs.
+ *
+ * The same fields edit the block of a text style key (D-73, `TextStyleSection`): every field
+ * knows what its edit belongs to (`EditOwner`) and commits through `editValue`.
  */
 import type { VNode } from "preact";
 import { useRef } from "preact/hooks";
 import type { SceneNode } from "../../panels/shared/scene";
 import type { Json, StyleEdit, StyleValue } from "../../registry/protocol";
-import { clearEdits, copyEdits, editStyle, listEdits } from "../element/edit-style";
+import { clearEdits, copyEdits, editValue, listEdits } from "../element/edit-style";
 import {
   countText,
   type EditField,
+  type EditOwner,
   editFields,
   editKey,
   editsOf,
@@ -28,10 +32,17 @@ import type { GameViewCtx } from "../types";
 import { styleValue } from "./text";
 
 /**
- * Props of one field: the context, the field and its pending edit, if any.
+ * The owner of the Styles rows: the selected element.
+ */
+const NODE: EditOwner = { kind: "node" };
+
+/**
+ * Props of one field: the context, what its edit belongs to, the field and its pending edit, if
+ * any.
  */
 type FieldProps = {
   readonly ctx: GameViewCtx;
+  readonly owner: EditOwner;
   readonly field: EditField;
   readonly edit: StyleEdit | undefined;
 };
@@ -66,18 +77,20 @@ function typedValue(typed: string, shown: number | string): StyleValue | undefin
  * keystroke. The draft is a ref, not state: a blur right after Enter or Esc, before the next
  * render, has to find it gone.
  *
- * @param props - The context, the path and the value the field shows.
+ * @param props - The context, the owner, the path and the value the field shows.
  * @param props.ctx - Domain context of gameView.
+ * @param props.owner - What the edit belongs to.
  * @param props.path - The style path, also the control's accessible name.
  * @param props.shown - The pending value, else the scene value.
  * @returns The input.
  */
 function TypedInput(props: {
   readonly ctx: GameViewCtx;
+  readonly owner: EditOwner;
   readonly path: string;
   readonly shown: number | string;
 }): VNode {
-  const { ctx, path, shown } = props;
+  const { ctx, owner, path, shown } = props;
   const draft = useRef<string>();
   const isNumber = typeof shown === "number";
 
@@ -102,7 +115,7 @@ function TypedInput(props: {
     if (typed === undefined) return;
     settle(input);
     const next = typedValue(typed, shown);
-    if (next !== undefined) editStyle(ctx, path, next);
+    if (next !== undefined) editValue(ctx, owner, path, next);
   };
 
   return (
@@ -127,8 +140,9 @@ function TypedInput(props: {
  * The select of an enum style property: one option per value. A choice (`change`) commits the
  * edit at once.
  *
- * @param props - The context, the path, the value the select shows and its options.
+ * @param props - The context, the owner, the path, the value the select shows and its options.
  * @param props.ctx - Domain context of gameView.
+ * @param props.owner - What the edit belongs to.
  * @param props.path - The style path, also the control's accessible name.
  * @param props.shown - The pending value, else the scene value.
  * @param props.options - The engine's values, with the scene value when it is none of them.
@@ -136,16 +150,17 @@ function TypedInput(props: {
  */
 function EnumSelect(props: {
   readonly ctx: GameViewCtx;
+  readonly owner: EditOwner;
   readonly path: string;
   readonly shown: string;
   readonly options: readonly string[];
 }): VNode {
-  const { ctx, path, shown, options } = props;
+  const { ctx, owner, path, shown, options } = props;
   return (
     <select
       aria-label={path}
       value={shown}
-      onChange={event => editStyle(ctx, path, event.currentTarget.value)}
+      onChange={event => editValue(ctx, owner, path, event.currentTarget.value)}
     >
       {options.map(option => (
         <option key={option} value={option}>
@@ -158,32 +173,38 @@ function EnumSelect(props: {
 
 /**
  * The control of one field, by its kind (`fieldKind`): a checkbox, a select for an enum
- * property, a number field or a text field.
+ * property, a number field or a text field. The enums are the ones of an element's style: a
+ * string of a text style key is always a text field.
  *
- * @param props - The context, the field and the value it shows.
+ * @param props - The context, the owner, the field and the value it shows.
  * @param props.ctx - Domain context of gameView.
+ * @param props.owner - What the edit belongs to.
  * @param props.field - The field: its path is also the control's accessible name.
  * @param props.shown - The pending value, else the scene value.
  * @returns The control.
  */
 function FieldInput(props: {
   readonly ctx: GameViewCtx;
+  readonly owner: EditOwner;
   readonly field: EditField;
   readonly shown: StyleValue;
 }): VNode {
-  const { ctx, field, shown } = props;
+  const { ctx, owner, field, shown } = props;
   const { path } = field;
-  if (typeof shown === "string" && fieldKind(field, shown) === "select") {
+  const isEnum = owner.kind === "node" && fieldKind(field, shown) === "select";
+  if (typeof shown === "string" && isEnum) {
     const options = selectOptions(field, shown);
-    return <EnumSelect ctx={ctx} path={path} shown={shown} options={options} />;
+    return <EnumSelect ctx={ctx} owner={owner} path={path} shown={shown} options={options} />;
   }
-  if (typeof shown !== "boolean") return <TypedInput ctx={ctx} path={path} shown={shown} />;
+  if (typeof shown !== "boolean") {
+    return <TypedInput ctx={ctx} owner={owner} path={path} shown={shown} />;
+  }
   return (
     <input
       type="checkbox"
       aria-label={path}
       checked={shown}
-      onChange={event => editStyle(ctx, path, event.currentTarget.checked)}
+      onChange={event => editValue(ctx, owner, path, event.currentTarget.checked)}
     />
   );
 }
@@ -192,24 +213,24 @@ function FieldInput(props: {
  * One field: the leaf name of a nested value, the control and, with a pending edit, the scene
  * value struck before it and the reset that removes the edit.
  *
- * @param props - The context, the field and its pending edit.
+ * @param props - The context, the owner, the field and its pending edit.
  * @returns The field.
  */
 function StyleFieldView(props: FieldProps): VNode {
-  const { ctx, field, edit } = props;
+  const { ctx, owner, field, edit } = props;
   const { path, label, value } = field;
   return (
     <span data-part="field" data-path={path} data-edited={edit === undefined ? undefined : ""}>
       {label !== undefined && <span data-part="leaf">{label}</span>}
       {edit !== undefined && <s>{String(value)}</s>}
-      <FieldInput ctx={ctx} field={field} shown={edit?.to ?? value} />
+      <FieldInput ctx={ctx} owner={owner} field={field} shown={edit?.to ?? value} />
       {edit !== undefined && (
         <button
           type="button"
           data-action="reset-edit"
           title={`Reset to ${value}`}
           aria-label={`Reset ${path} to ${value}`}
-          onClick={() => editStyle(ctx, path, value)}
+          onClick={() => editValue(ctx, owner, path, value)}
         >
           ×
         </button>
@@ -219,23 +240,42 @@ function StyleFieldView(props: FieldProps): VNode {
 }
 
 /**
- * One row of the Styles list: the style key and its fields, or its read-only text.
+ * Props of one row: the context, what its edits belong to, its name, its fields (undefined for a
+ * read-only row, which shows `text`) and the pending edits of the owner.
  *
- * @param props - The context, the entry and the pending edits of the element.
- * @param props.ctx - Domain context of gameView.
- * @param props.name - The style key.
- * @param props.value - Its value in the scene.
- * @param props.edits - The pending edits of the element.
- * @returns The row.
+ * @example
+ * ```tsx
+ * <StyleRow ctx={ctx} owner={{ kind: "textStyle", key: "ui.button" }} name="size" fields={[{ path: "size", label: undefined, value: 105 }]} text="105" edits={edits} />
+ * ```
  */
-function StyleRow(props: {
+export type StyleRowProps = {
   readonly ctx: GameViewCtx;
+  readonly owner: EditOwner;
+  /** The style key, or the field of a text style block. */
   readonly name: string;
-  readonly value: Json;
+  /** The fields of the row; undefined for a value no field edits. */
+  readonly fields: readonly EditField[] | undefined;
+  /** What a read-only row shows. */
+  readonly text: string;
+  /** The pending edits of the owner. */
   readonly edits: readonly StyleEdit[];
-}): VNode {
-  const { ctx, name, value, edits } = props;
-  const fields = editFields(name, value)?.map(field => ({
+};
+
+/**
+ * One row of a styles list: its name and its fields, or its read-only text. The Styles rows of
+ * an element and the rows of a text style block (D-73) are both made of it.
+ *
+ * @param props - The context, the owner, the name, the fields or the text, and the edits.
+ * @returns The row.
+ * @example
+ * ```tsx
+ * // The `size` of the text style key ui.button, 105 in the file.
+ * <StyleRow ctx={ctx} owner={{ kind: "textStyle", key: "ui.button" }} name="size" fields={[{ path: "size", label: undefined, value: 105 }]} text="105" edits={[]} />
+ * ```
+ */
+export function StyleRow(props: StyleRowProps): VNode {
+  const { ctx, owner, name, text, edits } = props;
+  const fields = props.fields?.map(field => ({
     field,
     edit: edits.find(edit => edit.path === field.path)
   }));
@@ -245,11 +285,12 @@ function StyleRow(props: {
       <dt>{name}</dt>
       <dd>
         {fields === undefined
-          ? styleValue(value)
+          ? text
           : fields.map(entry => (
               <StyleFieldView
                 key={entry.field.path}
                 ctx={ctx}
+                owner={owner}
                 field={entry.field}
                 edit={entry.edit}
               />
@@ -257,6 +298,21 @@ function StyleRow(props: {
       </dd>
     </div>
   );
+}
+
+/**
+ * The fields and the read-only text of one entry of an element's scene style.
+ *
+ * @param name - The style key.
+ * @param value - Its value in the scene.
+ * @returns What its row shows.
+ * @example
+ * ```ts
+ * entryRow("minWidth", 556); // { fields: [{ path: "minWidth", label: undefined, value: 556 }], text: "556" }
+ * ```
+ */
+function entryRow(name: string, value: Json): Pick<StyleRowProps, "fields" | "text"> {
+  return { fields: editFields(name, value), text: styleValue(value) };
 }
 
 /**
@@ -273,16 +329,23 @@ export function StyleRows(props: { readonly ctx: GameViewCtx; readonly node: Sce
   return (
     <dl data-props="">
       {Object.entries(node.style ?? {}).map(([name, value]) => (
-        <StyleRow key={name} ctx={ctx} name={name} value={value} edits={edits} />
+        <StyleRow
+          key={name}
+          ctx={ctx}
+          owner={NODE}
+          name={name}
+          edits={edits}
+          {...entryRow(name, value)}
+        />
       ))}
     </dl>
   );
 }
 
 /**
- * The edits bar under the rows, while any element has a pending edit: "N edits · M elements",
- * "Copy for agent" (the agent text on the clipboard) and "Clear" (every edit goes). It shows on
- * an element without edits of its own too.
+ * The edits bar under the rows, while any element or text style key has a pending edit: "N edits
+ * · M elements", "Copy for agent" (the agent text on the clipboard) and "Clear" (every edit
+ * goes). It shows on an element without edits of its own too.
  *
  * @param props - The gameView domain context.
  * @param props.ctx - Domain context of gameView.

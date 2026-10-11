@@ -1,9 +1,11 @@
 /**
  * @file gameView plugin — pending style edits (U8, D-67), pure: the key an element's edits are
- * kept under, the value a style path names, the fields one style entry turns into, the kind of
- * control a field is (with the engine's values of an enum property, `STYLE_ENUMS`), one edit
- * recorded into a list, the edits a scene has not taken yet, and the text the agent gets
- * (`editsText`). Nothing here writes a file or talks to the game.
+ * kept under, the key the edits of a text style key are kept under (`textStyle:<key>`, D-73) and
+ * what an edit belongs to (`EditOwner`), the value a style path names, the fields one style entry
+ * turns into, the kind of control a field is (with the engine's values of an enum property,
+ * `STYLE_ENUMS`), one edit recorded into a list, the edits a scene has not taken yet, the edits a
+ * selection carries, and the text the agent gets (`editsText`). Nothing here writes a file or
+ * talks to the game.
  */
 import type { SceneNode } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
@@ -24,6 +26,21 @@ export type EditField = {
   readonly label: string | undefined;
   readonly value: StyleValue;
 };
+
+/**
+ * What a pending edit belongs to: the selected element (its scene style), or a text style key
+ * (the block of the key in the text styles file, D-73). One key styles many text nodes, so its
+ * edit is the key's.
+ *
+ * @example
+ * ```ts
+ * const element: EditOwner = { kind: "node" };
+ * const button: EditOwner = { kind: "textStyle", key: "ui.button" };
+ * ```
+ */
+export type EditOwner =
+  | { readonly kind: "node" }
+  | { readonly kind: "textStyle"; readonly key: string };
 
 /**
  * The control a field of the Styles section is: a number field, a text field, a checkbox, or a
@@ -101,6 +118,55 @@ export function editKey(node: Pick<SceneNode, "id" | "key">): string {
 }
 
 /**
+ * What the map key of a text style key's edits starts with; also the project-index prefix.
+ */
+const TEXT_STYLE_PREFIX = "textStyle:";
+
+/**
+ * The key the edits of a text style key are kept under (D-73).
+ *
+ * @param key - The text style key.
+ * @returns The map key.
+ * @example
+ * ```ts
+ * textStyleEditKey("ui.button"); // "textStyle:ui.button"
+ * ```
+ */
+export function textStyleEditKey(key: string): string {
+  return `${TEXT_STYLE_PREFIX}${key}`;
+}
+
+/**
+ * True for the map key of a text style key's edits: no scene node answers it.
+ *
+ * @param key - A key of the pending edits.
+ * @returns Whether it names a text style key.
+ * @example
+ * ```ts
+ * isTextStyleEditKey("textStyle:ui.button"); // true
+ * isTextStyleEditKey("homePlay"); // false
+ * ```
+ */
+export function isTextStyleEditKey(key: string): boolean {
+  return key.startsWith(TEXT_STYLE_PREFIX);
+}
+
+/**
+ * The text style key the map key of its edits names.
+ *
+ * @param key - A key of the pending edits.
+ * @returns The text style key, undefined for the key of an element.
+ * @example
+ * ```ts
+ * textStyleKeyOf("textStyle:ui.button"); // "ui.button"
+ * textStyleKeyOf("homePlay"); // undefined
+ * ```
+ */
+export function textStyleKeyOf(key: string): string | undefined {
+  return isTextStyleEditKey(key) ? key.slice(TEXT_STYLE_PREFIX.length) : undefined;
+}
+
+/**
  * The edits kept under a key.
  *
  * @param kept - The pending edits per element (`state.edits`).
@@ -116,6 +182,31 @@ export function editsOf(
   key: string | undefined
 ): readonly StyleEdit[] {
   return (key === undefined ? undefined : kept.get(key)?.edits) ?? [];
+}
+
+/**
+ * The edits a selection of a node carries (`SelectionInfo.edits`): its own, then the edits of its
+ * text style key, each under the path `textStyle:<key>.<field>` (D-73).
+ *
+ * @param kept - The pending edits (`state.edits`).
+ * @param node - The selected node.
+ * @returns The edits; the node's own list when its text style key has none.
+ * @example
+ * ```ts
+ * // homePlayLabel is a text with `style="ui.button"`; the person wants its key smaller.
+ * selectionEdits(state.edits, homePlayLabel); // [{ path: "textStyle:ui.button.size", from: 105, to: 96 }]
+ * ```
+ */
+export function selectionEdits(
+  kept: ReadonlyMap<string, ElementEdits>,
+  node: Pick<SceneNode, "id" | "key" | "textStyle">
+): readonly StyleEdit[] {
+  const own = editsOf(kept, editKey(node));
+  if (node.textStyle === undefined) return own;
+
+  const owner = textStyleEditKey(node.textStyle);
+  const ofKey = editsOf(kept, owner).map(edit => ({ ...edit, path: `${owner}.${edit.path}` }));
+  return ofKey.length === 0 ? own : [...own, ...ofKey];
 }
 
 /**
@@ -329,15 +420,17 @@ function blockOf(entry: ElementEdits): string[] {
 }
 
 /**
- * The pending edits as text for the agent ("Copy for agent"): one block per element in the
- * list's order, blocks separated by one empty line.
+ * The pending edits as text for the agent ("Copy for agent"): one block per element and one per
+ * text style key in the list's order, blocks separated by one empty line.
  *
- * @param list - The edits per element, the selected element first.
+ * @param list - The edits per element, the selected element first, then the text style keys.
  * @returns The text, "" for an empty list.
  * @example
  * ```ts
  * editsText([{ label: "homePlay", source: { path: "features/stage/views/home-screen.tsx", line: 199 }, byId: false, edits: [{ path: "minWidth", from: 556, to: 600 }] }]);
  * // "@moku homePlay · features/stage/views/home-screen.tsx:199\nminWidth: 556 -> 600"
+ * editsText([{ label: "textStyle ui.button", source: { path: "shared/styles/text.ts", line: 88 }, byId: false, edits: [{ path: "size", from: 105, to: 96 }] }]);
+ * // "@moku textStyle ui.button · shared/styles/text.ts:88\nsize: 105 -> 96"
  * ```
  */
 export function editsText(list: readonly ElementEdits[]): string {
