@@ -297,9 +297,12 @@ describe("parseDeviceInfo", () => {
     }
   });
 
-  it("rejects an extra field, at the top and in a preset row", () => {
-    expect(parseDeviceInfo({ ...bareDevice, dpr: 3 })).toBeUndefined();
-    expect(parseDeviceInfo({ ...bareDevice, presets: [{ ...pixel, radius: 30 }] })).toBeUndefined();
+  it("drops an unknown field, at the top and in a preset row", () => {
+    expect(parseDeviceInfo({ ...bareDevice, dpr: 3 })).toEqual(bareDevice);
+    expect(parseDeviceInfo({ ...bareDevice, presets: [{ ...pixel, radius: 30 }] })).toEqual({
+      ...bareDevice,
+      presets: [pixel]
+    });
   });
 
   it("rejects a missing field", () => {
@@ -308,7 +311,6 @@ describe("parseDeviceInfo", () => {
     expect(parseDeviceInfo(without(bareDevice, "folded"))).toBeUndefined();
     expect(parseDeviceInfo(without(bareDevice, "presets"))).toBeUndefined();
     expect(parseDeviceInfo({ ...bareDevice, presets: [row] })).toBeUndefined();
-    expect(parseDeviceInfo(without(bareDevice, "zoom"))).toEqual(bareDevice);
   });
 
   it("rejects a wrong type at the top", () => {
@@ -381,8 +383,11 @@ describe("parseShowInfo", () => {
     expect(parseShowInfo({ workspace: "flow", workspaces: ["flow", "settings"] })).toBeUndefined();
   });
 
-  it("rejects an extra field", () => {
-    expect(parseShowInfo({ workspace: "flow", workspaces: ["flow"], badge: 3 })).toBeUndefined();
+  it("drops an unknown field", () => {
+    expect(parseShowInfo({ workspace: "flow", workspaces: ["flow"], badge: 3 })).toEqual({
+      workspace: "flow",
+      workspaces: ["flow"]
+    });
   });
 
   it("rejects a missing field and a wrong type", () => {
@@ -421,8 +426,11 @@ describe("parseNodeInfo", () => {
     expect(parseNodeInfo(info)).toEqual(info);
   });
 
-  it("rejects an extra field", () => {
-    expect(parseNodeInfo({ id: "main/home", selected: "main/home", open: true })).toBeUndefined();
+  it("drops an unknown field", () => {
+    expect(parseNodeInfo({ id: "main/home", selected: "main/home", open: true })).toEqual({
+      id: "main/home",
+      selected: "main/home"
+    });
   });
 
   it("rejects a missing field and a wrong type", () => {

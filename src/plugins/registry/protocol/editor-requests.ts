@@ -1,8 +1,9 @@
 /**
  * @file Protocol — the checks of the three editor requests the hub relays to the page next to
  * `select` (D-60): `device`, `show` and `node`. Six parsers, one per params and one per answer,
- * and `WORKSPACE_NAMES`. Every shape is a closed object: an unknown field or a wrong type answers
- * `undefined`, in a preset row too. A parser returns a fresh copy. Pure: a value from the wire is
+ * and `WORKSPACE_NAMES`. Params are closed objects: an unknown field or a wrong type answers
+ * `undefined`. Answers are read like `parseSelectionInfo`: known fields are checked, unknown fields
+ * are dropped, in a preset row too. A parser returns a fresh copy. Pure: a value from the wire is
  * narrowed field by field, never cast.
  */
 import { DEVICE_GROUPS } from "./devices";
@@ -77,39 +78,9 @@ const DEVICE_PARAMS_FIELDS = [
 ] as const satisfies readonly (keyof DeviceParams)[];
 
 /**
- * The fields of a DevicePresetInfo.
- */
-const PRESET_FIELDS = [
-  "id",
-  "name",
-  "group",
-  "kind",
-  "w",
-  "h",
-  "foldable"
-] as const satisfies readonly (keyof DevicePresetInfo)[];
-
-/**
- * The fields of a DeviceInfo.
- */
-const DEVICE_INFO_FIELDS = [
-  "preset",
-  "orientation",
-  "folded",
-  "w",
-  "h",
-  "presets"
-] as const satisfies readonly (keyof DeviceInfo)[];
-
-/**
  * The fields of ShowParams.
  */
 const SHOW_PARAMS_FIELDS = ["workspace"] as const satisfies readonly (keyof ShowParams)[];
-
-/**
- * The fields of a ShowInfo.
- */
-const SHOW_INFO_FIELDS = ["workspace", "workspaces"] as const satisfies readonly (keyof ShowInfo)[];
 
 /**
  * The fields of NodeParams.
@@ -117,12 +88,21 @@ const SHOW_INFO_FIELDS = ["workspace", "workspaces"] as const satisfies readonly
 const NODE_PARAMS_FIELDS = ["id"] as const satisfies readonly (keyof NodeParams)[];
 
 /**
- * The fields of a NodeInfo.
+ * True for an object that is neither null nor an array.
+ *
+ * @param value - Anything.
+ * @returns Whether `value` is a record.
+ * @example
+ * ```ts
+ * isRecord({ id: "main/home" }); // true
+ * ```
  */
-const NODE_INFO_FIELDS = ["id", "selected"] as const satisfies readonly (keyof NodeInfo)[];
+function isRecord(value: unknown): value is object {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 /**
- * True for an object that is neither null nor an array, with no key outside `fields`.
+ * True for a record with no key outside `fields`: the shape of request params.
  *
  * @param value - Anything.
  * @param fields - Every key the object may have.
@@ -134,9 +114,7 @@ const NODE_INFO_FIELDS = ["id", "selected"] as const satisfies readonly (keyof N
  * ```
  */
 function isClosedRecord(value: unknown, fields: readonly string[]): value is object {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-
-  return Object.keys(value).every(key => fields.includes(key));
+  return isRecord(value) && Object.keys(value).every(key => fields.includes(key));
 }
 
 /**
@@ -318,7 +296,7 @@ function isDeviceParams(value: unknown): value is DeviceParams {
 }
 
 /**
- * True for a DevicePresetInfo: a closed object with its seven fields.
+ * True for a DevicePresetInfo: its seven fields are present and right. Unknown fields are ignored.
  *
  * @param value - Anything.
  * @returns Whether `value` is a DevicePresetInfo.
@@ -329,7 +307,7 @@ function isDeviceParams(value: unknown): value is DeviceParams {
  */
 function isPresetInfo(value: unknown): value is DevicePresetInfo {
   return (
-    isClosedRecord(value, PRESET_FIELDS) &&
+    isRecord(value) &&
     required(value, "id", isText) &&
     required(value, "name", isText) &&
     required(value, "group", isDeviceGroup) &&
@@ -355,7 +333,8 @@ function isPresetList(value: unknown): boolean {
 }
 
 /**
- * True for a DeviceInfo: a closed object with its six fields, every preset row closed too.
+ * True for a DeviceInfo: its six fields are present and right. Unknown fields are ignored, in a
+ * preset row too.
  *
  * @param value - Anything.
  * @returns Whether `value` is a DeviceInfo.
@@ -366,7 +345,7 @@ function isPresetList(value: unknown): boolean {
  */
 function isDeviceInfo(value: unknown): value is DeviceInfo {
   return (
-    isClosedRecord(value, DEVICE_INFO_FIELDS) &&
+    isRecord(value) &&
     required(value, "preset", isText) &&
     required(value, "orientation", isOrientation) &&
     required(value, "folded", isBoolean) &&
@@ -391,7 +370,7 @@ function isShowParams(value: unknown): value is ShowParams {
 }
 
 /**
- * True for a ShowInfo: a closed object with a WorkspaceName and a list of them.
+ * True for a ShowInfo: a WorkspaceName and a list of them. Unknown fields are ignored.
  *
  * @param value - Anything.
  * @returns Whether `value` is a ShowInfo.
@@ -402,7 +381,7 @@ function isShowParams(value: unknown): value is ShowParams {
  */
 function isShowInfo(value: unknown): value is ShowInfo {
   return (
-    isClosedRecord(value, SHOW_INFO_FIELDS) &&
+    isRecord(value) &&
     required(value, "workspace", isWorkspaceName) &&
     required(value, "workspaces", isWorkspaceList)
   );
@@ -423,7 +402,7 @@ function isNodeParams(value: unknown): value is NodeParams {
 }
 
 /**
- * True for a NodeInfo: a closed object with a text `id` and a text `selected`.
+ * True for a NodeInfo: a text `id` and a text `selected`. Unknown fields are ignored.
  *
  * @param value - Anything.
  * @returns Whether `value` is a NodeInfo.
@@ -433,15 +412,11 @@ function isNodeParams(value: unknown): value is NodeParams {
  * ```
  */
 function isNodeInfo(value: unknown): value is NodeInfo {
-  return (
-    isClosedRecord(value, NODE_INFO_FIELDS) &&
-    required(value, "id", isText) &&
-    required(value, "selected", isText)
-  );
+  return isRecord(value) && required(value, "id", isText) && required(value, "selected", isText);
 }
 
 /**
- * A fresh copy of a checked preset row.
+ * A fresh copy of a checked preset row with its seven fields only.
  *
  * @param row - A checked row.
  * @returns The copy.
@@ -521,14 +496,14 @@ export function parseNodeParams(value: unknown): NodeParams | undefined {
 }
 
 /**
- * Checks the answer of an editor-channel `device` request and copies it, the preset list and its
- * rows included.
+ * Checks the answer of an editor-channel `device` request and copies its known fields, the preset
+ * list and its rows included; unknown fields, at the top and in a row, are dropped.
  *
  * @param value - Anything, e.g. the result of a `device` response.
  * @returns A fresh DeviceInfo, or undefined when `value` is not one.
  * @example
  * ```ts
- * parseDeviceInfo({ preset: "pixel-8", orientation: "landscape", folded: true, w: 915, h: 412, presets: [] });
+ * parseDeviceInfo({ preset: "pixel-8", orientation: "landscape", folded: true, w: 915, h: 412, presets: [], dpr: 3 });
  * // { preset: "pixel-8", orientation: "landscape", folded: true, w: 915, h: 412, presets: [] }
  * parseDeviceInfo({ preset: "pixel-8", orientation: "landscape" }); // undefined
  * ```
@@ -542,13 +517,14 @@ export function parseDeviceInfo(value: unknown): DeviceInfo | undefined {
 }
 
 /**
- * Checks the answer of an editor-channel `show` request and copies it, the list included.
+ * Checks the answer of an editor-channel `show` request and copies its known fields, the list
+ * included; unknown fields are dropped.
  *
  * @param value - Anything, e.g. the result of a `show` response.
  * @returns A fresh ShowInfo, or undefined when `value` is not one.
  * @example
  * ```ts
- * parseShowInfo({ workspace: "state", workspaces: ["flow", "game", "state"] });
+ * parseShowInfo({ workspace: "state", workspaces: ["flow", "game", "state"], badge: 3 });
  * // { workspace: "state", workspaces: ["flow", "game", "state"] }
  * parseShowInfo({ workspace: "settings", workspaces: [] }); // undefined
  * ```
@@ -560,13 +536,14 @@ export function parseShowInfo(value: unknown): ShowInfo | undefined {
 }
 
 /**
- * Checks the answer of an editor-channel `node` request and copies it.
+ * Checks the answer of an editor-channel `node` request and copies its known fields; unknown
+ * fields are dropped.
  *
  * @param value - Anything, e.g. the result of a `node` response.
  * @returns A fresh NodeInfo, or undefined when `value` is not one.
  * @example
  * ```ts
- * parseNodeInfo({ id: "main/home", selected: "main/home" }); // { id: "main/home", selected: "main/home" }
+ * parseNodeInfo({ id: "main/home", selected: "main/home", open: true }); // { id: "main/home", selected: "main/home" }
  * parseNodeInfo({ id: "main/home" }); // undefined
  * ```
  */

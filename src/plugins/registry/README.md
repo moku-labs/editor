@@ -193,7 +193,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
 | `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `isVersionConflict` (-32005: the file changed since it was read), `bareMessage`. |
 | `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values, `area`, `items` and the `select` `rect` included. Unknown fields are ignored by the guard and dropped by the parsers, inside the items too. |
-| `editor-requests.ts` | The checks of the three requests the hub relays to the page next to `select` (change mcp-editor-tools, D-60): `parseDeviceParams`, `parseShowParams`, `parseNodeParams` for the params, `parseDeviceInfo`, `parseShowInfo`, `parseNodeInfo` for the answers, and `WORKSPACE_NAMES`. Every shape is a closed object: an unknown field or a wrong type answers `undefined`, in a preset row too. A parser returns a fresh copy. |
+| `editor-requests.ts` | The checks of the three requests the hub relays to the page next to `select` (change mcp-editor-tools, D-60): `parseDeviceParams`, `parseShowParams`, `parseNodeParams` for the params, `parseDeviceInfo`, `parseShowInfo`, `parseNodeInfo` for the answers, and `WORKSPACE_NAMES`. Params are closed objects: an unknown field or a wrong type answers `undefined`. Answers are read like `parseSelectionInfo`: known fields are checked, unknown fields are dropped, in a preset row too. A parser returns a fresh copy. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `hash.ts` | `commandsHash(manifest)` (D-37): commands sorted by `id`, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit over the UTF-16 code units, 8 lowercase hex chars. Titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`. |
 | `session-choice.ts` | `pickSession(sessions, requested?)`: the one session rule of a game request. The asked id, else the only session, else the one embedded session; `undefined` when none or several fit. An unknown asked id never falls back. Generic over `{ id, embedded }`, so it returns the caller's own type. The hub's `chooseSession` wraps it and throws -32003; the MCP bridge's `chooseSession` uses it as is. |
@@ -252,7 +252,7 @@ parseDeviceParams({}); // {}: a read
 parseDeviceParams({ preset: "pixel-8", zoom: 2 }); // undefined: an unknown field
 parseShowParams({ workspace: "settings" }); // undefined: not in WORKSPACE_NAMES
 parseNodeParams({ id: "" }); // undefined: 1 to 256 chars
-parseNodeInfo({ id: "main/home", selected: "main/home" }); // { id: "main/home", selected: "main/home" }
+parseNodeInfo({ id: "main/home", selected: "main/home", open: true }); // { id: "main/home", selected: "main/home" }
 ```
 
 Shape of the MCP door tools (change mcp-doors, D-37):
