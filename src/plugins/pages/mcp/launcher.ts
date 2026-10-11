@@ -42,9 +42,16 @@ const STOP_GRACE_MS = 2000;
 const LOG_MODE = 0o600;
 
 /**
- * The page the engine writes for a moku-game folder, relative to the root (`engine-page.ts`).
+ * The page the engine writes for a moku-game folder, relative to the root (`engine-page.ts`). The
+ * html `<root>/.moku/index.html` starts the engine form: the bridge passes it for a moku-game
+ * folder when it knows no html (D-63).
+ *
+ * @example
+ * ```ts
+ * join("/games/timber", ENGINE_PAGE); // "/games/timber/.moku/index.html"
+ * ```
  */
-const ENGINE_PAGE = ".moku/index.html";
+export const ENGINE_PAGE = ".moku/index.html";
 
 /**
  * What the bin is started with: absolute html and root, the port and hot reload. The html

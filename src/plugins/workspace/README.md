@@ -376,11 +376,52 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 
 `RanEvent` = `{ id, input, origin, at }` plus `{ ok: true, result }` or `{ ok: false, error }`.
 
+## Requests of the hub
+
+The hub relays two editor-channel requests of a tools client (the MCP bridge) to this page
+(D-60). `onInit` gives link one handler for each with `link.handle`; `onStop` removes them. The
+handlers are in `requests.ts`. Empty params only read. A change runs the function the api method
+runs, so the page behaves as after a click.
+
+| Request | Params | Does | Answers |
+|---|---|---|---|
+| `device` | `DeviceParams`: `{ preset?, orientation?, folded? }` | With any field: checks `preset` against `devices()`, then changes the device as `setDevice` does. The frame resizes, the choice persists, `onPrefs` listeners run. | `DeviceInfo`: `{ preset, orientation, folded, w, h, presets }`. |
+| `show` | `ShowParams`: `{ workspace? }` | With `workspace`: shows it as `show` does. Writes `#<ws>`, emits `workspace:changed` when it changed. Stores no preference: the workspace lives in the URL hash. | `ShowInfo`: `{ workspace, workspaces }`: the shown workspace and `WORKSPACE_NAMES`. |
+
+`DeviceInfo` describes the device after the change:
+
+- `preset` is the preset id, `orientation` the orientation.
+- `folded` is `true` for the cover screen. It is always `true` for a preset without a fold,
+  whatever flag is stored.
+- `w` and `h` are the game viewport in CSS px: the screen in use (`device().preset`) through
+  `resolveDevice`, so landscape swaps them.
+- `presets` has one row per preset of `devices()`: `id`, `name`, `group`, `kind`, `w`, `h` and
+  `foldable`. `w` and `h` of a row are the portrait size; for a foldable, its cover screen.
+
+```ts
+// The hub relays { preset: "pixel-8", orientation: "landscape" } as a `device` request.
+// The page answers:
+// { preset: "pixel-8", orientation: "landscape", folded: true, w: 915, h: 412, presets: [ … ] }
+
+// { preset: "galaxy-z-fold-6", folded: false } answers the inner screen: w: 707, h: 823.
+// {} changes nothing and answers the current device with the same fields.
+```
+
+An unknown preset id fails with -32602 `invalid_input` and `field: "preset"`. Nothing changes,
+also when the request names an orientation or a fold too. The message is
+`[moku-editor] editor.device: unknown preset "nokia".` and a hint line. It names the asked id
+only, not the presets: they are the `presets` of any answer. link answers -32602 itself for a bad
+shape (an unknown field, a workspace outside `WORKSPACE_NAMES`) before a handler runs.
+
+`WorkspaceName` of the protocol and `WorkspaceId` are the same six names. The protocol imports no
+plugin type, so it declares its own; a type test (`__tests__/unit/types.test.ts`) fails when they
+differ.
+
 ## Dependencies
 
 | Kind | What |
 |---|---|
-| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`. |
+| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`, `handle`. |
 | Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`, `workspace:reference`; hooks `link:status`. |
 | Packages | `preact`, `preact/hooks`. Dev: `happy-dom` for the component tests. |
 
@@ -407,10 +448,10 @@ workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "fl
 
 | Phase | Does |
 |---|---|
-| `onInit` | Validates config, loads prefs, reads the OS theme, the density and the hash, registers built-in keys, Esc layers and palette Commands. No DOM writes. |
+| `onInit` | Validates config, loads prefs, reads the OS theme, the density and the hash, registers built-in keys, Esc layers and palette Commands, and gives link the `device` and `show` request handlers. No DOM writes. |
 | `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples) and the `link.onHotReload` listener (the switch). No mount. |
 | `mount(el)` | Renders the shell, sets `data-theme` and `data-density` on `<html>`, attaches hosts, creates the frame layer once. |
-| `onStop` | Runs every cleanup, clears toast, ticker, reload and ripple timers, unrenders, removes the frame layer and the hosts. |
+| `onStop` | Runs every cleanup (the request handlers of link among them), clears toast, ticker, reload and ripple timers, unrenders, removes the frame layer and the hosts. |
 
 ## Integration notes
 

@@ -2,7 +2,7 @@
 import { vi } from "vitest";
 import type { Require } from "../../../config";
 import { linkPlugin } from "../../link";
-import type { FilesClient } from "../../link/types";
+import type { FilesClient, RequestHandler } from "../../link/types";
 import { panelsPlugin } from "../../panels";
 import type { PanelSpec } from "../../panels/types";
 import type {
@@ -206,7 +206,10 @@ export type Fakes = {
     boot: () => ToolsBoot | undefined;
     project: () => ProjectState | undefined;
     files: MemoryFiles;
+    handle: (method: "node", handler: RequestHandler<"node">) => () => void;
   };
+  /** The handlers the fake link holds for the hub's requests; a remover takes only its own out. */
+  readonly requests: Map<"node", RequestHandler<"node">>;
   /** Every watch the fake link took, stopped ones included. */
   readonly watches: FakeWatch[];
   /** Delivers a value to every active watch of a source id. */
@@ -293,8 +296,15 @@ export function createTestCtx(
       },
       boot: () => fakes.boot,
       project: () => (fakes.project === "index" ? projectOf(files) : fakes.project),
-      files
+      files,
+      handle: (method, handler) => {
+        fakes.requests.set(method, handler);
+        return () => {
+          if (fakes.requests.get(method) === handler) fakes.requests.delete(method);
+        };
+      }
     },
+    requests: new Map(),
     watches: [],
     send: (id, value) => {
       for (const watch of fakes.watches) if (watch.active && watch.id === id) watch.onValue(value);

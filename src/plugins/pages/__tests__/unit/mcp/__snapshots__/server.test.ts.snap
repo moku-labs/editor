@@ -281,7 +281,7 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": false,
       },
-      "description": "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Pass exactly one of key or rect. Needs the tools page open: without it the answer names the URL to open.",
+      "description": "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -292,6 +292,12 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
           },
           "key": {
             "description": "A ui element key, projection-qualified like "hud/infoBar" allowed: the first element with that key.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "node": {
+            "description": "A node of the flow graph by id, such as "main/home": its flow and its name. moku_project { prefix: "node:" } lists them.",
+            "maxLength": 256,
             "minLength": 1,
             "type": "string",
           },
@@ -333,6 +339,69 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
       },
       "name": "moku_select",
       "title": "Select in the editor",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "The device the tools page shows the game in. Each argument is optional and only the given ones change: preset (an id from presets), orientation, and folded for a foldable. With no argument it only reads. Answers { preset, orientation, folded, w, h, presets }: w and h are the game viewport in CSS px after the change, presets the devices to choose from. Take moku_screenshot after it to see the new size. Needs the tools page open: without it the answer names the URL to open.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "folded": {
+            "description": "A foldable preset: true shows its cover screen, false its inner screen.",
+            "type": "boolean",
+          },
+          "orientation": {
+            "description": "How the device is held.",
+            "enum": [
+              "portrait",
+              "landscape",
+            ],
+            "type": "string",
+          },
+          "preset": {
+            "description": "A device preset id from presets, such as pixel-8 or ipad-mini.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_device",
+      "title": "Editor device",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Switches the tools page to a workspace of its rail: flow (the flow graph), game (the game and its device), render, state, files or console. With no argument it only reads. Answers { workspace, workspaces }: the active workspace and all of them. Needs the tools page open: without it the answer names the URL to open.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "workspace": {
+            "description": "The workspace to show.",
+            "enum": [
+              "flow",
+              "game",
+              "render",
+              "state",
+              "files",
+              "console",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_show",
+      "title": "Show a workspace",
     },
     {
       "annotations": {
@@ -413,6 +482,55 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
     },
     {
       "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "Where a key of the project index lives: its places as JSON, each with path, binding (the const or function that holds it), line, hash (the version of the file, for moku_files_write) and broken when the file does not parse now. Keys: node:<flow>/<node> (node:board/merge), flow:<flow> (flow:board), jsx:<ui key> (jsx:coins), textStyle:<key> (textStyle:ui.title), style:<file>#<name> (style:features/ui/popup.tsx#popupScreen). A key the index does not know answers "No place for <key>.". moku_project lists the keys.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "description": "A project-index key with its prefix, such as node:board/merge or jsx:coins.",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "key",
+        ],
+        "type": "object",
+      },
+      "name": "moku_files_find",
+      "title": "Find a key in the project",
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "description": "The project index of the game: which file defines which flow, node, text style and style. With no argument: { state, revision, manifest, keys, broken, prefixes }, where keys is the key count, broken the files that do not parse with their first error, and prefixes the key count per prefix (node:, flow:, textStyle:, style:). prefix lists the keys that start with it, each with its files. path answers { defines, uses, broken } for one file. Pass at most one of them. jsx keys are not in this state: find them with moku_files_find. An index that is off answers { state: "off", reason }.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "A path relative to the project root, such as src/nodes/merge.ts.",
+            "minLength": 1,
+            "type": "string",
+          },
+          "prefix": {
+            "description": "The start of the keys to list, such as node: or node:board/.",
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "moku_project",
+      "title": "Project index",
+    },
+    {
+      "annotations": {
         "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": false,
@@ -445,7 +563,31 @@ exports[`tools/list > lists the generic moku tools with closed object schemas 1`
         "openWorldHint": false,
         "readOnlyHint": false,
       },
-      "description": "Starts moku-editor for the game when it does not run (its output goes to .moku/editor.log) and connects. html defaults to the bridge's game file or the last one used; port to the bridge's --port, the last port or 3000.",
+      "description": "Switches Bun hot reload of the game server on or off. moku-editor restarts its server for it: the call waits, at most 15 s, until the editor is back, and answers { hmr, owner, restarted }. Already in the asked state answers restarted: false at once. After a switch the game page has to load again to pick it up: call moku_reload. A game served by its own server cannot be switched. moku_status shows the state.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "description": "true: a saved source file reloads the game page. false: it does not.",
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "on",
+        ],
+        "type": "object",
+      },
+      "name": "moku_hot_reload",
+      "title": "Switch hot reload",
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "description": "Starts moku-editor for the game when it does not run (its output goes to .moku/editor.log) and connects. html defaults to the bridge's game file or the last one used; in a moku-game folder (index.ts and config.ts) no html is needed: the engine page starts. port defaults to the bridge's --port, the last port or 3000.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

@@ -5,11 +5,29 @@
  * by the hub to the editor page, which picks like the Reference picker). Both answer the
  * SelectionInfo as JSON and, when the page wrote one, its crop picture. Hub errors, such as
  * -32003 `no_editor_page` with the URL to open, pass through as readable `isError` results.
+ *
+ * moku_select also selects a node of the flow graph (`node`, D-61), in three steps the page shows:
+ * `editor.show { workspace: "flow" }`, `editor.node { id }`, then `files.find { key: "node:<id>" }`
+ * for its source places. A node has no rect, crop or card, so that answer is `{ id, selected,
+ * places }`, not a SelectionInfo.
  */
-import type { Json, SelectionInfo, SelectionRect } from "../../registry/protocol";
-import { parseSelectionInfo } from "../../registry/protocol";
-import { readPicture } from "./file-tools";
-import { errorResult, imageItem, jsonText, textItem } from "./results";
+import type {
+  Json,
+  NodeInfo,
+  SelectionInfo,
+  SelectionRect,
+  WireError
+} from "../../registry/protocol";
+import {
+  bareMessage,
+  isWireError,
+  parseNodeInfo,
+  parseSelectionInfo,
+  parseShowInfo
+} from "../../registry/protocol";
+import { askPage } from "./editor-tools";
+import { placesIfIndexed, readPicture } from "./file-tools";
+import { errorResult, imageItem, jsonResult, jsonText, textItem } from "./results";
 import {
   flagArgument,
   READ_ONLY,
@@ -33,7 +51,26 @@ const EMPTY_AREA = "No elements in the area.";
 /**
  * The error of moku_select without exactly one target.
  */
-const ONE_TARGET = "pass exactly one of key (an element) or rect (an area of the game page)";
+const ONE_TARGET =
+  "pass exactly one of key (an element), rect (an area of the game page) or node (a node of the flow graph)";
+
+/**
+ * The error of moku_select with `card` next to `node`.
+ */
+const NO_NODE_CARD = "card does not go with node: a flow node has no reference card";
+
+/**
+ * The longest node id moku_select takes, in characters: the limit of `editor.node`.
+ */
+const NODE_ID_MAX = 256;
+
+/**
+ * What moku_select selects: an element by key, an area, or a node of the flow graph.
+ */
+type Target =
+  | { readonly key: string }
+  | { readonly rect: SelectionRect }
+  | { readonly node: string };
 
 /**
  * Reads the SelectionInfo an editor request answered.
@@ -79,24 +116,26 @@ function isEmptyArea(info: SelectionInfo): boolean {
 }
 
 /**
- * The target of moku_select: the key or the rect, when exactly one of them is given.
+ * The target of moku_select: the key, the rect or the node, when exactly one of them is given.
  *
  * @param args - The checked arguments.
- * @returns `{ key }` or `{ rect }`, or undefined for neither or both.
+ * @returns `{ key }`, `{ rect }` or `{ node }`, or undefined for none or more than one.
  * @example
  * ```ts
  * targetOf({ key: "hud/coins" }); // { key: "hud/coins" }
+ * targetOf({ node: "main/home" }); // { node: "main/home" }
  * targetOf({ key: "coins", rect: { x: 0, y: 0, w: 1, h: 1 } }); // undefined
  * ```
  */
-function targetOf(
-  args: JsonObject
-): { readonly key: string } | { readonly rect: SelectionRect } | undefined {
+function targetOf(args: JsonObject): Target | undefined {
   const key = textArgument(args, "key");
   const rect = rectArgument(args, "rect");
-  if (key !== undefined && rect === undefined) return { key };
-  if (rect !== undefined && key === undefined) return { rect };
-  return undefined;
+  const node = textArgument(args, "node");
+  const targets: Target[] = [];
+  if (key !== undefined) targets.push({ key });
+  if (rect !== undefined) targets.push({ rect });
+  if (node !== undefined) targets.push({ node });
+  return targets.length === 1 ? targets[0] : undefined;
 }
 
 /**
@@ -140,17 +179,61 @@ async function selection(call: ToolCall, context: ToolContext): Promise<ToolResu
 }
 
 /**
+ * True for the -32003 `no_graph` of `editor.node`: the Flow view has no graph yet. Retryable.
+ *
+ * @param error - The thrown value.
+ * @returns Whether the node can be selected a moment later.
+ * @example
+ * ```ts
+ * isNoGraph(wireError(-32_003, "the Flow view has no graph yet", { reason: "no_graph", retryable: true })); // true
+ * ```
+ */
+function isNoGraph(error: unknown): error is WireError {
+  return isWireError(error) && error.data?.reason === "no_graph";
+}
+
+/**
+ * Selects a node of the flow graph in the editor page, in the three steps the page shows: the Flow
+ * workspace, the node, then its source places from the project index (left out while the index is
+ * off). The Flow view without a graph yet reads as `isError` with "try again".
+ *
+ * @param hub - The hub connection.
+ * @param id - The node id, such as `main/home`.
+ * @returns `{ id, selected, places }` as JSON; `{ id, selected }` while the index is off.
+ */
+async function selectNode(hub: HubClient, id: string): Promise<ToolResult> {
+  await askPage(hub, "show", { workspace: "flow" }, parseShowInfo);
+
+  let node: NodeInfo;
+  try {
+    node = await askPage(hub, "node", { id }, parseNodeInfo);
+  } catch (error) {
+    if (!isNoGraph(error)) throw error;
+    const reason = bareMessage(error.message).replace(/\.$/, "");
+    return errorResult(`${reason}; try again in a moment`);
+  }
+
+  const places = await placesIfIndexed(hub, `node:${node.id}`);
+  return jsonResult(places === undefined ? node : { ...node, places });
+}
+
+/**
  * moku_select: selects by key or by area in the editor page, with a card unless `card` is false,
  * and answers the selection with its crop. An area with no element is a valid selection: its text
- * starts with the line "No elements in the area.".
+ * starts with the line "No elements in the area.". With `node` it selects a node of the flow graph
+ * instead (`selectNode`); `card` does not go with it.
  *
- * @param call - The call: key or rect, card.
+ * @param call - The call: key, rect or node, and card.
  * @param context - The tool context.
- * @returns The SelectionInfo as JSON and the crop image.
+ * @returns The SelectionInfo as JSON and the crop image; `{ id, selected, places }` for a node.
  */
 async function select(call: ToolCall, context: ToolContext): Promise<ToolResult> {
   const target = targetOf(call.args);
   if (target === undefined) return errorResult(ONE_TARGET);
+  if ("node" in target) {
+    if (call.args.card !== undefined) return errorResult(NO_NODE_CARD);
+    return selectNode(await context.editor.hub(), target.node);
+  }
 
   const hub = await context.editor.hub();
   const card = flagArgument(call.args, "card", true);
@@ -180,13 +263,15 @@ export const selectionTool: Tool = {
 /**
  * moku_select: lets an MCP client select an element by ui key, or every element inside a rect,
  * in the editor page, the way the Reference picker does. With `card` (the default) the page writes
- * the reference card and the crop; the answer is the selection as JSON plus the crop picture.
+ * the reference card and the crop; the answer is the selection as JSON plus the crop picture. With
+ * `node` it selects a node of the flow graph: the page opens the Flow workspace and focuses the
+ * node, and the answer names the node's source places.
  */
 export const selectTool: Tool = {
   name: "moku_select",
   title: "Select in the editor",
   description:
-    "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Pass exactly one of key or rect. Needs the tools page open: without it the answer names the URL to open.",
+    "Selects an element in the editor page by its ui key, or every element inside an area (rect), the way a click or a drag of the Reference picker does: the Game view shows it, and with card (the default) a reference card and a crop picture are written. Answers the selection as JSON and the crop picture. Or selects a node of the flow graph (node): the tools page opens the Flow workspace and focuses the node, and the answer is { id, selected, places }, where places are the node's source files and lines; card does not go with node. Pass exactly one of key, rect or node. Needs the tools page open: without it the answer names the URL to open.",
   inputSchema: {
     type: "object",
     properties: {
@@ -197,6 +282,13 @@ export const selectTool: Tool = {
           'A ui element key, projection-qualified like "hud/infoBar" allowed: the first element with that key.'
       },
       rect: RECT_PROPERTY,
+      node: {
+        type: "string",
+        minLength: 1,
+        maxLength: NODE_ID_MAX,
+        description:
+          'A node of the flow graph by id, such as "main/home": its flow and its name. moku_project { prefix: "node:" } lists them.'
+      },
       card: {
         type: "boolean",
         default: true,

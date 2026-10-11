@@ -370,7 +370,7 @@ describe("moku-editor mcp over stdio", () => {
     const list = await bridge.request("tools/list");
     const names = (list.result as { tools: { name: string }[] }).tools.map(tool => tool.name);
     const generic = names.filter(name => name.startsWith("moku_"));
-    expect(generic).toHaveLength(17);
+    expect(generic).toHaveLength(22);
     expect(generic).toEqual(
       expect.arrayContaining([
         "moku_read",
@@ -381,8 +381,8 @@ describe("moku-editor mcp over stdio", () => {
         "moku_select"
       ])
     );
-    expect(names.slice(0, 17)).toEqual(generic);
-    const doors = names.slice(17);
+    expect(names.slice(0, 22)).toEqual(generic);
+    const doors = names.slice(22);
     expect(doors).toEqual(expect.arrayContaining(["game_pause", "game_resume", "game_tap"]));
     expect(doors).not.toContain("editor_capture");
     expect(doors).not.toContain("game_capture");

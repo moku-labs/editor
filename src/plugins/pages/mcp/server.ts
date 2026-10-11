@@ -34,10 +34,11 @@ export const PROTOCOL_VERSIONS: readonly string[] = ["2025-11-25", "2025-06-18",
 const SERVER_NAME = "moku-editor";
 
 /**
- * The `instructions` of the `initialize` result: how the generic tools and the door tools differ.
+ * The `instructions` of the `initialize` result: how the generic tools and the door tools differ,
+ * and which generic tools work on the editor and on the project index, not on the game.
  */
 export const INSTRUCTIONS =
-  "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read.";
+  "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read. moku_device, moku_show, moku_select and moku_hot_reload drive the editor itself (device, workspace, selection, hot reload); moku_files_find and moku_project read the project index.";
 
 /**
  * The longest wait of the first `tools/list` for the door tools.

@@ -1,6 +1,6 @@
 /**
  * @file pages/mcp — checks the arguments of a tool call against its input schema (the JSON Schema
- * subset of `PropertySchema`: string with an optional enum, integer with a range, plain number,
+ * subset of `PropertySchema`: string with an optional length range and enum, integer with a range, plain number,
  * boolean, a closed object of numbers such as a rect, any JSON) and reads the checked values. A
  * problem is a message for an `isError` result, so the model can fix the call.
  */
@@ -29,6 +29,7 @@ type ObjectSchema = Extract<PropertySchema, { readonly type: "object" }>;
  * @example
  * ```ts
  * stringProblem("format", { type: "string", enum: ["jpeg", "png"], description: "" }, "gif"); // "format must be one of jpeg, png"
+ * stringProblem("key", { type: "string", maxLength: 512, description: "" }, "k".repeat(513)); // "key must be at most 512 characters"
  * ```
  */
 function stringProblem(
@@ -39,6 +40,9 @@ function stringProblem(
   if (typeof value !== "string") return `${name} must be a string`;
   if (schema.minLength !== undefined && value.length < schema.minLength) {
     return `${name} must not be empty`;
+  }
+  if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+    return `${name} must be at most ${String(schema.maxLength)} characters`;
   }
   if (schema.enum !== undefined && !schema.enum.includes(value)) {
     return `${name} must be one of ${schema.enum.join(", ")}`;

@@ -56,6 +56,21 @@ describe("checkArguments", () => {
   });
 });
 
+describe("string lengths", () => {
+  /** A schema with a bounded string, as a project-index key. */
+  const KEYED: ToolInputSchema = {
+    type: "object",
+    properties: { key: { type: "string", minLength: 1, maxLength: 8, description: "key" } },
+    additionalProperties: false
+  };
+
+  it("accepts a string up to maxLength and names one that is longer", () => {
+    expect(checkArguments(KEYED, { key: "flow:abc" })).toEqual({ key: "flow:abc" });
+    expect(checkArguments(KEYED, { key: "flow:abcd" })).toBe("key must be at most 8 characters");
+    expect(checkArguments(KEYED, { key: "" })).toBe("key must not be empty");
+  });
+});
+
 describe("plain numbers", () => {
   /** A schema with a plain number, as a door's number field. */
   const POINT: ToolInputSchema = {

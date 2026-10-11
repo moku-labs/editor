@@ -142,6 +142,7 @@ flowView declares no events. It uses the global tools events of `src/config.ts` 
 | Hooks | `workspace:select-node` | `{ id }` | Show Flow, then select. An unknown id logs `flowView:unknown-node`. Before the first flow values the selection waits for them. When Flow shows for the first time, the first canvas measure frames the selection, not the current node. |
 | Hooks | `workspace:focus-frame` | `{ frame }` | Show Flow, then `focusFrame`. Before the first flow values it waits for them. |
 | Hooks | `workspace:density` | `{ density }` | The ELK spacing follows the applied density, then a relayout. |
+| Answers | `node` (a request of `link.handle`) | `{ id }` → `{ id, selected }` | The hub relays `editor.node` (MCP `moku_select { node }`, D-60). Selects the node as `focus.select` does: collapsed parents expand. A node outside an entered sub-flow takes the canvas back to the root first (`flows.up(0)`), then is selected. Answers `selected`, the item key Flow focused. A select before the first canvas measure is framed by that measure, not the current node. It does not show Flow: the caller asks `editor.show` first. An unknown id is -32602 `invalid_input` (`field: "id"`): the selection stays, and an entered sub-flow stays entered. Before the first graph it is -32003 `no_graph`, retryable. Nothing waits for the graph. |
 
 An intent that comes before the first `game.graph`, `game.position` and `game.history` values (Game is the default workspace, so one can come at startup) runs once they are in. Only the latest such intent is kept.
 
@@ -156,7 +157,7 @@ Log events use the prefix `flowView: ` (for example `flowView: layout failed`, `
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of `game.graph`, `game.position` and `game.history { last: historyLast }` for the session; `status()`, `boot()` ("Open in editor"), `project()` (the index state), `files.find`, `files.read`, `files.write`. No `run`. |
+| `linkPlugin` | `watch` of `game.graph`, `game.position` and `game.history { last: historyLast }` for the session; `status()`, `boot()` ("Open in editor"), `project()` (the index state), `files.find`, `files.read`, `files.write`; `handle("node", …)` for the hub's `editor.node`. No `run`. |
 | `workspacePlugin` | `active()`, `show("flow")`, `toast`, `gameFrame().reload({ restore: true, afterSave: true, since })` (after a save; `since` taken before the write), `preview("flow")`, `density()`, `previewZone`, `palette.add`, `keys.bind`, `keys.escape` |
 | `panelsPlugin` | `register` the Flow panel; `run(id, input)` for every command |
 
@@ -168,9 +169,9 @@ Shared modules: `panels/shared/side-panel` (the Inspector panel), `panels/shared
 
 | Phase | What |
 |---|---|
-| `onInit` | Registers the Flow panel: no sources; commands `step: "game.step"`, `pause: "game.pause"`, `resume: "game.resume"`. Adds the palette Commands. Binds the Flow keys. Binds the Esc layers `contextMenu`, `codeEdit`, `selection`. Captures `link.files`. Takes `workspace.density()`. No I/O. |
+| `onInit` | Registers the Flow panel: no sources; commands `step: "game.step"`, `pause: "game.pause"`, `resume: "game.resume"`. Adds the palette Commands. Binds the Flow keys. Binds the Esc layers `contextMenu`, `codeEdit`, `selection`. Captures `link.files`. Takes `workspace.density()`. Gives link the handler of the `node` request. No I/O. |
 | `onStart` | Watches `game.graph`, `game.position` and `game.history { last: historyLast }` for the whole session (R6), whatever workspace shows. The values go in once all three arrived, then one by one: the Nodes palette group, the layout, the intents of other views and the live history frames work before Flow is shown. The Flow canvas renders when Flow is first shown. Loading `layout.file` and the style keys starts on the first `live`/`paused` status. |
-| `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches among them. |
+| `onStop` | Waits for a pending `layout.file` save, at most 1000 ms. Clears the timers and the camera rAF. Disposes the ELK engine (the worker is terminated, the Blob URL revoked). Removes the Nodes and Styles palette groups. Runs every remover, the three watches and the `node` handler among them. |
 
 Palette: Commands "Fit all", "Fit selection", "Follow the game", "Reset layout", "Go to current node", "Show where the game is", "Show Inspector".
 The Nodes group is replaced when the graph hash changes. The Styles group is replaced whenever the text-styles file is read.

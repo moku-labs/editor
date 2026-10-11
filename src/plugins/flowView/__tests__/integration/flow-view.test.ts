@@ -6,7 +6,14 @@ import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
-import type { Json, Manifest, RunResult, SessionInfo, ToolsBoot } from "../../../registry/protocol";
+import type {
+  Json,
+  Manifest,
+  Response as RpcResponse,
+  RunResult,
+  SessionInfo,
+  ToolsBoot
+} from "../../../registry/protocol";
 import { workspacePlugin } from "../../../workspace";
 import { flowViewPlugin } from "../..";
 import { parsePins } from "../../layout/pins";
@@ -223,6 +230,15 @@ async function startOnGame(): Promise<ReturnType<typeof createApp>> {
   return app;
 }
 
+/** Relays an editor-channel request to the page as the hub does; a select re-renders, so in act. */
+async function ask(method: string, params: Json): Promise<RpcResponse> {
+  const asked = hub.ask(method, params);
+  await act(async () => {
+    await asked;
+  });
+  return asked;
+}
+
 /** The palette option with a label, if it shows. */
 function paletteOption(label: string): HTMLElement | undefined {
   return [...root.querySelectorAll<HTMLElement>('[data-ui="palette"] [role="option"]')].find(
@@ -283,6 +299,43 @@ describe("flowView before Flow is shown (Game is the default workspace)", () => 
       "the focus-frame toast"
     );
     expect(document.body.textContent).not.toContain("Frames are not recorded in this history");
+    await app.stop();
+  });
+
+  it("the hub's editor.node selects the node and answers its item key; Flow is not shown (D-60)", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    await until(() => app.link.status().kind === "empty", "the open socket");
+
+    // Before the first graph: a retryable refusal, and nothing waits for the graph.
+    expect(await ask("node", { id: "board/merge" })).toMatchObject({
+      error: {
+        code: -32_003,
+        message: "[moku-editor] the Flow view has no graph yet",
+        data: { reason: "no_graph", retryable: true }
+      }
+    });
+    hub.open(SESSION, MANIFEST);
+    await untilWatched();
+    sendFlowValues();
+    await until(() => app.flowView.focus.current() === "board/awaitIntent", "the flow values");
+    expect(app.flowView.focus.selected()).toBeUndefined();
+
+    expect(await ask("node", { id: "board/merge" })).toMatchObject({
+      result: { id: "board/merge", selected: "main/board>board/merge" }
+    });
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+
+    expect(await ask("node", { id: "board/nope" })).toMatchObject({
+      error: {
+        code: -32_602,
+        message: "[moku-editor] unknown node board/nope",
+        data: { reason: "invalid_input", field: "id" }
+      }
+    });
+    expect(app.flowView.focus.selected()).toBe("main/board>board/merge");
+    expect(app.workspace.active()).toBe("game");
     await app.stop();
   });
 });

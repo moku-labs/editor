@@ -2,7 +2,9 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
 import { linkPlugin } from "../../../link";
-import type { DeviceSpec, HotReload } from "../../../registry/protocol";
+import { WORKSPACE_IDS } from "../../../panels/shared/workspaces";
+import type { DeviceSpec, HotReload, WorkspaceName } from "../../../registry/protocol";
+import { WORKSPACE_NAMES } from "../../../registry/protocol";
 import { workspacePlugin } from "../..";
 import type {
   Density,
@@ -83,6 +85,12 @@ describe("workspace types", () => {
     // @ts-expect-error — Game has no preview
     expect(() => app.workspace.setPreview("game", { visible: false })).toBeTypeOf("function");
     expectTypeOf(app.workspace.setPreview).parameter(0).not.toEqualTypeOf<WorkspaceId>();
+  });
+
+  it("the protocol's WorkspaceName is the WorkspaceId of the rail (D-60: the protocol imports no plugin type)", () => {
+    expectTypeOf<WorkspaceName>().toEqualTypeOf<WorkspaceId>();
+    expectTypeOf(WORKSPACE_NAMES).toEqualTypeOf<readonly WorkspaceId[]>();
+    expect(WORKSPACE_NAMES.toSorted()).toEqual(WORKSPACE_IDS.toSorted());
   });
 
   it("types the global events: workspace:changed and workspace:ran", () => {

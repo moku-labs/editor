@@ -151,7 +151,7 @@ drag picks [an area](#an-area) with every element inside it.
 
 ## Use with Claude Code
 
-`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude 17 generic `moku_*` tools: read the game, wait for a value, run commands, take screenshots, read and make the editor's selection, edit files. On top of them it lists one tool per command door of the connected game (see [Door tools](#door-tools)).
+`moku-editor mcp` is a stdio MCP server. Claude Code starts it. It uses the running editor, or starts one, and gives Claude 22 generic `moku_*` tools: read the game, wait for a value, run commands, take screenshots, read and make the editor's selection, set its device and workspace, switch hot reload, edit files and find keys of the project index. On top of them it lists one tool per command door of the connected game (see [Door tools](#door-tools)).
 
 **1. Register it** from the game folder:
 
@@ -182,7 +182,7 @@ Or commit a project `.mcp.json`. `bunx moku-editor mcp-config web/index.html --p
 Which editor the bridge uses:
 
 - A running bin wins. The bridge finds it through `.moku/editor.json` under `--root` (default the working directory).
-- No bin runs: the bridge starts `moku-editor <html> --port <port>` itself, with the html and port it was given.
+- No bin runs: the bridge starts `moku-editor <html> --port <port>` itself, with the html and port it was given. In a moku-game folder (`index.ts` and `config.ts`) it needs no html: it starts the engine page.
 - Claude Code closes (stdin end, SIGINT or SIGTERM): the bridge stops the bin it started. A bin you started yourself keeps running.
 
 | Tool | What it does |
@@ -197,19 +197,24 @@ Which editor the bridge uses:
 | `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one JPEG at most 1080 px wide. Game 0.4. |
 | `moku_reference` | The newest or a named reference card with its crop: the day folders `.moku/captures/<yyyy-mm-dd>/` and the older flat `.moku/captures/`. |
 | `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. |
-| `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. Needs the tools page open. |
+| `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. With `node` it selects a node of the flow graph: the page opens the Flow workspace and focuses the node; the answer is `{ id, selected, places }`, the places being the node's files and lines. Needs the tools page open. |
+| `moku_device` | Reads or sets the device of the tools page: `preset`, `orientation`, `folded`. The answer carries the game viewport `w` × `h` after the change and the presets to choose from. Needs the tools page open. |
+| `moku_show` | Switches the tools page to a workspace: `flow`, `game`, `render`, `state`, `files` or `console`. Without one it reads the active one. Needs the tools page open. |
 | `moku_files_list` | Lists project files. |
 | `moku_files_read` | Reads a file and its version. |
 | `moku_files_write` | Writes a file, with an optional version check. |
+| `moku_files_find` | Where a key of the project index lives, such as `node:board/merge` or `jsx:coins`: file, binding, line and the file's version. |
+| `moku_project` | The project index the editor keeps: the key count per kind, the keys of a `prefix` with their files, or what one file (`path`) defines and uses. |
 | `moku_reload` | Reloads the game page and restores its state. |
-| `moku_start` | Starts the editor when it does not run. |
+| `moku_hot_reload` | Switches Bun hot reload on or off. The editor restarts its server; the call returns once it is back, at most 15 s. Call `moku_reload` after it. |
+| `moku_start` | Starts the editor when it does not run. A moku-game folder needs no html: the engine page starts. |
 | `moku_stop` | Stops the editor, only when the bridge started it. |
 
 Every game tool takes an optional `session`. The file tools stay in the files sandbox and never show or touch `.moku/editor.json` or `.moku/editor.log`. The bridge never prints the token. Detail: [pages README, MCP bridge](src/plugins/pages/README.md#mcp-bridge-mcp).
 
 ### Door tools
 
-After the 17 generic tools, `tools/list` holds one tool per command door of the selected session. Each has a typed input schema, so Claude does not guess `input` for `moku_run`. Sources stay behind `moku_read`.
+After the 22 generic tools, `tools/list` holds one tool per command door of the selected session. Each has a typed input schema, so Claude does not guess `input` for `moku_run`. Sources stay behind `moku_read`.
 
 - **Name.** The door id with `.` as `_`: `game.tap` is `game_tap`. Cheat and raw doors carry the effect first: `cheat_game_fill`, `raw_game_restore`.
 - **Input.** One property per door field (`string`, `number`, `boolean`, `json`); fields without `?` are required. The optional `_session` picks another session.

@@ -4,8 +4,21 @@
  * any failure into an `isError` result. The door tools of the selected session come after them
  * (`door-tools.ts`).
  */
-import { reloadTool, startTool, stopTool } from "./editor-tools";
-import { filesListTool, filesReadTool, filesWriteTool } from "./file-tools";
+import {
+  deviceTool,
+  hotReloadTool,
+  reloadTool,
+  showTool,
+  startTool,
+  stopTool
+} from "./editor-tools";
+import {
+  filesFindTool,
+  filesListTool,
+  filesReadTool,
+  filesWriteTool,
+  projectTool
+} from "./file-tools";
 import { manifestTool, readTool, runTool, sessionsTool, statusTool, waitTool } from "./game-tools";
 import { referenceTool, screenshotTool, seriesTool } from "./picture-tools";
 import { failureResult } from "./results";
@@ -27,10 +40,15 @@ export const TOOLS: readonly Tool[] = [
   referenceTool,
   selectionTool,
   selectTool,
+  deviceTool,
+  showTool,
   filesListTool,
   filesReadTool,
   filesWriteTool,
+  filesFindTool,
+  projectTool,
   reloadTool,
+  hotReloadTool,
   startTool,
   stopTool
 ];

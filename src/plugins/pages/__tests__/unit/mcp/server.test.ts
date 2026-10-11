@@ -223,10 +223,15 @@ describe("tools/list", () => {
       "moku_reference",
       "moku_selection",
       "moku_select",
+      "moku_device",
+      "moku_show",
       "moku_files_list",
       "moku_files_read",
       "moku_files_write",
+      "moku_files_find",
+      "moku_project",
       "moku_reload",
+      "moku_hot_reload",
       "moku_start",
       "moku_stop"
     ]);
@@ -239,6 +244,12 @@ describe("tools/list", () => {
   it("carries static annotations: read-only tools, and the worst case of the others (M6)", () => {
     const annotations = Object.fromEntries(TOOLS.map(tool => [tool.name, tool.annotations]));
     const readOnly = { readOnlyHint: true, openWorldHint: false };
+    const repeatable = {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false
+    };
     expect(annotations).toEqual({
       moku_status: readOnly,
       moku_sessions: readOnly,
@@ -261,6 +272,8 @@ describe("tools/list", () => {
         idempotentHint: false,
         openWorldHint: false
       },
+      moku_device: repeatable,
+      moku_show: repeatable,
       moku_files_list: readOnly,
       moku_files_read: readOnly,
       moku_files_write: {
@@ -269,18 +282,16 @@ describe("tools/list", () => {
         idempotentHint: false,
         openWorldHint: false
       },
+      moku_files_find: readOnly,
+      moku_project: readOnly,
       moku_reload: {
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: false,
         openWorldHint: false
       },
-      moku_start: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false
-      },
+      moku_hot_reload: repeatable,
+      moku_start: repeatable,
       moku_stop: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -502,9 +513,9 @@ describe("door tools in the server (D-35)", () => {
     });
   });
 
-  it("explains the door tools in the initialize instructions", () => {
+  it("explains the door tools and names the editor tools in the initialize instructions", () => {
     expect(INSTRUCTIONS).toBe(
-      "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read."
+      "moku_* tools work on any game. game_*, editor_* and <game>_* tools are command doors of the connected game, with typed input; cheat_* and raw_* change the game outside its rules. The list changes when the game reloads. Sources are read with moku_read. moku_device, moku_show, moku_select and moku_hot_reload drive the editor itself (device, workspace, selection, hot reload); moku_files_find and moku_project read the project index."
     );
   });
 });

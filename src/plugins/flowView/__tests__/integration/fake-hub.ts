@@ -3,6 +3,7 @@ import type {
   Json,
   Manifest,
   Request as RpcRequest,
+  Response as RpcResponse,
   SessionInfo,
   WireError
 } from "../../../registry/protocol";
@@ -11,7 +12,9 @@ import {
   encode,
   failure,
   isRequest,
+  isResponse,
   notification,
+  request as rpcRequest,
   success,
   toWireValue
 } from "../../../registry/protocol";
@@ -22,6 +25,7 @@ import {
 // runs with a RunResult, reads from a value map; the files channel works on an
 // in-memory project (folders listed, versions, -32005 conflicts, -32601 for a
 // missing file) with a project index (`find`, the published `editor.project`).
+// `ask` relays an editor-channel request to the page, as the hub does for MCP.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** What a socket listener receives. */
@@ -52,6 +56,8 @@ export type FlowHub = {
   readonly index: Map<string, readonly HubAnswer[]>;
   /** Publishes a new revision of the project state with what changed (a watch batch). */
   project(change: HubChange): void;
+  /** Sends an editor-channel request to the page (the relay of D-33); resolves with its answer. */
+  ask(method: string, params?: Json): Promise<RpcResponse>;
   frame: number;
   open(info: SessionInfo, manifest: Manifest): void;
   close(id: string, reason: string): void;
@@ -90,6 +96,8 @@ export function createFlowHub(): FlowHub {
     broadcast(encode(notification(channel, method, params, session)));
   };
   const sessions: SessionInfo[] = [];
+  const asks = new Map<number, (response: RpcResponse) => void>();
+  let nextAsk = 9000;
   let revision = 1;
   let change: HubChange | undefined;
 
@@ -229,6 +237,11 @@ export function createFlowHub(): FlowHub {
 
     send(text: string): void {
       const message = decode(text);
+      if (isResponse(message)) {
+        asks.get(message.id)?.(message);
+        asks.delete(message.id);
+        return;
+      }
       if (!isRequest(message)) return;
       hub.received.push(message);
       this.deliver(message.channel === "files" ? filesAnswer(message) : gameAnswer(message));
@@ -261,6 +274,15 @@ export function createFlowHub(): FlowHub {
       revision += 1;
       change = next;
       notify("editor", "project", projectState());
+    },
+    ask(method, params) {
+      nextAsk += 1;
+      const id = nextAsk;
+      const answered = new Promise<RpcResponse>(resolve => {
+        asks.set(id, resolve);
+      });
+      broadcast(encode(rpcRequest(id, "editor", method, params)));
+      return answered;
     },
     frame: 1,
     open(info, manifest) {

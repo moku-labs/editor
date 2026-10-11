@@ -310,6 +310,7 @@ function fakeClient(first: SessionView[]) {
     watch: () => Promise.resolve(() => undefined),
     sessions: () => list,
     hotReload: () => undefined,
+    project: () => undefined,
     onSessions: listener => {
       listeners.add(listener);
       return () => {

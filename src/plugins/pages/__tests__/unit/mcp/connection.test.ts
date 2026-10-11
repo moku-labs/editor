@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
@@ -22,7 +23,8 @@ import { session, startFakeHub, until } from "../../fake-hub";
 // bridge starts the bin when it knows the html; a closed socket reconnects at
 // the close and, while the bin lives, 1, 3 and 7 s after it (the bin's restart,
 // D-57, D-59); a connection dropped within 5 s counts as a failed try; the
-// bridge stops only the bin it started.
+// bridge stops only the bin it started. In a moku-game folder (index.ts and
+// config.ts) with no html known, the bridge starts the engine form (D-63).
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: string;
@@ -47,6 +49,15 @@ afterEach(async () => {
   await hub.stop();
   await rm(root, { recursive: true, force: true });
 });
+
+/**
+ * Makes the temp root a moku-game folder, or half of one.
+ *
+ * @param files - The files to write (default: both `index.ts` and `config.ts`).
+ */
+function makeGameFolder(files: readonly string[] = ["index.ts", "config.ts"]): void {
+  for (const name of files) writeFileSync(join(root, name), "export {};\n");
+}
 
 /** A fake child that exits on any signal. */
 function fakeChild(pid: number) {
@@ -138,6 +149,59 @@ describe("startup", () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(lines.join("\n")).toContain("waiting for moku_start");
     expect(editor.status()).toEqual({ running: false, owned: false, bin: undefined });
+  });
+
+  it("starts the engine form in a moku-game folder without an html and without a discovery file", async () => {
+    makeGameFolder();
+    const { editor, spawn, lines } = link({ port: 4556 });
+    await editor.start();
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(spawn.mock.calls[0]?.[0]).toEqual(["bun", "bin.mjs", "--port", "4556", "--root", root]);
+    expect(editor.status()).toMatchObject({ running: true, owned: true });
+    expect(lines.join("\n")).not.toContain("waiting for moku_start");
+    await editor.shutdown();
+    expect(children[0]?.signals).toEqual(["SIGTERM"]);
+  });
+
+  it("starts the engine form on port 3000 and with --no-hmr when the bridge got no port and no hot reload", async () => {
+    makeGameFolder();
+    const { editor, spawn } = link({ hmr: false });
+    await editor.start();
+    expect(spawn.mock.calls[0]?.[0]).toEqual([
+      "bun",
+      "bin.mjs",
+      "--port",
+      "3000",
+      "--root",
+      root,
+      "--no-hmr"
+    ]);
+    await editor.shutdown();
+  });
+
+  it("keeps waiting for moku_start in a folder with only one of index.ts and config.ts", async () => {
+    makeGameFolder(["index.ts"]);
+    const { editor, spawn, lines } = link();
+    await editor.start();
+    await expect(editor.hub()).rejects.toThrow(NOT_RUNNING);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(lines.join("\n")).toContain("waiting for moku_start");
+  });
+
+  it("prefers the argv html to the engine form in a moku-game folder", async () => {
+    makeGameFolder();
+    const { editor, spawn } = link({ html: "web/index.html", port: 4557 });
+    await editor.start();
+    expect(spawn.mock.calls[0]?.[0]).toEqual([
+      "bun",
+      "bin.mjs",
+      expect.stringMatching(/\/web\/index\.html$/),
+      "--port",
+      "4557",
+      "--root",
+      root
+    ]);
+    await editor.shutdown();
   });
 
   it("starts the bin from the argv html, owns it and stops it on shutdown", async () => {
@@ -284,6 +348,7 @@ function handClient(bin: EditorDiscovery, options: HubClientOptions) {
     watch: () => Promise.resolve(() => undefined),
     sessions: () => [],
     hotReload: () => undefined,
+    project: () => undefined,
     onSessions: () => removeNothing,
     isOpen: () => open,
     close
@@ -863,6 +928,21 @@ describe("launch and stop", () => {
     const { editor } = link();
     await editor.start();
     await expect(editor.launch({})).rejects.toThrow("moku_start needs the game HTML file");
+  });
+
+  it("starts the engine form on moku_start without an html in a moku-game folder", async () => {
+    const { editor, spawn } = link();
+    await editor.start();
+    expect(spawn).not.toHaveBeenCalled();
+
+    // The folder became a moku-game after the bridge started: moku_start {} starts its engine page.
+    makeGameFolder();
+    await expect(editor.launch({ port: 4558 })).resolves.toMatchObject({
+      running: true,
+      owned: true
+    });
+    expect(spawn.mock.calls[0]?.[0]).toEqual(["bun", "bin.mjs", "--port", "4558", "--root", root]);
+    await editor.shutdown();
   });
 
   it("starts the bin on launch with the asked html and port", async () => {

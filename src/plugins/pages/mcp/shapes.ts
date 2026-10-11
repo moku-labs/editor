@@ -1,21 +1,25 @@
 /**
  * @file pages/mcp — reads the hub answers and notifications the bridge acts on (sessions,
- * heartbeats, run results, shots, file results, manifest entries and command doors) from Json
- * into typed values. Every field is checked; a bad shape reads as undefined. The bridge imports
- * only the protocol module, so these readers are its own.
+ * heartbeats, the hot reload state, run results, shots, file results, the places of a project-index
+ * key, manifest entries and command doors) from Json into typed values. Every field is checked; a
+ * bad shape reads as undefined. The bridge imports only the protocol module, so these readers are
+ * its own; the places go through the protocol's `parseFoundList`.
  */
 import type {
   CommandDescriptor,
   Effect,
   FileEntry,
   FileText,
+  HotReload,
   InputKind,
   InputSchema,
   Json,
   Manifest,
+  ProjectFound,
   RunResult,
   SessionInfo
 } from "../../registry/protocol";
+import { parseFoundList } from "../../registry/protocol";
 import { isObject } from "./rpc";
 import type { JsonObject } from "./types";
 
@@ -188,6 +192,27 @@ export function readBeat(
   const frame = numberOf(params, "frame");
   const paused = flagOf(params, "paused");
   return frame === undefined || paused === undefined ? undefined : { frame, paused };
+}
+
+/**
+ * Reads the hot reload state: the params of an `editor.hotReload` notification, or the answer of
+ * `P/hmr`.
+ *
+ * @param value - The kept params or the parsed answer.
+ * @returns A fresh `{ hmr, owner }`, or undefined for any other shape.
+ * @example
+ * ```ts
+ * readHotReload({ hmr: true, owner: "bin" }); // { hmr: true, owner: "bin" }
+ * readHotReload({ hmr: true, owner: "cloud" }); // undefined
+ * readHotReload(undefined); // undefined: the hub sent none yet
+ * ```
+ */
+export function readHotReload(value: Json | undefined): HotReload | undefined {
+  if (!isObject(value)) return undefined;
+  const hmr = flagOf(value, "hmr");
+  const owner = textOf(value, "owner");
+  if (hmr === undefined) return undefined;
+  return owner === "bin" || owner === "server" ? { hmr, owner } : undefined;
 }
 
 /**
@@ -502,6 +527,52 @@ export function readFileText(value: Json): FileText | undefined {
   const text = textOf(value, "text");
   const version = textOf(value, "version");
   return text === undefined || version === undefined ? undefined : { text, version };
+}
+
+/**
+ * Where a project-index key lives, the way the bridge prints it: the file, the binding that holds
+ * the key, the line, the hash of the bytes the line was read from (the files `version` of the
+ * file), and `broken` when the file does not parse now.
+ */
+export type Place = Pick<ProjectFound, "path" | "binding" | "line" | "hash" | "broken">;
+
+/**
+ * The printed fields of one checked `find` answer; the range and the JSX fields are left out.
+ *
+ * @param found - A checked answer.
+ * @returns The place.
+ * @example
+ * ```ts
+ * placeOf({ path: "nodes/merge.ts", binding: "merge", line: 17, range: [17, 1, 30, 3], hash: "a1" });
+ * // { path: "nodes/merge.ts", binding: "merge", line: 17, hash: "a1" }
+ * ```
+ */
+function placeOf(found: ProjectFound): Place {
+  const { path, binding, line, hash, broken } = found;
+  return {
+    path,
+    ...(binding === undefined ? {} : { binding }),
+    line,
+    hash,
+    ...(broken === undefined ? {} : { broken })
+  };
+}
+
+/**
+ * Reads a files `find` result through the protocol's strict parser: one bad answer rejects the
+ * list.
+ *
+ * @param value - The result.
+ * @returns The places (empty for a key the index does not know), or undefined for another shape.
+ * @example
+ * ```ts
+ * readPlaces(await hub.request("files", "find", { key: "node:board/merge" }));
+ * // [{ path: "nodes/merge.ts", binding: "merge", line: 17, hash: "a1b2c3" }]
+ * readPlaces([{ path: "nodes/merge.ts" }]); // undefined
+ * ```
+ */
+export function readPlaces(value: Json): Place[] | undefined {
+  return parseFoundList(value)?.map(found => placeOf(found));
 }
 
 /**

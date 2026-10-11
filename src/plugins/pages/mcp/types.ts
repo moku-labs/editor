@@ -4,7 +4,7 @@
  * no plugin: the bridge is a hub tools client in its own process.
  */
 import type { BrandConsole } from "@moku-labs/common/cli";
-import type { Channel, Json, SessionInfo } from "../../registry/protocol";
+import type { Channel, Json, ProjectState, SessionInfo } from "../../registry/protocol";
 import type { EditorDiscovery } from "../types";
 
 /**
@@ -92,7 +92,8 @@ export type NumberFieldSchema = {
 
 /**
  * One property of a tool input schema (a JSON Schema subset). A property without `type` takes any
- * JSON value. An object property is a closed object of number fields (a rect).
+ * JSON value. An object property is a closed object of number fields (a rect). A string may bound
+ * its length in characters (`minLength`, `maxLength`).
  */
 export type PropertySchema =
   | NumberFieldSchema
@@ -100,6 +101,7 @@ export type PropertySchema =
       readonly type: "string";
       readonly description: string;
       readonly minLength?: number;
+      readonly maxLength?: number;
       readonly enum?: readonly string[];
       readonly default?: string;
     }
@@ -200,7 +202,8 @@ export type HubClient = {
   readonly bin: EditorDiscovery;
   /**
    * Sends one game, files or editor request; resolves with its result, rejects with a
-   * ProtocolError. Editor requests (`selection`, `select`) take no session.
+   * ProtocolError. Editor requests (`selection`, and `select`, `device`, `show` and `node`, which
+   * the hub relays to the editor page) take no session.
    */
   request(channel: Channel, method: string, params?: Json, session?: string): Promise<Json>;
   /** Watches a source; resolves with the stop once the hub accepted the watch. */
@@ -209,6 +212,11 @@ export type HubClient = {
   sessions(): SessionView[];
   /** The last `editor.hotReload` the hub sent, if any. */
   hotReload(): Json | undefined;
+  /**
+   * The last well-formed `editor.project` the hub sent: the project index, on with its key maps or
+   * off with the reason. Undefined until the hub published one.
+   */
+  project(): ProjectState | undefined;
   /** Calls `listener` on every `sessions` notification; returns the remover. */
   onSessions(listener: (list: readonly SessionView[]) => void): () => void;
   /** True until the socket closed. */

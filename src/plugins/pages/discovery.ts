@@ -2,9 +2,19 @@
  * @file pages plugin — the discovery file `<root>/.moku/editor.json` (M3, M6). A serving bin writes
  * it after `Bun.serve` (mode 0600, through a temp file and a rename, so a reader never sees half a
  * file) and removes it on stop and on process exit. The MCP bridge reads it to find the running
- * editor. It holds the hub token: never print or log it.
+ * editor. It holds the hub token: never print or log it. `isGameFolder` lives here too: the one
+ * rule by which the bin and the MCP bridge (which may import this module, D-31) tell a moku-game
+ * folder and start the engine page (D-63).
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join } from "node:path/posix";
 import type { EditorDiscovery } from "./types";
 
@@ -37,6 +47,40 @@ export type DiscoveryInput = {
   /** When the file is written (`Date.now()`). */
   readonly startedAt: number;
 };
+
+/**
+ * Whether a path is a file.
+ *
+ * @param path - An absolute path.
+ * @returns True for a file, false for a folder or nothing.
+ * @example
+ * ```ts
+ * isFile("/games/timber/index.ts"); // true
+ * isFile("/games/timber"); // false: a folder
+ * ```
+ */
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a folder holds a moku-game: `index.ts` and `config.ts`, both files.
+ *
+ * @param root - The absolute folder.
+ * @returns True for a moku-game folder.
+ * @example
+ * ```ts
+ * isGameFolder("/games/timber"); // true: /games/timber/index.ts and config.ts exist
+ * isGameFolder("/games/timber/web"); // false
+ * ```
+ */
+export function isGameFolder(root: string): boolean {
+  return isFile(join(root, "index.ts")) && isFile(join(root, "config.ts"));
+}
 
 /**
  * The absolute path of the discovery file under a root.
