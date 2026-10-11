@@ -20,6 +20,8 @@ import {
   readDoorManifest,
   readFileEntries,
   readFileText,
+  readHotReload,
+  readPlaces,
   readRunResult,
   readSessionList,
   readShot,
@@ -203,6 +205,51 @@ describe("shape readers", () => {
     expect(commandOf({ commands: [{ id: "a" }] }, "a")).toEqual({ effect: "unknown", input: {} });
     expect(restoredFrameOf({ restored: "x" })).toBeUndefined();
     expect(restoredFrameOf(null)).toBeUndefined();
+  });
+});
+
+describe("readers of the published state and of find", () => {
+  it("reads a hot reload state and nothing else", () => {
+    expect(readHotReload({ hmr: true, owner: "bin" })).toEqual({ hmr: true, owner: "bin" });
+    expect(readHotReload({ hmr: false, owner: "server", extra: 1 })).toEqual({
+      hmr: false,
+      owner: "server"
+    });
+    expect(readHotReload({ hmr: true, owner: "cloud" })).toBeUndefined();
+    expect(readHotReload({ hmr: "yes", owner: "bin" })).toBeUndefined();
+    expect(readHotReload({ owner: "bin" })).toBeUndefined();
+    expect(readHotReload("unknown")).toBeUndefined();
+    expect(readHotReload(null)).toBeUndefined();
+    expect(readHotReload(undefined)).toBeUndefined();
+  });
+
+  it("reads the places of a find answer: path, binding, line, hash and broken", () => {
+    const jsx = {
+      path: "features/settings/settings.tsx",
+      key: "settingsBoard",
+      component: "Signboard",
+      kind: "idProp",
+      prop: "id",
+      line: 290,
+      range: [289, 7, 310, 19],
+      hash: "0f3c"
+    };
+    const node = {
+      path: "nodes/merge.ts",
+      binding: "merge",
+      line: 17,
+      range: [17, 1, 30, 3],
+      hash: "a1",
+      broken: true
+    };
+    expect(readPlaces([node, jsx])).toEqual([
+      { path: "nodes/merge.ts", binding: "merge", line: 17, hash: "a1", broken: true },
+      { path: "features/settings/settings.tsx", line: 290, hash: "0f3c" }
+    ]);
+    expect(readPlaces([])).toEqual([]);
+    expect(readPlaces([{ path: "nodes/merge.ts", line: 17 }])).toBeUndefined();
+    expect(readPlaces({ path: "nodes/merge.ts" })).toBeUndefined();
+    expect(readPlaces(null)).toBeUndefined();
   });
 });
 

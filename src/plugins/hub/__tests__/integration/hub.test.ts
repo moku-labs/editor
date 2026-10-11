@@ -463,6 +463,47 @@ describe("hub over real websockets", () => {
     });
   });
 
+  it("relays editor.device to the editor page and answers the tools client with the page's answer", async () => {
+    await serveEditor();
+    const page = await editorPage();
+    const mcp = await tools();
+    await mcp.next(isNote("editor", "sessions"));
+    const info = {
+      preset: "pixel-8",
+      orientation: "landscape",
+      folded: true,
+      w: 915,
+      h: 412,
+      presets: [
+        {
+          id: "pixel-8",
+          name: "Pixel 8",
+          group: "android",
+          kind: "phone",
+          w: 412,
+          h: 915,
+          foldable: false
+        }
+      ]
+    };
+
+    mcp.send(request(1, "editor", "device", { preset: "pixel-8", orientation: "landscape" }));
+    const relayed = await nextRequest(page, "device");
+    expect(relayed).toMatchObject({
+      channel: "editor",
+      method: "device",
+      params: { preset: "pixel-8", orientation: "landscape" }
+    });
+    page.send(success(relayed.id, info));
+    expect(await mcp.next(isResponseTo(1))).toEqual({ jsonrpc: "2.0", id: 1, result: info });
+
+    mcp.send(request(2, "editor", "device", { orientation: "sideways" }));
+    expect(await mcp.next(isResponseTo(2))).toMatchObject({
+      error: { code: -32_602, data: { reason: "invalid_input", retryable: false } }
+    });
+    expect(page.messages.filter(isRequestOf("device"))).toHaveLength(1);
+  });
+
   it("refuses role=page on an agent and any other role with 400", async () => {
     const { port, token } = await serveEditor();
 

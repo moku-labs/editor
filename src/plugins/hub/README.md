@@ -6,7 +6,8 @@ Checks Host, Origin and a per-start token before any upgrade. Runs the one webso
 Bun allows per server, with two connection kinds: `agent` (a game page) and `tools` (a tools
 page). A tools connection with `role=page` is the editor page. Keeps the game sessions. Routes
 game-channel requests from tools to the chosen session and files-channel requests to `files`.
-Keeps the editor page's selection and relays `editor.select` to the page. Publishes the project
+Keeps the editor page's selection and relays `editor.select`, `editor.device`, `editor.show` and
+`editor.node` to the page. Publishes the project
 index state of `files` as `editor.project` and answers `files.find`. Wraps the game's
 `Bun.serve` options with `serve`.
 
@@ -232,19 +233,25 @@ Tools connection requests:
 | `files` | `find` | `{ key }` (a project-index key, e.g. `node:board/merge`) | `ProjectFound[]`, lines read from disk now. -32008 `not_installed` while the index is off. |
 | `editor` | `selection` | `{}` | the kept `SelectionInfo`, or `null`. Answered by the hub. |
 | `editor` | `select` | `SelectParams` `{ key?, ref?, rect?, card? }` | `SelectionInfo`, relayed to the editor page |
+| `editor` | `device` | `DeviceParams` `{ preset?, orientation?, folded? }`. `{}` reads the device. | `DeviceInfo`, relayed to the editor page |
+| `editor` | `show` | `ShowParams` `{ workspace? }`. `{}` reads the active workspace. | `ShowInfo`, relayed to the editor page |
+| `editor` | `node` | `NodeParams` `{ id }`, 1 to 256 chars | `NodeInfo`, relayed to the editor page |
 | other | any | | -32601 |
 
 Before a game call is forwarded, the hub checks the session choice, the id in the manifest and
 the input. `select` params are checked with `parseSelectParams`; unknown fields are dropped.
+`device`, `show` and `node` params are checked with `parseDeviceParams`, `parseShowParams` and
+`parseNodeParams`. These are closed objects: an unknown field is -32602. Absent params are
+checked as `{}`. One table in `sockets/tools.ts` maps each relayed method to its parser.
 
-Editor page relay (D-33, A3, A6, A7):
+Editor page relay of `select`, `device`, `show` and `node` (D-33, D-60, A3, A6, A7):
 
 | Step | Rule |
 |---|---|
 | Choice | The page that published the kept selection, while it is open. Else the newest page connection. |
-| Request | `{"channel":"editor","method":"select","id":<hub id>,"params":…}` to the page. |
+| Request | `{"channel":"editor","method":"<method>","id":<hub id>,"params":…}` to the page, with the checked copy of the params. |
 | Answer | The page's response settles only a call relayed to that page. It goes back to the caller with the caller's id. An agent or another page cannot settle it. |
-| Deadline | `callTimeoutMs`. With `card: true` or no `card`: `4 × callTimeoutMs`. The extension is capped at 60 s, like every long call. |
+| Deadline | `callTimeoutMs`. A `select` with `card: true` or no `card`: `4 × callTimeoutMs`. The extension is capped at 60 s, like every long call. |
 | No page | -32003 `no_editor_page`: `no editor page is open. Open the editor page: http://127.0.0.1:<port>{path}/` |
 | Page closes | Its relayed calls fail -32001 `page_closed`, retryable. |
 | Session ends | Relayed calls keep waiting: `failSession` fails agent calls only. |
@@ -253,7 +260,7 @@ Tools connection notifications and responses:
 
 | From | Incoming | Result |
 |---|---|---|
-| editor page | `selection` with a `SelectionInfo` | checked with `parseSelectionInfo`, unknown fields dropped, published. The page becomes the one `select` goes to. |
+| editor page | `selection` with a `SelectionInfo` | checked with `parseSelectionInfo`, unknown fields dropped, published. The page becomes the one relayed requests go to. |
 | editor page | `selection` without params | nothing is selected: `null` is published. |
 | editor page | `selection` with a bad value | one strike, nothing published |
 | editor page | response | settles a call relayed to this page; else `hub:late-response` |
@@ -273,14 +280,14 @@ Errors the hub builds (message prefix `[moku-editor]`):
 | Code | Reason | Retryable | When |
 |---|---|---|---|
 | -32001 | `game_reloaded` | yes | the agent closed while the call was pending |
-| -32001 | `page_closed` | yes | the editor page closed before it answered a relayed `select` |
+| -32001 | `page_closed` | yes | the editor page closed before it answered a relayed request |
 | -32002 | `timeout` | yes | the call passed its deadline |
 | -32003 | `no_session` | no | the named session is not open (`data.id`), or no game is connected |
 | -32003 | `choose_session` | no | several sessions and not exactly one `embedded` |
-| -32003 | `no_editor_page` | no | `editor.select` and no tools connection with `role=page` is open |
+| -32003 | `no_editor_page` | no | `editor.select`, `device`, `show` or `node` and no tools connection with `role=page` is open |
 | -32601 | `unknown_id` | no | the source or command id is not in the manifest (`data.id`) |
 | -32601 | | no | unknown channel or method |
-| -32602 | `invalid_input` | no | bad params or input; `sub` not a safe integer ≥ 0; `select` params that do not fit `SelectParams` |
+| -32602 | `invalid_input` | no | bad params or input; `sub` not a safe integer ≥ 0; `select`, `device`, `show` or `node` params that do not fit `SelectParams`, `DeviceParams`, `ShowParams` or `NodeParams` |
 | -32600 | | no | duplicate `sub` on one connection; more than 256 pending calls |
 | -32007 | `unauthorized` | no | a request from an agent |
 
@@ -337,7 +344,7 @@ Log events (`ctx.log`):
 | depends | `filesPlugin` | `list`, `read`, `write`, `writeDataUrl`, `readBinary`, `find` for the files channel. `writeBinary {path, data}` calls `writeDataUrl(path, data)`: a mime that does not match the path is -32602, a non-image path is -32004 |
 | global event | `hub:session` | emitted |
 | global event | `files:project` | hooked, published as `editor.project` |
-| protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `ProjectFound`, `ProjectState`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `decode`, `encode` |
+| protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `ProjectFound`, `ProjectState`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `parseDeviceParams`, `parseShowParams`, `parseNodeParams`, `EditorRequests`, `RelayedEditorMethod`, `decode`, `encode` |
 
 ## Usage
 
@@ -385,7 +392,7 @@ Lifecycle:
 
 - One `serve` per app. Loopback only. No `unix`, no `tls`.
 - 32 MiB per frame. Bigger frames are closed by Bun (1009).
-- 256 pending calls per tools connection, files calls and relayed `select` calls included.
+- 256 pending calls per tools connection, files calls and relayed editor calls included.
 - `role` takes one value, `page`, and only with `kind=tools`.
 - Binary frames are not accepted.
 - A silent flip re-sends `sessions {list}` with the `heartbeat` readout, once per check. A new frame alone sends no list; the forwarded `heartbeat` carries it.

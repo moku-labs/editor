@@ -14,11 +14,12 @@ import type { EditorDiscovery } from "../types";
 // ─────────────────────────────────────────────────────────────────────────────
 // A fake hub for the MCP bridge tests: a real Bun websocket server on
 // 127.0.0.1 that checks the token, kind=tools and the Origin header like the
-// hub guard, sends `sessions {list}` (and `hotReload`) on open, answers game
-// and files requests from per-method handlers and records every request. It
-// can go away like the bin's restart (close 1012, then a closed port) and come
-// back on the same port, and it can hold its first `sessions` list, so a
-// connect stays in flight.
+// hub guard, sends `sessions {list}` and every published value (`hotReload`,
+// `project`) on open, answers game, files and editor requests from per-method
+// handlers and records every request. It can go away like the bin's restart
+// (close 1012, then a closed port) and come back on the same port, and it can
+// hold its first `sessions` list, so a connect stays in flight. A test can
+// serve its other HTTP paths, such as `P/hmr`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The token of the fake hub. */
@@ -41,6 +42,9 @@ export type Handler = (
   session: string | undefined
 ) => Json | Promise<Json>;
 
+/** Answers an HTTP request that is not the socket upgrade; undefined is the 404. */
+export type HttpHandler = (req: Request) => Response | Promise<Response> | undefined;
+
 /** The fake hub. */
 export type FakeHub = {
   readonly port: number;
@@ -54,6 +58,13 @@ export type FakeHub = {
   setSessions(list: SessionInfo[]): void;
   /** Sends a notification to every client. */
   notify(channel: "game" | "editor", method: string, params: Json, session?: string): void;
+  /**
+   * The hub's publish: keeps the value, sends `editor.<method>` to every client and replays it to
+   * a socket that opens later, right after its `sessions` list.
+   */
+  publish(method: string, params: Json): void;
+  /** Answers the HTTP requests that are not the socket upgrade (default: 404). */
+  serveHttp(handler: HttpHandler): void;
   /** Sends a `value` notification for a watch sub. */
   value(sub: number, value: Json): void;
   /** The subs watched now. */
@@ -92,14 +103,19 @@ export function session(id: string, extra: Partial<SessionInfo> = {}): SessionIn
 /**
  * Starts a fake hub.
  *
- * @param options - The first session list and the published hot reload state.
+ * @param options - The first session list and the published values.
  * @param options.sessions - The sessions sent on open.
  * @param options.hotReload - The `editor.hotReload` params sent on open, if any.
+ * @param options.project - The `editor.project` params sent on open, if any.
  */
 export function startFakeHub(
-  options: { sessions?: SessionInfo[]; hotReload?: Json } = {}
+  options: { sessions?: SessionInfo[]; hotReload?: Json; project?: Json } = {}
 ): FakeHub {
   const handlers = new Map<string, Handler>();
+  const published = new Map<string, Json>();
+  if (options.hotReload !== undefined) published.set("hotReload", options.hotReload);
+  if (options.project !== undefined) published.set("project", options.project);
+  let http: HttpHandler | undefined;
   const clients = new Set<ServerWebSocket<undefined>>();
   const requests: Received[] = [];
   const origins: string[] = [];
@@ -129,7 +145,9 @@ export function startFakeHub(
       port: onPort,
       fetch(req, srv) {
         const url = new URL(req.url);
-        if (url.pathname !== "/__editor/ws") return new Response("missing", { status: 404 });
+        if (url.pathname !== "/__editor/ws") {
+          return http?.(req) ?? new Response("missing", { status: 404 });
+        }
         const origin = req.headers.get("origin") ?? "";
         origins.push(origin);
         // A socket that arrives while the restart closes the old ones is refused.
@@ -148,8 +166,8 @@ export function startFakeHub(
           clients.add(ws);
           if (holding) return;
           ws.send(sessionsNote());
-          if (options.hotReload !== undefined) {
-            ws.send(encode(notification("editor", "hotReload", options.hotReload)));
+          for (const [method, value] of published) {
+            ws.send(encode(notification("editor", method, value)));
           }
         },
         async message(ws, text) {
@@ -194,6 +212,14 @@ export function startFakeHub(
     notify: (channel, method, params, id) => {
       const text = encode(notification(channel, method, params, id));
       for (const client of clients) client.send(text);
+    },
+    publish: (method, params) => {
+      published.set(method, params);
+      const text = encode(notification("editor", method, params));
+      for (const client of clients) client.send(text);
+    },
+    serveHttp: handler => {
+      http = handler;
     },
     value: (sub, value) => {
       const text = encode(notification("game", "value", { sub, value }));

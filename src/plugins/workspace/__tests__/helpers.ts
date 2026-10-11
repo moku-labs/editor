@@ -8,6 +8,7 @@ import type {
   Json,
   LinkStatus,
   Manifest,
+  RelayedEditorMethod,
   RunResult,
   SessionInfo,
   Tap,
@@ -128,11 +129,18 @@ export function tagged(url: string, frame = FRAME): string {
 /** A tap listener, as link's `onTap` takes it. */
 type TapListener = (tap: Tap) => void;
 
+/**
+ * `handle` of link as a mock records it. The params and the result of a handler follow its method,
+ * so the mock keeps it as a function of unknown params; a test reads it back as `RequestHandler<M>`.
+ */
+type HandleCall = (method: RelayedEditorMethod, handler: (params: never) => unknown) => () => void;
+
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
-  [K in keyof Omit<LinkApi, "files">]: Mock<LinkApi[K]>;
+  [K in keyof Omit<LinkApi, "files" | "handle">]: Mock<LinkApi[K]>;
 } & {
   files: LinkApi["files"];
+  handle: Mock<HandleCall>;
   /** Live tap listeners. */
   readonly tapListeners: Set<TapListener>;
   /** Calls every tap listener, like link on a game tap. */
@@ -209,7 +217,7 @@ export function createLinkMock(): LinkMock {
     selection: vi.fn<LinkApi["selection"]>(() => undefined),
     project: vi.fn<LinkApi["project"]>(() => undefined),
     notify: vi.fn<LinkApi["notify"]>(),
-    handle: vi.fn<LinkApi["handle"]>(() => vi.fn()),
+    handle: vi.fn<HandleCall>(() => vi.fn()),
     tapListeners,
     tap(tap) {
       for (const listener of tapListeners) listener(tap);

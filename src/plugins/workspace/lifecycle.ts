@@ -1,8 +1,9 @@
 /**
  * @file workspace plugin — onInit (validate config, load prefs, read the OS theme, the density
- * and the hash, built-in keys, Esc layers, palette commands), onStart (window listeners, the
- * manifest, restore, tap and hot reload listeners; no mount, R3) and onStop (every cleanup, timers, tap ripples,
- * unrender, remove the frame layer and hosts).
+ * and the hash, built-in keys, Esc layers, palette commands, the `device` and `show` request
+ * handlers of link), onStart (window listeners, the manifest, restore, tap and hot reload
+ * listeners; no mount, R3) and onStop (every cleanup, the request handlers among them, timers,
+ * tap ripples, unrender, remove the frame layer and hosts).
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
@@ -20,6 +21,7 @@ import { osThemeChanged } from "./prefs/apply";
 import { refreshDensity, resolveDensity, viewportWidth } from "./prefs/density";
 import { loadPrefs } from "./prefs/store";
 import { readOsTheme, watchOsTheme } from "./prefs/theme";
+import { registerRequests } from "./requests";
 import { trackCleanup } from "./state";
 import { clearToasts } from "./toasts";
 import type { WorkspaceConfig, WorkspaceCtx, WorkspaceState } from "./types";
@@ -80,8 +82,8 @@ export function validateConfig(config: Readonly<WorkspaceConfig>): void {
 }
 
 /**
- * onInit: validation, prefs, OS theme, density, hash, built-in bindings and palette commands.
- * Sync, no DOM writes.
+ * onInit: validation, prefs, OS theme, density, hash, built-in bindings, palette commands and the
+ * handlers of the hub's `device` and `show` requests. Sync, no DOM writes.
  *
  * @param ctx - Domain context of workspace.
  * @throws {Error} `[moku-editor] workspace.<field> is invalid.`
@@ -106,6 +108,7 @@ export function initWorkspace(ctx: WorkspaceCtx): void {
 
   registerBuiltIns(ctx);
   addPaletteItems(ctx, builtInCommands(ctx));
+  registerRequests(ctx);
 }
 
 /**

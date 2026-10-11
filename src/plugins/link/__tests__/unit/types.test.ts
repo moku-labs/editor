@@ -1,12 +1,15 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
 import type {
+  DeviceInfo,
+  DeviceParams,
   FileBinary,
   Json,
   LinkStatus,
   Manifest,
   ProjectFound,
   ProjectState,
+  RelayedEditorMethod,
   RunResult,
   SelectionInfo,
   SelectParams,
@@ -60,11 +63,24 @@ describe("link types", () => {
     expectTypeOf(app.link.selection).returns.toEqualTypeOf<SelectionInfo | undefined>();
     expectTypeOf(app.link.notify).parameter(0).toEqualTypeOf<"selection">();
     expectTypeOf(app.link.notify).parameter(1).toEqualTypeOf<SelectionInfo | null>();
-    expectTypeOf(app.link.handle)
-      .parameter(1)
-      .toEqualTypeOf<(params: SelectParams) => Promise<SelectionInfo>>();
+    expectTypeOf(app.link.handle).parameter(0).toEqualTypeOf<RelayedEditorMethod>();
     expectTypeOf(app.link.handle).returns.toEqualTypeOf<() => void>();
     expect(app.link.selection()).toBeUndefined();
+  });
+
+  it("app.link.handle takes each relayed method with its own params and result", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.handle<RelayedEditorMethod>)
+      .parameter(0)
+      .toEqualTypeOf<"select" | "device" | "show" | "node">();
+    expectTypeOf(app.link.handle<"select">)
+      .parameter(1)
+      .toEqualTypeOf<(params: SelectParams) => SelectionInfo | Promise<SelectionInfo>>();
+    expectTypeOf(app.link.handle<"device">)
+      .parameter(1)
+      .toEqualTypeOf<(params: DeviceParams) => DeviceInfo | Promise<DeviceInfo>>();
+    expectTypeOf(app.link.handle<"device">).returns.toEqualTypeOf<() => void>();
+    expect(typeof app.link.handle).toBe("function");
   });
 
   it("app.link carries the project index: project() and files.find", () => {
@@ -79,7 +95,7 @@ describe("link types", () => {
     const app = framework.createApp({});
     // @ts-expect-error — the page notifies only its selection
     expect(() => app.link.notify("hotReload", { hmr: true, owner: "bin" })).not.toThrow();
-    // @ts-expect-error — the page handles only select
+    // @ts-expect-error — `selection` is not relayed to the page: the hub answers it itself
     expect(typeof app.link.handle("selection", async () => ({}))).toBe("function");
   });
 

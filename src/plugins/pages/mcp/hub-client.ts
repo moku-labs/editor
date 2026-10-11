@@ -1,10 +1,18 @@
 /**
  * @file pages/mcp — the bridge's hub tools connection (M2): `${ws}?token=…&kind=tools` with the
  * Origin header `http://127.0.0.1:<port>` so the hub guard passes, JSON-RPC ids, the `sessions`
- * list with the live heartbeats, `editor.hotReload`, game, files and editor requests, and
+ * list with the live heartbeats, the last `editor.hotReload` and `editor.project` (the hub replays
+ * both to a new connection right after its `sessions` list), game, files and editor requests, and
  * `watch`/`value`/`unwatch`. The token is never logged, and neither is the URL that carries it.
  */
-import type { Channel, Json, Message, Notification, SessionInfo } from "../../registry/protocol";
+import type {
+  Channel,
+  Json,
+  Message,
+  Notification,
+  ProjectState,
+  SessionInfo
+} from "../../registry/protocol";
 import {
   decode,
   encode,
@@ -12,6 +20,7 @@ import {
   fromWireError,
   isFailure,
   isNotification,
+  parseProjectState,
   request as requestMessage,
   wireError
 } from "../../registry/protocol";
@@ -76,6 +85,8 @@ type ClientState = {
   sessions: SessionInfo[];
   readonly beats: Map<string, { readonly frame: number; readonly paused: boolean }>;
   hotReload: Json | undefined;
+  /** The last well-formed `editor.project` state. */
+  project: ProjectState | undefined;
   readonly listeners: Set<(list: readonly SessionView[]) => void>;
 };
 
@@ -170,34 +181,56 @@ function takeSessions(state: ClientState, list: SessionInfo[]): void {
 }
 
 /**
- * One notification of the hub: sessions, hot reload, a forwarded heartbeat or a watched value.
+ * One editor-channel notification of the hub: the sessions, the hot reload state or the project
+ * index. A project state that is not well-formed is dropped: the last good one stays.
  *
  * @param state - The connection state.
  * @param note - The notification.
  * @param onReady - Called on every `sessions` list (the first one opens the connection).
  */
-function onNotification(state: ClientState, note: Notification, onReady: () => void): void {
-  const { channel, method, params } = note;
-  if (channel === "editor" && method === "sessions") {
+function onEditorNote(state: ClientState, note: Notification, onReady: () => void): void {
+  const { method, params } = note;
+  if (method === "sessions") {
     const list = readSessionList(params);
     if (list === undefined) return;
     takeSessions(state, list);
     onReady();
     return;
   }
-  if (channel === "editor" && method === "hotReload") {
-    state.hotReload = params;
-    return;
-  }
-  if (channel === "game" && method === "heartbeat" && note.session !== undefined) {
+  if (method === "hotReload") state.hotReload = params;
+  if (method === "project") state.project = parseProjectState(params) ?? state.project;
+}
+
+/**
+ * One game-channel notification the hub forwards: a heartbeat of a session or a watched value.
+ *
+ * @param state - The connection state.
+ * @param note - The notification.
+ */
+function onGameNote(state: ClientState, note: Notification): void {
+  const { method, params } = note;
+  if (method === "heartbeat" && note.session !== undefined) {
     const beat = readBeat(params);
     if (beat !== undefined) state.beats.set(note.session, beat);
     return;
   }
-  if (channel === "game" && method === "value" && isObject(params)) {
+  if (method === "value" && isObject(params)) {
     const { sub, value } = params;
     if (typeof sub === "number" && value !== undefined) state.subs.get(sub)?.(value);
   }
+}
+
+/**
+ * One notification of the hub: sessions, hot reload, the project index, a forwarded heartbeat or a
+ * watched value.
+ *
+ * @param state - The connection state.
+ * @param note - The notification.
+ * @param onReady - Called on every `sessions` list (the first one opens the connection).
+ */
+function onNotification(state: ClientState, note: Notification, onReady: () => void): void {
+  if (note.channel === "editor") onEditorNote(state, note, onReady);
+  else if (note.channel === "game") onGameNote(state, note);
 }
 
 /**
@@ -314,6 +347,7 @@ function clientOf(
     watch,
     sessions: () => sessionViews(state),
     hotReload: () => state.hotReload,
+    project: () => state.project,
     onSessions: listener => {
       state.listeners.add(listener);
       return () => state.listeners.delete(listener);
@@ -376,6 +410,7 @@ export function connectHub(
     sessions: [],
     beats: new Map(),
     hotReload: undefined,
+    project: undefined,
     listeners: new Set()
   };
   const url = `${bin.ws}?token=${encodeURIComponent(bin.token)}&kind=tools`;

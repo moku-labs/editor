@@ -1,13 +1,14 @@
 /**
  * @file flowView plugin — onInit (register the Flow panel, the palette Commands, the Flow keys and
- * the Esc layers; capture link.files; take the applied density; no I/O), onStart (the session
- * watches of the flow sources) and onStop (wait for a pending layout save at most 1000 ms, clear
- * timers and the rAF, dispose the ELK engine, run every remover).
+ * the Esc layers; capture link.files; take the applied density; answer the editor request `node`;
+ * no I/O), onStart (the session watches of the flow sources) and onStop (wait for a pending layout
+ * save at most 1000 ms, clear timers and the rAF, dispose the ELK engine, run every remover).
  */
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
 import { actionsOf } from "./actions";
+import { answerNode } from "./handlers";
 import { escapeLayers, flowKeys } from "./keys";
 import { commandItems } from "./palette";
 import { createFlowPanel } from "./panel";
@@ -22,18 +23,23 @@ const SAVE_WAIT_MS = 1000;
 /**
  * onInit: registers the Flow panel (D-04), adds the Commands, binds the Flow keys and the Esc layers
  * and keeps every remover; captures link.files for the stop flush; the layout spaces by the
- * density the shell applies now (workspace:density keeps it in step).
+ * density the shell applies now (workspace:density keeps it in step); answers the editor request
+ * `node` the hub relays through link (D-60), until onStop runs its remover.
  *
  * @param ctx - Domain context of flowView.
  */
 export function initFlowView(ctx: FlowCtx): void {
   const actions = actionsOf(ctx);
   const workspace = ctx.require(workspacePlugin);
+  const link = ctx.require(linkPlugin);
   const { view } = ctx.state;
   ctx.require(panelsPlugin).register(createFlowPanel(ctx));
-  view.files = ctx.require(linkPlugin).files;
+  view.files = link.files;
   ctx.state.layout.density = workspace.density();
-  view.removers.push(workspace.palette.add(commandItems(ctx, actions)));
+  view.removers.push(
+    workspace.palette.add(commandItems(ctx, actions)),
+    link.handle("node", answerNode(ctx))
+  );
   for (const binding of flowKeys(ctx, actions)) view.removers.push(workspace.keys.bind(binding));
   for (const [layer, close] of escapeLayers(actions)) {
     view.removers.push(workspace.keys.escape(layer, close));
@@ -54,7 +60,7 @@ export function startFlowView(ctx: FlowCtx): void {
 /**
  * onStop (TeardownContext: own state only): waits for a pending layout save at most 1000 ms, clears
  * the timers, cancels the camera rAF, disposes the ELK engine (worker terminated, Blob URL revoked)
- * and runs every remover (the session watches among them).
+ * and runs every remover (the session watches and the `node` request handler among them).
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.

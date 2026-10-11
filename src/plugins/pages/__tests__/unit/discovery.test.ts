@@ -7,17 +7,21 @@ import {
   DISCOVERY_FILE,
   discoveryOf,
   discoveryPath,
+  isGameFolder,
   publishDiscovery,
   removeDiscovery,
   writeDiscovery
 } from "../../discovery";
+import { isGameFolder as enginePageIsGameFolder, gameFolderProblem } from "../../engine-page";
 import type { EditorDiscovery } from "../../types";
 import { TOKEN } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pages discovery (M3, M6): the bin writes <root>/.moku/editor.json, mode 0600,
 // through a temp file and a rename, and removes it on stop and on process exit.
-// Only the process that wrote the file removes it.
+// Only the process that wrote the file removes it. `isGameFolder` tells a
+// moku-game folder (index.ts and config.ts): the bin and the MCP bridge both
+// start the engine page there.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let root: string;
@@ -47,6 +51,32 @@ function record(pid = process.pid): EditorDiscovery {
     startedAt: 1_700_000_000_000
   });
 }
+
+describe("isGameFolder", () => {
+  it("is true only with both index.ts and config.ts, as files", async () => {
+    expect(isGameFolder(root)).toBe(false);
+    writeFileSync(join(root, "index.ts"), "export {};\n");
+    expect(isGameFolder(root)).toBe(false);
+    writeFileSync(join(root, "config.ts"), "export {};\n");
+    expect(isGameFolder(root)).toBe(true);
+
+    const half = join(root, "half");
+    await mkdir(join(half, "index.ts"), { recursive: true });
+    writeFileSync(join(half, "config.ts"), "export {};\n");
+    expect(isGameFolder(half)).toBe(false);
+    expect(isGameFolder(join(root, "missing"))).toBe(false);
+  });
+
+  it("is the function engine-page.ts re-exports, so the bin and the bridge share one rule", () => {
+    expect(enginePageIsGameFolder).toBe(isGameFolder);
+    expect(gameFolderProblem(root)).toBe(
+      `[moku-editor] ${root} has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder`
+    );
+    writeFileSync(join(root, "index.ts"), "export {};\n");
+    writeFileSync(join(root, "config.ts"), "export {};\n");
+    expect(gameFolderProblem(root)).toBeUndefined();
+  });
+});
 
 describe("discoveryOf", () => {
   it("builds version 1 with the loopback url and the hub websocket url", () => {

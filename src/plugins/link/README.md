@@ -8,9 +8,9 @@ choice first, then this page's own game frame, then the newest embedded one, the
 The game frame of another tools tab is attached only through `choose()`. It caches that session's manifest
 and exposes the remote `EditorChannel` that every panel reads through. It also carries the files
 client and derives the link status. As the editor page (`role: "page"`), it publishes the editor
-selection to the hub and answers the `editor.select` requests the hub relays (D-33). It keeps
-the project index the hub publishes and asks it where a key lives (`files.find`). It renders
-nothing.
+selection to the hub and answers the editor requests the hub relays: `select`, `device`, `show`
+and `node` (D-33, D-60). It keeps the project index the hub publishes and asks it where a key
+lives (`files.find`). It renders nothing.
 
 ## Configuration
 
@@ -19,7 +19,7 @@ nothing.
 | `retryMs` | `number` | `1000` | Base delay of the reconnect backoff: `min(retryMs × 2^n, 8000)`. |
 | `boot` | `string` | `"#moku-editor-boot"` | CSS selector of the JSON script tag `pages` injects. |
 | `reloadGraceMs` | `number` | `8000` | How long an expected reload reads `lost` with `reloading: true` (U7). Without a heartbeat of the game by then the status is a plain `lost`. The default outlasts the bin's longest restart: its port is closed for up to 6 s (D-57) and link reconnects 1 s, 3 s and 7 s after the close. No upper bound: a window still open 10 s after a session loss (a value of 10000 or more, or a renewed window) ends as `empty` when no session came back, with no plain `lost` before it. A positive number; `onInit` throws `[moku-editor] link.reloadGraceMs is invalid.` otherwise. |
-| `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays `editor.select` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
+| `role` | `"page" \| "tools"` | `"page"` | `"page"`: the editor page. The upgrade URL gets `&role=page`, so the hub takes its `selection` and relays the editor requests `select`, `device`, `show` and `node` to it. `"tools"`: a plain tools client, no role sent. A headless e2e client passes `"tools"`. |
 
 Fixed constants in `types.ts` (not config):
 
@@ -37,7 +37,7 @@ Fixed constants in `types.ts` (not config):
 ## API
 
 `app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap, hot
-reload, the editor selection, the select handler, the project index and files.
+reload, the editor selection, the request handlers, the project index and files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -62,7 +62,7 @@ reload, the editor selection, the select handler, the project index and files.
 | `setHotReload` | `(on: boolean) => Promise<boolean>` | `POST {path}/hmr` on the page origin (the boot socket's http origin outside a page) with `{ hmr }` and `Authorization: Bearer <boot.token>`. Takes the state the server answers. True when the bin owns the server and its HMR now equals `on`: the bin restarts its server for a change (D-32). False for a game's own server (`owner: "server"`), 401 or no boot. A network failure (the restart cut the answer off) is the warn `link:hot-reload-failed`; the call then waits up to 10 s for a `hotReload` state delivered on a new socket (the reconnect) and answers whether its `hmr` equals `on` (A1). A state the old socket delivered does not count. No reconnect in time, or `app.stop()`, answers false. Never rejects. |
 | `selection` | `() => SelectionInfo \| undefined` | A fresh copy of the selection from the hub's last `editor.selection` notification: this page's own publish echoed back, or another editor page tab's. `undefined` until the hub sent one, and when nothing is selected. A malformed one is the warn `link:bad-selection` and keeps the last value. |
 | `notify` | `(method: "selection", params: SelectionInfo \| null) => void` | Sends the editor-channel notification `selection` to the hub through `toWireValue`. `null` (nothing selected) goes out without params: the wire refuses null params. Dropped while the socket is closed. The last value, `null` included, is sent again each time a socket opens. The hub takes it only from a `role: "page"` link. A failed send is the warn `link:notify-failed`. A no-op after stop. |
-| `handle` | `(method: "select", handler: (params: SelectParams) => Promise<SelectionInfo>) => () => void` | Handles the editor-channel request `select` the hub relays to this page (MCP `moku_select`). The params are checked with `parseSelectParams`; missing params are `{}`. The handler's result goes back through `toWireValue` with the hub's id. A thrown error goes back through `toWireError` and is logged as `link:request-failed`: at debug for invalid input (-32602, such as an unknown key; the caller gets the error), at warn otherwise. A later handler replaces an earlier one. Returns an idempotent remover that removes only its own handler. |
+| `handle` | `<M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>) => () => void` | Handles an editor-channel request the hub relays to this page: `select`, `device`, `show` or `node`. One handler per method. Returns an idempotent remover that removes only its own handler. See [handle](#handle). |
 | `project` | `() => ProjectState \| undefined` | The project index from the hub's last `editor.project` notification: `on` with its key maps (`defs`, `uses`, `broken`, `manifest`), or `off` with the reason. Frozen. Kept across reconnects. `undefined` until the hub sent one. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`, `find(key)`. No session needed. `find` answers the `ProjectFound[]` of a project-index key, lines read from disk at the call; `[]` for a key the index does not know; -32008 `not_installed` while the index is off. |
 
@@ -92,6 +92,34 @@ offSelect();
 stop();
 ```
 
+### handle
+
+`handle(method, handler)` adds the handler of one editor-channel request the hub relays to this
+page (D-33, D-60). There are four methods. Each has its own params, parser and result, declared in
+`EditorRequests` of the protocol.
+
+| Method | Params | Checked with | Result | Answers |
+|---|---|---|---|---|
+| `select` | `SelectParams` | `parseSelectParams` | `SelectionInfo` | The element after the select (MCP `moku_select`). |
+| `device` | `DeviceParams` | `parseDeviceParams` | `DeviceInfo` | The device of the game viewer. |
+| `show` | `ShowParams` | `parseShowParams` | `ShowInfo` | The active workspace. |
+| `node` | `NodeParams` | `parseNodeParams` | `NodeInfo` | The focused graph node. |
+
+```ts
+const link = ctx.require(linkPlugin);
+const offShow = link.handle("show", params => {
+  if (params.workspace !== undefined) open(params.workspace); // params is ShowParams
+  return { workspace: active(), workspaces: WORKSPACE_NAMES }; // a ShowInfo, with or without a promise
+});
+offShow();
+```
+
+- The handler is a `RequestHandler<M>`: `(params: EditorRequests[M]["params"]) => EditorRequests[M]["result"] | Promise<EditorRequests[M]["result"]>`. The method fixes both types: a `device` handler that returns a `ShowInfo` does not compile.
+- One handler per method. A later handler replaces the earlier one of the same method. The handlers of the other methods stay.
+- The remover removes only its own handler. A second call does nothing.
+- The params are checked with the parser of the method before the handler runs. Missing params are `{}`: `device {}` and `show {}` are reads, `node {}` is bad params.
+- The handler's result goes back through `toWireValue` with the hub's id. A thrown error goes back through `toWireError` and is logged as `link:request-failed`: at debug for invalid input (-32602, such as an unknown key; the caller gets the error), at warn otherwise.
+
 ### Errors
 
 Every error is a wire error built with `wireError`. Its message starts with `[moku-editor]`.
@@ -108,8 +136,8 @@ Answers this page sends to the hub for an editor-channel request:
 
 | Code | `data.reason` | When |
 |---|---|---|
-| -32601 | none | No handler for the method (`select` without `handle`, or any other editor method). |
-| -32602 | `invalid_input` | The params are not SelectParams. The handler is not called. |
+| -32601 | none | No handler for the method: `select`, `device`, `show` or `node` without `handle`, or any other editor method. |
+| -32602 | `invalid_input` | The parser of the method refused the params. The handler is not called. |
 | any | the handler's | The handler threw a wire error. A plain `Error` is -32000 `command_failed`. |
 
 ## Events
@@ -204,7 +232,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 - `readManifest` keeps `restored { bookmark, frame }` (set by the bridge in the first hello after it restored its checkpoint across Bun's full reload, R6) and drops a malformed one; the manifest stays.
 - Hot reload: the hub sends `editor.hotReload { hmr, owner }` after `sessions {list}` and on each change. A malformed one is the warn `link:bad-hot-reload`. workspace shows the Hot reload switch from `hotReload()`/`onHotReload`, calls `setHotReload` and confirms by `onHotReload`.
 - Hot reload switch (D-32, A1): the bin answers the POST, then restarts its server. The hub closes the socket with 1012 `editor restarting` first; link logs `link:closed` at info, as every close, and reconnects after `retryMs`; the hub replays `hotReload` on open. That replay settles a `setHotReload` whose answer the restart cut off.
-- Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
+- Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. `device`, `show` and `node` ride the same relay, one handler per method (D-60). The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
 - Project index: the files plugin opens the index of the files root; the hub publishes its state as `editor.project` and replays it on every socket open. link parses it with the protocol's `parseProjectState` (re-exported as `readProjectState`). A malformed state is the warn `link:bad-project` and keeps the last one. Views read `project()` and drop what the `link:project` delta names. JSX keys never ride the state: only `files.find` reaches them.
 - Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.

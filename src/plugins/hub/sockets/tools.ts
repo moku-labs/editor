@@ -2,17 +2,20 @@
  * @file hub plugin — messages of a tools page connection: game-channel requests are checked
  * (session, id in the manifest, input) before they are forwarded to the agent; files-channel
  * requests go to the files plugin; editor-channel requests answer the kept selection or are
- * relayed to the editor page. An editor page (`role=page`, D-33) also sends its `selection` and
+ * relayed to the editor page (`select`, `device`, `show`, `node`: one table, each with the protocol
+ * parser of its params, D-60). An editor page (`role=page`, D-33) also sends its `selection` and
  * answers relayed calls; other notifications and responses are ignored. At most 256 pending calls
  * per connection.
  */
 import type { FilesApi } from "../../files/types";
 import type {
   CommandDescriptor,
+  EditorRequests,
   InputSchema,
   Json,
   Message,
   Notification,
+  RelayedEditorMethod,
   Request as RpcRequest,
   SourceDescriptor,
   SubId
@@ -24,7 +27,10 @@ import {
   isNotification,
   isRequest,
   isResponse,
+  parseDeviceParams,
+  parseNodeParams,
   parseSelectParams,
+  parseShowParams,
   success,
   toWireError,
   toWireValue,
@@ -64,6 +70,33 @@ const WATCH = { sub: "number", id: "string", input: "json?" } satisfies InputSch
 const UNWATCH = { sub: "number" } satisfies InputSchema;
 
 /**
+ * How the hub checks one request it relays to the editor page.
+ */
+type RelayCheck<M extends RelayedEditorMethod> = {
+  /** The protocol parser of the params: a fresh checked copy, or undefined when they do not fit. */
+  readonly parse: (value: unknown) => EditorRequests[M]["params"] | undefined;
+  /** The params shape, as the -32602 message prints it. */
+  readonly shape: string;
+};
+
+/**
+ * The editor-channel requests the hub relays to the editor page (D-33, D-60), each with the check
+ * of its params. A method that is not a key here is not relayed.
+ */
+const RELAYED: { readonly [M in RelayedEditorMethod]: RelayCheck<M> } = {
+  select: {
+    parse: parseSelectParams,
+    shape: "{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }"
+  },
+  device: {
+    parse: parseDeviceParams,
+    shape: '{ preset?: string, orientation?: "portrait" | "landscape", folded?: boolean }'
+  },
+  show: { parse: parseShowParams, shape: "{ workspace?: WorkspaceName }" },
+  node: { parse: parseNodeParams, shape: "{ id: string (1 to 256 chars) }" }
+};
+
+/**
  * The -32601 error of an unknown method or channel.
  *
  * @param name - `channel.method`.
@@ -92,19 +125,37 @@ function invalidRequest(message: string): Error {
 }
 
 /**
- * The -32602 error of `editor.select` params that do not fit SelectParams.
+ * True for an editor-channel method the hub relays to the editor page: an own key of `RELAYED`, so
+ * a name every object inherits is not one.
  *
+ * @param method - The request method.
+ * @returns Whether the method is relayed.
+ * @example
+ * ```ts
+ * isRelayed("device"); // true
+ * isRelayed("selection"); // false: the hub answers it itself
+ * isRelayed("constructor"); // false
+ * ```
+ */
+function isRelayed(method: string): method is RelayedEditorMethod {
+  return Object.hasOwn(RELAYED, method);
+}
+
+/**
+ * The -32602 error of relayed params that do not fit the shape of their method.
+ *
+ * @param method - The relayed method.
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * invalidSelectParams().message;
- * // "[moku-editor] editor.select params must be { key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }"
+ * invalidRelayParams("node").message;
+ * // "[moku-editor] editor.node params must be { id: string (1 to 256 chars) }"
  * ```
  */
-function invalidSelectParams(): Error {
+function invalidRelayParams(method: RelayedEditorMethod): Error {
   return wireError(
     errorCode.invalidInput,
-    "editor.select params must be { key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }",
+    `editor.${method} params must be ${RELAYED[method].shape}`,
     { reason: "invalid_input", retryable: false }
   );
 }
@@ -258,9 +309,37 @@ function routeFiles(ctx: HubCtx, files: FilesApi, conn: ToolsConn, req: RpcReque
 }
 
 /**
+ * A request relayed to the editor page: the params are checked with the parser of the method, then
+ * the checked copy goes to the page, whose answer comes back with the tools id. Absent params are
+ * checked as `{}`.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The tools connection.
+ * @param req - The request.
+ * @param method - The method of the request, known to be relayed.
+ * @throws {Error} -32602 `invalid_input` for params that do not fit (nothing is relayed), -32003
+ * `no_editor_page` when no page is open.
+ */
+function relayToPage(
+  ctx: HubCtx,
+  conn: ToolsConn,
+  req: RpcRequest,
+  method: RelayedEditorMethod
+): void {
+  const params = RELAYED[method].parse(req.params ?? {});
+  if (params === undefined) throw invalidRelayParams(method);
+
+  forwardToPage(ctx, method, toWireValue(params), {
+    kind: "tools",
+    conn: conn.conn,
+    toolsId: req.id
+  });
+}
+
+/**
  * An editor-channel request: `selection` answers the kept selection (`null` when none, never
- * forwarded); `select` is checked and relayed to the editor page, whose answer comes back with
- * the tools id.
+ * forwarded); `select`, `device`, `show` and `node` are checked and relayed to the editor page,
+ * whose answer comes back with the tools id.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
@@ -268,26 +347,16 @@ function routeFiles(ctx: HubCtx, files: FilesApi, conn: ToolsConn, req: RpcReque
  * @throws {Error} A wire error for the response: -32602, -32003 `no_editor_page`, -32601.
  */
 function routeEditor(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
-  switch (req.method) {
-    case "selection": {
-      checkInput(NO_PARAMS, req.params ?? {});
-      sendJson(conn, success(req.id, ctx.state.published.get("selection") ?? JSON_NULL));
-      return;
-    }
-    case "select": {
-      const params = parseSelectParams(req.params ?? {});
-      if (params === undefined) throw invalidSelectParams();
-      forwardToPage(ctx, req.method, toWireValue(params), {
-        kind: "tools",
-        conn: conn.conn,
-        toolsId: req.id
-      });
-      return;
-    }
-    default: {
-      throw unknownMethod(`editor.${req.method}`);
-    }
+  const { method } = req;
+
+  if (method === "selection") {
+    checkInput(NO_PARAMS, req.params ?? {});
+    sendJson(conn, success(req.id, ctx.state.published.get("selection") ?? JSON_NULL));
+    return;
   }
+  if (!isRelayed(method)) throw unknownMethod(`editor.${method}`);
+
+  relayToPage(ctx, conn, req, method);
 }
 
 /**

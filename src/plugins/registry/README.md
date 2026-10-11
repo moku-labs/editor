@@ -193,6 +193,7 @@ Runtime-free, re-exported from `"."`. It imports nothing outside itself. Importe
 | `types.ts` | Every wire type and the shared wire shapes (`SessionInfo`, `FileEntry`, `ToolsBoot`, …). |
 | `errors.ts` | `ERROR_PREFIX`, `errorCode` (-32008 `notInstalled` included), `ProtocolError`, `wireError`, `isWireError`, `toWireError`, `fromWireError`, `isRetryable`, `isVersionConflict` (-32005: the file changed since it was read), `bareMessage`. |
 | `selection.ts` | `isSelectionInfo`, `parseSelectionInfo`, `parseSelectParams`: the checks of the selection wire values, `area`, `items` and the `select` `rect` included. Unknown fields are ignored by the guard and dropped by the parsers, inside the items too. |
+| `editor-requests.ts` | The checks of the three requests the hub relays to the page next to `select` (change mcp-editor-tools, D-60): `parseDeviceParams`, `parseShowParams`, `parseNodeParams` for the params, `parseDeviceInfo`, `parseShowInfo`, `parseNodeInfo` for the answers, and `WORKSPACE_NAMES`. Params are closed objects: an unknown field or a wrong type answers `undefined`. Answers are read like `parseSelectionInfo`: known fields are checked, unknown fields are dropped, in a preset row too. A parser returns a fresh copy. |
 | `check.ts` | `checkInput`, `isJson`. Holds the one boundary cast of the editor. |
 | `hash.ts` | `commandsHash(manifest)` (D-37): commands sorted by `id`, the JSON of `[id, effect, input]` per command with `input` keys sorted, joined with `\n`, FNV-1a 32-bit over the UTF-16 code units, 8 lowercase hex chars. Titles and sources do not count. The hub stamps it on `SessionInfo.manifestHash`. |
 | `session-choice.ts` | `pickSession(sessions, requested?)`: the one session rule of a game request. The asked id, else the only session, else the one embedded session; `undefined` when none or several fit. An unknown asked id never falls back. Generic over `{ id, embedded }`, so it returns the caller's own type. The hub's `chooseSession` wraps it and throws -32003; the MCP bridge's `chooseSession` uses it as is. |
@@ -221,13 +222,37 @@ Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10, A15):
 | `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null, project: ProjectState }`. `PublishMethod` is its keys: `"hotReload" \| "selection" \| "project"`. |
 | `PictureFormat` | `"jpeg" \| "png"`: the format of a picture on the wire (editor.capture, editor.sheet, a crop). JPEG is the default (D-34). capture, gameView and the MCP bridge use this one type. |
 | `SelectParams` | `{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }`. `rect` picks an area like a Reference-mode drag and wins over `key` and `ref`. The page treats an absent `card` as `true`. |
-| `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. |
+| `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. `RelayedEditorMethod` is the four requests the hub relays to the page. |
 
 ```ts
 parseSelectionInfo({ ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1, zoom: 2 });
 // { ref: { kind: "entity", id: 7 }, name: "slime", type: "entity", at: 1 }
 parseSelectParams({ rect: { x: 0, y: 30, w: 200, h: 60 } }); // an area: every element inside
 parseSelectParams({ card: "yes" }); // undefined
+```
+
+Shapes of the editor requests `device`, `show` and `node` (change mcp-editor-tools, D-60). All
+readonly. Empty params (`device {}`, `show {}`) read the state and change nothing.
+
+| Type | Fields |
+|---|---|
+| `WorkspaceName` | `"flow" \| "game" \| "render" \| "state" \| "files" \| "console"`: the same members as workspace's `WorkspaceId`, declared here so the protocol imports no plugin type. `WORKSPACE_NAMES` is the list at runtime, in rail order. |
+| `DeviceParams` | `{ preset?: string, orientation?: Orientation, folded?: boolean }`. `preset` is any string: the page knows the presets and answers -32602 for an id it does not have. |
+| `DevicePresetInfo` | `{ id, name, group, kind, w, h, foldable }`: a row of `DeviceSpec` with the same `id`, `name`, `group` and `kind`, the cover-screen `w` and `h` in portrait, and `foldable` true when the spec has two screens. |
+| `DeviceInfo` | `{ preset, orientation, folded, w, h, presets }`. `folded` is always `true` for a preset that is not foldable. `w` and `h` are the game viewport after the change in CSS px, orientation applied. `presets` is a list of `DevicePresetInfo`. |
+| `ShowParams` | `{ workspace?: WorkspaceName }`. |
+| `ShowInfo` | `{ workspace: WorkspaceName, workspaces: readonly WorkspaceName[] }`: the active workspace after the change and the names a next request can take. |
+| `NodeParams` | `{ id: string }`, 1 to 256 chars. |
+| `NodeInfo` | `{ id: string, selected: string }`. `selected` is the item key the Flow view focused, e.g. `"main/board>board/merge"` for a node inside a sub-flow. |
+| `RelayedEditorMethod` | `"select" \| "device" \| "show" \| "node"`: the requests the hub relays to the editor page. `selection` is not one: the hub answers it itself. |
+
+```ts
+parseDeviceParams({ preset: "pixel-8", orientation: "landscape" }); // the same fields, a fresh object
+parseDeviceParams({}); // {}: a read
+parseDeviceParams({ preset: "pixel-8", zoom: 2 }); // undefined: an unknown field
+parseShowParams({ workspace: "settings" }); // undefined: not in WORKSPACE_NAMES
+parseNodeParams({ id: "" }); // undefined: 1 to 256 chars
+parseNodeInfo({ id: "main/home", selected: "main/home", open: true }); // { id: "main/home", selected: "main/home" }
 ```
 
 Shape of the MCP door tools (change mcp-doors, D-37):
@@ -285,6 +310,9 @@ Editor-channel methods:
 | notification | `project` | `ProjectState` | | hub to tools (published, from the files event `files:project`) |
 | request | `selection` | `{}` | `SelectionInfo \| null` | tools to hub |
 | request | `select` | `SelectParams` | `SelectionInfo` | tools to hub, hub to the editor page |
+| request | `device` | `DeviceParams` | `DeviceInfo` | tools to hub, hub to the editor page |
+| request | `show` | `ShowParams` | `ShowInfo` | tools to hub, hub to the editor page |
+| request | `node` | `NodeParams` | `NodeInfo` | tools to hub, hub to the editor page |
 
 A null selection travels as a `selection` notification without params.
 
@@ -294,6 +322,13 @@ Errors of the selection relay:
 |---|---|---|---|---|
 | `no_editor_page` | -32003 | `noEditorPage` | no | No tools connection with `role=page` is open. |
 | `page_closed` | -32001 | `pageClosed` | yes | The page closed before it answered. |
+
+Errors of `device`, `show` and `node`, next to the two above:
+
+| Reason | Code | `errorCode` | Retryable | When |
+|---|---|---|---|---|
+| `invalid_input` | -32602 | `invalidInput` | no | The params fail their parser; `device` names a preset the page does not have (`field: "preset"`); `node` names a node the graph does not have (`field: "id"`). |
+| `no_graph` | -32003 | `noSession` | yes | `node` arrived before the Flow view had its first graph. |
 
 Game-channel notifications of the agent and their params:
 

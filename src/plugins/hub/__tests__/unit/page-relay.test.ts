@@ -1,6 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Json, Message, SelectionInfo } from "../../../registry/protocol";
-import { failure, notification, request, success, toWireValue } from "../../../registry/protocol";
+import type {
+  DeviceInfo,
+  Json,
+  Message,
+  NodeInfo,
+  RelayedEditorMethod,
+  SelectionInfo,
+  ShowInfo,
+  WireError
+} from "../../../registry/protocol";
+import {
+  failure,
+  notification,
+  request,
+  success,
+  toWireValue,
+  WORKSPACE_NAMES
+} from "../../../registry/protocol";
 import { deadlineFor, failSession } from "../../routing/calls";
 import type { FakeSocket, Harness } from "../helpers";
 import { createHarness, errorOf, paramsOf, resultOf } from "../helpers";
@@ -267,6 +283,314 @@ describe("editor.select relay", () => {
     });
     expect(errorOf(tools, 2)?.code).toBe(-32_602);
     expect(page.requests()).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// editor.device, editor.show and editor.node (D-60): the requests that drive the
+// tools page UI. Each is checked with its protocol parser (a closed object), then
+// relayed to the page exactly like editor.select, with the deadline of a plain call.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The page's answer to `device { preset: "pixel-8", orientation: "landscape" }`. */
+const DEVICE_INFO: DeviceInfo = {
+  preset: "pixel-8",
+  orientation: "landscape",
+  folded: true,
+  w: 915,
+  h: 412,
+  presets: [
+    {
+      id: "pixel-8",
+      name: "Pixel 8",
+      group: "android",
+      kind: "phone",
+      w: 412,
+      h: 915,
+      foldable: false
+    }
+  ]
+};
+
+/** The page's answer to `show { workspace: "state" }`. */
+const SHOW_INFO: ShowInfo = { workspace: "state", workspaces: WORKSPACE_NAMES };
+
+/** The page's answer to `node { id: "main/home" }`. */
+const NODE_INFO: NodeInfo = { id: "main/home", selected: "main/home" };
+
+/** One UI request: params that pass, the page's answer, an error of the page, params that fail. */
+type RelayCase = {
+  readonly method: Exclude<RelayedEditorMethod, "select">;
+  readonly params: Json;
+  readonly answer: Json;
+  readonly pageError: WireError;
+  readonly bad: readonly Json[];
+};
+
+/** The three UI requests the hub relays next to `select`. */
+const UI_REQUESTS: readonly RelayCase[] = [
+  {
+    method: "device",
+    params: { preset: "pixel-8", orientation: "landscape", folded: true },
+    answer: toWireValue(DEVICE_INFO),
+    pageError: {
+      code: -32_602,
+      message: "[moku-editor] unknown preset pixel-9",
+      data: { reason: "invalid_input", retryable: false, field: "preset" }
+    },
+    bad: [
+      { orientation: "sideways" },
+      { preset: 8 },
+      { folded: "yes" },
+      { preset: "pixel-8", zoom: 2 },
+      [1]
+    ]
+  },
+  {
+    method: "show",
+    params: { workspace: "state" },
+    answer: toWireValue(SHOW_INFO),
+    pageError: {
+      code: -32_601,
+      message: "[moku-editor] unknown method editor.show",
+      data: { retryable: false }
+    },
+    bad: [{ workspace: "settings" }, { workspace: 1 }, { workspace: "state", focus: true }, [1]]
+  },
+  {
+    method: "node",
+    params: { id: "main/home" },
+    answer: toWireValue(NODE_INFO),
+    pageError: {
+      code: -32_003,
+      message: "[moku-editor] the Flow view has no graph yet",
+      data: { reason: "no_graph", retryable: true }
+    },
+    bad: [
+      {},
+      { id: "" },
+      { id: "n".repeat(257) },
+      { id: 7 },
+      { id: "main/home", expand: true },
+      [1]
+    ]
+  }
+];
+
+/** The UI requests as `[method, case]` rows, so a test title prints the bare method name. */
+const UI_REQUEST_ROWS = UI_REQUESTS.map(row => [row.method, row] as const);
+
+describe.each(UI_REQUEST_ROWS)("editor.%s relay", (method, { params, answer, pageError, bad }) => {
+  it("relays the checked params to the page under a hub id and answers the caller with its own id", () => {
+    const { harness, page, tools } = setup();
+
+    harness.send(tools, request(7, "editor", method, params));
+
+    expect(page.requests()).toEqual([{ jsonrpc: "2.0", id: 1, channel: "editor", method, params }]);
+    expect(harness.toolsConn(tools).pending).toBe(1);
+
+    harness.send(page, success(lastHubId(page), answer));
+
+    expect(resultOf(tools, 7)).toEqual(answer);
+    expect(harness.ctx.state.pending.size).toBe(0);
+    expect(harness.toolsConn(tools).pending).toBe(0);
+  });
+
+  it("passes a page error through to the caller", () => {
+    const { harness, page, tools } = setup();
+    harness.send(tools, request(7, "editor", method, params));
+
+    harness.send(page, failure(lastHubId(page), pageError));
+
+    expect(errorOf(tools, 7)).toEqual(pageError);
+    expect(harness.ctx.state.pending.size).toBe(0);
+  });
+
+  it("refuses bad params with -32602 invalid_input and relays nothing", () => {
+    const { harness, page, tools } = setup();
+
+    for (const [index, wrong] of bad.entries()) {
+      harness.send(tools, request(index + 1, "editor", method, wrong));
+    }
+
+    for (const index of bad.keys()) {
+      expect(errorOf(tools, index + 1)).toMatchObject({
+        code: -32_602,
+        message: expect.stringContaining(`editor.${method} params must be {`),
+        data: { reason: "invalid_input", retryable: false }
+      });
+    }
+    expect(page.requests()).toEqual([]);
+    expect(harness.ctx.state.pending.size).toBe(0);
+    expect(harness.toolsConn(tools).pending).toBe(0);
+  });
+
+  it("checks the params before it looks for a page", () => {
+    const harness = createHarness();
+    const tools = harness.connect("tools");
+
+    harness.send(tools, request(1, "editor", method, bad[0]));
+
+    expect(errorOf(tools, 1)?.code).toBe(-32_602);
+  });
+
+  it("fails -32003 no_editor_page naming the editor page url when no page is open", () => {
+    const harness = createHarness();
+    harness.ctx.state.editorPort = 3000;
+    const tools = harness.connect("tools");
+    const other = harness.connect("tools");
+
+    harness.send(tools, request(1, "editor", method, params));
+
+    expect(errorOf(tools, 1)).toEqual({
+      code: -32_003,
+      message:
+        "[moku-editor] no editor page is open. Open the editor page: http://127.0.0.1:3000/__editor/",
+      data: { reason: "no_editor_page", retryable: false }
+    });
+    expect(other.requests()).toEqual([]);
+    expect(harness.toolsConn(tools).pending).toBe(0);
+  });
+
+  it("waits callTimeoutMs, the deadline of a plain call, then fails -32002", () => {
+    const { harness, page, tools } = setup(300);
+    harness.send(tools, request(7, "editor", method, params));
+
+    vi.advanceTimersByTime(299);
+    expect(page.requests()).toHaveLength(1);
+    expect(errorOf(tools, 7)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+
+    expect(errorOf(tools, 7)).toMatchObject({ code: -32_002, data: { reason: "timeout" } });
+    expect(harness.ctx.state.pending.size).toBe(0);
+  });
+});
+
+describe("editor.device, editor.show and editor.node", () => {
+  it("relay empty or absent params of device and show as {}: they read the state", () => {
+    const { harness, page, tools } = setup();
+
+    harness.send(tools, request(1, "editor", "device"));
+    harness.send(tools, request(2, "editor", "device", {}));
+    harness.send(tools, request(3, "editor", "show"));
+    harness.send(tools, request(4, "editor", "show", {}));
+
+    expect(page.requests().map(relayed => [relayed.method, relayed.params])).toEqual([
+      ["device", {}],
+      ["device", {}],
+      ["show", {}],
+      ["show", {}]
+    ]);
+  });
+
+  it("name the method and the expected shape in the -32602 message, select as before", () => {
+    const { harness, page, tools } = setup();
+
+    harness.send(tools, request(1, "editor", "select", { card: "yes" }));
+    harness.send(tools, request(2, "editor", "device", { folded: "yes" }));
+    harness.send(tools, request(3, "editor", "show", { workspace: "settings" }));
+    harness.send(tools, request(4, "editor", "node"));
+
+    expect([1, 2, 3, 4].map(id => errorOf(tools, id))).toEqual(
+      [
+        "editor.select params must be { key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }",
+        'editor.device params must be { preset?: string, orientation?: "portrait" | "landscape", folded?: boolean }',
+        "editor.show params must be { workspace?: WorkspaceName }",
+        "editor.node params must be { id: string (1 to 256 chars) }"
+      ].map(message => ({
+        code: -32_602,
+        message: `[moku-editor] ${message}`,
+        data: { reason: "invalid_input", retryable: false }
+      }))
+    );
+    expect(page.requests()).toEqual([]);
+  });
+
+  it("go to the page that published the selection while it is open, else the newest (A7)", () => {
+    const harness = createHarness();
+    const first = harness.page();
+    const second = harness.page();
+    const tools = harness.connect("tools");
+    harness.send(first, selectionNote(INFO_JSON));
+
+    harness.send(tools, request(1, "editor", "show", { workspace: "flow" }));
+    expect(first.requests().map(relayed => relayed.method)).toEqual(["show"]);
+    expect(second.requests()).toEqual([]);
+
+    harness.close(first);
+    const third = harness.page();
+    harness.send(tools, request(2, "editor", "node", { id: "main/home" }));
+    expect(third.requests().map(relayed => relayed.method)).toEqual(["node"]);
+    expect(second.requests()).toEqual([]);
+  });
+
+  it("fail -32001 page_closed when the page closes before it answers", () => {
+    const { harness, page, tools } = setup();
+    harness.send(tools, request(1, "editor", "device", {}));
+
+    harness.close(page);
+
+    expect(errorOf(tools, 1)).toEqual({
+      code: -32_001,
+      message: "[moku-editor] editor page closed",
+      data: { retryable: true, reason: "page_closed" }
+    });
+    expect(harness.ctx.state.pending.size).toBe(0);
+  });
+
+  it("are never settled by another page nor by a plain tools conn", () => {
+    const harness = createHarness();
+    const first = harness.page();
+    const second = harness.page();
+    const tools = harness.connect("tools");
+    harness.send(first, selectionNote(INFO_JSON));
+    harness.send(tools, request(7, "editor", "node", { id: "main/home" }));
+    const id = lastHubId(first);
+
+    harness.send(second, success(id, toWireValue(NODE_INFO)));
+    harness.send(tools, success(id, toWireValue(NODE_INFO)));
+    expect(resultOf(tools, 7)).toBeUndefined();
+
+    harness.send(first, success(id, toWireValue(NODE_INFO)));
+    expect(resultOf(tools, 7)).toEqual(toWireValue(NODE_INFO));
+  });
+
+  it.each([
+    "devices",
+    "nodes",
+    "constructor",
+    "toString",
+    "hasOwnProperty",
+    "__proto__"
+  ])("still refuse the unknown editor method %s with -32601 and relay nothing", method => {
+    const { harness, page, tools } = setup();
+
+    harness.send(tools, request(1, "editor", method, {}));
+
+    expect(errorOf(tools, 1)).toEqual({
+      code: -32_601,
+      message: `[moku-editor] unknown method editor.${method}`,
+      data: { retryable: false }
+    });
+    expect(page.requests()).toEqual([]);
+  });
+
+  it("leave editor.selection to the hub: answered from the kept value, never relayed", () => {
+    const { harness, page, tools } = setup();
+    harness.send(page, selectionNote(INFO_JSON));
+    page.clear();
+
+    harness.send(tools, request(1, "editor", "selection", {}));
+
+    expect(resultOf(tools, 1)).toEqual(INFO_JSON);
+    expect(page.requests()).toEqual([]);
+  });
+});
+
+describe("deadlineFor editor.device, editor.show and editor.node", () => {
+  it.each(UI_REQUEST_ROWS)("is callTimeoutMs for %s, a plain call", (method, { params }) => {
+    expect(deadlineFor(method, params, 5000)).toBe(5000);
+    expect(deadlineFor(method, undefined, 5000)).toBe(5000);
   });
 });
 

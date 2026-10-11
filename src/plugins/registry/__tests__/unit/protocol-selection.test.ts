@@ -443,7 +443,9 @@ describe("selection types", () => {
     expectTypeOf<EditorNotifications["session"]>().toEqualTypeOf<SessionParams>();
     expectTypeOf<EditorNotifications["sessions"]>().toEqualTypeOf<SessionsParams>();
 
-    expectTypeOf<EditorRequestMethod>().toEqualTypeOf<"selection" | "select">();
+    expectTypeOf<EditorRequestMethod>().toEqualTypeOf<
+      "selection" | "select" | "device" | "show" | "node"
+    >();
     expectTypeOf<EditorRequests["selection"]["result"]>().toEqualTypeOf<SelectionInfo | null>();
     expectTypeOf<EditorRequests["select"]["params"]>().toEqualTypeOf<SelectParams>();
     expectTypeOf<EditorRequests["select"]["result"]>().toEqualTypeOf<SelectionInfo>();

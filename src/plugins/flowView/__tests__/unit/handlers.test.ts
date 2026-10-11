@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isRetryable } from "../../../registry/protocol";
 import { actionsOf } from "../../actions";
-import { createHandlers } from "../../handlers";
+import { answerNode, createHandlers } from "../../handlers";
 import { startFlowView } from "../../lifecycle";
+import { infoView } from "../../view-model";
 import { createTestCtx, flush, jumpCamera, prepare, type TestCtx } from "../ctx";
 import { cloneGraph, entry } from "../helpers";
 
@@ -257,5 +259,164 @@ describe("workspace:density (finding 16)", () => {
     const comfortable = ctx.state.layout.result;
     const width = (result: typeof compact): number => result?.byKey["#main"]?.w ?? 0;
     expect(width(compact)).toBeLessThan(width(comfortable));
+  });
+});
+
+/** What a call throws. */
+function thrown(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("nothing was thrown");
+}
+
+describe("the link request node (D-60)", () => {
+  it("before the first graph it throws the retryable no_graph error and keeps nothing for later", () => {
+    const test = started();
+    const error = thrown(() => answerNode(test.ctx)({ id: "board/merge" }));
+    expect(error).toMatchObject({
+      code: -32_003,
+      message: "[moku-editor] the Flow view has no graph yet",
+      data: { reason: "no_graph", retryable: true }
+    });
+    expect(isRetryable(error)).toBe(true);
+    expect(test.ctx.state.data.pending).toBeUndefined();
+
+    sendData(test);
+    expect(test.ctx.state.focus.selected).toBeUndefined();
+  });
+
+  it("a known node id answers the item key it selected and the Inspector shows it", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    expect(answerNode(ctx)({ id: "board/merge" })).toEqual({
+      id: "board/merge",
+      selected: "main/board>board/merge"
+    });
+    expect(ctx.state.focus.selected).toBe("main/board>board/merge");
+    expect(infoView(ctx, actionsOf(ctx), "board/merge")).toMatchObject({
+      id: "board/merge",
+      key: "main/board>board/merge"
+    });
+  });
+
+  it("does not show Flow and warns nothing: the request has one job", async () => {
+    const { ctx, fakes } = createTestCtx();
+    await prepare(ctx);
+    const node = answerNode(ctx);
+    node({ id: "board/merge" });
+    thrown(() => node({ id: "board/nope" }));
+    expect(fakes.workspace.show).not.toHaveBeenCalled();
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+  });
+
+  it("an unknown id throws -32602 invalid_input on the id field and keeps the selection", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const node = answerNode(ctx);
+    node({ id: "main/home" });
+    const error = thrown(() => node({ id: "board/nope" }));
+    expect(error).toMatchObject({
+      code: -32_602,
+      message: "[moku-editor] unknown node board/nope",
+      data: { reason: "invalid_input", retryable: false, field: "id" }
+    });
+    expect(isRetryable(error)).toBe(false);
+    expect(ctx.state.focus.selected).toBe("main/home");
+  });
+
+  it("a node inside a collapsed sub-flow expands its parents and answers the key it gets", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    expect(ctx.state.layout.expanded.has("main/settings")).toBe(false);
+    expect(answerNode(ctx)({ id: "settingsPopup/open" })).toEqual({
+      id: "settingsPopup/open",
+      selected: "main/settings>settingsPopup/open"
+    });
+    expect(ctx.state.layout.expanded.has("main/settings")).toBe(true);
+    await flush(10);
+    expect(ctx.state.layout.result?.byKey["main/settings>settingsPopup/open"]).toMatchObject({
+      kind: "node",
+      flow: "settingsPopup",
+      parent: "main/settings"
+    });
+  });
+
+  it("answers the asked id as selected when the focus reads no selection after the select", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    vi.spyOn(actionsOf(ctx).focus, "selected").mockReturnValue(undefined);
+    expect(answerNode(ctx)({ id: "main/home" })).toEqual({
+      id: "main/home",
+      selected: "main/home"
+    });
+  });
+
+  it("a select before the first canvas measure is framed by that measure, not the current node", async () => {
+    const test = started();
+    sendData(test);
+    await flush(10);
+    const { camera } = test.ctx.state;
+    expect(camera.initialised).toBe(false);
+
+    answerNode(test.ctx)({ id: "main/home" });
+    expect(camera.frameSelection).toBe(true);
+
+    actionsOf(test.ctx).camera.setView({ w: 1200, h: 800 });
+    const home = test.ctx.state.layout.result?.byKey["main/home"];
+    expect(camera.initialised).toBe(true);
+    expect(camera.frameSelection).toBe(false);
+    expect(((home?.x ?? 0) + (home?.w ?? 0) / 2) * camera.cam.z + camera.cam.x).toBeCloseTo(600, 0);
+    expect(((home?.y ?? 0) + (home?.h ?? 0) / 2) * camera.cam.z + camera.cam.y).toBeCloseTo(400, 0);
+  });
+
+  it("on a measured canvas the select moves the camera itself: nothing waits for a measure", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    answerNode(ctx)({ id: "main/home" });
+    expect(ctx.state.camera.frameSelection).toBe(false);
+  });
+
+  it("a node outside the entered sub-flow: the canvas goes back to the root, then it is selected", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.flows.enter("main/board");
+    await flush(10);
+    expect(actions.layout.root()).toBe("board");
+
+    expect(answerNode(ctx)({ id: "main/home" })).toEqual({
+      id: "main/home",
+      selected: "main/home"
+    });
+    expect(actions.layout.root()).toBe("main");
+    await flush(10);
+    expect(ctx.state.focus.selected).toBe("main/home");
+    expect(ctx.state.layout.result?.byKey["main/home"]).toMatchObject({
+      kind: "node",
+      id: "main/home"
+    });
+  });
+
+  it("inside an entered sub-flow a node of it is selected there, and an id of no node is refused there", async () => {
+    const { ctx } = createTestCtx();
+    await prepare(ctx);
+    const actions = actionsOf(ctx);
+    actions.flows.enter("main/board");
+    await flush(10);
+    const node = answerNode(ctx);
+
+    expect(node({ id: "board/merge" })).toMatchObject({ id: "board/merge" });
+    const selected = ctx.state.focus.selected;
+    expect(actions.layout.root()).toBe("board");
+
+    expect(thrown(() => node({ id: "board/nope" }))).toMatchObject({
+      code: -32_602,
+      message: "[moku-editor] unknown node board/nope"
+    });
+    expect(actions.layout.root()).toBe("board");
+    expect(ctx.state.focus.selected).toBe(selected);
   });
 });

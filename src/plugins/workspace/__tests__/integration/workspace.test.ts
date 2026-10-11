@@ -6,10 +6,13 @@ import { createToolsCore, toolsCoreConfig } from "../../../../config";
 import { linkPlugin } from "../../../link";
 import type {
   CommandDescriptor,
+  Json,
   Manifest,
+  Response as RpcResponse,
   SessionInfo,
   ToolsBoot
 } from "../../../registry/protocol";
+import { decode, encode, isResponse, request, WORKSPACE_NAMES } from "../../../registry/protocol";
 import { workspacePlugin } from "../..";
 import type { RanEvent, WorkspaceId } from "../../types";
 import { createScriptedHub, type ScriptedHub } from "./fake-hub";
@@ -299,6 +302,74 @@ describe("workspace integration", () => {
     hub.open({ ...sessionOf("s-2"), page, connectedAt: 9000 }, { ...manifestOf(), page });
     await expect(pending).resolves.toEqual({ restored: false });
     expect(app.link.session()).toBe("s-2");
+    await app.stop();
+  });
+
+  it("the hub's editor.show and editor.device requests change the page like a click and answer it", async () => {
+    const sent = vi.spyOn(hub.Socket.prototype, "send");
+    /**
+     * Sends an editor-channel request to the page, as the hub relays one of the MCP bridge.
+     *
+     * @param id - The request id.
+     * @param method - "show" or "device".
+     * @param params - The request params.
+     */
+    const ask = (id: number, method: string, params: Json): void => {
+      hub.sockets[0]?.deliver(encode(request(id, "editor", method, params)));
+    };
+    /**
+     * The page's answer to a request.
+     *
+     * @param id - The request id.
+     * @returns The response, undefined until the page sent it.
+     */
+    const answerTo = (id: number): RpcResponse | undefined => {
+      for (const [text] of sent.mock.calls) {
+        const message = typeof text === "string" ? decode(text) : undefined;
+        if (message !== undefined && isResponse(message) && message.id === id) return message;
+      }
+      return undefined;
+    };
+
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    await until(() => hub.sockets.length === 1, "the hub socket");
+
+    ask(1, "show", { workspace: "state" });
+    await until(() => answerTo(1) !== undefined, "the show answer");
+    expect(answerTo(1)).toMatchObject({
+      result: { workspace: "state", workspaces: [...WORKSPACE_NAMES] }
+    });
+    expect(app.workspace.active()).toBe("state");
+    expect(changed).toEqual(["state"]);
+    expect(location.hash).toBe("#state");
+
+    ask(2, "device", { preset: "pixel-8", orientation: "landscape" });
+    await until(() => answerTo(2) !== undefined, "the device answer");
+    expect(answerTo(2)).toMatchObject({
+      result: { preset: "pixel-8", orientation: "landscape", folded: true, w: 915, h: 412 }
+    });
+    expect(app.workspace.device()).toMatchObject({
+      preset: { id: "pixel-8" },
+      orientation: "landscape"
+    });
+    expect(JSON.parse(localStorage.getItem("moku-editor") ?? "{}").device).toEqual({
+      preset: "pixel-8",
+      orientation: "landscape"
+    });
+
+    ask(3, "device", { preset: "nokia" });
+    await until(() => answerTo(3) !== undefined, "the error answer");
+    expect(answerTo(3)).toMatchObject({
+      error: { code: -32_602, data: { reason: "invalid_input", field: "preset" } }
+    });
+    expect(app.workspace.device().preset.id).toBe("pixel-8");
+
+    ask(4, "show", {});
+    await until(() => answerTo(4) !== undefined, "the read answer");
+    expect(answerTo(4)).toMatchObject({ result: { workspace: "state" } });
+    expect(changed).toEqual(["state"]);
     await app.stop();
   });
 

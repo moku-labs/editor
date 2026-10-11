@@ -9,7 +9,8 @@ import { FAKE_TOKEN, session, startFakeHub, until } from "../../fake-hub";
 // pages/mcp hub-client (M2, M4): the bridge is a hub tools client. It sends
 // the Origin header, the token and kind=tools; it reads sessions with the
 // heartbeat readout and keeps the live frame from forwarded heartbeats; it
-// watches and unwatches; a closed socket fails its pending calls.
+// keeps the last published hot reload and project state; it watches and
+// unwatches; a closed socket fails its pending calls.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let hub: FakeHub | undefined;
@@ -169,8 +170,56 @@ describe("sessions and liveness (M4)", () => {
   });
 });
 
+/** The project index of a small game, as the hub publishes it. */
+const PROJECT = {
+  state: "on",
+  revision: "r1",
+  defs: { "node:board/merge": ["nodes/merge.ts"] },
+  uses: { "node:board/merge": ["flows/board.ts"] },
+  broken: {}
+};
+
 describe("editor.project", () => {
-  it("ignores the published project state: sessions and hot reload stay as they were", async () => {
+  it("keeps the project state the hub replays to a new connection, and each later one", async () => {
+    const server = fake({ sessions: [session("s-1")], project: PROJECT });
+    const client = await connectHub(server.discovery("/root"));
+    await until(() => client.project() !== undefined, "the replayed project state");
+    expect(client.project()).toEqual(PROJECT);
+
+    server.publish("project", { state: "off", reason: "disabled" });
+    await until(() => client.project()?.state === "off", "the next project state");
+    expect(client.project()).toEqual({ state: "off", reason: "disabled" });
+    client.close();
+  });
+
+  it("answers undefined before the hub published one, and keeps the last good state over a malformed one", async () => {
+    const server = fake({ sessions: [session("s-1")] });
+    const client = await connectHub(server.discovery("/root"));
+    expect(client.project()).toBeUndefined();
+
+    server.publish("project", PROJECT);
+    await until(() => client.project() !== undefined, "the project state");
+    server.notify("editor", "project", { state: "on", revision: "r2", defs: { k: "a.ts" } });
+    server.notify("editor", "hotReload", { hmr: true, owner: "bin" });
+    await until(() => client.hotReload() !== undefined, "the note after the malformed one");
+    expect(client.project()).toEqual(PROJECT);
+    client.close();
+  });
+
+  it("sends the editor requests of the page (device, show, node) like any editor request", async () => {
+    const server = fake({ sessions: [session("s-1")] });
+    server.handle("editor.device", params => ({ asked: params ?? null }));
+    const client = await connectHub(server.discovery("/root"));
+    await expect(client.request("editor", "device", { preset: "pixel-8" })).resolves.toEqual({
+      asked: { preset: "pixel-8" }
+    });
+    expect(server.requests).toEqual([
+      { channel: "editor", method: "device", params: { preset: "pixel-8" }, session: undefined }
+    ]);
+    client.close();
+  });
+
+  it("keeps the project state apart: sessions and hot reload stay as they were", async () => {
     const server = fake({ sessions: [session("s-1")] });
     const client = await connectHub(server.discovery("/root"));
 

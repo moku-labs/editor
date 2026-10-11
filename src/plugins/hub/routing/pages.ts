@@ -1,9 +1,11 @@
 /**
  * @file hub plugin — the editor page (D-33): a tools connection upgraded with `role=page`. Its
- * `selection` notification is checked and published (A5). `editor.select` is relayed to the page
- * that published the selection while it is open, else to the newest page (A7), under a hub id with
- * the select deadline (A6). A closing page fails its relayed calls (-32001 `page_closed`, A3); the
- * last one closing publishes `selection: null`. No page open: -32003 `no_editor_page`.
+ * `selection` notification is checked and published (A5). A relayed request (`editor.select`,
+ * `device`, `show`, `node`, D-60) goes to the page that published the selection while it is open,
+ * else to the newest page (A7), under a hub id with the deadline of its method (a plain call; a
+ * `select` with a card waits longer, A6). A closing page fails its relayed calls (-32001
+ * `page_closed`, A3); the last one closing publishes `selection: null`. No page open: -32003
+ * `no_editor_page`.
  */
 import type { Json } from "../../registry/protocol";
 import { errorCode, parseSelectionInfo, request, wireError } from "../../registry/protocol";
@@ -84,7 +86,7 @@ function choosePage(ctx: HubCtx): ToolsConn {
  * deadline of the method. The page's answer settles back to `reply` like an agent's.
  *
  * @param ctx - Domain context of the hub.
- * @param method - The editor method, e.g. "select".
+ * @param method - The editor method: "select", "device", "show" or "node".
  * @param params - The checked params.
  * @param reply - Where the answer goes (the calling tools request).
  * @throws {Error} -32003 `no_editor_page` when no page is open; nothing is counted then.
@@ -99,7 +101,7 @@ export function forwardToPage(ctx: HubCtx, method: string, params: Json, reply: 
 /**
  * A page's `selection` notification: no params is nothing selected (`null`), a SelectionInfo is
  * kept without its unknown fields; either is published and the page is remembered as the one the
- * next `editor.select` goes to. Anything else is a strike.
+ * next relayed request goes to. Anything else is a strike.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The page connection.

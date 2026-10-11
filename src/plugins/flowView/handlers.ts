@@ -4,16 +4,18 @@
  * project index), workspace:changed (active flag, default camera),
  * workspace:density (the layout spacing), and the intents of other views: workspace:select-node,
  * workspace:focus-frame. The handler of an intent shows its own workspace; an intent that comes
- * before the first flow values waits for them (intents.ts).
+ * before the first flow values waits for them (intents.ts). Also the handler of the editor
+ * request `node` the hub relays through link (D-60): it selects at once and answers, or refuses.
  */
 import type { ToolsEvents } from "../../config";
-import type { LinkStatus } from "../registry/protocol";
-import { isReloading } from "../registry/protocol";
+import type { LinkStatus, NodeInfo, NodeParams } from "../registry/protocol";
+import { errorCode, isReloading, wireError } from "../registry/protocol";
 import { workspacePlugin } from "../workspace";
 import { actionsOf } from "./actions";
+import { nodeOf } from "./focus/graph";
 import { requestIntent } from "./intents";
 import { notify } from "./state";
-import type { FlowCtx, FlowHooks, FlowViewState } from "./types";
+import type { FlowCtx, FlowHooks, FlowViewState, GraphJson, NodeId } from "./types";
 
 /**
  * Loads what a session needs once: layout.json and the style keys (errors → warn).
@@ -186,6 +188,61 @@ export function onDensity(ctx: FlowCtx): (payload: ToolsEvents["workspace:densit
 export function onProject(ctx: FlowCtx): (payload: ToolsEvents["link:project"]) => void {
   return change => {
     actionsOf(ctx).inspector.followProject(change);
+  };
+}
+
+/**
+ * Selects the node of a `node` request. A node of the graph that the entered sub-flow does not
+ * show is tried once more from the root: the canvas goes up as by the first breadcrumb segment
+ * (`flows.up(0)`). An id of no node is refused where the canvas is.
+ *
+ * @param ctx - Domain context of flowView.
+ * @param graph - The graph.
+ * @param id - The asked node id.
+ * @returns Whether the node is selected now.
+ */
+function selectNode(ctx: FlowCtx, graph: GraphJson, id: NodeId): boolean {
+  const { focus, flows } = actionsOf(ctx);
+  if (focus.select(id)) return true;
+
+  const entered = ctx.state.layout.enter.length > 0;
+  if (!entered || nodeOf(graph, id) === undefined) return false;
+  flows.up(0);
+  return focus.select(id);
+}
+
+/**
+ * The editor request `node` (MCP `moku_select { node }`, D-60), given to `link.handle`: selects
+ * the node as `focus.select` does (a collapsed parent expands first; a node outside an entered
+ * sub-flow takes the canvas back to the root first) and answers the item key the Flow view
+ * focused. It does not show Flow: the caller asks `editor.show` first. Nothing waits for the
+ * graph, unlike the workspace:select-node intent: the caller needs the answer now. A select made
+ * before the default camera was applied (the canvas not measured yet, or a new root) is framed by
+ * that camera instead of the current node, as for an intent.
+ *
+ * @param ctx - Domain context of flowView.
+ * @returns The handler. It throws -32003 `no_graph` (retryable) before the first graph, and -32602
+ *   `invalid_input` on the field `id` for a node the Flow view cannot select; the selection stays.
+ */
+export function answerNode(ctx: FlowCtx): (params: NodeParams) => NodeInfo {
+  return ({ id }) => {
+    const { graph } = ctx.state.data;
+    if (graph === undefined) {
+      throw wireError(errorCode.noSession, "the Flow view has no graph yet", {
+        reason: "no_graph",
+        retryable: true
+      });
+    }
+
+    if (!selectNode(ctx, graph, id)) {
+      throw wireError(errorCode.invalidInput, `unknown node ${id}`, {
+        reason: "invalid_input",
+        retryable: false,
+        field: "id"
+      });
+    }
+    if (!ctx.state.camera.initialised) ctx.state.camera.frameSelection = true;
+    return { id, selected: actionsOf(ctx).focus.selected() ?? id };
   };
 }
 

@@ -46,15 +46,18 @@ export type ToolSetup = {
 /**
  * Starts a fake hub and connects a client to it.
  *
- * @param options - The first sessions and the published hot reload state.
+ * @param options - The first sessions, the published values and the clock.
  * @param options.sessions - The sessions the fake hub sends on open.
  * @param options.hotReload - The hot reload state it sends on open, if any.
+ * @param options.project - The project state it sends on open, if any.
+ * @param options.now - The clock of the tool context (default `Date.now`).
  */
 export async function toolSetup(
-  options: { sessions?: SessionInfo[]; hotReload?: Json } = {}
+  options: { sessions?: SessionInfo[]; hotReload?: Json; project?: Json; now?: () => number } = {}
 ): Promise<ToolSetup> {
   const root = await mkdtemp(join(tmpdir(), "moku-mcp-tools-"));
-  const hub = startFakeHub(options);
+  const { now = Date.now, ...published } = options;
+  const hub = startFakeHub(published);
   const client = await connectHub(hub.discovery(root));
   const status: EditorStatus = { running: true, owned: false, bin: client.bin };
   const editor = {
@@ -66,7 +69,7 @@ export async function toolSetup(
     stopOwned: vi.fn<EditorLink["stopOwned"]>(() => Promise.resolve({ stopped: false, status })),
     shutdown: () => Promise.resolve()
   };
-  const context: ToolContext = { editor, now: Date.now };
+  const context: ToolContext = { editor, now };
 
   return {
     root,

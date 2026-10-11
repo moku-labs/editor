@@ -16,6 +16,18 @@ import type {
   KeysWatcher,
   PreparedPage
 } from "@moku-labs/game/cli";
+import { isGameFolder } from "./discovery";
+
+/**
+ * Whether a folder holds a moku-game (`index.ts` and `config.ts`). Declared in `discovery.ts`, which
+ * the MCP bridge may import (D-31); re-exported here for the bin.
+ *
+ * @example
+ * ```ts
+ * isGameFolder("/games/timber"); // true: /games/timber/index.ts and config.ts exist
+ * ```
+ */
+export { isGameFolder } from "./discovery";
 
 /**
  * The agent module the engine page starts after the game: `src/agent-page.ts` (D-49).
@@ -210,21 +222,6 @@ function isEditorManifest(manifestPath: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Whether a folder holds a moku-game: `index.ts` and `config.ts`, both files.
- *
- * @param root - The absolute folder.
- * @returns True for a moku-game folder.
- * @example
- * ```ts
- * isGameFolder("/games/timber"); // true: /games/timber/index.ts and config.ts exist
- * isGameFolder("/games/timber/web"); // false
- * ```
- */
-export function isGameFolder(root: string): boolean {
-  return isFile(join(root, "index.ts")) && isFile(join(root, "config.ts"));
 }
 
 /**

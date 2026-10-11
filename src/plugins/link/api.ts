@@ -1,7 +1,7 @@
 /**
  * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
- * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and select
- * handler, the project index and the files client, composed from the sub-modules.
+ * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and request
+ * handlers, the project index and the files client, composed from the sub-modules.
  */
 import { createFilesClient } from "./files/client";
 import { addHandler } from "./page/requests";

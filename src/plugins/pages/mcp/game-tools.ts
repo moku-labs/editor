@@ -46,16 +46,18 @@ const SOURCE_ID = {
 } as const;
 
 /**
- * The URL of the tools page of a bin: its socket URL without `/ws`, over http.
+ * The URL of the tools page of a bin: its socket URL without `/ws`, over http. The routes of the
+ * editor hang under it, such as `hmr`.
  *
  * @param bin - The discovery record.
  * @returns `http://127.0.0.1:<port><P>/`.
  * @example
  * ```ts
  * toolsUrl({ ...bin, ws: "ws://127.0.0.1:3000/__editor/ws" }); // "http://127.0.0.1:3000/__editor/"
+ * `${toolsUrl(bin)}hmr`; // "http://127.0.0.1:3000/__editor/hmr"
  * ```
  */
-function toolsUrl(bin: EditorDiscovery): string {
+export function toolsUrl(bin: EditorDiscovery): string {
   return bin.ws.replace(/^ws/, "http").replace(/\/ws$/, "/");
 }
 

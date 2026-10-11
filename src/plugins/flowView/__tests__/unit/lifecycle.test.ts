@@ -115,6 +115,18 @@ describe("initFlowView", () => {
     expect(save?.inInputs).toBe(true);
     expect(save?.when?.()).toBe(false);
   });
+
+  it("gives link the handler of the hub's node request; onStop takes it out again (D-60)", async () => {
+    const { ctx, fakes } = createTestCtx();
+    initFlowView(ctx);
+    const node = fakes.requests.get("node");
+    await prepare(ctx);
+    expect(await node?.({ id: "main/home" })).toEqual({ id: "main/home", selected: "main/home" });
+    expect(ctx.state.focus.selected).toBe("main/home");
+
+    await stopFlowView(ctx);
+    expect(fakes.requests.has("node")).toBe(false);
+  });
 });
 
 describe("stopFlowView", () => {

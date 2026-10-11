@@ -1,17 +1,25 @@
 /* eslint-disable unicorn/no-null -- null is the "nothing selected" value of notify */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type {
+  DeviceInfo,
+  DeviceParams,
   Json,
   Message,
+  NodeInfo,
+  NodeParams,
+  RelayedEditorMethod,
   Response as RpcResponse,
   SelectionInfo,
-  SelectParams
+  SelectParams,
+  ShowInfo,
+  ShowParams
 } from "../../../registry/protocol";
 import {
   isNotification,
   isResponse,
   request,
   toWireValue,
+  WORKSPACE_NAMES,
   wireError
 } from "../../../registry/protocol";
 import { createLinkApi } from "../../api";
@@ -413,5 +421,310 @@ describe("handle('select')", () => {
     stopLink(ctx);
 
     expect(ctx.state.handlers.size).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handle("device" | "show" | "node") (D-60): the hub relays them like select.
+// One handler per method, each behind the params parser of its method.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const pixel: DeviceInfo = {
+  preset: "pixel-8",
+  orientation: "landscape",
+  folded: true,
+  w: 915,
+  h: 412,
+  presets: [
+    {
+      id: "pixel-8",
+      name: "Pixel 8",
+      group: "android",
+      kind: "phone",
+      w: 412,
+      h: 915,
+      foldable: false
+    }
+  ]
+};
+
+const stateShown: ShowInfo = { workspace: "state", workspaces: WORKSPACE_NAMES };
+
+const home: NodeInfo = { id: "main/home", selected: "main/home" };
+
+/** Params the parser of the method refuses. */
+const BAD_PARAMS: [RelayedEditorMethod, Json | undefined][] = [
+  ["device", { orientation: "sideways" }],
+  ["device", { preset: "pixel-8", zoom: 2 }],
+  ["show", { workspace: "settings" }],
+  ["node", { id: "" }],
+  ["node", { id: "main/home", expand: true }],
+  ["node", undefined]
+];
+
+/**
+ * How link answered the request with an id.
+ *
+ * @param socket - The fake socket.
+ * @param id - The request id.
+ * @returns The error code, "ok" for a result, undefined when link sent no answer.
+ */
+function outcome(socket: FakeWebSocket, id: number): number | "ok" | undefined {
+  const response = responses(socket).find(sent => sent.id === id);
+  if (response === undefined) return undefined;
+  return "error" in response ? response.error.code : "ok";
+}
+
+describe("handle('device' | 'show' | 'node')", () => {
+  it("device: runs the handler with the checked params and answers its result", async () => {
+    const socket = await connected(ctx);
+    const handler = vi.fn((_params: DeviceParams) => pixel);
+    createLinkApi(ctx).handle("device", handler);
+
+    socket.receive(
+      request(60, "editor", "device", { preset: "pixel-8", orientation: "landscape" })
+    );
+    await flush();
+
+    expect(handler).toHaveBeenCalledWith({ preset: "pixel-8", orientation: "landscape" });
+    expect(responses(socket)).toEqual([{ jsonrpc: "2.0", id: 60, result: toWireValue(pixel) }]);
+  });
+
+  it("show: runs the handler with the checked params and answers its result", async () => {
+    const socket = await connected(ctx);
+    const handler = vi.fn(async (_params: ShowParams) => stateShown);
+    createLinkApi(ctx).handle("show", handler);
+
+    socket.receive(request(61, "editor", "show", { workspace: "state" }));
+    await flush();
+
+    expect(handler).toHaveBeenCalledWith({ workspace: "state" });
+    expect(responses(socket)).toEqual([
+      { jsonrpc: "2.0", id: 61, result: toWireValue(stateShown) }
+    ]);
+  });
+
+  it("node: runs the handler with the checked params and answers its result", async () => {
+    const socket = await connected(ctx);
+    const handler = vi.fn((_params: NodeParams) => home);
+    createLinkApi(ctx).handle("node", handler);
+
+    socket.receive(request(62, "editor", "node", { id: "main/home" }));
+    await flush();
+
+    expect(handler).toHaveBeenCalledWith({ id: "main/home" });
+    expect(responses(socket)).toEqual([{ jsonrpc: "2.0", id: 62, result: toWireValue(home) }]);
+  });
+
+  it("passes {} to a device and a show handler when the request has no params (a read)", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const device = vi.fn((_params: DeviceParams) => pixel);
+    const show = vi.fn((_params: ShowParams) => stateShown);
+    link.handle("device", device);
+    link.handle("show", show);
+
+    socket.receive(request(63, "editor", "device"));
+    socket.receive(request(64, "editor", "show"));
+    await flush();
+
+    expect(device).toHaveBeenCalledWith({});
+    expect(show).toHaveBeenCalledWith({});
+    expect([outcome(socket, 63), outcome(socket, 64)]).toEqual(["ok", "ok"]);
+  });
+
+  it.each(
+    BAD_PARAMS
+  )("answers -32602 invalid_input for bad %s params %j without calling a handler", async (method, params) => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const device = vi.fn((_params: DeviceParams) => pixel);
+    const show = vi.fn((_params: ShowParams) => stateShown);
+    const node = vi.fn((_params: NodeParams) => home);
+    link.handle("device", device);
+    link.handle("show", show);
+    link.handle("node", node);
+
+    socket.receive(request(65, "editor", method, params));
+    await flush();
+
+    expect(device).not.toHaveBeenCalled();
+    expect(show).not.toHaveBeenCalled();
+    expect(node).not.toHaveBeenCalled();
+    expect(responses(socket)).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 65,
+        error: {
+          code: -32_602,
+          message: `[moku-editor] editor.${method}: bad params`,
+          data: { reason: "invalid_input", retryable: false }
+        }
+      }
+    ]);
+  });
+
+  it("answers -32601 for a method without a handler, bad params included", async () => {
+    const socket = await connected(ctx);
+    createLinkApi(ctx).handle("select", async () => coins);
+
+    socket.receive(request(66, "editor", "device", {}));
+    socket.receive(request(67, "editor", "show", {}));
+    socket.receive(request(68, "editor", "node", { id: "main/home" }));
+    socket.receive(request(69, "editor", "node", { id: "" }));
+    await flush();
+
+    expect([66, 67, 68, 69].map(id => outcome(socket, id))).toEqual([
+      -32_601, -32_601, -32_601, -32_601
+    ]);
+  });
+
+  it("answers a throwing handler's wire error as the failure", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    link.handle("node", () => {
+      throw wireError(-32_003, "the Flow view has no graph yet", {
+        reason: "no_graph",
+        retryable: true
+      });
+    });
+    link.handle("device", async () => {
+      throw wireError(-32_602, "unknown preset nope", {
+        reason: "invalid_input",
+        retryable: false,
+        field: "preset"
+      });
+    });
+
+    socket.receive(request(70, "editor", "node", { id: "main/home" }));
+    await flush();
+    socket.receive(request(71, "editor", "device", { preset: "nope" }));
+    await flush();
+
+    expect(responses(socket)).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 70,
+        error: {
+          code: -32_003,
+          message: "[moku-editor] the Flow view has no graph yet",
+          data: { reason: "no_graph", retryable: true }
+        }
+      },
+      {
+        jsonrpc: "2.0",
+        id: 71,
+        error: {
+          code: -32_602,
+          message: "[moku-editor] unknown preset nope",
+          data: { reason: "invalid_input", retryable: false, field: "preset" }
+        }
+      }
+    ]);
+    expect(ctx.log.warn).toHaveBeenCalledWith("link:request-failed", {
+      method: "node",
+      code: -32_003,
+      reason: "no_graph"
+    });
+    expect(ctx.log.debug).toHaveBeenCalledWith("link:request-failed", {
+      method: "device",
+      code: -32_602,
+      reason: "invalid_input"
+    });
+  });
+
+  it("the remover of one method leaves the handlers of the others; twice is a no-op", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const select = vi.fn(async (_params: SelectParams) => coins);
+    const show = vi.fn((_params: ShowParams) => stateShown);
+    link.handle("select", select);
+    const removeDevice = link.handle("device", () => pixel);
+    link.handle("show", show);
+
+    removeDevice();
+    removeDevice();
+    socket.receive(request(72, "editor", "device", {}));
+    socket.receive(request(73, "editor", "show", {}));
+    socket.receive(request(74, "editor", "select", {}));
+    await flush();
+
+    expect([72, 73, 74].map(id => outcome(socket, id))).toEqual([-32_601, "ok", "ok"]);
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("a later handler replaces the earlier one of the same method only", async () => {
+    const socket = await connected(ctx);
+    const link = createLinkApi(ctx);
+    const first = vi.fn((_params: ShowParams) => stateShown);
+    const second = vi.fn((_params: ShowParams) => stateShown);
+    const node = vi.fn((_params: NodeParams) => home);
+    link.handle("node", node);
+    const removeFirst = link.handle("show", first);
+    link.handle("show", second);
+    removeFirst();
+
+    socket.receive(request(75, "editor", "show", {}));
+    socket.receive(request(76, "editor", "node", { id: "main/home" }));
+    await flush();
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(node).toHaveBeenCalledTimes(1);
+    expect([outcome(socket, 75), outcome(socket, 76)]).toEqual(["ok", "ok"]);
+  });
+
+  it("stop forgets the handlers of every method", async () => {
+    const link = createLinkApi(ctx);
+    link.handle("device", () => pixel);
+    link.handle("show", () => stateShown);
+    link.handle("node", () => home);
+    await connected(ctx);
+    expect(ctx.state.handlers.size).toBe(3);
+
+    stopLink(ctx);
+
+    expect(ctx.state.handlers.size).toBe(0);
+  });
+});
+
+describe("handle types", () => {
+  it("infers the params of the method; the result comes with or without a promise", () => {
+    const link = createLinkApi(ctx);
+
+    link.handle("device", params => {
+      expectTypeOf(params).toEqualTypeOf<DeviceParams>();
+      return pixel;
+    });
+    link.handle("show", async params => {
+      expectTypeOf(params).toEqualTypeOf<ShowParams>();
+      return stateShown;
+    });
+    link.handle("node", params => {
+      expectTypeOf(params).toEqualTypeOf<NodeParams>();
+      return home;
+    });
+    link.handle("select", async params => {
+      expectTypeOf(params).toEqualTypeOf<SelectParams>();
+      return coins;
+    });
+
+    expectTypeOf(link.handle<"device">)
+      .parameter(1)
+      .toEqualTypeOf<(params: DeviceParams) => DeviceInfo | Promise<DeviceInfo>>();
+    expectTypeOf(link.handle<"node">).returns.toEqualTypeOf<() => void>();
+    expect(ctx.state.handlers.size).toBe(4);
+  });
+
+  it("rejects a handler that answers the result of another method, or reads its params", () => {
+    const link = createLinkApi(ctx);
+
+    // @ts-expect-error — a device handler answers a DeviceInfo, not a ShowInfo
+    link.handle("device", () => stateShown);
+    // @ts-expect-error — a node handler gets NodeParams: they have no `workspace`
+    link.handle("node", params => ({ id: params.workspace, selected: "main/home" }));
+
+    expect(ctx.state.handlers.size).toBe(2);
   });
 });

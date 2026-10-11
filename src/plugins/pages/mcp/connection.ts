@@ -1,17 +1,19 @@
 /**
  * @file pages/mcp — the bin side of the bridge (M3): a live `.moku/editor.json` under the root
  * wins; without one the bridge starts the bin when it knows the game html (argv or the last
- * discovery file it saw). A hub socket that closes is reconnected: one try at the close, then at
- * most three more, 1, 2 and 4 s apart, each after the discovery file was read again, so the
- * bridge is back after the bin's restart (D-32, D-57, D-59). A connection the hub drops within
- * 5 s counts as a failed try. The bridge stops only a bin it started.
+ * discovery file it saw), and in a moku-game folder with no html known it starts the engine page
+ * (D-63). A hub socket that closes is reconnected: one try at the close, then at most three more,
+ * 1, 2 and 4 s apart, each after the discovery file was read again, so the bridge is back after the
+ * bin's restart (D-32, D-57, D-59). A connection the hub drops within 5 s counts as a failed try.
+ * The bridge stops only a bin it started.
  */
-import { resolve } from "node:path/posix";
+import { join, resolve } from "node:path/posix";
+import { isGameFolder } from "../discovery";
 import type { EditorDiscovery, McpArgs } from "../types";
 import { findEditor } from "./discovery";
 import type { HubClientOptions } from "./hub-client";
 import { connectHub } from "./hub-client";
-import { launchEditor, stopChild } from "./launcher";
+import { ENGINE_PAGE, launchEditor, stopChild } from "./launcher";
 import type { BridgeDeps, ChildProcess, EditorLink, EditorStatus, HubClient } from "./types";
 
 /**
@@ -297,14 +299,31 @@ async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient>
 }
 
 /**
- * Starts the bin when none runs, then connects. A live bin found first is used instead.
+ * The engine page of the root when the root is a moku-game folder (`index.ts` and `config.ts`, the
+ * rule of the bin): the html the launcher starts the engine form for (D-63).
+ *
+ * @param root - The absolute project root.
+ * @returns `<root>/.moku/index.html`, or undefined for any other folder.
+ * @example
+ * ```ts
+ * enginePageOf("/games/timber"); // "/games/timber/.moku/index.html"
+ * enginePageOf("/work/site"); // undefined: no index.ts and config.ts
+ * ```
+ */
+function enginePageOf(root: string): string | undefined {
+  return isGameFolder(root) ? join(root, ENGINE_PAGE) : undefined;
+}
+
+/**
+ * Starts the bin when none runs, then connects. A live bin found first is used instead. With no
+ * html known, a moku-game root starts its engine page.
  *
  * @param ctx - The bin side.
  * @param input - The html and port asked for, if any.
  * @param input.html - The game HTML file.
  * @param input.port - The port.
  * @returns The status after the start.
- * @throws {Error} When no html is known, or the start fails.
+ * @throws {Error} When no html is known and the root is no moku-game folder, or the start fails.
  */
 async function launchNow(
   ctx: LinkCtx,
@@ -322,8 +341,9 @@ async function launchNow(
     return statusOf(state);
   }
 
-  // The html and port: the call's, else argv's, else the last discovery file's.
-  const html = input.html ?? args.html ?? state.seen?.html;
+  // The html: the call's, else argv's, else the last discovery file's, else the engine page of a
+  // moku-game root. The port: the call's, else argv's, else the last one, else 3000.
+  const html = input.html ?? args.html ?? state.seen?.html ?? enginePageOf(root);
   if (html === undefined) {
     throw new Error(
       "[moku-editor] moku_start needs the game HTML file.\n  Pass html, such as web/index.html."
@@ -386,7 +406,8 @@ function warnOnPortMismatch(ctx: LinkCtx, port: number): void {
 
 /**
  * The startup: a live bin is connected (a different `--port` prints one line); otherwise the bin
- * is started when an html is known. Failures are remembered, never thrown.
+ * is started when an html is known, or when the root is a moku-game folder (its engine page).
+ * Failures are remembered, never thrown.
  *
  * @param ctx - The bin side.
  */
@@ -401,7 +422,8 @@ async function startup(ctx: LinkCtx): Promise<void> {
     return;
   }
 
-  if (args.html === undefined && found.seen === undefined) {
+  const knowsPage = args.html !== undefined || found.seen !== undefined || isGameFolder(root);
+  if (!knowsPage) {
     deps.ui.info(
       "moku-editor mcp: no running moku-editor and no game html; waiting for moku_start"
     );

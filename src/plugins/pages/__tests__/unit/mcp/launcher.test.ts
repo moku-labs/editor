@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseBinArgs } from "../../../args";
 import { discoveryOf, writeDiscovery } from "../../../discovery";
 import {
+  ENGINE_PAGE,
   LOG_FILE,
   launchCommand,
   launchEditor,
@@ -116,6 +117,20 @@ describe("launchCommand", () => {
       preload: [],
       servePlugins: []
     });
+  });
+
+  it("names the engine page the bridge passes for a moku-game folder: the engine form", () => {
+    expect(ENGINE_PAGE).toBe(".moku/index.html");
+    const engine = { html: join(root, ENGINE_PAGE), port: 3000, root, hmr: true };
+
+    expect(launchCommand(["bun", "bin.mjs"], engine)).toEqual([
+      "bun",
+      "bin.mjs",
+      "--port",
+      "3000",
+      "--root",
+      root
+    ]);
   });
 
   it("keeps the html form for an engine page of another folder", () => {

@@ -264,7 +264,8 @@ export type Channel = "game" | "files" | "editor";
 /**
  * Why a call failed (R1 adds `link_closed`). The selection relay adds `no_editor_page` (-32003: no
  * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
- * it answered).
+ * it answered). The `node` request adds `no_graph` (-32003, retryable: the Flow view has no graph
+ * yet).
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -281,7 +282,8 @@ export type ErrorReason =
   | "not_installed"
   | "link_closed"
   | "no_editor_page"
-  | "page_closed";
+  | "page_closed"
+  | "no_graph";
 
 /**
  * A JSON-RPC error object with the editor's data fields.
@@ -878,12 +880,157 @@ export type EditorNotifications = {
 export type EditorNotificationMethod = keyof EditorNotifications;
 
 /**
+ * A workspace of the tools page rail. The same members as workspace's `WorkspaceId`, declared here
+ * so the wire module imports nothing; `WORKSPACE_NAMES` is the list at runtime.
+ *
+ * @example
+ * ```ts
+ * const name: WorkspaceName = "state";
+ * ```
+ */
+export type WorkspaceName = "flow" | "game" | "render" | "state" | "files" | "console";
+
+/**
+ * Params of the editor-channel request `device`: the preset by id, the orientation and, for a
+ * foldable, whether it is folded. Every field is optional; empty params read the device and change
+ * nothing. Check received params with `parseDeviceParams`. The page answers -32602 for a preset id
+ * it does not know.
+ *
+ * @example
+ * ```ts
+ * const read: DeviceParams = {};
+ * const turn: DeviceParams = { preset: "pixel-8", orientation: "landscape" };
+ * const open: DeviceParams = { preset: "galaxy-z-fold-6", folded: false }; // the inner screen
+ * ```
+ */
+export type DeviceParams = {
+  /** A preset id, e.g. `"pixel-8"`. */
+  readonly preset?: string;
+  readonly orientation?: Orientation;
+  /** `false` shows the inner screen of a foldable. */
+  readonly folded?: boolean;
+};
+
+/**
+ * One device preset in a `DeviceInfo`: a row of `DeviceSpec` with the same `id`, `name`, `group`
+ * and `kind`, and the cover-screen `w` and `h` in portrait.
+ *
+ * @example
+ * ```ts
+ * const row: DevicePresetInfo = {
+ *   id: "galaxy-z-fold-6", name: "Galaxy Z Fold 6", group: "foldable", kind: "phone",
+ *   w: 369, h: 968, foldable: true
+ * };
+ * ```
+ */
+export type DevicePresetInfo = {
+  readonly id: string;
+  readonly name: string;
+  readonly group: DeviceSpec["group"];
+  readonly kind: DeviceSpec["kind"];
+  readonly w: number;
+  readonly h: number;
+  /** True when the spec has two screens (`DeviceSpec.fold`). */
+  readonly foldable: boolean;
+};
+
+/**
+ * The answer of the editor-channel request `device`: the device of the game viewer after the
+ * change, and every preset a next request can name. Check a received answer with `parseDeviceInfo`.
+ *
+ * @example
+ * ```ts
+ * // After `device { preset: "pixel-8", orientation: "landscape" }`.
+ * const info: DeviceInfo = {
+ *   preset: "pixel-8",
+ *   orientation: "landscape",
+ *   folded: true,
+ *   w: 915,
+ *   h: 412,
+ *   presets: [
+ *     { id: "pixel-8", name: "Pixel 8", group: "android", kind: "phone", w: 412, h: 915, foldable: false }
+ *   ]
+ * };
+ * ```
+ */
+export type DeviceInfo = {
+  readonly preset: string;
+  readonly orientation: Orientation;
+  /** Always `true` for a preset that is not foldable. */
+  readonly folded: boolean;
+  /** The width of the game viewport after the change, CSS px, orientation applied. */
+  readonly w: number;
+  /** The height of the game viewport after the change, CSS px, orientation applied. */
+  readonly h: number;
+  readonly presets: readonly DevicePresetInfo[];
+};
+
+/**
+ * Params of the editor-channel request `show`: the workspace to activate. Empty params read the
+ * active workspace and change nothing. Check received params with `parseShowParams`.
+ *
+ * @example
+ * ```ts
+ * const read: ShowParams = {};
+ * const open: ShowParams = { workspace: "state" };
+ * ```
+ */
+export type ShowParams = {
+  readonly workspace?: WorkspaceName;
+};
+
+/**
+ * The answer of the editor-channel request `show`: the active workspace after the change, and the
+ * workspaces a next request can name. Check a received answer with `parseShowInfo`.
+ *
+ * @example
+ * ```ts
+ * const info: ShowInfo = { workspace: "state", workspaces: WORKSPACE_NAMES };
+ * ```
+ */
+export type ShowInfo = {
+  readonly workspace: WorkspaceName;
+  readonly workspaces: readonly WorkspaceName[];
+};
+
+/**
+ * Params of the editor-channel request `node`: the graph node the Flow view focuses, by its id of
+ * 1 to 256 chars. Check received params with `parseNodeParams`.
+ *
+ * @example
+ * ```ts
+ * const params: NodeParams = { id: "main/home" };
+ * ```
+ */
+export type NodeParams = {
+  readonly id: string;
+};
+
+/**
+ * The answer of the editor-channel request `node`: the asked node id and the item key the Flow
+ * view focused. Check a received answer with `parseNodeInfo`.
+ *
+ * @example
+ * ```ts
+ * const info: NodeInfo = { id: "main/home", selected: "main/home" };
+ * ```
+ */
+export type NodeInfo = {
+  readonly id: string;
+  /** The item key the Flow view focused, e.g. `"main/board>board/merge"` inside a sub-flow. */
+  readonly selected: string;
+};
+
+/**
  * The editor-channel requests by method: `selection` (answered by the hub with the last published
- * selection) and `select` (relayed by the hub to the editor page, which answers the selection).
+ * selection), and the four the hub relays to the editor page (`RelayedEditorMethod`): `select`
+ * answers the selection, `device` the device of the game viewer, `show` the active workspace and
+ * `node` the focused graph node.
  *
  * @example
  * ```ts
  * const answer: EditorRequests["select"]["result"] = info; // the element after the select
+ * const turn: EditorRequests["device"]["params"] = { orientation: "landscape" };
  * ```
  */
 export type EditorRequests = {
@@ -892,12 +1039,29 @@ export type EditorRequests = {
     readonly result: SelectionInfo | null;
   };
   readonly select: { readonly params: SelectParams; readonly result: SelectionInfo };
+  readonly device: { readonly params: DeviceParams; readonly result: DeviceInfo };
+  readonly show: { readonly params: ShowParams; readonly result: ShowInfo };
+  readonly node: { readonly params: NodeParams; readonly result: NodeInfo };
 };
 
 /**
  * The name of an editor-channel request.
  */
 export type EditorRequestMethod = keyof EditorRequests;
+
+/**
+ * An editor-channel request the hub relays to the editor page and answers with the page's answer.
+ * `selection` is not one: the hub answers it itself.
+ *
+ * @example
+ * ```ts
+ * const relayed: RelayedEditorMethod[] = ["select", "device", "show", "node"];
+ * ```
+ */
+export type RelayedEditorMethod = Extract<
+  EditorRequestMethod,
+  "select" | "device" | "show" | "node"
+>;
 
 /**
  * The size and corner radius of one screen of a foldable device, in CSS px.
