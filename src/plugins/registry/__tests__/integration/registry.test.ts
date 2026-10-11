@@ -94,6 +94,19 @@ describe("registry integration", () => {
     await app.stop();
   });
 
+  it("says in clock() which pause a reload keeps: devtools, not another reason", async () => {
+    const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
+    await app.start();
+
+    expect(app.registry.clock()).toMatchObject({ paused: false, held: false, reasons: [] });
+    await app.registry.command("game.pause")?.run(null);
+    expect(app.registry.clock()).toMatchObject({ paused: true, held: true, reasons: ["devtools"] });
+    await app.registry.command("game.resume")?.run(null);
+    expect(app.registry.clock()).toMatchObject({ paused: false, held: false, reasons: [] });
+
+    await app.stop();
+  });
+
   it("logs a failed command through ctx.log", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     vi.stubGlobal("__MOKU_GAME_DEV__", undefined);

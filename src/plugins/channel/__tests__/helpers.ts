@@ -142,7 +142,7 @@ export function fakeRegistry(): FakeRegistry {
     clockNow: { frame: 1840, paused: false },
     source: id => registry.sources.get(id),
     command: id => registry.commands.get(id),
-    clock: () => ({ ...registry.clockNow })
+    clock: () => ({ ...registry.clockNow, held: registry.clockNow.paused, reasons: [] })
   };
   return registry;
 }

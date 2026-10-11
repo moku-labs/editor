@@ -28,6 +28,8 @@ What it does:
 9. **Checkpoint across Bun's full reload (R6).** See [Checkpoint](#checkpoint).
 10. **`editor.reload`.** A registry command that stores the same checkpoint and reloads the page
     on request (the MCP tool `moku_reload`). See [editor.reload](#editorreload).
+11. **`editor.clock`.** A read-only registry command that answers the game clock and why it stands
+    (the MCP door tool `editor_clock`). See [editor.clock](#editorclock).
 
 The token is never logged. Log lines name the hello origin and path only.
 
@@ -71,14 +73,34 @@ Bun HMR reloads the game page after a source save (D-23). Bun cannot be held:
    through its registry entry. The door runs at once, not a microtask later as through
    `channel.run`. When the run settles (microtasks, before the reload) it stores
    `{ v: 1, doc, at, frame, paused, bookmark }` as JSON in `sessionStorage["moku-editor:checkpoint"]`.
-   `doc` is `performance.timeOrigin` of the page. Right after it starts the checkpoint it sends
+   `doc` is `performance.timeOrigin` of the page. `paused` is `registry.clock().held`, see
+   [Which pause is kept](#which-pause-is-kept). Right after it starts the checkpoint it sends
    `bye` on the open socket: the hub ends the session with `bye`, and the tools read the reload
    as expected (U7, neutral "Reloading…" instead of a red lost).
 2. On start, the bridge of the next page takes a checkpoint stored by another document, removes
-   it, runs `game.restore { bookmark }`, then `game.pause` when it was paused, and only then
+   it, runs `game.restore { bookmark }`, then `game.pause` when its `paused` is true, and only then
    connects. Its first hello carries `manifest.restored = { bookmark, frame }`: `bookmark` is the
    JSON text of the restored bookmark, `frame` the frame of the old page. Later hellos do not.
 3. Without a checkpoint it connects at once, as before.
+
+### Which pause is kept
+
+The checkpoint keeps only the pause the developer holds. `registry.clock()` answers two flags:
+`paused` is true for any pause reason, `held` only while the reasons include `"devtools"`, the
+reason `game.pause` pushes. The checkpoint stores `paused: clock.held`.
+
+| Pause reasons at the reload | `clock.paused` | Stored `paused` | After the restore |
+|---|---|---|---|
+| none | `false` | `false` | The game runs. |
+| `["background"]` (the tab is hidden) | `true` | `false` | No `game.pause`. The game pauses itself while the tab is hidden and runs when it is shown. |
+| `["devtools"]` (`game.pause`, the editor's pause) | `true` | `true` | `game.pause` runs once. |
+| `["background", "devtools"]` | `true` | `true` | `game.pause` runs once. |
+| a game without `lifecycle.reasons` and a paused clock | `true` | `true` | `game.pause` runs once: `held` follows `paused` there. |
+
+Why: `game.pause` after the restore pushes the reason `devtools`. Only `game.resume` ends it. A
+hidden tab restored that way stayed paused after it was shown.
+
+The stored shape and its version did not change: a checkpoint has no `held` and no `reasons`.
 
 | Case | What happens |
 |---|---|
@@ -101,7 +123,8 @@ Spike (Bun 1.3.14, Chromium, a module in `node_modules` like the published agent
 
 ## editor.reload
 
-The bridge adds one command to the registry in `onInit` (`reload.ts`, `reloadEntry`):
+The bridge adds two commands to the registry in `onInit`. The first is `editor.reload`
+(`reload.ts`, `reloadEntry`):
 
 | Command | Title | Input | Effect | Value |
 |---|---|---|---|---|
@@ -111,8 +134,9 @@ The bridge adds one command to the registry in `onInit` (`reload.ts`, `reloadEnt
    refused with -32602, and nothing is scheduled.
 2. With `restore`, it stores the checkpoint exactly as `bun:beforeFullReload` does
    (`takeCheckpoint`: clock, `game.bookmark`, `sessionStorage["moku-editor:checkpoint"]`) and waits
-   for the store. A checkpoint that cannot be taken logs `bridge:checkpoint-failed`; the reload
-   still happens. `restore: false` stores nothing.
+   for the store. Its `paused` is the devtools pause only, see
+   [Which pause is kept](#which-pause-is-kept). A checkpoint that cannot be taken logs
+   `bridge:checkpoint-failed`; the reload still happens. `restore: false` stores nothing.
 3. It answers `{ scheduled: true }` with `state` = `registry.envelope()`.
 4. On the next macrotask, after the answer went out, it sends `bye` on the open socket. On the
    macrotask after that it calls `location.reload()` (`reloadPage` of the reload seam; a no-op
@@ -127,6 +151,38 @@ document runs `game.restore` through the game, which does.
 ```ts
 await link.run("editor.reload"); // { value: { scheduled: true }, state: { path, frame, tainted } }
 await link.run("editor.reload", { restore: false }); // a fresh start, no checkpoint
+```
+
+## editor.clock
+
+The second command, added right after `editor.reload` (`clock.ts`, `clockEntry`):
+
+| Command | Title | Input | Effect | Value |
+|---|---|---|---|---|
+| `editor.clock` | `"Clock"` | `{}` | `read` | `{ frame, paused, held, reasons }` |
+
+It answers `registry.clock()` as Json, with `state` = `registry.envelope()`. It runs no door and
+changes nothing.
+
+| Field | Meaning |
+|---|---|
+| `frame` | The frame of the game clock. |
+| `paused` | True while the clock does not run, for any pause reason. The heartbeat sends the same flag. |
+| `held` | True while the reasons include `"devtools"`: the developer paused the game. A reload restores this pause only. |
+| `reasons` | `game.lifecycle.reasons()`, in push order. |
+
+A game without `lifecycle.reasons` answers `reasons: []` and `held` equal to `paused`. The command
+does not fail for it.
+
+The heartbeat and `LinkStatus` keep `paused` only. A tool that must tell the two pauses apart runs
+this command: workspace does before its own reload checkpoint. The MCP server lists it as the door
+tool `editor_clock`.
+
+```ts
+// The game tab is hidden, the developer did not pause.
+(await link.run("editor.clock")).value; // { frame: 1840, paused: true, held: false, reasons: ["background"] }
+// After game.pause, in the same hidden tab.
+(await link.run("editor.clock")).value; // { frame: 1840, paused: true, held: true, reasons: ["background", "devtools"] }
 ```
 
 ## API
@@ -172,7 +228,7 @@ The bridge hooks no events.
 
 | Plugin | Used |
 |---|---|
-| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and pause flag. `add(entry)` for `editor.reload` in `onInit`, `envelope()` for its `state`. |
+| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and its pause flag (`held`) and for the value of `editor.clock`. `add(entry)` for `editor.reload` and `editor.clock` in `onInit`, `envelope()` for their `state`. |
 | `channel` | `read`, `watch`, `run` for every game request. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
 
 `depends: [registryPlugin, channelPlugin]`. Global event used: `bridge:status` (emitted).
@@ -205,7 +261,7 @@ hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, s
 
 | Phase | What happens |
 |---|---|
-| `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100), then `registry.add` of `editor.reload`. A duplicate id throws at `createApp`. |
+| `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100), then `registry.add` of `editor.reload` and `editor.clock`, in that order. A duplicate id throws at `createApp`. |
 | `onStart` | `startBridge`: publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. With a stored checkpoint it restores it first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. |
 | `onStop` | `stopBridge`: phase `stopped`, clears the retry timer and every deadline, removes the listeners and a pending `editor.reload`, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
 

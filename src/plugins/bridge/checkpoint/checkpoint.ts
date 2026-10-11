@@ -5,6 +5,11 @@
  * frame and the pause flag. The bridge of the next document takes it, restores it with
  * `game.restore`, pauses again when it was paused, and sends `restored` in its first hello.
  *
+ * The pause flag is the pause the developer holds (`clock.held`, the reason `devtools`), not
+ * `clock.paused`: a hidden tab pauses the game too (the reason `background`), and the game ends
+ * that pause itself when the tab is shown. Restored through `game.pause` it would come back as a
+ * `devtools` pause, which only `game.resume` ends.
+ *
  * Bun runs the new code in the old page before it reloads it, so a checkpoint is only taken by a
  * document other than the one that stored it; one older than CHECKPOINT_MAX_AGE_MS is dropped.
  */
@@ -70,8 +75,9 @@ function store(
 
 /**
  * Takes the checkpoint now: the clock is read and `game.bookmark` runs through its registry
- * entry at once; the bookmark is stored when the run settles (microtasks, before the reload). No
- * storage or no `game.bookmark` stores nothing; a failure is logged.
+ * entry at once; the bookmark is stored when the run settles (microtasks, before the reload) with
+ * the frame and `paused` = `clock.held`. No storage or no `game.bookmark` stores nothing; a failure
+ * is logged.
  *
  * @param deps - Registry, reload seam and log.
  * @returns Resolves once the checkpoint is stored, or was not (never rejects).
@@ -82,10 +88,10 @@ export async function takeCheckpoint(deps: CheckpointDeps): Promise<void> {
   if (storage === undefined || bookmark === undefined) return;
 
   try {
-    const clock = deps.registry.clock();
+    const { frame, held } = deps.registry.clock();
     const at = Date.now();
     const ran = await bookmark.run(NO_INPUT);
-    store(deps, storage, { v: VERSION, doc, at, ...clock, bookmark: ran.value });
+    store(deps, storage, { v: VERSION, doc, at, frame, paused: held, bookmark: ran.value });
   } catch (error) {
     deps.log.warn("bridge:checkpoint-failed", { message: messageOf(error) });
   }

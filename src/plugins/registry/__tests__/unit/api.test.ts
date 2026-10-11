@@ -245,7 +245,20 @@ describe("clock()", () => {
     game.app.time.step(16);
     game.app.time.step(16);
 
-    expect(registry.clock()).toEqual({ frame: game.app.time.snapshot().frame, paused: false });
+    expect(registry.clock()).toEqual({
+      frame: game.app.time.snapshot().frame,
+      paused: false,
+      held: false,
+      reasons: []
+    });
+  });
+
+  it("is held with the reason devtools after game.pause, and free after game.resume", async () => {
+    await registry.command("game.pause")?.run(null);
+
+    expect(registry.clock()).toMatchObject({ paused: true, held: true, reasons: ["devtools"] });
+    await registry.command("game.resume")?.run(null);
+    expect(registry.clock()).toMatchObject({ paused: false, held: false, reasons: [] });
   });
 
   it("is paused after game.pause (the devtools pause reason)", async () => {

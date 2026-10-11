@@ -6,7 +6,7 @@ import type { Json } from "../../../registry/protocol";
 import { wireError } from "../../../registry/protocol";
 import { createGameFrame, gameUrl, taggedGameUrl } from "../../frame/frame";
 import type { Taken } from "../../frame/reload";
-import { hotSwappedSince, nextManifest, reloadFrame } from "../../frame/reload";
+import { hotSwappedSince, nextManifest, reloadFrame, takeCheckpoint } from "../../frame/reload";
 import { RESTORED_TOAST } from "../../frame/restored";
 import { createCtx, flush, manifestOf, resultOf, type TestCtx, tagged } from "../helpers";
 
@@ -185,6 +185,182 @@ describe("reloadFrame keeps the pause", () => {
     ctx.link.attach(manifestOf(COMMANDS));
     await expect(second).resolves.toEqual({ restored: false, reason: "restore_failed" });
     expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Only a pause the developer made is kept: a paused link asks `editor.clock`
+// before the bookmark and keeps its `held`. A hidden tab pauses the game too
+// (reason `background`); pausing it again after the restore would hold it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The commands of a session whose agent answers `editor.clock`. */
+const WITH_CLOCK = ["game.bookmark", "game.restore", "game.pause", "editor.clock"];
+
+/** The clock of a game paused only because its tab is hidden. */
+const BACKGROUND: Json = { frame: 1840, paused: true, held: false, reasons: ["background"] };
+
+/** The clock of a game the developer paused. */
+const DEVTOOLS: Json = { frame: 1840, paused: true, held: true, reasons: ["devtools"] };
+
+/**
+ * A paused session that lists `editor.clock` and answers it with the given value; `game.bookmark`
+ * answers BOOKMARK and the rest an empty result.
+ *
+ * @param clock - The value of the `editor.clock` run.
+ */
+function pausedWithClock(clock: Json): void {
+  ctx.state.link = { kind: "paused", frame: 1840 };
+  ctx.link.manifestValue = manifestOf(WITH_CLOCK);
+  ctx.link.run.mockImplementation(id => {
+    if (id === "editor.clock") return Promise.resolve(resultOf(clock));
+    return Promise.resolve(id === "game.bookmark" ? resultOf(BOOKMARK) : resultOf());
+  });
+}
+
+describe("reloadFrame keeps only a pause the developer made (editor.clock)", () => {
+  it("a background pause (held false) is not kept: the game is restored and not paused", async () => {
+    pausedWithClock(BACKGROUND);
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(WITH_CLOCK));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark", "game.restore"]);
+    expect(toasts()).toEqual(["Game reloaded · state restored from the last checkpoint"]);
+    expect(ctx.log.debug).not.toHaveBeenCalled();
+    expect(ctx.emit).not.toHaveBeenCalled();
+  });
+
+  it("a devtools pause (held true) is kept: the game is paused again", async () => {
+    pausedWithClock(DEVTOOLS);
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(WITH_CLOCK));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark", "game.restore", "game.pause"]);
+    expect(ctx.log.debug).not.toHaveBeenCalled();
+  });
+
+  it("an older agent without editor.clock keeps the old rule: paused again, the clock is not asked", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    ctx.link.manifestValue = manifestOf(["game.bookmark", "game.restore", "game.pause"]);
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(WITH_CLOCK));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore", "game.pause"]);
+    expect(ctx.log.debug).not.toHaveBeenCalled();
+  });
+
+  it("a failed editor.clock run keeps the old rule and logs one debug", async () => {
+    pausedWithClock(BACKGROUND);
+    failOn("editor.clock", "clock refused");
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(WITH_CLOCK));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark", "game.restore", "game.pause"]);
+    expect(ctx.log.debug).toHaveBeenCalledTimes(1);
+    expect(ctx.log.debug).toHaveBeenCalledWith("workspace:clock-failed", {
+      message: "[moku-editor] clock refused"
+    });
+    expect(ctx.log.warn).not.toHaveBeenCalled();
+  });
+
+  it("a live game is never asked for its clock", async () => {
+    ctx.link.manifestValue = manifestOf(WITH_CLOCK);
+    const pending = reloadFrame(ctx, { restore: true });
+    await flush();
+    ctx.link.attach(manifestOf(WITH_CLOCK));
+    await expect(pending).resolves.toEqual({ restored: true });
+    expect(ranIds()).toEqual(["game.bookmark", "game.restore"]);
+  });
+});
+
+describe("takeCheckpoint", () => {
+  it("asks the clock before the bookmark and keeps its held", async () => {
+    pausedWithClock(BACKGROUND);
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: { bookmark: BOOKMARK, paused: false },
+      reason: undefined
+    });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark"]);
+    expect(ctx.link.run).toHaveBeenNthCalledWith(1, "editor.clock");
+
+    ctx.link.run.mockClear();
+    pausedWithClock(DEVTOOLS);
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: { bookmark: BOOKMARK, paused: true },
+      reason: undefined
+    });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark"]);
+  });
+
+  it("a live game is a checkpoint that is not paused, with no clock run", async () => {
+    ctx.link.manifestValue = manifestOf(WITH_CLOCK);
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: { bookmark: BOOKMARK, paused: false },
+      reason: undefined
+    });
+    expect(ranIds()).toEqual(["game.bookmark"]);
+  });
+
+  it("a paused link without a manifest keeps the old rule and asks no clock", async () => {
+    ctx.state.link = { kind: "paused", frame: 1840 };
+    ctx.link.manifestValue = undefined;
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: { bookmark: BOOKMARK, paused: true },
+      reason: undefined
+    });
+    expect(ranIds()).toEqual(["game.bookmark"]);
+    expect(ctx.log.debug).not.toHaveBeenCalled();
+  });
+
+  const WRONG_SHAPES: [string, Json][] = [
+    // eslint-disable-next-line unicorn/no-null -- null is a JSON value on the wire
+    ["null", null],
+    ["a string", "held"],
+    ["a boolean", false],
+    ["an array", [false]],
+    ["an object without held", { frame: 1840, paused: true, reasons: ["background"] }],
+    ["a held that is no boolean", { held: "false" }]
+  ];
+
+  it.each(
+    WRONG_SHAPES
+  )("an editor.clock answer that is %s keeps the old rule and logs one debug", async (_name, clock) => {
+    pausedWithClock(clock);
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: { bookmark: BOOKMARK, paused: true },
+      reason: undefined
+    });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark"]);
+    expect(ctx.log.debug).toHaveBeenCalledTimes(1);
+    expect(ctx.log.debug).toHaveBeenCalledWith("workspace:clock-failed", {
+      message: "[moku-editor] editor.clock: held must be a boolean"
+    });
+  });
+
+  it("a clock and a bookmark that both fail: bookmark_failed, one debug log", async () => {
+    pausedWithClock(BACKGROUND);
+    ctx.link.run.mockRejectedValue(wireError(-32_000, "game page reloaded"));
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: undefined,
+      reason: "bookmark_failed",
+      failure: "[moku-editor] game page reloaded"
+    });
+    expect(ranIds()).toEqual(["editor.clock", "game.bookmark"]);
+    expect(ctx.log.debug).toHaveBeenCalledTimes(1);
+  });
+
+  it("no session: neither the clock nor the bookmark runs", async () => {
+    ctx.state.link = { kind: "connecting" };
+    ctx.link.manifestValue = manifestOf(WITH_CLOCK);
+    await expect(takeCheckpoint(ctx, ctx.link)).resolves.toEqual({
+      checkpoint: undefined,
+      reason: "no_session"
+    });
+    expect(ctx.link.run).not.toHaveBeenCalled();
   });
 });
 

@@ -29,7 +29,7 @@ function setup() {
       Promise.resolve({ value: BOOKMARK, state: { ...ENVELOPE, frame: 40 } })
   );
   deps.registry.commands.set("game.bookmark", commandEntry("game.bookmark", bookmark));
-  deps.registry.clockValue = { frame: 1840, paused: true };
+  deps.registry.clockValue = { frame: 1840, paused: true, held: true, reasons: ["devtools"] };
   return { deps, bookmark, entry: reloadEntry(deps) };
 }
 
@@ -76,6 +76,22 @@ describe("reloadEntry", () => {
 
     expect(deps.reload.reloadPage).toHaveBeenCalledOnce();
     expect(deps.state.off).toEqual([]);
+  });
+
+  it("does not keep the pause of a hidden tab in the checkpoint", async () => {
+    const { deps, entry } = setup();
+    deps.registry.clockValue = { frame: 1840, paused: true, held: false, reasons: ["background"] };
+
+    await entry.run(null);
+
+    expect(JSON.parse(deps.reload.storage.getItem(CHECKPOINT_KEY) ?? "null")).toEqual({
+      v: 1,
+      doc: 5000,
+      at: 1_790_000_000_000,
+      frame: 1840,
+      paused: false,
+      bookmark: BOOKMARK
+    });
   });
 
   it("says bye right before it reloads the page (U7)", async () => {

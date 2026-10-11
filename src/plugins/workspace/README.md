@@ -242,14 +242,29 @@ Before `mount` there is no iframe: `box()` is `undefined` and `reload()` resolve
 
 ### reload (D-07)
 
-`reload({ restore: true })`: `game.bookmark`, and whether the link is `paused` →
+`reload({ restore: true })`: whether the developer paused the game (below), then `game.bookmark` →
 `link.expectReload()` → `iframe.src` reassigned on the same element → first manifest of this tab's own embedded frame (a manifest
 whose page carries another tools page's frame id is skipped) → `game.restore { bookmark }` →
-`game.pause` when the game was paused and the new manifest lists it → toast "Game reloaded · state
-restored from the last checkpoint". A failed `game.pause` is the warn `workspace:pause-failed`; the
-result stays `{ restored: true }`. Concurrent calls share one run and schedule one more after it.
-Bookmark, restore and pause are not user runs: no `workspace:ran`. `link.expectReload()` makes the
-session close of the reload an expected reload (U7): the link reads `lost` with `reloading: true`.
+`game.pause` when the developer had paused the game and the new manifest lists it → toast "Game
+reloaded · state restored from the last checkpoint". A failed `game.pause` is the warn
+`workspace:pause-failed`; the result stays `{ restored: true }`. Concurrent calls share one run and
+schedule one more after it. Clock, bookmark, restore and pause are not user runs: no
+`workspace:ran`. `link.expectReload()` makes the session close of the reload an expected reload
+(U7): the link reads `lost` with `reloading: true`.
+
+Only a pause the developer made is kept. A hidden tab pauses the game too (the reason
+`background`), and the link reads `paused` for it all the same. That pause ends by itself when the
+tab shows. `game.pause` after the restore would add the reason `devtools`, which stays: the game
+would not run again until someone resumes it. So the checkpoint decides `paused` like this, before
+the bookmark:
+
+| Link | `editor.clock` | Checkpoint `paused` |
+|---|---|---|
+| `live` | not run | `false` |
+| `paused` | answers `{ held: true }` (the reasons include `devtools`) | `true` |
+| `paused` | answers `{ held: false }` (for example only `background`) | `false` |
+| `paused` | not in the manifest (an older agent), or no manifest | `true`, not run |
+| `paused` | the run fails, or the answer has no boolean `held` | `true`, debug `workspace:clock-failed` |
 
 ### Expected reload (U7)
 
@@ -306,15 +321,15 @@ checkbox-style toggle: `role="switch"` with `aria-checked` in the wide bar, an i
 reload), and the game page has to load again to gain or drop Bun's HMR client. A flip (click, ⋯
 row or key H) under the bin:
 
-1. Takes the checkpoint first: `game.bookmark`, and whether the game is paused. It also starts
-   waiting for this tab's game to connect again. The bin restarts its server right after it
-   answers, so both happen before the ask.
+1. Takes the checkpoint first, as the D-07 reload does: whether the developer paused the game, and
+   `game.bookmark`. It also starts waiting for this tab's game to connect again. The bin restarts
+   its server right after it answers, so both happen before the ask.
 2. Asks `link.setHotReload(on)`. An accepted switch toasts "Hot reload on" or "Hot reload off".
 3. Waits for this tab's game on the restarted server, at most `reloadTimeoutMs`. Then the server
    serves again.
 4. Reloads the game frame with that checkpoint, as the D-07 reload does. The new session gets
-   `game.restore`, then `game.pause` when the game was paused. Toast "Game reloaded · state
-   restored from the last checkpoint".
+   `game.restore`, then `game.pause` when the developer had paused the game. Toast "Game reloaded ·
+   state restored from the last checkpoint".
 
 A game outside the editor is not waited for: its toast says "The game runs outside the editor ·
 reload it there". Asking for the value hot reload already has takes no checkpoint and reloads

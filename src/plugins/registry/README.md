@@ -43,14 +43,32 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `command(id)` | `CommandEntry \| undefined` | Door, module or editor command. |
 | `add(entry)` | `void` | Adds an editor command. Call it in `onInit`. |
 | `envelope()` | `RunState` | `{ path, frame, tainted }` for editor commands that run no door. |
-| `clock()` | `Clock` | `{ frame, paused }` from the game clock. Read by the channel heartbeat. |
+| `clock()` | `Clock` | `{ frame, paused, held, reasons }` from the game clock and its pause stack. The channel heartbeat reads `frame` and `paused`; the reload checkpoint reads `held`. |
 
 ```ts
 registry.manifest().commands.length; // 17 door commands + module + editor commands
 registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
 await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
 registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }
-registry.clock(); // { frame: 1840, paused: false }
+registry.clock(); // { frame: 1840, paused: false, held: false, reasons: [] }
+```
+
+### `Clock`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `frame` | `number` | The frame of the game clock. |
+| `paused` | `boolean` | The clock does not run, for any pause reason (`game.time.isPaused()`). |
+| `held` | `boolean` | The developer holds the pause: `reasons` include `"devtools"`, the reason `game.pause` pushes. This is the pause a reload restores. |
+| `reasons` | `readonly string[]` | A copy of `game.lifecycle.reasons()`, in push order. |
+
+`GameLike.lifecycle` is optional. A game without `lifecycle.reasons` answers `reasons: []` and
+`held` equal to `paused`. The heartbeat on the wire keeps two fields, `frame` and `paused`.
+
+```ts
+registry.clock(); // the game tab is hidden: { frame: 1840, paused: true, held: false, reasons: ["background"] }
+await registry.command("game.pause")?.run(null);
+registry.clock(); // { frame: 1840, paused: true, held: true, reasons: ["background", "devtools"] }
 ```
 
 ### Entries

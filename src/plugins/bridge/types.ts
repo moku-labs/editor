@@ -197,6 +197,10 @@ export type ReloadSeam = {
  */
 export type TakenCheckpoint = {
   readonly frame: number;
+  /**
+   * True when the developer held the pause (`clock.held`, the reason `devtools`): the restore runs
+   * `game.pause`. False for a running game and for the pause of a hidden tab.
+   */
   readonly paused: boolean;
   readonly bookmark: Json;
 };
