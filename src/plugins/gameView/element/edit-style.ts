@@ -9,8 +9,9 @@
  *
  * A text style key has pending edits too (D-73): `editTextStyle` records one under
  * `textStyle:<key>` (`from` is the value its block has in the file), `editValue` records for
- * either owner, and the block read again drops the edits it shows (`resolveTextStyleEdits`). The
- * list names the keys after the elements.
+ * either owner, and the block read again drops the edits it shows and the ones of a field that is
+ * no literal any more, and moves `from` to a new file value (`resolveTextStyleEdits`). The list
+ * names the keys after the elements.
  */
 import type { SceneNode, SceneSnapshot } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
@@ -28,6 +29,7 @@ import {
   styleValueAt,
   textStyleEditKey,
   unresolved,
+  unresolvedInBlock,
   withEdit
 } from "./edits";
 import { publishEdits } from "./publish";
@@ -319,9 +321,12 @@ export function resolveEdits(ctx: GameViewCtx, scene: SceneSnapshot): void {
 
 /**
  * The self-resolve of the pending edits of a text style key on a read of its block (D-73): an
- * edit whose field has its `to` value in the file is dropped (the agent wrote the code); a key
- * without edits left is forgotten. The entry follows the place of the block. The selection is
- * published again when the selected text node has the key and it lost an edit.
+ * edit whose field has its `to` value in the file is dropped (the agent wrote the code), and so is
+ * an edit whose field is no literal row of the block any more (a token now, or gone); an edit
+ * whose field has another value takes it as `from`; a key without edits left is forgotten. A block
+ * that cannot be parsed (no rows) keeps every edit. The entry follows the place of the block. The
+ * selection is published again when the selected text node has the key and an edit of it changed
+ * or left.
  *
  * @param ctx - Domain context of gameView.
  * @param card - The block of the key as read.
@@ -332,12 +337,9 @@ export function resolveTextStyleEdits(ctx: GameViewCtx, card: ReadTextStyle): vo
   const entry = state.edits.get(key);
   if (entry === undefined) return;
 
-  const left = entry.edits.filter(
-    edit => card.rows.find(row => row.path === edit.path)?.value !== edit.to
-  );
-  const isResolved = left.length < entry.edits.length;
-  keep(state, key, textStyleEntry(card, isResolved ? left : entry.edits));
-  if (isResolved && selectedNode(state)?.textStyle === card.key) publishEdits(ctx);
+  const left = unresolvedInBlock(entry.edits, card.rows);
+  keep(state, key, textStyleEntry(card, left));
+  if (left !== entry.edits && selectedNode(state)?.textStyle === card.key) publishEdits(ctx);
 }
 
 /**

@@ -4,7 +4,7 @@
  * nothing is selected. A source the project index still answers follows in a second publish; a
  * key the index does not know is published without one. A pick and an area publish their own
  * info (card, crop, line). The pending style edits of the element go with every one of them (the
- * ones of a text node's style key as `textStyle:<key>.<field>`, D-73), and a change of those
+ * ones of a text node's style key as `textStyle:<key>#<field>`, D-73), and a change of those
  * edits publishes again (U8). The last published info stays in
  * `state.selection`; a late follow-up of an older one is dropped.
  */

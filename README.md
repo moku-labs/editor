@@ -199,7 +199,7 @@ Which editor the bridge uses:
 | `moku_screenshot` | A JPEG of the game, at most 1080 px wide by default. `key` crops it to one ui element; `format: "png"` keeps it lossless. Over 300 KB it is taken once more at half the width. |
 | `moku_series` | A contact sheet: 2 to 12 frames, `everyMs` of game time apart, on one JPEG at most 1080 px wide. Game 0.4. |
 | `moku_reference` | The newest or a named reference card with its crop: the day folders `.moku/captures/<yyyy-mm-dd>/` and the older flat `.moku/captures/`. |
-| `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. `edits` lists the pending style edits of the element, `{ path, from, to }` each, to apply in the source. An edit of a text's style key has the path `textStyle:<key>.<field>`. |
+| `moku_selection` | What is selected in the editor page: key, name, type, `file:line`, rect, card, crop and the reference line, with the crop image. `edits` lists the pending style edits of the element, `{ path, from, to }` each, to apply in the source. An edit of a text's style key has the path `textStyle:<key>#<field>`. |
 | `moku_select` | Selects an element by `key`, or an area by `rect`, in the editor page. The page shows the selection; the answer is the selection with its card and crop. With `node` it selects a node of the flow graph: the page opens the Flow workspace and focuses the node; the answer is `{ id, selected, places }`, the places being the node's files and lines. Needs the tools page open. |
 | `moku_device` | Reads or sets the device of the tools page: `preset`, `orientation`, `folded`. The answer carries the game viewport `w` × `h` after the change and the presets to choose from. Needs the tools page open. |
 | `moku_show` | Switches the tools page to a workspace: `flow`, `game`, `render`, `state`, `files` or `console`. Without one it reads the active one. Needs the tools page open. |
@@ -478,8 +478,10 @@ selection. The selection carries the pending style edits of the element (`edits`
   size: 105 -> 96
   ```
 
-  In `moku_selection` such an edit has the path `textStyle:<key>.<field>`, for example
-  `textStyle:ui.button.size`. It leaves by itself once the file has the new value. The list needs
+  In `moku_selection` such an edit has the path `textStyle:<key>#<field>`, for example
+  `textStyle:ui.button#size` or `textStyle:ui.button#shadow.dy`. It leaves by itself once the file
+  has the new value, or once its field is no number or quoted string any more. Another value in
+  the file becomes the `from` of the edit. The list needs
   @moku-labs/game 0.14.11 or newer, which sends the key of a text (`UiNode.textStyle`); with an
   older game it is not shown. A key the project index does not know shows
   `Not in the project index: textStyle:<key>`.

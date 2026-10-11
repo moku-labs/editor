@@ -3,14 +3,14 @@
  * kept under, the key the edits of a text style key are kept under (`textStyle:<key>`, D-73) and
  * what an edit belongs to (`EditOwner`), the value a style path names, the fields one style entry
  * turns into, the kind of control a field is (with the engine's values of an enum property,
- * `STYLE_ENUMS`), one edit recorded into a list, the edits a scene has not taken yet, the edits a
- * selection carries, and the text the agent gets (`editsText`). Nothing here writes a file or
- * talks to the game.
+ * `STYLE_ENUMS`), one edit recorded into a list, the edits a scene has not taken yet, the edits
+ * of a text style key a read of its block leaves, the edits a selection carries, and the text the
+ * agent gets (`editsText`). Nothing here writes a file or talks to the game.
  */
 import type { SceneNode } from "../../panels/shared/scene";
 import { refId } from "../../panels/shared/scene";
 import type { Json, StyleEdit, StyleValue } from "../../registry/protocol";
-import type { ElementEdits, GameViewState } from "../types";
+import type { ElementEdits, GameViewState, TextStyleRow } from "../types";
 
 /**
  * One field of the Styles section: the style path it edits, the leaf name of a nested value
@@ -123,6 +123,13 @@ export function editKey(node: Pick<SceneNode, "id" | "key">): string {
 const TEXT_STYLE_PREFIX = "textStyle:";
 
 /**
+ * What stands between the text style key and the field in the path of a style key's edit in a
+ * selection. A key and a field both have dots (`ui.button`, `shadow.dy`), so a dot cannot part
+ * them.
+ */
+const TEXT_STYLE_FIELD = "#";
+
+/**
  * The key the edits of a text style key are kept under (D-73).
  *
  * @param key - The text style key.
@@ -186,7 +193,8 @@ export function editsOf(
 
 /**
  * The edits a selection of a node carries (`SelectionInfo.edits`): its own, then the edits of its
- * text style key, each under the path `textStyle:<key>.<field>` (D-73).
+ * text style key, each under the path `textStyle:<key>#<field>` (D-73). The `#` ends the key: a
+ * key and a field both have dots, so the path splits at its first `#`.
  *
  * @param kept - The pending edits (`state.edits`).
  * @param node - The selected node.
@@ -194,7 +202,8 @@ export function editsOf(
  * @example
  * ```ts
  * // homePlayLabel is a text with `style="ui.button"`; the person wants its key smaller.
- * selectionEdits(state.edits, homePlayLabel); // [{ path: "textStyle:ui.button.size", from: 105, to: 96 }]
+ * selectionEdits(state.edits, homePlayLabel); // [{ path: "textStyle:ui.button#size", from: 105, to: 96 }]
+ * // A nested field keeps its dots after the `#`: "textStyle:ui.button#shadow.dy".
  * ```
  */
 export function selectionEdits(
@@ -205,7 +214,10 @@ export function selectionEdits(
   if (node.textStyle === undefined) return own;
 
   const owner = textStyleEditKey(node.textStyle);
-  const ofKey = editsOf(kept, owner).map(edit => ({ ...edit, path: `${owner}.${edit.path}` }));
+  const ofKey = editsOf(kept, owner).map(edit => ({
+    ...edit,
+    path: `${owner}${TEXT_STYLE_FIELD}${edit.path}`
+  }));
   return ofKey.length === 0 ? own : [...own, ...ofKey];
 }
 
@@ -385,6 +397,42 @@ export function unresolved(
 ): readonly StyleEdit[] {
   const left = edits.filter(edit => styleValueAt(style, edit.path) !== edit.to);
   return left.length === edits.length ? edits : left;
+}
+
+/**
+ * The edits of a text style key a read of its block leaves (D-73). An edit whose field has its
+ * `to` value in the file is done. An edit whose field is no literal row any more (a token now, or
+ * gone) is dropped: no field edits it. An edit whose field has another value than its `from`
+ * takes that value as `from`. A block without rows could not be parsed and says nothing, so every
+ * edit stays.
+ *
+ * @param edits - The edits of the key.
+ * @param rows - The rows of its block as read; none for a block that cannot be parsed.
+ * @returns The edits still pending: the same list when the read changes none.
+ * @example
+ * ```ts
+ * const size = [{ path: "size", from: 105, to: 96 }];
+ * unresolvedInBlock(size, [{ path: "size", raw: "96", value: 96 }]); // []
+ * unresolvedInBlock(size, [{ path: "size", raw: "100", value: 100 }]); // [{ path: "size", from: 100, to: 96 }]
+ * unresolvedInBlock(size, [{ path: "size", raw: "sizes.big", value: undefined }]); // []
+ * unresolvedInBlock(size, []); // size
+ * ```
+ */
+export function unresolvedInBlock(
+  edits: readonly StyleEdit[],
+  rows: readonly TextStyleRow[]
+): readonly StyleEdit[] {
+  if (rows.length === 0) return edits;
+
+  const left = edits.flatMap(edit => {
+    const value = rows.find(row => row.path === edit.path)?.value;
+    // Done (the file has the wanted value), or no literal a field can edit: a read-only row has
+    // no value, and neither has a field that left the block.
+    if (value === undefined || value === edit.to) return [];
+    return value === edit.from ? [edit] : [{ ...edit, from: value }];
+  });
+  const isSame = left.length === edits.length && left.every((edit, at) => edit === edits[at]);
+  return isSame ? edits : left;
 }
 
 /**
