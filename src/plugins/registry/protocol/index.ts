@@ -16,6 +16,15 @@ export {
   screenOf
 } from "./devices";
 export {
+  parseDeviceInfo,
+  parseDeviceParams,
+  parseNodeInfo,
+  parseNodeParams,
+  parseShowInfo,
+  parseShowParams,
+  WORKSPACE_NAMES
+} from "./editor-requests";
+export {
   bareMessage,
   ERROR_PREFIX,
   errorCode,
@@ -56,7 +65,10 @@ export type {
   Changes,
   Channel,
   CommandDescriptor,
+  DeviceInfo,
+  DeviceParams,
   DevicePresetId,
+  DevicePresetInfo,
   DeviceSize,
   DeviceSpec,
   EditorChannel,
@@ -83,6 +95,8 @@ export type {
   ListParams,
   Manifest,
   Message,
+  NodeInfo,
+  NodeParams,
   NodeRef,
   Notification,
   Orientation,
@@ -97,6 +111,7 @@ export type {
   PublishMethod,
   PublishParams,
   ReadParams,
+  RelayedEditorMethod,
   Request,
   Response,
   RunParams,
@@ -110,6 +125,8 @@ export type {
   SessionInfo,
   SessionParams,
   SessionsParams,
+  ShowInfo,
+  ShowParams,
   SourceDescriptor,
   SubId,
   Tap,
@@ -119,6 +136,7 @@ export type {
   WatchParams,
   WireError,
   WireErrorData,
+  WorkspaceName,
   WriteBinaryParams,
   WriteParams,
   WriteResult
