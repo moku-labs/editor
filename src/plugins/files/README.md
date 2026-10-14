@@ -6,9 +6,12 @@
 reads and writes text files, writes image captures and reads images back as data URLs. It works
 strictly inside one configured `root`. It also holds the project index of that root (D-38): where
 every flow, node, JSX key, text style and style of the game lives. `hub` calls it for files-channel
-requests from `tools` connections and publishes the index state. `pages` reads `root()`.
+requests from `tools` connections and publishes the index state. `pages` reads `root()`. It
+computes the engine fingerprint of the root's installed `@moku-labs/game` (`engine()`), which the
+hub publishes as `editor.engine`.
 
-Node built-ins only (`node:fs`, `node:fs/promises`, `node:path/posix`, `node:crypto`). No `Bun.*`.
+Node built-ins (`node:fs`, `node:fs/promises`, `node:path/posix`, `node:crypto`), and
+`Bun.resolveSync` for the engine fingerprint only (the server core runs on Bun).
 The project index is `@moku-labs/game/project` (game 0.7.0 or newer, with `typescript` 5.5 or newer
 in the game repo), loaded with a dynamic `import()` on start.
 
@@ -61,6 +64,8 @@ Paths are relative posix paths from the root, for example `src/nodes/merge.ts`. 
 | `root()` | `string` | The real, symlink-resolved root. |
 | `find(key: string)` | `Promise<ProjectFound[]>` | Where a key of the project index lives. Lines are read from disk at the call. See [Project index](#project-index). |
 | `project()` | `ProjectState` | The state last announced with `files:project`, frozen all the way down. |
+| `engine()` | `EngineInfo` | The engine fingerprint of the root, computed on start, frozen. See [Engine fingerprint](#engine-fingerprint). |
+| `refreshEngine()` | `Promise<EngineInfo>` | Computes the fingerprint again when the last run is older than 2 s, else answers the kept one. |
 
 Image extensions: `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, case-insensitive (`IMAGE_EXTENSIONS`).
 With the default `allow`, images are readable and writable only under `.moku/**`.
@@ -201,6 +206,44 @@ const [found] = await app.files.find("node:main/open");
 
 The editor's own writes are not fed to the index. The other tabs hear them through the next watch batch.
 
+## Engine fingerprint
+
+`engine()` answers the engine of the computer's project: the installed `@moku-labs/game`, by the
+recipe of the engine's `__MOKU_GAME_ENGINE__` (engine spec 10 E2), so a phone's fingerprint and the
+computer's compare (the overlay's STALE).
+
+```ts
+// The perf command prints the computer's engine next to each phone's.
+editor.files.engine().id; // "0.14.12+9c41e0"
+
+// The hub, when a phone pairs: publish the engine again only when its id changed.
+const info = await ctx.require(filesPlugin).refreshEngine(); // { id: "0.14.13+1ab7f2", version: "0.14.13", dist: "1ab7f2…" }
+```
+
+`EngineInfo` (from `hub/protocol`) is `{ id, version, dist, patch? }`; `patch` is
+`{ file, hash }` with `file` relative to the root when inside it, absolute otherwise.
+
+The recipe: resolve `@moku-labs/game/hot` from the root (not resolvable: `unknown`); walk up from
+its folder to the first `package.json` named `@moku-labs/game` (none: `unknown`); `version` is its
+`version`; `dist` is the SHA-256 over every file below `<package>/dist`, in sorted POSIX relative
+order, each fed as `<relative path>\0<bytes>\0`, or `"src"` when the hot plugin is not under
+`dist/`; the patch is the file the first `package.json` up from the root declares in
+`patchedDependencies` under `@moku-labs/game@<version>` (the walk stops after the folder holding
+`bun.lock` or `bun.lockb`; a missing file gives no patch), hashed with SHA-256; the id is
+`<version>+<first 6 of dist>` (`src` and `unknown` kept whole) plus `.patch.<first 6 of the patch
+hash>`. Examples: `0.14.12+9c41e0`, `0.14.12+9c41e0.patch.3f2a7b`, `0.0.0+src`, `unknown`.
+
+| Case | Result |
+|---|---|
+| Before the first start | `engine()` throws `[moku-editor] files.engine() needs a started app.` / `Call it after await editor.start().`; `refreshEngine()` rejects with it |
+| On start | computed before the project index opens; any read error gives `{ id: "unknown", version: "unknown", dist: "unknown" }`, logged `files:engine-unknown { error }` at debug, and never fails the start |
+| `refreshEngine()` within 2 s (`ENGINE_REFRESH_MS`) of the last run | the kept fingerprint, no new hash |
+| After stop | the last fingerprint is kept; a restart computes it again |
+
+The walks read outside the sandbox's allow list on purpose: fixed names (the installed package,
+the lockfile folder) read by the server itself, never a path a client sends. Nothing but the
+fingerprint is exposed.
+
 ## Events
 
 | Event | Payload | When |
@@ -230,7 +273,7 @@ This plugin hooks no events.
 | `depends` | none. `files` is first in the server core (files ← hub ← pages). |
 | Global events emitted | `files:written`, `files:project` |
 | Global events hooked | none |
-| Lifecycle | `onInit` (`validateFilesConfig`), `onStart` (`startFiles`: opens the project index), `onStop` (`stopFiles`: ends the watch, closes the index). |
+| Lifecycle | `onInit` (`validateFilesConfig`), `onStart` (`startFiles`, async: computes the engine fingerprint, then opens the project index), `onStop` (`stopFiles`: ends the watch, closes the index; the fingerprint is kept). |
 | Peer packages | `@moku-labs/game` >= 0.7.0 and `typescript` >= 5.5, for the project index. |
 
 ## Usage
@@ -262,7 +305,7 @@ const auditPlugin = createPlugin("audit", {
 
 | Plugin | How it uses `files` |
 |---|---|
-| `hub` | `depends: [filesPlugin]`. `dispatchFiles(ctx.require(filesPlugin), method, params)` serves the files channel of `tools` connections: `list {dir}`, `read {path}`, `write {path, text, version?}`, `writeBinary {path, data}`, `readBinary {path}`, `find {key}`. Params pass `checkInput` first. `writeBinary` calls `files.writeDataUrl(path, data)`. Its hook on `files:project` publishes `editor.project`. |
+| `hub` | `depends: [filesPlugin]`. Publishes `engine()` as `editor.engine` on start and calls `refreshEngine()` when a phone pairs or reconnects. `dispatchFiles(ctx.require(filesPlugin), method, params)` serves the files channel of `tools` connections: `list {dir}`, `read {path}`, `write {path, text, version?}`, `writeBinary {path, data}`, `readBinary {path}`, `find {key}`. Params pass `checkInput` first. `writeBinary` calls `files.writeDataUrl(path, data)`. Its hook on `files:project` publishes `editor.project`. |
 | `pages` | `depends: [filesPlugin, hubPlugin]`. `ctx.require(filesPlugin)` in `onInit`. The tools boot JSON puts `files.root()` in `root`, for "Open in editor" links. |
 | `link` (tools core) | `link.files` mirrors the files-channel methods for the tools views. It reaches `files` only through `hub`. |
 
@@ -276,3 +319,23 @@ const auditPlugin = createPlugin("audit", {
 - Text is capped at 2 MiB, images at 16 MiB. Larger files fail.
 - `writeBinary` takes bytes. `writeDataUrl` takes the data URL of the wire and decodes it.
 - `files:written` is there for a later MCP layer to react to writes. No plugin in this package hooks it yet.
+
+## Files
+
+| File | What |
+|---|---|
+| `index.ts` | wiring: config, state, api, lifecycle |
+| `types.ts` | config, state, api types |
+| `state.ts` | `createFilesState` |
+| `init.ts` | `onInit`: the root, the compiled globs |
+| `lifecycle.ts` | `onStart` (the fingerprint, then the project index), `onStop` |
+| `api.ts` | `createFilesApi` |
+| `sandbox.ts` | the sandbox rules |
+| `io.ts` | reads, atomic writes, locks |
+| `binary.ts` | data URLs |
+| `glob.ts` | glob compile |
+| `kind.ts` | `classifyWrite` |
+| `errors.ts` | the wire errors |
+| `emit.ts` | `emitLogged` |
+| `project.ts` | the project index |
+| `engine.ts` | `engineOf`, `computeEngine`: the engine fingerprint of the root (C10) |

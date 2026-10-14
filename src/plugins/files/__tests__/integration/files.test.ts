@@ -7,7 +7,7 @@ import type { FileBinary, FileText, ProjectFound, ProjectState } from "../../../
 import { filesPlugin } from "../..";
 import { decodeDataUrl } from "../../binary";
 import type { FilesWritten } from "../../types";
-import { MINI_GAME, PNG_BYTES } from "../helpers";
+import { fixtureEngineId, MINI_GAME, PNG_BYTES, putGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A server core composed with files and an audit plugin that hooks
@@ -142,6 +142,20 @@ describe("files integration", () => {
     expect(announced).toEqual([{ state: "off", reason: "disabled" }]);
     await expect(app.files.read("src/main.ts")).resolves.toHaveProperty("text");
     await app.stop();
+  });
+
+  it("fingerprints the installed game on start, by the engine's recipe, and keeps it after stop", async () => {
+    await putGame(root);
+    const app = framework.createApp({ pluginConfigs: { files: { root, project: false } } });
+    expect(() => app.files.engine()).toThrow(
+      /^\[moku-editor] files\.engine\(\) needs a started app\./
+    );
+
+    await app.start();
+    expect(app.files.engine().id).toBe(fixtureEngineId());
+    await app.stop();
+
+    expect(app.files.engine().id).toBe(fixtureEngineId());
   });
 
   it("throws from createApp on a missing root", () => {

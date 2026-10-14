@@ -98,6 +98,74 @@ describe("readManifest", () => {
     expect(readManifest(good)).not.toHaveProperty("restored");
   });
 
+  it("keeps the overlay marker and the build verdict of a command, and the page's build", () => {
+    const good = toObject(manifestOf());
+    const glow = {
+      id: "garden.glow",
+      title: "Glow",
+      input: { on: "boolean" },
+      effect: "cosmetic",
+      overlay: "toggle",
+      allowed: true
+    };
+    const tap = {
+      id: "game.tap",
+      title: "Tap",
+      input: { target: "string" },
+      effect: "route",
+      overlay: "button",
+      allowed: false,
+      reason: "read-only"
+    };
+    const build = { profile: "read", id: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" };
+
+    const read = readManifest({ ...good, commands: [glow, tap], build });
+
+    expect(read?.commands).toEqual([glow, tap]);
+    expect(read?.build).toEqual(build);
+    expect(readManifest({ ...good, build: { profile: "none" } })?.build).toEqual({
+      profile: "none"
+    });
+  });
+
+  it("reads an older agent's manifest without the new fields as before", () => {
+    const read = readManifest(toObject(manifestOf()));
+
+    expect(read).not.toHaveProperty("build");
+    expect(read?.commands[0]).toEqual({
+      id: "game.step",
+      title: "Step",
+      input: { frames: "number" },
+      effect: "raw"
+    });
+  });
+
+  it("drops a malformed marker, verdict or build and keeps the rest of the manifest", () => {
+    const good = toObject(manifestOf());
+    const base = { id: "game.tap", title: "Tap", input: {}, effect: "route" };
+
+    const read = readManifest({
+      ...good,
+      commands: [
+        { ...base, overlay: "slider", allowed: "yes", reason: "read-only" },
+        { ...base, id: "game.drag", allowed: true, reason: "read-only" },
+        { ...base, id: "game.key", allowed: false, reason: "sudo" }
+      ],
+      build: { profile: "release", id: "debug-1" }
+    });
+
+    expect(read?.commands).toEqual([
+      base,
+      { ...base, id: "game.drag", allowed: true },
+      { ...base, id: "game.key", allowed: false }
+    ]);
+    expect(read).not.toHaveProperty("build");
+    expect(
+      readManifest({ ...good, build: { profile: "dev", id: 7, engine: null } })?.build
+    ).toEqual({ profile: "dev" });
+    expect(readManifest({ ...good, build: "dev" })).not.toHaveProperty("build");
+  });
+
   it("rejects bad descriptors", () => {
     const good = toObject(manifestOf());
     expect(readManifest({ ...good, game: 3 })).toBeUndefined();

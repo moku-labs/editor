@@ -1,8 +1,18 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notification, request, success, toWireValue } from "../../../registry/protocol";
+import { publishEngine } from "../../engine";
 import { forward } from "../../routing/calls";
-import { createHarness, errorOf, helloOf, MANIFEST, NULL, paramsOf, resultOf } from "../helpers";
+import {
+  createHarness,
+  ENGINE,
+  errorOf,
+  helloOf,
+  MANIFEST,
+  NULL,
+  paramsOf,
+  resultOf
+} from "../helpers";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -467,5 +477,24 @@ describe("agent frames", () => {
 
     harness.handler.message(agent, "[]");
     expect(agent.closes).toEqual([{ code: 1008, reason: "too many invalid messages" }]);
+  });
+});
+
+describe("agent hello and the computer's engine (C7)", () => {
+  it("puts the engine id in the agent's session answer, never in the tools copy", () => {
+    const harness = createHarness();
+    publishEngine(harness.ctx);
+    const tools = harness.connect("tools");
+    const agent = harness.connect("agent");
+
+    harness.send(agent, helloOf());
+
+    expect(paramsOf(agent.notes("editor", "session")[0])).toMatchObject({
+      open: true,
+      engine: ENGINE.id
+    });
+    const toolsCopy = paramsOf(tools.notes("editor", "session")[0]);
+    expect(toolsCopy).toMatchObject({ open: true });
+    expect(toolsCopy !== undefined && "engine" in toolsCopy).toBe(false);
   });
 });

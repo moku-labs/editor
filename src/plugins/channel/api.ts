@@ -2,7 +2,7 @@
  * @file channel plugin — api factory: read, watch (delegated to watch.ts), run in a microtask,
  * status, heartbeat, onHeartbeat.
  */
-import type { Json, LinkStatus, RunResult } from "../registry/protocol";
+import type { CommandVia, Json, LinkStatus, RunResult } from "../registry/protocol";
 import { commandOf, depsOf, rawOf, sourceOf } from "./deps";
 import { beatOf } from "./heartbeat";
 import type { ChannelApi, ChannelCtx, ChannelDeps, HeartbeatListener } from "./types";
@@ -24,12 +24,12 @@ export function buildChannelApi(deps: ChannelDeps): ChannelApi {
     watch: (id: string, input: Json | undefined, onValue: (value: Json) => void): (() => void) =>
       openWatch(deps, id, input, onValue),
 
-    // Runs in a microtask, off the game's frame loop.
-    run: (id: string, input?: Json): Promise<RunResult> =>
+    // Runs in a microtask, off the game's frame loop; `via` reaches the entry's run event.
+    run: (id: string, input?: Json, via?: CommandVia): Promise<RunResult> =>
       new Promise<RunResult>((resolve, reject) => {
         queueMicrotask(() => {
           try {
-            commandOf(registry, id).run(rawOf(input)).then(resolve, reject);
+            commandOf(registry, id).run(rawOf(input), via).then(resolve, reject);
           } catch (error) {
             reject(error);
           }

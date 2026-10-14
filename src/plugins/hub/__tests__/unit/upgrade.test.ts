@@ -1,5 +1,6 @@
 /* eslint-disable sonarjs/no-clear-text-protocols -- the hub serves plain http on 127.0.0.1 */
 import { describe, expect, it } from "vitest";
+import { validateHubConfig } from "../../init";
 import { handleUpgrade } from "../../security/upgrade";
 import type { FakeServer, TestCtx } from "../helpers";
 import { createCtx, fakeServer, TOKEN } from "../helpers";
@@ -229,5 +230,38 @@ describe("handleUpgrade refusals", () => {
     expect(ctx.log.warn).toHaveBeenCalledTimes(asks.length - 1);
     expect(logged).not.toContain(TOKEN);
     expect(logged).not.toContain("token=");
+  });
+});
+
+describe("handleUpgrade and device mode (C3, C9): the normal listener is unchanged", () => {
+  it("refuses kind=agent role=device with 400 role (bug: device mode weakening the loopback rules)", () => {
+    const { ctx, server } = started();
+
+    expect(
+      handleUpgrade(ctx, upgradeRequest({ kind: "agent", role: "device" }), server)?.status
+    ).toBe(400);
+    expect(ctx.log.warn).toHaveBeenCalledWith(
+      "hub:refused",
+      expect.objectContaining({ status: 400, check: "role" })
+    );
+  });
+
+  it("never lets a device Origin pass the normal guard", () => {
+    const ctx = createCtx();
+    validateHubConfig(ctx);
+    ctx.state.token = TOKEN;
+    const server = fakeServer(P);
+
+    for (const origin of [
+      "tauri://localhost",
+      "https://tauri.localhost",
+      "http://tauri.localhost"
+    ]) {
+      const ask = { kind: "agent", role: "device", headers: { origin } };
+      expect(handleUpgrade(ctx, upgradeRequest(ask), server)?.status).toBe(403);
+      expect(handleUpgrade(ctx, upgradeRequest({ headers: { origin } }), server)?.status).toBe(403);
+    }
+    expect(ctx.state.origins.size).toBe(0);
+    expect(server.upgrade).not.toHaveBeenCalled();
   });
 });

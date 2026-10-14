@@ -6,9 +6,6 @@
  * type-only. The agent's bridge and overlay import `../hub/protocol`, never the hub plugin.
  */
 
-/** The message of a skeleton function that unit 01 implements in wave 1. */
-const NOT_IMPLEMENTED = "not implemented";
-
 /**
  * A JSON value on the device link: the same set of values as registry/protocol's `Json`, declared
  * here so hub/protocol imports nothing (no registry/protocol ↔ hub/protocol cycle). The two are
@@ -179,75 +176,244 @@ export type DeviceLink = {
   readonly seenAt?: number;
 };
 
+/** The longest normalized model, in characters (the engine's header rule). */
+const MAX_MODEL = 64;
+
+/** A pairing code: exactly four decimal digits, leading zeros kept. */
+const PAIR_CODE = /^\d{4}$/;
+
+/** A device log name: 1–128 word characters, dots or hyphens. */
+const LOG_NAME = /^[\w.-]{1,128}$/;
+
+/** The most lines one `perf.lines` batch may carry. */
+const MAX_BATCH_LINES = 5000;
+
+/** The highest TCP port. */
+const MAX_PORT = 65_535;
+
+/** A port as typed: one to five digits. */
+const PORT_TEXT = /^\d{1,5}$/;
+
+/** One label of a DNS name: letters, digits and hyphens. */
+const NAME_LABEL = /^[\da-z-]{1,63}$/i;
+
+/** The longest DNS name. */
+const MAX_NAME = 253;
+
+/** The characters of an IPv6 literal (checked loosely: the socket refuses a wrong one). */
+const IPV6_TEXT = /^[\da-f:.]{2,45}$/i;
+
+/** One part of a dotted IPv4 literal. */
+const IPV4_PART = /^\d{1,3}$/;
+
+/** The highest value of one IPv4 part. */
+const MAX_IPV4_PART = 255;
+
+/** The first part of every IPv4 loopback address (127.0.0.0/8). */
+const LOOPBACK_NET = 127;
+
+/** The device fields of a `pair` that are kept when they are strings. */
+const DEVICE_FIELDS = ["model", "os", "engine", "build"] as const;
+
+/** The device of a `pair`, being built. */
+type MutablePairDevice = { -readonly [K in keyof PairParams["device"]]: PairParams["device"][K] };
+
+/** A JSON object of the wire. */
+type LinkObject = { [key: string]: LinkJson };
+
+/**
+ * The value as a JSON object, or undefined for null, an array or a scalar.
+ *
+ * @param value - A decoded JSON value.
+ * @returns The object, or undefined.
+ * @example
+ * ```ts
+ * objectOf({ code: "4821" }); // { code: "4821" }
+ * ```
+ */
+function objectOf(value: LinkJson | undefined): LinkObject | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+}
+
+/**
+ * The parts of a dotted IPv4 literal, or undefined when the text is not one.
+ *
+ * @param text - A host.
+ * @returns The four parts.
+ * @example
+ * ```ts
+ * ipv4Of("127.0.0.2"); // [127, 0, 0, 2]
+ * ```
+ */
+function ipv4Of(text: string): number[] | undefined {
+  const parts = text.split(".");
+  if (parts.length !== 4 || !parts.every(part => IPV4_PART.test(part))) return undefined;
+
+  const numbers = parts.map(Number);
+  return numbers.every(part => part <= MAX_IPV4_PART) ? numbers : undefined;
+}
+
+/**
+ * True for a DNS name or an IPv4 literal: an all-digit name must be a valid IPv4 literal.
+ *
+ * @param host - A lower-cased host.
+ * @returns Whether it is a host of `host:port`.
+ * @example
+ * ```ts
+ * isHostName("my-pc.local"); // true
+ * ```
+ */
+function isHostName(host: string): boolean {
+  const labels = host.split(".");
+  if (labels.every(label => IPV4_PART.test(label))) return ipv4Of(host) !== undefined;
+
+  return (
+    host.length <= MAX_NAME &&
+    labels.every(label => NAME_LABEL.test(label) && !label.startsWith("-") && !label.endsWith("-"))
+  );
+}
+
+/**
+ * The port of an address, or undefined when it is not a whole number from 1 to 65535.
+ *
+ * @param text - The text after the last colon.
+ * @returns The port.
+ * @example
+ * ```ts
+ * portOf("47600"); // 47600
+ * ```
+ */
+function portOf(text: string): number | undefined {
+  if (!PORT_TEXT.test(text)) return undefined;
+
+  const port = Number(text);
+  return port >= 1 && port <= MAX_PORT ? port : undefined;
+}
+
 /**
  * Normalizes a device model the engine's way: trimmed, whitespace runs to "-", upper case, at most
- * 64 characters; an empty or non-string value gives null.
+ * 64 characters; an empty or non-string value gives null. The hub, the collector's adb reading and
+ * the phone's log header agree through it.
  *
- * @param _raw - The model as a phone, the shell or adb reported it.
- * @throws {Error} Always, until unit 01 implements it.
+ * @param raw - The model as a phone, the shell or adb reported it.
+ * @returns The model, or null.
  * @example
  * ```ts
  * normalizeModel(" sm a266b "); // "SM-A266B"
  * ```
  */
-export function normalizeModel(_raw: unknown): string | null {
-  throw new Error(NOT_IMPLEMENTED);
+export function normalizeModel(raw: unknown): string | null {
+  const model =
+    typeof raw === "string"
+      ? raw.trim().replaceAll(/\s+/g, "-").toUpperCase().slice(0, MAX_MODEL)
+      : "";
+
+  // eslint-disable-next-line unicorn/no-null -- null is "no model" on the wire (SessionDevice.model)
+  return model === "" ? null : model;
 }
 
 /**
- * Checks the params of a `pair` notification: the code must be exactly 4 digits.
+ * Checks the params of a `pair` notification: an object whose code is exactly four digits and
+ * whose `device` is an object. Of the device, only the string fields model, os, engine and build
+ * are kept.
  *
- * @param _params - The notification's params as they arrived.
- * @throws {Error} Always, until unit 01 implements it.
+ * @param params - The notification's params as they arrived.
+ * @returns The params, or undefined when they are malformed.
  * @example
  * ```ts
+ * parsePairParams({ code: "0421", device: { model: "SM-A266B" } }); // { code: "0421", device: { model: "SM-A266B" } }
  * parsePairParams({ code: "48", device: {} }); // undefined
  * ```
  */
-export function parsePairParams(_params: LinkJson | undefined): PairParams | undefined {
-  throw new Error(NOT_IMPLEMENTED);
+export function parsePairParams(params: LinkJson | undefined): PairParams | undefined {
+  const fields = objectOf(params);
+  const info = objectOf(fields?.device);
+  const code = fields?.code;
+  if (info === undefined || typeof code !== "string" || !PAIR_CODE.test(code)) return undefined;
+
+  const device: MutablePairDevice = {};
+  for (const key of DEVICE_FIELDS) {
+    const value = info[key];
+    if (typeof value === "string") device[key] = value;
+  }
+  return { code, device };
 }
 
 /**
- * Checks the params of a `perf.lines` notification.
+ * Checks the params of a `perf.lines` notification: `log` of 1–128 word characters, dots or
+ * hyphens, `from` a safe integer ≥ 0, `lines` a list of 1–5000 items. The items themselves are
+ * checked by the hub one by one.
  *
- * @param _params - The notification's params as they arrived.
- * @throws {Error} Always, until unit 01 implements it.
+ * @param params - The notification's params as they arrived.
+ * @returns The params, or undefined when they are malformed.
  * @example
  * ```ts
  * parsePerfLinesParams({ log: "perf-20261014-1532-sm-a266b.jsonl", from: -1, lines: [] }); // undefined
  * ```
  */
-export function parsePerfLinesParams(_params: LinkJson | undefined): PerfLinesParams | undefined {
-  throw new Error(NOT_IMPLEMENTED);
+export function parsePerfLinesParams(params: LinkJson | undefined): PerfLinesParams | undefined {
+  const fields = objectOf(params);
+  const log = fields?.log;
+  const from = fields?.from;
+  const lines = fields?.lines;
+  if (typeof log !== "string" || !LOG_NAME.test(log)) return undefined;
+  if (typeof from !== "number" || !Number.isSafeInteger(from) || from < 0) return undefined;
+  if (!Array.isArray(lines) || lines.length === 0 || lines.length > MAX_BATCH_LINES) {
+    return undefined;
+  }
+
+  return { log, from, lines };
 }
 
 /**
- * Checks a `host:port` or `[ipv6]:port` address (trimmed; port 1–65535) and normalizes its text.
+ * Checks a `host:port` (a DNS name or an IPv4 literal) or `[ipv6]:port` address, trimmed, port
+ * 1–65535, and normalizes it: the host lower-cased, the port without leading zeros.
  *
- * @param _text - The address as typed or configured.
- * @throws {Error} Always, until unit 01 implements it.
+ * @param text - The address as typed or configured.
+ * @returns The host (IPv6 without brackets), the port and the normalized text, or undefined.
  * @example
  * ```ts
  * parseAddress(" 192.168.1.5:47600 ")?.text; // "192.168.1.5:47600"
+ * parseAddress("[::1]:47600")?.host; // "::1"
+ * parseAddress("192.168.1.5"); // undefined
  * ```
  */
 export function parseAddress(
-  _text: string
+  text: string
 ): { readonly host: string; readonly port: number; readonly text: string } | undefined {
-  throw new Error(NOT_IMPLEMENTED);
+  const trimmed = text.trim().toLowerCase();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]:");
+    const host = trimmed.slice(1, end);
+    const port = end === -1 ? undefined : portOf(trimmed.slice(end + 2));
+    return port !== undefined && IPV6_TEXT.test(host) && host.includes(":")
+      ? { host, port, text: `[${host}]:${port}` }
+      : undefined;
+  }
+
+  const colon = trimmed.lastIndexOf(":");
+  const host = trimmed.slice(0, colon);
+  const port = colon === -1 ? undefined : portOf(trimmed.slice(colon + 1));
+  return port !== undefined && isHostName(host)
+    ? { host, port, text: `${host}:${port}` }
+    : undefined;
 }
 
 /**
- * Whether a host is the loopback: 127.0.0.0/8, `localhost` or `::1`.
+ * Whether a host is the loopback: any address of 127.0.0.0/8, `localhost` or `::1`. A phone that
+ * reaches the computer at such an address came through adb reverse.
  *
- * @param _host - A host of `parseAddress`.
- * @throws {Error} Always, until unit 01 implements it.
+ * @param host - A host of `parseAddress`.
+ * @returns Whether it is the loopback.
  * @example
  * ```ts
+ * isLoopback("127.0.0.2"); // true
  * isLoopback("192.168.1.5"); // false
  * ```
  */
-export function isLoopback(_host: string): boolean {
-  throw new Error(NOT_IMPLEMENTED);
+export function isLoopback(host: string): boolean {
+  const lower = host.toLowerCase();
+  if (lower === "localhost" || lower === "::1") return true;
+
+  return ipv4Of(lower)?.[0] === LOOPBACK_NET;
 }

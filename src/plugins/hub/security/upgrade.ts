@@ -1,8 +1,9 @@
 /**
  * @file hub plugin — the `{path}/ws` route: path, started, upgrade header, Host and Origin, token,
  * kind and role are checked in that order before Bun upgrades the request. `role=page` with
- * `kind=tools` marks the editor page (A11). Every refusal is logged once, without the URL and
- * without the token.
+ * `kind=tools` marks the editor page (A11); any other role (`role=device` included) is refused
+ * here: devices connect on the device listeners only. Every refusal is logged once, without the
+ * URL and without the token; the device upgrade logs its refusals through the same `refused`.
  */
 import type { ConnKind, HubCtx, HubServer, HubSocketData } from "../types";
 import { refusalOf, refuse } from "./guard";
@@ -22,13 +23,16 @@ const REFUSALS = {
   token: [401, "unauthorized"],
   kind: [400, "invalid"],
   role: [400, "invalid"],
-  failed: [400, "invalid"]
+  failed: [400, "invalid"],
+  listener: [403, "forbidden"],
+  credentials: [400, "invalid"],
+  cooldown: [429, "busy"]
 } satisfies Record<string, readonly [number, string]>;
 
 /**
- * A check of the upgrade route.
+ * A check of the upgrade route (the normal and the device listeners).
  */
-type UpgradeCheck = keyof typeof REFUSALS;
+export type UpgradeCheck = keyof typeof REFUSALS;
 
 /**
  * The connection kind of the query, or undefined.
@@ -76,7 +80,7 @@ function pageOf(role: string | null, kind: ConnKind): boolean | undefined {
  * @param check - The failed check.
  * @returns The refusal response.
  */
-function refused(ctx: HubCtx, req: Request, check: UpgradeCheck): Response {
+export function refused(ctx: HubCtx, req: Request, check: UpgradeCheck): Response {
   const [status, word] = REFUSALS[check];
   ctx.log.warn("hub:refused", {
     status,

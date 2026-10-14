@@ -516,7 +516,8 @@ describe("bridge integration", { timeout: 15_000 }, () => {
       id: "editor.reload",
       title: "Reload the page",
       input: { restore: "boolean?" },
-      effect: "route"
+      effect: "route",
+      allowed: true
     });
 
     const ran = await call(connection, "run", { id: "editor.reload" });
@@ -541,9 +542,10 @@ describe("bridge integration", { timeout: 15_000 }, () => {
         id: "editor.reload",
         title: "Reload the page",
         input: { restore: "boolean?" },
-        effect: "route"
+        effect: "route",
+        allowed: true
       },
-      { id: "editor.clock", title: "Clock", input: {}, effect: "read" }
+      { id: "editor.clock", title: "Clock", input: {}, effect: "read", allowed: true }
     ]);
   });
 

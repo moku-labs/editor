@@ -1,8 +1,8 @@
 /**
  * @file hub plugin — game sessions: the manifest check, open and close, the session choice of a
- * tools request, the SessionInfo list (R1, the manifest hash of D-37, the heartbeat readout of M4)
- * and the silent rule (R6: 6 s, or 65 s after a paused heartbeat). A flip of paused or silent
- * re-sends the list.
+ * tools request, the SessionInfo list (R1, the manifest hash of D-37, the heartbeat readout of M4,
+ * the phone of a device session) and the silent rule (R6: 6 s, or 65 s after a paused heartbeat).
+ * A flip of paused or silent re-sends the list.
  */
 import { randomBytes } from "node:crypto";
 import type { Heartbeat, Json, Manifest, Notification, SessionInfo } from "../../registry/protocol";
@@ -14,6 +14,7 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
+import type { SessionDevice } from "../protocol";
 import { JSON_NULL, sendJson, toolsConns } from "../sockets/send";
 import type { AgentConn, HubCtx, HubSession, HubState, Session } from "../types";
 import { failSession } from "./calls";
@@ -301,7 +302,26 @@ export function sessionIdFrom(
 }
 
 /**
- * Opens a session for an agent that sent a valid hello.
+ * The phone of a paired device connection, for its session: the record's fields and the device
+ * listener's real port. Undefined for a game page and for a pairing socket.
+ *
+ * @param state - Hub state.
+ * @param conn - The agent connection.
+ * @returns The SessionDevice, or undefined.
+ */
+export function sessionDeviceOf(state: HubState, conn: AgentConn): SessionDevice | undefined {
+  const id = conn.device?.id;
+  const record = id === undefined ? undefined : state.devices.get(id);
+  const port = state.deviceListen?.port;
+  if (record === undefined || port === undefined) return undefined;
+
+  const { model, link, address, engine, build } = record;
+  return { id: record.id, model, link, address, port, engine, build };
+}
+
+/**
+ * Opens a session for an agent that sent a valid hello; a paired phone's session records its
+ * device.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
@@ -321,6 +341,8 @@ export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): S
     silent: false,
     nextSub: 1
   };
+  const device = sessionDeviceOf(ctx.state, conn);
+  if (device !== undefined) session.device = device;
   ctx.state.sessions.set(session.id, session);
   conn.session = session.id;
 
@@ -328,18 +350,25 @@ export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): S
 }
 
 /**
- * The params of the editor-channel `session` notification.
+ * The params of the editor-channel `session` notification. The agent's copy of the answer to its
+ * hello also carries the computer's engine id; the tools copy never does.
  *
  * @param payload - The hub:session payload.
- * @returns The Json params (reason only when set).
+ * @param engine - The computer's engine id, for the agent's copy only.
+ * @returns The Json params (reason and engine only when set).
  * @example
  * ```ts
  * sessionParams({ id: "s-1", game: "g", open: true }); // { id: "s-1", game: "g", open: true }
+ * sessionParams({ id: "s-1", game: "g", open: true }, "0.14.12+9c41e0"); // { id: "s-1", game: "g", open: true, engine: "0.14.12+9c41e0" }
  * ```
  */
-export function sessionParams(payload: HubSession): Json {
+export function sessionParams(payload: HubSession, engine?: string): Json {
   const { id, game, open, reason } = payload;
-  return reason === undefined ? { id, game, open } : { id, game, open, reason };
+  const params: { [key: string]: Json } =
+    reason === undefined ? { id, game, open } : { id, game, open, reason };
+  if (engine !== undefined) params.engine = engine;
+
+  return params;
 }
 
 /**
@@ -373,7 +402,7 @@ export function broadcastSessions(ctx: HubCtx): void {
  * emitLogged(() => Promise.reject(new Error("x")), console.error); // returns; logs "Error: x" later
  * ```
  */
-function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
+export function emitLogged(fire: () => unknown, onFailure: (error: unknown) => void): void {
   try {
     const emitted = fire();
     if (emitted instanceof Promise) emitted.catch(onFailure);
@@ -462,14 +491,14 @@ export function chooseSession(ctx: HubCtx, requested: string | undefined): Sessi
 /**
  * The wire view of a session: the five R1 fields and the manifest hash kept since hello (D-37),
  * plus the heartbeat readout (frame and paused of the last beat, the silent flag) once the session
- * has sent a heartbeat.
+ * has sent a heartbeat, plus the phone of a device session.
  *
  * @param session - The session.
  * @returns A fresh SessionInfo.
  */
 export function toSessionInfo(session: Session): SessionInfo {
   const { game, page, embedded } = session.manifest;
-  const info = {
+  const base = {
     id: session.id,
     game,
     page,
@@ -477,6 +506,8 @@ export function toSessionInfo(session: Session): SessionInfo {
     connectedAt: session.connectedAt,
     manifestHash: session.manifestHash
   };
+  const info: SessionInfo =
+    session.device === undefined ? base : { ...base, device: { ...session.device } };
   if (session.heartbeat === null) return info;
 
   const { frame, paused } = session.heartbeat;

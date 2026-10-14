@@ -6,8 +6,11 @@
  */
 
 import type {
+  BuildInfo,
+  BuildProfile,
   Changes,
   CommandDescriptor,
+  CommandRefusal,
   Effect,
   FileBinary,
   FileEntry,
@@ -18,6 +21,7 @@ import type {
   InputSchema,
   Json,
   Manifest,
+  OverlayMarker,
   RunResult,
   SessionInfo,
   SourceDescriptor,
@@ -59,6 +63,11 @@ const CHANGES: ReadonlySet<string> = new Set(["frame", "commit", "edge"]);
  * Every `effect` value of a command.
  */
 const EFFECTS: ReadonlySet<string> = new Set(["read", "route", "cosmetic", "cheat", "raw"]);
+
+/**
+ * Every build profile of a game page.
+ */
+const PROFILES: ReadonlySet<string> = new Set(["dev", "full", "read", "none"]);
 
 /**
  * The value as a JSON object, or undefined for null, arrays and primitives.
@@ -275,7 +284,86 @@ function readCommand(value: Json): CommandDescriptor | undefined {
   const common = readDescriptor(value);
   const effect = common?.object.effect;
   if (common === undefined || !isEffect(effect)) return undefined;
-  return { id: common.id, title: common.title, input: common.input, effect };
+
+  const command = { id: common.id, title: common.title, input: common.input, effect };
+  return { ...command, ...readOverlay(common.object), ...readVerdict(common.object) };
+}
+
+/**
+ * Reads the overlay marker of a command; any other value is dropped.
+ *
+ * @param object - The command object.
+ * @returns `{ overlay }`, or `{}`.
+ * @example
+ * ```ts
+ * readOverlay({ overlay: "toggle" }); // { overlay: "toggle" }
+ * readOverlay({ overlay: "slider" }); // {}
+ * ```
+ */
+function readOverlay(object: JsonObject): { overlay?: OverlayMarker } {
+  const { overlay } = object;
+  return overlay === "toggle" || overlay === "button" ? { overlay } : {};
+}
+
+/**
+ * Reads the build verdict of a command: `allowed` when it is a boolean, `reason` only with
+ * `allowed: false` and a known refusal. An older agent sends neither: the command reads as allowed.
+ *
+ * @param object - The command object.
+ * @returns `{ allowed, reason? }`, or `{}`.
+ * @example
+ * ```ts
+ * readVerdict({ allowed: false, reason: "read-only" }); // { allowed: false, reason: "read-only" }
+ * readVerdict({ allowed: true, reason: "read-only" }); // { allowed: true }
+ * ```
+ */
+function readVerdict(object: JsonObject): { allowed?: boolean; reason?: CommandRefusal } {
+  const allowed = flagOf(object, "allowed");
+  if (allowed === undefined) return {};
+
+  const { reason } = object;
+  return !allowed && (reason === "read-only" || reason === "dev-only")
+    ? { allowed, reason }
+    : { allowed };
+}
+
+/**
+ * Reads the build of a game page: a known profile, `id` and `engine` when they are text.
+ *
+ * @param value - The `build` member.
+ * @returns The BuildInfo, or undefined when absent or malformed.
+ * @example
+ * ```ts
+ * readBuild({ profile: "read", id: "debug-1", engine: 7 }); // { profile: "read", id: "debug-1" }
+ * readBuild({ profile: "release" }); // undefined
+ * ```
+ */
+function readBuild(value: Json | undefined): BuildInfo | undefined {
+  const object = objectOf(value);
+  const profile = object?.profile;
+  if (object === undefined || !isProfile(profile)) return undefined;
+
+  const id = textOf(object, "id");
+  const engine = textOf(object, "engine");
+  return {
+    profile,
+    ...(id === undefined ? {} : { id }),
+    ...(engine === undefined ? {} : { engine })
+  };
+}
+
+/**
+ * True for a build profile.
+ *
+ * @param value - A Json value.
+ * @returns Whether it is dev, full, read or none.
+ * @example
+ * ```ts
+ * isProfile("read"); // true
+ * ```
+ */
+function isProfile(value: Json | undefined): value is BuildProfile {
+  return typeof value === "string" && PROFILES.has(value);
 }
 
 /**
@@ -315,7 +403,8 @@ function readRestored(value: Json | undefined): Manifest["restored"] {
 
 /**
  * Reads a manifest (the hub validated it on hello; link checks it again before typing it). A
- * malformed `restored` entry is dropped; the manifest stays.
+ * malformed `restored` or `build` entry, overlay marker or build verdict is dropped; the manifest
+ * stays.
  *
  * @param value - The `manifest` result.
  * @returns The manifest, or undefined.
@@ -333,7 +422,16 @@ export function readManifest(value: Json): Manifest | undefined {
   if (sources === undefined || commands === undefined) return undefined;
 
   const restored = readRestored(object.restored);
-  const manifest = { game, page, embedded, sources, commands, ...(restored && { restored }) };
+  const build = readBuild(object.build);
+  const manifest = {
+    game,
+    page,
+    embedded,
+    sources,
+    commands,
+    ...(restored && { restored }),
+    ...(build && { build })
+  };
   if (object.panels === undefined) return manifest;
 
   const panels = listOf(object.panels, readPanel);

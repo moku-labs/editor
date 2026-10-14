@@ -1,11 +1,12 @@
-import { chmod, readdir, readFile } from "node:fs/promises";
+import { chmod, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { FileBinary, FileEntry, FileText, WriteResult } from "../../../registry/protocol";
 import { sha1 } from "../../io";
+import { startFiles, stopFiles } from "../../lifecycle";
 import type { FilesApi, FilesCtx } from "../../types";
 import type { Fixture } from "../helpers";
-import { createFixture, outcome, PNG_BYTES } from "../helpers";
+import { createFixture, fixtureEngineId, outcome, PNG_BYTES, putGame } from "../helpers";
 
 let fx: Fixture;
 
@@ -303,5 +304,59 @@ describe("files api: types", () => {
     // @ts-expect-error — bytes is required
     emit("files:written", { path: "a.ts", kind: "code" });
     expect(emit).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("files api: engine (C10)", () => {
+  /** The two-line lifecycle error of engine() before the first start. */
+  const NOT_STARTED =
+    /^\[moku-editor] files\.engine\(\) needs a started app\.\n {2}Call it after await editor\.start\(\)\.$/;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("throws the two-line lifecycle Error before the first start, from engine() and refreshEngine()", async () => {
+    expect(() => fx.api.engine()).toThrow(NOT_STARTED);
+    await expect(fx.api.refreshEngine()).rejects.toThrow(NOT_STARTED);
+  });
+
+  it("answers the fingerprint of the installed game after start, and keeps it after stop", async () => {
+    await putGame(fx.rootReal);
+
+    await startFiles(fx.ctx);
+    stopFiles(fx.ctx);
+
+    expect(fx.api.engine().id).toBe(fixtureEngineId());
+  });
+
+  it("answers the kept fingerprint inside 2 s without hashing again, and a changed id after (bug: a reinstall during a long perf run never seen)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    await putGame(fx.rootReal);
+    await startFiles(fx.ctx);
+    const manifest = join(fx.rootReal, "node_modules/@moku-labs/game/package.json");
+    const reinstalled = {
+      name: "@moku-labs/game",
+      version: "0.14.13",
+      exports: { "./hot": "./dist/a.mjs" }
+    };
+    await writeFile(manifest, JSON.stringify(reinstalled));
+
+    vi.setSystemTime(1_001_999);
+    const kept = await fx.api.refreshEngine();
+    expect(kept.version).toBe("0.14.12");
+    expect(fx.api.engine().version).toBe("0.14.12");
+
+    vi.setSystemTime(1_002_000);
+    const fresh = await fx.api.refreshEngine();
+    expect(fresh.version).toBe("0.14.13");
+    expect(fresh.id).toMatch(/^0\.14\.13\+/);
+    expect(fx.api.engine()).toBe(fresh);
+
+    vi.setSystemTime(1_003_000);
+    await writeFile(manifest, JSON.stringify({ ...reinstalled, version: "0.14.14" }));
+    const again = await fx.api.refreshEngine();
+    expect(again.version).toBe("0.14.13");
   });
 });

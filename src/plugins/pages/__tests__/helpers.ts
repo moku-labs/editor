@@ -92,7 +92,10 @@ export function createHub(): FakeHub {
     guard: (req, server, mode) => guard(req, server, mode, new Set()),
     publish: vi.fn<HubApi["publish"]>(),
     closeAll: vi.fn<HubApi["closeAll"]>(),
-    path: () => "/__editor"
+    path: () => "/__editor",
+    listenDevices: vi.fn(),
+    stopDevices: vi.fn(async () => undefined),
+    devices: vi.fn(() => [])
   };
   return hub;
 }
@@ -114,7 +117,9 @@ export function createFiles(root = "/projects/merge-game"): FilesApi {
     resolve: vi.fn(),
     root: () => root,
     find: vi.fn(),
-    project: () => ({ state: "off", reason: "not opened" })
+    project: () => ({ state: "off", reason: "not opened" }),
+    engine: () => ({ id: "unknown", version: "unknown", dist: "unknown" }),
+    refreshEngine: async () => ({ id: "unknown", version: "unknown", dist: "unknown" })
   };
 }
 

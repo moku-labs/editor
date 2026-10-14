@@ -4,7 +4,7 @@
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { Require } from "../../config";
-import type { EditorChannel, Heartbeat } from "../registry/protocol";
+import type { CommandVia, EditorChannel, Heartbeat, Json, RunResult } from "../registry/protocol";
 import type { RegistryApi } from "../registry/types";
 
 /**
@@ -39,11 +39,28 @@ export type ChannelState = {
 
 /**
  * The channel api (`app.channel`, `ctx.require(channelPlugin)`): the in-process EditorChannel of
- * the game page plus the heartbeat. `read`, `watch`, `run` and `status` are documented on
- * EditorChannel. Here `watch` delivers the current value before it returns, and an unknown id, an
- * invalid input or a throwing first `onValue` throws synchronously and opens no watch.
+ * the game page plus the heartbeat. `read`, `watch` and `status` are documented on EditorChannel;
+ * `run` takes who runs the command as well (still assignable to EditorChannel). Here `watch`
+ * delivers the current value before it returns, and an unknown id, an invalid input or a throwing
+ * first `onValue` throws synchronously and opens no watch.
  */
-export type ChannelApi = EditorChannel & {
+export type ChannelApi = Omit<EditorChannel, "run"> & {
+  /**
+   * Runs a command in a microtask, off the game's frame loop. `via` names who runs it for the
+   * registry's `registry:command` event: the overlay's Game tab passes `"overlay"`, the bridge
+   * `"bridge"`; absent, the registry records `"local"`.
+   *
+   * @param id - The command id, e.g. "game.step".
+   * @param input - The command input; omit it for a command without input.
+   * @param via - Who runs it; omit it for an in-process caller.
+   * @returns A promise of the command's value and where the game stands after it.
+   * @example
+   * ```ts
+   * // The bridge runs a hub `run` request from the tools page or MCP.
+   * (await ctx.require(channelPlugin).run("game.step", { frames: 1 }, "bridge")).state; // { path: "home", frame: 1841, tainted: false }
+   * ```
+   */
+  run(id: string, input?: Json, via?: CommandVia): Promise<RunResult>;
   /**
    * A fresh frozen beat now, from the registry clock. In Chromium it also carries the page heap
    * from `performance.memory`, in MB rounded to 0.1; elsewhere `heap` is absent.

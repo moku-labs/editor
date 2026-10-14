@@ -1,8 +1,10 @@
 /**
- * @file hub plugin — messages of an agent (game page) connection: `hello` first (else close
- * 1008), heartbeats, values, taps, bye, responses to forwarded calls; any request is answered
- * -32007 `unauthorized` (R6). On close the session ends: pending calls fail -32001 and tools are
- * told.
+ * @file hub plugin — messages of an agent (game page or paired phone) connection: `hello` first
+ * (else close 1008), heartbeats, values, taps, bye, responses to forwarded calls; any request is
+ * answered -32007 `unauthorized` (R6). A paired phone may also send `perf.lines` at any time, before
+ * hello too; a pairing socket goes to pairing. The answer to hello carries the computer's engine id.
+ * On close the session ends (pending calls fail -32001, tools are told) and a device connection is
+ * announced.
  */
 import type { Json, Manifest, Message, Notification, Tap } from "../../registry/protocol";
 import {
@@ -14,6 +16,9 @@ import {
   toWireError,
   wireError
 } from "../../registry/protocol";
+import { closeDevice } from "../device/connections";
+import { onPerfLines } from "../device/lines";
+import { onPairingMessage } from "../device/pairing";
 import { settle } from "../routing/calls";
 import {
   announce,
@@ -79,7 +84,8 @@ function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
 
   const session = openSession(ctx, conn, manifest);
   const payload = { id: session.id, game: manifest.game, open: true };
-  sendJson(conn, notification("editor", "session", sessionParams(payload)));
+  const answer = sessionParams(payload, ctx.state.engineId);
+  sendJson(conn, notification("editor", "session", answer));
   ctx.log.info("hub:session-open", { id: session.id, game: manifest.game });
   announce(ctx, payload);
 }
@@ -210,13 +216,43 @@ function onNotification(ctx: HubCtx, conn: AgentConn, session: Session, note: No
 }
 
 /**
- * One decoded message of an agent connection.
+ * True for an `editor`/`perf.lines` notification.
+ *
+ * @param message - The decoded message.
+ * @returns Whether it is a device's log batch.
+ * @example
+ * ```ts
+ * isPerfLines(notification("editor", "perf.lines", { log: "a.jsonl", from: 0, lines: [] })); // true
+ * ```
+ */
+function isPerfLines(message: Message): message is Notification {
+  return (
+    !isResponse(message) &&
+    !isRequest(message) &&
+    message.channel === "editor" &&
+    message.method === "perf.lines"
+  );
+}
+
+/**
+ * One decoded message of an agent connection: a pairing socket's goes to pairing, a paired
+ * phone's `perf.lines` to the device lines (before or after hello), the first message of any other
+ * must be hello.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
  * @param message - The decoded message.
  */
 export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): void {
+  const { device } = conn;
+  if (device !== undefined && device.id === undefined) {
+    onPairingMessage(ctx, conn, device, message);
+    return;
+  }
+  if (device?.id !== undefined && isPerfLines(message)) {
+    onPerfLines(ctx, conn, device.id, message);
+    return;
+  }
   if (conn.session === undefined) {
     onHello(ctx, conn, message);
     return;
@@ -240,13 +276,13 @@ export function onAgentMessage(ctx: HubCtx, conn: AgentConn, message: Message): 
 
 /**
  * The agent connection closed: its session ends with reason `bye` after a bye notification,
- * else `game_reloaded`.
+ * else `game_reloaded`; a device connection is then announced (or its pairing aborted).
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
  */
 export function onAgentClose(ctx: HubCtx, conn: AgentConn): void {
-  if (conn.session === undefined) return;
-
-  closeSession(ctx, conn.session, conn.bye ? "bye" : "game_reloaded");
+  if (conn.session !== undefined)
+    closeSession(ctx, conn.session, conn.bye ? "bye" : "game_reloaded");
+  if (conn.device !== undefined) closeDevice(ctx, conn, conn.device);
 }

@@ -1,16 +1,19 @@
 /**
  * @file files plugin — api factory: list, read, write, writeBinary, writeDataUrl, readBinary,
- * resolve, root, find, project.
+ * resolve, root, find, project, engine, refreshEngine.
  * Thin: every call goes through the sandbox (sandbox.ts) and then the file-system helpers (io.ts);
- * find and project go to the project index (project.ts).
+ * find and project go to the project index (project.ts); engine and refreshEngine to the
+ * fingerprint (engine.ts).
  * Any error that is not already a wire error becomes -32000 naming the relative path only.
  */
 import { realpath } from "node:fs/promises";
 import { dirname } from "node:path/posix";
+import type { EngineInfo } from "../hub/protocol";
 import type { FileBinary, FileEntry, FileText, WriteResult } from "../registry/protocol";
 import { isWireError } from "../registry/protocol";
 import { decodeDataUrl, encodeDataUrl } from "./binary";
 import { emitLogged } from "./emit";
+import { computeEngine, ENGINE_REFRESH_MS } from "./engine";
 import { conflict, forbidden, invalid, ioFailed } from "./errors";
 import {
   atomicWrite,
@@ -238,6 +241,41 @@ async function readFile(ctx: FilesCtx, path: string): Promise<FileText> {
 }
 
 /**
+ * The kept engine fingerprint.
+ *
+ * @param ctx - Domain context of files.
+ * @returns The fingerprint.
+ * @throws {Error} Before the first start.
+ */
+function keptEngine(ctx: FilesCtx): EngineInfo {
+  const { engine } = ctx.state;
+  if (engine !== undefined) return engine;
+
+  throw new Error(
+    "[moku-editor] files.engine() needs a started app.\n  Call it after await editor.start()."
+  );
+}
+
+/**
+ * The fingerprint, computed again when the last run is older than ENGINE_REFRESH_MS. The run's
+ * time is taken before the hash, so calls that come during it answer the kept value.
+ *
+ * @param ctx - Domain context of files.
+ * @returns The fingerprint, fresh or kept.
+ * @throws {Error} Before the first start.
+ */
+async function refreshEngine(ctx: FilesCtx): Promise<EngineInfo> {
+  const kept = keptEngine(ctx);
+  const now = Date.now();
+  if (now - ctx.state.engineAt < ENGINE_REFRESH_MS) return kept;
+
+  ctx.state.engineAt = now;
+  const fresh = await computeEngine(ctx);
+  ctx.state.engine = fresh;
+  return fresh;
+}
+
+/**
  * Creates the files api.
  *
  * @param ctx - Domain context of files.
@@ -267,7 +305,10 @@ export function createFilesApi(ctx: FilesCtx): FilesApi {
     root: () => ctx.state.rootReal,
     find: key => guard("find", key, () => findKey(ctx, key)),
     // Every state files announces is frozen: the caller gets it without a copy.
-    project: () => ctx.state.projectState
+    project: () => ctx.state.projectState,
+    // The fingerprint is frozen too.
+    engine: () => keptEngine(ctx),
+    refreshEngine: () => refreshEngine(ctx)
   };
 
   return api;

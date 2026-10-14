@@ -1,6 +1,7 @@
 /**
  * @file registry plugin — the errors of the entries: the id after the prefix, door failures
- * (-32000 command_failed) and the checked steps (checkInput, toWireValue) of every entry.
+ * (-32000 command_failed), the build's refusal (-32009 read_only) and the checked steps
+ * (checkInput, toWireValue) of every entry.
  */
 
 import type { InputOf, InputSchema, Json } from "../protocol";
@@ -71,6 +72,38 @@ export function doorFailed(id: string, message: string): ProtocolError {
     id,
     wireError(errorCode.commandFailed, message, { reason: "command_failed", retryable: false })
   );
+}
+
+/**
+ * The -32009 `read_only` error of a command the page's build refuses: the engine's controlReadOnly.
+ *
+ * @param id - The command id.
+ * @returns The ProtocolError, not retryable.
+ * @example
+ * ```ts
+ * readOnlyRefusal("game.tap").code; // -32009
+ * ```
+ */
+export function readOnlyRefusal(id: string): ProtocolError {
+  return new ProtocolError(
+    errorCode.readOnly,
+    `${ERROR_PREFIX}${id}: refused by this debug build, which runs read and cosmetic commands only.\n  Build the game with --debug=full to run it.`,
+    { reason: "read_only", retryable: false, id }
+  );
+}
+
+/**
+ * True for the -32602 error of an input check: the call was refused before anything ran.
+ *
+ * @param error - Anything thrown.
+ * @returns Whether it is an input error.
+ * @example
+ * ```ts
+ * isInputError(wireError(-32_602, "frames must be a number", { reason: "invalid_input" })); // true
+ * ```
+ */
+export function isInputError(error: unknown): boolean {
+  return error instanceof ProtocolError && error.code === errorCode.invalidInput;
 }
 
 /**

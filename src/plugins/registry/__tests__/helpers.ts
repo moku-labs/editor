@@ -1,8 +1,9 @@
 import { createApp, defineGame, type } from "@moku-labs/game";
 import { createHeadless, fakeClock, memory } from "@moku-labs/game/testing";
+import type { Mock } from "vitest";
 import { vi } from "vitest";
 import { createRegistryState } from "../state";
-import type { GameLike, RegistryConfig, RegistryCtx } from "../types";
+import type { GameLike, RegistryCommandEvent, RegistryConfig, RegistryCtx } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared test helpers of the registry: a log mock, a domain ctx and a started
@@ -31,11 +32,23 @@ export function createLog() {
 /** The mock log type. */
 export type LogMock = ReturnType<typeof createLog>;
 
-/** A registry ctx whose log is the mock. */
-export type TestCtx = RegistryCtx & { readonly log: LogMock };
+/** The mock of the registry's emit. */
+export type EmitMock = Mock<(name: "registry:command", payload: RegistryCommandEvent) => void>;
 
 /**
- * A registry domain ctx with a real state and a mock log.
+ * A mock of the registry's emit.
+ *
+ * @returns The mock.
+ */
+export function createEmit(): EmitMock {
+  return vi.fn<(name: "registry:command", payload: RegistryCommandEvent) => void>();
+}
+
+/** A registry ctx whose log and emit are mocks. */
+export type TestCtx = RegistryCtx & { readonly log: LogMock; readonly emit: EmitMock };
+
+/**
+ * A registry domain ctx with a real state, a mock log and a mock emit.
  *
  * @param config - Config overrides.
  * @returns The ctx.
@@ -44,8 +57,32 @@ export function createCtx(config: Partial<RegistryConfig> = {}): TestCtx {
   return {
     config: { game: undefined, modules: [], name: undefined, ...config },
     state: createRegistryState(),
-    log: createLog()
+    log: createLog(),
+    emit: createEmit()
   };
+}
+
+/** The build flags of the engine (spec 10 F1/F3), as the tests stub them. */
+type BuildFlags = {
+  readonly dev?: unknown;
+  readonly control?: unknown;
+  readonly agent?: unknown;
+  readonly build?: unknown;
+  readonly engine?: unknown;
+};
+
+/**
+ * Stubs the page's build flags as globals (the caller unstubs in afterEach). A flag left out is
+ * stubbed `undefined`.
+ *
+ * @param flags - The flag values.
+ */
+export function stubBuild(flags: BuildFlags): void {
+  vi.stubGlobal("__MOKU_GAME_DEV__", flags.dev);
+  vi.stubGlobal("__MOKU_GAME_CONTROL__", flags.control);
+  vi.stubGlobal("__MOKU_GAME_AGENT__", flags.agent);
+  vi.stubGlobal("__MOKU_GAME_BUILD__", flags.build);
+  vi.stubGlobal("__MOKU_GAME_ENGINE__", flags.engine);
 }
 
 /** A started headless game. */

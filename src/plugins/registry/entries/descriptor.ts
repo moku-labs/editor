@@ -1,8 +1,8 @@
 /**
  * @file registry plugin — fresh frozen descriptors: only the manifest keys, never a door object
- * (doors carry functions).
+ * (doors carry functions). A command descriptor carries its build verdict and overlay marker.
  */
-import type { CommandDescriptor, SourceDescriptor } from "../protocol";
+import type { CommandDescriptor, CommandRefusal, SourceDescriptor } from "../protocol";
 
 /**
  * A fresh frozen source descriptor `{ id, title, input, changes }`.
@@ -26,22 +26,32 @@ export function describeSource(source: SourceDescriptor): SourceDescriptor {
 }
 
 /**
- * A fresh frozen command descriptor `{ id, title, input, effect }`.
+ * A fresh frozen command descriptor `{ id, title, input, effect, overlay?, allowed, reason? }`:
+ * the overlay marker when the command has one (never `value`: a function is not JSON), `allowed`
+ * always, and `reason` only when the build refuses the command. An `allowed` or `reason` the given
+ * descriptor carries is dropped: the registry owns them.
  *
  * @param command - A door command or any command descriptor.
+ * @param refusal - Why this page's build refuses it; absent when it runs (an editor command).
  * @returns The descriptor, without functions.
  * @example
  * ```ts
  * const run = () => undefined;
- * describeCommand({ id: "game.step", title: "Step frames", input: { frames: "number" }, effect: "cosmetic", run });
- * // { id: "game.step", title: "Step frames", input: { frames: "number" }, effect: "cosmetic" }, frozen, no run
+ * describeCommand({ id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route", run }, "read-only");
+ * // { id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route", allowed: false, reason: "read-only" }
  * ```
  */
-export function describeCommand(command: CommandDescriptor): CommandDescriptor {
+export function describeCommand(
+  command: CommandDescriptor,
+  refusal?: CommandRefusal
+): CommandDescriptor {
   return Object.freeze({
     id: command.id,
     title: command.title,
     input: Object.freeze({ ...command.input }),
-    effect: command.effect
+    effect: command.effect,
+    ...(command.overlay === undefined ? {} : { overlay: command.overlay }),
+    allowed: refusal === undefined,
+    ...(refusal === undefined ? {} : { reason: refusal })
   });
 }

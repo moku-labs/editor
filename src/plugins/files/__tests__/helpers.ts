@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path/posix";
@@ -211,4 +212,86 @@ export async function outcome(promise: Promise<unknown>): Promise<number | "ok">
     }
     return -1;
   }
+}
+
+/** The engine version the fixture game installs. */
+export const GAME_VERSION = "0.14.12";
+
+/** The dist files of the fixture game, by path relative to its `dist/`. */
+export const GAME_DIST: Readonly<Record<string, string>> = {
+  "a.mjs": "export const hot = 1;\n",
+  "x/b.mjs": "export const b = 2;\n"
+};
+
+/** The patch file the fixture root declares, relative to the root. */
+export const GAME_PATCH = "patches/@moku-labs%2Fgame@0.14.12.patch";
+
+/** What a fixture game looks like on disk. */
+export type GameFixtureOptions = {
+  /** The key of `patchedDependencies` in the root's package.json; undefined declares none. */
+  readonly patchKey?: string | undefined;
+  /** Write the declared patch file. Default true. */
+  readonly patchFile?: boolean;
+  /** Write a bun.lock (the install root). Default true. */
+  readonly lockfile?: boolean;
+};
+
+/**
+ * Writes an installed `@moku-labs/game` under a root: its package.json (with the `./hot` export to
+ * `dist/a.mjs`) and two dist files, a root package.json declaring the patch, the patch file and a
+ * bun.lock (each optional).
+ *
+ * @param root - The project root.
+ * @param options - The patch declaration and whether its file exists.
+ */
+export async function putGame(root: string, options: GameFixtureOptions = {}): Promise<void> {
+  const game = join(root, "node_modules/@moku-labs/game");
+  const manifest = {
+    name: "@moku-labs/game",
+    version: GAME_VERSION,
+    type: "module",
+    exports: { "./hot": "./dist/a.mjs" }
+  };
+  await writeAt(join(game, "package.json"), JSON.stringify(manifest));
+  for (const [path, text] of Object.entries(GAME_DIST))
+    await writeAt(join(game, "dist", path), text);
+
+  const patchKey = "patchKey" in options ? options.patchKey : `@moku-labs/game@${GAME_VERSION}`;
+  const patched = patchKey === undefined ? {} : { patchedDependencies: { [patchKey]: GAME_PATCH } };
+  await writeAt(join(root, "package.json"), JSON.stringify({ name: "fixture-game", ...patched }));
+  if (options.patchFile !== false) await writeAt(join(root, GAME_PATCH), "--- a\n+++ b\n");
+  if (options.lockfile !== false) await writeAt(join(root, "bun.lock"), "{}\n");
+}
+
+/**
+ * SHA-256 (hex) of bytes or text.
+ *
+ * @param data - What to hash.
+ * @returns The hex digest.
+ */
+export function sha256(data: string | Uint8Array): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+/**
+ * The dist hash of the fixture game, fed by hand the way engine spec 10 E2 says: every file in
+ * sorted relative order as `<relative path>\0<bytes>\0`.
+ *
+ * @returns The hex digest.
+ */
+export function fixtureDistHash(): string {
+  const feed = Object.keys(GAME_DIST)
+    .toSorted()
+    .map(path => `${path}\0${GAME_DIST[path] ?? ""}\0`)
+    .join("");
+  return sha256(feed);
+}
+
+/**
+ * The fingerprint id of the fixture game with its declared patch, computed by hand.
+ *
+ * @returns The id, e.g. "0.14.12+1a2b3c.patch.4d5e6f".
+ */
+export function fixtureEngineId(): string {
+  return `${GAME_VERSION}+${fixtureDistHash().slice(0, 6)}.patch.${sha256("--- a\n+++ b\n").slice(0, 6)}`;
 }

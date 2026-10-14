@@ -1,7 +1,10 @@
 /**
  * @file hub plugin — api factory: assembles serve, token, sessions, fetch, websocket, addRoutes,
- * guard, publish, closeAll and path from the modules. No logic of its own.
+ * guard, publish, closeAll, path, listenDevices, stopDevices and devices from the modules. No logic
+ * of its own.
  */
+import { listenDevices, stopDevices } from "./device/listen";
+import { devicesOf } from "./device/records";
 import { publish } from "./routing/publish";
 import { sessionList } from "./routing/sessions";
 import { guard as checkRequest } from "./security/guard";
@@ -35,6 +38,9 @@ export function createHubApi(ctx: HubCtx): HubApi {
       publish(ctx, method, params);
     },
     closeAll: (code, reason) => closeAll(ctx, code, reason),
-    path: () => ctx.config.path
+    path: () => ctx.config.path,
+    listenDevices: options => listenDevices(ctx, options, websocket),
+    stopDevices: () => stopDevices(ctx),
+    devices: () => devicesOf(ctx.state)
   };
 }

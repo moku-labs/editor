@@ -184,7 +184,9 @@ describe("hub over real websockets", () => {
     const { agent: game, session } = await agent();
 
     const note = game.messages.find(isNote("editor", "session"));
-    expect(paramsOf(note)).toEqual({ id: session, game: AGENT_MANIFEST.game, open: true });
+    // The agent's copy of the answer carries the computer's engine id (C7); the tools copy not.
+    const engine = running?.app.files.engine().id;
+    expect(paramsOf(note)).toEqual({ id: session, game: AGENT_MANIFEST.game, open: true, engine });
     await page.next(
       message => isNote("editor", "sessions")(message) && JSON.stringify(message).includes(session)
     );
@@ -214,7 +216,8 @@ describe("hub over real websockets", () => {
     const methods = later.messages
       .map(message => ("method" in message ? message.method : ""))
       .filter(method => method !== "project");
-    expect(methods.slice(0, 2)).toEqual(["sessions", "hotReload"]);
+    // The hub publishes the engine itself on start (C7), so it is replayed before hotReload.
+    expect(methods.slice(0, 3)).toEqual(["sessions", "engine", "hotReload"]);
     expect(paramsOf(replayed)).toEqual({ hmr: true, owner: "bin" });
     expect(game.messages.filter(isNote("editor", "hotReload"))).toEqual([]);
   });
