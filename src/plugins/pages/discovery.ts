@@ -4,7 +4,8 @@
  * file) and removes it on stop and on process exit. The MCP bridge reads it to find the running
  * editor. It holds the hub token: never print or log it. `isGameFolder` lives here too: the one
  * rule by which the bin and the MCP bridge (which may import this module, D-31) tell a moku-game
- * folder and start the engine page (D-63).
+ * folder and start the engine page (D-63). The perf CLI writes its own `.moku/perf.json` through
+ * the same private record helpers (`publishRecord`).
  */
 import {
   mkdirSync,
@@ -124,6 +125,29 @@ export function discoveryOf(input: DiscoveryInput): EditorDiscovery {
 }
 
 /**
+ * Writes a private JSON record: creates its folder when missing, writes a fresh temp file with
+ * mode 0600, then renames it over the old file, so a reader never sees half a file. Shared by
+ * `.moku/editor.json` and the perf CLI's `.moku/perf.json`.
+ *
+ * @param path - The absolute file.
+ * @param record - The record; its pid names the temp file.
+ * @param record.pid - The writing process id.
+ * @throws {Error} When the folder or the file cannot be written.
+ */
+export function writeRecord(path: string, record: { readonly pid: number }): void {
+  const temporary = `${path}.${record.pid}.tmp`;
+
+  mkdirSync(dirname(path), { recursive: true });
+  // A leftover temp file of a crashed run may carry another mode: start from a new file.
+  rmSync(temporary, { force: true });
+  writeFileSync(temporary, `${JSON.stringify(record, undefined, 2)}\n`, {
+    mode: FILE_MODE,
+    flag: "wx"
+  });
+  renameSync(temporary, path);
+}
+
+/**
  * Writes the discovery file: creates `.moku/` when missing, writes a fresh temp file with mode
  * 0600, then renames it over the old file.
  *
@@ -138,16 +162,7 @@ export function discoveryOf(input: DiscoveryInput): EditorDiscovery {
  */
 export function writeDiscovery(root: string, discovery: EditorDiscovery): string {
   const path = discoveryPath(root);
-  const temporary = `${path}.${discovery.pid}.tmp`;
-
-  mkdirSync(dirname(path), { recursive: true });
-  // A leftover temp file of a crashed run may carry another mode: start from a new file.
-  rmSync(temporary, { force: true });
-  writeFileSync(temporary, `${JSON.stringify(discovery, undefined, 2)}\n`, {
-    mode: FILE_MODE,
-    flag: "wx"
-  });
-  renameSync(temporary, path);
+  writeRecord(path, discovery);
   return path;
 }
 
@@ -172,6 +187,20 @@ function recordedPid(path: string): number | undefined {
 }
 
 /**
+ * Removes a record when this pid wrote it; a file of another process stays.
+ *
+ * @param path - The absolute file.
+ * @param pid - The pid that wrote it.
+ * @returns True when the file was removed.
+ */
+export function removeRecord(path: string, pid: number): boolean {
+  if (recordedPid(path) !== pid) return false;
+
+  unlinkSync(path);
+  return true;
+}
+
+/**
  * Removes the discovery file when this pid wrote it; a file of another bin stays.
  *
  * @param root - The project root.
@@ -183,11 +212,32 @@ function recordedPid(path: string): number | undefined {
  * ```
  */
 export function removeDiscovery(root: string, pid: number): boolean {
-  const path = discoveryPath(root);
-  if (recordedPid(path) !== pid) return false;
+  return removeRecord(discoveryPath(root), pid);
+}
 
-  unlinkSync(path);
-  return true;
+/**
+ * Writes a private record and removes it on release or, failing that, on process exit
+ * (synchronous, so it runs in an `exit` listener).
+ *
+ * @param path - The absolute file.
+ * @param record - The record.
+ * @param record.pid - The writing process id.
+ * @returns The release function: removes the file once (only while it holds this pid) and drops
+ * the exit listener.
+ * @throws {Error} When the file cannot be written; then no listener is left behind.
+ */
+export function publishRecord(path: string, record: { readonly pid: number }): () => void {
+  writeRecord(path, record);
+
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    process.off("exit", release);
+    removeRecord(path, record.pid);
+  };
+  process.once("exit", release);
+  return release;
 }
 
 /**
@@ -206,15 +256,5 @@ export function removeDiscovery(root: string, pid: number): boolean {
  * ```
  */
 export function publishDiscovery(root: string, discovery: EditorDiscovery): () => void {
-  writeDiscovery(root, discovery);
-
-  let released = false;
-  const release = (): void => {
-    if (released) return;
-    released = true;
-    process.off("exit", release);
-    removeDiscovery(root, discovery.pid);
-  };
-  process.once("exit", release);
-  return release;
+  return publishRecord(discoveryPath(root), discovery);
 }

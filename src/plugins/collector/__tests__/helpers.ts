@@ -545,3 +545,21 @@ export function gfxLine(t: number, overrides: Partial<PerfCollectorLine> = {}): 
 export function jsonl(lines: readonly (object | string)[]): string {
   return `${lines.map(line => (typeof line === "string" ? line : JSON.stringify(line))).join("\n")}\n`;
 }
+
+/**
+ * Whether a text holds a C0 or C1 control, DEL, or a bidi embedding, override or isolate.
+ *
+ * @param text - The text.
+ * @returns Whether one is there.
+ */
+export function hasUnsafeChar(text: string): boolean {
+  return [...text].some(char => {
+    const code = char.codePointAt(0) ?? 0;
+    return (
+      code < 0x20 ||
+      (code >= 0x7f && code <= 0x9f) ||
+      (code >= 0x20_2a && code <= 0x20_2e) ||
+      (code >= 0x20_66 && code <= 0x20_69)
+    );
+  });
+}

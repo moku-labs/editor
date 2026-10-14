@@ -1,9 +1,10 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" on SessionDigest */
 /**
  * @file collector plugin — the live digest of a device log (`SessionDigest`, the newest second
- * for the CLI's live line). It switches on the `kind` of typed PerfLogLine items and reads every
- * field beyond `v` and `kind` defensively: the hub's shallow guard vouches for those two only, so a
- * line missing a field is skipped here and still written.
+ * for the CLI's live line), frozen, every phone string through `cleanText`. It switches on the
+ * `kind` of typed PerfLogLine items and reads every field beyond `v` and `kind` defensively: the
+ * hub's shallow guard vouches for those two only, so a line missing a field is skipped here and
+ * still written.
  */
 import { normalizeModel } from "../../hub/protocol";
 import type {
@@ -15,6 +16,7 @@ import type {
   PerfSpikeLine,
   PerfThermalLine
 } from "../../perf/protocol";
+import { cleanText } from "../../perf/protocol";
 import { headerRate, primaryOf, rankCauses } from "../report";
 import type { DigestFacts, LogSession, SessionDigest } from "../types";
 
@@ -102,7 +104,7 @@ function recentCauses(recent: readonly (readonly [number, PerfCause])[], end: nu
 function digestOf(session: DigestTarget, second: Second): SessionDigest {
   const { facts, recent } = session;
   const newestSpike = recent.at(-1)?.[0] ?? second.t;
-  return {
+  return Object.freeze({
     t: second.t,
     path: second.path,
     fps: second.fps,
@@ -111,13 +113,13 @@ function digestOf(session: DigestTarget, second: Second): SessionDigest {
     gpuMs: second.gpuMs,
     spikes: second.spikes,
     rate: facts.rate,
-    causes: recentCauses(recent, Math.max(second.t, newestSpike)),
+    causes: Object.freeze(recentCauses(recent, Math.max(second.t, newestSpike))),
     thermal: facts.thermal,
-    model: facts.model ?? session.model,
+    model: cleanText(facts.model ?? session.model),
     backend: facts.backend,
     engine: facts.engine,
     build: session.build
-  };
+  });
 }
 
 /**
@@ -140,7 +142,7 @@ function secondOf(sample: PerfSampleLine): Second | undefined {
 
   return {
     t,
-    path,
+    path: cleanText(path),
     fps: Math.round((drawn * 1000) / windowMs),
     loopFps: Math.round((frames * 1000) / windowMs),
     p90Ms: finiteOrNull(sample.gapMs?.p90),
@@ -157,8 +159,8 @@ function secondOf(sample: PerfSampleLine): Second | undefined {
  */
 function readHeader(session: DigestTarget, header: PerfHeaderLine): void {
   const { facts } = session;
-  if (typeof header.build === "string") session.build = header.build;
-  if (typeof header.engine === "string") facts.engine = header.engine;
+  if (typeof header.build === "string") session.build = cleanText(header.build);
+  if (typeof header.engine === "string") facts.engine = cleanText(header.engine);
   facts.model = normalizeModel(header.device?.model) ?? facts.model;
   facts.backend = backendOf(header.gpu?.backend) ?? facts.backend;
   facts.rate = headerRate(header) ?? facts.rate;
@@ -187,10 +189,10 @@ function readSpike(session: DigestTarget, spike: PerfSpikeLine): void {
  */
 function readThermal(facts: DigestFacts, line: PerfThermalLine): void {
   const { status } = line;
-  facts.thermal = {
-    status: typeof status === "string" || isFiniteNumber(status) ? status : null,
+  facts.thermal = Object.freeze({
+    status: typeof status === "string" ? cleanText(status) : finiteOrNull(status),
     batteryC: finiteOrNull(line.batteryC)
-  };
+  });
 }
 
 /**

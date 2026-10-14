@@ -227,6 +227,10 @@ export type LogSession = {
   emitTimer: ReturnType<typeof setTimeout> | undefined;
   /** onStop's flush bound (STOP_FLUSH_MS) ran out while this log's queue was still writing. */
   stopTimedOut: boolean;
+  /** Bytes waiting in the queue (at most QUEUE_MAX_BYTES; a write beyond it is dropped). */
+  queued: number;
+  /** A write was dropped on a full queue and none was taken since (one warning per streak). */
+  queueFull: boolean;
 };
 
 /**
@@ -274,6 +278,11 @@ export type CollectorState = {
   outDir: string | undefined;
   /** onStop ran: a later hub:device is ignored and nothing is emitted. */
   stopped: boolean;
+  /**
+   * Lines refused per device id because the device already had MAX_LIVE_LOGS live logs; the first
+   * refusal of a device is warned (`collector:log-cap`).
+   */
+  refused: Map<string, number>;
 };
 
 /**

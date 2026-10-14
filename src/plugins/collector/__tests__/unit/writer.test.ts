@@ -1,7 +1,7 @@
 import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WriterIo } from "../../session/writer";
-import { writeLines } from "../../session/writer";
+import { enqueue, QUEUE_MAX_BYTES, writeLines } from "../../session/writer";
 import { createLogSession } from "../../state";
 import type { LogSession } from "../../types";
 import type { TestCtx } from "../helpers";
@@ -161,5 +161,34 @@ describe("writeLines", () => {
       t: 15_917.4,
       lines: 2
     });
+  });
+});
+
+describe("queue bound and lost-only batches", () => {
+  it("drops a write once 8 MiB wait in a log's queue, counts it lost and warns once per streak (bug: a stuck disk filling memory)", async () => {
+    const { promise: stuck, resolve: release } = Promise.withResolvers<void>();
+    const { io, texts } = fakeIo((_text, call) => (call === 1 ? stuck : Promise.resolve()));
+    const half = `${"x".repeat(QUEUE_MAX_BYTES / 2)}\n`;
+
+    const writes = [half, half, half, "y\n"].map(text => enqueue(ctx, session, text, 1, io));
+    release();
+    await Promise.all(writes);
+
+    expect(texts).toEqual([half, "y\n"]);
+    expect(session.lost).toBe(2);
+    expect(session.lines).toBe(2);
+    expect(ctx.log.warn.mock.calls).toEqual([
+      ["collector:queue-full", { file: session.file, bytes: QUEUE_MAX_BYTES }]
+    ]);
+  });
+
+  it("emits when a batch only changed the lost count", async () => {
+    await writeLines(ctx, session, { log: LOG, from: 0, rx: RX, items: [], gap: 0, rejected: 3 });
+
+    expect(session.lost).toBe(3);
+    expect(ctx.emit).toHaveBeenCalledWith(
+      "collector:session",
+      expect.objectContaining({ lost: 3, lines: 0 })
+    );
   });
 });

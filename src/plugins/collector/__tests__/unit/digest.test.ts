@@ -161,3 +161,27 @@ describe("malformed lines the hub's shallow guard let through", () => {
     expect(written.map(line => line.kind)).toEqual(["sample", "spike", "sample", "thermal"]);
   });
 });
+
+describe("digest safety", () => {
+  it("drops control and bidi characters from phone text and caps it at 128 (bug: escapes in the CLI's live line)", () => {
+    const digest = digestOf(
+      headerLine(0, { build: "debug\u001B[31m-1", engine: "0.14.12\u202E+9c" }),
+      thermalLine(500, { status: "light\u0007" }),
+      sampleLine(1000, { path: `garden\u0085/boss${"x".repeat(200)}` })
+    );
+
+    expect(digest?.build).toBe("debug[31m-1");
+    expect(session.build).toBe("debug[31m-1");
+    expect(digest?.engine).toBe("0.14.12+9c");
+    expect(digest?.thermal?.status).toBe("light");
+    expect(digest?.path).toBe(`garden/boss${"x".repeat(117)}`);
+  });
+
+  it("hands out a frozen digest, causes and heat (bug: one listener editing the payload the next one gets)", () => {
+    const digest = digestOf(spikeLine(900, ["js"]), thermalLine(950), sampleLine(1000));
+
+    expect(Object.isFrozen(digest)).toBe(true);
+    expect(Object.isFrozen(digest?.causes)).toBe(true);
+    expect(Object.isFrozen(digest?.thermal)).toBe(true);
+  });
+});

@@ -1,19 +1,42 @@
 /**
- * @file pages plugin — type definitions: config, state, api, the bin arguments, the route deps and
- * the domain context. ToolsBoot and HelloBody come from the protocol (R1); the route types from hub.
+ * @file pages plugin — type definitions: config, state, api, hooks, the bin arguments, the route
+ * deps and the domain context. ToolsBoot and HelloBody come from the protocol (R1); the route
+ * types from hub; the perf CLI's own types from `perf/types.ts` (re-exported here).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { Require } from "../../config";
+import type { CollectorSessionEvent } from "../collector/types";
 import type { FilesApi } from "../files/types";
 import type { BunServeOptions, EditorRoutes, HubApi } from "../hub/types";
 import type { HotReload } from "../registry/protocol";
+import type {
+  LiveMemory,
+  PerfArgs,
+  PerfCompareArgs,
+  PerfMarkArgs,
+  PerfOutput,
+  PerfSummaryArgs
+} from "./perf/types";
+
+export type {
+  LiveMemory,
+  PerfArgs,
+  PerfCompareArgs,
+  PerfDeps,
+  PerfDiscovery,
+  PerfMarkArgs,
+  PerfOutput,
+  PerfPluginConfigs,
+  PerfSummaryArgs,
+  ServerPluginConfigs
+} from "./perf/types";
 
 /**
  * Pages configuration.
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { pages: { editorUrl: "cursor://file/{path}:{line}" } } });
+ * createApp({ pluginConfigs: { pages: { editorUrl: "cursor://file/{path}:{line}", toolsPage: false } } });
  * ```
  */
 export type PagesConfig = {
@@ -25,6 +48,8 @@ export type PagesConfig = {
   pageDir: string | undefined;
   /** Same-origin URL of the game page the tools page embeds (R3). */
   gameUrl: string;
+  /** Serve the tools page and its assets; false answers 404 there (moku-editor perf --no-ui). */
+  toolsPage: boolean;
 };
 
 /**
@@ -41,6 +66,17 @@ export type PagesState = {
   hot: HotReload;
   /** The bin's serve options and restart (D-32), set by attachServer; undefined for a game's own server. */
   served: ServedGame | undefined;
+  /** Set by attachPerf: the perf run's output and the memory of each log. Undefined in every other app. */
+  perf: PerfLive | undefined;
+};
+
+/**
+ * What attachPerf keeps: where the live lines go, and what each log printed so far (key: the
+ * log's absolute file).
+ */
+export type PerfLive = {
+  readonly output: PerfOutput;
+  readonly seen: Map<string, LiveMemory>;
 };
 
 /**
@@ -153,6 +189,28 @@ export type PagesApi = {
    * ```
    */
   setHotReload(on: boolean): Promise<boolean>;
+  /**
+   * Prints a live line per phone log from now on: each `collector:session` becomes the lines of
+   * the perf command (header with engine and build, STALE warning, a stats line at most every 5 s,
+   * left / done). Call it once, after hub.listenDevices; without it the collector's events print
+   * nothing.
+   *
+   * @param output - Where the lines go: the bin's brand console.
+   * @example
+   * ```ts
+   * // runPerf, after the device listener is up.
+   * editor.pages.attachPerf(ui);
+   * // on the first log batch of a phone: "◉ SM-A266B · webgpu · engine 0.14.12+9c41e0 · build debug-20261014T160000Z · adb 127.0.0.1"
+   * ```
+   */
+  attachPerf(output: PerfOutput): void;
+};
+
+/**
+ * The hooks of pages: the collector's per-plugin event, visible because pages depends on it.
+ */
+export type PagesHooks = {
+  readonly "collector:session": (event: CollectorSessionEvent) => void;
 };
 
 /**
@@ -241,15 +299,30 @@ export type E2eArgs = {
 };
 
 /**
- * Parsed arguments of the bin: serve, the two MCP subcommands, `e2e`, help, or an error.
+ * Parsed arguments of the bin: serve, the two MCP subcommands, `e2e`, the four `perf` forms,
+ * help, or an error.
  */
 export type BinArgs =
   | RunArgs
   | McpArgs
   | McpConfigArgs
   | E2eArgs
+  | PerfArgs
+  | PerfMarkArgs
+  | PerfSummaryArgs
+  | PerfCompareArgs
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The result of starting the bin: the exit code, and the stop function while serving.
+ *
+ * @example
+ * ```ts
+ * const started: Started = { code: 0, stop: () => editor.stop() };
+ * ```
+ */
+export type Started = { readonly code: number; readonly stop?: () => Promise<void> };
 
 /**
  * A signal the re-spawning bin forwards to its child (`reexec.ts`).

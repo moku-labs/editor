@@ -1,6 +1,6 @@
 # pages
 
-> Complex plugin (server core). It serves the tools page and its assets from the editor server. It also serves the `hello` route that the game page's bridge calls to learn the websocket URL and the token. The `moku-editor` bin lives here too, with its `mcp` and `mcp-config` subcommands and the `.moku/editor.json` discovery file.
+> Complex plugin (server core). It serves the tools page and its assets from the editor server. It also serves the `hello` route that the game page's bridge calls to learn the websocket URL and the token. The `moku-editor` bin lives here too, with its `mcp` and `mcp-config` subcommands, the `.moku/editor.json` discovery file and the `perf` CLI (`perf/`, see "The perf CLI").
 
 `onInit` checks the config, finds the built page and registers five routes with `hub.addRoutes`. There is no `onStart` and no `onStop`. After `stop` the hub has no token, so the page, `hello` and a `hmr` POST answer 503.
 
@@ -14,8 +14,9 @@ Set through `pluginConfigs.pages`. Defaults are in `index.ts`.
 | `editorUrl` | `string` | `"vscode://file/{path}:{line}"` | "Open in editor" link template. `{path}` is the absolute file path, `{line}` the 1-based line. Must contain `{path}`. The scheme cannot be `javascript`, `data` or `vbscript`, in any case. |
 | `pageDir` | `string \| undefined` | `undefined` | Folder with the built page (`index.html` and `assets/`). A set value wins, built or not. `undefined` tries `dist/tools` next to the bundled module, then the repo `dist/tools`. |
 | `gameUrl` | `string` | `"/"` | Same-origin URL of the game page the tools page embeds. Starts with `/`, not with `//`, and has no `\`. |
+| `toolsPage` | `boolean` | `true` | Serve the tools page and its assets. `false` (`moku-editor perf --no-ui`) answers 404 `tools page off (moku-editor perf --no-ui)` on `P`, `P/` and `P/assets/*` after the guard; `P/hello` and `P/hmr` are unchanged. |
 
-A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` with a fix line below it.
+A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` with a fix line below it. A `toolsPage` that is not a boolean throws a `TypeError`: `[moku-editor] pages.toolsPage is <value>.` and `  Give true or false; false is moku-editor perf --no-ui.`
 
 ## API
 
@@ -27,6 +28,7 @@ A bad value makes `createApp` throw `[moku-editor] pages.<field> <problem>.` wit
 | `attachServer` | `attachServer(options: BunServeOptions, restart?: RestartServer): void` | The bin calls it right after its first `Bun.serve`. The bin owns hot reload from then on; HMR is read from `options.development`; the state is published with `hub.publish("hotReload", …)`. `restart(options)` stops the bin's current server and serves `options` on the same port; with it `setHotReload` can switch (see Hot reload). |
 | `hotReload` | `hotReload(): HotReload` | A fresh `{ hmr, owner }`. Owner `"server"` with `hmr: false` until `attachServer`. |
 | `setHotReload` | `setHotReload(on: boolean): Promise<boolean>` | The bin with a restart switches: true at once, the server restarts after the answer. The same value answers true. Owner `"server"` always answers false. Publishes the state in every case. |
+| `attachPerf` | `attachPerf(output: PerfOutput): void` | `runPerf` calls it once, after `hub.listenDevices`. From then on each `collector:session` prints the live lines of the perf command through `output` (the bin's brand console). Without it the hook prints nothing. |
 
 ```ts
 Object.keys(editor.pages.routes()); // ["/__editor", "/__editor/", "/__editor/hello", "/__editor/hmr", "/__editor/assets/*"]
@@ -176,7 +178,7 @@ An asset name must match `[\w.-]` segments joined by `/`. No segment may start w
 | Kind | Name | Payload | When |
 |---|---|---|---|
 | Emits | none | | |
-| Hooks | none | | |
+| Hooks | `collector:session` (the collector's per-plugin event, visible through `depends`) | `CollectorSessionEvent` | After `attachPerf` only: `perfLiveLines` per log, the STALE line through `output.warn`, the others through `output.line`. |
 
 Log lines (not events):
 
@@ -194,8 +196,10 @@ Log lines (not events):
 
 | Kind | Value |
 |---|---|
-| `depends` | `[filesPlugin, hubPlugin]` |
-| `filesPlugin` | `root()` for `ToolsBoot.root` |
+| `depends` | `[filesPlugin, hubPlugin, collectorPlugin]` |
+| `filesPlugin` | `root()` for `ToolsBoot.root`; `engine()` for the STALE line of the live hook |
+| `collectorPlugin` | Only to see its per-plugin `collector:session` (spec/07 §5). A server composition with pages must hold the collector before pages; the server defaults do (`files, hub, collector, pages`). |
+| `collector/report` (pure) | `parsePerfLog`, `summarize`, `compare`, `summaryText`, `compareText`, `isPerfLog` for `perf summary`, `perf compare` and the stop summary |
 | `hubPlugin` | `addRoutes` (in `onInit`), `guard`, `path`, `token`, `publish` |
 | Global events | none |
 | Protocol types | `ToolsBoot`, `HelloBody`, `HotReload` from `registry/protocol` |
@@ -238,6 +242,8 @@ moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
 moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
 moku-editor mcp-config [<game-html>] [--port N]
 moku-editor e2e -c <playwright config> [playwright args…]
+moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]
+moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jsonl> <b.jsonl>
 ```
 
 `package.json` maps `moku-editor` to `./dist/bin.mjs` (from `bin.ts`). Bun only.
@@ -287,7 +293,7 @@ Started from the game root, or from the MCP launcher (it spawns with `cwd: root`
 
 ### Subcommands
 
-A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywhere else it is a second positional and an error. A first word `e2e` picks `e2e` before any other check, so its `--help` goes to Playwright.
+A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywhere else it is a second positional and an error. A first word `e2e` picks `e2e` before any other check, so its `--help` goes to Playwright. A first word `perf` picks the perf CLI right after, before the global `--help` scan and the strict parse (its switches are not the serving bin's; see "The perf CLI").
 
 | Subcommand | `BinArgs` | What it does |
 |---|---|---|
@@ -486,6 +492,78 @@ What `main` (`cli.ts`) does:
 | 130, 143 | The engine form got SIGINT (130) or SIGTERM (143) before its child was spawned: the default signal action, no child, no keys watch left |
 | 1 | Runtime error: missing or bad HTML file, start failed, port in use; the engine page could not be written or its keys watch could not start |
 | 2 | Bad arguments; without an html file, a root that is not a moku-game folder |
+
+## The perf CLI
+
+`moku-editor perf` measures phones: it starts the server core (files, hub, collector, pages) without a game, turns on the hub's device mode with the terminal as the pairing prompt, serves the tools page on the device port, prints a live line per phone log and writes one JSONL log per phone. The code lives in `perf/` (its own `__tests__/`); the argv dispatch stays in `args.ts` (`perfArgs`) and `cli.ts` (`startBin`, one branch each). Nothing in `perf/` imports a pages module other than `../types` and the record helpers of `../discovery`.
+
+| Command | `BinArgs` | What it does |
+|---|---|---|
+| `perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]` | `{ kind: "perf", lan, port, out, every, ui }` | `runPerf` (`perf/run.ts`). Runs until Ctrl+C. |
+| `perf mark "<label>"` | `{ kind: "perf-mark", label }` | `perfMark` (`perf/mark.ts`): from a second terminal, a mark into every live log of the running perf. |
+| `perf summary <log>` | `{ kind: "perf-summary", log }` | `perfSummary` (`perf/report.ts`): the `summaryText` table of a finished log. Starts nothing. |
+| `perf compare <a> <b>` | `{ kind: "perf-compare", a, b }` | `perfCompare`: the `compareText` rows by screen and rate, then one warning that counts the screens that got worse by 10 % or more (exit 0). |
+
+### Switches and their plugin fields
+
+Every switch is a field of the plugin that owns it, mapped by one pure function `perfConfigOf` (`perf/plugin-configs.ts`), so a later `moku-editor --device` reuses the same fields. `PerfDeps.extraConfig` merges over them one plugin at a time (`mergePluginConfigs`: a field of the extra config wins, the others stay).
+
+| Switch | Default | Rule | Plugin field |
+|---|---|---|---|
+| `--lan` | off | boolean | `hub.deviceLan` |
+| `--port`, `-p` | `47600` | digits, 0 to 65535 (`0` = random, for tests) | `hub.devicePort` |
+| `--out`, `-o` | `.moku/perf` | not empty | `collector.out` |
+| `--every` | `10` | integer 1 to 3600 (seconds between adb readings) | `collector.everyS` |
+| `--no-ui` | tools page on | boolean | `pages.toolsPage` |
+| (none) | | | `files.root` (the cwd), `files.project: false` (no file watching while a phone is measured), `collector.appId` (`native.identifier` of the game's `config.ts`, left out when there is none) |
+
+Every argument error is two lines, the second the fix, printed with the usage, exit 2: `perf mark needs one label of 1-200 characters.`, `perf summary needs one log file.`, `perf compare needs two log files.`, `perf takes no file here.` (`Did you mean moku-editor perf summary <log>?`), and the range errors of `--port`, `--every`, `--out`. `--help` or `-h` anywhere after `perf` prints the usage.
+
+### What a run prints
+
+The ready block after `listenDevices` (the token is never printed):
+
+```
+▟▙ moku editor  perf
+┌────────────────────────────────────────────────────────────┐
+│ Phones  127.0.0.1:47600 · adb reverse every 2 s            │
+│ LAN     192.168.1.5:47600 · a phone pairs by its code      │   (only with --lan)
+│ Tools   http://127.0.0.1:47600/__editor/#render            │   (not with --no-ui)
+│ Logs    /game/.moku/perf                                   │
+│ Engine  0.14.12+9c41e0                                     │
+└────────────────────────────────────────────────────────────┘
+› Waiting for a phone: a debug build dials 127.0.0.1:47600 (moku-game build --debug).
+› No app id: gfx lines are off. Set native.identifier in config.ts or pluginConfigs.collector.appId.   (only without one)
+› Ctrl+C to stop
+```
+
+`/` of the device port answers the no-game page (`perf/home.ts`): a sentence, `default-src 'none'`, no cache.
+
+The live lines (`perfLiveLines`, `perf/live.ts`, through `attachPerf` and the `collector:session` hook; the memory of each log is `state.perf.seen`):
+
+| When | Line |
+|---|---|
+| First event of a log, or its engine or build changed | `◉ SM-A266B · webgpu · engine 0.14.12+9c41e0 · build debug-20261014T160000Z · adb 127.0.0.1` and `  ● REC → .moku/perf/perf-20261014-1532-sm-a266b.jsonl` |
+| The phone's engine differs from `files.engine().id` (both known, neither `unknown`) | one warning per log and engine pair: `STALE: SM-A266B runs engine 0.14.12+9c41e0, this computer has 0.14.13+1ab7f2 · rebuild the game so the logs match` |
+| `live` with a digest: at most every 5 s per log, at once when its path or rate changed | `  garden/boss  @60  54 fps  p90 18.2  gpu 6.1  spikes 2 (upload, gc?)  38.0 °C  · 1 840 lines` (`@rate` left out when unknown, `—` for a null value, the heat only with a reading, ` · 12 lost` when lines were lost) |
+| `away` | `  ○ SM-A266B left · 1 840 lines kept, the log continues when it comes back` |
+| `done` | `  ■ SM-A266B · 1 840 lines → .moku/perf/perf-20261014-1532-sm-a266b.jsonl` |
+
+No cursor movement: the lines interleave safely with the pairing prompt and log warnings. The app log goes through `perfSink` (`perf/log.ts`): warnings and errors as `event JSON`; `hub:paired`, `hub:pair-refused`, `collector:reversed`, `collector:adb-missing` and `collector:adb-ambiguous` as sentences (`✓ SM-A266B linked over adb`); every other info and debug entry is dropped.
+
+### The stop
+
+Ctrl+C runs the stop once (`main` owns the signals of a perf run from the start, so a Ctrl+C during the start is not lost): `.moku/perf.json` goes first; `hub.stopDevices()` runs while the app still runs, so the collector marks every log done and the hook prints each `■` line (teardown has no emit, spec/08 §2; the stop waits 50 ms for the collector's close queue); then `editor.stop()` flushes and closes the files; then each log with lines prints `log <file> · <lines> lines` and its summary table (a log that cannot be read is one warning).
+
+### `.moku/perf.json`
+
+`perf/discovery.ts`: `{ version: 1, pid, port, path, token, lan, startedAt }`, mode 0600, written through a temp file and a rename (the record helpers of `discovery.ts`), removed on stop and on process exit, only while it holds this pid. It holds the hub token: never printed or logged. A failed write is one warning (without the token) and the run goes on. `perf mark` reads it, checks the pid is alive, and posts the label to `http://127.0.0.1:<port><path>/perf/mark` (the collector's route) with `authorization: Bearer <token>`: 200 prints `✓ mark "boss" in N log(s)` (with no live phone a warning, exit 0); 401 is `The running perf has another token.` (exit 1); no file or a dead pid is `No moku-editor perf runs in this folder.` (exit 1). `perf` never touches `.moku/editor.json`, so the MCP bridge never mistakes a perf run for a served game.
+
+### The pairing prompt and `node:readline`
+
+A LAN phone links only when the person types the 4-digit code its screen shows (`pairPrompt`, `perf/prompt.ts`): `◆ SM-A266B at 192.168.1.23 (lan) asks to link · engine 0.14.12+9c41e0`, then `  Type the 4-digit code on its screen (Enter refuses): `. Another code or an empty Enter refuses; a question cut by the pairing's signal (the phone left, the 60 s ran out, device mode stopped) prints `  (the phone left or the wait ran out)` and refuses. An adb phone under the default `pairing: "lan"` is never asked. The hub asks one phone at a time, so prompts never interleave.
+
+`PerfDeps.ask` is the only place the perf CLI reads the terminal. `@moku-labs/common/cli` 0.3.10 has no text prompt (`createBrandPrompts()` offers only y/N `confirm` and `select`, neither takes an `AbortSignal`, and y/N cannot carry the code), so `processPerfDeps().ask` (`perf/deps.ts`) uses `node:readline/promises` per question with `rl.question(text, { signal })` and forwards a Ctrl+C typed during the question to the bin's handler. This is the known MC1 exception of decisions.md "Pairing code prompt uses node:readline behind one `ask` seam"; when `@moku-labs/common` ships a text prompt with an `AbortSignal`, only `ask` changes.
 
 ## Integration notes
 

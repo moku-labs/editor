@@ -9,7 +9,9 @@ computer:
 - **One JSONL file per device log** (`perf-<yyyymmdd-hhmm>-<model>.jsonl` under `out`). Every line the
   hub hands over is appended with `rx` (computer epoch ms at receipt). A phone that reconnects with its
   token appends to the same file, so a Wi-Fi drop no longer splits or loses a recording. Batches are
-  written in arrival order: the hook enqueues synchronously, each log has one write queue.
+  written in arrival order: the hook enqueues synchronously, each log has one write queue. When a
+  device starts a new log, the files of its other logs are closed (chained on their queues) and
+  reopen on their next line, so one phone holds one open file at a time.
 - **adb, only while device mode is on.** Every `reverseEveryMs` (2 s): `adb devices` and
   `adb -s <serial> reverse tcp:<port> tcp:<port>` for every ready phone, so a phone plugged in later is
   reached without a restart. The model comes from `adb shell getprop ro.product.model`, normalized
@@ -22,7 +24,19 @@ computer:
   computer lines sort on one timeline.
 - **Never silent about loss.** A device gap (lines it lost before sending) becomes one `gap` line
   before the batch; gaps, rejected lines and failed writes are counted as `lost` (one
-  `collector:write-failed` warning per failing streak).
+  `collector:write-failed` warning per failing streak). A batch that only lost lines still emits.
+- **Bounded.** At most 8 MiB (`QUEUE_MAX_BYTES`) may wait in one log's queue: a write beyond it is
+  dropped and counted `lost` (one `collector:queue-full` warning per streak), so a stuck disk cannot
+  fill the memory. At most 32 live logs per device (`MAX_LIVE_LOGS`, like the hub's per-device log
+  record): the lines of one more log are refused, counted per device in the state's `refused`, and
+  the device's first refusal is warned `collector:log-cap { device, log, cap }`.
+- **Clean text.** Every string that came from a phone passes `cleanText` (`perf/protocol/text.ts`)
+  before the editor shows it: C0 and C1 controls, DEL, the bidi embeddings and overrides
+  (U+202A–U+202E) and isolates (U+2066–U+2069) are dropped, and the text is capped at 128
+  characters. The collector owns it: the digest's build, engine, path, model and heat status are
+  clean, and so is every cell `report/text.ts` prints (paths, builds, engines, models, labels,
+  devices, sensor names, rate reasons), so pages prints clean text. The file itself keeps the lines
+  as the phone sent them (as JSON).
 - **`collector:session`**, its per-plugin event, at most once a second per log, for the CLI's live line.
 - **The computer mark**: `app.collector.mark(label)` and the route `{path}/perf/mark`.
 - **`report/`**: the runtime-free log report (parse, summary per screen and rate, compare, text).
@@ -92,14 +106,15 @@ creates no folder and no file.
 
 | Event | Kind | Payload | When |
 |---|---|---|---|
-| `collector:session` (emits) | per-plugin, visible through `depends: [collectorPlugin]` | `CollectorSessionEvent`: `{ device, file, state, lines, lost, last }` | the first written batch of a log (at once), then at most once a second with a trailing emit carrying the newest counts; at once on `live` again, and after the queue closed the file on `away` and `done` |
+| `collector:session` (emits) | per-plugin, visible through `depends: [collectorPlugin]` | `CollectorSessionEvent`: `{ device, file, state, lines, lost, last }` | the first written batch of a log (at once), then at most once a second with a trailing emit carrying the newest counts; after the queue closed the file on `away` and `done` (with the state the log had when it was closed); on `live` again after any close still pending, so a replaced connection reports `away`, then `live` |
 | `hub:device` (hooks) | the hub's per-plugin event | `HubDeviceEvent` | `listening` starts the adb loop; `connected` makes the device's away logs live; `lines` writes a batch; `closed` makes its live logs away; `stopped` stops the adb loop and makes every log done |
 
 `collector:session` is not in the global `ServerEvents`. `last` is the `SessionDigest` of the newest
 second: fps and loop fps, the gap p90, the GPU p50, the current rate (the newest `rate` event's `to`,
 else the header's), the spikes of the second, the primary causes of the last 6 s, the newest heat,
-the model, backend, engine and build. The digest reads typed `PerfLogLine` items defensively: a line
-missing a field is skipped by the digest and still written.
+the model, backend, engine and build. It is frozen (its causes and heat too): every listener gets the
+same object. The digest reads typed `PerfLogLine` items defensively: a line missing a field is
+skipped by the digest and still written.
 
 A `hub:device` after `onStop` is ignored.
 
@@ -123,7 +138,7 @@ A `hub:device` after `onStop` is ignored.
 ## `report/` — the runtime-free log report
 
 `src/plugins/collector/report/` imports only its own files and `perf/protocol` (types with
-`import type`; values: the constants and `primaryCause`, `causeName`, `rateFps`). No `node:`, no
+`import type`; values: the constants and `primaryCause`, `causeName`, `rateFps`, `cleanText`). No `node:`, no
 plugin index, no kernel, no ctx: pages' `perf summary` / `perf compare` import it, a browser page
 could. `report-boundary.test.ts` holds that line.
 
@@ -135,7 +150,7 @@ could. `report-boundary.test.ts` holds that line.
 | `gfxPercentile(hist, share)` | The game's percentile of adb gfxinfo's millisecond histogram. |
 | `summarize(log)` | One row per screen **and rate** (the same screen at 120 and at 60 fps is two rows; a sample counts at the rate in effect at its `t`, a spike at its own frame's `rateMs`): frames, p50/p90/p99, GPU ms weighted by timed frames, spikes by primary cause and per minute, passes, texture and heap memory, **pool trims** (count and MB freed), **warm-ups** (count and draws), **the game's overlay changes** by `label` + `what`. Frame events count on the screen of the sample whose second holds them. Also heat per device, system frames per mark segment, marks and every rate switch. Linear in the lines (200 000 samples in well under 1 s). |
 | `compare(a, b)`, `COMPARE_THRESHOLD` | A/B by screen and rate: p90, p99, spikes per minute, GPU ms; ▲ at +10 % or more (worse), ▼ at −10 % or less; a screen at a rate on one side only has null values and no arrow. |
-| `table(head, rows, names)`, `summaryText(summary)`, `compareText(comparison, names)` | The text tables `perf summary` and `perf compare` print (`≥200` and `—` cells, the `Rate:` line, the `Screen events:` block, heat, system frames, marks, the footer). |
+| `table(head, rows, names)`, `summaryText(summary)`, `compareText(comparison, names)` | The text tables `perf summary` and `perf compare` print (`≥200` and `—` cells, the `Rate:` line, the `Screen events:` block, heat, system frames, marks, the footer). Every phone string in a cell passes `cleanText`. |
 | `primaryOf(causes)`, `headerRate(header)`, `rankCauses(counts)` | The small rules the collector's live digest shares with the summary. |
 
 The report's types (`FileLine`, `PerfGapLine`, `HistPercentile`, `ParsedLog`, `ScreenSummary`,
@@ -167,6 +182,9 @@ src/plugins/collector/
   `thermal` lines still arrive) and no gfx line.
 - Two live adb logs of the same model (two identical phones) cannot be told apart by model: nothing
   is polled for that model and `collector:adb-ambiguous` is logged once.
+- A device's 33rd live log is not recorded (its lines are counted in `refused`, not in a file).
+- A log whose disk write stalls keeps at most 8 MiB waiting; later lines are dropped and counted.
+- A phone string longer than 128 characters is shown cut at 128 (the file keeps it whole).
 - gfxinfo counts 0 frames under WebGPU: gfx lines are a second opinion; the percentiles come from the
   page's own `frameHist`.
 - The phone's own log keeps no computer mark (it would come back as a duplicate line).

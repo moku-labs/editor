@@ -210,7 +210,11 @@ function byModel<Item>(
   const groups = new Map<string, Item[]>();
   for (const item of items) {
     const model = modelOf(item);
-    if (model !== null) groups.set(model, [...(groups.get(model) ?? []), item]);
+    if (model === null) continue;
+
+    const group = groups.get(model);
+    if (group === undefined) groups.set(model, [item]);
+    else group.push(item);
   }
 
   return groups;

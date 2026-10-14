@@ -1,5 +1,6 @@
 /**
- * @file pages plugin — api factory: routes(), attachServer(), hotReload(), setHotReload().
+ * @file pages plugin — api factory: routes(), attachServer(), hotReload(), setHotReload(),
+ * attachPerf().
  */
 import { hubPlugin } from "../hub";
 import type { HotReloadDeps } from "./hot-reload";
@@ -31,6 +32,10 @@ export function createPagesApi(ctx: PagesCtx): PagesApi {
       attachServer(hotDeps(), options, restart);
     },
     hotReload: () => hotReloadOf(ctx.state),
-    setHotReload: on => setHotReload(hotDeps(), on)
+    setHotReload: on => setHotReload(hotDeps(), on),
+    // The live hook (handlers.ts) prints through this output from now on, one memory per log.
+    attachPerf: output => {
+      ctx.state.perf = { output, seen: new Map() };
+    }
   };
 }

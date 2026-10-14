@@ -2,7 +2,8 @@
  * @file collector plugin — the per-log writer: each log's queue chains its writes in arrival
  * order (each batch on the previous), one `appendFile` per batch, `rx` on every device line, a
  * `gap` line for lines the device lost, `lost` for every line that could not be written (one
- * warning per failing streak), and the throttled `collector:session`.
+ * warning per failing streak), at most QUEUE_MAX_BYTES waiting per log (a write beyond it is
+ * dropped and counted lost, one warning per streak), and the throttled `collector:session`.
  */
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path/posix";
@@ -14,6 +15,9 @@ import { readLine } from "./digest";
 
 /** The least time between two `collector:session` of one log, ms. */
 export const EMIT_EVERY_MS = 1000;
+
+/** The most bytes that may wait in one log's queue (a stuck disk must not fill the memory). */
+export const QUEUE_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * The file seam of the writer: node's `fs/promises` in the plugin, a fake in tests.
@@ -50,13 +54,17 @@ export const nodeIo: WriterIo = {
  * The `collector:session` payload of a log, a fresh object.
  *
  * @param session - The log.
+ * @param state - The state to report (the log's state now by default).
  * @returns The payload.
  */
-export function eventOf(session: LogSession): CollectorSessionEvent {
+export function eventOf(
+  session: LogSession,
+  state: LogSession["state"] = session.state
+): CollectorSessionEvent {
   return {
     device: session.device,
     file: session.file,
-    state: session.state,
+    state,
     lines: session.lines,
     lost: session.lost,
     last: session.digest
@@ -69,14 +77,33 @@ export function eventOf(session: LogSession): CollectorSessionEvent {
  *
  * @param ctx - Domain context of the collector.
  * @param session - The log.
+ * @param state - The state to report (the log's state now by default).
  */
-export function emitNow(ctx: CollectorCtx, session: LogSession): void {
+export function emitNow(
+  ctx: CollectorCtx,
+  session: LogSession,
+  state: LogSession["state"] = session.state
+): void {
   clearTimeout(session.emitTimer);
   session.emitTimer = undefined;
   if (ctx.state.stopped) return;
 
   session.emittedAt = Date.now();
-  ctx.emit("collector:session", eventOf(session));
+  ctx.emit("collector:session", eventOf(session, state));
+}
+
+/**
+ * Emits a log's state of now after its pending queue steps, so a close that is still pending
+ * (away) is reported before this change (live again).
+ *
+ * @param ctx - Domain context of the collector.
+ * @param session - The log.
+ * @returns The queue, settled when the emit ran.
+ */
+export function emitQueued(ctx: CollectorCtx, session: LogSession): Promise<void> {
+  const { state } = session;
+  session.queue = session.queue.then(() => emitNow(ctx, session, state));
+  return session.queue;
 }
 
 /**
@@ -168,7 +195,23 @@ export function enqueue(
   count: number,
   io: WriterIo = nodeIo
 ): Promise<void> {
-  session.queue = session.queue.then(() => writeText(ctx, session, text, count, io));
+  const bytes = Buffer.byteLength(text);
+  if (session.queued + bytes > QUEUE_MAX_BYTES) {
+    session.lost += count;
+    if (!session.queueFull) {
+      ctx.log.warn("collector:queue-full", { file: session.file, bytes: QUEUE_MAX_BYTES });
+    }
+    session.queueFull = true;
+    emitSoon(ctx, session);
+    return session.queue;
+  }
+
+  session.queueFull = false;
+  session.queued += bytes;
+  session.queue = session.queue.then(async () => {
+    await writeText(ctx, session, text, count, io);
+    session.queued -= bytes;
+  });
   return session.queue;
 }
 
@@ -186,16 +229,30 @@ export async function closeHandle(session: Pick<LogSession, "handle">): Promise<
 }
 
 /**
- * Closes a log after its pending writes (it left or finished), then emits its final counts.
+ * Closes a log's file after its pending writes, without an emit (the device started another
+ * log); the next write reopens it.
+ *
+ * @param session - The log.
+ * @returns The queue, settled when the handle is closed.
+ */
+export function closeFile(session: LogSession): Promise<void> {
+  session.queue = session.queue.then(() => closeHandle(session));
+  return session.queue;
+}
+
+/**
+ * Closes a log after its pending writes (it left or finished), then emits its final counts with
+ * the state it had when it was closed.
  *
  * @param ctx - Domain context of the collector.
  * @param session - The log.
  * @returns The queue, settled when the handle is closed.
  */
 export function closeLog(ctx: CollectorCtx, session: LogSession): Promise<void> {
+  const { state } = session;
   session.queue = session.queue.then(async () => {
     await closeHandle(session);
-    emitNow(ctx, session);
+    emitNow(ctx, session, state);
   });
   return session.queue;
 }
@@ -228,7 +285,7 @@ function gapLineOf(
 /**
  * Writes a device's batch synchronously into its log's queue: each line moves the page-clock
  * offset, feeds the digest and is written as `{ ...line, rx }`; a gap adds one `gap` line before
- * them; `lost` grows by the gap and the rejected lines.
+ * them; `lost` grows by the gap and the rejected lines (a batch that only lost lines still emits).
  *
  * @param ctx - Domain context of the collector.
  * @param session - The log.
@@ -253,7 +310,10 @@ export function writeLines(
   if (batch.gap > 0) texts.unshift(JSON.stringify(gapLineOf(session, batch, firstT)));
   session.lost += batch.gap + batch.rejected;
 
-  return texts.length === 0
-    ? session.queue
-    : enqueue(ctx, session, `${texts.join("\n")}\n`, texts.length, io);
+  if (texts.length === 0) {
+    emitSoon(ctx, session);
+    return session.queue;
+  }
+
+  return enqueue(ctx, session, `${texts.join("\n")}\n`, texts.length, io);
 }

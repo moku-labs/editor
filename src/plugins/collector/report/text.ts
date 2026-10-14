@@ -1,7 +1,10 @@
 /**
  * @file collector/report — the text the perf CLI prints: the game's text table (Markdown-compatible
- * pipes), the lines of `perf summary` and of `perf compare`. Pure: summaries in, lines out.
+ * pipes), the lines of `perf summary` and of `perf compare`. Every string that came from a phone
+ * (paths, builds, labels, devices, sensor names, rate reasons) goes through `cleanText`, so a log
+ * cannot write control or bidi characters into a terminal. Pure: summaries in, lines out.
  */
+import { cleanText } from "../../perf/protocol";
 import type {
   Comparison,
   Delta,
@@ -105,6 +108,20 @@ export function table(
  */
 function oneDecimal(value: number | null): string {
   return value === null ? DASH : value.toFixed(1);
+}
+
+/**
+ * A phone's text as a cell: clean, or the dash.
+ *
+ * @param value - The text or null.
+ * @returns The cell.
+ * @example
+ * ```ts
+ * textCell("garden\u202E/boss"); // "garden/boss"
+ * ```
+ */
+function textCell(value: string | null): string {
+  return value === null ? DASH : cleanText(value);
 }
 
 /**
@@ -227,7 +244,7 @@ function spikesCell(screen: ScreenSummary): string {
 function screenCells(screen: ScreenSummary): string[] {
   const { art, targets, kept } = screen.textureMb;
   return [
-    screen.path,
+    cleanText(screen.path),
     whole(screen.rate),
     String(screen.frames),
     percentileCell(screen.p50),
@@ -254,9 +271,10 @@ function screenCells(screen: ScreenSummary): string[] {
 function overlaysText(overlays: ScreenSummary["overlays"]): string {
   const byLabel = new Map<string, string[]>();
   for (const { label, what, count } of overlays) {
-    const parts = byLabel.get(label) ?? [];
+    const name = cleanText(label);
+    const parts = byLabel.get(name) ?? [];
     parts.push(`${what} ×${count}`);
-    byLabel.set(label, parts);
+    byLabel.set(name, parts);
   }
 
   return [...byLabel].map(([label, parts]) => `${label} ${parts.join(", ")}`).join("; ");
@@ -278,7 +296,7 @@ function screenEventsOf(screen: ScreenSummary): string | undefined {
 
   return parts.length === 0
     ? undefined
-    : `${screen.path} @${whole(screen.rate)}: ${parts.join(DOT)}`;
+    : `${cleanText(screen.path)} @${whole(screen.rate)}: ${parts.join(DOT)}`;
 }
 
 /**
@@ -314,10 +332,10 @@ function heatLine(heat: HeatSummary): string {
     parts.push(`thermal status ${status.first} → ${status.last} (max ${status.max})`);
   }
   for (const sensor of heat.sensors) {
-    parts.push(`${sensor.name} ${sensor.first.toFixed(1)} → ${sensor.last.toFixed(1)}`);
+    parts.push(`${cleanText(sensor.name)} ${sensor.first.toFixed(1)} → ${sensor.last.toFixed(1)}`);
   }
 
-  return `Heat of ${heat.device}: ${parts.length > 0 ? parts.join(", ") : "no reading"}`;
+  return `Heat of ${cleanText(heat.device)}: ${parts.length > 0 ? parts.join(", ") : "no reading"}`;
 }
 
 /**
@@ -355,10 +373,10 @@ export function summaryText(summary: LogSummary): string[] {
   const { device, screens, rateSwitches, heat, system, marks } = summary;
   const lines = [
     [
-      device.model ?? DASH,
-      device.backend ?? DASH,
-      `engine ${device.engine ?? DASH}`,
-      `build ${device.build ?? DASH}`,
+      textCell(device.model),
+      textCell(device.backend),
+      `engine ${textCell(device.engine)}`,
+      `build ${textCell(device.build)}`,
       durationOf(summary.seconds)
     ].join(DOT)
   ];
@@ -371,15 +389,16 @@ export function summaryText(summary: LogSummary): string[] {
     );
   if (rateSwitches.length > 0) {
     const switches = rateSwitches.map(
-      item => `${clockOf(item.at)} ${item.from} → ${item.to} (${item.reason}, ${item.mode})`
+      item =>
+        `${clockOf(item.at)} ${item.from} → ${item.to} (${cleanText(item.reason)}, ${cleanText(item.mode)})`
     );
     lines.push(`Rate: ${switches.join(DOT)}`);
   }
   lines.push(...screenEventsBlock(screens), ...heat.map(item => heatLine(item)));
   if (system.length > 0) {
     const rows = system.map(item => [
-      item.device,
-      item.mark,
+      cleanText(item.device),
+      cleanText(item.mark),
       whole(item.seconds),
       String(item.frames),
       oneDecimal(item.fps),
@@ -392,7 +411,7 @@ export function summaryText(summary: LogSummary): string[] {
   }
   if (marks.length > 0) {
     const named = marks.map(
-      mark => `${clockOf(mark.at)} ${mark.label}${mark.auto ? " (auto)" : ""}`
+      mark => `${clockOf(mark.at)} ${cleanText(mark.label)}${mark.auto ? " (auto)" : ""}`
     );
     lines.push(`Marks: ${named.join(DOT)}`);
   }
@@ -424,7 +443,7 @@ function deltaCell(delta: Delta, format: (value: number | null) => string): stri
  */
 function switchesLine(name: string, summary: LogSummary): string {
   const switches = summary.rateSwitches.map(
-    item => `${item.from} → ${item.to} at ${clockOf(item.at)} (${item.reason})`
+    item => `${item.from} → ${item.to} at ${clockOf(item.at)} (${cleanText(item.reason)})`
   );
 
   return `${name}: ${switches.length > 0 ? switches.join(DOT) : "no switch"}`;
@@ -447,7 +466,7 @@ function switchesLine(name: string, summary: LogSummary): string {
  */
 export function compareText(comparison: Comparison, names: { a: string; b: string }): string[] {
   const rows = comparison.rows.map(row => [
-    row.path,
+    cleanText(row.path),
     whole(row.rate),
     deltaCell(row.p90, whole),
     deltaCell(row.p99, whole),

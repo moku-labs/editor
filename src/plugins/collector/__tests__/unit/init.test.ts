@@ -32,7 +32,9 @@ describe("validateCollectorConfig", () => {
     [{ adbTimeoutMs: 600.5 }, "[moku-editor] collector.adbTimeoutMs is 600.5."],
     [{ adb: "" }, '[moku-editor] collector.adb is "".'],
     [{ appId: "garden" }, '[moku-editor] collector.appId is "garden".'],
-    [{ appId: "1com.example" }, '[moku-editor] collector.appId is "1com.example".']
+    [{ appId: "1com.example" }, '[moku-editor] collector.appId is "1com.example".'],
+    [JSON.parse('{"out":42}'), "[moku-editor] collector.out is 42."],
+    [JSON.parse('{"adb":7}'), "[moku-editor] collector.adb is 7."]
   ])("refuses %o with a two-line TypeError (bug: a one-line error with no fix)", (change, first) => {
     const error = errorOf(change);
 

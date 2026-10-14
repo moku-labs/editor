@@ -104,4 +104,13 @@ describe("initPages", () => {
     expect(ctx.log.warn).toHaveBeenCalledTimes(1);
     expect(ctx.log.warn).toHaveBeenCalledWith("pages:not-built", { tried: [missing] });
   });
+
+  it("refuses a toolsPage that is not a boolean: a string flag must not read as true", () => {
+    const config = { toolsPage: "no" } as unknown as Partial<PagesConfig>;
+    const { ctx } = createCtx(config);
+    expect(() => initPages(ctx)).toThrow(TypeError);
+    expect(() => initPages(ctx)).toThrow(
+      "[moku-editor] pages.toolsPage is no.\n  Give true or false; false is moku-editor perf --no-ui."
+    );
+  });
 });

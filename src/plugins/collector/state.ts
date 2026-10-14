@@ -16,7 +16,8 @@ export function createCollectorState(): CollectorState {
     devices: new Map(),
     adb: undefined,
     outDir: undefined,
-    stopped: false
+    stopped: false,
+    refused: new Map()
   };
 }
 
@@ -57,6 +58,8 @@ export function createLogSession(fields: {
     recent: [],
     emittedAt: 0,
     emitTimer: undefined,
-    stopTimedOut: false
+    stopTimedOut: false,
+    queued: 0,
+    queueFull: false
   };
 }

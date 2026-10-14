@@ -32,7 +32,7 @@ const SPECIFIER = /^\s*(import|export)\s+(type\s+)?[^;]*?from\s+"([^"]+)"/gm;
 
 /** The value names perf/protocol may give the report: constants and pure functions. */
 const PROTOCOL_VALUES =
-  /^(PERF_LOG_VERSION|PERF_GAP_BUCKETS|CAUSE_BITS|CAUSE_RANK|primaryCause|causeName|rateFps)$/;
+  /^(PERF_LOG_VERSION|PERF_GAP_BUCKETS|CAUSE_BITS|CAUSE_RANK|primaryCause|causeName|rateFps|cleanText)$/;
 
 describe("report boundary", () => {
   it("has the files of the spec", () => {

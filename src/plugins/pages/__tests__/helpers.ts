@@ -20,7 +20,8 @@ export const DEFAULT_CONFIG: PagesConfig = {
   title: "moku editor",
   editorUrl: "vscode://file/{path}:{line}",
   pageDir: undefined,
-  gameUrl: "/"
+  gameUrl: "/",
+  toolsPage: true
 };
 
 /** The token the fake hub hands out. */

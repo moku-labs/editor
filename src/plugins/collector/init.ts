@@ -70,7 +70,7 @@ function isWholeIn(value: number, min: number, max = Number.POSITIVE_INFINITY): 
  */
 export function validateCollectorConfig(config: Readonly<CollectorConfig>): void {
   const { out, everyS, reverseEveryMs, adb, adbTimeoutMs, appId } = config;
-  if (out.length === 0)
+  if (typeof out !== "string" || out.length === 0)
     throw configError("out", out, 'Set it to a folder, for example ".moku/perf"');
   if (!isWholeIn(everyS, EVERY_S.min, EVERY_S.max)) {
     throw configError("everyS", everyS, "Use whole seconds from 1 to 3600, for example 10");
@@ -82,7 +82,7 @@ export function validateCollectorConfig(config: Readonly<CollectorConfig>): void
       "Use whole milliseconds of 500 or more, for example 2000"
     );
   }
-  if (adb.length === 0)
+  if (typeof adb !== "string" || adb.length === 0)
     throw configError("adb", adb, 'Set it to the adb command, for example "adb"');
   if (!isWholeIn(adbTimeoutMs, MIN_MS)) {
     throw configError(

@@ -1,8 +1,10 @@
 /**
  * @file collector plugin — the one `hub:device` handler: device mode listening starts the adb
  * loop; a batch of lines goes synchronously into its log's queue (one file per device log, found
- * or created); a device that leaves makes its logs away (a reconnect appends to the same file);
- * device mode stopping makes every log done. Ignored after onStop.
+ * or created; a new log closes the files of the device's other logs; at most MAX_LIVE_LOGS live
+ * logs per device, the lines of one more are refused); a device that leaves makes its logs away (a
+ * reconnect appends to the same file); device mode stopping makes every log done. Ignored after
+ * onStop.
  */
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path/posix";
@@ -12,9 +14,12 @@ import type { DeviceLines, HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfHeaderLine, PerfLogLine } from "../perf/protocol";
 import { startAdbLoop, stopAdbLoop } from "./adb/loop";
 import { fileNameOf } from "./session/name";
-import { closeLog, emitNow, writeLines } from "./session/writer";
+import { closeFile, closeLog, emitQueued, writeLines } from "./session/writer";
 import { createLogSession } from "./state";
 import type { CollectorCtx, CollectorHooks, LogSession } from "./types";
+
+/** The most live logs one device may have (like the hub's MAX_LOGS per device record). */
+export const MAX_LIVE_LOGS = 32;
 
 /**
  * Whether a line is a header.
@@ -38,34 +43,6 @@ function outDirOf(ctx: CollectorCtx): string {
 }
 
 /**
- * The log session of a batch, created on its first batch: the model from the batch's first header,
- * else the device's, else "device"; the file named by the minute and the model, never a name
- * taken on disk or by another session.
- *
- * @param ctx - Domain context of the collector.
- * @param device - The device.
- * @param batch - The batch.
- * @returns The session.
- */
-function sessionOf(ctx: CollectorCtx, device: LinkedDevice, batch: DeviceLines): LogSession {
-  const { sessions } = ctx.state;
-  const known = sessions.get(`${device.id}/${batch.log}`);
-  if (known !== undefined) return known;
-
-  const header = batch.items.find(item => isHeader(item));
-  const model = normalizeModel(header?.device?.model) ?? device.model ?? "device";
-  const outDir = outDirOf(ctx);
-  const files = new Set([...sessions.values()].map(session => session.file));
-  const taken = (name: string): boolean =>
-    files.has(join(outDir, name)) || existsSync(join(outDir, name));
-  const file = join(outDir, fileNameOf(new Date(), model, taken));
-
-  const session = createLogSession({ device, log: batch.log, file, model });
-  sessions.set(session.key, session);
-  return session;
-}
-
-/**
  * The logs of a device.
  *
  * @param ctx - Domain context of the collector.
@@ -77,7 +54,62 @@ function sessionsOfDevice(ctx: CollectorCtx, id: string): LogSession[] {
 }
 
 /**
- * A device connected: its away logs are live again (no file is opened yet) and emit.
+ * The log session of a batch, created on its first batch: the model from the batch's first header,
+ * else the device's, else "device"; the file named by the minute and the model, never a name
+ * taken on disk or by another session. A new log closes the files of the device's other logs
+ * (they reopen on their next line). A device with MAX_LIVE_LOGS live logs gets no new one.
+ *
+ * @param ctx - Domain context of the collector.
+ * @param device - The device.
+ * @param batch - The batch.
+ * @returns The session, or undefined when the device is at the cap.
+ */
+function sessionOf(
+  ctx: CollectorCtx,
+  device: LinkedDevice,
+  batch: DeviceLines
+): LogSession | undefined {
+  const { sessions } = ctx.state;
+  const known = sessions.get(`${device.id}/${batch.log}`);
+  if (known !== undefined) return known;
+
+  const others = sessionsOfDevice(ctx, device.id);
+  if (others.filter(other => other.state === "live").length >= MAX_LIVE_LOGS) return undefined;
+
+  const header = batch.items.find(item => isHeader(item));
+  const model = normalizeModel(header?.device?.model) ?? device.model ?? "device";
+  const outDir = outDirOf(ctx);
+  const files = new Set([...sessions.values()].map(session => session.file));
+  const taken = (name: string): boolean =>
+    files.has(join(outDir, name)) || existsSync(join(outDir, name));
+  const file = join(outDir, fileNameOf(new Date(), model, taken));
+
+  const session = createLogSession({ device, log: batch.log, file, model });
+  sessions.set(session.key, session);
+  for (const other of others) void closeFile(other);
+  return session;
+}
+
+/**
+ * Refuses the batch of a log over the device's cap: its lines are counted lost on the device; the
+ * device's first refusal is warned.
+ *
+ * @param ctx - Domain context of the collector.
+ * @param device - The device.
+ * @param batch - The refused batch.
+ */
+function refuse(ctx: CollectorCtx, device: LinkedDevice, batch: DeviceLines): void {
+  const { refused } = ctx.state;
+  if (!refused.has(device.id)) {
+    ctx.log.warn("collector:log-cap", { device: device.id, log: batch.log, cap: MAX_LIVE_LOGS });
+  }
+  const lines = batch.items.length + batch.gap + batch.rejected;
+  refused.set(device.id, (refused.get(device.id) ?? 0) + lines);
+}
+
+/**
+ * A device connected: its away logs are live again (no file is opened yet) and emit, after a
+ * close still pending on their queue (so a replaced connection reports away, then live).
  *
  * @param ctx - Domain context of the collector.
  * @param device - The device.
@@ -88,7 +120,7 @@ function onConnected(ctx: CollectorCtx, device: LinkedDevice): void {
     if (session.state !== "away") continue;
     session.state = "live";
     session.device = device;
-    emitNow(ctx, session);
+    void emitQueued(ctx, session);
   }
 }
 
@@ -102,6 +134,11 @@ function onConnected(ctx: CollectorCtx, device: LinkedDevice): void {
  */
 function onLines(ctx: CollectorCtx, device: LinkedDevice, batch: DeviceLines): void {
   const session = sessionOf(ctx, device, batch);
+  if (session === undefined) {
+    refuse(ctx, device, batch);
+    return;
+  }
+
   session.device = device;
   session.state = "live";
   void writeLines(ctx, session, batch);

@@ -180,3 +180,58 @@ describe("hub:device", () => {
     expect(existsSync(join(root, ".moku"))).toBe(false);
   });
 });
+
+describe("hub:device — limits and order", () => {
+  it("closes the file of a device's other logs when it starts a new one, and reopens it on its next line (bug: a phone holding open files)", async () => {
+    const device = deviceOf();
+    hooks["hub:device"](linesEvent(device, [sampleLine(1000)]));
+    await drain();
+    hooks["hub:device"](linesEvent(device, [sampleLine(2000)], { log: "perf-2.jsonl" }));
+    await drain();
+
+    const [first, second] = ctx.state.sessions.values();
+    expect(first?.handle).toBeUndefined();
+    expect(second?.handle).toBeDefined();
+
+    hooks["hub:device"](linesEvent(device, [sampleLine(3000)], { from: 1 }));
+    await drain();
+    expect(first?.handle).toBeDefined();
+    const written = await fileLines(first?.file ?? "");
+    expect(written.map(line => line.t)).toEqual([1000, 3000]);
+  });
+
+  it("refuses a 33rd live log of one device, counts its lines lost and warns once (bug: a phone creating files without end)", async () => {
+    const device = deviceOf();
+    for (let index = 0; index < 32; index += 1) {
+      hooks["hub:device"](linesEvent(device, [sampleLine(index)], { log: `log-${index}.jsonl` }));
+    }
+    hooks["hub:device"](
+      linesEvent(device, [sampleLine(100), sampleLine(101)], { log: "log-32.jsonl" })
+    );
+    hooks["hub:device"](linesEvent(device, [sampleLine(102)], { log: "log-32.jsonl", from: 2 }));
+    await drain();
+
+    expect(ctx.state.sessions.size).toBe(32);
+    expect(ctx.state.refused.get(device.id)).toBe(3);
+    const warned = ctx.log.warn.mock.calls.filter(([event]) => event === "collector:log-cap");
+    expect(warned).toEqual([
+      ["collector:log-cap", { device: device.id, log: "log-32.jsonl", cap: 32 }]
+    ]);
+  });
+
+  it("emits away then live when the device's connection is replaced by a new one", async () => {
+    const device = deviceOf();
+    hooks["hub:device"]({ kind: "connected", device });
+    hooks["hub:device"](linesEvent(device, [sampleLine(1000)]));
+    await drain();
+    hooks["hub:device"]({
+      kind: "closed",
+      device: { ...device, online: false },
+      reason: "replaced"
+    });
+    hooks["hub:device"]({ kind: "connected", device });
+    await drain();
+
+    expect(emitted().map(event => event.state)).toEqual(["live", "away", "live"]);
+  });
+});

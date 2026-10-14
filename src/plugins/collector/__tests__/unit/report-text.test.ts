@@ -1,13 +1,16 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" in the log lines and summaries */
 import { describe, expect, it } from "vitest";
+import type { PerfHeaderLine } from "../../../perf/protocol";
 import { parsePerfLog, summarize, summaryText, table } from "../../report";
 import {
   eventLine,
   gfxLine,
+  hasUnsafeChar,
   headerLine,
   histOf,
   jsonl,
   markLine,
+  rateLine,
   sampleLine,
   spikeLine,
   thermalLine
@@ -186,5 +189,52 @@ describe("summaryText", () => {
     expect(text[heading + 3]).toBe(
       "| SM-A266B | (start) |      10 |    600 | 60.0 |    1.0 |  16 |  19 |  25 |"
     );
+  });
+});
+
+describe("summaryText — phone text", () => {
+  it("prints every phone string without control or bidi characters (bug: a log that rewrites the terminal)", () => {
+    const evil = "\u001B[2J\u202E\u0085";
+    const base = headerLine();
+    const header: PerfHeaderLine = {
+      ...base,
+      build: `b${evil}`,
+      engine: `e${evil}`,
+      device: { ...base.device, model: `M${evil}` },
+      gpu: { ...base.gpu, backend: "webgpu" }
+    };
+    const text = summaryText(
+      summarize(
+        parsePerfLog(
+          jsonl([
+            header,
+            sampleLine(1000, { path: `p${evil}` }),
+            rateLine(1500, 120, 60, `missed${evil}`),
+            eventLine(1600, "overlay", { entity: 1, label: `L${evil}`, what: "open", mode: "x" }),
+            sampleLine(2000, { path: `p${evil}` }),
+            thermalLine(2100, { device: `D${evil}`, sensors: { [`S${evil}`]: 30 } }),
+            gfxLine(2200, { device: `G${evil}` }),
+            markLine(2300, `m${evil}`)
+          ])
+        )
+      )
+    );
+
+    expect(text.filter(line => hasUnsafeChar(line))).toEqual([]);
+    const all = text.join("\n");
+    for (const shown of [
+      "p[2J",
+      "missed[2J",
+      "L[2J",
+      "D[2J",
+      "S[2J",
+      "G[2J",
+      "m[2J",
+      "b[2J",
+      "e[2J",
+      "M[2J"
+    ]) {
+      expect(all).toContain(shown);
+    }
   });
 });
