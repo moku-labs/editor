@@ -65,6 +65,8 @@ export type DeviceStripState = {
   reading: number | undefined;
   /** Stops the repaint loop of the mounted canvas (its two intervals); undefined while none runs. */
   stopPaint: (() => void) | undefined;
+  /** The strip's own UI subscribers: its values re-render the strip, not the Render workspace. */
+  listeners: Set<() => void>;
 };
 
 /**

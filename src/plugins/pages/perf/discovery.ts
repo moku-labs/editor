@@ -15,8 +15,11 @@ export const PERF_DISCOVERY_FILE = ".moku/perf.json";
 /** The highest TCP port. */
 const PORT_MAX = 65_535;
 
-/** The shape of the hub path a record may name: `/` then letters, digits and `._~/-`. */
-const PATH_SHAPE = /^\/[\w.~/-]*$/;
+/**
+ * The shape of the hub path a record may name: `/` then letters, digits and `._~/-`, never `//`
+ * first (a protocol-relative path would leave the loopback origin).
+ */
+const PATH_SHAPE = /^\/(?!\/)[\w.~/-]*$/;
 
 /**
  * The absolute path of the perf discovery file under a root.

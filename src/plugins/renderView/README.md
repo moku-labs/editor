@@ -130,6 +130,9 @@ ago", and its header bar reads "Browser".
 - Hidden Render or another session drops every device watch at once; the strip keeps its data for a return to the same session and starts empty on a new session id.
 - The graph repaints through the painter at most every 250 ms (`REPAINT_MS`) and only after a new value or a selection change; never while Render is hidden. "seen N s ago" and the REC clock re-render once a second (`RECORD_TICK_MS`). Both intervals live with the mounted canvas and stop with it; onStop clears what is left.
 - The canvas's backing store follows `width × dpr` by `height × dpr` (`dpr` clamped to 1…3) only when the CSS size or the dpr changed; the dpr transform is set before every paint. The legends are measured again once Barlow Condensed has loaded.
+- The strip has its own subscription (`device/state.ts` `notifyStrip`, `useDeviceStrip`): a device value, the selection, the record, More and the 1 s clock re-render the strip only, never the workspace snapshot (`deriveSnapshot`). A session gaining or losing its strip re-renders the workspace.
+- A click on the graph after a new window arrived and before the next repaint paints first, so the flags and bars it hits are the ones on screen.
+- Every value is checked down to each member the strip reads (`device/guards.ts`): a cause must be one of `CAUSE_STYLE`, a window must span 0 < span ≤ 60 s. A value of another shape is warned, dropped, and the last good one stays: the Render workspace never throws on it.
 - STALE: the phone's engine fingerprint (`PerfSecond.engine`, else the session's `device.engine`) against the computer's (`link.engine()`), only when both are known and differ.
 - `device/contract/` is the one door to 03's `perf/protocol` window and values, 03's `perf/graph` painter and 05's `RecorderStatus`. Units 03 and 05 are not built yet: the folder holds stand-ins written to their specs; when they land, its `index.ts` re-exports their names and the stand-in files go.
 

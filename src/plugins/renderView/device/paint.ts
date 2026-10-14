@@ -7,10 +7,10 @@
  * every paint. A second interval re-renders "seen N s ago" and the REC clock once a second. The
  * loop lives with the mounted canvas: its cleanup clears both intervals.
  */
-import { notify } from "../state";
 import type { RenderViewCtx } from "../types";
 import type { GraphContext2D, GraphState } from "./contract";
 import { paintGraph, resetGraphText, rowAt, spikeAt } from "./contract";
+import { notifyStrip } from "./state";
 import { selectedRow } from "./step";
 import { openSpike, selectFrame } from "./watch";
 
@@ -56,6 +56,16 @@ export type StripCanvas = {
 };
 
 /**
+ * The painter of a mounted canvas: the window version it painted last and a paint now.
+ */
+type Painter = { version: number; readonly paint: () => void };
+
+/**
+ * The painter of each mounted canvas, by its painter state (dropped with the canvas).
+ */
+const painters = new WeakMap<GraphState, Painter>();
+
+/**
  * Does nothing: the cleanup of a canvas that never started, and the fonts' failure path.
  */
 function stopNothing(): void {}
@@ -96,8 +106,8 @@ export function startRepaint(
   // A re-mounted canvas is blank: paint the data the strip holds at the next tick.
   if (strip.window.count > 0) strip.dirty = true;
 
+  // Paints now; records the window version it painted, so a click knows its hit boxes are fresh.
   const paint = (): void => {
-    if (!state.active || !strip.dirty) return;
     const box = canvas.getBoundingClientRect();
     if (box.width === 0 || box.height === 0) return;
     const dpr = pixelRatio();
@@ -115,7 +125,10 @@ export function startRepaint(
       selected: selectedRow(strip.window, strip.selected)
     };
     paintGraph(g, strip.window, view, graph);
+    painter.version = strip.window.version;
   };
+  const painter: Painter = { version: -1, paint };
+  painters.set(graph, painter);
   const refont = (): void => {
     resetGraphText(graph);
     if (strip.window.count > 0) strip.dirty = true;
@@ -126,13 +139,17 @@ export function startRepaint(
     fonts.ready.then(refont, stopNothing);
   }
 
-  const repaint = setInterval(paint, REPAINT_MS);
+  const repaint = setInterval(() => {
+    if (state.active && strip.dirty) paint();
+  }, REPAINT_MS);
+  // "seen N s ago" and the REC clock: only the strip re-renders, not the Render workspace.
   const tick = setInterval(() => {
-    if (state.active) notify(state);
+    if (state.active) notifyStrip(strip);
   }, RECORD_TICK_MS);
   const stop = (): void => {
     clearInterval(repaint);
     clearInterval(tick);
+    if (painters.get(graph) === painter) painters.delete(graph);
     if (strip.stopPaint === stop) strip.stopPaint = undefined;
   };
   strip.stopPaint?.();
@@ -143,7 +160,9 @@ export function startRepaint(
 /**
  * A click on the strip's graph at CSS px `(x, y)`: on a spike's flag or bar it selects that frame
  * and opens its record; elsewhere it selects the frame under the pointer (the readout box moves)
- * and leaves the record panel as it is.
+ * and leaves the record panel as it is. When a value arrived after the last paint (the window
+ * was refilled, its rows moved), the canvas is painted first, so the hit boxes are the ones of
+ * the graph the person sees.
  *
  * @param ctx - Domain context of renderView.
  * @param graph - The painter state of the last paint.
@@ -151,7 +170,10 @@ export function startRepaint(
  * @param y - CSS px from its top.
  */
 export function clickGraph(ctx: RenderViewCtx, graph: GraphState, x: number, y: number): void {
-  const { window } = ctx.state.device;
+  const strip = ctx.state.device;
+  const { window } = strip;
+  const painter = painters.get(graph);
+  if (painter !== undefined && (strip.dirty || painter.version !== window.version)) painter.paint();
   const spike = spikeAt(graph, window, x, y);
   if (spike >= 0) {
     void openSpike(ctx, window.frame[spike] ?? 0);

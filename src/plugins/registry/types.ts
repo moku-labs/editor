@@ -51,8 +51,15 @@ export type DoorSource = {
 };
 
 /**
- * Any door command with its generics erased (method syntax, see DoorSource). The overlay members
- * are optional: an engine command without them stays assignable without a cast.
+ * The `value(app)` of an overlay toggle, as a method type: its parameter compares bivariantly, so
+ * a game's `value: (app: GameLike) => boolean` fits.
+ */
+type ToggleValue = { value(app: HeadlessApp): boolean }["value"];
+
+/**
+ * Any door command with its generics erased (method syntax, see DoorSource). Every branch of the
+ * engine's overlay union fits without a cast: none (`overlay?: undefined`), a toggle with its
+ * `value`, a button.
  */
 export type DoorCommand = {
   readonly id: string;
@@ -60,10 +67,22 @@ export type DoorCommand = {
   readonly input: InputSchema;
   readonly effect: Effect;
   /** Shows the command on the overlay's Game tab (engine spec 12 H4.4). Absent: not shown. */
-  readonly overlay?: OverlayMarker;
+  readonly overlay?: OverlayMarker | undefined;
   run(app: HeadlessApp, input: InputOf<InputSchema>): unknown;
   /** The current value of an overlay toggle (engine spec 12: required with `overlay: "toggle"`). */
-  value?(app: HeadlessApp): boolean;
+  readonly value?: ToggleValue | undefined;
+};
+
+/**
+ * The plain command the engine's `run` takes: a door command without its overlay members (`run`
+ * reads `id`, `effect` and `run` only). Assignable to the engine's `Command` without a cast.
+ */
+export type RunnableCommand = {
+  readonly id: string;
+  readonly title: string;
+  readonly input: InputSchema;
+  readonly effect: Effect;
+  readonly run: (app: GameLike, input: InputOf<InputSchema>) => unknown;
 };
 
 /**
@@ -211,7 +230,7 @@ export type RegistryApi = {
    * // A plain --debug build of the merge game on a phone:
    * app.registry.manifest().build; // { profile: "read", id: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" }
    * app.registry.manifest().commands.find(command => command.id === "game.tap");
-   * // { id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route", allowed: false, reason: "read-only" }
+   * // { id: "game.tap", title: "Tap", input: { key: "string?", target: "json?" }, effect: "route", allowed: false, reason: "read-only" }
    * ```
    */
   manifest(): Manifest;

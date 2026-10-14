@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
+import type { PreparedPage } from "@moku-labs/game/cli";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addSignalHandler,
@@ -227,8 +228,12 @@ describe("reexecBin", () => {
  *
  * @returns Its HTML and bunfig paths.
  */
-function enginePage(): { html: string; bunfig: string } {
-  return { html: join(root, ".moku", "index.html"), bunfig: join(root, ".moku", "bunfig.toml") };
+function enginePage(): PreparedPage {
+  return {
+    html: join(root, ".moku", "index.html"),
+    bunfig: join(root, ".moku", "bunfig.toml"),
+    engine: { id: "0.0.0+src", version: "0.0.0", dist: "src", folder: "/fixture" }
+  };
 }
 
 /**

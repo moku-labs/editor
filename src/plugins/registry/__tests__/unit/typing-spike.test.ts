@@ -5,6 +5,7 @@ import { commands, defineCommand, run } from "@moku-labs/game/control";
 import type { InputOf as GameInputOf } from "@moku-labs/game/inspect";
 import { read, sources, watch } from "@moku-labs/game/inspect";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { runnableOf } from "../../entries/command-entry";
 import type { InputOf, InputSchema, Json } from "../../protocol";
 import type { DevModule, DoorCommand, DoorSource, GameLike } from "../../types";
 import { createBareApp } from "../helpers";
@@ -44,7 +45,8 @@ const readErased = (game: GameLike, door: DoorSource, input: InputOf<InputSchema
   read(game, door, input);
 
 /**
- * Runs an erased command with checked input.
+ * Runs an erased command with checked input. The engine's `run` takes one branch of its overlay
+ * union, so the door goes through its plain projection (`runnableOf`, the one the registry uses).
  *
  * @param game - The game.
  * @param door - Any door command.
@@ -52,7 +54,7 @@ const readErased = (game: GameLike, door: DoorSource, input: InputOf<InputSchema
  * @returns The door's Ran.
  */
 const runErased = (game: GameLike, door: DoorCommand, input: InputOf<InputSchema>) =>
-  run(game, door, input);
+  run(game, runnableOf(door), input);
 
 /**
  * Watches an erased source.
@@ -91,8 +93,8 @@ describe("typing spike (S1)", () => {
       commands: Object.values(commands)
     };
 
-    expect(module.sources).toHaveLength(20);
-    expect(module.commands).toHaveLength(17);
+    expect(module.sources).toHaveLength(21);
+    expect(module.commands).toHaveLength(20);
   });
 
   it("fits a defineCommand with App = GameLike and an optional json field into DoorCommand", () => {

@@ -210,6 +210,19 @@ describe("the repaint loop", () => {
     expect(graph.measured).toBe(false);
   });
 
+  it("the 1 s tick re-renders only the strip, not the Render workspace", () => {
+    startRepaint(ctx, fakeCanvas(), createGraphState(1024));
+    const workspace = vi.fn();
+    const strip = vi.fn();
+    ctx.state.listeners.add(workspace);
+    ctx.state.device.listeners.add(strip);
+
+    vi.advanceTimersByTime(1000);
+
+    expect(strip).toHaveBeenCalled();
+    expect(workspace).not.toHaveBeenCalled();
+  });
+
   it("the cleanup leaves no interval, also when onStop runs it", () => {
     const stop = startRepaint(ctx, fakeCanvas(), createGraphState(1024));
     expect(vi.getTimerCount()).toBe(2);

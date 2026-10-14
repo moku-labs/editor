@@ -3,6 +3,7 @@
  * (doors carry functions). A command descriptor carries its build verdict and overlay marker.
  */
 import type { CommandDescriptor, CommandRefusal, SourceDescriptor } from "../protocol";
+import type { DoorCommand } from "../types";
 
 /**
  * A fresh frozen source descriptor `{ id, title, input, changes }`.
@@ -42,7 +43,7 @@ export function describeSource(source: SourceDescriptor): SourceDescriptor {
  * ```
  */
 export function describeCommand(
-  command: CommandDescriptor,
+  command: CommandDescriptor | DoorCommand,
   refusal?: CommandRefusal
 ): CommandDescriptor {
   return Object.freeze({

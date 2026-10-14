@@ -52,7 +52,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `build()` | `BuildInfo` | `{ profile, id?, engine? }` of this page (see "Build profile and allowed commands"). Read once; the flags of a page never change. |
 
 ```ts
-registry.manifest().commands.length; // 17 door commands + module + editor commands
+registry.manifest().commands.length; // 20 door commands + module + editor commands
 registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
 await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
 registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }
@@ -266,7 +266,7 @@ import { createApp } from "@moku-labs/editor/agent";
 const editor = createApp({
   pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "merge-game 0.0.0" } }
 });
-editor.registry.manifest().sources.length; // 20 door sources + the module's sources
+editor.registry.manifest().sources.length; // 21 door sources + the module's sources
 ```
 
 From another agent plugin:

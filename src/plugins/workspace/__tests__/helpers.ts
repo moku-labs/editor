@@ -159,9 +159,9 @@ export type LinkMock = {
   /** The id `engine()` answers. */
   engineValue: string | undefined;
   /** Live engine listeners. */
-  readonly engineListeners: Set<(engine: string) => void>;
+  readonly engineListeners: Set<(engine: string | undefined) => void>;
   /** Sets the engine id and calls every engine listener, like link on `editor.engine`. */
-  publishEngine(engine: string): void;
+  publishEngine(engine: string | undefined): void;
   /** Live manifest listeners. */
   readonly manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** Sets the manifest and calls every listener, like link on an attach. */
@@ -176,7 +176,7 @@ export type LinkMock = {
 export function createLinkMock(): LinkMock {
   const listeners = new Set<(manifest: Manifest | undefined) => void>();
   const tapListeners = new Set<TapListener>();
-  const engineListeners = new Set<(engine: string) => void>();
+  const engineListeners = new Set<(engine: string | undefined) => void>();
   const link: LinkMock = {
     current: { kind: "connecting" },
     manifestValue: undefined,

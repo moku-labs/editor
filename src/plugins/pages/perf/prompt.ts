@@ -34,10 +34,11 @@ function enginePart(engine: string | null): string {
 
 /**
  * Whether the phone's own text shows the code: a phone that prints the code into its model,
- * engine or build would get the person to type it.
+ * engine or build would get the person to type it. Only a standalone digit run counts: "4821"
+ * in "SM-4821" shows it, "1014" inside "20261014" does not.
  *
  * @param request - The pairing request.
- * @returns True when the model, engine or build contains the code.
+ * @returns True when the model, engine or build has the code as a whole digit run.
  * @example
  * ```ts
  * showsCode({ code: "4821", model: "SM-4821", address: "192.168.1.23", link: "lan", engine: null, build: null }); // true
@@ -45,7 +46,7 @@ function enginePart(engine: string | null): string {
  */
 function showsCode(request: PairRequest): boolean {
   const texts = [request.model, request.engine, request.build];
-  return texts.some(text => text?.includes(request.code) === true);
+  return texts.some(text => text?.match(/\d+/g)?.includes(request.code) === true);
 }
 
 /**

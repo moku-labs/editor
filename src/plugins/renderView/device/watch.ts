@@ -17,7 +17,7 @@ import type { RenderViewCtx, RenderViewState } from "../types";
 import { readWireWindow } from "./contract";
 import { stripView } from "./derive";
 import { isPerfSecond, isRecorderStatus, isSpikeList, isSpikeRecord } from "./guards";
-import { clearStripData } from "./state";
+import { clearStripData, notifyStrip } from "./state";
 import { stepFrom } from "./step";
 import type { DeviceStripView } from "./types";
 
@@ -123,7 +123,7 @@ function onValue(
       return;
     }
     strip.dirty = true;
-    notify(ctx.state);
+    notifyStrip(ctx.state.device);
   };
 }
 
@@ -242,7 +242,7 @@ async function readRecord(ctx: RenderViewCtx, frame: number): Promise<void> {
     if (strip.reading !== frame) return;
     strip.reading = undefined;
     strip.record = { kind: "failed", frame, message: bareMessage(toWireError(error).message) };
-    notify(ctx.state);
+    notifyStrip(ctx.state.device);
     return;
   }
   if (strip.reading !== frame) return;
@@ -251,7 +251,7 @@ async function readRecord(ctx: RenderViewCtx, frame: number): Promise<void> {
   if (answer === null) strip.record = { kind: "gone", frame };
   else if (isSpikeRecord(answer)) strip.record = { kind: "shown", frame, record: answer };
   else strip.record = { kind: "failed", frame, message: `${PERF_SPIKE}: unexpected shape` };
-  notify(ctx.state);
+  notifyStrip(ctx.state.device);
 }
 
 /**
@@ -274,7 +274,7 @@ export function openSpike(ctx: RenderViewCtx, frame: number): Promise<void> {
   strip.record = { kind: "loading", frame };
   strip.reading = frame;
   strip.dirty = true;
-  notify(state);
+  notifyStrip(strip);
   const read = readRecord(ctx, frame).finally(() => {
     if (pending.get(state) === read) pending.delete(state);
   });
@@ -291,7 +291,7 @@ export function openSpike(ctx: RenderViewCtx, frame: number): Promise<void> {
 export function selectFrame(ctx: RenderViewCtx, frame: number): void {
   ctx.state.device.selected = frame;
   ctx.state.device.dirty = true;
-  notify(ctx.state);
+  notifyStrip(ctx.state.device);
 }
 
 /**
@@ -319,7 +319,7 @@ export function closeSpike(ctx: RenderViewCtx): void {
   const strip = ctx.state.device;
   strip.record = { kind: "closed" };
   strip.reading = undefined;
-  notify(ctx.state);
+  notifyStrip(ctx.state.device);
 }
 
 /**
@@ -330,5 +330,5 @@ export function closeSpike(ctx: RenderViewCtx): void {
  */
 export function setMore(ctx: RenderViewCtx, open: boolean): void {
   ctx.state.device.more = open;
-  notify(ctx.state);
+  notifyStrip(ctx.state.device);
 }

@@ -7,6 +7,7 @@ import type { PanelTools } from "../../../panels/types";
 import type { LinkStatus, SessionInfo } from "../../../registry/protocol";
 import { toWireValue } from "../../../registry/protocol";
 import { createRenderViewApi } from "../../api";
+import { deriveSnapshot } from "../../derive";
 import { rowAt, spikeAt } from "../../device/contract";
 import { createHandlers } from "../../handlers";
 import { startRenderView, stopRenderView } from "../../lifecycle";
@@ -36,6 +37,11 @@ import {
 // keys, a canvas click (the painter's hit tests mocked), the record panel and
 // its empty state, More / Less, the REC cell, the tree card's device note.
 // ─────────────────────────────────────────────────────────────────────────────
+
+vi.mock("../../derive", async importOriginal => {
+  const actual = await importOriginal<typeof import("../../derive")>();
+  return { ...actual, deriveSnapshot: vi.fn(actual.deriveSnapshot) };
+});
 
 vi.mock("../../device/contract", async importOriginal => {
   const actual = await importOriginal<typeof import("../../device/contract")>();
@@ -287,5 +293,48 @@ describe("the render tree card beside the strip", () => {
     await strip(deviceSession("s-1"), GAME_01_SOURCES);
 
     expect(q("[data-render='device-strip']")).toBeNull();
+  });
+});
+
+describe("the strip's own re-render (review W1, W4)", () => {
+  it("an off-shape value never throws and the Render workspace still renders", async () => {
+    await strip(deviceSession("s-1", DEVICE));
+    const second = toWireValue(secondOf()) as { [key: string]: object };
+
+    act(() => {
+      ctx.link.send("editor.perf.second", {
+        ...second,
+        display: { ...second.display, canvas: null }
+      });
+      ctx.link.send("editor.perf.spikes", [
+        { ...(toWireValue(spikesOf()[0]) as object), cause: "boom" }
+      ]);
+    });
+    vi.mocked(ctx.link.api.read).mockResolvedValue({
+      ...(toWireValue(recordOf()) as object),
+      detail: {}
+    });
+    click(q("[data-part='nav'] [data-action='next-spike']"));
+    await act(flush);
+
+    expect(q("[data-render='tiles']")).not.toBeNull();
+    expect(q("[data-part='model-name']")?.textContent).toBe("SM-A266B");
+    expect(q("[data-part='more']")?.textContent).toContain("canvas 1080 \u00D7 2340");
+    expect(ctx.state.device.record).toMatchObject({ kind: "failed" });
+    expect(ctx.log.warn).toHaveBeenCalledWith("renderView: unexpected source shape", {
+      id: "editor.perf.second"
+    });
+  });
+
+  it("a device value re-renders the strip, not the workspace snapshot", async () => {
+    await strip(deviceSession("s-1", DEVICE));
+    vi.mocked(deriveSnapshot).mockClear();
+
+    act(() => {
+      ctx.link.send("editor.perf.second", toWireValue(secondOf({ fps: { loop: 60, drawn: 41 } })));
+    });
+
+    expect(q("[data-part='headline']")?.textContent).toContain("drawn / loop 41 / 60");
+    expect(deriveSnapshot).not.toHaveBeenCalled();
   });
 });

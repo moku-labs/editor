@@ -73,8 +73,8 @@ describe("manifest()", () => {
     expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.page).toBe("");
     expect(manifest.embedded).toBe(false);
-    expect(manifest.sources).toHaveLength(20);
-    expect(manifest.commands).toHaveLength(18);
+    expect(manifest.sources).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(21);
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
   });
 

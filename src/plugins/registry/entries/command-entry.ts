@@ -6,9 +6,9 @@
  */
 import type { Log } from "@moku-labs/common/browser";
 import { run } from "@moku-labs/game/control";
-import type { Json, RunResult } from "../protocol";
+import type { InputOf, InputSchema, Json, RunResult } from "../protocol";
 import { ProtocolError, refusalOf } from "../protocol";
-import type { CommandEntry, DoorCommand, GameLike } from "../types";
+import type { CommandEntry, DoorCommand, GameLike, RunnableCommand } from "../types";
 import { describeCommand } from "./descriptor";
 import {
   checkedInput,
@@ -43,6 +43,23 @@ function runFailure(id: string, error: unknown, log: Log.LogApi): ProtocolError 
 }
 
 /**
+ * The plain command the engine's `run` takes for a door: its overlay members left out (a door may
+ * carry any branch of the engine's overlay union; `run` reads `id`, `effect` and `run` only).
+ *
+ * @param door - The door command.
+ * @returns A fresh runnable command whose run calls the door's.
+ */
+export function runnableOf(door: DoorCommand): RunnableCommand {
+  return {
+    id: door.id,
+    title: door.title,
+    input: door.input,
+    effect: door.effect,
+    run: (app: GameLike, input: InputOf<InputSchema>): unknown => door.run(app, input)
+  };
+}
+
+/**
  * Builds the entry of a door (or module) command. Its `run` is async and never throws
  * synchronously. The descriptor's `allowed` / `reason` come from this page's build (its flags
  * never change); an overlay toggle's entry has `value()`.
@@ -55,6 +72,7 @@ function runFailure(id: string, error: unknown, log: Log.LogApi): ProtocolError 
 export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi): CommandEntry {
   const descriptor = describeCommand(door, refusalOf(readBuildInfo().profile, door.effect));
   const { id } = descriptor;
+  const runnable = runnableOf(door);
 
   return Object.freeze({
     descriptor,
@@ -66,7 +84,7 @@ export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi)
      */
     run: async (raw: Json): Promise<RunResult> => {
       const input = checkedInput(id, door.input, raw);
-      const ran = await run(game, door, input).catch((error: unknown) => {
+      const ran = await run(game, runnable, input).catch((error: unknown) => {
         throw runFailure(id, error, log);
       });
       const { path, frame, tainted } = ran.state;

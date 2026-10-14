@@ -586,11 +586,11 @@ export type LinkApi = EditorChannel & {
   engine(): string | undefined;
   /**
    * Listens to the computer's engine fingerprint: called at once when it is known, then on each
-   * change. The replay of the same id after a reconnect calls nothing; a change to "unknown"
-   * calls nothing either (`engine()` answers undefined from then on). A throwing listener is
-   * logged and does not stop the others.
+   * change. The replay of the same id after a reconnect calls nothing; a change from a known id
+   * to "unknown" calls it with `undefined` (`engine()` answers undefined from then on). A
+   * throwing listener is logged and does not stop the others.
    *
-   * @param listener - Called with the id.
+   * @param listener - Called with the id; with undefined when the hub no longer knows one.
    * @returns An idempotent unsubscribe.
    * @example
    * ```ts
@@ -599,7 +599,7 @@ export type LinkApi = EditorChannel & {
    * stop();
    * ```
    */
-  onEngine(listener: (engine: string) => void): () => void;
+  onEngine(listener: (engine: string | undefined) => void): () => void;
   /**
    * The files channel client.
    *
@@ -698,7 +698,7 @@ export type LinkState = {
   /** The computer-side engine fingerprint id the hub published (`editor.engine`); kept across reconnects. */
   engine: string | undefined;
   /** onEngine listeners (wrappers, like hotReloadListeners). */
-  engineListeners: Set<(engine: string) => void>;
+  engineListeners: Set<(engine: string | undefined) => void>;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
   /**

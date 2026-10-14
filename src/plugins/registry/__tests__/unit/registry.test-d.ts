@@ -1,4 +1,5 @@
 import type { Command } from "@moku-labs/game/control";
+import { defineCommand } from "@moku-labs/game/control";
 import { describe, expectTypeOf, it } from "vitest";
 import type { AgentEvents } from "../../../../config";
 import { createAgentPlugin } from "../../../../config";
@@ -19,11 +20,26 @@ import type {
 
 declare const registry: RegistryApi;
 
-/** A command of the shipped engine: the 0.14.12 Command plus the overlay members (spec 12 H4.4). */
-type ShippedCommand = Command<{ on: "boolean" }, boolean, GameLike> & {
-  readonly overlay?: "toggle" | "button";
-  value?(app: GameLike): boolean;
-};
+/** A game toggle of the engine's overlay union (spec 12 H4.4): input `{ on: "boolean" }` and `value(app)`. */
+const glow = defineCommand({
+  id: "garden.glow",
+  title: "Glow",
+  input: { on: "boolean" },
+  effect: "cosmetic",
+  overlay: "toggle",
+  value: (app: GameLike) => app.time.isPaused(),
+  run: (_app: GameLike, { on }) => on
+});
+
+/** A game button of the engine's overlay union: no required input, no value. */
+const boss = defineCommand({
+  id: "garden.boss",
+  title: "Boss fight",
+  input: {},
+  effect: "route",
+  overlay: "button",
+  run: () => true
+});
 
 describe("registry types", () => {
   it("add takes a command entry or a source entry, and nothing with neither run nor read", () => {
@@ -33,9 +49,11 @@ describe("registry types", () => {
     registry.add({ descriptor: { id: "editor.x", title: "X", input: {}, effect: "read" } });
   });
 
-  it("takes an engine 0.14.12 command and a shipped command with overlay and value as a DoorCommand", () => {
+  it("takes every branch of the engine's Command union as a DoorCommand: none, toggle, button", () => {
     expectTypeOf<Command<{ frames: "number" }, unknown, GameLike>>().toExtend<DoorCommand>();
-    expectTypeOf<ShippedCommand>().toExtend<DoorCommand>();
+    expectTypeOf<Command<{ on: "boolean" }, boolean, GameLike>>().toExtend<DoorCommand>();
+    expectTypeOf(glow).toExtend<DoorCommand>();
+    expectTypeOf(boss).toExtend<DoorCommand>();
   });
 
   it("refuses an unknown overlay marker on a DoorCommand", () => {

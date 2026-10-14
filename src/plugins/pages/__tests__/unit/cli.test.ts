@@ -705,7 +705,8 @@ describe("startBin engine page (B5)", () => {
   /** The page the stubbed engine writes. */
   const page = () => ({
     html: join(moku, ".moku", "index.html"),
-    bunfig: join(moku, ".moku", "bunfig.toml")
+    bunfig: join(moku, ".moku", "bunfig.toml"),
+    engine: { id: "0.0.0+src", version: "0.0.0", dist: "src", folder: "/fixture" }
   });
 
   /**

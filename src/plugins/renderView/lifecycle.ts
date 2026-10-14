@@ -7,11 +7,11 @@
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
+import { notifyStrip } from "./device/state";
 import { stopDeviceWatches } from "./device/watch";
 import { onWorkspaceChanged } from "./handlers";
 import { removeOverlay } from "./overlay";
 import { createRenderPanel } from "./panel";
-import { notify } from "./state";
 import type { RenderViewCtx, RenderViewState } from "./types";
 import { recalibrate, startTracker, stopEffects } from "./watch";
 
@@ -39,7 +39,7 @@ export function startRenderView(ctx: RenderViewCtx): void {
   startTracker(ctx);
   ctx.state.tracker.push(
     ctx.require(linkPlugin).onEngine(() => {
-      notify(ctx.state);
+      notifyStrip(ctx.state.device);
     }),
     workspace.onPrefs(prefs => {
       const next = `${prefs.device.preset.id}/${prefs.device.orientation}`;
@@ -72,6 +72,7 @@ export function stopRenderView(ctx: { readonly state: RenderViewState }): void {
   stopDeviceWatches(state);
   state.device.stopPaint?.();
   state.device.reading = undefined;
+  state.device.listeners.clear();
   removeOverlay(state);
   state.palette?.();
   state.palette = undefined;

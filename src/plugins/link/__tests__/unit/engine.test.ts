@@ -55,7 +55,7 @@ describe("readEngine", () => {
 describe("editor.engine notification", () => {
   it("the first editor.engine stores the id and calls the listeners", () => {
     const api = createLinkApi(ctx);
-    const seen: string[] = [];
+    const seen: (string | undefined)[] = [];
     api.onEngine(id => seen.push(id));
     expect(api.engine()).toBeUndefined();
 
@@ -82,7 +82,7 @@ describe("editor.engine notification", () => {
 
   it("a new id calls the listeners", () => {
     const api = createLinkApi(ctx);
-    const seen: string[] = [];
+    const seen: (string | undefined)[] = [];
     socket.notify("editor", "engine", ENGINE);
     api.onEngine(id => seen.push(id));
 
@@ -109,11 +109,20 @@ describe("editor.engine notification", () => {
 
     socket.notify("editor", "engine", { ...ENGINE, id: "unknown" });
     expect(api.engine()).toBeUndefined();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("a change from a known id to 'unknown' calls the listeners with undefined (review I5)", () => {
+    const api = createLinkApi(ctx);
+    const listener = vi.fn();
+    api.onEngine(listener);
 
     socket.notify("editor", "engine", ENGINE);
     socket.notify("editor", "engine", { ...ENGINE, id: "unknown" });
+    socket.notify("editor", "engine", { ...ENGINE, id: "unknown" });
+
     expect(api.engine()).toBeUndefined();
-    expect(listener.mock.calls).toEqual([["0.14.13+1ab7f2"]]);
+    expect(listener.mock.calls).toEqual([["0.14.13+1ab7f2"], [undefined]]);
   });
 
   it("onEngine is called at once when the id is known; its unsubscribe is idempotent", () => {

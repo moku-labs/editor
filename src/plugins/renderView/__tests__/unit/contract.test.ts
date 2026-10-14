@@ -122,6 +122,27 @@ describe("readWireWindow", () => {
   });
 });
 
+describe("readWireWindow · the span (review W2)", () => {
+  it("refuses a span that is not finite or outside 0 < span ≤ 60 s, and accepts 60 s", () => {
+    const window = demoWindow();
+    const wire = windowWire();
+    for (const endMs of [
+      wire.startMs,
+      wire.startMs - 1,
+      wire.startMs + 60_001,
+      Number.POSITIVE_INFINITY
+    ]) {
+      expect(readWireWindow({ ...(wireJson(wire) as object), endMs }, window), String(endMs)).toBe(
+        false
+      );
+    }
+    expect(window.version).toBe(1);
+    expect(
+      readWireWindow({ ...(wireJson(wire) as object), endMs: wire.startMs + 60_000 }, window)
+    ).toBe(true);
+  });
+});
+
 describe("rowOfFrame and meanGpu", () => {
   it("finds a frame's row; −1 for a frame outside the window", () => {
     const window = demoWindow();
@@ -175,6 +196,43 @@ describe("paintGraph and the hit tests", () => {
     expect(rowAt(state, window, state.px0)).toBe(0);
     expect(rowAt(state, window, state.px1 + 40)).toBe(359);
     expect(rowAt(state, createPerfWindow(4), 10)).toBe(-1);
+  });
+
+  it("each plain row's JS bar spans its own time and is at least 1 px wide (review I8)", () => {
+    const window = demoWindow();
+    const bars: { x: number; width: number }[] = [];
+    const g: GraphContext2D = {
+      ...recordingContext().g,
+      fillRect: (x, _y, width) => {
+        if (g.fillStyle === "#A8F0FF") bars.push({ x, width });
+      }
+    };
+
+    paintGraph(
+      g,
+      window,
+      { width: 1000, height: 200, wide: true, selected: -1 },
+      createGraphState(1024)
+    );
+
+    expect(bars).toHaveLength(354);
+    expect(bars.every(bar => bar.width >= 1)).toBe(true);
+    expect(bars.every((bar, index) => index === 0 || bar.x > (bars[index - 1]?.x ?? 0))).toBe(true);
+  });
+
+  it("paints at most 60 axis seconds whatever the window's span", () => {
+    const window = demoWindow();
+    window.endMs = window.startMs + 1e9;
+    const { g, texts } = recordingContext();
+
+    paintGraph(
+      g,
+      window,
+      { width: 1000, height: 200, wide: true, selected: -1 },
+      createGraphState(1024)
+    );
+
+    expect(texts.filter(text => text.endsWith(" s")).length).toBeLessThanOrEqual(60);
   });
 
   it("reads SKIP for a skipped frame and labels a rate switch", () => {

@@ -52,7 +52,8 @@ describe("createRenderViewState", () => {
         dirty: false,
         watches: [],
         reading: undefined,
-        stopPaint: undefined
+        stopPaint: undefined,
+        listeners: new Set()
       }
     });
   });

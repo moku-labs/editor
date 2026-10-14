@@ -1,7 +1,7 @@
 /* eslint-disable unicorn/no-null -- null is "not known" on the digest, the device and the pairing request */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writePerfDiscovery } from "../../discovery";
-import { perfMark } from "../../mark";
+import { isRunOrigin, markUrl, perfMark } from "../../mark";
 import type { PerfDeps } from "../../types";
 import { perfDeps, recordingConsole, removeRoot, tempRoot } from "../helpers";
 
@@ -121,7 +121,7 @@ describe("perfMark", () => {
 });
 
 describe("perfMark hardening (W1, W2)", () => {
-  it("refuses a perf.json whose path leads to another host, without a request", async () => {
+  it("refuses a perf.json whose path starts with // (another host or port), without a request", async () => {
     release();
     release = writePerfDiscovery(root, {
       pid: 4242,
@@ -136,7 +136,15 @@ describe("perfMark hardening (W1, W2)", () => {
     expect(code).toBe(1);
     expect(fetch).not.toHaveBeenCalled();
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^ {2}✗ \[moku-editor\] [^\n]*evil\.example[^\n]*\n {2}\S[^\n]*$/);
+    expect(lines[0]).toMatch(/^ {2}✗ \[moku-editor\] [^\n]*\n {2}\S[^\n]*$/);
+  });
+
+  it("posts only to the run's own loopback origin: the host and the port must match (review I6)", () => {
+    expect(isRunOrigin(markUrl("/__editor", 47_600), 47_600)).toBe(true);
+    expect(markUrl("/__editor", 47_600).href).toBe("http://127.0.0.1:47600/__editor/perf/mark");
+    expect(isRunOrigin(markUrl("//127.0.0.1", 47_600), 47_600)).toBe(false);
+    expect(isRunOrigin(markUrl("//127.0.0.1:9999", 47_600), 47_600)).toBe(false);
+    expect(isRunOrigin(markUrl("//evil.example", 47_600), 47_600)).toBe(false);
   });
 
   it("prints the reply body on one line without control characters, at most 120 characters", async () => {

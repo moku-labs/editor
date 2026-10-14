@@ -11,11 +11,12 @@ import type { LinkStatus } from "../../../registry/protocol";
 import type { RenderViewCtx } from "../../types";
 import { headline, moreText } from "../derive";
 import type { DeviceStripView, StripLine } from "../types";
-import { setMore } from "../watch";
+import { deviceView, setMore } from "../watch";
 import { DeviceRow } from "./DeviceRow";
 import { Legend } from "./Legend";
 import { SpikePanel } from "./SpikePanel";
 import { StripGraph } from "./StripGraph";
+import { useDeviceStrip } from "./useDeviceStrip";
 
 /**
  * Props of `DeviceStrip`.
@@ -23,7 +24,6 @@ import { StripGraph } from "./StripGraph";
 export type DeviceStripProps = {
   readonly ctx: RenderViewCtx;
   readonly status: LinkStatus;
-  readonly view: DeviceStripView;
 };
 
 /**
@@ -87,14 +87,17 @@ function HeaderBar(props: { readonly ctx: RenderViewCtx; readonly view: DeviceSt
 }
 
 /**
- * The D1 device strip.
+ * The D1 device strip. It subscribes to the strip's own notifications: a device value re-renders
+ * the strip only, not the Render workspace around it.
  *
- * @param props - ctx, the link status and the strip view.
- * @returns The strip.
+ * @param props - ctx and the link status.
+ * @returns The strip; undefined while the session has none.
  */
-export function DeviceStrip(props: DeviceStripProps): VNode {
-  const { ctx, status, view } = props;
+export function DeviceStrip(props: DeviceStripProps): VNode | undefined {
+  const { ctx, status } = props;
   const strip = ctx.state.device;
+  const view = useDeviceStrip(strip, () => deviceView(ctx));
+  if (view === undefined) return undefined;
   const stale = status.kind === "silent" || status.kind === "lost";
   const browser = view.link.kind === "browser";
   return (

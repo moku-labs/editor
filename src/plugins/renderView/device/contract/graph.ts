@@ -211,6 +211,11 @@ type Layout = (typeof LAYOUTS)[keyof typeof LAYOUTS];
 const SCALE_MS = 45;
 
 /**
+ * The most axis labels a paint draws: a window is at most 60 s (`readWireWindow` refuses more).
+ */
+const MAX_AXIS_SECONDS = 60;
+
+/**
  * Grid lines, ms.
  */
 const GRID_MS = [10, 20, 30, 40] as const;
@@ -292,17 +297,30 @@ function xOf(state: GraphState, t: number): number {
 }
 
 /**
- * The left and right x of a row's bar: from its start to the next row's (the newest to `px1`).
+ * The span of the row `spanOf` measured last, reused for every row: the painter allocates nothing
+ * per row (03's no-allocation rule). Read it right after the call.
+ */
+const SPAN = { x0: 0, x1: 0 };
+
+/**
+ * Measures the left and right x of a row's bar into `SPAN`: from its start to the next row's (the
+ * newest to `px1`), at least 1 px wide.
  *
  * @param state - The painter state.
  * @param window - The window.
  * @param row - A row.
- * @returns `[x0, x1]`.
+ * @returns The shared `SPAN`, filled for this row.
  */
-function spanOf(state: GraphState, window: PerfWindowView, row: number): [number, number] {
+function spanOf(
+  state: GraphState,
+  window: PerfWindowView,
+  row: number
+): { readonly x0: number; readonly x1: number } {
   const x0 = xOf(state, window.t[row] ?? 0);
   const x1 = row + 1 < window.count ? xOf(state, window.t[row + 1] ?? 0) : state.px1;
-  return [x0, Math.max(x1, x0 + 1)];
+  SPAN.x0 = x0;
+  SPAN.x1 = Math.max(x1, x0 + 1);
+  return SPAN;
 }
 
 /**
@@ -343,7 +361,7 @@ function paintRows(plot: Plot): void {
 
   for (let row = 0; row < window.count; row += 1) {
     if ((window.cause[row] ?? 0) !== 0) continue;
-    const [x0, x1] = spanOf(state, window, row);
+    const { x0, x1 } = spanOf(state, window, row);
     const width = x1 - x0 + 0.35;
     const js = window.jsMs[row] ?? 0;
     const gpu = window.gpuMs[row] ?? Number.NaN;
@@ -410,7 +428,7 @@ function paintBudget(plot: Plot, share: number): void {
   g.setLineDash(share === 1 ? [] : [4, 3]);
   g.beginPath();
   for (let row = 0; row < window.count; row += 1) {
-    const [x0, x1] = spanOf(state, window, row);
+    const { x0, x1 } = spanOf(state, window, row);
     const y = yOf(plot, (window.budgetMs[row] ?? 0) * share);
     if (row === 0) g.moveTo(x0, y);
     else g.lineTo(x0, y);
@@ -502,7 +520,7 @@ function paintSpike(plot: Plot, row: number, selected: boolean): void {
   const { g, window, state, layout } = plot;
   const cause = causeName(window.cause[row] ?? 0) ?? "gap";
   const style = CAUSE_STYLE[cause];
-  const [x0, x1] = spanOf(state, window, row);
+  const { x0, x1 } = spanOf(state, window, row);
   const centre = (x0 + x1) / 2;
   const ms = window.ms[row] ?? 0;
   const top = yOf(plot, ms);
@@ -567,7 +585,7 @@ function paintSpikes(plot: Plot): void {
   const { window, state, view } = plot;
   const focus = focusRow(plot);
   if (focus >= 0) {
-    const [x0, x1] = spanOf(state, window, focus);
+    const { x0, x1 } = spanOf(state, window, focus);
     band(plot, COLOUR.ink, (x0 + x1) / 2, 1, plot.py0, plot.py1);
   }
   state.flagCount = 0;
@@ -707,7 +725,7 @@ function paintText(plot: Plot, row: number): void {
 
   g.font = layout.axisFont;
   g.fillStyle = COLOUR.ink3;
-  const seconds = Math.max(1, Math.round(state.spanMs / 1000));
+  const seconds = Math.min(MAX_AXIS_SECONDS, Math.max(1, Math.round(state.spanMs / 1000)));
   const step = view.wide ? 1 : seconds;
   for (let second = seconds; second > 0; second -= step) {
     const x = plot.px1 - ((plot.px1 - plot.px0) * second) / seconds;
@@ -788,7 +806,7 @@ export function spikeAt(state: GraphState, window: PerfWindowView, x: number, y:
   let distance = 9;
   for (let index = 0; index < window.spikeCount; index += 1) {
     const row = window.spikes[index] ?? 0;
-    const [x0, x1] = spanOf(state, window, row);
+    const { x0, x1 } = spanOf(state, window, row);
     const away = Math.abs((x0 + x1) / 2 - x);
     if (away <= distance) {
       best = row;

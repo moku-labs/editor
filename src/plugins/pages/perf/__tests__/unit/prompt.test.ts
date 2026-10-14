@@ -128,6 +128,20 @@ describe("pairPrompt hardening (W4)", () => {
     }
   });
 
+  it("a code inside a longer digit run is not the code shown: the person is asked (review I7)", async () => {
+    const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve("1014"));
+    const { ui } = recordingConsole();
+    const request = {
+      ...REQUEST,
+      code: "1014",
+      model: "SM-A10145",
+      build: "debug-20261014T160000Z"
+    };
+
+    expect(await pairPrompt(ui, ask)(request, new AbortController().signal)).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
   it("prints the engine only when it looks like an engine id or is unknown", async () => {
     expect(await shown("0.14.12")).toBe(
       "◆ SM-A266B at 192.168.1.23 (lan) asks to link · engine 0.14.12"

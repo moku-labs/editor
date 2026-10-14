@@ -83,7 +83,9 @@ describe("readPerfDiscovery shape (W1)", () => {
       { path: "__editor" },
       { path: "/__editor?x=1" },
       { path: "/__editor@evil" },
-      { path: "/a b" }
+      { path: "/a b" },
+      { path: "//127.0.0.1" },
+      { path: "//evil.example/__editor" }
     ];
     for (const fields of bad) {
       await writeFile(perfDiscoveryPath(root), JSON.stringify({ version: 1, ...INPUT, ...fields }));

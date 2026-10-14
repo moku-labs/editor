@@ -62,6 +62,37 @@ function markedOf(text: string): number | undefined {
 }
 
 /**
+ * The mark route of a run: `<path>/perf/mark` resolved against the loopback origin of its port.
+ *
+ * @param path - The hub path the discovery record names.
+ * @param port - The port of the run.
+ * @returns The URL; check it with `isRunOrigin` before posting the token to it.
+ * @example
+ * ```ts
+ * markUrl("/__editor", 47_600).href; // "http://127.0.0.1:47600/__editor/perf/mark"
+ * ```
+ */
+export function markUrl(path: string, port: number): URL {
+  return new URL(`${path}/perf/mark`, `http://${LOOPBACK}:${port}`);
+}
+
+/**
+ * True when a URL stays on the run's own loopback origin: the host and the port both match, so
+ * the token is never posted to another host or another port of this computer.
+ *
+ * @param url - The resolved mark URL.
+ * @param port - The port of the run.
+ * @returns Whether the URL is the run's origin.
+ * @example
+ * ```ts
+ * isRunOrigin(markUrl("//127.0.0.1", 47_600), 47_600); // false: port 80
+ * ```
+ */
+export function isRunOrigin(url: URL, port: number): boolean {
+  return url.origin === `http://${LOOPBACK}:${port}`;
+}
+
+/**
  * Adds a mark to every live log of the perf running in the cwd.
  *
  * @param args - The label.
@@ -85,11 +116,11 @@ export async function perfMark(
     return 1;
   }
 
-  // The path resolves against the loopback origin: a path like "//host" would leave it.
-  const url = new URL(`${run.path}/perf/mark`, `http://${LOOPBACK}:${run.port}`);
-  if (url.hostname !== LOOPBACK) {
+  // The path resolves against the run's loopback origin: a path like "//host" would leave it.
+  const url = markUrl(run.path, run.port);
+  if (!isRunOrigin(url, run.port)) {
     ui.error(
-      `[moku-editor] .moku/perf.json points at ${cleanText(url.hostname)}, not this computer.\n  Delete .moku/perf.json and start moku-editor perf again.`
+      `[moku-editor] .moku/perf.json points at ${cleanText(url.host)}, not this run.\n  Delete .moku/perf.json and start moku-editor perf again.`
     );
     return 1;
   }

@@ -453,7 +453,7 @@ describe("link integration", () => {
 
   it("editor.engine after open and again after a reconnect calls the listener once", async () => {
     const app = createApp();
-    const seenEngines: string[] = [];
+    const seenEngines: (string | undefined)[] = [];
     app.link.onEngine(id => seenEngines.push(id));
     await app.start();
     await until(() => app.link.status().kind === "empty", "empty");

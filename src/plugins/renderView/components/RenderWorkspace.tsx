@@ -9,7 +9,6 @@ import type { LinkStatus } from "../../registry/protocol";
 import type { WorkspaceApi } from "../../workspace/types";
 import { deriveSnapshot } from "../derive";
 import { DeviceStrip } from "../device/components/DeviceStrip";
-import { deviceView } from "../device/watch";
 import { tileViews } from "../format";
 import type { RenderViewCtx } from "../types";
 import { BundlesCard } from "./BundlesCard";
@@ -63,7 +62,6 @@ export type RenderWorkspaceProps = {
 export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
   const { ctx, status, workspace } = props;
   const snapshot = useRenderView(ctx.state, () => deriveSnapshot(ctx.state));
-  const device = deviceView(ctx);
   const stale = status.kind === "silent" || status.kind === "lost";
   const { fps, frameMs } = snapshot.tiles;
 
@@ -75,7 +73,9 @@ export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
           {ctx.state.error}
         </p>
       )}
-      {device === undefined ? undefined : <DeviceStrip ctx={ctx} status={status} view={device} />}
+      {ctx.state.device.session === undefined ? undefined : (
+        <DeviceStrip ctx={ctx} status={status} />
+      )}
       <div data-render="tiles">
         {tileViews(snapshot.tiles).map(view => (
           <MetricTile key={view.id} view={view}>

@@ -50,13 +50,13 @@ afterEach(async () => {
 });
 
 describe("registry integration", () => {
-  it("lists the bare game's 20 sources and 17 commands without modules", async () => {
+  it("lists the bare game's 21 sources and 20 commands without modules", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     await app.start();
 
     const manifest = app.registry.manifest();
-    expect(manifest.sources).toHaveLength(20);
-    expect(manifest.commands).toHaveLength(17);
+    expect(manifest.sources).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(20);
     expect(manifest.game).toBe("game");
 
     await app.stop();
@@ -72,8 +72,8 @@ describe("registry integration", () => {
 
     const manifest = app.registry.manifest();
     expect(manifest.game).toBe("tiny-game 0.0.0");
-    expect(manifest.sources).toHaveLength(21);
-    expect(manifest.commands).toHaveLength(18);
+    expect(manifest.sources).toHaveLength(22);
+    expect(manifest.commands).toHaveLength(21);
     expect(manifest.sources.at(-1)?.id).toBe("tiny.coins");
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
 
@@ -202,25 +202,11 @@ describe("registry types", () => {
     });
 
     expectTypeOf(app.probe.registry).returns.toEqualTypeOf<RegistryApi>();
-    expect(app.probe.registry().manifest().sources).toHaveLength(20);
+    expect(app.probe.registry().manifest().sources).toHaveLength(21);
   });
 });
 
 describe("registry on a plain --debug build (agent flag, no dev flag)", () => {
-  /** A route command of the game's .dev module that the shipped engine refuses on this build. */
-  const tap = defineCommand({
-    id: "tiny.tap",
-    title: "Tap",
-    input: {},
-    effect: "route",
-    run: () => {
-      throw Object.assign(
-        new Error("[game] tiny.tap runs on --debug=full builds only.\n  Build with --debug=full."),
-        { reason: "read-only" }
-      );
-    }
-  });
-
   it("createApp → start → manifest → refused run → editor source → stop", async () => {
     stubBuild({ agent: true, build: "debug-20261014T160000Z" });
     const listeners = new Set<(value: Json) => void>();
@@ -242,13 +228,13 @@ describe("registry on a plain --debug build (agent flag, no dev flag)", () => {
     });
     const app = framework.createApp({
       plugins: [perfLike],
-      pluginConfigs: { registry: { game: game.app, modules: [{ commands: [tap] }] } }
+      pluginConfigs: { registry: { game: game.app } }
     });
     await app.start();
 
     const manifest = app.registry.manifest();
     expect(manifest.build).toEqual({ profile: "read", id: "debug-20261014T160000Z" });
-    expect(manifest.commands.find(command => command.id === "tiny.tap")).toMatchObject({
+    expect(manifest.commands.find(command => command.id === "game.tap")).toMatchObject({
       allowed: false,
       reason: "read-only"
     });
@@ -260,19 +246,21 @@ describe("registry on a plain --debug build (agent flag, no dev flag)", () => {
       changes: "frame"
     });
 
-    // Engine 0.14.12 runs no command without its dev flag; the shipped engine's run refuses
-    // tiny.tap itself with reason "read-only". The flag goes on for the run, so the command's own
-    // tagged throw stands in for the engine's controlReadOnly.
-    vi.stubGlobal("__MOKU_GAME_DEV__", true);
-    await expect(app.registry.command("tiny.tap")?.run(null)).rejects.toMatchObject({
+    // The engine's run refuses a route command on this build with controlReadOnly (reason
+    // "read-only"), and runs a cosmetic one.
+    await expect(app.registry.command("game.tap")?.run({ key: "play" })).rejects.toMatchObject({
       code: -32_009,
-      data: { reason: "read_only", retryable: false, id: "tiny.tap" }
+      data: { reason: "read_only", retryable: false, id: "game.tap" }
     });
     expect(
       app.log
         .trace()
         .some(entry => entry.event === "registry:command-refused" && entry.level === "info")
     ).toBe(true);
+    await expect(app.registry.command("game.pause")?.run(null)).resolves.toMatchObject({
+      state: { tainted: false }
+    });
+    expect(app.registry.clock()).toMatchObject({ paused: true, held: true });
 
     const stop = app.registry.source("editor.perf.second")?.watch(null, () => undefined);
     expect(listeners.size).toBe(1);

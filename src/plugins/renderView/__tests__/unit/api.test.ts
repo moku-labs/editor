@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "v
 import type { ElementRef } from "../../../panels/shared/scene";
 import { toWireValue } from "../../../registry/protocol";
 import { createRenderViewApi } from "../../api";
+import { subscribeStrip } from "../../device/state";
 import { createHandlers } from "../../handlers";
 import { initRenderView, startRenderView, stopRenderView } from "../../lifecycle";
 import { createRenderViewState, notify, subscribe } from "../../state";
@@ -339,10 +340,10 @@ describe("the device strip api (spec 09 R5)", () => {
     expect(ctx.state.device.session?.device?.link).toBe("adb");
   });
 
-  it("stepSpike, closeSpike and setMore change the state and notify the UI", () => {
+  it("stepSpike, closeSpike and setMore change the state and notify the strip", () => {
     attachSession(DEVICE);
     const listener = vi.fn();
-    subscribe(ctx.state, listener);
+    subscribeStrip(ctx.state.device, listener);
 
     expect(api.stepSpike(1)).toBe(4572);
     expect(api.device()?.selected).toBe(4572);
@@ -366,7 +367,7 @@ describe("the device strip api (spec 09 R5)", () => {
 
   it("onStart re-renders the strip when the computer's engine arrives; onStop drops it", () => {
     const listeners: (() => void)[] = [];
-    ctx.link.api.onEngine = vi.fn((listener: (engine: string) => void) => {
+    ctx.link.api.onEngine = vi.fn((listener: (engine: string | undefined) => void) => {
       const entry = (): void => listener("0.14.13+1ab7f2");
       listeners.push(entry);
       return () => {
@@ -375,7 +376,7 @@ describe("the device strip api (spec 09 R5)", () => {
     });
     attachSession(DEVICE);
     const ui = vi.fn();
-    subscribe(ctx.state, ui);
+    subscribeStrip(ctx.state.device, ui);
 
     for (const listener of listeners) listener();
     expect(ui).toHaveBeenCalled();

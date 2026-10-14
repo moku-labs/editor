@@ -4,6 +4,7 @@
  * command.
  */
 import type { CommandDescriptor, SourceDescriptor } from "../protocol";
+import type { DoorCommand } from "../types";
 import { ID_PATTERN } from "../types";
 
 /**
@@ -47,7 +48,7 @@ const OVERLAYS: ReadonlySet<unknown> = new Set(["toggle", "button"]);
  * @param command - The command descriptor (or the door).
  * @throws {TypeError} `[moku-editor] Command "<id>" has an unknown overlay …` or `… is an overlay toggle without value(app).`
  */
-function checkOverlay(command: CommandDescriptor): void {
+function checkOverlay(command: CommandDescriptor | DoorCommand): void {
   const { id, overlay } = command;
   if (overlay === undefined) return;
 
@@ -75,7 +76,7 @@ function checkOverlay(command: CommandDescriptor): void {
  */
 export function checkDescriptor(
   kind: "source" | "command",
-  descriptor: SourceDescriptor | CommandDescriptor
+  descriptor: SourceDescriptor | CommandDescriptor | DoorCommand
 ): void {
   const { id } = descriptor;
   const label = kind === "source" ? "Source" : "Command";

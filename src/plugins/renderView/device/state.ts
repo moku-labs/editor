@@ -31,7 +31,32 @@ export function createDeviceStripState(): DeviceStripState {
     dirty: false,
     watches: [],
     reading: undefined,
-    stopPaint: undefined
+    stopPaint: undefined,
+    listeners: new Set()
+  };
+}
+
+/**
+ * Re-renders the strip only (its own subscribers): a device value, the selection, the record,
+ * More and the 1 s clock touch nothing else of the Render workspace.
+ *
+ * @param strip - The strip state.
+ */
+export function notifyStrip(strip: DeviceStripState): void {
+  for (const listener of strip.listeners) listener();
+}
+
+/**
+ * Adds a strip subscriber; returns an idempotent remover.
+ *
+ * @param strip - The strip state.
+ * @param fn - The subscriber.
+ * @returns The remover.
+ */
+export function subscribeStrip(strip: DeviceStripState, fn: () => void): () => void {
+  strip.listeners.add(fn);
+  return () => {
+    strip.listeners.delete(fn);
   };
 }
 

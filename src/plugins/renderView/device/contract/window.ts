@@ -108,6 +108,11 @@ export type PerfWindowWire = {
 const MAX_ROWS = 65_535;
 
 /**
+ * The longest window a wire value may span, ms: a time axis is at most 60 s.
+ */
+const MAX_SPAN_MS = 60_000;
+
+/**
  * Allocates a window of `capacity` rows: every array once, `count` 0, `gpuTimer` true.
  *
  * @param capacity - Rows, a whole number from 1 to 65535.
@@ -197,8 +202,8 @@ function columnOf(object: JsonObject, key: string, length: number): number[] | u
 }
 
 /**
- * Reads a wire value as a `PerfWindowWire`: an object of `v: 1` with equal-length columns of
- * numbers (`gpuMs` may hold null).
+ * Reads a wire value as a `PerfWindowWire`: an object of `v: 1` whose span `endMs − startMs` is
+ * finite and in 0 < span ≤ 60 s, with equal-length columns of numbers (`gpuMs` may hold null).
  *
  * @param value - The value of `editor.perf.window`.
  * @returns The wire window, or undefined for any other shape.
@@ -212,6 +217,8 @@ function asWire(value: Json): PerfWindowWire | undefined {
   const { v, startMs, endMs, gpuTimer, gpuMs } = value;
   if (v !== 1 || typeof startMs !== "number" || typeof endMs !== "number") return undefined;
   if (typeof gpuTimer !== "boolean" || !isGpuColumn(gpuMs)) return undefined;
+  const span = endMs - startMs;
+  if (!Number.isFinite(span) || span <= 0 || span > MAX_SPAN_MS) return undefined;
 
   const { length } = gpuMs;
   const frame = columnOf(value, "frame", length);
@@ -247,7 +254,8 @@ function asWire(value: Json): PerfWindowWire | undefined {
 }
 
 /**
- * Fills `into` from a wire value: false and `into` untouched for a value of another shape; keeps
+ * Fills `into` from a wire value: false and `into` untouched for a value of another shape (a span
+ * that is not finite or not in 0 < span ≤ 60 s included); keeps
  * the newest `into.capacity` rows; recomputes `cause` and `spikes` from `causes`; `version += 1`.
  *
  * @param value - The value of `editor.perf.window`.

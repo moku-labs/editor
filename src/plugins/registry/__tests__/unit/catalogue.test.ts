@@ -94,17 +94,17 @@ const commandWith = (fields: Partial<DoorCommand>): DoorCommand => ({
 });
 
 describe("buildCatalogue", () => {
-  it("adds the 20 door sources and 17 door commands in catalogue key order", () => {
+  it("adds the 21 door sources and 20 door commands in catalogue key order", () => {
     const ctx = createCtx({ game: game.app });
 
     buildCatalogue(ctx);
 
-    expect(doorSourceIds).toHaveLength(20);
-    expect(doorCommandIds).toHaveLength(17);
+    expect(doorSourceIds).toHaveLength(21);
+    expect(doorCommandIds).toHaveLength(20);
     expect([...ctx.state.sources.keys()]).toEqual(doorSourceIds);
     expect([...ctx.state.commands.keys()]).toEqual(doorCommandIds);
     expect([...ctx.state.origins.values()].every(origin => origin === "door")).toBe(true);
-    expect(ctx.state.origins.size).toBe(37);
+    expect(ctx.state.origins.size).toBe(41);
   });
 
   it("adds module entries after the doors, modules in config order", () => {
@@ -341,8 +341,9 @@ describe("the build profile of the catalogue", () => {
 
   it("lists game.debug { kept } and game.frameRate as plain commands, allowed on a read build", () => {
     stubBuild({ agent: true });
-    // Engine 0.14.12 has game.debug { nineSlice } and no game.frameRate: the shipped commands are
-    // stood in by module commands with the shipped input (the descriptor's input comes from the engine).
+    // The engine (PR preview bf4f5dc) still has game.debug { nineSlice } without kept, and no
+    // game.frameRate: both are stood in by module commands with the input spec 02 C10 names (the
+    // descriptor's input comes from the engine). Reported as engine mismatches.
     const kept = commandWith({
       id: "shipped.debug",
       title: "Debug drawing",
