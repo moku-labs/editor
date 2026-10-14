@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import type { DeviceLink } from "../../../hub/protocol";
 import type { LinkStatus } from "../../../registry/protocol";
 import { HOST_ATTRIBUTE as PROTOCOL_HOST_ATTRIBUTE } from "../../../registry/protocol";
 import type { Config, OverlayApi, OverlayHooks } from "../../types";
@@ -19,10 +20,11 @@ describe("overlay types", () => {
     expectTypeOf(config).toEqualTypeOf<Config>();
   });
 
-  it("the hook payload is { status; session? }", () => {
+  it("the hook payload is { status; session?; link? }", () => {
     expectTypeOf<Parameters<OverlayHooks["bridge:status"]>[0]>().toEqualTypeOf<{
       status: LinkStatus;
       session?: string;
+      link?: DeviceLink;
     }>();
   });
 

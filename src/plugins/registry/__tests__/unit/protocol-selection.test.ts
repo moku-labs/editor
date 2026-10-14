@@ -480,8 +480,8 @@ describe("selection types", () => {
     expect(json).toBe(area);
   });
 
-  it("PublishMethod is hotReload, selection or project, typed by PublishParams", () => {
-    expectTypeOf<PublishMethod>().toEqualTypeOf<"hotReload" | "selection" | "project">();
+  it("PublishMethod is hotReload, selection, project or engine, typed by PublishParams", () => {
+    expectTypeOf<PublishMethod>().toEqualTypeOf<"hotReload" | "selection" | "project" | "engine">();
     expectTypeOf<PublishParams["hotReload"]>().toEqualTypeOf<HotReload>();
     expectTypeOf<PublishParams["selection"]>().toEqualTypeOf<SelectionInfo | null>();
     expectTypeOf<PublishParams["project"]>().toEqualTypeOf<ProjectState>();
@@ -489,7 +489,8 @@ describe("selection types", () => {
     const params: PublishParams = {
       hotReload: { hmr: true, owner: "bin" },
       selection: null,
-      project: { state: "off", reason: "disabled" }
+      project: { state: "off", reason: "disabled" },
+      engine: { id: "unknown", version: "unknown", dist: "unknown" }
     };
     expect(params.selection).toBeNull();
   });
@@ -542,7 +543,7 @@ describe("selection types", () => {
 
   it("the editor channel names its notifications and requests", () => {
     expectTypeOf<EditorNotificationMethod>().toEqualTypeOf<
-      "session" | "sessions" | "hotReload" | "selection" | "project"
+      "session" | "sessions" | "hotReload" | "selection" | "project" | "engine"
     >();
     expectTypeOf<EditorNotifications["selection"]>().toEqualTypeOf<SelectionInfo | null>();
     expectTypeOf<EditorNotifications["hotReload"]>().toEqualTypeOf<HotReload>();

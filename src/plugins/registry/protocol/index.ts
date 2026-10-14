@@ -62,9 +62,13 @@ export { isHotSwapEntry, isReloading } from "./reload";
 export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
 export { pickSession } from "./session-choice";
 export type {
+  BuildInfo,
+  BuildProfile,
   Changes,
   Channel,
   CommandDescriptor,
+  CommandRefusal,
+  CommandVia,
   DeviceInfo,
   DeviceParams,
   DevicePresetId,
@@ -100,6 +104,7 @@ export type {
   NodeRef,
   Notification,
   Orientation,
+  OverlayMarker,
   PathParams,
   PictureFormat,
   ProjectAnchor,

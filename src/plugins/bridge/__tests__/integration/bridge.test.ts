@@ -7,6 +7,7 @@ import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-gam
 import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
+import type { DeviceLink } from "../../../hub/protocol";
 import { registryPlugin } from "../../../registry";
 import type {
   Json,
@@ -736,12 +737,16 @@ describe("bridge types", () => {
     expect(app.bridge.status()).toEqual({ kind: "connecting" });
   });
 
-  it("a hook on bridge:status receives { status: LinkStatus; session?: string }", () => {
+  it("a hook on bridge:status receives { status: LinkStatus; session?: string; link?: DeviceLink }", () => {
     let hooked = false;
     const watcher = createAgentPlugin("watcher", {
       hooks: () => ({
         "bridge:status": payload => {
-          expectTypeOf(payload).toEqualTypeOf<{ status: LinkStatus; session?: string }>();
+          expectTypeOf(payload).toEqualTypeOf<{
+            status: LinkStatus;
+            session?: string;
+            link?: DeviceLink;
+          }>();
           hooked = true;
         }
       })

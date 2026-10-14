@@ -30,13 +30,14 @@
  * ```
  */
 import { createServerCore, serverCoreConfig } from "./config";
+import { collectorPlugin } from "./plugins/collector";
 import { filesPlugin } from "./plugins/files";
 import { hubPlugin } from "./plugins/hub";
 import { pagesPlugin } from "./plugins/pages";
 
 const framework = createServerCore(serverCoreConfig, {
   // Dependency order (D-03): files ← hub ← pages.
-  plugins: [filesPlugin, hubPlugin, pagesPlugin]
+  plugins: [filesPlugin, hubPlugin, collectorPlugin, pagesPlugin]
 });
 
 // ─── Framework API ────────────────────────────────────────────

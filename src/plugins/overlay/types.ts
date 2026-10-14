@@ -45,6 +45,27 @@ export { HOST_ATTRIBUTE } from "../registry/protocol";
 export type Corner = "top-right" | "top-left" | "bottom-right" | "bottom-left";
 
 /**
+ * The three modes of the window: nothing drawn, the small pill, the card. Declared by the Wave 0
+ * skeleton for the global `overlay:changed` event; unit 08 builds the window on it.
+ */
+export type OverlayMode = "hidden" | "pill" | "card";
+
+/**
+ * The tabs of the card. "game" exists only when the game registered overlay commands.
+ */
+export type OverlayTab = "frames" | "game" | "record" | "link";
+
+/**
+ * The payload of `overlay:changed`.
+ *
+ * @example
+ * ```ts
+ * const changed: OverlayChanged = { mode: "card", tab: "frames" };
+ * ```
+ */
+export type OverlayChanged = { readonly mode: OverlayMode; readonly tab: OverlayTab };
+
+/**
  * Overlay configuration.
  *
  * @example

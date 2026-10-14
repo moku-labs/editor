@@ -88,9 +88,9 @@ describe("protocol types", () => {
     expect(error.code).toBe(-32_000);
   });
 
-  it("SessionInfo has the five R1 fields, an optional heartbeat and an optional manifestHash", () => {
+  it("SessionInfo has the five R1 fields, an optional heartbeat, manifestHash and device", () => {
     expectTypeOf<keyof SessionInfo>().toEqualTypeOf<
-      "id" | "game" | "page" | "embedded" | "connectedAt" | "heartbeat" | "manifestHash"
+      "id" | "game" | "page" | "embedded" | "connectedAt" | "heartbeat" | "manifestHash" | "device"
     >();
     expectTypeOf<SessionInfo["manifestHash"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<SessionInfo["connectedAt"]>().toEqualTypeOf<number>();
@@ -192,15 +192,18 @@ describe("protocol types", () => {
     expect(json).toEqual({ x: 206, y: 640, at: 15_234.5 });
   });
 
-  it("PublishParams keeps hotReload, selection and project", () => {
-    expectTypeOf<keyof PublishParams>().toEqualTypeOf<"hotReload" | "selection" | "project">();
+  it("PublishParams keeps hotReload, selection, project and engine", () => {
+    expectTypeOf<keyof PublishParams>().toEqualTypeOf<
+      "hotReload" | "selection" | "project" | "engine"
+    >();
     expectTypeOf<PublishParams["project"]>().toEqualTypeOf<ProjectState>();
 
     const kept: PublishParams = {
       hotReload: { hmr: true, owner: "bin" },
       selection: null, // eslint-disable-line unicorn/no-null -- the wire value of "nothing is selected"
-      project: { state: "off", reason: "not opened" }
+      project: { state: "off", reason: "not opened" },
+      engine: { id: "unknown", version: "unknown", dist: "unknown" }
     };
-    expect(Object.keys(kept)).toEqual(["hotReload", "selection", "project"]);
+    expect(Object.keys(kept)).toEqual(["hotReload", "selection", "project", "engine"]);
   });
 });

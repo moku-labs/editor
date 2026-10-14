@@ -1,9 +1,11 @@
 /**
  * @file Protocol — every wire and channel type of the editor (contracts §2, R1, R6) and the shared
- * wire shapes of the server and the tools page (D-17). Runtime-free: imports nothing. Values that
- * hold readonly arrays (Manifest, SessionInfo[]) are not assignable to the mutable Json: senders
- * pass them through toWireValue first.
+ * wire shapes of the server and the tools page (D-17). Runtime-free: its only import is the
+ * type-only edge to hub/protocol (the device of a session, the computer's engine); hub/protocol
+ * never imports this module. Values that hold readonly arrays (Manifest, SessionInfo[]) are not
+ * assignable to the mutable Json: senders pass them through toWireValue first.
  */
+import type { EngineInfo, SessionDevice } from "../../hub/protocol";
 
 /**
  * A JSON value, the way it travels on the wire.
@@ -99,13 +101,80 @@ export type SourceDescriptor = {
 };
 
 /**
- * A command the way the manifest describes it (no functions).
+ * The overlay marker of a game command (engine spec 12 H4.4): a switch or a button on the
+ * overlay's Game tab.
+ *
+ * @example
+ * ```ts
+ * const marker: OverlayMarker = "toggle";
+ * ```
+ */
+export type OverlayMarker = "toggle" | "button";
+
+/**
+ * Why the page's build refuses a command: `"read-only"` (a plain `--debug` build runs read and
+ * cosmetic commands only), `"dev-only"` (a page without the debug or dev flags runs none).
+ *
+ * @example
+ * ```ts
+ * const refusal: CommandRefusal = "read-only";
+ * ```
+ */
+export type CommandRefusal = "read-only" | "dev-only";
+
+/**
+ * The build profile of a game page, from its build flags: `"dev"` (the dev server), `"full"`
+ * (`--debug=full`), `"read"` (`--debug`), `"none"` (no flag: a release page or a test without stubs).
+ *
+ * @example
+ * ```ts
+ * const profile: BuildProfile = "read";
+ * ```
+ */
+export type BuildProfile = "dev" | "full" | "read" | "none";
+
+/**
+ * The build of a game page: its profile, and the build id and engine fingerprint when the page has
+ * them (`__MOKU_GAME_BUILD__`, `__MOKU_GAME_ENGINE__`).
+ *
+ * @example
+ * ```ts
+ * const build: BuildInfo = { profile: "read", id: "debug-20261014T153012Z", engine: "0.14.12+9c41e0" };
+ * ```
+ */
+export type BuildInfo = {
+  readonly profile: BuildProfile;
+  readonly id?: string;
+  readonly engine?: string;
+};
+
+/**
+ * Who ran a command: the overlay's Game tab, the hub through the bridge (the tools page and MCP), or
+ * an in-process caller (a test, the game's own code, `channel.run` without a source). Agent-side
+ * only; never on the wire.
+ *
+ * @example
+ * ```ts
+ * const via: CommandVia = "overlay";
+ * ```
+ */
+export type CommandVia = "overlay" | "bridge" | "local";
+
+/**
+ * A command the way the manifest describes it (no functions). An agent from before the build
+ * profile sends no `allowed`: read it as allowed.
  */
 export type CommandDescriptor = {
   readonly id: string;
   readonly title: string;
   readonly input: InputSchema;
   readonly effect: Effect;
+  /** Shows the command on the overlay's Game tab. Absent: not shown. */
+  readonly overlay?: OverlayMarker;
+  /** Whether this page's build runs the command (advice; the engine's run decides). */
+  readonly allowed?: boolean;
+  /** Why the build refuses it; present only with `allowed: false`. */
+  readonly reason?: CommandRefusal;
 };
 
 /**
@@ -133,6 +202,8 @@ export type Manifest = {
    * frame of the page that took it. Absent on every other hello.
    */
   readonly restored?: { readonly bookmark: string; readonly frame: number };
+  /** The page's build: profile, build id and engine fingerprint. Absent from an older agent. */
+  readonly build?: BuildInfo;
 };
 
 /**
@@ -265,7 +336,7 @@ export type Channel = "game" | "files" | "editor";
  * Why a call failed (R1 adds `link_closed`). The selection relay adds `no_editor_page` (-32003: no
  * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
  * it answered). The `node` request adds `no_graph` (-32003, retryable: the Flow view has no graph
- * yet).
+ * yet). A build that refuses a command answers `read_only` (-32009, not retryable).
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -283,7 +354,8 @@ export type ErrorReason =
   | "link_closed"
   | "no_editor_page"
   | "page_closed"
-  | "no_graph";
+  | "no_graph"
+  | "read_only";
 
 /**
  * A JSON-RPC error object with the editor's data fields.
@@ -378,6 +450,8 @@ export type SessionParams = {
   game: string;
   open: boolean;
   reason?: "bye" | "game_reloaded";
+  /** The computer's engine fingerprint id; on the agent's copy of the answer to its hello only. */
+  engine?: string;
 };
 
 /**
@@ -461,6 +535,8 @@ export type SessionInfo = {
    * to rebuild its door tools only when the commands change. Absent from an old hub.
    */
   readonly manifestHash?: string;
+  /** The phone of a device session (a `role=device` agent); absent for a browser session. */
+  readonly device?: SessionDevice;
 };
 
 /**
@@ -852,7 +928,8 @@ export type SelectionInfo = {
  * const kept: PublishParams = {
  *   hotReload: { hmr: true, owner: "bin" },
  *   selection: null,
- *   project: { state: "off", reason: "not opened" }
+ *   project: { state: "off", reason: "not opened" },
+ *   engine: { id: "0.14.12+9c41e0", version: "0.14.12", dist: "9c41e0…" }
  * };
  * ```
  */
@@ -862,10 +939,13 @@ export type PublishParams = {
   readonly selection: SelectionInfo | null;
   /** The project index of the files root (`files:project`). */
   readonly project: ProjectState;
+  /** The engine of the computer's project (`files.engine()`), as `editor.engine`. */
+  readonly engine: EngineInfo;
 };
 
 /**
- * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"` or `"project"`.
+ * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"`, `"project"` or
+ * `"engine"`.
  */
 export type PublishMethod = keyof PublishParams;
 
