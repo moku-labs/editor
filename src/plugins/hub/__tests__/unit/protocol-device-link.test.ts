@@ -143,3 +143,58 @@ describe("isLoopback", () => {
     }
   });
 });
+
+describe("pairing text is clean (review fix 1)", () => {
+  /** Control and bidi characters a phone could hide in its pair: C0, DEL, C1, overrides, isolates. */
+  const UNSAFE = [
+    "\u0000",
+    "\u0007",
+    "\n",
+    "\u001B[31m",
+    "\u007F",
+    "\u0085",
+    "\u009B",
+    "\u202A",
+    "\u202E",
+    "\u2066",
+    "\u2069"
+  ];
+
+  it("a control or bidi character in model, os, engine or build reaches the confirm prompt and the logs", () => {
+    for (const field of ["model", "os", "engine", "build"]) {
+      for (const bad of UNSAFE) {
+        const device = { [field]: `SM-A266B${bad}x` };
+        expect({ field, bad, parsed: parsePairParams({ code: "4821", device }) }).toEqual({
+          field,
+          bad,
+          parsed: undefined
+        });
+      }
+    }
+  });
+
+  it("a model, os, engine or build over 128 characters passes", () => {
+    for (const field of ["model", "os", "engine", "build"]) {
+      expect(
+        parsePairParams({ code: "4821", device: { [field]: "a".repeat(129) } })
+      ).toBeUndefined();
+      expect(
+        parsePairParams({ code: "4821", device: { [field]: "a".repeat(128) } })?.device
+      ).toEqual({
+        [field]: "a".repeat(128)
+      });
+    }
+    expect(
+      parsePairParams({ code: "4821", device: { os: "Android 15 · ünïcode" } })?.device
+    ).toEqual({
+      os: "Android 15 · ünïcode"
+    });
+  });
+
+  it("normalizeModel keeps control and bidi characters in the model", () => {
+    expect(normalizeModel("SM\u202E-A266B\u0007")).toBe("SM-A266B");
+    expect(normalizeModel("\u001B[31mPixel 8\u0085")).toBe("[31MPIXEL-8");
+    expect(normalizeModel("\u2066\u0000")).toBeNull();
+    expect(normalizeModel("SM-A266B\n")).toBe("SM-A266B");
+  });
+});

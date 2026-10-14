@@ -104,6 +104,45 @@ function checkDeviceOrigins(deviceOrigins: unknown): readonly string[] {
 }
 
 /**
+ * The canonical text of an IPv6 address (lower case, compressed), or undefined when it does not
+ * parse as one (a zone id such as `%en0` does not).
+ *
+ * @param address - An IPv6 literal.
+ * @returns The canonical form.
+ * @example
+ * ```ts
+ * canonicalIpv6("FE80::1"); // "fe80::1"
+ * ```
+ */
+function canonicalIpv6(address: string): string | undefined {
+  const url = `http://[${address}]/`;
+  return URL.canParse(url) ? new URL(url).hostname.slice(1, -1) : undefined;
+}
+
+/**
+ * Checks config.lanAddress: unset, an IPv4 literal, or an IPv6 literal in canonical lower case
+ * without a zone id (the LAN listener's Host check compares the exact text).
+ *
+ * @param lanAddress - The configured LAN address.
+ * @throws {TypeError} When it is none of those.
+ */
+function checkLanAddress(lanAddress: unknown): void {
+  if (lanAddress === undefined) return;
+
+  const family = typeof lanAddress === "string" ? isIP(lanAddress) : 0;
+  const canonical =
+    typeof lanAddress === "string" && family === 6 ? canonicalIpv6(lanAddress) : undefined;
+  if (family === 4 || (family === 6 && canonical === lanAddress)) return;
+
+  const example = canonical === undefined ? '"192.168.1.5"' : `"${canonical}"`;
+  throw deviceConfigError(
+    "lanAddress",
+    lanAddress,
+    `Leave pluginConfigs.hub.lanAddress unset or pass an IPv4 or IPv6 address (IPv6 in canonical lower case, no zone id), for example ${example}`
+  );
+}
+
+/**
  * Checks the device-mode fields other than deviceOrigins.
  *
  * @param config - The resolved config.
@@ -130,13 +169,7 @@ function checkDeviceFields(config: HubCtx["config"]): void {
       "Pass true or false in pluginConfigs.hub.deviceLan"
     );
   }
-  if (lanAddress !== undefined && (typeof lanAddress !== "string" || isIP(lanAddress) === 0)) {
-    throw deviceConfigError(
-      "lanAddress",
-      lanAddress,
-      'Leave pluginConfigs.hub.lanAddress unset or pass an IPv4 or IPv6 address, for example "192.168.1.5"'
-    );
-  }
+  checkLanAddress(lanAddress);
   if (!PAIRINGS.has(pairing)) {
     throw deviceConfigError(
       "pairing",

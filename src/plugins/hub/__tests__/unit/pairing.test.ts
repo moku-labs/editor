@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { notification } from "../../../registry/protocol";
 import { createHubApi } from "../../api";
-import { PAIR_COOLDOWN_MS } from "../../device/pairing";
+import { forget, PAIR_COOLDOWN_MS, PAIR_FIRST_MS } from "../../device/pairing";
 import { publishEngine } from "../../engine";
 import type { HubDeviceEvent } from "../../types";
 import type { DeviceHarness } from "../helpers";
@@ -348,6 +348,18 @@ describe("paired connections", () => {
     ]);
     const record = harness.ctx.state.devices.get(id);
     expect(record).toMatchObject({ id, conn: newer.data.conn, address: PHONE, link: "lan" });
+    // The closed event describes the replaced connection, taken before the record moved on.
+    const [closed, connected] = deviceEvents(harness);
+    expect(closed?.kind === "closed" ? closed.device : undefined).toMatchObject({
+      address: "127.0.0.1",
+      link: "adb",
+      online: false
+    });
+    expect(connected?.kind === "connected" ? connected.device : undefined).toMatchObject({
+      address: PHONE,
+      link: "lan",
+      online: true
+    });
 
     harness.close(older);
     expect(deviceEvents(harness)).toHaveLength(2);
@@ -487,5 +499,79 @@ describe("devices() and the hub:device emit", () => {
       kind: "connected",
       error: "Error: hook failed"
     });
+  });
+});
+
+describe("review fixes: clean pairing text, the first-message deadline, forget", () => {
+  it("counts a pair with a bidi override in its model as a strike: nobody is asked, nothing is logged", async () => {
+    const harness = await deviceMode();
+    const socket = harness.device({ link: "lan", address: PHONE });
+
+    harness.send(socket, pairOf("4821", { model: "Pixel\u202E8" }));
+
+    expect(harness.agentConn(socket).invalid).toBe(1);
+    expect(harness.asked).toEqual([]);
+  });
+
+  it("closes an idle pairing socket 1008 pair first after the deadline (bug: a LAN socket held open forever)", async () => {
+    const harness = await deviceMode();
+    const socket = harness.device({ link: "lan", address: PHONE });
+
+    vi.advanceTimersByTime(PAIR_FIRST_MS - 1);
+    expect(socket.closes).toEqual([]);
+    vi.advanceTimersByTime(1);
+
+    expect(PAIR_FIRST_MS).toBe(5000);
+    expect(socket.closes).toEqual([{ code: 1008, reason: "pair first" }]);
+  });
+
+  it("keeps the deadline after a malformed pair, and clears it on a valid one", async () => {
+    const harness = await deviceMode();
+    const malformed = harness.device({ link: "lan", address: PHONE });
+    const waiting = harness.device({ link: "lan", address: "192.168.1.24" });
+
+    harness.send(malformed, pairOf("48"));
+    harness.send(waiting, pairOf());
+    vi.advanceTimersByTime(PAIR_FIRST_MS);
+
+    expect(malformed.closes).toEqual([{ code: 1008, reason: "pair first" }]);
+    expect(waiting.closes).toEqual([]);
+  });
+
+  it("clears the deadline of a socket that closes, and never closes a token reconnect or an adb pairing", async () => {
+    const harness = await deviceMode();
+    const leaving = harness.device({ link: "lan", address: PHONE });
+    const { socket: paired, id } = pairAdb(harness);
+    harness.close(paired);
+    const back = harness.device({ link: "adb", address: "127.0.0.1", id });
+
+    harness.close(leaving);
+    vi.advanceTimersByTime(PAIR_FIRST_MS);
+
+    expect(leaving.closes).toEqual([]);
+    expect(paired.closes).toEqual([]);
+    expect(back.closes).toEqual([]);
+  });
+
+  it("forget leaves the queue alone for a ticket that is in neither slot (bug: splice(-1) drops the last waiting phone)", async () => {
+    const harness = await deviceMode();
+    for (const last of [21, 22, 23])
+      harness.send(harness.device({ link: "lan", address: `192.168.1.${last}` }), pairOf());
+    const { queue, asking } = harness.ctx.state.pairing;
+    const before = [...queue];
+    const request = harness.asked[0]?.request;
+    if (request === undefined) throw new Error("nobody asked");
+    const stray = {
+      conn: 999,
+      request,
+      abort: new AbortController(),
+      timer: setTimeout(() => undefined, 1)
+    };
+
+    forget(harness.ctx.state, stray);
+
+    expect(queue).toHaveLength(2);
+    expect(harness.ctx.state.pairing.queue).toEqual(before);
+    expect(harness.ctx.state.pairing.asking).toBe(asking);
   });
 });

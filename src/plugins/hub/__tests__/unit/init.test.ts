@@ -155,8 +155,17 @@ describe("validateHubConfig: device mode (C1)", () => {
       expect(() => init({ lanAddress })).toThrow(DEVICE_FORMAT);
     }
     expect(() => init(loose('{"lanAddress":5}'))).toThrow(/^\[moku-editor] hub\.lanAddress is 5\./);
-    for (const lanAddress of ["192.168.1.5", "::1", undefined]) {
+    for (const lanAddress of ["192.168.1.5", "::1", "fe80::1", undefined]) {
       expect(() => init({ lanAddress })).not.toThrow();
     }
+  });
+
+  it("refuses an IPv6 lanAddress that is not canonical lower case or carries a zone id (bug: a LAN Host that never matches)", () => {
+    for (const lanAddress of ["FE80::1", "fe80::1%en0", "0:0:0:0:0:0:0:1", "2001:DB8::1"]) {
+      expect(() => init({ lanAddress })).toThrow(TypeError);
+      expect(() => init({ lanAddress })).toThrow(DEVICE_FORMAT);
+      expect(() => init({ lanAddress })).toThrow(/^\[moku-editor] hub\.lanAddress is /);
+    }
+    expect(() => init({ lanAddress: "FE80::1" })).toThrow(/"fe80::1"/);
   });
 });

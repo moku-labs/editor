@@ -5,6 +5,7 @@
  * listeners are the hub's own.
  */
 import { teardownDevices } from "./device/listen";
+import { clearPairDeadline } from "./device/pairing";
 import { publishEngine } from "./engine";
 import { tickSilent } from "./routing/sessions";
 import { newToken } from "./security/token";
@@ -71,6 +72,9 @@ export async function stopHub(ctx: { readonly state: HubState }): Promise<void> 
   state.silentTimer = undefined;
   for (const call of state.pending.values()) clearTimeout(call.timer);
 
+  for (const conn of state.conns.values()) {
+    if (conn.kind === "agent" && conn.device !== undefined) clearPairDeadline(conn.device);
+  }
   const sockets = [...state.conns.values()].map(conn => conn.socket);
   state.conns.clear();
   state.sessions.clear();

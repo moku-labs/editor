@@ -1,12 +1,13 @@
 /* eslint-disable unicorn/no-null, sonarjs/no-hardcoded-ip -- null is "not reported" on a device record; LAN addresses are the cases under test */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MAX_PAIRING_SOCKETS } from "../../device/pairing";
 import { handleDeviceUpgrade } from "../../device/upgrade";
 import { validateHubConfig } from "../../init";
 import type { DeviceLinkKind } from "../../protocol";
 import { sameToken } from "../../security/token";
 import type { DeviceRecord, HubServer } from "../../types";
 import type { FakeServer, TestCtx } from "../helpers";
-import { createCtx, createHarness, fakeServer, TOKEN } from "../helpers";
+import { createCtx, createHarness, fakeServer, fakeSocket, TOKEN } from "../helpers";
 
 vi.mock("../../security/token", async importOriginal => {
   const actual = await importOriginal<typeof import("../../security/token")>();
@@ -334,5 +335,72 @@ describe("the 4401 close of a stale token at open", () => {
     expect(harness.ctx.log.info.mock.calls).toEqual([
       ["hub:device-unpaired", { address: PHONE, link: "lan" }]
     ]);
+  });
+});
+
+/**
+ * Registers an open device connection from an address, paired or not.
+ *
+ * @param ctx - The ctx.
+ * @param address - The peer address.
+ * @param id - The device id of a paired connection.
+ */
+function openDeviceConn(ctx: TestCtx, address: string, id?: string): void {
+  const conn = ctx.state.nextConn++;
+  ctx.state.conns.set(conn, {
+    kind: "agent",
+    conn,
+    socket: fakeSocket("agent", conn),
+    session: undefined,
+    bye: false,
+    invalid: 0,
+    device: { link: "lan", address, id, ended: false, deadline: undefined }
+  });
+}
+
+describe("review fixes: the per-address cap and the editor port", () => {
+  it("answers 429 to a pairing upgrade over the per-address cap of open pairing sockets (bug: one LAN host holding unlimited sockets)", () => {
+    const { ctx, server } = started();
+    for (let index = 0; index < MAX_PAIRING_SOCKETS; index += 1) openDeviceConn(ctx, PHONE);
+    openDeviceConn(ctx, PHONE, "d-7f3a");
+
+    const refused = handleDeviceUpgrade(ctx, deviceRequest("lan"), server, "lan");
+
+    expect(MAX_PAIRING_SOCKETS).toBe(4);
+    expect(refused?.status).toBe(429);
+    expect(ctx.log.warn).toHaveBeenCalledWith(
+      "hub:refused",
+      expect.objectContaining({ status: 429, check: "cooldown" })
+    );
+  });
+
+  it("counts only the open pairing sockets of the same address, and never caps a token reconnect", () => {
+    const { ctx, server } = started();
+    for (let index = 0; index < MAX_PAIRING_SOCKETS - 1; index += 1) openDeviceConn(ctx, PHONE);
+    openDeviceConn(ctx, PHONE, "d-7f3a");
+    for (let index = 0; index < MAX_PAIRING_SOCKETS; index += 1)
+      openDeviceConn(ctx, "192.168.1.99");
+
+    expect(handleDeviceUpgrade(ctx, deviceRequest("lan"), server, "lan")).toBeUndefined();
+
+    for (let index = 0; index < 2; index += 1) openDeviceConn(ctx, PHONE);
+    const reconnect = deviceRequest("lan", { query: { device: "d-0000", token: DEVICE_TOKEN } });
+    expect(handleDeviceUpgrade(ctx, reconnect, server, "lan")).toBeUndefined();
+  });
+
+  it("keeps the editor port of the normal listener only: a tools socket on the adb listener changes nothing", () => {
+    const { ctx, server } = started();
+    const tools = { kind: "tools", role: undefined, token: TOKEN };
+
+    const upgraded = handleDeviceUpgrade(
+      ctx,
+      deviceRequest("adb", { query: tools, headers: { origin: `http://127.0.0.1:${P}` } }),
+      server,
+      "adb"
+    );
+
+    expect(upgraded).toBeUndefined();
+    expect(server.upgrade).toHaveBeenCalledTimes(1);
+    expect(ctx.state.editorPort).toBeUndefined();
   });
 });

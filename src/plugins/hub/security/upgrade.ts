@@ -119,14 +119,22 @@ function precheck(
 /**
  * The `{path}/ws` handler: undefined after a successful upgrade (Bun contract), else a refusal
  * (404 path, 503 not started, 426 not an upgrade, 403 Host/Origin, 401 token, 400 kind, role or a
- * failed upgrade). An accepted upgrade keeps the server port for the editor page URL.
+ * failed upgrade). An accepted upgrade on the normal listener keeps the server port for the editor
+ * page URL; a tools upgrade on the device listener (the device upgrade runs these checks for it)
+ * keeps nothing.
  *
  * @param ctx - Domain context of the hub.
  * @param req - The request.
  * @param server - The Bun server.
+ * @param listener - "normal" for `serve()` / `app.hub.fetch`, "device" for the adb listener.
  * @returns undefined when upgraded, else the refusal.
  */
-export function handleUpgrade(ctx: HubCtx, req: Request, server: HubServer): Response | undefined {
+export function handleUpgrade(
+  ctx: HubCtx,
+  req: Request,
+  server: HubServer,
+  listener: "normal" | "device" = "normal"
+): Response | undefined {
   // A request without Host (HTTP/1.0) carries a relative URL; the base only parses it, the guard
   // refuses the missing Host.
   const url = new URL(req.url, "http://127.0.0.1");
@@ -146,7 +154,7 @@ export function handleUpgrade(ctx: HubCtx, req: Request, server: HubServer): Res
 
   const conn = state.nextConn;
   state.nextConn += 1;
-  state.editorPort = server.port;
+  if (listener === "normal") state.editorPort = server.port;
 
   const data: HubSocketData = page ? { kind, conn, page } : { kind, conn };
   return server.upgrade(req, { data }) ? undefined : refused(ctx, req, "failed");

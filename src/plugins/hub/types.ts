@@ -219,13 +219,15 @@ export type HubWebSocketHandler = {
 /**
  * The device side of an agent connection that came through a device listener. `id` is set once
  * the device is paired (at once for a token upgrade). `ended` is set when the hub already announced
- * the end of this connection (it was replaced): its close then emits nothing.
+ * the end of this connection (it was replaced): its close then emits nothing. `deadline` is the
+ * first-message timer of a pairing socket (`PAIR_FIRST_MS`), cleared by a valid `pair` or a close.
  */
 export type DeviceConn = {
   readonly link: DeviceLinkKind;
   readonly address: string;
   id: string | undefined;
   ended: boolean;
+  deadline: ReturnType<typeof setTimeout> | undefined;
 };
 
 /**

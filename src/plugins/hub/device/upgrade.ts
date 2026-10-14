@@ -13,6 +13,7 @@ import { sameToken } from "../security/token";
 import type { UpgradeCheck } from "../security/upgrade";
 import { handleUpgrade, refused } from "../security/upgrade";
 import type { HubCtx, HubServer, HubSocketData, HubState } from "../types";
+import { MAX_PAIRING_SOCKETS, pairingSocketsOf } from "./pairing";
 
 /**
  * The device part of the socket data a device upgrade makes.
@@ -79,7 +80,8 @@ function isDeviceOrigin(state: HubState, req: Request): boolean {
 /**
  * The device data of the credentials, or the failing check: both `device` and `token` give a
  * paired socket when they name a record of this run (timing-safe compare), else an unpaired one;
- * none gives a pairing socket unless the address cools down; only one of the two is refused.
+ * none gives a pairing socket unless the address cools down or already holds MAX_PAIRING_SOCKETS
+ * open pairing sockets; only one of the two is refused.
  *
  * @param state - Hub state.
  * @param url - The parsed request URL.
@@ -103,11 +105,10 @@ function credentialsOf(
   if (id !== null || token !== null) return "credentials";
 
   const until = state.pairing.cooldown.get(device.address);
-  if (until === undefined) return device;
-  if (until > Date.now()) return "cooldown";
+  if (until !== undefined && until > Date.now()) return "cooldown";
+  if (until !== undefined) state.pairing.cooldown.delete(device.address);
 
-  state.pairing.cooldown.delete(device.address);
-  return device;
+  return pairingSocketsOf(state, device.address) >= MAX_PAIRING_SOCKETS ? "cooldown" : device;
 }
 
 /**
@@ -134,7 +135,9 @@ export function handleDeviceUpgrade(
 
   const kind = url.searchParams.get("kind");
   if (kind === "tools") {
-    return link === "adb" ? handleUpgrade(ctx, req, server) : refused(ctx, req, "listener");
+    return link === "adb"
+      ? handleUpgrade(ctx, req, server, "device")
+      : refused(ctx, req, "listener");
   }
   if (kind !== "agent") return refused(ctx, req, "kind");
   if (url.searchParams.get("role") !== "device") return refused(ctx, req, "role");

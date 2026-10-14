@@ -9,7 +9,7 @@
 import { refreshAndPublish } from "../engine";
 import { DEVICE_UNPAIRED_CODE, DEVICE_UNPAIRED_REASON } from "../protocol";
 import type { AgentConn, DeviceConn, HubCtx, HubSocket, HubSocketData } from "../types";
-import { abortPairing } from "./pairing";
+import { abortPairing, armPairDeadline, clearPairDeadline } from "./pairing";
 import { emitDevice, linkedDevice } from "./records";
 
 /**
@@ -54,17 +54,15 @@ function reconnect(ctx: HubCtx, conn: AgentConn, device: DeviceConn, id: string)
   }
 
   const older = record.conn === undefined ? undefined : state.conns.get(record.conn);
+  // The replaced connection's report, taken before the record follows the new socket.
+  const replaced = linkedDevice(state, record, false);
   device.id = id;
   record.conn = conn.conn;
   record.address = device.address;
   record.link = device.link;
   if (older?.kind === "agent" && older.device !== undefined) {
     older.device.ended = true;
-    emitDevice(ctx, {
-      kind: "closed",
-      device: linkedDevice(state, record),
-      reason: "replaced"
-    });
+    emitDevice(ctx, { kind: "closed", device: replaced, reason: "replaced" });
     older.socket.close(GOING_AWAY, "replaced");
   }
   emitDevice(ctx, { kind: "connected", device: linkedDevice(state, record) });
@@ -88,10 +86,12 @@ export function openDevice(
     link: data.link,
     address: data.address,
     id: undefined,
-    ended: false
+    ended: false,
+    deadline: undefined
   };
   conn.device = device;
-  if (data.id !== undefined) reconnect(ctx, conn, device, data.id);
+  if (data.id === undefined) armPairDeadline(conn, device);
+  else reconnect(ctx, conn, device, data.id);
 }
 
 /**
@@ -105,6 +105,7 @@ export function openDevice(
  * @param device - Its device side.
  */
 export function closeDevice(ctx: HubCtx, conn: AgentConn, device: DeviceConn): void {
+  clearPairDeadline(device);
   if (device.id === undefined) {
     abortPairing(ctx, conn.conn);
     return;

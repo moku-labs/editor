@@ -128,6 +128,11 @@ describe("listenDevices", () => {
     const bracketed = await listen(ipv6, fakeServe());
     expect(bracketed.lan).toBe("[::1]:47600");
 
+    // The Host check compares with this text lower-cased: an upper-case address never matches.
+    const upper = createHarness({ deviceLan: true, lanAddress: "FE80::1" });
+    const lowered = await listen(upper, fakeServe());
+    expect(lowered.lan).toBe("[fe80::1]:47600");
+
     const picked = createHarness({ deviceLan: true });
     const fake = fakeServe();
     const interfaces = {
@@ -266,6 +271,8 @@ describe("stopDevices", () => {
       event.kind === "closed" ? [event.kind, event.device.id, event.reason] : [event.kind]
     );
     expect(kinds).toEqual([["closed", id, "stopped"], ["stopped"]]);
+    const [closed] = deviceEvents(harness);
+    expect(closed?.kind === "closed" ? closed.device.online : undefined).toBe(false);
     expect(socket.closes).toEqual([{ code: 1001, reason: "device mode off" }]);
     expect(harness.ctx.state.devices.size).toBe(0);
     expect(harness.fake.servers[0]?.stop).toHaveBeenCalledWith(true);
@@ -359,6 +366,17 @@ describe("teardownDevices", () => {
 
     await expect(teardownDevices(state)).resolves.toBeUndefined();
     expect(state.deviceServers).toBeUndefined();
+  });
+
+  it("clears the first-message deadline of the pairing sockets it closes", async () => {
+    vi.useFakeTimers();
+    const harness = await createDeviceHarness();
+    const idle = harness.device({ link: "lan", address: "192.168.1.23" });
+
+    await teardownDevices(harness.ctx.state);
+    vi.advanceTimersByTime(60_000);
+
+    expect(idle.closes).toEqual([{ code: 1001, reason: "device mode off" }]);
   });
 
   it("leaves a non-device agent's socket open", async () => {

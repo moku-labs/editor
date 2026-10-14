@@ -40,6 +40,18 @@ export const MAX_DEVICES = 16;
 export const MAX_WAITING = 4;
 
 /**
+ * How long a pairing socket may stay open without a valid `pair`, in ms; then it closes 1008
+ * `pair first`. A phone sends its `pair` right after the socket opens.
+ */
+export const PAIR_FIRST_MS = 5000;
+
+/**
+ * The most open pairing sockets (device sockets not paired yet) per peer address; a pairing
+ * upgrade over it is answered 429 (check `cooldown`).
+ */
+export const MAX_PAIRING_SOCKETS = 4;
+
+/**
  * Policy-violation close code.
  */
 const POLICY_VIOLATION = 1008;
@@ -62,16 +74,63 @@ function ticketOf(state: HubState, conn: number): PairTicket | undefined {
 }
 
 /**
- * Removes a ticket from the queue or the asked slot and clears its timer.
+ * Removes a ticket from the queue or the asked slot and clears its timer. A ticket in neither
+ * leaves both alone.
  *
  * @param state - Hub state.
  * @param ticket - The ticket.
  */
-function forget(state: HubState, ticket: PairTicket): void {
+export function forget(state: HubState, ticket: PairTicket): void {
   clearTimeout(ticket.timer);
   const { pairing } = state;
-  if (pairing.asking === ticket) pairing.asking = undefined;
-  else pairing.queue.splice(pairing.queue.indexOf(ticket), 1);
+  if (pairing.asking === ticket) {
+    pairing.asking = undefined;
+    return;
+  }
+  const index = pairing.queue.indexOf(ticket);
+  if (index !== -1) pairing.queue.splice(index, 1);
+}
+
+/**
+ * Starts the first-message deadline of a pairing socket: without a valid `pair` within
+ * PAIR_FIRST_MS it closes 1008 `pair first`. The timer does not keep the process alive.
+ *
+ * @param conn - The pairing connection.
+ * @param device - Its device side.
+ */
+export function armPairDeadline(conn: AgentConn, device: DeviceConn): void {
+  const timer = setTimeout(() => {
+    device.deadline = undefined;
+    conn.socket.close(POLICY_VIOLATION, "pair first");
+  }, PAIR_FIRST_MS);
+  if (typeof timer === "object" && "unref" in timer) timer.unref();
+  device.deadline = timer;
+}
+
+/**
+ * Clears the first-message deadline of a device connection, if any.
+ *
+ * @param device - The device side of the connection.
+ */
+export function clearPairDeadline(device: DeviceConn): void {
+  if (device.deadline !== undefined) clearTimeout(device.deadline);
+  device.deadline = undefined;
+}
+
+/**
+ * The open pairing sockets (device connections not paired yet) of a peer address.
+ *
+ * @param state - Hub state.
+ * @param address - The peer address.
+ * @returns How many are open.
+ */
+export function pairingSocketsOf(state: HubState, address: string): number {
+  let count = 0;
+  for (const conn of state.conns.values()) {
+    const device = conn.kind === "agent" ? conn.device : undefined;
+    if (device?.id === undefined && device?.address === address) count += 1;
+  }
+  return count;
 }
 
 /**
@@ -229,8 +288,9 @@ function isBusy(state: HubState): boolean {
 /**
  * One message of a pairing socket (a device connection without an id). Anything but an
  * `editor`/`pair` notification closes it 1008 `pair first`; malformed params or a second `pair`
- * while one waits are a strike; a full house closes 1008 `pairing busy`. An adb phone under
- * `pairing: "lan"` pairs at once; every other phone waits for the person.
+ * while one waits are a strike (the first-message deadline keeps running); a full house closes
+ * 1008 `pairing busy`. A valid `pair` clears the deadline: an adb phone under `pairing: "lan"`
+ * pairs at once; every other phone waits for the person.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The pairing connection.
@@ -263,6 +323,7 @@ export function onPairingMessage(
     conn.socket.close(POLICY_VIOLATION, "pairing busy");
     return;
   }
+  clearPairDeadline(device);
 
   const request: PairRequest = {
     code: params.code,

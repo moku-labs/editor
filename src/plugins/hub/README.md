@@ -33,7 +33,7 @@ two-line form `[moku-editor] hub.<field> is <value>.` and the rule with an examp
 | `silentAfterMs` | `number` | `6000` | A session with no heartbeat for this long is marked silent. Integer ≥ 100. After a `paused: true` heartbeat the limit is 65 s (`PAUSED_SILENT_AFTER_MS`). |
 | `devicePort` | `number` | `47600` | Port of the device listeners (127.0.0.1 and, with `deviceLan`, the LAN address). Integer 0–65535; 0 picks a free port (tests). |
 | `deviceLan` | `boolean` | `false` | Also listen on the computer's LAN address: device upgrades only, pairing confirmed by the person. |
-| `lanAddress` | `string \| undefined` | `undefined` | The LAN address to bind, an IPv4 or IPv6 literal. Unset picks the first non-internal IPv4 of an `en*`, `wl*` or `eth*` interface, else of any interface. |
+| `lanAddress` | `string \| undefined` | `undefined` | The LAN address to bind: an IPv4 literal, or an IPv6 literal in canonical lower case without a zone id (`"fe80::1"`, not `"FE80::1"` or `"fe80::1%en0"`; the LAN Host check compares the exact text). Unset picks the first non-internal IPv4 of an `en*`, `wl*` or `eth*` interface, else of any interface. |
 | `deviceOrigins` | `readonly string[]` | `["tauri://localhost", "https://tauri.localhost", "http://tauri.localhost"]` | Exact Origins a device's WebView sends: scheme `tauri:`, `http:` or `https:`, a host, no path, no trailing slash, lower case. Never added to the normal listener's origins. |
 | `pairing` | `"lan" \| "always"` | `"lan"` | `"lan"`: only LAN phones are asked; an adb phone is confirmed at once. `"always"`: every phone is asked. |
 | `pairTimeoutMs` | `number` | `60000` | How long a pairing waits for the person before it is refused. Integer ≥ 1000. |
@@ -409,7 +409,7 @@ never the URL or a token):
 | 5 | `kind=agent role=device` | required | required | 400 `invalid`, check `role` (`kind` for an unknown kind) |
 | 6 | Host | a loopback Host of the port | exactly `<lan address>:<port>` | 403, check `host` |
 | 7 | Origin | required, in `deviceOrigins`; `null` never matches | same | 403, check `origin` |
-| 8 | credentials | `device` and `token` of this run: paired socket; a stale pair: accepted as unpaired; none: pairing socket | same | 400 (only one of the two); 429 `busy` while the address cools down |
+| 8 | credentials | `device` and `token` of this run: paired socket; a stale pair: accepted as unpaired; none: pairing socket | same | 400 (only one of the two); 429 `busy`, check `cooldown`, while the address cools down or already holds 4 open pairing sockets (`MAX_PAIRING_SOCKETS`) |
 | 9 | `server.upgrade` | | | 400 `invalid` |
 
 A stale device token (an earlier device-mode run, a forgotten device, a wrong token) is upgraded
@@ -423,8 +423,16 @@ unchanged: `role=device` there is 400 and a device Origin 403.
 
 A pairing socket's first message must be `editor`/`pair`
 `{ code, device: { model?, os?, engine?, build? } }`; anything else closes it 1008 `pair first`.
-The code is exactly four digits (`"0421"` keeps its zero): the phone shows it, the person types it
-in the terminal. A code of another length or a second `pair` while one waits is a strike.
+A pairing socket that has no valid `pair` within 5 s (`PAIR_FIRST_MS`) closes 1008 `pair first`
+too; a valid `pair` clears that deadline (then `pairTimeoutMs` governs the wait for the person). The
+code is exactly four digits (`"0421"` keeps its zero): the phone shows it, the person types it in
+the terminal. A code of another length or a second `pair` while one waits is a strike.
+
+The device fields are sanitized in `hub/protocol` (`parsePairParams`), so the terminal's
+question, the log lines and `SessionInfo.device` get clean text: a `model`, `os`, `engine` or
+`build` over 128 characters, or with a control character (C0, DEL, C1) or a bidi embedding,
+override or isolate (U+202A–U+202E, U+2066–U+2069), makes the `pair` malformed: a strike, nobody
+is asked. `normalizeModel` drops those characters from a model it is given (adb's output too).
 
 | Step | Rule |
 |---|---|
@@ -437,7 +445,8 @@ in the terminal. A code of another length or a second `pair` while one waits is 
 | The socket closes while waiting | the signal aborts, a late answer pairs nothing, the next ticket is asked |
 
 A token reconnect is paired at open: the record follows the new connection, an older live one is
-closed 1001 `replaced` (announced `closed` with reason `replaced`), then `connected` is emitted. The
+closed 1001 `replaced` (announced `closed` with reason `replaced`, carrying the replaced
+connection's address and link and `online: false`), then `connected` is emitted. The
 log indices of the record are kept, so a resend after a reconnect is skipped.
 
 ### Device messages
@@ -455,8 +464,9 @@ too:
 | Ack | always: `editor`/`perf.ack { log, next, n }`, `next` cumulative, `n` the batch size |
 
 At most 32 logs per device are tracked (the oldest is dropped). When a paired connection closes,
-`hub:device { kind: "closed" }` is emitted with reason `bye` after a bye, else `lost`; a pairing
-socket that closes emits nothing. The record stays until device mode stops.
+`hub:device { kind: "closed" }` is emitted with reason `bye` after a bye, else `lost`; every
+`closed` event (`stopped` and `replaced` too) carries `device.online: false`. A pairing socket
+that closes emits nothing. The record stays until device mode stops.
 
 A device session carries `SessionInfo.device` `{ id, model, link, address, port, engine, build }`
 (`port`: the device listener's real port), in `sessions()`, `sessions {list}` and the `session`
@@ -472,7 +482,9 @@ notifications. Tools requests reach it by the usual session choice (a device ses
 | device, LAN (<lan address>:<devicePort>) | devices only | native Origin and pairing confirmed by the person, then the device token |
 
 A device token is 32 random bytes per device per device-mode run, compared timing-safe, never
-logged, never sent to tools. A LAN client never reaches the tools page, the hello route, a tools
+logged, never sent to tools. Pairing is rate-limited per peer address: at most 4 open pairing
+sockets (429), a 5 s first-message deadline, a 10 s cooldown after a refusal; at most 4 pairings
+wait for the person and 16 devices pair per run. A LAN client never reaches the tools page, the hello route, a tools
 socket or another editor route.
 
 ### `editor.engine`
@@ -607,7 +619,9 @@ Lifecycle:
 - A silent flip re-sends `sessions {list}` with the `heartbeat` readout, once per check. A new frame alone sends no list; the forwarded `heartbeat` carries it.
 - No throttle of its own on frame sources. The bridge sends one value per heartbeat on change.
 - `serve` and the device listeners' start each hold one `as unknown as BunServeOptions` cast of the Bun seam (oven-sh/bun#17871, #18314).
-- Device mode: 16 devices per run, 4 pairings waiting, a 10 s cooldown per refused address, 32 logs per device, 1–5000 lines per `perf.lines` batch.
+- Device mode: 16 devices per run, 4 pairings waiting, 4 open pairing sockets per address, a 5 s first-message deadline, a 10 s cooldown per refused address, 128 characters per device field of `pair`, 32 logs per device, 1–5000 lines per `perf.lines` batch.
+- The per-address socket cap counts sockets Bun has opened: a burst of upgrades in the same instant can pass before the first opens; the 5 s deadline closes the extra ones.
+- `editorPort` (the editor page URL of `no_editor_page`) comes from the normal listener only; a tools page on the adb listener does not change it.
 
 ## Files
 

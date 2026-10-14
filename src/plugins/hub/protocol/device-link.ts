@@ -215,11 +215,59 @@ const LOOPBACK_NET = 127;
 /** The device fields of a `pair` that are kept when they are strings. */
 const DEVICE_FIELDS = ["model", "os", "engine", "build"] as const;
 
+/** The longest device field of a `pair` (model, os, engine, build), in characters. */
+const MAX_DEVICE_TEXT = 128;
+
+/**
+ * The code point ranges a device's text must not carry: C0 controls, DEL and C1 controls, the bidi
+ * embeddings and overrides (U+202A–U+202E) and the bidi isolates (U+2066–U+2069). They could
+ * rewrite the terminal's pairing question or a log line.
+ */
+const UNSAFE_RANGES: readonly (readonly [number, number])[] = [
+  [0x00, 0x1f],
+  [0x7f, 0x9f],
+  [0x20_2a, 0x20_2e],
+  [0x20_66, 0x20_69]
+];
+
+/** Whitespace: kept by normalizeModel's own rule (trimmed, inner runs to "-"). */
+const WHITESPACE = /^\s$/;
+
 /** The device of a `pair`, being built. */
 type MutablePairDevice = { -readonly [K in keyof PairParams["device"]]: PairParams["device"][K] };
 
 /** A JSON object of the wire. */
 type LinkObject = { [key: string]: LinkJson };
+
+/**
+ * True for a control or bidi character (one of UNSAFE_RANGES).
+ *
+ * @param char - One character (one code point).
+ * @returns Whether it is unsafe in a device's text.
+ * @example
+ * ```ts
+ * isUnsafeChar("\u202E"); // true
+ * ```
+ */
+function isUnsafeChar(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return UNSAFE_RANGES.some(([low, high]) => code >= low && code <= high);
+}
+
+/**
+ * True for a device field of a `pair` the hub takes: at most 128 characters, no control and no
+ * bidi character.
+ *
+ * @param text - The field's value.
+ * @returns Whether it is clean.
+ * @example
+ * ```ts
+ * isCleanText("Android 15"); // true
+ * ```
+ */
+function isCleanText(text: string): boolean {
+  return text.length <= MAX_DEVICE_TEXT && ![...text].some(char => isUnsafeChar(char));
+}
 
 /**
  * The value as a JSON object, or undefined for null, an array or a scalar.
@@ -291,9 +339,10 @@ function portOf(text: string): number | undefined {
 }
 
 /**
- * Normalizes a device model the engine's way: trimmed, whitespace runs to "-", upper case, at most
- * 64 characters; an empty or non-string value gives null. The hub, the collector's adb reading and
- * the phone's log header agree through it.
+ * Normalizes a device model the engine's way: control and bidi characters dropped (whitespace
+ * controls such as adb's trailing newline count as whitespace), trimmed, whitespace runs to "-",
+ * upper case, at most 64 characters; an empty or non-string value gives null. The hub, the
+ * collector's adb reading and the phone's log header agree through it.
  *
  * @param raw - The model as a phone, the shell or adb reported it.
  * @returns The model, or null.
@@ -303,10 +352,11 @@ function portOf(text: string): number | undefined {
  * ```
  */
 export function normalizeModel(raw: unknown): string | null {
-  const model =
+  const kept =
     typeof raw === "string"
-      ? raw.trim().replaceAll(/\s+/g, "-").toUpperCase().slice(0, MAX_MODEL)
+      ? [...raw].filter(char => WHITESPACE.test(char) || !isUnsafeChar(char)).join("")
       : "";
+  const model = kept.trim().replaceAll(/\s+/g, "-").toUpperCase().slice(0, MAX_MODEL);
 
   // eslint-disable-next-line unicorn/no-null -- null is "no model" on the wire (SessionDevice.model)
   return model === "" ? null : model;
@@ -315,7 +365,9 @@ export function normalizeModel(raw: unknown): string | null {
 /**
  * Checks the params of a `pair` notification: an object whose code is exactly four digits and
  * whose `device` is an object. Of the device, only the string fields model, os, engine and build
- * are kept.
+ * are kept; one of them over 128 characters or with a control or bidi character (C0, DEL, C1,
+ * U+202A–U+202E, U+2066–U+2069) makes the pair malformed, so every reader (the terminal's
+ * question, the logs, `SessionInfo.device`) gets clean text.
  *
  * @param params - The notification's params as they arrived.
  * @returns The params, or undefined when they are malformed.
@@ -334,7 +386,9 @@ export function parsePairParams(params: LinkJson | undefined): PairParams | unde
   const device: MutablePairDevice = {};
   for (const key of DEVICE_FIELDS) {
     const value = info[key];
-    if (typeof value === "string") device[key] = value;
+    if (typeof value !== "string") continue;
+    if (!isCleanText(value)) return undefined;
+    device[key] = value;
   }
   return { code, device };
 }

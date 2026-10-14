@@ -25,7 +25,7 @@ import type {
 } from "../types";
 import type { Interfaces } from "./lan";
 import { lanAddressOf } from "./lan";
-import { abortAllPairings } from "./pairing";
+import { abortAllPairings, clearPairDeadline } from "./pairing";
 import { emitDevice, linkedDevice } from "./records";
 import { handleDeviceUpgrade } from "./upgrade";
 
@@ -282,7 +282,7 @@ export async function listenDevices(
   }
 
   // eslint-disable-next-line unicorn/no-null -- null is "no LAN listener" on DeviceListen
-  const lanText = lan === undefined ? null : `${hostOf(lan)}:${port}`;
+  const lanText = lan === undefined ? null : `${hostOf(lan)}:${port}`.toLowerCase();
   const listen: DeviceListen = Object.freeze({ port, adb: `${LOOPBACK}:${port}`, lan: lanText });
   state.routesFrozen = true;
   state.deviceServers = { adb, lan: lanServer };
@@ -312,6 +312,7 @@ export async function teardownDevices(state: HubState): Promise<void> {
   state.devices.clear();
   for (const conn of state.conns.values()) {
     if (conn.kind === "agent" && conn.device !== undefined) {
+      clearPairDeadline(conn.device);
       conn.socket.close(GOING_AWAY, "device mode off");
     }
   }
@@ -335,7 +336,11 @@ export async function stopDevices(ctx: HubCtx): Promise<void> {
 
   for (const record of state.devices.values()) {
     if (record.conn === undefined) continue;
-    emitDevice(ctx, { kind: "closed", device: linkedDevice(state, record), reason: "stopped" });
+    emitDevice(ctx, {
+      kind: "closed",
+      device: linkedDevice(state, record, false),
+      reason: "stopped"
+    });
   }
   await teardownDevices(state);
   ctx.log.info("hub:devices-off", {});

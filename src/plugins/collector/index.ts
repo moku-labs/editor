@@ -1,12 +1,21 @@
 /**
- * Complex tier — device logs on the computer: one JSONL file per phone log, adb reverse and heat
- * while device mode is on, live lines for the perf CLI. Idle until hub:device. Wave 0 stub: the config
- * and the dependencies on files and the hub only; unit 04 wires the rest and its collector:session.
+ * Complex tier — device logs on the computer: one JSONL file per phone log (every line stamped
+ * with `rx`, a reconnect appends to the same file), adb reverse, heat and system frames while
+ * device mode is on, the computer mark route `{path}/perf/mark`, and the runtime-free `report/`.
+ * Idle until the hub's `hub:device`. Emits its per-plugin event `collector:session`.
+ *
+ * @see README.md
  */
+import type { RegisterFunction } from "@moku-labs/core";
 import { createServerPlugin } from "../../config";
 import { filesPlugin } from "../files";
 import { hubPlugin } from "../hub";
-import type { CollectorConfig } from "./types";
+import { createCollectorApi } from "./api";
+import { createCollectorHooks } from "./handlers";
+import { initCollector } from "./init";
+import { stopCollector } from "./lifecycle";
+import { createCollectorState } from "./state";
+import type { CollectorConfig, CollectorSessionEvent } from "./types";
 
 const defaultConfig: CollectorConfig = {
   out: ".moku/perf",
@@ -18,7 +27,8 @@ const defaultConfig: CollectorConfig = {
 };
 
 /**
- * The collector plugin, a default of the server core.
+ * Collector plugin — device logs on the computer: one JSONL file per phone log, adb reverse and
+ * heat while device mode is on, `collector:session` for live lines. Idle until `hub:device`.
  *
  * @example
  * ```ts
@@ -26,7 +36,17 @@ const defaultConfig: CollectorConfig = {
  * ```
  */
 export const collectorPlugin = createServerPlugin("collector", {
-  // The stub keeps the spec's edges so the composition order is checked from wave 0 on.
   depends: [filesPlugin, hubPlugin],
-  config: defaultConfig
+  config: defaultConfig,
+  events: (register: RegisterFunction) => ({
+    "collector:session": register<CollectorSessionEvent>(
+      "A device log opened, grew, left or finished"
+    )
+  }),
+  createState: createCollectorState,
+  api: createCollectorApi,
+  hooks: createCollectorHooks,
+  onInit: initCollector,
+  // @no-resource-check — timers and file handles start in the hub:device hook; onStop frees them
+  onStop: stopCollector
 });
