@@ -70,3 +70,33 @@ describe("adb", () => {
     });
   });
 });
+
+describe("settled", () => {
+  it("waits for the steps already queued on a log (bug: the editor stopped before a done line went out)", async () => {
+    const api = createCollectorApi(ctx);
+    const session = createLogSession({
+      device: deviceOf(),
+      log: LOG,
+      file: "/game/pending.jsonl",
+      model: "SM-A266B"
+    });
+    const { promise: closing, resolve: closed } = Promise.withResolvers<void>();
+    session.queue = closing;
+    ctx.state.sessions.set(session.key, session);
+
+    let done = false;
+    const settling = api.settled().then(() => {
+      done = true;
+    });
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve();
+    expect(done).toBe(false);
+
+    closed();
+    await settling;
+    expect(done).toBe(true);
+  });
+
+  it("resolves at once when nothing is pending", async () => {
+    await expect(createCollectorApi(ctx).settled()).resolves.toBeUndefined();
+  });
+});

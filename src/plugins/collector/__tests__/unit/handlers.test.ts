@@ -235,3 +235,15 @@ describe("hub:device — limits and order", () => {
     expect(emitted().map(event => event.state)).toEqual(["live", "away", "live"]);
   });
 });
+
+describe("hub:device — settled", () => {
+  it("has emitted every log's done with its final counts once settled resolves after stopped", async () => {
+    const device = deviceOf();
+    hooks["hub:device"](linesEvent(device, [headerLine(0), sampleLine(1000)]));
+    hooks["hub:device"]({ kind: "stopped" });
+
+    await createCollectorApi(ctx).settled();
+
+    expect(emitted().at(-1)).toMatchObject({ state: "done", lines: 2 });
+  });
+});

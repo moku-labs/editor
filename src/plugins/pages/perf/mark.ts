@@ -5,6 +5,7 @@
  */
 import { resolve } from "node:path/posix";
 import type { BrandConsole } from "@moku-labs/common/cli";
+import { cleanText } from "../../perf/protocol";
 import { readPerfDiscovery } from "./discovery";
 import type { PerfDeps, PerfMarkArgs } from "./types";
 
@@ -18,6 +19,12 @@ const OTHER_TOKEN =
 
 /** The fix line of a failed request. */
 const CHECK_RUN = "  Check that moku-editor perf still runs.";
+
+/** The only host `perf mark` posts to. */
+const LOOPBACK = "127.0.0.1";
+
+/** The most characters of a reply body printed. */
+const REPLY_MAX = 120;
 
 /**
  * The text of a thrown value.
@@ -78,10 +85,19 @@ export async function perfMark(
     return 1;
   }
 
+  // The path resolves against the loopback origin: a path like "//host" would leave it.
+  const url = new URL(`${run.path}/perf/mark`, `http://${LOOPBACK}:${run.port}`);
+  if (url.hostname !== LOOPBACK) {
+    ui.error(
+      `[moku-editor] .moku/perf.json points at ${cleanText(url.hostname)}, not this computer.\n  Delete .moku/perf.json and start moku-editor perf again.`
+    );
+    return 1;
+  }
+
   let status: number;
   let text: string;
   try {
-    const response = await deps.fetch(`http://127.0.0.1:${run.port}${run.path}/perf/mark`, {
+    const response = await deps.fetch(url.href, {
       method: "POST",
       headers: {
         authorization: `Bearer ${run.token}`,
@@ -102,7 +118,8 @@ export async function perfMark(
   }
   const marked = status === 200 ? markedOf(text) : undefined;
   if (marked === undefined) {
-    ui.error(`[moku-editor] perf mark: the running perf answered ${status} ${text}\n${CHECK_RUN}`);
+    const reply = cleanText(text.replaceAll(/\s+/g, " ").trim(), REPLY_MAX);
+    ui.error(`[moku-editor] perf mark: the running perf answered ${status} ${reply}\n${CHECK_RUN}`);
     return 1;
   }
 

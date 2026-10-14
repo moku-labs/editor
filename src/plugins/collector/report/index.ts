@@ -8,7 +8,7 @@ export { COMPARE_THRESHOLD, compare } from "./compare";
 export { bucketUpper, gfxPercentile, histPercentile } from "./hist";
 export { isPerfLog, parsePerfLog } from "./parse";
 export { headerRate, primaryOf, rankCauses, summarize } from "./summary";
-export { compareText, summaryText, table } from "./text";
+export { compareText, groupThousands, summaryText, table } from "./text";
 export type {
   CompareRow,
   Comparison,

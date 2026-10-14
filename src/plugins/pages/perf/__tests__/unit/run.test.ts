@@ -96,6 +96,10 @@ function stubEditor(sessions: CollectorSessionInfo[] = []) {
       sessions: vi.fn(() => {
         order.push("sessions");
         return sessions;
+      }),
+      settled: vi.fn(async () => {
+        await Promise.resolve();
+        order.push("settled");
       })
     },
     files: { engine: () => ({ id: "0.14.12+9c41e0", version: "0.14.12", dist: "9c41e0" }) }
@@ -185,11 +189,11 @@ describe("runPerf start", () => {
 });
 
 describe("runPerf stop", () => {
-  it("removes perf.json, stops device mode before the editor and reads the logs after both", async () => {
+  it("removes perf.json, stops device mode, waits for the collector to settle, then stops the editor and reads the logs (bug: done lines cut by the stop)", async () => {
     const { order } = stubEditor();
     const started = await runPerf(ARGS, depsIn(), recordingConsole().ui);
     await started.stop?.();
-    expect(order).toEqual(["start", "stopDevices, perf.json gone", "stop", "sessions"]);
+    expect(order).toEqual(["start", "stopDevices, perf.json gone", "settled", "stop", "sessions"]);
   });
 
   it("runs once when called twice", async () => {
@@ -217,5 +221,15 @@ describe("runPerf stop", () => {
     ]);
     expect(summary.some(line => line.includes("empty.jsonl"))).toBe(false);
     expect(summary.at(-1)).toMatch(/^ {2}⚠ could not read \.moku\/perf\/b\.jsonl: /);
+  });
+});
+
+describe("runPerf stop hardening (I6)", () => {
+  it("still stops the editor when stopDevices rejects", async () => {
+    const { editor } = stubEditor();
+    const started = await runPerf(ARGS, depsIn(), recordingConsole().ui);
+    editor.hub.stopDevices.mockRejectedValueOnce(new Error("listener stuck"));
+    await expect(started.stop?.()).rejects.toThrow("listener stuck");
+    expect(editor.stop).toHaveBeenCalledTimes(1);
   });
 });

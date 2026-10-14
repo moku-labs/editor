@@ -1,8 +1,9 @@
 # renderView
 
-> Standard plugin of the **tools** core (`createToolsPlugin`). The Render workspace (design A3, C9).
+> Complex plugin of the **tools** core (`createToolsPlugin`). The Render workspace (design A3, C9) and the D1 device strip (spec 09).
 
-Title "Render · game.render · frame N", five metric tiles (six with the JS heap tile in Chromium),
+Title "Render · game.render · frame N"; under it, for a session whose agent lists `editor.perf.*` (a phone, or the
+game page in the editor's frame), the D1 device strip; then five metric tiles (six with the JS heap tile in Chromium),
 the render tree card and the textures card on the left, the Bundles, Pools and Release log cards on the right.
 Hovering a tree row or a texture row draws a pink box (`--pick-tree`) around the element over the game frame.
 The box lives in renderView's own root inside `workspace.gameFrame().overlay()`, so it shows in the pinned preview.
@@ -28,6 +29,11 @@ The asset manifest has no config: it is the one the project index names (`Projec
 | `highlight` | `(ref: ElementRef \| undefined) => void` | Pink box around the element over the game frame. `undefined` clears it. A ref without a rect draws nothing. |
 | `sortTextures` | `(key: TextureSortKey) => void` | The same key flips the direction. A new key sorts numbers descending, text ascending. |
 | `filterBundle` | `(bundle: string) => void` | `"all"` or a bundle name. |
+| `device` | `() => DeviceStripView \| undefined` | The D1 strip as it shows now: session, link (`adb`/`lan` with address and port, or `browser`), seen seconds, perf state, model, about line, backend, rate, engine (device, computer, `stale`), build and profile, REC, the spikes with their primary cause, the selection, the `n/total` counter, the record panel's kind and frame, More. Copies. `undefined` while the session's manifest lists no `editor.perf.second`. |
+| `stepSpike` | `(dir: 1 \| -1) => number \| undefined` | The chevron keys: the next or previous spike of the strip's window, wrapping, and opens its record. From no selection next takes the oldest, previous the newest. `undefined` without a spike or a strip. |
+| `openSpike` | `(frame: number) => Promise<void>` | Selects the frame and reads `editor.perf.spike { frame }` once (an open of the same frame while it loads shares the read). `null` shows "Frame N is no longer on the phone", a failure its bare message. A late answer for a record closed or replaced since is dropped. Never rejects. |
+| `closeSpike` | `() => void` | Closes the record panel; the selection stays; the panel shows "No spike selected". |
+| `setMore` | `(open: boolean) => void` | Opens or closes More under the graph (open by default; not persisted). |
 
 `TextureSortKey` is `"key" | "bundle" | "size" | "gpuMb" | "fileMb" | "use"`.
 
@@ -70,8 +76,8 @@ renderView declares no events. It uses the global tools events (R4, R9).
 | Kind | Name | Payload | When |
 |---|---|---|---|
 | Emits | `workspace:inspect` | `{ ref }` | The C9 "Inspect in Game" button. gameView hooks it. |
-| Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches on, refresh once per session. Other: scene watches off, box cleared. |
-| Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept. A new session while live or paused: session data and effects cleared. `empty`: everything cleared. |
+| Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches on (none on a device session, R4), the strip's device watches on when the manifest lists `editor.perf.second`, refresh once per session. Other: scene and device watches off (one burst; the strip keeps its data), box cleared, the repaint loop stops with the canvas. |
+| Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept; the strip reads stale (`data-stale`) and its link cell "silent N s". A new session while live or paused: session data and effects cleared, the strip re-evaluated (a new session id starts it empty). `empty`: everything cleared, the strip too. |
 | Hooks | `link:project` | `{ state, delta }` | Reads the catalogue again when it is stale: a gap (`delta.all`: the first state, a reconnect, the index turned off), another manifest named or none any more, or `delta.files` holds the manifest. A catalogue not read yet stays unread until Render is shown. The Textures palette follows. |
 | Hooks | `workspace:reveal` | `{ ref }` | gameView's "Show in render tree": `reveal(ref)`. |
 
@@ -81,12 +87,14 @@ Log events: `renderView: unexpected source shape` (warn, once per wrong value), 
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the game sources, `read("game.locate")` or `read("game.rect")`, `manifest()`, `project()` (the asset manifest path), `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
+| `linkPlugin` | `watch` of the game sources and the device sources, `read("game.locate")` or `read("game.rect")`, `read("editor.perf.spike")`, `manifest()`, `project()` (the asset manifest path), `files.read` of the manifest, `onManifest`, `status()`, `heap()`, `sessions()` and `session()` (the session's `device`), `engine()` and `onEngine` (STALE) |
 | `workspacePlugin` | `show("render")`, `active()`, `onPrefs` (device change), `gameFrame().overlay()`, `palette.add` |
 | `panelsPlugin` | `register` the Render panel |
 
 Shared modules: `panels/shared/scene` builds the scene from `game.ui`, `game.entities` and `game.projections` (R8). `panels/shared/project` gives `manifestOf` and `projectOffText`.
-renderView depends on no other view (R4).
+renderView depends on no other view (R4). The strip reads the perf and recorder contracts only through
+`device/contract/` (see [Device sessions](#device-sessions-spec-09)) and `import type` of `hub/protocol`
+(`SessionDevice`); it never imports `collector/report` or a plugin instance of another core.
 
 ### Data path (R6)
 
@@ -105,13 +113,33 @@ renderView depends on no other view (R4).
 - A game without the effects plugin lists the source with `available: false` (the agent's probe). renderView sends no watch, sets `effectsInstalled: false` on the tiles and the Scene tile reads "Effects not installed in this game". Nothing is logged. `empty` forgets the flag.
 - A value of the wrong shape warns once and the last good value stays.
 
+### Device sessions (spec 09)
+
+A session gets the D1 strip when its manifest lists `editor.perf.second`: a **device session** (a phone linked to
+the hub's device listener; its `SessionInfo.device` carries model, link, address, port, engine and build) or a
+**browser session** (the game page in the editor's frame whose agent composes perf; no `device`). The kind of session
+decides only the device-only cells: a browser session's link cell is the outlined `BROWSER` legend with "seen N s
+ago", and its header bar reads "Browser".
+
+| Watch | When | Why |
+|---|---|---|
+| `editor.perf.second`, `editor.perf.window`, `editor.perf.spikes`, `editor.recorder` | While Render is shown and the session's manifest lists `editor.perf.second`; each only when listed available. | The device row, the headline, More, the frame graph (the strip's own window, filled by `readWireWindow`), the spike counts, REC. |
+| `editor.perf.spike { frame }` | A read on demand (a flag, a bar, the chevrons). | The record side panel. |
+| `game.ui`, `game.entities`, `game.projections` and the calibration | **Not on a device session** (R4): serializing a scene tree costs the phone the frames the strip measures. A browser session keeps them. | The tree card reads "The render tree is not read from a device: reading it costs the phone frames." |
+
+- Hidden Render or another session drops every device watch at once; the strip keeps its data for a return to the same session and starts empty on a new session id.
+- The graph repaints through the painter at most every 250 ms (`REPAINT_MS`) and only after a new value or a selection change; never while Render is hidden. "seen N s ago" and the REC clock re-render once a second (`RECORD_TICK_MS`). Both intervals live with the mounted canvas and stop with it; onStop clears what is left.
+- The canvas's backing store follows `width × dpr` by `height × dpr` (`dpr` clamped to 1…3) only when the CSS size or the dpr changed; the dpr transform is set before every paint. The legends are measured again once Barlow Condensed has loaded.
+- STALE: the phone's engine fingerprint (`PerfSecond.engine`, else the session's `device.engine`) against the computer's (`link.engine()`), only when both are known and differ.
+- `device/contract/` is the one door to 03's `perf/protocol` window and values, 03's `perf/graph` painter and 05's `RecorderStatus`. Units 03 and 05 are not built yet: the folder holds stand-ins written to their specs; when they land, its `index.ts` re-exports their names and the stand-in files go.
+
 ## Lifecycle
 
 | Phase | What |
 |---|---|
 | `onInit` | Registers the Render panel. |
-| `onStart` | Starts the session watches (`game.render`, `game.assets`, `game.effects` by manifest). Recalibrates on a device or orientation change (`workspace.onPrefs`). Runs the `workspace:changed` logic at once when Render is already shown. |
-| `onStop` | Stops every watch and the effects watch. Removes the overlay root and the palette items. Clears the listeners. |
+| `onStart` | Starts the session watches (`game.render`, `game.assets`, `game.effects` by manifest; the manifest listener also follows the strip and R4). Recalibrates on a device or orientation change (`workspace.onPrefs`). Re-renders the strip when the computer's engine fingerprint arrives (`link.onEngine`). Runs the `workspace:changed` logic at once when Render is already shown. |
+| `onStop` | Stops every watch, the effects watch and the strip's device watches; clears the strip's repaint timers and drops a record read in flight. Removes the overlay root and the palette items. Clears the listeners. |
 
 ## Usage
 
@@ -152,7 +180,17 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `handlers.ts` | The four hooks. |
 | `lifecycle.ts` | onInit, onStart, onStop. |
 | `panel.tsx`, `components/` | The Render panel and its Preact components. |
-| `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7). |
+| `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7); `strip.css` and `record.css` for the D1 strip. |
+| `device/types.ts` | The strip's state, record state, view, text runs, cells and record rows. |
+| `device/state.ts` | The strip's state factory and its reset on a session change. |
+| `device/derive.ts` | Pure: `stripView`, the about line, build profile, STALE, seen, REC clock, rate suffix, link cell, headline, More. |
+| `device/step.ts` | Pure: prev / next over the window's spikes, the `n/total` counter. |
+| `device/record.ts` | Pure: the rows of the record side panel. |
+| `device/guards.ts` | Shape guards of the device values. |
+| `device/watch.ts` | Which sessions get the strip, the device watches, the record read, the strip's api actions. |
+| `device/paint.ts` | The ≤ 4 Hz repaint loop of the canvas and the canvas click. |
+| `device/contract/` | The perf and recorder contracts the strip reads (stand-ins of units 03 and 05 until they land). |
+| `device/components/` | `DeviceStrip`, `DeviceRow`, `StripGraph`, `SpikePanel`, `Legend`, `Annunciator`. |
 
 ## Narrow layout
 
@@ -166,6 +204,10 @@ The Render workspace is the inline-size container `render`.
 
 The render tree header wraps: Expand all and Collapse are one group that moves onto its own line, and the counts shrink (`min-inline-size: 0`).
 
+The D1 strip is the inline-size container `device-strip`. Below 900 px of its width the main grid is one column and the
+record panel moves under the graph (full width, `max-block-size: 320px`, its details scroll); the device row and the
+headline wrap. The graph row stays 200 high and the nav column 44 wide. No horizontal scroll at any width.
+
 ## Limits and game follow-ups
 
 | Limit | Follow-up in `@moku-labs/game` |
@@ -175,3 +217,5 @@ The render tree header wraps: Expand all and Collapse are one group that moves o
 | The release log is a diff. Its frame is approximate ("≈fN"). No reason. | F-R3: `assets:bundle-unloaded` with frame and reason. |
 | Tree types are ui tags and entity display kinds, not Pixi classes. | F-G1: a display-tree source. |
 | Draw calls are counted in a dev build only. | None. |
+| The strip's Barlow faces are not on the tools page yet: `styles/fonts.css` gains them with the overlay's font files (spec 09 W4, spec 10 E9); until then the strip falls back to "Arial Narrow". | None (editor follow-up with unit 08). |
+| The strip paints through a stand-in of 03's painter (`device/contract/graph.ts`): no phone stack legend, no no-allocation rule. | None (editor follow-up with unit 03). |

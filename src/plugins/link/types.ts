@@ -396,20 +396,22 @@ export type LinkApi = EditorChannel & {
 
   /**
    * Tags a game page URL with the frame id of this tools page (the `__editorFrame` query
-   * parameter; one random id per tools page). workspace loads its game frame from the tagged URL,
-   * so the session of that frame is this page's own: the session choice prefers it and never
-   * picks the game frame of another tools tab on its own.
+   * parameter; one random id per tools page) and, with `opts.player`, the dev page's scenario.
+   * workspace loads its game frame from the tagged URL, so the session of that frame is this
+   * page's own: the session choice prefers it and never picks the game frame of another tools tab
+   * on its own.
    *
    * @param url - The game page URL, absolute or relative to the tools page.
+   * @param opts - The scenario to start from (dev only).
    * @returns The absolute tagged URL; the URL unchanged when it does not parse.
    * @example
    * ```ts
-   * // workspace loads its game frame from the boot's game URL.
-   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/");
-   * // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
+   * // workspace loads its game frame from the scenario the person picked.
+   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/", { player: "full" });
+   * // "http://127.0.0.1:3000/?player=full&__editorFrame=3f9a1c2b7d4e"
    * ```
    */
-  frameUrl(url: string): string;
+  frameUrl(url: string, opts?: FrameUrlOptions): string;
 
   /**
    * True when a page URL (`Manifest.page`, `SessionInfo.page`) is the game frame of another tools
@@ -570,6 +572,35 @@ export type LinkApi = EditorChannel & {
    */
   project(): ProjectState | undefined;
   /**
+   * The fingerprint id of the engine the computer serves: the project's installed
+   * `@moku-labs/game` (version + dist hash, the recipe of the page's `__MOKU_GAME_ENGINE__`), as
+   * the hub published it (`editor.engine`). Kept across reconnects.
+   *
+   * @returns The id; undefined until the hub sent one, or when it has none ("unknown").
+   * @example
+   * ```ts
+   * // renderView marks a phone that runs another engine than the computer.
+   * ctx.require(linkPlugin).engine(); // "0.14.13+1ab7f2"
+   * ```
+   */
+  engine(): string | undefined;
+  /**
+   * Listens to the computer's engine fingerprint: called at once when it is known, then on each
+   * change. The replay of the same id after a reconnect calls nothing; a change to "unknown"
+   * calls nothing either (`engine()` answers undefined from then on). A throwing listener is
+   * logged and does not stop the others.
+   *
+   * @param listener - Called with the id.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace re-renders the top bar when the fingerprint arrives.
+   * const stop = ctx.require(linkPlugin).onEngine(() => state.ui.bump());
+   * stop();
+   * ```
+   */
+  onEngine(listener: (engine: string) => void): () => void;
+  /**
    * The files channel client.
    *
    * @example
@@ -579,6 +610,23 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   files: FilesClient;
+};
+
+/**
+ * Options of `frameUrl`.
+ *
+ * @example
+ * ```ts
+ * const opts: FrameUrlOptions = { player: "full" };
+ * ```
+ */
+export type FrameUrlOptions = {
+  /**
+   * A scenario of the engine dev page (`tests/scenarios/<name>.ts`): sets the `player` query
+   * parameter, which `startPage` reads (`?player=<name>`). Dev only. Absent or "": the URL's own
+   * `player` parameter is left as it is.
+   */
+  readonly player?: string;
 };
 
 /**
@@ -647,6 +695,10 @@ export type LinkState = {
   selection: SelectionInfo | undefined;
   /** The project index the hub last sent (`editor.project`), frozen; kept across reconnects. */
   project: ProjectState | undefined;
+  /** The computer-side engine fingerprint id the hub published (`editor.engine`); kept across reconnects. */
+  engine: string | undefined;
+  /** onEngine listeners (wrappers, like hotReloadListeners). */
+  engineListeners: Set<(engine: string) => void>;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
   /**

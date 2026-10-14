@@ -1,9 +1,9 @@
 /**
  * @file workspace plugin — onInit (validate config, load prefs, read the OS theme, the density
  * and the hash, built-in keys, Esc layers, palette commands, the `device` and `show` request
- * handlers of link), onStart (window listeners, the manifest, restore, tap and hot reload
+ * handlers of link), onStart (window listeners, the manifest, restore, tap, hot reload and engine
  * listeners; no mount, R3) and onStop (every cleanup, the request handlers among them, timers,
- * tap ripples, unrender, remove the frame layer and hosts).
+ * tap ripples, the scenario listeners, unrender, remove the frame layer and hosts).
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
@@ -203,11 +203,20 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
 
   // Hot reload: the switch follows the server's state.
   trackCleanup(state, watchHotReload(ctx));
+
+  // Engine: the top bar shows the computer's engine fingerprint once link knows it.
+  trackCleanup(
+    state,
+    link.onEngine(() => {
+      state.ui.bump();
+    })
+  );
 }
 
 /**
- * onStop: runs every cleanup, clears timers, unrenders the shell, removes the frame layer and
- * the hosts. Late callbacks see `stopped` and return.
+ * onStop: runs every cleanup, clears timers, forgets the scenario listeners, unrenders the shell,
+ * removes the frame layer and the hosts. Late callbacks (a listing that settles after stop among
+ * them) see `stopped` and return.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -223,4 +232,5 @@ export function stopWorkspace(ctx: { readonly state: WorkspaceState }): void {
   removeFrameLayer(state);
   removeHosts(state);
   state.listeners.clear();
+  state.scenario.listeners.clear();
 }

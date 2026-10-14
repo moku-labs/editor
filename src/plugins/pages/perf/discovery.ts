@@ -12,6 +12,12 @@ import type { PerfDiscovery } from "./types";
 /** The perf discovery file, relative to the root. */
 export const PERF_DISCOVERY_FILE = ".moku/perf.json";
 
+/** The highest TCP port. */
+const PORT_MAX = 65_535;
+
+/** The shape of the hub path a record may name: `/` then letters, digits and `._~/-`. */
+const PATH_SHAPE = /^\/[\w.~/-]*$/;
+
 /**
  * The absolute path of the perf discovery file under a root.
  *
@@ -48,7 +54,9 @@ export function writePerfDiscovery(
 }
 
 /**
- * Whether a parsed value is a version 1 perf discovery record.
+ * Whether a parsed value is a version 1 perf discovery record: a whole port 1-65535 and a path of
+ * `/` with letters, digits and `._~/-` only (a file another process wrote must not steer the
+ * request of `perf mark`).
  *
  * @param value - The parsed JSON.
  * @returns True for a complete record.
@@ -61,12 +69,15 @@ function isPerfDiscovery(value: unknown): value is PerfDiscovery {
   if (typeof value !== "object" || value === null) return false;
 
   const record: Partial<Record<keyof PerfDiscovery, unknown>> = value;
-  const numbers = [record.pid, record.port, record.startedAt].every(
-    field => typeof field === "number"
-  );
-  const texts = typeof record.path === "string" && typeof record.token === "string";
+  const { port, path } = record;
+  const isPort =
+    typeof port === "number" && Number.isInteger(port) && port >= 1 && port <= PORT_MAX;
+  const isPath = typeof path === "string" && PATH_SHAPE.test(path);
+  const numbers = typeof record.pid === "number" && typeof record.startedAt === "number";
   const lan = record.lan === null || typeof record.lan === "string";
-  return record.version === 1 && numbers && texts && lan;
+  return (
+    record.version === 1 && isPort && isPath && numbers && typeof record.token === "string" && lan
+  );
 }
 
 /**

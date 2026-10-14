@@ -1,5 +1,6 @@
 import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stopCollector } from "../../lifecycle";
 import type { WriterIo } from "../../session/writer";
 import { enqueue, QUEUE_MAX_BYTES, writeLines } from "../../session/writer";
 import { createLogSession } from "../../state";
@@ -74,6 +75,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Closes the file handles the tests opened (never left to the garbage collector).
+  await stopCollector(ctx);
   await removeDir(root);
 });
 

@@ -53,7 +53,7 @@ reload, the editor selection, the request handlers, the project index and files.
 | `expectReload` | `() => void` | Tells link that the game page is about to reload on purpose (U7). The loss that follows reads `lost` with `reloading: true` until the game beats again, or for `reloadGraceMs`. A loss before the call stays plain. No-op after stop. workspace calls it before it reloads the game frame. |
 | `retry` | `() => void` | "Retry now": reconnects, re-picks a session or re-reads the boot tag. No-op unless the status is `lost`. |
 | `boot` | `() => ToolsBoot \| undefined` | The boot data. `undefined` without a valid tag. Never log its token. |
-| `frameUrl` | `(url) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. |
+| `frameUrl` | `(url, opts?: { player?: string }) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. `opts.player` (dev only) sets the `player` query parameter first: the engine dev page starts from `tests/scenarios/<player>.ts`. Absent or `""` leaves the URL's own `player` as it is. The only function that tags a game URL; `frameUrl(url)` answers as before. |
 | `isOtherTab` | `(page) => boolean` | True when a page URL carries another tools page's frame id. A page without one is not another tab's. |
 | `onTap` | `(listener: (tap: Tap) => void) => () => void` | Called with every `tap { x, y, at }` of the chosen session: a `pointerdown` on the game page in page CSS px, `at` = the page's `performance.now()`. The bridge sends at most one per 50 ms. Taps of other sessions and malformed taps are dropped. Every listener gets the same frozen tap. A throwing listener is logged as `link:tap-listener-failed` and the others still run. The same function added twice is two subscriptions. Returns an idempotent unsubscribe. |
 | `heap` | `() => { usedMb, limitMb } \| undefined` | A copy of the heap from the last heartbeat of the chosen session, in MB. `undefined` until the page reports one (only Chromium does), when its last beat had none, and after every attach or session loss. |
@@ -64,6 +64,8 @@ reload, the editor selection, the request handlers, the project index and files.
 | `notify` | `(method: "selection", params: SelectionInfo \| null) => void` | Sends the editor-channel notification `selection` to the hub through `toWireValue`. `null` (nothing selected) goes out without params: the wire refuses null params. Dropped while the socket is closed. The last value, `null` included, is sent again each time a socket opens. The hub takes it only from a `role: "page"` link. A failed send is the warn `link:notify-failed`. A no-op after stop. |
 | `handle` | `<M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>) => () => void` | Handles an editor-channel request the hub relays to this page: `select`, `device`, `show` or `node`. One handler per method. Returns an idempotent remover that removes only its own handler. See [handle](#handle). |
 | `project` | `() => ProjectState \| undefined` | The project index from the hub's last `editor.project` notification: `on` with its key maps (`defs`, `uses`, `broken`, `manifest`), or `off` with the reason. Frozen. Kept across reconnects. `undefined` until the hub sent one. |
+| `engine` | `() => string \| undefined` | The computer's engine fingerprint id (`0.14.13+1ab7f2`) from the hub's `editor.engine` notification (`EngineInfo`, spec 01 C7). Kept across reconnects. `undefined` until the hub sent one, and for the id `"unknown"` (no game installed under the root), so a STALE mark never fires on it. |
+| `onEngine` | `(listener: (engine: string) => void) => () => void` | Called at once when the id is known, then on each change. The replay of the same id after a reconnect calls nothing; a change to `"unknown"` calls nothing either. A malformed value is the warn `link:bad-engine` and keeps the id. A throwing listener is logged as `link:engine-listener-failed`. Returns an idempotent unsubscribe. |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`, `find(key)`. No session needed. `find` answers the `ProjectFound[]` of a project-index key, lines read from disk at the call; `[]` for a key the index does not know; -32008 `not_installed` while the index is off. |
 
 ```ts
@@ -189,6 +191,7 @@ Hooks: none. Inputs are socket messages and timers.
 | `depends` | none. `link` is the first tools plugin. |
 | Imports | `../registry/protocol` (runtime-free wire types and helpers). |
 | Global events | emits `link:status`, `link:project`. |
+| Listens (wire) | the hub's editor notifications `sessions`, `session`, `hotReload`, `selection`, `project`, `engine`; the game notifications `heartbeat`, `value`, `tap` of the chosen session. |
 | Runtime globals | `WebSocket`, `fetch`, `document`, timers. No npm runtime dependency. |
 
 ## Usage
@@ -216,7 +219,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 |---|---|
 | `onInit` | Validates `reloadGraceMs`. |
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners, the notified values and the request handlers. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap, hot reload and engine listeners, the notified values and the request handlers. |
 
 ## Integration notes
 
@@ -234,6 +237,8 @@ const off = link.onManifest(manifest => recheck(manifest));
 - Hot reload switch (D-32, A1): the bin answers the POST, then restarts its server. The hub closes the socket with 1012 `editor restarting` first; link logs `link:closed` at info, as every close, and reconnects after `retryMs`; the hub replays `hotReload` on open. That replay settles a `setHotReload` whose answer the restart cut off.
 - Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. `device`, `show` and `node` ride the same relay, one handler per method (D-60). The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
 - Project index: the files plugin opens the index of the files root; the hub publishes its state as `editor.project` and replays it on every socket open. link parses it with the protocol's `parseProjectState` (re-exported as `readProjectState`). A malformed state is the warn `link:bad-project` and keeps the last one. Views read `project()` and drop what the `link:project` delta names. JSX keys never ride the state: only `files.find` reaches them.
+- Engine fingerprint: the hub sends `editor.engine { id, version, dist, patch? }` after each tools socket opens and on change (`server/engine.ts`, `onEngineNote`). link keeps the id like `project`; workspace shows it in the top bar, renderView compares it with a phone's for STALE.
+- Device sessions: `readSessions` keeps `SessionInfo.device` (`{ id, model, link: "adb" | "lan", address, port, engine, build }`, spec 01 C8) when every field has its type, and leaves a malformed device out (the session then reads as a browser session). renderView reads it for the D1 device strip.
 - Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.

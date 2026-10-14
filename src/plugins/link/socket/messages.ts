@@ -12,6 +12,7 @@ import { onEditorRequest } from "../page/requests";
 import { onSelectionNote } from "../page/selection";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
+import { onEngineNote } from "../server/engine";
 import { onHotReloadNote } from "../server/hot-reload";
 import { onProjectNote } from "../server/project";
 import { applySessions, closeChosen } from "../sessions/choose";
@@ -90,6 +91,16 @@ function onSelection(ctx: LinkCtx, note: Notification): void {
  */
 function onProject(ctx: LinkCtx, note: Notification): void {
   onProjectNote(ctx, note.params);
+}
+
+/**
+ * `editor` · `engine {EngineInfo}`: the computer's engine fingerprint the hub keeps and replays.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onEngine(ctx: LinkCtx, note: Notification): void {
+  onEngineNote(ctx, note.params);
 }
 
 /**
@@ -174,6 +185,7 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.hotReload", onHotReload],
   ["editor.selection", onSelection],
   ["editor.project", onProject],
+  ["editor.engine", onEngine],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]

@@ -1,5 +1,6 @@
 /**
- * @file renderView plugin — the Render workspace (design A3): the title with the frame, the metric
+ * @file renderView plugin — the Render workspace (design A3): the title with the frame, the D1
+ * device strip under it for a session whose agent lists `editor.perf.*` (spec 09 R2), the metric
  * tiles (the JS heap tile only where the page reports it), the left column (render tree, textures) and the right column (bundles, pools, release
  * log). Re-renders on every notify; marks stale data while the link is silent or lost.
  */
@@ -7,6 +8,8 @@ import type { JSX } from "preact";
 import type { LinkStatus } from "../../registry/protocol";
 import type { WorkspaceApi } from "../../workspace/types";
 import { deriveSnapshot } from "../derive";
+import { DeviceStrip } from "../device/components/DeviceStrip";
+import { deviceView } from "../device/watch";
 import { tileViews } from "../format";
 import type { RenderViewCtx } from "../types";
 import { BundlesCard } from "./BundlesCard";
@@ -60,6 +63,7 @@ export type RenderWorkspaceProps = {
 export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
   const { ctx, status, workspace } = props;
   const snapshot = useRenderView(ctx.state, () => deriveSnapshot(ctx.state));
+  const device = deviceView(ctx);
   const stale = status.kind === "silent" || status.kind === "lost";
   const { fps, frameMs } = snapshot.tiles;
 
@@ -71,6 +75,7 @@ export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
           {ctx.state.error}
         </p>
       )}
+      {device === undefined ? undefined : <DeviceStrip ctx={ctx} status={status} view={device} />}
       <div data-render="tiles">
         {tileViews(snapshot.tiles).map(view => (
           <MetricTile key={view.id} view={view}>

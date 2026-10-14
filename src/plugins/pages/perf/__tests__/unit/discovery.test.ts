@@ -72,3 +72,27 @@ describe("readPerfDiscovery", () => {
     expect(readPerfDiscovery(root)).toBeUndefined();
   });
 });
+
+describe("readPerfDiscovery shape (W1)", () => {
+  it("refuses a port outside 1-65535 or not whole, and a path outside /[A-Za-z0-9._~/-]*", async () => {
+    await mkdir(join(root, ".moku"));
+    const bad = [
+      { port: 0 },
+      { port: 65_536 },
+      { port: 47_600.5 },
+      { path: "__editor" },
+      { path: "/__editor?x=1" },
+      { path: "/__editor@evil" },
+      { path: "/a b" }
+    ];
+    for (const fields of bad) {
+      await writeFile(perfDiscoveryPath(root), JSON.stringify({ version: 1, ...INPUT, ...fields }));
+      expect(readPerfDiscovery(root), JSON.stringify(fields)).toBeUndefined();
+    }
+    await writeFile(
+      perfDiscoveryPath(root),
+      JSON.stringify({ version: 1, ...INPUT, port: 65_535, path: "/__editor/a.b_c~d-e" })
+    );
+    expect(readPerfDiscovery(root)).toMatchObject({ port: 65_535 });
+  });
+});

@@ -401,6 +401,23 @@ export type CollectorApi = {
    * ```
    */
   adb(): AdbStatus;
+
+  /**
+   * Resolves when every step queued on a log before the call is done: its writes, the close of
+   * its file and the `collector:session` that follows. After `hub.stopDevices()` that is every
+   * log's `done` event, which the collector emits from the log's queue a few ticks after the hub's
+   * `stopped`. Resolves at once when nothing is pending.
+   *
+   * @returns When the logs' queues have drained.
+   * @example
+   * ```ts
+   * // The perf command's Ctrl+C: device mode off, every done line printed, then the editor stops.
+   * await editor.hub.stopDevices();
+   * await editor.collector.settled(); // each log's collector:session { state: "done" } went out
+   * await editor.stop();
+   * ```
+   */
+  settled(): Promise<void>;
 };
 
 /**

@@ -199,16 +199,16 @@ function durationOf(seconds: number): string {
 }
 
 /**
- * A count with a space between thousands.
+ * A count with a space between thousands, as the report tables and the perf CLI print it.
  *
  * @param value - The count.
  * @returns e.g. "1 840".
  * @example
  * ```ts
- * grouped(1840); // "1 840"
+ * groupThousands(1840); // "1 840"
  * ```
  */
-function grouped(value: number): string {
+export function groupThousands(value: number): string {
   const digits = String(value);
   const head = digits.length % 3;
   const groups = head > 0 ? [digits.slice(0, head)] : [];
@@ -345,13 +345,13 @@ function heatLine(heat: HeatSummary): string {
  * @returns e.g. "1 840 lines · 3 skipped (2 of a newer log version, 1 not JSON) · 12 lost on the device".
  */
 function footerOf(summary: LogSummary): string {
-  const parts = [`${grouped(summary.lines)} lines`];
+  const parts = [`${groupThousands(summary.lines)} lines`];
   const reasons = SKIPPED_WORDS.filter(([key]) => summary.skipped[key] > 0).map(
     ([key, words]) => `${summary.skipped[key]} ${words}`
   );
   const skipped = SKIPPED_WORDS.reduce((sum, [key]) => sum + summary.skipped[key], 0);
   if (skipped > 0) parts.push(`${skipped} skipped (${reasons.join(", ")})`);
-  if (summary.lost > 0) parts.push(`${grouped(summary.lost)} lost on the device`);
+  if (summary.lost > 0) parts.push(`${groupThousands(summary.lost)} lost on the device`);
 
   return parts.join(DOT);
 }

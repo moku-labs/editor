@@ -86,6 +86,13 @@ export function createWorkspaceState(ctx: {
     listeners: new Set(),
     ui: createUiStore(),
     ticker: undefined,
+    scenario: {
+      list: [],
+      chosen: undefined,
+      listing: undefined,
+      listed: false,
+      listeners: new Set()
+    },
     stopped: false
   };
 }

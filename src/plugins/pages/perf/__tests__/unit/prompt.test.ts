@@ -95,3 +95,47 @@ describe("the one input seam", () => {
     );
   });
 });
+
+/**
+ * The ask line the prompt prints for a phone reporting an engine.
+ *
+ * @param engine - The engine text the phone sent.
+ * @returns The first printed line.
+ */
+async function shown(engine: string): Promise<string | undefined> {
+  const { ui, lines } = recordingConsole();
+  await pairPrompt(ui, () => Promise.resolve(""))(
+    { ...REQUEST, engine },
+    new AbortController().signal
+  );
+  return lines[0];
+}
+
+describe("pairPrompt hardening (W4)", () => {
+  it("refuses at once a phone whose model, engine or build shows the code, without asking", async () => {
+    const leaks: readonly Partial<PairRequest>[] = [
+      { model: "SM-4821" },
+      { engine: "4821" },
+      { build: "debug-4821" }
+    ];
+    for (const leak of leaks) {
+      const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve("4821"));
+      const { ui, lines } = recordingConsole();
+      const request = { ...REQUEST, ...leak };
+      expect(await pairPrompt(ui, ask)(request, new AbortController().signal)).toBe(false);
+      expect(ask).not.toHaveBeenCalled();
+      expect(lines).toEqual([`  ✗ refused ${request.model}`]);
+    }
+  });
+
+  it("prints the engine only when it looks like an engine id or is unknown", async () => {
+    expect(await shown("0.14.12")).toBe(
+      "◆ SM-A266B at 192.168.1.23 (lan) asks to link · engine 0.14.12"
+    );
+    expect(await shown("unknown")).toBe(
+      "◆ SM-A266B at 192.168.1.23 (lan) asks to link · engine unknown"
+    );
+    expect(await shown("type 1234 now")).toBe("◆ SM-A266B at 192.168.1.23 (lan) asks to link");
+    expect(await shown("0.14.12+9C41E0")).toBe("◆ SM-A266B at 192.168.1.23 (lan) asks to link");
+  });
+});

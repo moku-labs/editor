@@ -33,6 +33,8 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
     hotReloadWaiters: new Set(),
     selection: undefined,
     project: undefined,
+    engine: undefined,
+    engineListeners: new Set(),
     notified: new Map(),
     handlers: new Map(),
     subs: new Map(),

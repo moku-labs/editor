@@ -37,7 +37,23 @@ describe("createRenderViewState", () => {
       palette: undefined,
       tracker: [],
       watching: [],
-      listeners: new Set()
+      listeners: new Set(),
+      device: {
+        session: undefined,
+        second: undefined,
+        secondAt: undefined,
+        window: expect.objectContaining({ capacity: 1024, count: 0, spikeCount: 0 }),
+        spikes: [],
+        recorder: undefined,
+        perf: "absent",
+        selected: undefined,
+        record: { kind: "closed" },
+        more: true,
+        dirty: false,
+        watches: [],
+        reading: undefined,
+        stopPaint: undefined
+      }
     });
   });
 

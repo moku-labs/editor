@@ -5,6 +5,7 @@
  * protocol's own parsers, re-exported under the reader names.
  */
 
+import type { SessionDevice } from "../../hub/protocol";
 import type {
   BuildInfo,
   BuildProfile,
@@ -458,8 +459,55 @@ export function readHotReload(value: Json | undefined): HotReload | undefined {
 }
 
 /**
- * Reads one session: the five R1 fields. The hub's `heartbeat` readout and other keys are dropped;
- * the link computes silence itself from forwarded heartbeats.
+ * Text or null: a field the hub sends as `string | null`.
+ *
+ * @param object - A JSON object.
+ * @param key - The field.
+ * @returns The text, null, or undefined when the field is neither.
+ * @example
+ * ```ts
+ * textOrNull({ model: null }, "model"); // null
+ * ```
+ */
+function textOrNull(object: JsonObject, key: string): string | null | undefined {
+  // eslint-disable-next-line unicorn/no-null -- null is a JSON value on the wire
+  return object[key] === null ? null : textOf(object, key);
+}
+
+/**
+ * Reads the device of a device session (`SessionInfo.device`, spec 01 C8): its id, model, link
+ * kind, address, port, engine and build. Any field of the wrong type reads as no device.
+ *
+ * @param value - The `device` member of a session.
+ * @returns The device, or undefined.
+ * @example
+ * ```ts
+ * readDevice({ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: null, build: null });
+ * // { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: null, build: null }
+ * ```
+ */
+function readDevice(value: Json | undefined): SessionDevice | undefined {
+  const object = objectOf(value);
+  if (object === undefined) return undefined;
+
+  const id = textOf(object, "id");
+  const link = object.link === "adb" || object.link === "lan" ? object.link : undefined;
+  const address = textOf(object, "address");
+  const port = numberOf(object, "port");
+  const model = textOrNull(object, "model");
+  const engine = textOrNull(object, "engine");
+  const build = textOrNull(object, "build");
+  if (id === undefined || link === undefined || address === undefined || port === undefined) {
+    return undefined;
+  }
+  if (model === undefined || engine === undefined || build === undefined) return undefined;
+  return { id, model, link, address, port, engine, build };
+}
+
+/**
+ * Reads one session: the five R1 fields, and the device of a device session (spec 01 C8). The
+ * hub's `heartbeat` readout and other keys are dropped; the link computes silence itself from
+ * forwarded heartbeats. A malformed device is left out (the session reads as a browser session).
  *
  * @param value - A Json value.
  * @returns The session, or undefined.
@@ -479,7 +527,10 @@ function readSession(value: Json): SessionInfo | undefined {
   const connectedAt = numberOf(object, "connectedAt");
   if (id === undefined || game === undefined || page === undefined) return undefined;
   if (embedded === undefined || connectedAt === undefined) return undefined;
-  return { id, game, page, embedded, connectedAt };
+
+  const device = readDevice(object.device);
+  const session = { id, game, page, embedded, connectedAt };
+  return device === undefined ? session : { ...session, device };
 }
 
 /**

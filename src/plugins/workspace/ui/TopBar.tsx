@@ -2,15 +2,16 @@
  * @file workspace plugin — B1, the top bar, in two layouts by window width (round 2 R1).
  *
  * 900 px and wider (`data-layout="wide"`), left to right: the game mark, game name, session chip,
- * link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O)
+ * the computer's engine fingerprint (`engine 0.14.13+1ab7f2`, once link knows it; TopBar.css hides
+ * it below 1100 px), link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O)
  * and Hot reload (H) switches with visible labels, Registry (icon; counts in its title), theme
  * toggle.
  *
  * Below 900 px (`data-layout="compact"`): the game mark, game name, link pill (the session id in
  * its title; it opens the session menu), Pause/Resume and Step as icons (the label is their
  * accessible name), the Hot reload (H) icon toggle (round 2b R15), the search icon and the ⋯ menu
- * holding the rest; the toggle stays in the menu too. At 560 px and narrower the game name hides
- * (TopBar.css). Controls that cannot act now are `aria-disabled` so their tooltip still explains
+ * holding the rest; the toggle stays in the menu too. The game name's title carries the engine
+ * fingerprint there. At 560 px and narrower the game name hides (TopBar.css). Controls that cannot act now are `aria-disabled` so their tooltip still explains
  * why.
  *
  * The game mark (U1) is a tile with the initials of the game name, tinted by a hue from the name
@@ -132,16 +133,18 @@ function MarkTile(props: { readonly game: string | undefined }): VNode {
 }
 
 /**
- * The game name and its version.
+ * The game name and its version; in the compact bar its title also names the computer's engine
+ * fingerprint.
  *
- * @param props - The manifest game string.
+ * @param props - The manifest game string and the title.
  * @param props.game - E.g. "merge-game 0.0.0", "No game" without one.
+ * @param props.title - The tooltip, e.g. "merge-game 0.0.0 · engine 0.14.13+1ab7f2"; none when undefined.
  * @returns The name.
  */
-function GameName(props: { readonly game: string }): VNode {
+function GameName(props: { readonly game: string; readonly title: string | undefined }): VNode {
   const { name, version } = splitGameName(props.game);
   return (
-    <span data-game-name>
+    <span data-game-name title={props.title}>
       <span data-part="name">{name}</span>
       {version !== undefined && (
         <>
@@ -298,7 +301,9 @@ export function TopBar(props: TopBarProps): VNode {
   const { ctx } = props;
   const { state } = ctx;
   useWorkspace(state.ui, () => state.ui.version);
-  const manifest = ctx.require(linkPlugin).manifest();
+  const link = ctx.require(linkPlugin);
+  const manifest = link.manifest();
+  const engine = link.engine();
   const width = viewportWidth();
   const layout = barLayout(width);
   const compact = layout === "compact";
@@ -312,8 +317,18 @@ export function TopBar(props: TopBarProps): VNode {
   return (
     <header data-ui="top-bar" data-layout={layout}>
       <MarkTile game={game} />
-      <GameName game={game ?? "No game"} />
+      <GameName
+        game={game ?? "No game"}
+        title={
+          compact && engine !== undefined ? `${game ?? "No game"} · engine ${engine}` : undefined
+        }
+      />
       {!compact && <SessionChip ctx={ctx} />}
+      {!compact && engine !== undefined && (
+        <span data-part="engine" data-mono>
+          engine {engine}
+        </span>
+      )}
       <LinkPill ctx={ctx} session={compact} />
       <BarButton
         name="pause"

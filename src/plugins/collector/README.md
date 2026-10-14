@@ -85,6 +85,20 @@ label is trimmed and must be 1–200 characters, else:
 `{ state: "off" | "on" | "missing", phones: [{ serial, model, reversed }] }`: off while device mode
 is off, missing when adb could not be spawned, else the phones the loop sees.
 
+### `settled(): Promise<void>`
+
+Resolves when every step queued on a log before the call is done: its writes, the close of its file
+and the `collector:session` that follows. A log's `away` and `done` events go out from its queue, a
+few ticks after the hub's `closed` / `stopped`, so the perf command's stop awaits it between
+`hub.stopDevices()` and `editor.stop()`: every done line is printed before the app stops. Resolves
+at once when nothing is pending.
+
+```ts
+await editor.hub.stopDevices();
+await editor.collector.settled(); // each log's collector:session { state: "done" } went out
+await editor.stop();
+```
+
 ### The mark route `{path}/perf/mark`
 
 Registered in `onInit` on every server (device mode off included), so `moku-editor perf mark` always

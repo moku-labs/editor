@@ -147,6 +147,8 @@ export function createLinkMock(): LinkMock {
       notify: vi.fn(),
       handle: vi.fn(() => vi.fn()),
       project: () => undefined,
+      engine: () => undefined,
+      onEngine: () => stopNothing,
       files: {
         find: vi.fn(() => Promise.resolve([])),
         list: vi.fn(() => Promise.resolve([])),

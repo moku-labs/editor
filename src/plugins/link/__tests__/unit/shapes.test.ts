@@ -43,6 +43,27 @@ describe("readSessions", () => {
     expect(list).toEqual([sessionOf("s-1")]);
   });
 
+  it("keeps the device of a device session and leaves a malformed device out", () => {
+    const device = {
+      id: "d-7f3a",
+      model: "SM-A266B",
+      link: "adb",
+      address: "127.0.0.1",
+      port: 47_600,
+      engine: "0.14.12+9c41e0",
+      build: null
+    } as const;
+    const list = readSessions({
+      list: [
+        { ...toObject(sessionOf("s-1")), device },
+        { ...toObject(sessionOf("s-2")), device: { ...device, link: "usb" } },
+        { ...toObject(sessionOf("s-3")), device: { ...device, port: "47600" } }
+      ]
+    });
+
+    expect(list).toEqual([sessionOf("s-1", { device }), sessionOf("s-2"), sessionOf("s-3")]);
+  });
+
   it("is undefined without a list", () => {
     expect(readSessions({})).toBeUndefined();
     expect(readSessions(undefined)).toBeUndefined();

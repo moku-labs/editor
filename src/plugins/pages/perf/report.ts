@@ -14,7 +14,31 @@ import {
   summarize,
   summaryText
 } from "../../collector/report";
+import { cleanText } from "../../perf/protocol";
 import type { PerfCompareArgs, PerfDeps, PerfSummaryArgs } from "./types";
+
+/** The fix line of a log that cannot be read. */
+const GIVE_LOG = "  Give the path of a .jsonl log, for example .moku/perf/<log>.jsonl.";
+
+/**
+ * Why a log could not be read: "does not exist" for a missing file, else the error's message on
+ * one line.
+ *
+ * @param log - The path as given.
+ * @param error - What the read threw.
+ * @returns The problem, without a final period.
+ * @example
+ * ```ts
+ * readProblem("a.jsonl", Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" })); // "a.jsonl does not exist"
+ * ```
+ */
+function readProblem(log: string, error: unknown): string {
+  const isMissing = error instanceof Error && "code" in error && error.code === "ENOENT";
+  if (isMissing) return `${log} does not exist`;
+
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replaceAll(/\s+/g, " ").trim();
+}
 
 /**
  * Reads and parses a log; prints why when it cannot.
@@ -34,10 +58,8 @@ async function readLog(
   let text: string;
   try {
     text = await deps.readText(log);
-  } catch {
-    ui.error(
-      `[moku-editor] ${command}: ${log} does not exist.\n  Give the path of a .jsonl log, for example .moku/perf/<log>.jsonl.`
-    );
+  } catch (error) {
+    ui.error(`[moku-editor] ${command}: ${readProblem(log, error)}.\n${GIVE_LOG}`);
     return undefined;
   }
 
@@ -56,14 +78,16 @@ async function readLog(
  * @param row - The row's screen and rate.
  * @param row.path - The screen.
  * @param row.rate - The rate, or null.
- * @returns The screen, then the rate after an at sign when it is known.
+ * @returns The screen, then the rate after an at sign when it is known; both as clean text (a
+ * path comes from the phone).
  * @example
  * ```ts
  * rowName({ path: "settings", rate: 120 }); // "settings @120"
  * ```
  */
 function rowName(row: Pick<CompareRow, "path" | "rate">): string {
-  return row.rate === null ? row.path : `${row.path} @${row.rate}`;
+  const path = cleanText(row.path);
+  return row.rate === null ? path : `${path} @${cleanText(String(row.rate))}`;
 }
 
 /**

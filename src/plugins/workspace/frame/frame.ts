@@ -59,13 +59,19 @@ export function gameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
 
 /**
  * The `src` of the game frame: the game URL tagged with the frame id of this tools page
- * (`link.frameUrl`), so link and the reload know the frame's session from another tab's.
+ * (`link.frameUrl`), so link and the reload know the frame's session from another tab's, and with
+ * the chosen scenario (`?player=<name>`), so the first mount, the D-07 reload and the Hot reload
+ * switch's reload all keep it. The one place the frame URL is made.
  *
  * @param ctx - Domain context of workspace.
  * @returns The tagged URL.
  */
-export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require">): string {
-  return ctx.require(linkPlugin).frameUrl(gameUrl(ctx));
+export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require" | "state">): string {
+  const link = ctx.require(linkPlugin);
+  const player = ctx.state.scenario.chosen;
+  return player === undefined
+    ? link.frameUrl(gameUrl(ctx))
+    : link.frameUrl(gameUrl(ctx), { player });
 }
 
 /**

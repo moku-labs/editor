@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is "not known" on the digest, the device and the pairing request */
 /* eslint-disable sonarjs/no-hardcoded-ip -- the LAN address of the fixture phone */
+import type { LogEntry } from "@moku-labs/common";
 import { describe, expect, it } from "vitest";
 import { perfSink } from "../../log";
 import { recordingConsole } from "../helpers";
@@ -10,10 +11,10 @@ import { recordingConsole } from "../helpers";
  * @param entries - The log entries.
  * @returns The printed lines.
  */
-function printed(entries: readonly { level: string; event: string; data?: unknown }[]): string[] {
+function printed(entries: readonly Omit<LogEntry, "ts">[]): string[] {
   const { ui, lines } = recordingConsole();
   const sink = perfSink(ui);
-  for (const entry of entries) sink.write(entry);
+  for (const entry of entries) sink.write({ ...entry, ts: 0 });
   return lines;
 }
 
@@ -74,5 +75,31 @@ describe("perfSink", () => {
         { level: "error", event: "hub:emit-failed" }
       ])
     ).toEqual(['  ⚠ collector:reverse-failed {"serial":"R5","model":null}', "  ✗ hub:emit-failed"]);
+  });
+});
+
+describe("perfSink hardening (I5, I9)", () => {
+  it("cleans the adb serial of control characters", () => {
+    expect(
+      printed([
+        {
+          level: "info",
+          event: "collector:reversed",
+          data: { serial: "R5\u001B[2J\u202EX", model: "SM-A266B", port: 47_600 }
+        }
+      ])
+    ).toEqual(["  ✓ SM-A266B (R5[2JX): its 127.0.0.1:47600 leads here (adb reverse)"]);
+  });
+
+  it("never prints undefined for a missing field", () => {
+    const lines = printed([
+      { level: "info", event: "hub:paired", data: { model: "SM-A266B" } },
+      { level: "info", event: "hub:pair-refused", data: {} },
+      { level: "info", event: "collector:reversed", data: {} },
+      { level: "info", event: "collector:adb-missing" },
+      { level: "info", event: "collector:adb-ambiguous", data: {} }
+    ]);
+    expect(lines).toHaveLength(5);
+    for (const line of lines) expect(line).not.toContain("undefined");
   });
 });

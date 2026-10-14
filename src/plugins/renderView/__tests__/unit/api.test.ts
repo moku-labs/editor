@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { ElementRef } from "../../../panels/shared/scene";
+import { toWireValue } from "../../../registry/protocol";
 import { createRenderViewApi } from "../../api";
+import { createHandlers } from "../../handlers";
 import { initRenderView, startRenderView, stopRenderView } from "../../lifecycle";
 import { createRenderViewState, notify, subscribe } from "../../state";
 import type { RenderSnapshot, RenderViewApi, TextureSortKey } from "../../types";
 import { startScene } from "../../watch";
+import { DEVICE, deviceSession, spikesOf, windowWire, wireJson } from "../device-fixtures";
 import {
   ASSETS,
   CONFIG,
@@ -13,6 +16,8 @@ import {
   deliverBoard,
   type FrameQueue,
   flush,
+  GAME_01_SOURCES,
+  manifestOf,
   RENDER,
   serveManifest,
   stubFrames,
@@ -278,5 +283,105 @@ describe("lifecycle", () => {
 
     stopRenderView(ctx);
     expect(ctx.workspace.items).toHaveLength(0);
+  });
+});
+
+describe("the device strip api (spec 09 R5)", () => {
+  const PERF = [
+    "editor.perf.second",
+    "editor.perf.window",
+    "editor.perf.spikes",
+    "editor.perf.spike"
+  ];
+
+  /**
+   * Attaches a session (a phone when `device` is given) and shows Render.
+   *
+   * @param device - The phone, or undefined for a browser session.
+   * @param sources - The manifest's sources.
+   */
+  function attachSession(
+    device: typeof DEVICE | undefined,
+    sources: readonly string[] = [...GAME_01_SOURCES, ...PERF]
+  ): void {
+    ctx.link.api.sessions = () => [deviceSession("s-1", device)];
+    ctx.link.api.session = () => "s-1";
+    ctx.link.manifestValue = manifestOf(sources);
+    startRenderView(ctx);
+    createHandlers(ctx)["workspace:changed"]({ ws: "render" });
+    ctx.link.send("editor.perf.window", wireJson(windowWire()));
+    ctx.link.send("editor.perf.spikes", toWireValue(spikesOf()));
+  }
+
+  it("device() is undefined for a session without editor.perf.second", () => {
+    attachSession(DEVICE, GAME_01_SOURCES);
+
+    expect(api.device()).toBeUndefined();
+  });
+
+  it("device() is defined for a browser session with perf, with link.kind 'browser'", () => {
+    attachSession(undefined);
+
+    expect(api.device()?.link).toEqual({ kind: "browser" });
+    expect(api.device()?.counter).toBe("–/6");
+  });
+
+  it("device() returns copies: mutating it changes nothing", () => {
+    attachSession(DEVICE);
+    const view = api.device();
+    if (view === undefined) throw new Error("no strip");
+
+    Object.assign(view.spikes, { 0: { frame: 1, cause: "js" } });
+    Object.assign(view.link, { kind: "lan" });
+
+    expect(api.device()?.link.kind).toBe("adb");
+    expect(api.device()?.spikes[0]?.frame).toBe(4572);
+    expect(ctx.state.device.session?.device?.link).toBe("adb");
+  });
+
+  it("stepSpike, closeSpike and setMore change the state and notify the UI", () => {
+    attachSession(DEVICE);
+    const listener = vi.fn();
+    subscribe(ctx.state, listener);
+
+    expect(api.stepSpike(1)).toBe(4572);
+    expect(api.device()?.selected).toBe(4572);
+    expect(api.device()?.record).toBe("loading");
+    expect(api.stepSpike(-1)).toBe(4845);
+    api.closeSpike();
+    expect(api.device()?.record).toBe("closed");
+    expect(api.device()?.selected).toBe(4845);
+    api.setMore(false);
+    expect(api.device()?.more).toBe(false);
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it("without a strip stepSpike and openSpike change nothing", async () => {
+    attachSession(DEVICE, GAME_01_SOURCES);
+
+    expect(api.stepSpike(1)).toBeUndefined();
+    await api.openSpike(4812);
+    expect(ctx.link.api.read).not.toHaveBeenCalledWith("editor.perf.spike", expect.anything());
+  });
+
+  it("onStart re-renders the strip when the computer's engine arrives; onStop drops it", () => {
+    const listeners: (() => void)[] = [];
+    ctx.link.api.onEngine = vi.fn((listener: (engine: string) => void) => {
+      const entry = (): void => listener("0.14.13+1ab7f2");
+      listeners.push(entry);
+      return () => {
+        listeners.splice(listeners.indexOf(entry), 1);
+      };
+    });
+    attachSession(DEVICE);
+    const ui = vi.fn();
+    subscribe(ctx.state, ui);
+
+    for (const listener of listeners) listener();
+    expect(ui).toHaveBeenCalled();
+
+    stopRenderView(ctx);
+    expect(listeners).toEqual([]);
+    expect(ctx.state.device.watches).toEqual([]);
   });
 });

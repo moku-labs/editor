@@ -88,3 +88,24 @@ describe("perfCompare", () => {
     expect(await perfCompare({ kind: "perf-compare", a: game, b: a }, READING, ui)).toBe(1);
   });
 });
+
+describe("report hardening (W3, I7)", () => {
+  it("cleans a screen path before it names it in the closing warning", async () => {
+    const path = "garden\u001B[2J\u202E/boss";
+    const a = await writeIn(root, "a.jsonl", perfLogText([{ path, bucket: 8 }]));
+    const b = await writeIn(root, "b.jsonl", perfLogText([{ path, bucket: 30 }]));
+    const { ui, lines } = recordingConsole();
+    expect(await perfCompare({ kind: "perf-compare", a, b }, READING, ui)).toBe(0);
+    expect(lines.at(-1)).toBe("  ⚠ 1 screen got worse by 10 % or more: garden[2J/boss @120");
+  });
+
+  it("says does not exist only for a missing file, else prints the read error with the same fix", async () => {
+    const { ui, lines } = recordingConsole();
+    expect(await perfSummary({ kind: "perf-summary", log: root }, READING, ui)).toBe(1);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^ {2}✗ \[moku-editor\] perf summary: [^\n]*EISDIR[^\n]*\n {2}Give the path of a \.jsonl log, for example \.moku\/perf\/<log>\.jsonl\.$/
+    );
+    expect(lines[0]).not.toContain("does not exist");
+  });
+});

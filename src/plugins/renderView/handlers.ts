@@ -1,10 +1,12 @@
 /**
  * @file renderView plugin — hooks of the global tools events: workspace:changed starts and stops
- * the scene watches, link:status keeps or clears the session data, link:project reads a stale
- * catalogue again, workspace:reveal reveals.
+ * the scene watches and the D1 strip's device watches, link:status keeps or clears the session
+ * data and the strip, link:project reads a stale catalogue again, workspace:reveal reveals.
  */
 import type { ToolsEvents } from "../../config";
+import { linkPlugin } from "../link";
 import { highlightRef, revealRef, setTexturePalette } from "./actions";
+import { clearDevice, stopDeviceWatches, syncDevice } from "./device/watch";
 import { removeOverlay } from "./overlay";
 import { notify } from "./state";
 import type { RenderViewCtx, RenderViewHooks, RenderViewState } from "./types";
@@ -57,8 +59,10 @@ function clearAll(state: RenderViewState): void {
 }
 
 /**
- * Render shown: scene watches on, refresh once per session (catalogue, calibration). Hidden:
- * scene watches off, box cleared.
+ * Render shown: scene watches on (none on a device session, R4), the D1 strip's watches on when
+ * the session's manifest lists `editor.perf.second`, refresh once per session (catalogue,
+ * calibration). Hidden: scene and device watches off (one burst; the strip's data is kept), box
+ * cleared.
  *
  * @param ctx - Domain context of renderView.
  * @returns The hook.
@@ -69,12 +73,15 @@ export function onWorkspaceChanged(
   return ({ ws }) => {
     const { state } = ctx;
     if (ws === "render") {
+      const link = ctx.require(linkPlugin);
       state.active = true;
       startScene(ctx);
+      syncDevice(ctx, link, link.manifest());
       if (state.catalogue === undefined) void refreshRenderView(ctx);
     } else {
       state.active = false;
       stopScene(ctx);
+      stopDeviceWatches(state);
       highlightRef(ctx);
     }
     notify(state);
@@ -82,8 +89,9 @@ export function onWorkspaceChanged(
 }
 
 /**
- * Keeps the data while silent or lost (the host marks it stale); clears the session data after a
- * session change and refreshes while Render is shown; clears everything on empty.
+ * Keeps the data while silent or lost (the host and the strip mark it stale); clears the session
+ * data after a session change, re-evaluates the strip (a new session starts it empty) and
+ * refreshes while Render is shown; clears everything, the strip included, on empty.
  *
  * @param ctx - Domain context of renderView.
  * @returns The hook.
@@ -93,6 +101,7 @@ export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:st
     const { state } = ctx;
     if (status.kind === "empty") {
       clearAll(state);
+      clearDevice(state);
       setTexturePalette(ctx);
       notify(state);
       return;
@@ -103,6 +112,8 @@ export function onLinkStatus(ctx: RenderViewCtx): (payload: ToolsEvents["link:st
     state.session = session;
     clearSession(state);
     setTexturePalette(ctx);
+    const link = ctx.require(linkPlugin);
+    syncDevice(ctx, link, link.manifest());
     notify(state);
     if (state.active) void refreshRenderView(ctx);
   };

@@ -114,14 +114,17 @@ export function resultOf(value: Json = null, frame = 1841): RunResult {
 export const FRAME = "f-test";
 
 /**
- * A page URL tagged with a frame id, as link's `frameUrl` builds it.
+ * A page URL tagged with a frame id and, with a player, the scenario, as link's `frameUrl` builds
+ * it.
  *
  * @param url - The page URL.
  * @param frame - The frame id; default the mock's own.
+ * @param player - The scenario; none when absent or "".
  * @returns The tagged URL.
  */
-export function tagged(url: string, frame = FRAME): string {
+export function tagged(url: string, frame = FRAME, player?: string): string {
   const parsed = new URL(url);
+  if (player !== undefined && player !== "") parsed.searchParams.set("player", player);
   parsed.searchParams.set("__editorFrame", frame);
   return parsed.href;
 }
@@ -153,6 +156,12 @@ export type LinkMock = {
   bootValue: ToolsBoot | undefined;
   /** The sessions `sessions()` answers. */
   sessionList: SessionInfo[];
+  /** The id `engine()` answers. */
+  engineValue: string | undefined;
+  /** Live engine listeners. */
+  readonly engineListeners: Set<(engine: string) => void>;
+  /** Sets the engine id and calls every engine listener, like link on `editor.engine`. */
+  publishEngine(engine: string): void;
   /** Live manifest listeners. */
   readonly manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** Sets the manifest and calls every listener, like link on an attach. */
@@ -167,11 +176,14 @@ export type LinkMock = {
 export function createLinkMock(): LinkMock {
   const listeners = new Set<(manifest: Manifest | undefined) => void>();
   const tapListeners = new Set<TapListener>();
+  const engineListeners = new Set<(engine: string) => void>();
   const link: LinkMock = {
     current: { kind: "connecting" },
     manifestValue: undefined,
     bootValue: BOOT,
     sessionList: [],
+    engineValue: undefined,
+    engineListeners,
     manifestListeners: listeners,
     read: vi.fn<LinkApi["read"]>(() => Promise.resolve(null)),
     watch: vi.fn<LinkApi["watch"]>(() => vi.fn()),
@@ -191,7 +203,7 @@ export function createLinkMock(): LinkMock {
     retry: vi.fn<LinkApi["retry"]>(),
     expectReload: vi.fn<LinkApi["expectReload"]>(),
     boot: vi.fn<LinkApi["boot"]>(() => link.bootValue),
-    frameUrl: vi.fn<LinkApi["frameUrl"]>(url => tagged(url)),
+    frameUrl: vi.fn<LinkApi["frameUrl"]>((url, opts) => tagged(url, FRAME, opts?.player)),
     isOtherTab: vi.fn<LinkApi["isOtherTab"]>(page => {
       const frame = new URL(page).searchParams.get("__editorFrame");
       return frame !== null && frame !== FRAME;
@@ -216,9 +228,21 @@ export function createLinkMock(): LinkMock {
     setHotReload: vi.fn<LinkApi["setHotReload"]>(() => Promise.resolve(false)),
     selection: vi.fn<LinkApi["selection"]>(() => undefined),
     project: vi.fn<LinkApi["project"]>(() => undefined),
+    engine: vi.fn<LinkApi["engine"]>(() => link.engineValue),
+    onEngine: vi.fn<LinkApi["onEngine"]>(listener => {
+      engineListeners.add(listener);
+      if (link.engineValue !== undefined) listener(link.engineValue);
+      return () => {
+        engineListeners.delete(listener);
+      };
+    }),
     notify: vi.fn<LinkApi["notify"]>(),
     handle: vi.fn<HandleCall>(() => vi.fn()),
     tapListeners,
+    publishEngine(engine) {
+      link.engineValue = engine;
+      for (const listener of engineListeners) listener(engine);
+    },
     tap(tap) {
       for (const listener of tapListeners) listener(tap);
     },

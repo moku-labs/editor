@@ -7,13 +7,12 @@
 import { relative, resolve } from "node:path/posix";
 import type { BrandConsole } from "@moku-labs/common/cli";
 import { createApp } from "../../../server";
-import { parsePerfLog, summarize, summaryText } from "../../collector/report";
+import { groupThousands, parsePerfLog, summarize, summaryText } from "../../collector/report";
 import type { CollectorSessionInfo } from "../../collector/types";
 import type { DeviceListen } from "../../hub/types";
 import type { Started } from "../types";
 import { writePerfDiscovery } from "./discovery";
 import { noGamePage } from "./home";
-import { groupThousands } from "./live";
 import { perfSink } from "./log";
 import { mergePluginConfigs, perfConfigOf } from "./plugin-configs";
 import { printPerfReady } from "./print";
@@ -25,12 +24,6 @@ type PerfEditor = ReturnType<typeof createApp>;
 
 /** The collector's default time between two adb reverse rounds, ms. */
 const REVERSE_EVERY_MS = 2000;
-
-/**
- * How long the stop waits after `hub.stopDevices()`: the collector emits each log's `done` from
- * its close queue, a few ticks after the hub's `stopped`, and `editor.stop()` would cut that emit.
- */
-const DONE_SETTLE_MS = 50;
 
 /**
  * The text of a thrown value.
@@ -165,9 +158,10 @@ async function printLogSummary(
 
 /**
  * Stops a perf run: the discovery file goes first; device mode stops while the app still runs,
- * so the collector marks every log done and the live hook prints each done line (teardown has no
- * emit); then the editor stops (the collector flushes and closes its files); then each log with
- * lines prints its summary (the records outlive the stop, with the final counts).
+ * so the collector marks every log done; `collector.settled()` waits until each log's done event
+ * went out from its close queue and the live hook printed it (teardown has no emit); then the
+ * editor stops (the collector flushes and closes its files); then each log with lines prints its
+ * summary (the records outlive the stop, with the final counts).
  *
  * @param editor - The started editor.
  * @param root - The root.
@@ -184,9 +178,13 @@ async function stopRun(
   ui: BrandConsole
 ): Promise<void> {
   release();
-  await editor.hub.stopDevices();
-  await new Promise(settled => setTimeout(settled, DONE_SETTLE_MS));
-  await editor.stop();
+  try {
+    await editor.hub.stopDevices();
+    await editor.collector.settled();
+  } finally {
+    // A failed device stop still stops the editor: no half-stopped server is left running.
+    await editor.stop();
+  }
 
   for (const log of editor.collector.sessions()) {
     if (log.lines > 0) await printLogSummary(log, root, deps, ui);

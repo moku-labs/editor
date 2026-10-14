@@ -24,6 +24,7 @@ import {
   previewState
 } from "./prefs/apply";
 import { effectiveTheme } from "./prefs/theme";
+import { addScenarioListener, refreshScenarios, scenarioView, setScenario } from "./scenarios";
 import { showToast } from "./toasts";
 import type { PreviewZone, WorkspaceApi, WorkspaceCtx } from "./types";
 import { mountShell } from "./ui/mount";
@@ -145,6 +146,14 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
       chooseCopyOnSelect(ctx, on);
     },
 
-    onPrefs: fn => addPrefsListener(state, fn)
+    onPrefs: fn => addPrefsListener(state, fn),
+
+    scenarios: () => scenarioView(state),
+
+    setScenario: name => setScenario(ctx, name),
+
+    refreshScenarios: () => refreshScenarios(ctx),
+
+    onScenario: fn => addScenarioListener(state, fn)
   };
 }

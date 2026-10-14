@@ -1,6 +1,6 @@
 /**
- * @file collector plugin — the api factory (sessions, mark, adb) and the computer mark the mark
- * route shares: one `mark` line into every live log, on that log's page clock.
+ * @file collector plugin — the api factory (sessions, mark, adb, settled) and the computer mark the
+ * mark route shares: one `mark` line into every live log, on that log's page clock.
  */
 import type { PerfMarkLine } from "../perf/protocol";
 import { pageTime } from "./session/clock";
@@ -11,6 +11,7 @@ import type {
   CollectorApi,
   CollectorCtx,
   CollectorSessionInfo,
+  CollectorState,
   LogSession
 } from "./types";
 
@@ -101,6 +102,16 @@ function adbStatusOf(loop: AdbLoop | undefined): AdbStatus {
 }
 
 /**
+ * Waits for the steps queued on every log at the call (writes, closes, the emits after a close).
+ *
+ * @param state - The collector's state.
+ * @returns When those queues have drained.
+ */
+async function settledLogs(state: CollectorState): Promise<void> {
+  await Promise.all([...state.sessions.values()].map(session => session.queue));
+}
+
+/**
  * collector's api factory (`api: createCollectorApi`).
  *
  * @param ctx - Domain context of the collector.
@@ -110,6 +121,7 @@ export function createCollectorApi(ctx: CollectorCtx): CollectorApi {
   return {
     sessions: () => [...ctx.state.sessions.values()].map(session => infoOf(session)),
     mark: label => markLogs(ctx, label),
-    adb: () => adbStatusOf(ctx.state.adb)
+    adb: () => adbStatusOf(ctx.state.adb),
+    settled: () => settledLogs(ctx.state)
   };
 }

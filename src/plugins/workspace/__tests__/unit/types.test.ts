@@ -30,6 +30,12 @@ import type {
 const framework = createToolsCore(toolsCoreConfig, { plugins: [linkPlugin, workspacePlugin] });
 
 describe("workspace types", () => {
+  it("setScenario takes a scenario name or undefined for the saved player", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.workspace.setScenario).parameter(0).toEqualTypeOf<string | undefined>();
+    expect(app.workspace.scenarios()).toEqual({ scenarios: [], chosen: undefined });
+  });
+
   it("app.workspace carries the R4 api", () => {
     const app = framework.createApp({});
     expectTypeOf(app.workspace.active()).toEqualTypeOf<WorkspaceId>();

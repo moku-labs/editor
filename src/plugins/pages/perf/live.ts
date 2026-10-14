@@ -6,6 +6,7 @@
  * and the left / done lines. Pure apart from the memory it updates; no cursor movement, so the
  * lines interleave safely with the pairing prompt and log warnings.
  */
+import { groupThousands } from "../../collector/report";
 import type { CollectorSessionEvent, SessionDigest } from "../../collector/types";
 import type { LiveMemory } from "./types";
 
@@ -54,25 +55,6 @@ export function newLiveMemory(): LiveMemory {
  */
 export function isStaleLine(line: string): boolean {
   return line.startsWith(STALE_PREFIX);
-}
-
-/**
- * A count with a space between thousands, as the report tables print it.
- *
- * @param value - The count.
- * @returns e.g. "1 840".
- * @example
- * ```ts
- * groupThousands(1840); // "1 840"
- * ```
- */
-export function groupThousands(value: number): string {
-  const digits = String(value);
-  const head = digits.length % 3 || 3;
-  const groups = [digits.slice(0, head)];
-  for (let index = head; index < digits.length; index += 3)
-    groups.push(digits.slice(index, index + 3));
-  return groups.join(" ");
 }
 
 /**

@@ -228,6 +228,8 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       notify: vi.fn(),
       handle: vi.fn(() => vi.fn()),
       project: () => link.projectValue,
+      engine: () => undefined,
+      onEngine: () => unwatch,
       files: files.client
     },
     attach(manifest) {

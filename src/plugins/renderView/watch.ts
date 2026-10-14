@@ -6,7 +6,9 @@
  * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest the project
  * index names (`manifestOf(link.project())`, the only source) and reads it again when a project
  * change makes it stale. No timer
- * reads a frame source. Each entry point resolves link once and passes it down: no delivered value
+ * reads a frame source. On a device session (a phone, `SessionInfo.device`) no scene source is
+ * watched and nothing is calibrated (spec 09 R4: serializing a scene tree costs the phone the
+ * frames the strip measures); the D1 strip's own watches live in `device/watch.ts`. Each entry point resolves link once and passes it down: no delivered value
  * resolves it again.
  */
 import { linkPlugin } from "../link";
@@ -24,6 +26,7 @@ import { rectOf } from "../panels/shared/scene/wire";
 import type { Json, LinkStatus, Manifest, ProjectDelta, ProjectState } from "../registry/protocol";
 import { applyPendingReveal, setTexturePalette } from "./actions";
 import { releasesOf, updateTextureUse } from "./derive";
+import { sessionDevice, syncDevice } from "./device/watch";
 import { asAssetsUsage, asEffectsStats, asRenderStats } from "./guards";
 import { drawBox } from "./overlay";
 import { notify } from "./state";
@@ -234,8 +237,29 @@ export function syncEffects(
 }
 
 /**
+ * Follows the kind of the chosen session on every attach: its D1 strip (`editor.perf.second`
+ * listed or not), and the scene watches while Render is shown — none on a device session (R4),
+ * the usual three on any other. An undefined manifest (session lost) keeps everything.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
+ * @param manifest - The manifest of the session, undefined while none is attached.
+ */
+export function syncSession(
+  ctx: RenderViewCtx,
+  link: LinkApi,
+  manifest: Manifest | undefined
+): void {
+  if (manifest === undefined) return;
+  syncDevice(ctx, link, manifest);
+  if (!ctx.state.active) return;
+  if (sessionDevice(link) === undefined) startScene(ctx);
+  else stopScene(ctx);
+}
+
+/**
  * Starts the session watches of game.render and game.assets and the manifest listener that
- * starts game.effects when the manifest lists it (once).
+ * starts game.effects when the manifest lists it and follows the kind of session (once).
  *
  * @param ctx - Domain context of renderView.
  */
@@ -246,7 +270,10 @@ export function startTracker(ctx: RenderViewCtx): void {
   ctx.state.tracker.push(
     link.watch("game.render", undefined, value => onRender(ctx, link, value)),
     link.watch("game.assets", undefined, value => onAssets(ctx, link, value)),
-    link.onManifest(manifest => syncEffects(ctx, link, manifest))
+    link.onManifest(manifest => {
+      syncEffects(ctx, link, manifest);
+      syncSession(ctx, link, manifest);
+    })
   );
 }
 
@@ -317,7 +344,7 @@ function scheduleBuild(ctx: RenderViewCtx, link: LinkApi): void {
 
 /**
  * Starts the scene watches while Render is shown (once): every value is stored, game.ui asks the
- * calibration once, and a build is queued.
+ * calibration once, and a build is queued. A device session gets none (R4).
  *
  * @param ctx - Domain context of renderView.
  */
@@ -326,6 +353,7 @@ export function startScene(ctx: RenderViewCtx): void {
   if (state.watching.length > 0) return;
 
   const link = ctx.require(linkPlugin);
+  if (sessionDevice(link) !== undefined) return;
   for (const [key, id] of SCENE_SOURCES) {
     const stop = link.watch(id, undefined, value => {
       // A late value after stopScene is dropped.
@@ -356,7 +384,7 @@ export function stopScene(ctx: RenderViewCtx): void {
  * read of `game.locate`, else `game.rect`). A manifest that lists neither reports no element
  * rects: nothing is read, nothing is warned and the calibration stays undefined. Marks the
  * calibration asked first, so a burst reads once; queues a rebuild while the scene is watched.
- * Never rejects.
+ * A device session is never calibrated (R4). Never rejects.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API; resolved from ctx when left out.
@@ -368,7 +396,7 @@ export async function calibrate(
 ): Promise<void> {
   const { state } = ctx;
   const { ui } = state.sources;
-  if (ui === undefined) return;
+  if (ui === undefined || sessionDevice(link) !== undefined) return;
 
   // Mark asked first, so a burst of game.ui values reads once.
   state.calibrationAsked = true;

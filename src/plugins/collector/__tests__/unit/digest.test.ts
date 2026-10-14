@@ -3,7 +3,7 @@ import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PerfLogLine } from "../../../perf/protocol";
 import { readLine } from "../../session/digest";
-import { writeLines } from "../../session/writer";
+import { closeHandle, writeLines } from "../../session/writer";
 import { createLogSession } from "../../state";
 import type { LogSession } from "../../types";
 import {
@@ -127,6 +127,8 @@ describe("malformed lines the hub's shallow guard let through", () => {
   });
 
   afterEach(async () => {
+    // The test writes a real file: its handle is closed here, never left to the garbage collector.
+    await closeHandle(session);
     await removeDir(root);
   });
 

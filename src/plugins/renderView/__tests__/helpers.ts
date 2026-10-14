@@ -35,6 +35,11 @@ import type { RenderViewConfig, RenderViewCtx } from "../types";
 // mock, a manual animation-frame queue and a domain ctx over a real state.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The unsubscribe of a listener that never fires.
+ */
+function stopNothing(): void {}
+
 /** The default config of the plugin. */
 export const CONFIG: RenderViewConfig = {
   fpsSamples: 60,
@@ -270,6 +275,8 @@ export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
   const link = createLinkMock();
   link.current = { kind: "live", frame: 1841 };
   link.manifestValue = manifestOf(GAME_01_SOURCES);
+  link.api.engine = vi.fn(() => undefined);
+  link.api.onEngine = vi.fn(() => stopNothing);
   const capture = boardCapture();
   link.api.read = vi.fn((id: string, input?: Json) => {
     const key =

@@ -64,6 +64,10 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `copyOnSelect` | `() => boolean` | The Copy on select preference (U5, D-70): what a click of gameView's element picker does. On: the pick writes the reference (crop, full frame, card) and copies its line. Off: the pick only selects the element and writes nothing. Persisted; `true` for a fresh viewer and for a stored record without the field. |
 | `setCopyOnSelect` | `(on) => void` | Sets and persists the preference; `onPrefs` listeners get the new `copyOnSelect` (the Copy Ref switch of gameView's game toolbar follows them). The same value again does nothing. No event: gameView reads `copyOnSelect()` at a pick. |
 | `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device, sound or Copy on select change with `{ theme, previews, device, muted, copyOnSelect }`. |
+| `scenarios` | `() => ScenarioView` | `{ scenarios, chosen }`: the scenario names of `tests/scenarios/` (file stems, sorted) and the one the game frame starts from. A copy. Empty until the first listing and for a project without the folder. See [Scenarios](#scenarios-dev-only). |
+| `setScenario` | `(name: string \| undefined) => Promise<ReloadResult>` | Starts the game frame from a scenario (`?player=<name>`), or from the saved player with `undefined`: reloads the frame without restore and toasts "Game started from scenario <name>" / "Game started from the saved player" instead of the reload's own toast. Before the first mount it stores the choice and resolves `not_mounted`. A name not listed rejects `[moku-editor] Unknown scenario "<name>".` (`TypeError`). Never persisted; emits no `workspace:ran`. |
+| `refreshScenarios` | `() => Promise<ScenarioView>` | Lists `tests/scenarios/` again through `link.files.list`. Concurrent calls share one listing. A missing folder or a failed list gives no scenarios (debug `workspace:scenarios-failed`, no toast). |
+| `onScenario` | `(fn) => () => void` | Called with the new view after the list changed or a scenario was chosen. A throwing listener is logged as `workspace:scenario-listener-failed`. |
 
 ```ts
 workspace.show("flow");
@@ -97,7 +101,9 @@ const off = workspace.onPrefs(prefs => rerender(prefs));
 The bar picks its layout from the window width and writes it as `data-layout` on
 `[data-ui="top-bar"]`. A window resize re-renders it.
 
-- **900 px and wider (`wide`)**: the game mark, game name, session chip, link pill, Pause, Step,
+- **900 px and wider (`wide`)**: the game mark, game name, session chip, the computer's engine
+  fingerprint (`span[data-part="engine"]`, mono, "engine 0.14.13+1ab7f2" from `link.engine()`;
+  nothing while it is unknown; hidden below 1100 px of window width), link pill, Pause, Step,
   the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels,
   Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
   theme. Under 1180 px Pause and Step show their icons only.
@@ -109,7 +115,8 @@ The bar picks its layout from the window width and writes it as `data-layout` on
   bar at every compact width: `barToggles(width)` in `ui/TopBar.tsx` answers `["hot-reload"]`
   below 900 px and `[]` from there. The session chip is gone: the pill's tooltip names the session
   ("… · session s-7f3a · connected 22:41:07"), and with more than one session the pill opens the
-  session menu.
+  session menu. The game name's `title` carries the engine fingerprint ("merge-game 0.0.0 · engine
+  0.14.13+1ab7f2") once link knows it.
 - **The ⋯ menu** is a top-layer `role="menu"` popover. Rows: Game preview (G), Overlay in game
   (O), Hot reload (H), each with its state and its key (Hot reload is a row even though the bar
   shows it as an icon); then Registry (counts), Density (cycles auto → compact → comfortable) and
@@ -122,6 +129,23 @@ The bar picks its layout from the window width and writes it as `data-layout` on
 
 Every control keeps its size; only the game name and the wide search box shrink, and the search
 box clips its own content, so no control runs over another.
+
+### Scenarios (dev only)
+
+The engine dev page starts from a prepared save when its URL carries `?player=<name>`: the file
+`tests/scenarios/<name>.ts` of the game folder (engine `src/app/page.ts`). workspace lists that
+folder once the link's socket is open (the first `link:status` that is not `connecting` or
+`lost`), keeps the chosen name in its state and passes it to `link.frameUrl(url, { player })`
+(`taggedGameUrl`, the one place the frame URL is made): the first mount, the D-07 reload and the
+Hot reload switch's reload all keep it; Bun's own HMR reload keeps the frame's URL by itself.
+
+- The file rule is the engine's: every `.ts` file directly in the folder but `*.test.ts`,
+  `*.spec.ts`, `*.d.ts` and `index.ts`, by file stem, sorted (`scenarioNames`).
+- `setScenario(name)` reloads the frame without restore: a scenario plays on a fresh memory save
+  and a bookmark restored on top would undo it.
+- The choice is never stored: a reload of the tools page starts from the saved player.
+- A debug build carries no scenarios; the picker is a dev-server feature.
+- gameView's game toolbar shows the control over this api (spec 09 W5).
 
 ### The game mark (U1)
 
@@ -502,9 +526,9 @@ workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "fl
 | Phase | Does |
 |---|---|
 | `onInit` | Validates config, loads prefs, reads the OS theme, the density and the hash, registers built-in keys, Esc layers and palette Commands, and gives link the `device` and `show` request handlers. No DOM writes. |
-| `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples) and the `link.onHotReload` listener (the switch). No mount. |
+| `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples), the `link.onHotReload` listener (the switch) and the `link.onEngine` listener (the top bar's fingerprint). No mount. |
 | `mount(el)` | Renders the shell, sets `data-theme` and `data-density` on `<html>`, attaches hosts, creates the frame layer once. |
-| `onStop` | Runs every cleanup (the request handlers of link among them), clears toast, ticker, reload and ripple timers, unrenders, removes the frame layer and the hosts. |
+| `onStop` | Runs every cleanup (the request handlers of link among them), clears toast, ticker, reload and ripple timers, forgets the scenario listeners, unrenders, removes the frame layer and the hosts. A scenario listing that settles after stop changes nothing. |
 
 ## Integration notes
 

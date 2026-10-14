@@ -255,6 +255,32 @@ describe("workspace integration", () => {
     await app.stop();
   });
 
+  it("a scenario picked after the first listing starts the frame from it: player=full, new session", async () => {
+    hub.listings.set("tests/scenarios", [
+      { path: "tests/scenarios/full.ts", kind: "file", size: 9 },
+      { path: "tests/scenarios/full.test.ts", kind: "file", size: 9 }
+    ]);
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    hub.open(sessionOf("s-1"), manifestOf());
+    await until(() => app.workspace.scenarios().scenarios.length === 1, "the first listing");
+    expect(app.workspace.scenarios()).toEqual({ scenarios: ["full"], chosen: undefined });
+    await until(() => app.link.manifest() !== undefined, "attach");
+
+    const pending = app.workspace.setScenario("full");
+    const iframe = document.querySelector<HTMLIFrameElement>("iframe[data-game-frame]");
+    expect(new URL(iframe?.src ?? "").searchParams.get("player")).toBe("full");
+    hub.close("s-1", "game_reloaded");
+    hub.open(sessionOf("s-2"), manifestOf());
+
+    await expect(pending).resolves.toEqual({ restored: false });
+    expect(app.link.session()).toBe("s-2");
+    expect(hub.runs("game.bookmark")).toEqual([]);
+    expect(ran).toEqual([]);
+    await app.stop();
+  });
+
   it("reload({ restore: true }) while paused: the restored game is paused again", async () => {
     const app = createApp();
     await app.start();

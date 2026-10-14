@@ -1,13 +1,17 @@
 /**
  * @file renderView plugin — onInit (register the Render panel), onStart (tracker watches for the
- * session, the manifest listener of game.effects, the device listener, scene watches when Render
- * is active) and onStop (every unwatch, the overlay root, the palette items).
+ * session, the manifest listener of game.effects and the D1 strip, the device listener, the
+ * computer's engine listener, scene watches when Render is active) and onStop (every unwatch, the
+ * strip's watches and repaint timers, the overlay root, the palette items).
  */
+import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
+import { stopDeviceWatches } from "./device/watch";
 import { onWorkspaceChanged } from "./handlers";
 import { removeOverlay } from "./overlay";
 import { createRenderPanel } from "./panel";
+import { notify } from "./state";
 import type { RenderViewCtx, RenderViewState } from "./types";
 import { recalibrate, startTracker, stopEffects } from "./watch";
 
@@ -22,8 +26,9 @@ export function initRenderView(ctx: RenderViewCtx): void {
 
 /**
  * onStart: watches game.render and game.assets for the session and game.effects while the
- * manifest lists it, re-calibrates after a device change, and starts the scene watches when
- * Render is the restored workspace (it emits no `workspace:changed`).
+ * manifest lists it, re-calibrates after a device change, re-renders the strip's STALE cell when
+ * the computer's engine fingerprint arrives, and starts the scene watches when Render is the
+ * restored workspace (it emits no `workspace:changed`).
  *
  * @param ctx - Domain context of renderView.
  */
@@ -33,6 +38,9 @@ export function startRenderView(ctx: RenderViewCtx): void {
 
   startTracker(ctx);
   ctx.state.tracker.push(
+    ctx.require(linkPlugin).onEngine(() => {
+      notify(ctx.state);
+    }),
     workspace.onPrefs(prefs => {
       const next = `${prefs.device.preset.id}/${prefs.device.orientation}`;
       if (next === device) return;
@@ -44,9 +52,10 @@ export function startRenderView(ctx: RenderViewCtx): void {
 }
 
 /**
- * onStop: every unwatch of the tracker and the scene, the manifest and device listeners, the
- * game.effects watch, the overlay root and the Textures palette items. Teardown context only
- * (spec/08 §4).
+ * onStop: every unwatch of the tracker and the scene, the manifest, device and engine listeners,
+ * the game.effects watch, the strip's device watches and the timers of its repaint loop (a late
+ * record answer is dropped), the overlay root and the Textures palette items. Teardown context
+ * only (spec/08 §4).
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -60,6 +69,9 @@ export function stopRenderView(ctx: { readonly state: RenderViewState }): void {
   state.sources = {};
   for (const stop of stops) stop();
   stopEffects(state);
+  stopDeviceWatches(state);
+  state.device.stopPaint?.();
+  state.device.reading = undefined;
   removeOverlay(state);
   state.palette?.();
   state.palette = undefined;

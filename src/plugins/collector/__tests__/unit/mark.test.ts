@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubServer, RouteHandler } from "../../../hub/types";
 import { createCollectorApi } from "../../api";
 import { initCollector } from "../../init";
+import { stopCollector } from "../../lifecycle";
 import { createLogSession } from "../../state";
 import type { LogSession } from "../../types";
 import type { TestCtx } from "../helpers";
@@ -96,6 +97,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Closes the file handles the marks opened (never left to the garbage collector).
+  await stopCollector(ctx);
   vi.useRealTimers();
   await removeDir(root);
 });

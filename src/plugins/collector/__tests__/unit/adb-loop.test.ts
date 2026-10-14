@@ -5,6 +5,7 @@ import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkedDevice } from "../../../hub/types";
 import { createAdbLoop, pollRound, reverseRound, startAdbLoop, stopAdbLoop } from "../../adb/loop";
+import { stopCollector } from "../../lifecycle";
 import { createLogSession } from "../../state";
 import type { AdbResult, AdbRunner, LogSession } from "../../types";
 import type { TestCtx } from "../helpers";
@@ -162,7 +163,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  stopAdbLoop(ctx);
+  // Stops the loop and closes the file handles the polls opened (never left to the garbage collector).
+  await stopCollector(ctx);
   vi.useRealTimers();
   await removeDir(root);
 });

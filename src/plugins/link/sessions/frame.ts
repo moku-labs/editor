@@ -2,13 +2,20 @@
  * @file link plugin — the frame id of this tools page: one random id per page, carried as the
  * `__editorFrame` query parameter in the URL of the page's own game frame. The session that frame
  * opens reports the URL as its `page`, so it is told apart from the game frames of other tools
- * tabs on the same hub.
+ * tabs on the same hub. `tagFrame` is the only function that tags a game URL; it also carries the
+ * dev page's scenario (`player`).
  */
 
 /**
  * The query parameter of the game frame URL that carries the frame id.
  */
 export const FRAME_PARAM = "__editorFrame";
+
+/**
+ * The query parameter of the engine dev page that names the scenario it starts from
+ * (`tests/scenarios/<name>.ts`, read by `startPage`).
+ */
+export const PLAYER_PARAM = "player";
 
 /**
  * A new random frame id: 12 hex digits from `crypto.getRandomValues`, which also exists outside a
@@ -45,20 +52,24 @@ export function frameOf(page: string): string | undefined {
 }
 
 /**
- * Tags a game page URL with a frame id, resolved against the tools page.
+ * Tags a game page URL with a frame id, resolved against the tools page. A non-empty `player` is
+ * set first, as the `player` query parameter (the dev page's scenario); absent or "" leaves the
+ * URL's own `player` as it is.
  *
  * @param url - The game page URL, absolute or relative to the tools page.
  * @param frame - The frame id.
+ * @param player - The scenario to start from; absent or "" for none.
  * @returns The absolute tagged URL; the URL unchanged when it does not parse.
  * @example
  * ```ts
- * tagFrame("http://127.0.0.1:3000/?level=2", "3f9a1c2b7d4e");
- * // "http://127.0.0.1:3000/?level=2&__editorFrame=3f9a1c2b7d4e"
+ * tagFrame("http://127.0.0.1:3000/", "3f9a1c2b7d4e", "full");
+ * // "http://127.0.0.1:3000/?player=full&__editorFrame=3f9a1c2b7d4e"
  * ```
  */
-export function tagFrame(url: string, frame: string): string {
+export function tagFrame(url: string, frame: string, player?: string): string {
   try {
     const tagged = new URL(url, globalThis.location?.href);
+    if (player !== undefined && player !== "") tagged.searchParams.set(PLAYER_PARAM, player);
     tagged.searchParams.set(FRAME_PARAM, frame);
     return tagged.href;
   } catch {

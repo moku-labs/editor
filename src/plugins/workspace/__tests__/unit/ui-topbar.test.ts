@@ -588,6 +588,37 @@ describe("TopBar at 900 px and wider", () => {
   });
 });
 
+describe("TopBar · the computer's engine fingerprint (spec 09 W3)", () => {
+  it("the wide bar shows 'engine <id>' once link knows it, after the session chip", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    ctx.link.engineValue = "0.14.13+1ab7f2";
+    mount();
+
+    const engine = root.querySelector('[data-ui="session-chip"] + [data-part="engine"]');
+    expect(engine?.textContent).toBe("engine 0.14.13+1ab7f2");
+  });
+
+  it("nothing shows while it is unknown", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    mount();
+
+    expect(root.querySelector('[data-part="engine"]')).toBeNull();
+    expect(root.querySelector("[data-game-name]")?.getAttribute("title")).toBeNull();
+  });
+
+  it("the compact bar puts it into the game name's title", () => {
+    vi.stubGlobal("innerWidth", 720);
+    ctx.link.manifestValue = manifestOf();
+    ctx.link.engineValue = "0.14.13+1ab7f2";
+    mount();
+
+    expect(root.querySelector('[data-part="engine"]')).toBeNull();
+    expect(root.querySelector("[data-game-name]")?.getAttribute("title")).toBe(
+      "merge-game 0.0.0 · engine 0.14.13+1ab7f2"
+    );
+  });
+});
+
 describe("TopBar below 900 px (compact)", () => {
   beforeEach(() => {
     vi.stubGlobal("innerWidth", 720);

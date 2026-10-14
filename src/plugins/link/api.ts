@@ -1,13 +1,15 @@
 /**
  * @file link plugin — api factory: the remote EditorChannel plus sessions, manifest, boot, retry,
  * the frame id helpers, taps, the page heap, hot reload, the editor page's selection and request
- * handlers, the project index and the files client, composed from the sub-modules.
+ * handlers, the project index, the computer's engine fingerprint and the files client, composed
+ * from the sub-modules.
  */
 import { createFilesClient } from "./files/client";
 import { addHandler } from "./page/requests";
 import { currentSelection, notifyEditor } from "./page/selection";
 import { gameRequest } from "./rpc/calls";
 import { expectShape, readRunResult } from "./rpc/shapes";
+import { addEngineListener } from "./server/engine";
 import { addHotReloadListener, requestHotReload } from "./server/hot-reload";
 import { chooseSession } from "./sessions/choose";
 import { isOtherFrame, tagFrame } from "./sessions/frame";
@@ -59,7 +61,7 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
 
     boot: () => state.boot,
 
-    frameUrl: url => tagFrame(url, state.frame),
+    frameUrl: (url, opts) => tagFrame(url, state.frame, opts?.player),
 
     isOtherTab: page => isOtherFrame(page, state.frame),
 
@@ -85,6 +87,10 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
     handle: (method, handler) => addHandler(ctx, method, handler),
 
     project: () => state.project,
+
+    engine: () => state.engine,
+
+    onEngine: listener => addEngineListener(ctx, listener),
 
     files: createFilesClient(ctx)
   };

@@ -28,6 +28,7 @@ import type {
   Orientation,
   PaletteItem,
   Prefs,
+  ScenarioView,
   WorkspaceApi,
   WorkspaceId
 } from "../../workspace/types";
@@ -308,6 +309,8 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       notify,
       handle,
       project: () => link.projectValue,
+      engine: () => undefined,
+      onEngine: () => noop,
       files: store
     },
     send(id, value) {
@@ -349,6 +352,13 @@ export type WorkspaceMock = {
   onShow: (ws: WorkspaceId) => void;
   /** Sets the device and calls every onPrefs listener. */
   changeDevice(preset: DevicePresetId, orientation: Orientation, folded?: boolean): void;
+  /** The view `scenarios()` answers: no scenarios by default. */
+  scenarioView: ScenarioView;
+  readonly scenarioListeners: Set<(view: ScenarioView) => void>;
+  readonly setScenario: Mock<WorkspaceApi["setScenario"]>;
+  readonly refreshScenarios: Mock<WorkspaceApi["refreshScenarios"]>;
+  /** Sets the scenario view and calls every onScenario listener, like workspace on a change. */
+  changeScenarios(view: ScenarioView): void;
 };
 
 /**
@@ -365,6 +375,13 @@ export function createWorkspaceMock(): WorkspaceMock {
   const dock = vi.fn<GameFrame["dock"]>(() => release);
   const reload = vi.fn<GameFrame["reload"]>(() => Promise.resolve({ restored: true }));
   const toast = vi.fn<WorkspaceApi["toast"]>();
+  const scenarioListeners = new Set<(view: ScenarioView) => void>();
+  const setScenario = vi.fn<WorkspaceApi["setScenario"]>(() =>
+    Promise.resolve({ restored: false })
+  );
+  const refreshScenarios = vi.fn<WorkspaceApi["refreshScenarios"]>(() =>
+    Promise.resolve(workspace.scenarioView)
+  );
   const show = vi.fn<WorkspaceApi["show"]>((ws: WorkspaceId) => {
     workspace.activeValue = ws;
     workspace.onShow(ws);
@@ -420,6 +437,14 @@ export function createWorkspaceMock(): WorkspaceMock {
     box: { left: 100, top: 50, width: 393, height: 852, scale: 1, docked: "stage" },
     overlayElement: undefined,
     onShow: () => {},
+    scenarioView: { scenarios: [], chosen: undefined },
+    scenarioListeners,
+    setScenario,
+    refreshScenarios,
+    changeScenarios(view) {
+      workspace.scenarioView = view;
+      for (const fn of scenarioListeners) fn(view);
+    },
     changeDevice(preset, orientation, folded = true) {
       workspace.device = { preset, orientation, folded };
       for (const fn of prefsListeners) fn(prefs());
@@ -512,6 +537,15 @@ export function createWorkspaceMock(): WorkspaceMock {
         prefsListeners.add(fn);
         return () => {
           prefsListeners.delete(fn);
+        };
+      },
+      scenarios: () => workspace.scenarioView,
+      setScenario,
+      refreshScenarios,
+      onScenario: fn => {
+        scenarioListeners.add(fn);
+        return () => {
+          scenarioListeners.delete(fn);
         };
       }
     }

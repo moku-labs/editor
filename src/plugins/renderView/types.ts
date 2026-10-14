@@ -2,7 +2,8 @@
  * @file renderView plugin — type definitions: config, state, the game.render / game.assets /
  * game.effects shapes,
  * derived rows and tiles, the snapshot, the api, the domain context and the hooks. Scene types
- * come from panels/shared/scene (R8), never from gameView (R4).
+ * come from panels/shared/scene (R8), never from gameView (R4). The D1 device strip's types live
+ * in `device/types.ts`; the api's `DeviceStripView` and `RecordState` are re-exported here.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -14,6 +15,9 @@ import type {
   TextureCatalogue
 } from "../panels/shared/scene";
 import type { Json } from "../registry/protocol";
+import type { DeviceStripState, DeviceStripView } from "./device/types";
+
+export type { DeviceStripState, DeviceStripView, RecordState } from "./device/types";
 
 /**
  * renderView configuration.
@@ -162,6 +166,8 @@ export type RenderViewState = {
   watching: (() => void)[];
   /** UI subscribers. */
   listeners: Set<() => void>;
+  /** The D1 device strip. */
+  device: DeviceStripState;
 };
 
 /**
@@ -376,6 +382,82 @@ export type RenderViewApi = {
    * ```
    */
   filterBundle(bundle: string): void;
+
+  /**
+   * The device strip as it shows now: the device row, the spikes on the graph, the selection and
+   * the record panel. Copies. undefined while the chosen session's agent lists no
+   * `editor.perf.second` (a device session and a browser session with perf both have a strip).
+   *
+   * @returns The view, or undefined.
+   * @example
+   * ```ts
+   * // An MCP tool reports which phone is attached and whether its engine matches the computer's.
+   * app.renderView.device()?.engine;
+   * // { device: "0.14.12+9c41e0", computer: "0.14.13+1ab7f2", stale: true }
+   * ```
+   */
+  device(): DeviceStripView | undefined;
+
+  /**
+   * Steps to the next (1) or previous (-1) spike on the graph, wrapping, and opens its record (the
+   * chevron keys). From no selection, next takes the oldest spike and previous the newest.
+   * Without spikes, or without a strip, nothing changes.
+   *
+   * @param dir - 1 for next, -1 for previous.
+   * @returns The frame now selected; undefined when there is no spike.
+   * @example
+   * ```ts
+   * // Six spikes on the graph, the record of frame 4812 (the fifth) is open: the next key.
+   * app.renderView.stepSpike(1); // 4845, the sixth; the record of 4845 loads
+   * app.renderView.stepSpike(1); // 4572, wrapped to the oldest
+   * ```
+   */
+  stepSpike(dir: 1 | -1): number | undefined;
+
+  /**
+   * Selects a frame and opens its spike record in the side panel: reads `editor.perf.spike
+   * { frame }` once (an open of the same frame while it loads shares the read). The record is a
+   * copy and stays when the frame later leaves the 6 s window. `null` from perf shows "Frame N is
+   * no longer on the phone"; a failed read shows its bare message. A late answer for a record
+   * closed or replaced since is dropped. Never rejects.
+   *
+   * @param frame - A frame number of a spike on the graph (a flag or a bar was clicked).
+   * @returns Resolves when the read settled.
+   * @example
+   * ```ts
+   * // The UP flag of frame 4812 was clicked.
+   * await app.renderView.openSpike(4812);
+   * app.renderView.device()?.record; // "shown"
+   * ```
+   */
+  openSpike(frame: number): Promise<void>;
+
+  /**
+   * Closes the record side panel; the selection stays on the graph and the panel shows its empty
+   * state ("No spike selected").
+   *
+   * @example
+   * ```ts
+   * // The close key of the record.
+   * app.renderView.closeSpike();
+   * app.renderView.device()?.record; // "closed"
+   * ```
+   */
+  closeSpike(): void;
+
+  /**
+   * Opens or closes More, the secondary counters under the graph. Open by default on the strip;
+   * kept for the life of the tools page, not persisted.
+   *
+   * @param open - True to show the secondary counters.
+   * @example
+   * ```ts
+   * // The Less key under the graph.
+   * app.renderView.setMore(false);
+   * app.renderView.device()?.more; // false
+   * ```
+   */
+  setMore(open: boolean): void;
 };
 
 /**

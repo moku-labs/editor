@@ -51,6 +51,13 @@ import {
 // editor's.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * How long B3 waits for five heartbeats over real sockets. Five beats at heartbeatMs 100 take about
+ * 400 ms; the budget is generous because a loaded parallel run (the pre-commit's whole suite) can
+ * delay timers and socket reads, and B3 asserts the spacing of the beats, not the wait.
+ */
+const HEARTBEAT_WAIT_MS = 5000;
+
 /** The R3 tools page policy, verbatim. pages appends three private directives after it. */
 const R3_POLICY =
   "default-src 'self'; script-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; " +
@@ -320,7 +327,9 @@ describe("core boot", () => {
           "method" in entry.message &&
           entry.message.method === "heartbeat"
       );
-    await until(() => beats().length >= 5, "5 agent heartbeats within 800 ms", 800);
+    // A wait on real sockets: the budget only bounds a hung run, so a loaded parallel run does not
+    // fail it (the spacing below is what B3 asserts).
+    await until(() => beats().length >= 5, "5 agent heartbeats", HEARTBEAT_WAIT_MS);
     const times = beats().map(entry => entry.at);
     const first = times[0] ?? 0;
     const fifth = times[4] ?? 0;

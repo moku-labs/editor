@@ -119,3 +119,32 @@ describe("perfMark", () => {
     expect(busy.lines[0]).toMatch(/503.*\n {2}Check that moku-editor perf still runs\.$/);
   });
 });
+
+describe("perfMark hardening (W1, W2)", () => {
+  it("refuses a perf.json whose path leads to another host, without a request", async () => {
+    release();
+    release = writePerfDiscovery(root, {
+      pid: 4242,
+      port: 47_600,
+      path: "//evil.example",
+      token: TOKEN,
+      lan: null,
+      startedAt: 1
+    });
+    const fetch = answering(200, '{"marked":1}');
+    const { code, lines } = await markWith(fetch);
+    expect(code).toBe(1);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^ {2}✗ \[moku-editor\] [^\n]*evil\.example[^\n]*\n {2}\S[^\n]*$/);
+  });
+
+  it("prints the reply body on one line without control characters, at most 120 characters", async () => {
+    const odd = await markWith(answering(500, "boom\n\u001B[2Jline two\r\n"));
+    expect(odd.lines).toEqual([
+      "  ✗ [moku-editor] perf mark: the running perf answered 500 boom [2Jline two\n  Check that moku-editor perf still runs."
+    ]);
+    const long = await markWith(answering(500, "x".repeat(300)));
+    expect(long.lines[0]).toContain(`500 ${"x".repeat(120)}\n`);
+  });
+});

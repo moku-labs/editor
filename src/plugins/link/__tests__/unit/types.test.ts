@@ -48,6 +48,16 @@ describe("link types", () => {
     expect(typeof app.link.files.readBinary).toBe("function");
   });
 
+  it("frameUrl takes the scenario as a string and engine answers the id", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.engine).returns.toEqualTypeOf<string | undefined>();
+    // @ts-expect-error — the scenario is a file stem, not a number
+    app.link.frameUrl("http://127.0.0.1:3000/", { player: 1 });
+    expect(app.link.frameUrl("http://127.0.0.1:3000/", { player: "full" })).toContain(
+      "player=full"
+    );
+  });
+
   it("app.link carries onTap and heap", () => {
     const app = framework.createApp({});
     expectTypeOf(app.link.onTap).parameter(0).toEqualTypeOf<(tap: Tap) => void>();

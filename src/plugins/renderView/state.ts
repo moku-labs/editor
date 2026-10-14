@@ -1,11 +1,13 @@
 /**
  * @file renderView plugin — state factory and the UI store (notify, subscribe).
  */
+import { createDeviceStripState } from "./device/state";
 import type { RenderViewConfig, RenderViewState } from "./types";
 
 /**
  * Creates the initial renderView state: textures sorted by GPU MB descending, every bundle shown,
- * no data. The roots of the tree open on the first scene of a session.
+ * no data, the device strip empty (its window allocated once, More open). The roots of the tree
+ * open on the first scene of a session.
  *
  * @param _ctx - Minimal context (the config shapes nothing here yet).
  * @param _ctx.config - Resolved plugin config.
@@ -43,7 +45,8 @@ export function createRenderViewState(_ctx: {
     palette: undefined,
     tracker: [],
     watching: [],
-    listeners: new Set()
+    listeners: new Set(),
+    device: createDeviceStripState()
   };
 }
 
