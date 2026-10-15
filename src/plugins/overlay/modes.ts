@@ -49,6 +49,7 @@ export function applyMode(octx: OverlayCtx): void {
   withAgent(octx, () => {
     host.hidden = hidden;
     host.toggleAttribute("data-opening", state.opening);
+
     // Hidden draws nothing and runs nothing: no tick, no view, no canvas.
     if (hidden) {
       layout(state);
@@ -172,6 +173,7 @@ export function applyStart(octx: OverlayCtx, stored: StoredOverlay | undefined):
   state.tab = tabFor(octx, state.tab);
   state.mode = mode;
   state.asked = undefined;
+
   // Start hidden: apply and announce nothing.
   if (mode === "hidden") {
     applyMode(octx);

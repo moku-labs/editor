@@ -478,6 +478,35 @@ function isGpuColumn(value: Json | undefined): value is (number | null)[] {
 }
 
 /**
+ * Whether a wire value is a plain object: not null, not an array, not a scalar.
+ *
+ * @param value - The wire value.
+ * @returns Whether it is a Json object.
+ * @example
+ * ```ts
+ * isJsonObject([1]); // false
+ * ```
+ */
+function isJsonObject(value: Json): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Whether the wire `rateMs` is a number column of the given length with every rate in (0, 1000].
+ *
+ * @param rateMs - The wire `rateMs` value.
+ * @param length - The length every column has.
+ * @returns Whether the rates are valid.
+ * @example
+ * ```ts
+ * hasValidRates([16.7, 0], 2); // false
+ * ```
+ */
+function hasValidRates(rateMs: Json | undefined, length: number): boolean {
+  return isColumn(rateMs, length) && rateMs.every(ms => ms > 0 && ms <= MAX_RATE_MS);
+}
+
+/**
  * Checks a wire value as a window the tools page may draw: an object of `v: 1`, a finite span of
  * more than 0 and at most 60 s, a boolean `gpuTimer`, equal-length number columns (`gpuMs` may
  * hold null) and every `rateMs` in (0, 1000]. A hostile phone value must not freeze the page, so a span past 60 s is refused.
@@ -491,7 +520,7 @@ function isGpuColumn(value: Json | undefined): value is (number | null)[] {
  */
 function checkedWire(value: Json): CheckedWire | undefined {
   // Shape: an object of v: 1 with numeric startMs and endMs.
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { v, startMs, endMs, gpuTimer, gpuMs } = value;
   if (v !== 1 || typeof startMs !== "number" || typeof endMs !== "number") return undefined;
 
@@ -503,9 +532,7 @@ function checkedWire(value: Json): CheckedWire | undefined {
   const { length } = gpuMs;
   if (!NUMBER_COLUMNS.every(key => isColumn(value[key], length))) return undefined;
   const { rateMs } = value;
-  if (!isColumn(rateMs, length) || !rateMs.every(ms => ms > 0 && ms <= MAX_RATE_MS)) {
-    return undefined;
-  }
+  if (!hasValidRates(rateMs, length)) return undefined;
   return { object: value, startMs, endMs, gpuTimer, gpu: gpuMs };
 }
 

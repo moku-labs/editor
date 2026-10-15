@@ -183,14 +183,18 @@ function escapedChars(text: string): string[] {
  */
 function glyphsOf(texts: readonly string[]): string {
   const glyphs = new Set<string>();
+
   // The base ranges, whatever the sources print.
-  for (const char of BASE_RANGES.flatMap(range => charsOfRange(range)))
+  for (const char of BASE_RANGES.flatMap(range => charsOfRange(range))) {
     addIfPrintable(glyphs, char);
+  }
+
   // Every printable character beyond ASCII the sources write, literally or as a \uXXXX escape.
   for (const text of texts) {
     for (const char of [...text].filter(each => isBeyondAscii(each))) addIfPrintable(glyphs, char);
     for (const char of escapedChars(text)) addIfPrintable(glyphs, char);
   }
+
   // In code point order.
   return [...glyphs].toSorted((a, b) => (a.codePointAt(0) ?? 0) - (b.codePointAt(0) ?? 0)).join("");
 }

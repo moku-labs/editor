@@ -99,43 +99,6 @@ export function isRunOrigin(url: URL, port: number): boolean {
 }
 
 /**
- * Adds a mark to every live log of the perf running in the cwd.
- *
- * @param args - The label.
- * @param deps - The process seam (cwd, isAlive, fetch).
- * @param ui - The brand console.
- * @returns 0 when the run answered (also with no live phone), 1 with no run, a refused token, a
- * network error or another answer.
- */
-export async function perfMark(
-  args: PerfMarkArgs,
-  deps: PerfDeps,
-  ui: BrandConsole
-): Promise<number> {
-  const run = readPerfDiscovery(resolve(deps.cwd()));
-  if (run === undefined || !deps.isAlive(run.pid)) {
-    ui.error(NO_RUN);
-    return 1;
-  }
-
-  // The path resolves against the run's loopback origin: a path like "//host" would leave it.
-  const url = markUrl(run.path, run.port);
-  if (!isRunOrigin(url, run.port)) {
-    ui.error(
-      `[moku-editor] .moku/perf.json points at ${cleanText(url.host)}, not this run.\n  Delete .moku/perf.json and start moku-editor perf again.`
-    );
-    return 1;
-  }
-
-  const reply = await postMark(deps, url, run.token, args.label);
-  if ("error" in reply) {
-    ui.error(`[moku-editor] ${reply.error}\n${CHECK_RUN}`);
-    return 1;
-  }
-  return reportMark(reply, args.label, ui);
-}
-
-/**
  * The answer of the mark route, or the message of a network failure.
  */
 type MarkReply = { readonly status: number; readonly text: string } | { readonly error: string };
@@ -201,4 +164,41 @@ function reportMark(
   if (marked === 0) ui.warn("no phone is live: the mark went into no log");
   else ui.check(true, `mark "${label}" in ${marked} log(s)`);
   return 0;
+}
+
+/**
+ * Adds a mark to every live log of the perf running in the cwd.
+ *
+ * @param args - The label.
+ * @param deps - The process seam (cwd, isAlive, fetch).
+ * @param ui - The brand console.
+ * @returns 0 when the run answered (also with no live phone), 1 with no run, a refused token, a
+ * network error or another answer.
+ */
+export async function perfMark(
+  args: PerfMarkArgs,
+  deps: PerfDeps,
+  ui: BrandConsole
+): Promise<number> {
+  const run = readPerfDiscovery(resolve(deps.cwd()));
+  if (run === undefined || !deps.isAlive(run.pid)) {
+    ui.error(NO_RUN);
+    return 1;
+  }
+
+  // The path resolves against the run's loopback origin: a path like "//host" would leave it.
+  const url = markUrl(run.path, run.port);
+  if (!isRunOrigin(url, run.port)) {
+    ui.error(
+      `[moku-editor] .moku/perf.json points at ${cleanText(url.host)}, not this run.\n  Delete .moku/perf.json and start moku-editor perf again.`
+    );
+    return 1;
+  }
+
+  const reply = await postMark(deps, url, run.token, args.label);
+  if ("error" in reply) {
+    ui.error(`[moku-editor] ${reply.error}\n${CHECK_RUN}`);
+    return 1;
+  }
+  return reportMark(reply, args.label, ui);
 }
