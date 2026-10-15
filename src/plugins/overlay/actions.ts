@@ -15,7 +15,7 @@ import { paintNow } from "./paint/tick";
 import { windowSize } from "./place/dock";
 import type { KeyLike, PointerLike } from "./place/drag";
 import { gripDown, gripKey, gripMove, gripUp } from "./place/drag";
-import type { OverlayCtx, OverlayState, OverlayTab } from "./types";
+import type { OverlayCommand, OverlayCtx, OverlayState, OverlayTab } from "./types";
 import { TOAST_MS } from "./types";
 
 /** Card width the graph well leaves to the canvas: body padding, nav column, gap and border. */
@@ -102,11 +102,13 @@ function errorText(error: unknown): string {
  * @returns Settles when the run settled; never rejects.
  */
 export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> {
+  // Guard: a press in flight, or an unknown or refused command, does nothing.
   const { state } = octx;
   if (state.busy.has(id)) return;
   const command = overlayCommands(octx.registry).find(each => each.id === id);
   if (command === undefined || !command.allowed) return;
 
+  // Gather: a toggle runs the opposite of its value; the mark names the value it switches to.
   const toggle = command.kind === "toggle";
   const on = command.value !== true;
   const input: Json = toggle ? { on } : {};
@@ -115,25 +117,45 @@ export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> 
   state.busy.add(id);
   paintNow(octx);
   try {
+    // Run: through the channel as the overlay (the recorder's hook writes the one command line).
     await octx.channel.run(id, input, "overlay");
+    // Report: the recorder's auto mark, then the toast.
     octx.recorder.command(id, input, label);
     const status = octx.recorder.status();
     const logged =
       status.state === "recording" ? ` Logged as a mark at ${clockText(status.sinceMs)}.` : "";
     showToast(octx, `${label}.${logged}`, "info");
   } catch (error) {
-    const wire = toWireError(error);
-    if (wire.code === errorCode.readOnly) {
-      const why = wire.data?.reason === "dev_only" ? reasonText("dev-only") : READ_ONLY_TEXT;
-      showToast(octx, `${command.title} ${why}.`, "error");
-    } else {
-      showToast(octx, `${command.title} failed: ${errorText(error)}`, "error");
-      octx.log.warn("overlay:command-failed", { id, code: wire.code, message: wire.message });
-    }
+    toastPressFailure(octx, command, error);
   } finally {
+    // Cleanup: the row can be pressed again.
     state.busy.delete(id);
     paintNow(octx);
   }
+}
+
+/**
+ * Toasts a press that failed: a -32009 refusal names its reason (`dev_only`: a dev or debug build,
+ * else a --debug=full build); any other failure shows its message and warns
+ * `overlay:command-failed`.
+ *
+ * @param octx - Domain context.
+ * @param command - The command pressed.
+ * @param error - What the run rejected with.
+ */
+function toastPressFailure(octx: OverlayCtx, command: OverlayCommand, error: unknown): void {
+  const wire = toWireError(error);
+  if (wire.code === errorCode.readOnly) {
+    const why = wire.data?.reason === "dev_only" ? reasonText("dev-only") : READ_ONLY_TEXT;
+    showToast(octx, `${command.title} ${why}.`, "error");
+    return;
+  }
+  showToast(octx, `${command.title} failed: ${errorText(error)}`, "error");
+  octx.log.warn("overlay:command-failed", {
+    id: command.id,
+    code: wire.code,
+    message: wire.message
+  });
 }
 
 /**
@@ -271,6 +293,26 @@ function canvasSize(state: OverlayState): { readonly w: number; readonly h: numb
 }
 
 /**
+ * True for an event target that can report its box (an element).
+ *
+ * @param target - The event's current target.
+ * @returns Whether `getBoundingClientRect` can be called on it.
+ * @example
+ * ```ts
+ * hasBoundingBox(null); // false
+ * ```
+ */
+function hasBoundingBox(target: EventTarget | null): target is EventTarget & {
+  getBoundingClientRect(): { readonly left: number; readonly top: number };
+} {
+  return (
+    target !== null &&
+    "getBoundingClientRect" in target &&
+    typeof target.getBoundingClientRect === "function"
+  );
+}
+
+/**
  * The point of a pointer event inside its target, CSS px.
  *
  * @param event - The event.
@@ -285,14 +327,7 @@ function pointIn(event: {
   readonly currentTarget: EventTarget | null;
 }): { readonly x: number; readonly y: number } {
   const target = event.currentTarget;
-  let box = { left: 0, top: 0 };
-  if (
-    target !== null &&
-    "getBoundingClientRect" in target &&
-    typeof target.getBoundingClientRect === "function"
-  ) {
-    box = target.getBoundingClientRect() as { left: number; top: number };
-  }
+  const box = hasBoundingBox(target) ? target.getBoundingClientRect() : { left: 0, top: 0 };
   return { x: event.clientX - box.left, y: event.clientY - box.top };
 }
 

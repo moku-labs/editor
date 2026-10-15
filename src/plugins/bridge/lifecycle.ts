@@ -76,6 +76,36 @@ function checkWhole(field: string, value: number, example: number): void {
 }
 
 /**
+ * True for a configured device address `parseAddress` refuses (undefined is no address).
+ *
+ * @param device - config.device.
+ * @returns Whether the config check must throw.
+ * @example
+ * ```ts
+ * isBadDevice("192.168.1.5"); // true: no port
+ * ```
+ */
+function isBadDevice(device: unknown): boolean {
+  return device !== undefined && (typeof device !== "string" || parseAddress(device) === undefined);
+}
+
+/**
+ * True for a whole number of log lines from 1 to MAX_LINES_PER_BATCH.
+ *
+ * @param linesPerBatch - config.linesPerBatch.
+ * @returns Whether it is in range.
+ * @example
+ * ```ts
+ * isBatchInRange(200); // true
+ * ```
+ */
+function isBatchInRange(linesPerBatch: number): boolean {
+  return (
+    Number.isInteger(linesPerBatch) && linesPerBatch >= 1 && linesPerBatch <= MAX_LINES_PER_BATCH
+  );
+}
+
+/**
  * onInit: `hello` non-empty; `retryMs`, `callTimeoutMs` finite integers ≥ 100; `device`, when
  * set, a `host:port` parseAddress takes; `linesPerBatch` a whole number from 1 to 1000.
  *
@@ -90,14 +120,12 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
 
   checkWhole("retryMs", retryMs, DEFAULT_RETRY_MS);
   checkWhole("callTimeoutMs", callTimeoutMs, DEFAULT_CALL_TIMEOUT_MS);
-  if (device !== undefined && (typeof device !== "string" || parseAddress(device) === undefined)) {
+  if (isBadDevice(device)) {
     throw new TypeError(
       '[moku-editor] bridge.device must be host:port, for example "192.168.1.5:47600".\n  Fix pluginConfigs.bridge.device, for example "127.0.0.1:47600".'
     );
   }
-  const isBatch =
-    Number.isInteger(linesPerBatch) && linesPerBatch >= 1 && linesPerBatch <= MAX_LINES_PER_BATCH;
-  if (!isBatch) {
+  if (!isBatchInRange(linesPerBatch)) {
     throw configError("linesPerBatch", "a whole number from 1 to 1000", "200");
   }
 }
@@ -173,11 +201,7 @@ function buildDeps(ctx: BridgeCtx): BridgeDeps {
     config: ctx.config,
     state: ctx.state,
     log: ctx.log,
-    /**
-     * Emits the global agent event (fire and forget).
-     *
-     * @param payload - The status and the session.
-     */
+    // Emits the global agent event (fire and forget).
     emit: payload => {
       ctx.emit("bridge:status", payload);
     },

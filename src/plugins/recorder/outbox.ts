@@ -55,6 +55,55 @@ export function dropOldestLine(state: RecorderState): boolean {
 }
 
 /**
+ * The most lines a run takes: `max` when it is a whole number from 1, else 1.
+ *
+ * @param max - The caller's max.
+ * @returns The run length.
+ * @example
+ * ```ts
+ * runLength(2.5); // 1
+ * ```
+ */
+function runLength(max: number): number {
+  return Number.isInteger(max) && max >= 1 ? max : 1;
+}
+
+/**
+ * Whether the outbox line at `index` belongs to the run of `log` that starts at `head`: it exists,
+ * the run is not full, and it is the same log's.
+ *
+ * @param state - The recorder's state.
+ * @param log - The run's log.
+ * @param head - The run's first index.
+ * @param most - The run's length limit.
+ * @param index - The candidate line.
+ * @returns Whether the run takes it.
+ */
+function extendsRun(
+  state: RecorderState,
+  log: string,
+  head: number,
+  most: number,
+  index: number
+): boolean {
+  return index < state.outbox.length && index - head < most && state.outboxOwner[index] === log;
+}
+
+/**
+ * Whether the outbox's head line is one of `log`'s that the hub confirmed: its index is below
+ * `next`.
+ *
+ * @param state - The recorder's state.
+ * @param log - The acked log.
+ * @param next - The hub's next expected index of that log.
+ * @returns Whether the head leaves the outbox.
+ */
+function isConfirmedHead(state: RecorderState, log: string, next: number): boolean {
+  const index = state.outboxIndex[state.outboxHead];
+  return state.outboxOwner[state.outboxHead] === log && index !== undefined && index < next;
+}
+
+/**
  * The oldest unconfirmed lines of the log of the outbox's oldest line, without taking them.
  *
  * @param state - The recorder's state.
@@ -67,9 +116,9 @@ export function unsentRun(state: RecorderState, max: number): OutboxRun | undefi
   const from = state.outboxIndex[head];
   if (log === undefined || from === undefined) return undefined;
 
-  const most = Number.isInteger(max) && max >= 1 ? max : 1;
+  const most = runLength(max);
   let end = head + 1;
-  while (end < state.outbox.length && end - head < most && state.outboxOwner[end] === log) end += 1;
+  while (extendsRun(state, log, head, most, end)) end += 1;
   return { log, from, lines: state.outbox.slice(head, end) };
 }
 
@@ -108,10 +157,7 @@ export function ackLines(state: RecorderState, log: string, next: number): void 
   }
 
   let count = 0;
-  while (
-    state.outboxOwner[state.outboxHead] === log &&
-    (state.outboxIndex[state.outboxHead] ?? next) < next
-  ) {
+  while (isConfirmedHead(state, log, next)) {
     state.outboxBytes -= (state.outbox[state.outboxHead]?.length ?? 0) + 1;
     state.outboxHead += 1;
     count += 1;

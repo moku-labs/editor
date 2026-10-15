@@ -3,6 +3,7 @@
  * the api hands out, and the texts of the device row, the headline and More. renderView computes
  * nothing about frames: perf computes, the painter paints, this file formats.
  */
+import type { PerfDisplay } from "../../perf/protocol";
 import type { LinkStatus } from "../../registry/protocol";
 import type { PerfRate, PerfSecond, PerfWindowView } from "./contract";
 import { meanGpu } from "./contract";
@@ -51,6 +52,11 @@ const SECONDS_PER_MINUTE = 60;
  * The window length the headline names before the first window, seconds.
  */
 const DEFAULT_WINDOW_SECONDS = 6;
+
+/**
+ * The slowest systems More names.
+ */
+const MORE_SYSTEMS = 3;
 
 /**
  * More, closed: the names of what it holds.
@@ -298,12 +304,39 @@ export function rateSuffix(rate: PerfRate | undefined): StripRun | undefined {
 
   const parts = [`${view.fps} fps`];
   if (view.mode !== undefined) parts.push(view.mode);
-  let title = parts.join(", ");
-  if (view.fellBack)
-    title += view.reason === undefined ? ", fell back" : `, fell back (${view.reason})`;
-  if (rate?.displayHz !== null && rate?.displayHz !== undefined)
-    title += `; display ${rate.displayHz} Hz`;
+  const title = `${parts.join(", ")}${fallBackNote(view)}${displayNote(rate?.displayHz)}`;
   return { text: `@${view.fps}`, tone: view.fellBack ? "warn" : "value", title };
+}
+
+/**
+ * The fall-back part of the rate suffix's title: ", fell back (missed)", or nothing.
+ *
+ * @param view - The view's rate.
+ * @returns The text.
+ * @example
+ * ```ts
+ * fallBackNote({ fps: 60, mode: "auto", reason: "missed", fellBack: true }); // ", fell back (missed)"
+ * ```
+ */
+function fallBackNote(view: NonNullable<DeviceStripView["rate"]>): string {
+  if (!view.fellBack) return "";
+  if (view.reason === undefined) return ", fell back";
+  return `, fell back (${view.reason})`;
+}
+
+/**
+ * The display part of the rate suffix's title: "; display 120 Hz", or nothing.
+ *
+ * @param displayHz - The display's rate; null or undefined when unknown.
+ * @returns The text.
+ * @example
+ * ```ts
+ * displayNote(120); // "; display 120 Hz"
+ * ```
+ */
+function displayNote(displayHz: number | null | undefined): string {
+  if (displayHz === null || displayHz === undefined) return "";
+  return `; display ${displayHz} Hz`;
 }
 
 /**
@@ -428,6 +461,8 @@ export function headline(
 ): StripLine[] {
   const spikes = window.count > 0 ? window.spikeCount : (second?.spikes ?? 0);
   const p90 = second?.sample?.gapMs?.p90;
+  const p90Text = p90 === undefined ? DASH : p90.toFixed(1);
+  const p90OverBudget = p90 !== undefined && p90 > (second?.budgetMs ?? Number.POSITIVE_INFINITY);
   const gpu = meanGpu(window);
   const from = browser ? "the browser" : "the phone";
   return [
@@ -437,14 +472,7 @@ export function headline(
       plain(" spikes")
     ],
     fpsLine(second),
-    [
-      plain("p90 frame "),
-      value(
-        p90 === undefined ? DASH : p90.toFixed(1),
-        p90 !== undefined && p90 > (second?.budgetMs ?? Number.POSITIVE_INFINITY)
-      ),
-      plain(" ms")
-    ],
+    [plain("p90 frame "), value(p90Text, p90OverBudget), plain(" ms")],
     gpu === null
       ? [plain(`GPU ${DASH} no timer`)]
       : [plain("GPU "), value(gpu.toFixed(1)), plain(" ms avg")],
@@ -463,9 +491,28 @@ export function headline(
 function systemsItem(second: PerfSecond | undefined): StripRun[] | undefined {
   const systems = second?.sample?.systems;
   if (systems === null || systems === undefined || systems.length === 0) return undefined;
-  const top = systems.toSorted((left, right) => right.mean - left.mean).slice(0, 3);
+  const top = systems.toSorted((left, right) => right.mean - left.mean).slice(0, MORE_SYSTEMS);
   const text = top.map(system => `${system.name} ${system.mean.toFixed(1)}`).join(ITEM_SEPARATOR);
   return [plain("systems: "), value(`${text} ms`)];
+}
+
+/**
+ * The kept item of More: "kept 4 pictures, 0 retakes", or "kept —" without the stats.
+ *
+ * @param kept - `render.kept`; undefined when the renderer does not report it.
+ * @returns The runs.
+ */
+function keptItem(
+  kept: { readonly pictures: number; readonly retakes: number } | undefined
+): StripRun[] {
+  if (kept === undefined) return [plain(`kept ${DASH}`)];
+  return [
+    plain("kept "),
+    value(whole(kept.pictures)),
+    plain(" pictures, "),
+    value(whole(kept.retakes)),
+    plain(" retakes")
+  ];
 }
 
 /**
@@ -479,28 +526,72 @@ function renderItems(second: PerfSecond | undefined): StripRun[][] {
   const render = second?.render ?? undefined;
   const kept = render?.kept ?? undefined;
   const items: StripRun[][] = [
-    kept === undefined
-      ? [plain(`kept ${DASH}`)]
-      : [
-          plain("kept "),
-          value(whole(kept.pictures)),
-          plain(" pictures, "),
-          value(whole(kept.retakes)),
-          plain(" retakes")
-        ],
+    keptItem(kept),
     [plain("passes max "), value(wholeOrDash(render?.passesMax))],
     [plain("rate switches "), value(wholeOrDash(second?.rate.switches))]
   ];
   const redraws = render?.redraws ?? undefined;
   const rebuilds = render?.rebuilds ?? undefined;
-  if (redraws === undefined && rebuilds === undefined)
+  if (redraws === undefined && rebuilds === undefined) {
     items.push([plain(`redraws ${DASH} dev builds only`)]);
-  else
-    items.push(
-      [plain("redraws "), value(wholeOrDash(redraws))],
-      [plain("rebuilds "), value(wholeOrDash(rebuilds))]
-    );
+    return items;
+  }
+  items.push(
+    [plain("redraws "), value(wholeOrDash(redraws))],
+    [plain("rebuilds "), value(wholeOrDash(rebuilds))]
+  );
   return items;
+}
+
+/**
+ * The canvas item of More: "canvas 1080 × 2340, scale 1.0", or "canvas —" without a display.
+ *
+ * @param display - The screen facts; undefined before the first.
+ * @returns The runs.
+ */
+function canvasItem(display: PerfDisplay | undefined): StripRun[] {
+  if (display === undefined) return [plain(`canvas ${DASH}`)];
+  return [
+    plain("canvas "),
+    value(`${display.canvas.w} \u00D7 ${display.canvas.h}`),
+    plain(", scale "),
+    value(display.resolution.toFixed(1))
+  ];
+}
+
+/**
+ * The heap item of More: "heap 151 MB", or "heap —" where the page reports none.
+ *
+ * @param heap - The heap in MB; undefined when unknown.
+ * @returns The runs.
+ */
+function heapItem(heap: number | undefined): StripRun[] {
+  if (heap === undefined) return [plain(`heap ${DASH}`)];
+  return [plain("heap "), value(`${whole(heap)} MB`)];
+}
+
+/**
+ * The insets item of More: "insets t32 b24 l0 r0", or "insets —".
+ *
+ * @param inset - The safe area; undefined before the first display.
+ * @returns The runs.
+ */
+function insetsItem(inset: PerfDisplay["safeArea"] | undefined): StripRun[] {
+  const text = inset === undefined ? DASH : `t${inset.t} b${inset.b} l${inset.l} r${inset.r}`;
+  return [plain("insets "), value(text)];
+}
+
+/**
+ * The device item of More: the model, then the display facts that are known.
+ *
+ * @param model - The device model.
+ * @param facts - "60 Hz", "dpr 2.81": the known ones.
+ * @returns The runs.
+ */
+function deviceItem(model: string | undefined, facts: readonly string[]): StripRun[] {
+  const runs = [plain("device "), value(model ?? DASH)];
+  if (facts.length > 0) runs.push(plain(`, ${facts.join(", ")}`));
+  return runs;
 }
 
 /**
@@ -513,33 +604,14 @@ function renderItems(second: PerfSecond | undefined): StripRun[][] {
 function screenItems(second: PerfSecond | undefined, model: string | undefined): StripRun[][] {
   const sample = second?.sample ?? undefined;
   const display = second?.display ?? undefined;
-  const heap = sample?.heapMb ?? undefined;
-  const inset = display?.safeArea;
   const backend = display?.backend ?? second?.gpu?.backend;
-  const canvas: StripRun[] =
-    display === undefined
-      ? [plain(`canvas ${DASH}`)]
-      : [
-          plain("canvas "),
-          value(`${display.canvas.w} × ${display.canvas.h}`),
-          plain(", scale "),
-          value(display.resolution.toFixed(1))
-        ];
-  const tail = displayParts(second);
   return [
     [plain("views "), value(wholeOrDash(sample?.views))],
-    heap === undefined ? [plain(`heap ${DASH}`)] : [plain("heap "), value(`${whole(heap)} MB`)],
-    [
-      plain("insets "),
-      value(inset === undefined ? DASH : `t${inset.t} b${inset.b} l${inset.l} r${inset.r}`)
-    ],
+    heapItem(sample?.heapMb ?? undefined),
+    insetsItem(display?.safeArea),
     [plain("backend "), value(backend ?? DASH)],
-    canvas,
-    [
-      plain("device "),
-      value(model ?? DASH),
-      ...(tail.length === 0 ? [] : [plain(`, ${tail.join(", ")}`)])
-    ]
+    canvasItem(display),
+    deviceItem(model, displayParts(second))
   ];
 }
 

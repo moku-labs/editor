@@ -132,6 +132,38 @@ export function fail(deps: BridgeDeps, reason: string, retry: boolean, restartin
 }
 
 /**
+ * True for the hub's 4401 `unpaired` close of a socket that carried a device id and token: the
+ * credentials are dead.
+ *
+ * @param code - The close code.
+ * @param reason - The close reason.
+ * @param credentialed - The socket carried a device id and token.
+ * @returns Whether the device should pair again at once.
+ * @example
+ * ```ts
+ * isUnpairedClose(4401, "unpaired", true); // true
+ * ```
+ */
+function isUnpairedClose(code: number, reason: string, credentialed: boolean): boolean {
+  return code === DEVICE_UNPAIRED_CODE && reason === DEVICE_UNPAIRED_REASON && credentialed;
+}
+
+/**
+ * True for the hub's 1008 `pairing refused` close: the person said no.
+ *
+ * @param code - The close code.
+ * @param reason - The close reason.
+ * @returns Whether the pairing was refused.
+ * @example
+ * ```ts
+ * isPairingRefused(1008, "pairing refused"); // true
+ * ```
+ */
+function isPairingRefused(code: number, reason: string): boolean {
+  return code === POLICY_CLOSE && reason === PAIRING_REFUSED;
+}
+
+/**
  * A device-mode close the hub gave a meaning: 4401 `unpaired` on a credentialed socket drops the
  * dead credentials and dials again at once (no backoff, the streak unchanged), so the next socket
  * pairs; 1008 `pairing refused` stops retrying until `connect` asks again.
@@ -148,13 +180,13 @@ function onDeviceClose(
   reason: string,
   credentialed: boolean
 ): boolean {
-  if (code === DEVICE_UNPAIRED_CODE && reason === DEVICE_UNPAIRED_REASON && credentialed) {
+  if (isUnpairedClose(code, reason, credentialed)) {
     dropLink(deps);
     onUnpaired(deps);
     connectInBackground(deps);
     return true;
   }
-  if (code === POLICY_CLOSE && reason === PAIRING_REFUSED) {
+  if (isPairingRefused(code, reason)) {
     deps.state.pairing = undefined;
     deps.log.warn("bridge:pairing-refused", { address: deps.state.address });
     fail(deps, PAIRING_REFUSED, false);

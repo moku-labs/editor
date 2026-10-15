@@ -116,25 +116,22 @@ function pruneLogs(ctx: RecorderCtx): void {
 }
 
 /**
- * Starts a log (`start`, `editor.record`, autoStart): the session, the context lines and the
- * `recorder` start event in the queue, the log in the list, keepFiles, the status. A running log
- * is answered as it is.
+ * A new log's session: its name, its label (trimmed; empty is none), zeros, the recorder's store.
  *
- * @param ctx - The recorder's context.
- * @param label - A name for the run; trimmed, empty is none.
- * @returns The new (or running) log.
- * @throws {Error} When perf found no monitor.
+ * @param state - The recorder's state.
+ * @param label - A name for the run, as given.
+ * @param startedAt - Epoch ms of the start.
+ * @param taken - The names already in the list.
+ * @returns The session.
  */
-export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
-  const { state } = ctx;
-  if (state.session !== undefined) return infoOf(state.session);
-  const { monitor } = state;
-  if (monitor === undefined) throw new Error(NO_MONITOR);
-
-  const startedAt = Date.now();
+function createSession(
+  state: RecorderState,
+  label: string | undefined,
+  startedAt: number,
+  taken: ReadonlySet<string>
+): Session {
   const trimmed = label?.trim() ?? "";
-  const taken = new Set(state.files.map(file => file.name));
-  const session: Session = {
+  return {
     name: logFileName(state.header?.device.model, new Date(startedAt), taken),
     label: trimmed === "" ? null : trimmed,
     startedAt,
@@ -148,14 +145,53 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
     store: state.store,
     inflight: undefined
   };
+}
+
+/**
+ * Makes a session the current log: its phase (exporting while a share runs), no marks, no failures,
+ * no pending autoStart, an empty queue.
+ *
+ * @param state - The recorder's state.
+ * @param session - The new log.
+ */
+function resetForNewLog(state: RecorderState, session: Session): void {
   state.session = session;
   state.phase = state.exports > 0 ? "exporting" : "recording";
   state.marks = [];
   state.failures = 0;
   state.autoStartWait = 0;
   clearQueue(state);
+}
+
+/**
+ * Starts a log (`start`, `editor.record`, autoStart): the session, the context lines and the
+ * `recorder` start event in the queue, the log in the list, keepFiles, the status. A running log
+ * is answered as it is.
+ *
+ * @param ctx - The recorder's context.
+ * @param label - A name for the run; trimmed, empty is none.
+ * @returns The new (or running) log.
+ * @throws {Error} When perf found no monitor.
+ */
+export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
+  const { state } = ctx;
+  // Guard: a running log is answered as it is; without a monitor nothing can be recorded.
+  if (state.session !== undefined) return infoOf(state.session);
+  const { monitor } = state;
+  if (monitor === undefined) throw new Error(NO_MONITOR);
+
+  // Build: the session, named by the local minute and the header's model, never a taken name.
+  const taken = new Set(state.files.map(file => file.name));
+  const session = createSession(state, label, Date.now(), taken);
+
+  // Reset: the new log is the current one, with an empty queue and no marks.
+  resetForNewLog(state, session);
+
+  // Queue context: the header, startup and newest display first, then the start event.
   queueContext(state);
   monitor.event("recorder", { action: "start", label: session.label });
+
+  // Announce: the log in the list (keepFiles applied), the status event, the log line.
   state.files.push(infoOf(session));
   pruneLogs(ctx);
   emitStatus(ctx, true);
@@ -175,6 +211,25 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
  */
 function replaceFile(state: RecorderState, info: LogFileInfo): void {
   state.files = state.files.map(file => (file.name === info.name ? info : file));
+}
+
+/**
+ * Writes the text of a failed write at stop to memory: the failed chunk is back in the pending text;
+ * the log moves to memory unless the third failure in a row already moved it.
+ *
+ * @param state - The recorder's state.
+ * @param session - The finishing log.
+ * @param failure - The failed write.
+ * @returns The failure, the log now in memory.
+ */
+async function retryInMemory(
+  state: RecorderState,
+  session: Session,
+  failure: WriteFailure
+): Promise<WriteFailure> {
+  if (!failure.moved) moveToMemory(state, session);
+  await persistAll(state, session);
+  return { message: failure.message, moved: true };
 }
 
 /**
@@ -201,14 +256,8 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
   // Still current (keepMb and keepFiles leave it alone) until its text is in the store.
   replaceFile(state, infoOf(session));
 
-  let failure = await persistAll(state, session);
-  if (failure !== undefined) {
-    // The failed chunk is back in the pending text: write it to memory (where the third failure in
-    // a row already moved the log).
-    if (!failure.moved) moveToMemory(state, session);
-    await persistAll(state, session);
-    failure = { message: failure.message, moved: true };
-  }
+  const written = await persistAll(state, session);
+  const failure = written === undefined ? undefined : await retryInMemory(state, session, written);
   const info: LogFileInfo = {
     ...(findFile(state, session.name) ?? infoOf(session)),
     current: false,

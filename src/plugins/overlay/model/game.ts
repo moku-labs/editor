@@ -103,25 +103,44 @@ export function tabsOf(hasCommands: boolean): readonly OverlayTab[] {
 function rowOf(command: OverlayCommand, busy: boolean): GameRow {
   const toggle = command.kind === "toggle";
   const on = command.value === true;
-  let state: GameRow["state"] = "run";
-  if (toggle) state = on ? "on" : "off";
-  if (busy) state = "busy";
-  if (!command.allowed) state = "refused";
-  let legend: GameRow["legend"] = "RUN";
-  if (toggle) legend = on ? "ON" : "OFF";
   return {
     id: command.id,
     name: command.title,
     line: command.allowed
       ? `${command.id}, ${command.effect} ${command.kind}`
       : `${command.id}, ${command.reason ?? READ_ONLY_TEXT}`,
-    state,
-    legend,
+    state: rowState(command, busy),
+    legend: rowLegend(command),
     toggle,
     pressed: toggle ? on : undefined,
     disabled: !command.allowed || busy,
     title: command.allowed ? undefined : command.reason
   };
+}
+
+/**
+ * The state of a row: refused before busy, busy before its own value.
+ *
+ * @param command - The overlay command.
+ * @param busy - Whether its run has not settled.
+ * @returns "refused", "busy", "on", "off" or "run".
+ */
+function rowState(command: OverlayCommand, busy: boolean): GameRow["state"] {
+  if (!command.allowed) return "refused";
+  if (busy) return "busy";
+  if (command.kind !== "toggle") return "run";
+  return command.value === true ? "on" : "off";
+}
+
+/**
+ * The state legend of a row: ON / OFF for a toggle, RUN for a button.
+ *
+ * @param command - The overlay command.
+ * @returns The legend.
+ */
+function rowLegend(command: OverlayCommand): GameRow["legend"] {
+  if (command.kind !== "toggle") return "RUN";
+  return command.value === true ? "ON" : "OFF";
 }
 
 /**

@@ -7,7 +7,7 @@
 import { dropOldestLine, pushOutbox } from "./outbox";
 import { dropLog, emitStatus, infoOf } from "./state";
 import { messageOf } from "./store";
-import type { RecorderCtx, RecorderState, Session } from "./types";
+import type { RecorderConfig, RecorderCtx, RecorderState, Session } from "./types";
 
 /** Pending text that is written at once, whatever persistEveryMs says. */
 export const PERSIST_BYTES = 65_536;
@@ -15,8 +15,8 @@ export const PERSIST_BYTES = 65_536;
 /** Consecutive failed writes that move a log to the memory store. */
 export const MAX_FAILURES = 3;
 
-/** Bytes in a megabyte of keepMb. */
-const MEGABYTE = 1_048_576;
+/** Bytes in a megabyte (keepMb, the native share's limit). */
+export const MEGABYTE = 1_048_576;
 
 /** A write that failed: its message, and whether the log moved to memory with it. */
 export type WriteFailure = { readonly message: string; readonly moved: boolean };
@@ -255,6 +255,28 @@ function noteDrops(ctx: Pick<RecorderCtx, "state" | "log">): void {
 }
 
 /**
+ * Whether a log's pending text is due for the store: no write in flight, some text pending, and
+ * persistEveryMs passed since the last write or 64 KB waiting.
+ *
+ * @param session - The current log, or none.
+ * @param now - Epoch ms now.
+ * @param config - The recorder's config.
+ * @returns Whether the tick takes a chunk.
+ */
+function isChunkDue(
+  session: Session | undefined,
+  now: number,
+  config: Readonly<RecorderConfig>
+): session is Session {
+  if (session === undefined || session.inflight !== undefined || session.pending.length === 0) {
+    return false;
+  }
+  return (
+    now - session.lastPersistAt >= config.persistEveryMs || session.pendingBytes >= PERSIST_BYTES
+  );
+}
+
+/**
  * One tick of the recorder's timer: inside the agent span, drain the queue, bound memory and take
  * the chunk that is due (persistEveryMs, or 64 KB pending); after the span, start its write, warn a
  * drop streak and emit the status when a number changed.
@@ -268,21 +290,18 @@ export function flushTick(ctx: RecorderCtx): void {
 
   const now = Date.now();
   let chunk: string | undefined;
+  // Inside the agent span (left out of the spike rule): serialize, bound memory, take the chunk
+  // that is due. The span closes also when a step throws.
   monitor.beginAgent();
   try {
     drain(state);
     trimToKeepMb(ctx);
-    const due =
-      session !== undefined &&
-      session.inflight === undefined &&
-      session.pending.length > 0 &&
-      (now - session.lastPersistAt >= config.persistEveryMs ||
-        session.pendingBytes >= PERSIST_BYTES);
-    if (due) chunk = takeChunk(session, now);
+    if (isChunkDue(session, now, config)) chunk = takeChunk(session, now);
   } finally {
     monitor.endAgent();
   }
 
+  // After the span: the write (async IO), the drop streak, the status when a number changed.
   if (session !== undefined && chunk !== undefined) {
     startWrite(state, session, chunk, failure => warnFailure(ctx, session.name, failure)).catch(
       () => {}

@@ -17,6 +17,9 @@ import type {
 /** The cell of a missing value. */
 const DASH = "—";
 
+/** Seconds of a minute (the `mm:ss` clock and the log's length). */
+const SECONDS_PER_MINUTE = 60;
+
 /** The separator of the parts of a line. */
 const DOT = " · ";
 
@@ -179,7 +182,8 @@ function twoDigits(value: number): string {
  * ```
  */
 function clockOf(seconds: number): string {
-  return `${twoDigits(Math.floor(seconds / 60))}:${twoDigits(Math.floor(seconds % 60))}`;
+  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
+  return `${twoDigits(minutes)}:${twoDigits(Math.floor(seconds % SECONDS_PER_MINUTE))}`;
 }
 
 /**
@@ -194,8 +198,8 @@ function clockOf(seconds: number): string {
  */
 function durationOf(seconds: number): string {
   const total = Math.round(seconds);
-  const minutes = Math.floor(total / 60);
-  return minutes > 0 ? `${minutes} min ${total % 60} s` : `${total} s`;
+  const minutes = Math.floor(total / SECONDS_PER_MINUTE);
+  return minutes > 0 ? `${minutes} min ${total % SECONDS_PER_MINUTE} s` : `${total} s`;
 }
 
 /**
@@ -357,6 +361,62 @@ function footerOf(summary: LogSummary): string {
 }
 
 /**
+ * The `Rate:` line: every rate switch with its moment, reason and mode; none without a switch.
+ *
+ * @param rateSwitches - The log's rate switches.
+ * @returns The line, or no line.
+ */
+function rateSwitchesLine(rateSwitches: LogSummary["rateSwitches"]): string[] {
+  if (rateSwitches.length === 0) return [];
+
+  const switches = rateSwitches.map(
+    item =>
+      `${clockOf(item.at)} ${item.from} → ${item.to} (${cleanText(item.reason)}, ${cleanText(item.mode)})`
+  );
+  return [`Rate: ${switches.join(DOT)}`];
+}
+
+/**
+ * The system frames block: its heading and one table row per device and mark segment; nothing
+ * without gfx readings.
+ *
+ * @param system - The log's system frames.
+ * @returns The lines.
+ */
+function systemFramesBlock(system: LogSummary["system"]): string[] {
+  if (system.length === 0) return [];
+
+  const rows = system.map(item => [
+    cleanText(item.device),
+    cleanText(item.mark),
+    whole(item.seconds),
+    String(item.frames),
+    oneDecimal(item.fps),
+    oneDecimal(item.latePct),
+    String(item.p50),
+    String(item.p90),
+    String(item.p99)
+  ]);
+  return ["System frames (adb gfxinfo)", ...table(SYSTEM_HEAD, rows, 2)];
+}
+
+/**
+ * The `Marks:` line: each mark's moment and label, `(auto)` for the engine's own; none without a
+ * mark.
+ *
+ * @param marks - The log's marks.
+ * @returns The line, or no line.
+ */
+function marksLine(marks: LogSummary["marks"]): string[] {
+  if (marks.length === 0) return [];
+
+  const named = marks.map(
+    mark => `${clockOf(mark.at)} ${cleanText(mark.label)}${mark.auto ? " (auto)" : ""}`
+  );
+  return [`Marks: ${named.join(DOT)}`];
+}
+
+/**
  * The lines `perf summary` prints: the device line, the screens table (one row per screen and
  * rate), the rate switches, the screens' frame events, the heat, the system frames per mark, the
  * marks and the footer. `≥200` for an over percentile, `—` for a missing value; whole ms for
@@ -370,54 +430,32 @@ function footerOf(summary: LogSummary): string {
  * ```
  */
 export function summaryText(summary: LogSummary): string[] {
-  const { device, screens, rateSwitches, heat, system, marks } = summary;
-  const lines = [
-    [
-      textCell(device.model),
-      textCell(device.backend),
-      `engine ${textCell(device.engine)}`,
-      `build ${textCell(device.build)}`,
-      durationOf(summary.seconds)
-    ].join(DOT)
-  ];
-  if (screens.length > 0)
-    lines.push(
-      ...table(
-        SCREEN_HEAD,
-        screens.map(screen => screenCells(screen))
-      )
-    );
-  if (rateSwitches.length > 0) {
-    const switches = rateSwitches.map(
-      item =>
-        `${clockOf(item.at)} ${item.from} → ${item.to} (${cleanText(item.reason)}, ${cleanText(item.mode)})`
-    );
-    lines.push(`Rate: ${switches.join(DOT)}`);
-  }
-  lines.push(...screenEventsBlock(screens), ...heat.map(item => heatLine(item)));
-  if (system.length > 0) {
-    const rows = system.map(item => [
-      cleanText(item.device),
-      cleanText(item.mark),
-      whole(item.seconds),
-      String(item.frames),
-      oneDecimal(item.fps),
-      oneDecimal(item.latePct),
-      String(item.p50),
-      String(item.p90),
-      String(item.p99)
-    ]);
-    lines.push("System frames (adb gfxinfo)", ...table(SYSTEM_HEAD, rows, 2));
-  }
-  if (marks.length > 0) {
-    const named = marks.map(
-      mark => `${clockOf(mark.at)} ${cleanText(mark.label)}${mark.auto ? " (auto)" : ""}`
-    );
-    lines.push(`Marks: ${named.join(DOT)}`);
-  }
-  lines.push(footerOf(summary));
+  const { device, screens, heat } = summary;
+  const deviceLine = [
+    textCell(device.model),
+    textCell(device.backend),
+    `engine ${textCell(device.engine)}`,
+    `build ${textCell(device.build)}`,
+    durationOf(summary.seconds)
+  ].join(DOT);
+  const screensTable =
+    screens.length > 0
+      ? table(
+          SCREEN_HEAD,
+          screens.map(screen => screenCells(screen))
+        )
+      : [];
 
-  return lines;
+  return [
+    deviceLine,
+    ...screensTable,
+    ...rateSwitchesLine(summary.rateSwitches),
+    ...screenEventsBlock(screens),
+    ...heat.map(item => heatLine(item)),
+    ...systemFramesBlock(summary.system),
+    ...marksLine(summary.marks),
+    footerOf(summary)
+  ];
 }
 
 /**

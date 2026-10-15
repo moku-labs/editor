@@ -4,14 +4,14 @@
  * (a browser page; a WebView ignores it), else an error. The current log is written to the store
  * first; the status shows `exporting` meanwhile.
  */
-import { persistAll, warnFailure } from "./flush";
+import { MEGABYTE, persistAll, warnFailure } from "./flush";
 import { unknownLog } from "./session";
 import { emitStatus, filesOf, findFile, readLog } from "./state";
 import { NDJSON } from "./store";
 import type { RecorderCtx, RecorderState, ShareResult } from "./types";
 
 /** The most bytes the native shell's share takes (@moku-labs/native: "≤ 32 MiB"). */
-export const NATIVE_SHARE_MAX_BYTES = 32 * 1_048_576;
+export const NATIVE_SHARE_MAX_BYTES = 32 * MEGABYTE;
 
 /** How long a download URL stays valid after the click, ms. */
 const REVOKE_AFTER_MS = 30_000;
@@ -38,7 +38,7 @@ function nativeDelivery(): Deliver | undefined {
   if (typeof share !== "function") return undefined;
   return async (name, blob) => {
     if (blob.size > NATIVE_SHARE_MAX_BYTES) {
-      const megabytes = (blob.size / 1_048_576).toFixed(1);
+      const megabytes = (blob.size / MEGABYTE).toFixed(1);
       throw new Error(
         `[moku-editor] recorder.share: ${name} is ${megabytes} MB, more than the 32 MB a native share takes.\n  Pull it with the collector over adb (moku-editor perf), or share shorter logs.`
       );

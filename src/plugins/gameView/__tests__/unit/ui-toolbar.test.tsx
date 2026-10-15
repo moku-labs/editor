@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { DEVICES } from "../../../registry/protocol";
 import { setPicker } from "../../element/select";
@@ -46,6 +46,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   view.unmount();
   stopGameView(ctx);
   document.body.innerHTML = "";
@@ -383,10 +384,12 @@ describe("DeviceToolbar", () => {
     expect(find(view.root, "[data-part='series']").getAttribute("aria-expanded")).toBe("true");
 
     view.unmount();
+    const T = 50_000;
+    vi.spyOn(performance, "now").mockReturnValue(T);
     ctx.state.series.recording = {
       folder: "f/",
       label: "a",
-      startedAt: performance.now() - 900,
+      startedAt: T - 900,
       durationMs: 2000,
       intervalMs: 100,
       planned: 20,

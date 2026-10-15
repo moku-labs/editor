@@ -29,6 +29,7 @@ import {
   parseModel,
   parsePackages,
   parseThermal,
+  roundTenth,
   spanOf
 } from "./parse";
 import { runAdb } from "./run";
@@ -349,7 +350,7 @@ function gfxSpanOf(
   phone.gfx = totals === undefined ? undefined : { totals, at: now };
   if (totals === undefined || before === undefined) return undefined;
 
-  const seconds = Math.round(((now - before.at) / SECOND_MS) * 10) / 10;
+  const seconds = roundTenth((now - before.at) / SECOND_MS);
   return { ...spanOf(before.totals, totals, seconds), seconds };
 }
 

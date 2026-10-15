@@ -5,6 +5,7 @@
 import type { LogFileInfo, LogMark, RecorderStatus } from "../../recorder/types";
 import type { LinkPayload } from "../types";
 import { COLOUR, clockText, groupDigits, hourMinute, sizeText } from "./format";
+import { isLive } from "./link";
 import type { LegendView, LogRow, RecordTabView, SentView, ToastView } from "./types";
 
 /** The REC legend of a running log. */
@@ -44,7 +45,7 @@ function sentOf(
   const mode = payload?.link?.mode;
   if (!hasBridge || mode === undefined) return undefined;
 
-  const linked = mode === "adb" || mode === "lan";
+  const linked = isLive(mode);
   const total = status.sent + status.pending;
   return {
     linked,
@@ -61,23 +62,27 @@ function sentOf(
  * @returns The row.
  */
 function logRow(file: LogFileInfo): LogRow {
-  let status: LogRow["status"] = "partial";
-  let statusText = `${groupDigits(file.sent)} of ${groupDigits(file.lines)} sent`;
-  if (file.sent >= file.lines) {
-    status = "sent";
-    statusText = "sent";
-  }
-  if (file.current) {
-    status = "current";
-    statusText = "current";
-  }
   return {
     name: file.name,
     size: sizeText(file.bytes),
     time: hourMinute(file.startedAt),
-    status,
-    statusText,
+    ...logStatus(file),
     canDelete: !file.current
+  };
+}
+
+/**
+ * How much of a log reached the computer: the current log first, then fully sent, else a count.
+ *
+ * @param file - The log.
+ * @returns The status and its text.
+ */
+function logStatus(file: LogFileInfo): Pick<LogRow, "status" | "statusText"> {
+  if (file.current) return { status: "current", statusText: "current" };
+  if (file.sent >= file.lines) return { status: "sent", statusText: "sent" };
+  return {
+    status: "partial",
+    statusText: `${groupDigits(file.sent)} of ${groupDigits(file.lines)} sent`
   };
 }
 

@@ -44,11 +44,14 @@ function selectedRow(state: OverlayState, window: PerfWindowView): number {
  */
 export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors {
   const paint = (window: PerfWindowView): void => {
+    // No canvas mounted (the pill, another tab, the record): nothing to paint.
     const canvas = state.canvas;
     if (canvas === undefined) return;
+    // The painter's state, made once per canvas and sized for the window's rows.
     if (state.graph === undefined || state.graph.flagRow.length < window.capacity) {
       state.graph = graph.createState(window.capacity);
     }
+    // Skip a paint that would draw the same: window version, selection, size, dpr (a paused game costs nothing).
     const row = state.selected === undefined ? -1 : rowOfFrame(window, state.selected);
     const painted = state.painted;
     const same =
@@ -59,12 +62,14 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
       canvas.dpr === painted.dpr;
     if (same) return;
 
+    // Paint through the reused view object (no allocation per paint) at the dpr transform.
     const view = state.graphView;
     view.width = canvas.w;
     view.height = canvas.h;
     view.selected = row;
     canvas.g.setTransform(canvas.dpr, 0, 0, canvas.dpr, 0, 0);
     graph.paint(canvas.g, window, view, state.graph);
+    // Remember what was painted, for the next skip test.
     painted.version = window.version;
     painted.row = row;
     painted.w = canvas.w;

@@ -125,36 +125,78 @@ export async function perfMark(
     return 1;
   }
 
-  let status: number;
-  let text: string;
+  const reply = await postMark(deps, url, run.token, args.label);
+  if ("error" in reply) {
+    ui.error(`[moku-editor] ${reply.error}\n${CHECK_RUN}`);
+    return 1;
+  }
+  return reportMark(reply, args.label, ui);
+}
+
+/**
+ * The answer of the mark route, or the message of a network failure.
+ */
+type MarkReply = { readonly status: number; readonly text: string } | { readonly error: string };
+
+/**
+ * Posts the label to the run's mark route with its Bearer token and reads the whole body.
+ *
+ * @param deps - The process seam (fetch).
+ * @param url - The mark route, checked to be the run's origin.
+ * @param token - The run's hub token.
+ * @param label - The mark's label.
+ * @returns The status and the body, or the message of a network failure.
+ */
+async function postMark(
+  deps: PerfDeps,
+  url: URL,
+  token: string,
+  label: string
+): Promise<MarkReply> {
   try {
     const response = await deps.fetch(url.href, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${run.token}`,
+        authorization: `Bearer ${token}`,
         "content-type": "text/plain; charset=utf-8"
       },
-      body: args.label
+      body: label
     });
-    status = response.status;
-    text = await response.text();
+    return { status: response.status, text: await response.text() };
   } catch (error) {
-    ui.error(`[moku-editor] ${messageOf(error)}\n${CHECK_RUN}`);
-    return 1;
+    return { error: messageOf(error) };
   }
+}
 
+/**
+ * Prints what the mark route answered: the count of logs marked, a warning when no phone is live,
+ * the restart hint on 401, the reply on one line for any other answer.
+ *
+ * @param reply - The status and the body.
+ * @param reply.status - The HTTP status.
+ * @param reply.text - The whole body.
+ * @param label - The mark's label.
+ * @param ui - The brand console.
+ * @returns 0 for a 200 with a count, 1 otherwise.
+ */
+function reportMark(
+  reply: { readonly status: number; readonly text: string },
+  label: string,
+  ui: BrandConsole
+): number {
+  const { status, text } = reply;
   if (status === 401) {
     ui.error(OTHER_TOKEN);
     return 1;
   }
   const marked = status === 200 ? markedOf(text) : undefined;
   if (marked === undefined) {
-    const reply = cleanText(text.replaceAll(/\s+/g, " ").trim(), REPLY_MAX);
-    ui.error(`[moku-editor] perf mark: the running perf answered ${status} ${reply}\n${CHECK_RUN}`);
+    const body = cleanText(text.replaceAll(/\s+/g, " ").trim(), REPLY_MAX);
+    ui.error(`[moku-editor] perf mark: the running perf answered ${status} ${body}\n${CHECK_RUN}`);
     return 1;
   }
 
   if (marked === 0) ui.warn("no phone is live: the mark went into no log");
-  else ui.check(true, `mark "${args.label}" in ${marked} log(s)`);
+  else ui.check(true, `mark "${label}" in ${marked} log(s)`);
   return 0;
 }

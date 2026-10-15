@@ -45,10 +45,6 @@ const MODES: ReadonlySet<unknown> = new Set(["hidden", "pill", "card"]);
  * Stops overlay input at the host.
  *
  * @param event - An input event inside the overlay.
- * @example
- * ```ts
- * host.addEventListener("keydown", isolate);
- * ```
  */
 function isolate(event: Event): void {
   event.stopPropagation();
@@ -113,10 +109,6 @@ export function initOverlay(ctx: OverlayPluginCtx): void {
  * The document of the page, when there is one.
  *
  * @returns The document, or undefined outside a browser.
- * @example
- * ```ts
- * pageDocument(); // globalThis.document in a browser
- * ```
  */
 function pageDocument(): Document | undefined {
   return typeof document === "undefined" ? undefined : document;
@@ -241,17 +233,24 @@ export function startOverlayWith(
  */
 export function stopOverlay(ctx: OverlayStopCtx): void {
   const { state } = ctx;
+  // The tick and the view: no timer, nothing rendered, no canvas.
   stopTick(state);
   if (state.container !== undefined) render(undefined, state.container);
   dropCanvas(state);
+
+  // Listeners and observers: the window, the document, the probes and the host's isolation.
   for (const off of state.off.splice(0)) off();
   const { host, isolate: listener } = state;
   if (host !== undefined && listener !== undefined) {
     for (const type of ISOLATED_EVENTS) host.removeEventListener(type, listener);
   }
+
+  // The host, the registered faces and our global channel.
   deleteFaces(state);
   host?.remove();
   clearChannel(state);
+
+  // State reset (the store keeps the last place, mode and tab).
   state.host = undefined;
   state.root = undefined;
   state.container = undefined;

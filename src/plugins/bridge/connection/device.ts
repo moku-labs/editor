@@ -18,6 +18,7 @@ import type {
   BridgeMode,
   BridgeState,
   PageFlags,
+  Phase,
   RememberedLink,
   RememberedLinks
 } from "../types";
@@ -133,15 +134,20 @@ export function resolveMode(input: ModeInput): ResolvedMode {
   const last = normalized(remembered.last);
   const configured = normalized(config.device);
 
+  // 1. A debug build: its `--editor` wrote the computer's address (__MOKU_GAME_EDITOR__).
   if (flags.editor !== undefined) {
     const address = last ?? configured ?? normalized(flags.editor) ?? DEFAULT_DEVICE_ADDRESS;
     return { mode: "device", address };
   }
+  // 2. The developer configured a computer address.
   if (configured !== undefined) return { mode: "device", address: last ?? configured };
+  // 3. A native WebView page no dev server served; a page without a URL whose hello names its
+  //    server is a headless agent and stays in page mode.
   const headless = href === undefined && isAbsoluteHello(config.hello);
   if (isNativePage(href) && !headless) {
     return { mode: "device", address: last ?? DEFAULT_DEVICE_ADDRESS };
   }
+  // 4. A page the dev server served.
   return { mode: "page", address: undefined };
 }
 
@@ -214,6 +220,26 @@ function textOf(params: Json | undefined, key: string): string | undefined {
 }
 
 /**
+ * True for a `paired` that answers a pairing socket and carries both a device id and a token.
+ *
+ * @param phase - The connection phase.
+ * @param reply - The device id and token the notification carried.
+ * @param reply.device - The device id, if any.
+ * @param reply.token - The token, if any.
+ * @returns Whether the reply pairs this socket.
+ * @example
+ * ```ts
+ * isPairingReply("pairing", { device: "d-7f3a", token: "t1" }); // true
+ * ```
+ */
+function isPairingReply(
+  phase: Phase,
+  reply: { readonly device: string | undefined; readonly token: string | undefined }
+): reply is RememberedLink {
+  return phase === "pairing" && reply.device !== undefined && reply.token !== undefined;
+}
+
+/**
  * The hub's `paired { device, token, engine }` on a pairing socket: the device id and token are
  * remembered for the address (the newest, the last address), the code goes, the computer's
  * engine is kept, and the link step runs on the same socket. Ignored on any other socket.
@@ -224,19 +250,16 @@ function textOf(params: Json | undefined, key: string): string | undefined {
 export function onPaired(deps: BridgeDeps, params: Json | undefined): void {
   const { state } = deps;
   const { address } = state;
-  const device = textOf(params, "device");
-  const token = textOf(params, "token");
-  if (
-    state.phase !== "pairing" ||
-    address === undefined ||
-    device === undefined ||
-    token === undefined
-  ) {
+  const reply = { device: textOf(params, "device"), token: textOf(params, "token") };
+  if (address === undefined || !isPairingReply(state.phase, reply)) {
     deps.log.debug("bridge:paired-ignored", { phase: state.phase });
     return;
   }
 
-  state.remembered = rememberLink(state.remembered, address, { device, token });
+  state.remembered = rememberLink(state.remembered, address, {
+    device: reply.device,
+    token: reply.token
+  });
   writeRemembered(deps);
   state.pairing = undefined;
   state.pairNext = false;

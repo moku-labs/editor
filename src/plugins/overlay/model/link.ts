@@ -29,6 +29,20 @@ const MODES: readonly (readonly [ModeKey["kind"], string, string, string])[] = [
 ];
 
 /**
+ * True for a live device link: open at a loopback address (adb) or any other (LAN).
+ *
+ * @param mode - The device link's mode.
+ * @returns Whether a computer is connected.
+ * @example
+ * ```ts
+ * isLive("connecting"); // false
+ * ```
+ */
+export function isLive(mode: DeviceLink["mode"]): boolean {
+  return mode === "adb" || mode === "lan";
+}
+
+/**
  * Checks the address field: `host:port`, normalized.
  *
  * @param text - The field.
@@ -84,7 +98,7 @@ function addressRow(
 
   const link = payload?.link;
   if (link === undefined) return undefined;
-  if (link.mode === "adb" || link.mode === "lan") {
+  if (isLive(link.mode)) {
     const tag = link.mode === "adb" ? "via adb" : "via LAN";
     return {
       ...blank,
@@ -121,7 +135,7 @@ function liveBoxOf(
   now: number
 ): LinkTabView["live"] {
   if (pageMode) return { title: "Live via the dev server", text: "" };
-  if (link?.mode !== "adb" && link?.mode !== "lan") return undefined;
+  if (link === undefined || !isLive(link.mode)) return undefined;
 
   const seen = link.seenAt === undefined ? "not yet" : `${secondsBetween(link.seenAt, now)} s ago`;
   const counts =
@@ -141,7 +155,7 @@ function liveBoxOf(
  * @returns The seen line, or undefined.
  */
 function seenOf(link: DeviceLink | undefined, build: BuildInfo): LinkTabView["seen"] {
-  if (link === undefined || link.mode === "adb" || link.mode === "lan") return undefined;
+  if (link === undefined || isLive(link.mode)) return undefined;
   const value = link.seenAt === undefined ? "not yet" : hourMinute(link.seenAt);
   const rest =
     link.pairing === undefined ? "" : `, build ${build.id ?? "—"}, ${profileText(build.profile)}`;
@@ -185,7 +199,7 @@ export function linkTabView(input: {
         ? { phone: input.build.engine ?? "unknown", computer: editorEngine }
         : undefined,
     live: liveBoxOf(link, hasBridge && link === undefined, input.rec, input.now),
-    engineInline: link?.mode === "adb" || link?.mode === "lan",
+    engineInline: link !== undefined && isLive(link.mode),
     seen: seenOf(link, input.build),
     note: hasBridge ? undefined : NO_BRIDGE
   };

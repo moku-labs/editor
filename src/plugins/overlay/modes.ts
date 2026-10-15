@@ -92,10 +92,8 @@ export function setMode(octx: OverlayCtx, mode: OverlayMode, tab?: OverlayTab): 
   state.mode = mode;
   state.tab = nextTab;
   if (mode === "hidden") state.opening = false;
-  else {
-    state.last = mode;
-    if (previous !== mode) state.opening = true;
-  }
+  else state.last = mode;
+  if (mode !== "hidden" && previous !== mode) state.opening = true;
   applyMode(octx);
   writeStored(octx);
   emitChanged(octx);

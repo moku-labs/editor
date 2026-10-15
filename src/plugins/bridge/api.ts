@@ -20,17 +20,21 @@ import type { BridgeApi, BridgeCtx, BridgeDeps } from "./types";
  *   validation); nothing changes then.
  */
 export function dial(deps: BridgeDeps, address: string): void {
+  // Guard: an address parseAddress refuses changes nothing.
   const parsed = parseAddress(address);
   if (parsed === undefined) {
     throw new TypeError(
       `[moku-editor] bridge.connect needs host:port, got "${address}".\n  Pass an address like "192.168.1.5:47600".`
     );
   }
+
+  // Decide: the address already live and a stopped bridge need nothing.
   const { state } = deps;
   const target = parsed.text;
   const live = state.mode === "device" && state.address === target && state.phase === "open";
   if (live || state.phase === "stopped") return;
 
+  // Commit: device mode at the address, remembered as the last one; a started bridge dials now.
   if (state.address !== target) state.pairing = undefined;
   state.mode = "device";
   state.address = target;

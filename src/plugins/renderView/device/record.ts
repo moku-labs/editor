@@ -20,6 +20,21 @@ const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;
 
 /**
+ * Milliseconds in a tenth of a second: the log clock shows tenths.
+ */
+const MS_PER_TENTH = 100;
+
+/**
+ * Tenths in a second.
+ */
+const TENTHS_PER_SECOND = 10;
+
+/**
+ * Uploads of this many MB or more in one frame are a caution (amber), as in the overlay's record.
+ */
+const UPLOAD_CAUTION_MB = 1;
+
+/**
  * The phases of a frame, in the record's order.
  */
 const PHASE_NAMES = ["input", "animate", "layout", "sync", "signals", "render", "agent"] as const;
@@ -45,9 +60,10 @@ const CHANGE_SEPARATOR = " · ";
  * ```
  */
 function logClock(ms: number): string {
-  const tenths = Math.floor(ms / 100);
-  const seconds = (tenths % (SECONDS_PER_MINUTE * 10)) / 10;
-  const minutes = Math.floor(tenths / (SECONDS_PER_MINUTE * 10));
+  const tenths = Math.floor(ms / MS_PER_TENTH);
+  const tenthsPerMinute = SECONDS_PER_MINUTE * TENTHS_PER_SECOND;
+  const seconds = (tenths % tenthsPerMinute) / TENTHS_PER_SECOND;
+  const minutes = Math.floor(tenths / tenthsPerMinute);
   return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
@@ -180,7 +196,7 @@ function frameRows(record: PerfSpikeRecord): ValueRow[] {
     {
       label: "uploads",
       value: record.uploads === null ? DASH : `${record.uploads.mb.toFixed(1)} MB`,
-      tone: (record.uploads?.mb ?? 0) >= 1 ? "warn" : "value"
+      tone: (record.uploads?.mb ?? 0) >= UPLOAD_CAUTION_MB ? "warn" : "value"
     },
     {
       label: "shader compiles",

@@ -56,9 +56,12 @@ export type DeviceDeps = {
  * The runtime's device deps: `Bun.serve` and `os.networkInterfaces()`.
  */
 const RUNTIME_DEPS: DeviceDeps = {
-  // The one cast of device mode, as in serve.ts: Bun types routes, fetch and websocket as an XOR of
-  // option shapes, and an upgrading route returns undefined.
-  serve: options => Bun.serve(options as unknown as BunServeOptions),
+  // The one cast of device mode. DeviceServeOptions is the hub's structural seam (a fake in unit
+  // tests, and no Bun namespace type in an exported shape, skeleton-conventions §3): its routes
+  // are `unknown` values (the CLI's routes, the editor's handlers that answer undefined after an
+  // upgrade) and its websocket is the hub's structural handler, so it is comparable with, but not
+  // assignable to, Bun's XOR of option shapes. Bun.serve checks the route values at run time.
+  serve: options => Bun.serve(options as BunServeOptions),
   interfaces: () => networkInterfaces()
 };
 

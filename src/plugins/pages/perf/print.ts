@@ -33,6 +33,11 @@ export type PerfReady = {
 };
 
 /**
+ * Milliseconds in a second: the adb reverse period prints in seconds.
+ */
+const MS_PER_SECOND = 1000;
+
+/**
  * Prints the ready block of a perf run.
  *
  * @param ui - The brand console.
@@ -45,7 +50,7 @@ export type PerfReady = {
  */
 export function printPerfReady(ui: BrandConsole, ready: PerfReady): void {
   const { listen, path, tools, logs, engine, appId, reverseEveryMs } = ready;
-  const seconds = Math.round(reverseEveryMs / 1000);
+  const seconds = Math.round(reverseEveryMs / MS_PER_SECOND);
   ui.lockup({ wordmark: "moku editor", label: "perf" });
   ui.box([
     `Phones  ${listen.adb} · adb reverse every ${seconds} s`,

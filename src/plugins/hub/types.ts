@@ -141,6 +141,11 @@ export type ServeOptions = {
   readonly port?: number;
   readonly hostname?: string;
   readonly development?: boolean | { readonly hmr?: boolean; readonly console?: boolean };
+  /**
+   * The game's routes, passed to Bun as they are. Structural on purpose: this type ships in the
+   * server `.d.mts`, and Bun's `Serve.Routes` is a namespace type the d.ts bundle drops
+   * (skeleton-conventions §3); Bun.serve checks the values (HTML imports, files, method maps).
+   */
   readonly routes?: Readonly<Record<string, unknown>>;
   readonly fetch?: (req: Request, server: HubServer) => Response | Promise<Response>;
   /** Refused at runtime too: the editor owns the one websocket handler. */
@@ -160,6 +165,7 @@ export type BunServeOptions = Bun.Serve.Options<HubSocketData, string>;
 export type MergedServeOptions = {
   readonly [key: string]: unknown;
   readonly hostname: "127.0.0.1";
+  /** The game's routes and the editor's, merged; structural like ServeOptions.routes. */
   readonly routes: Readonly<Record<string, unknown>>;
   readonly fetch: (req: Request, server: HubServer) => Response | Promise<Response>;
   readonly websocket: HubWebSocketHandler;
@@ -379,7 +385,11 @@ export type PairConfirm = (request: PairRequest, signal: AbortSignal) => Promise
 export type DeviceListenOptions = {
   /** The pairing callback (the CLI's terminal prompt). */
   readonly confirm: PairConfirm;
-  /** Non-editor routes of the adb listener (e.g. "/" for a page that says no game is served here). */
+  /**
+   * Non-editor routes of the adb listener (e.g. "/" for a page that says no game is served here).
+   * Structural like ServeOptions.routes: no Bun namespace type in a shipped shape; Bun.serve
+   * checks the values.
+   */
   readonly routes?: Readonly<Record<string, unknown>>;
 };
 
@@ -459,6 +469,7 @@ export type DeviceServer = {
 export type DeviceServeOptions = {
   readonly hostname: string;
   readonly port: number;
+  /** The CLI's routes and the editor's, merged; structural like ServeOptions.routes. */
   readonly routes: Readonly<Record<string, unknown>>;
   readonly fetch: () => Response;
   readonly websocket: HubWebSocketHandler;

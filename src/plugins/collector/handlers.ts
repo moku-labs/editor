@@ -54,6 +54,22 @@ function sessionsOfDevice(ctx: CollectorCtx, id: string): LogSession[] {
 }
 
 /**
+ * The file of a new log under the out folder: named by the minute and the model, never a name
+ * taken on disk or by another session.
+ *
+ * @param ctx - Domain context of the collector.
+ * @param model - The log's normalized model.
+ * @returns The absolute file path.
+ */
+function uniqueLogFile(ctx: CollectorCtx, model: string): string {
+  const outDir = outDirOf(ctx);
+  const files = new Set([...ctx.state.sessions.values()].map(session => session.file));
+  const taken = (name: string): boolean =>
+    files.has(join(outDir, name)) || existsSync(join(outDir, name));
+  return join(outDir, fileNameOf(new Date(), model, taken));
+}
+
+/**
  * The log session of a batch, created on its first batch: the model from the batch's first header,
  * else the device's, else "device"; the file named by the minute and the model, never a name
  * taken on disk or by another session. A new log closes the files of the device's other logs
@@ -78,11 +94,7 @@ function sessionOf(
 
   const header = batch.items.find(item => isHeader(item));
   const model = normalizeModel(header?.device?.model) ?? device.model ?? "device";
-  const outDir = outDirOf(ctx);
-  const files = new Set([...sessions.values()].map(session => session.file));
-  const taken = (name: string): boolean =>
-    files.has(join(outDir, name)) || existsSync(join(outDir, name));
-  const file = join(outDir, fileNameOf(new Date(), model, taken));
+  const file = uniqueLogFile(ctx, model);
 
   const session = createLogSession({ device, log: batch.log, file, model });
   sessions.set(session.key, session);

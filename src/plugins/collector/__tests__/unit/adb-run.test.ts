@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runAdb } from "../../adb/run";
+import type { AdbResult } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // runAdb, the one process seam: what a missing command and a hung one answer.
 // ─────────────────────────────────────────────────────────────────────────────
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("runAdb", () => {
   it("answers the exit code and the standard output", async () => {
@@ -22,12 +27,17 @@ describe("runAdb", () => {
     });
   });
 
-  it("kills a command that outlives the timeout and answers code -1 without text", async () => {
-    const started = Date.now();
+  it("kills a command that outlives the timeout and answers code -1 without text (bug: a hung adb blocking every round)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let answered: AdbResult | undefined;
+    const running = runAdb("sh", ["-c", "echo early; exec sleep 30"], 100).then(result => {
+      answered = result;
+    });
 
-    const result = await runAdb("sh", ["-c", "echo early; sleep 5"], 100);
-
-    expect(result).toEqual({ code: -1, text: "", missing: false });
-    expect(Date.now() - started).toBeLessThan(3000);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(answered).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answered).toEqual({ code: -1, text: "", missing: false });
+    await running;
   });
 });

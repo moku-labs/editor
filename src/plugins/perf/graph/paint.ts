@@ -5,9 +5,10 @@
  * only when their cached key in the state changed.
  */
 import type { PerfWindowView } from "../protocol";
-import { CAUSE_RANK, rateFps, spikeOrdinal } from "../protocol";
+import { CAUSE_RANK, EMPTY_BUDGET_MS, rateFps, spikeOrdinal } from "../protocol";
 import { cell, rowCentre, rowLeft, rowRight, xOf } from "./geometry";
 import { axisLabel, captionKeyOf, captionOf, flagText, oneDecimal } from "./labels";
+import type { CauseStyle } from "./palette";
 import { CAUSE_STYLE, GRAPH_COLOURS, GRAPH_FONTS } from "./palette";
 import type { GraphContext2D, GraphState, GraphView } from "./types";
 
@@ -95,12 +96,6 @@ const SKIP_TEXT = "SKIP";
 /** The axis label of the newest frame. */
 const NOW_TEXT = "now";
 
-/** Fixed tape labels. */
-const TAPE_0 = "0";
-const TAPE_25 = "25";
-const TAPE_30 = "30";
-const TAPE_40 = "40";
-
 /** The stack legend's words and the room each item takes (swatch, gap, word), phone only. */
 const LEGEND_JS = "JS";
 const LEGEND_GPU = "GPU";
@@ -108,6 +103,76 @@ const LEGEND_IDLE = "idle";
 const LEGEND_ROOM_JS = 24;
 const LEGEND_ROOM_GPU = 31;
 const LEGEND_ROOM_IDLE = 27;
+
+/** The top of a flag box, CSS px. */
+const FLAG_TOP = 1;
+
+/** A flag box is the flag band minus this high, px. */
+const FLAG_INSET = 4;
+
+/** The border of a flag box, px; the selected hollow (GC?) flag's is wider. */
+const FLAG_BORDER = 1.5;
+const FLAG_BORDER_SELECTED_HOLLOW = 2;
+
+/** One CSS px: leaders, switch marks, outlines and the readout box's border. */
+const HAIRLINE = 1;
+
+/** A rate label sits this far beside its switch line and this far below the plot's top, px. */
+const RATE_LABEL_GAP = 2;
+const RATE_LABEL_DROP = 9;
+
+/** Tape ticks every 5 ms, long (7 px) at multiples of 10 ms, else short (4 px). */
+const TICK_STEP_MS = 5;
+const MAJOR_TICK_MS = 10;
+const MAJOR_TICK = 7;
+const MINOR_TICK = 4;
+
+/** Tape labels end this far from the canvas's right edge, px. */
+const TAPE_LABEL_INSET = 3;
+
+/** A fixed tape label: its text, its ms, and whether it shows only on a tall plot or the wide graph. */
+type TapeMark = {
+  readonly text: string;
+  readonly ms: number;
+  readonly tallOnly: boolean;
+  readonly wideOnly: boolean;
+};
+
+/** The tape's fixed labels in drawing order, after the budget and its half. */
+const TAPE_MARKS: readonly TapeMark[] = [
+  { text: "0", ms: 0, tallOnly: false, wideOnly: false },
+  { text: "25", ms: 25, tallOnly: true, wideOnly: true },
+  { text: "30", ms: 30, tallOnly: true, wideOnly: false },
+  { text: "40", ms: 40, tallOnly: false, wideOnly: false }
+];
+
+/** A tape bug: from 1 px right of the spine to 11 px, 5 px above and below its line, tip at 6 px. */
+const BUG_NEAR = 1;
+const BUG_FAR = 11;
+const BUG_TIP = 6;
+const BUG_HALF = 5;
+const BUG_OUTLINE = 1.5;
+
+/** The readout box's pointer reaches this far left of the box, px. */
+const READOUT_POINTER = 7;
+
+/** The readout shows tenths of a millisecond. */
+const TENTHS = 10;
+
+/** The caption starts this far right of the plot's left edge, px. */
+const CAPTION_INSET = 4;
+
+/** Axis labels sit this far inside the plot's edges, their baseline this far above the bottom, px. */
+const AXIS_INSET = 2;
+const BASELINE_INSET = 2;
+
+/** One second, ms: the wide axis labels every second. */
+const SECOND_MS = 1000;
+
+/** A stack legend swatch: 8 px square, its word 3 px to its right, its outline 0.5 px inside. */
+const SWATCH = 8;
+const SWATCH_GAP = 3;
+const SWATCH_OUTLINE_INSET = 0.5;
 
 /** The cause style of each primary cause code (index = code − 1). */
 const STYLE_OF_CODE = CAUSE_RANK.map(cause => CAUSE_STYLE[cause]);
@@ -335,6 +400,38 @@ function rateText(state: GraphState, fps: number): string {
 }
 
 /**
+ * Whether a rate switch gets a label: a rate of 1 to 1000 fps (a broken rate gets the mark only).
+ *
+ * @param fps - The new rate, fps.
+ * @returns Whether to label it.
+ * @example
+ * ```ts
+ * isLabelledRate(2000); // false
+ * ```
+ */
+function isLabelledRate(fps: number): boolean {
+  return fps >= 1 && fps <= MAX_LABELLED_FPS;
+}
+
+/**
+ * Step 5b, one switch: a dashed magenta vertical at `x` across the plot.
+ *
+ * @param g - The context.
+ * @param state - The painter state.
+ * @param x - The switch's x.
+ */
+function paintRateMark(g: GraphContext2D, state: GraphState, x: number): void {
+  g.strokeStyle = GRAPH_COLOURS.magenta;
+  g.lineWidth = HAIRLINE;
+  g.setLineDash(DASH_FINE);
+  g.beginPath();
+  g.moveTo(x, state.py0);
+  g.lineTo(x, state.py1);
+  g.stroke();
+  g.setLineDash(DASH_NONE);
+}
+
+/**
  * Step 5b: at every rate switch a dashed magenta vertical and the new rate's fps (1 to 1000 fps),
  * drawn left of the line when it would cross the tape.
  *
@@ -353,22 +450,18 @@ function paintRateSwitches(
     const rate = cell(window.rateMs, row);
     if (Math.abs(rate - cell(window.rateMs, row - 1)) <= RATE_EPSILON) continue;
     const x = xOf(state, cell(window.t, row));
-    g.strokeStyle = GRAPH_COLOURS.magenta;
-    g.lineWidth = 1;
-    g.setLineDash(DASH_FINE);
-    g.beginPath();
-    g.moveTo(x, state.py0);
-    g.lineTo(x, state.py1);
-    g.stroke();
-    g.setLineDash(DASH_NONE);
-    const flips = x + 2 + layout.rateRoom > state.px1;
+    paintRateMark(g, state, x);
+
+    // The label: right of the line, or left of it when it would cross the tape.
+    const flips = x + RATE_LABEL_GAP + layout.rateRoom > state.px1;
     g.font = layout.fonts.rate;
     g.fillStyle = GRAPH_COLOURS.magenta;
     g.textAlign = flips ? "right" : "left";
     g.textBaseline = "alphabetic";
     const fps = rateFps(rate);
-    if (fps >= 1 && fps <= MAX_LABELLED_FPS) {
-      g.fillText(rateText(state, fps), flips ? x - 2 : x + 2, state.py0 + 9);
+    if (isLabelledRate(fps)) {
+      const labelX = flips ? x - RATE_LABEL_GAP : x + RATE_LABEL_GAP;
+      g.fillText(rateText(state, fps), labelX, state.py0 + RATE_LABEL_DROP);
     }
   }
 }
@@ -424,6 +517,76 @@ function paintSpikeBar(
 }
 
 /**
+ * Step 7, a flag's box: filled in the cause colour when selected (the hollow GC? flag in its own
+ * ground), bordered in the cause colour, dashed when hollow.
+ *
+ * @param g - The context.
+ * @param style - The cause's style.
+ * @param left - The box's left, CSS px.
+ * @param width - Its width.
+ * @param height - Its height.
+ * @param selected - Whether its row is the selected one.
+ */
+function paintFlagBox(
+  g: GraphContext2D,
+  style: CauseStyle,
+  left: number,
+  width: number,
+  height: number,
+  selected: boolean
+): void {
+  const selectedGround = style.hollow ? GRAPH_COLOURS.flagSelectedHollow : style.hue;
+  g.fillStyle = selected ? selectedGround : GRAPH_COLOURS.flagGround;
+  g.fillRect(left, FLAG_TOP, width, height);
+  g.strokeStyle = style.hue;
+  g.lineWidth = style.hollow && selected ? FLAG_BORDER_SELECTED_HOLLOW : FLAG_BORDER;
+  g.setLineDash(style.hollow ? DASH_HOLLOW : DASH_NONE);
+  g.strokeRect(left, FLAG_TOP, width, height);
+}
+
+/**
+ * Step 7, a flag's leader: a dashed hairline in the cause colour from the box down to the bar's top.
+ *
+ * @param g - The context.
+ * @param style - The cause's style.
+ * @param x - The bar's centre.
+ * @param from - The box's bottom.
+ * @param to - The bar's top.
+ */
+function paintFlagLeader(
+  g: GraphContext2D,
+  style: CauseStyle,
+  x: number,
+  from: number,
+  to: number
+): void {
+  g.strokeStyle = style.hue;
+  g.lineWidth = HAIRLINE;
+  g.setLineDash(DASH_FINE);
+  g.beginPath();
+  g.moveTo(x, from);
+  g.lineTo(x, to);
+  g.stroke();
+  g.setLineDash(DASH_NONE);
+}
+
+/**
+ * Step 7, a flag's hit box for `spikeAt`; a state with no room left keeps no more.
+ *
+ * @param state - The painter state.
+ * @param row - The spike row.
+ * @param left - The box's left.
+ * @param right - Its right.
+ */
+function keepFlagBox(state: GraphState, row: number, left: number, right: number): void {
+  if (state.flagCount >= state.flagRow.length) return;
+  state.flagRow[state.flagCount] = row;
+  state.flagX0[state.flagCount] = left;
+  state.flagX1[state.flagCount] = right;
+  state.flagCount += 1;
+}
+
+/**
  * Step 7, the flag of one spike: its legend boxed in the cause colour (filled when selected, dashed
  * when hollow), clamped into the plot, a dashed leader down to the bar, and its hit box.
  *
@@ -446,33 +609,19 @@ function paintFlag(
 ): void {
   const style = STYLE_OF_CODE[code - 1] ?? CAUSE_STYLE.gap;
   const centre = rowCentre(state, window, row);
-  const boxWidth = cell(state.legendWidth, code - 1) + layout.flagPad;
-  const boxHeight = layout.flagBand - 4;
-  const left = Math.min(Math.max(centre - boxWidth / 2, state.px0), state.px1 - boxWidth);
-  const selectedGround = style.hollow ? GRAPH_COLOURS.flagSelectedHollow : style.hue;
-  g.fillStyle = selected ? selectedGround : GRAPH_COLOURS.flagGround;
-  g.fillRect(left, 1, boxWidth, boxHeight);
-  g.strokeStyle = style.hue;
-  g.lineWidth = style.hollow && selected ? 2 : 1.5;
-  g.setLineDash(style.hollow ? DASH_HOLLOW : DASH_NONE);
-  g.strokeRect(left, 1, boxWidth, boxHeight);
-  g.lineWidth = 1;
-  g.setLineDash(DASH_FINE);
-  g.beginPath();
-  g.moveTo(centre, 1 + boxHeight);
-  g.lineTo(centre, yOf(state, cell(window.ms, row)));
-  g.stroke();
-  g.setLineDash(DASH_NONE);
+  const width = cell(state.legendWidth, code - 1) + layout.flagPad;
+  const height = layout.flagBand - FLAG_INSET;
+  const left = Math.min(Math.max(centre - width / 2, state.px0), state.px1 - width);
+  paintFlagBox(g, style, left, width, height, selected);
+  paintFlagLeader(g, style, centre, FLAG_TOP + height, yOf(state, cell(window.ms, row)));
+
+  // The legend, on the cause colour's ground when selected, else in the cause colour.
   g.font = layout.fonts.flag;
   g.fillStyle = selected && !style.hollow ? GRAPH_COLOURS.flagGround : style.hue;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(FLAG_TEXT_OF_CODE[code - 1] ?? "", left + boxWidth / 2, 1 + boxHeight / 2);
-  if (state.flagCount >= state.flagRow.length) return;
-  state.flagRow[state.flagCount] = row;
-  state.flagX0[state.flagCount] = left;
-  state.flagX1[state.flagCount] = left + boxWidth;
-  state.flagCount += 1;
+  g.fillText(FLAG_TEXT_OF_CODE[code - 1] ?? "", left + width / 2, FLAG_TOP + height / 2);
+  keepFlagBox(state, row, left, left + width);
 }
 
 /**
@@ -517,11 +666,11 @@ function paintSpikes(
 function bug(g: GraphContext2D, state: GraphState, y: number, solid: boolean): void {
   const { px1 } = state;
   g.beginPath();
-  g.moveTo(px1 + 1, y - 5);
-  g.lineTo(px1 + 11, y - 5);
-  g.lineTo(px1 + 11, y + 5);
-  g.lineTo(px1 + 1, y + 5);
-  g.lineTo(px1 + 6, y);
+  g.moveTo(px1 + BUG_NEAR, y - BUG_HALF);
+  g.lineTo(px1 + BUG_FAR, y - BUG_HALF);
+  g.lineTo(px1 + BUG_FAR, y + BUG_HALF);
+  g.lineTo(px1 + BUG_NEAR, y + BUG_HALF);
+  g.lineTo(px1 + BUG_TIP, y);
   g.closePath();
   if (solid) {
     g.fillStyle = GRAPH_COLOURS.magenta;
@@ -529,7 +678,7 @@ function bug(g: GraphContext2D, state: GraphState, y: number, solid: boolean): v
     return;
   }
   g.strokeStyle = GRAPH_COLOURS.magenta;
-  g.lineWidth = 1.5;
+  g.lineWidth = BUG_OUTLINE;
   g.setLineDash(DASH_NONE);
   g.stroke();
 }
@@ -557,15 +706,99 @@ function tapeLabel(
     if (Math.abs(cell(TAPE_Y, index) - y) < TAPE_GAP) return drawn;
   }
   g.fillStyle = colour;
-  g.fillText(text, view.width - 3, y);
+  g.fillText(text, view.width - TAPE_LABEL_INSET, y);
   TAPE_Y[drawn] = y;
   return drawn + 1;
 }
 
 /**
- * Step 8: the tape — ground, spine, ticks every 5 ms, the labels (the newest budget first, so it
- * wins over a neighbour closer than 9 px; a short plot shows `0`, the budget and `40` only) and the
- * two bugs.
+ * Step 8, the tape's body: its ground, the spine and a tick every 5 ms (long at multiples of 10).
+ *
+ * @param g - The context.
+ * @param view - The view.
+ * @param state - The painter state.
+ */
+function paintTapeTicks(g: GraphContext2D, view: GraphView, state: GraphState): void {
+  const { px1 } = state;
+  band(g, GRAPH_COLOURS.tape, px1, view.width - px1, 0, view.height);
+  band(g, GRAPH_COLOURS.tapeInk, px1, HAIRLINE, state.py0, state.py1);
+  for (let ms = 0; ms <= SCALE_MS; ms += TICK_STEP_MS) {
+    const y = yOf(state, ms);
+    const length = ms % MAJOR_TICK_MS === 0 ? MAJOR_TICK : MINOR_TICK;
+    band(g, GRAPH_COLOURS.tapeInk, px1, length, y, y + HAIRLINE);
+  }
+}
+
+/**
+ * The budget the tape labels: the newest row's, or the empty window's.
+ *
+ * @param window - The window.
+ * @returns The budget, ms.
+ */
+function tapeBudgetOf(window: PerfWindowView): number {
+  if (window.count === 0) return EMPTY_BUDGET_MS;
+  return window.budgetMs[window.count - 1] ?? EMPTY_BUDGET_MS;
+}
+
+/**
+ * Step 8, the tape's labels: the newest budget first (so it wins over a neighbour closer than
+ * 9 px), its half and the fixed labels; a short plot shows `0`, the budget and `40` only. The budget
+ * texts are rebuilt only when the budget changed.
+ *
+ * @param g - The context.
+ * @param view - The view.
+ * @param state - The painter state.
+ * @param layout - The layout.
+ * @param budget - The newest budget, ms.
+ */
+function paintTapeLabels(
+  g: GraphContext2D,
+  view: GraphView,
+  state: GraphState,
+  layout: Layout,
+  budget: number
+): void {
+  if (budget !== state.tapeBudgetMs) {
+    state.tapeBudgetMs = budget;
+    state.tapeBudgetText = oneDecimal(budget);
+    state.tapeHalfText = oneDecimal(budget / 2);
+  }
+
+  const showHalf = state.py1 - state.py0 >= SHORT_PLOT;
+  const magenta = GRAPH_COLOURS.magenta;
+  g.font = layout.fonts.tape;
+  g.textAlign = "right";
+  g.textBaseline = "middle";
+  let drawn = tapeLabel(g, view, state.tapeBudgetText, magenta, yOf(state, budget), 0);
+  if (showHalf) {
+    drawn = tapeLabel(g, view, state.tapeHalfText, magenta, yOf(state, budget / 2), drawn);
+  }
+
+  // The fixed labels, an indexed loop over a module table: nothing allocated.
+  // eslint-disable-next-line unicorn/no-for-loop -- see above
+  for (let index = 0; index < TAPE_MARKS.length; index += 1) {
+    const mark = TAPE_MARKS[index];
+    if (mark === undefined || (mark.tallOnly && !showHalf) || (mark.wideOnly && !view.wide)) {
+      continue;
+    }
+    drawn = tapeLabel(g, view, mark.text, GRAPH_COLOURS.tapeInk, yOf(state, mark.ms), drawn);
+  }
+}
+
+/**
+ * Step 8, the tape's bugs: solid at the newest budget, outlined at its half.
+ *
+ * @param g - The context.
+ * @param state - The painter state.
+ * @param budget - The newest budget, ms.
+ */
+function paintTapeBugs(g: GraphContext2D, state: GraphState, budget: number): void {
+  bug(g, state, yOf(state, budget), true);
+  bug(g, state, yOf(state, budget / 2), false);
+}
+
+/**
+ * Step 8: the tape — ground, spine, ticks every 5 ms, the labels and the two bugs.
  *
  * @param g - The context.
  * @param window - The window.
@@ -580,49 +813,10 @@ function paintTape(
   state: GraphState,
   layout: Layout
 ): void {
-  const { px1 } = state;
-  band(g, GRAPH_COLOURS.tape, px1, view.width - px1, 0, view.height);
-  band(g, GRAPH_COLOURS.tapeInk, px1, 1, state.py0, state.py1);
-  for (let ms = 0; ms <= SCALE_MS; ms += 5) {
-    const y = yOf(state, ms);
-    band(g, GRAPH_COLOURS.tapeInk, px1, ms % 10 === 0 ? 7 : 4, y, y + 1);
-  }
-
-  const budget = window.count > 0 ? (window.budgetMs[window.count - 1] ?? 16.7) : 16.7;
-  if (budget !== state.tapeBudgetMs) {
-    state.tapeBudgetMs = budget;
-    state.tapeBudgetText = oneDecimal(budget);
-    state.tapeHalfText = oneDecimal(budget / 2);
-  }
-  const short = state.py1 - state.py0 < SHORT_PLOT;
-  const ink = GRAPH_COLOURS.tapeInk;
-  g.font = layout.fonts.tape;
-  g.textAlign = "right";
-  g.textBaseline = "middle";
-  let drawn = tapeLabel(
-    g,
-    view,
-    state.tapeBudgetText,
-    GRAPH_COLOURS.magenta,
-    yOf(state, budget),
-    0
-  );
-  if (!short) {
-    drawn = tapeLabel(
-      g,
-      view,
-      state.tapeHalfText,
-      GRAPH_COLOURS.magenta,
-      yOf(state, budget / 2),
-      drawn
-    );
-  }
-  drawn = tapeLabel(g, view, TAPE_0, ink, yOf(state, 0), drawn);
-  if (view.wide && !short) drawn = tapeLabel(g, view, TAPE_25, ink, yOf(state, 25), drawn);
-  if (!short) drawn = tapeLabel(g, view, TAPE_30, ink, yOf(state, 30), drawn);
-  tapeLabel(g, view, TAPE_40, ink, yOf(state, 40), drawn);
-  bug(g, state, yOf(state, budget), true);
-  bug(g, state, yOf(state, budget / 2), false);
+  const budget = tapeBudgetOf(window);
+  paintTapeTicks(g, view, state);
+  paintTapeLabels(g, view, state, layout, budget);
+  paintTapeBugs(g, state, budget);
 }
 
 /**
@@ -645,6 +839,31 @@ function readoutColour(skipped: boolean, ms: number, budget: number): string {
 }
 
 /**
+ * Step 9, the readout's box: black with a pointer to the left at `y`, a hairline outline.
+ *
+ * @param g - The context.
+ * @param left - The box's left, CSS px (the pointer reaches 7 px further).
+ * @param right - Its right.
+ * @param y - Its middle.
+ * @param half - Half its height.
+ */
+function readoutBox(g: GraphContext2D, left: number, right: number, y: number, half: number): void {
+  g.fillStyle = GRAPH_COLOURS.readout;
+  g.beginPath();
+  g.moveTo(left - READOUT_POINTER, y);
+  g.lineTo(left, y - half);
+  g.lineTo(right, y - half);
+  g.lineTo(right, y + half);
+  g.lineTo(left, y + half);
+  g.closePath();
+  g.fill();
+  g.strokeStyle = GRAPH_COLOURS.ink;
+  g.lineWidth = HAIRLINE;
+  g.setLineDash(DASH_NONE);
+  g.stroke();
+}
+
+/**
  * Step 9: the readout box riding the tape at the focus row's frame time: `SKIP` for a frame not
  * drawn, else the ms with one decimal. The text is rebuilt only when the value changed.
  *
@@ -663,31 +882,23 @@ function paintReadout(
   layout: Layout,
   row: number
 ): void {
+  // The text: SKIP, or the frame time in tenths, rebuilt only when it changed.
   const ms = cell(window.ms, row);
   const skipped = window.drawn[row] !== 1;
-  const key = skipped ? -1 : Math.round(ms * 10) / 10;
+  const key = skipped ? -1 : Math.round(ms * TENTHS) / TENTHS;
   if (key !== state.readoutMs) {
     state.readoutMs = key;
     state.readoutText = skipped ? SKIP_TEXT : oneDecimal(key);
   }
 
+  // The box: on the tape at the frame time, kept inside the plot.
   const half = layout.readout / 2;
   const y = Math.min(Math.max(yOf(state, ms), state.py0 + half), state.py1 - half);
   const left = state.px1 + layout.readoutGap;
   const right = view.width - 1;
-  g.fillStyle = GRAPH_COLOURS.readout;
-  g.beginPath();
-  g.moveTo(left - 7, y);
-  g.lineTo(left, y - half);
-  g.lineTo(right, y - half);
-  g.lineTo(right, y + half);
-  g.lineTo(left, y + half);
-  g.closePath();
-  g.fill();
-  g.strokeStyle = GRAPH_COLOURS.ink;
-  g.lineWidth = 1;
-  g.setLineDash(DASH_NONE);
-  g.stroke();
+  readoutBox(g, left, right, y, half);
+
+  // The value, coloured by the row's own budget.
   g.font = layout.fonts.readout;
   g.textAlign = "center";
   g.textBaseline = "middle";
@@ -715,11 +926,11 @@ function paintCaption(
   const frame = cell(window.frame, row);
   const ordinal = spikeOrdinal(window, row);
   const count = window.spikeCount;
-  if (
+  const captionChanged =
     frame !== state.captionFrame ||
     ordinal !== state.captionOrdinal ||
-    count !== state.captionCount
-  ) {
+    count !== state.captionCount;
+  if (captionChanged) {
     state.captionFrame = frame;
     state.captionOrdinal = ordinal;
     state.captionCount = count;
@@ -730,7 +941,7 @@ function paintCaption(
   g.fillStyle = GRAPH_COLOURS.ink2;
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
-  g.fillText(state.captionText, state.px0 + 4, state.py0 + layout.captionDy);
+  g.fillText(state.captionText, state.px0 + CAPTION_INSET, state.py0 + layout.captionDy);
 }
 
 /**
@@ -743,28 +954,35 @@ function paintCaption(
  * @param layout - The layout.
  */
 function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, layout: Layout): void {
-  const seconds = Math.min(Math.max(1, Math.round(state.spanMs / 1000)), MAX_AXIS_SECONDS);
-  if (seconds * 1000 !== state.axisWindowMs) {
-    state.axisWindowMs = seconds * 1000;
+  // The labels, one a second, rebuilt only for a new window length.
+  const seconds = Math.min(Math.max(1, Math.round(state.spanMs / SECOND_MS)), MAX_AXIS_SECONDS);
+  if (seconds * SECOND_MS !== state.axisWindowMs) {
+    state.axisWindowMs = seconds * SECOND_MS;
     state.axisText.length = 0;
     for (let second = seconds; second > 0; second -= 1) state.axisText.push(axisLabel(second));
   }
 
-  const y = view.height - 2;
+  // The oldest second at the left edge.
+  const y = view.height - BASELINE_INSET;
   const { px0, px1 } = state;
   g.font = layout.fonts.axis;
   g.fillStyle = GRAPH_COLOURS.ink3;
   g.textBaseline = "alphabetic";
   g.textAlign = "left";
-  g.fillText(state.axisText[0] ?? "", px0 + 2, y);
+  g.fillText(state.axisText[0] ?? "", px0 + AXIS_INSET, y);
+
+  // The wide graph: every other second, centred on its time.
   if (view.wide) {
     g.textAlign = "center";
     for (let second = seconds - 1; second > 0; second -= 1) {
-      g.fillText(state.axisText[seconds - second] ?? "", px1 - ((px1 - px0) * second) / seconds, y);
+      const x = px1 - ((px1 - px0) * second) / seconds;
+      g.fillText(state.axisText[seconds - second] ?? "", x, y);
     }
   }
+
+  // `now` at the right edge.
   g.textAlign = "right";
-  g.fillText(NOW_TEXT, px1 - 2, y);
+  g.fillText(NOW_TEXT, px1 - AXIS_INSET, y);
 }
 
 /**
@@ -786,15 +1004,16 @@ function legendItem(
   outlined: boolean
 ): void {
   g.fillStyle = colour;
-  g.fillRect(x, y - 8, 8, 8);
+  g.fillRect(x, y - SWATCH, SWATCH, SWATCH);
   if (outlined) {
+    const inner = SWATCH - 2 * SWATCH_OUTLINE_INSET;
     g.strokeStyle = GRAPH_COLOURS.idleOutline;
-    g.lineWidth = 1;
+    g.lineWidth = HAIRLINE;
     g.setLineDash(DASH_NONE);
-    g.strokeRect(x + 0.5, y - 7.5, 7, 7);
+    g.strokeRect(x + SWATCH_OUTLINE_INSET, y - SWATCH + SWATCH_OUTLINE_INSET, inner, inner);
   }
   g.fillStyle = GRAPH_COLOURS.ink2;
-  g.fillText(word, x + 11, y);
+  g.fillText(word, x + SWATCH + SWATCH_GAP, y);
 }
 
 /**
@@ -815,7 +1034,7 @@ function paintStackLegend(
 ): void {
   const gpu = window.gpuTimer;
   const room = LEGEND_ROOM_JS + LEGEND_ROOM_IDLE + (gpu ? LEGEND_ROOM_GPU : 0);
-  const y = view.height - 2;
+  const y = view.height - BASELINE_INSET;
   let x = (state.px0 + state.px1) / 2 - room / 2;
   g.font = layout.fonts.axis;
   g.textAlign = "left";

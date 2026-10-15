@@ -286,7 +286,12 @@ export function spikeOrdinal(window: PerfWindowView, row: number): number {
  * @returns The mean; null when no drawn row has a measured GPU time (WebKit has no GPU timer).
  * @example
  * ```ts
- * meanGpu(window); // 6.1
+ * // Two drawn rows whose GPU took 5 and 7 ms: the "GPU avg" counter reads 6.
+ * const window = createPerfWindow(2);
+ * window.count = 2;
+ * window.drawn.set([1, 1]);
+ * window.gpuMs.set([5, 7]);
+ * meanGpu(window); // 6
  * ```
  */
 export function meanGpu(window: PerfWindowView): number | null {

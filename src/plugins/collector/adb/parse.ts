@@ -30,6 +30,20 @@ const HISTOGRAM_KEY = "HISTOGRAM:";
 const SENSOR_READING = /Temperature\{mValue=(-?[\d.]+),[^}]*mName=([^,}]+)/g;
 
 /**
+ * A number rounded to one decimal.
+ *
+ * @param value - The number.
+ * @returns It, to 0.1.
+ * @example
+ * ```ts
+ * roundTenth(41.24); // 41.2
+ * ```
+ */
+export function roundTenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
  * The serials of the ready devices of `adb devices`: the lines after the first, state `device`
  * only, without the `_adb-tls` twin of a Wi-Fi phone.
  *
@@ -194,7 +208,7 @@ export function spanOf(before: GfxTotals, after: GfxTotals, seconds: number): Gf
   return {
     frames,
     janky: after.janky - (restarted ? 0 : before.janky),
-    fps: seconds > 0 ? Math.round((frames / seconds) * 10) / 10 : 0,
+    fps: seconds > 0 ? roundTenth(frames / seconds) : 0,
     p50: gfxPercentile(hist, 0.5),
     p90: gfxPercentile(hist, 0.9),
     p99: gfxPercentile(hist, 0.99),

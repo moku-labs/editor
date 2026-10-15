@@ -177,6 +177,18 @@ function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifes
 }
 
 /**
+ * Drops the strip of a session that has none any more (no session, or no perf), and re-renders
+ * the workspace; nothing when there was no strip.
+ *
+ * @param state - renderView state.
+ */
+function forgetStrip(state: RenderViewState): void {
+  if (state.device.session === undefined) return;
+  clearDevice(state);
+  notify(state);
+}
+
+/**
  * Follows the chosen session (the manifest listener, `workspace:changed`, `link:status`): a
  * session whose manifest lists `editor.perf.second` gets the strip (a new session id starts it
  * empty), its watches run while Render is shown; any other session has no strip and sends no
@@ -195,10 +207,7 @@ export function syncDevice(
   const { state } = ctx;
   const id = link.session();
   if (id === undefined || !hasPerf(manifest)) {
-    if (state.device.session !== undefined) {
-      clearDevice(state);
-      notify(state);
-    }
+    forgetStrip(state);
     return;
   }
 

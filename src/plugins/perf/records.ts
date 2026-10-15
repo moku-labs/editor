@@ -7,6 +7,7 @@
 import type {
   FrameRecord,
   FrameRing,
+  LongFrameEntry,
   PerfCause,
   PerfEventLine,
   PerfFrameEvent,
@@ -22,6 +23,7 @@ import {
   causeName,
   causesOf,
   changesOf,
+  EMPTY_BUDGET_MS,
   frameEventOf,
   isRateChange,
   PHASES,
@@ -48,14 +50,21 @@ function cell(column: ArrayLike<number>, index: number): number {
   return column[index] ?? Number.NaN;
 }
 
-/** The budget of an empty window, ms. */
-const EMPTY_BUDGET_MS = 16.7;
-
 /** A rate switch counts when two rows' `rateMs` differ by more than this, ms. */
 const RATE_EPSILON = 0.01;
 
 /** The path of a frame whose path id the ring does not know. */
 const UNKNOWN_PATH = "…";
+
+/** The index of each phase among a frame's six `phaseMs` values (PHASES order, 11:731). */
+const PHASE_INDEX: Readonly<Record<(typeof PHASES)[number], number>> = {
+  input: PHASES.indexOf("input"),
+  animate: PHASES.indexOf("animate"),
+  layout: PHASES.indexOf("layout"),
+  sync: PHASES.indexOf("sync"),
+  signals: PHASES.indexOf("signals"),
+  render: PHASES.indexOf("render")
+};
 
 /**
  * A number rounded to 0.01; null for a value that is not finite.
@@ -135,18 +144,22 @@ function inArrivalOrder<Line>(lines: readonly (Line | undefined)[], next: number
  */
 export function rateOf(state: PerfState): PerfRate {
   const { window } = state;
+
+  // The switches the rows show, and the rate of the newest row.
   let switches = 0;
   for (let row = 1; row < window.count; row += 1) if (switchesAt(state, row)) switches += 1;
+  const fps = window.count > 0 ? rateFps(cell(window.rateMs, window.count - 1)) : null;
 
+  // Who decides it: the newest valid rate line ...
   let change: RateChange | undefined;
   for (const line of inArrivalOrder(state.rateLines, state.rateLineNext)) {
     if (isRateChange(line.detail)) change = line.detail;
   }
-  const fps = window.count > 0 ? rateFps(cell(window.rateMs, window.count - 1)) : null;
   if (change !== undefined) {
     return { fps, mode: change.mode, reason: change.reason, displayHz: change.displayHz, switches };
   }
 
+  // ... else the header's rate (spec 21), else nothing known.
   const header = state.header?.rate;
   return {
     fps,
@@ -239,14 +252,15 @@ function slotNumbers(ring: FrameRing, slot: number): FrameNumbers {
   const applies = hundredths(cell(columns.filterApplies, slot));
   const uploads = hundredths(cell(columns.uploads, slot));
   const phase = slot * PHASES.length;
+  const phaseMs = (index: number): number => plain(cell(columns.phaseMs, phase + index));
   return {
     phases: {
-      input: plain(cell(columns.phaseMs, phase)),
-      animate: plain(cell(columns.phaseMs, phase + 1)),
-      layout: plain(cell(columns.phaseMs, phase + 2)),
-      sync: plain(cell(columns.phaseMs, phase + 3)),
-      signals: plain(cell(columns.phaseMs, phase + 4)),
-      render: plain(cell(columns.phaseMs, phase + 5)),
+      input: phaseMs(PHASE_INDEX.input),
+      animate: phaseMs(PHASE_INDEX.animate),
+      layout: phaseMs(PHASE_INDEX.layout),
+      sync: phaseMs(PHASE_INDEX.sync),
+      signals: phaseMs(PHASE_INDEX.signals),
+      render: phaseMs(PHASE_INDEX.render),
       agent: plain(cell(columns.agentMs, slot))
     },
     passes: hundredths(cell(columns.passes, slot)),
@@ -297,6 +311,22 @@ const NO_NUMBERS: FrameNumbers = Object.freeze({
 });
 
 /**
+ * Whether a game frame event belongs to a spike's frame: its own frame, or for a `pool-trim` the frame
+ * before (the frame after a trim pays the re-allocation, engine fact 11).
+ *
+ * @param event - The frame event.
+ * @param frame - The spike's frame.
+ * @returns Whether the record lists it.
+ * @example
+ * ```ts
+ * belongsToFrame({ kind: "pool-trim", frame: 4811, reason: "rest", freedMb: 41.5 }, 4812); // true
+ * ```
+ */
+function belongsToFrame(event: PerfFrameEvent, frame: number): boolean {
+  return event.frame === frame || (event.kind === "pool-trim" && event.frame === frame - 1);
+}
+
+/**
  * The game's frame events of a frame, in arrival order: its `overlay` and `warm` lines, and the
  * `pool-trim` lines of this frame or the frame before (the frame after a trim pays the
  * re-allocation, engine fact 11).
@@ -310,10 +340,7 @@ function eventsOf(state: PerfState, frame: number): PerfFrameEvent[] {
   const events: PerfFrameEvent[] = [];
   for (const line of lines) {
     const event = frameEventOf(line);
-    if (event === undefined) continue;
-    if (event.frame === frame || (event.kind === "pool-trim" && event.frame === frame - 1)) {
-      events.push(event);
-    }
+    if (event !== undefined && belongsToFrame(event, frame)) events.push(event);
   }
   return events;
 }
@@ -362,7 +389,9 @@ function rateSwitchOf(state: PerfState, row: number): PerfSpikeRecord["rateSwitc
   for (const line of inArrivalOrder(state.rateLines, state.rateLineNext)) {
     const detail = line.detail;
     if (!isRateChange(detail)) continue;
-    if (line.frame === frame || (switched && leadsInto(state, row, line, detail))) change = detail;
+    const namesFrame = line.frame === frame;
+    const leadsIntoSwitch = switched && leadsInto(state, row, line, detail);
+    if (namesFrame || leadsIntoSwitch) change = detail;
   }
   if (change !== undefined) {
     return { from: change.from, to: change.to, reason: change.reason, mode: change.mode };
@@ -438,17 +467,38 @@ function compileWhy(facts: WhyFacts): string {
 }
 
 /**
+ * The longest long animation frame of a spike's detail, the first of equal ones.
+ *
+ * @param frames - The detail's long frames.
+ * @returns The longest, or undefined for none.
+ */
+function longestFrame(frames: readonly LongFrameEntry[]): LongFrameEntry | undefined {
+  let longest = frames[0];
+  for (const entry of frames) if (entry.durationMs > (longest?.durationMs ?? 0)) longest = entry;
+  return longest;
+}
+
+/**
+ * The script that ran longest in a long animation frame, the first of equal ones.
+ *
+ * @param frame - The long frame.
+ * @returns The script, or undefined for a frame without scripts.
+ */
+function topScript(frame: LongFrameEntry): LongFrameEntry["scripts"][number] | undefined {
+  let top = frame.scripts[0];
+  for (const script of frame.scripts) if (script.ms > (top?.ms ?? 0)) top = script;
+  return top;
+}
+
+/**
  * The long-frame sentence: the longest overlapping long animation frame and its top script.
  *
  * @param facts - The spike.
  * @returns The sentence.
  */
 function longFrameWhy(facts: WhyFacts): string {
-  const frames = facts.detail?.longFrames ?? [];
-  let longest = frames[0];
-  for (const entry of frames) if (entry.durationMs > (longest?.durationMs ?? 0)) longest = entry;
-  let top = longest?.scripts[0];
-  for (const script of longest?.scripts ?? []) if (script.ms > (top?.ms ?? 0)) top = script;
+  const longest = longestFrame(facts.detail?.longFrames ?? []);
+  const top = longest === undefined ? undefined : topScript(longest);
   const name = top === undefined ? "" : top.fn || top.source;
   const subject = name === "" ? "" : ` (${name})`;
   return `A long animation frame overlapped: script held the main thread for ${fixed(longest?.durationMs ?? facts.ms)} ms${subject}`;

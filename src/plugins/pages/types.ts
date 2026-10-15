@@ -198,8 +198,9 @@ export type PagesApi = {
    * @param output - Where the lines go: the bin's brand console.
    * @example
    * ```ts
-   * // runPerf, after the device listener is up.
-   * editor.pages.attachPerf(ui);
+   * // runPerf, after the device listener is up: the lines go to any sink with line and warn.
+   * const lines: string[] = [];
+   * editor.pages.attachPerf({ line: text => lines.push(text ?? ""), warn: text => lines.push(`! ${text}`) });
    * // on the first log batch of a phone: "◉ SM-A266B · webgpu · engine 0.14.12+9c41e0 · build debug-20261014T160000Z · adb 127.0.0.1"
    * ```
    */

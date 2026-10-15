@@ -15,19 +15,65 @@ const RATE_LINES = 16;
 const FRAME_EVENTS = 32;
 
 /**
- * Whether a config value is a finite number in a range.
+ * The range of each config field and the words of its error: checked in this order, and the message
+ * names the same numbers the check uses.
+ */
+const RANGES = [
+  {
+    key: "readEveryMs",
+    low: 50,
+    high: 1000,
+    whole: false,
+    what: "milliseconds",
+    note: "; 250 reads four times a second"
+  },
+  {
+    key: "windowMs",
+    low: 1000,
+    high: 30_000,
+    whole: false,
+    what: "milliseconds",
+    note: "; the graph shows 6000"
+  },
+  {
+    key: "frames",
+    low: 64,
+    high: 16_384,
+    whole: true,
+    what: "a whole number",
+    note: ", at least the frames of windowMs at 120 Hz"
+  }
+] as const satisfies readonly {
+  readonly key: keyof PerfConfig;
+  readonly low: number;
+  readonly high: number;
+  readonly whole: boolean;
+  readonly what: string;
+  readonly note: string;
+}[];
+
+/**
+ * Whether a config value is in its range: a finite number from `low` to `high`, whole when asked.
  *
  * @param value - The value.
- * @param low - The smallest allowed.
- * @param high - The largest allowed.
- * @returns Whether it is in range.
+ * @param range - Its range.
+ * @param range.low - The smallest allowed.
+ * @param range.high - The largest allowed.
+ * @param range.whole - Whether only a whole number is allowed.
+ * @returns Whether it is allowed.
  * @example
  * ```ts
- * inRange(250, 50, 1000); // true
+ * inRange(250, { low: 50, high: 1000, whole: false }); // true
  * ```
  */
-function inRange(value: number, low: number, high: number): boolean {
-  return typeof value === "number" && Number.isFinite(value) && value >= low && value <= high;
+function inRange(
+  value: number,
+  range: { readonly low: number; readonly high: number; readonly whole: boolean }
+): boolean {
+  const finite = typeof value === "number" && Number.isFinite(value);
+  return (
+    finite && value >= range.low && value <= range.high && (!range.whole || Number.isInteger(value))
+  );
 }
 
 /**
@@ -38,20 +84,11 @@ function inRange(value: number, low: number, high: number): boolean {
  * @throws {TypeError} `[moku-editor] perf.<field> is <value>.` with how to fix it.
  */
 export function checkPerfConfig(config: Readonly<PerfConfig>): void {
-  const { readEveryMs, windowMs, frames } = config;
-  if (!inRange(readEveryMs, 50, 1000)) {
+  for (const range of RANGES) {
+    const value = config[range.key];
+    if (inRange(value, range)) continue;
     throw new TypeError(
-      `[moku-editor] perf.readEveryMs is ${String(readEveryMs)}.\n  Give milliseconds from 50 to 1000; 250 reads four times a second.`
-    );
-  }
-  if (!inRange(windowMs, 1000, 30_000)) {
-    throw new TypeError(
-      `[moku-editor] perf.windowMs is ${String(windowMs)}.\n  Give milliseconds from 1000 to 30000; the graph shows 6000.`
-    );
-  }
-  if (!inRange(frames, 64, 16_384) || !Number.isInteger(frames)) {
-    throw new TypeError(
-      `[moku-editor] perf.frames is ${String(frames)}.\n  Give a whole number from 64 to 16384, at least the frames of windowMs at 120 Hz.`
+      `[moku-editor] perf.${range.key} is ${String(value)}.\n  Give ${range.what} from ${String(range.low)} to ${String(range.high)}${range.note}.`
     );
   }
 }

@@ -3,7 +3,13 @@
  * frame's ms against its own budget), the why line with "Also …", and the details. Pure.
  */
 import { CAUSE_STYLE } from "../../perf/graph";
-import type { PerfCause, PerfChange, PerfFrameEvent, PerfSpikeRecord } from "../../perf/protocol";
+import type {
+  PerfCause,
+  PerfChange,
+  PerfChangeEntry,
+  PerfFrameEvent,
+  PerfSpikeRecord
+} from "../../perf/protocol";
 import type { RecorderStatus } from "../../recorder/types";
 import { logTime, oneDecimal, wholeText } from "./format";
 import { navView } from "./frames";
@@ -11,6 +17,9 @@ import type { BarRow, KvRow, LegendView, RecordView } from "./types";
 
 /** "Not measured" in a record row. */
 const DASH = "—";
+
+/** Milliseconds in a second. */
+const SECOND_MS = 1000;
 
 /** The widest mini bar, CSS px. */
 const BAR_MAX = 40;
@@ -111,8 +120,59 @@ function eventText(event: PerfFrameEvent): string {
 }
 
 /**
- * "What changed" in the frame: the engine's changes (with their subjects once the spike line
- * arrived), a structure rebuild, the rate switch, then the game's frame events, joined " · ".
+ * One engine change as "What changed" reads it: with its subject once the spike line arrived.
+ *
+ * @param change - The change entry of the spike line.
+ * @returns The text.
+ * @example
+ * ```ts
+ * changeText({ kind: "bundle", what: "garden-boss" }); // "bundle garden-boss loaded"
+ * ```
+ */
+function changeText(change: PerfChangeEntry): string {
+  if (change.what === null) return CHANGE_TEXT[change.kind];
+  if (change.kind === "bundle") return `bundle ${change.what} loaded`;
+  return `${CHANGE_TEXT[change.kind]} ${change.what}`;
+}
+
+/**
+ * The engine's changes of the frame: from the spike line (with subjects, and a structure rebuild)
+ * once it arrived, else the ring's change kinds.
+ *
+ * @param record - The spike record.
+ * @returns The texts, in order.
+ */
+function changeParts(record: PerfSpikeRecord): string[] {
+  const frame = record.detail?.frame;
+  if (frame === undefined) return record.changed.map(change => CHANGE_TEXT[change]);
+
+  const parts = frame.changed.map(change => changeText(change));
+  if (typeof frame.rebuilds === "number" && frame.rebuilds > 0) {
+    parts.push(`structure rebuild ×${frame.rebuilds}`);
+  }
+  return parts;
+}
+
+/**
+ * The rate switch of the frame, its reason and mode left out when unknown.
+ *
+ * @param rate - The record's rate switch.
+ * @returns "rate 120 → 60 (missed, auto)"; nothing without a switch.
+ * @example
+ * ```ts
+ * rateText({ from: 120, to: 60, reason: null, mode: null }); // ["rate 120 → 60"]
+ * ```
+ */
+function rateText(rate: PerfSpikeRecord["rateSwitch"]): string[] {
+  if (rate === null) return [];
+  const why = [rate.reason, rate.mode].filter(part => typeof part === "string");
+  const because = why.length > 0 ? ` (${why.join(", ")})` : "";
+  return [`rate ${rate.from} → ${rate.to}${because}`];
+}
+
+/**
+ * "What changed" in the frame: the engine's changes, the rate switch, then the game's frame events,
+ * joined " · "; "—" when nothing changed.
  *
  * @param record - The spike record.
  * @returns The text, or "—".
@@ -122,25 +182,11 @@ function eventText(event: PerfFrameEvent): string {
  * ```
  */
 export function changedText(record: PerfSpikeRecord): string {
-  const frame = record.detail?.frame;
-  const parts: string[] = frame
-    ? frame.changed.map(change => {
-        if (change.what === null) return CHANGE_TEXT[change.kind];
-        return change.kind === "bundle"
-          ? `bundle ${change.what} loaded`
-          : `${CHANGE_TEXT[change.kind]} ${change.what}`;
-      })
-    : record.changed.map(change => CHANGE_TEXT[change]);
-  const rebuilds = frame?.rebuilds;
-  if (typeof rebuilds === "number" && rebuilds > 0) parts.push(`structure rebuild ×${rebuilds}`);
-
-  const rate = record.rateSwitch;
-  if (rate !== null) {
-    const why = [rate.reason, rate.mode].filter(part => typeof part === "string");
-    const because = why.length > 0 ? ` (${why.join(", ")})` : "";
-    parts.push(`rate ${rate.from} → ${rate.to}${because}`);
-  }
-  for (const event of record.events) parts.push(eventText(event));
+  const parts = [
+    ...changeParts(record),
+    ...rateText(record.rateSwitch),
+    ...record.events.map(event => eventText(event))
+  ];
   return parts.length === 0 ? DASH : parts.join(" · ");
 }
 
@@ -268,7 +314,7 @@ function systemsOf(record: PerfSpikeRecord): string {
  * @returns "0.98 s ago, log 03:11.0".
  */
 function metaOf(record: PerfSpikeRecord, rec: RecorderStatus | undefined): string {
-  const ago = `${(record.agoMs / 1000).toFixed(2)} s ago`;
+  const ago = `${(record.agoMs / SECOND_MS).toFixed(2)} s ago`;
   if (rec?.state !== "recording") return ago;
 
   const at = rec.sinceMs - record.agoMs;

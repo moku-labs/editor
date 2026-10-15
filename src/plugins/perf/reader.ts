@@ -5,7 +5,7 @@
  * monitor's agent span. Allocation-free: indexed loops and typed-array `copyWithin`.
  */
 import type { FrameRing } from "./protocol";
-import { primaryCause } from "./protocol";
+import { DEFAULT_RATE_MS, primaryCause } from "./protocol";
 import { notifyWatchers } from "./state";
 import type { PerfConfig, PerfState } from "./types";
 
@@ -24,9 +24,6 @@ import type { PerfConfig, PerfState } from "./types";
 function cell(column: ArrayLike<number>, index: number): number {
   return column[index] ?? Number.NaN;
 }
-
-/** The rate of a row whose ring value is missing and that has no row before it: one 60 fps frame. */
-const DEFAULT_RATE_MS = 16.67;
 
 /** The window's "this second", ms. */
 const SECOND_MS = 1000;

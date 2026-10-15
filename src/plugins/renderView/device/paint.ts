@@ -12,6 +12,7 @@ import type { GraphContext2D, GraphState } from "./contract";
 import { paintGraph, resetGraphText, rowAt, spikeAt } from "./contract";
 import { notifyStrip } from "./state";
 import { selectedRow } from "./step";
+import type { DeviceStripState } from "./types";
 import { openSpike, selectFrame } from "./watch";
 
 /**
@@ -35,24 +36,27 @@ const GRAPH_FONT = '600 12px "Barlow Condensed"';
 const MAX_DPR = 3;
 
 /**
+ * The 2D context of the strip's canvas: what the painter calls, plus the dpr transform.
+ */
+export type StripContext = GraphContext2D & {
+  setTransform(
+    scaleX: number,
+    skewY: number,
+    skewX: number,
+    scaleY: number,
+    moveX: number,
+    moveY: number
+  ): void;
+};
+
+/**
  * The canvas as the loop uses it: its CSS box, its backing store and its 2D context.
  */
 export type StripCanvas = {
   width: number;
   height: number;
   getBoundingClientRect(): { readonly width: number; readonly height: number };
-  getContext(kind: "2d"):
-    | (GraphContext2D & {
-        setTransform(
-          scaleX: number,
-          skewY: number,
-          skewX: number,
-          scaleY: number,
-          moveX: number,
-          moveY: number
-        ): void;
-      })
-    | null;
+  getContext(kind: "2d"): StripContext | null;
 };
 
 /**
@@ -84,6 +88,68 @@ function pixelRatio(): number {
 }
 
 /**
+ * Makes the painter of a mounted canvas: a paint now that sizes the backing store (only when the
+ * CSS size or the dpr changed), sets the dpr transform, paints and records the window version it
+ * painted, so a click knows its hit boxes are fresh.
+ *
+ * @param strip - The strip state.
+ * @param canvas - The strip's canvas.
+ * @param g - Its 2D context.
+ * @param graph - The painter state made with the canvas.
+ * @returns The painter.
+ */
+function makePaint(
+  strip: DeviceStripState,
+  canvas: StripCanvas,
+  g: StripContext,
+  graph: GraphState
+): Painter {
+  let size = { width: 0, height: 0, dpr: 0 };
+  const painter: Painter = {
+    version: -1,
+    paint: () => {
+      const box = canvas.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const dpr = pixelRatio();
+      if (box.width !== size.width || box.height !== size.height || dpr !== size.dpr) {
+        canvas.width = Math.round(box.width * dpr);
+        canvas.height = Math.round(box.height * dpr);
+        size = { width: box.width, height: box.height, dpr };
+      }
+      strip.dirty = false;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const selected = selectedRow(strip.window, strip.selected);
+      paintGraph(
+        g,
+        strip.window,
+        { width: box.width, height: box.height, wide: true, selected },
+        graph
+      );
+      painter.version = strip.window.version;
+    }
+  };
+  return painter;
+}
+
+/**
+ * Measures the legends again once Barlow Condensed has loaded, and once more when every font is
+ * ready: the painter's cached text is reset and a strip with data repaints.
+ *
+ * @param strip - The strip state.
+ * @param graph - The painter state of the canvas.
+ */
+function watchFonts(strip: DeviceStripState, graph: GraphState): void {
+  const fonts = globalThis.document?.fonts;
+  if (fonts === undefined) return;
+  const refont = (): void => {
+    resetGraphText(graph);
+    if (strip.window.count > 0) strip.dirty = true;
+  };
+  fonts.load(GRAPH_FONT).then(refont, stopNothing);
+  fonts.ready.then(refont, stopNothing);
+}
+
+/**
  * Starts the repaint loop of a mounted strip canvas; the fonts reset the painter's measured
  * legends when they load.
  *
@@ -102,45 +168,14 @@ export function startRepaint(
   const g = canvas?.getContext("2d");
   if (canvas === null || g === null || g === undefined) return stopNothing;
 
-  let size = { width: 0, height: 0, dpr: 0 };
   // A re-mounted canvas is blank: paint the data the strip holds at the next tick.
   if (strip.window.count > 0) strip.dirty = true;
-
-  // Paints now; records the window version it painted, so a click knows its hit boxes are fresh.
-  const paint = (): void => {
-    const box = canvas.getBoundingClientRect();
-    if (box.width === 0 || box.height === 0) return;
-    const dpr = pixelRatio();
-    if (box.width !== size.width || box.height !== size.height || dpr !== size.dpr) {
-      canvas.width = Math.round(box.width * dpr);
-      canvas.height = Math.round(box.height * dpr);
-      size = { width: box.width, height: box.height, dpr };
-    }
-    strip.dirty = false;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const view = {
-      width: box.width,
-      height: box.height,
-      wide: true,
-      selected: selectedRow(strip.window, strip.selected)
-    };
-    paintGraph(g, strip.window, view, graph);
-    painter.version = strip.window.version;
-  };
-  const painter: Painter = { version: -1, paint };
+  const painter = makePaint(strip, canvas, g, graph);
   painters.set(graph, painter);
-  const refont = (): void => {
-    resetGraphText(graph);
-    if (strip.window.count > 0) strip.dirty = true;
-  };
-  const fonts = globalThis.document?.fonts;
-  if (fonts !== undefined) {
-    fonts.load(GRAPH_FONT).then(refont, stopNothing);
-    fonts.ready.then(refont, stopNothing);
-  }
+  watchFonts(strip, graph);
 
   const repaint = setInterval(() => {
-    if (state.active && strip.dirty) paint();
+    if (state.active && strip.dirty) painter.paint();
   }, REPAINT_MS);
   // "seen N s ago" and the REC clock: only the strip re-renders, not the Render workspace.
   const tick = setInterval(() => {
