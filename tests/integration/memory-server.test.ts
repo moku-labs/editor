@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-null -- localStorage answers null for a missing key; null is "between frames" in a line */
-import { readdirSync } from "node:fs";
+import { existsSync, fstatSync, readdirSync, readlinkSync, statSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Registry } from "../../src/agent";
 import { bridgePlugin, createApp as createPhoneApp } from "../../src/agent";
@@ -22,7 +22,9 @@ import { createProject, removeTemps, type ServerStack, startServer, until } from
 // the opt-in bridge over the headless tiny game, its monitor a fake: 5 000 perf
 // records and 20 000 log lines go through the recorder (1 MB logs, so it
 // rotates) and the collector; then 50 links connect and disconnect. Open files
-// are counted in /dev/fd (Bun's process.getActiveResourcesInfo() lists none).
+// and sockets are read from the process's descriptor table (/proc/self/fd with
+// its links on Linux, /dev/fd and fstat elsewhere; Bun's
+// process.getActiveResourcesInfo() lists none), so a failure names what is left.
 // Each test prints its numbers (`[leak] …`).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -34,6 +36,9 @@ const TEST_MS = 60_000;
 
 /** How long one step may wait for the lines or a link. */
 const STEP_MS = 10_000;
+
+/** How long the OS may take to release a closed socket's descriptor. */
+const RELEASE_MS = 2000;
 
 /** Spike records and log lines per step: 10 steps make 5 000 records and 20 000 lines. */
 const RECORDS = 500;
@@ -53,11 +58,21 @@ const EVENT = eventLine("devtools", null, { mode: "card", tab: "frames" });
 /** The platform WebSocket, wrapped below. */
 const PlatformSocket = globalThis.WebSocket;
 
-/** The WebView's WebSocket: it sends the shell's Origin (the bridge passes none in device mode). */
+/** The phone's sockets that have not fired `close` yet. */
+const liveSockets = new Set<WebSocket>();
+
+/**
+ * The WebView's WebSocket: it sends the shell's Origin (the bridge passes none in device mode) and
+ * is live until its `close` event.
+ */
 class ShellSocket extends PlatformSocket {
   constructor(url: string | URL) {
     const options: unknown = { headers: { origin: SHELL_ORIGIN } };
     super(url, options as string);
+    liveSockets.add(this);
+    this.addEventListener("close", () => {
+      liveSockets.delete(this);
+    });
   }
 }
 
@@ -92,6 +107,7 @@ afterEach(async () => {
   await removeTemps();
   vi.unstubAllGlobals();
   storage.clear();
+  liveSockets.clear();
 });
 
 /**
@@ -104,7 +120,8 @@ async function startComputer(): Promise<ServerStack> {
   const root = await createProject("tiny");
   const stack = await startServer(root, {
     hub: { devicePort: 0 },
-    collector: { out: "perf", adb: "moku-memory-no-adb" }
+    // The default out, `.moku/perf`: a folder the project index skips, as in a real project.
+    collector: { adb: "moku-memory-no-adb" }
   });
   server = stack;
   const listen = await stack.app.hub.listenDevices({ confirm: async () => true });
@@ -154,13 +171,152 @@ function written(stack: ServerStack): number {
   return lines;
 }
 
+/** The descriptor table with links (Linux). */
+const PROC_FD = "/proc/self/fd";
+
+/** One open descriptor of the process. */
+type Descriptor = {
+  readonly fd: number;
+  /** A regular file, a socket, or anything else (a pipe, an eventfd, a kqueue, a device). */
+  readonly kind: "file" | "socket" | "other";
+  /** Device and inode: the same open file under any descriptor number. */
+  readonly inode: string;
+  /** Where it points: the link on Linux (a path, `socket:[…]`, `anon_inode:[…]`), else kind and inode. */
+  readonly target: string;
+};
+
 /**
- * The process's open file descriptors.
+ * One descriptor, or undefined when it closed while the table was read (the listing's own).
  *
- * @returns How many.
+ * @param fd - The descriptor.
+ * @param link - Its `/proc/self/fd` entry, on Linux.
+ * @returns What it is.
  */
-function openFiles(): number {
-  return readdirSync("/dev/fd").length;
+function descriptorOf(fd: number, link: string | undefined): Descriptor | undefined {
+  try {
+    const stats = fstatSync(fd);
+    let kind: Descriptor["kind"] = "other";
+    if (stats.isFile()) kind = "file";
+    else if (stats.isSocket()) kind = "socket";
+    const inode = `${String(stats.dev)}:${String(stats.ino)}`;
+    return {
+      fd,
+      kind,
+      inode,
+      target: link === undefined ? `${kind} ${inode}` : readlinkSync(link)
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The process's open descriptors.
+ *
+ * @returns Every descriptor by number.
+ */
+function descriptors(): Map<number, Descriptor> {
+  const linux = existsSync(PROC_FD);
+  const table = new Map<number, Descriptor>();
+  for (const name of readdirSync(linux ? PROC_FD : "/dev/fd")) {
+    const entry = descriptorOf(Number(name), linux ? `${PROC_FD}/${name}` : undefined);
+    if (entry !== undefined) table.set(entry.fd, entry);
+  }
+  return table;
+}
+
+/**
+ * The descriptors open now that were not open in `before` (a number reused by another file counts).
+ *
+ * @param before - The table at the start.
+ * @returns The new ones.
+ */
+function openedSince(before: ReadonlyMap<number, Descriptor>): Descriptor[] {
+  return [...descriptors().values()].filter(entry => before.get(entry.fd)?.inode !== entry.inode);
+}
+
+/**
+ * Whether a descriptor is the server's to close: a socket or a regular file (a log). A pipe, an
+ * eventfd or a kqueue the runtime opens once for itself is not.
+ *
+ * @param entry - The descriptor.
+ * @returns True for a socket or a file.
+ */
+function isSocketOrFile(entry: Descriptor): boolean {
+  return entry.kind !== "other";
+}
+
+/**
+ * The collector's log files by device and inode.
+ *
+ * @param stack - The server.
+ * @returns Each log's path by its inode.
+ */
+function logInodes(stack: ServerStack): Map<string, string> {
+  const logs = new Map<string, string>();
+  for (const { file } of stack.app.collector.sessions()) {
+    const stats = statSync(file, { throwIfNoEntry: false });
+    if (stats !== undefined) logs.set(`${String(stats.dev)}:${String(stats.ino)}`, file);
+  }
+  return logs;
+}
+
+/**
+ * Descriptors with a log's path as the target where they are open on one of the collector's logs.
+ *
+ * @param stack - The server.
+ * @param entries - The descriptors.
+ * @returns The same descriptors, logs named.
+ */
+function withLogNames(stack: ServerStack, entries: readonly Descriptor[]): Descriptor[] {
+  const logs = logInodes(stack);
+  return entries.map(entry => {
+    const file = logs.get(entry.inode);
+    return file === undefined ? entry : { ...entry, target: file };
+  });
+}
+
+/**
+ * The descriptors open on the collector's log files.
+ *
+ * @param stack - The server.
+ * @returns Them, with the log's path as the target.
+ */
+function openLogs(stack: ServerStack): Descriptor[] {
+  const logs = logInodes(stack);
+  return withLogNames(stack, [...descriptors().values()]).filter(entry => logs.has(entry.inode));
+}
+
+/**
+ * After the phone stopped: its socket fired `close`, the server closed its session, the collector
+ * finished every log (writes and file closes), and the server's end of each socket is released
+ * (the OS frees a socket a little after the close handshake; bounded).
+ *
+ * @param stack - The server.
+ * @param before - The descriptor table before the phone.
+ * @returns The descriptors still open that were not before, sockets and files first.
+ */
+async function leftAfterStop(
+  stack: ServerStack,
+  before: ReadonlyMap<number, Descriptor>
+): Promise<Descriptor[]> {
+  await until(
+    () =>
+      liveSockets.size === 0 &&
+      stack.app.hub.sessions().length === 0 &&
+      stack.app.collector.sessions().every(session => session.state !== "live"),
+    "the phone's sockets closed and every log away",
+    STEP_MS
+  );
+  await stack.app.collector.settled();
+  await until(
+    () => !openedSince(before).some(entry => isSocketOrFile(entry)),
+    "every socket and file the phone opened released",
+    RELEASE_MS
+  ).catch(() => undefined);
+  return withLogNames(stack, openedSince(before)).toSorted(
+    (one, other) => Number(isSocketOrFile(other)) - Number(isSocketOrFile(one))
+  );
 }
 
 describe("server stack memory (M3)", () => {
@@ -168,15 +324,12 @@ describe("server stack memory (M3)", () => {
     timeout: TEST_MS
   }, async () => {
     const stack = await startComputer();
-    const files = openFiles();
+    const before = descriptors();
     const phone = await startPhone(true);
     phones.push(phone);
     let emitted = 0;
-    let linkedFiles = 0;
 
-    const step = async (round: number): Promise<void> => {
-      // Linked: the two ends of the socket and the current log's file. Rotations add none.
-      if (round === WARMUP_STEPS) linkedFiles = openFiles();
+    const step = async (): Promise<void> => {
       for (let index = 0; index < RECORDS; index += 1) {
         monitor.emit(SPIKE);
         for (let log = 0; log < LOGS / RECORDS; log += 1) {
@@ -200,30 +353,32 @@ describe("server stack memory (M3)", () => {
       settle: () => settleServer(stack),
       ceiling
     });
-    const rotatedFiles = openFiles() - linkedFiles;
+    // Linked, after the rotations: only the current log's file is open.
+    const linkedLogs = openLogs(stack);
     const logs = stack.app.collector.sessions().length;
     const { dropped } = phone.recorder.status();
 
     await phone.stop();
     phones.length = 0;
-    await until(
-      () => stack.app.collector.sessions().every(session => session.state !== "live"),
-      "every log away",
-      STEP_MS
-    );
-    await stack.app.collector.settled();
-    const filesLeft = openFiles() - files;
+    const left = await leftAfterStop(stack, before);
     logLeak("server stack, 25 000 lines through recorder and collector", {
       ...growth,
-      counts: { logs, "files after rotations": rotatedFiles, "files left": filesLeft, dropped }
+      counts: {
+        logs,
+        "log files open": linkedLogs.length,
+        "descriptors left": left.length,
+        dropped
+      }
     });
+    if (left.length > 0) console.info(`[leak] descriptors left: ${targetsOf(left)}`);
 
     expect(written(stack)).toBeGreaterThanOrEqual(25_000);
     expect(dropped).toBe(0);
     // 1 MB logs: the recorder rotated, and the collector closed each finished log's file.
     expect(logs).toBeGreaterThanOrEqual(5);
-    expect(rotatedFiles).toBeLessThanOrEqual(0);
-    expect(filesLeft).toBeLessThanOrEqual(0);
+    expect(linkedLogs.length).toBeLessThanOrEqual(1);
+    expect(targetsOf(openLogs(stack))).toBe("");
+    expect(targetsOf(left.filter(entry => isSocketOrFile(entry)))).toBe("");
     expect(stack.app.hub.sessions()).toEqual([]);
     if (heapMeasured(growth)) expect(growth.heapBytes).toBeLessThan(ceiling.heapBytes);
   });
@@ -237,7 +392,7 @@ describe("server stack memory (M3)", () => {
     await first.stop();
     await until(() => stack.app.hub.sessions().length === 0, "the paired phone gone", STEP_MS);
     const sessions = stack.app.hub.sessions().length;
-    const files = openFiles();
+    const before = descriptors();
 
     const cycle = async (): Promise<void> => {
       const phone = await startPhone(false);
@@ -258,17 +413,22 @@ describe("server stack memory (M3)", () => {
       settle: () => settleServer(stack),
       ceiling
     });
-    const filesLeft = openFiles() - files;
+    const left = await leftAfterStop(stack, before);
     const sessionsLeft = stack.app.hub.sessions().length - sessions;
     const devices = stack.app.hub.devices();
     logLeak("server stack, 50 link cycles", {
       ...growth,
-      counts: { "sessions left": sessionsLeft, devices: devices.length, "files left": filesLeft }
+      counts: {
+        "sessions left": sessionsLeft,
+        devices: devices.length,
+        "descriptors left": left.length
+      }
     });
+    if (left.length > 0) console.info(`[leak] descriptors left: ${targetsOf(left)}`);
 
     expect(sessionsLeft).toBe(0);
     expect(devices).toMatchObject([{ online: false }]);
-    expect(filesLeft).toBeLessThanOrEqual(0);
+    expect(targetsOf(left.filter(entry => isSocketOrFile(entry)))).toBe("");
     if (growth.objects !== undefined) expect(growth.objects).toBeLessThan(ceiling.objects);
     if (heapMeasured(growth)) expect(growth.heapBytes).toBeLessThan(ceiling.heapBytes);
   });
@@ -289,6 +449,16 @@ async function settleServer(stack: ServerStack): Promise<void> {
   stack.written.length = 0;
   stack.tap.entries.length = 0;
   stack.tap.sockets.length = 0;
+}
+
+/**
+ * Descriptors as one line: `fd 23 → socket:[81234], fd 24 → /tmp/…/perf-….jsonl`.
+ *
+ * @param entries - The descriptors.
+ * @returns The line; empty for none.
+ */
+function targetsOf(entries: readonly Descriptor[]): string {
+  return entries.map(entry => `fd ${String(entry.fd)} → ${entry.target}`).join(", ");
 }
 
 /**
