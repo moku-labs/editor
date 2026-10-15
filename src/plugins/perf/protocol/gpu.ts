@@ -129,36 +129,54 @@ export function promoteSustainedGpu(window: PerfWindow): boolean {
 }
 
 /**
+ * Sorts the first `count` values of a scratch in place, ascending: the unused tail is filled with
+ * +Infinity first, so one whole-array sort (no comparator, no copy) leaves them at the start.
+ * Allocation-free.
+ *
+ * @param sorted - The scratch; its first `count` values are the ones to sort.
+ * @param count - Values in use.
+ * @example
+ * ```ts
+ * const scratch = Float64Array.of(3, 1, 9, 9);
+ * sortHead(scratch, 2); // scratch: 1, 3, Infinity, Infinity
+ * ```
+ */
+export function sortHead(sorted: Float64Array, count: number): void {
+  sorted.fill(Number.POSITIVE_INFINITY, count);
+  sorted.sort();
+}
+
+/**
  * The value at a nearest-rank percentile of the first `count` sorted values.
  *
- * @param sorted - Ascending values.
+ * @param sorted - Ascending values (`sortHead`).
  * @param count - Values in use.
  * @param fraction - The percentile, 0..1.
  * @returns The value; NaN without values.
  * @example
  * ```ts
- * rankOf(Float64Array.of(1, 2, 3, 4), 4, 0.5); // 2
+ * nearestRank(Float64Array.of(1, 2, 3, 4), 4, 0.5); // 2
  * ```
  */
-function rankOf(sorted: Float64Array, count: number, fraction: number): number {
+export function nearestRank(sorted: Float64Array, count: number, fraction: number): number {
   return count === 0 ? Number.NaN : cell(sorted, Math.ceil(count * fraction) - 1);
 }
 
 /**
  * Writes the window's headline GPU: the p50 and p90 (nearest rank) of the GPU times of its drawn
- * frames with a measured GPU, NaN without one (no GPU timer). Allocation-free: sorts `sorted` in
- * place, its unused tail filled with +Infinity.
+ * frames with a measured GPU, NaN without one (no GPU timer). Allocation-free: sorts in the
+ * window's own scratch (`sorted`).
  *
  * @param window - The window.
- * @param sorted - A scratch of at least `window.count` values.
  * @example
  * ```ts
- * spreadGpu(window, scratch);
+ * spreadGpu(window);
  * window.gpuP50Ms; // 0.49
  * window.gpuP90Ms; // 0.61: one 22 ms outlier moves neither
  * ```
  */
-export function spreadGpu(window: PerfWindow, sorted: Float64Array): void {
+export function spreadGpu(window: PerfWindow): void {
+  const { sorted } = window;
   let count = 0;
   for (let row = 0; row < window.count; row += 1) {
     const gpuMs = cell(window.gpuMs, row);
@@ -166,8 +184,7 @@ export function spreadGpu(window: PerfWindow, sorted: Float64Array): void {
     sorted[count] = gpuMs;
     count += 1;
   }
-  sorted.fill(Number.POSITIVE_INFINITY, count);
-  sorted.sort();
-  window.gpuP50Ms = rankOf(sorted, count, P50);
-  window.gpuP90Ms = rankOf(sorted, count, P90);
+  sortHead(sorted, count);
+  window.gpuP50Ms = nearestRank(sorted, count, P50);
+  window.gpuP90Ms = nearestRank(sorted, count, P90);
 }

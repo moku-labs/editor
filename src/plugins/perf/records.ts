@@ -196,26 +196,8 @@ function renderOf(state: PerfState): PerfSecond["render"] {
 }
 
 /**
- * The p90 frame time of the awake frames of the window (nearest rank). Allocates: once per
- * `second()`.
- *
- * @param state - perf's state.
- * @returns The p90, ms to hundredths; null without an awake frame.
- */
-function awakeP90(state: PerfState): number | null {
-  const { window } = state;
-  const awake: number[] = [];
-  for (let row = 0; row < window.count; row += 1) {
-    if (window.rest[row] === REST.awake) awake.push(cell(window.ms, row));
-  }
-  if (awake.length === 0) return null;
-  awake.sort((one, other) => one - other);
-  return hundredths(awake[Math.ceil(awake.length * 0.9) - 1] ?? Number.NaN);
-}
-
-/**
  * How the window paced: the rest now and since when, the resting frames and their time, the breaks,
- * and the p90 of the awake frames.
+ * and the p90 of the awake frames (the last awake window's while the window holds none).
  *
  * @param state - perf's state.
  * @returns The activity.
@@ -233,13 +215,16 @@ function activityOf(state: PerfState): PerfActivity {
     idleMs += cell(window.ms, row);
   }
 
-  // The current rest: back from the newest frame while it rests.
-  let first = window.count;
-  while (first > 0 && window.rest[first - 1] === REST.idle) first -= 1;
-  const idle = first < window.count;
+  // The current rest: the newest frame rests; since the first frame of the rest (the reader keeps it
+  // while the window trims its rows).
+  const idle = window.count > 0 && window.rest[window.count - 1] === REST.idle;
+  const { idleSinceT } = state;
   const idleSince =
-    idle && header !== undefined ? plain(header.timeOrigin + cell(window.t, first)) : null;
-  return { idle, idleSince, idleFrames, idleMs: plain(idleMs), breaks, p90Ms: awakeP90(state) };
+    idle && header !== undefined && idleSinceT !== undefined
+      ? plain(header.timeOrigin + idleSinceT)
+      : null;
+  const p90Ms = hundredths(state.awakeP90Ms);
+  return { idle, idleSince, idleFrames, idleMs: plain(idleMs), breaks, p90Ms };
 }
 
 /**

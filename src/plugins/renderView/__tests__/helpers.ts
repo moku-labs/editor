@@ -364,6 +364,85 @@ export function stubFrames(): FrameQueue {
   };
 }
 
+/** A manual ResizeObserver: the test resizes every observed element by hand. */
+export type ResizeQueue = {
+  /** How many observers watch an element now. */
+  observed(): number;
+  /** Reports a new border box to every observer. */
+  resize(width: number, height: number): void;
+};
+
+/**
+ * Stubs ResizeObserver with a manual one (the caller unstubs in afterEach).
+ *
+ * @returns The queue.
+ */
+export function stubResizeObserver(): ResizeQueue {
+  const watching = new Set<ResizeObserverCallback>();
+  /** The stand-in: observe and disconnect only. */
+  class ManualObserver {
+    readonly callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe(): void {
+      watching.add(this.callback);
+    }
+    unobserve(): void {
+      watching.delete(this.callback);
+    }
+    disconnect(): void {
+      watching.delete(this.callback);
+    }
+  }
+  vi.stubGlobal("ResizeObserver", ManualObserver);
+  return {
+    observed: () => watching.size,
+    resize(width, height) {
+      const entry = {
+        contentRect: { width, height },
+        borderBoxSize: [{ inlineSize: width, blockSize: height }]
+      };
+      for (const callback of watching) callback([entry] as never, {} as never);
+    }
+  };
+}
+
+/** A manual `prefers-reduced-motion` query. */
+export type MotionQuery = {
+  /** How often `matchMedia` was called. */
+  calls(): number;
+  /** How many change listeners the query has. */
+  listeners(): number;
+  /** Turns reduced motion on or off and fires the query's change event. */
+  set(reduced: boolean): void;
+};
+
+/**
+ * Stubs matchMedia with one query whose `matches` the test sets (the caller unstubs in afterEach).
+ *
+ * @param reduced - Whether reduced motion is on at first.
+ * @returns The query.
+ */
+export function stubMotion(reduced: boolean): MotionQuery {
+  const changes = new Set<() => void>();
+  const query = {
+    matches: reduced,
+    addEventListener: (_type: string, listener: () => void) => changes.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => changes.delete(listener)
+  };
+  const matchMedia = vi.fn(() => query);
+  vi.stubGlobal("matchMedia", matchMedia);
+  return {
+    calls: () => matchMedia.mock.calls.length,
+    listeners: () => changes.size,
+    set(next) {
+      query.matches = next;
+      for (const listener of changes) listener();
+    }
+  };
+}
+
 /**
  * Lets pending promise callbacks run (no timers involved).
  */

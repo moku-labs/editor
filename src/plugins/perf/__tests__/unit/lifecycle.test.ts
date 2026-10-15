@@ -1,3 +1,4 @@
+/* eslint-disable unicorn/no-null -- null is "not known" in perf's activity values */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
@@ -132,5 +133,33 @@ describe("a failing start and a stop", () => {
     expect(secondOf(perf.state).fps.loop).toBe(30);
     stopPerf(ctx);
     expect(secondOf(perf.state).fps).toEqual({ loop: 0, drawn: 0 });
+  });
+
+  it("forgets the rest and the last awake p90 at a stop: the next run shows its own (bug: a new run idle since the last run's rest)", () => {
+    vi.useFakeTimers();
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 256 });
+    for (let index = 0; index < 10; index += 1) {
+      monitor.commit({ t: index * 16.7, gapMs: 16.7, workMs: index >= 8 ? 30 : 3 });
+    }
+    commitFrames(monitor, 5, 200, 33.4, { idle: true, capMs: 33.33 });
+    const registry = { game: () => ({ renderer: { monitor } }), add: () => undefined };
+    const { ctx } = perfCtx(perf, registry);
+    initPerf(ctx);
+    startPerf(ctx);
+    expect(secondOf(perf.state).activity).toMatchObject({ idle: true, p90Ms: 30 });
+    stopPerf(ctx);
+    expect(secondOf(perf.state).activity).toMatchObject({ idleSince: null, p90Ms: null });
+
+    monitor.restart();
+    commitFrames(monitor, 5, 5000, 33.4, { idle: true, capMs: 33.33 });
+    startPerf(ctx);
+    const origin = perf.state.header?.timeOrigin ?? 0;
+    expect(secondOf(perf.state).activity).toMatchObject({
+      idle: true,
+      idleSince: origin + 5000,
+      p90Ms: null
+    });
+    stopPerf(ctx);
   });
 });

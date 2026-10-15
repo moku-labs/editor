@@ -53,8 +53,8 @@ export function startPerf(ctx: PerfCtx): void {
 }
 
 /**
- * onStop: clears the timer, unsubscribes, drops the watches and empties the window (its arrays stay
- * for a restart).
+ * onStop: clears the timer, unsubscribes, drops the watches, empties the window (its arrays stay
+ * for a restart) and forgets the rest and the last awake p90.
  *
  * @param ctx - The teardown context: own config and state.
  */
@@ -69,6 +69,8 @@ export function stopPerf(ctx: PerfStopCtx): void {
   state.measuring = false;
   state.fpsLoop = 0;
   state.fpsDrawn = 0;
+  state.idleSinceT = undefined;
+  state.awakeP90Ms = Number.NaN;
   state.second = undefined;
   state.window.count = 0;
   state.window.spikeCount = 0;

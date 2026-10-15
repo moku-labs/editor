@@ -105,8 +105,14 @@ export type PerfState = {
   readonly rowPath: Uint16Array;
   /** The read target, `config.frames` long. */
   readonly scratch: PerfScratch;
-  /** The sort scratch of the headline GPU p50/p90 (`spreadGpu`), `config.frames` long. */
-  readonly gpuSorted: Float64Array;
+  /**
+   * Page-clock ms of the first frame of the current rest: set when a row turns idle after a row that
+   * was not, kept while the rows stay idle (the window's trims do not move it), cleared by the next
+   * row that is not idle. Undefined while awake.
+   */
+  idleSinceT: number | undefined;
+  /** The p90 frame time of the window's awake frames at the last read that had one, ms; NaN before. */
+  awakeP90Ms: number;
   /** ring.written after the last read; undefined before the first read of a run. */
   cursor: number | undefined;
   /** Frames the ring overwrote before perf read them, since start. */

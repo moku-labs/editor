@@ -313,8 +313,20 @@ describe("the caption and the axis", () => {
       { t: 63.4, ms: 30, causes: 1 }
     ]);
     expect(paintOnce(window, { ...WIDE, selected: 3 }).texts()).toContain("frame 4, spike 2/2");
-    expect(paintOnce(window, PHONE).texts()).toContain("frame 4, spike 2/2");
+    expect(paintOnce(window, { ...PHONE, selected: 2 }).texts()).toContain("frame 3, spike 1/2");
     expect(paintOnce(window, { ...PHONE, selected: 0 }).texts()).toContain("frame 1");
+  });
+
+  it("an unselected newest spike is captioned with its frame only, as the counter reads '–/n' (spec 03 delta item 11)", () => {
+    const window = windowOf([
+      ...rows(2),
+      { t: 33.4, ms: 30, causes: 1 },
+      { t: 63.4, ms: 30, causes: 1 }
+    ]);
+    const texts = paintOnce(window, PHONE).texts();
+
+    expect(texts).toContain("frame 4");
+    expect(texts.some(text => text.includes("spike"))).toBe(false);
   });
 
   it("labels each second on the wide strip and only the ends on the phone, the phone with its stack legend", () => {

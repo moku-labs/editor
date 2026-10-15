@@ -32,6 +32,9 @@ recorder adds no field. Order inside a log:
 
 File name: `perf-<yyyymmdd>-<hhmm>-<model>.jsonl` in local time, `model` = `header.device.model` lower-cased with every
 character outside `[a-z0-9-]` turned into `-`, `device` without one; a taken name gains `-2`, `-3`, … before `.jsonl`.
+A name is taken while a log has it, and for the rest of the run once this recorder gave it, also after `keepFiles` or
+`keepMb` removed that log: the computer keys a phone's logs by name, so a reused name would make the new log's lines
+look like lines it already has.
 
 ```text
 perf-20261014-1532-sm-a266b.jsonl

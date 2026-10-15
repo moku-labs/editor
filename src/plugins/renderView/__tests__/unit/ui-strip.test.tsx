@@ -9,7 +9,15 @@ import type { LinkStatus, SessionInfo } from "../../../registry/protocol";
 import { toWireValue } from "../../../registry/protocol";
 import { createRenderViewApi } from "../../api";
 import { deriveSnapshot } from "../../derive";
-import { CAUSE_STYLE, causeHue, GRAPH_PALETTES, rowAt, spikeAt } from "../../device/contract";
+import { budgetText } from "../../device/components/Legend";
+import {
+  CAUSE_STYLE,
+  causeHue,
+  createPerfWindow,
+  GRAPH_PALETTES,
+  rowAt,
+  spikeAt
+} from "../../device/contract";
 import { createHandlers } from "../../handlers";
 import { startRenderView, stopRenderView } from "../../lifecycle";
 import { createRenderPanel } from "../../panel";
@@ -162,7 +170,7 @@ describe("the device strip", () => {
     expect(q("[data-render='device-strip']")).not.toBeNull();
     expect(q("[data-part='bar']")?.textContent).toBe("Devices1 connectedPerformance");
     expect(q("[data-part='model-name']")?.textContent).toBe("SM-A266B");
-    expect(q("[data-part='about']")?.textContent).toBe("Android 15, WebView 131, 120 Hz, dpr 2.81");
+    expect(q("[data-part='about']")?.textContent).toBe("Android 15, WebView 131, 60 Hz, dpr 2.81");
     expect(q("[data-cell='backend']")?.textContent).toContain("webgpu");
     expect(q("[data-cell='engine']")?.textContent).toBe(
       "engine fingerprint0.14.12+9c41e0STALEcomputer has 0.14.13+1ab7f2"
@@ -177,9 +185,9 @@ describe("the device strip", () => {
     await strip(deviceSession("s-1", DEVICE));
 
     const fps = [...host.querySelectorAll("[data-part='headline'] > span")][1];
-    expect(fps?.textContent).toBe("drawn / loop 54 / 60 @120 fps");
+    expect(fps?.textContent).toBe("drawn / loop 54 / 60 @60 fps");
     expect(fps?.querySelector("[title]")?.getAttribute("title")).toBe(
-      "120 fps, auto; display 120 Hz"
+      "60 fps, auto; display 60 Hz"
     );
   });
 
@@ -405,5 +413,38 @@ describe("the strip in the editor's theme (spec 09 Delta 2026-10-15)", () => {
     expect(colourOf("[data-part='bars'][data-kind='gpu']")).toBe(
       themed(GRAPH_PALETTES.light.gpu, GRAPH_PALETTES.dark.gpu)
     );
+  });
+});
+
+describe("the legend's budget and the headline's rate (design check D1)", () => {
+  it("the demo phone is one 60 Hz display at 60 fps: the headline and the legend agree", async () => {
+    await strip(deviceSession("s-1", DEVICE));
+
+    expect(q("[data-part='headline']")?.textContent).toContain("drawn / loop 54 / 60 @60 fps");
+    expect(q("[data-part='legend'] [data-part='budget']")?.textContent?.trim()).toBe(
+      "budget 16.7 ms at 60 fps"
+    );
+  });
+
+  it("the legend's budget reads the rate the headline reads (bug: '@120 fps' over 'budget 16.7 ms at 60 fps')", async () => {
+    await strip(deviceSession("s-1", DEVICE));
+
+    act(() => {
+      ctx.link.send(
+        "editor.perf.second",
+        toWireValue(
+          secondOf({
+            budgetMs: 8.3,
+            rate: { fps: 120, mode: "auto", reason: "start", displayHz: 120, switches: 0 }
+          })
+        )
+      );
+    });
+
+    expect(q("[data-part='headline']")?.textContent).toContain("@120 fps");
+    expect(q("[data-part='legend'] [data-part='budget']")?.textContent?.trim()).toBe(
+      "budget 8.3 ms at 120 fps"
+    );
+    expect(budgetText(createPerfWindow(8), undefined)).toBe("budget 16.7 ms");
   });
 });

@@ -3,6 +3,8 @@
   :scope {
     container: device-strip / inline-size;
     display: flex;
+    /* Never shrunk by the Render workspace's column (it scrolls): the strip is as tall as its content, at least 420. */
+    flex: none;
     flex-direction: column;
     inline-size: 100%;
     min-block-size: 420px;
@@ -44,15 +46,17 @@
     flex: 1;
   }
 
-  /* Device row: 56 high (min), gap 24; the model 600 18 / 1 with its about line 500 12 in text-2. */
+  /* Device row: 56 high (min), gap 8 12; the model 600 18 / 1 with its about line 500 12 in text-2. Every cell stays on one line (an id never breaks at its hyphen); a cell that does not fit moves to the next row whole. */
   [data-part="device-row"] {
     display: flex;
     flex: none;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 24px;
+    gap: 8px 12px;
     min-block-size: 56px;
-    padding: 0 16px;
+    padding: 8px 16px;
     border-block-end: 1px solid var(--line-1);
+    white-space: nowrap;
   }
 
   [data-part="model"] {
@@ -151,10 +155,10 @@
     font-size: var(--font-size-12);
   }
 
-  /* Main: the graph column and the 384 px side panel. */
+  /* Main: the graph column and the 384 px side panel. It grows with the graph column (never clips its last legend line); the side panel takes the row's height and scrolls (record.css). */
   [data-part="main"] {
     display: grid;
-    flex: 1;
+    flex: 1 0 auto;
     grid-template-columns: 1fr 384px;
     min-block-size: 0;
   }
@@ -167,11 +171,12 @@
     padding: 8px 16px;
   }
 
-  /* Headline: 500 12.5 / 20 in text-2, one line; the numbers Geist Mono 600 in ink, warnings amber. */
+  /* Headline: 500 12.5 / 20 in text-2; each counter on one line, a counter that does not fit wraps whole to a second line (none is clipped); the numbers Geist Mono 600 in ink, warnings amber. */
   [data-part="headline"] {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 16px;
+    gap: 0 16px;
     overflow: hidden;
     color: var(--text-2);
     font-size: var(--font-size-12-5);

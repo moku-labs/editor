@@ -1179,8 +1179,8 @@ function paintReadout(
 }
 
 /**
- * Step 10: the caption `frame 4812`, plus `, spike 5/6` on a spike; rebuilt only when its key
- * changed.
+ * Step 10: the caption `frame 4812`, plus `, spike 5/6` on a selected spike; rebuilt only when its
+ * key changed.
  *
  * @param g - The context.
  * @param window - The window.
@@ -1198,7 +1198,9 @@ function paintCaption(
   row: number
 ): void {
   const frame = cell(window.frame, row);
-  const ordinal = spikeOrdinal(window, row);
+  // Only a selected spike names its place (spec 03 delta item 11): with nothing selected the
+  // counter reads "–/n", so the newest row's caption is its frame alone.
+  const ordinal = row === view.selected ? spikeOrdinal(window, row) : 0;
   const count = window.spikeCount;
   const captionChanged =
     frame !== state.captionFrame ||

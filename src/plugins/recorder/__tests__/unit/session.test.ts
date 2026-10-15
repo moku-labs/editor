@@ -125,4 +125,16 @@ describe("start", () => {
     const kept = await t.state.memory.list();
     expect(kept.map(info => info.name)).toEqual(["b.jsonl", "c.jsonl"]);
   });
+
+  it("never gives a new log the name of one it pruned in this run (bug: the computer's collector taking the new log's lines for the old log's and dropping them)", async () => {
+    const t = recorder({ config: { keepFiles: 1 } });
+    const names: string[] = [];
+    for (let run = 0; run < 4; run += 1) {
+      names.push(t.api.start().name);
+      await t.api.stop();
+      await settle();
+    }
+    expect(names[3]).toBe("perf-20261014-1532-sm-a266b-4.jsonl");
+    expect(new Set(names).size).toBe(4);
+  });
 });

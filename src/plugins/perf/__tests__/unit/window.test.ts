@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" on the wire */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";
 import type { PerfWindow } from "../../protocol";
 import {
@@ -304,6 +304,31 @@ describe("the noise column and the GPU spread on the wire (spec 03 delta item 8)
     expect(readWireWindow(wire({ noise: [0b1000_0100, 300] }), into)).toBe(true);
     expect([...into.noise.subarray(0, 2)]).toEqual([4, 0]);
     expect(readWireWindow(wire({ noise: [4] }), into)).toBe(false);
+  });
+});
+
+describe("readWireWindow allocation", () => {
+  it("builds no typed array per read: the headline GPU sorts in the window's own scratch (bug: a Float64Array a read on the tools page)", () => {
+    const into = createPerfWindow(8);
+    const value = wire();
+    const Native = Float64Array;
+    let made = 0;
+    vi.stubGlobal(
+      "Float64Array",
+      new Proxy(Native, {
+        construct(target, args: unknown[]) {
+          made += 1;
+          return Reflect.construct(target, args) as object;
+        }
+      })
+    );
+    try {
+      for (let read = 0; read < 5; read += 1) expect(readWireWindow(value, into)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(made).toBe(0);
+    expect(into.gpuP50Ms).toBeCloseTo(5.2, 4);
   });
 });
 

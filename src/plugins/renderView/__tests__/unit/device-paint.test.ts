@@ -6,13 +6,22 @@ import { REPAINT_MS, type StripCanvas, startRepaint } from "../../device/paint";
 import { onWorkspaceChanged } from "../../handlers";
 import { startTracker } from "../../watch";
 import { DEVICE, deviceSession, secondOf, windowWire, wireJson } from "../device-fixtures";
-import { createCtx, GAME_01_SOURCES, manifestOf, stubFrames, type TestCtx } from "../helpers";
+import {
+  createCtx,
+  GAME_01_SOURCES,
+  manifestOf,
+  type ResizeQueue,
+  stubFrames,
+  stubResizeObserver,
+  type TestCtx
+} from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // device/paint.ts: the ≤ 4 Hz repaint loop of the strip's canvas through the
 // painter (mocked here: 03 owns its pixels) — only after a new value, never
 // while Render is hidden, the transform set before each paint, the backing
-// store resized only on a size or dpr change, no timer after the cleanup.
+// store resized only on a size (from the ResizeObserver) or dpr change, no
+// timer after the cleanup.
 // ─────────────────────────────────────────────────────────────────────────────
 
 vi.mock("../../device/contract", async importOriginal => {
@@ -29,9 +38,11 @@ let ctx: TestCtx;
 let calls: string[];
 let box: { width: number; height: number };
 let widthWrites: number;
+let sizes: ResizeQueue;
 
 /**
- * A strip canvas whose context records the transform and whose backing store counts its writes.
+ * A strip canvas element whose context records the transform, whose CSS box the test sets and
+ * whose backing store counts its writes.
  *
  * @returns The canvas.
  */
@@ -60,18 +71,17 @@ function fakeCanvas(): StripCanvas {
     })
   };
   let width = 0;
-  return {
-    get width() {
-      return width;
-    },
-    set width(value: number) {
+  const canvas = document.createElement("canvas");
+  Object.defineProperty(canvas, "width", {
+    get: () => width,
+    set: (value: number) => {
       widthWrites += 1;
       width = value;
-    },
-    height: 0,
-    getBoundingClientRect: () => box,
-    getContext: () => g
-  };
+    }
+  });
+  canvas.getBoundingClientRect = () => box as DOMRect;
+  canvas.getContext = (() => g) as never;
+  return canvas;
 }
 
 /**
@@ -87,6 +97,7 @@ beforeEach(() => {
   // These cases are the 4 Hz steps, which reduced motion keeps on the tools page (spec 09
   // Amendment 2026-10-15); the interpolated loop has its own suite, device-loop.test.ts.
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  sizes = stubResizeObserver();
   calls = [];
   box = { width: 1000, height: 200 };
   widthWrites = 0;
@@ -181,7 +192,7 @@ describe("the repaint loop", () => {
     vi.advanceTimersByTime(REPAINT_MS);
     expect(widthWrites).toBe(1);
 
-    box = { width: 800, height: 200 };
+    sizes.resize(800, 200);
     deliver();
     vi.advanceTimersByTime(REPAINT_MS);
     expect(widthWrites).toBe(2);

@@ -1,6 +1,8 @@
 /* renderView · the spike record side panel of the D1 strip (design §7, F5; spec 09 Delta 2026-10-15): a line rule on the card's panel; the header with the close key and prev / next (44 × 44), the lead, the why line with its rule in the primary cause's colour, and the scrolling details. Every colour is an editor token or the inline `--c` (a cause hue, the budget or the GPU bars, in both themes); Geist for words, Geist Mono for numbers. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-render="device-strip"] [data-part="side"]) {
   :scope {
+    /* Its content never sets the row's height: the panel takes the graph column's height and its details scroll. */
+    contain: size;
     display: flex;
     flex-direction: column;
     min-block-size: 0;
@@ -252,6 +254,7 @@
   /* Narrow: the panel sits under the graph, full width, its details scroll. */
   @container device-strip (width < 900px) {
     :scope {
+      contain: none;
       max-block-size: 320px;
       border-block-start: 1px solid var(--line-1);
       border-inline-start: 0;

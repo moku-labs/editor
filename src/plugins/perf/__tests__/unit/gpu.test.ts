@@ -128,13 +128,13 @@ describe("spreadGpu", () => {
   it("writes the p50 and p90 GPU time of the drawn frames with a measured GPU (nearest rank)", () => {
     const rows = Array.from({ length: 10 }, (_row, index) => ({ gpuMs: 10 - index }));
     const window = rowsOf([...rows, { gpuMs: 99, drawn: 0 }, { gpuMs: Number.NaN }]);
-    spreadGpu(window, new Float64Array(window.capacity));
+    spreadGpu(window);
     expect([window.gpuP50Ms, window.gpuP90Ms]).toEqual([5, 9]);
   });
 
   it("writes NaN for a window without a measured GPU time (no GPU timer)", () => {
     const window = rowsOf([{ gpuMs: Number.NaN }, { gpuMs: Number.NaN }]);
-    spreadGpu(window, new Float64Array(window.capacity));
+    spreadGpu(window);
     expect([window.gpuP50Ms, window.gpuP90Ms]).toEqual([Number.NaN, Number.NaN]);
   });
 

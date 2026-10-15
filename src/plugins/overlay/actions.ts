@@ -320,8 +320,20 @@ function hasBoundingBox(
 }
 
 /**
+ * A box's border width on one side (`clientLeft` / `clientTop`), 0 when it has none.
+ *
+ * @param box - The element.
+ * @param side - "clientLeft" or "clientTop".
+ * @returns CSS px.
+ */
+function borderOf(box: unknown, side: "clientLeft" | "clientTop"): number {
+  const value: unknown = typeof box === "object" && box !== null ? Reflect.get(box, side) : 0;
+  return typeof value === "number" ? value : 0;
+}
+
+/**
  * The point of a pointer event inside the graph well (the canvas's parent, which does not slide),
- * CSS px.
+ * CSS px from its padding box: the canvases sit inside its 1 px border (review I8).
  *
  * @param event - The event.
  * @param event.clientX - Viewport x.
@@ -338,7 +350,10 @@ function pointIn(event: {
   const well: unknown = target === null ? undefined : Reflect.get(target, "parentElement");
   const anchor = hasBoundingBox(well) ? well : target;
   const box = hasBoundingBox(anchor) ? anchor.getBoundingClientRect() : { left: 0, top: 0 };
-  return { x: event.clientX - box.left, y: event.clientY - box.top };
+  return {
+    x: event.clientX - box.left - borderOf(anchor, "clientLeft"),
+    y: event.clientY - box.top - borderOf(anchor, "clientTop")
+  };
 }
 
 /**

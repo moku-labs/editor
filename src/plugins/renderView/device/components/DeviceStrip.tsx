@@ -133,7 +133,7 @@ export function DeviceStrip(props: DeviceStripProps): VNode | undefined {
               <Runs line={moreText(strip.second, view.model, view.more)} />
             </p>
           </div>
-          <Legend window={strip.window} />
+          <Legend window={strip.window} second={strip.second} />
         </div>
         <SpikePanel ctx={ctx} view={view} />
       </div>

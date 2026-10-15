@@ -158,12 +158,25 @@ function pruneLogs(ctx: RecorderCtx): void {
 }
 
 /**
- * A new log's session: its name, its label (trimmed; empty is none), zeros, the recorder's store.
+ * The names a new log may not take: every log in the list and every name given in this run (a log
+ * keepFiles or keepMb removed still names lines the computer has).
+ *
+ * @param state - The recorder's state.
+ * @returns The names.
+ */
+function takenNames(state: RecorderState): Set<string> {
+  const taken = new Set(state.named);
+  for (const file of state.files) taken.add(file.name);
+  return taken;
+}
+
+/**
+ * A new log's session: its name (remembered in `named`), its label (trimmed; empty is none), zeros, the recorder's store.
  *
  * @param state - The recorder's state.
  * @param label - A name for the run, as given.
  * @param startedAt - Epoch ms of the start.
- * @param taken - The names already in the list.
+ * @param taken - The names it may not take (`takenNames`).
  * @param capBytes - The log's hard cap in UTF-8 bytes.
  * @returns The session.
  */
@@ -175,8 +188,10 @@ function createSession(
   capBytes: number
 ): Session {
   const trimmed = label?.trim() ?? "";
+  const name = logFileName(state.header?.device.model, new Date(startedAt), taken);
+  state.named.add(name);
   return {
-    name: logFileName(state.header?.device.model, new Date(startedAt), taken),
+    name,
     label: trimmed === "" ? null : trimmed,
     startedAt,
     lines: 0,
@@ -227,7 +242,7 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
   if (monitor === undefined) throw new Error(NO_MONITOR);
 
   // Build: the session, named by the local minute and the header's model, never a taken name.
-  const taken = new Set(state.files.map(file => file.name));
+  const taken = takenNames(state);
   const session = createSession(state, label, Date.now(), taken, ctx.config.maxLogMb * MEGABYTE);
 
   // Reset: the new log is the current one, with an empty queue and no marks.
@@ -302,7 +317,7 @@ function isStopEvent(line: PerfLogLine | undefined): line is PerfEventLine {
  * @returns The continuation, now the session.
  */
 function openContinuation(state: RecorderState, part: Session, monitor: MonitorLike): Session {
-  const taken = new Set(state.files.map(file => file.name));
+  const taken = takenNames(state);
   const next = createSession(state, part.label ?? undefined, Date.now(), taken, part.capBytes);
   resetForNewLog(state, next);
   queueContext(state);

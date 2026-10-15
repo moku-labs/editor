@@ -345,6 +345,17 @@ describe("readTick", () => {
     expect(state.window.spikeCount).toBe(0);
   });
 
+  it("makes the first frame after a rest the wake, never a break, however long the engine slept (spec 03 delta item 10)", () => {
+    const { state, monitor, tick } = setup();
+    monitor.commit({ t: 0 });
+    monitor.commit({ t: 16.7, gapMs: 16.7, drawn: false, reason: 11 });
+    monitor.commit({ t: 2016.7, gapMs: 2000 });
+    monitor.commit({ t: 3016.7, gapMs: 1000 });
+    tick();
+    expect([...state.window.rest.subarray(0, 4)]).toEqual([0, 1, 2, 3]);
+    expect(state.window.spikeCount).toBe(0);
+  });
+
   it("counts the fps of the last second over awake frames only (bug: loop 2 fps on a sleeping screen)", () => {
     const { state, monitor, tick } = setup();
     commitFrames(monitor, 30, 0, 16.7);

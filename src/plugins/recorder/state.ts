@@ -41,6 +41,7 @@ export function createRecorderState(): RecorderState {
     store: memory,
     memory,
     files: [],
+    named: new Set(),
     marks: [],
     outbox: [],
     outboxOwner: [],

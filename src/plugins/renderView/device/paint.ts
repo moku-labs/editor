@@ -11,7 +11,7 @@
  */
 import { workspacePlugin } from "../../workspace";
 import type { RenderViewCtx } from "../types";
-import type { GraphContext2D, GraphState, GraphTheme } from "./contract";
+import type { GraphContext2D, GraphLayer, GraphLook, GraphState, GraphTheme } from "./contract";
 import { graphLook, paintGraph, resetGraphText, rowAt, spikeAt } from "./contract";
 import { notifyStrip } from "./state";
 import { selectedRow } from "./step";
@@ -91,8 +91,26 @@ type Painter = { version: number; readonly paint: () => void };
 type LayerKey = { width: number; height: number; dpr: number; theme: GraphTheme | undefined };
 
 /**
+ * A view the loop paints with, changed in place every frame: a frame allocates no view (review W4).
+ */
+type FrameView = {
+  width: number;
+  height: number;
+  readonly wide: true;
+  selected: number;
+  look: GraphLook;
+  readonly layer: GraphLayer;
+};
+
+/**
+ * The view of a frame with a moving now.
+ */
+type MovingView = FrameView & { nowMs: number };
+
+/**
  * What one mounted canvas paints with: its context, the painter state, the base layer and its key,
- * the backing store's size and the theme.
+ * the canvas's CSS box (read once at mount, then from a ResizeObserver: a frame reads no layout),
+ * the backing store's size, the theme and the three views it paints with.
  */
 type Surface = {
   readonly canvas: StripCanvas;
@@ -101,9 +119,21 @@ type Surface = {
   readonly layer: HTMLCanvasElement | undefined;
   readonly layerG: StripContext | undefined;
   readonly layerKey: LayerKey;
+  readonly box: { width: number; height: number };
   readonly size: { width: number; height: number; dpr: number };
   theme: GraphTheme;
+  /** The 4 Hz step: the newest row at the right edge. */
+  readonly still: FrameView;
+  /** The interpolated frame. */
+  readonly moving: MovingView;
+  /** The static base layer. */
+  readonly base: FrameView;
 };
+
+/**
+ * Whether the person asked for reduced motion, kept from one media query and its change events.
+ */
+type Motion = { reduced: boolean; readonly stop: () => void };
 
 /**
  * The painter of each mounted canvas, by its painter state (dropped with the canvas).
@@ -129,12 +159,48 @@ function pixelRatio(): number {
 }
 
 /**
- * Whether the person asked for reduced motion.
+ * Asks `prefers-reduced-motion: reduce` once and follows its change events: a frame reads the kept
+ * answer, it never asks the media query (review W4).
  *
- * @returns True when `prefers-reduced-motion: reduce` matches.
+ * @returns The answer and the cleanup that drops the listener.
  */
-function isReducedMotion(): boolean {
-  return globalThis.matchMedia?.(REDUCED_MOTION).matches === true;
+function watchMotion(): Motion {
+  const query = globalThis.matchMedia?.(REDUCED_MOTION);
+  if (query === undefined) return { reduced: false, stop: stopNothing };
+  const onChange = (): void => {
+    motion.reduced = query.matches;
+  };
+  const motion: Motion = {
+    reduced: query.matches,
+    stop: () => query.removeEventListener?.("change", onChange)
+  };
+  query.addEventListener?.("change", onChange);
+  return motion;
+}
+
+/**
+ * Follows the canvas's CSS box with a ResizeObserver (the border box, as a click measures it); a
+ * new box makes a strip with data repaint. Without a ResizeObserver (or for a canvas that is no
+ * element) the box stays as read at mount.
+ *
+ * @param surface - The canvas's surface.
+ * @param strip - The strip state.
+ * @returns The cleanup that disconnects the observer.
+ */
+function watchSize(surface: Surface, strip: DeviceStripState): () => void {
+  const { canvas, box } = surface;
+  const { ResizeObserver: Observer, Element: Base } = globalThis;
+  if (Observer === undefined || Base === undefined || !(canvas instanceof Base)) return stopNothing;
+  const observer = new Observer(entries => {
+    const entry = entries.at(-1);
+    if (entry === undefined) return;
+    const border = entry.borderBoxSize?.[0];
+    box.width = border?.inlineSize ?? entry.contentRect.width;
+    box.height = border?.blockSize ?? entry.contentRect.height;
+    if (strip.window.count > 0) strip.dirty = true;
+  });
+  observer.observe(canvas);
+  return () => observer.disconnect();
 }
 
 /**
@@ -184,30 +250,26 @@ export function movingNow(strip: DeviceStripState): number {
  *
  * @param surface - The canvas's surface.
  * @param strip - The strip state.
- * @param width - CSS px.
- * @param height - CSS px.
+ * @param look - The look of the theme.
  */
-function drawBase(surface: Surface, strip: DeviceStripState, width: number, height: number): void {
-  const { layer, layerG, layerKey, size, theme } = surface;
+function drawBase(surface: Surface, strip: DeviceStripState, look: GraphLook): void {
+  const { layer, layerG, layerKey, size, theme, base } = surface;
   if (layer === undefined || layerG === undefined) return;
   const same =
-    layerKey.width === width &&
-    layerKey.height === height &&
+    layerKey.width === size.width &&
+    layerKey.height === size.height &&
     layerKey.dpr === size.dpr &&
     layerKey.theme === theme;
   if (same) return;
-  layer.width = Math.round(width * size.dpr);
-  layer.height = Math.round(height * size.dpr);
+  layer.width = Math.round(size.width * size.dpr);
+  layer.height = Math.round(size.height * size.dpr);
   layerG.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
-  const look = graphLook(theme);
-  paintGraph(
-    layerG,
-    strip.window,
-    { width, height, wide: true, selected: -1, layer: "base", look },
-    surface.graph
-  );
-  layerKey.width = width;
-  layerKey.height = height;
+  base.width = size.width;
+  base.height = size.height;
+  base.look = look;
+  paintGraph(layerG, strip.window, base, surface.graph);
+  layerKey.width = size.width;
+  layerKey.height = size.height;
   layerKey.dpr = size.dpr;
   layerKey.theme = theme;
 }
@@ -228,8 +290,7 @@ function drawFrame(
   painter: Painter,
   nowMs: number | undefined
 ): void {
-  const { canvas, g, size } = surface;
-  const box = canvas.getBoundingClientRect();
+  const { canvas, g, box, size } = surface;
   if (box.width === 0 || box.height === 0) return;
   const dpr = pixelRatio();
   if (box.width !== size.width || box.height !== size.height || dpr !== size.dpr) {
@@ -240,18 +301,20 @@ function drawFrame(
     size.dpr = dpr;
   }
   strip.dirty = false;
-  drawBase(surface, strip, box.width, box.height);
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const selected = selectedRow(strip.window, strip.selected);
   const look = graphLook(surface.theme);
-  const view = { width: box.width, height: box.height, wide: true, selected, look };
-  if (surface.layer === undefined) {
-    paintGraph(g, strip.window, nowMs === undefined ? view : { ...view, nowMs }, surface.graph);
-  } else {
-    g.drawImage(surface.layer, 0, 0, box.width, box.height);
-    const over = { ...view, layer: "over" as const };
-    paintGraph(g, strip.window, nowMs === undefined ? over : { ...over, nowMs }, surface.graph);
+  drawBase(surface, strip, look);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let view: FrameView = surface.still;
+  if (nowMs !== undefined) {
+    surface.moving.nowMs = nowMs;
+    view = surface.moving;
   }
+  view.width = size.width;
+  view.height = size.height;
+  view.selected = selectedRow(strip.window, strip.selected);
+  view.look = look;
+  if (surface.layer !== undefined) g.drawImage(surface.layer, 0, 0, size.width, size.height);
+  paintGraph(g, strip.window, view, surface.graph);
   painter.version = strip.window.version;
 }
 
@@ -275,7 +338,7 @@ function watchFonts(strip: DeviceStripState, graph: GraphState): void {
 
 /**
  * Makes the surface of a mounted canvas: its context, an offscreen base layer when the page can
- * make one, and the editor's theme now.
+ * make one, its CSS box (the one layout read, at mount), the editor's theme now and its views.
  *
  * @param ctx - Domain context of renderView.
  * @param canvas - The strip's canvas.
@@ -291,17 +354,35 @@ function makeSurface(
   graph: GraphState,
   makeLayer: LayerFactory
 ): Surface {
-  const layer = makeLayer();
-  const layerG = layer?.getContext("2d") ?? undefined;
+  const made = makeLayer();
+  const layerG = made?.getContext("2d") ?? undefined;
+  const layer = layerG === undefined ? undefined : made;
+  const { width, height } = canvas.getBoundingClientRect();
+  const theme = editorTheme(ctx);
+  const look = graphLook(theme);
+  // With a base layer each frame paints the moving part over it; without one, all of it.
+  const paints: GraphLayer = layer === undefined ? "all" : "over";
+  const viewOf = (kind: GraphLayer): FrameView => ({
+    width: 0,
+    height: 0,
+    wide: true,
+    selected: -1,
+    look,
+    layer: kind
+  });
   return {
     canvas,
     g,
     graph,
-    layer: layerG === undefined ? undefined : layer,
+    layer,
     layerG,
     layerKey: { width: 0, height: 0, dpr: 0, theme: undefined },
+    box: { width, height },
     size: { width: 0, height: 0, dpr: 0 },
-    theme: editorTheme(ctx)
+    theme,
+    still: viewOf(paints),
+    moving: { ...viewOf(paints), nowMs: 0 },
+    base: viewOf("base")
   };
 }
 
@@ -317,7 +398,8 @@ function makeSurface(
  * @param canvas - The strip's canvas; null before it mounted.
  * @param graph - The painter state made with the canvas.
  * @param makeLayer - Makes the offscreen canvas of the base layer (a document canvas by default).
- * @returns The cleanup: stops the loop and both intervals, drops the theme listener (idempotent).
+ * @returns The cleanup: stops the loop and both intervals, drops the theme and motion listeners and
+ * the size observer (idempotent).
  */
 export function startRepaint(
   ctx: RenderViewCtx,
@@ -337,12 +419,14 @@ export function startRepaint(
   const loop: { handle: number | undefined } = { handle: undefined };
   painters.set(graph, painter);
   watchFonts(strip, graph);
+  const motion = watchMotion();
+  const stopSize = watchSize(surface, strip);
 
   const isLive = (): boolean =>
     strip.windowAt !== undefined && performance.now() - strip.windowAt <= STALE_AFTER_MS;
-  const shouldRun = (): boolean => state.active && isTabVisible() && !isReducedMotion() && isLive();
+  const shouldRun = (): boolean => state.active && isTabVisible() && !motion.reduced && isLive();
   const paintStill = (): void => {
-    drawFrame(surface, strip, painter, isReducedMotion() ? undefined : movingNow(strip));
+    drawFrame(surface, strip, painter, motion.reduced ? undefined : movingNow(strip));
   };
   const frame = (): void => {
     loop.handle = undefined;
@@ -376,6 +460,8 @@ export function startRepaint(
     if (loop.handle !== undefined) cancelAnimationFrame(loop.handle);
     loop.handle = undefined;
     offTheme();
+    motion.stop();
+    stopSize();
     if (painters.get(graph) === painter) painters.delete(graph);
     if (strip.stopPaint === stop) strip.stopPaint = undefined;
   };

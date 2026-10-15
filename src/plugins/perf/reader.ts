@@ -14,8 +14,10 @@ import {
   GPU_BIT,
   hasWork,
   isNotableGap,
+  nearestRank,
   promoteSustainedGpu,
   REST,
+  sortHead,
   spikeCause,
   spreadGpu
 } from "./protocol";
@@ -44,6 +46,9 @@ const BREAK_GAP_MS = 900;
 
 /** The window's "this second", ms. */
 const SECOND_MS = 1000;
+
+/** The headline percentile of the awake frame times. */
+const AWAKE_P90 = 0.9;
 
 /**
  * The frame time of a row: the gap before it (the cap when there is no gap), or its work plus its
@@ -96,9 +101,9 @@ function dropRows(state: PerfState, from: number): void {
 
 /**
  * The rest of scratch row `index` as window row `row` (spec 03 delta 2026-10-15): resting when the
- * engine ran it under its idle cap or rendered it on demand and drew nothing; a break when a gap of
- * 900 ms or more came without work (the browser made no frame); the wake when the row before rested;
- * else awake.
+ * engine ran it under its idle cap or rendered it on demand and drew nothing; the wake when the row
+ * before rested, however long the engine slept (delta item 10: a wake wins); a break when a gap of
+ * 900 ms or more came without work while awake (the browser made no frame); else awake.
  *
  * @param state - perf's state.
  * @param row - The window row it becomes.
@@ -110,10 +115,10 @@ function restOf(state: PerfState, row: number, index: number): RestState {
   const isIdleCap = scratch.idle[index] === 1;
   const isStillDemand = scratch.drawn[index] === 0 && scratch.reason[index] === REASON_NONE;
   if (isIdleCap || isStillDemand) return REST.idle;
+  if (row > 0 && window.rest[row - 1] === REST.idle) return REST.woke;
   const isBreak =
     cell(scratch.gapMs, index) >= BREAK_GAP_MS && !hasWork(ringCauses(cell(scratch.causes, index)));
-  if (isBreak) return REST.break;
-  return row > 0 && window.rest[row - 1] === REST.idle ? REST.woke : REST.awake;
+  return isBreak ? REST.break : REST.awake;
 }
 
 /**
@@ -192,6 +197,19 @@ function rowBudgetMs(state: PerfState, index: number, rateMs: number, rest: Rest
 }
 
 /**
+ * Follows the current rest: its first frame's time when a row turns idle after one that was not,
+ * kept while the rows stay idle, forgotten at the first row that is not idle.
+ *
+ * @param state - perf's state.
+ * @param rest - The new row's rest.
+ * @param t - The new row's page-clock start, ms.
+ */
+function noteRest(state: PerfState, rest: RestState, t: number): void {
+  if (rest === REST.idle) state.idleSinceT ??= t;
+  else state.idleSinceT = undefined;
+}
+
+/**
  * Writes scratch row `index` as window row `row`.
  *
  * @param state - perf's state.
@@ -220,6 +238,7 @@ function writeRow(state: PerfState, row: number, index: number, written: number)
 
   window.frame[row] = cell(scratch.frame, index);
   window.t[row] = cell(scratch.t, index);
+  noteRest(state, rest, cell(scratch.t, index));
   window.drawn[row] = cell(scratch.drawn, index);
   window.rest[row] = rest;
   writeCauses(window, row, heard, 0);
@@ -376,6 +395,27 @@ function indexSpikes(state: PerfState): void {
 }
 
 /**
+ * Step 7b: the p90 frame time of the window's awake frames (nearest rank), sorted in the window's
+ * scratch; kept from the last read that had an awake frame while the window holds none (delta item
+ * 2: p90 shows the last awake window). Allocation-free.
+ *
+ * @param state - perf's state.
+ */
+function updateAwakeP90(state: PerfState): void {
+  const { window } = state;
+  const { sorted } = window;
+  let count = 0;
+  for (let row = 0; row < window.count; row += 1) {
+    if (window.rest[row] !== REST.awake) continue;
+    sorted[count] = cell(window.ms, row);
+    count += 1;
+  }
+  if (count === 0) return;
+  sortHead(sorted, count);
+  state.awakeP90Ms = nearestRank(sorted, count, AWAKE_P90);
+}
+
+/**
  * Step 8: the time axis, the GPU timer flag and the fps of the last second.
  *
  * @param state - perf's state.
@@ -444,7 +484,10 @@ function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig
   const refreshed = refreshPartial(state, ring);
   const promoted = promoteSustainedGpu(state.window);
   const rowsChanged = reset || appended || trimmed || refreshed || promoted;
-  if (rowsChanged) spreadGpu(state.window, state.gpuSorted);
+  if (rowsChanged) {
+    spreadGpu(state.window);
+    updateAwakeP90(state);
+  }
   indexSpikes(state);
   const scalars = updateScalars(state, config.windowMs);
   state.measuring = true;

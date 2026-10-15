@@ -4,7 +4,7 @@ import { msToPx } from "../../../perf/graph";
 import { openOverlay, setTab } from "../../modes";
 import { overlayCss } from "../../styles";
 import { PAINT_MS } from "../../types";
-import { createOctx, part, started, stopped, type TestOctx } from "../helpers";
+import { createOctx, part, started, stopped, type TestOctx, windowOf } from "../helpers";
 
 // Delta 2026-10-15 (spec 08): the graph scrolls by one compositor slide per tick; paint stays
 // at most 4 Hz.
@@ -245,5 +245,38 @@ describe("the fixed canvas (tape, readout, now, caption, legend: it does not sli
     expect(octx.state.fixedGraph).toBeUndefined();
     setTab(octx, "frames");
     expect(octx.state.fixed?.element).toBe(fixed());
+  });
+});
+
+describe("the slide's bounds (review W3) and the pointer in the well (review I8)", () => {
+  it("an empty window slides nothing (bug: startMs = endMs = 0 made a 59 000 px canvas)", () => {
+    octx = createOctx({ remember: false });
+    Object.assign(octx.graph, { msToPx });
+    octx.perf.window = { ...windowOf([]), startMs: 0, endMs: 0 };
+    started(octx);
+    openOverlay(octx);
+    const w = octx.state.canvas?.w ?? 0;
+    expect(octx.graph.paints.at(-1)).toMatchObject({ width: w, lead: 0 });
+    expect(canvas().style.getPropertyValue("transform")).toBe("translateX(0px)");
+  });
+
+  it("a slide never reaches past one well width (bug: a hostile window's scale sizing the canvas)", () => {
+    card(100_000);
+    const w = octx.state.canvas?.w ?? 0;
+    expect(octx.graph.paints.at(-1)).toMatchObject({ width: 2 * w, lead: w });
+    expect(canvas().style.getPropertyValue("transform")).toBe(`translateX(-${w}px)`);
+  });
+
+  it("a click is read from the well's padding box, inside its 1 px border (bug: every tap 1 px off)", () => {
+    card(0);
+    octx.graph.hitRow = 4;
+    const well = canvas().parentElement;
+    if (well === null) throw new Error("no well");
+    vi.spyOn(well, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 50, 200, 90));
+    Object.defineProperty(well, "clientLeft", { configurable: true, value: 1 });
+    Object.defineProperty(well, "clientTop", { configurable: true, value: 1 });
+    canvas().dispatchEvent(new MouseEvent("click", { clientX: 140, clientY: 120 }));
+    expect(octx.graph.hits.at(-1)).toBe(39);
+    expect(octx.state.probe.y).toBe(69);
   });
 });

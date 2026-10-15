@@ -222,7 +222,9 @@ function isRender(value: unknown): boolean {
 }
 
 /**
- * True for the device members the model and the about line read.
+ * True for the device members the model and the about line read; `browser` (game@0fda201) and
+ * `modelFrom` are text or null when present (review W5: a hostile `browser: {}` printed
+ * "Chrome [object Object]").
  *
  * @param value - `PerfSecond.device`, not null.
  * @returns Whether every read member has its type.
@@ -232,7 +234,9 @@ function isHeaderDevice(value: unknown): boolean {
     isObject(value) &&
     isText(value.userAgent) &&
     isTextOrNull(value.model) &&
-    isTextOrNull(value.webview)
+    isTextOrNull(value.webview) &&
+    (value.browser === undefined || isTextOrNull(value.browser)) &&
+    (value.modelFrom === undefined || isTextOrNull(value.modelFrom))
   );
 }
 

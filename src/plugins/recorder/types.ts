@@ -180,6 +180,12 @@ export type RecorderState = {
   readonly memory: LogStore;
   /** Every log the store holds, oldest first; the current one last. */
   files: LogFileInfo[];
+  /**
+   * Every name this recorder gave a log in this run, the pruned ones too: a new log never takes one
+   * (the computer keys a phone's logs by name, so a reused name would make the new log's lines look
+   * like the old log's). One short string per log started.
+   */
+  readonly named: Set<string>;
   /** Marks of the current (or last) log. */
   marks: LogMark[];
   /**

@@ -17,8 +17,8 @@ and 8) and ranks their causes: gpu › upload › compile › longFrame › js �
 - **Work decides.** A frame is a spike only for its own work over its budget: JS, a sustained GPU, or a long
   animation frame. Upload and compile only name the work; a gap or the `gc?` hint alone is never a spike.
 - **Rest.** Each row has a `rest` (`REST`): awake, idle (the engine's idle cap, or render on demand that drew
-  nothing), the wake after a rest (keeps its work, not its gap), or a break (a workless gap of 900 ms or more: the
-  browser made no frame). Idle rows and breaks are never spikes; only awake rows and wakes count in the fps.
+  nothing), the wake after a rest (keeps its work, not its gap; the first frame after a rest is the wake however
+  long the engine slept), or a break (a workless gap of 900 ms or more while awake: the browser made no frame). Idle rows and breaks are never spikes; only awake rows and wakes count in the fps.
 - **Vsync.** A gap counts only beyond 1.5 × max(budget, 1000 / display Hz): the gap bit of a shorter one is cleared.
   The display Hz is the `hz` the display announces (`PerfDisplay.hz` in the header and in each `display` event, one
   of which follows when the engine learns the panel's rate), else `time.rate().displayHz` (an older log).
@@ -54,7 +54,7 @@ A value out of range throws a `TypeError` at `createApp` (the state is checked b
 |---|---|
 | `status()` | `{ state: "on", lost, gpuTimer }`, `{ state: "waiting" }` (a monitor with an empty ring) or `{ state: "off", reason }` (`"no-renderer"`, `"no-monitor"`). |
 | `readWindow(visit)` | Calls `visit` once, synchronously, with perf's live window as a read-only `PerfWindowView`. Valid only inside `visit`: read it, never write it, never keep it. Allocation-free; a throwing visitor reaches the caller and changes nothing. |
-| `second()` | The pill and the counters: fps of the window's last second, spikes, the newest frame's budget, the rate (`fps`, `mode`, `reason`, `displayHz`, `switches`), `activity` (rest now and since when, idle frames and time, breaks, p90 of the awake frames), `gpuTime` (the window's GPU `p50Ms` and `p90Ms`, null without a GPU timer), `renderer.stats()` (`passesMax`, `kept`, `redraws`, `rebuilds`, null where the engine does not answer), the newest sample and the screen facts. Cached until the next read and frozen with its parts. |
+| `second()` | The pill and the counters: fps of the window's last second, spikes, the newest frame's budget, the rate (`fps`, `mode`, `reason`, `displayHz`, `switches`), `activity` (rest now and since when, steady for the whole rest; idle frames and time; breaks; p90 of the awake frames, the last awake window's during a long rest), `gpuTime` (the window's GPU `p50Ms` and `p90Ms`, null without a GPU timer), `renderer.stats()` (`passesMax`, `kept`, `redraws`, `rebuilds`, null where the engine does not answer), the newest sample and the screen facts. Cached until the next read and frozen with its parts. |
 | `spikes({ lastMs? })` | The spikes of the window, oldest first, each with its primary cause and a one-line `why`. |
 | `spike(frame)` | The record of one spike: the ring's numbers (or the engine spike line's once the slot was overwritten), the rate switch, the game's frame events (`overlay`, `warm` of the frame, `pool-trim` of the frame or the one before) and the spike line as `detail` once it arrived. |
 | `monitor()` | The monitor, for the recorder; `undefined` while off. |

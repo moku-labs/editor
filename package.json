@@ -67,7 +67,7 @@
   "peerDependencies": {
     "@moku-labs/common": "^0.3.4",
     "@moku-labs/core": "^1.7.1",
-    "@moku-labs/game": ">=0.13.1",
+    "@moku-labs/game": ">=0.15.0",
     "typescript": ">=5.5"
   },
   "dependencies": {
@@ -84,7 +84,7 @@
     "@moku-labs/ci": "1.5.7",
     "@moku-labs/common": "0.3.10",
     "@moku-labs/core": "1.7.6",
-    "@moku-labs/game": "https://pkg.pr.new/@moku-labs/game@0fda201361446dffef850f57fdeb409702b383bd",
+    "@moku-labs/game": "^0.15.0",
     "@playwright/test": "1.63.0",
     "@types/bun": "1.4.2",
     "@vitest/coverage-istanbul": "4.0.18",

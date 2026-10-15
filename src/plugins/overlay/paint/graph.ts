@@ -86,6 +86,22 @@ function finiteMs(ms: number | undefined): number | undefined {
 }
 
 /**
+ * The slide of a paint: one tick's distance at the window's scale, rounded; none under reduced
+ * motion, for an empty window or one without a time span, and never more than the well's width
+ * (review W3: an empty window's scale made a 59 000 px canvas).
+ *
+ * @param window - The window.
+ * @param canvas - The plot canvas.
+ * @param graph - The painter seam.
+ * @returns CSS px, 0 to the well's width.
+ */
+function slideLead(window: PerfWindowView, canvas: GraphCanvas, graph: GraphSeam): number {
+  if (!canvas.motion || window.count === 0 || window.endMs <= window.startMs) return 0;
+  const lead = Math.round(graph.msToPx(window, canvas.w, false, PAINT_MS));
+  return Number.isFinite(lead) ? Math.min(Math.max(lead, 0), canvas.w) : 0;
+}
+
+/**
  * Makes the four visitors of a domain context. Each reads its inputs from the state and writes its
  * answer there; none keeps the window.
  *
@@ -102,9 +118,8 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     if (state.graph === undefined || state.graph.flagRow.length < window.capacity) {
       state.graph = graph.createState(window.capacity);
     }
-    // The slide: one tick's distance at this scale, painted past the well's right edge (none under
-    // reduced motion).
-    const lead = canvas.motion ? Math.round(graph.msToPx(window, canvas.w, false, PAINT_MS)) : 0;
+    // The slide: one tick's distance at this scale, painted past the well's right edge.
+    const lead = slideLead(window, canvas, graph);
     const width = canvas.w + lead;
     // Skip a paint that would draw the same: window version, selection, size, dpr (a paused game costs nothing).
     const row = state.selected === undefined ? -1 : rowOfFrame(window, state.selected);

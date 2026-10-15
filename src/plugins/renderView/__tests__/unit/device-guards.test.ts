@@ -78,6 +78,34 @@ describe("isPerfSecond", () => {
   });
 });
 
+describe("isPerfSecond: the header device (review W5)", () => {
+  it("refuses a device whose browser or modelFrom is not text or null (bug: 'Chrome [object Object]')", () => {
+    const device = (toWireValue(secondOf()) as { [key: string]: object }).device ?? {};
+    const bad: object[] = [
+      { device: { ...device, browser: {} } },
+      { device: { ...device, browser: 155 } },
+      { device: { ...device, modelFrom: {} } },
+      { device: { ...device, modelFrom: 1 } }
+    ];
+    for (const patch of bad) {
+      expect(isPerfSecond(offShape(secondOf(), patch)), JSON.stringify(patch)).toBe(false);
+    }
+  });
+
+  it("accepts a device with browser and modelFrom as text or null, and one without them", () => {
+    const device = (toWireValue(secondOf()) as { [key: string]: object }).device ?? {};
+    const good: object[] = [
+      { device: { ...device, browser: "155" } },
+      { device: { ...device, browser: null, modelFrom: null } },
+      { device: { ...device, modelFrom: "shell" } },
+      { device: { ...device, modelFrom: undefined } }
+    ];
+    for (const patch of good) {
+      expect(isPerfSecond(offShape(secondOf(), patch)), JSON.stringify(patch)).toBe(true);
+    }
+  });
+});
+
 describe("isSpikeRecord", () => {
   it("accepts the demo record, with and without the engine's line", () => {
     expect(isSpikeRecord(toWireValue(recordOf()))).toBe(true);

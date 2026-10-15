@@ -7,7 +7,16 @@ import { REPAINT_MS, STALE_AFTER_MS, type StripCanvas, startRepaint } from "../.
 import { onWorkspaceChanged } from "../../handlers";
 import { startTracker } from "../../watch";
 import { DEVICE, deviceSession, secondOf, windowWire, wireJson } from "../device-fixtures";
-import { createCtx, GAME_01_SOURCES, manifestOf, type TestCtx } from "../helpers";
+import {
+  createCtx,
+  GAME_01_SOURCES,
+  type MotionQuery,
+  manifestOf,
+  type ResizeQueue,
+  stubMotion,
+  stubResizeObserver,
+  type TestCtx
+} from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // device/paint.ts, spec 09 Amendment 2026-10-15: on the tools page the strip
@@ -26,7 +35,9 @@ vi.mock("../../device/contract", async importOriginal => {
 let ctx: TestCtx;
 let frames: (() => void)[];
 let box: { width: number; height: number };
-let reduced: boolean;
+let motion: MotionQuery;
+let sizes: ResizeQueue;
+let rectReads: number;
 let baseCanvas: StripCanvas & { drawn: number };
 
 /**
@@ -44,18 +55,20 @@ function context() {
 }
 
 /**
- * The strip's canvas: a CSS box that the test changes, and its context.
+ * The strip's canvas: a canvas element whose CSS box the test sets and whose layout reads it
+ * counts, with the recording context.
  *
  * @returns The canvas.
  */
-function canvasOf(): StripCanvas {
+function canvasOf(): HTMLCanvasElement {
   const { g } = context();
-  return {
-    width: 0,
-    height: 0,
-    getBoundingClientRect: () => box,
-    getContext: () => g as never
+  const canvas = document.createElement("canvas");
+  canvas.getBoundingClientRect = () => {
+    rectReads += 1;
+    return box as DOMRect;
   };
+  canvas.getContext = (() => g) as never;
+  return canvas;
 }
 
 /**
@@ -102,7 +115,7 @@ beforeEach(() => {
   });
   frames = [];
   box = { width: 1000, height: 200 };
-  reduced = false;
+  rectReads = 0;
   const base = context();
   baseCanvas = {
     width: 0,
@@ -118,7 +131,8 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", () => {
     frames = [];
   });
-  vi.stubGlobal("matchMedia", () => ({ matches: reduced }));
+  motion = stubMotion(false);
+  sizes = stubResizeObserver();
   vi.stubGlobal("devicePixelRatio", 2);
   vi.mocked(paintGraph).mockReset();
   ctx = createCtx();
@@ -207,7 +221,7 @@ describe("the interpolated loop", () => {
     expect(views("base")).toHaveLength(2);
     expect(views("over").at(-1)?.look?.key).toBe("dark");
 
-    box = { width: 800, height: 200 };
+    sizes.resize(800, 200);
     runFrames();
     vi.stubGlobal("devicePixelRatio", 1);
     runFrames();
@@ -230,7 +244,7 @@ describe("the interpolated loop", () => {
   });
 
   it("reduced motion paints at most 4 times a second, in steps without a moving now", () => {
-    reduced = true;
+    motion.set(true);
     start();
     for (let tick = 0; tick < 20; tick += 1) {
       deliverWindow();
@@ -244,5 +258,69 @@ describe("the interpolated loop", () => {
       vi.mocked(paintGraph).mock.calls.filter(call => call[2].layer !== "base").length
     ).toBeLessThanOrEqual(4);
     expect(views("over").every(view => view.nowMs === undefined)).toBe(true);
+  });
+
+  it("turning reduced motion on stops the loop at the next frame, turning it off starts it again", () => {
+    start();
+    deliverWindow();
+    vi.advanceTimersByTime(REPAINT_MS);
+    expect(frames).toHaveLength(1);
+
+    motion.set(true);
+    runFrames();
+    expect(frames).toHaveLength(0);
+
+    motion.set(false);
+    deliverWindow();
+    vi.advanceTimersByTime(REPAINT_MS);
+    expect(frames).toHaveLength(1);
+  });
+});
+
+describe("a frame's cost (review W4)", () => {
+  it("a frame reads no layout and asks no media query: the size comes from a ResizeObserver", () => {
+    start();
+    deliverWindow();
+    vi.advanceTimersByTime(REPAINT_MS);
+    const reads = rectReads;
+    const queries = motion.calls();
+
+    runFrames();
+    runFrames();
+    runFrames();
+
+    expect(rectReads).toBe(reads);
+    expect(motion.calls()).toBe(queries);
+    expect(reads).toBeLessThanOrEqual(1);
+    expect(queries).toBeLessThanOrEqual(1);
+
+    sizes.resize(640, 180);
+    runFrames();
+    expect(views("over").at(-1)).toMatchObject({ width: 640, height: 180 });
+    expect(rectReads).toBe(reads);
+  });
+
+  it("every frame paints with the same view object", () => {
+    start();
+    deliverWindow();
+    vi.advanceTimersByTime(REPAINT_MS);
+
+    runFrames();
+    runFrames();
+    runFrames();
+
+    expect(views("over").length).toBeGreaterThanOrEqual(3);
+    expect(new Set(views("over")).size).toBe(1);
+  });
+
+  it("the cleanup drops the size observer and the motion listener", () => {
+    const stop = start();
+    expect(sizes.observed()).toBe(1);
+    expect(motion.listeners()).toBe(1);
+
+    stop();
+
+    expect(sizes.observed()).toBe(0);
+    expect(motion.listeners()).toBe(0);
   });
 });

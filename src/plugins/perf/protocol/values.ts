@@ -96,7 +96,10 @@ export type PerfRenderStats = {
 export type PerfActivity = {
   /** The newest frame rests: the engine's idle cap, or render on demand that drew nothing. */
   readonly idle: boolean;
-  /** Epoch ms of the first frame of the current rest (header.timeOrigin + t); null while awake or before a header. */
+  /**
+   * Epoch ms of the first frame of the current rest (header.timeOrigin + t), steady for the whole rest
+   * however long it lasts; null while awake or before a header.
+   */
   readonly idleSince: number | null;
   /** Resting frames in the window. */
   readonly idleFrames: number;
@@ -104,7 +107,10 @@ export type PerfActivity = {
   readonly idleMs: number;
   /** Breaks in the window: gaps of 900 ms or more without work, the browser made no frame. */
   readonly breaks: number;
-  /** p90 frame time of the awake frames of the window, ms; null without one. */
+  /**
+   * p90 frame time of the awake frames of the window, ms; while the window holds none (a long rest),
+   * the last awake window's; null before the first awake frame.
+   */
   readonly p90Ms: number | null;
 };
 

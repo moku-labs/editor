@@ -41,6 +41,27 @@ describe("perf on an idle real engine", () => {
     await game.stop();
   });
 
+  it("keeps idleSince and the last awake p90 through 10 s of rest, past the 6 s window (bug: idleSince drifting with the window's oldest row)", async () => {
+    const { game, editor, step } = await startPair({ onDemand: true });
+    runFor(step, 1000, 16.7);
+    vi.advanceTimersByTime(250);
+    const awakeP90 = editor.perf.second().activity?.p90Ms;
+    const since = new Set<number | null | undefined>();
+    for (let second = 0; second < 10; second += 1) {
+      runFor(step, 1000, 16.7);
+      vi.advanceTimersByTime(250);
+      if (editor.perf.second().activity?.idle === true) {
+        since.add(editor.perf.second().activity?.idleSince);
+      }
+    }
+    expect(since.size).toBe(1);
+    expect([...since][0]).toEqual(expect.any(Number));
+    expect(awakeP90).toEqual(expect.any(Number));
+    expect(editor.perf.second().activity?.p90Ms).toBe(awakeP90);
+    await editor.stop();
+    await game.stop();
+  });
+
   it("the wake after a rest makes no gap spike (the engine flags it)", async () => {
     const { game, editor, step } = await startPair({ onDemand: true });
     runFor(step, 4000, 16.7);

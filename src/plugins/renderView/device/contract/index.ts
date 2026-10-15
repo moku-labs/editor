@@ -10,6 +10,8 @@
 export type {
   CauseStyle,
   GraphContext2D,
+  GraphLayer,
+  GraphLook,
   GraphPalette,
   GraphState,
   GraphView

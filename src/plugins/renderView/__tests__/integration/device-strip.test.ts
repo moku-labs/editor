@@ -255,7 +255,7 @@ describe("renderView integration · the D1 device strip", () => {
       "the strip renders"
     );
     expect(q("[data-cell='engine']")?.textContent).toContain("STALE");
-    expect(q("[data-part='headline']")?.textContent).toContain("drawn / loop 54 / 60 @120 fps");
+    expect(q("[data-part='headline']")?.textContent).toContain("drawn / loop 54 / 60 @60 fps");
 
     // Next opens the oldest spike's record through editor.perf.spike.
     expect(app.renderView.stepSpike(1)).toBe(4572);

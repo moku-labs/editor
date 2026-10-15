@@ -456,6 +456,48 @@ describe("second()", () => {
     });
   });
 
+  it("keeps idleSince at the rest's first frame for 10 s of rest, while the window trims its rows (bug: idleSince moving 7.3 s during one rest)", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 1024 });
+    attach(perf.state, monitor);
+    commitFrames(monitor, 30, 0, 16.7);
+    readTick(perf.state, perf.config);
+    const since: (number | null | undefined)[] = [];
+    for (let second = 0; second < 10; second += 1) {
+      commitFrames(monitor, 30, 501 + second * 1002, 33.4, { idle: true, capMs: 33.33 });
+      readTick(perf.state, perf.config);
+      since.push(secondOf(perf.state).activity?.idleSince);
+    }
+    expect(perf.state.window.rest[0]).toBe(1);
+    expect(new Set(since)).toEqual(new Set([headerLine().timeOrigin + 501]));
+  });
+
+  it("starts a new idleSince at the next rest after the screen woke and worked (bug: the second rest dated from the first)", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 1024 });
+    attach(perf.state, monitor);
+    commitFrames(monitor, 10, 0, 33.4, { idle: true, capMs: 33.33 });
+    commitFrames(monitor, 10, 334, 16.7);
+    commitFrames(monitor, 10, 501, 33.4, { idle: true, capMs: 33.33 });
+    readTick(perf.state, perf.config);
+    expect(secondOf(perf.state).activity?.idleSince).toBe(headerLine().timeOrigin + 501);
+  });
+
+  it("keeps the last awake p90 while the window holds no awake frame (spec 03 delta item 2: p90 shows the last awake window)", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 1024 });
+    attach(perf.state, monitor);
+    for (let index = 0; index < 10; index += 1) {
+      monitor.commit({ t: index * 16.7, gapMs: 16.7, workMs: index >= 8 ? 30 : 3 });
+    }
+    readTick(perf.state, perf.config);
+    expect(secondOf(perf.state).activity?.p90Ms).toBe(30);
+    commitFrames(monitor, 240, 200, 33.4, { idle: true, capMs: 33.33 });
+    readTick(perf.state, perf.config);
+    expect(perf.state.window.rest[0]).toBe(1);
+    expect(secondOf(perf.state).activity?.p90Ms).toBe(30);
+  });
+
   it("is awake with no idle frames while the loop runs", () => {
     const { state, tick } = setup();
     tick();

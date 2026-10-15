@@ -89,7 +89,7 @@ describe("the build", () => {
 
 describe("the about line", () => {
   it("joins OS, WebView, the display's Hz and dpr", () => {
-    expect(aboutLine(secondOf())).toBe("Android 15, WebView 131, 120 Hz, dpr 2.81");
+    expect(aboutLine(secondOf())).toBe("Android 15, WebView 131, 60 Hz, dpr 2.81");
   });
 
   it("names the browser on a desktop or a Chrome tab, WebView only in a native shell or an Android WebView (bug: 'WebView 152' on a Mac)", () => {
@@ -104,13 +104,13 @@ describe("the about line", () => {
       modelFrom: null,
       webview: "152"
     };
-    expect(aboutLine({ ...base, device: desktop })).toBe("Chrome 152, 120 Hz, dpr 2.81");
+    expect(aboutLine({ ...base, device: desktop })).toBe("Chrome 152, 60 Hz, dpr 2.81");
     const chromeTab = { ...device, userAgent: device.userAgent.replace("; wv)", ")") };
     expect(aboutLine({ ...base, device: chromeTab })).toBe(
-      "Android 15, Chrome 131, 120 Hz, dpr 2.81"
+      "Android 15, Chrome 131, 60 Hz, dpr 2.81"
     );
     const shell = { ...chromeTab, modelFrom: "shell" as const };
-    expect(aboutLine({ ...base, device: shell })).toBe("Android 15, WebView 131, 120 Hz, dpr 2.81");
+    expect(aboutLine({ ...base, device: shell })).toBe("Android 15, WebView 131, 60 Hz, dpr 2.81");
   });
 
   it("names the browser from device.browser on an engine that writes it: WebView where webview is set, else Chrome, nothing on Safari (bug: no browser on a Mac now that webview is null there)", () => {
@@ -126,15 +126,15 @@ describe("the about line", () => {
       webview: null,
       browser: "155"
     };
-    expect(aboutLine({ ...base, device: mac })).toBe("Chrome 155, 120 Hz, dpr 2.81");
+    expect(aboutLine({ ...base, device: mac })).toBe("Chrome 155, 60 Hz, dpr 2.81");
     const webView = { ...device, webview: "131", browser: "131" };
     expect(aboutLine({ ...base, device: webView })).toBe(
-      "Android 15, WebView 131, 120 Hz, dpr 2.81"
+      "Android 15, WebView 131, 60 Hz, dpr 2.81"
     );
     const tab = { ...webView, webview: null };
-    expect(aboutLine({ ...base, device: tab })).toBe("Android 15, Chrome 131, 120 Hz, dpr 2.81");
+    expect(aboutLine({ ...base, device: tab })).toBe("Android 15, Chrome 131, 60 Hz, dpr 2.81");
     const safari = { ...mac, browser: null };
-    expect(aboutLine({ ...base, device: safari })).toBe("120 Hz, dpr 2.81");
+    expect(aboutLine({ ...base, device: safari })).toBe("60 Hz, dpr 2.81");
   });
 
   it("takes the Hz from the engine's display rate, never from the loop's ticks (bug: '2 Hz' on a throttled page)", () => {
@@ -168,7 +168,7 @@ describe("the headline", () => {
 
     expect(lines).toEqual([
       "Last 6 s from the phone, 6 spikes",
-      "drawn / loop 54 / 60 @120 fps",
+      "drawn / loop 54 / 60 @60 fps",
       "p90 frame 18.2 ms",
       "GPU p50 6.0 / p90 6.0 ms",
       "passes 6",
@@ -177,12 +177,12 @@ describe("the headline", () => {
     ]);
   });
 
-  it("the headline reads 'drawn / loop 54 / 60 @120 fps' with the suffix inside the drawn / loop span", () => {
+  it("the headline reads 'drawn / loop 54 / 60 @60 fps' with the suffix inside the drawn / loop span", () => {
     const strip = stripOf();
     const fps = headline(strip.second, strip.window, false)[1] ?? [];
 
-    expect(fps.map(run => run.text)).toEqual(["drawn / loop ", "54 / 60", " ", "@120", " fps"]);
-    expect(fps[3]).toEqual({ text: "@120", tone: "value", title: "120 fps, auto; display 120 Hz" });
+    expect(fps.map(run => run.text)).toEqual(["drawn / loop ", "54 / 60", " ", "@60", " fps"]);
+    expect(fps[3]).toEqual({ text: "@60", tone: "value", title: "60 fps, auto; display 60 Hz" });
   });
 
   it("the suffix @60 is amber with the fall-back title after a switch from 120", () => {
@@ -264,13 +264,13 @@ describe("the headline", () => {
     const clock = new Date(since).toTimeString().slice(0, 8);
 
     expect(textOf(headline(idle, strip.window, false)[1] ?? [])).toBe(
-      `drawn / loop idle since ${clock} @120`
+      `drawn / loop idle since ${clock} @60`
     );
     const unknownStart = secondOf({
       activity: { idle: true, idleSince: null, idleFrames: 3, idleMs: 100, breaks: 0, p90Ms: null }
     });
     expect(textOf(headline(unknownStart, strip.window, false)[1] ?? [])).toBe(
-      "drawn / loop idle @120"
+      "drawn / loop idle @60"
     );
   });
 
@@ -316,7 +316,7 @@ describe("More", () => {
     const text = textOf(moreText(secondOf(), "SM-A266B", true));
 
     expect(text).toBe(
-      "systems: frost-apply 2.1 · ripple 1.4 · glass 0.9 ms · filters 4 · kept 4 pictures, 0 retakes · passes max 3 · rate switches 1 · redraws 0 · rebuilds 0 · views 1 384 · heap 151 MB · insets t32 b24 l0 r0 · backend webgpu · canvas 1080 × 2340, scale 1.0 · device SM-A266B, 120 Hz, dpr 2.81"
+      "systems: frost-apply 2.1 · ripple 1.4 · glass 0.9 ms · filters 4 · kept 4 pictures, 0 retakes · passes max 3 · rate switches 0 · redraws 0 · rebuilds 0 · views 1 384 · heap 151 MB · insets t32 b24 l0 r0 · backend webgpu · canvas 1080 × 2340, scale 1.0 · device SM-A266B, 60 Hz, dpr 2.81"
     );
   });
 

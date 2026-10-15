@@ -96,6 +96,11 @@ export type PerfWindow = {
   readonly spikes: Uint16Array;
   /** Spikes in `spikes`. */
   spikeCount: number;
+  /**
+   * A sort scratch of `capacity` values for the window's percentiles (`spreadGpu`, the awake p90):
+   * made once with the window, so no read allocates. Not part of the view.
+   */
+  readonly sorted: Float64Array;
 };
 
 /**
@@ -292,7 +297,8 @@ export function createPerfWindow(capacity: number): PerfWindow {
     noise: new Uint8Array(capacity),
     cause: new Uint8Array(capacity),
     spikes: new Uint16Array(capacity),
-    spikeCount: 0
+    spikeCount: 0,
+    sorted: new Float64Array(capacity)
   };
 }
 
@@ -750,7 +756,7 @@ export function readWireWindow(value: Json, into: PerfWindow): boolean {
   into.startMs = startMs;
   into.endMs = wire.endMs;
   into.gpuTimer = wire.gpuTimer;
-  spreadGpu(into, new Float64Array(count));
+  spreadGpu(into);
   into.version += 1;
   return true;
 }
