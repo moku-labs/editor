@@ -5,24 +5,23 @@
  * reach `@moku-labs/game`, so no engine code enters the tools or server bundle.
  *
  * Where the engine exports a type with the shape spec 03 names, it is re-exported here unchanged
- * (the spec 21 rate types from its `Time` namespace). Where the engine does not export it yet
- * (spec 22 overlay, spec 23 kept pictures, spec 25 pool trim, spec 27 warm-up, the editor's
- * `devtools` detail), the type is a structural copy; where the engine exports a type but a later
- * engine spec adds fields to it, the type is the engine's own with those fields added as optional.
- * `engine-contract.test.ts` compares every copy and every addition with the engine.
+ * (the spec 21 rate types from its `Time` namespace, spec 23's `KeptStats` from `Renderer`). Where
+ * the engine does not export it yet (spec 22 overlay, spec 25 pool trim, spec 27 warm-up, the
+ * editor's `devtools` detail), the type is a structural copy; where the engine exports a type but a
+ * later engine spec adds members to it (the `pool-trim` and `warm` event names, spec 26's
+ * `redraws` / `rebuilds`), the editor adds them. `engine-contract.test.ts` compares every copy and
+ * every addition with the engine.
  */
 import type {
-  FrameRecord as EngineFrameRecord,
   PerfEventLine as EnginePerfEventLine,
   PerfEventName as EnginePerfEventName,
-  PerfMeasured as EnginePerfMeasured,
-  PerfSampleLine as EnginePerfSampleLine,
-  PerfSpikeLine as EnginePerfSpikeLine,
   FrameRing,
   PerfCollectorLine,
   PerfHeaderLine,
   PerfLongFrameLine,
   PerfMarkLine,
+  PerfSampleLine,
+  PerfSpikeLine,
   PerfStartupLine,
   PerfThermalLine,
   Renderer,
@@ -34,6 +33,7 @@ export type {
   FrameColumns,
   FrameReadout,
   FrameReadResult,
+  FrameRecord,
   FrameRing,
   LongFrameEntry,
   PassKind,
@@ -46,6 +46,9 @@ export type {
   PerfHeaderLine,
   PerfLongFrameLine,
   PerfMarkLine,
+  PerfMeasured,
+  PerfSampleLine,
+  PerfSpikeLine,
   PerfStartupLine,
   PerfThermalLine
 } from "@moku-labs/game";
@@ -91,17 +94,6 @@ export type PassColumns = FrameRing["passes"];
  * ```
  */
 export type ThermalReading = Time.ThermalReading;
-
-/**
- * What a build and backend measure, listed in the header (11:938-940): the engine's union plus
- * `"kept"` (addendum 3B/4 item 4, spec 23 P12.2; not in the engine yet).
- *
- * @example
- * ```ts
- * const measured: PerfMeasured[] = ["gpu", "passes", "draws", "kept"];
- * ```
- */
-export type PerfMeasured = EnginePerfMeasured | "kept";
 
 /**
  * The engine's frame-rate mode (spec 21 G1.3, `Time.RateMode`): `"fixed"` (`maxFps`), `"auto"` (the
@@ -157,46 +149,6 @@ export type FrameRate = Time.FrameRate;
 export type RateChange = Time.RateChange;
 
 /**
- * One second of the loop (11:977-1004): the engine's sample plus `kept`, the kept pictures of the
- * second (addendum 3B/4 item 4, spec 23 P12.2; optional until the engine writes it).
- *
- * @example
- * ```ts
- * // collector/report: the kept MB of a screen, from sample.kept when the engine writes it.
- * const keptMb = sample.kept ? sample.kept.mb : sample.textures.kept; // 6.5
- * ```
- */
-export type PerfSampleLine = EnginePerfSampleLine & {
-  kept?: { pictures: number; mb: number; retakes: number; refreshes: number } | null;
-};
-
-/**
- * One frame with everything known about it (11:1014-1027, addendum 11:1786-1789): the engine's frame
- * record plus `kept`, the kept pictures drawn and their takes in the frame (addendum 3B/4 item 4,
- * spec 23 P12.2; optional until the engine writes it).
- *
- * @example
- * ```ts
- * frameAt(app.renderer.monitor.frames(), 0)?.budgetMs; // 8.33 at 120 fps
- * ```
- */
-export type FrameRecord = EngineFrameRecord & {
-  kept?: { pictures: number; retakes: number } | null;
-};
-
-/**
- * A frame over the budget, with everything known about it (11:1034-1044): the engine's spike line
- * whose `frame` is the editor's `FrameRecord`.
- *
- * @example
- * ```ts
- * // perf keeps the 64 newest; a record shows the passes with their labels.
- * spikeLine.passes.map(pass => pass.label); // ["frost", null]
- * ```
- */
-export type PerfSpikeLine = Omit<EnginePerfSpikeLine, "frame"> & { frame: FrameRecord };
-
-/**
  * The names of event lines after blocks 3B and 4 (11:1052-1055, addendum 3B/4 item 1): the engine's
  * union plus `"pool-trim"` (spec 25 M1.8) and `"warm"` (spec 27 P2.3.8), not in the engine yet.
  * `overlay` is the game's overlays only; the editor's own window is `devtools`.
@@ -221,7 +173,7 @@ export type PerfEventLine = Omit<EnginePerfEventLine, "name"> & { name: PerfEven
 
 /**
  * One line of the performance log, v1 (11:932-934): one JSON object per line of a `.jsonl` file.
- * The engine's nine kinds, with the editor's header, sample and event additions.
+ * The engine's nine kinds, with the editor's event names.
  *
  * @example
  * ```ts
@@ -299,29 +251,30 @@ export type WarmDetail = { draws: number };
 export type DevtoolsDetail = { mode: "hidden" | "pill" | "card"; tab: string };
 
 /**
- * Kept pictures of the last drawn frame (spec 23 P12.1): pictures drawn as one texture, the MB their
- * textures hold, and retakes in the last full second. Structural.
+ * Kept pictures of the last drawn frame (spec 23 P12.1, `Renderer.KeptStats`): pictures drawn as one
+ * texture, the MiB their textures hold, and the pictures taken in the last full second.
  *
  * @example
  * ```ts
  * const kept: KeptStats = { pictures: 1, mb: 1.4, retakes: 0 };
  * ```
  */
-export type KeptStats = { pictures: number; mb: number; retakes: number };
+export type KeptStats = Renderer.KeptStats;
 
 /**
- * The members of the engine's `RenderStats` perf reads (11 R12.2, addendum 3B/4 item 3):
- * `renderPasses` is the engine's; `renderPassesMax` and `kept` (spec 23) and `redraws` /
- * `rebuilds` (spec 26, dev or agent builds only) are not in the engine yet.
+ * The members of the engine's `RenderStats` perf reads (11 R12.2, addendum 3B/4 item 3): the
+ * engine's `renderPasses`, `renderPassesMax` and `kept` (spec 23), plus `redraws` / `rebuilds`
+ * (spec 26, dev or agent builds only; not in the engine yet).
  *
  * @example
  * ```ts
- * const stats: RenderStatsLike = { renderPasses: 3, renderPassesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 };
+ * const stats: RenderStatsLike = { renderPasses: 1, renderPassesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 };
  * ```
  */
-export type RenderStatsLike = Pick<Renderer.RenderStats, "renderPasses"> & {
-  renderPassesMax: number;
-  kept: KeptStats;
+export type RenderStatsLike = Pick<
+  Renderer.RenderStats,
+  "renderPasses" | "renderPassesMax" | "kept"
+> & {
   redraws?: number;
   rebuilds?: number;
 };

@@ -170,7 +170,7 @@ export const TABS = `
     [data-part="code"] { color: var(--measured); font: 600 52px/1 var(--font-cond); letter-spacing: .12em; }
     [data-pairing] p { color: var(--ink-2); font: 500 12.5px/1.3 var(--font-text); }
     [data-pairing] p b { display: block; color: var(--caution); font-family: var(--font-cond); font-weight: 600; }
-    [data-caution] {
+    [role="tabpanel"][data-tab="link"] [data-caution] {
       display: flex;
       align-items: flex-start;
       gap: 8px;
@@ -180,8 +180,8 @@ export const TABS = `
       border-radius: 3px;
       background: var(--off-ground);
     }
-    [data-caution] p { color: var(--ink); font: 500 12px/1.3 var(--font-text); }
-    [data-caution] b { color: var(--caution); font-family: var(--font-cond); font-weight: 600; }
+    [role="tabpanel"][data-tab="link"] [data-caution] p { color: var(--ink); font: 500 12px/1.3 var(--font-text); }
+    [role="tabpanel"][data-tab="link"] [data-caution] b { color: var(--caution); font-family: var(--font-cond); font-weight: 600; }
     [data-part="live"] {
       display: flex;
       align-items: center;

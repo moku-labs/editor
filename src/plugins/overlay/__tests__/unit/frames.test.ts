@@ -58,6 +58,31 @@ describe("counterCells", () => {
     expect(cell(compact, "fps").rate?.text).toBe("@120");
   });
 
+  it("the compact card clips 57 / 58 @60 fps (there the suffix rides the label line)", () => {
+    const second = secondOf({
+      fps: { loop: 58, drawn: 57 },
+      rate: { fps: 60, mode: "auto", reason: "missed", displayHz: 120, switches: 1 }
+    });
+    expect(cell(counterCells(second, 6, true, true), "fps")).toMatchObject({
+      label: "fps",
+      value: "57 / 58",
+      unit: "",
+      ratePlace: "label",
+      title: "drawn / loop · 60 fps, auto (missed); display 120 Hz",
+      rate: { text: "@60", caution: true }
+    });
+    expect(cell(counterCells(second, 6, false, true), "fps")).toMatchObject({
+      label: "drawn / loop",
+      title: "60 fps, auto (missed); display 120 Hz"
+    });
+    const unknown = secondOf({
+      rate: { fps: null, mode: null, reason: null, displayHz: null, switches: 0 }
+    });
+    expect(cell(counterCells(unknown, 6, true, true), "fps").title).toBe("drawn / loop");
+    expect(cell(counterCells(second, 6, false, true), "fps").ratePlace).toBe("value");
+    expect(cell(counterCells(second, undefined, false, false), "fps").ratePlace).toBe("value");
+  });
+
   it("the @ suffix shows the display Hz instead of the loop's rate", () => {
     const second = secondOf({
       rate: { fps: 60, mode: "auto", reason: "missed", displayHz: 120, switches: 1 }

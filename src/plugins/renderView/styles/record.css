@@ -42,20 +42,20 @@
 
   [data-part="record-id"] {
     display: flex;
-    flex: 1;
+    flex: 0 1 auto;
     flex-direction: column;
     min-inline-size: 0;
     margin-inline-start: 3px;
   }
 
   [data-part="record-id"] > b {
-    font: 600 16px var(--strip-cond);
+    font: 600 16px / 1.15 var(--strip-cond);
   }
 
   [data-part="record-id"] > span {
     overflow: hidden;
     color: var(--strip-ink-2);
-    font: 500 11.5px var(--strip-text);
+    font: 500 11.5px / 1.15 var(--strip-cond);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -64,6 +64,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    margin-inline-start: auto;
   }
 
   [data-part="record-nav"] > button {
@@ -71,6 +72,7 @@
   }
 
   [data-part="record-nav"] > [data-part="counter"] {
+    block-size: auto;
     min-inline-size: 30px;
   }
 
@@ -90,7 +92,7 @@
   }
 
   [data-part="word"] {
-    flex: 1;
+    flex: 0 1 auto;
     min-inline-size: 0;
     overflow: hidden;
     font: 600 20px / 1 var(--strip-cond);
@@ -101,11 +103,13 @@
   [data-part="numbers"] {
     display: flex;
     flex: none;
+    margin-inline-start: auto;
     flex-direction: column;
     gap: 2px;
     align-items: end;
     color: var(--strip-ink-2);
     font: 500 12px / 1.05 var(--strip-cond);
+    font-variant-numeric: tabular-nums;
   }
 
   [data-part="numbers"] b {
@@ -114,6 +118,7 @@
 
   [data-part="numbers"] [data-part="ms"] {
     font-size: 23px;
+    line-height: 1;
   }
 
   [data-part="numbers"][data-severity="red"] b:not([data-part="budget"]) {
@@ -173,6 +178,7 @@
     gap: 5px;
     block-size: 15px;
     font: 500 12px / 15px var(--strip-cond);
+    font-variant-numeric: tabular-nums;
   }
 
   [data-part="bar-row"] > [data-part="label"],

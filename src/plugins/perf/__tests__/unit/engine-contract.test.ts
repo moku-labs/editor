@@ -20,6 +20,7 @@ import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import type {
   FrameRate,
   FrameRecord,
+  KeptStats,
   MonitorLike,
   PerfEventLine,
   PerfEventName,
@@ -40,8 +41,8 @@ import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } fro
 // The editor's view of the engine against the engine itself (spec 03 § Against
 // the shipped engine): every type perf/protocol keeps or extends, the editor
 // constants, and the fake monitor's ring read by the engine's own frameAt.
-// Built against the engine PR preview: spec 21 (rate) is in it; 22 (overlay
-// detail), 23 (kept), 25 (pool-trim), 26 (redraws), 27 (warm) are not yet.
+// Built against the engine PR preview: specs 21 (rate) and 23 (kept) are in it;
+// 22 (overlay detail), 25 (pool-trim), 26 (redraws), 27 (warm) are not yet.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("the types perf/protocol extends", () => {
@@ -63,8 +64,7 @@ describe("the types perf/protocol extends", () => {
     expectTypeOf<Exclude<PerfEventName, EngineEventName>>().toEqualTypeOf<"pool-trim" | "warm">();
     expectTypeOf<Exclude<EngineEventName, PerfEventName>>().toEqualTypeOf<never>();
     expectTypeOf<"devtools" | "overlay" | "rate">().toExtend<EngineEventName>();
-    expectTypeOf<Exclude<PerfMeasured, EngineMeasured>>().toEqualTypeOf<"kept">();
-    expectTypeOf<Exclude<EngineMeasured, PerfMeasured>>().toEqualTypeOf<never>();
+    expectTypeOf<PerfMeasured>().toEqualTypeOf<EngineMeasured>();
     expect(ENGINE_GAP_BUCKETS).toBe(PERF_GAP_BUCKETS);
   });
 
@@ -79,15 +79,27 @@ describe("the types perf/protocol extends", () => {
     expect(PERF_LOG_VERSION).toBe(1);
   });
 
-  it("marks the fields still pending in the engine (specs 23, 25, 26, 27); when one lands this fails and the addition is dropped", () => {
-    expectTypeOf<"kept" extends keyof EngineSampleLine ? true : false>().toEqualTypeOf<false>();
-    expectTypeOf<"kept" extends keyof EngineFrameRecord ? true : false>().toEqualTypeOf<false>();
-    expectTypeOf<
-      "renderPassesMax" extends keyof Renderer.RenderStats ? true : false
-    >().toEqualTypeOf<false>();
-    expectTypeOf<"kept" extends keyof Renderer.RenderStats ? true : false>().toEqualTypeOf<false>();
+  it("takes the spec 23 kept fields from the engine: sample, frame record, spike line, measures, KeptStats, stats() (bug: a kept counter read with another shape)", () => {
+    expectTypeOf<PerfSampleLine>().toEqualTypeOf<EngineSampleLine>();
+    expectTypeOf<FrameRecord>().toEqualTypeOf<EngineFrameRecord>();
+    expectTypeOf<PerfSpikeLine>().toEqualTypeOf<EngineSpikeLine>();
+    expectTypeOf<KeptStats>().toEqualTypeOf<Renderer.KeptStats>();
+    expectTypeOf<RenderStatsLike["kept"]>().toEqualTypeOf<Renderer.RenderStats["kept"]>();
+    expectTypeOf<RenderStatsLike["renderPassesMax"]>().toEqualTypeOf<
+      Renderer.RenderStats["renderPassesMax"]
+    >();
+    expect(PHASES).toHaveLength(6);
+  });
+
+  it("marks the fields still pending in the engine (specs 25, 26, 27; 22 O10.2 has no engine type to check); when one lands this fails and the addition is dropped", () => {
     expectTypeOf<
       "redraws" extends keyof Renderer.RenderStats ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      "rebuilds" extends keyof Renderer.RenderStats ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      "pool-trim" | "warm" extends EngineEventName ? true : false
     >().toEqualTypeOf<false>();
     expect(PHASES).toHaveLength(6);
   });
@@ -148,5 +160,14 @@ describe("the editor constants against the engine's frameAt", () => {
     expect(ring.columns.frame[3 % ring.capacity]).toBe(frame);
     expect([ring.newest, ring.size, ring.written]).toEqual([3, 1, 4]);
     expect(frameAt(ring, 0)?.frame).toBe(frame);
+  });
+
+  it("reads the fake ring's kept and retakes columns as the engine's frame record does (spec 23 P12.2)", () => {
+    const monitor = createFakeMonitor({ capacity: 4 });
+    monitor.commit({ t: 0 });
+    expect(frameAt(monitor.frames(), 0)?.kept).toBeNull();
+    monitor.commit({ t: 16, kept: 2, retakes: 1 });
+    expect(frameAt(monitor.frames(), 0)?.kept).toEqual({ pictures: 2, retakes: 1 });
+    expect(frameAt(monitor.frames(), 0)?.reason).toBeNull();
   });
 });

@@ -25,10 +25,13 @@ const RESET = `
 }`;
 
 /**
- * The utilities layer: the focus ring and reduced motion (no slide).
+ * The utilities layer: tabular numerals on every element (a \`font\` shorthand in the components
+ * layer resets \`font-variant-numeric\`, so the host's value alone does not reach the numbers), the
+ * focus ring and reduced motion (no slide).
  */
 const UTILITIES = `
 @layer utilities {
+  * { font-variant-numeric: tabular-nums; }
   :focus-visible { outline: 2px solid var(--measured); outline-offset: 1px; }
   @media (prefers-reduced-motion: reduce) {
     [data-overlay] { animation: none; }

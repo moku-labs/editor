@@ -38,7 +38,9 @@ function cellOf(
   key: CounterCell["key"],
   label: string,
   value: string,
-  extra: Partial<Pick<CounterCell, "unit" | "span" | "caution" | "rate">> = {}
+  extra: Partial<
+    Pick<CounterCell, "unit" | "span" | "caution" | "rate" | "ratePlace" | "title">
+  > = {}
 ): CounterCell {
   return {
     key,
@@ -47,7 +49,9 @@ function cellOf(
     unit: extra.unit ?? "",
     span: extra.span ?? 4,
     caution: extra.caution ?? false,
-    rate: extra.rate
+    rate: extra.rate,
+    ratePlace: extra.ratePlace ?? "value",
+    title: extra.title ?? extra.rate?.title
   };
 }
 
@@ -114,16 +118,27 @@ function textureText(second: PerfSecond): string {
   return `${wholeText(textures.art)} / ${wholeText(textures.targets)} / ${wholeText(kept)}`;
 }
 
+/** The drawn / loop cell's full name, kept in the compact cell's title. */
+const DRAWN_LOOP = "drawn / loop";
+
 /**
- * The drawn / loop cell with its rate suffix.
+ * The drawn / loop cell with its rate suffix after the value on the wide card. On the compact card
+ * (decision "Compact card: the rate suffix moves to the label line", option 1; design check P7) the
+ * value is the two numbers alone, the label line reads "fps" with the suffix after it, and the
+ * cell's title carries "drawn / loop" and the mode.
  *
  * @param second - perf's second.
+ * @param compact - The compact card.
  * @returns The cell.
  */
-function fpsCell(second: PerfSecond): CounterCell {
-  return cellOf("fps", "drawn / loop", `${second.fps.drawn} / ${second.fps.loop}`, {
-    unit: "fps",
-    rate: rateSuffix(second.rate)
+function fpsCell(second: PerfSecond, compact: boolean): CounterCell {
+  const value = `${second.fps.drawn} / ${second.fps.loop}`;
+  const rate = rateSuffix(second.rate);
+  if (!compact) return cellOf("fps", DRAWN_LOOP, value, { unit: "fps", rate });
+  return cellOf("fps", "fps", value, {
+    rate,
+    ratePlace: "label",
+    title: rate === undefined ? DRAWN_LOOP : `${DRAWN_LOOP} · ${rate.title}`
   });
 }
 
@@ -146,7 +161,7 @@ export function counterCells(
   const sample = second.sample;
   const p90 = sample?.gapMs?.p90;
   const first = [
-    fpsCell(second),
+    fpsCell(second, compact),
     cellOf("p90", "p90 frame", oneDecimal(p90), {
       unit: "ms",
       caution: typeof p90 === "number" && p90 > second.budgetMs

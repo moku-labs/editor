@@ -131,7 +131,7 @@ export const GRAPH_FONTS = {
     tape: `600 11px ${FAMILY}`,
     readout: `600 13.5px ${FAMILY}`,
     axis: `500 11px ${FAMILY}`,
-    rate: `600 10px ${FAMILY}`
+    rate: `600 11px ${FAMILY}`
   },
   wide: {
     flag: `600 12px ${FAMILY}`,

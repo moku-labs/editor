@@ -71,6 +71,10 @@ export type CounterCell = {
   readonly span: 3 | 4 | 6;
   readonly caution: boolean;
   readonly rate: RateSuffix | undefined;
+  /** Where the rate suffix sits: after the value, or on the label line (the compact card, where the value cell is too narrow). */
+  readonly ratePlace: "value" | "label";
+  /** The cell's tooltip: the rate's mode; on the compact card also the "drawn / loop" its short label leaves out. */
+  readonly title: string | undefined;
 };
 
 /**

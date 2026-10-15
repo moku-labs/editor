@@ -261,7 +261,8 @@
     place-items: center;
     block-size: 22px;
     color: var(--strip-ink-2);
-    font: 600 12px var(--strip-cond);
+    font: 600 12px / 1 var(--strip-cond);
+    font-variant-numeric: tabular-nums;
   }
 
   [data-part="graph"] {
@@ -311,6 +312,10 @@
     cursor: pointer;
   }
 
+  [data-action="more"] > b {
+    font: 600 15px / 1 var(--strip-cond);
+  }
+
   [data-part="more"] {
     min-inline-size: 0;
     overflow: hidden;
@@ -335,6 +340,20 @@
     align-items: center;
     gap: 4px;
     white-space: nowrap;
+  }
+
+  /* A swatch sits 5 px before its word; 20 px more (an 8 px spacer and its 12 px gap) set the stack swatches apart from the cause legends. */
+  [data-part="legend"] > span:has(> [data-swatch]) {
+    gap: 5px;
+  }
+
+  [data-part="legend"] > span:has(> [data-swatch="idle"]) {
+    margin-inline-end: 20px;
+  }
+
+  /* A cause legend and its words flow as text: the space between them is the word space, as drawn. */
+  [data-part="legend"] > span:has(> [data-an]) {
+    display: block;
   }
 
   [data-swatch] {

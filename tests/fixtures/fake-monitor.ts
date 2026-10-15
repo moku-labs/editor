@@ -59,6 +59,12 @@ export type FakeFrame = {
   readonly uploads?: number;
   readonly uploadMb?: number;
   readonly compiles?: number;
+  /** Kept pictures drawn in the frame (spec 23); NaN (not measured) by default. */
+  readonly kept?: number;
+  /** Kept and range pictures taken in the frame (spec 23); NaN by default. */
+  readonly retakes?: number;
+  /** The draw reason of spec 14; 255 (not measured) by default. */
+  readonly reason?: number;
 };
 
 /** How to build a fake monitor. */
@@ -156,7 +162,9 @@ const STRIDES: Readonly<Record<keyof FrameColumns, number>> = {
   sysMs: 5,
   fltKind: 4,
   fltApplies: 4,
-  fltMpx: 4
+  fltMpx: 4,
+  kept: 1,
+  retakes: 1
 };
 
 /** The column names in a fixed order. */
@@ -204,7 +212,9 @@ function createColumns(capacity: number): FrameColumns {
     sysMs: new Float32Array(capacity * 5),
     fltKind: new Uint8Array(capacity * 4),
     fltApplies: new Uint16Array(capacity * 4),
-    fltMpx: new Float32Array(capacity * 4)
+    fltMpx: new Float32Array(capacity * 4),
+    kept: new Float32Array(capacity).fill(Number.NaN),
+    retakes: new Float32Array(capacity).fill(Number.NaN)
   };
 }
 
@@ -271,7 +281,7 @@ export function headerLine(overrides: Partial<PerfHeaderLine> = {}): PerfHeaderL
 }
 
 /**
- * A valid sample line (11:977-1004).
+ * A valid sample line (11:977-1004), `kept` null (no kept picture in the second).
  *
  * @param frame - The newest frame of the second.
  * @param overrides - Fields to replace.
@@ -323,6 +333,7 @@ export function sampleLine(frame: number, overrides: Partial<PerfSampleLine> = {
     resolution: 2,
     monitorMs: 0.05,
     spikes: 1,
+    kept: null,
     ...overrides
   };
 }
@@ -372,6 +383,7 @@ export function frameRecord(frame: number, overrides: Partial<FrameRecord> = {})
     path: "garden/boss",
     changed: [{ kind: "bundle", what: "garden-boss" }],
     causes: ["upload", "gap"],
+    kept: null,
     ...overrides
   };
 }
@@ -498,6 +510,9 @@ function writeSlot(ring: MutableRing, slot: number, frame: number, input: FakeFr
   c.uploadMb[slot] = input.uploadMb ?? Number.NaN;
   c.compiles[slot] = input.compiles ?? Number.NaN;
   c.sysMs[slot * 5] = Number.NaN;
+  c.kept[slot] = input.kept ?? Number.NaN;
+  c.retakes[slot] = input.retakes ?? Number.NaN;
+  c.reason[slot] = input.reason ?? 255;
 }
 
 /**

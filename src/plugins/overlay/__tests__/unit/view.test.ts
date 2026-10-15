@@ -323,6 +323,11 @@ describe("the card", () => {
     openOverlay(octx);
     Reflect.deleteProperty(globalThis, "innerWidth");
     expect(shadowOf(octx).querySelectorAll("[data-counter]")).toHaveLength(3);
+    expect(part(octx, '[data-counter="fps"] i').textContent).toBe("fps @60");
+    expect(part(octx, '[data-counter="fps"]').getAttribute("title")).toBe(
+      "drawn / loop · 60 fps, fixed; display 60 Hz"
+    );
+    expect(part(octx, '[data-counter="fps"] b').textContent).toBe("54 / 60");
     expect(part(octx, '[data-overlay="card"]').dataset.compact !== undefined).toBe(true);
     click('[data-part="counters"] [data-more]');
     expect(part(octx, '[data-part="xtra"]').textContent).toContain("passes — · draws —");

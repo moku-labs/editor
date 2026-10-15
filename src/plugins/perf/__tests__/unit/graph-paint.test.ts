@@ -441,6 +441,15 @@ describe("the edges of a paint", () => {
     expect(fast.texts()).not.toContain("2000");
   });
 
+  it("draws no text below the design's 11 px minimum (bug: the phone's rate labels at 10 px)", () => {
+    const fonts = [...Object.values(GRAPH_FONTS.phone), ...Object.values(GRAPH_FONTS.wide)];
+    for (const font of fonts) {
+      expect(Number.parseFloat(/ ([\d.]+)px /.exec(font)?.[1] ?? "0"), font).toBeGreaterThanOrEqual(
+        11
+      );
+    }
+  });
+
   it("names the overlay's private Barlow face first and the plain one next, for the tools page (bug: the overlay drawing in a fallback face)", () => {
     const fonts = [...Object.values(GRAPH_FONTS.phone), ...Object.values(GRAPH_FONTS.wide)];
     for (const font of fonts) {
