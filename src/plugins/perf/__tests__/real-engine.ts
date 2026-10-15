@@ -16,11 +16,19 @@ import { perfPlugin } from "..";
 /** The game's player and session. */
 type Tree = Record<string, never>;
 
-/** A Pixi application with what the engine's host, render and sample call: init, a webgl renderer with no textures, a canvas. */
+/** A Pixi runner or signal the engine adds a listener to and removes it from; it never fires. */
+const silentRunner = { add: (): void => undefined, remove: (): void => undefined };
+
+/**
+ * A Pixi application with what the engine's host, render and sample call: init, a webgl renderer
+ * with no textures, a canvas; and the runners a build without the agent flag counts passes on.
+ */
 class StandInApplication {
   renderer = {
     name: "webgl",
     texture: { managedTextures: [] },
+    runners: { prerender: silentRunner, renderStart: silentRunner },
+    renderTarget: { renderTarget: undefined, onRenderTargetChange: silentRunner },
     render: (): void => undefined,
     resize: (): void => undefined
   };
@@ -33,8 +41,13 @@ class StandInApplication {
   }
 }
 
-/** What a test can change of the real game: render on demand, the idle cap, the rate and the adaptive rule. */
+/**
+ * What a test can change of the real game: render on demand, the idle cap, the rate, the adaptive
+ * rule and the agent flag (on by default; off is a page `moku-game dev` did not write, whose
+ * monitor's ring has capacity 0).
+ */
 export type RealGameOptions = {
+  readonly agent?: boolean;
   readonly onDemand?: boolean;
   readonly idleFps?: 0 | 30;
   readonly idleAfterMs?: number;
@@ -89,19 +102,19 @@ function createRealGame(options: RealGameOptions) {
 const { createApp } = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, perfPlugin] });
 
 /**
- * Starts a real game with the agent flag on and frames from a scripted rAF, then the agent app with
- * registry and perf on it. Time is fake (`performance` included): `step(gapMs)` moves the clock and
+ * Starts a real game with the agent flag on (unless `agent: false`) and frames from a scripted
+ * rAF, then the agent app with registry and perf on it. Time is fake (`performance` included): `step(gapMs)` moves the clock and
  * runs one frame of the loop at that gap. The caller restores globals and timers (`vi.unstubAllGlobals`,
  * `vi.useRealTimers`).
  *
- * @param options - Render on demand and the idle cap of the game.
+ * @param options - Render on demand, the idle cap and the agent flag of the game.
  * @returns The game, the editor and the frame stepper.
  */
 export async function startPair(options: RealGameOptions = {}) {
   vi.useFakeTimers({
     toFake: ["performance", "setInterval", "clearInterval", "setTimeout", "clearTimeout"]
   });
-  vi.stubGlobal("__MOKU_GAME_AGENT__", true);
+  vi.stubGlobal("__MOKU_GAME_AGENT__", options.agent ?? true);
   let frame: ((at: number) => void) | undefined;
   vi.stubGlobal("requestAnimationFrame", (callback: (at: number) => void) => {
     frame = callback;

@@ -244,17 +244,22 @@ function isRowCount(capacity: number): boolean {
 }
 
 /**
- * Whether a wire window's span is one the tools page may draw: finite, above 0 and at most 60 s.
+ * Whether a wire window's span is one the tools page may draw: finite, at most 60 s, and above 0
+ * for a window with rows. A window without rows may span 0: perf's window while it waits for the
+ * monitor's first frame (a page without the agent flag, or the first read of a run).
  *
  * @param span - `endMs − startMs`, ms.
+ * @param rows - The rows the wire carries.
  * @returns Whether the span is allowed.
  * @example
  * ```ts
- * isWireSpan(600_000); // false: a hostile ten-minute window
+ * isWireSpan(600_000, 2); // false: a hostile ten-minute window
+ * isWireSpan(0, 0); // true: perf's empty window
  * ```
  */
-function isWireSpan(span: number): boolean {
-  return Number.isFinite(span) && span > 0 && span <= MAX_WIRE_SPAN_MS;
+function isWireSpan(span: number, rows: number): boolean {
+  if (!Number.isFinite(span) || span > MAX_WIRE_SPAN_MS) return false;
+  return span > 0 || (span === 0 && rows === 0);
 }
 
 /**
@@ -593,9 +598,10 @@ function hasValidRates(rateMs: Json | undefined, length: number): boolean {
 
 /**
  * Checks a wire value as a window the tools page may draw: an object of `v: 1`, a finite span of
- * more than 0 and at most 60 s, a boolean `gpuTimer`, equal-length number columns (`gpuMs` may
- * hold null; `rest` and `noise` may be absent) and every `rateMs` in (0, 1000]. A hostile phone
- * value must not freeze the page, so a span past 60 s is refused.
+ * at most 60 s (more than 0, or 0 for a window without rows: perf's window while it waits), a
+ * boolean `gpuTimer`, equal-length number columns (`gpuMs` may hold null; `rest` and `noise` may be
+ * absent) and every `rateMs` in (0, 1000]. A hostile phone value must not freeze the page, so a
+ * span past 60 s is refused.
  *
  * @param value - The value of `editor.perf.window`.
  * @returns The checked parts, or undefined for any other shape.
@@ -610,12 +616,14 @@ function checkedWire(value: Json): CheckedWire | undefined {
   const { v, startMs, endMs, gpuTimer, gpuMs } = value;
   if (v !== 1 || typeof startMs !== "number" || typeof endMs !== "number") return undefined;
 
-  // Span: a hostile phone value must not make the tools page loop for long.
-  if (!isWireSpan(endMs - startMs)) return undefined;
-
-  // Columns: a boolean gpuTimer, equal-length number columns, every rateMs in (0, 1000].
+  // Rows: a boolean gpuTimer and the GPU column, whose length every other column has.
   if (typeof gpuTimer !== "boolean" || !isGpuColumn(gpuMs)) return undefined;
   const { length } = gpuMs;
+
+  // Span: a hostile phone value must not make the tools page loop for long; no rows may span 0.
+  if (!isWireSpan(endMs - startMs, length)) return undefined;
+
+  // Columns: equal-length number columns, every rateMs in (0, 1000].
   if (!NUMBER_COLUMNS.every(key => isColumn(value[key], length))) return undefined;
   if (!isOptionalColumn(value.rest, length) || !isOptionalColumn(value.noise, length)) {
     return undefined;

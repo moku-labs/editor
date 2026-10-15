@@ -117,7 +117,8 @@ and `overMs` are its own row's. A ring without the `budgetMs` column falls back 
   `stepSpike`, `spikeOrdinal`, `meanGpu`, `writeWireWindow`, `readWireWindow`; optional `rest` and `noise` columns),
   the source values (`values.ts`) and the guards perf reads the engine through (`guards.ts`). It imports its own files, `registry/protocol` by type and the engine by
   type only, never `hub/protocol` (`protocol-boundary.test.ts`). `readWireWindow` refuses a value of another shape,
-  a span that is not finite or outside 0 < span ≤ 60 s and a `rateMs` outside (0, 1000], and drops cause bits it
+  a span that is not finite or outside 0 < span ≤ 60 s (a window without rows may span 0: perf's own value while it
+  waits for the monitor's first frame) and a `rateMs` outside (0, 1000], and drops cause bits it
   does not know.
 - **`perf/graph/`** — the pure canvas-2D painter of the frame graph on the structural `GraphContext2D`
   (`paintGraph`, `msToPx`, `createGraphState`, `resetGraphText`, `spikeAt`, `rowAt`, `CAUSE_STYLE`,

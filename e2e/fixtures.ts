@@ -235,6 +235,15 @@ function driver(page: Page): Tools {
       page.locator("[data-render=workspace] > h1"),
       page.locator("[data-render=tiles]"),
       page.locator("[data-render=textures] tbody"),
+      // The Render strip's live readings of the browser's frames: the headline, the graph with its
+      // spike counter, the More counters, the newest frame's budget, the device line (its Hz is
+      // the sample's) and how long ago the last value came.
+      page.locator("[data-render=device-strip] [data-part=headline]"),
+      page.locator("[data-render=device-strip] [data-part=graph-row]"),
+      page.locator("[data-render=device-strip] [data-part=more]"),
+      page.locator("[data-render=device-strip] [data-part=budget]"),
+      page.locator("[data-render=device-strip] [data-part=about]"),
+      page.locator("[data-render=device-strip] [data-cell=link] em"),
       page.locator("[data-part=title]"),
       page.locator("[data-part=runner-card]"),
       page.locator("[data-part=session-card]"),

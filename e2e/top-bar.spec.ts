@@ -120,6 +120,7 @@ async function measureBar(page: Page): Promise<{ overflow: number; items: BarIte
           (data.search === undefined ? undefined : "search") ??
           (data.gameName === undefined ? undefined : "game-name") ??
           (data.mark === undefined ? undefined : "mark") ??
+          data.part ??
           element.tagName.toLowerCase();
         return {
           name,
@@ -597,6 +598,8 @@ test.describe("top bar · round 2", () => {
             "mark",
             "game-name",
             "session-chip",
+            // The computer's engine fingerprint, from 1100 px (TopBar.css ENGINE_TEXT_FROM_PX).
+            ...(width >= 1100 ? ["engine"] : []),
             "link-pill",
             "pause",
             "step",
@@ -801,7 +804,7 @@ test.describe("top bar · round 2", () => {
 
       // Registry opens the registry popover under ⋯, inside the window.
       await openMore(page);
-      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("20 · 24");
+      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("27 · 30");
       await menuRow(page, "registry").click();
       const registry = page.locator("[data-ui=registry-popover]");
       await expect(registry).toBeVisible();
@@ -887,7 +890,7 @@ test.describe("top bar · round 2", () => {
       }
       // Registry: the icon only, the counts in its title.
       const registryButton = bar.locator(":scope > [data-action=registry]");
-      await expect(registryButton).toHaveAttribute("title", "Registry · 20 sources · 24 commands");
+      await expect(registryButton).toHaveAttribute("title", "Registry · 27 sources · 30 commands");
       await expect(registryButton).toHaveAccessibleName("Registry");
 
       const overlay = bar.getByRole("switch", { name: "Overlay", exact: true });

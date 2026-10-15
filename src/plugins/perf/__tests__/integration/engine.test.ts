@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is "not known" in the engine's rate (displayHz without adaptive) */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CAUSE_BITS, causesOf } from "../../protocol";
+import { CAUSE_BITS, causesOf, createPerfWindow, readWireWindow } from "../../protocol";
 import { stallOnce, startPair } from "../real-engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +103,23 @@ describe("perf on the real engine", () => {
       reason: "forced",
       mode: "forced"
     });
+
+    await editor.stop();
+    await game.stop();
+  });
+});
+
+describe("perf on the real engine without the agent flag (a page moku-game dev did not write)", () => {
+  it("waits, and the tools page reads its window source as an empty window (bug: the strip warned 'unexpected source shape' for editor.perf.window on every Render show)", async () => {
+    const { game, editor, step } = await startPair({ agent: false });
+    for (let index = 0; index < 30; index += 1) step(16.7);
+    vi.advanceTimersByTime(250);
+    expect(editor.perf.status()).toEqual({ state: "waiting" });
+
+    const wire = editor.registry.source("editor.perf.window")?.read(null) ?? null;
+    const into = createPerfWindow(1024);
+    expect(readWireWindow(wire, into)).toBe(true);
+    expect([into.count, into.spikeCount, into.version]).toEqual([0, 0, 1]);
 
     await editor.stop();
     await game.stop();

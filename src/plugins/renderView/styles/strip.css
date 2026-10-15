@@ -402,5 +402,24 @@
       gap: 0 16px;
       white-space: normal;
     }
+
+    /* More wraps too, so no secondary counter is cut off; the wide strip keeps the prototype's one line. Its first line sits at the middle of the 32 high key. */
+    [data-part="more-row"] {
+      align-items: flex-start;
+      block-size: auto;
+      min-block-size: 32px;
+    }
+
+    [data-part="more"] {
+      padding-block-start: 8px;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
+    /* A value too long for the line (the slowest systems) moves to the next one whole and wraps inside its own box, never across a neighbour's. */
+    [data-part="more"] b {
+      display: inline-block;
+      max-inline-size: 100%;
+    }
   }
 }

@@ -200,6 +200,17 @@ describe("the wire form", () => {
     expect(readWireWindow(wire({ endMs: 40_123.5 + 60_000 }), into)).toBe(true);
   });
 
+  it("reads perf's empty window (no rows, span 0: waiting, or before the first frame) and empties the strip's window; a negative span stays refused (bug: the strip warned and kept stale rows)", () => {
+    const into = createPerfWindow(16);
+    expect(readWireWindow(wire(), into)).toBe(true);
+    const empty = writeWireWindow(createPerfWindow(16));
+    expect(readWireWindow({ ...empty, startMs: 10 }, into)).toBe(false);
+    expect(into.count).toBe(2);
+
+    expect(readWireWindow(empty, into)).toBe(true);
+    expect([into.count, into.spikeCount, into.startMs, into.endMs]).toEqual([0, 0, 0, 0]);
+  });
+
   it("refuses a rateMs outside 0 < rateMs ≤ 1000 (bug: a hostile rate growing the label cache of the tools page)", () => {
     const into = createPerfWindow(16);
     for (const rateMs of [
