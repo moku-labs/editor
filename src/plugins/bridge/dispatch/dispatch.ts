@@ -218,10 +218,12 @@ function onSession(deps: BridgeDeps, params: Json | undefined): void {
   const engineChanged = typeof engine === "string" && engine !== state.editorEngine;
   if (engineChanged) state.editorEngine = engine;
   const next = sessionAfter(state.session, id, memberOf(params, "open"));
-  const sessionChanged = next !== state.session;
-  if (!sessionChanged && !(engineChanged && state.mode === "device")) return;
+  const isUnchanged = next === state.session;
+  // A new engine shows only in device mode (`editorEngine` of the link).
+  const needsStatus = !isUnchanged || (engineChanged && state.mode === "device");
+  if (!needsStatus) return;
   state.session = next;
-  setStatus(deps, currentStatus(deps), sessionChanged);
+  setStatus(deps, currentStatus(deps), !isUnchanged);
 }
 
 /**
@@ -288,7 +290,8 @@ export function handleText(deps: BridgeDeps, data: unknown): void {
  * @returns The Error, or undefined for anything else.
  * @example
  * ```ts
- * log.error("bridge:connect-crashed", undefined, asError(error));
+ * asError(new Error("boom")) instanceof Error; // true
+ * asError("boom"); // undefined
  * ```
  */
 export function asError(error: unknown): Error | undefined {

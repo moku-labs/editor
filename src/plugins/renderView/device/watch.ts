@@ -19,7 +19,12 @@ import { stripView } from "./derive";
 import { isPerfSecond, isRecorderStatus, isSpikeList, isSpikeRecord } from "./guards";
 import { clearStripData, notifyStrip } from "./state";
 import { stepFrom } from "./step";
-import type { DeviceStripView } from "./types";
+import type { DeviceStripState, DeviceStripView } from "./types";
+
+/**
+ * Stores one value of a device source: false for a value of the wrong shape.
+ */
+type Store = (value: Json) => boolean;
 
 /**
  * The source whose presence in the manifest gives a session its strip.
@@ -35,6 +40,16 @@ const PERF_WINDOW = "editor.perf.window";
  * The record source, read on demand.
  */
 const PERF_SPIKE = "editor.perf.spike";
+
+/**
+ * The spike list source: the flags' primary causes.
+ */
+const PERF_SPIKES = "editor.perf.spikes";
+
+/**
+ * The recorder's status source: the REC cell.
+ */
+const RECORDER = "editor.recorder";
 
 /**
  * The record reads in flight, per state: an open of the same frame shares its promise.
@@ -128,18 +143,14 @@ function onValue(
 }
 
 /**
- * Starts the device watches once: the three perf sources and the recorder, each only when the
- * manifest lists it available.
+ * The device sources the strip watches, each with the store of its value: it checks the shape
+ * and keeps the value, or refuses it (false).
  *
- * @param ctx - Domain context of renderView.
- * @param link - The link api.
- * @param manifest - The manifest of the chosen session.
+ * @param strip - The strip state the values go into.
+ * @returns The source ids and their stores, in watch order.
  */
-function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifest): void {
-  const strip = ctx.state.device;
-  if (strip.watches.length > 0) return;
-
-  const sources: readonly [string, (value: Json) => boolean][] = [
+function storesOf(strip: DeviceStripState): readonly (readonly [string, Store])[] {
+  return [
     [
       PERF_SECOND,
       value => {
@@ -151,7 +162,7 @@ function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifes
     ],
     [PERF_WINDOW, value => readWireWindow(value, strip.window)],
     [
-      "editor.perf.spikes",
+      PERF_SPIKES,
       value => {
         if (!isSpikeList(value)) return false;
         strip.spikes = value;
@@ -159,7 +170,7 @@ function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifes
       }
     ],
     [
-      "editor.recorder",
+      RECORDER,
       value => {
         if (!isRecorderStatus(value)) return false;
         strip.recorder = value;
@@ -167,10 +178,24 @@ function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifes
       }
     ]
   ];
+}
+
+/**
+ * Starts the device watches once: the three perf sources and the recorder, each only when the
+ * manifest lists it available.
+ *
+ * @param ctx - Domain context of renderView.
+ * @param link - The link api.
+ * @param manifest - The manifest of the chosen session.
+ */
+function startDeviceWatches(ctx: RenderViewCtx, link: LinkApi, manifest: Manifest): void {
+  const strip = ctx.state.device;
+  if (strip.watches.length > 0) return;
+
   // Mark the watches started first: a value delivered at once by the watch is then kept.
   const stops: (() => void)[] = [];
   strip.watches = stops;
-  for (const [id, store] of sources) {
+  for (const [id, store] of storesOf(strip)) {
     if (isListed(manifest, id))
       stops.push(link.watch(id, undefined, onValue(ctx, id, stops, store)));
   }

@@ -13,6 +13,12 @@ import type { PerfDeps, PerfMarkArgs } from "./types";
 const NO_RUN =
   "[moku-editor] No moku-editor perf runs in this folder.\n  Start one with moku-editor perf.";
 
+/** The HTTP status of an answered mark. */
+const OK = 200;
+
+/** The HTTP status of a refused token. */
+const UNAUTHORIZED = 401;
+
 /** The route refused the token. */
 const OTHER_TOKEN =
   "[moku-editor] The running perf has another token.\n  Restart moku-editor perf.";
@@ -185,11 +191,11 @@ function reportMark(
   ui: BrandConsole
 ): number {
   const { status, text } = reply;
-  if (status === 401) {
+  if (status === UNAUTHORIZED) {
     ui.error(OTHER_TOKEN);
     return 1;
   }
-  const marked = status === 200 ? markedOf(text) : undefined;
+  const marked = status === OK ? markedOf(text) : undefined;
   if (marked === undefined) {
     const body = cleanText(text.replaceAll(/\s+/g, " ").trim(), REPLY_MAX);
     ui.error(`[moku-editor] perf mark: the running perf answered ${status} ${body}\n${CHECK_RUN}`);

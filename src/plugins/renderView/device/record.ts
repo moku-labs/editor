@@ -160,6 +160,24 @@ function systemRows(record: PerfSpikeRecord): BarRow[] | undefined {
 }
 
 /**
+ * The record's own filter total as one row of kind "all", for a record whose engine line has not
+ * arrived: none when the frame applied no filter.
+ *
+ * @param total - `record.filters`: applies and Mpx of the frame, or null.
+ * @returns The row, or none.
+ * @example
+ * ```ts
+ * totalFilterRows({ applies: 4, mpx: 2.1 }); // [{ kind: "all", applies: 4, mpx: 2.1 }]
+ * ```
+ */
+function totalFilterRows(
+  total: PerfSpikeRecord["filters"]
+): { readonly kind: string; readonly applies: number; readonly mpx: number }[] {
+  if (total === null || total.applies === 0) return [];
+  return [{ kind: "all", ...total }];
+}
+
+/**
  * The filters of the frame: per kind from the engine's line, else the record's total; undefined
  * when it applied none.
  *
@@ -168,12 +186,7 @@ function systemRows(record: PerfSpikeRecord): BarRow[] | undefined {
  */
 function filterRows(record: PerfSpikeRecord): ValueRow[] | undefined {
   const kinds = record.detail?.filters;
-  const rows =
-    kinds === undefined
-      ? [record.filters].flatMap(total =>
-          total === null || total.applies === 0 ? [] : [{ kind: "all", ...total }]
-        )
-      : kinds;
+  const rows = kinds ?? totalFilterRows(record.filters);
   if (rows.length === 0) return undefined;
   return rows.map(row => ({
     label: row.kind,

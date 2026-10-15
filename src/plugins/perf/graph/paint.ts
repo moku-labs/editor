@@ -174,6 +174,38 @@ const SWATCH = 8;
 const SWATCH_GAP = 3;
 const SWATCH_OUTLINE_INSET = 0.5;
 
+/** The plot's left edge, CSS px, and its gap under the flag band. */
+const PLOT_LEFT = 1;
+const PLOT_TOP_GAP = 2;
+
+/** The shortest time axis a paint divides by, ms. */
+const MIN_SPAN_MS = 1;
+
+/** Grid lines every 10 ms up to 40 ms. */
+const GRID_STEP_MS = 10;
+const GRID_TOP_MS = 40;
+
+/** A not-drawn frame: a 3 px hole reaching 1 px over its budget, and a 7×5 caret 2 px under the baseline. */
+const SKIP_HOLE_W = 3;
+const SKIP_HOLE_OVER = 1;
+const SKIP_CARET_GAP = 2;
+const SKIP_CARET_W = 7;
+const SKIP_CARET_H = 5;
+
+/** A stack bar overlaps the next by this much, px, so no seam shows. */
+const STACK_BLEED = 0.35;
+
+/** The budget line's width, px (its half line is a hairline). */
+const BUDGET_LINE = 1.5;
+
+/** The share of a row's budget each budget line marks: the budget, and its half. */
+const FULL_BUDGET = 1;
+const HALF_BUDGET = 0.5;
+
+/** The caret over a spike past the scale: 10 px wide, 7 px high. */
+const OVERFLOW_CARET_W = 10;
+const OVERFLOW_CARET_H = 7;
+
 /** The cause style of each primary cause code (index = code − 1). */
 const STYLE_OF_CODE = CAUSE_RANK.map(cause => CAUSE_STYLE[cause]);
 
@@ -276,9 +308,9 @@ function measureLegends(g: GraphContext2D, state: GraphState, layout: Layout): v
 function paintWell(g: GraphContext2D, view: GraphView, state: GraphState): void {
   g.fillStyle = GRAPH_COLOURS.well;
   g.fillRect(0, 0, view.width, view.height);
-  for (let ms = 10; ms <= 40; ms += 10) {
+  for (let ms = GRID_STEP_MS; ms <= GRID_TOP_MS; ms += GRID_STEP_MS) {
     const y = yOf(state, ms);
-    band(g, GRAPH_COLOURS.grid, state.px0, state.px1 - state.px0, y, y + 1);
+    band(g, GRAPH_COLOURS.grid, state.px0, state.px1 - state.px0, y, y + HAIRLINE);
   }
 }
 
@@ -298,15 +330,10 @@ function paintSkipped(
   row: number
 ): void {
   const centre = rowCentre(state, window, row);
-  band(
-    g,
-    GRAPH_COLOURS.well,
-    centre - 1.5,
-    3,
-    yOf(state, cell(window.budgetMs, row)) - 1,
-    state.py1
-  );
-  caret(g, centre, state.py1 + 2, state.py1 + 7, 7, GRAPH_COLOURS.amber);
+  const holeTop = yOf(state, cell(window.budgetMs, row)) - SKIP_HOLE_OVER;
+  band(g, GRAPH_COLOURS.well, centre - SKIP_HOLE_W / 2, SKIP_HOLE_W, holeTop, state.py1);
+  const caretTop = state.py1 + SKIP_CARET_GAP;
+  caret(g, centre, caretTop, caretTop + SKIP_CARET_H, SKIP_CARET_W, GRAPH_COLOURS.amber);
 }
 
 /**
@@ -325,7 +352,7 @@ function paintStack(
   row: number
 ): void {
   const left = rowLeft(state, window, row);
-  const width = rowRight(state, window, row) - left + 0.35;
+  const width = rowRight(state, window, row) - left + STACK_BLEED;
   const js = cell(window.jsMs, row);
   const gpu = cell(window.gpuMs, row);
   const stacked = window.gpuTimer && Number.isFinite(gpu);
@@ -369,8 +396,9 @@ function paintBudget(
 ): void {
   if (window.count === 0) return;
   g.strokeStyle = GRAPH_COLOURS.magenta;
-  g.lineWidth = share === 1 ? 1.5 : 1;
-  g.setLineDash(share === 1 ? DASH_NONE : DASH_HALF);
+  const full = share === FULL_BUDGET;
+  g.lineWidth = full ? BUDGET_LINE : HAIRLINE;
+  g.setLineDash(full ? DASH_NONE : DASH_HALF);
   g.beginPath();
   for (let row = 0; row < window.count; row += 1) {
     const y = yOf(state, cell(window.budgetMs, row) * share);
@@ -503,16 +531,17 @@ function paintSpikeBar(
   if (style.hollow) {
     band(g, GRAPH_COLOURS.well, left, layout.bar, top, state.py1);
     g.strokeStyle = style.hue;
-    g.lineWidth = 1;
+    g.lineWidth = HAIRLINE;
     g.setLineDash(DASH_NONE);
     g.strokeRect(left, top, layout.bar, state.py1 - top);
   } else {
     band(g, style.hue, left, layout.bar, top, state.py1);
     const yJs = yOf(state, cell(window.jsMs, row));
-    if (window.gpuTimer) band(g, GRAPH_COLOURS.well, left, layout.bar, yJs, yJs + 1);
+    if (window.gpuTimer) band(g, GRAPH_COLOURS.well, left, layout.bar, yJs, yJs + HAIRLINE);
   }
   if (ms > SCALE_MS) {
-    caret(g, left + layout.bar / 2, state.py0, state.py0 + 7, 10, GRAPH_COLOURS.red);
+    const centre = left + layout.bar / 2;
+    caret(g, centre, state.py0, state.py0 + OVERFLOW_CARET_H, OVERFLOW_CARET_W, GRAPH_COLOURS.red);
   }
 }
 
@@ -741,6 +770,23 @@ function tapeBudgetOf(window: PerfWindowView): number {
 }
 
 /**
+ * Whether a fixed tape label is left out: a tall-plot label on a short plot, a wide-only label on
+ * the phone.
+ *
+ * @param mark - The label.
+ * @param showHalf - The plot is tall enough for the half budget and the middle labels.
+ * @param wide - The graph is the tools strip's.
+ * @returns Whether to leave it out.
+ * @example
+ * ```ts
+ * isMarkHidden({ text: "25", ms: 25, tallOnly: true, wideOnly: true }, true, false); // true: phone
+ * ```
+ */
+function isMarkHidden(mark: TapeMark, showHalf: boolean, wide: boolean): boolean {
+  return (mark.tallOnly && !showHalf) || (mark.wideOnly && !wide);
+}
+
+/**
  * Step 8, the tape's labels: the newest budget first (so it wins over a neighbour closer than
  * 9 px), its half and the fixed labels; a short plot shows `0`, the budget and `40` only. The budget
  * texts are rebuilt only when the budget changed.
@@ -778,9 +824,7 @@ function paintTapeLabels(
   // eslint-disable-next-line unicorn/no-for-loop -- see above
   for (let index = 0; index < TAPE_MARKS.length; index += 1) {
     const mark = TAPE_MARKS[index];
-    if (mark === undefined || (mark.tallOnly && !showHalf) || (mark.wideOnly && !view.wide)) {
-      continue;
-    }
+    if (mark === undefined || isMarkHidden(mark, showHalf, view.wide)) continue;
     drawn = tapeLabel(g, view, mark.text, GRAPH_COLOURS.tapeInk, yOf(state, mark.ms), drawn);
   }
 }
@@ -1065,20 +1109,22 @@ export function paintGraph(
   view: GraphView,
   state: GraphState
 ): void {
+  // Layout: the plot box and the time axis of this paint, kept for spikeAt / rowAt.
   const layout = view.wide ? WIDE : PHONE;
-  state.px0 = 1;
+  state.px0 = PLOT_LEFT;
   state.px1 = view.width - layout.tape;
-  state.py0 = layout.flagBand + 2;
+  state.py0 = layout.flagBand + PLOT_TOP_GAP;
   state.py1 = view.height - layout.axis;
   state.flagBand = layout.flagBand;
   state.startMs = window.startMs;
-  state.spanMs = Math.max(1, window.endMs - window.startMs);
+  state.spanMs = Math.max(MIN_SPAN_MS, window.endMs - window.startMs);
   if (!state.measured) measureLegends(g, state, layout);
 
+  // Paint layers, back to front (spec 03 "What it paints", steps 1–12).
   paintWell(g, view, state);
   paintRows(g, window, state);
-  paintBudget(g, window, state, 1);
-  paintBudget(g, window, state, 0.5);
+  paintBudget(g, window, state, FULL_BUDGET);
+  paintBudget(g, window, state, HALF_BUDGET);
   paintRateSwitches(g, window, state, layout);
   paintSpikes(g, window, view, state, layout);
   paintTape(g, window, view, state, layout);

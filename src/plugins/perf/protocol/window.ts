@@ -150,6 +150,13 @@ const MAX_RATE_MS = 1000;
 /** The cause bits the editor knows (seven, CAUSE_BITS): every other bit of a wire value is dropped. */
 const KNOWN_CAUSES = 0x7f;
 
+/** The largest `causes` value of a ring column (a byte); a larger wire value is no cause. */
+const MAX_CAUSE_BYTE = 0xff;
+
+/** Wire rounding: `t` to tenths of a ms, every other ms value to hundredths. */
+const TIME_SCALE = 10;
+const MS_SCALE = 100;
+
 /** The number columns of the wire form, besides `gpuMs`. */
 const NUMBER_COLUMNS = [
   "frame",
@@ -360,16 +367,18 @@ export function writeWireWindow(window: PerfWindowView): PerfWindowWire {
   const gpuMs: (number | null)[] = [];
   const drawn: (0 | 1)[] = [];
   const causes: number[] = [];
+  // The columns with their own rule: times after startMs, a NaN GPU time as null, drawn as 0 | 1.
   for (let row = 0; row < count; row += 1) {
     const gpu = cell(window.gpuMs, row);
     frame.push(cell(window.frame, row));
-    t.push(roundTo(cell(window.t, row) - startMs, 10));
+    t.push(roundTo(cell(window.t, row) - startMs, TIME_SCALE));
     // eslint-disable-next-line unicorn/no-null -- null is "not measured" on the wire (JSON has no NaN)
-    gpuMs.push(Number.isFinite(gpu) ? roundTo(gpu, 100) : null);
+    gpuMs.push(Number.isFinite(gpu) ? roundTo(gpu, MS_SCALE) : null);
     drawn.push(window.drawn[row] === 1 ? 1 : 0);
     causes.push(cell(window.causes, row));
   }
 
+  // The plain ms columns, to hundredths.
   return {
     v: 1,
     startMs,
@@ -377,11 +386,11 @@ export function writeWireWindow(window: PerfWindowView): PerfWindowWire {
     gpuTimer: window.gpuTimer,
     frame,
     t,
-    ms: plainColumn(window.ms, count, 100),
-    jsMs: plainColumn(window.jsMs, count, 100),
+    ms: plainColumn(window.ms, count, MS_SCALE),
+    jsMs: plainColumn(window.jsMs, count, MS_SCALE),
     gpuMs,
-    rateMs: plainColumn(window.rateMs, count, 100),
-    budgetMs: plainColumn(window.budgetMs, count, 100),
+    rateMs: plainColumn(window.rateMs, count, MS_SCALE),
+    budgetMs: plainColumn(window.budgetMs, count, MS_SCALE),
     drawn,
     causes
   };
@@ -468,6 +477,20 @@ function checkedWire(value: Json): CheckedWire | undefined {
 }
 
 /**
+ * Whether a wire `causes` item can be a ring value: a whole number from 0 to 255.
+ *
+ * @param value - The wire item.
+ * @returns Whether it is a cause byte.
+ * @example
+ * ```ts
+ * isCauseByte(300); // false
+ * ```
+ */
+function isCauseByte(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= MAX_CAUSE_BYTE;
+}
+
+/**
  * A known cause bits value: an integer from the wire with every unknown bit dropped; 0 for a value
  * that is not a whole number from 0 to 255. Never throws.
  *
@@ -479,7 +502,7 @@ function checkedWire(value: Json): CheckedWire | undefined {
  * ```
  */
 function knownCauses(value: number): number {
-  return Number.isInteger(value) && value >= 0 && value <= 0xff ? value & KNOWN_CAUSES : 0;
+  return isCauseByte(value) ? value & KNOWN_CAUSES : 0;
 }
 
 /**
@@ -501,6 +524,34 @@ function cellOf(object: JsonObject, key: string, index: number): number {
 }
 
 /**
+ * Copies one row of a checked wire value into a window row: times back to page-clock ms, a null GPU
+ * time as NaN, unknown cause bits dropped, the primary cause recomputed. Allocates nothing.
+ *
+ * @param wire - The checked wire value.
+ * @param from - The wire row.
+ * @param into - The window.
+ * @param row - The window row.
+ * @returns The row's primary cause code (0 = not a spike).
+ */
+function copyRow(wire: CheckedWire, from: number, into: PerfWindow, row: number): number {
+  const { object } = wire;
+  const gpuValue = wire.gpu[from];
+  const causes = knownCauses(cellOf(object, "causes", from));
+  const cause = primaryCause(causes);
+  into.frame[row] = cellOf(object, "frame", from);
+  into.t[row] = wire.startMs + cellOf(object, "t", from);
+  into.ms[row] = cellOf(object, "ms", from);
+  into.jsMs[row] = cellOf(object, "jsMs", from);
+  into.gpuMs[row] = typeof gpuValue === "number" ? gpuValue : Number.NaN;
+  into.rateMs[row] = cellOf(object, "rateMs", from);
+  into.budgetMs[row] = cellOf(object, "budgetMs", from);
+  into.drawn[row] = cellOf(object, "drawn", from) === 1 ? 1 : 0;
+  into.causes[row] = causes;
+  into.cause[row] = cause;
+  return cause;
+}
+
+/**
  * Fills `into` from a wire value: false and `into` untouched for a value of another shape (see
  * `checkedWire`); keeps the newest `into.capacity` rows; drops the cause bits the editor does not
  * know; recomputes `cause` and `spikes` with `primaryCause`; `version += 1`.
@@ -517,31 +568,18 @@ export function readWireWindow(value: Json, into: PerfWindow): boolean {
   const wire = checkedWire(value);
   if (wire === undefined) return false;
 
-  const { object, gpu, startMs } = wire;
-  const offset = Math.max(0, gpu.length - into.capacity);
-  const count = gpu.length - offset;
+  // The rows: the newest `capacity` of the wire, the spike index rebuilt from their causes.
+  const offset = Math.max(0, wire.gpu.length - into.capacity);
+  const count = wire.gpu.length - offset;
   let spikeCount = 0;
   for (let row = 0; row < count; row += 1) {
-    const from = row + offset;
-    const gpuValue = gpu[from];
-    const causes = knownCauses(cellOf(object, "causes", from));
-    const cause = primaryCause(causes);
-    into.frame[row] = cellOf(object, "frame", from);
-    into.t[row] = startMs + cellOf(object, "t", from);
-    into.ms[row] = cellOf(object, "ms", from);
-    into.jsMs[row] = cellOf(object, "jsMs", from);
-    into.gpuMs[row] = typeof gpuValue === "number" ? gpuValue : Number.NaN;
-    into.rateMs[row] = cellOf(object, "rateMs", from);
-    into.budgetMs[row] = cellOf(object, "budgetMs", from);
-    into.drawn[row] = cellOf(object, "drawn", from) === 1 ? 1 : 0;
-    into.causes[row] = causes;
-    into.cause[row] = cause;
-    if (cause !== 0) {
-      into.spikes[spikeCount] = row;
-      spikeCount += 1;
-    }
+    if (copyRow(wire, row + offset, into, row) === 0) continue;
+    into.spikes[spikeCount] = row;
+    spikeCount += 1;
   }
 
+  // The scalars, and a new version for the painter.
+  const { startMs } = wire;
   into.count = count;
   into.spikeCount = spikeCount;
   into.startMs = startMs;

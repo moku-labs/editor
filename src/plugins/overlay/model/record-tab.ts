@@ -87,6 +87,29 @@ function logStatus(file: LogFileInfo): Pick<LogRow, "status" | "statusText"> {
 }
 
 /**
+ * The Start / Stop key: Stop while recording, else Start (off without a monitor); off while a log
+ * is exported.
+ *
+ * @param status - `recorder.status()`.
+ * @param recording - Whether the recording row shows.
+ * @param exporting - Whether a log is being exported.
+ * @returns The key.
+ */
+function recordKeyOf(
+  status: RecorderStatus,
+  recording: boolean,
+  exporting: boolean
+): RecordTabView["key"] {
+  if (recording) return { action: "stop", label: "Stop", disabled: exporting, title: undefined };
+  return {
+    action: "start",
+    label: "Start",
+    disabled: exporting || !status.monitor,
+    title: status.monitor ? undefined : "No frame monitor in this build"
+  };
+}
+
+/**
  * The Record tab.
  *
  * @param input - The recorder's status, marks and logs, the link and the field.
@@ -126,14 +149,7 @@ export function recordTabView(input: {
           { value: "", text: "not recording" },
           { value: "", text: "logs kept on the phone" }
         ],
-    key: recording
-      ? { action: "stop", label: "Stop", disabled: exporting, title: undefined }
-      : {
-          action: "start",
-          label: "Start",
-          disabled: exporting || !status.monitor,
-          title: status.monitor ? undefined : "No frame monitor in this build"
-        },
+    key: recordKeyOf(status, recording, exporting),
     sent: sentOf(status, input.payload, input.hasBridge),
     draft: input.draft,
     marks: input.marks.map(mark => ({

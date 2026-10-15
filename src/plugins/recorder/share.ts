@@ -24,6 +24,20 @@ const NO_SHARE =
 type Deliver = (name: string, blob: Blob) => Promise<ShareResult>;
 
 /**
+ * Whether a value is the native shell of version 1 (`__MOKU_NATIVE__` of `@moku-labs/native`).
+ *
+ * @param shell - The global's value.
+ * @returns True for an object with `version: 1`.
+ * @example
+ * ```ts
+ * isNativeShell({ version: 2 }); // false
+ * ```
+ */
+function isNativeShell(shell: unknown): shell is object {
+  return typeof shell === "object" && shell !== null && Reflect.get(shell, "version") === 1;
+}
+
+/**
  * The share sheet of the native shell: `__MOKU_NATIVE__` of version 1 with a function `share`. A
  * log over 32 MiB is refused before the shell is called (the shell rejects it).
  *
@@ -31,9 +45,7 @@ type Deliver = (name: string, blob: Blob) => Promise<ShareResult>;
  */
 function nativeDelivery(): Deliver | undefined {
   const shell: unknown = Reflect.get(globalThis, "__MOKU_NATIVE__");
-  if (typeof shell !== "object" || shell === null || Reflect.get(shell, "version") !== 1) {
-    return undefined;
-  }
+  if (!isNativeShell(shell)) return undefined;
   const share: unknown = Reflect.get(shell, "share");
   if (typeof share !== "function") return undefined;
   return async (name, blob) => {
@@ -59,14 +71,19 @@ function nativeDelivery(): Deliver | undefined {
  */
 function downloadDelivery(state: RecorderState, page: Document): Deliver {
   return async (name, blob) => {
+    // Anchor: a hidden `<a download>` on an object URL of the blob, in the body.
     const url = URL.createObjectURL(blob);
     const anchor = page.createElement("a");
     anchor.href = url;
     anchor.download = name;
     anchor.style.display = "none";
     page.body.append(anchor);
+
+    // Click: the browser saves the file; the anchor goes at once.
     anchor.click();
     anchor.remove();
+
+    // Schedule revoke: the URL lives REVOKE_AFTER_MS (onStop revokes it sooner).
     const timer = setTimeout(() => {
       state.revokes.delete(timer);
       URL.revokeObjectURL(url);

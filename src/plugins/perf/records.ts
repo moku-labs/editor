@@ -53,6 +53,9 @@ function cell(column: ArrayLike<number>, index: number): number {
 /** A rate switch counts when two rows' `rateMs` differ by more than this, ms. */
 const RATE_EPSILON = 0.01;
 
+/** perf's values carry ms to hundredths. */
+const HUNDREDTHS = 100;
+
 /** The path of a frame whose path id the ring does not know. */
 const UNKNOWN_PATH = "…";
 
@@ -77,7 +80,7 @@ const PHASE_INDEX: Readonly<Record<(typeof PHASES)[number], number>> = {
  * ```
  */
 function hundredths(value: number): number | null {
-  return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+  return Number.isFinite(value) ? Math.round(value * HUNDREDTHS) / HUNDREDTHS : null;
 }
 
 /**

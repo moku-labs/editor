@@ -169,6 +169,7 @@ function adoptSheet(doc: Document, root: ShadowRoot): void {
  */
 function mountHost(octx: OverlayCtx, doc: Document): void {
   const { state } = octx;
+  // Build the hidden host, its open shadow root with the sheet, the probes and the render target.
   const host = doc.createElement("div");
   host.setAttribute(HOST_ATTRIBUTE, "");
   host.hidden = true;
@@ -178,7 +179,11 @@ function mountHost(octx: OverlayCtx, doc: Document): void {
   const container = doc.createElement("div");
   container.dataset.root = "";
   root.append(container);
+
+  // Wire the isolation listener: overlay input never reaches the game's listeners.
   for (const type of ISOLATED_EVENTS) host.addEventListener(type, isolate);
+
+  // Publish into the state, lay out, and append to the mount element (or body).
   state.host = host;
   state.root = root;
   state.container = container;
@@ -202,6 +207,7 @@ export function startOverlayWith(
   doc: Document | undefined
 ): void {
   const { state } = octx;
+  // From here on the api acts instead of recording; without a document nothing is mounted.
   state.started = true;
   state.hasBridge = hasBridge;
   if (doc === undefined) {
@@ -209,11 +215,14 @@ export function startOverlayWith(
     return;
   }
 
+  // The host, then what moves it: the slide's end, resize and insets, the page's visibility.
   mountHost(octx, doc);
   const root = state.root;
   if (root !== undefined) watchSlide(state, root);
   watchPlace(octx, doc.defaultView ?? undefined);
   watchVisibility(octx, doc);
+  // First reads inside the agent span, then the remembered window, the global channel and the
+  // start mode.
   withAgent(octx, () => {
     readViewport(state);
     readInsets(octx);

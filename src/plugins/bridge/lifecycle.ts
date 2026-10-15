@@ -49,7 +49,7 @@ const MIN_MS = 100;
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * throw configError("retryMs", "a whole number of at least 100", "1000");
+ * throw configError("retryMs", "a whole number of at least 100", "1000"); // TypeError "[moku-editor] bridge.retryMs must be a whole number of at least 100.\n  Fix pluginConfigs.bridge.retryMs, for example 1000."
  * ```
  */
 function configError(field: string, rule: string, example: string): TypeError {

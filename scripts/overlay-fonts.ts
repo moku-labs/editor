@@ -84,6 +84,9 @@ const FACES = [
  */
 const BASE_RANGES = [[0x20, 0x7e]] as const;
 
+/** Characters of BASE_RANGES (all printable): the glyph set's ASCII head. */
+const ASCII_GLYPH_COUNT = BASE_RANGES.reduce((sum, [first, last]) => sum + last - first + 1, 0);
+
 /** A character a face can draw: a letter, number, punctuation, symbol or space. */
 const PRINTABLE = /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}]$/u;
 
@@ -111,6 +114,20 @@ async function sourceFiles(path: string): Promise<string[]> {
 }
 
 /**
+ * True for a character past printable ASCII (after "~").
+ *
+ * @param char - One character.
+ * @returns Whether it is beyond U+007E.
+ * @example
+ * ```ts
+ * isBeyondAscii("×"); // true
+ * ```
+ */
+function isBeyondAscii(char: string): boolean {
+  return char > "~";
+}
+
+/**
  * The glyph set: printable ASCII and every printable non-ASCII character of the texts (literal or
  * escaped), in code point order.
  *
@@ -123,19 +140,22 @@ async function sourceFiles(path: string): Promise<string[]> {
  */
 function glyphsOf(texts: readonly string[]): string {
   const glyphs = new Set<string>();
+  // The base ranges, whatever the sources print.
   for (const [first, last] of BASE_RANGES) {
     for (let code = first; code <= last; code += 1) {
       const char = String.fromCodePoint(code);
       if (PRINTABLE.test(char)) glyphs.add(char);
     }
   }
+  // Every printable character beyond ASCII the sources write, literally or as a \uXXXX escape.
   for (const text of texts) {
-    for (const char of text) if (char > "~" && PRINTABLE.test(char)) glyphs.add(char);
+    for (const char of text) if (isBeyondAscii(char) && PRINTABLE.test(char)) glyphs.add(char);
     for (const match of text.matchAll(ESCAPE)) {
       const char = String.fromCodePoint(Number.parseInt(match[1] ?? "0", 16));
       if (PRINTABLE.test(char)) glyphs.add(char);
     }
   }
+  // In code point order.
   return [...glyphs].toSorted((a, b) => (a.codePointAt(0) ?? 0) - (b.codePointAt(0) ?? 0)).join("");
 }
 
@@ -188,6 +208,24 @@ ${faces}
 }
 
 /**
+ * Reads a fontsource face from node_modules.
+ *
+ * @param source - The path under node_modules.
+ * @returns The bytes, or undefined when the package is not installed.
+ * @example
+ * ```ts
+ * await readFontsource("@fontsource/barlow/files/barlow-latin-500-normal.woff2"); // Uint8Array(22008)
+ * ```
+ */
+async function readFontsource(source: string): Promise<Uint8Array | undefined> {
+  try {
+    return await readFile(join(REPO, "node_modules", source));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Subsets the three faces, writes them and `faces.ts`.
  *
  * @returns The process exit code: 0 when written, 1 when a fontsource file is missing.
@@ -201,23 +239,24 @@ async function writeFaces(): Promise<number> {
   const glyphs = glyphsOf(await Promise.all(paths.map(path => readFile(path, "utf8"))));
   const entries: (readonly [string, number, string])[] = [];
   for (const [file, source, family, weight] of FACES) {
-    let font: Uint8Array;
-    try {
-      font = await readFile(join(REPO, "node_modules", source));
-    } catch {
+    // Read the fontsource face; a missing devDependency stops the run.
+    const font = await readFontsource(source);
+    if (font === undefined) {
       ui.error(
         `[moku-editor] overlay-fonts found no ${source}.\n  Install the devDependencies: bun install.`
       );
       return 1;
     }
+    // Subset it to the glyph set, write the woff2, keep its base64 for faces.ts.
     const subset = await subsetFont(font, glyphs, { targetFormat: "woff2" });
     await writeFile(join(FONT_DIR, file), subset);
     entries.push([family, weight, Buffer.from(subset).toString("base64")]);
     ui.info(`${file} · ${font.length} → ${subset.length} B`);
   }
+  // Write faces.ts and name the glyphs beyond the ASCII head.
   const text = moduleText(glyphs, entries);
   await writeFile(join(FONT_DIR, "faces.ts"), text);
-  ui.info(`faces.ts · ${text.length} B · glyphs beyond ASCII: ${glyphs.slice(95)}`);
+  ui.info(`faces.ts · ${text.length} B · glyphs beyond ASCII: ${glyphs.slice(ASCII_GLYPH_COUNT)}`);
   return 0;
 }
 

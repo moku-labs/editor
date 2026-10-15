@@ -33,6 +33,20 @@ function twoDigits(value: number): string {
 }
 
 /**
+ * Whether the header names a device model.
+ *
+ * @param model - The header's `device.model`.
+ * @returns True for a non-empty model.
+ * @example
+ * ```ts
+ * hasModel(""); // false
+ * ```
+ */
+function hasModel(model: string | null | undefined): model is string {
+  return typeof model === "string" && model !== "";
+}
+
+/**
  * The file name of a log: `perf-<yyyymmdd>-<hhmm>-<model>.jsonl` in local time, the model lower-cased
  * with every character outside `[a-z0-9-]` turned into `-`, `device` without one; a name already
  * taken gains `-2`, `-3`, … before `.jsonl`.
@@ -51,12 +65,14 @@ export function logFileName(
   at: Date,
   taken: ReadonlySet<string>
 ): string {
-  const slug =
-    model === null || model === undefined || model === ""
-      ? "device"
-      : model.toLowerCase().replaceAll(/[^\da-z-]/g, "-");
+  // Slug: the model lower-cased, every character outside [a-z0-9-] a dash; `device` without one.
+  const slug = hasModel(model) ? model.toLowerCase().replaceAll(/[^\da-z-]/g, "-") : "device";
+
+  // Stamp: the local day and minute of the start.
   const day = `${at.getFullYear()}${twoDigits(at.getMonth() + 1)}${twoDigits(at.getDate())}`;
   const base = `perf-${day}-${twoDigits(at.getHours())}${twoDigits(at.getMinutes())}-${slug}`;
+
+  // Free-name search: -2, -3, … before `.jsonl` until no log has the name.
   let name = `${base}.jsonl`;
   let copy = 1;
   while (taken.has(name)) {
@@ -241,9 +257,11 @@ async function retryInMemory(
  * @returns The finished log and the failed write; undefined when no log was running.
  */
 export async function finishLog(state: RecorderState): Promise<Finished | undefined> {
+  // Guard: no log runs, nothing to finish.
   const { session, monitor } = state;
   if (session === undefined || monitor === undefined) return undefined;
 
+  // Close the log: the stop event, then the queue drained inside the agent span.
   monitor.event("recorder", { action: "stop" });
   monitor.beginAgent();
   try {
@@ -251,13 +269,18 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
   } finally {
     monitor.endAgent();
   }
+
+  // Detach: the recorder is idle (or exporting); the log stays current in the list (keepMb and
+  // keepFiles leave it alone) until its text is in the store.
   state.session = undefined;
   state.phase = state.exports > 0 ? "exporting" : "idle";
-  // Still current (keepMb and keepFiles leave it alone) until its text is in the store.
   replaceFile(state, infoOf(session));
 
+  // Write: every pending text; a failed write moves the log to memory and writes it there.
   const written = await persistAll(state, session);
   const failure = written === undefined ? undefined : await retryInMemory(state, session, written);
+
+  // Finish: the final info in the list and as `last`, the meta rewritten `current: false`.
   const info: LogFileInfo = {
     ...(findFile(state, session.name) ?? infoOf(session)),
     current: false,

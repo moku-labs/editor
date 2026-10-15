@@ -25,6 +25,9 @@ const WELL_INSET_W = 70;
 const ROW_H = 110;
 const ROW_H_COMPACT = 88;
 
+/** The well's border above and below the canvas (1 px each), CSS px. */
+const CANVAS_BORDER = 2;
+
 /**
  * The callbacks the view calls.
  */
@@ -289,7 +292,8 @@ export function tapGraph(octx: OverlayCtx, x: number, y: number): void {
  */
 function canvasSize(state: OverlayState): { readonly w: number; readonly h: number } {
   const size = windowSize("card", state.viewport);
-  return { w: Math.max(1, size.w - WELL_INSET_W), h: (size.compact ? ROW_H_COMPACT : ROW_H) - 2 };
+  const rowHeight = size.compact ? ROW_H_COMPACT : ROW_H;
+  return { w: Math.max(1, size.w - WELL_INSET_W), h: rowHeight - CANVAS_BORDER };
 }
 
 /**

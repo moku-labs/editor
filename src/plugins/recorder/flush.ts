@@ -46,17 +46,21 @@ function serialize(line: unknown): string | undefined {
 export function drain(state: RecorderState): void {
   const { queue, session } = state;
   while (state.queueSize > 0) {
+    // Dequeue: the oldest reference leaves the ring (its slot freed); without a log it is dropped.
     const line = queue[state.queueHead];
     queue[state.queueHead] = undefined;
     state.queueHead = (state.queueHead + 1) % queue.length;
     state.queueSize -= 1;
     if (session === undefined) continue;
 
+    // Serialize: one JSON text; a line that cannot be serialized is counted as dropped.
     const text = serialize(line);
     if (text === undefined) {
       state.dropped += 1;
       continue;
     }
+
+    // Append: to the log's pending text and to the outbox with its index in the log.
     session.pending.push(text);
     session.pendingBytes += text.length + 1;
     pushOutbox(state, text, session.name, session.lines);

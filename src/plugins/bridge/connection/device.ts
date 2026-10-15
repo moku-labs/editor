@@ -160,7 +160,8 @@ export function resolveMode(input: ModeInput): ResolvedMode {
  * @returns The code.
  * @example
  * ```ts
- * newCode(() => 0.0421, {}); // "0421"
+ * newCode(() => 0.5, {}); // "5000"
+ * newCode(() => 0.0421, {}); // "0421": leading zeros kept
  * ```
  */
 export function newCode(random: () => number, scope: RandomScope = globalThis): string {
@@ -256,14 +257,20 @@ export function onPaired(deps: BridgeDeps, params: Json | undefined): void {
     return;
   }
 
+  // Remember: the device id and token for this address (the newest, the last address), stored.
   state.remembered = rememberLink(state.remembered, address, {
     device: reply.device,
     token: reply.token
   });
   writeRemembered(deps);
+
+  // Reset pairing: the code goes, the next socket dials with the credentials; the computer's
+  // engine is kept.
   state.pairing = undefined;
   state.pairNext = false;
   state.editorEngine = textOf(params, "engine") ?? state.editorEngine;
+
+  // Link: the link step runs on the same socket.
   deps.log.info("bridge:paired", { address });
   onLinked(deps);
 }

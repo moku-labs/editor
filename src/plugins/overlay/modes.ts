@@ -78,6 +78,7 @@ export function applyMode(octx: OverlayCtx): void {
  */
 export function setMode(octx: OverlayCtx, mode: OverlayMode, tab?: OverlayTab): void {
   const { state } = octx;
+  // Before start: only record what was asked; onStart applies it.
   if (!state.started) {
     state.asked = mode;
     state.mode = mode;
@@ -86,14 +87,20 @@ export function setMode(octx: OverlayCtx, mode: OverlayMode, tab?: OverlayTab): 
     return;
   }
 
+  // Decide: nothing to do when the mode and the tab stay; a change into a visible mode slides.
   const nextTab = tab === undefined ? state.tab : tabFor(octx, tab);
   const previous = state.mode;
   if (previous === mode && state.tab === nextTab) return;
+  const visible = mode !== "hidden";
+  const entersVisible = visible && previous !== mode;
+
+  // Update: mode, tab, the last visible mode, and the slide (hidden ends it, a tab change keeps it).
   state.mode = mode;
   state.tab = nextTab;
-  if (mode === "hidden") state.opening = false;
-  else state.last = mode;
-  if (mode !== "hidden" && previous !== mode) state.opening = true;
+  if (visible) state.last = mode;
+  state.opening = entersVisible || (visible && state.opening);
+
+  // Apply and announce.
   applyMode(octx);
   writeStored(octx);
   emitChanged(octx);

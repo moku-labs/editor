@@ -136,11 +136,9 @@ export function paintGraphNow(octx: OverlayCtx): void {
   if (canvas === undefined) return;
 
   const dpr = pixelRatio();
-  if (
-    dpr !== canvas.dpr ||
-    octx.state.painted.w !== canvas.w ||
-    octx.state.painted.h !== canvas.h
-  ) {
+  const { painted } = octx.state;
+  const backingStoreStale = dpr !== canvas.dpr || painted.w !== canvas.w || painted.h !== canvas.h;
+  if (backingStoreStale) {
     canvas.dpr = dpr;
     canvas.element.width = Math.round(canvas.w * dpr);
     canvas.element.height = Math.round(canvas.h * dpr);
@@ -179,6 +177,22 @@ export function mountCanvas(
 }
 
 /**
+ * True for a box the layout has not measured yet (a canvas not shown, or detached).
+ *
+ * @param box - The observed content box.
+ * @param box.width - CSS px.
+ * @param box.height - CSS px.
+ * @returns Whether it has no area.
+ * @example
+ * ```ts
+ * isUnmeasured({ width: 0, height: 108 }); // true
+ * ```
+ */
+function isUnmeasured(box: { readonly width: number; readonly height: number }): boolean {
+  return box.width === 0 || box.height === 0;
+}
+
+/**
  * Follows the canvas's CSS size with a ResizeObserver (none in a test runtime without one).
  *
  * @param state - Overlay state.
@@ -189,7 +203,7 @@ function observeCanvas(state: OverlayState, element: HTMLCanvasElement): void {
   const observer = new ResizeObserver(entries => {
     const box = entries[0]?.contentRect;
     const canvas = state.canvas;
-    if (box === undefined || canvas === undefined || box.width === 0 || box.height === 0) return;
+    if (box === undefined || canvas === undefined || isUnmeasured(box)) return;
     canvas.w = box.width;
     canvas.h = box.height;
   });

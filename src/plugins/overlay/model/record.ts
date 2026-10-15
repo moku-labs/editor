@@ -291,6 +291,25 @@ function filterRows(record: PerfSpikeRecord): KvRow[] {
 }
 
 /**
+ * The per-system times of a spike line.
+ */
+type SystemTimes = readonly { readonly name: string; readonly ms: number }[];
+
+/**
+ * True when the spike line timed at least one system.
+ *
+ * @param systems - The line's systems; null or undefined when not measured.
+ * @returns Whether there is a time to name.
+ * @example
+ * ```ts
+ * hasSystems([]); // false
+ * ```
+ */
+function hasSystems(systems: SystemTimes | null | undefined): systems is SystemTimes {
+  return systems !== undefined && systems !== null && systems.length > 0;
+}
+
+/**
  * The slowest systems of the frame, from the spike line.
  *
  * @param record - The spike record.
@@ -298,7 +317,7 @@ function filterRows(record: PerfSpikeRecord): KvRow[] {
  */
 function systemsOf(record: PerfSpikeRecord): string {
   const systems = record.detail?.systems ?? record.detail?.frame.systems ?? undefined;
-  if (systems === undefined || systems === null || systems.length === 0) return DASH;
+  if (!hasSystems(systems)) return DASH;
 
   const top = systems.toSorted((a, b) => b.ms - a.ms).slice(0, TOP_SYSTEMS);
   const named = top.map(system => `${system.name} ${system.ms.toFixed(1)}`);

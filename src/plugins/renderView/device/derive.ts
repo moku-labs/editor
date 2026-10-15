@@ -5,7 +5,7 @@
  */
 import type { PerfDisplay } from "../../perf/protocol";
 import type { LinkStatus } from "../../registry/protocol";
-import type { PerfRate, PerfSecond, PerfWindowView } from "./contract";
+import type { PerfRate, PerfSecond, PerfWindowView, RecorderStatus } from "./contract";
 import { meanGpu } from "./contract";
 import { spikeCounter } from "./step";
 import type {
@@ -643,6 +643,23 @@ export function moreText(
 }
 
 /**
+ * The view's recorder: its state and, while recording, the clock of the log (measured on the
+ * phone); undefined for an agent without the recorder source.
+ *
+ * @param recorder - The last `editor.recorder` value.
+ * @returns The view's `rec`.
+ * @example
+ * ```ts
+ * recCellOf(undefined); // undefined: the agent has no recorder source
+ * ```
+ */
+function recCellOf(recorder: RecorderStatus | undefined): DeviceStripView["rec"] {
+  if (recorder === undefined) return undefined;
+  if (recorder.state !== "recording") return { state: recorder.state, clock: undefined };
+  return { state: recorder.state, clock: recClock(recorder.sinceMs) };
+}
+
+/**
  * What perf can measure, as the view names it.
  *
  * @param state - The strip state.
@@ -692,13 +709,7 @@ export function stripView(
       stale: isStale(deviceEngine, computerEngine)
     },
     build: { id: buildId, profile: buildProfile(buildId) },
-    rec:
-      recorder === undefined
-        ? undefined
-        : {
-            state: recorder.state,
-            clock: recorder.state === "recording" ? recClock(recorder.sinceMs) : undefined
-          },
+    rec: recCellOf(recorder),
     spikes: state.spikes.map(spike => ({ frame: spike.frame, cause: spike.cause })),
     selected: state.selected,
     counter: spikeCounter(state.window, state.selected),
