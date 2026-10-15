@@ -16,12 +16,13 @@
  * | perf | readEveryMs | 250 |
  * | perf | windowMs | 6000 |
  * | perf | frames | 1024 |
- * | recorder | autoStart | true |
+ * | recorder | autoStart | "device": a log starts by itself on a debug build only |
  * | recorder | keepMb | 64 |
  * | recorder | flushEveryMs | 1000 |
  * | recorder | persistEveryMs | 5000 |
  * | recorder | storage | "auto": OPFS when the page has it, else memory |
  * | recorder | keepFiles | 10 |
+ * | recorder | maxLogMb | 32: a log rotates to the next at 32 MB |
  * | overlay | mode | "hidden" |
  * | overlay | dock | "right" |
  * | overlay | remember | true |

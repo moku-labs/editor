@@ -41,15 +41,16 @@ perf-20261014-1532-sm-a266b.jsonl
 
 | Option | Default | Range | Meaning |
 |---|---|---|---|
-| `autoStart` | `true` | | Start a log when the plugin starts. |
+| `autoStart` | `"device"` | `true`, `false`, `"device"` | Start a log when the plugin starts: `"device"` only on a debug build (agent flag on, dev flag off; the registry's build profile `read` or `full`), `true` always, `false` never. A dev page records only when asked (`start()`, `editor.record`, the overlay's Record tab). |
 | `keepMb` | `64` | 1 to 512 | Most MB in memory: unconfirmed outbox lines, memory-store logs, pending text. |
 | `flushEveryMs` | `1000` | 100 to 10000 | How often the queue is serialized. |
 | `persistEveryMs` | `5000` | 1000 to 60000 | How often text is written to the store (also at 64 KB pending, and at stop). |
 | `storage` | `"auto"` | `"auto"`, `"memory"` | OPFS when the page has it, or never on disk. |
 | `keepFiles` | `10` | whole, 1 to 100 | Finished logs kept; the oldest beyond go when a log starts. |
+| `maxLogMb` | `32` | whole, 1 to 512 | The size of one log: at it the recorder rotates to a new log. 32 is the native share's cap, so every log stays shareable; the store holds at most about `keepFiles × maxLogMb`. |
 
 ```ts
-createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: false, keepMb: 32 } } });
+createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: true, maxLogMb: 16 } } });
 ```
 
 A bad value throws a `TypeError` at `createApp`:
@@ -97,6 +98,13 @@ status shows `exporting` while any share runs; the last one to end sets it back 
 - **keepMb**: while the outbox, the memory store and the pending text pass `keepMb`, the oldest finished log of the
   memory store goes first (`recorder:dropped-log`), then the oldest outbox lines (`recorder:dropped`, once per streak).
   The current log's own text is never removed while it records.
+- **Rotation** (`rotate.ts`, after each tick): when the current log reaches `maxLogMb`, the recorder finishes it (the
+  stop event, every line written, the meta rewritten) and starts the next one at once with the same label and the
+  header/startup/display context again (`recorder:started`, then `recorder:rotated { from, to }`). The switch is
+  synchronous, so no line falls between the two logs or goes into both; a line already queued when the cap is passed
+  goes into the full log before its stop event. The status shows the new log as the current one; the finished part is
+  listed in `files()` and can be shared or removed. The outbox keeps the full log's unsent lines: the bridge ships them
+  first, acked per log. `marks()` belongs to the current log, so it starts empty after a rotation.
 - **Failed writes**: a rejected chunk goes back in front of the pending text (`recorder:persist-failed`); after three
   in a row the log moves to the memory store for the rest of its life (`recorder:storage`). Nothing is copied into the
   heap: the chunks OPFS already has stay there, later ones go to memory, and a read or share joins both parts (a remove
@@ -162,8 +170,8 @@ writes the `command` line; then the overlay calls `recorder.command(id, input, l
 
 ## Log events
 
-`recorder:started`, `recorder:stopped`, `recorder:shared`, `recorder:storage`, `recorder:dropped-log` and
-`recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
+`recorder:started`, `recorder:stopped`, `recorder:rotated`, `recorder:shared`, `recorder:storage`,
+`recorder:dropped-log` and `recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
 `recorder:list-failed`, `recorder:flush-failed` and `recorder:watcher-failed` at warn. onStop logs nothing.
 
 ## Dependencies
@@ -185,7 +193,7 @@ calls the API.
 | Phase | What |
 |---|---|
 | `onInit` | Checks the config (a two-line `TypeError` at `createApp`), takes `perf.monitor()`, adds the three registry entries, and logs `recorder:no-monitor` at info without a monitor. |
-| `onStart` | Opens the store (`openStore(storage)`: OPFS, or memory with the reason logged as `recorder:storage`); with OPFS lists the logs an earlier launch left (a failed list warns `recorder:list-failed`). Without a monitor it stops here. Otherwise subscribes to `monitor.stream` and starts the flush timer every `flushEveryMs` (a throwing tick warns `recorder:flush-failed`). `autoStart` starts a log now when the engine's header is there, else on the first tick that has it, at most 10 ticks later. |
+| `onStart` | Opens the store (`openStore(storage)`: OPFS, or memory with the reason logged as `recorder:storage`); with OPFS lists the logs an earlier launch left (a failed list warns `recorder:list-failed`). Without a monitor it stops here. Otherwise subscribes to `monitor.stream` and starts the flush timer every `flushEveryMs` (a throwing tick warns `recorder:flush-failed`). When `autoStart` says so for this build (`"device"`: a debug build only), a log starts now when the engine's header is there, else on the first tick that has it, at most 10 ticks later. |
 | `onStop` | Clears the timer and the autoStart wait, revokes the download URLs still waiting, finishes the running log (`finishLog`: the stop event, the queue drained in the agent span, every pending text written, the meta rewritten), unsubscribes the stream and drops the watches. No emit and no log line: the teardown context has neither. |
 
 ## Files
@@ -199,6 +207,7 @@ calls the API.
 | `lifecycle.ts` | The config check, `initRecorder`, `startRecorder`, `stopRecorder`. |
 | `listener.ts` | The `monitor.stream` listener: references in a ring of 4096 slots; allocates nothing, never serializes. |
 | `flush.ts` | The flush tick inside the agent span, the `keepMb` bound, the chunk writes and their failures. |
+| `rotate.ts` | Rotation at `maxLogMb`: finish the full log, start the next with the same label. |
 | `session.ts` | The life of a log: file name, start (context lines first), `finishLog`, `remove`, the `keepFiles` bound. |
 | `marks.ts` | A user mark and the overlay's automatic mark of a game command (`monitor.mark`). |
 | `outbox.ts` | The unconfirmed lines: `unsentRun`, `ack`, the head splice. |

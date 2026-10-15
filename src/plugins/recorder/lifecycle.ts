@@ -4,9 +4,12 @@
  * the running log finished, the timer and the listener freed (onStop, without emit or log).
  */
 import { perfPlugin } from "../perf";
+import { registryPlugin } from "../registry";
+import type { BuildProfile } from "../registry/protocol";
 import { addRecorderEntries } from "./entries";
 import { flushTick } from "./flush";
 import { listen } from "./listener";
+import { rotateIfFull } from "./rotate";
 import { finishLog, startRecording } from "./session";
 import { revokeDownloads } from "./share";
 import { messageOf, openStore } from "./store";
@@ -15,7 +18,7 @@ import type { LogFileInfo, RecorderConfig, RecorderCtx, RecorderStopCtx } from "
 
 /** A numeric option and its range. */
 type Rule = {
-  readonly key: "keepMb" | "flushEveryMs" | "persistEveryMs" | "keepFiles";
+  readonly key: "keepMb" | "flushEveryMs" | "persistEveryMs" | "keepFiles" | "maxLogMb";
   readonly min: number;
   readonly max: number;
   readonly whole: boolean;
@@ -51,6 +54,13 @@ const RULES: readonly Rule[] = [
     max: 100,
     whole: true,
     hint: "Give a whole number from 1 to 100; 10 keeps the last ten logs."
+  },
+  {
+    key: "maxLogMb",
+    min: 1,
+    max: 512,
+    whole: true,
+    hint: "Give a whole number of megabytes from 1 to 512; 32 keeps every log shareable."
   }
 ];
 
@@ -86,6 +96,12 @@ export function checkRecorderConfig(config: Readonly<RecorderConfig>): void {
     if (!fits) {
       throw new TypeError(`[moku-editor] recorder.${rule.key} is ${shown(value)}.\n  ${rule.hint}`);
     }
+  }
+  const autoStart: unknown = config.autoStart;
+  if (autoStart !== true && autoStart !== false && autoStart !== "device") {
+    throw new TypeError(
+      `[moku-editor] recorder.autoStart is ${shown(autoStart)}.\n  Give true, false or "device" (start a log on a debug build only).`
+    );
   }
   const storage: unknown = config.storage;
   if (storage !== "auto" && storage !== "memory") {
@@ -149,8 +165,8 @@ function autoStartOnTick(ctx: RecorderCtx): void {
 }
 
 /**
- * One tick of the flush timer: a pending autoStart first, then the flush; a throw of either is
- * warned, never left to the timer.
+ * One tick of the flush timer: a pending autoStart first, then the flush, then the rotation of a
+ * log at maxLogMb; a throw of any is warned, never left to the timer.
  *
  * @param ctx - The recorder's context.
  */
@@ -158,14 +174,32 @@ function tick(ctx: RecorderCtx): void {
   try {
     autoStartOnTick(ctx);
     flushTick(ctx);
+    rotateIfFull(ctx);
   } catch (error) {
     ctx.log.warn("recorder:flush-failed", { message: messageOf(error) });
   }
 }
 
 /**
+ * Whether onStart starts a log: "device" on a debug build only (the registry's profile `read` or
+ * `full`: agent flag on, dev flag off), true always, false never.
+ *
+ * @param autoStart - The config's autoStart.
+ * @param profile - The page's build profile.
+ * @returns Whether to start.
+ * @example
+ * ```ts
+ * shouldAutoStart("device", "dev"); // false: a dev page records only when asked
+ * ```
+ */
+export function shouldAutoStart(autoStart: boolean | "device", profile: BuildProfile): boolean {
+  return autoStart === "device" ? profile === "read" || profile === "full" : autoStart;
+}
+
+/**
  * onStart: opens the store (OPFS may answer memory with a reason) and lists its logs. With a
- * monitor: subscribes to the stream, starts the flush timer and, with autoStart, starts a log —
+ * monitor: subscribes to the stream, starts the flush timer and, when autoStart says so for this
+ * build (`shouldAutoStart`), starts a log —
  * at once when the header is in, else on the first tick that has it, at most AUTOSTART_WAIT_TICKS
  * later (a native shell holds the header back until it is ready).
  *
@@ -184,7 +218,7 @@ export async function startRecorder(ctx: RecorderCtx): Promise<void> {
   if (monitor === undefined) return;
   state.unsubscribe = monitor.stream(line => listen(state, line));
   state.timer = setInterval(() => tick(ctx), config.flushEveryMs);
-  if (!config.autoStart) return;
+  if (!shouldAutoStart(config.autoStart, ctx.require(registryPlugin).build().profile)) return;
   if (state.header === undefined) state.autoStartWait = AUTOSTART_WAIT_TICKS;
   else startRecording(ctx);
 }

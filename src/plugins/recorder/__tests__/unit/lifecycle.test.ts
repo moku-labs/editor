@@ -113,4 +113,35 @@ describe("onInit and onStart", () => {
     expect(t.state.session?.name).toBe("perf-20261014-1532-device.jsonl");
     await stopRecorder(t.ctx);
   });
+
+  it.each<[string, Record<string, boolean>, boolean | "device", boolean]>([
+    [
+      "a dev page with the default",
+      { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true },
+      "device",
+      false
+    ],
+    ["a debug build with the default", { __MOKU_GAME_AGENT__: true }, "device", true],
+    [
+      "a --debug=full build with the default",
+      { __MOKU_GAME_AGENT__: true, __MOKU_GAME_CONTROL__: true },
+      "device",
+      true
+    ],
+    ["a page without flags with the default", {}, "device", false],
+    [
+      "a dev page with autoStart true",
+      { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true },
+      true,
+      true
+    ],
+    ["a debug build with autoStart false", { __MOKU_GAME_AGENT__: true }, false, false]
+  ])("%s (flags %o, autoStart %s) starts a log: %s (bug: a dev page that records without bound)", async (_label, flags, autoStart, starts) => {
+    for (const [name, value] of Object.entries(flags)) vi.stubGlobal(name, value);
+    const t = recorder({ attached: false, config: { autoStart } });
+    await startRecorder(t.ctx);
+    vi.advanceTimersByTime(10_000);
+    expect(t.state.session !== undefined).toBe(starts);
+    await stopRecorder(t.ctx);
+  });
 });

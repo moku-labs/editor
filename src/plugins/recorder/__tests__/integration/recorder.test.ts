@@ -10,7 +10,7 @@ import { registryPlugin } from "../../../registry";
 import type { DevModule, GameLike } from "../../../registry/types";
 import { recorderPlugin } from "../..";
 import { createOpfsStore, OPFS_DIR } from "../../store";
-import type { RecorderStatusEvent } from "../../types";
+import type { RecorderConfig, RecorderStatusEvent } from "../../types";
 import { createFakeDirectory } from "../fake-opfs";
 import { kinds, startedGame } from "../helpers";
 
@@ -49,6 +49,12 @@ const glowModule: DevModule = {
   ]
 };
 
+/** The recorder's options of most tests: on the dev page they use, a log starts only when asked. */
+const RECORD_ALWAYS: Partial<RecorderConfig> = { autoStart: true };
+
+/** The flags of a dev page. */
+const DEV_PAGE: Readonly<Record<string, boolean>> = { __MOKU_GAME_DEV__: true };
+
 /** What each test stops. */
 const stops: (() => Promise<void>)[] = [];
 
@@ -64,10 +70,18 @@ afterEach(async () => {
  *
  * @param monitor - The monitor; none for a game without a renderer.
  * @param storage - The recorder's storage.
+ * @param recorder - The recorder's other options (autoStart true by default: a dev page records
+ *   only when asked).
+ * @param flags - The page's build flags (a dev page by default).
  * @returns The agent app.
  */
-async function startEditor(monitor?: FakeMonitor, storage: "auto" | "memory" = "memory") {
-  vi.stubGlobal("__MOKU_GAME_DEV__", true);
+async function startEditor(
+  monitor?: FakeMonitor,
+  storage: "auto" | "memory" = "memory",
+  recorder: Partial<RecorderConfig> = RECORD_ALWAYS,
+  flags: Readonly<Record<string, boolean>> = DEV_PAGE
+) {
+  for (const [name, value] of Object.entries(flags)) vi.stubGlobal(name, value);
   const game = await startedGame();
   stops.push(() => game.stop());
   const grafted: GameLike =
@@ -78,7 +92,10 @@ async function startEditor(monitor?: FakeMonitor, storage: "auto" | "memory" = "
   vi.setSystemTime(new Date(2026, 9, 14, 15, 32, 10));
   const editor = createApp({
     plugins: [observerPlugin],
-    pluginConfigs: { registry: { game: grafted, modules: [glowModule] }, recorder: { storage } }
+    pluginConfigs: {
+      registry: { game: grafted, modules: [glowModule] },
+      recorder: { storage, ...recorder }
+    }
   });
   editor.log.clearSinks();
   await editor.start();
@@ -161,6 +178,17 @@ describe("the recorder on a game with a monitor", () => {
     vi.advanceTimersByTime(5000);
     expect([monitor.begins, monitor.listeners, vi.getTimerCount()]).toEqual([begins, 0, 0]);
     expect(editor.recorder.files().at(-1)).toMatchObject({ name: second.name, current: false });
+  });
+});
+
+describe('autoStart "device", the default', () => {
+  it.each([
+    ["a debug build (agent flag on, dev flag off)", { __MOKU_GAME_AGENT__: true }, "recording"],
+    ["a dev page (dev flag on)", { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true }, "idle"]
+  ])("on %s the recorder is %s at start (bug: a dev page that records without bound)", async (_label, flags, state) => {
+    const editor = await startEditor(createFakeMonitor(), "memory", {}, flags);
+    expect(editor.recorder.status().state).toBe(state);
+    expect(editor.recorder.start().current).toBe(true);
   });
 });
 

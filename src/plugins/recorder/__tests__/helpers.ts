@@ -6,6 +6,7 @@ import type { FakeMonitor } from "../../../../tests/fixtures/fake-monitor";
 import { createFakeMonitor } from "../../../../tests/fixtures/fake-monitor";
 import type { Require } from "../../../config";
 import type { PerfLogLine, PerfStartupLine } from "../../perf/protocol";
+import { readBuildInfo } from "../../registry/entries/profile";
 import type { CommandEntry, GameLike, SourceEntry } from "../../registry/types";
 import { createRecorderApi } from "../api";
 import { listen } from "../listener";
@@ -32,7 +33,8 @@ export const CONFIG: RecorderConfig = {
   flushEveryMs: 1000,
   persistEveryMs: 5000,
   storage: "memory",
-  keepFiles: 10
+  keepFiles: 10,
+  maxLogMb: 32
 };
 
 /**
@@ -102,7 +104,8 @@ export function recorder(
   const added: (CommandEntry | SourceEntry)[] = [];
   const registry = {
     add: (entry: CommandEntry | SourceEntry) => added.push(entry),
-    envelope: () => ({ path: "home", frame: 12, tainted: false })
+    envelope: () => ({ path: "home", frame: 12, tainted: false }),
+    build: readBuildInfo
   };
   const perf = { monitor: () => (options.monitor === false ? undefined : monitor) };
   const require = ((plugin: { name: string }) =>

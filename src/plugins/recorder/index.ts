@@ -17,12 +17,13 @@ import { createRecorderState } from "./state";
 import type { RecorderConfig, RecorderStatusEvent } from "./types";
 
 const defaultConfig: RecorderConfig = {
-  autoStart: true,
+  autoStart: "device",
   keepMb: 64,
   flushEveryMs: 1000,
   persistEveryMs: 5000,
   storage: "auto",
-  keepFiles: 10
+  keepFiles: 10,
+  maxLogMb: 32
 };
 
 /**

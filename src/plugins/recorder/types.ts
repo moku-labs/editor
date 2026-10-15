@@ -25,12 +25,16 @@ export type { RecorderStatus, RecorderStatusEvent } from "./protocol";
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: false, keepMb: 32 } } });
+ * createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: true, maxLogMb: 16 } } });
  * ```
  */
 export type RecorderConfig = {
-  /** Start a log when the plugin starts: a debug build is for measuring, and the bridge ships only what is recorded. true. */
-  autoStart: boolean;
+  /**
+   * Start a log when the plugin starts. "device": only on a debug build (agent flag on, dev flag
+   * off), the build that is for measuring; a dev page records only when asked. true: always;
+   * false: never. "device".
+   */
+  autoStart: boolean | "device";
   /** Most MB kept in memory: lines the computer has not confirmed, plus the logs of the memory store. 64. 1 to 512. */
   keepMb: number;
   /** How often the queue is serialized, ms: 1000. 100 to 10000. */
@@ -41,6 +45,11 @@ export type RecorderConfig = {
   storage: "auto" | "memory";
   /** Finished logs kept in the store; the oldest beyond are removed when a log starts. 10. 1 to 100. */
   keepFiles: number;
+  /**
+   * The size of one log, MB: at it the recorder rotates (finishes the log and goes on in a new one
+   * with the same label). 32 (the native share's cap, so every log stays shareable). Whole, 1 to 512.
+   */
+  maxLogMb: number;
 };
 
 /**

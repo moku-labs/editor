@@ -47,6 +47,18 @@ describe("the config checks (bug: a config typo that surfaces as a crash on the 
       "[moku-editor] recorder.keepFiles is 2.5.\n  Give a whole number from 1 to 100; 10 keeps the last ten logs."
     ],
     [
+      { autoStart: "yes" },
+      '[moku-editor] recorder.autoStart is "yes".\n  Give true, false or "device" (start a log on a debug build only).'
+    ],
+    [
+      { maxLogMb: 0 },
+      "[moku-editor] recorder.maxLogMb is 0.\n  Give a whole number of megabytes from 1 to 512; 32 keeps every log shareable."
+    ],
+    [
+      { maxLogMb: 2.5 },
+      "[moku-editor] recorder.maxLogMb is 2.5.\n  Give a whole number of megabytes from 1 to 512; 32 keeps every log shareable."
+    ],
+    [
       { storage: "disk" },
       '[moku-editor] recorder.storage is "disk".\n  Give "auto" (OPFS when the page has it) or "memory" (never on disk).'
     ]
