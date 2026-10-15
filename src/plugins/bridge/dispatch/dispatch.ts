@@ -68,6 +68,7 @@ function answerWithin(
   work: Promise<Json>
 ): Promise<void> {
   const { state } = deps;
+  // Arm the deadline: a late result becomes -32002 (retryable); the command itself runs on.
   const deadline = deadlineFor(request.method, request.params, deps.config.callTimeoutMs);
   const timer = setTimeout(() => {
     state.inflight.delete(request.id);
@@ -86,6 +87,7 @@ function answerWithin(
    * @param response - The response of the settled call.
    */
   const settle = (response: RpcResponse): void => {
+    // Settle once: a result after the deadline, or after the socket closed, is dropped.
     if (state.inflight.get(request.id) !== timer) {
       deps.log.debug("bridge:late-result", { id, request: request.id });
       return;
@@ -95,6 +97,7 @@ function answerWithin(
     sendNow(deps, response);
   };
 
+  // Respond when the call settles: its value, or its error as a wire error.
   return work.then(
     value => {
       settle(success(request.id, value));

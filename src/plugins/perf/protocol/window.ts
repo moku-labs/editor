@@ -170,6 +170,35 @@ const NUMBER_COLUMNS = [
 ] as const;
 
 /**
+ * Whether a capacity is a row count a window can hold: a whole number from 1 to 65535 (`spikes` is
+ * a Uint16Array).
+ *
+ * @param capacity - The rows asked for.
+ * @returns Whether a window can have it.
+ * @example
+ * ```ts
+ * isRowCount(65_536); // false
+ * ```
+ */
+function isRowCount(capacity: number): boolean {
+  return Number.isInteger(capacity) && capacity >= 1 && capacity <= MAX_ROWS;
+}
+
+/**
+ * Whether a wire window's span is one the tools page may draw: finite, above 0 and at most 60 s.
+ *
+ * @param span - `endMs − startMs`, ms.
+ * @returns Whether the span is allowed.
+ * @example
+ * ```ts
+ * isWireSpan(600_000); // false: a hostile ten-minute window
+ * ```
+ */
+function isWireSpan(span: number): boolean {
+  return Number.isFinite(span) && span > 0 && span <= MAX_WIRE_SPAN_MS;
+}
+
+/**
  * Allocates a window of `capacity` rows: every array once, `count` 0, `gpuTimer` true, `version` 0.
  *
  * @param capacity - Rows, a whole number from 1 to 65535.
@@ -181,7 +210,7 @@ const NUMBER_COLUMNS = [
  * ```
  */
 export function createPerfWindow(capacity: number): PerfWindow {
-  if (!Number.isInteger(capacity) || capacity < 1 || capacity > MAX_ROWS) {
+  if (!isRowCount(capacity)) {
     throw new TypeError(
       `[moku-editor] createPerfWindow(${String(capacity)}) needs a whole number of rows from 1 to 65535.\n  Pass perf's frames, for example 1024.`
     );
@@ -461,11 +490,15 @@ function isGpuColumn(value: Json | undefined): value is (number | null)[] {
  * ```
  */
 function checkedWire(value: Json): CheckedWire | undefined {
+  // Shape: an object of v: 1 with numeric startMs and endMs.
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const { v, startMs, endMs, gpuTimer, gpuMs } = value;
   if (v !== 1 || typeof startMs !== "number" || typeof endMs !== "number") return undefined;
-  const span = endMs - startMs;
-  if (!Number.isFinite(span) || span <= 0 || span > MAX_WIRE_SPAN_MS) return undefined;
+
+  // Span: a hostile phone value must not make the tools page loop for long.
+  if (!isWireSpan(endMs - startMs)) return undefined;
+
+  // Columns: a boolean gpuTimer, equal-length number columns, every rateMs in (0, 1000].
   if (typeof gpuTimer !== "boolean" || !isGpuColumn(gpuMs)) return undefined;
   const { length } = gpuMs;
   if (!NUMBER_COLUMNS.every(key => isColumn(value[key], length))) return undefined;

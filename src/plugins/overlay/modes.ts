@@ -49,6 +49,7 @@ export function applyMode(octx: OverlayCtx): void {
   withAgent(octx, () => {
     host.hidden = hidden;
     host.toggleAttribute("data-opening", state.opening);
+    // Hidden draws nothing and runs nothing: no tick, no view, no canvas.
     if (hidden) {
       layout(state);
       stopTick(state);
@@ -56,6 +57,7 @@ export function applyMode(octx: OverlayCtx): void {
       dropCanvas(state);
       return;
     }
+    // Visible: the faces (once), then the viewport and the insets read again, then the layout.
     registerFaces(octx);
     readViewport(state);
     readInsets(octx);
@@ -63,6 +65,7 @@ export function applyMode(octx: OverlayCtx): void {
   });
   if (hidden) return;
 
+  // Start the tick and paint now (the paint brackets itself).
   startTick(octx);
   paintNow(octx);
 }
@@ -159,6 +162,7 @@ export function setTab(octx: OverlayCtx, tab: OverlayTab): void {
  */
 export function applyStart(octx: OverlayCtx, stored: StoredOverlay | undefined): void {
   const { state } = octx;
+  // Gather: the asked mode over the remembered one over config.mode; tab, place and last from the store.
   const mode = state.asked ?? stored?.mode ?? octx.config.mode;
   if (stored !== undefined) {
     state.place = stored.place;
@@ -168,11 +172,13 @@ export function applyStart(octx: OverlayCtx, stored: StoredOverlay | undefined):
   state.tab = tabFor(octx, state.tab);
   state.mode = mode;
   state.asked = undefined;
+  // Start hidden: apply and announce nothing.
   if (mode === "hidden") {
     applyMode(octx);
     return;
   }
 
+  // Start visible: with the slide, and one overlay:changed.
   state.last = mode;
   state.opening = true;
   applyMode(octx);

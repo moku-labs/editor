@@ -106,10 +106,6 @@ export function isRunOrigin(url: URL, port: number): boolean {
  * @param ui - The brand console.
  * @returns 0 when the run answered (also with no live phone), 1 with no run, a refused token, a
  * network error or another answer.
- * @example
- * ```ts
- * await perfMark({ kind: "perf-mark", label: "boss" }, processPerfDeps(), ui); // 0, prints '✓ mark "boss" in 1 log(s)'
- * ```
  */
 export async function perfMark(
   args: PerfMarkArgs,

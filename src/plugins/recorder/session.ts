@@ -4,6 +4,8 @@
  * then the `recorder` start event), the finish shared by `stop` and onStop, `remove`, and the
  * keepFiles bound.
  */
+
+import type { PerfEventLine, PerfHeaderLine } from "../perf/protocol";
 import type { WriteFailure } from "./flush";
 import { drain, moveToMemory, persistAll, warnFailure } from "./flush";
 import { clearQueue, enqueue } from "./listener";
@@ -98,6 +100,25 @@ export function unknownLog(method: string, name: string): string {
 }
 
 /**
+ * Whether the newest display is news for a log start: there is one, and it came after the header
+ * (or there is no header).
+ *
+ * @param display - The newest `display` event line.
+ * @param header - The newest header line.
+ * @returns Whether the start repeats the display.
+ * @example
+ * ```ts
+ * isDisplayAfterHeader(undefined, undefined); // false
+ * ```
+ */
+function isDisplayAfterHeader(
+  display: PerfEventLine | undefined,
+  header: PerfHeaderLine | undefined
+): display is PerfEventLine {
+  return display !== undefined && (header === undefined || display.t > header.t);
+}
+
+/**
  * Queues the context lines of a log start: the newest header, the startup, and the newest display
  * when it came after the header.
  *
@@ -107,9 +128,7 @@ function queueContext(state: RecorderState): void {
   const { header, startup, display } = state;
   if (header !== undefined) enqueue(state, header);
   if (startup !== undefined) enqueue(state, startup);
-  if (display !== undefined && (header === undefined || display.t > header.t)) {
-    enqueue(state, display);
-  }
+  if (isDisplayAfterHeader(display, header)) enqueue(state, display);
 }
 
 /**

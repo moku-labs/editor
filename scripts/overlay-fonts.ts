@@ -128,6 +128,49 @@ function isBeyondAscii(char: string): boolean {
 }
 
 /**
+ * Adds a character to the glyph set when a face can draw it.
+ *
+ * @param glyphs - The glyph set.
+ * @param char - One character.
+ */
+function addIfPrintable(glyphs: Set<string>, char: string): void {
+  if (PRINTABLE.test(char)) glyphs.add(char);
+}
+
+/**
+ * The characters of a code point range, both ends included.
+ *
+ * @param range - The first and last code point.
+ * @returns The characters.
+ * @example
+ * ```ts
+ * charsOfRange([0x41, 0x43]); // ["A", "B", "C"]
+ * ```
+ */
+function charsOfRange(range: readonly [number, number]): string[] {
+  const [first, last] = range;
+  return Array.from({ length: last - first + 1 }, (_, index) =>
+    String.fromCodePoint(first + index)
+  );
+}
+
+/**
+ * The characters a source writes as `\uXXXX` escapes.
+ *
+ * @param text - The source text.
+ * @returns The characters, in order.
+ * @example
+ * ```ts
+ * escapedChars('const NBSP = "\\u00A0";'); // ["\u00A0"]
+ * ```
+ */
+function escapedChars(text: string): string[] {
+  return [...text.matchAll(ESCAPE)].map(match =>
+    String.fromCodePoint(Number.parseInt(match[1] ?? "0", 16))
+  );
+}
+
+/**
  * The glyph set: printable ASCII and every printable non-ASCII character of the texts (literal or
  * escaped), in code point order.
  *
@@ -141,19 +184,12 @@ function isBeyondAscii(char: string): boolean {
 function glyphsOf(texts: readonly string[]): string {
   const glyphs = new Set<string>();
   // The base ranges, whatever the sources print.
-  for (const [first, last] of BASE_RANGES) {
-    for (let code = first; code <= last; code += 1) {
-      const char = String.fromCodePoint(code);
-      if (PRINTABLE.test(char)) glyphs.add(char);
-    }
-  }
+  for (const char of BASE_RANGES.flatMap(range => charsOfRange(range)))
+    addIfPrintable(glyphs, char);
   // Every printable character beyond ASCII the sources write, literally or as a \uXXXX escape.
   for (const text of texts) {
-    for (const char of text) if (isBeyondAscii(char) && PRINTABLE.test(char)) glyphs.add(char);
-    for (const match of text.matchAll(ESCAPE)) {
-      const char = String.fromCodePoint(Number.parseInt(match[1] ?? "0", 16));
-      if (PRINTABLE.test(char)) glyphs.add(char);
-    }
+    for (const char of [...text].filter(each => isBeyondAscii(each))) addIfPrintable(glyphs, char);
+    for (const char of escapedChars(text)) addIfPrintable(glyphs, char);
   }
   // In code point order.
   return [...glyphs].toSorted((a, b) => (a.codePointAt(0) ?? 0) - (b.codePointAt(0) ?? 0)).join("");

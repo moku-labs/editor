@@ -386,6 +386,7 @@ function leadsInto(
  * @returns The switch, or null.
  */
 function rateSwitchOf(state: PerfState, row: number): PerfSpikeRecord["rateSwitch"] {
+  // Find the newest rate line that names this frame or leads into its switch.
   const frame = cell(state.window.frame, row);
   const switched = switchesAt(state, row);
   let change: RateChange | undefined;
@@ -396,9 +397,13 @@ function rateSwitchOf(state: PerfState, row: number): PerfSpikeRecord["rateSwitc
     const leadsIntoSwitch = switched && leadsInto(state, row, line, detail);
     if (namesFrame || leadsIntoSwitch) change = detail;
   }
+
+  // Prefer the engine's line: it carries the reason and the mode.
   if (change !== undefined) {
     return { from: change.from, to: change.to, reason: change.reason, mode: change.mode };
   }
+
+  // Else the switch the rows show, without reason and mode; else no switch here.
   if (!switched) return null;
   const { rateMs } = state.window;
   return {
