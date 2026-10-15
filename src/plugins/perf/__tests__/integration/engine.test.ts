@@ -145,12 +145,13 @@ describe("perf on the real engine", () => {
       ring.capacity;
     expect(ring.columns.causes[spikeSlot]).toBe(1 << CAUSE_BITS.indexOf("gap"));
     expect(editor.perf.second().budgetMs).toBe(16.67);
-    // spec 23: the engine's own stats().kept and renderPassesMax; spec 26's redraws / rebuilds not yet.
+    // The engine's own stats(): kept and renderPassesMax (spec 23) in every build, redraws and
+    // rebuilds (spec 26) on this agent build.
     expect(editor.perf.second().render).toEqual({
       passesMax: expect.any(Number),
       kept: { pictures: 0, mb: 0, retakes: 0 },
-      redraws: null,
-      rebuilds: null
+      redraws: 0,
+      rebuilds: 0
     });
     expect(editor.perf.second().sample).toHaveProperty("kept");
 

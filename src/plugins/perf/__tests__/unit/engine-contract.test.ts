@@ -5,8 +5,12 @@ import type {
   PerfHeaderLine as EngineHeaderLine,
   PerfLogLine as EngineLogLine,
   PerfMeasured as EngineMeasured,
+  OverlayEventDetail as EngineOverlayEventDetail,
+  OverlayWhat as EngineOverlayWhat,
+  PoolTrimDetail as EnginePoolTrimDetail,
   PerfSampleLine as EngineSampleLine,
   PerfSpikeLine as EngineSpikeLine,
+  WarmDetail as EngineWarmDetail,
   Renderer,
   Time
 } from "@moku-labs/game";
@@ -22,6 +26,8 @@ import type {
   FrameRecord,
   KeptStats,
   MonitorLike,
+  OverlayEventDetail,
+  OverlayWhat,
   PerfEventLine,
   PerfEventName,
   PerfHeaderLine,
@@ -29,47 +35,45 @@ import type {
   PerfMeasured,
   PerfSampleLine,
   PerfSpikeLine,
+  PoolTrimDetail,
   RateChange,
   RateMode,
   RateReason,
   RenderStatsLike,
-  ThermalStatus
+  ThermalStatus,
+  WarmDetail
 } from "../../protocol";
 import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } from "../../protocol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The editor's view of the engine against the engine itself (spec 03 § Against
-// the shipped engine): every type perf/protocol keeps or extends, the editor
-// constants, and the fake monitor's ring read by the engine's own frameAt.
-// Built against the engine PR preview: specs 21 (rate) and 23 (kept) are in it;
-// 22 (overlay detail), 25 (pool-trim), 26 (redraws), 27 (warm) are not yet.
+// the shipped engine): every type perf/protocol re-exports equals the engine's,
+// the editor constants match, and the fake monitor's ring is read by the
+// engine's own frameAt. The engine now has every type spec 03 names; the only
+// editor type left is DevtoolsDetail (the engine names the event, not its detail).
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("the types perf/protocol extends", () => {
-  it("lets every engine line into the editor's union, and the editor's header, sample, frame record and spike line back (bug: a mirror that drifted from the engine)", () => {
-    expectTypeOf<EngineLogLine>().toExtend<PerfLogLine>();
-    expectTypeOf<EngineHeaderLine>().toExtend<PerfHeaderLine>();
-    expectTypeOf<PerfHeaderLine>().toExtend<EngineHeaderLine>();
-    expectTypeOf<EngineSampleLine>().toExtend<PerfSampleLine>();
-    expectTypeOf<PerfSampleLine>().toExtend<EngineSampleLine>();
-    expectTypeOf<EngineFrameRecord>().toExtend<FrameRecord>();
-    expectTypeOf<FrameRecord>().toExtend<EngineFrameRecord>();
-    expectTypeOf<EngineSpikeLine>().toExtend<PerfSpikeLine>();
-    expectTypeOf<PerfSpikeLine>().toExtend<EngineSpikeLine>();
-    expectTypeOf<EngineEventLine>().toExtend<PerfEventLine>();
+describe("the engine types perf/protocol re-exports", () => {
+  it("takes the log lines and their union from the engine (bug: a mirror that drifted from the engine)", () => {
+    expectTypeOf<PerfLogLine>().toEqualTypeOf<EngineLogLine>();
+    expectTypeOf<PerfHeaderLine>().toEqualTypeOf<EngineHeaderLine>();
+    expectTypeOf<PerfSampleLine>().toEqualTypeOf<EngineSampleLine>();
+    expectTypeOf<PerfSpikeLine>().toEqualTypeOf<EngineSpikeLine>();
+    expectTypeOf<PerfEventLine>().toEqualTypeOf<EngineEventLine>();
+    expectTypeOf<FrameRecord>().toEqualTypeOf<EngineFrameRecord>();
     expect(PERF_LOG_VERSION).toBe(ENGINE_LOG_VERSION);
   });
 
-  it("adds exactly the event names and measures the engine does not have yet (devtools is the engine's)", () => {
-    expectTypeOf<Exclude<PerfEventName, EngineEventName>>().toEqualTypeOf<"pool-trim" | "warm">();
-    expectTypeOf<Exclude<EngineEventName, PerfEventName>>().toEqualTypeOf<never>();
-    expectTypeOf<"devtools" | "overlay" | "rate">().toExtend<EngineEventName>();
+  it("takes the event names and measures from the engine, devtools, pool-trim and warm included", () => {
+    expectTypeOf<PerfEventName>().toEqualTypeOf<EngineEventName>();
+    expectTypeOf<
+      "devtools" | "overlay" | "rate" | "pool-trim" | "warm"
+    >().toExtend<PerfEventName>();
     expectTypeOf<PerfMeasured>().toEqualTypeOf<EngineMeasured>();
     expect(ENGINE_GAP_BUCKETS).toBe(PERF_GAP_BUCKETS);
   });
 
   it("takes the spec 21 rate types and the header's rate from the engine (bug: a rate line the editor reads with another shape)", () => {
-    expectTypeOf<PerfHeaderLine>().toEqualTypeOf<EngineHeaderLine>();
     expectTypeOf<NonNullable<PerfHeaderLine["rate"]>>().toEqualTypeOf<Readonly<Time.FrameRate>>();
     expectTypeOf<FrameRate>().toEqualTypeOf<Time.FrameRate>();
     expectTypeOf<RateChange>().toEqualTypeOf<Time.RateChange>();
@@ -79,35 +83,22 @@ describe("the types perf/protocol extends", () => {
     expect(PERF_LOG_VERSION).toBe(1);
   });
 
-  it("takes the spec 23 kept fields from the engine: sample, frame record, spike line, measures, KeptStats, stats() (bug: a kept counter read with another shape)", () => {
-    expectTypeOf<PerfSampleLine>().toEqualTypeOf<EngineSampleLine>();
-    expectTypeOf<FrameRecord>().toEqualTypeOf<EngineFrameRecord>();
-    expectTypeOf<PerfSpikeLine>().toEqualTypeOf<EngineSpikeLine>();
+  it("takes the event details of specs 22 O10.2, 25 and 27 from the engine (bug: the editor logging an overlay change with another shape)", () => {
+    expectTypeOf<OverlayWhat>().toEqualTypeOf<EngineOverlayWhat>();
+    expectTypeOf<OverlayEventDetail>().toEqualTypeOf<EngineOverlayEventDetail>();
+    expectTypeOf<PoolTrimDetail>().toEqualTypeOf<EnginePoolTrimDetail>();
+    expectTypeOf<WarmDetail>().toEqualTypeOf<EngineWarmDetail>();
+    expect(PHASES).toHaveLength(6);
+  });
+
+  it("takes the monitor, KeptStats and every RenderStats field perf reads from the engine (specs 23, 26)", () => {
+    expectTypeOf<MonitorLike>().toEqualTypeOf<Renderer.PerfMonitorApi>();
     expectTypeOf<KeptStats>().toEqualTypeOf<Renderer.KeptStats>();
-    expectTypeOf<RenderStatsLike["kept"]>().toEqualTypeOf<Renderer.RenderStats["kept"]>();
-    expectTypeOf<RenderStatsLike["renderPassesMax"]>().toEqualTypeOf<
-      Renderer.RenderStats["renderPassesMax"]
-    >();
-    expect(PHASES).toHaveLength(6);
-  });
-
-  it("marks the fields still pending in the engine (specs 25, 26, 27; 22 O10.2 has no engine type to check); when one lands this fails and the addition is dropped", () => {
-    expectTypeOf<
-      "redraws" extends keyof Renderer.RenderStats ? true : false
-    >().toEqualTypeOf<false>();
-    expectTypeOf<
-      "rebuilds" extends keyof Renderer.RenderStats ? true : false
-    >().toEqualTypeOf<false>();
-    expectTypeOf<
-      "pool-trim" | "warm" extends EngineEventName ? true : false
-    >().toEqualTypeOf<false>();
-    expect(PHASES).toHaveLength(6);
-  });
-
-  it("takes the engine's monitor as a MonitorLike and the engine's renderPasses for RenderStatsLike", () => {
-    expectTypeOf<Renderer.PerfMonitorApi>().toExtend<MonitorLike>();
-    expectTypeOf<RenderStatsLike["renderPasses"]>().toEqualTypeOf<
-      Renderer.RenderStats["renderPasses"]
+    expectTypeOf<RenderStatsLike>().toEqualTypeOf<
+      Pick<
+        Renderer.RenderStats,
+        "renderPasses" | "renderPassesMax" | "kept" | "redraws" | "rebuilds"
+      >
     >();
     expect(CAUSE_BITS).toHaveLength(7);
   });
