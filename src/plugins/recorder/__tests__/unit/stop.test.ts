@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import { flushTick } from "../../flush";
 import { stopRecorder } from "../../lifecycle";
 import { createOpfsStore } from "../../store";
 import { createFakeDirectory } from "../fake-opfs";
@@ -82,5 +83,24 @@ describe("onStop", () => {
     expect([t.monitor.listeners, vi.getTimerCount()]).toEqual([0, 0]);
     expect(t.emit).not.toHaveBeenCalled();
     expect(t.log.info).not.toHaveBeenCalled();
+  });
+
+  it("keeps every line when the stop's write is the third failure (bug: the re-queued chunk lost)", async () => {
+    const root = createFakeDirectory();
+    root.failWrites = 3;
+    const t = recorder({ store: createOpfsStore(root) });
+    const { name } = t.api.start();
+    for (let failure = 1; failure <= 2; failure += 1) {
+      vi.advanceTimersByTime(5000);
+      flushTick(t.ctx);
+      await t.state.session?.inflight;
+    }
+    const file = await t.api.stop();
+    expect(file?.storage).toBe("memory");
+    expect(kinds(await storedLines(t.state.memory, name))).toEqual([
+      "header",
+      "event:recorder",
+      "event:recorder"
+    ]);
   });
 });

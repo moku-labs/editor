@@ -82,6 +82,25 @@ export function sendNow(deps: Pick<BridgeDeps, "state" | "log">, message: Messag
 }
 
 /**
+ * Sends a message text that is already JSON (a `perf.lines` batch) when the socket is open.
+ *
+ * @param deps - The state and the log.
+ * @param text - The encoded message.
+ * @returns Whether the socket took it.
+ */
+export function sendText(deps: Pick<BridgeDeps, "state" | "log">, text: string): boolean {
+  const { socket } = deps.state;
+  if (socket === undefined || socket.readyState !== SOCKET_OPEN) return false;
+  try {
+    socket.send(text);
+    return true;
+  } catch (error) {
+    deps.log.debug("bridge:send-failed", { message: messageOf(error) });
+    return false;
+  }
+}
+
+/**
  * Says `bye` on the open socket right before the page reloads on purpose (Bun's full reload,
  * `editor.reload`): the hub then ends the session with reason `bye`, which the tools read as an
  * expected reload (U7). The socket stays open until the page goes. Dropped without an open socket.

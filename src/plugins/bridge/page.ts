@@ -5,7 +5,7 @@
  */
 import type { Tap } from "../registry/protocol";
 import { HOST_ATTRIBUTE, notification } from "../registry/protocol";
-import { sendBeat } from "./connection/loop";
+import { sendBeat } from "./connection/link";
 import { sendNow } from "./dispatch/send";
 import type { BridgeDeps, TapEvent, TapOptions } from "./types";
 

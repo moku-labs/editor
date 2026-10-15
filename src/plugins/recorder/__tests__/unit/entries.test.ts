@@ -48,6 +48,15 @@ function source(): SourceEntry {
 
 const ENVELOPE = { path: "home", frame: 12, tainted: false };
 
+/**
+ * A watch whose tools page went away.
+ *
+ * @throws {Error} Always.
+ */
+function failing(): never {
+  throw new Error("the tools page went away");
+}
+
 describe("editor.record", () => {
   it("starts with { on: true, label } and stops with { on: false }, answering the log's name", async () => {
     const name = "perf-20261014-1532-sm-a266b.jsonl";
@@ -118,5 +127,27 @@ describe("editor.recorder", () => {
     expect(entry.descriptor.changes).toBe("frame");
     expect(entry.probe).toBeUndefined();
     expect(entry.read(null)).toMatchObject({ monitor: false, state: "idle" });
+  });
+});
+
+describe("the watches of editor.recorder", () => {
+  it("isolates a failing watch: the others and the event go on, one warn per streak", async () => {
+    const seen: unknown[] = [];
+    const stopFailing = source().watch(null, failing);
+    source().watch(null, value => seen.push(Reflect.get(Object(value), "state")));
+    const warns = () =>
+      t.log.warn.mock.calls.filter(([event]) => event === "recorder:watcher-failed").length;
+
+    t.api.start();
+    await t.api.stop();
+    expect(seen).toEqual(["recording", "idle"]);
+    expect(t.emit).toHaveBeenCalledTimes(2);
+    expect(warns()).toBe(1);
+
+    stopFailing();
+    t.api.start();
+    source().watch(null, failing);
+    await t.api.stop();
+    expect(warns()).toBe(2);
   });
 });

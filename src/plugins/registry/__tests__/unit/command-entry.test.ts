@@ -103,17 +103,24 @@ describe("commandEntry", () => {
     await expect(pending).rejects.toMatchObject({ code: -32_602 });
   });
 
-  it("rejects -32000 with the first line of the game's message when the dev flag is off", async () => {
+  it("rejects -32009 dev_only with two lines when the dev flag is off (the engine's controlRefused, reason dev-only)", async () => {
+    // Engine answer 2026-10-15 item 3: controlRefused carries reason "dev-only" and is mapped like
+    // the read-only refusal (it was -32000 command_failed before the engine tagged it).
     vi.stubGlobal("__MOKU_GAME_DEV__", undefined);
     const run = commandEntry(game.app, commands.step, log).run({ frames: 1 });
-    const message = "[game] Control commands run in dev builds only.";
 
+    await expect(run).rejects.toBeInstanceOf(ProtocolError);
     await expect(run).rejects.toMatchObject({
-      code: -32_000,
-      message: `[moku-editor] game.step: ${message}`,
-      data: { reason: "command_failed", retryable: false, id: "game.step" }
+      code: -32_009,
+      message:
+        "[moku-editor] game.step: refused by this build, which has neither the dev nor the debug flag.\n  Run the game from the dev server, or build it with --debug.",
+      data: { reason: "dev_only", retryable: false, id: "game.step" }
     });
-    expect(log.warn).toHaveBeenCalledWith("registry:command-failed", { id: "game.step", message });
+    expect(log.info).toHaveBeenCalledWith("registry:command-refused", {
+      id: "game.step",
+      reason: "dev-only"
+    });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it("rejects -32000 when the door command throws (game.step with a fractional frame count)", async () => {

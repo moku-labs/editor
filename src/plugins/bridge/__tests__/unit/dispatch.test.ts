@@ -105,6 +105,14 @@ describe("handleRequest — the game channel table", () => {
     expect(socket.messages()).toEqual([success(6, RAN)]);
   });
 
+  it("run → the channel runs the command for the bridge (via bridge), so it is not logged as local", async () => {
+    const { deps } = openDeps();
+
+    await ask(deps, requestText(7, "run", { id: "game.step", input: { frames: 1 } }));
+
+    expect(deps.channel.ran).toEqual([{ id: "game.step", via: "bridge" }]);
+  });
+
   it("run → the response comes before the post-run refresh of every sub", async () => {
     const { deps, socket } = openDeps();
     await ask(deps, requestText(1, "watch", { sub: 1, id: "game.render" }));

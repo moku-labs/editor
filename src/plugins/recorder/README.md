@@ -56,7 +56,8 @@ A bad value throws a `TypeError` at `createApp`:
 `[moku-editor] recorder.keepMb is 0.` / `  Give megabytes from 1 to 512; 64 keeps about 12 hours of samples.`
 
 When `autoStart` finds no header at start (a native shell holds the engine's header back until it is ready), the log
-starts on the next flush tick, so its file is named after the device and its first line is the header.
+starts on the first flush tick that has the header, so its file is named after the device and its first line is the
+header; after 10 ticks without one it starts anyway (named `device`).
 
 ## API
 
@@ -71,20 +72,23 @@ starts on the next flush tick, so its file is named after the device and its fir
 | `status()` | `{ state, lines, bytes, sent, pending, monitor, file, label, sinceMs, storage, dropped }`. |
 | `marks()` | The marks of the current log, or of the last one while idle. A copy. |
 | `files()` | The logs, oldest first, the current one last. A copy. |
-| `share(name)` | `"shared"` / `"cancelled"` (native share sheet) or `"downloaded"`. The current log is written first. |
+| `share(name)` | `"shared"` / `"cancelled"` (native share sheet) or `"downloaded"`. The current log is written first. A log over 32 MiB is refused before the native share is called (the shell takes no more): an `Error` naming its size; pull it with the collector over adb (`moku-editor perf`) instead. |
 | `remove(name)` | Removes a finished log. |
 | `unsentRun(max)` | `{ log, from, lines }`: the oldest unconfirmed lines of one log, a peek. |
 | `ack(log, next)` | Confirms that log's lines below `next`. |
 
 Argument errors are `TypeError` (`share` / `remove` of an unknown name, `ack` with a `next` that is not a whole number
 from 0), state errors `Error` (`start` without a monitor, `remove` of the log being recorded, `share` on a page with
-neither a document nor a native share); every message has two lines.
+neither a document nor a native share, a log over 32 MiB for the native share); every message has two lines. The
+status shows `exporting` while any share runs; the last one to end sets it back (`recording` while a log runs, else
+`idle`).
 
 ## The pipeline
 
 - **Listener** (`listener.ts`): called synchronously inside the engine's commit. Keeps the newest `header`, `startup`
-  and `display`; while a log runs (or is exported) pushes the reference into a ring of 4096 slots; a full ring drops
-  its oldest reference and counts it. It allocates nothing and never serializes.
+  and `display`; while a log runs (also while it is exported) pushes the reference into a ring of 4096 slots; a full
+  ring drops its oldest reference and counts it. Without a log (also while a finished log is exported) it queues
+  nothing, and a new log empties the ring before its context lines. It allocates nothing and never serializes.
 - **Flush tick** (`flush.ts`, every `flushEveryMs`): inside the agent span it drains the queue (each line's text goes
   to the log's pending text and to the outbox with its index in the log), applies `keepMb`, and takes the chunk that is
   due; after the span it starts the chunk's write (one write in flight per log, so chunks keep their order), warns a
@@ -94,18 +98,24 @@ neither a document nor a native share); every message has two lines.
   memory store goes first (`recorder:dropped-log`), then the oldest outbox lines (`recorder:dropped`, once per streak).
   The current log's own text is never removed while it records.
 - **Failed writes**: a rejected chunk goes back in front of the pending text (`recorder:persist-failed`); after three
-  in a row the log moves to the memory store for the rest of its life (`recorder:storage`), its earlier chunks copied
-  when they can be read.
+  in a row the log moves to the memory store for the rest of its life (`recorder:storage`). Nothing is copied into the
+  heap: the chunks OPFS already has stay there, later ones go to memory, and a read or share joins both parts (a remove
+  takes both). OPFS keeps the meta of its last chunk, so the next launch lists that part as a finished log.
 - **Stop** (`session.ts` `finishLog`, shared by `stop` and onStop): the stop event, the queue drained in the agent
-  span, every pending text written, the meta rewritten `current: false`. It needs no emit and no log.
+  span, every pending text written (a write that fails at stop moves the log to memory and is written there, also when
+  it was the third failure in a row), the meta rewritten `current: false`. It needs no emit and no log. onStop also
+  revokes the download URLs still waiting for their timer.
 
 ## The store
 
 - **OPFS** (`store/opfs.ts`): the directory `moku-editor-perf` under `navigator.storage.getDirectory()`; a log is a
   sub-directory named after the file without `.jsonl`, with `meta.json` (the `LogFileInfo` fields without `current` and
   `storage`, plus `chunks`) and the chunk files `000001.jsonl`, `000002.jsonl`, …. Each append writes a new chunk file,
-  never a rewrite of a big one; `read` joins the chunks in name order into one `application/x-ndjson` Blob; `remove` is
-  recursive. A log a dead page left behind lists as finished. The handles are local structural types.
+  never a rewrite of a big one, then the meta (best-effort: a failed meta write keeps the chunk, so a retry writes no
+  duplicate); `read` joins the chunks in name order into one `application/x-ndjson` Blob; `remove` is recursive. A log
+  a dead page left behind lists as finished. A listed log is named after its directory, never its meta.json, and only
+  names of the recorder's form (`perf-<yyyymmdd>-<hhmm>-<model>.jsonl`) are read, written or removed. The handles are
+  local structural types.
 - **Memory** (`store/memory.ts`): a Map of logs to their chunks; `memoryBytes` is the sum of the text lengths.
 - `openStore("auto")` answers memory with the reason when the page has no `getDirectory` or opening fails.
 - Persistence across app launches in the native WebView is open with `@moku-labs/native`; a native store would be a
@@ -134,7 +144,7 @@ recorder.ack(log, next);
 |---|---|---|---|
 | `editor.record` | command, `cosmetic` | `{ on: "boolean", label: "string?" }` | `{ on, file }`: `on: true` starts, `on: false` stops |
 | `editor.mark` | command, `cosmetic` | `{ label: "string" }` | `{ marked }` |
-| `editor.recorder` | source, `changes: "frame"`, no probe | `{}` | `status()`; its watch is called wherever `recorder:status` is emitted |
+| `editor.recorder` | source, `changes: "frame"`, no probe | `{}` | `status()`; its watch is called wherever `recorder:status` is emitted, each watch isolated (a throw warns `recorder:watcher-failed` once per streak) |
 
 The commands answer `state: registry.envelope()`; a `start` without a monitor rejects -32000 through the registry's
 guard.
@@ -154,7 +164,7 @@ writes the `command` line; then the overlay calls `recorder.command(id, input, l
 
 `recorder:started`, `recorder:stopped`, `recorder:shared`, `recorder:storage`, `recorder:dropped-log` and
 `recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
-`recorder:list-failed` and `recorder:flush-failed` at warn. onStop logs nothing.
+`recorder:list-failed`, `recorder:flush-failed` and `recorder:watcher-failed` at warn. onStop logs nothing.
 
 ## Why recorder and perf are two plugins
 

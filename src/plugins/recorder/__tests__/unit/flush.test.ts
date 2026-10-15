@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eventLine, headerLine, sampleLine } from "../../../../../tests/fixtures/fake-monitor";
 import type { PerfMarkLine } from "../../../perf/protocol";
 import { flushTick } from "../../flush";
+import { readLog } from "../../state";
 import { createOpfsStore } from "../../store";
 import type { LogFileInfo, RecorderConfig } from "../../types";
 import { createFakeDirectory } from "../fake-opfs";
+import type { TestRecorder } from "../helpers";
 import { kinds, queued, recorder, settle, storedLines } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +23,17 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/**
+ * Five seconds on, one flush tick, and its write awaited.
+ *
+ * @param t - The recorder under test.
+ */
+async function persistTick(t: TestRecorder): Promise<void> {
+  vi.advanceTimersByTime(5000);
+  flushTick(t.ctx);
+  await t.state.session?.inflight;
+}
 
 /**
  * A mark line as the engine writes it.
@@ -92,11 +105,7 @@ describe("the flush tick", () => {
     root.failWrites = 3;
     const t = recorder({ store: createOpfsStore(root) });
     const { name } = t.api.start();
-    const tick = async (): Promise<void> => {
-      vi.advanceTimersByTime(5000);
-      flushTick(t.ctx);
-      await t.state.session?.inflight;
-    };
+    const tick = (): Promise<void> => persistTick(t);
 
     await tick();
     expect(t.log.warn).toHaveBeenCalledWith("recorder:persist-failed", {
@@ -184,5 +193,34 @@ describe("the flush tick", () => {
       "recorder:status",
       expect.objectContaining({ sent: 2, pending: 0 })
     );
+  });
+
+  it("after a move to memory keeps the earlier chunks in OPFS, writes the rest to memory and reads the log whole (bug: a whole log copied into the heap)", async () => {
+    const root = createFakeDirectory();
+    const opfs = createOpfsStore(root);
+    const t = recorder({ store: opfs });
+    const { name } = t.api.start();
+    const tick = (): Promise<void> => persistTick(t);
+    await tick();
+    t.monitor.emit(sampleLine(3));
+    root.failWrites = 3;
+    for (let failure = 1; failure <= 3; failure += 1) await tick();
+    expect(t.state.session?.store).toBe(t.state.memory);
+    expect(await storedLines(t.state.memory, name)).toEqual([]);
+
+    await tick();
+    const file = await t.api.stop();
+    if (file === undefined) throw new Error("no log was running");
+    const blob = await readLog(t.state, file);
+    const text = await blob.text();
+    expect(
+      kinds(
+        text
+          .trim()
+          .split("\n")
+          .map(line => JSON.parse(line))
+      )
+    ).toEqual(["header", "event:recorder", "sample", "event:recorder"]);
+    expect(await opfs.list()).toMatchObject([{ name, lines: 2, current: false }]);
   });
 });

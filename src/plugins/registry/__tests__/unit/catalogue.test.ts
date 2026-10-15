@@ -339,11 +339,20 @@ describe("the build profile of the catalogue", () => {
     });
   });
 
-  it("lists game.debug { kept } and game.frameRate as plain commands, allowed on a read build", () => {
+  it("runs the engine's game.debug on a read build and lists the kept and frameRate stand-ins as plain commands", async () => {
     stubBuild({ agent: true });
-    // The engine (PR preview bf4f5dc) still has game.debug { nineSlice } without kept, and no
-    // game.frameRate: both are stood in by module commands with the input spec 02 C10 names (the
-    // descriptor's input comes from the engine). Reported as engine mismatches.
+    // game.debug is the engine's own door (game@91f2ab8: input { nineSlice?, verifyFrames? }, all
+    // optional), run on a renderer stand-in. Its `kept` arrives with engine spec 23 and
+    // game.frameRate with spec 21: until they land, both are stood in by module commands with the
+    // input spec 02 C10 names.
+    const debug = {
+      nineSlice: vi.fn(),
+      verifyFrames: vi.fn(),
+      state: () => ({ nineSlice: false, verifyFrames: false })
+    };
+    const withRenderer: GameLike = Object.create(game.app, {
+      renderer: { value: { sync: { debug } } }
+    });
     const kept = commandWith({
       id: "shipped.debug",
       title: "Debug drawing",
@@ -356,21 +365,26 @@ describe("the build profile of the catalogue", () => {
       input: { rate: "number" },
       effect: "cosmetic"
     });
-    const ctx = createCtx({ game: game.app, modules: [{ commands: [kept, frameRate] }] });
+    const ctx = createCtx({ game: withRenderer, modules: [{ commands: [kept, frameRate] }] });
 
     buildCatalogue(ctx);
 
     expect(ctx.state.commands.get("game.debug")?.descriptor).toEqual({
       id: "game.debug",
-      title: commands.debug.title,
-      input: commands.debug.input,
+      title: "Debug drawing",
+      input: { nineSlice: "boolean?", verifyFrames: "boolean?" },
       effect: "cosmetic",
       allowed: true
     });
+    await expect(
+      ctx.state.commands.get("game.debug")?.run({ verifyFrames: false })
+    ).resolves.toMatchObject({ value: { nineSlice: false, verifyFrames: false } });
+    expect(debug.verifyFrames).toHaveBeenCalledWith(false);
+    expect(debug.nineSlice).not.toHaveBeenCalled();
     expect(ctx.state.commands.get("shipped.debug")?.descriptor).toEqual({
       id: "shipped.debug",
       title: "Debug drawing",
-      input: { nineSlice: "boolean", kept: "boolean?" },
+      input: { nineSlice: "boolean?", verifyFrames: "boolean?", kept: "boolean?" },
       effect: "cosmetic",
       allowed: true
     });

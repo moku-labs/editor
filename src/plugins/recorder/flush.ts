@@ -5,7 +5,7 @@
  * failed write keeps its chunk, and the third failure in a row moves the log to memory.
  */
 import { dropOldestLine, pushOutbox } from "./outbox";
-import { emitStatus, infoOf } from "./state";
+import { dropLog, emitStatus, infoOf } from "./state";
 import { messageOf } from "./store";
 import type { RecorderCtx, RecorderState, Session } from "./types";
 
@@ -82,7 +82,7 @@ export function trimToKeepMb(ctx: Pick<RecorderCtx, "config" | "state" | "log">)
     const oldest = state.files.find(file => file.storage === "memory" && !file.current);
     if (oldest !== undefined) {
       state.files = state.files.filter(file => file !== oldest);
-      state.memory.remove(oldest.name).catch(() => {});
+      dropLog(state, oldest).catch(() => {});
       ctx.log.info("recorder:dropped-log", { file: oldest.name });
       continue;
     }
@@ -107,23 +107,19 @@ function takeChunk(session: Session, now: number): string {
 }
 
 /**
- * Moves a log to the memory store for the rest of its life: the chunks its store already has are
- * copied when they can be read, and every later write goes to memory.
+ * Moves a log to the memory store for the rest of its life. Nothing is copied into the heap: the
+ * chunks its store already has stay there (`heads`, so a read and a remove take both parts), and
+ * every later write goes to memory. The store's meta keeps the numbers of its last chunk, so the
+ * next launch lists that part as a finished log.
  *
  * @param state - The recorder's state.
  * @param session - The log.
  */
-export async function moveToMemory(state: RecorderState, session: Session): Promise<void> {
-  const from = session.store;
+export function moveToMemory(state: RecorderState, session: Session): void {
+  if (session.chunks > 0) state.heads.set(session.name, session.store);
   session.store = state.memory;
+  session.chunks = 0;
   state.failures = 0;
-  try {
-    const blob = await from.read(session.name);
-    const text = await blob.text();
-    if (text !== "") await state.memory.append(infoOf(session), text);
-  } catch {
-    // The earlier chunks stay where they are; the log goes on in memory.
-  }
 }
 
 /**
@@ -152,7 +148,7 @@ async function writeChunk(
     state.failures += 1;
     const message = messageOf(error);
     if (state.failures < MAX_FAILURES) return { message, moved: false };
-    await moveToMemory(state, session);
+    moveToMemory(state, session);
     return { message, moved: true };
   }
 }

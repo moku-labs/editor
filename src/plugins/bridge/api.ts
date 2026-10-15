@@ -1,20 +1,59 @@
 /**
- * @file bridge plugin — api factory: status (from the phase and channel.heartbeat) and session.
+ * @file bridge plugin — api factory: status (from the phase and channel.heartbeat), session, the
+ * device link, and connect (switch to another computer in device mode).
  */
-import { channelPlugin } from "../channel";
-import { currentStatus } from "./status";
+import { parseAddress } from "../hub/protocol";
+import { redial } from "./connection/loop";
+import { writeRemembered } from "./connection/pairing-store";
+import { depsOf } from "./lifecycle";
+import { currentStatus, linkOf } from "./status";
 import type { BridgeApi, BridgeCtx, BridgeDeps } from "./types";
 
 /**
- * Builds the bridge api over the state and the channel (unit tests pass a fake channel).
+ * Switches to device mode at `address` and dials it now: remembers it as the last address,
+ * closes the current socket and connects with the streak reset. The address already live does
+ * nothing; before start the address waits for start; after stop nothing happens.
  *
- * @param deps - The state and the channel.
- * @returns The api; both methods read state only.
+ * @param deps - The domain deps.
+ * @param address - `host:port` or `[v6]:port`.
+ * @throws {TypeError} `[moku-editor] bridge.connect needs host:port, got "<address>".` (argument
+ *   validation); nothing changes then.
  */
-export function buildBridgeApi(deps: Pick<BridgeDeps, "state" | "channel">): BridgeApi {
+export function dial(deps: BridgeDeps, address: string): void {
+  const parsed = parseAddress(address);
+  if (parsed === undefined) {
+    throw new TypeError(
+      `[moku-editor] bridge.connect needs host:port, got "${address}".\n  Pass an address like "192.168.1.5:47600".`
+    );
+  }
+  const { state } = deps;
+  const target = parsed.text;
+  const live = state.mode === "device" && state.address === target && state.phase === "open";
+  if (live || state.phase === "stopped") return;
+
+  if (state.address !== target) state.pairing = undefined;
+  state.mode = "device";
+  state.address = target;
+  state.pairNext = false;
+  state.remembered = { ...state.remembered, last: target };
+  writeRemembered(deps);
+  if (state.phase !== "idle") redial(deps);
+}
+
+/**
+ * Builds the bridge api over the domain deps (unit tests pass fakes).
+ *
+ * @param deps - The domain deps.
+ * @returns The api: status, session and link read state; connect dials.
+ */
+export function buildBridgeApi(deps: BridgeDeps): BridgeApi {
   return {
     status: () => currentStatus(deps),
-    session: () => deps.state.session
+    session: () => deps.state.session,
+    link: () => linkOf(deps.state),
+    connect: address => {
+      dial(deps, address);
+    }
   };
 }
 
@@ -22,8 +61,8 @@ export function buildBridgeApi(deps: Pick<BridgeDeps, "state" | "channel">): Bri
  * Creates the bridge api.
  *
  * @param ctx - Plugin context of the bridge.
- * @returns The api over `ctx.state` and `ctx.require(channelPlugin)`.
+ * @returns The api over the deps of `ctx`.
  */
 export function createBridgeApi(ctx: BridgeCtx): BridgeApi {
-  return buildBridgeApi({ state: ctx.state, channel: ctx.require(channelPlugin) });
+  return buildBridgeApi(depsOf(ctx));
 }

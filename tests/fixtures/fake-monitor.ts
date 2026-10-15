@@ -4,7 +4,9 @@
  * recorder, bridge and overlay (spec 03 revision 6: a root fixture next to moku-game.ts). A ring of
  * configurable capacity with `commit(frame)` and `read(into, since)` by engine facts 1–5, `stream`
  * delivering a frozen header at subscribe, `emit(line)` for frozen lines, `beginAgent` / `endAgent`
- * counters and `mark` / `event` records; plus builders of valid log lines. Its shape is checked
+ * counters, and `mark` / `event` recorded AND delivered to the listeners as frozen `mark` / `event`
+ * lines (the engine's writeMark / writeEvent: between frames, `frame` null); plus builders of valid
+ * log lines. Its shape is checked
  * against the real engine by perf's `engine-contract.test.ts` (the engine's own `frameAt` reads its
  * ring).
  */
@@ -18,6 +20,7 @@ import type {
   PerfEventName,
   PerfHeaderLine,
   PerfLogLine,
+  PerfMarkLine,
   PerfSampleLine,
   PerfSpikeLine,
   RateChange
@@ -411,6 +414,17 @@ export function eventLine(
 }
 
 /**
+ * A valid mark line (11-monitor), as `monitor.mark(label)` writes it.
+ *
+ * @param label - What follows.
+ * @param auto - True for the engine's own mark of a new rest path.
+ * @returns The mark line.
+ */
+export function markLine(label: string, auto = false): PerfMarkLine {
+  return { v: 1, kind: "mark", t: 1_760_454_002_000, build: null, label, auto };
+}
+
+/**
  * A valid rate change (spec 21, 21:117-129): the fall back from 120 to 60 after missed frames.
  *
  * @param overrides - Fields to replace.
@@ -561,9 +575,11 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     frames: () => ring,
     mark: label => {
       fake.marks.push(label);
+      fake.emit(markLine(label));
     },
     event: (name, detail = {}) => {
       fake.events.push({ name, detail });
+      fake.emit(eventLine(name, null, detail));
     },
     beginAgent: () => {
       fake.begins += 1;

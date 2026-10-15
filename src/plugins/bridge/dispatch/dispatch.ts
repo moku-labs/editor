@@ -1,6 +1,8 @@
 /**
- * @file bridge plugin — dispatch of the hub's messages: the `editor`/`session` notification, and
- * every game request answered exactly once, within its deadline (R1, R7).
+ * @file bridge plugin — dispatch of the hub's messages: the `editor`/`session` notification (with
+ * the computer's engine), `editor`/`paired` and `editor`/`perf.ack` of device mode, and every game
+ * request answered exactly once, within its deadline (R1, R7). A hub `run` runs for the bridge
+ * (`via: "bridge"`), so the registry names the tools page and MCP as its source.
  */
 import type {
   Json,
@@ -20,6 +22,8 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
+import { onPaired } from "../connection/device";
+import { onAck } from "../lines";
 import { currentStatus, setStatus } from "../status";
 import type { BridgeDeps } from "../types";
 import { checkParams, deadlineFor, memberOf } from "./params";
@@ -134,7 +138,7 @@ async function route(deps: BridgeDeps, request: RpcRequest): Promise<void> {
     }
     case "run": {
       const { id, input } = checkParams("run", params);
-      await answerWithin(deps, request, id, deps.channel.run(id, input));
+      await answerWithin(deps, request, id, deps.channel.run(id, input, "bridge"));
       refreshAll(deps);
       return;
     }
@@ -184,28 +188,54 @@ function sessionAfter(
 }
 
 /**
- * Serves a notification of the hub: the `editor`/`session` notification sets or clears the
- * session (R6) and announces it; every other one is ignored.
+ * The `editor`/`session` notification: sets or clears the session (R6) and announces it; keeps
+ * the computer's `engine` it carries, which a device-mode link publishes as `editorEngine`.
+ *
+ * @param deps - The domain deps.
+ * @param params - The notification's params.
+ */
+function onSession(deps: BridgeDeps, params: Json | undefined): void {
+  const id = memberOf(params, "id");
+  if (typeof id !== "string") return;
+
+  const { state } = deps;
+  const engine = memberOf(params, "engine");
+  const engineChanged = typeof engine === "string" && engine !== state.editorEngine;
+  if (engineChanged) state.editorEngine = engine;
+  const next = sessionAfter(state.session, id, memberOf(params, "open"));
+  const sessionChanged = next !== state.session;
+  if (!sessionChanged && !(engineChanged && state.mode === "device")) return;
+  state.session = next;
+  setStatus(deps, currentStatus(deps), sessionChanged);
+}
+
+/**
+ * The editor-channel notifications the bridge serves, by method.
+ */
+const EDITOR_NOTIFICATIONS: ReadonlyMap<
+  string,
+  (deps: BridgeDeps, params: Json | undefined) => void
+> = new Map([
+  ["session", onSession],
+  ["paired", onPaired],
+  ["perf.ack", onAck]
+]);
+
+/**
+ * Serves a notification of the hub: `editor`/`session`, `editor`/`paired` (device mode pairing)
+ * and `editor`/`perf.ack` (log shipping); every other one is ignored.
  *
  * @param deps - The domain deps.
  * @param message - The notification.
  */
 function handleNotification(deps: BridgeDeps, message: Notification): void {
-  if (message.channel !== "editor" || message.method !== "session") {
-    deps.log.debug("bridge:notification-ignored", {
-      channel: message.channel,
-      method: message.method
-    });
+  const { channel, method, params } = message;
+  const serve = channel === "editor" ? EDITOR_NOTIFICATIONS.get(method) : undefined;
+  if (serve === undefined) {
+    deps.log.debug("bridge:notification-ignored", { channel, method });
     return;
   }
-  const id = memberOf(message.params, "id");
-  if (typeof id !== "string") return;
-
-  const { state } = deps;
-  const next = sessionAfter(state.session, id, memberOf(message.params, "open"));
-  if (next === state.session) return;
-  state.session = next;
-  setStatus(deps, currentStatus(deps), true);
+  serve(deps, params);
 }
 
 /**

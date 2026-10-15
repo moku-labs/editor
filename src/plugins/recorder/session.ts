@@ -6,8 +6,8 @@
  */
 import type { WriteFailure } from "./flush";
 import { drain, moveToMemory, persistAll, warnFailure } from "./flush";
-import { enqueue } from "./listener";
-import { emitStatus, findFile, infoOf, storeOf } from "./state";
+import { clearQueue, enqueue } from "./listener";
+import { dropLog, emitStatus, findFile, infoOf } from "./state";
 import { messageOf } from "./store";
 import type { LogFileInfo, RecorderCtx, RecorderState, Session } from "./types";
 
@@ -109,11 +109,9 @@ function pruneLogs(ctx: RecorderCtx): void {
   if (extra.size === 0) return;
   state.files = state.files.filter(file => !extra.has(file));
   for (const file of extra) {
-    storeOf(state, file)
-      .remove(file.name)
-      .catch((error: unknown) => {
-        ctx.log.warn("recorder:remove-failed", { file: file.name, message: messageOf(error) });
-      });
+    dropLog(state, file).catch((error: unknown) => {
+      ctx.log.warn("recorder:remove-failed", { file: file.name, message: messageOf(error) });
+    });
   }
 }
 
@@ -151,10 +149,11 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
     inflight: undefined
   };
   state.session = session;
-  state.phase = "recording";
+  state.phase = state.exports > 0 ? "exporting" : "recording";
   state.marks = [];
   state.failures = 0;
-  state.autoStartPending = false;
+  state.autoStartWait = 0;
+  clearQueue(state);
   queueContext(state);
   monitor.event("recorder", { action: "start", label: session.label });
   state.files.push(infoOf(session));
@@ -198,13 +197,15 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
     monitor.endAgent();
   }
   state.session = undefined;
-  state.phase = "idle";
+  state.phase = state.exports > 0 ? "exporting" : "idle";
   // Still current (keepMb and keepFiles leave it alone) until its text is in the store.
   replaceFile(state, infoOf(session));
 
   let failure = await persistAll(state, session);
-  if (failure !== undefined && !failure.moved) {
-    await moveToMemory(state, session);
+  if (failure !== undefined) {
+    // The failed chunk is back in the pending text: write it to memory (where the third failure in
+    // a row already moved the log).
+    if (!failure.moved) moveToMemory(state, session);
     await persistAll(state, session);
     failure = { message: failure.message, moved: true };
   }
@@ -253,7 +254,7 @@ export async function removeLog(ctx: RecorderCtx, name: string): Promise<void> {
       `[moku-editor] recorder.remove: ${name} is being recorded.\n  Stop the recording first.`
     );
   }
-  await storeOf(state, info).remove(name);
+  await dropLog(state, info);
   state.files = state.files.filter(file => file.name !== name);
   emitStatus(ctx, true);
 }

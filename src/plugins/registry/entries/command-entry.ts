@@ -2,9 +2,11 @@
  * @file registry plugin — the closure-erased command entry (door and module commands run through
  * the door `run`, which guards dev builds and taints cheats) and guardEntry for editor commands.
  * A door entry's descriptor carries the build's verdict; a refusal tagged `reason: "read-only"`
- * becomes -32009, read by its tag with no engine import.
+ * (the engine's controlReadOnly) or `reason: "dev-only"` (its controlRefused) becomes -32009, read
+ * by its tag: the engine's error types are imported as types only.
  */
 import type { Log } from "@moku-labs/common/browser";
+import type { ControlReadOnlyError, ControlRefusedError } from "@moku-labs/game/control";
 import { run } from "@moku-labs/game/control";
 import type { InputOf, InputSchema, Json, RunResult } from "../protocol";
 import { ProtocolError, refusalOf } from "../protocol";
@@ -12,6 +14,7 @@ import type { CommandEntry, DoorCommand, GameLike, RunnableCommand } from "../ty
 import { describeCommand } from "./descriptor";
 import {
   checkedInput,
+  devOnlyRefusal,
   doorFailed,
   firstLine,
   messageOf,
@@ -22,9 +25,23 @@ import { readBuildInfo } from "./profile";
 import { toggleValue } from "./toggles";
 
 /**
- * The error a door command's rejection becomes: -32009 for the build's read-only refusal (an
- * error tagged `reason: "read-only"`, logged at info), -32000 with the first line for any other
- * (logged at warn).
+ * The engine's refusal of a command by the page's build: `run` on a `--debug` page
+ * (`controlReadOnly`, `reason: "read-only"`) or a door body on a page without the dev or debug
+ * flag (`controlRefused`, `reason: "dev-only"`). Read by the tag, so any engine that tags its
+ * refusals works.
+ *
+ * @param error - What the door run rejected with.
+ * @returns Whether it is one of the two refusals.
+ */
+function isRefusal(error: unknown): error is ControlReadOnlyError | ControlRefusedError {
+  const reason: unknown = Reflect.get(Object(error), "reason");
+  return reason === "read-only" || reason === "dev-only";
+}
+
+/**
+ * The error a door command's rejection becomes: -32009 for the build's refusals (`read_only` for
+ * an error tagged `reason: "read-only"`, `dev_only` for `reason: "dev-only"`, logged at info),
+ * -32000 with the first line for any other (logged at warn).
  *
  * @param id - The command id.
  * @param error - What the door run rejected with.
@@ -32,9 +49,9 @@ import { toggleValue } from "./toggles";
  * @returns The ProtocolError to reject with.
  */
 function runFailure(id: string, error: unknown, log: Log.LogApi): ProtocolError {
-  if (Reflect.get(Object(error), "reason") === "read-only") {
-    log.info("registry:command-refused", { id, reason: "read-only" });
-    return readOnlyRefusal(id);
+  if (isRefusal(error)) {
+    log.info("registry:command-refused", { id, reason: error.reason });
+    return error.reason === "read-only" ? readOnlyRefusal(id) : devOnlyRefusal(id);
   }
 
   const message = firstLine(messageOf(error));

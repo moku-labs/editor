@@ -44,7 +44,8 @@ const REASONS: Readonly<Record<ErrorReason, true>> = {
   no_editor_page: true,
   page_closed: true,
   no_graph: true,
-  read_only: true
+  read_only: true,
+  dev_only: true
 };
 
 /**

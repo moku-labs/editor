@@ -41,7 +41,7 @@ describe("setOverlayInGame", () => {
     await setOverlayInGame(ctx, true, "topbar");
 
     expect(ctx.state.overlayInGame).toBe(true);
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
     expect(ctx.emit).toHaveBeenCalledWith(
       "workspace:ran",
       expect.objectContaining({ id: "editor.overlay", origin: "topbar", ok: true })
@@ -53,7 +53,7 @@ describe("setOverlayInGame", () => {
     const ctx = liveCtx();
     ctx.state.overlayInGame = true;
     await setOverlayInGame(ctx, false, "key");
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: false });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "hidden" });
     expect(ctx.state.toasts.at(-1)?.message).toBe("Overlay in game off");
   });
 
@@ -77,12 +77,12 @@ describe("setOverlayInGame", () => {
 });
 
 describe("reapplyOverlay", () => {
-  it("re-runs { on: true } for a new manifest while the flag is on, without workspace:ran", async () => {
+  it('re-runs { mode: "card" } for a new manifest while the flag is on, without workspace:ran', async () => {
     const ctx = createCtx();
     ctx.state.overlayInGame = true;
     reapplyOverlay(ctx, manifestOf());
     await flush();
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
     expect(ctx.emit).not.toHaveBeenCalled();
     expect(ctx.state.toasts).toEqual([]);
   });

@@ -1,10 +1,10 @@
 /* eslint-disable unicorn/no-null -- null is "no input", "no header" and "between frames" of the engine */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { headerLine } from "../../../../../tests/fixtures/fake-monitor";
+import { createFakeMonitor, headerLine } from "../../../../../tests/fixtures/fake-monitor";
 import { initRecorder, startRecorder, stopRecorder } from "../../lifecycle";
 import { OPFS_DIR } from "../../store";
 import { createFakeDirectory } from "../fake-opfs";
-import { engineMonitor, recorder } from "../helpers";
+import { recorder } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // onInit and onStart: the monitor and the entries, the subscription, the timer,
@@ -49,7 +49,7 @@ describe("onInit and onStart", () => {
   });
 
   it("starts the log on the next tick when the header comes after the subscribe (bug: a phone log named `device`, its header after the start)", async () => {
-    const monitor = engineMonitor({ header: null });
+    const monitor = createFakeMonitor({ header: null });
     const t = recorder({ monitor, attached: false });
     await startRecorder(t.ctx);
     expect(t.state.session).toBeUndefined();
@@ -88,6 +88,29 @@ describe("onInit and onStart", () => {
       message: "NotReadableError: the directory is gone"
     });
     expect(t.api.files()).toMatchObject([{ current: true, storage: "opfs" }]);
+    await stopRecorder(t.ctx);
+  });
+
+  it("waits ticks for a header that comes late and starts the log with it", async () => {
+    const monitor = createFakeMonitor({ header: null });
+    const t = recorder({ monitor, attached: false });
+    await startRecorder(t.ctx);
+    vi.advanceTimersByTime(3000);
+    expect(t.state.session).toBeUndefined();
+    monitor.emit(headerLine());
+    vi.advanceTimersByTime(1000);
+    expect(t.state.session?.name).toBe("perf-20261014-1532-sm-a266b.jsonl");
+    expect(t.state.session?.pending[0]).toMatch(/^\{"v":1,"kind":"header"/);
+    await stopRecorder(t.ctx);
+  });
+
+  it("starts anyway at the tenth tick when no header comes", async () => {
+    const t = recorder({ monitor: createFakeMonitor({ header: null }), attached: false });
+    await startRecorder(t.ctx);
+    vi.advanceTimersByTime(9000);
+    expect(t.state.session).toBeUndefined();
+    vi.advanceTimersByTime(1000);
+    expect(t.state.session?.name).toBe("perf-20261014-1532-device.jsonl");
     await stopRecorder(t.ctx);
   });
 });

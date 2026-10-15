@@ -197,7 +197,7 @@ describe("startWorkspace — keys", () => {
     press("o");
     await flush();
     expect(ctx.state.overlayInGame).toBe(true);
-    expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { mode: "card" });
   });
 
   it("R is a free key (D-65): the press runs nothing, emits nothing and is left to the page", () => {
@@ -331,7 +331,7 @@ describe("startWorkspace — listeners", () => {
     await flush();
     expect(ctx.state.everLive).toBe(true);
     expect(ctx.state.ui.version).toBeGreaterThan(version);
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
   });
 
   it("resize bumps the UI; an OS theme change updates the theme while none is chosen", () => {

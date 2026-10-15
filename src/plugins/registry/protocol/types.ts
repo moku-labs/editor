@@ -336,7 +336,8 @@ export type Channel = "game" | "files" | "editor";
  * Why a call failed (R1 adds `link_closed`). The selection relay adds `no_editor_page` (-32003: no
  * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
  * it answered). The `node` request adds `no_graph` (-32003, retryable: the Flow view has no graph
- * yet). A build that refuses a command answers `read_only` (-32009, not retryable).
+ * yet). A build that refuses a command answers `read_only` (a `--debug` page) or `dev_only` (a page
+ * without the dev or debug flag), both -32009 and not retryable.
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -355,7 +356,8 @@ export type ErrorReason =
   | "no_editor_page"
   | "page_closed"
   | "no_graph"
-  | "read_only";
+  | "read_only"
+  | "dev_only";
 
 /**
  * A JSON-RPC error object with the editor's data fields.

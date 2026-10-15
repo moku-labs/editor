@@ -13,7 +13,8 @@ export const ERROR_PREFIX = "[moku-editor] ";
  * JSON-RPC error codes of the editor (contracts §2, R6). The selection relay reuses two codes
  * under its own names: `noEditorPage` (-32003, reason `no_editor_page`) and `pageClosed` (-32001,
  * reason `page_closed`, retryable). `readOnly` (-32009, reason `read_only`) is a command the page's
- * build refuses.
+ * build refuses; `devOnly` reuses it (reason `dev_only`) for a command a page without the dev or
+ * debug flag refuses.
  */
 export const errorCode = {
   invalidRequest: -32_600,
@@ -30,7 +31,8 @@ export const errorCode = {
   notInstalled: -32_008,
   noEditorPage: -32_003,
   pageClosed: -32_001,
-  readOnly: -32_009
+  readOnly: -32_009,
+  devOnly: -32_009
 } as const;
 
 /**

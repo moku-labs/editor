@@ -8,6 +8,8 @@ import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import type { DeviceLink } from "../../../hub/protocol";
+import { perfPlugin } from "../../../perf";
+import { recorderPlugin } from "../../../recorder";
 import { registryPlugin } from "../../../registry";
 import type {
   Json,
@@ -30,13 +32,13 @@ import { CHECKPOINT_KEY } from "../../checkpoint/checkpoint";
 import type { BridgeApi } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The agent core (registry + channel + bridge) over the headless tiny game,
+// The agent core (registry + channel + perf + recorder + bridge) over the headless tiny game,
 // linked to a minimal hub: a real Bun.serve with the hello route and the
 // websocket upgrade (token, kind=agent and an Origin header required).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createAgentCore(agentCoreConfig, {
-  plugins: [registryPlugin, channelPlugin, bridgePlugin]
+  plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, bridgePlugin]
 });
 
 /** The server side of one agent socket. */
@@ -394,11 +396,17 @@ describe("bridge integration", { timeout: 15_000 }, () => {
       "manifest"
     );
     const sources = listOf(field(manifest, "sources"));
-    expect(sources).toHaveLength(22);
+    const registered = app.registry.manifest();
+    // The hello carries the registry's whole manifest: the game's 21 sources, perf's and the recorder's.
+    expect(sources.map(source => field(source, "id"))).toEqual(
+      registered.sources.map(source => source.id)
+    );
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
       21
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(24);
+    expect(listOf(field(manifest, "commands")).map(command => field(command, "id"))).toEqual(
+      registered.commands.map(command => command.id)
+    );
     expect(field(manifest, "game")).toBe("tiny-screen 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
@@ -536,8 +544,10 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     const editor = app.registry
       .manifest()
       .commands.filter(command => command.id.startsWith("editor."));
+    const reload = editor.findIndex(command => command.id === "editor.reload");
 
-    expect(editor).toEqual([
+    // The recorder's editor commands come first (it is composed before the bridge).
+    expect(editor.slice(reload)).toEqual([
       {
         id: "editor.reload",
         title: "Reload the page",

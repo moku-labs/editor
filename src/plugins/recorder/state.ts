@@ -3,7 +3,7 @@
  * @file recorder plugin — the state (the queue allocated once, the memory store), and the reads
  * over it every domain file shares: the info of a log, the file list, the status and its event.
  */
-import { createMemoryStore } from "./store";
+import { createMemoryStore, messageOf, NDJSON } from "./store";
 import type { LogStore } from "./store/types";
 import type {
   LogFileInfo,
@@ -51,10 +51,14 @@ export function createRecorderState(): RecorderState {
     dropped: 0,
     droppedTick: 0,
     dropping: false,
-    autoStartPending: false,
+    autoStartWait: 0,
+    exports: 0,
     emitted: undefined,
     watchers: new Set(),
-    failures: 0
+    watchFailing: false,
+    failures: 0,
+    heads: new Map(),
+    revokes: new Map()
   };
 }
 
@@ -158,17 +162,70 @@ function sameStatus(a: RecorderStatusEvent | undefined, b: RecorderStatusEvent):
 }
 
 /**
+ * Calls the watches of the `editor.recorder` source, each isolated: a throw is caught, so the
+ * others and the caller go on; the first throw of a streak of failing rounds warns
+ * `recorder:watcher-failed`, a round without one ends the streak.
+ *
+ * @param ctx - The recorder's state and log.
+ */
+function callWatchers(ctx: Pick<RecorderCtx, "state" | "log">): void {
+  const { state } = ctx;
+  let failed = false;
+  for (const watcher of state.watchers) {
+    try {
+      watcher();
+    } catch (error) {
+      failed = true;
+      if (!state.watchFailing) {
+        ctx.log.warn("recorder:watcher-failed", { message: messageOf(error) });
+      }
+      state.watchFailing = true;
+    }
+  }
+  if (!failed) state.watchFailing = false;
+}
+
+/**
  * Emits `recorder:status` and calls the watches of the `editor.recorder` source: always when
  * `force`, else only when a number or the state changed since the last emit.
  *
- * @param ctx - The recorder's state and emit.
+ * @param ctx - The recorder's state, emit and log.
  * @param force - Emit even when nothing changed (start, stop, share, remove).
  */
-export function emitStatus(ctx: Pick<RecorderCtx, "state" | "emit">, force: boolean): void {
+export function emitStatus(ctx: Pick<RecorderCtx, "state" | "emit" | "log">, force: boolean): void {
   const { state } = ctx;
   const event = statusEventOf(state);
   if (!force && sameStatus(state.emitted, event)) return;
   state.emitted = event;
   ctx.emit("recorder:status", event);
-  for (const watcher of state.watchers) watcher();
+  callWatchers(ctx);
+}
+
+/**
+ * A whole log as one Blob: its chunks in the store that holds it, after the chunks an earlier
+ * store kept when the log moved to memory.
+ *
+ * @param state - The recorder's state.
+ * @param info - The log.
+ * @returns The Blob, of type application/x-ndjson.
+ */
+export async function readLog(state: RecorderState, info: LogFileInfo): Promise<Blob> {
+  const rest = await storeOf(state, info).read(info.name);
+  const head = state.heads.get(info.name);
+  if (head === undefined) return rest;
+  return new Blob([await head.read(info.name), rest], { type: NDJSON });
+}
+
+/**
+ * Removes a log from the store that holds it and from the store that keeps its earlier chunks. The
+ * memory store forgets it before the first await, so `memoryBytes` drops at once.
+ *
+ * @param state - The recorder's state.
+ * @param info - The log.
+ */
+export async function dropLog(state: RecorderState, info: LogFileInfo): Promise<void> {
+  const head = state.heads.get(info.name);
+  state.heads.delete(info.name);
+  await storeOf(state, info).remove(info.name);
+  await head?.remove(info.name);
 }

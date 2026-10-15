@@ -26,9 +26,23 @@ export function enqueue(state: RecorderState, line: PerfLogLine): void {
 }
 
 /**
+ * Empties the queue ring (a new log starts with its context lines).
+ *
+ * @param state - The recorder's state.
+ */
+export function clearQueue(state: RecorderState): void {
+  const { queue } = state;
+  for (let index = 0; index < state.queueSize; index += 1) {
+    queue[(state.queueHead + index) % queue.length] = undefined;
+  }
+  state.queueHead = 0;
+  state.queueSize = 0;
+}
+
+/**
  * The stream listener: keeps the newest header, startup and `display` event for the next log
- * start, and queues every line while a log runs (also while it is exported). Idle, every other line
- * is ignored.
+ * start, and queues every line while a log runs (also while it is exported). Without a log (also
+ * while a finished log is exported), every other line is ignored.
  *
  * @param state - The recorder's state.
  * @param line - A line of the monitor's stream.
@@ -38,5 +52,5 @@ export function listen(state: RecorderState, line: PerfLogLine): void {
   else if (line.kind === "startup") state.startup = line;
   else if (line.kind === "event" && line.name === "display") state.display = line;
 
-  if (state.phase !== "idle") enqueue(state, line);
+  if (state.session !== undefined) enqueue(state, line);
 }

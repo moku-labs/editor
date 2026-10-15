@@ -1,7 +1,7 @@
 import { defineCommand } from "@moku-labs/game/control";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
-import { sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import { createFakeMonitor, sampleLine } from "../../../../../tests/fixtures/fake-monitor";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { perfPlugin } from "../../../perf";
@@ -12,7 +12,7 @@ import { recorderPlugin } from "../..";
 import { createOpfsStore, OPFS_DIR } from "../../store";
 import type { RecorderStatusEvent } from "../../types";
 import { createFakeDirectory } from "../fake-opfs";
-import { engineMonitor, kinds, startedGame } from "../helpers";
+import { kinds, startedGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The recorder in a real agent app [registry, channel, perf, recorder] on a
@@ -98,7 +98,7 @@ function parsed(lines: readonly string[] | undefined): PerfLogLine[] {
 
 describe("the recorder on a game with a monitor", () => {
   it("records from start, ships through the outbox, logs commands once and starts each log with the header", async () => {
-    const monitor = engineMonitor({ capacity: 64 });
+    const monitor = createFakeMonitor({ capacity: 64 });
     const editor = await startEditor(monitor);
     const { name } = editor.recorder.files()[0] ?? { name: "" };
     expect(editor.recorder.status()).toMatchObject({

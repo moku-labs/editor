@@ -2,8 +2,17 @@
 
 > Complex plugin (agent core). The websocket client that links the game page to the editor server (`hub`).
 
-Opt-in and dev only. It is not in the agent's default plugins (`[registryPlugin, channelPlugin, overlayPlugin]`).
-A game's dev entry adds it. It is exported from `@moku-labs/editor/agent` as `bridgePlugin`; its types as `Bridge`.
+Opt-in. It is not in the agent's default plugins (`[registry, channel, perf, recorder, overlay]`).
+A game's dev entry, and the page agent of a debug build, add it. It is exported from
+`@moku-labs/editor/agent` as `bridgePlugin`; its types as `Bridge`. It depends on `registry`,
+`channel` and `recorder` (it pulls the recorder's log; the recorder never imports the bridge).
+
+It runs in one of two modes, decided at start (see [Device mode](#device-mode)):
+
+- **Page mode**: a page the dev server served. Everything below (hello, socket, requests, taps,
+  checkpoint) is page mode.
+- **Device mode**: a debug build on a phone with no dev server. It dials a computer address on the
+  hub's device listener, pairs by a code, and ships the recorder's log.
 
 What it does:
 
@@ -31,7 +40,8 @@ What it does:
 11. **`editor.clock`.** A read-only registry command that answers the game clock and why it stands
     (the MCP door tool `editor_clock`). See [editor.clock](#editorclock).
 
-The token is never logged. Log lines name the hello origin and path only.
+The token is never logged. Log lines name the hello origin and path, or the device address, never a
+query, a device id or a device token.
 
 ## Configuration
 
@@ -41,11 +51,20 @@ The token is never logged. Log lines name the hello origin and path only.
 | `retryMs` | `number` | `1000` | First reconnect delay in ms. Doubles per failure up to `MAX_RETRY_MS` (30 000), ±20 % jitter. A whole number, at least 100. |
 | `callTimeoutMs` | `number` | `5000` | Deadline of one `read` or `run` in ms. A `run` of `editor.series` gets `min(input.durationMs, 60 000)` on top, a `run` of `editor.sheet` `min(input.frames × input.everyMs, 60 000)`. A whole number, at least 100. |
 
-`onInit` checks the three options, so a bad value throws at `createApp`:
+| `device` | `string \| undefined` | `undefined` | Device mode at this computer address (`host:port`, `[v6]:port`). Undefined: the mode follows [Mode and address](#mode-and-address). |
+| `linesPerBatch` | `number` | `200` | Most log lines in one `perf.lines` message. A whole number from 1 to 1000. |
+
+`callTimeoutMs` is also the deadline of one `perf.ack`.
+
+`onInit` checks the five options, so a bad value throws a `TypeError` at `createApp`:
 
 ```
 [moku-editor] bridge.retryMs must be a whole number of at least 100.
   Fix pluginConfigs.bridge.retryMs, for example 1000.
+[moku-editor] bridge.device must be host:port, for example "192.168.1.5:47600".
+  Fix pluginConfigs.bridge.device, for example "127.0.0.1:47600".
+[moku-editor] bridge.linesPerBatch must be a whole number from 1 to 1000.
+  Fix pluginConfigs.bridge.linesPerBatch, for example 200.
 ```
 
 Constants in `types.ts`:
@@ -60,9 +79,84 @@ Constants in `types.ts`:
 | `SERIES_ID` | `"editor.series"` | The long call that waits its `durationMs` on top. |
 | `SHEET_ID` | `"editor.sheet"` | The long call that waits its `frames × everyMs` on top. |
 | `RELOAD_ID` | `"editor.reload"` | The command the bridge adds to the registry. |
+| `DEFAULT_DEVICE_ADDRESS` | `"127.0.0.1:47600"` | The address when nothing else names one (adb reverse to the hub's `devicePort`). |
+| `DEFAULT_LINES_PER_BATCH` | `200` | Default of `linesPerBatch`. |
+| `MAX_LINES_PER_BATCH` | `1000` | Upper bound of `linesPerBatch`. |
+| `SEEN_EMIT_MS` | `1000` | While linked in device mode, at most one `bridge:status` per second for the last sign alone. |
+| `PAIRING_STORE_KEY` | `"moku-editor:link"` | The `localStorage` key of the remembered links. |
+| `MAX_REMEMBERED` | `4` | Most remembered addresses; the oldest is dropped. |
+| `PAIRING_REFUSED` | `"pairing refused"` | The hub's 1008 close reason after a refusal: no retry. |
 
 Backoff: `nextDelay(attempt, retryMs, random)`. With the defaults and `random() = 0.5`:
 1000, 2000, 4000, 8000, 16000, 30000, 30000.
+
+## Device mode
+
+### Mode and address
+
+At start the bridge reads `localStorage["moku-editor:link"]` and decides (first match wins):
+
+| # | Condition | Mode | Address |
+|---|---|---|---|
+| 1 | `__MOKU_GAME_EDITOR__` is a non-empty string (a debug build, `--editor host:port`) | device | remembered last ?? `device` ?? the build's address |
+| 2 | config `device` is set | device | remembered last ?? `device` |
+| 3 | no page URL, a page URL that is not http(s) (`tauri://localhost` on iOS, `file:`) or the native WebView's own host (`http://tauri.localhost` on Android), and a `hello` that is not an absolute http(s) URL | device | remembered last ?? `127.0.0.1:47600` |
+| 4 | otherwise (a page the dev server served; also a headless agent whose `hello` names its server) | page | none |
+
+The remembered address wins: the person chose it on the device after the build was made. An address
+`parseAddress` refuses is skipped; a build address it refuses is warned about once
+(`bridge:bad-address`), because the engine's `--editor` rule (`[\w.-]+` hosts) is wider than ours.
+`connect(address)` and `overlay:connect` always switch to device mode, also on a dev page.
+
+### Connect sequence
+
+1. No hello fetch. The socket is `ws://<address>{path}/ws?kind=agent&role=device`, plus
+   `&device=<id>&token=<token>` when the device has credentials for the address (both or
+   neither). `{path}` is the path of `hello` with its last segment replaced by `ws`. Always `ws:`:
+   debug builds allow cleartext. The bridge sends no Origin: the WebView sets the native one, which
+   the hub allowlists (`deviceOrigins`).
+2. **With credentials**, the open socket runs the link step: `hello { manifest }` first (the
+   manifest carries `build { profile, id, engine }`), a heartbeat, live or paused, log shipping.
+3. **Without credentials**, the open socket pairs: phase `pairing`, a four-digit code (from
+   `crypto.getRandomValues`, leading zeros kept, the same code across retries until paired or
+   refused), and `editor`/`pair { code, device: { model?, os?, engine?, build? } }` as the first
+   message. `bridge:status` shows `link: { mode: "connecting", address, pairing: { code } }`.
+   Over adb under the hub's `pairing: "lan"` the hub confirms at once.
+4. `editor`/`paired { device, token, engine }` stores the device id and token for the address,
+   remembers the address as the last one, keeps the computer's engine and runs the link step on
+   the same socket.
+
+| Close | What the bridge does |
+|---|---|
+| 4401 `unpaired` on a credentialed socket (the hub does not know the token: a restarted `moku-editor perf`) | Drops the address's credentials from the store and dials again at once, without credentials: the next socket pairs. No backoff. |
+| 1008 `pairing refused` | Lost with `retryInMs: 0`, warn `bridge:pairing-refused`. No retry until `connect()` or `overlay:connect`. |
+| any other (1008 `pairing timed out`, 1001, 1012, a 4401 on a pairing socket) | The usual backoff; the pairing code is kept. |
+| a socket that never opened (1006: no computer, a refused upgrade) | The usual backoff; the credentials are kept. |
+
+**Quiet when no computer.** Before the page ever linked, the first failure of a streak logs
+`bridge:no-computer { address, retryInMs }` at info, the rest at debug. After a live link it is the
+usual `bridge:lost` at warn. The backoff is page mode's.
+
+**Remembered links.** `localStorage["moku-editor:link"]` holds `{ v: 1, last, links: { [address]:
+{ device, token } } }`, at most four addresses. A store of another version or a broken text reads as
+nothing remembered. A store that throws (storage off) keeps the links in memory for the page's life
+(`bridge:storage-failed` at debug). The links stay after stop.
+
+### Log shipping
+
+Device mode only, only while open: the recorder's oldest unacknowledged run
+(`recorder.unsentRun(linesPerBatch)`) goes out as `editor`/`perf.lines { log, from, lines }`, one
+batch in flight. The lines are the recorder's JSON texts, spliced into the message as they are, so
+the hub receives objects. Triggered after the link step, by `recorder:status`, by each heartbeat
+tick and after an ack. Nothing goes out while the socket is congested.
+
+- Every `editor`/`perf.ack { log, next, n }` is handed to `recorder.ack(log, next)`. An ack of the
+  batch in flight (same `log`, `n` its size) ends it and sends the next one. Any other ack is passed
+  on too (the recorder treats a late one as a no-op), logged `bridge:late-ack` at debug.
+- No ack within `callTimeoutMs`: shipping stalls on this link (`bridge:lines-unacked` warn, once).
+  The next link resumes it.
+- A failure drops the batch without an ack: its lines stay in the recorder and go out again after
+  the next link. At-least-once on the bridge's side; the hub drops what it already has by index.
 
 ## Checkpoint
 
@@ -193,6 +287,8 @@ tool `editor_clock`.
 |---|---|---|
 | `status` | `status(): LinkStatus` | `{ kind: "connecting" }` before start and while connecting. `{ kind: "live" \| "paused", frame }` while open, from `channel.heartbeat()`. `{ kind: "lost", reason, lastFrame, retryInMs }` while lost (`retryInMs` is 0 when no retry is scheduled). `{ kind: "lost", reason: "stopped", lastFrame, retryInMs: 0 }` after stop. Never `silent` or `empty`: those are tools-side states. |
 | `session` | `session(): string \| undefined` | The session id from the hub's `editor`/`session` notification after `hello`. `undefined` before it arrives and after the socket closes. |
+| `link` | `link(): DeviceLink \| undefined` | Device mode: `{ mode: "none" \| "connecting" \| "adb" \| "lan", address, pairing?: { code }, editorEngine?, seenAt? }`, a fresh copy. `adb` is an open socket at a loopback address, `lan` at any other. `undefined` in page mode. |
+| `connect` | `connect(address: string): void` | Switches to device mode at `address`, remembers it, closes the current socket (1000 `switch`) and dials now with the streak reset. The live address does nothing. A bad address throws a `TypeError` (`[moku-editor] bridge.connect needs host:port, got "<address>".`) and changes nothing. |
 
 ```ts
 editor.bridge.status(); // { kind: "live", frame: 1840 }
@@ -205,6 +301,8 @@ Lost reasons:
 |---|---|
 | `no WebSocket in this runtime` | no |
 | `no page URL for <hello>` (relative `hello` and no page URL) | no |
+| `pairing refused` (device mode) | no |
+| `no socket URL for <address>` (device mode, a `hello` that is not a URL) | no |
 | `hello unreachable` | yes |
 | `hello <status>` (404: no editor server, 403: not same-origin) | yes |
 | `hello answered without ws and token` | yes |
@@ -217,7 +315,9 @@ Lost reasons:
 
 | Event | Direction | Payload | When |
 |---|---|---|---|
-| `bridge:status` | emitted | `{ status: LinkStatus; session?: string }` | At start (`connecting`), on every change of the status kind, and on every session change. A frame change alone does not emit. `session` is left out when there is none. |
+| `bridge:status` | emitted | `{ status: LinkStatus; session?: string; link?: DeviceLink }` | At start (`connecting`), on every change of the status kind, on every session change, in device mode on every change of the link's mode, address, pairing code or computer engine, and while linked at most once per `SEEN_EMIT_MS` for `seenAt` alone. A frame change alone does not emit. `session` is left out when there is none; `link` in page mode. |
+| `overlay:connect` | hooked (global) | `{ address }` | The overlay's Link tab asks for another computer. A bad address: warn `bridge:bad-address`, nothing else. Otherwise the same as `connect(address)`. |
+| `recorder:status` | hooked (the recorder's, through `depends`) | `RecorderStatusEvent` | Ships the pending log lines; the bridge reads none of its numbers. |
 
 `bridge:status` is a global agent event, declared in `AgentEvents` in `src/config.ts`. The bridge has
 no `events` field. `onStop` emits nothing (teardown context).
@@ -228,8 +328,9 @@ The bridge hooks no events.
 
 | Plugin | Used |
 |---|---|
-| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and its pause flag (`held`) and for the value of `editor.clock`. `add(entry)` for `editor.reload` and `editor.clock` in `onInit`, `envelope()` for their `state`. |
-| `channel` | `read`, `watch`, `run` for every game request. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
+| `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and its pause flag (`held`) and for the value of `editor.clock`. `add(entry)` for `editor.reload` and `editor.clock` in `onInit`, `envelope()` for their `state`. `build()` for the engine and build id in `pair`. |
+| `channel` | `read`, `watch`, `run` for every game request; a hub `run` passes `via: "bridge"`, so `registry:command` names the tools page and MCP as its source. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
+| `recorder` | `unsentRun(max)` and `ack(log, next)` for log shipping (device mode). |
 
 `depends: [registryPlugin, channelPlugin]`. Global event used: `bridge:status` (emitted).
 It uses the platform `fetch`, `WebSocket`, `sessionStorage`, `location.reload()` and Bun's `import.meta.hot`. No package dependency.
@@ -261,9 +362,9 @@ hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, s
 
 | Phase | What happens |
 |---|---|
-| `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100), then `registry.add` of `editor.reload` and `editor.clock`, in that order. A duplicate id throws at `createApp`. |
-| `onStart` | `startBridge`: publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. With a stored checkpoint it restores it first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. |
-| `onStop` | `stopBridge`: phase `stopped`, clears the retry timer and every deadline, removes the listeners and a pending `editor.reload`, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
+| `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100, `device` a `host:port` when set, `linesPerBatch` 1–1000), then `registry.add` of `editor.reload` and `editor.clock`, in that order. A duplicate id throws at `createApp`. |
+| `onStart` | `startBridge`: reads the remembered links, decides the mode and the address, publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. In page mode a stored checkpoint is restored first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. |
+| `onStop` | `stopBridge`: phase `stopped`, clears the retry timer, every deadline and the ack deadline of a batch in flight, removes the listeners and a pending `editor.reload`, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
 
 Heartbeat tick, only while open: send the beat (always, even when congested), update the status,
 send the backlog when below `LOW_WATER`, then re-read every `frame` subscription (skipped while congested).
@@ -282,7 +383,14 @@ Log events:
 
 | Event | Level | When |
 |---|---|---|
-| `bridge:connected` | info | Socket open. `{ url }` is the hello origin and path. |
+| `bridge:connected` | info | Socket open. `{ url }` is the hello origin and path, or `ws://<address>{path}/ws` in device mode. |
+| `bridge:no-computer` | info, then debug | Device mode, the first failure of a streak before the page ever linked. `{ address, retryInMs }`. |
+| `bridge:paired` | info | The computer confirmed this phone. `{ address }`. |
+| `bridge:unpaired` | info | A 4401 `unpaired` close: the credentials are dropped. `{ address }`. |
+| `bridge:pairing-refused` | warn | The person refused the pairing. `{ address }`. |
+| `bridge:bad-address` | warn | An `overlay:connect` or a build address `parseAddress` refuses. `{ address }`. |
+| `bridge:lines-unacked` | warn | No `perf.ack` within `callTimeoutMs`: shipping stalls on this link. `{ address, log, from }`. |
+| `bridge:storage-failed`, `bridge:late-ack`, `bridge:bad-ack`, `bridge:paired-ignored` | debug | The link store threw (`{ step }`), an ack that ends no batch (`{ log }`), a malformed ack, a `paired` on a socket that is not pairing. |
 | `bridge:lost` | warn, then debug | First failure of a streak at warn, the rest at debug. A close 1012 `editor restarting` (the bin's Hot reload restart) opens the streak at info instead; the reconnect is the same. `{ reason, retryInMs }`. |
 | `bridge:disabled` | error | A failure without retry. `{ reason }`. |
 | `bridge:connect-crashed`, `bridge:request-crashed` | error | An unexpected throw in the connect loop or in a request. |
@@ -297,7 +405,12 @@ Log events:
 | Direction | Message |
 |---|---|
 | agent to hub | `hello { manifest }` (first; `manifest.restored` once after a checkpoint restore), `heartbeat Heartbeat` (with `heap` in Chromium), `value { sub, value }`, `tap Tap`, `bye` (channel `game`), and the responses |
-| hub to agent | requests `manifest`, `read { id, input? }`, `watch { sub, id, input? }`, `unwatch { sub }`, `run { id, input? }` (channel `game`). Notification `session { id, game, open }` (channel `editor`). |
+| hub to agent | requests `manifest`, `read { id, input? }`, `watch { sub, id, input? }`, `unwatch { sub }`, `run { id, input? }` (channel `game`). Notification `session { id, game, open, engine? }` (channel `editor`). |
+| agent to hub, device mode | `pair PairParams` (first on a socket without credentials), `perf.lines PerfLinesParams` (channel `editor`) |
+| hub to agent, device mode | `paired PairedParams`, `perf.ack PerfAckParams` (channel `editor`) |
+
+The device-link types and `parseAddress` / `isLoopback` come from `../hub/protocol`
+(runtime-free), never from the hub plugin.
 
 - `sub` is a safe integer of at least 0, else -32602 with field `sub`.
 - Another method, or another channel than `game`, answers -32601 `unknown method …`.
@@ -336,3 +449,7 @@ same rule.
 - A hidden tab under Chrome's intensive throttling beats about once a minute. Hub and link wait
   65 s before `silent` because the last beat said `paused: true`.
 - `no WebSocket in this runtime` and `no page URL for <hello>` schedule no retry. The status stays `lost` with `retryInMs: 0`.
+- Device mode: a credentialed socket runs the link step on open; when the hub closes a stale token
+  with 4401 right after the open, `bridge:connected` and a short `live` come before the re-pair.
+- The native shell's device model is read from `__MOKU_NATIVE__.model` (the field is open on the
+  native side); without it the Android user agent's model is sent.

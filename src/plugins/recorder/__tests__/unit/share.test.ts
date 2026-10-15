@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleLine } from "../../../../../tests/fixtures/fake-monitor";
 import { flushTick } from "../../flush";
+import { stopRecorder } from "../../lifecycle";
 import type { TestRecorder } from "../helpers";
-import { recorder } from "../helpers";
+import { kinds, queued, recorder } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // share: the native share sheet when the shell has one, else a download link,
@@ -26,6 +27,16 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
+
+/**
+ * Waits until a condition holds, a fake millisecond at a time (at most 100): the blob read of a
+ * share settles on a timer turn.
+ *
+ * @param done - The condition.
+ */
+async function until(done: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 100 && !done(); turn += 1) await vi.advanceTimersByTimeAsync(1);
+}
 
 /**
  * A native shell whose share answers `answer`.
@@ -110,5 +121,74 @@ describe("share", () => {
     expect(t.monitor.events.at(-1)).toEqual({ name: "recorder", detail: { action: "export" } });
     expect(t.emit.mock.calls.map(([, event]) => event.state)).toEqual(["exporting", "recording"]);
     expect(t.api.status().state).toBe("recording");
+  });
+
+  it("refuses a log over 32 MiB before the native share, naming its size and how to fetch it (bug: a share sheet that fails on the phone)", async () => {
+    const share = nativeShell({ shared: true });
+    const megabyte = new Uint8Array(1_048_576);
+    t.state.memory.read = async () => new Blob(Array.from({ length: 33 }, () => megabyte));
+    t.emit.mockClear();
+    await expect(t.api.share(name)).rejects.toThrow(
+      `[moku-editor] recorder.share: ${name} is 33.0 MB, more than the 32 MB a native share takes.\n  Pull it with the collector over adb (moku-editor perf), or share shorter logs.`
+    );
+    expect(share).not.toHaveBeenCalled();
+    expect(t.emit.mock.calls.map(([, event]) => event.state)).toEqual(["exporting", "recording"]);
+  });
+
+  it("stays exporting until the last of two overlapping shares ends (bug: a status stuck on exporting)", async () => {
+    const releases: ((answer: { shared: boolean }) => void)[] = [];
+    const share = vi.fn(
+      () =>
+        new Promise<{ shared: boolean }>(resolve => {
+          releases.push(resolve);
+        })
+    );
+    vi.stubGlobal("__MOKU_NATIVE__", { version: 1, share });
+    const settled: string[] = [];
+    const first = t.api.share(name).then(how => settled.push(`first ${how}`));
+    const second = t.api.share(name).then(how => settled.push(`second ${how}`));
+    await until(() => releases.length === 2);
+    releases[0]?.({ shared: true });
+    await until(() => settled.length === 1);
+    // Whichever share reached the shell first ends first: the other still exports.
+    expect([settled.length, t.api.status().state]).toEqual([1, "exporting"]);
+    releases[1]?.({ shared: false });
+    await until(() => settled.length === 2);
+    await Promise.all([first, second]);
+    expect([settled.length, t.api.status().state]).toEqual([2, "recording"]);
+  });
+
+  it("starts a log with its header after a share while idle (bug: the export's lines queued before the header)", async () => {
+    const idle = recorder();
+    const finished = idle.api.start().name;
+    await idle.api.stop();
+    let release: ((answer: { shared: boolean }) => void) | undefined;
+    const share = vi.fn(
+      () =>
+        new Promise<{ shared: boolean }>(resolve => {
+          release = resolve;
+        })
+    );
+    vi.stubGlobal("__MOKU_NATIVE__", { version: 1, share });
+    const sharing = idle.api.share(finished);
+    await until(() => share.mock.calls.length === 1);
+    idle.monitor.emit(sampleLine(9));
+    expect(idle.state.queueSize).toBe(0);
+    idle.api.start();
+    expect(kinds(queued(idle.state))).toEqual(["header", "event:recorder"]);
+    release?.({ shared: true });
+    await until(() => idle.state.exports === 0);
+    await sharing;
+  });
+
+  it("revokes a download's URL at stop and leaves no timer behind", async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:perf-log");
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    await expect(t.api.share(name)).resolves.toBe("downloaded");
+    expect(vi.getTimerCount()).toBe(1);
+    await stopRecorder(t.ctx);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(revoke).toHaveBeenCalledWith("blob:perf-log");
   });
 });

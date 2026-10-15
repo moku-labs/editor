@@ -1,6 +1,6 @@
 /**
  * @file registry plugin — the errors of the entries: the id after the prefix, door failures
- * (-32000 command_failed), the build's refusal (-32009 read_only) and the checked steps
+ * (-32000 command_failed), the build's refusals (-32009 read_only and dev_only) and the checked steps
  * (checkInput, toWireValue) of every entry.
  */
 
@@ -89,6 +89,25 @@ export function readOnlyRefusal(id: string): ProtocolError {
     errorCode.readOnly,
     `${ERROR_PREFIX}${id}: refused by this debug build, which runs read and cosmetic commands only.\n  Build the game with --debug=full to run it.`,
     { reason: "read_only", retryable: false, id }
+  );
+}
+
+/**
+ * The -32009 `dev_only` error of a command a page without the dev or debug flag refuses: the
+ * engine's controlRefused.
+ *
+ * @param id - The command id.
+ * @returns The ProtocolError, not retryable.
+ * @example
+ * ```ts
+ * devOnlyRefusal("game.pause").data?.reason; // "dev_only"
+ * ```
+ */
+export function devOnlyRefusal(id: string): ProtocolError {
+  return new ProtocolError(
+    errorCode.devOnly,
+    `${ERROR_PREFIX}${id}: refused by this build, which has neither the dev nor the debug flag.\n  Run the game from the dev server, or build it with --debug.`,
+    { reason: "dev_only", retryable: false, id }
   );
 }
 

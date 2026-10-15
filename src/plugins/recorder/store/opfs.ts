@@ -15,6 +15,9 @@ export const OPFS_DIR = "moku-editor-perf";
 /** The meta file of a log. */
 const META = "meta.json";
 
+/** A log's file name: what the recorder names logs, and all the OPFS store reads, writes or removes. */
+const LOG_NAME = /^perf-\d{8}-\d{4}-[\da-z-]+\.jsonl$/;
+
 /** A chunk file name: six digits and `.jsonl`. */
 const CHUNK_NAME = /^\d{6}\.jsonl$/;
 
@@ -22,17 +25,23 @@ const CHUNK_NAME = /^\d{6}\.jsonl$/;
 type Meta = Omit<LogFileInfo, "current" | "storage"> & { readonly chunks: number };
 
 /**
- * The directory name of a log.
+ * The directory name of a log; only a name of the recorder's form reaches the file system.
  *
  * @param name - The log's file name.
  * @returns The name without `.jsonl`.
+ * @throws {TypeError} For a name that is not a log name (a forged meta.json, a path).
  * @example
  * ```ts
  * baseOf("perf-20261014-1532-sm-a266b.jsonl"); // "perf-20261014-1532-sm-a266b"
  * ```
  */
 function baseOf(name: string): string {
-  return name.endsWith(".jsonl") ? name.slice(0, -".jsonl".length) : name;
+  if (!LOG_NAME.test(name)) {
+    throw new TypeError(
+      `[moku-editor] recorder store: ${JSON.stringify(name)} is not a log name.\n  Use a name from recorder.files().`
+    );
+  }
+  return name.slice(0, -".jsonl".length);
 }
 
 /**
@@ -142,10 +151,12 @@ export function createOpfsStore(root: DirectoryHandleLike): LogStore {
     list: async () => {
       const infos: LogFileInfo[] = [];
       for await (const entry of root.values()) {
-        if (entry.kind !== "directory") continue;
+        // The name comes from the directory, never from meta.json.
+        const name = `${entry.name}.jsonl`;
+        if (entry.kind !== "directory" || !LOG_NAME.test(name)) continue;
         const meta = await readMeta(entry);
         if (meta === undefined) continue;
-        const { name, label, startedAt, lines, bytes, sent } = meta;
+        const { label, startedAt, lines, bytes, sent } = meta;
         infos.push({ name, label, startedAt, lines, bytes, sent, current: false, storage: "opfs" });
       }
       return infos.toSorted((a, b) => a.startedAt - b.startedAt);
@@ -155,7 +166,12 @@ export function createOpfsStore(root: DirectoryHandleLike): LogStore {
       const chunk = (await chunksOf(directory, info.name)) + 1;
       await writeText(directory, chunkName(chunk), text);
       chunkCounts.set(info.name, chunk);
-      await writeText(directory, META, metaText(info, chunk));
+      try {
+        await writeText(directory, META, metaText(info, chunk));
+      } catch {
+        // Best-effort: the chunk is kept and counted, so a retry writes no duplicate; the next
+        // append or describe rewrites the meta.
+      }
     },
     describe: async info => {
       const directory = await root.getDirectoryHandle(baseOf(info.name), { create: true });

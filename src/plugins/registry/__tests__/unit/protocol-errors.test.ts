@@ -54,7 +54,8 @@ describe("errorCode", () => {
       notInstalled: -32_008,
       noEditorPage: -32_003,
       pageClosed: -32_001,
-      readOnly: -32_009
+      readOnly: -32_009,
+      devOnly: -32_009
     });
   });
 

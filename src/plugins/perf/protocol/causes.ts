@@ -55,10 +55,10 @@ const RANK_MASKS: readonly number[] = CAUSE_RANK.map(cause => 1 << CAUSE_BITS.in
  * ```
  */
 export function primaryCause(bits: number): number {
-  let code = 0;
-  for (const mask of RANK_MASKS) {
-    code += 1;
-    if ((bits & mask) !== 0) return code;
+  // An indexed loop, as everywhere on the 4 Hz read path: no iterator per frame.
+  // eslint-disable-next-line unicorn/no-for-loop -- see above
+  for (let index = 0; index < RANK_MASKS.length; index += 1) {
+    if ((bits & (RANK_MASKS[index] ?? 0)) !== 0) return index + 1;
   }
 
   return 0;

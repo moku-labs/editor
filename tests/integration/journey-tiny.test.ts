@@ -323,6 +323,17 @@ function cardKeys(live: Live): string[] {
 }
 
 /**
+ * True when two key lists hold the same keys in the same order.
+ *
+ * @param actual - The rendered keys.
+ * @param expected - The keys a step waits for.
+ * @returns Whether they match.
+ */
+function sameKeys(actual: readonly string[], expected: readonly string[]): boolean {
+  return actual.length === expected.length && actual.every((key, at) => key === expected[at]);
+}
+
+/**
  * The breadcrumb segments of the flow canvas.
  *
  * @param live - The live stack.
@@ -561,7 +572,15 @@ describe("journey-tiny: open the editor", () => {
     expect(workspace.active()).toBe("game");
     await showFlow(live);
     expect(workspace.active()).toBe("flow");
+    await until(() => sameKeys(cardKeys(live), ["main/home", "main/visit"]), "the main cards");
     expect(cardKeys(live)).toEqual(["main/home", "main/visit"]);
+    await until(
+      () =>
+        flowHost(live)
+          .querySelector('[data-flow="node-card"][data-key="main/home"]')
+          ?.getAttribute("aria-current") === "location",
+      "the home card at the location"
+    );
     const home = elementIn(flowHost(live), '[data-flow="node-card"][data-key="main/home"]');
     expect(home.getAttribute("aria-current")).toBe("location");
     await until(
@@ -695,19 +714,31 @@ describe("journey-tiny: pause and walk", () => {
 
     // 4. the visit sub-flow: expand, collapse, enter, up
     flowView.flows.expand("main/visit");
-    await until(() => cardKeys(live).includes("main/visit>visit/leave"), "the expanded sub-flow");
+    await until(
+      () =>
+        ["main/visit>visit/enter", "main/visit>visit/leave"].every(key =>
+          cardKeys(live).includes(key)
+        ),
+      "the expanded sub-flow"
+    );
     expect(cardKeys(live)).toEqual(
       expect.arrayContaining(["main/visit>visit/enter", "main/visit>visit/leave"])
     );
     flowView.flows.collapse("main/visit");
-    await until(() => cardKeys(live).includes("main/visit"), "the collapsed sub-flow");
+    await until(
+      () =>
+        cardKeys(live).includes("main/visit") &&
+        !cardKeys(live).some(key => key.includes("visit/enter")),
+      "the collapsed sub-flow"
+    );
     expect(cardKeys(live).some(key => key.includes("visit/enter"))).toBe(false);
     flowView.flows.enter("main/visit");
-    await until(() => crumbs(live).length === 2, "the visit breadcrumb");
+    await until(() => sameKeys(crumbs(live), ["main", "visit"]), "the visit breadcrumb");
+    await until(() => sameKeys(cardKeys(live), ["visit/enter", "visit/leave"]), "the visit cards");
     expect(crumbs(live)).toEqual(["main", "visit"]);
     expect(cardKeys(live)).toEqual(["visit/enter", "visit/leave"]);
     flowView.flows.up(0);
-    await until(() => crumbs(live).length === 1, "back to main");
+    await until(() => sameKeys(crumbs(live), ["main"]), "back to main");
     expect(crumbs(live)).toEqual(["main"]);
 
     // 5. resume from the top bar
@@ -817,7 +848,7 @@ describe("journey-tiny: pictures", () => {
 });
 
 describe("journey-tiny: device, overlay, theme, palette", () => {
-  it("J5: prefs persist, the overlay opens in the game, cheats run, the palette closes on Esc", async () => {
+  it("J5: prefs persist, the overlay opens in the game, its game commands run, the palette closes on Esc", async () => {
     const live = await liveStack();
     const { tools, server, page } = live;
     const { workspace, consoleView, stateView, link } = tools.app;
@@ -848,17 +879,19 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     // 3. the overlay in the game
     await workspace.setOverlayInGame(true);
     expect(agentRuns(server.tap, "editor.overlay").map(run => paramsOf(run.message))).toEqual([
-      { id: "editor.overlay", input: { on: true } }
+      { id: "editor.overlay", input: { mode: "card" } }
     ]);
     expect(live.agent.app.overlay.isOpen()).toBe(true);
     const host = elementIn(page.gamePage, OVERLAY_HOST);
     expect(host.hidden).toBe(false);
     const shadow = host.shadowRoot;
     if (shadow === null) throw new Error("the overlay host has no shadow root");
-    expect(shadow.querySelector('[data-cheat="tiny.hang"]')).toBeNull();
+    expect(shadow.querySelector('[data-command="tiny.hang"]')).toBeNull();
 
-    // 4. the tiny.warn cheat button
-    await click(elementIn(shadow, '[data-cheat="tiny.warn"]'));
+    // 4. the tiny.warn overlay button on the Game tab (the fixture marks it `overlay: "button"`)
+    await click(elementIn(shadow, '[role="tab"][data-tab="game"]'));
+    expect(shadow.querySelector('[data-command="tiny.hang"]')).toBeNull();
+    await click(elementIn(shadow, '[data-command="tiny.warn"]'));
     await until(() => stateView.tainted() === true, "a tainted game in stateView");
     expect(await link.read("game.tainted")).toBe(true);
     await until(
@@ -870,17 +903,28 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     const oldConn = agentRuns(server.tap, "editor.overlay")[0]?.conn;
     await reloadAgent(live, createTinyGame);
     const agent = live.agent;
-    await until(() => agent.app.overlay.isOpen(), "the overlay open on the new agent");
+    // The new agent also remembers the card on the page (overlay `remember`); the switch must still
+    // run on the new session.
+    await until(
+      () => agentRuns(server.tap, "editor.overlay").at(-1)?.conn !== oldConn,
+      "editor.overlay run on the new agent"
+    );
+    expect(agent.app.overlay.isOpen()).toBe(true);
     const reopened = agentRuns(server.tap, "editor.overlay").at(-1);
     if (reopened === undefined) throw new Error("no editor.overlay run");
     expect(reopened.conn).not.toBe(oldConn);
     expect(paramsOf(reopened.message)).toEqual({
       id: "editor.overlay",
-      input: { on: true }
+      input: { mode: "card" }
     });
 
     // 6. the overlay off
     await workspace.setOverlayInGame(false);
+    const closed = agentRuns(server.tap, "editor.overlay").at(-1);
+    expect(closed === undefined ? undefined : paramsOf(closed.message)).toEqual({
+      id: "editor.overlay",
+      input: { mode: "hidden" }
+    });
     expect(agent.app.overlay.isOpen()).toBe(false);
     expect(workspace.overlayInGame()).toBe(false);
     expect(toastTexts(live)).toContain("Overlay in game off");
@@ -896,11 +940,16 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     });
     const paletteOpen = () =>
       page.root.querySelector('[data-ui="palette"] [role="combobox"]') !== null;
+    const paletteOptions = () =>
+      [...page.root.querySelectorAll('[data-ui="palette"] [role="option"]')].map(
+        option => option.textContent ?? ""
+      );
     workspace.palette.open("visit");
-    await until(paletteOpen, "the palette open");
-    const options = [...page.root.querySelectorAll('[data-ui="palette"] [role="option"]')].map(
-      option => option.textContent ?? ""
+    await until(
+      () => paletteOpen() && paletteOptions().includes("main/visit"),
+      "the palette open with the flow's nodes"
     );
+    const options = paletteOptions();
     expect(options).toContain("main/visit");
     await pressKey("Escape");
     expect(paletteOpen()).toBe(false);

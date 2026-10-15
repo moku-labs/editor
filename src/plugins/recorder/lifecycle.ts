@@ -8,6 +8,7 @@ import { addRecorderEntries } from "./entries";
 import { flushTick } from "./flush";
 import { listen } from "./listener";
 import { finishLog, startRecording } from "./session";
+import { revokeDownloads } from "./share";
 import { messageOf, openStore } from "./store";
 import type { LogStore } from "./store/types";
 import type { LogFileInfo, RecorderConfig, RecorderCtx, RecorderStopCtx } from "./types";
@@ -131,15 +132,31 @@ async function withStoredLogs(ctx: RecorderCtx, store: LogStore): Promise<LogFil
   }
 }
 
+/** Ticks autoStart waits for the header a native shell holds back before it starts anyway. */
+export const AUTOSTART_WAIT_TICKS = 10;
+
 /**
- * One tick of the flush timer: a pending autoStart first (its header came after the subscribe),
- * then the flush; a throw is warned, never left to the timer.
+ * A pending autoStart: starts the log once the header is in, or at the last tick of the wait
+ * without it.
+ *
+ * @param ctx - The recorder's context.
+ */
+function autoStartOnTick(ctx: RecorderCtx): void {
+  const { state } = ctx;
+  if (state.autoStartWait === 0) return;
+  state.autoStartWait -= 1;
+  if (state.header !== undefined || state.autoStartWait === 0) startRecording(ctx);
+}
+
+/**
+ * One tick of the flush timer: a pending autoStart first, then the flush; a throw of either is
+ * warned, never left to the timer.
  *
  * @param ctx - The recorder's context.
  */
 function tick(ctx: RecorderCtx): void {
-  if (ctx.state.autoStartPending) startRecording(ctx);
   try {
+    autoStartOnTick(ctx);
     flushTick(ctx);
   } catch (error) {
     ctx.log.warn("recorder:flush-failed", { message: messageOf(error) });
@@ -149,8 +166,8 @@ function tick(ctx: RecorderCtx): void {
 /**
  * onStart: opens the store (OPFS may answer memory with a reason) and lists its logs. With a
  * monitor: subscribes to the stream, starts the flush timer and, with autoStart, starts a log —
- * at once when the header is in, else on the next tick (a native shell holds the header back
- * until it is ready).
+ * at once when the header is in, else on the first tick that has it, at most AUTOSTART_WAIT_TICKS
+ * later (a native shell holds the header back until it is ready).
  *
  * @param ctx - The recorder's context.
  */
@@ -168,13 +185,14 @@ export async function startRecorder(ctx: RecorderCtx): Promise<void> {
   state.unsubscribe = monitor.stream(line => listen(state, line));
   state.timer = setInterval(() => tick(ctx), config.flushEveryMs);
   if (!config.autoStart) return;
-  if (state.header === undefined) state.autoStartPending = true;
+  if (state.header === undefined) state.autoStartWait = AUTOSTART_WAIT_TICKS;
   else startRecording(ctx);
 }
 
 /**
- * onStop: clears the timer, finishes a running log (its errors swallowed: teardown reports nothing,
- * and the text stays in the memory store), unsubscribes and drops the source watches.
+ * onStop: clears the timer, revokes the download URLs still waiting, finishes a running log (its
+ * errors swallowed: teardown reports nothing, and the text stays in the memory store), unsubscribes
+ * and drops the source watches.
  *
  * @param ctx - The teardown context: own config and state.
  */
@@ -182,7 +200,8 @@ export async function stopRecorder(ctx: RecorderStopCtx): Promise<void> {
   const { state } = ctx;
   clearInterval(state.timer);
   state.timer = undefined;
-  state.autoStartPending = false;
+  state.autoStartWait = 0;
+  revokeDownloads(state);
   await finishLog(state).catch(() => {});
   state.unsubscribe?.();
   state.unsubscribe = undefined;

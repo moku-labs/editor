@@ -6,9 +6,12 @@
  */
 import { persistAll, warnFailure } from "./flush";
 import { unknownLog } from "./session";
-import { emitStatus, filesOf, findFile, storeOf } from "./state";
+import { emitStatus, filesOf, findFile, readLog } from "./state";
 import { NDJSON } from "./store";
 import type { RecorderCtx, RecorderState, ShareResult } from "./types";
+
+/** The most bytes the native shell's share takes (@moku-labs/native: "≤ 32 MiB"). */
+export const NATIVE_SHARE_MAX_BYTES = 32 * 1_048_576;
 
 /** How long a download URL stays valid after the click, ms. */
 const REVOKE_AFTER_MS = 30_000;
@@ -21,7 +24,8 @@ const NO_SHARE =
 type Deliver = (name: string, blob: Blob) => Promise<ShareResult>;
 
 /**
- * The share sheet of the native shell: `__MOKU_NATIVE__` of version 1 with a function `share`.
+ * The share sheet of the native shell: `__MOKU_NATIVE__` of version 1 with a function `share`. A
+ * log over 32 MiB is refused before the shell is called (the shell rejects it).
  *
  * @returns The delivery through it; undefined without one.
  */
@@ -33,6 +37,12 @@ function nativeDelivery(): Deliver | undefined {
   const share: unknown = Reflect.get(shell, "share");
   if (typeof share !== "function") return undefined;
   return async (name, blob) => {
+    if (blob.size > NATIVE_SHARE_MAX_BYTES) {
+      const megabytes = (blob.size / 1_048_576).toFixed(1);
+      throw new Error(
+        `[moku-editor] recorder.share: ${name} is ${megabytes} MB, more than the 32 MB a native share takes.\n  Pull it with the collector over adb (moku-editor perf), or share shorter logs.`
+      );
+    }
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const answer: unknown = await Reflect.apply(share, shell, [{ name, mime: NDJSON, bytes }]);
     return Reflect.get(Object(answer), "shared") === true ? "shared" : "cancelled";
@@ -40,12 +50,14 @@ function nativeDelivery(): Deliver | undefined {
 }
 
 /**
- * A download link on the page: an `<a download>` on an object URL, clicked, the URL revoked later.
+ * A download link on the page: an `<a download>` on an object URL, clicked, the URL revoked later
+ * (the timer is kept in `revokes`, so onStop revokes it at once).
  *
+ * @param state - The recorder's state.
  * @param page - The page's document.
  * @returns The delivery.
  */
-function downloadDelivery(page: Document): Deliver {
+function downloadDelivery(state: RecorderState, page: Document): Deliver {
   return async (name, blob) => {
     const url = URL.createObjectURL(blob);
     const anchor = page.createElement("a");
@@ -55,7 +67,11 @@ function downloadDelivery(page: Document): Deliver {
     page.body.append(anchor);
     anchor.click();
     anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
+    const timer = setTimeout(() => {
+      state.revokes.delete(timer);
+      URL.revokeObjectURL(url);
+    }, REVOKE_AFTER_MS);
+    state.revokes.set(timer, url);
     return "downloaded";
   };
 }
@@ -63,28 +79,32 @@ function downloadDelivery(page: Document): Deliver {
 /**
  * The way this page hands a file to the user.
  *
+ * @param state - The recorder's state.
  * @returns The native share, else a download link; undefined on a page with neither.
  */
-function deliveryOf(): Deliver | undefined {
+function deliveryOf(state: RecorderState): Deliver | undefined {
   const native = nativeDelivery();
   if (native !== undefined) return native;
-  return typeof document === "undefined" ? undefined : downloadDelivery(document);
+  return typeof document === "undefined" ? undefined : downloadDelivery(state, document);
 }
 
 /**
- * Sets the phase back after an export: the one before, unless the log stopped or started meanwhile.
+ * Revokes every download URL whose timer still runs, and clears the timers (onStop).
  *
  * @param state - The recorder's state.
- * @param previous - The phase before the export.
  */
-function restorePhase(state: RecorderState, previous: RecorderState["phase"]): void {
-  if (state.session === undefined) state.phase = "idle";
-  else state.phase = previous === "idle" ? "recording" : previous;
+export function revokeDownloads(state: RecorderState): void {
+  for (const [timer, url] of state.revokes) {
+    clearTimeout(timer);
+    URL.revokeObjectURL(url);
+  }
+  state.revokes.clear();
 }
 
 /**
- * Shares a log: the current log's pending text written first, the status `exporting`, a `recorder`
- * export event, the store's blob handed over, the phase back (also on a failure).
+ * Shares a log: the current log's pending text written first, the status `exporting` while any share
+ * runs, a `recorder` export event, the whole log handed over, the phase back when the last share
+ * ends (also on a failure).
  *
  * @param ctx - The recorder's context.
  * @param name - The log's name.
@@ -96,23 +116,25 @@ export async function shareLog(ctx: RecorderCtx, name: string): Promise<ShareRes
   const { state } = ctx;
   const known = findFile(state, name);
   if (known === undefined) throw new TypeError(unknownLog("recorder.share", name));
-  const deliver = deliveryOf();
+  const deliver = deliveryOf(state);
   if (deliver === undefined) throw new Error(NO_SHARE);
 
   const { session } = state;
   if (session?.name === name) warnFailure(ctx, name, await persistAll(state, session));
-  const previous = state.phase;
+  state.exports += 1;
   state.phase = "exporting";
   emitStatus(ctx, true);
   state.monitor?.event("recorder", { action: "export" });
   try {
     // The current log may have moved to memory while it was written.
     const info = filesOf(state).find(file => file.name === name) ?? known;
-    const how = await deliver(name, await storeOf(state, info).read(name));
+    const how = await deliver(name, await readLog(state, info));
     ctx.log.info("recorder:shared", { file: name, how });
     return how;
   } finally {
-    restorePhase(state, previous);
+    // The last share in flight sets the phase back: recording while a log runs, else idle.
+    state.exports -= 1;
+    if (state.exports === 0) state.phase = state.session === undefined ? "idle" : "recording";
     emitStatus(ctx, true);
   }
 }

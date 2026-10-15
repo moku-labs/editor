@@ -1,34 +1,25 @@
 /**
- * @file overlay plugin — hooks: the global agent event bridge:status feeds the link dot.
+ * @file overlay plugin — hooks: the global `bridge:status` (the bridge is opt-in, so no dependency)
+ * and the recorder's per-plugin `recorder:status` (through `depends`). Both only store the payload:
+ * the next tick shows it. They read no other plugin (the kernel builds hooks before the apis).
  */
-import type { AgentEvents } from "../../config";
-import { overlayCtxOf } from "./context";
-import { paint } from "./paint";
-import type { OverlayCtx, OverlayHooks, OverlayPluginCtx } from "./types";
+import type { OverlayHooks, OverlayState } from "./types";
 
 /**
- * The overlay's hooks factory (`hooks: createHandlers`). `bridge:status` is a global agent event,
- * so no dependency on the opt-in bridge is needed; in a QA build it never fires.
+ * The overlay's hooks factory (`hooks: createHandlers`).
  *
- * @param ctx - Plugin context of the overlay.
+ * @param ctx - Plugin context of the overlay (only its state is read).
+ * @param ctx.state - Own state.
  * @returns The hook map.
  */
-export function createHandlers(ctx: OverlayPluginCtx): OverlayHooks {
-  return { "bridge:status": handleBridgeStatus(overlayCtxOf(ctx)) };
-}
-
-/**
- * Stores status and session; repaints when open.
- *
- * @param octx - Domain context.
- * @returns The bridge:status handler.
- */
-export function handleBridgeStatus(
-  octx: OverlayCtx
-): (payload: AgentEvents["bridge:status"]) => void {
-  return payload => {
-    octx.state.link = payload.status;
-    octx.state.session = payload.session;
-    if (octx.state.open) paint(octx);
+export function createHandlers(ctx: { readonly state: OverlayState }): OverlayHooks {
+  const { state } = ctx;
+  return {
+    "bridge:status": payload => {
+      state.link = payload;
+    },
+    "recorder:status": payload => {
+      state.rec = payload;
+    }
   };
 }

@@ -224,14 +224,28 @@ export type RecorderState = {
   droppedTick: number;
   /** A drop streak is open: the next drop logs nothing. */
   dropping: boolean;
-  /** autoStart found no header at onStart (a native shell holds it back): the next tick starts the log. */
-  autoStartPending: boolean;
+  /**
+   * Ticks autoStart still waits for the header a native shell holds back (0: none pending): a tick
+   * with the header, or the last one, starts the log.
+   */
+  autoStartWait: number;
+  /** Shares in flight: the phase is `exporting` while one runs. */
+  exports: number;
   /** The last status emitted, to emit only on change. */
   emitted: RecorderStatusEvent | undefined;
   /** Watches of the editor.recorder source: called wherever recorder:status is emitted. */
   readonly watchers: Set<() => void>;
+  /** A watch threw in the last round of calls: the next throw logs nothing. */
+  watchFailing: boolean;
   /** Consecutive persist failures of the current log. */
   failures: number;
+  /**
+   * Logs moved to memory after their store failed: the store that keeps their earlier chunks. Read
+   * and remove take both parts.
+   */
+  readonly heads: Map<string, LogStore>;
+  /** The revoke timers of download URLs, and their URLs: revoked at once at stop. */
+  readonly revokes: Map<ReturnType<typeof setTimeout>, string>;
 };
 
 /**

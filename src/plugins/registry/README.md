@@ -112,7 +112,8 @@ Editor commands are allowed on every build (`editor.reload`, effect `route`, kee
 phone's `--debug` build): they run no door. `allowed` is advice for panels, the overlay and MCP; the
 registry never refuses a run because of it. The engine's `run` decides, and its refusal reaches the
 caller: an error tagged `reason: "read-only"` (the engine's `controlReadOnly`) rejects -32009
-`read_only` and logs `registry:command-refused` at info.
+`read_only`, one tagged `reason: "dev-only"` (the engine's `controlRefused`: a door body on a page
+without the dev or debug flag) rejects -32009 `dev_only`; both log `registry:command-refused` at info.
 
 ```ts
 app.registry.manifest().commands.find(command => command.id === "game.tap");
@@ -211,6 +212,7 @@ registry.add({
 | The value is not JSON | -32006 `not_json` | `[moku-editor] test.leaky: function is not JSON at $.fn` |
 | The source is not installed in this game | -32008 `not_installed` | `[moku-editor] source game.effects is not available in this game: <reason>` |
 | The page's build refuses the command (the engine's `controlReadOnly`, `reason: "read-only"`) | -32009 `read_only`, not retryable | `[moku-editor] <id>: refused by this debug build, which runs read and cosmetic commands only.` and `  Build the game with --debug=full to run it.` |
+| A page without the dev or debug flag refuses the command (the engine's `controlRefused`, `reason: "dev-only"`) | -32009 `dev_only`, not retryable | `[moku-editor] <id>: refused by this build, which has neither the dev nor the debug flag.` and `  Run the game from the dev server, or build it with --debug.` |
 
 Logs (`ctx.log.warn`, payload `{ id, message }`, unless noted):
 
@@ -220,7 +222,7 @@ Logs (`ctx.log.warn`, payload `{ id, message }`, unless noted):
 | `registry:command-failed` | A command door rejected in `run`. |
 | `registry:watch-failed` | A watch failed inside a frame. Once per streak. |
 | `registry:source-unavailable` | Info, payload `{ id, reason }`: the probe found a door or editor source not available. Once per source while it stays so. |
-| `registry:command-refused` | Info, payload `{ id, reason: "read-only" }`: the build refused a command (-32009). |
+| `registry:command-refused` | Info, payload `{ id, reason: "read-only" \| "dev-only" }`: the build refused a command (-32009). |
 | `registry:value-failed` | An overlay toggle's `value(app)` threw or answered no boolean. Once per streak. |
 | `registry:emit-failed` | A hook of `registry:command` threw; the caller's result is unchanged. |
 
@@ -383,7 +385,7 @@ allowed, no overlay commands, build unknown"; an older hub ignores the new field
 | `CommandVia` | `"overlay" \| "bridge" \| "local"`: who ran a command. Agent-side only, never on the wire. |
 | `CommandDescriptor` | Gains `overlay?`, `allowed?` and `reason?`. This registry always writes `allowed`, writes `reason` only with `allowed: false`, `overlay` only when set. |
 | `Manifest.build?` | The page's `BuildInfo`. |
-| `ErrorReason`, `errorCode` | `"read_only"`, `readOnly: -32009`: a command the page's build refuses, not retryable. |
+| `ErrorReason`, `errorCode` | `"read_only"`, `readOnly: -32009`: a command the page's build refuses, not retryable; `"dev_only"`, `devOnly: -32009` (the same code): a command a page without the dev or debug flag refuses. |
 
 ```ts
 refusalOf("read", "route"); // "read-only"

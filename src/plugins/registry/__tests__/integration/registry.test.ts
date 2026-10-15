@@ -109,13 +109,42 @@ describe("registry integration", () => {
   });
 
   it("logs a failed command through ctx.log", async () => {
+    const failing: DevModule = {
+      commands: [
+        defineCommand({
+          id: "tiny.fail",
+          title: "Fail",
+          input: {},
+          effect: "read",
+          run: () => {
+            throw new Error("[tiny] the garden is not loaded");
+          }
+        })
+      ]
+    };
+    const app = framework.createApp({
+      pluginConfigs: { registry: { game: game.app, modules: [failing] } }
+    });
+
+    await expect(app.registry.command("tiny.fail")?.run(null)).rejects.toMatchObject({
+      code: -32_000
+    });
+    expect(app.log.trace().some(entry => entry.event === "registry:command-failed")).toBe(true);
+  });
+
+  it("refuses a door command on a page without flags with -32009 dev_only (the engine's controlRefused)", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     vi.stubGlobal("__MOKU_GAME_DEV__", undefined);
 
     await expect(app.registry.command("game.pause")?.run(null)).rejects.toMatchObject({
-      code: -32_000
+      code: -32_009,
+      data: { reason: "dev_only", retryable: false, id: "game.pause" }
     });
-    expect(app.log.trace().some(entry => entry.event === "registry:command-failed")).toBe(true);
+    expect(
+      app.log
+        .trace()
+        .some(entry => entry.event === "registry:command-refused" && entry.level === "info")
+    ).toBe(true);
   });
 
   it("throws from createApp on a duplicate module id", () => {

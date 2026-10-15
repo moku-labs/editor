@@ -207,7 +207,7 @@ describe("TopBar", () => {
     bump();
     act(() => control("overlay").click());
     await flush();
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
     expect(ctx.emit).toHaveBeenCalledWith(
       "workspace:ran",
       expect.objectContaining({ id: "editor.overlay", origin: "topbar" })

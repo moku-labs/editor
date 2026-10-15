@@ -47,7 +47,8 @@ export function overlayAvailable(ctx: Pick<WorkspaceCtx, "state" | "require">): 
 }
 
 /**
- * Sets the overlay-in-game flag and, when the game is connected, runs `editor.overlay { on }`.
+ * Sets the overlay-in-game flag and, when the game is connected, runs `editor.overlay { mode }`
+ * (the card when on, hidden when off).
  * Success toasts "Overlay in game on/off"; a failure puts the flag back, toasts and warns. Not
  * connected: the flag stays and the next session gets it.
  *
@@ -68,7 +69,7 @@ export async function setOverlayInGame(
   if (!overlayAvailable(ctx)) return;
 
   try {
-    await runCommand(ctx, OVERLAY_COMMAND, { on }, origin);
+    await runCommand(ctx, OVERLAY_COMMAND, { mode: on ? "card" : "hidden" }, origin);
     showToast(ctx, on ? "Overlay in game on" : "Overlay in game off");
   } catch (error) {
     const wire = toWireError(error);
@@ -80,7 +81,7 @@ export async function setOverlayInGame(
 }
 
 /**
- * The manifest listener part: while the flag is on, runs `editor.overlay { on: true }` on every
+ * The manifest listener part: while the flag is on, runs `editor.overlay { mode: "card" }` on every
  * new session directly through link (not a user run: no toast, no `workspace:ran`; a failure is a
  * warn). The overlay in the game page starts off after every reload.
  *
@@ -92,7 +93,7 @@ export function reapplyOverlay(ctx: WorkspaceCtx, manifest: Manifest | undefined
 
   ctx
     .require(linkPlugin)
-    .run(OVERLAY_COMMAND, { on: true })
+    .run(OVERLAY_COMMAND, { mode: "card" })
     .catch((error: unknown) => {
       ctx.log.warn(OVERLAY_FAILED, { code: toWireError(error).code });
     });

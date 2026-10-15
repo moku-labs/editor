@@ -1,9 +1,9 @@
 /* eslint-disable unicorn/no-null -- null is "no label" of a log */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DISPLAY, eventLine } from "../../../../../tests/fixtures/fake-monitor";
+import { createFakeMonitor, DISPLAY, eventLine } from "../../../../../tests/fixtures/fake-monitor";
 import { logFileName } from "../../session";
 import type { LogFileInfo } from "../../types";
-import { engineMonitor, kinds, queued, recorder, settle, startupLine } from "../helpers";
+import { kinds, queued, recorder, settle, startupLine } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Starting a log: the context lines first, the file name, a running log, no
@@ -80,7 +80,7 @@ describe("start", () => {
 
   it("names the file by the local minute and the lower-cased model, `device` without a header", () => {
     expect(recorder().api.start().name).toBe("perf-20261014-1532-sm-a266b.jsonl");
-    const headless = recorder({ monitor: engineMonitor({ header: null }) }).api.start({
+    const headless = recorder({ monitor: createFakeMonitor({ header: null }) }).api.start({
       label: " "
     });
     expect([headless.name, headless.label]).toEqual(["perf-20261014-1532-device.jsonl", null]);

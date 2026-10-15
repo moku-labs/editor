@@ -2,8 +2,8 @@
 import { createApp as createGame, defineGame, type } from "@moku-labs/game";
 import { createHeadless, fakeClock, memory } from "@moku-labs/game/testing";
 import { vi } from "vitest";
-import type { FakeMonitor, FakeMonitorOptions } from "../../../../tests/fixtures/fake-monitor";
-import { createFakeMonitor, eventLine } from "../../../../tests/fixtures/fake-monitor";
+import type { FakeMonitor } from "../../../../tests/fixtures/fake-monitor";
+import { createFakeMonitor } from "../../../../tests/fixtures/fake-monitor";
 import type { Require } from "../../../config";
 import type { PerfLogLine, PerfStartupLine } from "../../perf/protocol";
 import type { CommandEntry, GameLike, SourceEntry } from "../../registry/types";
@@ -20,9 +20,8 @@ import type {
 } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared fakes of the recorder's tests: an engine-like monitor (its mark and
-// event lines reach the stream, as the engine's writeMark / writeEvent do), a
-// mock ctx with the api over it, readers of the queue and the store, and a
+// Shared fakes of the recorder's tests: the fake monitor of tests/fixtures (its
+// mark and event lines reach the stream, as the engine's do), a mock ctx with the api over it, readers of the queue and the store, and a
 // started headless engine game for the app tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -53,27 +52,6 @@ export function createLog() {
     reset: vi.fn(),
     clearSinks: vi.fn()
   };
-}
-
-/**
- * The fake monitor of tests/fixtures, with `mark` and `event` also delivering their line to the
- * stream's listeners, the way the engine's monitor does (the fixture only records them).
- *
- * @param options - The fake's options.
- * @returns The monitor.
- */
-export function engineMonitor(options: FakeMonitorOptions = {}): FakeMonitor {
-  const monitor = createFakeMonitor(options);
-  const { mark, event } = monitor;
-  monitor.mark = label => {
-    mark(label);
-    monitor.emit({ v: 1, kind: "mark", t: 1_760_454_002_000, build: null, label, auto: false });
-  };
-  monitor.event = (name, detail = {}) => {
-    event(name, detail);
-    monitor.emit(eventLine(name, null, detail));
-  };
-  return monitor;
 }
 
 /** A recorder under test: its ctx, state, api, mocks and monitor. */
@@ -119,7 +97,7 @@ export function recorder(
   } = {}
 ): TestRecorder {
   const monitor =
-    options.monitor === false ? engineMonitor() : (options.monitor ?? engineMonitor());
+    options.monitor === false ? createFakeMonitor() : (options.monitor ?? createFakeMonitor());
   const state = createRecorderState();
   const added: (CommandEntry | SourceEntry)[] = [];
   const registry = {

@@ -97,6 +97,44 @@ describe("the OPFS store", () => {
     await expect(blob.text()).resolves.toBe("first\nsecond\n");
   });
 
+  it("keeps a chunk whose meta.json write failed, and numbers the next chunk on (bug: a duplicate chunk on retry)", async () => {
+    const root = createFakeDirectory();
+    const store = createOpfsStore(root);
+    root.failOn = name => name === "meta.json";
+    await expect(store.append(INFO, "a\n")).resolves.toBeUndefined();
+    root.failOn = undefined;
+    await store.append(INFO, "b\n");
+    expect([...logDirectory(root).entries.keys()].toSorted()).toEqual([
+      "000001.jsonl",
+      "000002.jsonl",
+      "meta.json"
+    ]);
+    const blob = await store.read(INFO.name);
+    await expect(blob.text()).resolves.toBe("a\nb\n");
+  });
+
+  it("names a listed log by its directory, skips a directory that is not a log, and refuses other names (bug: a forged meta.json steering remove)", async () => {
+    const root = createFakeDirectory();
+    const store = createOpfsStore(root);
+    await store.append(INFO, "a\n");
+    const forge = async (directory: string, name: string): Promise<void> => {
+      const folder = await root.getDirectoryHandle(directory, { create: true });
+      const file = await folder.getFileHandle("meta.json", { create: true });
+      const writable = await file.createWritable();
+      await writable.write(JSON.stringify({ ...INFO, name, chunks: 1 }));
+      await writable.close();
+    };
+    await forge("notes", INFO.name);
+    await forge("perf-20261014-1600-sm-a266b", "../../evil.jsonl");
+    const listed = await store.list();
+    expect(listed.map(info => info.name)).toEqual([INFO.name, "perf-20261014-1600-sm-a266b.jsonl"]);
+    await expect(store.remove("../../evil.jsonl")).rejects.toThrow(TypeError);
+    await expect(store.read("notes.jsonl")).rejects.toThrow(
+      '[moku-editor] recorder store: "notes.jsonl" is not a log name.\n  Use a name from recorder.files().'
+    );
+    expect(root.removed).toEqual([]);
+  });
+
   it("removes a log's directory recursively", async () => {
     const root = createFakeDirectory();
     const store = createOpfsStore(root);

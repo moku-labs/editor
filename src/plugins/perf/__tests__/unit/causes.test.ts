@@ -10,6 +10,23 @@ import { causeName, causesOf, changesOf, primaryCause } from "../../protocol";
 const BIT = { gap: 1, js: 2, gpu: 4, compile: 8, upload: 16, longFrame: 32, gc: 64 } as const;
 
 describe("primaryCause", () => {
+  it("walks the ranks without an iterator: nothing allocated per frame on the 4 Hz read (bug: a for…of per frame)", () => {
+    // A plain counting patch, restored at once (a vitest spy would iterate arrays itself).
+    const original = Array.prototype[Symbol.iterator];
+    let iterators = 0;
+    let code = 0;
+    Array.prototype[Symbol.iterator] = function counted(this: unknown[]) {
+      iterators += 1;
+      return original.call(this);
+    };
+    try {
+      code = primaryCause(BIT.gap);
+    } finally {
+      Array.prototype[Symbol.iterator] = original;
+    }
+    expect([code, iterators]).toEqual([7, 0]);
+  });
+
   it("ranks gpu › upload › compile › longFrame › js › gc? › gap (bug: a spike coloured by the wrong cause)", () => {
     expect(primaryCause(BIT.js | BIT.upload)).toBe(2);
     expect(primaryCause(BIT.gap | BIT.gc)).toBe(6);

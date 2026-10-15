@@ -9,6 +9,7 @@ import type { DirectoryHandleLike, FileHandleLike, WritableLike } from "../store
 /** The records every directory of one fake root writes into. */
 type Records = {
   failWrites: number;
+  failOn: ((name: string) => boolean) | undefined;
   writes: string[];
   removed: { name: string; recursive: boolean }[];
 };
@@ -25,6 +26,8 @@ export type FakeDirectory = DirectoryHandleLike & {
   readonly removed: { name: string; recursive: boolean }[];
   /** The next this-many writes reject (anywhere under the root). */
   failWrites: number;
+  /** Every write to a file whose name it accepts rejects (anywhere under the root). */
+  failOn: ((name: string) => boolean) | undefined;
 };
 
 /**
@@ -45,6 +48,7 @@ function createFile(name: string, root: Records, path: string): FakeFile {
       let buffer = "";
       return {
         write: async data => {
+          if (root.failOn?.(name) === true) throw new Error("QuotaExceededError: the disk is full");
           if (root.failWrites > 0) {
             root.failWrites -= 1;
             throw new Error("QuotaExceededError: the disk is full");
@@ -78,6 +82,7 @@ export function createFakeDirectory(name = "", root?: Records, path = name): Fak
     writes: [],
     removed: [],
     failWrites: 0,
+    failOn: undefined,
     values: () => {
       const list = [...entries.values()];
       return (async function* () {
