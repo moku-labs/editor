@@ -7,7 +7,8 @@ import type {
   PerfMeasured as EngineMeasured,
   PerfSampleLine as EngineSampleLine,
   PerfSpikeLine as EngineSpikeLine,
-  Renderer
+  Renderer,
+  Time
 } from "@moku-labs/game";
 import {
   PERF_GAP_BUCKETS as ENGINE_GAP_BUCKETS,
@@ -17,6 +18,7 @@ import {
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import type {
+  FrameRate,
   FrameRecord,
   MonitorLike,
   PerfEventLine,
@@ -26,7 +28,11 @@ import type {
   PerfMeasured,
   PerfSampleLine,
   PerfSpikeLine,
-  RenderStatsLike
+  RateChange,
+  RateMode,
+  RateReason,
+  RenderStatsLike,
+  ThermalStatus
 } from "../../protocol";
 import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } from "../../protocol";
 
@@ -34,8 +40,8 @@ import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } fro
 // The editor's view of the engine against the engine itself (spec 03 § Against
 // the shipped engine): every type perf/protocol keeps or extends, the editor
 // constants, and the fake monitor's ring read by the engine's own frameAt.
-// Built against the engine PR preview: spec 21 (rate), 22 (overlay detail),
-// 23 (kept), 25 (pool-trim), 26 (redraws), 27 (warm) are not in it yet.
+// Built against the engine PR preview: spec 21 (rate) is in it; 22 (overlay
+// detail), 23 (kept), 25 (pool-trim), 26 (redraws), 27 (warm) are not yet.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("the types perf/protocol extends", () => {
@@ -62,14 +68,27 @@ describe("the types perf/protocol extends", () => {
     expect(ENGINE_GAP_BUCKETS).toBe(PERF_GAP_BUCKETS);
   });
 
-  it("marks the fields still pending in the engine; when one lands this fails and the addition is dropped", () => {
-    expectTypeOf<"rate" extends keyof EngineHeaderLine ? true : false>().toEqualTypeOf<false>();
+  it("takes the spec 21 rate types and the header's rate from the engine (bug: a rate line the editor reads with another shape)", () => {
+    expectTypeOf<PerfHeaderLine>().toEqualTypeOf<EngineHeaderLine>();
+    expectTypeOf<NonNullable<PerfHeaderLine["rate"]>>().toEqualTypeOf<Readonly<Time.FrameRate>>();
+    expectTypeOf<FrameRate>().toEqualTypeOf<Time.FrameRate>();
+    expectTypeOf<RateChange>().toEqualTypeOf<Time.RateChange>();
+    expectTypeOf<RateMode>().toEqualTypeOf<Time.RateMode>();
+    expectTypeOf<RateReason>().toEqualTypeOf<Time.RateReason>();
+    expectTypeOf<ThermalStatus>().toEqualTypeOf<Time.ThermalStatus>();
+    expect(PERF_LOG_VERSION).toBe(1);
+  });
+
+  it("marks the fields still pending in the engine (specs 23, 25, 26, 27); when one lands this fails and the addition is dropped", () => {
     expectTypeOf<"kept" extends keyof EngineSampleLine ? true : false>().toEqualTypeOf<false>();
     expectTypeOf<"kept" extends keyof EngineFrameRecord ? true : false>().toEqualTypeOf<false>();
     expectTypeOf<
       "renderPassesMax" extends keyof Renderer.RenderStats ? true : false
     >().toEqualTypeOf<false>();
     expectTypeOf<"kept" extends keyof Renderer.RenderStats ? true : false>().toEqualTypeOf<false>();
+    expectTypeOf<
+      "redraws" extends keyof Renderer.RenderStats ? true : false
+    >().toEqualTypeOf<false>();
     expect(PHASES).toHaveLength(6);
   });
 
@@ -118,5 +137,16 @@ describe("the editor constants against the engine's frameAt", () => {
     expect(frameAt(ring, 0)).toMatchObject({ frame: 6, budgetMs: 16.7, rateMs: 8.33 });
     expect(ring.columns.frame[5 % ring.capacity]).toBe(6);
     expect(frameAt(ring, 4)).toBeUndefined();
+  });
+
+  it("keeps frame k in slot k % capacity across the engine's stop and start (engine fix A, the fake included)", () => {
+    const monitor = createFakeMonitor({ capacity: 8 });
+    for (let index = 0; index < 3; index += 1) monitor.commit({ t: index * 16 });
+    monitor.restart();
+    const frame = monitor.commit({ t: 100 });
+    const ring = monitor.frames();
+    expect(ring.columns.frame[3 % ring.capacity]).toBe(frame);
+    expect([ring.newest, ring.size, ring.written]).toEqual([3, 1, 4]);
+    expect(frameAt(ring, 0)?.frame).toBe(frame);
   });
 });

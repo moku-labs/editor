@@ -109,6 +109,56 @@ line against the editor's union both ways, the additions and the pending fields,
 (`PERF_LOG_VERSION`, `PERF_GAP_BUCKETS`, `PHASES`, `CAUSE_BITS`, the change order) against the engine's exports and
 its own `frameAt`. The integration test `engine.test.ts` runs perf on a real engine game with the agent flag on.
 
+## Dependencies
+
+| Kind | Name | Used for |
+|---|---|---|
+| `depends` | `registryPlugin` | `game()` in `onInit` (the monitor and the renderer are read from the game app), `add` of the five sources |
+| events | none | perf emits and hooks nothing; the overlay and the recorder call its API |
+| protocol | `./protocol` (`perf/protocol`) | the engine view, the cause ranking, the window and its wire form, the values, the guards |
+| protocol | `../registry/protocol` | `checkInput`, `toWireValue` and the `InputSchema` / `Json` types of the sources |
+
+perf imports the engine by type only (`import type` in `protocol/engine.ts`): no engine code enters a bundle. It
+never imports the recorder, the overlay, the bridge or `hub/protocol`.
+
+## Lifecycle
+
+| Phase | What |
+|---|---|
+| `createState` | Checks the config (a `TypeError` at `createApp`) and allocates every typed array once: the window of `frames` rows and the read scratch. |
+| `onInit` | Reads the game from the registry, finds `app.renderer.monitor` (`monitorOf`) or the off reason (`offReasonOf`: `no-renderer`, `no-monitor`), adds the five sources, and logs `perf:off` at info when off. |
+| `onStart` | Without a monitor: nothing. Otherwise subscribes to `monitor.stream`, runs the first read (a throw unsubscribes and fails the start, no timer is left), then starts the read timer every `readEveryMs`; logs `perf:started` at debug. |
+| `onStop` | Clears the timer, unsubscribes the stream, drops the watches and the cursor, and empties the window (its `version` moves, so a painter repaints an empty graph). Emits and logs nothing. |
+
+## Files
+
+| File | Role |
+|---|---|
+| `index.ts` | Wiring: depends, config, state, api, lifecycle. |
+| `types.ts` | Config, state, scratch, ctx, the API (contracts and examples on its members); re-exports the `perf/protocol` types for `Perf.*`. |
+| `state.ts` | The config check and `createPerfState`: every array allocated once; the watch notify. |
+| `api.ts` | `createPerfApi`: thin calls into `records.ts`, the window visitor, `monitor()`. |
+| `lifecycle.ts` | `initPerf`, `startPerf`, `stopPerf`. |
+| `reader.ts` | `readTick`: the read cycle inside the monitor's agent span; allocation-free. |
+| `stream.ts` | The `monitor.stream` listener: the newest header, display and sample, the last 64 spike lines, 16 `rate` lines and 32 frame-event lines. |
+| `records.ts` | The values handed out: `status`, `second()` (frozen), the spike summaries, the spike record and its `why`. |
+| `entries.ts` | The five registry sources, their probes and watches. |
+| `protocol/` | Runtime-free: `engine.ts`, `causes.ts`, `rate.ts`, `text.ts`, `values.ts`, `window.ts`, `guards.ts`, `index.ts`. |
+| `graph/` | Runtime-free, DOM-free canvas painter: `paint.ts`, `geometry.ts`, `labels.ts`, `hit.ts`, `palette.ts`, `state.ts`, `types.ts`, `index.ts`. |
+
+## Limits
+
+| Missing or bounded | What perf does |
+|---|---|
+| A renderer or its monitor (a headless game, an engine before block 2b) | Off: `status()` answers the reason, the reads answer empty values, the sources are listed `available: false` (-32008); the overlay's Frames tab says why. |
+| A GPU timer (WebKit; `header.gpu.timer` null) | `gpuTimer: false`: GPU times stay "not measured", the graph stacks JS and idle only, and a gap spike's `why` adds that a busy GPU also reads as a gap. |
+| The ring's `budgetMs` column (an engine before the addendum) | The row's `rateMs` is its budget. |
+| A spike whose ring slot was overwritten | Its numbers come from the engine's spike line, once that line arrived. |
+| Late GPU times | Picked up only while the ring slot still holds the frame. |
+| Lines kept | The last 64 spike lines, 16 `rate` lines and 32 frame-event lines; the window covers `windowMs` (at most 30 s). The recorder keeps the whole stream. |
+| `renderer.stats()` fields the engine does not answer | `null` in `second().render` (`passesMax`, `kept`, `redraws`, `rebuilds`). |
+| Engine types not shipped yet (spec 21 rate types, spec 22 overlay detail, spec 23 kept, specs 25 and 27 details) | Structural copies in `protocol/engine.ts`; `engine-contract.test.ts` checks them against the engine. |
+
 ## Why perf and recorder are two plugins
 
 perf is a **read model**: it keeps the last 6 s in typed arrays allocated once, answers the overlay and the sources,

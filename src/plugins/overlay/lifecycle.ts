@@ -11,7 +11,7 @@ import { overlayCtxOf } from "./context";
 import { deleteFaces } from "./fonts/register";
 import { applyStart } from "./modes";
 import { dropCanvas } from "./paint/graph";
-import { stopTick, watchSlide, watchVisibility } from "./paint/tick";
+import { stopTick, watchSlide, watchVisibility, withAgent } from "./paint/tick";
 import { layout, readViewport } from "./place/layout";
 import { createProbes, readInsets, watchPlace } from "./place/safe-area";
 import { readStored } from "./place/store";
@@ -222,8 +222,10 @@ export function startOverlayWith(
   if (root !== undefined) watchSlide(state, root);
   watchPlace(octx, doc.defaultView ?? undefined);
   watchVisibility(octx, doc);
-  readViewport(state);
-  readInsets(octx);
+  withAgent(octx, () => {
+    readViewport(state);
+    readInsets(octx);
+  });
   const stored = readStored(octx);
   setChannel(octx);
   applyStart(octx, stored);

@@ -94,17 +94,17 @@ const commandWith = (fields: Partial<DoorCommand>): DoorCommand => ({
 });
 
 describe("buildCatalogue", () => {
-  it("adds the 21 door sources and 20 door commands in catalogue key order", () => {
+  it("adds the 21 door sources and 21 door commands in catalogue key order", () => {
     const ctx = createCtx({ game: game.app });
 
     buildCatalogue(ctx);
 
     expect(doorSourceIds).toHaveLength(21);
-    expect(doorCommandIds).toHaveLength(20);
+    expect(doorCommandIds).toHaveLength(21);
     expect([...ctx.state.sources.keys()]).toEqual(doorSourceIds);
     expect([...ctx.state.commands.keys()]).toEqual(doorCommandIds);
     expect([...ctx.state.origins.values()].every(origin => origin === "door")).toBe(true);
-    expect(ctx.state.origins.size).toBe(41);
+    expect(ctx.state.origins.size).toBe(42);
   });
 
   it("adds module entries after the doors, modules in config order", () => {
@@ -339,12 +339,11 @@ describe("the build profile of the catalogue", () => {
     });
   });
 
-  it("runs the engine's game.debug on a read build and lists the kept and frameRate stand-ins as plain commands", async () => {
+  it("runs the engine's game.debug and game.frameRate on a read build as plain door commands, kept stood in", async () => {
     stubBuild({ agent: true });
-    // game.debug is the engine's own door (game@91f2ab8: input { nineSlice?, verifyFrames? }, all
-    // optional), run on a renderer stand-in. Its `kept` arrives with engine spec 23 and
-    // game.frameRate with spec 21: until they land, both are stood in by module commands with the
-    // input spec 02 C10 names.
+    // game.debug and game.frameRate are the engine's own doors (game@85fba19: game.debug { nineSlice?,
+    // verifyFrames? }, game.frameRate { fps? } of spec 21), run on a renderer stand-in. game.debug's
+    // `kept` (spec 02 C10) arrives with engine spec 23: until then it is stood in by a module command.
     const debug = {
       nineSlice: vi.fn(),
       verifyFrames: vi.fn(),
@@ -359,13 +358,7 @@ describe("the build profile of the catalogue", () => {
       input: { ...commands.debug.input, kept: "boolean?" },
       effect: "cosmetic"
     });
-    const frameRate = commandWith({
-      id: "game.frameRate",
-      title: "Frame rate",
-      input: { rate: "number" },
-      effect: "cosmetic"
-    });
-    const ctx = createCtx({ game: withRenderer, modules: [{ commands: [kept, frameRate] }] });
+    const ctx = createCtx({ game: withRenderer, modules: [{ commands: [kept] }] });
 
     buildCatalogue(ctx);
 
@@ -388,13 +381,18 @@ describe("the build profile of the catalogue", () => {
       effect: "cosmetic",
       allowed: true
     });
+    // spec 02 C10: a cosmetic door command, allowed on a read build, no overlay marker.
+    expect(ctx.state.origins.get("game.frameRate")).toBe("door");
     expect(ctx.state.commands.get("game.frameRate")?.descriptor).toEqual({
       id: "game.frameRate",
       title: "Frame rate",
-      input: { rate: "number" },
+      input: { fps: "number?" },
       effect: "cosmetic",
       allowed: true
     });
+    await expect(ctx.state.commands.get("game.frameRate")?.run({ fps: 60 })).resolves.toMatchObject(
+      { value: { fps: 60 } }
+    );
     // The registry adds no editor button for them (decision "No built-in debug buttons").
     expect([...ctx.state.origins.keys()].filter(id => id.startsWith("editor."))).toEqual([]);
   });

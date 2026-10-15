@@ -94,7 +94,7 @@ describe("typing spike (S1)", () => {
     };
 
     expect(module.sources).toHaveLength(21);
-    expect(module.commands).toHaveLength(20);
+    expect(module.commands).toHaveLength(21);
   });
 
   it("fits a defineCommand with App = GameLike and an optional json field into DoorCommand", () => {

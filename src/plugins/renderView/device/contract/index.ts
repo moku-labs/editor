@@ -3,8 +3,8 @@
  * Contracts this unit consumes): perf's runtime-free `perf/protocol` (the window, its wire form,
  * the values of the perf sources and the window helpers) and `perf/graph` (the painter, its
  * state, its hit tests and the cause palette: renderView keeps no copy), plus the recorder's
- * `RecorderStatus`, still a stand-in (`./recorder.ts`) until unit 05 lands. No plugin instance of
- * another core is imported.
+ * `RecorderStatus`, a type-only re-export of `recorder/types` (`./recorder.ts`). No plugin instance
+ * of another core is imported.
  */
 export type { CauseStyle, GraphContext2D, GraphState, GraphView } from "../../../perf/graph";
 export {

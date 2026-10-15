@@ -76,6 +76,13 @@ let opened: ToolsEvents["workspace:open-file"][];
 /** How long `until` waits for a check (real time; generous for a loaded CI runner). */
 const UNTIL_DEADLINE_MS = 10_000;
 
+/**
+ * The timeout of every test here: a test waits on the fake hub's real socket several times, each
+ * `until` up to UNTIL_DEADLINE_MS, which vitest's 5 s default does not fit under load (the
+ * whole-suite pre-commit run took the start-to-stop journey to 6.4 s).
+ */
+const FLOW_TEST_TIMEOUT_MS = 20_000;
+
 /** The longest `until` sleeps between two checks while the page does not change. */
 const UNTIL_TICK_MS = 5;
 
@@ -248,7 +255,9 @@ function warned(app: ReturnType<typeof createApp>, event: string): unknown[] {
   return app.log.trace().filter(entry => entry.event === event);
 }
 
-describe("flowView before Flow is shown (Game is the default workspace)", () => {
+describe("flowView before Flow is shown (Game is the default workspace)", {
+  timeout: FLOW_TEST_TIMEOUT_MS
+}, () => {
   it("a Nodes palette item shows Flow and selects its node", async () => {
     const app = await startOnGame();
     act(() => app.workspace.palette.open("board/merge"));
@@ -337,7 +346,7 @@ describe("flowView before Flow is shown (Game is the default workspace)", () => 
   });
 });
 
-describe("flowView integration", () => {
+describe("flowView integration", { timeout: FLOW_TEST_TIMEOUT_MS }, () => {
   it("types the app surface: namespaced api, no events of its own", () => {
     const app = createApp();
     expectTypeOf(app.flowView.camera.fitAll).toEqualTypeOf<() => void>();
@@ -377,7 +386,16 @@ describe("flowView integration", () => {
     hub.value(SESSION.id, "game.history", []);
     hub.heartbeat(SESSION.id, 1840, false);
 
-    await until(() => root.querySelector('[data-flow="hub"]') !== null, "the board hub");
+    // The graph renders the hub; the position marks it current: wait for both, and the lanes.
+    await until(() => {
+      const hubCard = root.querySelector<HTMLElement>('[data-flow="hub"]');
+      return (
+        hubCard !== null &&
+        root.querySelectorAll('[data-flow="lane"]').length === 8 &&
+        hubCard.dataset.current === "" &&
+        hubCard.textContent?.includes("You are here") === true
+      );
+    }, "the board hub at the position");
     expect(root.querySelectorAll('[data-flow="lane"]')).toHaveLength(8);
     expect(find('[data-flow="hub"]').dataset.current).toBe("");
     expect(find('[data-flow="hub"]').textContent).toContain("You are here");

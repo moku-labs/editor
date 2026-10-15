@@ -166,6 +166,47 @@ writes the `command` line; then the overlay calls `recorder.command(id, input, l
 `recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
 `recorder:list-failed`, `recorder:flush-failed` and `recorder:watcher-failed` at warn. onStop logs nothing.
 
+## Dependencies
+
+| Kind | Name | Used for |
+|---|---|---|
+| `depends` | `registryPlugin` | `add` of `editor.record`, `editor.mark` and `editor.recorder` in `onInit`, `envelope()` for the commands' `state`; its per-plugin `registry:command` (hooked) |
+| `depends` | `perfPlugin` | `monitor()` in `onInit`: the one place that finds the engine monitor |
+| global event | `overlay:changed` | hooked: the `devtools` monitor event |
+| per-plugin event | `recorder:status` | emitted, declared with `register<RecorderStatusEvent>()`; the overlay and the bridge hook it through `depends` |
+| protocol | `../perf/protocol` | type only: `PerfLogLine` of the queued lines |
+| protocol | `../registry/protocol` | `checkInput`, `toWireValue` and the `Json` type of the entries |
+
+The recorder never imports the bridge or the overlay: the bridge pulls with `unsentRun` / `ack`, and the overlay
+calls the API.
+
+## Lifecycle
+
+| Phase | What |
+|---|---|
+| `onInit` | Checks the config (a two-line `TypeError` at `createApp`), takes `perf.monitor()`, adds the three registry entries, and logs `recorder:no-monitor` at info without a monitor. |
+| `onStart` | Opens the store (`openStore(storage)`: OPFS, or memory with the reason logged as `recorder:storage`); with OPFS lists the logs an earlier launch left (a failed list warns `recorder:list-failed`). Without a monitor it stops here. Otherwise subscribes to `monitor.stream` and starts the flush timer every `flushEveryMs` (a throwing tick warns `recorder:flush-failed`). `autoStart` starts a log now when the engine's header is there, else on the first tick that has it, at most 10 ticks later. |
+| `onStop` | Clears the timer and the autoStart wait, revokes the download URLs still waiting, finishes the running log (`finishLog`: the stop event, the queue drained in the agent span, every pending text written, the meta rewritten), unsubscribes the stream and drops the watches. No emit and no log line: the teardown context has neither. |
+
+## Files
+
+| File | Role |
+|---|---|
+| `index.ts` | Wiring: depends, config, the `recorder:status` event, state, api, hooks, lifecycle. |
+| `types.ts` | Config, log and outbox shapes, the per-plugin event, state, ctx, hooks, the API (contracts and examples on its members). |
+| `state.ts` | `createRecorderState` (the queue allocated once, the memory store) and the shared reads: a log's info, the file list, the status and its event. |
+| `api.ts` | `createRecorderApi`: thin calls into the domain files. |
+| `lifecycle.ts` | The config check, `initRecorder`, `startRecorder`, `stopRecorder`. |
+| `listener.ts` | The `monitor.stream` listener: references in a ring of 4096 slots; allocates nothing, never serializes. |
+| `flush.ts` | The flush tick inside the agent span, the `keepMb` bound, the chunk writes and their failures. |
+| `session.ts` | The life of a log: file name, start (context lines first), `finishLog`, `remove`, the `keepFiles` bound. |
+| `marks.ts` | A user mark and the overlay's automatic mark of a game command (`monitor.mark`). |
+| `outbox.ts` | The unconfirmed lines: `unsentRun`, `ack`, the head splice. |
+| `share.ts` | The native share sheet (32 MiB limit), else a download link, else an error. |
+| `entries.ts` | `editor.record`, `editor.mark` and the source `editor.recorder`. |
+| `handlers.ts` | The hooks: `registry:command` → `command`, `overlay:changed` → `devtools`. |
+| `store/` | `index.ts` (`openStore`), `opfs.ts` (chunk files and `meta.json` under `moku-editor-perf/`), `memory.ts`, `types.ts` (the `LogStore` shape and the structural OPFS handles). |
+
 ## Why recorder and perf are two plugins
 
 perf is the **read model** of the last 6 s: typed arrays allocated once, a 4 Hz allocation-free read, answers for the

@@ -440,4 +440,19 @@ describe("the edges of a paint", () => {
     );
     expect(fast.texts()).not.toContain("2000");
   });
+
+  it("names the overlay's private Barlow face first and the plain one next, for the tools page (bug: the overlay drawing in a fallback face)", () => {
+    const fonts = [...Object.values(GRAPH_FONTS.phone), ...Object.values(GRAPH_FONTS.wide)];
+    for (const font of fonts) {
+      const families = font.slice(font.indexOf('"')).split(", ");
+      expect(families.slice(0, 2)).toEqual([
+        '"Moku Overlay Barlow Condensed"',
+        '"Barlow Condensed"'
+      ]);
+    }
+    const { calls } = paintOnce(windowOf(rows(3)));
+    expect(calls.find(call => call.op === "fillText")?.font).toContain(
+      '"Moku Overlay Barlow Condensed"'
+    );
+  });
 });

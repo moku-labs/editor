@@ -2,8 +2,10 @@
 /**
  * The `@moku-labs/editor/tools` entry: the tools core for the tools page. Default plugins: link
  * (the websocket to the hub), workspace (the shell and the one game frame), panels (the panel
- * host) and the six workspaces flowView, gameView, renderView, stateView, filesView, consoleView.
- * The prebuilt tools page composes it in `src/plugins/pages/page/main.tsx` (D-06).
+ * host) and the six workspaces flowView, gameView, renderView, stateView, filesView, consoleView
+ * (Render shows the device strip on a phone session, and on the game page in the editor when its
+ * agent has perf). The prebuilt tools page composes it in `src/plugins/pages/page/main.tsx`
+ * (D-06); `moku-editor perf` serves the same page on the device port.
  *
  * Plugin options and their defaults, set through `pluginConfigs`:
  *

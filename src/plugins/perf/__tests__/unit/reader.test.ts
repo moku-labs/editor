@@ -208,7 +208,7 @@ describe("readTick", () => {
     expect(() => readTick(state, config)).not.toThrow();
     expect([state.window.version, state.measuring]).toEqual([0, false]);
   });
-  it("picks up a late GPU time after the engine reset its ring and kept counting frames (engine stop: newest -1, written kept)", () => {
+  it("picks up a late GPU time after the engine's stop and start (fix A: frame k stays in slot k % capacity)", () => {
     const { state, monitor, tick } = setup();
     commitFrames(monitor, 3, 0, 16.7);
     tick();
@@ -217,6 +217,22 @@ describe("readTick", () => {
     tick();
     monitor.landGpu(frame, 30, 0b100);
     tick();
+    expect(state.window.gpuMs[3]).toBe(30);
+    expect(state.window.cause[3]).toBe(1);
+  });
+
+  it("picks up a late GPU time after an engine before fix A reset its ring to slot 0 and kept counting frames", () => {
+    const { state, config } = perfState();
+    const monitor = createFakeMonitor({ legacyReset: true });
+    attach(state, monitor);
+    commitFrames(monitor, 3, 0, 16.7);
+    readTick(state, config);
+    monitor.restart();
+    const frame = monitor.commit({ t: 100, gpuPartial: true });
+    readTick(state, config);
+    expect(monitor.frames().columns.frame[0]).toBe(frame);
+    monitor.landGpu(frame, 30, 0b100);
+    readTick(state, config);
     expect(state.window.gpuMs[3]).toBe(30);
     expect(state.window.cause[3]).toBe(1);
   });

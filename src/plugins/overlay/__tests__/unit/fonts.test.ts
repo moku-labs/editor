@@ -4,15 +4,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FACES, GLYPHS } from "../../fonts/faces";
 import { bytesOf, deleteFaces, registerFaces } from "../../fonts/register";
+import { overlayCss } from "../../styles";
 import { createOctx, started, stopped, type TestOctx } from "../helpers";
 
 const FONT_DIR = path.join(process.cwd(), "src/plugins/overlay/fonts/");
 
 /** The face files of the table of spec 08 § Fonts, by name. */
 const FACE_FILES = [
-  ["barlow-condensed-latin-600.woff2", "Barlow Condensed", 600],
-  ["barlow-condensed-latin-500.woff2", "Barlow Condensed", 500],
-  ["barlow-latin-500.woff2", "Barlow", 500]
+  ["barlow-condensed-latin-600.woff2", "Moku Overlay Barlow Condensed", 600],
+  ["barlow-condensed-latin-500.woff2", "Moku Overlay Barlow Condensed", 500],
+  ["barlow-latin-500.woff2", "Moku Overlay Barlow", 500]
 ] as const;
 
 /** A Latin-subset face is about 22 KB; a full Barlow face (every script) is about twice that. */
@@ -146,6 +147,17 @@ describe("the bundled faces", () => {
     const ascii = Array.from({ length: 0x5f }, (_, index) => String.fromCodePoint(0x20 + index));
     const printed = [...ascii, ...printingTexts().flatMap(text => printedChars(text))];
     expect([...new Set(printed.filter(char => !GLYPHS.includes(char)))]).toEqual([]);
+  });
+
+  it("a game's own Barlow is drawn from our subset (the faces and the sheet use private families)", () => {
+    expect(new Set(FACES.map(face => face.family))).toEqual(
+      new Set(["Moku Overlay Barlow Condensed", "Moku Overlay Barlow"])
+    );
+    expect(overlayCss).toContain(
+      '--font-cond: "Moku Overlay Barlow Condensed", "Barlow Condensed",'
+    );
+    expect(overlayCss).toContain('--font-text: "Moku Overlay Barlow", Barlow,');
+    expect(overlayCss).not.toMatch(/font(-family)?:[^;]*(^|[\s,])"?Barlow( Condensed)?"?[,;]/m);
   });
 
   it("decodes base64 into the woff2 bytes", () => {

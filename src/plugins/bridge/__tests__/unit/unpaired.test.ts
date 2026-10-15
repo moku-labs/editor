@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { connect } from "../../connection/loop";
 import { PAIRING_STORE_KEY } from "../../types";
-import { deviceDeps, flush, LAN, socketOf } from "../helpers";
+import { deviceDeps, editorNote, flush, LAN, socketOf } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4401 `unpaired`: the hub does not know the device id or token. The bridge
@@ -88,6 +88,32 @@ describe("a 4401 unpaired close", () => {
 
     expect(deps.net.sockets).toHaveLength(1);
     expect(deps.state.status).toMatchObject({ kind: "lost", retryInMs: 1000 });
+  });
+});
+
+describe("a hub that unpairs the phone on every link", () => {
+  it("cannot cycle it faster than the backoff: the streak is kept until a session", async () => {
+    const deps = credentialed();
+    await connect(deps);
+    const delays: number[] = [];
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const stale = socketOf(deps, deps.net.sockets.length - 1);
+      stale.open();
+      stale.emit("close", { code: 4401, reason: "unpaired" });
+      await flush();
+      const pairing = socketOf(deps, deps.net.sockets.length - 1);
+      pairing.open();
+      pairing.emit("message", {
+        data: editorNote("paired", { device: `d-000${String(cycle)}`, token: "t", engine: "e" })
+      });
+      pairing.emit("close", { code: 1006, reason: "" });
+      const { status } = deps.state;
+      if (status.kind === "lost") delays.push(status.retryInMs);
+      await vi.advanceTimersByTimeAsync(31_000);
+    }
+
+    expect(delays).toEqual([1000, 2000, 4000]);
   });
 });
 

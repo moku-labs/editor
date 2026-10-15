@@ -188,8 +188,22 @@ function sessionAfter(
 }
 
 /**
+ * The computer accepted this page's hello: the page counts as linked (a later loss is a warning,
+ * not "no computer") and the failure streak and its backoff start over.
+ *
+ * @param deps - The domain deps.
+ */
+function onReached(deps: BridgeDeps): void {
+  const { state } = deps;
+  state.everLinked = true;
+  state.attempt = 0;
+  state.failureLogged = false;
+}
+
+/**
  * The `editor`/`session` notification: sets or clears the session (R6) and announces it; keeps
- * the computer's `engine` it carries, which a device-mode link publishes as `editorEngine`.
+ * the computer's `engine` it carries, which a device-mode link publishes as `editorEngine`. An
+ * opened session means the computer was reached (`onReached`).
  *
  * @param deps - The domain deps.
  * @param params - The notification's params.
@@ -197,6 +211,7 @@ function sessionAfter(
 function onSession(deps: BridgeDeps, params: Json | undefined): void {
   const id = memberOf(params, "id");
   if (typeof id !== "string") return;
+  if (memberOf(params, "open") === true) onReached(deps);
 
   const { state } = deps;
   const engine = memberOf(params, "engine");

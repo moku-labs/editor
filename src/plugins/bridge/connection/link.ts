@@ -54,18 +54,21 @@ export function sendBeat(deps: BridgeDeps, beat: Heartbeat): void {
 }
 
 /**
- * The link step: resets the failure streak, marks the page linked, sends `hello { manifest }`
- * first (the hub closes an agent that sends anything else first; the manifest carries the build,
- * and `restored` after a checkpoint restore), then a heartbeat, publishes live or paused, logs the
- * link and starts shipping the recorder's log (device mode).
+ * The link step: sends `hello { manifest }` first (the hub closes an agent that sends anything
+ * else first; the manifest carries the build, and `restored` after a checkpoint restore), then a
+ * heartbeat, publishes live or paused, logs the link and starts shipping the recorder's log
+ * (device mode). Page mode resets the failure streak here; device mode resets it, and marks the
+ * page linked, only when the hub answers with a session (`onSession`), so a hub that closes every
+ * link before its session (4401 on each reconnect) cannot cycle the phone faster than the backoff.
  *
  * @param deps - The domain deps.
  */
 export function onLinked(deps: BridgeDeps): void {
   const { state } = deps;
-  state.attempt = 0;
-  state.failureLogged = false;
-  state.everLinked = true;
+  if (state.mode === "page") {
+    state.attempt = 0;
+    state.failureLogged = false;
+  }
   state.shippingStalled = false;
   state.phase = "open";
   if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);

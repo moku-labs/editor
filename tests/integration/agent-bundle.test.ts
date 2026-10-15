@@ -12,8 +12,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // package (dist, resolved through package.json, so `sideEffects: false` and the
 // `/* @__PURE__ */` agent core, plugins and core configs apply). With
 // `__MOKU_GAME_DEV__` false nothing of the agent is left; with true the bridge
-// and capture are there. An agent export used outside the dev branch keeps what
-// it references and drops the rest (here: capture).
+// and capture are there, and the whole dev agent (perf, recorder, the overlay
+// with its three Barlow faces) stays at or under 120 KB gzip. An agent export
+// used outside the dev branch keeps what it references and drops the rest (here:
+// capture). The engine's page agent `@moku-labs/editor/agent/page` is in a
+// debug build (`__MOKU_GAME_AGENT__` true) and out of a release build (both
+// flags false).
 // Needs `bun run build` first: without dist/agent.mjs the suite is skipped.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -25,9 +29,19 @@ const AGENT = path.join(REPO, "dist", "agent.mjs");
 
 /**
  * Strings only the agent carries: the bridge hello route, a capture command id, bridge log events,
- * the editor's error prefix.
+ * the editor's error prefix. The hello route and the bracketed prefix are what the engine's store
+ * check of a release build looks for (engine spec 10:290-293).
  */
-const AGENT_MARKS = ["/__editor/hello", "editor.capture", "bridge:", "moku-editor"] as const;
+const AGENT_MARKS = ["/__editor/hello", "editor.capture", "bridge:", "[moku-editor]"] as const;
+
+/** The strings the engine's store check looks for: a debug build has them, a release build none. */
+const STORE_CHECK_MARKS = ["/__editor/hello", "[moku-editor]"] as const;
+
+/**
+ * The bound of the dev agent, gzip bytes (spec 10 T1, decision "Stage 2 gate approved"). A
+ * measurement above it stops the build for the owner: the bound is never raised silently.
+ */
+const DEV_AGENT_MAX_GZIP = 120_000;
 
 /** A string only the capture plugin carries: its large-series warning. */
 const CAPTURE_MARK = "capture:series-large";
@@ -79,8 +93,22 @@ await app.start();
 console.info("editor plugin", bridgePlugin.name);
 `;
 
+/** The engine's page of a game build: it imports the page agent and calls it after the game started. */
+const PAGE_ENTRY = `import { createApp as createGame } from "@moku-labs/game";
+import editorAgent from "@moku-labs/editor/agent/page";
+const app = createGame({});
+await app.start();
+await editorAgent({ app, name: "tiny", modules: [] });
+`;
+
 /** What one bundle produced: its text and its sizes. */
 type Bundle = { readonly text: string; readonly bytes: number; readonly gzip: number };
+
+/** The build flags a bundle defines, as the engine's `definesOf` writes them. */
+type Flags = {
+  readonly __MOKU_GAME_DEV__: "true" | "false";
+  readonly __MOKU_GAME_AGENT__?: "true" | "false";
+};
 
 if (!existsSync(AGENT)) {
   console.warn(`agent-bundle: ${AGENT} not found, run \`bun run build\` first: skipping`);
@@ -97,6 +125,7 @@ beforeAll(async () => {
   await writeFile(path.join(dir, "static-one.ts"), STATIC_ONE_ENTRY);
   await writeFile(path.join(dir, "type-only.ts"), TYPE_ONLY_ENTRY);
   await writeFile(path.join(dir, "outside.ts"), OUTSIDE_ENTRY);
+  await writeFile(path.join(dir, "page.ts"), PAGE_ENTRY);
 });
 
 afterAll(async () => {
@@ -104,20 +133,21 @@ afterAll(async () => {
 });
 
 /**
- * Bundles one entry for the browser, minified, with the dev flag defined. The game itself is
+ * Bundles one entry for the browser, minified, with the build flags defined. The game itself is
  * external: the sizes are what the editor adds.
  *
  * @param entry - The entry file name in the temp folder.
- * @param dev - The value of `__MOKU_GAME_DEV__`.
+ * @param flags - The value of `__MOKU_GAME_DEV__`, or every flag the build defines.
  * @returns The joined output text and its sizes.
  */
-async function bundle(entry: string, dev: "true" | "false"): Promise<Bundle> {
+async function bundle(entry: string, flags: "true" | "false" | Flags): Promise<Bundle> {
+  const define = typeof flags === "string" ? { __MOKU_GAME_DEV__: flags } : { ...flags };
   const result = await Bun.build({
     entrypoints: [path.join(dir, entry)],
     target: "browser",
     format: "esm",
     minify: true,
-    define: { __MOKU_GAME_DEV__: dev },
+    define,
     external: ["@moku-labs/game", "@moku-labs/game/*"]
   });
   if (!result.success) throw new AggregateError(result.logs, `bundling ${entry} failed`);
@@ -166,6 +196,32 @@ describe.skipIf(!existsSync(AGENT))("the agent in a game bundle", () => {
     );
   });
 
+  it("keeps the dev agent with perf, recorder and the overlay's fonts at or under 120 KB gzip", async () => {
+    const dev = await bundle("dynamic.ts", "true");
+
+    expect(dev.gzip).toBeLessThanOrEqual(DEV_AGENT_MAX_GZIP);
+  });
+
+  it("keeps the page agent in a debug build and drops it from a release build", async () => {
+    const debug = await bundle("page.ts", {
+      __MOKU_GAME_DEV__: "false",
+      __MOKU_GAME_AGENT__: "true"
+    });
+    const release = await bundle("page.ts", {
+      __MOKU_GAME_DEV__: "false",
+      __MOKU_GAME_AGENT__: "false"
+    });
+
+    expect(STORE_CHECK_MARKS.filter(mark => debug.text.includes(mark))).toEqual([
+      ...STORE_CHECK_MARKS
+    ]);
+    expect(marksIn(release)).toEqual([]);
+    expect(release.bytes).toBeLessThan(1024);
+    console.info(
+      `agent-bundle: debug page ${debug.bytes} B (${debug.gzip} B gzip), release page ${release.bytes} B (${release.gzip} B gzip)`
+    );
+  });
+
   it("drops out of a static import behind the flag too (sideEffects: false)", async () => {
     expect(marksIn(await bundle("static.ts", "false"))).toEqual([]);
     expect(marksIn(await bundle("static.ts", "true"))).toEqual([...AGENT_MARKS]);
@@ -198,7 +254,15 @@ describe.skipIf(!existsSync(AGENT))("the agent in a game bundle", () => {
     const built = await builtAgent();
 
     expect(built).toContain("/* @__PURE__ */ createAgentCore(");
-    for (const name of ["registry", "channel", "overlay", "bridge", "capture"]) {
+    for (const name of [
+      "registry",
+      "channel",
+      "perf",
+      "recorder",
+      "overlay",
+      "bridge",
+      "capture"
+    ]) {
       expect(built).toContain(`/* @__PURE__ */ createAgentPlugin("${name}"`);
     }
   });

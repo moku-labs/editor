@@ -109,6 +109,41 @@ describe("the per-frame budget and the rate", () => {
     });
   });
 
+  it("takes reason and mode from a rate line written between frames (frame null) that leads into the switch (bug: a game.frameRate switch shown without its reason)", () => {
+    const { state, monitor, tick } = setup();
+    const origin = headerLine().timeOrigin;
+    commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
+    const change = rateChange({ reason: "forced", mode: "forced" });
+    monitor.emit({ ...eventLine("rate", null, change), t: origin + 20 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    tick();
+    expect(spikeRecord(state, switched)?.rateSwitch).toEqual({
+      from: 120,
+      to: 60,
+      reason: "forced",
+      mode: "forced"
+    });
+  });
+
+  it("does not take a frame-null rate line from before the row before, or of another switch", () => {
+    const { state, monitor, tick } = setup();
+    const origin = headerLine().timeOrigin;
+    monitor.emit({
+      ...eventLine("rate", null, rateChange({ reason: "forced", mode: "forced" })),
+      t: origin - 50
+    });
+    commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
+    monitor.emit({ ...eventLine("rate", null, rateChange({ from: 60, to: 30 })), t: origin + 20 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    tick();
+    expect(spikeRecord(state, switched)?.rateSwitch).toEqual({
+      from: 120,
+      to: 60,
+      reason: null,
+      mode: null
+    });
+  });
+
   it("shows a switch the rows show without reason and mode when no rate line names it", () => {
     const { state, monitor, tick } = setup();
     commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });

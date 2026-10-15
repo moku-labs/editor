@@ -2,7 +2,7 @@
 /* eslint-disable unicorn/no-null -- null is the engine's and perf's "not measured" */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openOverlay } from "../../modes";
-import { createOctx, secondOf, started, stopped, type TestOctx } from "../helpers";
+import { bracketMonitor, createOctx, secondOf, started, stopped, type TestOctx } from "../helpers";
 
 let octx: TestOctx | undefined;
 
@@ -19,8 +19,8 @@ afterEach(() => {
  * @param start - Width (left) and height (top) of the start probe.
  * @param end - Width (right) and height (bottom) of the end probe.
  */
-function probes(start: readonly [string, string], end: readonly [string, string]): void {
-  vi.spyOn(globalThis, "getComputedStyle").mockImplementation(element => {
+function probes(start: readonly [string, string], end: readonly [string, string]) {
+  return vi.spyOn(globalThis, "getComputedStyle").mockImplementation(element => {
     const [width, height] = (element as HTMLElement).dataset.safeProbe === "start" ? start : end;
     return { width, height } as CSSStyleDeclaration;
   });
@@ -94,5 +94,38 @@ describe("the safe area", () => {
     probes(["0px", "40px"], ["0px", "0px"]);
     globalThis.dispatchEvent(new Event("moku-native:insets"));
     expect(made.state.insets.top).toBe(0);
+  });
+
+  it("does no work on resize or insets while hidden; the next visible mode re-reads", () => {
+    probes(["0px", "0px"], ["0px", "0px"]);
+    const made = start(null);
+    const reads = probes(["0px", "40px"], ["0px", "0px"]);
+    reads.mockClear();
+    const second = vi.spyOn(made.perf, "second");
+    globalThis.dispatchEvent(new Event("resize"));
+    globalThis.dispatchEvent(new Event("moku-native:insets"));
+    expect(reads).not.toHaveBeenCalled();
+    expect(second).not.toHaveBeenCalled();
+    expect(made.state.insets.top).toBe(0);
+    openOverlay(made);
+    expect(made.state.insets.top).toBe(40);
+  });
+
+  it("reads and lays out inside the agent span on a resize while visible", () => {
+    probes(["0px", "0px"], ["0px", "0px"]);
+    const made = start(null);
+    const monitor = bracketMonitor();
+    made.perf.monitorValue = monitor;
+    openOverlay(made);
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(() => {
+      monitor.calls.push("style");
+      return { width: "0px", height: "0px" } as CSSStyleDeclaration;
+    });
+    monitor.calls.length = 0;
+    globalThis.dispatchEvent(new Event("resize"));
+    expect(monitor.calls.slice(0, 3)).toEqual(["begin", "style", "style"]);
+    expect(monitor.calls.filter(call => call === "begin")).toHaveLength(
+      monitor.calls.filter(call => call === "end").length
+    );
   });
 });

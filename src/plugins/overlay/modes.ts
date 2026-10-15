@@ -35,8 +35,9 @@ function tabFor(octx: OverlayCtx, tab: OverlayTab): OverlayTab {
 }
 
 /**
- * Applies the state's mode to the host: hidden draws nothing and runs nothing; a visible mode
- * registers the fonts (once), lays out, starts the tick and renders now.
+ * Applies the state's mode to the host, inside the agent span: hidden draws nothing and runs
+ * nothing; a visible mode registers the fonts (once), re-reads the viewport and the insets, lays
+ * out, then starts the tick and renders now (its own span).
  *
  * @param octx - Domain context.
  */
@@ -44,22 +45,24 @@ export function applyMode(octx: OverlayCtx): void {
   const { state } = octx;
   const host = state.host;
   if (host === undefined) return;
-  host.hidden = state.mode === "hidden";
-  host.toggleAttribute("data-opening", state.opening);
-  layout(state);
-  if (state.mode === "hidden") {
-    stopTick(state);
-    if (state.container !== undefined) render(undefined, state.container);
-    dropCanvas(state);
-    return;
-  }
-
+  const hidden = state.mode === "hidden";
   withAgent(octx, () => {
+    host.hidden = hidden;
+    host.toggleAttribute("data-opening", state.opening);
+    if (hidden) {
+      layout(state);
+      stopTick(state);
+      if (state.container !== undefined) render(undefined, state.container);
+      dropCanvas(state);
+      return;
+    }
     registerFaces(octx);
+    readViewport(state);
+    readInsets(octx);
+    layout(state);
   });
-  readViewport(state);
-  readInsets(octx);
-  layout(state);
+  if (hidden) return;
+
   startTick(octx);
   paintNow(octx);
 }

@@ -60,7 +60,7 @@ describe("buildManifest", () => {
     expect(manifest.sources.map(source => source.id)).toEqual([...ctx.state.sources.keys()]);
     expect(manifest.commands.map(command => command.id)).toEqual([...ctx.state.commands.keys()]);
     expect(manifest.sources).toHaveLength(21);
-    expect(manifest.commands).toHaveLength(20);
+    expect(manifest.commands).toHaveLength(21);
     expect("panels" in manifest).toBe(false);
   });
 

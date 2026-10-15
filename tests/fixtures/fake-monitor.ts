@@ -69,6 +69,11 @@ export type FakeMonitorOptions = {
   readonly header?: PerfHeaderLine | null;
   /** False: the ring has no `budgetMs` column (an engine before the 11-monitor addendum). */
   readonly budgetColumn?: boolean;
+  /**
+   * True: the ring of an engine before fix A: after `restart()` the next frame goes to slot 0
+   * (`(newest + 1) % capacity`), not to `written % capacity`.
+   */
+  readonly legacyReset?: boolean;
 };
 
 /** A monitor event the fake recorded. */
@@ -110,7 +115,7 @@ export type FakeMonitor = MonitorLike & {
   emit(line: PerfLogLine): void;
   /**
    * Resets the ring the way the engine's stop does (`stopPerf`): `size` 0 and `newest` -1, `written`
-   * kept, so the next frame goes to slot 0 whatever `written` is.
+   * kept. The next frame k goes to slot `k % capacity` (engine fix A), or to slot 0 with `legacyReset`.
    */
   restart(): void;
 };
@@ -505,6 +510,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
   const capacity = options.capacity ?? 64;
   const header = options.header === undefined ? headerLine() : options.header;
   const budgetColumn = options.budgetColumn !== false;
+  const legacyReset = options.legacyReset === true;
   const result = { copied: 0, lost: 0 };
   const listeners = new Set<(line: PerfLogLine) => void>();
   let lastFrame = 0;
@@ -592,7 +598,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
       if (capacity === 0) throw new Error("fake-monitor: a ring of capacity 0 commits nothing");
       const frame = input.frame ?? lastFrame + 1;
       lastFrame = frame;
-      const slot = (ring.newest + 1) % capacity;
+      const slot = legacyReset ? (ring.newest + 1) % capacity : ring.written % capacity;
       writeSlot(ring, slot, frame, input);
       ring.newest = slot;
       ring.size = Math.min(ring.size + 1, capacity);
@@ -600,7 +606,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
       return frame;
     },
     landGpu: (frame, gpuMs, causes = 0) => {
-      for (let slot = 0; slot < ring.size; slot += 1) {
+      for (let slot = 0; slot < capacity; slot += 1) {
         if (ring.columns.frame[slot] !== frame) continue;
         ring.columns.gpuMs[slot] = gpuMs;
         ring.columns.gpuPartial[slot] = 0;

@@ -93,6 +93,15 @@ describe("resolveMode", () => {
     });
   });
 
+  it("row 3 on a native page dials the computer even when hello names a server", () => {
+    const config = { ...CONFIG, hello: "http://127.0.0.1:3000/__editor/hello" };
+
+    expect(resolveMode(inputOf({ href: "tauri://localhost/index.html", config }))).toEqual({
+      mode: "device",
+      address: DEFAULT_DEVICE_ADDRESS
+    });
+  });
+
   it("row 4: a page the dev server served stays in page mode", () => {
     expect(resolveMode(inputOf())).toEqual({ mode: "page", address: undefined });
     expect(resolveMode(inputOf({ href: "https://game.local:3000/" }))).toEqual({

@@ -66,7 +66,8 @@ export type AgentEvents = {
 };
 
 /**
- * Global events of the server core (contracts §4).
+ * Global events of the server core (contracts §4). Unchanged: `collector:session` is the collector's own
+ * per-plugin event, and `hub:device` the hub's; neither is declared here.
  *
  * @example
  * ```ts

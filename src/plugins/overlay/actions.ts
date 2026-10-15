@@ -7,7 +7,7 @@
 import type { Json } from "../registry/protocol";
 import { bareMessage, errorCode, toWireError } from "../registry/protocol";
 import { clockText } from "./model/format";
-import { overlayCommands, READ_ONLY_TEXT } from "./model/game";
+import { overlayCommands, READ_ONLY_TEXT, reasonText } from "./model/game";
 import { ADDRESS_HINT, checkAddress } from "./model/link";
 import { closeOverlay, openOverlay, setMode, setTab } from "./modes";
 import { mountCanvas } from "./paint/graph";
@@ -94,7 +94,8 @@ function errorText(error: unknown): string {
  * Presses a Game tab command: a toggle runs `{ on: !value }`, a button `{}`, through
  * `channel.run(id, input, "overlay")` (the recorder's `registry:command` hook writes the one
  * `command` line); a success adds the recorder's auto mark and toasts; a -32009 refusal toasts its
- * reason; any other failure toasts and warns. Ignored while busy or for a refused command.
+ * reason (`read_only`: a --debug=full build, `dev_only`: a dev or debug build); any other failure
+ * toasts and warns. Ignored while busy or for a refused command.
  *
  * @param octx - Domain context.
  * @param id - The command id.
@@ -123,7 +124,8 @@ export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> 
   } catch (error) {
     const wire = toWireError(error);
     if (wire.code === errorCode.readOnly) {
-      showToast(octx, `${command.title} ${READ_ONLY_TEXT}.`, "error");
+      const why = wire.data?.reason === "dev_only" ? reasonText("dev-only") : READ_ONLY_TEXT;
+      showToast(octx, `${command.title} ${why}.`, "error");
     } else {
       showToast(octx, `${command.title} failed: ${errorText(error)}`, "error");
       octx.log.warn("overlay:command-failed", { id, code: wire.code, message: wire.message });

@@ -329,6 +329,11 @@ export type BridgeState = {
   off: (() => void)[];
   /** The checkpoint restored at start, sent once in the next hello (R6). */
   restored: { readonly bookmark: string; readonly frame: number } | undefined;
+  /**
+   * The connect generation: +1 at every connect. A page-mode hello fetch that settles after a
+   * newer connect opens nothing and fails nothing.
+   */
+  dial: number;
   /** Decided at start; switched to "device" by connect() and overlay:connect. */
   mode: BridgeMode;
   /** Device mode: the `host:port` dialled (normalized); undefined in page mode. */
@@ -345,7 +350,10 @@ export type BridgeState = {
   seenEmittedAt: number;
   /** The link the last bridge:status carried (device mode), to tell a link change. */
   emittedLink: DeviceLink | undefined;
-  /** True once this page reached the computer (decides "no computer" vs "lost" logging). */
+  /**
+   * True once the computer answered this page's hello with a session (decides "no computer" vs
+   * "lost" logging).
+   */
   everLinked: boolean;
   /** The batch of log lines waiting for its ack; undefined when none is in flight. */
   shipping: Shipping | undefined;

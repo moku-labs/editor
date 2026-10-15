@@ -116,8 +116,8 @@ function isAbsoluteHello(hello: string): boolean {
  * The mode and the address at start, first match wins: (1) a debug build's
  * `__MOKU_GAME_EDITOR__` → device at the remembered address, else config.device, else the
  * build's; (2) config.device → device at the remembered address, else config.device; (3) a native
- * page (and a hello route that does not name its server) → device at the remembered address, else
- * DEFAULT_DEVICE_ADDRESS; (4) page mode. The remembered address wins: it was chosen on the device
+ * page → device at the remembered address, else DEFAULT_DEVICE_ADDRESS, except a page without a URL
+ * whose hello names its server (a headless agent in Bun); (4) page mode. The remembered address wins: it was chosen on the device
  * later than the build was made. An address `parseAddress` refuses is skipped.
  *
  * @param input - Config, flags, page URL and the remembered links.
@@ -138,7 +138,8 @@ export function resolveMode(input: ModeInput): ResolvedMode {
     return { mode: "device", address };
   }
   if (configured !== undefined) return { mode: "device", address: last ?? configured };
-  if (isNativePage(href) && !isAbsoluteHello(config.hello)) {
+  const headless = href === undefined && isAbsoluteHello(config.hello);
+  if (isNativePage(href) && !headless) {
     return { mode: "device", address: last ?? DEFAULT_DEVICE_ADDRESS };
   }
   return { mode: "page", address: undefined };

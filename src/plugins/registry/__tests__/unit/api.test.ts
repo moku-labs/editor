@@ -74,7 +74,7 @@ describe("manifest()", () => {
     expect(manifest.page).toBe("");
     expect(manifest.embedded).toBe(false);
     expect(manifest.sources).toHaveLength(21);
-    expect(manifest.commands).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(22);
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
   });
 

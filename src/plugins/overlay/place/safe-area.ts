@@ -4,7 +4,7 @@
  * stylesheet, read with getComputedStyle, and per side the larger of the probe and perf's display
  * insets. Re-read on resize, on `moku-native:insets` and when a probe resizes; never per tick.
  */
-import { paintNow } from "../paint/tick";
+import { paintNow, withAgent } from "../paint/tick";
 import type { Insets, OverlayCtx } from "../types";
 import { layout, readViewport } from "./layout";
 
@@ -81,7 +81,9 @@ export function readInsets(octx: OverlayCtx): void {
 
 /**
  * Listens for what moves the window's box: the window's `resize` and `moku-native:insets`, and a
- * resize of either probe. Each re-reads the viewport and the insets, lays out and repaints.
+ * resize of either probe. While the window shows, each re-reads the viewport and the insets and lays
+ * out inside the agent span, then repaints; while hidden it does nothing (the next visible mode
+ * re-reads).
  *
  * @param octx - Domain context.
  * @param view - The host's window.
@@ -89,9 +91,12 @@ export function readInsets(octx: OverlayCtx): void {
 export function watchPlace(octx: OverlayCtx, view: Window | undefined): void {
   const { state } = octx;
   const relayout = (): void => {
-    readViewport(state);
-    readInsets(octx);
-    layout(state);
+    if (state.mode === "hidden") return;
+    withAgent(octx, () => {
+      readViewport(state);
+      readInsets(octx);
+      layout(state);
+    });
     paintNow(octx);
   };
   if (view !== undefined) {

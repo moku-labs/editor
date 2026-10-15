@@ -143,6 +143,13 @@ function unwatchedSubs(tap: Tap): Set<number> {
   return subs;
 }
 
+/**
+ * How long P1 waits on the wire: it boots the server, tools and agent by hand (no startStack), and
+ * under load the live link and the first probe view alone took past `until`'s 3 s default (the
+ * whole-suite pre-commit run). The same budget as startStack's live link.
+ */
+const REAL_SOCKET_MS = 10_000;
+
 /** The sources of the P1 probe panel. */
 const PROBE_SOURCES = { pos: "game.position", last: ["game.history", { last: 1 }] } as const;
 
@@ -212,7 +219,11 @@ describe("cross-plugin panels", () => {
     workspace.show("state");
     const section = (): HTMLElement | null =>
       workspace.host("state").querySelector<HTMLElement>('[data-panel="probe"]');
-    await until(() => section()?.dataset.panelState === "no-game", "the no-game placeholder");
+    await until(
+      () => section()?.dataset.panelState === "no-game",
+      "the no-game placeholder",
+      REAL_SOCKET_MS
+    );
     expect(section()?.textContent).toContain("No game connected");
     expect(record.views).toEqual([]);
     expect(page.root.contains(section())).toBe(true);
@@ -223,8 +234,8 @@ describe("cross-plugin panels", () => {
     started.push(game);
     const agent = await startAgent(server, game);
     started.push(agent);
-    await until(() => link.status().kind === "live", "a live link");
-    await until(() => record.views.length > 0, "the first probe view");
+    await until(() => link.status().kind === "live", "a live link", REAL_SOCKET_MS);
+    await until(() => record.views.length > 0, "the first probe view", REAL_SOCKET_MS);
     expect(
       record.views.every(values => values.pos !== undefined && values.last !== undefined)
     ).toBe(true);
@@ -245,7 +256,8 @@ describe("cross-plugin panels", () => {
     // leave only a short-lived value: the frame walks back to `home` and empties the history.
     await until(
       () => latest()?.pos.path === "visit/enter" && lastHistory(record) !== before,
-      "the run's position and edge in the probe"
+      "the run's position and edge in the probe",
+      REAL_SOCKET_MS
     );
     expect(latest()?.last).toEqual([
       expect.objectContaining({ path: "home", outcome: "play", next: "visit/enter" })
@@ -253,7 +265,8 @@ describe("cross-plugin panels", () => {
     await game.frames(1);
     await until(
       () => latest()?.pos.path === "home" && lastHistory(record) === before,
-      "the probe back at home with an empty history"
+      "the probe back at home with an empty history",
+      REAL_SOCKET_MS
     );
     expect(tools.eventsOf("workspace:ran")).toEqual([
       expect.objectContaining({ id: "game.answer", origin: "panel", ok: true })
@@ -267,14 +280,16 @@ describe("cross-plugin panels", () => {
       () =>
         watchSubs(server.tap, "game.position", from).length > 0 &&
         watchSubs(server.tap, "game.history", from).length > 0,
-      "the detached mount's watches"
+      "the detached mount's watches",
+      REAL_SOCKET_MS
     );
     expect(detached.querySelector('[data-panel="probe"]')).not.toBeNull();
     const subs = watchSubs(server.tap, undefined, from);
     unmount();
     await until(
       () => subs.every(sub => unwatchedSubs(server.tap).has(sub)),
-      "an unwatch for every detached sub"
+      "an unwatch for every detached sub",
+      REAL_SOCKET_MS
     );
     expect(detached.querySelector('[data-panel="probe"]')).toBeNull();
   });

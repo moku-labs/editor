@@ -4,23 +4,23 @@
  * their event details and the monitor itself. Runtime-free: only `import type` / `export type`
  * reach `@moku-labs/game`, so no engine code enters the tools or server bundle.
  *
- * Where the engine exports a type with the shape spec 03 names, it is re-exported here unchanged.
- * Where the engine does not export it yet (spec 21 rate, spec 22 overlay, spec 23 kept pictures,
- * spec 25 pool trim, spec 27 warm-up, the editor's `devtools` detail), the type is a structural
- * copy; where the engine exports a type but a later engine spec adds fields to it, the type is the
- * engine's own with those fields added as optional. `engine-contract.test.ts` compares every
- * copy and every addition with the engine.
+ * Where the engine exports a type with the shape spec 03 names, it is re-exported here unchanged
+ * (the spec 21 rate types from its `Time` namespace). Where the engine does not export it yet
+ * (spec 22 overlay, spec 23 kept pictures, spec 25 pool trim, spec 27 warm-up, the editor's
+ * `devtools` detail), the type is a structural copy; where the engine exports a type but a later
+ * engine spec adds fields to it, the type is the engine's own with those fields added as optional.
+ * `engine-contract.test.ts` compares every copy and every addition with the engine.
  */
 import type {
   FrameRecord as EngineFrameRecord,
   PerfEventLine as EnginePerfEventLine,
   PerfEventName as EnginePerfEventName,
-  PerfHeaderLine as EnginePerfHeaderLine,
   PerfMeasured as EnginePerfMeasured,
   PerfSampleLine as EnginePerfSampleLine,
   PerfSpikeLine as EnginePerfSpikeLine,
   FrameRing,
   PerfCollectorLine,
+  PerfHeaderLine,
   PerfLongFrameLine,
   PerfMarkLine,
   PerfStartupLine,
@@ -43,6 +43,7 @@ export type {
   PerfChangeEntry,
   PerfCollectorLine,
   PerfDisplay,
+  PerfHeaderLine,
   PerfLongFrameLine,
   PerfMarkLine,
   PerfStartupLine,
@@ -103,107 +104,57 @@ export type ThermalReading = Time.ThermalReading;
 export type PerfMeasured = EnginePerfMeasured | "kept";
 
 /**
- * The engine's frame-rate mode (spec 21 G1.3): `"fixed"` (`maxFps`), `"auto"` (the adaptive rule),
- * `"forced"` (`setRate` with a number). Structural: spec 21 is not in the engine yet.
+ * The engine's frame-rate mode (spec 21 G1.3, `Time.RateMode`): `"fixed"` (`maxFps`), `"auto"` (the
+ * adaptive rule), `"forced"` (`setRate` with a number).
  *
  * @example
  * ```ts
  * const mode: RateMode = "auto";
  * ```
  */
-export type RateMode = "fixed" | "auto" | "forced";
+export type RateMode = Time.RateMode;
 
 /**
- * Why the rate is what it is: the reason of the last change (spec 21 G1.3). Structural.
+ * Why the rate is what it is: the reason of the last change (spec 21 G1.3, `Time.RateReason`).
  *
  * @example
  * ```ts
  * const reason: RateReason = "missed"; // the loop fell back to 60 after missed frames
  * ```
  */
-export type RateReason =
-  | "start"
-  | "display"
-  | "missed"
-  | "headroom"
-  | "thermal"
-  | "forced"
-  | "auto";
+export type RateReason = Time.RateReason;
 
 /**
- * The native shell's thermal status, normalized (spec 21 G1.3). Structural.
+ * The native shell's thermal status, normalized (spec 21 G1.3, `Time.ThermalStatus`).
  *
  * @example
  * ```ts
  * const status: ThermalStatus = "moderate";
  * ```
  */
-export type ThermalStatus =
-  | "none"
-  | "light"
-  | "moderate"
-  | "severe"
-  | "critical"
-  | "emergency"
-  | "shutdown";
+export type ThermalStatus = Time.ThermalStatus;
 
 /**
- * The loop's frame rate as `app.time.rate()` answers it (spec 21 G1.3). Structural.
+ * The loop's frame rate as `app.time.rate()` answers it (spec 21 G1.3, `Time.FrameRate`); the
+ * header's `rate`.
  *
  * @example
  * ```ts
  * const rate: FrameRate = { fps: 60, mode: "auto", reason: "missed", displayHz: 120, ladder: [120, 60], thermal: "none" };
  * ```
  */
-export type FrameRate = {
-  /** Frames per second the loop runs at, the idle cap left out. */
-  fps: number;
-  mode: RateMode;
-  reason: RateReason;
-  /** Refresh rate of the display in Hz; `null` until known, and always without `adaptive`. */
-  displayHz: number | null;
-  /** The rates the adaptive rule chooses from, highest first. */
-  ladder: readonly number[];
-  /** The native shell's last thermal status; `null` without a shell. */
-  thermal: ThermalStatus | null;
-};
+export type FrameRate = Time.FrameRate;
 
 /**
- * A change of the loop's rate or of its mode (spec 21 G1.3, 21:117-129): the payload of `time:rate`
- * and the `detail` of a `rate` event line (21:516-520). Structural.
+ * A change of the loop's rate or of its mode (spec 21 G1.3, `Time.RateChange`): the payload of
+ * `time:rate` and the `detail` of a `rate` event line.
  *
  * @example
  * ```ts
  * const change: RateChange = { from: 120, to: 60, reason: "missed", mode: "auto", displayHz: 120, thermal: "none", window: { drawn: 41, missed: 9, heavy: 0 }, dwellMs: 5000 };
  * ```
  */
-export type RateChange = {
-  from: number;
-  to: number;
-  reason: RateReason;
-  mode: RateMode;
-  displayHz: number | null;
-  thermal: ThermalStatus | null;
-  /** Drawn intervals, the late ones and the heavy ones of the window the rule read. */
-  window: { drawn: number; missed: number; heavy: number };
-  /** How long a return must now wait at the lower rate, ms. */
-  dwellMs: number;
-};
-
-/**
- * The first line a subscriber gets (11:944-958, addendum 11:1790-1791): the engine's header plus
- * the optional `rate` of spec 21 (11:954). A block-2b header, the engine of today, has no `rate`
- * key; `config.budget` is the configured value and `config.budgetMs` the resolved budget at
- * subscribe time.
- *
- * @example
- * ```ts
- * const off = app.renderer.monitor.stream(line => {
- *   if (line.kind === "header") line.rate?.fps; // 120 once spec 21 ships; undefined before
- * });
- * ```
- */
-export type PerfHeaderLine = EnginePerfHeaderLine & { rate?: Readonly<FrameRate> };
+export type RateChange = Time.RateChange;
 
 /**
  * One second of the loop (11:977-1004): the engine's sample plus `kept`, the kept pictures of the

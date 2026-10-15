@@ -7,13 +7,15 @@
  * inside the module) and the glyph set as `GLYPHS`. The tools page's device strip names the same
  * files (`workspace/styles/fonts.css`).
  *
- * The glyph set: printable ASCII U+0020–U+007E, plus every printable non-ASCII character written in
+ * The glyph set: printable ASCII U+0020–U+007E (BASE_RANGES), plus every printable non-ASCII character written in
  * the sources that print in these faces (literal, or as a `\uXXXX` escape): the overlay
  * (`src/plugins/overlay`, tests excluded), the graph painter (`src/plugins/perf/graph`), perf's
  * cause words and why sentences (`src/plugins/perf/protocol`, `src/plugins/perf/records.ts`) and
  * the tools strip (`src/plugins/renderView/device`). On 2026-10-15 that is NBSP U+00A0 and
  * § ° ± · × – — … → − ≥. Text a game supplies (labels, paths, system names) outside the set falls
- * back to the stacks' next face. `fonts.test.ts` fails when a source gains a glyph `GLYPHS` lacks.
+ * back to the stacks' next face. The faces are registered under private families
+ * ("Moku Overlay Barlow Condensed", "Moku Overlay Barlow"), so a game's own Barlow never draws from
+ * this subset. `fonts.test.ts` fails when a source gains a glyph `GLYPHS` lacks.
  *
  * Run with `bun run fonts:overlay`. Output through the branded console (MC1).
  */
@@ -57,22 +59,30 @@ const FACES = [
   [
     "barlow-condensed-latin-600.woff2",
     "@fontsource/barlow-condensed/files/barlow-condensed-latin-600-normal.woff2",
-    "Barlow Condensed",
+    "Moku Overlay Barlow Condensed",
     600
   ],
   [
     "barlow-condensed-latin-500.woff2",
     "@fontsource/barlow-condensed/files/barlow-condensed-latin-500-normal.woff2",
-    "Barlow Condensed",
+    "Moku Overlay Barlow Condensed",
     500
   ],
   [
     "barlow-latin-500.woff2",
     "@fontsource/barlow/files/barlow-latin-500-normal.woff2",
-    "Barlow",
+    "Moku Overlay Barlow",
     500
   ]
 ] as const;
+
+/**
+ * The ranges every face holds whatever the sources print: printable ASCII. Full Latin-1
+ * (U+00A0–U+00FF) was measured on 2026-10-15 at 126 481 B gzip for the dev agent bundle, over the
+ * 120 000 B bound (113 299 B with this range), so accented Latin in a game's text falls back to the
+ * stacks' next face.
+ */
+const BASE_RANGES = [[0x20, 0x7e]] as const;
 
 /** A character a face can draw: a letter, number, punctuation, symbol or space. */
 const PRINTABLE = /^[\p{L}\p{N}\p{P}\p{S}\p{Zs}]$/u;
@@ -113,7 +123,12 @@ async function sourceFiles(path: string): Promise<string[]> {
  */
 function glyphsOf(texts: readonly string[]): string {
   const glyphs = new Set<string>();
-  for (let code = 0x20; code <= 0x7e; code += 1) glyphs.add(String.fromCodePoint(code));
+  for (const [first, last] of BASE_RANGES) {
+    for (let code = first; code <= last; code += 1) {
+      const char = String.fromCodePoint(code);
+      if (PRINTABLE.test(char)) glyphs.add(char);
+    }
+  }
   for (const text of texts) {
     for (const char of text) if (char > "~" && PRINTABLE.test(char)) glyphs.add(char);
     for (const match of text.matchAll(ESCAPE)) {

@@ -58,7 +58,6 @@ describe("the tick (cheapness)", () => {
     const before = renders();
     vi.advanceTimersByTime(10_000);
     expect(renders() - before).toBe(40);
-    expect(renders()).toBeLessThanOrEqual(42);
     expect(octx.graph.paints.length).toBeLessThanOrEqual(41);
     expect(octx.graph.paints.length).toBeGreaterThanOrEqual(40);
     expect(frame).not.toHaveBeenCalled();

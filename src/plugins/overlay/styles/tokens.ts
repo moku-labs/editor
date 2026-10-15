@@ -1,7 +1,9 @@
 /**
  * @file overlay plugin — the tokens layer: the design §2 palette as primitives (from the prototype's
  * `styles.scss :root`), then the semantic names the components use, and the font stacks. One fixed
- * dark cockpit theme (design §2 Theming): single values, no `light-dark()`.
+ * dark cockpit theme (design §2 Theming): single values, no `light-dark()`. The font stacks name the
+ * bundled faces by their private families first (`fonts/register.ts`), so a game's own Barlow is
+ * never drawn from the overlay's subset, and then the plain families.
  */
 
 /**
@@ -64,7 +66,7 @@ export const TOKENS = `
     --stack-js: var(--prim-js);
     --stack-gpu: var(--prim-gpu);
     --stack-idle: var(--prim-idle);
-    --font-cond: "Barlow Condensed", "Arial Narrow", sans-serif;
-    --font-text: Barlow, system-ui, sans-serif;
+    --font-cond: "Moku Overlay Barlow Condensed", "Barlow Condensed", "Arial Narrow", sans-serif;
+    --font-text: "Moku Overlay Barlow", Barlow, system-ui, sans-serif;
   }
 }`;

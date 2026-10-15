@@ -110,8 +110,11 @@ export const GRAPH_COLOURS = {
   readout: "#000000"
 } as const;
 
-/** The font families: the bundled Barlow Condensed, then the fallbacks. */
-const FAMILY = '"Barlow Condensed", "Arial Narrow", sans-serif';
+/**
+ * The font families: the overlay's subset Barlow faces under their private name first, then plain
+ * Barlow Condensed (the tools page loads it through fonts.css), then the fallbacks.
+ */
+const FAMILY = '"Moku Overlay Barlow Condensed", "Barlow Condensed", "Arial Narrow", sans-serif';
 
 /**
  * The painter's fonts, phone and wide (the prototype's 700 drawn at 600, its 400 at 500: the bundled
@@ -119,7 +122,7 @@ const FAMILY = '"Barlow Condensed", "Arial Narrow", sans-serif';
  *
  * @example
  * ```ts
- * GRAPH_FONTS.phone.flag; // '600 11px "Barlow Condensed", "Arial Narrow", sans-serif'
+ * GRAPH_FONTS.phone.flag; // '600 11px "Moku Overlay Barlow Condensed", "Barlow Condensed", "Arial Narrow", sans-serif'
  * ```
  */
 export const GRAPH_FONTS = {

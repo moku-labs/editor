@@ -259,24 +259,29 @@ function openLink(deps: BridgeDeps, helloUrl: URL, body: HelloBody): void {
 }
 
 /**
- * True once onStop ran (read again after an await: stop may run meanwhile).
+ * True when a page-mode attempt is no longer the current one (read again after an await): stop
+ * ran, a newer connect started (connect(address), overlay:connect, a retry), or the bridge left
+ * page mode. Its hello answer then opens nothing and its failure fails nothing.
  *
  * @param deps - The domain deps.
- * @returns Whether the phase is "stopped".
+ * @param dial - The generation of the attempt.
+ * @returns Whether the attempt is stale.
  */
-function isStopped(deps: BridgeDeps): boolean {
-  return deps.state.phase === "stopped";
+function isStale(deps: BridgeDeps, dial: number): boolean {
+  const { state } = deps;
+  return state.phase === "stopped" || state.dial !== dial || state.mode !== "page";
 }
 
 /**
  * Page mode: network check, hello URL, hello fetch (every attempt: a hub restart rotates the
  * token), then the socket. In a Bun process the hello origin goes along as the Origin header and
- * Bun's socket option (R6). A stop during the fetch opens nothing.
+ * Bun's socket option (R6). A stop or a newer connect during the fetch opens nothing.
  *
  * @param deps - The domain deps.
+ * @param dial - The generation of this attempt.
  * @returns A promise that settles when the socket is opening or the attempt failed.
  */
-async function connectPage(deps: BridgeDeps): Promise<void> {
+async function connectPage(deps: BridgeDeps, dial: number): Promise<void> {
   const { config, page } = deps;
   if (!hasNetwork(globalThis)) {
     fail(deps, "no WebSocket in this runtime", false);
@@ -293,10 +298,10 @@ async function connectPage(deps: BridgeDeps): Promise<void> {
     const origin = helloOrigin(helloUrl);
     body = await fetchHello(deps.net, helloUrl, origin === undefined ? undefined : { origin });
   } catch (error) {
-    fail(deps, bareMessage(messageOf(error)), true);
+    if (!isStale(deps, dial)) fail(deps, bareMessage(messageOf(error)), true);
     return;
   }
-  if (isStopped(deps)) return;
+  if (isStale(deps, dial)) return;
   openLink(deps, helloUrl, body);
 }
 
@@ -328,8 +333,8 @@ function connectDevice(deps: BridgeDeps): void {
 }
 
 /**
- * The connect sequence: connecting, then page mode (hello, socket) or device mode (socket,
- * pairing). A stopped bridge connects nothing.
+ * The connect sequence: a new generation, connecting, then page mode (hello, socket) or device
+ * mode (socket, pairing). A stopped bridge connects nothing.
  *
  * @param deps - The domain deps.
  * @returns A promise that settles when the socket is opening or the attempt failed.
@@ -337,12 +342,13 @@ function connectDevice(deps: BridgeDeps): void {
 export async function connect(deps: BridgeDeps): Promise<void> {
   const { state } = deps;
   if (state.phase === "stopped") return;
+  state.dial += 1;
   state.retryTimer = undefined;
   state.phase = "connecting";
   setStatus(deps, { kind: "connecting" });
 
   if (state.mode === "device") connectDevice(deps);
-  else await connectPage(deps);
+  else await connectPage(deps, state.dial);
 }
 
 /**

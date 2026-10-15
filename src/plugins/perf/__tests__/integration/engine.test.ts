@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* eslint-disable unicorn/no-null -- null is "not known" in the engine's rate (displayHz without adaptive) */
 import { createApp as createGame, defineGame, screen, type } from "@moku-labs/game";
 import { fakeClock, memory } from "@moku-labs/game/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -76,38 +77,50 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/**
+ * Starts a real game with the agent flag on and frames from a scripted rAF, then the agent app with
+ * registry and perf on it. Time is fake (`performance` included): `step(gapMs)` moves the clock and
+ * runs one frame of the loop at that gap.
+ *
+ * @returns The game, the editor and the frame stepper.
+ */
+async function startPair() {
+  vi.useFakeTimers({
+    toFake: ["performance", "setInterval", "clearInterval", "setTimeout", "clearTimeout"]
+  });
+  vi.stubGlobal("__MOKU_GAME_AGENT__", true);
+  let frame: ((at: number) => void) | undefined;
+  vi.stubGlobal("requestAnimationFrame", (callback: (at: number) => void) => {
+    frame = callback;
+    return 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", () => {
+    frame = undefined;
+  });
+
+  const game = createRealGame();
+  await game.start();
+  const editor = createApp({
+    pluginConfigs: { registry: { game: game as unknown as GameLike } }
+  });
+  editor.log.clearSinks();
+  await editor.start();
+  const monitor = editor.perf.monitor();
+  expect(monitor).toBe(game.renderer.monitor);
+
+  // The frame's rAF timestamp is the page clock now, so a frame's work reads 0 ms and its gap is the
+  // time moved since the last frame (a perf tick's advance included).
+  const step = (gapMs: number): void => {
+    vi.advanceTimersByTime(gapMs);
+    frame?.(performance.now());
+  };
+  frame?.(performance.now());
+  return { game, editor, step };
+}
+
 describe("perf on the real engine", () => {
   it("reads the engine's ring: the window fills, a 25.1 ms gap is a gap spike, each row's budget is the ring's", async () => {
-    vi.useFakeTimers({
-      toFake: ["performance", "setInterval", "clearInterval", "setTimeout", "clearTimeout"]
-    });
-    vi.stubGlobal("__MOKU_GAME_AGENT__", true);
-    let frame: ((at: number) => void) | undefined;
-    vi.stubGlobal("requestAnimationFrame", (callback: (at: number) => void) => {
-      frame = callback;
-      return 1;
-    });
-    vi.stubGlobal("cancelAnimationFrame", () => {
-      frame = undefined;
-    });
-
-    const game = createRealGame();
-    await game.start();
-    const editor = createApp({
-      pluginConfigs: { registry: { game: game as unknown as GameLike } }
-    });
-    editor.log.clearSinks();
-    await editor.start();
-    const monitor = editor.perf.monitor();
-    expect(monitor).toBe(game.renderer.monitor);
-
-    let now = performance.now();
-    const step = (gapMs: number): void => {
-      vi.advanceTimersByTime(gapMs);
-      now += gapMs;
-      frame?.(now);
-    };
-    frame?.(now);
+    const { game, editor, step } = await startPair();
     for (let index = 0; index < 20; index += 1) step(16.7);
     step(25.1);
     for (let index = 0; index < 80; index += 1) step(16.7);
@@ -136,6 +149,46 @@ describe("perf on the real engine", () => {
     const detail = editor.perf.spike(spike?.frame ?? 0)?.detail;
     expect(detail?.frame.causes).toEqual(causesOf(ring.columns.causes[spikeSlot] ?? 0));
     expect(detail?.frame.budgetMs).toBe(16.67);
+
+    await editor.stop();
+    await game.stop();
+  });
+
+  it("reads the rate from the header, then a game.frameRate switch from its rate line: second().rate, the row budgets and the record's rateSwitch (spec 21)", async () => {
+    const { game, editor, step } = await startPair();
+    for (let index = 0; index < 20; index += 1) step(16.7);
+    vi.advanceTimersByTime(250);
+    expect(editor.perf.second().rate).toEqual({
+      fps: 60,
+      mode: "fixed",
+      reason: "start",
+      displayHz: null,
+      switches: 0
+    });
+
+    const ran = await editor.registry.command("game.frameRate")?.run({ fps: 30 });
+    expect(ran?.value).toMatchObject({ fps: 30, mode: "forced", reason: "forced" });
+    step(60); // late after the 250 ms read tick: the first 30 fps frame is a gap spike
+    for (let index = 0; index < 10; index += 1) step(33.4);
+    vi.advanceTimersByTime(250);
+
+    const second = editor.perf.second();
+    expect(second.rate).toEqual({
+      fps: 30,
+      mode: "forced",
+      reason: "forced",
+      displayHz: null,
+      switches: 1
+    });
+    expect(second.budgetMs).toBe(33.33);
+    const [spike] = editor.perf.spikes();
+    expect(spike).toMatchObject({ cause: "gap", budgetMs: 33.33 });
+    expect(editor.perf.spike(spike?.frame ?? 0)?.rateSwitch).toEqual({
+      from: 60,
+      to: 30,
+      reason: "forced",
+      mode: "forced"
+    });
 
     await editor.stop();
     await game.stop();

@@ -2,7 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeOverlay, openOverlay, setTab, toggleOverlay } from "../../modes";
 import { HOST_ATTRIBUTE, PAINT_MS, STORE_KEY } from "../../types";
-import { changes, command, createOctx, started, stopped, type TestOctx } from "../helpers";
+import {
+  bracketMonitor,
+  changes,
+  command,
+  createOctx,
+  started,
+  stopped,
+  type TestOctx
+} from "../helpers";
 
 let octx: TestOctx;
 
@@ -162,5 +170,40 @@ describe("modes", () => {
     octx = started(createOctx({ mode: "card", remember: false }));
     expect(octx.state.mode).toBe("card");
     expect(octx.state.tab).toBe("frames");
+  });
+
+  it("no unbracketed work on a mode change (viewport, insets and layout inside the agent span)", () => {
+    octx = createOctx({ remember: false });
+    const monitor = bracketMonitor();
+    octx.perf.monitorValue = monitor;
+    started(octx);
+    const second = octx.perf.second;
+    octx.perf.second = () => {
+      monitor.calls.push("second");
+      return second();
+    };
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(() => {
+      monitor.calls.push("style");
+      return { width: "0px", height: "0px" } as CSSStyleDeclaration;
+    });
+    const style = octx.state.host?.style;
+    if (style === undefined) throw new Error("no host");
+    const setProperty = style.setProperty.bind(style);
+    vi.spyOn(style, "setProperty").mockImplementation((...args) => {
+      monitor.calls.push("layout");
+      setProperty(...args);
+    });
+    monitor.calls.length = 0;
+    openOverlay(octx, { mode: "pill" });
+    openOverlay(octx);
+    expect(monitor.calls).toContain("style");
+    expect(monitor.calls).toContain("layout");
+    let depth = 0;
+    for (const call of monitor.calls) {
+      if (call === "begin") depth += 1;
+      else if (call === "end") depth -= 1;
+      else expect(depth, call).toBeGreaterThan(0);
+    }
+    vi.restoreAllMocks();
   });
 });

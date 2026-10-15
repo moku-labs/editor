@@ -32,7 +32,9 @@ What it does:
 6. **Taps.** A `pointerdown` on the page window sends `tap { x, y, at }`: page CSS px
    (`clientX`, `clientY`) and the page's `performance.now()`. At most one per 50 ms
    (`TAP_THROTTLE_MS`), only while open. Overlay input sends none.
-7. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff.
+7. **Reconnect.** A failed hello or a closed socket schedules a new attempt with backoff. Every
+   connect starts a new generation: a hello answer or failure that arrives after a newer connect
+   (`connect(address)`, `overlay:connect`) opens nothing and fails nothing.
 8. **Bye.** On stop it sends `bye` and closes with 1000.
 9. **Checkpoint across Bun's full reload (R6).** See [Checkpoint](#checkpoint).
 10. **`editor.reload`.** A registry command that stores the same checkpoint and reloads the page
@@ -100,8 +102,8 @@ At start the bridge reads `localStorage["moku-editor:link"]` and decides (first 
 |---|---|---|---|
 | 1 | `__MOKU_GAME_EDITOR__` is a non-empty string (a debug build, `--editor host:port`) | device | remembered last ?? `device` ?? the build's address |
 | 2 | config `device` is set | device | remembered last ?? `device` |
-| 3 | no page URL, a page URL that is not http(s) (`tauri://localhost` on iOS, `file:`) or the native WebView's own host (`http://tauri.localhost` on Android), and a `hello` that is not an absolute http(s) URL | device | remembered last ?? `127.0.0.1:47600` |
-| 4 | otherwise (a page the dev server served; also a headless agent whose `hello` names its server) | page | none |
+| 3 | a page URL that is not http(s) (`tauri://localhost` on iOS, `file:`), the native WebView's own host (`http://tauri.localhost` on Android), or no page URL with a `hello` that is not an absolute http(s) URL | device | remembered last ?? `127.0.0.1:47600` |
+| 4 | otherwise (a page the dev server served; also a page without a URL whose `hello` names its server: a headless agent in Bun) | page | none |
 
 The remembered address wins: the person chose it on the device after the build was made. An address
 `parseAddress` refuses is skipped; a build address it refuses is warned about once
@@ -133,9 +135,12 @@ The remembered address wins: the person chose it on the device after the build w
 | any other (1008 `pairing timed out`, 1001, 1012, a 4401 on a pairing socket) | The usual backoff; the pairing code is kept. |
 | a socket that never opened (1006: no computer, a refused upgrade) | The usual backoff; the credentials are kept. |
 
-**Quiet when no computer.** Before the page ever linked, the first failure of a streak logs
-`bridge:no-computer { address, retryInMs }` at info, the rest at debug. After a live link it is the
-usual `bridge:lost` at warn. The backoff is page mode's.
+**Quiet when no computer.** Until the computer first answers a hello with a `session`, the first
+failure of a streak logs `bridge:no-computer { address, retryInMs }` at info, the rest at debug (a
+stale token closed 4401 right after the open does not count as reached). After that it is the usual
+`bridge:lost` at warn. The backoff is page mode's, but in device mode the streak and its backoff
+start over only on a `session`, not when a socket opens: a hub that closes every link before its
+session (4401 on each reconnect) cannot cycle the phone faster than the backoff.
 
 **Remembered links.** `localStorage["moku-editor:link"]` holds `{ v: 1, last, links: { [address]:
 { device, token } } }`, at most four addresses. A store of another version or a broken text reads as

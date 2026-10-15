@@ -52,7 +52,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `build()` | `BuildInfo` | `{ profile, id?, engine? }` of this page (see "Build profile and allowed commands"). Read once; the flags of a page never change. |
 
 ```ts
-registry.manifest().commands.length; // 20 door commands + module + editor commands
+registry.manifest().commands.length; // 21 door commands + module + editor commands
 registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
 await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
 registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }
@@ -197,8 +197,11 @@ The stored entry is a guarded copy. Its `run` turns any error that is not a `Pro
 
 ```ts
 registry.add({
-  descriptor: { id: "editor.overlay", title: "Overlay in game", input: { on: "boolean" }, effect: "cosmetic" },
-  run: async raw => ({ value: checkInput({ on: "boolean" }, raw).on, state: registry.envelope() })
+  descriptor: { id: "editor.overlay", title: "Overlay in game", input: { mode: "string" }, effect: "cosmetic" },
+  run: async raw => {
+    const { mode } = checkInput({ mode: "string" }, raw); // "hidden" closes, "pill" and "card" open
+    return { value: { mode }, state: registry.envelope() };
+  }
 });
 ```
 

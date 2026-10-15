@@ -144,6 +144,21 @@ describe("a press", () => {
     expect(octx.log.warn).not.toHaveBeenCalled();
   });
 
+  it("a dev-only refusal shows the --debug=full text (it names its own reason)", async () => {
+    const octx = garden();
+    octx.channel.answer = async () => {
+      throw wireError(-32_009, "garden.glow: the page has no dev or debug flag", {
+        reason: "dev_only"
+      });
+    };
+    await pressCommand(octx, "garden.glow");
+    expect(octx.state.toast).toMatchObject({
+      text: "Glow needs a dev or debug build.",
+      tone: "error"
+    });
+    expect(octx.log.warn).not.toHaveBeenCalled();
+  });
+
   it("a failed press is logged with recorder.command (it is not; it warns)", async () => {
     const octx = garden();
     octx.channel.answer = async () => {

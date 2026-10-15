@@ -142,15 +142,33 @@ function linkStorageOf(scope: {
   }
 }
 
+/** The domain deps of each bridge state, built once. */
+const known = new WeakMap<BridgeState, BridgeDeps>();
+
 /**
- * Builds the domain deps: registry, channel and recorder through ctx.require, emit of
- * bridge:status, defaultNet(globalThis), the reload seam, the page flags, the link storage and
- * the page probe (URL, document, window).
+ * The domain deps, built once per plugin state, so the api, the hooks and start share one
+ * snapshot of the flags, the net and the page: registry, channel and recorder through
+ * ctx.require, emit of bridge:status, defaultNet(globalThis), the reload seam, the page flags, the
+ * link storage and the page probe (URL, document, window).
  *
  * @param ctx - Plugin context of the bridge.
  * @returns The deps every bridge module takes.
  */
 export function depsOf(ctx: BridgeCtx): BridgeDeps {
+  const cached = known.get(ctx.state);
+  if (cached !== undefined) return cached;
+  const deps = buildDeps(ctx);
+  known.set(ctx.state, deps);
+  return deps;
+}
+
+/**
+ * Builds the domain deps of `ctx` (see depsOf).
+ *
+ * @param ctx - Plugin context of the bridge.
+ * @returns The deps.
+ */
+function buildDeps(ctx: BridgeCtx): BridgeDeps {
   return {
     config: ctx.config,
     state: ctx.state,

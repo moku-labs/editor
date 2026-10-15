@@ -319,8 +319,37 @@ function eventsOf(state: PerfState, frame: number): PerfFrameEvent[] {
 }
 
 /**
- * The rate switch at a row: the kept `rate` line of its frame (with reason and mode), else the
- * switch the rows show, else null.
+ * Whether a `rate` line written between frames (`frame` null, 11:1056: a `game.frameRate` or
+ * `setRate` switch) leads into the switch at `row`: its change goes from the previous row's rate to
+ * this row's, and it was written after the previous row started and no later than this one (epoch
+ * ms; at any time while there is no header).
+ *
+ * @param state - perf's state.
+ * @param row - A row whose rate differs from the row before.
+ * @param line - The rate line.
+ * @param change - Its detail.
+ * @returns Whether the line explains the switch.
+ */
+function leadsInto(
+  state: PerfState,
+  row: number,
+  line: PerfEventLine,
+  change: RateChange
+): boolean {
+  const { window, header } = state;
+  if (line.frame !== null) return false;
+  const from = rateFps(cell(window.rateMs, row - 1));
+  if (change.from !== from || change.to !== rateFps(cell(window.rateMs, row))) return false;
+  if (header === undefined) return true;
+  return (
+    line.t > header.timeOrigin + cell(window.t, row - 1) &&
+    line.t <= header.timeOrigin + cell(window.t, row)
+  );
+}
+
+/**
+ * The rate switch at a row: the kept `rate` line of its frame, or a frame-null line that leads into
+ * the switch (with reason and mode), else the switch the rows show, else null.
  *
  * @param state - perf's state.
  * @param row - The row.
@@ -328,14 +357,17 @@ function eventsOf(state: PerfState, frame: number): PerfFrameEvent[] {
  */
 function rateSwitchOf(state: PerfState, row: number): PerfSpikeRecord["rateSwitch"] {
   const frame = cell(state.window.frame, row);
-  const line = inArrivalOrder(state.rateLines, state.rateLineNext).findLast(
-    rate => rate.frame === frame && isRateChange(rate.detail)
-  );
-  const detail = line?.detail;
-  if (detail !== undefined && isRateChange(detail)) {
-    return { from: detail.from, to: detail.to, reason: detail.reason, mode: detail.mode };
+  const switched = switchesAt(state, row);
+  let change: RateChange | undefined;
+  for (const line of inArrivalOrder(state.rateLines, state.rateLineNext)) {
+    const detail = line.detail;
+    if (!isRateChange(detail)) continue;
+    if (line.frame === frame || (switched && leadsInto(state, row, line, detail))) change = detail;
   }
-  if (!switchesAt(state, row)) return null;
+  if (change !== undefined) {
+    return { from: change.from, to: change.to, reason: change.reason, mode: change.mode };
+  }
+  if (!switched) return null;
   const { rateMs } = state.window;
   return {
     from: rateFps(cell(rateMs, row - 1)),

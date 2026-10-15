@@ -4,6 +4,8 @@
  * release snaps to the nearer edge, lays out and writes the store. Arrow keys on the grip move it
  * by `KEY_STEP` or pick the edge. A place change emits nothing.
  */
+
+import { withAgent } from "../paint/tick";
 import type { OverlayCtx, Place } from "../types";
 import { DRAG_SLOP, KEY_STEP } from "../types";
 import { snap } from "./dock";
@@ -52,8 +54,10 @@ function capture(target: EventTarget | null, id: number): void {
 function movePlace(octx: OverlayCtx, place: Place): void {
   const { state } = octx;
   state.place = place;
-  state.host?.style.removeProperty("transform");
-  layout(state);
+  withAgent(octx, () => {
+    state.host?.style.removeProperty("transform");
+    layout(state);
+  });
   writeStored(octx);
 }
 

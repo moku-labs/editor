@@ -26,6 +26,7 @@ export function createBridgeState(_ctx: { readonly config: Readonly<BridgeConfig
     inflight: new Map(),
     off: [],
     restored: undefined,
+    dial: 0,
     mode: "page",
     address: undefined,
     pairing: undefined,

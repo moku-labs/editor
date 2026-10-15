@@ -50,13 +50,13 @@ afterEach(async () => {
 });
 
 describe("registry integration", () => {
-  it("lists the bare game's 21 sources and 20 commands without modules", async () => {
+  it("lists the bare game's 21 sources and 21 commands without modules", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     await app.start();
 
     const manifest = app.registry.manifest();
     expect(manifest.sources).toHaveLength(21);
-    expect(manifest.commands).toHaveLength(20);
+    expect(manifest.commands).toHaveLength(21);
     expect(manifest.game).toBe("game");
 
     await app.stop();
@@ -73,7 +73,7 @@ describe("registry integration", () => {
     const manifest = app.registry.manifest();
     expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.sources).toHaveLength(22);
-    expect(manifest.commands).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(22);
     expect(manifest.sources.at(-1)?.id).toBe("tiny.coins");
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
 

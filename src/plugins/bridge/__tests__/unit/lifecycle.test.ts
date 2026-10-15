@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Require } from "../../../../config";
 import { encode, notification } from "../../../registry/protocol";
-import { checkConfig, stopBridge } from "../../lifecycle";
+import { checkConfig, depsOf, stopBridge } from "../../lifecycle";
 import { createBridgeState } from "../../state";
-import { CONFIG, FakeSocket, LAN, openDeps } from "../helpers";
+import type { BridgeCtx } from "../../types";
+import {
+  CONFIG,
+  createLog,
+  FakeSocket,
+  fakeChannel,
+  fakeRecorder,
+  fakeRegistry,
+  LAN,
+  openDeps
+} from "../helpers";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -26,6 +37,7 @@ describe("createBridgeState", () => {
       inflight: new Map(),
       off: [],
       restored: undefined,
+      dial: 0,
       mode: "page",
       address: undefined,
       pairing: undefined,
@@ -168,5 +180,36 @@ describe("stopBridge", () => {
 
     expect(() => stopBridge({ state: deps.state })).not.toThrow();
     expect(deps.state.phase).toBe("stopped");
+  });
+});
+
+/**
+ * A plugin context of the bridge over fakes.
+ *
+ * @returns The context.
+ */
+function fakeCtx(): BridgeCtx {
+  const apis: Record<string, unknown> = {
+    registry: fakeRegistry(),
+    channel: fakeChannel(),
+    recorder: fakeRecorder()
+  };
+  return {
+    config: CONFIG,
+    state: createBridgeState({ config: CONFIG }),
+    emit: vi.fn() as unknown as BridgeCtx["emit"],
+    log: createLog(),
+    require: ((plugin: { readonly name: string }) => apis[plugin.name]) as unknown as Require
+  };
+}
+
+describe("depsOf", () => {
+  it("builds the deps once per state: api, hooks and start share one snapshot", () => {
+    const ctx = fakeCtx();
+
+    const first = depsOf(ctx);
+
+    expect(depsOf({ ...ctx })).toBe(first);
+    expect(depsOf(fakeCtx())).not.toBe(first);
   });
 });

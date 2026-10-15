@@ -165,17 +165,20 @@ pick the edge.
 Three faces live in `fonts/` with `OFL.txt` (SIL OFL 1.1): `barlow-condensed-latin-600.woff2`,
 `barlow-condensed-latin-500.woff2`, `barlow-latin-500.woff2`. `bun run fonts:overlay` (`scripts/overlay-fonts.ts`) cuts
 each from the fontsource Latin woff2 (`@fontsource/barlow`, `@fontsource/barlow-condensed` 5.3.0) with HarfBuzz
-(`subset-font`) down to the glyphs the overlay prints: printable ASCII plus every printable non-ASCII character in
-the overlay's sources, the graph painter, perf's cause words and why sentences, and the tools strip (today NBSP and
-§ ° ± · × – — … → − ≥). It writes the files and `faces.ts` (base64 and `GLYPHS`; generated). `fonts.test.ts` fails
-when a source prints a glyph outside `GLYPHS` or `faces.ts` is stale. Text a game supplies (labels, paths) outside the
-set falls back to the stacks' next face.
+(`subset-font`) down to printable ASCII plus every printable non-ASCII character the overlay, the graph painter,
+perf's cause words and why sentences and the tools strip print (today NBSP and § ° ± · × – — … → − ≥). It writes the
+files and `faces.ts` (base64 and `GLYPHS`; generated). `fonts.test.ts` fails when a source prints a glyph outside
+`GLYPHS` or `faces.ts` is stale. Full Latin-1 was measured over the agent's 120 KB bound, so a game's accented text
+falls back to the stack's next family.
 
-`fonts/register.ts` adds the faces to `document.fonts` at the first visible mode, measures the graph's legends again
-once they load, and deletes them on stop. The tools page names the same three files in `workspace/styles/fonts.css`;
-`scripts/build-tools.ts` copies them from this folder (their one home). The file names are a contract with that build.
+`fonts/register.ts` adds the faces to `document.fonts` under private families, `"Moku Overlay Barlow Condensed"` and
+`"Moku Overlay Barlow"`, so a game's own Barlow never draws from this subset; the overlay's stacks name them first
+(`--font-cond`, `--font-text`). Registration happens at the first visible mode, inside the agent bracket; the graph's
+legends are measured again once the faces load; stop deletes them. The tools page names the same three files under the
+plain families in `workspace/styles/fonts.css`; `scripts/build-tools.ts` copies them from this folder (their one home).
+The file names are a contract with that build.
 
-Size: 43 424 bytes of woff2, 58 770 bytes of `faces.ts`; the dev agent bundle is 113 180 bytes gzip with them.
+Size: 43 424 bytes of woff2, 58 788 bytes of `faces.ts`; the dev agent bundle is 110,705 bytes gzip with them (265,098 bytes minified), measured by `tests/integration/agent-bundle.test.ts`: `Bun.build` of the README's dev entry for the browser, minified, `__MOKU_GAME_DEV__` defined `true`, the game itself external; the test fails above 120,000 bytes gzip.
 
 ## Migration
 
