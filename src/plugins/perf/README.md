@@ -61,7 +61,10 @@ listed `available: false` with the reason and their reads answer -32008.
 | `editor.perf.spike` | `{ frame: "number" }` | `PerfSpikeRecord` or `null` |
 | `editor.spikes` | `{ lastMs: "number?" }` | the MCP mirror of `perf.spikes({ lastMs })` |
 
-A watch is called after each read that changed the window and after a new header, display, sample or rate line.
+A watch is called after each read that changed the window and after a new header, display, sample or rate line,
+always inside the monitor's agent span. Each watch is isolated: a throw is caught, the other watches still run, and
+the first failure of a streak logs `perf:watcher-failed` at warn. A start whose first read throws leaves no stream
+listener behind.
 
 ## The read cycle
 
@@ -87,10 +90,12 @@ and `overMs` are its own row's. A ring without the `budgetMs` column falls back 
   `spikeOrdinal`, `meanGpu`, `writeWireWindow`, `readWireWindow`), the source values (`values.ts`) and the guards perf
   reads the engine through (`guards.ts`). It imports its own files, `registry/protocol` by type and the engine by
   type only, never `hub/protocol` (`protocol-boundary.test.ts`). `readWireWindow` refuses a value of another shape,
-  a span that is not finite or outside 0 < span ≤ 60 s, and drops cause bits it does not know.
+  a span that is not finite or outside 0 < span ≤ 60 s and a `rateMs` outside (0, 1000], and drops cause bits it
+  does not know.
 - **`perf/graph/`** — the pure canvas-2D painter of the frame graph on the structural `GraphContext2D`
   (`paintGraph`, `createGraphState`, `resetGraphText`, `spikeAt`, `rowAt`, `CAUSE_STYLE`). No DOM type, no Preact,
-  no allocation per paint; at most 60 axis labels (`graph-boundary.test.ts`). Used by the overlay and the tools strip.
+  no allocation per paint; at most 60 axis labels; rate labels only for 1 to 1000 fps, at most 16 cached
+  (`graph-boundary.test.ts`). Used by the overlay and the tools strip.
 
 ## The engine types and their contract test
 

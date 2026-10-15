@@ -200,6 +200,19 @@ describe("the wire form", () => {
     expect(readWireWindow(wire({ endMs: 40_123.5 + 60_000 }), into)).toBe(true);
   });
 
+  it("refuses a rateMs outside 0 < rateMs ≤ 1000 (bug: a hostile rate growing the label cache of the tools page)", () => {
+    const into = createPerfWindow(16);
+    for (const rateMs of [
+      [0, 8.33],
+      [-8.33, 8.33],
+      [8.33, 1000.5]
+    ]) {
+      expect(readWireWindow(wire({ rateMs }), into)).toBe(false);
+    }
+    expect(into.version).toBe(0);
+    expect(readWireWindow(wire({ rateMs: [1000, 0.01] }), into)).toBe(true);
+  });
+
   it("drops cause bits it does not know and reads a bad causes item as no cause, never throwing", () => {
     const into = createPerfWindow(16);
     expect(readWireWindow(wire({ causes: [0b1001_0001, 1.5] }), into)).toBe(true);

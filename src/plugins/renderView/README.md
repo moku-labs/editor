@@ -134,7 +134,7 @@ ago", and its header bar reads "Browser".
 - A click on the graph after a new window arrived and before the next repaint paints first, so the flags and bars it hits are the ones on screen.
 - Every value is checked down to each member the strip reads (`device/guards.ts`): a cause must be one of `CAUSE_STYLE`, a window must span 0 < span ≤ 60 s. A value of another shape is warned, dropped, and the last good one stays: the Render workspace never throws on it.
 - STALE: the phone's engine fingerprint (`PerfSecond.engine`, else the session's `device.engine`) against the computer's (`link.engine()`), only when both are known and differ.
-- `device/contract/` is the one door to 03's `perf/protocol` window and values, 03's `perf/graph` painter and 05's `RecorderStatus`. Units 03 and 05 are not built yet: the folder holds stand-ins written to their specs; when they land, its `index.ts` re-exports their names and the stand-in files go.
+- `device/contract/index.ts` is the one door to perf's `perf/protocol` (the window, its wire form with the 60 s span rule and the unknown cause bits dropped, the values, `createPerfWindow`, `readWireWindow`, `rowOfFrame`, `stepSpike`, `spikeOrdinal`, `meanGpu`) and `perf/graph` (`paintGraph`, `createGraphState`, `resetGraphText`, `spikeAt`, `rowAt` and the cause palette `CAUSE_STYLE`: renderView keeps no copy). The recorder's `RecorderStatus` is still a stand-in (`device/contract/recorder.ts`) until unit 05 lands; then the barrel re-exports it with `import type` from `recorder/types`.
 
 ## Lifecycle
 
@@ -192,7 +192,7 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `device/guards.ts` | Shape guards of the device values. |
 | `device/watch.ts` | Which sessions get the strip, the device watches, the record read, the strip's api actions. |
 | `device/paint.ts` | The ≤ 4 Hz repaint loop of the canvas and the canvas click. |
-| `device/contract/` | The perf and recorder contracts the strip reads (stand-ins of units 03 and 05 until they land). |
+| `device/contract/` | The barrel of the perf contracts the strip reads (`perf/protocol`, `perf/graph`) and the recorder's `RecorderStatus` (a stand-in until unit 05 lands). |
 | `device/components/` | `DeviceStrip`, `DeviceRow`, `StripGraph`, `SpikePanel`, `Legend`, `Annunciator`. |
 
 ## Narrow layout
@@ -221,4 +221,3 @@ headline wrap. The graph row stays 200 high and the nav column 44 wide. No horiz
 | Tree types are ui tags and entity display kinds, not Pixi classes. | F-G1: a display-tree source. |
 | Draw calls are counted in a dev build only. | None. |
 | The strip's Barlow faces are not on the tools page yet: `styles/fonts.css` gains them with the overlay's font files (spec 09 W4, spec 10 E9); until then the strip falls back to "Arial Narrow". | None (editor follow-up with unit 08). |
-| The strip paints through a stand-in of 03's painter (`device/contract/graph.ts`): no phone stack legend, no no-allocation rule. | None (editor follow-up with unit 03). |

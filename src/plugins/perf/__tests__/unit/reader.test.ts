@@ -120,18 +120,21 @@ describe("readTick", () => {
 
   it("does not read a ring of capacity 0 and reports waiting", () => {
     const { state, monitor, tick } = setup(1024, 6000, 0);
+    const begins = monitor.begins;
     tick();
-    expect([monitor.reads, monitor.begins]).toEqual([0, 0]);
+    expect([monitor.reads, monitor.begins - begins]).toEqual([0, 0]);
     expect(statusOf(state)).toEqual({ state: "waiting" });
   });
 
   it("brackets every tick with beginAgent and endAgent, also when read throws (bug: an open agent span hiding every spike)", () => {
     const { monitor, tick } = setup();
+    const before = monitor.begins;
+    expect(monitor.ends).toBe(before);
     tick();
-    expect([monitor.begins, monitor.ends]).toEqual([1, 1]);
+    expect([monitor.begins - before, monitor.ends - before]).toEqual([1, 1]);
     monitor.failRead = new Error("ring torn");
     expect(tick).toThrow("ring torn");
-    expect([monitor.begins, monitor.ends]).toEqual([2, 2]);
+    expect([monitor.begins - before, monitor.ends - before]).toEqual([2, 2]);
   });
 
   it("does not move version on a tick that read nothing (bug: a 4 Hz repaint of an unchanged graph)", () => {
@@ -216,5 +219,15 @@ describe("readTick", () => {
     tick();
     expect(state.window.gpuMs[3]).toBe(30);
     expect(state.window.cause[3]).toBe(1);
+  });
+
+  it("answers fps 0 for an empty window after the engine rebuilt its ring (bug: a stale fps on an empty graph)", () => {
+    const { state, config, monitor, tick } = setup();
+    commitFrames(monitor, 30, 0, 16.7);
+    tick();
+    expect(state.fpsLoop).toBe(30);
+    state.monitor = createFakeMonitor({ capacity: 128 });
+    readTick(state, config);
+    expect([state.window.count, state.fpsLoop, state.fpsDrawn]).toEqual([0, 0, 0]);
   });
 });

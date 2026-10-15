@@ -33,27 +33,29 @@ function enginePart(engine: string | null): string {
 }
 
 /**
- * Whether the phone's own text shows the code: a phone that prints the code into its model,
- * engine or build would get the person to type it. Only a standalone digit run counts: "4821"
- * in "SM-4821" shows it, "1014" inside "20261014" does not.
+ * Whether the phone's own text that the prompt prints shows the code: a phone that writes the code
+ * into its model, or into an engine id the ask line prints, would get the person to type it from
+ * the terminal instead of from its screen. Any occurrence counts, also inside a longer digit run
+ * ("1014" in "SM-A10145"). The build is never printed, so a timestamp build ("20261014") does not
+ * count.
  *
  * @param request - The pairing request.
- * @returns True when the model, engine or build has the code as a whole digit run.
+ * @returns True when the printed model or the printed engine contains the code.
  * @example
  * ```ts
- * showsCode({ code: "4821", model: "SM-4821", address: "192.168.1.23", link: "lan", engine: null, build: null }); // true
+ * showsCode({ code: "1014", model: "SM-A10145", address: "192.168.1.23", link: "lan", engine: null, build: null }); // true
  * ```
  */
 function showsCode(request: PairRequest): boolean {
-  const texts = [request.model, request.engine, request.build];
-  return texts.some(text => text?.match(/\d+/g)?.includes(request.code) === true);
+  const printed = [request.model ?? "", enginePart(request.engine)];
+  return printed.some(text => text.includes(request.code));
 }
 
 /**
  * The hub's pairing callback for the terminal: names the phone and asks the person to type the
  * code its screen shows. Typing the code (not y/N) proves the person sees this phone, not another
- * one on the LAN. A phone whose model, engine or build shows the code is refused without a
- * question; the engine prints only as an engine id or "unknown". An aborted question (the phone
+ * one on the LAN. A phone whose printed model or printed engine contains the code is refused
+ * without a question; the engine prints only as an engine id or "unknown", the build never. An aborted question (the phone
  * left, the wait ran out, device mode stopped) and any other throw answer false.
  *
  * @param ui - The brand console.

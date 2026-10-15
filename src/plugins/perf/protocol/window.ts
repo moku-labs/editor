@@ -144,6 +144,9 @@ const MAX_ROWS = 65_535;
 /** The longest span a wire window may have, ms: a longer one is a hostile or broken value. */
 const MAX_WIRE_SPAN_MS = 60_000;
 
+/** The longest frame of a rate a wire window may carry, ms (1 fps): `rateMs` is in (0, 1000]. */
+const MAX_RATE_MS = 1000;
+
 /** The cause bits the editor knows (seven, CAUSE_BITS): every other bit of a wire value is dropped. */
 const KNOWN_CAUSES = 0x7f;
 
@@ -433,8 +436,8 @@ function isGpuColumn(value: Json | undefined): value is (number | null)[] {
 
 /**
  * Checks a wire value as a window the tools page may draw: an object of `v: 1`, a finite span of
- * more than 0 and at most 60 s, a boolean `gpuTimer` and equal-length number columns (`gpuMs` may
- * hold null). A hostile phone value must not freeze the page, so a span past 60 s is refused.
+ * more than 0 and at most 60 s, a boolean `gpuTimer`, equal-length number columns (`gpuMs` may
+ * hold null) and every `rateMs` in (0, 1000]. A hostile phone value must not freeze the page, so a span past 60 s is refused.
  *
  * @param value - The value of `editor.perf.window`.
  * @returns The checked parts, or undefined for any other shape.
@@ -452,6 +455,10 @@ function checkedWire(value: Json): CheckedWire | undefined {
   if (typeof gpuTimer !== "boolean" || !isGpuColumn(gpuMs)) return undefined;
   const { length } = gpuMs;
   if (!NUMBER_COLUMNS.every(key => isColumn(value[key], length))) return undefined;
+  const { rateMs } = value;
+  if (!isColumn(rateMs, length) || !rateMs.every(ms => ms > 0 && ms <= MAX_RATE_MS)) {
+    return undefined;
+  }
   return { object: value, startMs, endMs, gpuTimer, gpu: gpuMs };
 }
 

@@ -57,7 +57,7 @@ describe("graph boundary", () => {
     const functions = paint.slice(paint.indexOf("\nfunction "));
     expect(functions.length).toBeGreaterThan(1000);
     expect(functions).not.toMatch(/`/);
-    expect(functions).not.toMatch(/for\s*\(\s*const\s+\w+\s+of\b/);
+    expect(functions).not.toMatch(/for\s*\(\s*(?:const|let)\s+[^;]*?\bof\b/);
     expect(functions).not.toMatch(/(?:=|return|\()\s*\[/);
     expect(functions).not.toMatch(/(?:=|return|\()\s*\{(?!\s*\})/);
     expect(functions).not.toMatch(/\.\.\.|\.(map|filter|forEach|slice|concat)\(/);

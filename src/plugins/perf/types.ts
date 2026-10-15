@@ -133,6 +133,14 @@ export type PerfState = {
   unsubscribe: (() => void) | undefined;
   /** Source watches: called after each read that changed the window, and after a new sample or rate line. */
   readonly watchers: Set<() => void>;
+  /** Calls one watcher, isolated: a throw is caught and warned once per streak. Made once with the state. */
+  readonly callWatcher: (watcher: () => void) => void;
+  /** perf's log, set in onInit: the `perf:watcher-failed` warning goes here. */
+  log: Pick<Log.LogApi, "warn"> | undefined;
+  /** A watcher threw in the notify round now running. */
+  watchFailed: boolean;
+  /** The last notify round had a failure: the warning of this streak was given. */
+  watchStreak: boolean;
   /** second() of the current window version and lines, built on demand. */
   second: PerfSecond | undefined;
 };

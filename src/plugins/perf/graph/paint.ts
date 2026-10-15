@@ -68,6 +68,12 @@ const SHORT_PLOT = 60;
 /** Two tape labels closer than this, px: the lower-priority one is left out. */
 const TAPE_GAP = 9;
 
+/** The rate labels a painter state keeps; past this the cache starts over. */
+const MAX_RATE_LABELS = 16;
+
+/** The highest rate a switch is labelled with, fps; a rate outside 1…1000 gets the mark, no label. */
+const MAX_LABELLED_FPS = 1000;
+
 /** A rate switch counts when two rows' `rateMs` differ by more than this, ms. */
 const RATE_EPSILON = 0.01;
 
@@ -187,8 +193,10 @@ function caret(
  */
 function measureLegends(g: GraphContext2D, state: GraphState, layout: Layout): void {
   g.font = layout.fonts.flag;
-  for (const [index, element] of FLAG_TEXT_OF_CODE.entries()) {
-    state.legendWidth[index] = g.measureText(element ?? "").width;
+  // An indexed loop, as everywhere in the painter: no iterator per measure.
+  // eslint-disable-next-line unicorn/no-for-loop -- see above
+  for (let index = 0; index < FLAG_TEXT_OF_CODE.length; index += 1) {
+    state.legendWidth[index] = g.measureText(FLAG_TEXT_OF_CODE[index] ?? "").width;
   }
   state.measured = true;
 }
@@ -311,7 +319,7 @@ function paintBudget(
 }
 
 /**
- * The label of a rate, built once per fps value.
+ * The label of a rate, built once per fps value; the cache starts over past 16 labels.
  *
  * @param state - The painter state.
  * @param fps - Frames per second.
@@ -320,14 +328,15 @@ function paintBudget(
 function rateText(state: GraphState, fps: number): string {
   const known = state.rateText.get(fps);
   if (known !== undefined) return known;
+  if (state.rateText.size >= MAX_RATE_LABELS) state.rateText.clear();
   const text = String(fps);
   state.rateText.set(fps, text);
   return text;
 }
 
 /**
- * Step 5b: at every rate switch a dashed magenta vertical and the new rate's fps, drawn left of the
- * line when it would cross the tape.
+ * Step 5b: at every rate switch a dashed magenta vertical and the new rate's fps (1 to 1000 fps),
+ * drawn left of the line when it would cross the tape.
  *
  * @param g - The context.
  * @param window - The window.
@@ -357,7 +366,10 @@ function paintRateSwitches(
     g.fillStyle = GRAPH_COLOURS.magenta;
     g.textAlign = flips ? "right" : "left";
     g.textBaseline = "alphabetic";
-    g.fillText(rateText(state, rateFps(rate)), flips ? x - 2 : x + 2, state.py0 + 9);
+    const fps = rateFps(rate);
+    if (fps >= 1 && fps <= MAX_LABELLED_FPS) {
+      g.fillText(rateText(state, fps), flips ? x - 2 : x + 2, state.py0 + 9);
+    }
   }
 }
 

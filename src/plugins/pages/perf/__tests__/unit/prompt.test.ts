@@ -112,34 +112,36 @@ async function shown(engine: string): Promise<string | undefined> {
 }
 
 describe("pairPrompt hardening (W4)", () => {
-  it("refuses at once a phone whose model, engine or build shows the code, without asking", async () => {
+  it("refuses at once a phone whose printed model or printed engine shows the code, without asking (review W2)", async () => {
     const leaks: readonly Partial<PairRequest>[] = [
       { model: "SM-4821" },
-      { engine: "4821" },
-      { build: "debug-4821" }
+      { model: "SM-A48210" },
+      { engine: "0.14.12+4821ab" },
+      { code: "1014", model: "SM-A10145", build: "debug-20261014T160000Z" }
     ];
     for (const leak of leaks) {
-      const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve("4821"));
-      const { ui, lines } = recordingConsole();
       const request = { ...REQUEST, ...leak };
+      const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve(request.code));
+      const { ui, lines } = recordingConsole();
       expect(await pairPrompt(ui, ask)(request, new AbortController().signal)).toBe(false);
       expect(ask).not.toHaveBeenCalled();
       expect(lines).toEqual([`  ✗ refused ${request.model}`]);
     }
   });
 
-  it("a code inside a longer digit run is not the code shown: the person is asked (review I7)", async () => {
-    const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve("1014"));
-    const { ui } = recordingConsole();
-    const request = {
-      ...REQUEST,
-      code: "1014",
-      model: "SM-A10145",
-      build: "debug-20261014T160000Z"
-    };
-
-    expect(await pairPrompt(ui, ask)(request, new AbortController().signal)).toBe(true);
-    expect(ask).toHaveBeenCalledTimes(1);
+  it("asks when the code is only in text the prompt never prints: an engine it leaves out, the build", async () => {
+    const hidden: readonly Partial<PairRequest>[] = [
+      { engine: "4821" },
+      { build: "debug-4821" },
+      { code: "1014", build: "debug-20261014T160000Z" }
+    ];
+    for (const leak of hidden) {
+      const request = { ...REQUEST, ...leak };
+      const ask = vi.fn<PerfDeps["ask"]>(() => Promise.resolve(request.code));
+      const { ui } = recordingConsole();
+      expect(await pairPrompt(ui, ask)(request, new AbortController().signal)).toBe(true);
+      expect(ask).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("prints the engine only when it looks like an engine id or is unknown", async () => {

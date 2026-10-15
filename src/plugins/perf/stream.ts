@@ -12,6 +12,22 @@ import type { PerfState } from "./types";
 const FRAME_EVENT_NAMES: ReadonlySet<string> = new Set(["overlay", "pool-trim", "warm"]);
 
 /**
+ * Tells the watches inside the monitor's agent span (spec 03 step 10: a watch delivery is agent
+ * work), the span closed also when the delivery throws.
+ *
+ * @param state - perf's state.
+ */
+function notifyInSpan(state: PerfState): void {
+  const { monitor } = state;
+  monitor?.beginAgent();
+  try {
+    notifyWatchers(state);
+  } finally {
+    monitor?.endAgent();
+  }
+}
+
+/**
  * Keeps a header: its display, and whether the page has a GPU timer.
  *
  * @param state - perf's state.
@@ -25,7 +41,7 @@ function keepHeader(state: PerfState, line: PerfHeaderLine): void {
     state.window.gpuTimer = gpuTimer;
     state.window.version += 1;
   }
-  notifyWatchers(state);
+  notifyInSpan(state);
 }
 
 /**
@@ -39,14 +55,14 @@ function keepEvent(state: PerfState, line: PerfEventLine): void {
   if (line.name === "display") {
     if (!isPerfDisplay(line.detail)) return;
     state.display = line.detail;
-    notifyWatchers(state);
+    notifyInSpan(state);
     return;
   }
 
   if (line.name === "rate") {
     state.rateLines[state.rateLineNext % state.rateLines.length] = line;
     state.rateLineNext += 1;
-    notifyWatchers(state);
+    notifyInSpan(state);
     return;
   }
 
@@ -71,7 +87,7 @@ export function listen(state: PerfState, line: PerfLogLine): void {
     }
     case "sample": {
       state.sample = line;
-      notifyWatchers(state);
+      notifyInSpan(state);
       return;
     }
     case "spike": {

@@ -20,6 +20,7 @@ export function initPerf(ctx: PerfCtx): void {
   const registry = ctx.require(registryPlugin);
   const game = registry.game();
   state.game = game;
+  state.log = ctx.log;
   state.monitor = monitorOf(game);
   state.off = offReasonOf(game);
   addPerfEntries(registry, state, ctx.config);
@@ -39,7 +40,14 @@ export function startPerf(ctx: PerfCtx): void {
 
   const tick = (): void => readTick(state, config);
   state.unsubscribe = monitor.stream(line => listen(state, line));
-  tick();
+  try {
+    tick();
+  } catch (error) {
+    // A first read that throws fails the start: leave no listener behind (the timer is not set yet).
+    state.unsubscribe();
+    state.unsubscribe = undefined;
+    throw error;
+  }
   state.timer = setInterval(tick, config.readEveryMs);
   ctx.log.debug("perf:started", { readEveryMs: config.readEveryMs, windowMs: config.windowMs });
 }
@@ -59,6 +67,8 @@ export function stopPerf(ctx: PerfStopCtx): void {
   state.watchers.clear();
   state.cursor = undefined;
   state.measuring = false;
+  state.fpsLoop = 0;
+  state.fpsDrawn = 0;
   state.second = undefined;
   state.window.count = 0;
   state.window.spikeCount = 0;

@@ -1,0 +1,166 @@
+# recorder
+
+> Complex plugin (agent core). The performance **log on the device**: every line of the engine monitor's stream, for
+> hours, in a file per run, with an outbox the opt-in bridge ships to the computer.
+
+The recorder subscribes to `monitor.stream` of the monitor perf found (`perf.monitor()`, the one place that finds it),
+keeps every line it is handed as a **reference** in a bounded queue (a line is fresh and deeply frozen, never reused),
+and serializes the queue to JSON text on **its own timer**, between `monitor.beginAgent()` and `endAgent()`, so the log
+never costs a game frame and its own time is left out of the spike rule. The text goes to two places: the log file of
+the current run in a store (OPFS when the page has it, memory otherwise), and an **outbox** of lines the computer has
+not confirmed, which the bridge pulls with `unsentRun(max)` and confirms with `ack(log, next)`. The recorder imports no
+bridge.
+
+It also writes the editor's own events through `monitor.event`: `devtools` (the editor's window, from the global
+`overlay:changed`; never `overlay`, which is the game's overlays), `command` (one line per command run, whoever ran it,
+from the registry's `registry:command`) and `recorder` (start, stop, export).
+
+Without a monitor (a headless game, an engine before block 2b) it records nothing: `start` throws, earlier logs can
+still be listed, shared and removed.
+
+## The log format
+
+One JSON object per line, exactly as the stream handed it (`JSON.stringify(line)`, the engine's `PerfLogLine` v1); the
+recorder adds no field. Order inside a log:
+
+1. The context lines, re-written at every start: the newest `header`, the `startup` line once measured, and the newest
+   `display` event when it came after the header.
+2. The `recorder` event `{ action: "start", label }`.
+3. Every line of the stream while recording (samples, spikes, long frames, events, marks, `thermal`). A `header` that
+   arrives while recording is written where it arrives.
+4. The `recorder` event `{ action: "stop" }`.
+
+File name: `perf-<yyyymmdd>-<hhmm>-<model>.jsonl` in local time, `model` = `header.device.model` lower-cased with every
+character outside `[a-z0-9-]` turned into `-`, `device` without one; a taken name gains `-2`, `-3`, … before `.jsonl`.
+
+```text
+perf-20261014-1532-sm-a266b.jsonl
+```
+
+## Configuration
+
+| Option | Default | Range | Meaning |
+|---|---|---|---|
+| `autoStart` | `true` | | Start a log when the plugin starts. |
+| `keepMb` | `64` | 1 to 512 | Most MB in memory: unconfirmed outbox lines, memory-store logs, pending text. |
+| `flushEveryMs` | `1000` | 100 to 10000 | How often the queue is serialized. |
+| `persistEveryMs` | `5000` | 1000 to 60000 | How often text is written to the store (also at 64 KB pending, and at stop). |
+| `storage` | `"auto"` | `"auto"`, `"memory"` | OPFS when the page has it, or never on disk. |
+| `keepFiles` | `10` | whole, 1 to 100 | Finished logs kept; the oldest beyond go when a log starts. |
+
+```ts
+createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: false, keepMb: 32 } } });
+```
+
+A bad value throws a `TypeError` at `createApp`:
+`[moku-editor] recorder.keepMb is 0.` / `  Give megabytes from 1 to 512; 64 keeps about 12 hours of samples.`
+
+When `autoStart` finds no header at start (a native shell holds the engine's header back until it is ready), the log
+starts on the next flush tick, so its file is named after the device and its first line is the header.
+
+## API
+
+`app.recorder` or `ctx.require(recorderPlugin)` gives `RecorderApi` (contracts and examples on the type in `types.ts`).
+
+| Member | Answers |
+|---|---|
+| `start({ label? })` | The new log (or the running one). Throws an `Error` without a monitor. |
+| `stop()` | The finished log; `undefined` while idle. A store failure keeps the log in memory and warns. |
+| `mark(label)` | `true` when the mark went into a running log (`monitor.mark`). |
+| `command(id, input, label)` | The overlay's automatic mark of a command it ran: the `mark` line and `{ auto: true, command }` in `marks()`; never a `command` event. |
+| `status()` | `{ state, lines, bytes, sent, pending, monitor, file, label, sinceMs, storage, dropped }`. |
+| `marks()` | The marks of the current log, or of the last one while idle. A copy. |
+| `files()` | The logs, oldest first, the current one last. A copy. |
+| `share(name)` | `"shared"` / `"cancelled"` (native share sheet) or `"downloaded"`. The current log is written first. |
+| `remove(name)` | Removes a finished log. |
+| `unsentRun(max)` | `{ log, from, lines }`: the oldest unconfirmed lines of one log, a peek. |
+| `ack(log, next)` | Confirms that log's lines below `next`. |
+
+Argument errors are `TypeError` (`share` / `remove` of an unknown name, `ack` with a `next` that is not a whole number
+from 0), state errors `Error` (`start` without a monitor, `remove` of the log being recorded, `share` on a page with
+neither a document nor a native share); every message has two lines.
+
+## The pipeline
+
+- **Listener** (`listener.ts`): called synchronously inside the engine's commit. Keeps the newest `header`, `startup`
+  and `display`; while a log runs (or is exported) pushes the reference into a ring of 4096 slots; a full ring drops
+  its oldest reference and counts it. It allocates nothing and never serializes.
+- **Flush tick** (`flush.ts`, every `flushEveryMs`): inside the agent span it drains the queue (each line's text goes
+  to the log's pending text and to the outbox with its index in the log), applies `keepMb`, and takes the chunk that is
+  due; after the span it starts the chunk's write (one write in flight per log, so chunks keep their order), warns a
+  drop streak once and emits `recorder:status` when a number changed. A throwing tick is warned
+  (`recorder:flush-failed`), never left to the timer.
+- **keepMb**: while the outbox, the memory store and the pending text pass `keepMb`, the oldest finished log of the
+  memory store goes first (`recorder:dropped-log`), then the oldest outbox lines (`recorder:dropped`, once per streak).
+  The current log's own text is never removed while it records.
+- **Failed writes**: a rejected chunk goes back in front of the pending text (`recorder:persist-failed`); after three
+  in a row the log moves to the memory store for the rest of its life (`recorder:storage`), its earlier chunks copied
+  when they can be read.
+- **Stop** (`session.ts` `finishLog`, shared by `stop` and onStop): the stop event, the queue drained in the agent
+  span, every pending text written, the meta rewritten `current: false`. It needs no emit and no log.
+
+## The store
+
+- **OPFS** (`store/opfs.ts`): the directory `moku-editor-perf` under `navigator.storage.getDirectory()`; a log is a
+  sub-directory named after the file without `.jsonl`, with `meta.json` (the `LogFileInfo` fields without `current` and
+  `storage`, plus `chunks`) and the chunk files `000001.jsonl`, `000002.jsonl`, …. Each append writes a new chunk file,
+  never a rewrite of a big one; `read` joins the chunks in name order into one `application/x-ndjson` Blob; `remove` is
+  recursive. A log a dead page left behind lists as finished. The handles are local structural types.
+- **Memory** (`store/memory.ts`): a Map of logs to their chunks; `memoryBytes` is the sum of the text lengths.
+- `openStore("auto")` answers memory with the reason when the page has no `getDirectory` or opening fails.
+- Persistence across app launches in the native WebView is open with `@moku-labs/native`; a native store would be a
+  third `LogStore` and change nothing else.
+
+## The outbox
+
+The outbox holds the lines of every log in serialization order, so a log's lines are contiguous. `unsentRun(max)`
+answers the oldest unconfirmed lines of the head's log, at most `max` (anything but a whole number from 1 counts as
+1), without taking them: after a reconnect the same run is answered again and the hub drops what it already has by
+index. `ack(log, next)` removes that log's head lines below `next`, adds them to `sent` (the log's and the
+recorder's) and is idempotent and monotonic. Lines dropped under `keepMb` leave a jump in the index, which the hub
+reports as a gap. The consumed head is spliced off once it is longer than 4096 lines and more than half the outbox.
+
+```ts
+// bridge (unit 07), shipping the outbox while live:
+const recorder = ctx.require(recorderPlugin);
+const run = recorder.unsentRun(200); // { log, from, lines } of one log, or undefined
+// … send perf.lines { log, from, lines }; on the hub's perf.ack { log, next, n }:
+recorder.ack(log, next);
+```
+
+## Registry entries
+
+| Id | Kind | Input | Value |
+|---|---|---|---|
+| `editor.record` | command, `cosmetic` | `{ on: "boolean", label: "string?" }` | `{ on, file }`: `on: true` starts, `on: false` stops |
+| `editor.mark` | command, `cosmetic` | `{ label: "string" }` | `{ marked }` |
+| `editor.recorder` | source, `changes: "frame"`, no probe | `{}` | `status()`; its watch is called wherever `recorder:status` is emitted |
+
+The commands answer `state: registry.envelope()`; a `start` without a monitor rejects -32000 through the registry's
+guard.
+
+## Events
+
+- **Emits** its per-plugin `recorder:status` (`RecorderStatusEvent`: `state`, `lines`, `bytes`, `sent`, `pending`) on
+  start, stop, share (exporting and back), remove, and after a flush tick that changed a number. It is not in
+  `AgentEvents`: only plugins that list `recorderPlugin` in `depends` hook it (the overlay, the bridge).
+- **Hooks** the global `overlay:changed` → `monitor.event("devtools", { mode, tab })`, and the registry's per-plugin
+  `registry:command` → `monitor.event("command", { id, input, via, ok })`. Both write whether or not a log records.
+
+A command run from the overlay is logged once: the registry emits `registry:command { via: "overlay" }` → this hook
+writes the `command` line; then the overlay calls `recorder.command(id, input, label)`, which adds only the mark.
+
+## Log events
+
+`recorder:started`, `recorder:stopped`, `recorder:shared`, `recorder:storage`, `recorder:dropped-log` and
+`recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
+`recorder:list-failed` and `recorder:flush-failed` at warn. onStop logs nothing.
+
+## Why recorder and perf are two plugins
+
+perf is the **read model** of the last 6 s: typed arrays allocated once, a 4 Hz allocation-free read, answers for the
+overlay and the sources, nothing kept beyond the window. The recorder is the **persistence and outbox pipeline**: every
+line for hours, serialization on its own timer, OPFS chunks, share, and the unconfirmed lines the bridge ships. They
+change for different reasons (a graph rule vs a storage or wire rule), fail differently (a missed paint vs a lost log)
+and are tested apart. The bridge depends on the recorder alone and never touches perf; the recorder reaches the monitor
+through `perf.monitor()` only.

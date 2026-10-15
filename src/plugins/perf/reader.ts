@@ -265,7 +265,11 @@ function updateScalars(state: PerfState, windowMs: number): boolean {
   const gpuTimer = state.header === undefined || state.header.gpu.timer !== null;
   const timerChanged = gpuTimer !== window.gpuTimer;
   window.gpuTimer = gpuTimer;
-  if (window.count === 0) return timerChanged;
+  if (window.count === 0) {
+    state.fpsLoop = 0;
+    state.fpsDrawn = 0;
+    return timerChanged;
+  }
 
   const newest = window.count - 1;
   const newestT = cell(window.t, newest);

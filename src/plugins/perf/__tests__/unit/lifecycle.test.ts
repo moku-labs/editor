@@ -4,8 +4,9 @@ import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { registryPlugin } from "../../../registry";
 import { perfPlugin } from "../..";
 import { initPerf, startPerf, stopPerf } from "../../lifecycle";
+import { secondOf } from "../../records";
 import type { PerfConfig } from "../../types";
-import { perfCtx, perfState, startedGame } from "../helpers";
+import { commitFrames, perfCtx, perfState, startedGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // lifecycle: the config checks at createApp, onInit, onStart and onStop.
@@ -99,5 +100,37 @@ describe("onStop", () => {
     expect(monitor.reads).toBe(3);
     expect(monitor.listeners).toBe(1);
     stopPerf(ctx);
+  });
+});
+
+describe("a failing start and a stop", () => {
+  it("undoes the stream subscription and starts no timer when the first tick throws (bug: a listener left behind by a failed start)", () => {
+    vi.useFakeTimers();
+    const perf = perfState();
+    const monitor = createFakeMonitor();
+    monitor.failRead = new Error("ring torn");
+    const registry = { game: () => ({ renderer: { monitor } }), add: () => undefined };
+    const { ctx } = perfCtx(perf, registry);
+    initPerf(ctx);
+    expect(() => startPerf(ctx)).toThrow("ring torn");
+    expect([monitor.listeners, perf.state.unsubscribe, vi.getTimerCount()]).toEqual([
+      0,
+      undefined,
+      0
+    ]);
+  });
+
+  it("answers fps 0 after a stop (bug: the pill showing the last second of a stopped game)", () => {
+    vi.useFakeTimers();
+    const perf = perfState();
+    const monitor = createFakeMonitor();
+    commitFrames(monitor, 30, 0, 16.7);
+    const registry = { game: () => ({ renderer: { monitor } }), add: () => undefined };
+    const { ctx } = perfCtx(perf, registry);
+    initPerf(ctx);
+    startPerf(ctx);
+    expect(secondOf(perf.state).fps.loop).toBe(30);
+    stopPerf(ctx);
+    expect(secondOf(perf.state).fps).toEqual({ loop: 0, drawn: 0 });
   });
 });

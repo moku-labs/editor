@@ -97,7 +97,7 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
   const { config } = ctx;
   checkPerfConfig(config);
   const { frames } = config;
-  return {
+  const state: PerfState = {
     game: undefined,
     monitor: undefined,
     off: undefined,
@@ -124,27 +124,46 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
     timer: undefined,
     unsubscribe: undefined,
     watchers: new Set(),
+    callWatcher: watcher => callIsolated(state, watcher),
+    log: undefined,
+    watchFailed: false,
+    watchStreak: false,
     second: undefined
   };
+  return state;
 }
 
 /**
- * Calls one watcher.
+ * Calls one watcher of a state, isolated: a throw is caught, so the other watchers and the read
+ * that notified them go on; the first throw of a streak of failing rounds warns
+ * `perf:watcher-failed`.
  *
+ * @param state - perf's state.
  * @param watcher - The watcher.
  */
-function callWatcher(watcher: () => void): void {
-  watcher();
+function callIsolated(state: PerfState, watcher: () => void): void {
+  try {
+    watcher();
+  } catch (error) {
+    state.watchFailed = true;
+    if (state.watchStreak) return;
+    state.watchStreak = true;
+    state.log?.warn("perf:watcher-failed", { error });
+  }
 }
 
 /**
- * Drops the cached `second()` and calls every source watch. Allocates nothing.
+ * Drops the cached `second()` and calls every source watch, each isolated (a throw of one never
+ * reaches the others or the caller). A round without a failure ends the streak of warnings.
+ * Allocates nothing.
  *
  * @param state - perf's state.
  */
 export function notifyWatchers(state: PerfState): void {
   state.second = undefined;
+  state.watchFailed = false;
   // Set#forEach allocates no iterator: the read cycle stays allocation-free (spec 03).
   // eslint-disable-next-line unicorn/no-array-for-each, unicorn/no-array-callback-reference -- see above
-  state.watchers.forEach(callWatcher);
+  state.watchers.forEach(state.callWatcher);
+  if (!state.watchFailed) state.watchStreak = false;
 }

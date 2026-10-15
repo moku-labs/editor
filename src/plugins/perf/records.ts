@@ -465,41 +465,59 @@ export function whyOf(facts: WhyFacts): string {
 }
 
 /**
- * The record of one spike row: ring numbers (or the spike line's once the slot was overwritten),
- * the rate switch, the game's frame events and the detail.
+ * What a summary and a record share of a spike row: the ring numbers (or the spike line's once the
+ * slot was overwritten) and the spike line itself.
+ */
+type RowFacts = {
+  readonly numbers: FrameNumbers;
+  readonly detail: PerfSpikeLine | null;
+};
+
+/**
+ * The numbers and the detail of a spike row.
  *
  * @param state - perf's state.
+ * @param ring - The frame ring, while perf has a monitor.
  * @param row - A spike row.
- * @returns The record.
+ * @returns The facts.
  */
-function recordOfRow(state: PerfState, row: number): PerfSpikeRecord {
-  const { window } = state;
-  const ring = state.monitor?.frames();
-  const frame = cell(window.frame, row);
-  const newest = window.count - 1;
+function factsOfRow(state: PerfState, ring: FrameRing | undefined, row: number): RowFacts {
+  const detail = detailOf(state, cell(state.window.frame, row)) ?? null;
   const slot = slotOf(state, ring, row);
-  const detail = detailOf(state, frame) ?? null;
-  let numbers = NO_NUMBERS;
-  if (ring !== undefined && slot >= 0) numbers = slotNumbers(ring, slot);
-  else if (detail !== null) numbers = recordNumbers(detail.frame);
+  if (ring !== undefined && slot >= 0) return { numbers: slotNumbers(ring, slot), detail };
+  return { numbers: detail === null ? NO_NUMBERS : recordNumbers(detail.frame), detail };
+}
 
+/**
+ * The summary of one spike row: the window's numbers, the causes, the path and the why. No frame
+ * events and no rate switch: those are the record's.
+ *
+ * @param state - perf's state.
+ * @param ring - The frame ring, while perf has a monitor.
+ * @param row - A spike row.
+ * @param facts - The row's numbers and detail.
+ * @returns The summary.
+ */
+function summaryOfRow(
+  state: PerfState,
+  ring: FrameRing | undefined,
+  row: number,
+  facts: RowFacts
+): PerfSpikeSummary {
+  const { window } = state;
   const ms = plain(cell(window.ms, row));
   const budgetMs = plain(cell(window.budgetMs, row));
-  const fps = rateFps(cell(window.rateMs, row));
   const gpuMs = hundredths(cell(window.gpuMs, row));
-  const gapMs = hundredths(cell(state.rowGapMs, row));
   const jsMs = plain(cell(window.jsMs, row));
-  const bits = cell(window.causes, row);
   const cause = causeName(cell(window.cause, row)) ?? "gap";
-  const header = state.header;
   return {
-    frame,
-    agoMs: plain(cell(window.t, newest) - cell(window.t, row)),
+    frame: cell(window.frame, row),
+    agoMs: plain(cell(window.t, window.count - 1) - cell(window.t, row)),
     ms,
     budgetMs,
     overMs: plain(ms - budgetMs),
     cause,
-    causes: causesOf(bits),
+    causes: causesOf(cell(window.causes, row)),
     jsMs,
     gpuMs,
     path: ring?.paths[cell(state.rowPath, row)] ?? UNKNOWN_PATH,
@@ -508,23 +526,41 @@ function recordOfRow(state: PerfState, row: number): PerfSpikeRecord {
       ms,
       jsMs,
       gpuMs,
-      gapMs,
+      gapMs: hundredths(cell(state.rowGapMs, row)),
       budgetMs,
-      fps,
-      uploads: numbers.uploads,
-      compiles: numbers.compiles,
+      fps: rateFps(cell(window.rateMs, row)),
+      uploads: facts.numbers.uploads,
+      compiles: facts.numbers.compiles,
       gpuTimer: window.gpuTimer,
-      detail
-    }),
+      detail: facts.detail
+    })
+  };
+}
+
+/**
+ * The record of one spike row: its summary, the epoch time, the rate switch, the numbers, the game's
+ * frame events and the detail.
+ *
+ * @param state - perf's state.
+ * @param row - A spike row.
+ * @returns The record.
+ */
+function recordOfRow(state: PerfState, row: number): PerfSpikeRecord {
+  const { window, header } = state;
+  const ring = state.monitor?.frames();
+  const facts = factsOfRow(state, ring, row);
+  const summary = summaryOfRow(state, ring, row, facts);
+  return {
+    ...summary,
     at: header === undefined ? null : plain(header.timeOrigin + cell(window.t, row)),
-    fps,
+    fps: rateFps(cell(window.rateMs, row)),
     rateSwitch: rateSwitchOf(state, row),
-    gapMs,
+    gapMs: hundredths(cell(state.rowGapMs, row)),
     drawn: window.drawn[row] === 1,
     gpuPartial: state.rowPartial[row] === 1,
-    ...numbers,
-    events: eventsOf(state, frame),
-    detail
+    ...facts.numbers,
+    events: eventsOf(state, summary.frame),
+    detail: facts.detail
   };
 }
 
@@ -539,17 +575,6 @@ export function spikeRecord(state: PerfState, frame: number): PerfSpikeRecord | 
   const row = rowOfFrame(state.window, frame);
   if (row < 0 || state.window.cause[row] === 0) return undefined;
   return recordOfRow(state, row);
-}
-
-/**
- * The summary part of a record.
- *
- * @param record - The record.
- * @returns The summary.
- */
-function summaryOf(record: PerfSpikeRecord): PerfSpikeSummary {
-  const { frame, agoMs, ms, budgetMs, overMs, cause, causes, jsMs, gpuMs, path, why } = record;
-  return { frame, agoMs, ms, budgetMs, overMs, cause, causes, jsMs, gpuMs, path, why };
 }
 
 /**
@@ -572,12 +597,13 @@ export function spikeSummaries(
       ? Math.min(Math.max(asked, 0), config.windowMs)
       : config.windowMs;
   const { window } = state;
+  const ring = state.monitor?.frames();
   const newestT = cell(window.t, window.count - 1);
   const summaries: PerfSpikeSummary[] = [];
   for (let index = 0; index < window.spikeCount; index += 1) {
     const row = cell(window.spikes, index);
     if (newestT - cell(window.t, row) > lastMs) continue;
-    summaries.push(summaryOf(recordOfRow(state, row)));
+    summaries.push(summaryOfRow(state, ring, row, factsOfRow(state, ring, row)));
   }
   return summaries;
 }

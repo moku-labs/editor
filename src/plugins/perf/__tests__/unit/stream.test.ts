@@ -116,4 +116,21 @@ describe("listen", () => {
       0
     ]);
   });
+
+  it("tells the watches inside the monitor's agent span, closed also when a watch throws (spec 03 step 10)", () => {
+    const { state } = perfState();
+    const monitor = createFakeMonitor();
+    attach(state, monitor);
+    const open: number[] = [];
+    state.watchers.add(() => {
+      open.push(monitor.begins - monitor.ends);
+      throw new Error("watch broke");
+    });
+    const before = [monitor.begins, monitor.ends];
+    monitor.emit(sampleLine(60));
+    monitor.emit(eventLine("display", 61, DISPLAY));
+    monitor.emit(eventLine("rate", 62, {}));
+    expect(open).toEqual([1, 1, 1]);
+    expect([monitor.begins - (before[0] ?? 0), monitor.ends - (before[1] ?? 0)]).toEqual([3, 3]);
+  });
 });

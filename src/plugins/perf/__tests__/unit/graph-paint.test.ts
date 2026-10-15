@@ -416,4 +416,28 @@ describe("the edges of a paint", () => {
     );
     expect(label?.textAlign).toBe("right");
   });
+
+  it("labels only rates of 1 to 1000 fps and keeps at most 16 rate labels (bug: an unbounded label cache)", () => {
+    const rates = Array.from({ length: 20 }, (_, index) => ({
+      t: index * 20,
+      rateMs: 1000 / (index + 30)
+    }));
+    const rec = recorder();
+    const state = createGraphState(32);
+    paintGraph(rec.g, windowOf(rates), WIDE, state);
+    expect(state.rateText.size).toBeLessThanOrEqual(16);
+    expect(rec.texts()).toContain("49");
+
+    const fast = recorder();
+    paintGraph(
+      fast.g,
+      windowOf([
+        { t: 0, rateMs: 16.67 },
+        { t: 20, rateMs: 0.5 }
+      ]),
+      WIDE,
+      createGraphState(4)
+    );
+    expect(fast.texts()).not.toContain("2000");
+  });
 });
