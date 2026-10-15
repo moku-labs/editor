@@ -45,6 +45,8 @@ export type DeviceStripState = {
   secondAt: number | undefined;
   /** The strip's own window, allocated once and filled from each `editor.perf.window` value. */
   readonly window: PerfWindow;
+  /** `performance.now()` when the last window arrived: the moving now's origin and the loop's liveness. */
+  windowAt: number | undefined;
   /** The last `editor.perf.spikes` value, oldest first; [] before the first. */
   spikes: readonly PerfSpikeSummary[];
   /** The last `editor.recorder` value; undefined when the agent has no recorder source. */
@@ -181,6 +183,7 @@ export type RecCell = {
 export type CauseLegend = {
   readonly cause: PerfCause;
   readonly legend: string;
+  /** The cause's hue in both editor themes: `light-dark(light, dark)` (`themedHue`). */
   readonly hue: string;
   /** The primary cause: filled. */
   readonly lit: boolean;
@@ -218,7 +221,7 @@ export type RecordView = {
   /** Red when the frame took more than twice its budget, else amber. */
   readonly severity: "red" | "amber";
   readonly why: string;
-  /** The primary cause's hue, for the why line's rule. */
+  /** The primary cause's hue in both editor themes, for the why line's rule. */
   readonly hue: string;
   readonly phases: readonly BarRow[];
   /** "GPU 6.6 ms over 6 passes", or "GPU — no timer". */

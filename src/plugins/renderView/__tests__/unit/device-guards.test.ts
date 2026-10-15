@@ -61,7 +61,16 @@ describe("isPerfSecond", () => {
       { render: { passesMax: 3, kept: {}, redraws: 0, rebuilds: 0 } },
       { device: { model: "SM-A266B" } },
       { gpu: {} },
-      { rate: { fps: 60, mode: "auto", reason: 7, displayHz: 120, switches: 1 } }
+      { rate: { fps: 60, mode: "auto", reason: 7, displayHz: 120, switches: 1 } },
+      {
+        activity: { idle: "yes", idleSince: null, idleFrames: 0, idleMs: 0, breaks: 0, p90Ms: null }
+      },
+      {
+        activity: { idle: true, idleSince: "now", idleFrames: 0, idleMs: 0, breaks: 0, p90Ms: null }
+      },
+      {
+        activity: { idle: false, idleSince: null, idleFrames: 0, idleMs: 0, breaks: 0, p90Ms: "17" }
+      }
     ];
     for (const patch of bad) {
       expect(isPerfSecond(offShape(secondOf(), patch)), JSON.stringify(patch)).toBe(false);

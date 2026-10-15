@@ -10,7 +10,8 @@ import { clockText } from "./model/format";
 import { overlayCommands, READ_ONLY_TEXT, reasonText } from "./model/game";
 import { ADDRESS_HINT, checkAddress } from "./model/link";
 import { closeOverlay, openOverlay, setMode, setTab } from "./modes";
-import { mountCanvas } from "./paint/graph";
+import { mountCanvas, mountFixed } from "./paint/graph";
+import { plotXOf } from "./paint/slide";
 import { paintNow } from "./paint/tick";
 import { windowSize } from "./place/dock";
 import type { KeyLike, PointerLike } from "./place/drag";
@@ -53,6 +54,7 @@ export type OverlayActions = {
   readonly addressDraft: (text: string) => void;
   readonly connect: () => void;
   readonly canvas: (element: HTMLCanvasElement | null) => void;
+  readonly fixed: (element: HTMLCanvasElement | null) => void;
   readonly gripDown: (event: PointerLike) => void;
   readonly gripMove: (event: PointerLike) => void;
   readonly gripUp: (event: PointerLike) => void;
@@ -297,19 +299,20 @@ function canvasSize(state: OverlayState): { readonly w: number; readonly h: numb
 }
 
 /**
- * True for an event target that can report its box (an element).
+ * True for a value that can report its box (an element).
  *
- * @param target - The event's current target.
+ * @param target - An event target or its parent.
  * @returns Whether `getBoundingClientRect` can be called on it.
  * @example
  * ```ts
  * hasBoundingBox(null); // false
  * ```
  */
-function hasBoundingBox(target: EventTarget | null): target is EventTarget & {
-  getBoundingClientRect(): { readonly left: number; readonly top: number };
-} {
+function hasBoundingBox(
+  target: unknown
+): target is { getBoundingClientRect(): { readonly left: number; readonly top: number } } {
   return (
+    typeof target === "object" &&
     target !== null &&
     "getBoundingClientRect" in target &&
     typeof target.getBoundingClientRect === "function"
@@ -317,13 +320,14 @@ function hasBoundingBox(target: EventTarget | null): target is EventTarget & {
 }
 
 /**
- * The point of a pointer event inside its target, CSS px.
+ * The point of a pointer event inside the graph well (the canvas's parent, which does not slide),
+ * CSS px.
  *
  * @param event - The event.
  * @param event.clientX - Viewport x.
  * @param event.clientY - Viewport y.
  * @param event.currentTarget - The canvas.
- * @returns x and y from the target's top left.
+ * @returns x and y from the well's top left.
  */
 function pointIn(event: {
   readonly clientX: number;
@@ -331,7 +335,9 @@ function pointIn(event: {
   readonly currentTarget: EventTarget | null;
 }): { readonly x: number; readonly y: number } {
   const target = event.currentTarget;
-  const box = hasBoundingBox(target) ? target.getBoundingClientRect() : { left: 0, top: 0 };
+  const well: unknown = target === null ? undefined : Reflect.get(target, "parentElement");
+  const anchor = hasBoundingBox(well) ? well : target;
+  const box = hasBoundingBox(anchor) ? anchor.getBoundingClientRect() : { left: 0, top: 0 };
   return { x: event.clientX - box.left, y: event.clientY - box.top };
 }
 
@@ -363,8 +369,9 @@ export function actionsOf(octx: OverlayCtx): OverlayActions {
       stepSpikes(octx, dir);
     },
     tapGraph: event => {
+      // A well x on the plot canvas (it slid since the last paint; the tape did not).
       const { x, y } = pointIn(event);
-      tapGraph(octx, x, y);
+      tapGraph(octx, plotXOf(state, x, Date.now()), y);
     },
     back: () => {
       state.record = undefined;
@@ -403,6 +410,9 @@ export function actionsOf(octx: OverlayCtx): OverlayActions {
     },
     canvas: element => {
       mountCanvas(octx, element, canvasSize(state));
+    },
+    fixed: element => {
+      mountFixed(octx, element);
     },
     gripDown: event => {
       gripDown(octx, event);

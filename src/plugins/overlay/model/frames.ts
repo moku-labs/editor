@@ -94,13 +94,29 @@ export function deviceLabel(device: PerfSecond["device"]): string {
   const ua = device.userAgent;
   const ios = /OS (\d+)[._]\d.* like Mac OS X/.exec(ua)?.[1];
   const android = /Android (\d+)/.exec(ua)?.[1];
-  const chrome = device.webview === null ? undefined : /(\d+)/.exec(device.webview)?.[1];
   const parts: string[] = [];
   if (ios !== undefined) parts.push(`iOS ${ios}`);
   if (android !== undefined) parts.push(`Android ${android}`);
-  if (chrome !== undefined) parts.push(`WebView ${chrome}`);
-  else if (ua.includes("AppleWebKit")) parts.push("WebKit");
+  const browser = browserLabel(device);
+  if (browser !== undefined) parts.push(browser);
   return parts.length === 0 ? DASH : parts.join(", ");
+}
+
+/**
+ * The web engine of a device (as renderView's `browserOf`). An engine that writes `device.browser`
+ * (game@0fda201) sets `webview` only in a WebView: `WebView N` then, else `Chrome N` from `browser`,
+ * nothing without a Chrome major (Safari). An older log: `WebView N` from any `webview`, else
+ * `WebKit` on a WebKit user agent.
+ *
+ * @param device - perf's device facts.
+ * @returns The label, or undefined.
+ */
+function browserLabel(device: NonNullable<PerfSecond["device"]>): string | undefined {
+  const { webview, browser } = device;
+  const major = webview === null ? undefined : /(\d+)/.exec(webview)?.[1];
+  if (major !== undefined) return `WebView ${major}`;
+  if (browser !== undefined) return browser === null ? undefined : `Chrome ${browser}`;
+  return device.userAgent.includes("AppleWebKit") ? "WebKit" : undefined;
 }
 
 /**
@@ -121,25 +137,97 @@ function textureText(second: PerfSecond): string {
 /** The drawn / loop cell's full name, kept in the compact cell's title. */
 const DRAWN_LOOP = "drawn / loop";
 
+/** The drawn / loop cell's value while the screen rests. */
+const IDLE_WORD = "idle";
+
 /**
  * The drawn / loop cell with its rate suffix after the value on the wide card. On the compact card
  * (decision "Compact card: the rate suffix moves to the label line", option 1; design check P7) the
  * value is the two numbers alone, the label line reads "fps" with the suffix after it, and the
- * cell's title carries "drawn / loop" and the mode.
+ * cell's title carries "drawn / loop" and the mode. While the screen rests (spec 03 delta
+ * 2026-10-15) the value reads `idle` with how long as its unit, the suffix on the label line.
  *
  * @param second - perf's second.
  * @param compact - The compact card.
+ * @param idleFor - How long the screen has rested ("" when unknown); undefined while awake.
  * @returns The cell.
  */
-function fpsCell(second: PerfSecond, compact: boolean): CounterCell {
-  const value = `${second.fps.drawn} / ${second.fps.loop}`;
+function fpsCell(second: PerfSecond, compact: boolean, idleFor: string | undefined): CounterCell {
   const rate = rateSuffix(second.rate);
+  const label = compact ? "fps" : DRAWN_LOOP;
+  const title = compact && rate !== undefined ? `${DRAWN_LOOP} · ${rate.title}` : undefined;
+  if (idleFor !== undefined) {
+    return cellOf("fps", label, IDLE_WORD, {
+      unit: idleFor,
+      rate,
+      ratePlace: "label",
+      title: title ?? (compact ? DRAWN_LOOP : rate?.title)
+    });
+  }
+  const value = `${second.fps.drawn} / ${second.fps.loop}`;
   if (!compact) return cellOf("fps", DRAWN_LOOP, value, { unit: "fps", rate });
-  return cellOf("fps", "fps", value, {
-    rate,
-    ratePlace: "label",
-    title: rate === undefined ? DRAWN_LOOP : `${DRAWN_LOOP} · ${rate.title}`
-  });
+  return cellOf("fps", "fps", value, { rate, ratePlace: "label", title: title ?? DRAWN_LOOP });
+}
+
+/**
+ * The p90 frame time the counters show: the awake frames' (perf's `activity`), or the sample's gap
+ * p90 from an agent before the delta.
+ *
+ * @param second - perf's second.
+ * @returns The p90, ms; null or undefined when unknown.
+ */
+function p90Of(second: PerfSecond): number | null | undefined {
+  return second.activity === undefined ? second.sample?.gapMs?.p90 : second.activity.p90Ms;
+}
+
+/**
+ * The GPU times the headline reads (`WindowFacts`): the window's p50 / p90, or the mean from an
+ * agent before spec 03 delta item 8.
+ */
+export type GpuFacts = {
+  readonly gpuAvg?: number | undefined;
+  readonly gpuP50?: number | undefined;
+  readonly gpuP90?: number | undefined;
+};
+
+/** The GPU cell's label on the wide card. */
+const GPU_LABEL = "GPU p50 / p90";
+
+/** GPU times from here print whole: "250", not "250.4". */
+const WHOLE_GPU_MS = 100;
+
+/**
+ * A GPU time: one decimal under 100 ms, whole above.
+ *
+ * @param ms - The time.
+ * @returns The text.
+ */
+function gpuText(ms: number): string {
+  return ms < WHOLE_GPU_MS ? oneDecimal(ms) : wholeText(ms);
+}
+
+/**
+ * The GPU cell: the window's p50 / p90 in ms (on the compact card without spaces, the unit in its
+ * title), the mean from an agent before the delta, else a dash without a timer.
+ *
+ * @param gpu - The GPU times.
+ * @param compact - The compact card.
+ * @returns The cell.
+ */
+function gpuCell(gpu: GpuFacts | undefined, compact: boolean): CounterCell {
+  const p50 = gpu?.gpuP50;
+  const p90 = gpu?.gpuP90;
+  if (p50 !== undefined && p90 !== undefined) {
+    if (!compact) {
+      return cellOf("gpu", GPU_LABEL, `${gpuText(p50)} / ${gpuText(p90)}`, { unit: "ms" });
+    }
+    return cellOf("gpu", "GPU p50/p90", `${gpuText(p50)}/${gpuText(p90)}`, {
+      title: `${GPU_LABEL}, ms`
+    });
+  }
+  const avg = gpu?.gpuAvg;
+  if (avg === undefined) return cellOf("gpu", "GPU avg", DASH, { unit: "no timer" });
+  return cellOf("gpu", "GPU avg", oneDecimal(avg), { unit: "ms" });
 }
 
 /**
@@ -147,28 +235,28 @@ function fpsCell(second: PerfSecond, compact: boolean): CounterCell {
  * without a GPU timer (P9) device and heap (6 / 6) instead; compact (C7): the first three only.
  *
  * @param second - perf's second.
- * @param gpuAvg - `meanGpu(window)`: undefined without a measured GPU time.
+ * @param gpu - The GPU times (the window's p50 / p90, or a mean); undefined without one.
  * @param compact - The compact card.
  * @param gpuTimer - Whether the page has a GPU timer.
+ * @param idleFor - How long the screen has rested ("" when unknown); undefined while awake.
  * @returns The cells, in order.
  */
 export function counterCells(
   second: PerfSecond,
-  gpuAvg: number | undefined,
+  gpu: GpuFacts | undefined,
   compact: boolean,
-  gpuTimer: boolean
+  gpuTimer: boolean,
+  idleFor?: string
 ): readonly CounterCell[] {
   const sample = second.sample;
-  const p90 = sample?.gapMs?.p90;
+  const p90 = p90Of(second);
   const first = [
-    fpsCell(second, compact),
+    fpsCell(second, compact, idleFor),
     cellOf("p90", "p90 frame", oneDecimal(p90), {
       unit: "ms",
       caution: typeof p90 === "number" && p90 > second.budgetMs
     }),
-    gpuAvg === undefined
-      ? cellOf("gpu", "GPU avg", DASH, { unit: "no timer" })
-      : cellOf("gpu", "GPU avg", oneDecimal(gpuAvg), { unit: "ms" })
+    gpuCell(gpu, compact)
   ];
   if (compact) return first;
 

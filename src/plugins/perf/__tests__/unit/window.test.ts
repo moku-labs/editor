@@ -155,7 +155,7 @@ describe("the wire form", () => {
   it("round-trips through writeWireWindow and readWireWindow with NaN GPU, rateMs and budgetMs (bug: a tools strip drawing the 16.7 line on a 120 fps phone)", () => {
     const source = windowOf([
       { frame: 7, t: 2000, gpuMs: 5.25, rateMs: 8.33, budgetMs: 8.33 },
-      { frame: 8, t: 2008.3, rateMs: 16.67, budgetMs: 16.67, causes: 0b1_0001 },
+      { frame: 8, t: 2008.3, rateMs: 16.67, budgetMs: 16.67, causes: 0b1_0010 },
       { frame: 9, t: 2025, drawn: 0 }
     ]);
     const value = writeWireWindow(source);
@@ -215,8 +215,8 @@ describe("the wire form", () => {
 
   it("drops cause bits it does not know and reads a bad causes item as no cause, never throwing", () => {
     const into = createPerfWindow(16);
-    expect(readWireWindow(wire({ causes: [0b1001_0001, 1.5] }), into)).toBe(true);
-    expect([into.causes[0], into.cause[0], into.causes[1], into.cause[1]]).toEqual([17, 2, 0, 0]);
+    expect(readWireWindow(wire({ causes: [0b1001_0010, 1.5] }), into)).toBe(true);
+    expect([into.causes[0], into.cause[0], into.causes[1], into.cause[1]]).toEqual([18, 2, 0, 0]);
     expect(readWireWindow(wire({ causes: [128, 300] }), into)).toBe(true);
     expect([into.spikeCount, into.causes[0], into.causes[1]]).toEqual([0, 0, 0]);
   });
@@ -225,6 +225,85 @@ describe("the wire form", () => {
     const into = createPerfWindow(1);
     expect(readWireWindow(wire(), into)).toBe(true);
     expect([into.count, into.frame[0], into.ms[0]]).toEqual([1, 4812, Math.fround(41.3)]);
+  });
+});
+
+describe("the rest column on the wire (spec 03 delta 2026-10-15)", () => {
+  it("round-trips the rest of each row and recomputes causes with the editor's rule: work decides, rests and breaks never spike", () => {
+    const source = createPerfWindow(8);
+    const rows = [
+      { t: 0, ms: 16.7, causes: 0, rest: 0 },
+      { t: 500, ms: 500, causes: 0b11, rest: 1 },
+      { t: 600, ms: 100, causes: 1, rest: 2 },
+      { t: 640, ms: 40, causes: 1, rest: 0 },
+      { t: 740, ms: 100, causes: 0b11, rest: 0 },
+      { t: 1741, ms: 1001, causes: 1, rest: 3 }
+    ];
+    for (const [index, row] of rows.entries()) {
+      source.frame[index] = index + 1;
+      source.t[index] = row.t;
+      source.ms[index] = row.ms;
+      source.rateMs[index] = 16.67;
+      source.budgetMs[index] = 16.67;
+      source.drawn[index] = 1;
+      source.causes[index] = row.causes;
+      source.rest[index] = row.rest;
+    }
+    source.count = rows.length;
+    source.startMs = 0;
+    source.endMs = 1800;
+    const value = writeWireWindow(source);
+    expect(value.rest).toEqual([0, 1, 2, 0, 0, 3]);
+
+    const into = createPerfWindow(8);
+    expect(readWireWindow(value, into)).toBe(true);
+    expect([...into.rest.subarray(0, 6)]).toEqual([0, 1, 2, 0, 0, 3]);
+    expect([...into.causes.subarray(0, 6)]).toEqual([0, 3, 1, 1, 3, 1]);
+    expect([into.spikeCount, into.spikes[0]]).toEqual([1, 4]);
+  });
+
+  it("reads a wire value of an agent before the delta (no rest column) as all awake", () => {
+    const into = createPerfWindow(8);
+    expect(readWireWindow(wire({}, "rest"), into)).toBe(true);
+    expect([...into.rest.subarray(0, 2)]).toEqual([0, 0]);
+    expect(readWireWindow(wire({ rest: [1] }), into)).toBe(false);
+  });
+});
+
+describe("the noise column and the GPU spread on the wire (spec 03 delta item 8)", () => {
+  it("round-trips a lone GPU outlier as noise, never a spike, and recomputes the GPU p50/p90 from the rows", () => {
+    const source = createPerfWindow(8);
+    const gpu = [0.4, 0.5, 22, 0.6, 0.5];
+    for (const [index, gpuMs] of gpu.entries()) {
+      source.frame[index] = index + 1;
+      source.t[index] = index * 16.7;
+      source.ms[index] = 16.7;
+      source.gpuMs[index] = gpuMs;
+      source.rateMs[index] = 16.67;
+      source.budgetMs[index] = 16.67;
+      source.drawn[index] = 1;
+    }
+    source.noise[2] = 0b100;
+    source.count = gpu.length;
+    source.endMs = 100;
+    const value = writeWireWindow(source);
+    expect(value.noise).toEqual([0, 0, 4, 0, 0]);
+
+    const into = createPerfWindow(8);
+    expect(readWireWindow(value, into)).toBe(true);
+    expect([...into.noise.subarray(0, 5)]).toEqual([0, 0, 4, 0, 0]);
+    expect([into.cause[2], into.spikeCount]).toEqual([0, 0]);
+    expect(into.gpuP50Ms).toBeCloseTo(0.5, 5);
+    expect(into.gpuP90Ms).toBe(22);
+  });
+
+  it("reads a wire value without noise (an agent before item 8) as no noise, drops unknown or hostile noise bits, and refuses a noise column of another length", () => {
+    const into = createPerfWindow(8);
+    expect(readWireWindow(wire({}, "noise"), into)).toBe(true);
+    expect([...into.noise.subarray(0, 2)]).toEqual([0, 0]);
+    expect(readWireWindow(wire({ noise: [0b1000_0100, 300] }), into)).toBe(true);
+    expect([...into.noise.subarray(0, 2)]).toEqual([4, 0]);
+    expect(readWireWindow(wire({ noise: [4] }), into)).toBe(false);
   });
 });
 

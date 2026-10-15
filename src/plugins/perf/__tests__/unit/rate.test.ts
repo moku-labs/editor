@@ -91,7 +91,7 @@ describe("the per-frame budget and the rate", () => {
   it("reads mode, reason and display Hz from a rate event, and the record's rateSwitch with its reason", () => {
     const { state, monitor, tick } = setup();
     commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
-    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, workMs: 20, causes: 0b11 });
     monitor.emit(eventLine("rate", switched, rateChange()));
     tick();
     expect(secondOf(state).rate).toEqual({
@@ -115,7 +115,7 @@ describe("the per-frame budget and the rate", () => {
     commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
     const change = rateChange({ reason: "forced", mode: "forced" });
     monitor.emit({ ...eventLine("rate", null, change), t: origin + 20 });
-    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, workMs: 20, causes: 0b11 });
     tick();
     expect(spikeRecord(state, switched)?.rateSwitch).toEqual({
       from: 120,
@@ -134,7 +134,7 @@ describe("the per-frame budget and the rate", () => {
     });
     commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
     monitor.emit({ ...eventLine("rate", null, rateChange({ from: 60, to: 30 })), t: origin + 20 });
-    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, workMs: 20, causes: 0b11 });
     tick();
     expect(spikeRecord(state, switched)?.rateSwitch).toEqual({
       from: 120,
@@ -147,7 +147,7 @@ describe("the per-frame budget and the rate", () => {
   it("shows a switch the rows show without reason and mode when no rate line names it", () => {
     const { state, monitor, tick } = setup();
     commitFrames(monitor, 3, 0, 8.33, { rateMs: 8.33, capMs: 8.33 });
-    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, causes: 0b1 });
+    const switched = monitor.commit({ t: 25, gapMs: 40, rateMs: 16.67, workMs: 20, causes: 0b11 });
     tick();
     expect(spikeRecord(state, switched)?.rateSwitch).toEqual({
       from: 120,

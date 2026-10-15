@@ -1,7 +1,8 @@
 /**
- * @file perf/graph — the one place the cause letters, words and hues live, and the painter's colours
- * and fonts. The overlay's and the tools strip's DOM legends read the same table (they set `--c`
- * from `hue`). Data only.
+ * @file perf/graph — the one place the cause letters, words and hues live, and the painter's
+ * cockpit colours and fonts (the phone overlay's glass cockpit, the painter's default look). The
+ * tools page's light and dark looks live in `themes.ts`, which only the tools page imports, so they
+ * never enter the agent bundle. Data only.
  */
 import type { PerfCause } from "../protocol";
 
@@ -81,6 +82,31 @@ export const CAUSE_STYLE: Readonly<Record<PerfCause, CauseStyle>> = {
 };
 
 /**
+ * The painter's colours of one theme.
+ */
+export type GraphPalette = {
+  readonly well: string;
+  readonly grid: string;
+  readonly baseline: string;
+  readonly tape: string;
+  readonly tapeInk: string;
+  readonly ink: string;
+  readonly ink2: string;
+  readonly ink3: string;
+  readonly magenta: string;
+  readonly amber: string;
+  readonly red: string;
+  readonly cyan: string;
+  readonly js: string;
+  readonly gpu: string;
+  readonly idle: string;
+  readonly idleOutline: string;
+  readonly flagGround: string;
+  readonly flagSelectedHollow: string;
+  readonly readout: string;
+};
+
+/**
  * The painter's colours (the prototype's tokens, design §6 G).
  *
  * @example
@@ -111,8 +137,9 @@ export const GRAPH_COLOURS = {
 } as const;
 
 /**
- * The font families: the overlay's subset Barlow faces under their private name first, then plain
- * Barlow Condensed (the tools page loads it through fonts.css), then the fallbacks.
+ * The font families of the cockpit: the overlay's subset Barlow faces under their private name
+ * first, then a plain Barlow Condensed the page may have, then the fallbacks. The tools page draws
+ * in Geist (`themes.ts`) and loads no Barlow.
  */
 const FAMILY = '"Moku Overlay Barlow Condensed", "Barlow Condensed", "Arial Narrow", sans-serif';
 

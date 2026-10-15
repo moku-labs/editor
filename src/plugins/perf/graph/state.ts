@@ -44,13 +44,16 @@ export function createGraphState(capacity: number): GraphState {
     tapeBudgetMs: Number.NaN,
     tapeBudgetText: "",
     tapeHalfText: "",
-    rateText: new Map()
+    rateText: new Map(),
+    lookKey: "cockpit",
+    edgeX: 0
   };
 }
 
 /**
  * Forgets the measured legends and every cached label: call after `document.fonts.ready`, so the
- * legends are measured in Barlow Condensed, not the fallback.
+ * legends are measured in the look's own face (Barlow Condensed on the phone, Geist on the tools
+ * page), not the fallback. A change of look resets them too.
  *
  * @param state - The painter state.
  */

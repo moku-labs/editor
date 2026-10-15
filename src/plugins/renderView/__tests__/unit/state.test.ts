@@ -43,6 +43,7 @@ describe("createRenderViewState", () => {
         second: undefined,
         secondAt: undefined,
         window: expect.objectContaining({ capacity: 1024, count: 0, spikeCount: 0 }),
+        windowAt: undefined,
         spikes: [],
         recorder: undefined,
         perf: "absent",

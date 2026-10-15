@@ -106,17 +106,27 @@ function classes(): number {
   return shadowOf(octx).querySelectorAll("[class]").length;
 }
 
-describe("C3: one canvas per graph", () => {
-  it("keeps the same canvas across ticks and none on other tabs or in the pill", () => {
+describe("C3: one plot canvas and one fixed canvas per graph", () => {
+  it("keeps the same two canvases across ticks, both painted once per tick, and none on other tabs or in the pill", () => {
     card();
-    expect(canvases()).toHaveLength(1);
-    const first = canvases()[0];
-    vi.advanceTimersByTime(PAINT_MS * 3);
-    expect(canvases()).toEqual([first]);
+    expect(canvases()).toHaveLength(2);
+    const [plot, fixed] = canvases();
+    expect(plot?.hasAttribute("data-fixed")).toBe(false);
+    expect(fixed?.hasAttribute("data-fixed")).toBe(true);
+    const painted = [octx.graph.paints.length, octx.graph.fixedPaints.length];
+    for (let tick = 0; tick < 3; tick += 1) {
+      octx.perf.window = { ...octx.perf.window, version: octx.perf.window.version + 1 };
+      vi.advanceTimersByTime(PAINT_MS);
+    }
+    expect(canvases()).toEqual([plot, fixed]);
+    expect([octx.graph.paints.length, octx.graph.fixedPaints.length]).toEqual([
+      (painted[0] ?? 0) + 3,
+      (painted[1] ?? 0) + 3
+    ]);
     setTab(octx, "record");
     expect(canvases()).toHaveLength(0);
     setTab(octx, "frames");
-    expect(canvases()).toHaveLength(1);
+    expect(canvases()).toHaveLength(2);
     openOverlay(octx, { mode: "pill" });
     expect(canvases()).toHaveLength(0);
   });
@@ -166,7 +176,8 @@ describe("the graph", () => {
     click('[data-action="back"]');
     expect(octx.state.record).toBeUndefined();
     expect(octx.state.selected).toBe(4809);
-    expect(canvases()).toHaveLength(1);
+    // The graph again: its plot canvas and its fixed canvas (C3).
+    expect(canvases()).toHaveLength(2);
   });
 
   it("a tap off the spikes selects that frame", () => {
@@ -278,6 +289,22 @@ describe("the card", () => {
     expect(classes()).toBe(0);
   });
 
+  it("the compact header: the fps without its unit, no spikes label, REC as a red dot and its time (named REC)", () => {
+    octx = createOctx({ remember: false });
+    octx.recorder.statusValue = { ...RECORDING, sinceMs: 192_000 };
+    Object.defineProperty(globalThis, "innerWidth", { configurable: true, value: 360 });
+    started(octx);
+    openOverlay(octx);
+    Reflect.deleteProperty(globalThis, "innerWidth");
+    const header = part(octx, '[data-part="header"]');
+    expect(part(octx, '[data-part="header"] [data-part="fps"]').textContent).toBe("54");
+    expect(header.querySelector('[data-part="spikes-label"]')).toBeNull();
+    const rec = part(octx, '[data-part="header"] [data-rec]');
+    expect(rec.textContent).toBe("3m");
+    expect(rec.getAttribute("aria-label")).toBe("REC 3m");
+    expect(header.textContent).not.toContain("REC");
+  });
+
   it("STALE takes the link legend's place in the header; REC stays", () => {
     octx = createOctx({ remember: false });
     octx.recorder.statusValue = RECORDING;
@@ -291,6 +318,31 @@ describe("the card", () => {
     expect(shadowOf(octx).querySelector('[data-part="header"] [data-rec]')).not.toBeNull();
     expect(part(octx, '[data-part="engine"]').dataset.stale !== undefined).toBe(true);
     expect(part(octx, '[data-tab="record"] [data-rec]')).toBeDefined();
+  });
+
+  it("an idle screen reads idle and for how long in the header, the pill and the drawn / loop cell", () => {
+    vi.setSystemTime(100_000);
+    octx = createOctx({ remember: false });
+    octx.perf.secondValue = secondOf({
+      fps: { loop: 2, drawn: 0 },
+      activity: {
+        idle: true,
+        idleSince: 88_000,
+        idleFrames: 92,
+        idleMs: 3066,
+        breaks: 0,
+        p90Ms: 17.6
+      }
+    });
+    started(octx);
+    openOverlay(octx);
+    expect(part(octx, '[data-part="header"] [data-part="fps"]').textContent).toBe("idle12s");
+    expect(part(octx, '[data-counter="fps"] b').textContent).toBe("idle12s");
+    expect(part(octx, '[data-counter="p90"] b').textContent).toBe("17.6ms");
+    click('[data-action="collapse"]');
+    const pill = part(octx, '[data-overlay="pill"]');
+    expect(pill.getAttribute("aria-label")).toBe("idle 12s, 6 spikes, 6 s. Open the overlay");
+    expect(part(octx, '[data-overlay="pill"] [data-part="labels"]').textContent).toBe("12s");
   });
 
   it("collapses to the pill and hides from the header keys", () => {

@@ -5,16 +5,25 @@
  * only when their cached key in the state changed.
  */
 import type { PerfWindowView } from "../protocol";
-import { CAUSE_RANK, EMPTY_BUDGET_MS, rateFps, spikeOrdinal } from "../protocol";
+import {
+  CAUSE_RANK,
+  EMPTY_BUDGET_MS,
+  GAP_BIT,
+  isGpuNoise,
+  REST,
+  rateFps,
+  spikeOrdinal
+} from "../protocol";
 import { cell, rowCentre, rowLeft, rowRight, xOf } from "./geometry";
 import { axisLabel, captionKeyOf, captionOf, flagText, oneDecimal } from "./labels";
-import type { CauseStyle } from "./palette";
+import type { CauseStyle, GraphPalette } from "./palette";
 import { CAUSE_STYLE, GRAPH_COLOURS, GRAPH_FONTS } from "./palette";
-import type { GraphContext2D, GraphState, GraphView } from "./types";
+import { resetGraphText } from "./state";
+import type { GraphContext2D, GraphFonts, GraphLook, GraphState, GraphView } from "./types";
 
 /**
  * The layout of one graph size: tape width, flag band, axis band, spike bar width, flag padding,
- * readout box, caption offset, the rate label's room and the fonts.
+ * readout box, caption offset and the rate label's room (the fonts come with the look).
  */
 type Layout = {
   readonly tape: number;
@@ -26,7 +35,6 @@ type Layout = {
   readonly readoutGap: number;
   readonly captionDy: number;
   readonly rateRoom: number;
-  readonly fonts: (typeof GRAPH_FONTS)["phone" | "wide"];
 };
 
 /** The phone card's graph (273×108). */
@@ -39,8 +47,7 @@ const PHONE: Layout = {
   readout: 17,
   readoutGap: 3,
   captionDy: 7,
-  rateRoom: 18,
-  fonts: GRAPH_FONTS.phone
+  rateRoom: 18
 };
 
 /** The tools strip's graph (about 1000×200). */
@@ -53,8 +60,7 @@ const WIDE: Layout = {
   readout: 22,
   readoutGap: 6,
   captionDy: 9,
-  rateRoom: 20,
-  fonts: GRAPH_FONTS.wide
+  rateRoom: 20
 };
 
 /** The top of the y scale, ms. */
@@ -92,6 +98,21 @@ const DASH_HOLLOW: number[] = [3, 2];
 
 /** The readout of a frame that was not drawn. */
 const SKIP_TEXT = "SKIP";
+
+/** The readout's word for a resting row or a break (spec 03 delta 2026-10-15). */
+const IDLE_TEXT = "IDLE";
+
+/** The readout cache keys of the fixed words. */
+const SKIP_KEY = -1;
+const IDLE_KEY = -2;
+
+/** The faint tick of an awake row's notable gap: its height under the baseline, CSS px. */
+const GAP_TICK_H = 3;
+
+/** A break's double bar: the bars' distance, how far above and below the baseline they reach. */
+const BREAK_BAR_GAP = 3;
+const BREAK_BAR_UP = 3;
+const BREAK_BAR_DOWN = 4;
 
 /** The axis label of the newest frame. */
 const NOW_TEXT = "now";
@@ -212,6 +233,26 @@ const STYLE_OF_CODE = CAUSE_RANK.map(cause => CAUSE_STYLE[cause]);
 /** The flag text of each primary cause code: the legend, "GC? likely" for the hollow one. */
 const FLAG_TEXT_OF_CODE = STYLE_OF_CODE.map(style => flagText(style.legend, style.hollow));
 
+/** The painter's default look: the phone overlay's glass cockpit. */
+const COCKPIT_LOOK: GraphLook = {
+  key: "cockpit",
+  colours: GRAPH_COLOURS,
+  hues: STYLE_OF_CODE.map(style => style.hue),
+  fonts: GRAPH_FONTS
+};
+
+/**
+ * The look of the paint in progress: its colours, cause hues and fonts, and the first row inside
+ * the span (0 unless a moving now hides older rows). Set by `paintGraph` before it draws; one
+ * object for every paint, so nothing is allocated.
+ */
+const look: {
+  colours: GraphPalette;
+  hues: readonly string[];
+  fonts: GraphFonts;
+  firstRow: number;
+} = { colours: GRAPH_COLOURS, hues: COCKPIT_LOOK.hues, fonts: GRAPH_FONTS.wide, firstRow: 0 };
+
 /** The y of each tape label drawn so far in one paint (module scratch, never reallocated). */
 const TAPE_Y = new Float64Array(8);
 
@@ -286,10 +327,9 @@ function caret(
  *
  * @param g - The context.
  * @param state - The painter state.
- * @param layout - The layout.
  */
-function measureLegends(g: GraphContext2D, state: GraphState, layout: Layout): void {
-  g.font = layout.fonts.flag;
+function measureLegends(g: GraphContext2D, state: GraphState): void {
+  g.font = look.fonts.flag;
   // An indexed loop, as everywhere in the painter: no iterator per measure.
   // eslint-disable-next-line unicorn/no-for-loop -- see above
   for (let index = 0; index < FLAG_TEXT_OF_CODE.length; index += 1) {
@@ -306,12 +346,64 @@ function measureLegends(g: GraphContext2D, state: GraphState, layout: Layout): v
  * @param state - The painter state.
  */
 function paintWell(g: GraphContext2D, view: GraphView, state: GraphState): void {
-  g.fillStyle = GRAPH_COLOURS.well;
+  g.fillStyle = look.colours.well;
   g.fillRect(0, 0, view.width, view.height);
   for (let ms = GRID_STEP_MS; ms <= GRID_TOP_MS; ms += GRID_STEP_MS) {
     const y = yOf(state, ms);
-    band(g, GRAPH_COLOURS.grid, state.px0, state.px1 - state.px0, y, y + HAIRLINE);
+    band(g, look.colours.grid, state.px0, state.px1 - state.px0, y, y + HAIRLINE);
   }
+}
+
+/**
+ * A row's rest (`REST`); awake in a window without the column (an agent before the delta).
+ *
+ * @param window - The window.
+ * @param row - The row.
+ * @returns The rest state.
+ */
+function restAt(window: PerfWindowView, row: number): number {
+  return window.rest === undefined ? REST.awake : cell(window.rest, row);
+}
+
+/**
+ * Whether a row rests or is a break: no work to show, no alarm.
+ *
+ * @param rest - The row's rest.
+ * @returns True for a resting row or a break.
+ * @example
+ * ```ts
+ * isQuiet(REST.break); // true
+ * ```
+ */
+function isQuiet(rest: number): boolean {
+  return rest === REST.idle || rest === REST.break;
+}
+
+/**
+ * A row's work, ms: JS plus GPU when the GPU is timed and measured, else JS. A frame's height and
+ * colour come from its work, never from the gap before it.
+ *
+ * @param window - The window.
+ * @param row - The row.
+ * @returns The work, ms.
+ */
+function workOf(window: PerfWindowView, row: number): number {
+  const js = cell(window.jsMs, row);
+  const gpu = cell(window.gpuMs, row);
+  return hasTimedGpu(window, row, gpu) ? js + gpu : js;
+}
+
+/**
+ * Whether a row's GPU time counts in its stack: the page times its GPU, the row has a time, and the
+ * time is no lone outlier (`isGpuNoise`: spec 03 delta item 8, drawn as a faint tick instead).
+ *
+ * @param window - The window.
+ * @param row - The row.
+ * @param gpu - The row's GPU time, ms.
+ * @returns True when the GPU part is stacked.
+ */
+function hasTimedGpu(window: PerfWindowView, row: number, gpu: number): boolean {
+  return window.gpuTimer && Number.isFinite(gpu) && !isGpuNoise(window, row);
 }
 
 /**
@@ -331,52 +423,144 @@ function paintSkipped(
 ): void {
   const centre = rowCentre(state, window, row);
   const holeTop = yOf(state, cell(window.budgetMs, row)) - SKIP_HOLE_OVER;
-  band(g, GRAPH_COLOURS.well, centre - SKIP_HOLE_W / 2, SKIP_HOLE_W, holeTop, state.py1);
+  band(g, look.colours.well, centre - SKIP_HOLE_W / 2, SKIP_HOLE_W, holeTop, state.py1);
   const caretTop = state.py1 + SKIP_CARET_GAP;
-  caret(g, centre, caretTop, caretTop + SKIP_CARET_H, SKIP_CARET_W, GRAPH_COLOURS.amber);
+  caret(g, centre, caretTop, caretTop + SKIP_CARET_H, SKIP_CARET_W, look.colours.amber);
 }
 
 /**
  * Step 2, one drawn row that is not a spike: idle over GPU over JS, stacked by lightness; without a
- * GPU timer or a GPU time, idle over JS.
+ * GPU timer or a GPU time, idle over JS. The idle part reaches the frame time but never past
+ * `ceilingMs` (its budget; a resting row's, one frame of its rate): a wait for vsync or for the
+ * next wake is not drawn as over-budget time. Work over the ceiling is drawn in full.
+ *
+ * @param g - The context.
+ * @param window - The window.
+ * @param state - The painter state.
+ * @param row - The row.
+ * @param ceilingMs - The highest frame time the idle part reaches, ms.
+ */
+function paintStack(
+  g: GraphContext2D,
+  window: PerfWindowView,
+  state: GraphState,
+  row: number,
+  ceilingMs: number
+): void {
+  const left = rowLeft(state, window, row);
+  const width = rowRight(state, window, row) - left + STACK_BLEED;
+  const js = cell(window.jsMs, row);
+  const gpu = cell(window.gpuMs, row);
+  const stacked = hasTimedGpu(window, row, gpu);
+  const work = stacked ? js + gpu : js;
+  const yWork = yOf(state, work);
+  const yJs = yOf(state, js);
+  const top = Math.max(work, Math.min(cell(window.ms, row), ceilingMs));
+  band(g, look.colours.idle, left, width, yOf(state, top), yWork);
+  if (stacked) band(g, look.colours.gpu, left, width, yWork, yJs);
+  band(g, look.colours.js, left, width, yJs, state.py1);
+}
+
+/**
+ * Step 4b, a faint tick under the baseline (no flag, not a spike): an awake row's notable gap with
+ * no work behind it (idle outline), or a lone GPU outlier (spec 03 delta item 8, GPU colour).
+ *
+ * @param g - The context.
+ * @param window - The window.
+ * @param state - The painter state.
+ * @param row - The row.
+ * @param colour - The tick's colour.
+ */
+function paintGapTick(
+  g: GraphContext2D,
+  window: PerfWindowView,
+  state: GraphState,
+  row: number,
+  colour: string
+): void {
+  const x = rowCentre(state, window, row);
+  band(g, colour, x, HAIRLINE, state.py1 + 1, state.py1 + 1 + GAP_TICK_H);
+}
+
+/**
+ * Step 4b, a break (the browser made no frame): the baseline cut across the row and a double bar
+ * at its middle.
  *
  * @param g - The context.
  * @param window - The window.
  * @param state - The painter state.
  * @param row - The row.
  */
-function paintStack(
+function paintBreak(
   g: GraphContext2D,
   window: PerfWindowView,
   state: GraphState,
   row: number
 ): void {
   const left = rowLeft(state, window, row);
-  const width = rowRight(state, window, row) - left + STACK_BLEED;
-  const js = cell(window.jsMs, row);
-  const gpu = cell(window.gpuMs, row);
-  const stacked = window.gpuTimer && Number.isFinite(gpu);
-  const yWork = yOf(state, stacked ? js + gpu : js);
-  const yJs = yOf(state, js);
-  band(g, GRAPH_COLOURS.idle, left, width, yOf(state, cell(window.ms, row)), yWork);
-  if (stacked) band(g, GRAPH_COLOURS.gpu, left, width, yWork, yJs);
-  band(g, GRAPH_COLOURS.js, left, width, yJs, state.py1);
+  const right = rowRight(state, window, row);
+  band(g, look.colours.well, left, right - left, state.py1, state.py1 + HAIRLINE);
+  const x = Math.round((left + right) / 2) - 1;
+  const top = state.py1 - BREAK_BAR_UP;
+  const bottom = state.py1 + BREAK_BAR_DOWN;
+  band(g, look.colours.ink3, x, HAIRLINE, top, bottom);
+  band(g, look.colours.ink3, x + BREAK_BAR_GAP, HAIRLINE, top, bottom);
 }
 
 /**
- * Steps 2–4: the stacks of the drawn plain rows, the holes and carets of the skipped ones, and the
- * baseline.
+ * Step 2–3, one row by how it paced: a resting row as one quiet frame of its rate, an awake row
+ * that was not drawn as a hole with a caret, a plain row as its stack (its notable gap as a faint
+ * tick); a break is drawn after the baseline, a spike by the flags.
+ *
+ * @param g - The context.
+ * @param window - The window.
+ * @param state - The painter state.
+ * @param row - The row.
+ * @param rest - Its rest.
+ */
+function paintRow(
+  g: GraphContext2D,
+  window: PerfWindowView,
+  state: GraphState,
+  row: number,
+  rest: number
+): void {
+  if (rest === REST.idle) {
+    paintStack(g, window, state, row, cell(window.rateMs, row));
+    return;
+  }
+  if (window.drawn[row] !== 1) {
+    paintSkipped(g, window, state, row);
+    return;
+  }
+  if (cell(window.cause, row) !== 0) return;
+  paintStack(g, window, state, row, cell(window.budgetMs, row));
+  if (rest === REST.awake && (cell(window.causes, row) & GAP_BIT) !== 0) {
+    paintGapTick(g, window, state, row, look.colours.idleOutline);
+  }
+  if (isGpuNoise(window, row)) paintGapTick(g, window, state, row, look.colours.gpu);
+}
+
+/**
+ * Steps 2–4: the rows (stacks, quiet resting frames, holes and carets, gap ticks), the baseline,
+ * then the breaks across it.
  *
  * @param g - The context.
  * @param window - The window.
  * @param state - The painter state.
  */
 function paintRows(g: GraphContext2D, window: PerfWindowView, state: GraphState): void {
-  for (let row = 0; row < window.count; row += 1) {
-    if (window.drawn[row] !== 1) paintSkipped(g, window, state, row);
-    else if (cell(window.cause, row) === 0) paintStack(g, window, state, row);
+  let breaks = 0;
+  for (let row = look.firstRow; row < window.count; row += 1) {
+    const rest = restAt(window, row);
+    if (rest === REST.break) breaks += 1;
+    else paintRow(g, window, state, row, rest);
   }
-  band(g, GRAPH_COLOURS.baseline, state.px0, state.px1 - state.px0, state.py1, state.py1 + 1);
+  band(g, look.colours.baseline, state.px0, state.px1 - state.px0, state.py1, state.py1 + 1);
+  if (breaks === 0) return;
+  for (let row = look.firstRow; row < window.count; row += 1) {
+    if (restAt(window, row) === REST.break) paintBreak(g, window, state, row);
+  }
 }
 
 /**
@@ -395,15 +579,15 @@ function paintBudget(
   share: number
 ): void {
   if (window.count === 0) return;
-  g.strokeStyle = GRAPH_COLOURS.magenta;
+  g.strokeStyle = look.colours.magenta;
   const full = share === FULL_BUDGET;
   g.lineWidth = full ? BUDGET_LINE : HAIRLINE;
   g.setLineDash(full ? DASH_NONE : DASH_HALF);
   g.beginPath();
-  for (let row = 0; row < window.count; row += 1) {
+  for (let row = look.firstRow; row < window.count; row += 1) {
     const y = yOf(state, cell(window.budgetMs, row) * share);
     const left = rowLeft(state, window, row);
-    if (row === 0) g.moveTo(left, y);
+    if (row === look.firstRow) g.moveTo(left, y);
     else g.lineTo(left, y);
     g.lineTo(rowRight(state, window, row), y);
   }
@@ -449,7 +633,7 @@ function isLabelledRate(fps: number): boolean {
  * @param x - The switch's x.
  */
 function paintRateMark(g: GraphContext2D, state: GraphState, x: number): void {
-  g.strokeStyle = GRAPH_COLOURS.magenta;
+  g.strokeStyle = look.colours.magenta;
   g.lineWidth = HAIRLINE;
   g.setLineDash(DASH_FINE);
   g.beginPath();
@@ -474,7 +658,7 @@ function paintRateSwitches(
   state: GraphState,
   layout: Layout
 ): void {
-  for (let row = 1; row < window.count; row += 1) {
+  for (let row = Math.max(1, look.firstRow); row < window.count; row += 1) {
     const rate = cell(window.rateMs, row);
     if (Math.abs(rate - cell(window.rateMs, row - 1)) <= RATE_EPSILON) continue;
     const x = xOf(state, cell(window.t, row));
@@ -482,8 +666,8 @@ function paintRateSwitches(
 
     // The label: right of the line, or left of it when it would cross the tape.
     const flips = x + RATE_LABEL_GAP + layout.rateRoom > state.px1;
-    g.font = layout.fonts.rate;
-    g.fillStyle = GRAPH_COLOURS.magenta;
+    g.font = look.fonts.rate;
+    g.fillStyle = look.colours.magenta;
     g.textAlign = flips ? "right" : "left";
     g.textBaseline = "alphabetic";
     const fps = rateFps(rate);
@@ -506,8 +690,8 @@ function focusRow(window: PerfWindowView, view: GraphView): number {
 }
 
 /**
- * Step 7, the bar of one spike: hollow for GC?, else filled with a tick at the JS height when the
- * GPU is timed; a red caret at the top of the plot for a frame over the scale.
+ * Step 7, the bar of one spike, as tall as its work: hollow for GC?, else filled with a tick at the
+ * JS height when the GPU is timed; a red caret at the top of the plot for work over the scale.
  *
  * @param g - The context.
  * @param window - The window.
@@ -525,23 +709,24 @@ function paintSpikeBar(
   code: number
 ): void {
   const style = STYLE_OF_CODE[code - 1] ?? CAUSE_STYLE.gap;
+  const hue = look.hues[code - 1] ?? style.hue;
   const left = rowCentre(state, window, row) - layout.bar / 2;
-  const ms = cell(window.ms, row);
-  const top = yOf(state, ms);
+  const work = workOf(window, row);
+  const top = yOf(state, work);
   if (style.hollow) {
-    band(g, GRAPH_COLOURS.well, left, layout.bar, top, state.py1);
-    g.strokeStyle = style.hue;
+    band(g, look.colours.well, left, layout.bar, top, state.py1);
+    g.strokeStyle = hue;
     g.lineWidth = HAIRLINE;
     g.setLineDash(DASH_NONE);
     g.strokeRect(left, top, layout.bar, state.py1 - top);
   } else {
-    band(g, style.hue, left, layout.bar, top, state.py1);
+    band(g, hue, left, layout.bar, top, state.py1);
     const yJs = yOf(state, cell(window.jsMs, row));
-    if (window.gpuTimer) band(g, GRAPH_COLOURS.well, left, layout.bar, yJs, yJs + HAIRLINE);
+    if (window.gpuTimer) band(g, look.colours.well, left, layout.bar, yJs, yJs + HAIRLINE);
   }
-  if (ms > SCALE_MS) {
+  if (work > SCALE_MS) {
     const centre = left + layout.bar / 2;
-    caret(g, centre, state.py0, state.py0 + OVERFLOW_CARET_H, OVERFLOW_CARET_W, GRAPH_COLOURS.red);
+    caret(g, centre, state.py0, state.py0 + OVERFLOW_CARET_H, OVERFLOW_CARET_W, look.colours.red);
   }
 }
 
@@ -551,6 +736,7 @@ function paintSpikeBar(
  *
  * @param g - The context.
  * @param style - The cause's style.
+ * @param hue - The cause's hue in the paint's look.
  * @param left - The box's left, CSS px.
  * @param width - Its width.
  * @param height - Its height.
@@ -559,15 +745,16 @@ function paintSpikeBar(
 function paintFlagBox(
   g: GraphContext2D,
   style: CauseStyle,
+  hue: string,
   left: number,
   width: number,
   height: number,
   selected: boolean
 ): void {
-  const selectedGround = style.hollow ? GRAPH_COLOURS.flagSelectedHollow : style.hue;
-  g.fillStyle = selected ? selectedGround : GRAPH_COLOURS.flagGround;
+  const selectedGround = style.hollow ? look.colours.flagSelectedHollow : hue;
+  g.fillStyle = selected ? selectedGround : look.colours.flagGround;
   g.fillRect(left, FLAG_TOP, width, height);
-  g.strokeStyle = style.hue;
+  g.strokeStyle = hue;
   g.lineWidth = style.hollow && selected ? FLAG_BORDER_SELECTED_HOLLOW : FLAG_BORDER;
   g.setLineDash(style.hollow ? DASH_HOLLOW : DASH_NONE);
   g.strokeRect(left, FLAG_TOP, width, height);
@@ -577,19 +764,19 @@ function paintFlagBox(
  * Step 7, a flag's leader: a dashed hairline in the cause colour from the box down to the bar's top.
  *
  * @param g - The context.
- * @param style - The cause's style.
+ * @param hue - The cause's hue in the paint's look.
  * @param x - The bar's centre.
  * @param from - The box's bottom.
  * @param to - The bar's top.
  */
 function paintFlagLeader(
   g: GraphContext2D,
-  style: CauseStyle,
+  hue: string,
   x: number,
   from: number,
   to: number
 ): void {
-  g.strokeStyle = style.hue;
+  g.strokeStyle = hue;
   g.lineWidth = HAIRLINE;
   g.setLineDash(DASH_FINE);
   g.beginPath();
@@ -637,16 +824,17 @@ function paintFlag(
   selected: boolean
 ): void {
   const style = STYLE_OF_CODE[code - 1] ?? CAUSE_STYLE.gap;
+  const hue = look.hues[code - 1] ?? style.hue;
   const centre = rowCentre(state, window, row);
   const width = cell(state.legendWidth, code - 1) + layout.flagPad;
   const height = layout.flagBand - FLAG_INSET;
   const left = Math.min(Math.max(centre - width / 2, state.px0), state.px1 - width);
-  paintFlagBox(g, style, left, width, height, selected);
-  paintFlagLeader(g, style, centre, FLAG_TOP + height, yOf(state, cell(window.ms, row)));
+  paintFlagBox(g, style, hue, left, width, height, selected);
+  paintFlagLeader(g, hue, centre, FLAG_TOP + height, yOf(state, workOf(window, row)));
 
   // The legend, on the cause colour's ground when selected, else in the cause colour.
-  g.font = layout.fonts.flag;
-  g.fillStyle = selected && !style.hollow ? GRAPH_COLOURS.flagGround : style.hue;
+  g.font = look.fonts.flag;
+  g.fillStyle = selected && !style.hollow ? look.colours.flagGround : hue;
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.fillText(FLAG_TEXT_OF_CODE[code - 1] ?? "", left + width / 2, FLAG_TOP + height / 2);
@@ -672,13 +860,13 @@ function paintSpikes(
 ): void {
   const focus = focusRow(window, view);
   if (focus >= 0) {
-    band(g, GRAPH_COLOURS.ink, rowCentre(state, window, focus), 1, state.py0, state.py1);
+    band(g, look.colours.ink, rowCentre(state, window, focus), 1, state.py0, state.py1);
   }
   state.flagCount = 0;
   for (let index = 0; index < window.spikeCount; index += 1) {
     const row = cell(window.spikes, index);
     const code = cell(window.cause, row);
-    if (code < 1 || code > STYLE_OF_CODE.length) continue;
+    if (code < 1 || code > STYLE_OF_CODE.length || row < look.firstRow) continue;
     paintSpikeBar(g, window, state, layout, row, code);
     paintFlag(g, window, state, layout, row, code, row === view.selected);
   }
@@ -702,11 +890,11 @@ function bug(g: GraphContext2D, state: GraphState, y: number, solid: boolean): v
   g.lineTo(px1 + BUG_TIP, y);
   g.closePath();
   if (solid) {
-    g.fillStyle = GRAPH_COLOURS.magenta;
+    g.fillStyle = look.colours.magenta;
     g.fill();
     return;
   }
-  g.strokeStyle = GRAPH_COLOURS.magenta;
+  g.strokeStyle = look.colours.magenta;
   g.lineWidth = BUG_OUTLINE;
   g.setLineDash(DASH_NONE);
   g.stroke();
@@ -749,12 +937,12 @@ function tapeLabel(
  */
 function paintTapeTicks(g: GraphContext2D, view: GraphView, state: GraphState): void {
   const { px1 } = state;
-  band(g, GRAPH_COLOURS.tape, px1, view.width - px1, 0, view.height);
-  band(g, GRAPH_COLOURS.tapeInk, px1, HAIRLINE, state.py0, state.py1);
+  band(g, look.colours.tape, px1, view.width - px1, 0, view.height);
+  band(g, look.colours.tapeInk, px1, HAIRLINE, state.py0, state.py1);
   for (let ms = 0; ms <= SCALE_MS; ms += TICK_STEP_MS) {
     const y = yOf(state, ms);
     const length = ms % MAJOR_TICK_MS === 0 ? MAJOR_TICK : MINOR_TICK;
-    band(g, GRAPH_COLOURS.tapeInk, px1, length, y, y + HAIRLINE);
+    band(g, look.colours.tapeInk, px1, length, y, y + HAIRLINE);
   }
 }
 
@@ -794,14 +982,12 @@ function isMarkHidden(mark: TapeMark, showHalf: boolean, wide: boolean): boolean
  * @param g - The context.
  * @param view - The view.
  * @param state - The painter state.
- * @param layout - The layout.
  * @param budget - The newest budget, ms.
  */
 function paintTapeLabels(
   g: GraphContext2D,
   view: GraphView,
   state: GraphState,
-  layout: Layout,
   budget: number
 ): void {
   if (budget !== state.tapeBudgetMs) {
@@ -811,8 +997,8 @@ function paintTapeLabels(
   }
 
   const showHalf = state.py1 - state.py0 >= SHORT_PLOT;
-  const magenta = GRAPH_COLOURS.magenta;
-  g.font = layout.fonts.tape;
+  const magenta = look.colours.magenta;
+  g.font = look.fonts.tape;
   g.textAlign = "right";
   g.textBaseline = "middle";
   let drawn = tapeLabel(g, view, state.tapeBudgetText, magenta, yOf(state, budget), 0);
@@ -825,7 +1011,7 @@ function paintTapeLabels(
   for (let index = 0; index < TAPE_MARKS.length; index += 1) {
     const mark = TAPE_MARKS[index];
     if (mark === undefined || isMarkHidden(mark, showHalf, view.wide)) continue;
-    drawn = tapeLabel(g, view, mark.text, GRAPH_COLOURS.tapeInk, yOf(state, mark.ms), drawn);
+    drawn = tapeLabel(g, view, mark.text, look.colours.tapeInk, yOf(state, mark.ms), drawn);
   }
 }
 
@@ -848,38 +1034,80 @@ function paintTapeBugs(g: GraphContext2D, state: GraphState, budget: number): vo
  * @param window - The window.
  * @param view - The view.
  * @param state - The painter state.
- * @param layout - The layout.
  */
 function paintTape(
   g: GraphContext2D,
   window: PerfWindowView,
   view: GraphView,
-  state: GraphState,
-  layout: Layout
+  state: GraphState
+): void {
+  paintTapeTicks(g, view, state);
+  paintTapeMarks(g, window, view, state);
+}
+
+/**
+ * Step 8 without the tape's body: the labels and the bugs of the newest budget (the body is in a
+ * static base layer).
+ *
+ * @param g - The context.
+ * @param window - The window.
+ * @param view - The view.
+ * @param state - The painter state.
+ */
+function paintTapeMarks(
+  g: GraphContext2D,
+  window: PerfWindowView,
+  view: GraphView,
+  state: GraphState
 ): void {
   const budget = tapeBudgetOf(window);
-  paintTapeTicks(g, view, state);
-  paintTapeLabels(g, view, state, layout, budget);
+  paintTapeLabels(g, view, state, budget);
   paintTapeBugs(g, state, budget);
 }
 
 /**
- * The readout colour of a row: amber for a frame not drawn, red above twice its own budget, amber
- * above it, cyan otherwise.
+ * The readout colour of a row: quiet for a resting row or a break, amber for a frame not drawn, then
+ * by its work against its own budget: red above twice it, amber above it, cyan otherwise.
  *
- * @param skipped - The frame was not drawn.
- * @param ms - Its frame time.
+ * @param key - The readout's key: `IDLE_KEY`, `SKIP_KEY` or the frame time.
+ * @param work - Its work, ms.
  * @param budget - Its own budget.
  * @returns The colour.
  * @example
  * ```ts
- * readoutColour(false, 34, 16.7); // "#FF4545": over twice the budget
+ * readoutColour(41.3, 34, 16.7); // "#FF4545": work over twice the budget
  * ```
  */
-function readoutColour(skipped: boolean, ms: number, budget: number): string {
-  if (skipped) return GRAPH_COLOURS.amber;
-  if (ms > 2 * budget) return GRAPH_COLOURS.red;
-  return ms > budget ? GRAPH_COLOURS.amber : GRAPH_COLOURS.cyan;
+function readoutColour(key: number, work: number, budget: number): string {
+  if (key === IDLE_KEY) return look.colours.ink2;
+  if (key === SKIP_KEY) return look.colours.amber;
+  if (work > 2 * budget) return look.colours.red;
+  return work > budget ? look.colours.amber : look.colours.cyan;
+}
+
+/**
+ * The readout's key of a row: `IDLE_KEY` for a resting row or a break, `SKIP_KEY` for an awake frame
+ * not drawn, else its frame time in tenths.
+ *
+ * @param window - The window.
+ * @param row - The row.
+ * @returns The key.
+ */
+function readoutKey(window: PerfWindowView, row: number): number {
+  if (isQuiet(restAt(window, row))) return IDLE_KEY;
+  if (window.drawn[row] !== 1) return SKIP_KEY;
+  return Math.round(cell(window.ms, row) * TENTHS) / TENTHS;
+}
+
+/**
+ * The readout's text of a key.
+ *
+ * @param key - The key.
+ * @returns IDLE, SKIP or the frame time with one decimal.
+ */
+function readoutTextOf(key: number): string {
+  if (key === IDLE_KEY) return IDLE_TEXT;
+  return key === SKIP_KEY ? SKIP_TEXT : oneDecimal(key);
 }
 
 /**
@@ -892,7 +1120,7 @@ function readoutColour(skipped: boolean, ms: number, budget: number): string {
  * @param half - Half its height.
  */
 function readoutBox(g: GraphContext2D, left: number, right: number, y: number, half: number): void {
-  g.fillStyle = GRAPH_COLOURS.readout;
+  g.fillStyle = look.colours.readout;
   g.beginPath();
   g.moveTo(left - READOUT_POINTER, y);
   g.lineTo(left, y - half);
@@ -901,15 +1129,16 @@ function readoutBox(g: GraphContext2D, left: number, right: number, y: number, h
   g.lineTo(left, y + half);
   g.closePath();
   g.fill();
-  g.strokeStyle = GRAPH_COLOURS.ink;
+  g.strokeStyle = look.colours.ink;
   g.lineWidth = HAIRLINE;
   g.setLineDash(DASH_NONE);
   g.stroke();
 }
 
 /**
- * Step 9: the readout box riding the tape at the focus row's frame time: `SKIP` for a frame not
- * drawn, else the ms with one decimal. The text is rebuilt only when the value changed.
+ * Step 9: the readout box riding the tape at the focus row's frame time: `IDLE` for a resting row
+ * or a break, `SKIP` for an awake frame not drawn, else the ms with one decimal, coloured by its
+ * work. The text is rebuilt only when the value changed.
  *
  * @param g - The context.
  * @param window - The window.
@@ -926,13 +1155,12 @@ function paintReadout(
   layout: Layout,
   row: number
 ): void {
-  // The text: SKIP, or the frame time in tenths, rebuilt only when it changed.
+  // The text: IDLE, SKIP, or the frame time in tenths, rebuilt only when it changed.
   const ms = cell(window.ms, row);
-  const skipped = window.drawn[row] !== 1;
-  const key = skipped ? -1 : Math.round(ms * TENTHS) / TENTHS;
+  const key = readoutKey(window, row);
   if (key !== state.readoutMs) {
     state.readoutMs = key;
-    state.readoutText = skipped ? SKIP_TEXT : oneDecimal(key);
+    state.readoutText = readoutTextOf(key);
   }
 
   // The box: on the tape at the frame time, kept inside the plot.
@@ -942,11 +1170,11 @@ function paintReadout(
   const right = view.width - 1;
   readoutBox(g, left, right, y, half);
 
-  // The value, coloured by the row's own budget.
-  g.font = layout.fonts.readout;
+  // The value, coloured by the row's work against its own budget.
+  g.font = look.fonts.readout;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillStyle = readoutColour(skipped, ms, cell(window.budgetMs, row));
+  g.fillStyle = readoutColour(key, workOf(window, row), cell(window.budgetMs, row));
   g.fillText(state.readoutText, (left + right) / 2, y);
 }
 
@@ -956,6 +1184,7 @@ function paintReadout(
  *
  * @param g - The context.
  * @param window - The window.
+ * @param view - The view (its lead moves the caption right).
  * @param state - The painter state.
  * @param layout - The layout.
  * @param row - The focus row.
@@ -963,6 +1192,7 @@ function paintReadout(
 function paintCaption(
   g: GraphContext2D,
   window: PerfWindowView,
+  view: GraphView,
   state: GraphState,
   layout: Layout,
   row: number
@@ -981,25 +1211,28 @@ function paintCaption(
     state.captionKey = captionKeyOf(frame, ordinal, count);
     state.captionText = captionOf(frame, ordinal, count);
   }
-  g.font = layout.fonts.tape;
-  g.fillStyle = GRAPH_COLOURS.ink2;
+  g.font = look.fonts.tape;
+  g.fillStyle = look.colours.ink2;
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
-  g.fillText(state.captionText, state.px0 + CAPTION_INSET, state.py0 + layout.captionDy);
+  const left = state.px0 + (view.leadPx ?? 0);
+  g.fillText(state.captionText, left + CAPTION_INSET, state.py0 + layout.captionDy);
 }
 
 /**
- * Step 11: the time axis — on the phone the oldest second at the left and `now` at the right, on the
- * wide graph one label a second (at most 60). Labels are rebuilt only when the window length changed.
+ * Step 11: the time axis — on the phone the oldest second at the left, on the wide graph one label a
+ * second (at most 60); `now` is `paintNow`. Labels are rebuilt only when the window length changed.
  *
  * @param g - The context.
  * @param view - The view.
  * @param state - The painter state.
- * @param layout - The layout.
  */
-function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, layout: Layout): void {
-  // The labels, one a second, rebuilt only for a new window length.
-  const seconds = Math.min(Math.max(1, Math.round(state.spanMs / SECOND_MS)), MAX_AXIS_SECONDS);
+function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState): void {
+  // The labels, one a second, rebuilt only for a new window length (the lead's time left out).
+  const lead = view.leadPx ?? 0;
+  const pxPerMs = (state.px1 - state.px0) / state.spanMs;
+  const visibleMs = state.spanMs - lead / pxPerMs;
+  const seconds = Math.min(Math.max(1, Math.round(visibleMs / SECOND_MS)), MAX_AXIS_SECONDS);
   if (seconds * SECOND_MS !== state.axisWindowMs) {
     state.axisWindowMs = seconds * SECOND_MS;
     state.axisText.length = 0;
@@ -1009,24 +1242,37 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, layout
   // The oldest second at the left edge.
   const y = view.height - BASELINE_INSET;
   const { px0, px1 } = state;
-  g.font = layout.fonts.axis;
-  g.fillStyle = GRAPH_COLOURS.ink3;
+  g.font = look.fonts.axis;
+  g.fillStyle = look.colours.ink3;
   g.textBaseline = "alphabetic";
   g.textAlign = "left";
-  g.fillText(state.axisText[0] ?? "", px0 + AXIS_INSET, y);
+  g.fillText(state.axisText[0] ?? "", px0 + lead + AXIS_INSET, y);
 
   // The wide graph: every other second, centred on its time.
   if (view.wide) {
     g.textAlign = "center";
     for (let second = seconds - 1; second > 0; second -= 1) {
-      const x = px1 - ((px1 - px0) * second) / seconds;
+      const x =
+        lead === 0 ? px1 - ((px1 - px0) * second) / seconds : px1 - second * SECOND_MS * pxPerMs;
       g.fillText(state.axisText[seconds - second] ?? "", x, y);
     }
   }
+}
 
-  // `now` at the right edge.
+/**
+ * Step 11, the axis's `now` at the plot's right edge: it marks a place, not a time, so a fixed layer
+ * draws it.
+ *
+ * @param g - The context.
+ * @param view - The view.
+ * @param state - The painter state.
+ */
+function paintNow(g: GraphContext2D, view: GraphView, state: GraphState): void {
+  g.font = look.fonts.axis;
+  g.fillStyle = look.colours.ink3;
+  g.textBaseline = "alphabetic";
   g.textAlign = "right";
-  g.fillText(NOW_TEXT, px1 - AXIS_INSET, y);
+  g.fillText(NOW_TEXT, state.px1 - AXIS_INSET, view.height - BASELINE_INSET);
 }
 
 /**
@@ -1051,12 +1297,12 @@ function legendItem(
   g.fillRect(x, y - SWATCH, SWATCH, SWATCH);
   if (outlined) {
     const inner = SWATCH - 2 * SWATCH_OUTLINE_INSET;
-    g.strokeStyle = GRAPH_COLOURS.idleOutline;
+    g.strokeStyle = look.colours.idleOutline;
     g.lineWidth = HAIRLINE;
     g.setLineDash(DASH_NONE);
     g.strokeRect(x + SWATCH_OUTLINE_INSET, y - SWATCH + SWATCH_OUTLINE_INSET, inner, inner);
   }
-  g.fillStyle = GRAPH_COLOURS.ink2;
+  g.fillStyle = look.colours.ink2;
   g.fillText(word, x + SWATCH + SWATCH_GAP, y);
 }
 
@@ -1067,40 +1313,176 @@ function legendItem(
  * @param window - The window.
  * @param view - The view.
  * @param state - The painter state.
- * @param layout - The layout.
  */
 function paintStackLegend(
   g: GraphContext2D,
   window: PerfWindowView,
   view: GraphView,
-  state: GraphState,
-  layout: Layout
+  state: GraphState
 ): void {
   const gpu = window.gpuTimer;
   const room = LEGEND_ROOM_JS + LEGEND_ROOM_IDLE + (gpu ? LEGEND_ROOM_GPU : 0);
   const y = view.height - BASELINE_INSET;
-  let x = (state.px0 + state.px1) / 2 - room / 2;
-  g.font = layout.fonts.axis;
+  let x = (state.px0 + (view.leadPx ?? 0) + state.px1) / 2 - room / 2;
+  g.font = look.fonts.axis;
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
-  legendItem(g, x, y, GRAPH_COLOURS.js, LEGEND_JS, false);
+  legendItem(g, x, y, look.colours.js, LEGEND_JS, false);
   x += LEGEND_ROOM_JS;
   if (gpu) {
-    legendItem(g, x, y, GRAPH_COLOURS.gpu, LEGEND_GPU, false);
+    legendItem(g, x, y, look.colours.gpu, LEGEND_GPU, false);
     x += LEGEND_ROOM_GPU;
   }
-  legendItem(g, x, y, GRAPH_COLOURS.idle, LEGEND_IDLE, true);
+  legendItem(g, x, y, look.colours.idle, LEGEND_IDLE, true);
 }
 
 /**
- * Paints the whole frame graph in one pass and records the flag boxes and the layout in `state`.
- * The caller owns the canvas: it sizes the backing store and sets the dpr transform first; the
- * painter works in CSS px. Allocates nothing per paint; label strings are built only when their
- * cached key changed and the legends are measured only while `state.measured` is false.
+ * The time a window's plot spans, ms (at least 1).
+ *
+ * @param window - The window.
+ * @returns The span.
+ */
+function spanOf(window: PerfWindowView): number {
+  return Math.max(MIN_SPAN_MS, window.endMs - window.startMs);
+}
+
+/**
+ * The plot's width on a canvas of a visible width: the canvas less the plot's left edge and the
+ * tape.
+ *
+ * @param width - The visible width, CSS px.
+ * @param layout - The layout.
+ * @returns At least 1 px.
+ */
+function plotWidth(width: number, layout: Layout): number {
+  return Math.max(1, width - layout.tape - PLOT_LEFT);
+}
+
+/**
+ * The CSS px a time covers on the time axis of a paint of this window at this visible width (no
+ * lead): the slide distance of one tick. Pure, no allocation.
+ *
+ * @param window - The window to paint.
+ * @param width - The visible width of the canvas, CSS px.
+ * @param wide - The tools strip's layout.
+ * @param ms - The time.
+ * @returns CSS px.
+ * @example
+ * ```ts
+ * msToPx(window, 273, false, 250); // 9.9 for a 6 s window on the phone card
+ * ```
+ */
+export function msToPx(window: PerfWindowView, width: number, wide: boolean, ms: number): number {
+  return (ms * plotWidth(width, wide ? WIDE : PHONE)) / spanOf(window);
+}
+
+/**
+ * Lays out a paint in `state`: the plot box and the time axis, kept for spikeAt / rowAt. A lead
+ * keeps the time scale of the visible width and reaches further back by the time it covers.
+ *
+ * @param window - The window.
+ * @param view - The view.
+ * @param state - The painter state.
+ * @param layout - The layout.
+ */
+function layOut(window: PerfWindowView, view: GraphView, state: GraphState, layout: Layout): void {
+  const lead = view.leadPx ?? 0;
+  const span = spanOf(window);
+  const leadMs = lead === 0 ? 0 : (lead * span) / plotWidth(view.width - lead, layout);
+  const now = view.nowMs;
+  state.px0 = PLOT_LEFT;
+  state.px1 = view.width - layout.tape;
+  state.py0 = layout.flagBand + PLOT_TOP_GAP;
+  state.py1 = view.height - layout.axis;
+  state.flagBand = layout.flagBand;
+  state.startMs = now === undefined ? window.startMs - leadMs : now - span - leadMs;
+  state.spanMs = span + leadMs;
+  // Under a moving now the newest row ends at its own end; the rest of the plot is still empty.
+  state.edgeX = now === undefined ? state.px1 : Math.min(state.px1, xOf(state, window.endMs));
+}
+
+/**
+ * The first row inside the plot's span: the newest row starting at or before its left edge (rows
+ * older than it are off the plot under a moving now).
+ *
+ * @param window - The window.
+ * @param state - The painter state holding the paint's time origin.
+ * @returns The row; 0 for an empty window.
+ */
+function firstVisibleRow(window: PerfWindowView, state: GraphState): number {
+  let low = 0;
+  let high = window.count - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >> 1;
+    if (cell(window.t, middle) <= state.startMs) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+/**
+ * Sets the look of this paint: its colours, cause hues and the fonts of its size; another look
+ * resets the state's text cache (the legends are measured again in its fonts).
+ *
+ * @param state - The painter state.
+ * @param lk - The look of this paint.
+ * @param wide - The tools strip's size.
+ */
+function useLook(state: GraphState, lk: GraphLook, wide: boolean): void {
+  if (state.lookKey !== lk.key) {
+    resetGraphText(state);
+    state.lookKey = lk.key;
+  }
+  look.colours = lk.colours;
+  look.hues = lk.hues;
+  look.fonts = wide ? lk.fonts.wide : lk.fonts.phone;
+}
+
+/**
+ * The fixed layer: what marks a place rather than a time — the tape with its readout, the caption,
+ * `now` and the stack legend — over a transparent ground.
+ *
+ * @param g - The context.
+ * @param window - The window.
+ * @param view - The view.
+ * @param state - The painter state.
+ * @param layout - The layout.
+ * @param focus - The focus row (−1 for none).
+ */
+function paintFixed(
+  g: GraphContext2D,
+  window: PerfWindowView,
+  view: GraphView,
+  state: GraphState,
+  layout: Layout,
+  focus: number
+): void {
+  paintTape(g, window, view, state);
+  if (focus >= 0) {
+    paintReadout(g, window, view, state, layout, focus);
+    paintCaption(g, window, view, state, layout, focus);
+  }
+  paintNow(g, view, state);
+  if (!view.wide) paintStackLegend(g, window, view, state);
+}
+
+/**
+ * Paints the frame graph in one pass and records the flag boxes and the layout in `state`: the
+ * whole graph, or one layer of it (`view.layer`): the plot of a canvas that slides (what is tied to
+ * time: the rows, the budget lines, the flags and the axis's seconds), or what stays of a canvas
+ * laid over it that does not (the tape and its readout, the caption, `now` and the stack legend, on
+ * a transparent ground); or, for the tools page's interpolated drawing, its static `base` (the well,
+ * the grid, the tape's body) and the `over` layer painted each frame on a blit of it. `view.look`
+ * picks the cockpit's or the editor's light or dark colours, cause hues and fonts; `view.nowMs`
+ * moves the time axis's right edge past the newest row (only the rows inside the span are drawn).
+ * The caller owns the canvas: it sizes the backing store and sets the dpr transform first (and
+ * clears a fixed layer's canvas); the painter works in CSS px. Allocates nothing per paint; label
+ * strings are built only when their cached key changed and the legends are measured only while
+ * `state.measured` is false.
  *
  * @param g - The 2D context.
  * @param window - The window (perf's, inside `readWindow`, or the tools page's own).
- * @param view - Size, layout and the selected row.
+ * @param view - Size, layout, the selected row and the layer.
  * @param state - The painter state of this canvas.
  */
 export function paintGraph(
@@ -1109,30 +1491,41 @@ export function paintGraph(
   view: GraphView,
   state: GraphState
 ): void {
-  // Layout: the plot box and the time axis of this paint, kept for spikeAt / rowAt.
   const layout = view.wide ? WIDE : PHONE;
-  state.px0 = PLOT_LEFT;
-  state.px1 = view.width - layout.tape;
-  state.py0 = layout.flagBand + PLOT_TOP_GAP;
-  state.py1 = view.height - layout.axis;
-  state.flagBand = layout.flagBand;
-  state.startMs = window.startMs;
-  state.spanMs = Math.max(MIN_SPAN_MS, window.endMs - window.startMs);
-  if (!state.measured) measureLegends(g, state, layout);
+  const layer = view.layer ?? "all";
+  const focus = focusRow(window, view);
+  useLook(state, view.look ?? COCKPIT_LOOK, view.wide);
+  layOut(window, view, state, layout);
+  look.firstRow = view.nowMs === undefined ? 0 : firstVisibleRow(window, state);
+  if (layer === "base") {
+    paintWell(g, view, state);
+    paintTapeTicks(g, view, state);
+    return;
+  }
+  if (layer === "fixed") {
+    paintFixed(g, window, view, state, layout, focus);
+    return;
+  }
 
-  // Paint layers, back to front (spec 03 "What it paints", steps 1–12).
-  paintWell(g, view, state);
+  // Paint layers, back to front (spec 03 "What it paints", steps 1–12); the plot layer leaves out
+  // the fixed layer's steps, the over layer the base layer's.
+  const all = layer === "all";
+  const over = layer === "over";
+  if (!state.measured) measureLegends(g, state);
+  if (!over) paintWell(g, view, state);
   paintRows(g, window, state);
   paintBudget(g, window, state, FULL_BUDGET);
   paintBudget(g, window, state, HALF_BUDGET);
   paintRateSwitches(g, window, state, layout);
   paintSpikes(g, window, view, state, layout);
-  paintTape(g, window, view, state, layout);
-  const focus = focusRow(window, view);
-  if (focus >= 0) {
+  if (all) paintTape(g, window, view, state);
+  if (over) paintTapeMarks(g, window, view, state);
+  if ((all || over) && focus >= 0) {
     paintReadout(g, window, view, state, layout, focus);
-    paintCaption(g, window, state, layout, focus);
+    paintCaption(g, window, view, state, layout, focus);
   }
-  paintAxis(g, view, state, layout);
-  if (!view.wide) paintStackLegend(g, window, view, state, layout);
+  paintAxis(g, view, state);
+  if (!all && !over) return;
+  paintNow(g, view, state);
+  if (!view.wide) paintStackLegend(g, window, view, state);
 }

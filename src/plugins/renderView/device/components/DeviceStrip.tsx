@@ -3,7 +3,7 @@
  * bar ("Devices · N connected · Performance", "Browser · …" on a browser session), the device
  * row, and the main grid — on the left the headline of the last second, the wide frame graph
  * with prev / next, More (open by default) and the legend row; on the right the spike record
- * side panel. One dark cockpit theme in both tools themes (its tokens live on the strip's scope).
+ * side panel. An editor card in the editor's light or dark theme (spec 09 Delta 2026-10-15).
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../../link";

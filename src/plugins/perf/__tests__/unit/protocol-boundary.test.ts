@@ -32,10 +32,11 @@ const FILES = readdirSync(PROTOCOL)
 const SPECIFIER = /^\s*(import|export)\s+(type\s+)?[^;]*?from\s+"([^"]+)"/gm;
 
 describe("protocol boundary", () => {
-  it("keeps the skeleton's barrel and extends it with window, values and guards", () => {
+  it("keeps the skeleton's barrel and extends it with window, values, guards and the GPU rule", () => {
     expect(FILES.map(file => file.name).toSorted()).toEqual([
       "causes.ts",
       "engine.ts",
+      "gpu.ts",
       "guards.ts",
       "index.ts",
       "rate.ts",
@@ -44,7 +45,7 @@ describe("protocol boundary", () => {
       "window.ts"
     ]);
     const barrel = FILES.find(file => file.name === "index.ts")?.text ?? "";
-    for (const part of ["causes", "engine", "guards", "rate", "text", "values", "window"]) {
+    for (const part of ["causes", "engine", "gpu", "guards", "rate", "text", "values", "window"]) {
       expect(barrel).toContain(`export * from "./${part}";`);
     }
   });

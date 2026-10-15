@@ -23,9 +23,10 @@ const NBSP = " ";
 const KB = 1000;
 const MB = 1_000_000;
 
-/** Milliseconds in a second and a minute. */
+/** Milliseconds in a second, a minute and an hour. */
 const SECOND = 1000;
 const MINUTE = 60_000;
+const HOUR = 3_600_000;
 
 /**
  * Two digits, zero-padded.
@@ -164,4 +165,37 @@ export function wholeText(value: number | null | undefined): string {
  */
 export function secondsBetween(from: number, now: number): number {
   return Math.max(0, Math.round((now - from) / SECOND));
+}
+
+/**
+ * A duration as short as the compact card's header needs (header fit test): whole seconds under a
+ * minute, then whole minutes, then whole hours, the unit's letter right after the number.
+ *
+ * @param ms - The duration, ms (negative reads as 0).
+ * @returns "12s", "4m" or "2h".
+ * @example
+ * ```ts
+ * shortDuration(192_000); // "3m"
+ * ```
+ */
+export function shortDuration(ms: number): string {
+  const elapsed = Math.max(0, ms);
+  if (elapsed < MINUTE) return `${Math.floor(elapsed / SECOND)}s`;
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m`;
+  return `${Math.floor(elapsed / HOUR)}h`;
+}
+
+/**
+ * How long the screen has rested, short (`shortDuration`); "" without a start.
+ *
+ * @param since - Epoch ms of the first resting frame (perf's `activity.idleSince`), or null.
+ * @param now - Epoch ms now.
+ * @returns "12s", "4m", "2h" or "".
+ * @example
+ * ```ts
+ * idleForText(1000, 13_400); // "12s"
+ * ```
+ */
+export function idleForText(since: number | null, now: number): string {
+  return since === null ? "" : shortDuration(now - since);
 }

@@ -1,64 +1,42 @@
-/* renderView · the D1 device strip (spec 09 § Design Reference, prototype #d1; target = prototype px × 1). The cockpit is one dark theme fixed for the session in both tools themes: its tokens are fixed values on the scope root with color-scheme dark. Barlow Condensed 500 / 600 and Barlow 500 only (700 → 600). data-* selectors only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). The record side panel is styles/record.css. */
+/* renderView · the D1 device strip (spec 09 § Design Reference; Delta 2026-10-15 "the strip follows the editor's look and theme"). The strip is an editor card like the Render cards under it: the panel surface, the line, the card radius, Geist for words and Geist Mono for numbers, and every colour an editor token, so light and dark follow the editor's theme switch. The only inline colour is `--c` (an annunciator's state colour, a swatch or the budget bug: the graph's own colour in both themes, device/colour.ts). Spacing on the editor's 4 / 8 px rhythm. data-* selectors only. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). The record side panel is styles/record.css. */
 @scope ([data-render="device-strip"]) {
   :scope {
-    --strip-ground: #13213a;
-    --strip-bar: #0d182c;
-    --strip-slate: #16243d;
-    --strip-slate-2: #0f1b30;
-    --strip-slate-3: #1c2e4e;
-    --strip-well: #0b1629;
-    --strip-rule: #2a4270;
-    --strip-edge: #3a5686;
-    --strip-ink: #e9f0fa;
-    --strip-ink-2: #9db0cc;
-    --strip-ink-3: #7a8fb2;
-    --strip-cyan: #3fdcf5;
-    --strip-magenta: #ff4fd8;
-    --strip-amber: #ffb320;
-    --strip-red: #ff4545;
-    --strip-green: #3de37a;
-    --strip-js: #a8f0ff;
-    --strip-gpu: #2f78c4;
-    --strip-idle: #24406b;
-    --strip-idle-edge: #4a6696;
-    --strip-cond: "Barlow Condensed", "Arial Narrow", sans-serif;
-    --strip-text: "Barlow", system-ui, sans-serif;
-
     container: device-strip / inline-size;
-    color-scheme: dark;
     display: flex;
     flex-direction: column;
     inline-size: 100%;
     min-block-size: 420px;
     overflow: hidden;
-    border-radius: 10px;
-    background: var(--strip-ground);
-    color: var(--strip-ink);
-    font-family: var(--strip-text);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-12);
     font-variant-numeric: tabular-nums;
   }
 
   button:focus-visible,
   canvas:focus-visible {
-    outline: 2px solid var(--strip-cyan);
+    outline: 2px solid var(--accent);
     outline-offset: 1px;
   }
 
-  /* Header bar: 36 high, Barlow Condensed 600 15, the secondary words 500 ink-3. */
+  /* Header bar: 36 high, the card's title (600 13); the secondary words 500 muted. */
   [data-part="bar"] {
     display: flex;
     flex: none;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     block-size: 36px;
     padding: 0 16px;
-    border-block-end: 1px solid var(--strip-rule);
-    background: var(--strip-bar);
-    font: 600 15px var(--strip-cond);
+    border-block-end: 1px solid var(--line-1);
+    font-size: var(--font-size-13);
+    font-weight: 600;
   }
 
   [data-part="bar"] > span {
-    color: var(--strip-ink-3);
+    color: var(--text-muted);
     font-weight: 500;
   }
 
@@ -66,16 +44,15 @@
     flex: 1;
   }
 
-  /* Device row: 60 high (min), gap 28; model 600 24 / 1 with its about line 500 12 ink-2. */
+  /* Device row: 56 high (min), gap 24; the model 600 18 / 1 with its about line 500 12 in text-2. */
   [data-part="device-row"] {
     display: flex;
     flex: none;
     align-items: center;
-    gap: 28px;
-    min-block-size: 60px;
+    gap: 24px;
+    min-block-size: 56px;
     padding: 0 16px;
-    border-block-end: 1px solid var(--strip-rule);
-    background: var(--strip-slate);
+    border-block-end: 1px solid var(--line-1);
   }
 
   [data-part="model"] {
@@ -84,14 +61,16 @@
   }
 
   [data-part="model-name"] {
-    font: 600 24px / 1 var(--strip-cond);
-    letter-spacing: 0.01em;
+    font-size: var(--font-size-18);
+    font-weight: 600;
+    line-height: 1;
   }
 
   [data-part="about"] {
-    margin-block-start: 3px;
-    color: var(--strip-ink-2);
-    font: 500 12px var(--strip-text);
+    margin-block-start: 4px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
   }
 
   [data-cell] {
@@ -101,54 +80,54 @@
   }
 
   [data-cell] > [data-part="label"] {
-    color: var(--strip-ink-3);
-    font: 500 11px var(--strip-text);
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 500;
   }
 
   [data-cell] > [data-part="value"] {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font: 600 16px / 1 var(--strip-cond);
+    gap: 8px;
+    font: 600 var(--font-size-13) / 1 var(--font-mono);
   }
 
   [data-cell] em {
-    color: var(--strip-ink-2);
-    font-size: 13px;
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-sans);
     font-style: normal;
-    font-weight: 500;
   }
 
   [data-tone="cyan"],
   [data-tone="value"] {
-    color: var(--strip-cyan);
+    color: var(--text-ink);
   }
 
   [data-tone="amber"],
   [data-tone="warn"] {
-    color: var(--strip-amber);
+    color: var(--status-warn);
   }
 
-  /* Annunciator legend: 20 high (legend row 18, record lead 26), 1.5 border in the state colour; lit fills it; hollow is dashed with "likely". */
+  /* Annunciator legend: 20 high (legend row 18, record lead 24), a 1 px border in the state colour; lit fills it; hollow is dashed with "likely". */
   [data-an] {
     display: inline-flex;
     flex: none;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     block-size: 20px;
-    padding: 0 5px;
-    border: 1.5px solid var(--c);
-    border-radius: 2px;
-    background: #0a1426;
+    padding: 0 6px;
+    border: 1px solid var(--c);
+    border-radius: var(--radius-4);
+    background: var(--surface-panel);
     color: var(--c);
-    font: 600 12px / 1 var(--strip-cond);
-    letter-spacing: 0.07em;
+    font: 600 var(--font-size-11) / 1 var(--font-mono);
+    letter-spacing: 0.04em;
     white-space: nowrap;
   }
 
   [data-an][data-lit] {
     background: var(--c);
-    color: #0a1426;
+    color: var(--surface-panel);
   }
 
   [data-an][data-hollow] {
@@ -156,63 +135,68 @@
   }
 
   [data-an] > small {
-    margin-inline-start: 2px;
-    font: 600 11px / 1 var(--strip-cond);
+    font: 500 var(--font-size-10) / 1 var(--font-sans);
     letter-spacing: 0;
   }
 
   [data-an="legend"] {
     block-size: 18px;
-    font-size: 11px;
+    padding: 0 4px;
+    font-size: var(--font-size-10-5);
   }
 
   [data-an="lead"] {
-    block-size: 26px;
-    padding: 0 6px;
-    font-size: 13px;
+    block-size: 24px;
+    padding: 0 8px;
+    font-size: var(--font-size-12);
   }
 
-  /* Main: the graph column and the 380 px side panel. */
+  /* Main: the graph column and the 384 px side panel. */
   [data-part="main"] {
     display: grid;
     flex: 1;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: 1fr 384px;
     min-block-size: 0;
   }
 
   [data-part="graph-column"] {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     min-inline-size: 0;
-    padding: 8px 14px 6px 16px;
+    padding: 8px 16px;
   }
 
-  /* Headline: Barlow Condensed 500 13 / 18 ink-2, one line; numbers 600 cyan, warnings amber. */
+  /* Headline: 500 12.5 / 20 in text-2, one line; the numbers Geist Mono 600 in ink, warnings amber. */
   [data-part="headline"] {
     display: flex;
     align-items: baseline;
     gap: 16px;
     overflow: hidden;
-    color: var(--strip-ink-2);
-    font: 500 13px / 18px var(--strip-cond);
+    color: var(--text-2);
+    font-size: var(--font-size-12-5);
+    font-weight: 500;
+    line-height: 20px;
     white-space: nowrap;
   }
 
   [data-part="headline"] b,
   [data-part="more"] b {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
     font-weight: 600;
   }
 
+  [data-part="headline"] b:not([data-tone="warn"]),
   [data-part="more"] b:not([data-tone="warn"]) {
-    color: var(--strip-ink);
+    color: var(--text-ink);
   }
 
-  /* Graph row: 200 high; nav column 44 wide; the canvas well with its border. */
+  /* Graph row: 200 high; the nav column 44 wide; the canvas well on the editor's canvas colour. */
   [data-part="graph-row"] {
     display: flex;
     flex: none;
-    gap: 6px;
+    gap: 8px;
     block-size: 200px;
   }
 
@@ -235,18 +219,19 @@
     display: grid;
     place-items: center;
     inline-size: 44px;
-    border: 1px solid var(--strip-edge);
-    border-radius: 3px;
-    background: var(--strip-slate-2);
-    color: var(--strip-ink);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-2);
     cursor: pointer;
   }
 
   [data-action="prev-spike"]:hover:not(:disabled),
   [data-action="next-spike"]:hover:not(:disabled),
   [data-action="close-record"]:hover {
-    border-color: var(--strip-cyan);
-    color: var(--strip-cyan);
+    border-color: var(--edge);
+    background: var(--surface-panel-2);
+    color: var(--text-ink);
   }
 
   [data-action="prev-spike"]:disabled,
@@ -259,10 +244,9 @@
     display: grid;
     flex: none;
     place-items: center;
-    block-size: 22px;
-    color: var(--strip-ink-2);
-    font: 600 12px / 1 var(--strip-cond);
-    font-variant-numeric: tabular-nums;
+    block-size: 24px;
+    color: var(--text-2);
+    font: 600 var(--font-size-12) / 1 var(--font-mono);
   }
 
   [data-part="graph"] {
@@ -275,9 +259,9 @@
     display: block;
     inline-size: 100%;
     block-size: 200px;
-    border: 1px solid var(--strip-rule);
-    border-radius: 3px;
-    background: var(--strip-well);
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-6);
+    background: var(--surface-canvas);
     cursor: crosshair;
   }
 
@@ -287,7 +271,7 @@
     inset-inline-start: 8px;
   }
 
-  /* More row: 32 high; the key Barlow Condensed 600 15 with its chevron; the text one line, 500 13 / 15 ink-3. */
+  /* More row: 32 high; the key 600 12.5 with its chevron; the text one line, 500 12.5 / 16 muted. */
   [data-part="more-row"] {
     display: flex;
     flex: none;
@@ -301,38 +285,46 @@
     display: inline-flex;
     flex: none;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     block-size: 32px;
-    padding: 0 10px;
-    border: 1px solid var(--strip-rule);
-    border-radius: 3px;
-    background: var(--strip-slate-2);
-    color: var(--strip-ink);
-    font: 600 15px var(--strip-cond);
+    padding: 0 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font: 600 var(--font-size-12-5) var(--font-sans);
     cursor: pointer;
   }
 
+  [data-action="more"]:hover {
+    border-color: var(--edge);
+    background: var(--surface-panel-2);
+  }
+
   [data-action="more"] > b {
-    font: 600 15px / 1 var(--strip-cond);
+    font: 600 var(--font-size-12-5) / 1 var(--font-sans);
   }
 
   [data-part="more"] {
     min-inline-size: 0;
     overflow: hidden;
-    color: var(--strip-ink-3);
-    font: 500 13px / 15px var(--strip-cond);
+    color: var(--text-muted);
+    font-size: var(--font-size-12-5);
+    font-weight: 500;
+    line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* Legend row: 500 12.5 ink-2, wraps; swatches 14 × 10; the skipped caret and the budget bug at the far end. */
+  /* Legend row: 500 12 in text-2, wraps; swatches 14 × 10 in the graph's colours; the skipped caret and the budget bug at the far end. */
   [data-part="legend"] {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 4px 12px;
-    color: var(--strip-ink-2);
-    font: 500 12.5px var(--strip-cond);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
   }
 
   [data-part="legend"] > span {
@@ -342,13 +334,9 @@
     white-space: nowrap;
   }
 
-  /* A swatch sits 5 px before its word; 20 px more (an 8 px spacer and its 12 px gap) set the stack swatches apart from the cause legends. */
-  [data-part="legend"] > span:has(> [data-swatch]) {
-    gap: 5px;
-  }
-
+  /* 16 px more than the 12 px gap set the stack swatches apart from the cause legends. */
   [data-part="legend"] > span:has(> [data-swatch="idle"]) {
-    margin-inline-end: 20px;
+    margin-inline-end: 16px;
   }
 
   /* A cause legend and its words flow as text: the space between them is the word space, as drawn. */
@@ -360,33 +348,25 @@
     display: inline-block;
     inline-size: 14px;
     block-size: 10px;
-    border-radius: 1px;
-  }
-
-  [data-swatch="js"] {
-    background: var(--strip-js);
-  }
-
-  [data-swatch="gpu"] {
-    background: var(--strip-gpu);
+    border-radius: 2px;
+    background: var(--c);
   }
 
   [data-swatch="idle"] {
-    border: 1px solid var(--strip-idle-edge);
-    background: var(--strip-idle);
+    border: 1px solid var(--edge);
   }
 
   [data-part="skipped"] {
     margin-inline-start: auto;
-    color: var(--strip-ink-2);
+    color: var(--text-2);
   }
 
   [data-part="skipped"] > svg {
-    color: var(--strip-amber);
+    color: var(--status-warn);
   }
 
   [data-part="budget"] > svg {
-    color: var(--strip-magenta);
+    color: var(--c);
   }
 
   /* More open: its chevron turns. */
@@ -408,7 +388,7 @@
 
     [data-part="device-row"] {
       flex-wrap: wrap;
-      gap: 8px 28px;
+      gap: 8px 24px;
       padding-block: 8px;
     }
 

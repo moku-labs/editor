@@ -132,7 +132,7 @@ describe("the bundled faces", () => {
     expect(statSync(`${FONT_DIR}faces.ts`).size).toBeLessThanOrEqual(82_000);
   });
 
-  it("a face was renamed under the tools page's @font-face (the folder holds exactly the three names)", () => {
+  it("the folder holds exactly the three faces, and the tools page loads none of them (spec 09 Delta 2026-10-15: the page is set in Geist)", () => {
     expect(readdirSync(FONT_DIR).toSorted()).toEqual(
       [...FACE_FILES.map(([name]) => name), "OFL.txt", "faces.ts", "register.ts"].toSorted()
     );
@@ -140,7 +140,11 @@ describe("the bundled faces", () => {
       path.join(process.cwd(), "src/plugins/workspace/styles/fonts.css"),
       "utf8"
     );
-    for (const [name] of FACE_FILES) expect(css).toContain(`url("./fonts/${name}")`);
+    for (const [name, family] of FACE_FILES) {
+      expect(css).not.toContain(name);
+      expect(css).not.toContain(family);
+    }
+    expect(css.toLowerCase()).not.toContain("barlow");
   });
 
   it("a new glyph silently falls back (every character the overlay prints is in the subset)", () => {

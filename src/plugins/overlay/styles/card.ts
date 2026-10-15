@@ -48,6 +48,16 @@ export const CARD = `
     [data-part="spikes"] { display: inline-flex; flex: none; align-items: center; gap: 3px; }
     [data-part="spikes-label"] { color: var(--ink-2); font: 500 11px/11px var(--font-cond); white-space: nowrap; }
     [data-part="spacer"] { flex: 1; }
+    [data-part="rec-dot"] {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      gap: 3px;
+      color: var(--warning);
+      font: 500 11px/1 var(--font-cond);
+      white-space: nowrap;
+    }
+    [data-part="rec-dot"] i { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
     [data-part="header"] button {
       display: grid;
       flex: none;

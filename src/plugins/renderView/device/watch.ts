@@ -160,7 +160,14 @@ function storesOf(strip: DeviceStripState): readonly (readonly [string, Store])[
         return true;
       }
     ],
-    [PERF_WINDOW, value => readWireWindow(value, strip.window)],
+    [
+      PERF_WINDOW,
+      value => {
+        if (!readWireWindow(value, strip.window)) return false;
+        strip.windowAt = performance.now();
+        return true;
+      }
+    ],
     [
       PERF_SPIKES,
       value => {

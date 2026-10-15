@@ -165,8 +165,12 @@ export type WorkspaceMock = {
   readonly setPreview: Mock<(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>) => void>;
   activeValue: WorkspaceId;
   previewVisible: boolean;
+  /** The editor theme `theme()` answers. */
+  themeValue: "light" | "dark";
   /** Calls every prefs listener with a device. */
   prefs(preset: string, orientation: "portrait" | "landscape"): void;
+  /** Switches the editor theme and calls every prefs listener, like the top bar's theme key. */
+  setTheme(theme: "light" | "dark"): void;
 };
 
 /**
@@ -192,8 +196,10 @@ export function createWorkspaceMock(): WorkspaceMock {
     setPreview,
     activeValue: "flow",
     previewVisible: true,
+    themeValue: "light",
     api: {
       active: () => workspace.activeValue,
+      theme: () => workspace.themeValue,
       show,
       preview: () => ({
         visible: workspace.previewVisible,
@@ -227,9 +233,18 @@ export function createWorkspaceMock(): WorkspaceMock {
         open: vi.fn()
       }
     } as unknown as WorkspaceApi,
+    setTheme(theme) {
+      workspace.themeValue = theme;
+      const prefs = {
+        theme,
+        previews: {},
+        device: { preset: { id: "pixel-8" } }
+      } as unknown as Prefs;
+      for (const fn of prefsListeners) fn(prefs);
+    },
     prefs(preset, orientation) {
       const prefs = {
-        theme: "light",
+        theme: workspace.themeValue,
         previews: {},
         device: { preset: { id: preset }, orientation }
       } as unknown as Prefs;

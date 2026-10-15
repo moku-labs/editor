@@ -5,7 +5,14 @@
  */
 import { channelPlugin } from "../channel";
 import { perfPlugin } from "../perf";
-import { createGraphState, paintGraph, resetGraphText, rowAt, spikeAt } from "../perf/graph";
+import {
+  createGraphState,
+  msToPx,
+  paintGraph,
+  resetGraphText,
+  rowAt,
+  spikeAt
+} from "../perf/graph";
 import { recorderPlugin } from "../recorder";
 import { registryPlugin } from "../registry";
 import { createVisitors } from "./paint/graph";
@@ -20,7 +27,8 @@ export const GRAPH: GraphSeam = {
   spikeAt,
   rowAt,
   createState: createGraphState,
-  resetText: resetGraphText
+  resetText: resetGraphText,
+  msToPx
 };
 
 /** The domain context of each plugin state. */

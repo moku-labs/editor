@@ -1,6 +1,7 @@
 /**
  * @file overlay plugin — the card header (B1): grip, fps, the spikes legend, the link legend (or
- * STALE), REC, collapse and hide.
+ * STALE), REC, collapse and hide. The compact card's header (spec 08 delta item 8) leaves out the
+ * fps unit and the spikes label and shows REC as a red dot and its time.
  */
 import type { VNode } from "preact";
 import type { OverlayActions } from "../actions";
@@ -20,6 +21,32 @@ export type HeaderProps = {
 };
 
 /**
+ * The recording mark: the REC legend, or on the compact card a red dot and the time (named REC).
+ *
+ * @param props - The header view.
+ * @param props.header - The header view.
+ * @returns The mark.
+ */
+function RecMark(props: { readonly header: HeaderView }): VNode {
+  const { header } = props;
+  if (!header.compact) {
+    return <Legend legend={legendOf("REC", COLOUR.warning, true, "Recording")} rec />;
+  }
+  return (
+    <span
+      data-part="rec-dot"
+      data-rec=""
+      role="img"
+      aria-label={`REC ${header.recFor}`}
+      title={`Recording, ${header.recFor}`}
+    >
+      <i />
+      {header.recFor}
+    </span>
+  );
+}
+
+/**
  * The header.
  *
  * @param props - The header view, the dock and the actions.
@@ -28,6 +55,7 @@ export type HeaderProps = {
 export function Header(props: HeaderProps): VNode {
   const { header, actions } = props;
   const spikes = `${header.spikes} spikes, 6 s`;
+  const unit = header.compact ? "" : header.fpsUnit;
   return (
     <div data-part="header">
       <button
@@ -43,16 +71,23 @@ export function Header(props: HeaderProps): VNode {
       >
         <GripIcon />
       </button>
-      <span data-part="fps">
+      <span
+        data-part="fps"
+        title={
+          header.compact && header.fpsUnit !== "" ? `${header.fps} ${header.fpsUnit}` : undefined
+        }
+      >
         <b>{header.fps}</b>
-        <small>fps</small>
+        {unit === "" ? undefined : <small>{unit}</small>}
       </span>
       <span data-part="spikes" title={spikes}>
         <Legend legend={legendOf(String(header.spikes), COLOUR.caution, false, spikes)} glyph />
-        <span data-part="spikes-label">
-          spikes
-          <br />6 s
-        </span>
+        {header.compact ? undefined : (
+          <span data-part="spikes-label">
+            spikes
+            <br />6 s
+          </span>
+        )}
       </span>
       {header.stale ? (
         <Legend
@@ -70,9 +105,7 @@ export function Header(props: HeaderProps): VNode {
           link={header.link.kind}
         />
       )}
-      {header.rec ? (
-        <Legend legend={legendOf("REC", COLOUR.warning, true, "Recording")} rec />
-      ) : undefined}
+      {header.rec ? <RecMark header={header} /> : undefined}
       <span data-part="spacer" />
       <button
         type="button"

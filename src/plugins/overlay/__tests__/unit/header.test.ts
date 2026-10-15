@@ -111,6 +111,22 @@ describe("headerView", () => {
     expect(header).toMatchObject({ fps: "—", spikes: 0, stale: false, rec: false });
   });
 
+  it("reads idle and for how long while the screen rests, instead of the fps (bug: 2 fps on a still screen)", () => {
+    const input = {
+      second: secondOf(),
+      status: { state: "on", lost: 0, gpuTimer: true } as const,
+      payload: undefined,
+      hasBridge: false,
+      engine: undefined,
+      recording: false
+    };
+    const idle = headerView({ ...input, idleFor: "12s" });
+    expect(idle).toMatchObject({ fps: "idle", fpsUnit: "12s" });
+    expect(pillLabel(idle)).toBe("idle 12s, 6 spikes, 6 s. Open the overlay");
+    expect(headerView({ ...input, idleFor: "" })).toMatchObject({ fps: "idle", fpsUnit: "" });
+    expect(headerView(input)).toMatchObject({ fps: "54", fpsUnit: "fps" });
+  });
+
   it("names fps and spikes in the pill's label", () => {
     const header = headerView({
       second: secondOf(),

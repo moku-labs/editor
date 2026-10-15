@@ -237,6 +237,19 @@ function isHeaderDevice(value: unknown): boolean {
 }
 
 /**
+ * True for perf's `activity` (spec 03 delta 2026-10-15): the idle flag, since when, the rest
+ * counts and the awake frames' p90 the headline reads.
+ *
+ * @param value - `PerfSecond.activity`, present.
+ * @returns Whether every read member has its type.
+ */
+function isActivity(value: unknown): boolean {
+  if (!isObject(value) || typeof value.idle !== "boolean") return false;
+  if (!isNumberOrNull(value.idleSince) || !isNumberOrNull(value.p90Ms)) return false;
+  return hasNumbers(value, ["idleFrames", "idleMs", "breaks"]);
+}
+
+/**
  * The perf states.
  */
 const PERF_STATES: ReadonlySet<unknown> = new Set(["on", "waiting", "off"]);
@@ -273,6 +286,7 @@ export function isPerfSecond(value: unknown): value is PerfSecond {
   if (!hasNumbers(value.fps, ["loop", "drawn"])) return false;
   if (!isNumber(value.spikes) || !isNumber(value.budgetMs)) return false;
   if (!isTextOrNull(value.build) || !isTextOrNull(value.engine)) return false;
+  if (value.activity !== undefined && !isActivity(value.activity)) return false;
   return (
     nullOr(value.sample, isSample) &&
     nullOr(value.display, isDisplay) &&

@@ -4,6 +4,7 @@
  * recorder's clock. The same strings as the overlay's record (unit 08). Pure.
  */
 import type { PerfCause } from "../../perf/protocol";
+import { themedHue } from "./colour";
 import type { PerfSpikeRecord, RecorderStatus } from "./contract";
 import { CAUSE_STYLE } from "./contract";
 import { DASH, whole } from "./derive";
@@ -96,7 +97,7 @@ function legendsOf(record: PerfSpikeRecord): CauseLegend[] {
   return causes.map(cause => ({
     cause,
     legend: CAUSE_STYLE[cause].legend,
-    hue: CAUSE_STYLE[cause].hue,
+    hue: themedHue(cause),
     lit: cause === record.cause,
     hollow: CAUSE_STYLE[cause].hollow
   }));
@@ -286,7 +287,7 @@ export function recordView(
     budget: record.budgetMs.toFixed(1),
     severity: record.ms > 2 * record.budgetMs ? "red" : "amber",
     why: record.why,
-    hue: style.hue,
+    hue: themedHue(record.cause),
     phases: phaseRows(record),
     gpuTitle: gpu.title,
     passes: gpu.rows,

@@ -267,6 +267,53 @@ export function statsOf(game: unknown): PerfRenderStats | undefined {
 }
 
 /**
+ * The display's refresh rate the engine learned: `game.time.rate().displayHz` (spec 21), read
+ * structurally. The engine's stream does not announce it until the rate itself changes, so perf asks
+ * the game. Never throws.
+ *
+ * @param game - The game app (any value).
+ * @returns The Hz; null when unknown, without `time.rate`, or when the call throws.
+ * @example
+ * ```ts
+ * displayHzOf({ time: { rate: () => ({ fps: 60, displayHz: 60 }) } }); // 60
+ * ```
+ */
+export function displayHzOf(game: unknown): number | null {
+  const time = fieldOf(game, "time");
+  const rate = fieldOf(time, "rate");
+  // eslint-disable-next-line unicorn/no-null -- null is "the engine has not learned the display's rate"
+  if (typeof rate !== "function") return null;
+  let answer: unknown;
+  try {
+    answer = Reflect.apply(rate, time, []);
+  } catch {
+    // eslint-disable-next-line unicorn/no-null -- as above
+    return null;
+  }
+  return finiteOrNull(fieldOf(answer, "displayHz"));
+}
+
+/**
+ * The display's refresh rate as a newer engine announces it in its display (engine diagnosis
+ * 2026-10-15: `PerfDisplay` gains `hz`, and a `display` event follows each change), read
+ * structurally: the engine before it has no `hz`. Preferred over `time.rate().displayHz`. Never
+ * throws.
+ *
+ * @param display - The header's display or a `display` event's detail (any value).
+ * @returns The Hz; null when absent or not a positive finite number.
+ * @example
+ * ```ts
+ * announcedHzOf({ ...header.display, hz: 120 }); // 120
+ * announcedHzOf(header.display); // null on an engine before the display's hz
+ * ```
+ */
+export function announcedHzOf(display: unknown): number | null {
+  const hz = finiteOrNull(fieldOf(display, "hz"));
+  // eslint-disable-next-line unicorn/no-null -- null is "the display announces no rate"
+  return hz !== null && hz > 0 ? hz : null;
+}
+
+/**
  * A game frame event of an event line (engine fact 11): `overlay` with a numeric `entity`, a string
  * `label`, `what` among `OverlayWhat` and a string `mode`; `pool-trim` with its reason and a finite
  * `freedMb`; `warm` with finite `draws`. The editor's own `devtools`, `command`, `recorder` lines

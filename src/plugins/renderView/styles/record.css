@@ -1,38 +1,40 @@
-/* renderView · the spike record side panel of the D1 strip (design §7, F5; prototype .dk-side, .empty, .srec …): border-left rule on the slate ground; the header with the close key and prev / next (44 × 44), the lead, the why line with its rule in the primary cause's colour, and the scrolling details. Tokens come from the strip's scope root (strip.css). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · the spike record side panel of the D1 strip (design §7, F5; spec 09 Delta 2026-10-15): a line rule on the card's panel; the header with the close key and prev / next (44 × 44), the lead, the why line with its rule in the primary cause's colour, and the scrolling details. Every colour is an editor token or the inline `--c` (a cause hue, the budget or the GPU bars, in both themes); Geist for words, Geist Mono for numbers. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-render="device-strip"] [data-part="side"]) {
   :scope {
     display: flex;
     flex-direction: column;
     min-block-size: 0;
     overflow: hidden;
-    padding: 6px 12px 0;
-    border-inline-start: 1px solid var(--strip-rule);
-    background: var(--strip-slate);
+    padding: 8px 12px 0;
+    border-inline-start: 1px solid var(--line-1);
   }
 
-  /* Empty state: full height, centred, Barlow 500 14 / 1.4 ink-2; the title Barlow Condensed 600 18 ink. */
+  /* Empty state: full height, centred, 500 13 / 1.4 in text-2; the title 600 15 in ink. */
   [data-part="empty"] {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
     block-size: 100%;
     padding: 0 20px;
-    color: var(--strip-ink-2);
-    font: 500 14px / 1.4 var(--strip-text);
+    color: var(--text-2);
+    font-size: var(--font-size-13);
+    font-weight: 500;
+    line-height: 1.4;
   }
 
   [data-part="empty"] > b {
-    color: var(--strip-ink);
-    font: 600 18px var(--strip-cond);
+    color: var(--text-ink);
+    font-size: var(--font-size-15);
+    font-weight: 600;
   }
 
-  /* Header: 44 high, gap 5. */
+  /* Header: 44 high, gap 4. */
   [data-part="record-head"] {
     display: flex;
     flex: none;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     block-size: 44px;
   }
 
@@ -44,18 +46,23 @@
     display: flex;
     flex: 0 1 auto;
     flex-direction: column;
+    gap: 2px;
     min-inline-size: 0;
-    margin-inline-start: 3px;
+    margin-inline-start: 4px;
   }
 
   [data-part="record-id"] > b {
-    font: 600 16px / 1.15 var(--strip-cond);
+    font-size: var(--font-size-14);
+    font-weight: 600;
+    line-height: 1.2;
   }
 
   [data-part="record-id"] > span {
     overflow: hidden;
-    color: var(--strip-ink-2);
-    font: 500 11.5px / 1.15 var(--strip-cond);
+    color: var(--text-2);
+    font-size: var(--font-size-11-5);
+    font-weight: 500;
+    line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -63,7 +70,7 @@
   [data-part="record-nav"] {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     margin-inline-start: auto;
   }
 
@@ -73,16 +80,16 @@
 
   [data-part="record-nav"] > [data-part="counter"] {
     block-size: auto;
-    min-inline-size: 30px;
+    min-inline-size: 32px;
   }
 
-  /* Lead: margin-top 7, gap 8; the word Barlow Condensed 600 20 / 1; the numbers 500 12 / 1.05 right-aligned. */
+  /* Lead: 8 below the header, gap 8; the word 600 18 / 1; the numbers Geist Mono 500 12, right-aligned. */
   [data-part="lead"] {
     display: flex;
     flex: none;
     align-items: center;
     gap: 8px;
-    margin-block-start: 7px;
+    margin-block-start: 8px;
   }
 
   [data-part="causes"] {
@@ -95,7 +102,9 @@
     flex: 0 1 auto;
     min-inline-size: 0;
     overflow: hidden;
-    font: 600 20px / 1 var(--strip-cond);
+    font-size: var(--font-size-18);
+    font-weight: 600;
+    line-height: 1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -105,11 +114,10 @@
     flex: none;
     margin-inline-start: auto;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     align-items: end;
-    color: var(--strip-ink-2);
-    font: 500 12px / 1.05 var(--strip-cond);
-    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+    font: 500 var(--font-size-12) / 1.1 var(--font-mono);
   }
 
   [data-part="numbers"] b {
@@ -117,121 +125,135 @@
   }
 
   [data-part="numbers"] [data-part="ms"] {
-    font-size: 23px;
+    font-size: var(--font-size-20);
     line-height: 1;
   }
 
   [data-part="numbers"][data-severity="red"] b:not([data-part="budget"]) {
-    color: var(--strip-red);
+    color: var(--status-error);
   }
 
   [data-part="numbers"][data-severity="amber"] b:not([data-part="budget"]) {
-    color: var(--strip-amber);
+    color: var(--status-warn);
   }
 
   [data-part="numbers"] [data-part="budget"] {
-    color: var(--strip-magenta);
+    color: var(--c);
   }
 
-  /* Why line: Barlow Condensed 500 13 / 1.25 ink, a 3 px left rule in the primary cause's colour. */
+  /* Why line: 500 13 / 1.3 in ink, a 3 px left rule in the primary cause's colour. */
   [data-part="why"] {
     flex: none;
-    margin: 6px 0 5px;
+    margin: 8px 0 4px;
     padding: 2px 0 2px 8px;
     border-inline-start: 3px solid var(--c);
-    font: 500 13px / 1.25 var(--strip-cond);
+    font-size: var(--font-size-13);
+    font-weight: 500;
+    line-height: 1.3;
   }
 
   [data-part="note"] {
-    color: var(--strip-ink-2);
-    font: 500 12px / 15px var(--strip-cond);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+    line-height: 16px;
   }
 
-  /* Details: the scroll region, 22 px bottom padding, a thin scrollbar. */
+  /* Details: the scroll region, 24 px bottom padding, a thin scrollbar. */
   [data-part="details"] {
     flex: 1;
     min-block-size: 0;
     overflow-y: auto;
-    padding: 5px 2px 22px 0;
-    border-block-start: 1px solid var(--strip-rule);
-    scrollbar-color: var(--strip-edge) transparent;
+    padding: 4px 2px 24px 0;
+    border-block-start: 1px solid var(--line-1);
+    scrollbar-color: var(--edge) transparent;
     scrollbar-width: thin;
   }
 
   [data-part="columns"] {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0 14px;
-    margin-block-end: 6px;
+    gap: 0 16px;
+    margin-block-end: 8px;
   }
 
   h3 {
-    color: var(--strip-ink-3);
-    font: 600 11px / 14px var(--strip-cond);
-    letter-spacing: 0.04em;
+    margin-block-start: 4px;
+    color: var(--text-muted);
+    font-size: var(--font-size-11);
+    font-weight: 600;
+    line-height: 16px;
   }
 
   [data-part="bar-row"],
   [data-part="value-row"] {
     display: flex;
     align-items: center;
-    gap: 5px;
-    block-size: 15px;
-    font: 500 12px / 15px var(--strip-cond);
-    font-variant-numeric: tabular-nums;
+    gap: 4px;
+    block-size: 16px;
+    font-size: var(--font-size-12);
+    font-weight: 500;
+    line-height: 16px;
   }
 
   [data-part="bar-row"] > [data-part="label"],
   [data-part="value-row"] > [data-part="label"] {
     flex: none;
-    inline-size: 74px;
+    inline-size: 76px;
     overflow: hidden;
-    color: var(--strip-ink-2);
+    color: var(--text-2);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   [data-part="bar"] {
     flex: 1;
-    block-size: 5px;
+    block-size: 4px;
+    border-radius: 2px;
+    background: var(--surface-panel-2);
+    overflow: hidden;
   }
 
   [data-part="bar"] > span {
     display: block;
     block-size: 100%;
-    background: #6e83a6;
+    background: var(--edge);
   }
 
   [data-kind="gpu"] [data-part="bar"] > span {
-    background: var(--strip-gpu);
+    background: var(--c);
   }
 
   [data-part="bar-row"] > [data-part="value"],
   [data-part="value-row"] > [data-part="value"] {
     margin-inline-start: auto;
-    color: var(--strip-cyan);
+    color: var(--text-ink);
+    font-family: var(--font-mono);
     font-weight: 600;
     text-align: end;
   }
 
   [data-part="value-row"] > [data-part="value"][data-tone="plain"] {
-    color: var(--strip-ink);
+    color: var(--text-2);
+    font-weight: 500;
   }
 
   [data-part="value-row"] > [data-part="value"][data-tone="warn"] {
-    color: var(--strip-amber);
+    color: var(--status-warn);
   }
 
   [data-part="changed"] {
     margin-block-start: 2px;
-    font: 500 12px / 15px var(--strip-cond);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+    line-height: 16px;
   }
 
   /* Narrow: the panel sits under the graph, full width, its details scroll. */
   @container device-strip (width < 900px) {
     :scope {
       max-block-size: 320px;
-      border-block-start: 1px solid var(--strip-rule);
+      border-block-start: 1px solid var(--line-1);
       border-inline-start: 0;
     }
   }

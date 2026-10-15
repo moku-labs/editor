@@ -32,13 +32,17 @@ export const DEVICE: SessionDevice = {
 /** The computer's engine fingerprint. */
 export const COMPUTER_ENGINE = "0.14.13+1ab7f2";
 
-/** The spike frames of the demo window, oldest first, with their causes (primary first). */
+/**
+ * The spike frames of the demo window, oldest first, with their causes (primary first). Each has
+ * work over budget (js, gpu or a long frame): perf flags a frame for its work, never for a gap or
+ * the GC hint alone (spec 03 delta 2026-10-15).
+ */
 export const SPIKE_FRAMES: readonly { frame: number; causes: readonly PerfCause[] }[] = [
   { frame: 4572, causes: ["js"] },
   { frame: 4630, causes: ["gpu"] },
-  { frame: 4701, causes: ["compile", "gap"] },
-  { frame: 4760, causes: ["gc?"] },
-  { frame: 4812, causes: ["upload", "gap"] },
+  { frame: 4701, causes: ["compile", "js", "gap"] },
+  { frame: 4760, causes: ["js", "gc?"] },
+  { frame: 4812, causes: ["upload", "js", "gap"] },
   { frame: 4845, causes: ["longFrame"] }
 ];
 
@@ -153,7 +157,7 @@ export function secondOf(overrides: Partial<PerfSecond> = {}): PerfSecond {
     },
     device: {
       userAgent:
-        "Mozilla/5.0 (Linux; Android 15; SM-A266B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 15; SM-A266B; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0 Mobile Safari/537.36",
       model: "SM-A266B",
       modelFrom: "ua",
       webview: "131",

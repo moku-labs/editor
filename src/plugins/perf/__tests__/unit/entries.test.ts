@@ -59,7 +59,7 @@ describe("the perf sources", () => {
   it("reads second, window, spikes and a spike record as wire values", () => {
     const { source, monitor, tick } = setup();
     commitFrames(monitor, 10, 1000, 16.7);
-    const spike = monitor.commit({ t: 1167, gapMs: 30, causes: 0b1 });
+    const spike = monitor.commit({ t: 1167, gapMs: 30, workMs: 30, causes: 0b11 });
     commitFrames(monitor, 10, 1197, 16.7);
     tick();
 
@@ -67,7 +67,7 @@ describe("the perf sources", () => {
     const window = createPerfWindow(64);
     expect(readWireWindow(source("editor.perf.window").read(null), window)).toBe(true);
     expect([window.count, window.spikeCount]).toEqual([21, 1]);
-    expect(source("editor.perf.spikes").read(null)).toMatchObject([{ frame: spike, cause: "gap" }]);
+    expect(source("editor.perf.spikes").read(null)).toMatchObject([{ frame: spike, cause: "js" }]);
     expect(source("editor.perf.spike").read({ frame: spike })).toMatchObject({
       frame: spike,
       detail: null
@@ -86,7 +86,7 @@ describe("the perf sources", () => {
 
   it("honours lastMs on the MCP mirror editor.spikes", () => {
     const { source, monitor, tick } = setup();
-    monitor.commit({ t: 0, gapMs: 30, causes: 0b1 });
+    monitor.commit({ t: 0, gapMs: 30, workMs: 30, causes: 0b11 });
     commitFrames(monitor, 100, 30, 16.7);
     tick();
     expect(source("editor.spikes").read({})).toHaveLength(1);

@@ -63,8 +63,10 @@ export type FakeFrame = {
   readonly kept?: number;
   /** Kept and range pictures taken in the frame (spec 23); NaN by default. */
   readonly retakes?: number;
-  /** The draw reason of spec 14; 255 (not measured) by default. */
+  /** The draw reason of spec 14 (a `DEMAND_REASONS` index); 255 (not measured) by default; "none" is on demand, nothing drawn. */
   readonly reason?: number;
+  /** The frame ran under the idle cap (time's `idle`). */
+  readonly idle?: boolean;
 };
 
 /** How to build a fake monitor. */
@@ -230,8 +232,12 @@ export function deepFreeze<Value>(value: Value): Value {
   return Object.freeze(value);
 }
 
-/** The display of the default header: a Samsung A26 in portrait. */
+/**
+ * The display of the default header: a Samsung A26 in portrait, its refresh rate not learned yet
+ * (`hz` null: the engine writes it once time knows the panel, then sends a `display` event).
+ */
 export const DISPLAY: PerfDisplay = {
+  hz: null,
   dpr: 2.81,
   resolution: 2,
   maxResolution: 2,
@@ -243,8 +249,8 @@ export const DISPLAY: PerfDisplay = {
 };
 
 /**
- * A valid header line (11:944-958): a debug build on a phone at 120 fps, budget "rate", with a GPU
- * timer and no `rate` key (a block-2b engine).
+ * A valid header line (11:944-958): a debug build in an Android WebView at 120 fps, budget "rate",
+ * with a GPU timer and no `rate` key (a block-2b engine); the display's Hz not learned yet.
  *
  * @param overrides - Fields to replace.
  * @returns The header.
@@ -258,10 +264,12 @@ export function headerLine(overrides: Partial<PerfHeaderLine> = {}): PerfHeaderL
     timeOrigin: 1_760_453_960_000,
     engine: "0.14.12+9c41e0",
     device: {
-      userAgent: "Mozilla/5.0 (Linux; Android 15; SM-A266B)",
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 15; SM-A266B Build/AP3A.240905.015; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.7390.122 Mobile Safari/537.36",
       model: "SM-A266B",
       modelFrom: "ua",
-      webview: "Chrome 141",
+      webview: "141",
+      browser: "141",
       cores: 8,
       memoryGb: 6
     },
@@ -497,6 +505,7 @@ function writeSlot(ring: MutableRing, slot: number, frame: number, input: FakeFr
   c.agentMs[slot] = input.agentMs ?? 0;
   c.workMs[slot] = input.workMs ?? 3;
   c.drawn[slot] = input.drawn === false ? 0 : 1;
+  c.idle[slot] = input.idle === true ? 1 : 0;
   c.gpuMs[slot] = input.gpuMs ?? Number.NaN;
   c.gpuPartial[slot] = input.gpuPartial === true ? 1 : 0;
   c.causes[slot] = input.causes ?? 0;

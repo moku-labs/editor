@@ -2,13 +2,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";
 import { toWireValue } from "../../../registry/protocol";
-import type { GraphContext2D } from "../../device/contract";
 import { createGraphState } from "../../device/contract";
-import { clickGraph, REPAINT_MS, type StripCanvas, startRepaint } from "../../device/paint";
+import {
+  clickGraph,
+  REPAINT_MS,
+  type StripCanvas,
+  type StripContext,
+  startRepaint
+} from "../../device/paint";
 import { onWorkspaceChanged } from "../../handlers";
 import { startTracker } from "../../watch";
 import { DEVICE, deviceSession, recordOf, windowWire, wireJson } from "../device-fixtures";
-import { createCtx, GAME_01_SOURCES, manifestOf, stubFrames, type TestCtx } from "../helpers";
+import {
+  createCtx,
+  type FrameQueue,
+  GAME_01_SOURCES,
+  manifestOf,
+  stubFrames,
+  type TestCtx
+} from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // device/paint.ts clickGraph with the real painter: a click that lands after a
@@ -17,20 +29,21 @@ import { createCtx, GAME_01_SOURCES, manifestOf, stubFrames, type TestCtx } from
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
+let frames: FrameQueue;
 
 /**
  * A 2D context that draws nothing; text is 6 px a character.
  *
  * @returns The context.
  */
-function silentContext(): GraphContext2D & { setTransform(): void } {
+function silentContext(): StripContext {
   return new Proxy(
     { measureText: (text: string) => ({ width: text.length * 6 }) },
     {
       get: (target, key) => (key in target ? Reflect.get(target, key) : () => {}),
       set: () => true
     }
-  ) as unknown as GraphContext2D & { setTransform(): void };
+  ) as unknown as StripContext;
 }
 
 /**
@@ -49,7 +62,9 @@ function canvasOf(): StripCanvas {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "performance"]
+  });
   ctx = createCtx();
   ctx.link.api.sessions = () => [deviceSession("s-1", DEVICE)];
   ctx.link.api.session = () => "s-1";
@@ -64,7 +79,7 @@ beforeEach(() => {
     "editor.perf.spikes",
     "editor.perf.spike"
   ]);
-  stubFrames();
+  frames = stubFrames();
   startTracker(ctx);
   onWorkspaceChanged(ctx)({ ws: "render" });
 });
@@ -77,6 +92,7 @@ afterEach(() => {
 
 describe("clickGraph", () => {
   it("a click between a refill and the repaint opens the frame the graph shows now", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
     const graph = createGraphState(1024);
     startRepaint(ctx, canvasOf(), graph);
     ctx.link.send("editor.perf.window", wireJson(windowWire()));
@@ -90,5 +106,25 @@ describe("clickGraph", () => {
 
     expect(ctx.link.api.read).not.toHaveBeenCalledWith("editor.perf.spike", { frame: 4848 });
     expect(ctx.link.api.read).toHaveBeenCalledWith("editor.perf.spike", { frame: 4845 });
+  });
+
+  it("hit tests use the frame's own time origin: a click under a moving now selects the row drawn there", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    const graph = createGraphState(1024);
+    startRepaint(ctx, canvasOf(), graph);
+    ctx.link.send("editor.perf.window", wireJson(windowWire()));
+    vi.advanceTimersByTime(REPAINT_MS);
+    ctx.link.send("editor.perf.window", wireJson(windowWire()));
+    vi.advanceTimersByTime(200);
+    frames.flush();
+    const { window } = ctx.state.device;
+    expect(graph.startMs).toBeCloseTo(window.endMs + 200 - (window.endMs - window.startMs));
+
+    // Row 200 (frame 4686) as this frame drew it: 200 ms of the moving now further left.
+    const at = (window.t[200] ?? 0) + 8;
+    const x = graph.px0 + ((at - graph.startMs) / graph.spanMs) * (graph.px1 - graph.px0);
+    clickGraph(ctx, graph, x, 150);
+
+    expect(ctx.state.device.selected).toBe(4686);
   });
 });

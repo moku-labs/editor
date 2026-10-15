@@ -6,11 +6,15 @@ import { isLoopback, parseAddress } from "../../hub/protocol";
 import type { PerfSecond, PerfStatus } from "../../perf/protocol";
 import type { BuildInfo, BuildProfile } from "../../registry/protocol";
 import type { LinkPayload } from "../types";
-import { COLOUR } from "./format";
+import { COLOUR, shortDuration } from "./format";
 import type { EngineLineView, HeaderView, LinkLegend } from "./types";
 
 /** The legend of a phone with no computer, or of a build without the bridge. */
 const NO_PC: LinkLegend = { kind: "none", text: "NO PC", colour: COLOUR.ink };
+
+/** The header's word for a resting screen, and the unit of its fps. */
+const IDLE_WORD = "idle";
+const FPS_WORD = "fps";
 
 /**
  * The profile texts of the engine line.
@@ -103,6 +107,9 @@ export function profileText(profile: BuildProfile): string {
  * @param input.hasBridge - Whether the bridge is composed.
  * @param input.engine - The page's engine.
  * @param input.recording - Whether the recorder records.
+ * @param input.recordingMs - How long the recorder has recorded, ms.
+ * @param input.idleFor - How long the screen has rested ("12s", "" when unknown); undefined while awake.
+ * @param input.compact - The compact card.
  * @returns The header view.
  */
 export function headerView(input: {
@@ -112,10 +119,19 @@ export function headerView(input: {
   readonly hasBridge: boolean;
   readonly engine: string | undefined;
   readonly recording: boolean;
+  readonly recordingMs?: number;
+  readonly idleFor?: string | undefined;
+  readonly compact?: boolean;
 }): HeaderView {
   const on = input.status.state === "on";
+  const idle = on && input.idleFor !== undefined;
+  let fps = on ? String(input.second.fps.drawn) : "—";
+  if (idle) fps = IDLE_WORD;
   return {
-    fps: on ? String(input.second.fps.drawn) : "—",
+    fps,
+    fpsUnit: idle ? (input.idleFor ?? "") : FPS_WORD,
+    compact: input.compact ?? false,
+    recFor: input.recording ? shortDuration(input.recordingMs ?? 0) : "",
     spikes: on ? input.second.spikes : 0,
     link: linkLegend(input.payload, input.hasBridge),
     stale: isStale(input.engine, input.payload),
@@ -130,11 +146,12 @@ export function headerView(input: {
  * @returns The label.
  * @example
  * ```ts
- * pillLabel({ fps: "54", spikes: 6, link: { kind: "none", text: "NO PC", colour: "var(--ink)" }, stale: false, rec: false }); // "54 fps, 6 spikes, 6 s. Open the overlay"
+ * pillLabel({ fps: "54", fpsUnit: "fps", compact: false, recFor: "", spikes: 6, link: { kind: "none", text: "NO PC", colour: "var(--ink)" }, stale: false, rec: false }); // "54 fps, 6 spikes, 6 s. Open the overlay"
  * ```
  */
 export function pillLabel(header: HeaderView): string {
-  return `${header.fps} fps, ${header.spikes} spikes, 6 s. Open the overlay`;
+  const fps = header.fpsUnit === "" ? header.fps : `${header.fps} ${header.fpsUnit}`;
+  return `${fps}, ${header.spikes} spikes, 6 s. Open the overlay`;
 }
 
 /**

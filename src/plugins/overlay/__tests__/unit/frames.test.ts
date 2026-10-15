@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the engine's and perf's "not measured" */
 import { describe, expect, it } from "vitest";
+import { idleForText } from "../../model/format";
 import {
   counterCells,
   deviceLabel,
@@ -35,7 +36,7 @@ describe("counterCells", () => {
       { rate: { fps: 120, mode: "auto", reason: "start", displayHz: 120, switches: 0 } },
       { passes: PASSES, draws: DRAWS }
     );
-    const cells = counterCells(second, 6.1, false, true);
+    const cells = counterCells(second, { gpuAvg: 6.1 }, false, true);
     expect(cells.map(each => each.key)).toEqual([
       "fps",
       "p90",
@@ -53,7 +54,7 @@ describe("counterCells", () => {
     });
     expect(cell(cells, "passes").value).toBe("6");
     expect(cell(cells, "draws").value).toBe("212");
-    const compact = counterCells(second, 6.1, true, true);
+    const compact = counterCells(second, { gpuAvg: 6.1 }, true, true);
     expect(compact.map(each => each.key)).toEqual(["fps", "p90", "gpu"]);
     expect(cell(compact, "fps").rate?.text).toBe("@120");
   });
@@ -63,7 +64,7 @@ describe("counterCells", () => {
       fps: { loop: 58, drawn: 57 },
       rate: { fps: 60, mode: "auto", reason: "missed", displayHz: 120, switches: 1 }
     });
-    expect(cell(counterCells(second, 6, true, true), "fps")).toMatchObject({
+    expect(cell(counterCells(second, { gpuAvg: 6 }, true, true), "fps")).toMatchObject({
       label: "fps",
       value: "57 / 58",
       unit: "",
@@ -71,15 +72,17 @@ describe("counterCells", () => {
       title: "drawn / loop · 60 fps, auto (missed); display 120 Hz",
       rate: { text: "@60", caution: true }
     });
-    expect(cell(counterCells(second, 6, false, true), "fps")).toMatchObject({
+    expect(cell(counterCells(second, { gpuAvg: 6 }, false, true), "fps")).toMatchObject({
       label: "drawn / loop",
       title: "60 fps, auto (missed); display 120 Hz"
     });
     const unknown = secondOf({
       rate: { fps: null, mode: null, reason: null, displayHz: null, switches: 0 }
     });
-    expect(cell(counterCells(unknown, 6, true, true), "fps").title).toBe("drawn / loop");
-    expect(cell(counterCells(second, 6, false, true), "fps").ratePlace).toBe("value");
+    expect(cell(counterCells(unknown, { gpuAvg: 6 }, true, true), "fps").title).toBe(
+      "drawn / loop"
+    );
+    expect(cell(counterCells(second, { gpuAvg: 6 }, false, true), "fps").ratePlace).toBe("value");
     expect(cell(counterCells(second, undefined, false, false), "fps").ratePlace).toBe("value");
   });
 
@@ -130,14 +133,14 @@ describe("counterCells", () => {
   it("p90 under budget is amber (only over the frame's budget)", () => {
     const under = counterCells(
       secondOf({}, { gapMs: { p50: 9, p90: 12, p99: 14 } }),
-      1,
+      { gpuAvg: 1 },
       false,
       true
     );
     expect(cell(under, "p90")).toMatchObject({ value: "12.0", unit: "ms", caution: false });
     const over = counterCells(
       secondOf({}, { gapMs: { p50: 9, p90: 18.2, p99: 20 } }),
-      1,
+      { gpuAvg: 1 },
       false,
       true
     );
@@ -146,7 +149,7 @@ describe("counterCells", () => {
 
   it("p90 of 12 ms at 120 fps is cyan (the 8.3 ms budget makes it amber)", () => {
     const second = secondOf({ budgetMs: 8.33 }, { gapMs: { p50: 9, p90: 12, p99: 14 } });
-    expect(cell(counterCells(second, 1, false, true), "p90").caution).toBe(true);
+    expect(cell(counterCells(second, { gpuAvg: 1 }, false, true), "p90").caution).toBe(true);
   });
 
   it("a null GPU time shows 0.0 (it shows — no timer)", () => {
@@ -154,14 +157,14 @@ describe("counterCells", () => {
       value: "—",
       unit: "no timer"
     });
-    expect(cell(counterCells(secondOf(), 6.06, false, true), "gpu")).toMatchObject({
+    expect(cell(counterCells(secondOf(), { gpuAvg: 6.06 }, false, true), "gpu")).toMatchObject({
       value: "6.1",
       unit: "ms"
     });
   });
 
   it("passes and draws read — with a reason when the sample has none", () => {
-    const cells = counterCells(secondOf(), 1, false, true);
+    const cells = counterCells(secondOf(), { gpuAvg: 1 }, false, true);
     expect(cell(cells, "passes")).toMatchObject({ value: "—", unit: "" });
     expect(cell(cells, "draws")).toMatchObject({ value: "—", unit: "on WebGL" });
   });
@@ -210,7 +213,7 @@ describe("counterCells", () => {
       },
       { textures: { count: 9, mb: 128, art: 96.2, targets: 32, kept: 0 } }
     );
-    expect(cell(counterCells(second, 1, false, true), "texture")).toMatchObject({
+    expect(cell(counterCells(second, { gpuAvg: 1 }, false, true), "texture")).toMatchObject({
       label: "texture art / targets / kept",
       value: "96 / 32 / 1",
       unit: "MB"
@@ -222,14 +225,16 @@ describe("counterCells", () => {
       { render: { passesMax: null, kept: null, redraws: null, rebuilds: null } },
       { textures: { count: 9, mb: 128, art: 96, targets: 32, kept: 2 } }
     );
-    expect(cell(counterCells(second, 1, false, true), "texture").value).toBe("96 / 32 / 2");
-    expect(cell(counterCells(secondOf({ render: null }), 1, false, true), "texture").value).toBe(
-      "32 / 10 / 0"
+    expect(cell(counterCells(second, { gpuAvg: 1 }, false, true), "texture").value).toBe(
+      "96 / 32 / 2"
     );
+    expect(
+      cell(counterCells(secondOf({ render: null }), { gpuAvg: 1 }, false, true), "texture").value
+    ).toBe("32 / 10 / 0");
   });
 
   it("reads — everywhere before the first sample", () => {
-    const cells = counterCells(secondOf({}, null), 1, false, true);
+    const cells = counterCells(secondOf({}, null), { gpuAvg: 1 }, false, true);
     expect(cell(cells, "p90").value).toBe("—");
     expect(cell(cells, "texture").value).toBe("—");
   });
@@ -311,6 +316,28 @@ describe("deviceLabel, navView and framesNote", () => {
     expect(deviceLabel(null)).toBe("—");
   });
 
+  it("names the browser from device.browser on an engine that writes it (bug: a desktop Chrome shown as nothing or WebView)", () => {
+    const device = secondOf().device;
+    if (device === null) throw new Error("no device");
+    const mac =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36";
+    expect(deviceLabel({ ...device, userAgent: mac, webview: null, browser: "152" })).toBe(
+      "Chrome 152"
+    );
+    expect(deviceLabel({ ...device, webview: "141", browser: "141" })).toBe(
+      "Android 15, WebView 141"
+    );
+    const iphone =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 Version/18.1 Mobile/15E148 Safari/604.1";
+    expect(deviceLabel({ ...device, userAgent: iphone, webview: null, browser: null })).toBe(
+      "iOS 18"
+    );
+    // An older log has no browser field.
+    const older = { ...device, userAgent: iphone, webview: null };
+    Reflect.deleteProperty(older, "browser");
+    expect(deviceLabel(older)).toBe("iOS 18, WebKit");
+  });
+
   it("a selected non-spike frame shows 1/6 (it shows –/6)", () => {
     expect(navView(6, 0)).toEqual({ counter: "–/6", disabled: false });
     expect(navView(6, 5)).toEqual({ counter: "5/6", disabled: false });
@@ -326,5 +353,91 @@ describe("deviceLabel, navView and framesNote", () => {
     );
     expect(framesNote({ state: "waiting" })).toBe("Waiting for the first frames.");
     expect(framesNote({ state: "on", lost: 0, gpuTimer: true })).toBeUndefined();
+  });
+});
+
+describe("an idle screen (spec 03 delta 2026-10-15)", () => {
+  const ACTIVITY = {
+    idle: true,
+    idleSince: 1000,
+    idleFrames: 92,
+    idleMs: 3066,
+    breaks: 0,
+    p90Ms: 17.6
+  };
+
+  it("the drawn / loop cell reads idle and for how long, the rate on the label line (bug: 0 / 2 @60 on a still screen)", () => {
+    const second = secondOf({ activity: ACTIVITY, fps: { loop: 2, drawn: 0 } });
+    for (const compact of [false, true]) {
+      expect(cell(counterCells(second, { gpuAvg: 6 }, compact, true, "12s"), "fps")).toMatchObject({
+        value: "idle",
+        unit: "12s",
+        ratePlace: "label",
+        rate: { text: "@60" }
+      });
+    }
+    expect(cell(counterCells(second, { gpuAvg: 6 }, false, true), "fps").value).toBe("0 / 2");
+  });
+
+  it("p90 is the awake frames' (bug: p90 1000 ms from the idle gaps)", () => {
+    const second = secondOf({ activity: ACTIVITY }, { gapMs: { p50: 900, p90: 1000, p99: 1100 } });
+    expect(cell(counterCells(second, { gpuAvg: 6 }, false, true), "p90")).toMatchObject({
+      value: "17.6",
+      caution: true
+    });
+    const none = secondOf(
+      { activity: { ...ACTIVITY, p90Ms: null } },
+      { gapMs: { p50: 9, p90: 10, p99: 11 } }
+    );
+    expect(cell(counterCells(none, { gpuAvg: 6 }, false, true), "p90").value).toBe("\u2014");
+    const before = secondOf({}, { gapMs: { p50: 9, p90: 10, p99: 11 } });
+    expect(cell(counterCells(before, { gpuAvg: 6 }, false, true), "p90").value).toBe("10.0");
+  });
+
+  it("says how long in seconds, minutes or hours, and nothing without a start", () => {
+    expect(idleForText(1000, 13_400)).toBe("12s");
+    expect(idleForText(0, 59_999)).toBe("59s");
+    expect(idleForText(0, 125_000)).toBe("2m");
+    expect(idleForText(0, 3_599_999)).toBe("59m");
+    expect(idleForText(0, 3_600_000)).toBe("1h");
+    expect(idleForText(0, 7_300_000)).toBe("2h");
+    expect(idleForText(5000, 1000)).toBe("0s");
+    expect(idleForText(null, 1000)).toBe("");
+  });
+});
+
+describe("the GPU headline (spec 03 delta item 8: the window's p50 / p90)", () => {
+  it("reads p50 / p90 in ms on the wide card (bug: one noisy frame moving a mean)", () => {
+    const cells = counterCells(secondOf(), { gpuP50: 4.24, gpuP90: 6.8 }, false, true);
+    expect(cell(cells, "gpu")).toMatchObject({
+      label: "GPU p50 / p90",
+      value: "4.2 / 6.8",
+      unit: "ms"
+    });
+  });
+
+  it("is shorter on the compact card, its unit in the title", () => {
+    const cells = counterCells(secondOf(), { gpuP50: 4.24, gpuP90: 6.8 }, true, true);
+    expect(cell(cells, "gpu")).toMatchObject({
+      label: "GPU p50/p90",
+      value: "4.2/6.8",
+      unit: "",
+      title: "GPU p50 / p90, ms"
+    });
+  });
+
+  it("prints a GPU time of 100 ms or more whole, keeps the mean of an older agent, and a dash without one", () => {
+    expect(
+      cell(counterCells(secondOf(), { gpuP50: 99.94, gpuP90: 250.4 }, false, true), "gpu").value
+    ).toBe("99.9 / 250");
+    expect(cell(counterCells(secondOf(), { gpuAvg: 6.06 }, true, true), "gpu")).toMatchObject({
+      label: "GPU avg",
+      value: "6.1",
+      unit: "ms"
+    });
+    expect(
+      cell(counterCells(secondOf(), { gpuP50: undefined, gpuP90: undefined }, false, true), "gpu")
+        .value
+    ).toBe("\u2014");
   });
 });

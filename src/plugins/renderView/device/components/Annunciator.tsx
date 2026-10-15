@@ -1,19 +1,21 @@
 /**
  * @file renderView device strip — the annunciator legend (design §4): a small boxed uppercase
  * legend in a state colour. Lit: filled; outlined: secondary; hollow (GC?): dashed with "likely".
- * The colour goes out as the inline custom property `--c`, the strip's only inline style.
+ * The colour goes out as the inline custom property `--c`: an editor token or a graph colour in
+ * both themes (`device/colour.ts`); `--c` is the strip's only inline colour.
  */
 import type { VNode } from "preact";
 
 /**
- * The state colours of the strip's legends (tokens on the strip's scope root).
+ * The state colours of the strip's legends: the editor's status and text tokens, so they follow
+ * its light and dark theme (spec 09 Delta 2026-10-15).
  */
 export const TONE_COLOUR = {
-  green: "var(--strip-green)",
-  amber: "var(--strip-amber)",
-  red: "var(--strip-red)",
-  ink2: "var(--strip-ink-2)",
-  cyan: "var(--strip-cyan)"
+  green: "var(--status-live)",
+  amber: "var(--status-warn)",
+  red: "var(--status-error)",
+  ink2: "var(--text-2)",
+  cyan: "var(--teal)"
 } as const;
 
 /**
@@ -21,7 +23,7 @@ export const TONE_COLOUR = {
  */
 export type AnnunciatorProps = {
   readonly text: string;
-  /** A state colour: a token of TONE_COLOUR or a cause hue. */
+  /** A state colour: a token of TONE_COLOUR or a cause hue in both themes (`themedHue`). */
   readonly colour: string;
   readonly lit?: boolean;
   /** GC?: dashed border and "likely". */

@@ -1,12 +1,15 @@
 /**
- * @file overlay plugin — the frame graph on its one canvas: the visitors handed to
- * `perf.readWindow` (made once per domain context, never an inline arrow per tick), the paint of
- * the graph (the backing store resized only on a size or dpr change) and the canvas mount. The
- * window never leaves a visitor: the overlay keeps frame numbers and answers in its state.
+ * @file overlay plugin — the frame graph on its two canvases (the plot, which slides, and the fixed
+ * canvas laid over the whole well, which does not): the visitors handed to `perf.readWindow` (made
+ * once per domain context, never an inline arrow per tick), the paint of both in one visit (each
+ * backing store resized only on a size or dpr change) and the canvas mounts. The window never
+ * leaves a visitor: the overlay keeps frame numbers and answers in its state.
  */
 import type { PerfWindowView } from "../../perf/protocol";
 import { meanGpu, rowOfFrame, spikeOrdinal, stepSpike } from "../../perf/protocol";
-import type { GraphSeam, OverlayCtx, OverlayState, Visitors } from "../types";
+import type { GraphCanvas, GraphSeam, OverlayCtx, OverlayState, Visitors } from "../types";
+import { PAINT_MS } from "../types";
+import { slideAllowed, startSlide } from "./slide";
 
 /** The largest device pixel ratio the backing store follows. */
 const MAX_DPR = 3;
@@ -35,6 +38,54 @@ function selectedRow(state: OverlayState, window: PerfWindowView): number {
 }
 
 /**
+ * Paints the fixed canvas after the plot, in the same visit, at the well's size and the plot's dpr,
+ * without a lead: the tape and its readout, the caption, `now` and the stack legend, cleared first
+ * (the rest of it shows the plot sliding under it). The backing store is resized only when the size
+ * or the dpr changed.
+ *
+ * @param state - Overlay state.
+ * @param graph - The painter seam.
+ * @param window - The window.
+ * @param canvas - The plot canvas just painted.
+ */
+function paintFixed(
+  state: OverlayState,
+  graph: GraphSeam,
+  window: PerfWindowView,
+  canvas: GraphCanvas
+): void {
+  const fixed = state.fixed;
+  if (fixed === undefined) return;
+  // The fixed layer keeps no flags: a painter state of one row, made once.
+  state.fixedGraph ??= graph.createState(1);
+  const { w, h, dpr } = canvas;
+  if (w !== fixed.w || h !== fixed.h || dpr !== fixed.dpr) {
+    fixed.w = w;
+    fixed.h = h;
+    fixed.dpr = dpr;
+    fixed.element.width = Math.round(w * dpr);
+    fixed.element.height = Math.round(h * dpr);
+  }
+  const view = state.fixedView;
+  view.width = w;
+  view.height = h;
+  view.selected = state.graphView.selected;
+  fixed.g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fixed.g.clearRect(0, 0, w, h);
+  graph.paint(fixed.g, window, view, state.fixedGraph);
+}
+
+/**
+ * A GPU time the headline can print: finite, else undefined.
+ *
+ * @param ms - The time, ms.
+ * @returns It, or undefined.
+ */
+function finiteMs(ms: number | undefined): number | undefined {
+  return ms !== undefined && Number.isFinite(ms) ? ms : undefined;
+}
+
+/**
  * Makes the four visitors of a domain context. Each reads its inputs from the state and writes its
  * answer there; none keeps the window.
  *
@@ -51,30 +102,46 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     if (state.graph === undefined || state.graph.flagRow.length < window.capacity) {
       state.graph = graph.createState(window.capacity);
     }
+    // The slide: one tick's distance at this scale, painted past the well's right edge (none under
+    // reduced motion).
+    const lead = canvas.motion ? Math.round(graph.msToPx(window, canvas.w, false, PAINT_MS)) : 0;
+    const width = canvas.w + lead;
     // Skip a paint that would draw the same: window version, selection, size, dpr (a paused game costs nothing).
     const row = state.selected === undefined ? -1 : rowOfFrame(window, state.selected);
     const painted = state.painted;
     const same =
       window.version === painted.version &&
       row === painted.row &&
-      canvas.w === painted.w &&
+      width === painted.w &&
       canvas.h === painted.h &&
-      canvas.dpr === painted.dpr;
+      canvas.nextDpr === painted.dpr;
     if (same) return;
 
+    // The backing store, only when the painted size or the dpr changed.
+    if (width !== painted.w || canvas.h !== painted.h || canvas.nextDpr !== canvas.dpr) {
+      canvas.dpr = canvas.nextDpr;
+      canvas.element.width = Math.round(width * canvas.dpr);
+      canvas.element.height = Math.round(canvas.h * canvas.dpr);
+      canvas.element.style.setProperty("width", `${width}px`);
+    }
     // Paint through the reused view object (no allocation per paint) at the dpr transform.
     const view = state.graphView;
-    view.width = canvas.w;
+    view.width = width;
     view.height = canvas.h;
     view.selected = row;
+    view.leadPx = lead;
     canvas.g.setTransform(canvas.dpr, 0, 0, canvas.dpr, 0, 0);
     graph.paint(canvas.g, window, view, state.graph);
     // Remember what was painted, for the next skip test.
     painted.version = window.version;
     painted.row = row;
-    painted.w = canvas.w;
+    painted.w = width;
     painted.h = canvas.h;
     painted.dpr = canvas.dpr;
+    // The fixed canvas over the well, in the same visit; then slide the fresh plot over the next
+    // tick (compositor only; the next paint resets it). The fixed canvas stays.
+    paintFixed(state, graph, window, canvas);
+    startSlide(state, canvas.element, lead);
   };
 
   const nav = (window: PerfWindowView): void => {
@@ -100,7 +167,12 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
 
   const count = (window: PerfWindowView): void => {
     const facts = state.facts;
-    facts.gpuAvg = meanGpu(window) ?? undefined;
+    // The GPU headline: the window's p50 / p90 (spec 03 delta item 8), the mean from an agent
+    // before it.
+    const before = window.gpuP50Ms === undefined;
+    facts.gpuAvg = before ? (meanGpu(window) ?? undefined) : undefined;
+    facts.gpuP50 = finiteMs(window.gpuP50Ms);
+    facts.gpuP90 = finiteMs(window.gpuP90Ms);
     facts.total = window.spikeCount;
     facts.count = window.count;
     facts.gpuTimer = window.gpuTimer;
@@ -126,8 +198,9 @@ function pixelRatio(): number {
 }
 
 /**
- * Paints the graph when it shows: sets the backing store when the CSS size or the dpr changed,
- * then hands the paint visitor to `perf.readWindow` once. No layout read.
+ * Paints the graph when it shows: reads the dpr and whether the graph may slide, then hands the
+ * paint visitor to `perf.readWindow` once (it sizes the backing store, paints and starts the
+ * slide). No layout read.
  *
  * @param octx - Domain context.
  */
@@ -135,19 +208,13 @@ export function paintGraphNow(octx: OverlayCtx): void {
   const canvas = octx.state.canvas;
   if (canvas === undefined) return;
 
-  const dpr = pixelRatio();
-  const { painted } = octx.state;
-  const backingStoreStale = dpr !== canvas.dpr || painted.w !== canvas.w || painted.h !== canvas.h;
-  if (backingStoreStale) {
-    canvas.dpr = dpr;
-    canvas.element.width = Math.round(canvas.w * dpr);
-    canvas.element.height = Math.round(canvas.h * dpr);
-  }
+  canvas.nextDpr = pixelRatio();
+  canvas.motion = slideAllowed(octx.state, octx.registry);
   octx.perf.readWindow(octx.visitors.paint);
 }
 
 /**
- * The canvas ref of the graph well: mounts the one canvas (its context, a size from the design
+ * The plot canvas ref of the graph well: mounts the canvas (its context, a size from the design
  * until the ResizeObserver reports one) or drops it with its painter state.
  *
  * @param octx - Domain context.
@@ -170,10 +237,42 @@ export function mountCanvas(
 
   const g = octx.graph.context(element);
   if (g === undefined) return;
-  state.canvas = { element, g, w: size.w, h: size.h, dpr: 0 };
+  state.canvas = { element, g, w: size.w, h: size.h, dpr: 0, nextDpr: 1, motion: false };
   state.graph = undefined;
   state.painted.version = -1;
   observeCanvas(state, element);
+}
+
+/**
+ * The fixed canvas ref of the graph well: mounts the canvas laid over the whole well (its context)
+ * or drops it with its painter state. The next tick paints it.
+ *
+ * @param octx - Domain context.
+ * @param element - The canvas, or null when it unmounted.
+ */
+export function mountFixed(octx: OverlayCtx, element: HTMLCanvasElement | null): void {
+  const { state } = octx;
+  if (element === null) {
+    dropFixed(state);
+    return;
+  }
+  if (state.fixed?.element === element) return;
+
+  const g = octx.graph.context(element);
+  if (g === undefined) return;
+  state.fixed = { element, g, w: 0, h: 0, dpr: 0 };
+  state.fixedGraph = undefined;
+  state.painted.version = -1;
+}
+
+/**
+ * Drops the fixed canvas and its painter state.
+ *
+ * @param state - Overlay state.
+ */
+function dropFixed(state: OverlayState): void {
+  state.fixed = undefined;
+  state.fixedGraph = undefined;
 }
 
 /**
@@ -193,7 +292,8 @@ function isUnmeasured(box: { readonly width: number; readonly height: number }):
 }
 
 /**
- * Follows the canvas's CSS size with a ResizeObserver (none in a test runtime without one).
+ * Follows the well's CSS size (the canvas's parent: the canvas itself is painted wider by the
+ * slide) with a ResizeObserver (none in a test runtime without one).
  *
  * @param state - Overlay state.
  * @param element - The canvas.
@@ -207,7 +307,7 @@ function observeCanvas(state: OverlayState, element: HTMLCanvasElement): void {
     canvas.w = box.width;
     canvas.h = box.height;
   });
-  observer.observe(element);
+  observer.observe(element.parentElement ?? element);
   canvasObservers.set(state, observer);
 }
 
@@ -215,7 +315,7 @@ function observeCanvas(state: OverlayState, element: HTMLCanvasElement): void {
 const canvasObservers = new WeakMap<OverlayState, ResizeObserver>();
 
 /**
- * Drops the canvas and its painter state (the record, another tab, the pill, hidden).
+ * Drops both canvases and their painter states (the record, another tab, the pill, hidden).
  *
  * @param state - Overlay state.
  */
@@ -225,4 +325,5 @@ export function dropCanvas(state: OverlayState): void {
   state.canvas = undefined;
   state.graph = undefined;
   state.painted.version = -1;
+  dropFixed(state);
 }

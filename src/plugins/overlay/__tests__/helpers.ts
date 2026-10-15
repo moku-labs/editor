@@ -101,10 +101,13 @@ export const GARDEN_COMMANDS: readonly CommandDescriptor[] = [
 ];
 
 /** The fake registry: records added entries, answers a settable manifest, build and values. */
-export type FakeRegistry = OverlayCtx["registry"] & {
+export type FakeRegistry = Omit<OverlayCtx["registry"], "game"> & {
+  game: OverlayCtx["registry"]["game"];
+  /** What `game()` answers (an object with `anim.reducedMotion()` for the slide tests). */
+  gameApp: unknown;
   readonly added: CommandEntry[];
   commands: readonly CommandDescriptor[];
-  game: string;
+  gameName: string;
   buildInfo: BuildInfo;
   readonly values: Map<string, boolean | undefined>;
 };
@@ -117,13 +120,15 @@ export type FakeRegistry = OverlayCtx["registry"] & {
  */
 export function fakeRegistry(commands: readonly CommandDescriptor[] = []): FakeRegistry {
   const registry: FakeRegistry = {
+    gameApp: {},
+    game: () => registry.gameApp as ReturnType<OverlayCtx["registry"]["game"]>,
     added: [],
     commands,
-    game: "A Memory Missing",
+    gameName: "A Memory Missing",
     buildInfo: { profile: "read", id: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" },
     values: new Map(),
     manifest: (): Manifest => ({
-      game: registry.game,
+      game: registry.gameName,
       page: "http://127.0.0.1/",
       embedded: false,
       sources: [],
@@ -134,6 +139,7 @@ export function fakeRegistry(commands: readonly CommandDescriptor[] = []): FakeR
     },
     envelope: () => ENVELOPE,
     build: () => registry.buildInfo,
+
     command: id => (registry.values.has(id) ? { value: () => registry.values.get(id) } : {})
   };
   return registry;
@@ -445,15 +451,29 @@ export function fakeRecorder(): FakeRecorder {
   return recorder;
 }
 
+/** One paint the spy recorded. */
+export type SpyPaint = {
+  readonly selected: number;
+  readonly width: number;
+  readonly version: number;
+  readonly lead: number;
+  readonly layer: string;
+};
+
 /** The spy painter: records paints; hit tests answer settable rows. */
 export type SpyGraph = GraphSeam & {
-  readonly paints: {
-    readonly selected: number;
-    readonly width: number;
-    readonly version: number;
-  }[];
+  /** The plot canvas's paints. */
+  readonly paints: SpyPaint[];
+  /** The fixed canvas's paints. */
+  readonly fixedPaints: SpyPaint[];
+  /** Every `clearRect` of a fake context: x, y, width, height. */
+  readonly clears: number[][];
   hitSpike: number;
   hitRow: number;
+  /** What `msToPx` answers: the slide distance of one tick (0: no slide). */
+  lead: number;
+  /** The x of every hit test, CSS px of the canvas. */
+  readonly hits: number[];
   noContext: boolean;
   readonly transforms: number[];
 };
@@ -466,16 +486,35 @@ export type SpyGraph = GraphSeam & {
 export function spyGraph(): SpyGraph {
   const graph: SpyGraph = {
     paints: [],
+    fixedPaints: [],
+    clears: [],
     hitSpike: -1,
     hitRow: -1,
+    lead: 0,
+    hits: [],
     noContext: false,
     transforms: [],
-    context: () => (graph.noContext ? undefined : fakeContext(graph.transforms)),
+    context: () => (graph.noContext ? undefined : fakeContext(graph.transforms, graph.clears)),
     paint: (_g, window, view) => {
-      graph.paints.push({ selected: view.selected, width: view.width, version: window.version });
+      const layer = view.layer ?? "all";
+      const paints = layer === "fixed" ? graph.fixedPaints : graph.paints;
+      paints.push({
+        selected: view.selected,
+        width: view.width,
+        version: window.version,
+        lead: view.leadPx ?? 0,
+        layer
+      });
     },
-    spikeAt: () => graph.hitSpike,
-    rowAt: () => graph.hitRow,
+    msToPx: () => graph.lead,
+    spikeAt: (_state, _window, x) => {
+      graph.hits.push(x);
+      return graph.hitSpike;
+    },
+    rowAt: (_state, _window, x) => {
+      graph.hits.push(x);
+      return graph.hitRow;
+    },
     createState: capacity => createGraphState(capacity),
     resetText: vi.fn()
   };
@@ -483,12 +522,16 @@ export function spyGraph(): SpyGraph {
 }
 
 /**
- * A 2D context that does nothing but record `setTransform` scales.
+ * A 2D context that does nothing but record `setTransform` scales and `clearRect` boxes.
  *
  * @param transforms - Where the scales go.
+ * @param clears - Where the cleared boxes go.
  * @returns The context.
  */
-export function fakeContext(transforms: number[] = []): GraphContext2DLike {
+export function fakeContext(
+  transforms: number[] = [],
+  clears: number[][] = []
+): GraphContext2DLike {
   return {
     fillStyle: "",
     strokeStyle: "",
@@ -507,6 +550,9 @@ export function fakeContext(transforms: number[] = []): GraphContext2DLike {
     setLineDash: () => undefined,
     fillText: () => undefined,
     measureText: text => ({ width: text.length * 6 }),
+    clearRect: (...box) => {
+      clears.push(box);
+    },
     setTransform: scale => {
       transforms.push(scale);
     }

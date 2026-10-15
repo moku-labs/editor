@@ -3,9 +3,9 @@
  * main.tsx, index.css and the fonts it reaches) with Bun.build into dist/tools/ (or `--outdir`).
  * Bun inlines CSS fonts as data URLs, which the tools page CSP (`default-src 'self'`) refuses, so
  * the woff2 files stay external and are copied into assets/ with hashed names, each found in the
- * font folders: src/plugins/workspace/styles/fonts (Geist), then src/plugins/overlay/fonts (Barlow,
- * the faces' one home). Then the 09-pages step 4 layout checks run. Output through the branded
- * console (MC1).
+ * font folder src/plugins/workspace/styles/fonts (Geist and Geist Mono, the tools page's only
+ * faces: the phone overlay's Barlow stays in the overlay, spec 09 Delta 2026-10-15). Then the
+ * 09-pages step 4 layout checks run. Output through the branded console (MC1).
  */
 import { copyFile, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path/posix";
@@ -15,11 +15,8 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const PAGE_ENTRY = join(REPO, "src/plugins/pages/page/index.html");
-// Decision "Stage 2 gate choices" (1): the Barlow faces live only in the overlay's folder.
-const FONT_DIRS = [
-  join(REPO, "src/plugins/workspace/styles/fonts"),
-  join(REPO, "src/plugins/overlay/fonts")
-] as const;
+// Decision "Tools-page strip in the editor's look and theme": the tools page loads Geist only.
+const FONT_DIRS = [join(REPO, "src/plugins/workspace/styles/fonts")] as const;
 const ui = createBrandConsole();
 
 /**
@@ -89,7 +86,7 @@ async function externalizeFonts(outDir: string, cssPath: string): Promise<string
     const source = await fontFile(stem);
     if (source === undefined) {
       ui.error(
-        `[moku-editor] build:tools found no font file for ./fonts/${stem}.woff2.\n  Put it in src/plugins/workspace/styles/fonts or src/plugins/overlay/fonts.`
+        `[moku-editor] build:tools found no font file for ./fonts/${stem}.woff2.\n  Put it in src/plugins/workspace/styles/fonts.`
       );
       return undefined;
     }
@@ -192,7 +189,10 @@ async function checkLayout(outDir: string): Promise<boolean> {
       files.some(file => file.startsWith("assets/") && file.endsWith(".woff2")),
       "woff2 fonts in assets/"
     ],
-    [files.some(file => /^assets\/barlow-[\w-]+\.woff2$/.test(file)), "Barlow faces in assets/"],
+    [
+      files.every(file => !/^assets\/barlow-[\w-]+\.woff2$/.test(file)),
+      "no Barlow face in assets/"
+    ],
     [
       texts.every(text => !/\{\s*with\s*:\s*\{\s*type\s*:/.test(text)),
       "no import attribute left in a script"

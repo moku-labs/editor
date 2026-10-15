@@ -5,10 +5,13 @@ import {
   createGraphState,
   GRAPH_COLOURS,
   GRAPH_FONTS,
+  msToPx,
   paintGraph,
-  resetGraphText
+  resetGraphText,
+  rowAt
 } from "../../graph";
-import type { PerfWindowView } from "../../protocol";
+import type { PerfWindow, PerfWindowView } from "../../protocol";
+import { REST } from "../../protocol";
 import type { WindowRow } from "../helpers";
 import { windowOf } from "../helpers";
 
@@ -163,8 +166,11 @@ function fills(colour: string, calls: readonly Call[]): number {
  * @param drawn - Whether it was drawn.
  * @returns The readout's fill and text.
  */
-function readout(ms: number, drawn: 0 | 1 = 1) {
-  const window = windowOf([...rows(3, 16, { budgetMs: 16 }), { t: 48, ms, budgetMs: 16, drawn }]);
+function readout(ms: number, drawn: 0 | 1 = 1, jsMs = ms) {
+  const window = windowOf([
+    ...rows(3, 16, { budgetMs: 16 }),
+    { t: 48, ms, jsMs, budgetMs: 16, drawn }
+  ]);
   const { calls } = paintOnce(window);
   const text = calls.find(call => call.op === "fillText" && call.font === GRAPH_FONTS.wide.readout);
   return [text?.fillStyle, text?.args[0]];
@@ -371,7 +377,7 @@ describe("the edges of a paint", () => {
   });
 
   it("carets a spike over the 45 ms scale in red, and frames the selected GC? flag hollow with a 2 px border", () => {
-    const window = windowOf([...rows(3), { t: 50.1, ms: 60, causes: 0b100_0001 }]);
+    const window = windowOf([...rows(3), { t: 50.1, ms: 60, jsMs: 60, causes: 0b100_0001 }]);
     const { calls } = paintOnce(window, { ...WIDE, selected: 3 });
     expect(calls.some(call => call.op === "fill" && call.fillStyle === GRAPH_COLOURS.red)).toBe(
       true
@@ -463,5 +469,269 @@ describe("the edges of a paint", () => {
     expect(calls.find(call => call.op === "fillText")?.font).toContain(
       '"Moku Overlay Barlow Condensed"'
     );
+  });
+});
+
+describe("the lead (a canvas painted wider than its well and slid between paints)", () => {
+  it("keeps the time scale and draws now leadPx further right (bug: a slide that drifts or stretches the time axis)", () => {
+    const window = windowOf(rows(300));
+    const plain = paintOnce(window, PHONE).state;
+    const lead = paintOnce(window, { ...PHONE, width: PHONE.width + 10, leadPx: 10 }).state;
+    const msPerPx = (state: typeof plain) => state.spanMs / (state.px1 - state.px0);
+    expect(lead.px1).toBeCloseTo(plain.px1 + 10);
+    expect(msPerPx(lead)).toBeCloseTo(msPerPx(plain));
+    expect(lead.startMs + lead.spanMs).toBeCloseTo(plain.startMs + plain.spanMs);
+    expect(lead.startMs).toBeCloseTo(plain.startMs - 10 * msPerPx(plain));
+    expect(rowAt(lead, window, lead.px1)).toBe(299);
+  });
+
+  it("keeps the left-anchored texts in view at the end of a slide (oldest axis label and caption move right by leadPx)", () => {
+    const window = windowOf(rows(300));
+    const plain = paintOnce(window, PHONE);
+    const lead = paintOnce(window, { ...PHONE, width: PHONE.width + 10, leadPx: 10 });
+    const xOfText = (calls: typeof plain.calls, text: string) =>
+      Number(calls.find(call => call.op === "fillText" && call.args[0] === text)?.args[1]);
+    expect(xOfText(lead.calls, "−6 s")).toBeCloseTo(xOfText(plain.calls, "−6 s") + 10);
+    const caption = plain.texts().find(text => text.startsWith("frame"));
+    if (caption !== undefined) {
+      expect(xOfText(lead.calls, caption)).toBeCloseTo(xOfText(plain.calls, caption) + 10);
+    }
+  });
+
+  it("msToPx follows the scale (bug: a slide distance that ignores the window length or the width)", () => {
+    const six = windowOf(rows(300), { spanMs: 6000 });
+    const three = windowOf(rows(150), { spanMs: 3000 });
+    expect(msToPx(six, PHONE.width, false, 250)).toBeCloseTo((250 * (PHONE.width - 36 - 1)) / 6000);
+    expect(msToPx(three, PHONE.width, false, 250)).toBeCloseTo(
+      2 * msToPx(six, PHONE.width, false, 250)
+    );
+    expect(msToPx(six, 1000, true, 1000)).toBeCloseTo((1000 * (1000 - 52 - 1)) / 6000);
+    const painted = paintOnce(six, PHONE).state;
+    expect(msToPx(six, PHONE.width, false, 250)).toBeCloseTo(
+      (250 * (painted.px1 - painted.px0)) / painted.spanMs
+    );
+  });
+});
+
+/**
+ * The texts a paint drew with their x, y and font.
+ *
+ * @param calls - The recorded calls.
+ * @returns The texts.
+ */
+function drawn(calls: readonly Call[]) {
+  return calls
+    .filter(call => call.op === "fillText")
+    .map(call => ({
+      text: String(call.args[0]),
+      x: Number(call.args[1]),
+      y: Number(call.args[2]),
+      font: call.font
+    }));
+}
+
+/** The texts a fixed layer draws over the plot: positions, not times. */
+const FIXED_TEXTS = ["now", "frame 121", "JS", "GPU", "idle"];
+
+describe("the layers (a plot canvas that slides under a fixed canvas that does not)", () => {
+  it("'all' is today's output (bug: the strip's graph changing with the layer option)", () => {
+    const window = windowOf(rows(300, 16.7, { causes: 0 }));
+    const plain = paintOnce(window, { ...PHONE, selected: 120 });
+    const all = paintOnce(window, { ...PHONE, selected: 120, layer: "all" });
+    expect(all.calls).toEqual(plain.calls);
+    const wide = paintOnce(window, WIDE);
+    expect(paintOnce(window, { ...WIDE, layer: "all" }).calls).toEqual(wide.calls);
+  });
+
+  it("plot and fixed together draw what 'all' draws, the fixed texts where 'all' puts them", () => {
+    const window = windowOf(rows(300));
+    const view = { ...PHONE, selected: 120 };
+    const all = drawn(paintOnce(window, view).calls);
+    const plot = drawn(paintOnce(window, { ...view, layer: "plot" }).calls);
+    const fixed = drawn(paintOnce(window, { ...view, layer: "fixed" }).calls);
+    expect([...plot, ...fixed].map(text => text.text).toSorted()).toEqual(
+      all.map(text => text.text).toSorted()
+    );
+    for (const text of fixed) {
+      const same = all.find(each => each.text === text.text && each.font === text.font);
+      expect(same, text.text).toBeDefined();
+      expect(text.x).toBeCloseTo(same?.x ?? Number.NaN);
+      expect(text.y).toBeCloseTo(same?.y ?? Number.NaN);
+    }
+    const fixedTexts = fixed.map(text => text.text);
+    expect(fixedTexts).toEqual(expect.arrayContaining([...FIXED_TEXTS, "16.7", "40"]));
+    expect(plot.map(text => text.text)).toEqual(["−6 s"]);
+  });
+
+  it("the fixed layer's texts stay where the slid plot ends; the time labels slide (bug: now, the caption or the legend jumping every tick)", () => {
+    const window = windowOf(rows(300));
+    const lead = 10;
+    const all = drawn(
+      paintOnce(window, { ...PHONE, width: PHONE.width + lead, leadPx: lead, selected: 120 }).calls
+    );
+    const fixed = drawn(paintOnce(window, { ...PHONE, layer: "fixed", selected: 120 }).calls);
+    for (const word of FIXED_TEXTS) {
+      const slid = all.find(text => text.text === word);
+      const still = fixed.find(text => text.text === word);
+      expect(still, word).toBeDefined();
+      expect(still?.x, word).toBeCloseTo((slid?.x ?? Number.NaN) - lead);
+    }
+    const plot = drawn(
+      paintOnce(window, { ...PHONE, width: PHONE.width + lead, leadPx: lead, layer: "plot" }).calls
+    );
+    const oldest = all.find(text => text.text === "−6 s");
+    expect(plot).toEqual([oldest]);
+  });
+
+  it("the fixed layer leaves the plot visible: no well, grid, rows or flags (bug: the slide hidden under it)", () => {
+    const window = windowOf(rows(300, 16.7, { causes: 1 }));
+    const fixed = paintOnce(window, { ...PHONE, layer: "fixed", selected: 120 });
+    const { px1, py1 } = fixed.state;
+    const fills = fixed.calls.filter(call => call.op === "fillRect");
+    expect(fills.length).toBeGreaterThan(0);
+    for (const fill of fills) {
+      const [x, y] = fill.args.map(Number);
+      expect((x ?? 0) >= px1 || (y ?? 0) >= py1, `${fill.fillStyle} at ${x},${y}`).toBe(true);
+    }
+    expect(fills.some(call => call.fillStyle === GRAPH_COLOURS.well)).toBe(false);
+    const points = fixed.calls
+      .filter(call => call.op === "moveTo" || call.op === "lineTo")
+      .map(call => Number(call.args[0]));
+    expect(points.filter(x => x < px1)).toEqual([px1 + 3 - 7]);
+    const plot = paintOnce(window, { ...PHONE, layer: "plot", selected: 120 });
+    expect(
+      plot.calls.some(call => call.op === "fillRect" && call.fillStyle === GRAPH_COLOURS.tape)
+    ).toBe(false);
+  });
+});
+
+/**
+ * A window of rows with their rest states set.
+ *
+ * @param list - The rows.
+ * @param rests - The rest of each row by index (missing: awake).
+ * @returns The window.
+ */
+function restingWindow(list: readonly WindowRow[], rests: Record<number, number>): PerfWindow {
+  const window = windowOf(list);
+  for (const [row, rest] of Object.entries(rests)) window.rest[Number(row)] = rest;
+  return window;
+}
+
+/**
+ * The filled rectangles of a colour as [x, y, width, height], above a y (the phone's stack legend
+ * draws its swatches in the axis band).
+ *
+ * @param colour - The fill.
+ * @param calls - The recorded calls.
+ * @param below - Only boxes whose top is above this y.
+ * @returns The boxes.
+ */
+function boxes(
+  colour: string,
+  calls: readonly Call[],
+  below = Number.POSITIVE_INFINITY
+): number[][] {
+  return calls
+    .filter(call => call.op === "fillRect" && call.fillStyle === colour)
+    .map(call => call.args.map(Number))
+    .filter(([, y]) => (y ?? 0) < below);
+}
+
+describe("rest and work (spec 03 delta 2026-10-15, item 7)", () => {
+  it("ticks an awake row's notable gap faintly under the baseline, with no flag (bug: a GAP flag a second on a still screen)", () => {
+    const window = windowOf([
+      ...rows(4),
+      { t: 66.8, ms: 40, causes: 1, cause: 0 },
+      { t: 106.8 },
+      { t: 123.5, ms: 40, causes: 1, cause: 0 },
+      { t: 163.5, ms: 40 }
+    ]);
+    window.rest[6] = REST.woke;
+    const { calls, state } = paintOnce(window, PHONE);
+    const ticks = boxes(GRAPH_COLOURS.idleOutline, calls);
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0]?.slice(1)).toEqual([state.py1 + 1, 1, 3]);
+    expect(state.flagCount).toBe(0);
+  });
+
+  it("draws a resting row as one quiet frame of its rate: no SKIP hole or caret (bug: amber carets all over an idle screen)", () => {
+    const window = restingWindow(
+      [
+        ...rows(3),
+        { t: 50.1, ms: 100, rateMs: 16.67, budgetMs: 100, drawn: 0 },
+        { t: 150.1, ms: 100, rateMs: 16.67, budgetMs: 100 }
+      ],
+      { 3: REST.idle, 4: REST.idle }
+    );
+    const { calls, state } = paintOnce(window, PHONE);
+    expect(calls.some(call => call.op === "fill" && call.fillStyle === GRAPH_COLOURS.amber)).toBe(
+      false
+    );
+    const tops = boxes(GRAPH_COLOURS.idle, calls, state.py1).map(([, y]) => y);
+    expect(tops).toHaveLength(5);
+    for (const top of tops) expect(top).toBeCloseTo(yAt(16.67, state.py0, state.py1));
+  });
+
+  it("draws a break as a cut in the baseline with a double bar, no bar (bug: a 900 ms wall where the browser made no frame)", () => {
+    const window = restingWindow([...rows(3), { t: 50.1, ms: 950, jsMs: 0.5 }, { t: 1000.1 }], {
+      3: REST.break
+    });
+    const { calls, state } = paintOnce(window, PHONE);
+    expect(boxes(GRAPH_COLOURS.js, calls, state.py1)).toHaveLength(4);
+    expect(boxes(GRAPH_COLOURS.idle, calls, state.py1)).toHaveLength(4);
+    const cut = boxes(GRAPH_COLOURS.well, calls).filter(([, y]) => y === state.py1);
+    expect(cut).toHaveLength(1);
+    expect(cut[0]?.[2]).toBeGreaterThan(20);
+    const bars = boxes(GRAPH_COLOURS.ink3, calls);
+    expect(bars).toHaveLength(2);
+    expect((bars[1]?.[0] ?? 0) - (bars[0]?.[0] ?? 0)).toBe(3);
+  });
+
+  it("draws the wake after a rest as an awake row: up to its budget, not its rate", () => {
+    const window = restingWindow(
+      [...rows(3), { t: 50.1, ms: 100 }, { t: 150.1, ms: 30, rateMs: 8.33, budgetMs: 20 }],
+      { 3: REST.idle, 4: REST.woke }
+    );
+    const { calls, state } = paintOnce(window, PHONE);
+    const tops = boxes(GRAPH_COLOURS.idle, calls, state.py1).map(([, y]) => y);
+    expect(tops.at(-1)).toBeCloseTo(yAt(20, state.py0, state.py1));
+  });
+
+  it("sizes a spike's bar and its flag's leader by its work, not by the gap before it (bug: the vsync gap drawn as over-budget work)", () => {
+    const window = windowOf([...rows(3), { t: 50.1, ms: 41.3, jsMs: 20, gpuMs: 5, causes: 0b11 }]);
+    const { calls, state } = paintOnce(window, PHONE);
+    const top = yAt(25, state.py0, state.py1);
+    expect(boxes(CAUSE_STYLE.js.hue, calls, state.py1).at(-1)?.[1]).toBeCloseTo(top);
+    const leader = calls.find(
+      call => call.op === "lineTo" && call.strokeStyle === CAUSE_STYLE.js.hue
+    );
+    expect(Number(leader?.args[1])).toBeCloseTo(top);
+  });
+
+  it("stops a plain row's idle band at its budget: a late frame without work stays flat (bug: a 120 fps budget on a 60 Hz display drawn as over budget)", () => {
+    const window = windowOf(rows(4, 16.7, { ms: 16.7, jsMs: 3, rateMs: 8.33, budgetMs: 8.33 }));
+    const { calls, state } = paintOnce(window, PHONE);
+    for (const [, y] of boxes(GRAPH_COLOURS.idle, calls, state.py1)) {
+      expect(y).toBeCloseTo(yAt(8.33, state.py0, state.py1));
+    }
+  });
+
+  it("colours the readout by work against the budget, not by the frame time (bug: an amber 32.5 for a frame that waited on vsync)", () => {
+    expect(readout(32.5, 1, 3)).toEqual([GRAPH_COLOURS.cyan, "32.5"]);
+    expect(readout(32.5, 1, 20)).toEqual([GRAPH_COLOURS.amber, "32.5"]);
+  });
+
+  it("reads IDLE in a quiet ink for a resting or break focus row, never an amber SKIP", () => {
+    const resting = restingWindow([...rows(3), { t: 50.1, ms: 100, drawn: 0 }], { 3: REST.idle });
+    const idle = paintOnce(resting, PHONE).calls.find(
+      call => call.op === "fillText" && call.font === GRAPH_FONTS.phone.readout
+    );
+    expect([idle?.fillStyle, idle?.args[0]]).toEqual([GRAPH_COLOURS.ink2, "IDLE"]);
+    const pause = restingWindow([...rows(3), { t: 50.1, ms: 950 }], { 3: REST.break });
+    const paused = paintOnce(pause, PHONE).calls.find(
+      call => call.op === "fillText" && call.font === GRAPH_FONTS.phone.readout
+    );
+    expect([paused?.fillStyle, paused?.args[0]]).toEqual([GRAPH_COLOURS.ink2, "IDLE"]);
   });
 });

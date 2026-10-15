@@ -4,7 +4,7 @@
  * nothing: every line is a fresh frozen engine object, kept as it is (engine fact 7).
  */
 import type { PerfEventLine, PerfHeaderLine, PerfLogLine } from "./protocol";
-import { isPerfDisplay } from "./protocol";
+import { announcedHzOf, isPerfDisplay, isRateChange } from "./protocol";
 import { notifyWatchers } from "./state";
 import type { PerfState } from "./types";
 
@@ -28,7 +28,8 @@ function notifyInSpan(state: PerfState): void {
 }
 
 /**
- * Keeps a header: its display, and whether the page has a GPU timer.
+ * Keeps a header: its display, the display's rate (the hz it announces, else the header's rate),
+ * and whether the page has a GPU timer.
  *
  * @param state - perf's state.
  * @param line - The header line.
@@ -37,6 +38,7 @@ function keepHeader(state: PerfState, line: PerfHeaderLine): void {
   const gpuTimer = line.gpu.timer !== null;
   state.header = line;
   state.display = line.display;
+  state.displayHz = announcedHzOf(line.display) ?? line.rate?.displayHz ?? state.displayHz;
   if (state.window.gpuTimer !== gpuTimer) {
     state.window.gpuTimer = gpuTimer;
     state.window.version += 1;
@@ -45,7 +47,8 @@ function keepHeader(state: PerfState, line: PerfHeaderLine): void {
 }
 
 /**
- * Keeps an event line perf reads: a valid `display`, a `rate` line, a frame event of the game.
+ * Keeps an event line perf reads: a valid `display` (with the hz a newer engine announces in it), a
+ * `rate` line (its display Hz only while the display announces none), a frame event of the game.
  * Every other name (`devtools`, `command`, `recorder`, …) changes nothing.
  *
  * @param state - perf's state.
@@ -55,11 +58,15 @@ function keepEvent(state: PerfState, line: PerfEventLine): void {
   if (line.name === "display") {
     if (!isPerfDisplay(line.detail)) return;
     state.display = line.detail;
+    state.displayHz = announcedHzOf(line.detail) ?? state.displayHz;
     notifyInSpan(state);
     return;
   }
 
   if (line.name === "rate") {
+    if (isRateChange(line.detail)) {
+      state.displayHz = announcedHzOf(state.display) ?? line.detail.displayHz ?? state.displayHz;
+    }
     state.rateLines[state.rateLineNext % state.rateLines.length] = line;
     state.rateLineNext += 1;
     notifyInSpan(state);

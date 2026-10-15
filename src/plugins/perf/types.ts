@@ -73,6 +73,10 @@ export type PerfScratch = {
   readonly gpuMs: Float32Array;
   readonly gpuPartial: Uint8Array;
   readonly drawn: Uint8Array;
+  /** The frame ran under the idle cap (time's `idle`). */
+  readonly idle: Uint8Array;
+  /** The draw reason of spec 14 (an index of the engine's `DEMAND_REASONS`; `REASON_NONE` = on demand, nothing drawn). */
+  readonly reason: Uint8Array;
   readonly causes: Uint8Array;
   readonly path: Uint16Array;
 };
@@ -101,6 +105,8 @@ export type PerfState = {
   readonly rowPath: Uint16Array;
   /** The read target, `config.frames` long. */
   readonly scratch: PerfScratch;
+  /** The sort scratch of the headline GPU p50/p90 (`spreadGpu`), `config.frames` long. */
+  readonly gpuSorted: Float64Array;
   /** ring.written after the last read; undefined before the first read of a run. */
   cursor: number | undefined;
   /** Frames the ring overwrote before perf read them, since start. */
@@ -115,6 +121,12 @@ export type PerfState = {
   display: PerfDisplay | undefined;
   /** The newest sample line. */
   sample: PerfSampleLine | undefined;
+  /**
+   * The display's refresh rate: the `hz` the display announces (header or newest `display` event),
+   * else the engine's `time.rate().displayHz`, else the header's or newest rate line's; null while
+   * unknown.
+   */
+  displayHz: number | null;
   /** The last 64 spike lines by arrival. */
   readonly spikeLines: (PerfSpikeLine | undefined)[];
   /** Spike lines received; the next slot is `spikeLineNext % 64`. */

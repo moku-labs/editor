@@ -22,6 +22,7 @@ export function createDeviceStripState(): DeviceStripState {
     second: undefined,
     secondAt: undefined,
     window: createPerfWindow(STRIP_ROWS),
+    windowAt: undefined,
     spikes: [],
     recorder: undefined,
     perf: "absent",
@@ -70,6 +71,7 @@ export function clearStripData(strip: DeviceStripState): void {
   strip.second = undefined;
   strip.secondAt = undefined;
   strip.window.count = 0;
+  strip.windowAt = undefined;
   strip.window.spikeCount = 0;
   strip.window.version += 1;
   strip.spikes = [];

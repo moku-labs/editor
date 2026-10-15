@@ -1,11 +1,25 @@
 /**
  * @file perf plugin — the read cycle (`readTick`): read the frames after the cursor into the
- * scratch, append them to the window, trim it to `windowMs`, pick up late GPU times, rebuild the
- * spike index and the scalars, then tell the watches. Runs on perf's own timer, inside the
- * monitor's agent span. Allocation-free: indexed loops and typed-array `copyWithin`.
+ * scratch, append them to the window, trim it to `windowMs`, pick up late GPU times, count the
+ * sustained GPU (2 of 3 drawn frames), rebuild the spike index, the headline GPU and the scalars,
+ * then tell the watches. Runs on perf's own timer, inside the monitor's agent span. Allocation-free:
+ * indexed loops, typed-array `copyWithin` and an in-place sort.
  */
-import type { FrameRing } from "./protocol";
-import { DEFAULT_RATE_MS, primaryCause } from "./protocol";
+import type { FrameRing, PerfWindow, RestState } from "./protocol";
+import {
+  announcedHzOf,
+  DEFAULT_RATE_MS,
+  displayHzOf,
+  GAP_BIT,
+  GPU_BIT,
+  hasWork,
+  isNotableGap,
+  promoteSustainedGpu,
+  REST,
+  spikeCause,
+  spreadGpu
+} from "./protocol";
+import { REASON_NONE, ringCauses } from "./ring";
 import { notifyWatchers } from "./state";
 import type { PerfConfig, PerfState } from "./types";
 
@@ -24,6 +38,9 @@ import type { PerfConfig, PerfState } from "./types";
 function cell(column: ArrayLike<number>, index: number): number {
   return column[index] ?? Number.NaN;
 }
+
+/** A gap this long or longer without work is a break: the browser made no frame, ms. */
+const BREAK_GAP_MS = 900;
 
 /** The window's "this second", ms. */
 const SECOND_MS = 1000;
@@ -66,13 +83,112 @@ function dropRows(state: PerfState, from: number): void {
   window.rateMs.copyWithin(0, from, end);
   window.budgetMs.copyWithin(0, from, end);
   window.drawn.copyWithin(0, from, end);
+  window.rest.copyWithin(0, from, end);
   window.causes.copyWithin(0, from, end);
+  window.noise.copyWithin(0, from, end);
   window.cause.copyWithin(0, from, end);
   state.rowWritten.copyWithin(0, from, end);
   state.rowPartial.copyWithin(0, from, end);
   state.rowGapMs.copyWithin(0, from, end);
   state.rowPath.copyWithin(0, from, end);
   window.count = end - from;
+}
+
+/**
+ * The rest of scratch row `index` as window row `row` (spec 03 delta 2026-10-15): resting when the
+ * engine ran it under its idle cap or rendered it on demand and drew nothing; a break when a gap of
+ * 900 ms or more came without work (the browser made no frame); the wake when the row before rested;
+ * else awake.
+ *
+ * @param state - perf's state.
+ * @param row - The window row it becomes.
+ * @param index - The scratch row.
+ * @returns The rest state.
+ */
+function restOf(state: PerfState, row: number, index: number): RestState {
+  const { scratch, window } = state;
+  const isIdleCap = scratch.idle[index] === 1;
+  const isStillDemand = scratch.drawn[index] === 0 && scratch.reason[index] === REASON_NONE;
+  if (isIdleCap || isStillDemand) return REST.idle;
+  const isBreak =
+    cell(scratch.gapMs, index) >= BREAK_GAP_MS && !hasWork(ringCauses(cell(scratch.causes, index)));
+  if (isBreak) return REST.break;
+  return row > 0 && window.rest[row - 1] === REST.idle ? REST.woke : REST.awake;
+}
+
+/**
+ * The cause bits perf keeps for a row: the engine's, with the gap bit of a gap vsync explains cleared
+ * (one frame of the budget or of the display, whichever is longer, times 1.5).
+ *
+ * @param causes - The engine's cause bits.
+ * @param gapMs - The gap before the frame.
+ * @param budgetMs - The frame's budget.
+ * @param displayHz - The display's rate the engine learned; null when unknown.
+ * @returns The bits kept.
+ * @example
+ * ```ts
+ * keptCauses(0b1, 16.7, 8.33, 60); // 0: one vsync of a 60 Hz display
+ * ```
+ */
+function keptCauses(
+  causes: number,
+  gapMs: number,
+  budgetMs: number,
+  displayHz: number | null
+): number {
+  if ((causes & GAP_BIT) === 0 || isNotableGap(gapMs, budgetMs, displayHz)) return causes;
+  return causes & ~GAP_BIT;
+}
+
+/**
+ * Writes a row's cause bits as perf heard them (`keptCauses`): a GPU over budget waits in `noise`
+ * until `promoteSustainedGpu` counts it, and a GPU once counted stays counted; then the cause.
+ *
+ * @param window - The window; the row's `rest` is written.
+ * @param row - The row.
+ * @param heard - The bits kept from the engine's.
+ * @param counted - `GPU_BIT` when the row's GPU was counted already, else 0.
+ * @returns Whether `causes` or `noise` changed.
+ */
+function writeCauses(window: PerfWindow, row: number, heard: number, counted: number): boolean {
+  const causes = (heard & ~GPU_BIT) | (heard & counted);
+  const noise = heard & GPU_BIT & ~counted;
+  const changed = causes !== window.causes[row] || noise !== window.noise[row];
+  window.causes[row] = causes;
+  window.noise[row] = noise;
+  window.cause[row] = spikeCause(causes, cell(window.rest, row));
+  return changed;
+}
+
+/**
+ * The rate of scratch row `index`: the ring's, else the row before's, else one 60 fps frame.
+ *
+ * @param state - perf's state.
+ * @param row - The window row it becomes.
+ * @param index - The scratch row.
+ * @returns One frame of the rate, ms.
+ */
+function rowRateMs(state: PerfState, row: number, index: number): number {
+  const rateMs = cell(state.scratch.rateMs, index);
+  if (rateMs > 0) return rateMs;
+  return row > 0 ? (state.window.rateMs[row - 1] ?? DEFAULT_RATE_MS) : DEFAULT_RATE_MS;
+}
+
+/**
+ * The budget of scratch row `index`: the ring's, else its rate; a resting frame's is at least its
+ * cap (the idle cap's frame).
+ *
+ * @param state - perf's state.
+ * @param index - The scratch row.
+ * @param rateMs - Its rate.
+ * @param rest - Its rest.
+ * @returns The budget, ms.
+ */
+function rowBudgetMs(state: PerfState, index: number, rateMs: number, rest: RestState): number {
+  const budgetMs = cell(state.scratch.budgetMs, index);
+  const own = budgetMs > 0 ? budgetMs : rateMs;
+  const capMs = cell(state.scratch.capMs, index);
+  return rest === REST.idle && capMs > own ? capMs : own;
 }
 
 /**
@@ -87,26 +203,31 @@ function writeRow(state: PerfState, row: number, index: number, written: number)
   const { window, scratch } = state;
   const gapMs = cell(scratch.gapMs, index);
   const gpuMs = cell(scratch.gpuMs, index);
-  const causes = cell(scratch.causes, index);
   const agentMs = cell(scratch.agentMs, index);
-  const workMs = cell(scratch.workMs, index);
-  let rateMs = cell(scratch.rateMs, index);
-  if (Number.isNaN(rateMs) || rateMs <= 0)
-    rateMs = row > 0 ? (window.rateMs[row - 1] ?? DEFAULT_RATE_MS) : DEFAULT_RATE_MS;
-  let budgetMs = cell(scratch.budgetMs, index);
-  if (Number.isNaN(budgetMs) || budgetMs <= 0) budgetMs = rateMs;
-  const jsMs = Math.max(0, (workMs || 0) - (Number.isFinite(agentMs) ? agentMs : 0));
+  const rateMs = rowRateMs(state, row, index);
+  const rest = restOf(state, row, index);
+  const budgetMs = rowBudgetMs(state, index, rateMs, rest);
+  const heard = keptCauses(
+    ringCauses(cell(scratch.causes, index)),
+    gapMs,
+    budgetMs,
+    state.displayHz
+  );
+  const jsMs = Math.max(
+    0,
+    (cell(scratch.workMs, index) || 0) - (Number.isFinite(agentMs) ? agentMs : 0)
+  );
 
   window.frame[row] = cell(scratch.frame, index);
   window.t[row] = cell(scratch.t, index);
   window.drawn[row] = cell(scratch.drawn, index);
-  window.causes[row] = causes;
+  window.rest[row] = rest;
+  writeCauses(window, row, heard, 0);
   window.gpuMs[row] = gpuMs;
   window.rateMs[row] = rateMs;
   window.budgetMs[row] = budgetMs;
   window.jsMs[row] = jsMs;
   window.ms[row] = frameMs(gapMs, cell(scratch.capMs, index), jsMs, gpuMs);
-  window.cause[row] = primaryCause(causes);
   state.rowWritten[row] = written;
   state.rowPartial[row] = cell(scratch.gpuPartial, index);
   state.rowGapMs[row] = gapMs;
@@ -188,7 +309,8 @@ export function slotOfFrame(ring: FrameRing, written: number, frame: number): nu
 
 /**
  * Step 6, one partial row: takes the late GPU time, `gpuPartial` and the causes from the ring slot,
- * but only while the slot still holds the row's frame (11:777-784).
+ * but only while the slot still holds the row's frame (11:777-784). A GPU over budget that lands
+ * waits in `noise` for `promoteSustainedGpu`.
  *
  * @param state - perf's state.
  * @param ring - The frame ring.
@@ -202,20 +324,23 @@ function refreshRow(state: PerfState, ring: FrameRing, row: number): boolean {
   const { columns } = ring;
 
   const gpuMs = cell(columns.gpuMs, slot);
-  const causes = cell(columns.causes, slot);
+  const gapMs = cell(state.rowGapMs, row);
+  const heard = keptCauses(
+    ringCauses(cell(columns.causes, slot)),
+    gapMs,
+    cell(window.budgetMs, row),
+    state.displayHz
+  );
   const partial = cell(columns.gpuPartial, slot);
+  const causesChanged = writeCauses(window, row, heard, cell(window.causes, row) & GPU_BIT);
   const changed =
-    differs(gpuMs, cell(window.gpuMs, row)) ||
-    causes !== window.causes[row] ||
-    partial !== state.rowPartial[row];
+    causesChanged || differs(gpuMs, cell(window.gpuMs, row)) || partial !== state.rowPartial[row];
   if (!changed) return false;
 
   window.gpuMs[row] = gpuMs;
-  window.causes[row] = causes;
   state.rowPartial[row] = partial;
   const capMs = cell(columns.capMs, slot);
-  window.ms[row] = frameMs(cell(state.rowGapMs, row), capMs, cell(window.jsMs, row), gpuMs);
-  window.cause[row] = primaryCause(causes);
+  window.ms[row] = frameMs(gapMs, capMs, cell(window.jsMs, row), gpuMs);
   return true;
 }
 
@@ -277,6 +402,8 @@ function updateScalars(state: PerfState, windowMs: number): boolean {
   let loop = 0;
   let drawn = 0;
   for (let row = newest; row >= 0 && cell(window.t, row) > newestT - SECOND_MS; row -= 1) {
+    const rest = window.rest[row];
+    if (rest === REST.idle || rest === REST.break) continue;
     loop += 1;
     if (window.drawn[row] === 1) drawn += 1;
   }
@@ -286,15 +413,19 @@ function updateScalars(state: PerfState, windowMs: number): boolean {
 }
 
 /**
- * Steps 3–10 inside the agent span: read, append, trim, late GPU, spike index, scalars; then
- * `version` and the watches when anything changed. A ring whose `written` went below the cursor was
- * rebuilt by the engine: the window starts over.
+ * Steps 3–10 inside the agent span: read, append, trim, late GPU, the sustained GPU, spike index,
+ * headline GPU, scalars; then `version` and the watches when anything changed. A ring whose
+ * `written` went below the cursor was rebuilt by the engine: the window starts over.
  *
  * @param state - perf's state.
  * @param ring - The frame ring.
  * @param config - perf's config.
  */
 function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig>): void {
+  // The display's rate, for the vsync judgement of the gaps read now: the hz the display announces,
+  // else the one the engine's time learned.
+  state.displayHz = announcedHzOf(state.display) ?? displayHzOf(state.game) ?? state.displayHz;
+
   const reset = state.cursor !== undefined && ring.written < state.cursor;
   if (reset) {
     // The engine rebuilt its ring (a new capacity): start over, as at the first read of a run.
@@ -311,10 +442,13 @@ function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig
   const appended = appendRows(state, copied, ring.written - copied);
   const trimmed = trimRows(state, config.windowMs);
   const refreshed = refreshPartial(state, ring);
+  const promoted = promoteSustainedGpu(state.window);
+  const rowsChanged = reset || appended || trimmed || refreshed || promoted;
+  if (rowsChanged) spreadGpu(state.window, state.gpuSorted);
   indexSpikes(state);
   const scalars = updateScalars(state, config.windowMs);
   state.measuring = true;
-  if (!(reset || appended || trimmed || refreshed || scalars)) return;
+  if (!(rowsChanged || scalars)) return;
 
   state.window.version += 1;
   notifyWatchers(state);

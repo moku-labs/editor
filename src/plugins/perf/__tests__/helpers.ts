@@ -152,6 +152,10 @@ export type WindowRow = {
   readonly budgetMs?: number;
   readonly drawn?: 0 | 1;
   readonly causes?: number;
+  /** Cause bits heard but not counted (the gpu bit of a lone GPU outlier); 0 by default. */
+  readonly noise?: number;
+  /** The row's `REST` state; awake by default. */
+  readonly rest?: number;
   /** A primary cause code to force (default: from `causes`). */
   readonly cause?: number;
 };
@@ -182,6 +186,8 @@ export function windowOf(
     window.budgetMs[index] = row.budgetMs ?? 16.67;
     window.drawn[index] = row.drawn ?? 1;
     window.causes[index] = row.causes ?? 0;
+    window.noise[index] = row.noise ?? 0;
+    window.rest[index] = row.rest ?? 0;
     window.cause[index] = cause;
     if (cause !== 0) {
       window.spikes[window.spikeCount] = index;

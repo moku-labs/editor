@@ -15,9 +15,11 @@ import type {
   Time
 } from "@moku-labs/game";
 import {
+  DEMAND_REASONS,
   PERF_GAP_BUCKETS as ENGINE_GAP_BUCKETS,
   PERF_LOG_VERSION as ENGINE_LOG_VERSION,
-  frameAt
+  frameAt,
+  PERF_CAUSES
 } from "@moku-labs/game";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
@@ -44,6 +46,7 @@ import type {
   WarmDetail
 } from "../../protocol";
 import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } from "../../protocol";
+import { REASON_NONE } from "../../ring";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The editor's view of the engine against the engine itself (spec 03 § Against
@@ -160,5 +163,26 @@ describe("the editor constants against the engine's frameAt", () => {
     monitor.commit({ t: 16, kept: 2, retakes: 1 });
     expect(frameAt(monitor.frames(), 0)?.kept).toEqual({ pictures: 2, retakes: 1 });
     expect(frameAt(monitor.frames(), 0)?.reason).toBeNull();
+  });
+
+  it('reads REASON_NONE as the engine\'s "none" draw reason (spec 14: on demand, nothing drawn)', () => {
+    const monitor = createFakeMonitor({ capacity: 4 });
+    monitor.commit({ t: 0, drawn: false, reason: REASON_NONE });
+    expect(frameAt(monitor.frames(), 0)?.reason).toBe("none");
+  });
+});
+
+describe("the engine's exported lists (game@0fda201: PERF_CAUSES, DEMAND_REASONS)", () => {
+  it("reads every draw reason of DEMAND_REASONS through frameAt in ring order (the fake's reason column is the engine's)", () => {
+    const monitor = createFakeMonitor({ capacity: 32 });
+    for (const [index, reason] of DEMAND_REASONS.entries()) {
+      monitor.commit({ t: index * 16, reason: index });
+      expect(frameAt(monitor.frames(), 0)?.reason).toBe(reason);
+    }
+  });
+
+  it("keeps CAUSE_BITS, the engine-free bit order of the wire, the tools page and the server's report, equal to PERF_CAUSES (bug: a tools page naming a spike by another cause)", () => {
+    expect([...CAUSE_BITS]).toEqual([...PERF_CAUSES]);
+    expectTypeOf<(typeof CAUSE_BITS)[number]>().toEqualTypeOf<(typeof PERF_CAUSES)[number]>();
   });
 });

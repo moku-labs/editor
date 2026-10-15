@@ -44,7 +44,15 @@ export const FRAMES = `
       border-radius: 3px;
       background: var(--well);
     }
-    [data-graph] canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: manipulation; }
+    [data-graph] canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      touch-action: manipulation;
+      will-change: transform;
+    }
+    [data-graph] canvas[data-fixed] { position: absolute; top: 0; left: 0; pointer-events: none; }
     [data-graph] [data-legend] { position: absolute; top: 36px; left: 5px; pointer-events: none; }
     [data-part="counters"] {
       display: grid;

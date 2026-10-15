@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the engine's "not reported" */
 import { describe, expect, it } from "vitest";
+import { causeHue } from "../../device/contract";
 import { recordView } from "../../device/record";
 import { recorderOf, recordOf, spikeLineOf } from "../device-fixtures";
 
@@ -65,8 +66,19 @@ describe("the record lead", () => {
     expect(view.ms).toBe("12.0");
   });
 
-  it("the why line carries the primary cause's hue", () => {
-    expect(recordView(recordOf(), undefined).hue).toBe("#B58CFF");
+  it("the why line carries the primary cause's hue in both editor themes", () => {
+    expect(recordView(recordOf(), undefined).hue).toBe(
+      `light-dark(${causeHue("light", "upload")}, ${causeHue("dark", "upload")})`
+    );
+  });
+
+  it("the lead's cause legends carry their hues in both editor themes", () => {
+    const view = recordView(recordOf(), undefined);
+
+    expect(view.causes.map(legend => [legend.cause, legend.hue])).toEqual([
+      ["upload", `light-dark(${causeHue("light", "upload")}, ${causeHue("dark", "upload")})`],
+      ["gap", `light-dark(${causeHue("light", "gap")}, ${causeHue("dark", "gap")})`]
+    ]);
   });
 });
 

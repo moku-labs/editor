@@ -18,7 +18,7 @@
         "@moku-labs/ci": "1.5.7",
         "@moku-labs/common": "0.3.10",
         "@moku-labs/core": "1.7.6",
-        "@moku-labs/game": "https://pkg.pr.new/@moku-labs/game@a10e324470468565246cb5cb7cfec519698ef3f8",
+        "@moku-labs/game": "https://pkg.pr.new/@moku-labs/game@0fda201361446dffef850f57fdeb409702b383bd",
         "@playwright/test": "1.63.0",
         "@types/bun": "1.4.2",
         "@vitest/coverage-istanbul": "4.0.18",
@@ -217,7 +217,7 @@
 
     "@moku-labs/core": ["@moku-labs/core@1.7.6", "", {}, "sha512-CdCxX/9zwJ9Czv45I/CmDuV8sV1r9uiOSfUzckD3MZC8eumO1QcT4PY4yiSXd0zspsTgdsntFxfDHkUUYVp5Iw=="],
 
-    "@moku-labs/game": ["@moku-labs/game@https://pkg.pr.new/@moku-labs/game@a10e324470468565246cb5cb7cfec519698ef3f8", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.2", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "./bin/moku-game.mjs", "moku-game-assets": "./bin/moku-game-assets.mjs", "moku-game-index": "./bin/moku-game-index.mjs" } }, "sha512-BzUF9p+qwsf6uGkgV0ZicRjeXvZ4lyIgzZSM3/ih17BtxdMaX5iJr0Q4bsqCTlT1hKyddpJjHUry4HUVmG3Z1A=="],
+    "@moku-labs/game": ["@moku-labs/game@https://pkg.pr.new/@moku-labs/game@0fda201361446dffef850f57fdeb409702b383bd", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.2", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "./bin/moku-game.mjs", "moku-game-assets": "./bin/moku-game-assets.mjs", "moku-game-index": "./bin/moku-game-index.mjs" } }, "sha512-mMNFb2QoeWQsBG5KlBRYoOifQG2qiMcU2lFCBGVmJ/WXGIwkdDznF3JHuiH2fGKW90812I+Mc+Mg2cyEaHCs4Q=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

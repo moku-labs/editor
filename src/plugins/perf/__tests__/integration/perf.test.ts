@@ -65,7 +65,7 @@ describe("perf on a game with a monitor", () => {
     expect(editor.perf.status()).toEqual({ state: "on", lost: 0, gpuTimer: true });
 
     commitFrames(monitor, 30, 1000, 16.7);
-    const spike = monitor.commit({ t: 1501, gapMs: 25.1, causes: 0b1 });
+    const spike = monitor.commit({ t: 1501, gapMs: 25.1, workMs: 30, causes: 0b11 });
     commitFrames(monitor, 30, 1526.1, 16.7);
     vi.advanceTimersByTime(250);
 
@@ -74,7 +74,7 @@ describe("perf on a game with a monitor", () => {
       count = window.count;
     });
     expect(count).toBe(61);
-    expect(editor.perf.spikes()).toMatchObject([{ frame: spike, cause: "gap", ms: 25.1 }]);
+    expect(editor.perf.spikes()).toMatchObject([{ frame: spike, cause: "js", ms: 30 }]);
 
     const manifest = editor.registry.manifest();
     const listed = manifest.sources.filter(source => PERF_IDS.includes(source.id));
@@ -99,6 +99,34 @@ describe("perf on a game with a monitor", () => {
     commitFrames(monitor, 5, 2100, 16.7);
     vi.advanceTimersByTime(1000);
     expect([monitor.reads, monitor.listeners]).toEqual([reads, 0]);
+  });
+});
+
+describe("perf and a noisy GPU (spec 03 delta item 8)", () => {
+  it("never lists a lone GPU outlier as a spike, shows it as noise on the wire, flags a sustained GPU when its second result lands, and heads with the window's GPU p50/p90", async () => {
+    const monitor = createFakeMonitor({ capacity: 512 });
+    const editor = await startEditor(monitor);
+    commitFrames(monitor, 20, 1000, 16.7, { gpuMs: 0.49 });
+    const outlier = monitor.commit({ t: 1334, gapMs: 16.7, gpuMs: 21, causes: 0b100 });
+    commitFrames(monitor, 5, 1350.7, 16.7, { gpuMs: 0.49 });
+    const late = commitFrames(monitor, 3, 1434.2, 16.7, { gpuPartial: true });
+    vi.advanceTimersByTime(250);
+
+    expect(editor.perf.second().spikes).toBe(0);
+    const into = createPerfWindow(512);
+    const wire: Json = editor.registry.source("editor.perf.window")?.read(null) ?? null;
+    expect(readWireWindow(wire, into)).toBe(true);
+    const row = [...into.frame.subarray(0, into.count)].indexOf(outlier);
+    expect([into.noise[row], into.cause[row]]).toEqual([0b100, 0]);
+
+    monitor.landGpu(late[0] ?? 0, 19, 0b100);
+    monitor.landGpu(late[1] ?? 0, 20, 0b100);
+    vi.advanceTimersByTime(250);
+    expect(editor.perf.spikes().map(spike => [spike.frame, spike.cause])).toEqual([
+      [late[0], "gpu"],
+      [late[1], "gpu"]
+    ]);
+    expect(editor.perf.second().gpuTime).toEqual({ p50Ms: 0.49, p90Ms: 19 });
   });
 });
 

@@ -287,15 +287,41 @@ export type LinkPayload = AgentEvents["bridge:status"];
 export type GraphCanvas = {
   readonly element: HTMLCanvasElement;
   readonly g: GraphContext2DLike;
+  /** The well's CSS width (the visible width; the canvas is painted wider by the slide). */
+  w: number;
+  h: number;
+  /** The dpr of the backing store. */
+  dpr: number;
+  /** The dpr the next paint uses (read on the tick). */
+  nextDpr: number;
+  /** The next paint slides (no reduced motion on the page or in the game). */
+  motion: boolean;
+};
+
+/**
+ * The fixed canvas while the graph shows: laid over the whole well, it does not slide (the tape and
+ * its readout, the caption, `now`, the stack legend). Its size and dpr are those of its backing store
+ * (0 before the first paint).
+ */
+export type FixedCanvas = {
+  readonly element: HTMLCanvasElement;
+  readonly g: GraphContext2DLike;
+  /** CSS width of the backing store: the well's. */
   w: number;
   h: number;
   dpr: number;
 };
 
 /**
+ * The slide of the last paint: its distance (0: none) and when it started (Date.now()).
+ */
+export type Slide = { px: number; at: number };
+
+/**
  * The 2D context the overlay paints on: the painter's structural context plus the dpr transform.
  */
 export type GraphContext2DLike = GraphContext2D & {
+  clearRect(x: number, y: number, width: number, height: number): void;
   setTransform(
     scaleX: number,
     skewY: number,
@@ -312,12 +338,16 @@ export type GraphContext2DLike = GraphContext2D & {
 export type Painted = { version: number; row: number; w: number; h: number; dpr: number };
 
 /**
- * What the count visitor read from the window for the view: GPU mean, spikes, the row and
+ * What the count visitor read from the window for the view: the GPU headline, spikes, the row and
  * ordinal of the selected frame (or the open record's), the rows and whether the page has a GPU
  * timer.
  */
 export type WindowFacts = {
+  /** The mean GPU time, from an agent before spec 03 delta item 8 (no p50 / p90); else undefined. */
   gpuAvg: number | undefined;
+  /** The window's GPU p50 and p90 (spec 03 delta item 8), ms; undefined without them. */
+  gpuP50: number | undefined;
+  gpuP90: number | undefined;
   total: number;
   row: number;
   ordinal: number;
@@ -382,12 +412,35 @@ export type OverlayState = {
   /** The two safe-area probes. */
   probes: readonly HTMLElement[];
   isolate: ((event: Event) => void) | undefined;
-  /** The one graph canvas while the graph shows. */
+  /** The plot canvas while the graph shows (it slides). */
   canvas: GraphCanvas | undefined;
   /** The painter's state of this canvas (perf/graph `GraphState`), made with the canvas, dropped with it. */
   graph: GraphState | undefined;
   /** The view handed to the painter, rewritten before each paint (no allocation per paint). */
-  readonly graphView: { width: number; height: number; wide: boolean; selected: number };
+  readonly graphView: {
+    width: number;
+    height: number;
+    wide: boolean;
+    selected: number;
+    leadPx: number;
+    readonly layer: "plot";
+  };
+  /** The fixed canvas while the graph shows (it does not slide). */
+  fixed: FixedCanvas | undefined;
+  /** The painter's state of the fixed canvas, made at its first paint, dropped with it. */
+  fixedGraph: GraphState | undefined;
+  /** The view handed to the painter for the fixed canvas, rewritten before each paint. */
+  readonly fixedView: {
+    width: number;
+    height: number;
+    wide: boolean;
+    selected: number;
+    readonly layer: "fixed";
+  };
+  /** The compositor slide of the last paint (spec 08 Delta 2026-10-15). */
+  readonly slide: Slide;
+  /** The page's `prefers-reduced-motion: reduce` query, made at the first paint. */
+  motionQuery: { readonly matches: boolean } | undefined;
   readonly painted: Painted;
   readonly facts: WindowFacts;
   readonly probe: Probe;
@@ -508,6 +561,8 @@ export type GraphSeam = {
   readonly spikeAt: (state: GraphState, window: PerfWindowView, x: number, y: number) => number;
   readonly rowAt: (state: GraphState, window: PerfWindowView, x: number) => number;
   readonly createState: (capacity: number) => GraphState;
+  /** The CSS px a time covers at the scale of a window painted at a visible width (perf/graph `msToPx`). */
+  readonly msToPx: (window: PerfWindowView, width: number, wide: boolean, ms: number) => number;
   readonly resetText: (state: GraphState) => void;
 };
 
@@ -534,7 +589,10 @@ export type OverlayEvents = Pick<AgentEvents, "overlay:changed" | "overlay:conne
 /**
  * The registry members the overlay reads.
  */
-export type OverlayRegistry = Pick<RegistryApi, "manifest" | "add" | "envelope" | "build"> & {
+export type OverlayRegistry = Pick<
+  RegistryApi,
+  "manifest" | "add" | "envelope" | "build" | "game"
+> & {
   command(id: string): { value?(): boolean | undefined } | undefined;
 };
 

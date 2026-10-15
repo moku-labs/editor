@@ -54,6 +54,7 @@ function fakeCanvas(): StripCanvas {
     setLineDash: vi.fn(),
     fillText: vi.fn(),
     measureText: () => ({ width: 10 }),
+    drawImage: vi.fn(),
     setTransform: vi.fn((...args: number[]) => {
       calls.push(`setTransform ${args.join(",")}`);
     })
@@ -83,6 +84,9 @@ function deliver(): void {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("devicePixelRatio", 2);
+  // These cases are the 4 Hz steps, which reduced motion keeps on the tools page (spec 09
+  // Amendment 2026-10-15); the interpolated loop has its own suite, device-loop.test.ts.
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
   calls = [];
   box = { width: 1000, height: 200 };
   widthWrites = 0;
@@ -157,7 +161,7 @@ describe("the repaint loop", () => {
       "setTransform 2,0,0,2,0,0",
       "paint"
     ]);
-    expect(vi.mocked(paintGraph).mock.calls[0]?.[2]).toEqual({
+    expect(vi.mocked(paintGraph).mock.calls[0]?.[2]).toMatchObject({
       width: 1000,
       height: 200,
       wide: true,
@@ -184,7 +188,7 @@ describe("the repaint loop", () => {
     expect(canvas.width).toBe(1600);
   });
 
-  it("paints once more when Barlow Condensed has loaded, with the legends measured again", async () => {
+  it("paints once more when Geist has loaded, with the legends measured again", async () => {
     let loaded: () => void = stopLater;
     const load = vi.fn(
       () =>
@@ -205,7 +209,7 @@ describe("the repaint loop", () => {
     loaded();
     await vi.advanceTimersByTimeAsync(REPAINT_MS);
 
-    expect(load).toHaveBeenCalledWith('600 12px "Barlow Condensed"');
+    expect(load).toHaveBeenCalledWith('600 11px "Geist"');
     expect(paintGraph).toHaveBeenCalledTimes(2);
     expect(graph.measured).toBe(false);
   });

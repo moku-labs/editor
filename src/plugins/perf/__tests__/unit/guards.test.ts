@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { DISPLAY, eventLine, rateChange } from "../../../../../tests/fixtures/fake-monitor";
 import {
+  announcedHzOf,
+  displayHzOf,
   frameEventOf,
   isPerfDisplay,
   isRateChange,
@@ -190,5 +192,47 @@ describe("isPerfDisplay and isRateChange", () => {
     expect(isRateChange(rateChange({ displayHz: null, thermal: null }))).toBe(true);
     expect(isRateChange({ ...rateChange(), mode: "turbo" })).toBe(false);
     expect(isRateChange({ ...rateChange(), window: { drawn: 1 } })).toBe(false);
+  });
+});
+
+/**
+ * A time.rate() of the engine answering a display rate.
+ *
+ * @param displayHz - The display rate.
+ * @returns The rate function.
+ */
+function rate(displayHz: number | null) {
+  return () => ({ fps: 120, displayHz });
+}
+
+describe("displayHzOf", () => {
+  it("reads the display rate the engine learned from its time.rate(), null when unknown or missing, never throwing", () => {
+    expect(displayHzOf({ time: { rate: rate(120) } })).toBe(120);
+    expect(displayHzOf({ time: { rate: rate(null) } })).toBeNull();
+    expect(displayHzOf({ time: {} })).toBeNull();
+    const broken = {
+      time: {
+        rate: () => {
+          throw new Error("no clock");
+        }
+      }
+    };
+    expect(displayHzOf(broken)).toBeNull();
+  });
+});
+
+describe("announcedHzOf", () => {
+  it("reads the display's hz a newer engine announces, null when absent, not a positive number, or a throwing getter", () => {
+    expect(announcedHzOf({ ...DISPLAY, hz: 120 })).toBe(120);
+    expect(announcedHzOf(DISPLAY)).toBeNull();
+    expect(announcedHzOf(undefined)).toBeNull();
+    expect(announcedHzOf({ hz: 0 })).toBeNull();
+    expect(announcedHzOf({ hz: Number.POSITIVE_INFINITY })).toBeNull();
+    const broken = Object.defineProperty({}, "hz", {
+      get() {
+        throw new Error("gone");
+      }
+    });
+    expect(announcedHzOf(broken)).toBeNull();
   });
 });

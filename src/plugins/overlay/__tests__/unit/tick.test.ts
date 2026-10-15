@@ -60,6 +60,8 @@ describe("the tick (cheapness)", () => {
     expect(renders() - before).toBe(40);
     expect(octx.graph.paints.length).toBeLessThanOrEqual(41);
     expect(octx.graph.paints.length).toBeGreaterThanOrEqual(40);
+    // The fixed canvas: painted with the plot, once per tick.
+    expect(octx.graph.fixedPaints).toHaveLength(octx.graph.paints.length);
     expect(frame).not.toHaveBeenCalled();
   });
 

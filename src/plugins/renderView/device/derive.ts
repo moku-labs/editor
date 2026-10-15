@@ -54,6 +54,16 @@ const SECONDS_PER_MINUTE = 60;
 const DEFAULT_WINDOW_SECONDS = 6;
 
 /**
+ * The drawn / loop value while the screen rests.
+ */
+const IDLE_WORD = "idle";
+
+/**
+ * The characters of "HH:MM:SS" at the start of `Date.toTimeString()`.
+ */
+const CLOCK_LENGTH = 8;
+
+/**
  * The slowest systems More names.
  */
 const MORE_SYSTEMS = 3;
@@ -189,30 +199,57 @@ function dprText(dpr: number): string {
 }
 
 /**
- * The display facts of the device line: Hz from the sample's ticks and the dpr.
+ * The display facts of the device line: the display's refresh rate the engine learned (its rate's
+ * `displayHz`; the loop's ticks are not the display: a throttled page ticks at 2 Hz) and the dpr.
  *
  * @param second - The last perf value.
  * @returns The known parts, e.g. ["60 Hz", "dpr 2.81"].
  */
 function displayParts(second: PerfSecond | undefined): string[] {
   const parts: string[] = [];
-  const hz = second?.sample?.ticks;
+  const hz = second?.rate.displayHz;
   const dpr = second?.display?.dpr;
-  if (hz !== undefined) parts.push(`${hz} Hz`);
+  if (hz !== null && hz !== undefined) parts.push(`${hz} Hz`);
   if (dpr !== undefined) parts.push(`dpr ${dprText(dpr)}`);
   return parts;
 }
 
 /**
- * The about line under the model: OS, WebView, Hz and dpr, the known parts only.
+ * The browser of the device line. An engine that writes `device.browser` (game@0fda201) sets
+ * `webview` only in an Android WebView or the native shell: `WebView N` then, else `Chrome N` from
+ * `browser`, nothing without a Chrome major (Safari, Firefox). An older log has `webview` on any
+ * Chromium page: `WebView N` in a native shell or an Android WebView (`; wv)` in its user agent),
+ * else `Chrome N`.
+ *
+ * @param device - The header's device.
+ * @returns The label; undefined without a version.
+ * @example
+ * ```ts
+ * browserOf({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) … Chrome/155.0.0.0 Safari/537.36", model: null, modelFrom: null, webview: null, browser: "155", cores: 10, memoryGb: 16 }); // "Chrome 155"
+ * ```
+ */
+export function browserOf(device: PerfSecond["device"] | undefined): string | undefined {
+  if (device === undefined || device === null) return undefined;
+  const { webview, browser } = device;
+  if (browser !== undefined) {
+    if (webview !== null) return `WebView ${webview}`;
+    return browser === null ? undefined : `Chrome ${browser}`;
+  }
+  if (webview === null) return undefined;
+  const isWebView = device.modelFrom === "shell" || /; wv\)/.test(device.userAgent);
+  return `${isWebView ? "WebView" : "Chrome"} ${webview}`;
+}
+
+/**
+ * The about line under the model: OS, the browser (WebView or Chrome), the display's Hz and dpr, the
+ * known parts only.
  *
  * @param second - The last perf value.
  * @returns E.g. "Android 15, WebView 131, 60 Hz, dpr 2.81"; "" when nothing is known.
  */
 export function aboutLine(second: PerfSecond | undefined): string {
   const os = osOf(second?.device?.userAgent);
-  const webview = second?.device?.webview;
-  const parts = [os, webview === null || webview === undefined ? undefined : `WebView ${webview}`];
+  const parts = [os, browserOf(second?.device)];
   return [...parts.filter(part => part !== undefined), ...displayParts(second)].join(", ");
 }
 
@@ -418,15 +455,85 @@ function windowSeconds(window: PerfWindowView): number {
  * @returns The line.
  */
 function fpsLine(second: PerfSecond | undefined): StripLine {
+  const suffix = rateSuffix(second?.rate);
+  const activity = second?.activity;
+  if (activity?.idle === true) return idleLine(activity.idleSince, suffix);
+
   const fps =
     second === undefined
       ? `${DASH} / ${DASH}`
       : `${whole(second.fps.drawn)} / ${whole(second.fps.loop)}`;
-  const suffix = rateSuffix(second?.rate);
   const runs: StripRun[] = [plain("drawn / loop "), value(fps)];
   if (suffix !== undefined) runs.push(plain(" "), suffix);
   runs.push(plain(" fps"));
   return runs;
+}
+
+/**
+ * The drawn / loop segment while the screen rests (spec 03 delta 2026-10-15): `idle` and, when
+ * perf knows it, since when on the phone's own clock, then the rate suffix.
+ *
+ * @param since - Epoch ms of the first resting frame (`activity.idleSince`), or null.
+ * @param suffix - The rate suffix; undefined without a rate.
+ * @returns The line.
+ */
+function idleLine(since: number | null, suffix: StripRun | undefined): StripLine {
+  const runs: StripRun[] = [plain("drawn / loop "), value(IDLE_WORD)];
+  if (since !== null) runs.push(plain(` since ${wallClock(since)}`));
+  if (suffix !== undefined) runs.push(plain(" "), suffix);
+  return runs;
+}
+
+/**
+ * A moment as the hour, minute and second it shows on the clock: a phone's moment is printed as it
+ * is, so its clock never mixes with the computer's.
+ *
+ * @param epochMs - Epoch ms.
+ * @returns "HH:MM:SS".
+ * @example
+ * ```ts
+ * wallClock(Date.UTC(2026, 9, 14, 13, 32, 4)); // "15:32:04" in Berlin
+ * ```
+ */
+function wallClock(epochMs: number): string {
+  return new Date(epochMs).toTimeString().slice(0, CLOCK_LENGTH);
+}
+
+/**
+ * The p90 frame time the headline shows: the awake frames' (perf's `activity`), or the sample's gap
+ * p90 from an agent before the idle delta.
+ *
+ * @param second - The last perf value.
+ * @returns The p90, ms; null or undefined when unknown.
+ */
+function p90Of(second: PerfSecond | undefined): number | null | undefined {
+  const activity = second?.activity;
+  return activity === undefined ? second?.sample?.gapMs?.p90 : activity.p90Ms;
+}
+
+/**
+ * The GPU segment of the headline: the window's p50 and p90 of the measured GPU times (one frame's
+ * GPU time is noisy, spec 03 delta item 8), else the mean, else "no timer".
+ *
+ * @param window - The strip's window.
+ * @returns The line.
+ */
+function gpuLine(window: PerfWindowView): StripLine {
+  const { gpuP50Ms: p50, gpuP90Ms: p90 } = window;
+  const hasSpread =
+    p50 !== undefined && p90 !== undefined && Number.isFinite(p50) && Number.isFinite(p90);
+  if (hasSpread) {
+    return [
+      plain("GPU p50 "),
+      value(p50.toFixed(1)),
+      plain(" / p90 "),
+      value(p90.toFixed(1)),
+      plain(" ms")
+    ];
+  }
+  const gpu = meanGpu(window);
+  if (gpu === null) return [plain(`GPU ${DASH} no timer`)];
+  return [plain("GPU "), value(gpu.toFixed(1)), plain(" ms avg")];
 }
 
 /**
@@ -460,10 +567,10 @@ export function headline(
   browser: boolean
 ): StripLine[] {
   const spikes = window.count > 0 ? window.spikeCount : (second?.spikes ?? 0);
-  const p90 = second?.sample?.gapMs?.p90;
-  const p90Text = p90 === undefined ? DASH : p90.toFixed(1);
-  const p90OverBudget = p90 !== undefined && p90 > (second?.budgetMs ?? Number.POSITIVE_INFINITY);
-  const gpu = meanGpu(window);
+  const p90 = p90Of(second);
+  const isP90Known = p90 !== null && p90 !== undefined;
+  const p90Text = isP90Known ? p90.toFixed(1) : DASH;
+  const p90OverBudget = isP90Known && p90 > (second?.budgetMs ?? Number.POSITIVE_INFINITY);
   const from = browser ? "the browser" : "the phone";
   return [
     [
@@ -473,9 +580,7 @@ export function headline(
     ],
     fpsLine(second),
     [plain("p90 frame "), value(p90Text, p90OverBudget), plain(" ms")],
-    gpu === null
-      ? [plain(`GPU ${DASH} no timer`)]
-      : [plain("GPU "), value(gpu.toFixed(1)), plain(" ms avg")],
+    gpuLine(window),
     [plain("passes "), value(wholeOrDash(second?.sample?.passes?.mean))],
     [plain("draws "), value(wholeOrDash(second?.sample?.draws?.mean))],
     textureLine(second)

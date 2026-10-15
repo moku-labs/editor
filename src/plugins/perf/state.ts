@@ -114,6 +114,8 @@ function createScratch(frames: number): PerfScratch {
     gpuMs: new Float32Array(frames),
     gpuPartial: new Uint8Array(frames),
     drawn: new Uint8Array(frames),
+    idle: new Uint8Array(frames),
+    reason: new Uint8Array(frames),
     causes: new Uint8Array(frames),
     path: new Uint16Array(frames)
   };
@@ -145,6 +147,7 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
     rowGapMs: new Float32Array(frames),
     rowPath: new Uint16Array(frames),
     scratch: createScratch(frames),
+    gpuSorted: new Float64Array(frames),
     cursor: undefined,
     lost: 0,
     fpsLoop: 0,
@@ -152,6 +155,8 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
     header: undefined,
     display: undefined,
     sample: undefined,
+    // eslint-disable-next-line unicorn/no-null -- null is "the engine has not learned the display's rate"
+    displayHz: null,
     spikeLines: Array.from<PerfSpikeLine | undefined>({ length: SPIKE_LINES }),
     spikeLineNext: 0,
     rateLines: Array.from<PerfEventLine | undefined>({ length: RATE_LINES }),

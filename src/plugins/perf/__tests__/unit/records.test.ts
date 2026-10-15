@@ -21,7 +21,8 @@ import { attach, commitFrames, perfState } from "../helpers";
 const SPIKE = 4812;
 
 /**
- * A state with a fake monitor: frames 4801…4811 at 60 fps, then the spike 4812 (gap + upload).
+ * A state with a fake monitor: frames 1…11 at 60 fps, then the spike 4812 (work over budget with an
+ * upload, after a gap).
  *
  * @param capacity - The ring's capacity.
  * @param stats - The renderer's stats, when the game has one.
@@ -36,10 +37,10 @@ function setup(capacity = 64, stats?: () => unknown) {
     frame: SPIKE,
     t: 40_183.7,
     gapMs: 41.3,
-    workMs: 8,
+    workMs: 30,
     agentMs: 0.1,
     gpuMs: 6.6,
-    causes: 0b1_0001,
+    causes: 0b1_0011,
     path: "garden/boss",
     phaseMs: [0.3, 0.4, 0.1, 1.2, 0.1, 5.9],
     passes: 2,
@@ -101,8 +102,8 @@ describe("spike(frame)", () => {
       frame: SPIKE,
       ms: 41.3,
       cause: "upload",
-      causes: ["upload", "gap"],
-      jsMs: 7.9,
+      causes: ["upload", "js", "gap"],
+      jsMs: 29.9,
       gpuMs: 6.6,
       gapMs: 41.3,
       path: "garden/boss",
@@ -258,6 +259,15 @@ describe("whyOf", () => {
     );
   });
 
+  it("says the compiles came in the 4 frames before when the frame compiled nothing itself, and names no count it does not know (engine: a compile cause on a gap spike may come from the 4 frames before)", () => {
+    expect(whyOf(facts("compile", { compiles: 0 }))).toBe(
+      "Shader compiles on first use in the 4 frames before stalled this frame"
+    );
+    expect(whyOf(facts("compile", { compiles: null }))).toBe(
+      "Shader compiles on first use stalled this frame"
+    );
+  });
+
   it("adds the subjects the detail names: the bundle, the first labelled compile, the top script", () => {
     const detail = spikeLine(frameRecord(SPIKE), {
       compiles: [
@@ -380,6 +390,15 @@ describe("second()", () => {
       spikes: 0,
       budgetMs: 16.7,
       rate: { fps: null, mode: null, reason: null, displayHz: null, switches: 0 },
+      activity: {
+        idle: false,
+        idleSince: null,
+        idleFrames: 0,
+        idleMs: 0,
+        breaks: 0,
+        p90Ms: null
+      },
+      gpuTime: null,
       render: null,
       sample: null,
       display: null,
@@ -409,5 +428,68 @@ describe("second()", () => {
     const { state, tick } = setup();
     tick();
     expect(secondOf(state).render).toBeNull();
+  });
+
+  it("says the screen rests, since when, its idle frames and time, and the p90 of the awake frames (bug: p90 ≈ 1000 ms on a still screen)", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 256 });
+    attach(perf.state, monitor);
+    for (let index = 0; index < 10; index += 1) {
+      const heavy = index >= 8;
+      monitor.commit({
+        t: index * 16.7,
+        gapMs: 16.7,
+        workMs: heavy ? 30 : 3,
+        causes: heavy ? 0b10 : 0
+      });
+    }
+    commitFrames(monitor, 6, 200, 500, { idle: true, capMs: 33.33 });
+    readTick(perf.state, perf.config);
+    const { activity } = secondOf(perf.state);
+    expect(activity).toEqual({
+      idle: true,
+      idleSince: headerLine().timeOrigin + 200,
+      idleFrames: 6,
+      idleMs: 3000,
+      breaks: 0,
+      p90Ms: 30
+    });
+  });
+
+  it("is awake with no idle frames while the loop runs", () => {
+    const { state, tick } = setup();
+    tick();
+    expect(secondOf(state).activity).toMatchObject({
+      idle: false,
+      idleSince: null,
+      idleFrames: 0,
+      breaks: 0
+    });
+  });
+});
+
+describe("second().gpuTime (spec 03 delta item 8: the headline GPU over the window)", () => {
+  it("is the p50 and p90 GPU time of the window's drawn frames, to hundredths, not one frame's", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor({ capacity: 256 });
+    attach(perf.state, monitor);
+    for (let index = 0; index < 20; index += 1) {
+      monitor.commit({
+        t: index * 16.7,
+        gapMs: 16.7,
+        gpuMs: index === 7 ? 24.5 : 0.49 + index / 1000
+      });
+    }
+    readTick(perf.state, perf.config);
+    expect(secondOf(perf.state).gpuTime).toEqual({ p50Ms: 0.5, p90Ms: 0.51 });
+  });
+
+  it("is null without a measured GPU time (no GPU timer)", () => {
+    const perf = perfState();
+    const monitor = createFakeMonitor();
+    attach(perf.state, monitor);
+    commitFrames(monitor, 5, 0, 16.7);
+    readTick(perf.state, perf.config);
+    expect(secondOf(perf.state).gpuTime).toBeNull();
   });
 });

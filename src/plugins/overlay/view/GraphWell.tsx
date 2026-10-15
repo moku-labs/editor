@@ -1,6 +1,7 @@
 /**
  * @file overlay plugin — the graph row: prev / next with the `n/total` counter, and the well that
- * holds the one canvas (only while the graph shows) and the NO GPU TIMER legend.
+ * holds the two canvases (only while the graph shows: the plot, which slides, and the fixed canvas
+ * over it, which does not) and the NO GPU TIMER legend.
  */
 import type { VNode } from "preact";
 import type { OverlayActions } from "../actions";
@@ -65,11 +66,14 @@ export function GraphWell(props: {
       </div>
       <div data-graph="">
         {frames.state === "graph" ? (
-          <canvas
-            ref={actions.canvas}
-            aria-label="Frame graph, last 6 seconds"
-            onClick={actions.tapGraph}
-          />
+          <>
+            <canvas
+              ref={actions.canvas}
+              aria-label="Frame graph, last 6 seconds"
+              onClick={actions.tapGraph}
+            />
+            <canvas data-fixed="" ref={actions.fixed} />
+          </>
         ) : undefined}
         {frames.gpuTimer ? undefined : (
           <Legend

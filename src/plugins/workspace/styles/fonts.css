@@ -1,4 +1,4 @@
-/* workspace · fonts. Vendored Geist and Geist Mono variable woff2 (Vercel, `geist` 1.7.2, SIL OFL 1.1, see fonts/OFL.txt) in workspace/styles/fonts/, and the three Barlow faces of the device strip, whose one home is src/plugins/overlay/fonts/ (SIL OFL 1.1, see its OFL.txt; decision "Stage 2 gate choices" (1)). The `./fonts/` path is only a name: scripts/build-tools.ts finds each file in workspace/styles/fonts, then overlay/fonts, and copies it into dist/tools/assets/ with a hashed name (R3, spec 10 E9). No CDN. Unlayered on purpose: font loading does not depend on the cascade (moku-web). */
+/* workspace · fonts. Vendored Geist and Geist Mono variable woff2 (Vercel, `geist` 1.7.2, SIL OFL 1.1, see fonts/OFL.txt) in workspace/styles/fonts/: the only faces of the tools page. The device strip is set in them too (spec 09 Delta 2026-10-15, decision "Tools-page strip in the editor's look and theme"); the phone overlay keeps its own private faces in src/plugins/overlay/fonts/, which the tools page never loads. The `./fonts/` path is only a name: scripts/build-tools.ts finds each file in workspace/styles/fonts and copies it into dist/tools/assets/ with a hashed name (R3, spec 10 E9). No CDN. Unlayered on purpose: font loading does not depend on the cascade (moku-web). */
 @font-face {
   font-family: "Geist";
   font-style: normal;
@@ -13,28 +13,4 @@
   font-weight: 100 900;
   font-display: swap;
   src: url("./fonts/GeistMono-Variable.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Barlow Condensed";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("./fonts/barlow-condensed-latin-500.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Barlow Condensed";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("./fonts/barlow-condensed-latin-600.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Barlow";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("./fonts/barlow-latin-500.woff2") format("woff2");
 }

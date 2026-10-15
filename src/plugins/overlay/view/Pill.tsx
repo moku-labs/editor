@@ -31,7 +31,7 @@ export function Pill(props: {
       <span data-part="light" data-link={header.link.kind} style={`--c: ${header.link.colour}`} />
       <b data-part="fps">{header.fps}</b>
       <span data-part="labels">
-        <span>fps</span>
+        {header.fpsUnit === "" ? undefined : <span>{header.fpsUnit}</span>}
         {header.rec ? (
           <span data-part="rec" data-rec="">
             <i />

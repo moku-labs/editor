@@ -8,6 +8,7 @@ import type { PerfSecond, PerfSpikeRecord, PerfStatus } from "../../perf/protoco
 import type { LogFileInfo, LogMark, RecorderStatus } from "../../recorder/types";
 import type { BuildInfo } from "../../registry/protocol";
 import { actionsOf } from "../actions";
+import { idleForText } from "../model/format";
 import { counterCells, framesNote, moreParts, navView, systemsText } from "../model/frames";
 import { gameView, overlayCommands, tabsOf } from "../model/game";
 import { engineLine, headerView, pillLabel } from "../model/header";
@@ -83,14 +84,34 @@ export function readInputs(octx: OverlayCtx): ViewInputs {
 }
 
 /**
+ * How long the screen has rested while perf says it rests (spec 03 delta 2026-10-15): "12s", ""
+ * when the start is unknown; undefined while awake, off, or from an agent before the delta.
+ *
+ * @param inputs - What the render read.
+ * @param now - Epoch ms.
+ * @returns The text, or undefined.
+ */
+function idleForOf(inputs: ViewInputs, now: number): string | undefined {
+  const activity = inputs.second.activity;
+  if (inputs.status.state !== "on" || activity === undefined || !activity.idle) return undefined;
+  return idleForText(activity.idleSince, now);
+}
+
+/**
  * The Frames tab's view.
  *
  * @param state - Overlay state.
  * @param inputs - The inputs.
  * @param compact - The compact card.
+ * @param idleFor - How long the screen has rested; undefined while awake.
  * @returns The view.
  */
-function framesViewOf(state: OverlayState, inputs: ViewInputs, compact: boolean): FramesView {
+function framesViewOf(
+  state: OverlayState,
+  inputs: ViewInputs,
+  compact: boolean,
+  idleFor: string | undefined
+): FramesView {
   const { status, second, record } = inputs;
   const facts = state.facts;
   const gpuTimer = status.state === "on" ? status.gpuTimer : facts.gpuTimer;
@@ -103,7 +124,7 @@ function framesViewOf(state: OverlayState, inputs: ViewInputs, compact: boolean)
     compact,
     nav: navView(facts.total, facts.ordinal),
     offline: state.hasBridge && state.link?.link?.mode === "none",
-    counters: counterCells(second, facts.gpuAvg, compact, gpuTimer),
+    counters: counterCells(second, facts, compact, gpuTimer, idleFor),
     more: state.more,
     systems: systemsText(second.sample),
     parts: moreParts(second, compact),
@@ -124,13 +145,17 @@ function framesViewOf(state: OverlayState, inputs: ViewInputs, compact: boolean)
  */
 export function viewOf(state: OverlayState, inputs: ViewInputs, now: number): OverlayView {
   const { compact } = windowSize("card", state.viewport);
+  const idleFor = idleForOf(inputs, now);
   const header = headerView({
     second: inputs.second,
     status: inputs.status,
     payload: state.link,
     hasBridge: state.hasBridge,
     engine: inputs.build.engine,
-    recording: inputs.recStatus.state === "recording"
+    recording: inputs.recStatus.state === "recording",
+    recordingMs: inputs.recStatus.sinceMs,
+    idleFor,
+    compact
   });
   const toast: ToastView | undefined =
     state.toast !== undefined && state.toast.until > now
@@ -147,7 +172,7 @@ export function viewOf(state: OverlayState, inputs: ViewInputs, now: number): Ov
     tabs: tabsOf(inputs.commands.length > 0),
     tab,
     engine: engineLine(inputs.build, header.stale),
-    frames: card && tab === "frames" ? framesViewOf(state, inputs, compact) : undefined,
+    frames: card && tab === "frames" ? framesViewOf(state, inputs, compact, idleFor) : undefined,
     game:
       card && tab === "game"
         ? gameView(inputs.game, inputs.commands, state.busy, toast)

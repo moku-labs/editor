@@ -4,7 +4,8 @@
  * tools strip share. Runtime-free: no plugin, no kernel, no DOM.
  */
 import type { Json } from "../../registry/protocol";
-import { primaryCause } from "./causes";
+import { spikeCause } from "./causes";
+import { spreadGpu } from "./gpu";
 
 /**
  * One value of a column; NaN past its end (`noUncheckedIndexedAccess` reads a typed array as
@@ -49,6 +50,13 @@ export type PerfWindow = {
   gpuTimer: boolean;
   /** Increments whenever any row or scalar changed, so a painter skips an unchanged window. */
   version: number;
+  /**
+   * The headline GPU (spec 03 delta item 8): p50 of the GPU times of the drawn frames with a measured
+   * GPU, ms; NaN without one (no GPU timer). One frame's GPU time is noisy, the window's p50 is not.
+   */
+  gpuP50Ms: number;
+  /** p90 of the same GPU times, ms; NaN without one. */
+  gpuP90Ms: number;
   /** The frame number of each row. */
   readonly frame: Uint32Array;
   /** Page-clock ms of each frame's start. */
@@ -65,8 +73,23 @@ export type PerfWindow = {
   readonly budgetMs: Float32Array;
   /** 1 when the renderer drew the frame. */
   readonly drawn: Uint8Array;
-  /** The engine's cause bits (CAUSE_BITS). */
+  /**
+   * How the frame paced (spec 03 delta 2026-10-15, `REST`): 0 awake, 1 resting (the engine's idle cap,
+   * or render on demand that drew nothing), 2 the wake right after a rest (awake, its gap is the
+   * rest's), 3 a break (a gap of 900 ms or more without work: the browser made no frame).
+   */
+  readonly rest: Uint8Array;
+  /**
+   * The cause bits perf counts (CAUSE_BITS): the engine's, without the gap bit of a gap vsync explains
+   * and without a GPU that is noise (see `noise`).
+   */
   readonly causes: Uint8Array;
+  /**
+   * The cause bits perf heard but did not count (spec 03 delta item 8): `GPU_BIT` for a GPU over the
+   * frame's budget that is not sustained (no other over-budget GPU within 2 drawn frames), the faint
+   * GPU tick of the graph. Moves to `causes` when a second over-budget GPU lands near it.
+   */
+  readonly noise: Uint8Array;
   /** The primary cause code (CAUSE_RANK), 0 = not a spike. */
   readonly cause: Uint8Array;
   /** Rows of the spikes, oldest first. */
@@ -95,6 +118,10 @@ export type PerfWindowView = {
   readonly endMs: number;
   readonly gpuTimer: boolean;
   readonly version: number;
+  /** The headline GPU p50, ms (NaN: none); absent in a window an agent before item 8 filled. */
+  readonly gpuP50Ms?: number;
+  /** The headline GPU p90, ms (NaN: none); absent in a window an agent before item 8 filled. */
+  readonly gpuP90Ms?: number;
   readonly frame: ArrayLike<number>;
   readonly t: ArrayLike<number>;
   readonly ms: ArrayLike<number>;
@@ -103,7 +130,11 @@ export type PerfWindowView = {
   readonly rateMs: ArrayLike<number>;
   readonly budgetMs: ArrayLike<number>;
   readonly drawn: ArrayLike<number>;
+  /** `REST` per row; absent in a window an agent before the 2026-10-15 delta filled (all awake). */
+  readonly rest?: ArrayLike<number>;
   readonly causes: ArrayLike<number>;
+  /** Cause bits heard but not counted (`GPU_BIT`: a faint GPU tick); absent before item 8 (no noise). */
+  readonly noise?: ArrayLike<number>;
   readonly cause: ArrayLike<number>;
   readonly spikes: ArrayLike<number>;
   readonly spikeCount: number;
@@ -135,8 +166,31 @@ export type PerfWindowWire = {
   /** The frame's own spike budget (ring column `budgetMs`). */
   budgetMs: number[];
   drawn: (0 | 1)[];
+  /** `REST` per row; absent from an agent before the 2026-10-15 delta (all awake). */
+  rest?: RestState[];
   causes: number[];
+  /** Cause bits heard but not counted per row (`GPU_BIT`); absent from an agent before item 8 (none). */
+  noise?: number[];
 };
+
+/**
+ * How a frame paced, the window's `rest` column (spec 03 delta 2026-10-15): awake; resting (the
+ * engine's idle cap, or render on demand that drew nothing); the wake right after a rest (its gap is
+ * the rest's); a break (a gap of 900 ms or more without work: the browser made no frame). Only awake
+ * frames and wakes count in the fps, only awake frames in the p90; resting frames and breaks are
+ * never spikes.
+ *
+ * @example
+ * ```ts
+ * app.perf.readWindow(window => window.rest?.[window.count - 1] === REST.idle); // true on a still screen
+ * ```
+ */
+export const REST = { awake: 0, idle: 1, woke: 2, break: 3 } as const;
+
+/**
+ * One state of `REST`.
+ */
+export type RestState = (typeof REST)[keyof typeof REST];
 
 /** The most rows a window holds: `spikes` is a Uint16Array. */
 const MAX_ROWS = 65_535;
@@ -223,6 +277,8 @@ export function createPerfWindow(capacity: number): PerfWindow {
     endMs: 0,
     gpuTimer: true,
     version: 0,
+    gpuP50Ms: Number.NaN,
+    gpuP90Ms: Number.NaN,
     frame: new Uint32Array(capacity),
     t: new Float64Array(capacity),
     ms: new Float32Array(capacity),
@@ -231,7 +287,9 @@ export function createPerfWindow(capacity: number): PerfWindow {
     rateMs: new Float32Array(capacity),
     budgetMs: new Float32Array(capacity),
     drawn: new Uint8Array(capacity),
+    rest: new Uint8Array(capacity),
     causes: new Uint8Array(capacity),
+    noise: new Uint8Array(capacity),
     cause: new Uint8Array(capacity),
     spikes: new Uint16Array(capacity),
     spikeCount: 0
@@ -395,7 +453,9 @@ export function writeWireWindow(window: PerfWindowView): PerfWindowWire {
   const t: number[] = [];
   const gpuMs: (number | null)[] = [];
   const drawn: (0 | 1)[] = [];
+  const rest: RestState[] = [];
   const causes: number[] = [];
+  const noise: number[] = [];
   // The columns with their own rule: times after startMs, a NaN GPU time as null, drawn as 0 | 1.
   for (let row = 0; row < count; row += 1) {
     const gpu = cell(window.gpuMs, row);
@@ -404,7 +464,9 @@ export function writeWireWindow(window: PerfWindowView): PerfWindowWire {
     // eslint-disable-next-line unicorn/no-null -- null is "not measured" on the wire (JSON has no NaN)
     gpuMs.push(Number.isFinite(gpu) ? roundTo(gpu, MS_SCALE) : null);
     drawn.push(window.drawn[row] === 1 ? 1 : 0);
+    rest.push(restState(window.rest?.[row]));
     causes.push(cell(window.causes, row));
+    noise.push(window.noise?.[row] ?? 0);
   }
 
   // The plain ms columns, to hundredths.
@@ -421,7 +483,9 @@ export function writeWireWindow(window: PerfWindowView): PerfWindowWire {
     rateMs: plainColumn(window.rateMs, count, MS_SCALE),
     budgetMs: plainColumn(window.budgetMs, count, MS_SCALE),
     drawn,
-    causes
+    rest,
+    causes,
+    noise
   };
 }
 
@@ -458,6 +522,21 @@ function isColumn(value: Json | undefined, length: number): value is number[] {
     value.length === length &&
     value.every(item => typeof item === "number" && Number.isFinite(item))
   );
+}
+
+/**
+ * Whether an optional Json column is absent or a number column of the given length.
+ *
+ * @param value - The value.
+ * @param length - The length every column has.
+ * @returns Whether it is absent or a number column.
+ * @example
+ * ```ts
+ * isOptionalColumn(undefined, 2); // true: an agent before the column
+ * ```
+ */
+function isOptionalColumn(value: Json | undefined, length: number): boolean {
+  return value === undefined || isColumn(value, length);
 }
 
 /**
@@ -509,7 +588,8 @@ function hasValidRates(rateMs: Json | undefined, length: number): boolean {
 /**
  * Checks a wire value as a window the tools page may draw: an object of `v: 1`, a finite span of
  * more than 0 and at most 60 s, a boolean `gpuTimer`, equal-length number columns (`gpuMs` may
- * hold null) and every `rateMs` in (0, 1000]. A hostile phone value must not freeze the page, so a span past 60 s is refused.
+ * hold null; `rest` and `noise` may be absent) and every `rateMs` in (0, 1000]. A hostile phone
+ * value must not freeze the page, so a span past 60 s is refused.
  *
  * @param value - The value of `editor.perf.window`.
  * @returns The checked parts, or undefined for any other shape.
@@ -531,6 +611,9 @@ function checkedWire(value: Json): CheckedWire | undefined {
   if (typeof gpuTimer !== "boolean" || !isGpuColumn(gpuMs)) return undefined;
   const { length } = gpuMs;
   if (!NUMBER_COLUMNS.every(key => isColumn(value[key], length))) return undefined;
+  if (!isOptionalColumn(value.rest, length) || !isOptionalColumn(value.noise, length)) {
+    return undefined;
+  }
   const { rateMs } = value;
   if (!hasValidRates(rateMs, length)) return undefined;
   return { object: value, startMs, endMs, gpuTimer, gpu: gpuMs };
@@ -548,6 +631,22 @@ function checkedWire(value: Json): CheckedWire | undefined {
  */
 function isCauseByte(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= MAX_CAUSE_BYTE;
+}
+
+/**
+ * A rest column value as one of its four states; anything else (missing, a hostile number) is
+ * awake.
+ *
+ * @param value - The column value.
+ * @returns The rest state.
+ * @example
+ * ```ts
+ * restState(7); // 0
+ * ```
+ */
+function restState(value: number | undefined): RestState {
+  if (value === REST.idle || value === REST.woke || value === REST.break) return value;
+  return REST.awake;
 }
 
 /**
@@ -585,7 +684,9 @@ function cellOf(object: JsonObject, key: string, index: number): number {
 
 /**
  * Copies one row of a checked wire value into a window row: times back to page-clock ms, a null GPU
- * time as NaN, unknown cause bits dropped, the primary cause recomputed. Allocates nothing.
+ * time as NaN, unknown cause bits dropped (of `noise` too), the rest (awake without the column), and
+ * the cause recomputed with the editor's spike rule (`spikeCause`) from the counted bits: the agent
+ * judged the GPU noise. Allocates nothing.
  *
  * @param wire - The checked wire value.
  * @param from - The wire row.
@@ -597,7 +698,8 @@ function copyRow(wire: CheckedWire, from: number, into: PerfWindow, row: number)
   const { object } = wire;
   const gpuValue = wire.gpu[from];
   const causes = knownCauses(cellOf(object, "causes", from));
-  const cause = primaryCause(causes);
+  const rest = restState(cellOf(object, "rest", from));
+  const cause = spikeCause(causes, rest);
   into.frame[row] = cellOf(object, "frame", from);
   into.t[row] = wire.startMs + cellOf(object, "t", from);
   into.ms[row] = cellOf(object, "ms", from);
@@ -606,7 +708,9 @@ function copyRow(wire: CheckedWire, from: number, into: PerfWindow, row: number)
   into.rateMs[row] = cellOf(object, "rateMs", from);
   into.budgetMs[row] = cellOf(object, "budgetMs", from);
   into.drawn[row] = cellOf(object, "drawn", from) === 1 ? 1 : 0;
+  into.rest[row] = rest;
   into.causes[row] = causes;
+  into.noise[row] = knownCauses(cellOf(object, "noise", from));
   into.cause[row] = cause;
   return cause;
 }
@@ -614,7 +718,8 @@ function copyRow(wire: CheckedWire, from: number, into: PerfWindow, row: number)
 /**
  * Fills `into` from a wire value: false and `into` untouched for a value of another shape (see
  * `checkedWire`); keeps the newest `into.capacity` rows; drops the cause bits the editor does not
- * know; recomputes `cause` and `spikes` with `primaryCause`; `version += 1`.
+ * know; recomputes `cause` and `spikes` with the editor's spike rule and the headline GPU p50/p90
+ * from the rows; `version += 1`.
  *
  * @param value - The value of `editor.perf.window`.
  * @param into - The window to fill.
@@ -645,6 +750,7 @@ export function readWireWindow(value: Json, into: PerfWindow): boolean {
   into.startMs = startMs;
   into.endMs = wire.endMs;
   into.gpuTimer = wire.gpuTimer;
+  spreadGpu(into, new Float64Array(count));
   into.version += 1;
   return true;
 }

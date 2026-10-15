@@ -84,6 +84,48 @@ export type PerfRenderStats = {
 };
 
 /**
+ * How the window paced (spec 03 delta 2026-10-15): whether the screen rests now and since when, its
+ * resting frames and their time, the breaks the browser made, and the p90 frame time of the awake
+ * frames. While `idle` the headline says idle instead of fps.
+ *
+ * @example
+ * ```ts
+ * const activity: PerfActivity = { idle: true, idleSince: 1760454003120, idleFrames: 92, idleMs: 3066, breaks: 0, p90Ms: 17.6 };
+ * ```
+ */
+export type PerfActivity = {
+  /** The newest frame rests: the engine's idle cap, or render on demand that drew nothing. */
+  readonly idle: boolean;
+  /** Epoch ms of the first frame of the current rest (header.timeOrigin + t); null while awake or before a header. */
+  readonly idleSince: number | null;
+  /** Resting frames in the window. */
+  readonly idleFrames: number;
+  /** Their time, ms. */
+  readonly idleMs: number;
+  /** Breaks in the window: gaps of 900 ms or more without work, the browser made no frame. */
+  readonly breaks: number;
+  /** p90 frame time of the awake frames of the window, ms; null without one. */
+  readonly p90Ms: number | null;
+};
+
+/**
+ * The headline GPU (spec 03 delta item 8): the p50 and p90 GPU time of the window's drawn frames
+ * with a measured GPU. One frame's GPU time is noisy on Apple and Mali (17–25 ms readings at a
+ * 0.49 ms p50), so the headline never shows a single frame's.
+ *
+ * @example
+ * ```ts
+ * const gpuTime: PerfGpuTime = { p50Ms: 0.49, p90Ms: 0.61 };
+ * ```
+ */
+export type PerfGpuTime = {
+  /** p50 GPU time, ms to hundredths. */
+  readonly p50Ms: number;
+  /** p90 GPU time, ms to hundredths. */
+  readonly p90Ms: number;
+};
+
+/**
  * The pill, the header and the counters: the window's fps and spike count, and the newest sample
  * and screen facts as the engine sent them.
  *
@@ -91,13 +133,14 @@ export type PerfRenderStats = {
  * ```ts
  * const second: PerfSecond = { state: "on", fps: { loop: 60, drawn: 54 }, spikes: 6, budgetMs: 16.67,
  *   rate: { fps: 60, mode: "auto", reason: "missed", displayHz: 120, switches: 1 },
+ *   gpuTime: { p50Ms: 0.49, p90Ms: 0.61 },
  *   render: { passesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 },
  *   sample: null, display: null, device: null, gpu: null, build: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" };
  * ```
  */
 export type PerfSecond = {
   readonly state: PerfStatus["state"];
-  /** Frames of the last 1000 ms of the window: run by the loop, drawn by the renderer. */
+  /** Awake frames of the last 1000 ms of the window: run by the loop, drawn by the renderer. */
   readonly fps: { readonly loop: number; readonly drawn: number };
   /** Spikes in the window (the one-window rule, design §4). */
   readonly spikes: number;
@@ -105,6 +148,16 @@ export type PerfSecond = {
   readonly budgetMs: number;
   /** The loop's rate now and who decides it (counters, device row). */
   readonly rate: PerfRate;
+  /**
+   * How the window paced: rest, breaks, p90 of the awake frames (spec 03 delta 2026-10-15). Absent from
+   * an agent before the delta.
+   */
+  readonly activity?: PerfActivity;
+  /**
+   * The headline GPU over the window (spec 03 delta item 8); null without a measured GPU time (no GPU
+   * timer). Absent from an agent before item 8.
+   */
+  readonly gpuTime?: PerfGpuTime | null;
   /** `renderer.stats()` read when this value was built; null when the renderer has no `stats` or it threw. */
   readonly render: PerfRenderStats | null;
   /** The newest `sample` line, as the engine sent it; null before the first. */

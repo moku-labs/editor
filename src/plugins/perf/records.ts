@@ -8,9 +8,11 @@ import type {
   FrameRecord,
   FrameRing,
   LongFrameEntry,
+  PerfActivity,
   PerfCause,
   PerfEventLine,
   PerfFrameEvent,
+  PerfGpuTime,
   PerfRate,
   PerfSecond,
   PerfSpikeLine,
@@ -27,6 +29,7 @@ import {
   frameEventOf,
   isRateChange,
   PHASES,
+  REST,
   rateFps,
   rowOfFrame,
   statsOf
@@ -158,17 +161,20 @@ export function rateOf(state: PerfState): PerfRate {
   for (const line of inArrivalOrder(state.rateLines, state.rateLineNext)) {
     if (isRateChange(line.detail)) change = line.detail;
   }
+  // The display's rate: the engine's live value, else what the lines said.
+  const header = state.header?.rate;
+  const linesHz = change === undefined ? (header?.displayHz ?? null) : change.displayHz;
+  const displayHz = state.displayHz ?? linesHz;
   if (change !== undefined) {
-    return { fps, mode: change.mode, reason: change.reason, displayHz: change.displayHz, switches };
+    return { fps, mode: change.mode, reason: change.reason, displayHz, switches };
   }
 
   // ... else the header's rate (spec 21), else nothing known.
-  const header = state.header?.rate;
   return {
     fps,
     mode: header?.mode ?? null,
     reason: header?.reason ?? null,
-    displayHz: header?.displayHz ?? null,
+    displayHz,
     switches
   };
 }
@@ -190,6 +196,67 @@ function renderOf(state: PerfState): PerfSecond["render"] {
 }
 
 /**
+ * The p90 frame time of the awake frames of the window (nearest rank). Allocates: once per
+ * `second()`.
+ *
+ * @param state - perf's state.
+ * @returns The p90, ms to hundredths; null without an awake frame.
+ */
+function awakeP90(state: PerfState): number | null {
+  const { window } = state;
+  const awake: number[] = [];
+  for (let row = 0; row < window.count; row += 1) {
+    if (window.rest[row] === REST.awake) awake.push(cell(window.ms, row));
+  }
+  if (awake.length === 0) return null;
+  awake.sort((one, other) => one - other);
+  return hundredths(awake[Math.ceil(awake.length * 0.9) - 1] ?? Number.NaN);
+}
+
+/**
+ * How the window paced: the rest now and since when, the resting frames and their time, the breaks,
+ * and the p90 of the awake frames.
+ *
+ * @param state - perf's state.
+ * @returns The activity.
+ */
+function activityOf(state: PerfState): PerfActivity {
+  const { window, header } = state;
+  let idleFrames = 0;
+  let idleMs = 0;
+  let breaks = 0;
+  for (let row = 0; row < window.count; row += 1) {
+    const rest = window.rest[row];
+    if (rest === REST.break) breaks += 1;
+    if (rest !== REST.idle) continue;
+    idleFrames += 1;
+    idleMs += cell(window.ms, row);
+  }
+
+  // The current rest: back from the newest frame while it rests.
+  let first = window.count;
+  while (first > 0 && window.rest[first - 1] === REST.idle) first -= 1;
+  const idle = first < window.count;
+  const idleSince =
+    idle && header !== undefined ? plain(header.timeOrigin + cell(window.t, first)) : null;
+  return { idle, idleSince, idleFrames, idleMs: plain(idleMs), breaks, p90Ms: awakeP90(state) };
+}
+
+/**
+ * The headline GPU: the window's GPU p50 and p90 (`spreadGpu`, written at every read) to hundredths;
+ * null without a measured GPU time.
+ *
+ * @param state - perf's state.
+ * @returns The frozen GPU time, or null.
+ */
+function gpuTimeOf(state: PerfState): PerfGpuTime | null {
+  const p50Ms = hundredths(state.window.gpuP50Ms);
+  const p90Ms = hundredths(state.window.gpuP90Ms);
+  if (p50Ms === null || p90Ms === null) return null;
+  return Object.freeze({ p50Ms, p90Ms });
+}
+
+/**
  * This second, built once per window version and lines and frozen with its `fps`, `rate`, `render`.
  *
  * @param state - perf's state.
@@ -205,6 +272,8 @@ export function secondOf(state: PerfState): PerfSecond {
     spikes: window.spikeCount,
     budgetMs: newest >= 0 ? plain(cell(window.budgetMs, newest)) : EMPTY_BUDGET_MS,
     rate: Object.freeze(rateOf(state)),
+    activity: Object.freeze(activityOf(state)),
+    gpuTime: gpuTimeOf(state),
     render: renderOf(state),
     sample: state.sample ?? null,
     display: state.display ?? null,
@@ -461,13 +530,18 @@ function uploadWhy(facts: WhyFacts): string {
 }
 
 /**
- * The compile sentence: how many and, when the detail has one, the first labelled compile.
+ * The compile sentence: how many and, when the detail has one, the first labelled compile. A frame
+ * that compiled nothing itself had its compiles in the 4 frames before (the engine names a compile
+ * on a gap spike from them); a count nobody knows (ring slot overwritten, no spike line) is not
+ * named.
  *
  * @param facts - The spike.
  * @returns The sentence.
  */
 function compileWhy(facts: WhyFacts): string {
-  const count = facts.compiles ?? facts.detail?.compiles.length ?? 0;
+  const count = facts.compiles ?? facts.detail?.compiles.length;
+  if (count === undefined) return "Shader compiles on first use stalled this frame";
+  if (count === 0) return "Shader compiles on first use in the 4 frames before stalled this frame";
   const label = facts.detail?.compiles.find(compile => compile.label !== null)?.label;
   const subject = label === undefined || label === null ? "" : ` (${label})`;
   const noun = count === 1 ? "compile" : "compiles";

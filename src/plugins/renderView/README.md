@@ -128,13 +128,15 @@ ago", and its header bar reads "Browser".
 | `game.ui`, `game.entities`, `game.projections` and the calibration | **Not on a device session** (R4): serializing a scene tree costs the phone the frames the strip measures. A browser session keeps them. | The tree card reads "The render tree is not read from a device: reading it costs the phone frames." |
 
 - Hidden Render or another session drops every device watch at once; the strip keeps its data for a return to the same session and starts empty on a new session id.
-- The graph repaints through the painter at most every 250 ms (`REPAINT_MS`) and only after a new value or a selection change; never while Render is hidden. "seen N s ago" and the REC clock re-render once a second (`RECORD_TICK_MS`). Both intervals live with the mounted canvas and stop with it; onStop clears what is left.
-- The canvas's backing store follows `width × dpr` by `height × dpr` (`dpr` clamped to 1…3) only when the CSS size or the dpr changed; the dpr transform is set before every paint. The legends are measured again once Barlow Condensed has loaded.
+- The graph is drawn with an interpolated time axis (spec 09 Amendment 2026-10-15): on each `requestAnimationFrame` the painter gets `now = window.endMs + (performance.now() − receivedAt)`, capped at one read (`REPAINT_MS`, 250 ms) past the newest row, so the graph scrolls between the 4 Hz window reads and a new row appears at the right edge when time reaches it. The loop runs only while Render is shown, the tab is visible and the session is live: a window value restarts it (a 250 ms supervisor), and 2 s without one (`STALE_AFTER_MS`) stops it at the last frame. `prefers-reduced-motion` keeps the 4 Hz steps without a moving `now`. "seen N s ago" and the REC clock re-render once a second (`RECORD_TICK_MS`). The supervisor, the clock, the frame and the theme listener live with the mounted canvas and stop with it; onStop clears what is left.
+- Each frame blits a static base layer and paints the moving part over it. The base (the well, the grid, the tape's body) is drawn into an offscreen canvas only when the CSS size, the dpr (clamped to 1…3) or the theme changed; the moving part (bars, budget, flags, tape marks, readout, axis, `now`) draws only the rows inside the visible span. The legends' text measures stay cached and are taken again once Geist has loaded or the theme changed. A click hits the flags and bars of the frame on screen: its time origin is the one of the last paint.
+- The strip follows the editor's look and theme (spec 09 Delta 2026-10-15): an editor card like the Render cards (`--surface-panel`, `--line-1`, `--radius-10`), Geist for words and Geist Mono for numbers, every colour an editor token. Light and dark follow the editor's theme switch with no reload: the sheets read `light-dark()` tokens, the colours the graph also draws (a cause key, a stack swatch, the budget bug, the GPU bars of a record) go inline as `--c`, a `light-dark()` of the graph's light and dark palette (`device/colour.ts`), and the canvas repaints with `graphLook("light" | "dark")` from `workspace.theme()` on every theme change. The light theme's cause hues are darker ones that hold 3:1 on the light well (`causeHue`). The phone overlay keeps its glass cockpit (spec 08).
+- The headline reads "idle since HH:MM:SS" (the phone's wall clock) instead of drawn / loop while the engine idles (`PerfSecond.activity.idle`); its p90 is `activity.p90Ms` over awake frames (the sample's gap p90 on an agent without `activity`); the GPU part is "GPU p50 0.5 / p90 1.2 ms" from the window's `gpuP50Ms` / `gpuP90Ms`, "GPU 6.0 ms avg" from `meanGpu` on an older window, "GPU — no timer" without a timer; the display Hz comes from `rate.displayHz`.
 - The strip has its own subscription (`device/state.ts` `notifyStrip`, `useDeviceStrip`): a device value, the selection, the record, More and the 1 s clock re-render the strip only, never the workspace snapshot (`deriveSnapshot`). A session gaining or losing its strip re-renders the workspace.
 - A click on the graph after a new window arrived and before the next repaint paints first, so the flags and bars it hits are the ones on screen.
 - Every value is checked down to each member the strip reads (`device/guards.ts`): a cause must be one of `CAUSE_STYLE`, a window must span 0 < span ≤ 60 s. A value of another shape is warned, dropped, and the last good one stays: the Render workspace never throws on it.
 - STALE: the phone's engine fingerprint (`PerfSecond.engine`, else the session's `device.engine`) against the computer's (`link.engine()`), only when both are known and differ.
-- `device/contract/index.ts` is the one door to perf's `perf/protocol` (the window, its wire form with the 60 s span rule and the unknown cause bits dropped, the values, `createPerfWindow`, `readWireWindow`, `rowOfFrame`, `stepSpike`, `spikeOrdinal`, `meanGpu`) and `perf/graph` (`paintGraph`, `createGraphState`, `resetGraphText`, `spikeAt`, `rowAt` and the cause palette `CAUSE_STYLE`: renderView keeps no copy). The recorder's `RecorderStatus` is a type-only re-export of `recorder/types` (`device/contract/recorder.ts`): no recorder code enters the tools bundle.
+- `device/contract/index.ts` is the one door to perf's `perf/protocol` (the window, its wire form with the 60 s span rule and the unknown cause bits dropped, the values, `createPerfWindow`, `readWireWindow`, `rowOfFrame`, `stepSpike`, `spikeOrdinal`, `meanGpu`), `perf/graph` (`paintGraph`, `createGraphState`, `resetGraphText`, `spikeAt`, `rowAt` and the cause palette `CAUSE_STYLE`: renderView keeps no copy) and `perf/graph/themes` (`graphLook`, `causeHue`, `GRAPH_PALETTES`: the light and dark looks stay out of the agent bundle). The recorder's `RecorderStatus` is a type-only re-export of `recorder/types` (`device/contract/recorder.ts`): no recorder code enters the tools bundle.
 
 ## Lifecycle
 
@@ -183,7 +185,7 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `handlers.ts` | The four hooks. |
 | `lifecycle.ts` | onInit, onStart, onStop. |
 | `panel.tsx`, `components/` | The Render panel and its Preact components. |
-| `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7); `strip.css` and `record.css` for the D1 strip. |
+| `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7); `strip.css` and `record.css` for the D1 strip, in editor tokens only. |
 | `device/types.ts` | The strip's state, record state, view, text runs, cells and record rows. |
 | `device/state.ts` | The strip's state factory and its reset on a session change. |
 | `device/derive.ts` | Pure: `stripView`, the about line, build profile, STALE, seen, REC clock, rate suffix, link cell, headline, More. |
@@ -191,8 +193,9 @@ ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
 | `device/record.ts` | Pure: the rows of the record side panel. |
 | `device/guards.ts` | Shape guards of the device values. |
 | `device/watch.ts` | Which sessions get the strip, the device watches, the record read, the strip's api actions. |
-| `device/paint.ts` | The ≤ 4 Hz repaint loop of the canvas and the canvas click. |
-| `device/contract/` | The barrel of the perf contracts the strip reads (`perf/protocol`, `perf/graph`) and the recorder's `RecorderStatus` (a type-only re-export of `recorder/types`). |
+| `device/paint.ts` | The canvas's interpolated `requestAnimationFrame` loop (4 Hz steps under reduced motion), its cached base layer, the theme repaint and the canvas click. |
+| `device/colour.ts` | Pure: the graph's colours as CSS `light-dark()` for the DOM (`themedHue`, `themedColour`). |
+| `device/contract/` | The barrel of the perf contracts the strip reads (`perf/protocol`, `perf/graph`, and `perf/graph/themes` for the light and dark looks, which only the tools page imports) and the recorder's `RecorderStatus` (a type-only re-export of `recorder/types`). |
 | `device/components/` | `DeviceStrip`, `DeviceRow`, `StripGraph`, `SpikePanel`, `Legend`, `Annunciator`. |
 
 ## Narrow layout
@@ -220,4 +223,3 @@ headline wrap. The graph row stays 200 high and the nav column 44 wide. No horiz
 | The release log is a diff. Its frame is approximate ("≈fN"). No reason. | F-R3: `assets:bundle-unloaded` with frame and reason. |
 | Tree types are ui tags and entity display kinds, not Pixi classes. | F-G1: a display-tree source. |
 | Draw calls are counted in a dev build only. | None. |
-| The strip's Barlow faces are not on the tools page yet: `styles/fonts.css` gains them with the overlay's font files (spec 09 W4, spec 10 E9); until then the strip falls back to "Arial Narrow". | None (editor follow-up with unit 08). |

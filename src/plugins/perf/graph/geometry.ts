@@ -62,7 +62,7 @@ export function rowLeft(state: GraphState, window: PerfWindowView, row: number):
  */
 export function rowRight(state: GraphState, window: PerfWindowView, row: number): number {
   const left = rowLeft(state, window, row);
-  const right = row + 1 < window.count ? xOf(state, cell(window.t, row + 1)) : state.px1;
+  const right = row + 1 < window.count ? xOf(state, cell(window.t, row + 1)) : state.edgeX;
   return Math.max(right, left + 1);
 }
 

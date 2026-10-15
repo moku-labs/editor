@@ -31,8 +31,17 @@ export type LinkLegend = {
  * The card header (B1); the pill (C1) draws the same numbers.
  */
 export type HeaderView = {
-  /** Drawn fps of the last second, or "—". */
+  /** Drawn fps of the last second, "idle" while the screen rests, or "—". */
   readonly fps: string;
+  /** The word after it: "fps", or how long the screen has rested ("12s"; "" when unknown). */
+  readonly fpsUnit: string;
+  /**
+   * The compact card's header (spec 08 delta item 8): the fps without its unit, no spikes label,
+   * REC as a red dot and its time.
+   */
+  readonly compact: boolean;
+  /** How long the recorder has recorded ("3m"); "" when it does not record. */
+  readonly recFor: string;
   /** Spikes in the window. */
   readonly spikes: number;
   readonly link: LinkLegend;

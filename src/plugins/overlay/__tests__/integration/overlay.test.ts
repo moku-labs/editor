@@ -230,14 +230,15 @@ describe("overlay integration", () => {
       drawn: true
     });
     t += 8.33;
+    // A spike is work over budget (spec 03 delta item 7): JS over it, its upload naming it.
     const spike = monitor.commit({
       t,
       gapMs: 41.3,
       rateMs: 16.67,
       budgetMs: 16.67,
-      workMs: 8,
+      workMs: 30,
       drawn: true,
-      causes: 1 << 4
+      causes: (1 << 1) | (1 << 4)
     });
     monitor.emit(
       eventLine("overlay", spike, {
@@ -269,7 +270,7 @@ describe("overlay integration", () => {
       [...shadow().querySelectorAll('[data-part="causes"] [data-legend]')].map(
         legend => legend.textContent
       )
-    ).toEqual(["UP"]);
+    ).toEqual(["UP", "JS"]);
     const changed = part('[data-part="changed"]').textContent;
     expect(changed).toContain("rate 120 → 60 (missed, auto)");
     expect(changed).toContain("shopDimLayer open · pool trim −41.5 MB (rest)");

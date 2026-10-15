@@ -88,12 +88,63 @@ describe("the build", () => {
 });
 
 describe("the about line", () => {
-  it("joins OS, WebView, Hz and dpr", () => {
-    expect(aboutLine(secondOf())).toBe("Android 15, WebView 131, 60 Hz, dpr 2.81");
+  it("joins OS, WebView, the display's Hz and dpr", () => {
+    expect(aboutLine(secondOf())).toBe("Android 15, WebView 131, 120 Hz, dpr 2.81");
+  });
+
+  it("names the browser on a desktop or a Chrome tab, WebView only in a native shell or an Android WebView (bug: 'WebView 152' on a Mac)", () => {
+    const base = secondOf();
+    const device = base.device ?? undefined;
+    if (device === undefined) throw new Error("fixture without a device");
+    const desktop = {
+      ...device,
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      model: null,
+      modelFrom: null,
+      webview: "152"
+    };
+    expect(aboutLine({ ...base, device: desktop })).toBe("Chrome 152, 120 Hz, dpr 2.81");
+    const chromeTab = { ...device, userAgent: device.userAgent.replace("; wv)", ")") };
+    expect(aboutLine({ ...base, device: chromeTab })).toBe(
+      "Android 15, Chrome 131, 120 Hz, dpr 2.81"
+    );
+    const shell = { ...chromeTab, modelFrom: "shell" as const };
+    expect(aboutLine({ ...base, device: shell })).toBe("Android 15, WebView 131, 120 Hz, dpr 2.81");
+  });
+
+  it("names the browser from device.browser on an engine that writes it: WebView where webview is set, else Chrome, nothing on Safari (bug: no browser on a Mac now that webview is null there)", () => {
+    const base = secondOf();
+    const device = base.device ?? undefined;
+    if (device === undefined) throw new Error("fixture without a device");
+    const mac = {
+      ...device,
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      model: null,
+      modelFrom: null,
+      webview: null,
+      browser: "155"
+    };
+    expect(aboutLine({ ...base, device: mac })).toBe("Chrome 155, 120 Hz, dpr 2.81");
+    const webView = { ...device, webview: "131", browser: "131" };
+    expect(aboutLine({ ...base, device: webView })).toBe(
+      "Android 15, WebView 131, 120 Hz, dpr 2.81"
+    );
+    const tab = { ...webView, webview: null };
+    expect(aboutLine({ ...base, device: tab })).toBe("Android 15, Chrome 131, 120 Hz, dpr 2.81");
+    const safari = { ...mac, browser: null };
+    expect(aboutLine({ ...base, device: safari })).toBe("120 Hz, dpr 2.81");
+  });
+
+  it("takes the Hz from the engine's display rate, never from the loop's ticks (bug: '2 Hz' on a throttled page)", () => {
+    const rate = { fps: 60, mode: "fixed", reason: "start", displayHz: null, switches: 0 } as const;
+    expect(aboutLine(secondOf({ rate }))).toBe("Android 15, WebView 131, dpr 2.81");
   });
 
   it("the about line drops unknown parts", () => {
-    const second = secondOf({ display: null, sample: null });
+    const rate = { fps: 120, mode: "auto", reason: "start", displayHz: null, switches: 1 } as const;
+    const second = secondOf({ display: null, sample: null, rate });
     const device = second.device ?? undefined;
     expect(
       aboutLine({ ...second, device: device === undefined ? null : { ...device, webview: null } })
@@ -119,7 +170,7 @@ describe("the headline", () => {
       "Last 6 s from the phone, 6 spikes",
       "drawn / loop 54 / 60 @120 fps",
       "p90 frame 18.2 ms",
-      "GPU 6.0 ms avg",
+      "GPU p50 6.0 / p90 6.0 ms",
       "passes 6",
       "draws 212",
       "texture 96 / 32 / 1 MB art / targets / kept"
@@ -196,6 +247,61 @@ describe("the headline", () => {
     expect(fromSample).toBe("texture 96 / 32 / 3 MB art / targets / kept");
   });
 
+  it("while the screen rests the headline says idle since when instead of fps (bug: '0 / 2 fps' on a still screen)", () => {
+    const strip = stripOf();
+    const since = 1_760_454_003_120;
+    const idle = secondOf({
+      fps: { loop: 2, drawn: 0 },
+      activity: {
+        idle: true,
+        idleSince: since,
+        idleFrames: 92,
+        idleMs: 3066,
+        breaks: 0,
+        p90Ms: 17.6
+      }
+    });
+    const clock = new Date(since).toTimeString().slice(0, 8);
+
+    expect(textOf(headline(idle, strip.window, false)[1] ?? [])).toBe(
+      `drawn / loop idle since ${clock} @120`
+    );
+    const unknownStart = secondOf({
+      activity: { idle: true, idleSince: null, idleFrames: 3, idleMs: 100, breaks: 0, p90Ms: null }
+    });
+    expect(textOf(headline(unknownStart, strip.window, false)[1] ?? [])).toBe(
+      "drawn / loop idle @120"
+    );
+  });
+
+  it("p90 comes from the awake frames (activity.p90Ms), not the sample's gap p90 (bug: p90 ≈ 1000 ms on an idle screen)", () => {
+    const strip = stripOf();
+    const sample = sampleOf({ gapMs: { p50: 500, p90: 1000, p99: 1000 } });
+    const awake = secondOf({
+      sample,
+      activity: { idle: false, idleSince: null, idleFrames: 0, idleMs: 0, breaks: 0, p90Ms: 17.6 }
+    });
+    const none = secondOf({
+      sample,
+      activity: { idle: false, idleSince: null, idleFrames: 0, idleMs: 0, breaks: 0, p90Ms: null }
+    });
+
+    expect(textOf(headline(awake, strip.window, false)[2] ?? [])).toBe("p90 frame 17.6 ms");
+    expect(textOf(headline(none, strip.window, false)[2] ?? [])).toBe("p90 frame \u2014 ms");
+    expect(textOf(headline(secondOf({ sample }), strip.window, false)[2] ?? [])).toBe(
+      "p90 frame 1000.0 ms"
+    );
+  });
+
+  it("GPU reads the window's p50 and p90, not one frame's average (bug: a single 20 ms outlier read as GPU time)", () => {
+    const strip = stripOf();
+    const window = { ...strip.window, gpuP50Ms: 0.49, gpuP90Ms: 1.24 };
+
+    expect(textOf(headline(secondOf(), window, false)[3] ?? [])).toBe("GPU p50 0.5 / p90 1.2 ms");
+    const older = { ...strip.window, gpuP50Ms: Number.NaN, gpuP90Ms: Number.NaN };
+    expect(textOf(headline(secondOf(), older, false)[3] ?? [])).toBe("GPU 6.0 ms avg");
+  });
+
   it("a browser session's headline says 'from the browser'", () => {
     const strip = stripOf("browser");
 
@@ -210,7 +316,7 @@ describe("More", () => {
     const text = textOf(moreText(secondOf(), "SM-A266B", true));
 
     expect(text).toBe(
-      "systems: frost-apply 2.1 · ripple 1.4 · glass 0.9 ms · filters 4 · kept 4 pictures, 0 retakes · passes max 3 · rate switches 1 · redraws 0 · rebuilds 0 · views 1 384 · heap 151 MB · insets t32 b24 l0 r0 · backend webgpu · canvas 1080 × 2340, scale 1.0 · device SM-A266B, 60 Hz, dpr 2.81"
+      "systems: frost-apply 2.1 · ripple 1.4 · glass 0.9 ms · filters 4 · kept 4 pictures, 0 retakes · passes max 3 · rate switches 1 · redraws 0 · rebuilds 0 · views 1 384 · heap 151 MB · insets t32 b24 l0 r0 · backend webgpu · canvas 1080 × 2340, scale 1.0 · device SM-A266B, 120 Hz, dpr 2.81"
     );
   });
 

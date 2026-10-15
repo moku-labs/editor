@@ -15,7 +15,7 @@ It opens however the game decides: the engine calls the global channel `globalTh
 sets at start (`app.debug.overlay.*`, `config.debug.overlay`, `DebugTrigger`). The editor ships no gesture and no debug
 button of its own.
 
-**The overlay must not cause the stutter it measures** (§ Cheapness): opaque surfaces, one canvas, numbers and canvas
+**The overlay must not cause the stutter it measures** (§ Cheapness): opaque surfaces, one plot canvas and one fixed canvas, numbers and canvas
 change at most four times a second, no animation loop, one 120 ms slide, and all of its work between
 `monitor.beginAgent()` and `monitor.endAgent()`, so the engine charges it to the `agent` phase.
 
@@ -141,7 +141,7 @@ index, `hub-import.test.ts`) and `registry/protocol`.
 |---|---|
 | C1 | No `backdrop-filter`, `filter`, blur, opacity, alpha colour or transparent ground; shadows without blur. |
 | C2 | Every surface resolves to an opaque token. |
-| C3 | One canvas, the same element across ticks, only while the Frames graph shows. |
+| C3 | One plot canvas and one fixed canvas, the same elements across ticks, only while the Frames graph shows; both painted once per tick in the same bracketed paint. Only the plot slides (one `PAINT_MS` linear compositor transition per paint, none under reduced motion): what is tied to time (rows, budget lines, flags, the axis's seconds). The fixed canvas lies over the whole well on a transparent ground and stays: what marks a place (the tape with its budget bug and readout, the caption, `now`, the stack legend). |
 | C4 | One `setInterval(PAINT_MS)`; data between ticks is stored, not rendered; the painter at most once a tick and only for a changed window; the backing store resized only on a size or dpr change. |
 | C5 | No `requestAnimationFrame`, no `infinite`, only the two slide keyframes. |
 | C6 | One 120 ms slide on an opening; reduced motion removes it. |
@@ -174,9 +174,8 @@ falls back to the stack's next family.
 `fonts/register.ts` adds the faces to `document.fonts` under private families, `"Moku Overlay Barlow Condensed"` and
 `"Moku Overlay Barlow"`, so a game's own Barlow never draws from this subset; the overlay's stacks name them first
 (`--font-cond`, `--font-text`). Registration happens at the first visible mode, inside the agent bracket; the graph's
-legends are measured again once the faces load; stop deletes them. The tools page names the same three files under the
-plain families in `workspace/styles/fonts.css`; `scripts/build-tools.ts` copies them from this folder (their one home).
-The file names are a contract with that build.
+legends are measured again once the faces load; stop deletes them. The tools page loads none of them (spec 09 Delta
+2026-10-15: it is set in Geist); this folder is their one home.
 
 Size: 43 424 bytes of woff2, 58 788 bytes of `faces.ts`; the dev agent bundle is 110,705 bytes gzip with them (265,098 bytes minified), measured by `tests/integration/agent-bundle.test.ts`: `Bun.build` of the README's dev entry for the browser, minified, `__MOKU_GAME_DEV__` defined `true`, the game itself external; the test fails above 120,000 bytes gzip.
 

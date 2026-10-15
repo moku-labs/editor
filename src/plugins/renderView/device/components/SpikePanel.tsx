@@ -7,6 +7,7 @@
  */
 import type { VNode } from "preact";
 import type { RenderViewCtx } from "../../types";
+import { themedColour } from "../colour";
 import { recordView } from "../record";
 import type { BarRow, DeviceStripView, RecordState, RecordView, ValueRow } from "../types";
 import { closeSpike } from "../watch";
@@ -37,7 +38,7 @@ function CloseMark(): VNode {
  * @param props - The title and the rows.
  * @param props.title - The section title.
  * @param props.rows - The rows.
- * @param props.kind - "phases" or "gpu": the bar colour.
+ * @param props.kind - "phases" or "gpu": the bar colour (GPU bars in the graph's GPU colour).
  * @returns The section.
  */
 function Bars(props: {
@@ -46,7 +47,11 @@ function Bars(props: {
   readonly kind: "phases" | "gpu";
 }): VNode {
   return (
-    <section data-part="bars" data-kind={props.kind}>
+    <section
+      data-part="bars"
+      data-kind={props.kind}
+      style={props.kind === "gpu" ? { "--c": themedColour("gpu") } : undefined}
+    >
       <h3>{props.title}</h3>
       {props.rows.map(row => (
         <div key={row.label} data-part="bar-row">
@@ -115,7 +120,10 @@ function RecordBody(props: { readonly record: RecordView }): VNode {
             <b data-part="ms">{record.ms}</b> ms frame
           </span>
           <span>
-            <b>{record.over}</b> <b data-part="budget">{record.budget}</b>
+            <b>{record.over}</b>{" "}
+            <b data-part="budget" style={{ "--c": themedColour("magenta") }}>
+              {record.budget}
+            </b>
           </span>
         </span>
       </div>
