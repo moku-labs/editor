@@ -5,7 +5,9 @@ import type { PerfLogLine, PerfMarkLine } from "../../../perf/protocol";
 import { flushTick, utf8Length } from "../../flush";
 import { startRecorder, stopRecorder } from "../../lifecycle";
 import { rotateIfFull } from "../../rotate";
+import { createOpfsStore } from "../../store";
 import type { LogFileInfo } from "../../types";
+import { createFakeDirectory } from "../fake-opfs";
 import type { TestRecorder } from "../helpers";
 import { kinds, recorder, settle, storedLines } from "../helpers";
 
@@ -288,5 +290,65 @@ describe("a log that is still being finished", () => {
     await stopping;
     expect(t.api.files()[0]).toMatchObject({ name: first, current: false });
     expect(kinds(await storedLines(t.state.memory, first)).at(-1)).toBe("event:recorder");
+  });
+
+  it("is removed from the store its finish moved it to (bug: the memory copy left behind)", async () => {
+    const root = createFakeDirectory();
+    const t = recorder({ store: createOpfsStore(root) });
+    const { name } = t.api.start();
+    t.monitor.emit(sampleLine(1));
+    root.failWrites = 1;
+    const stopping = t.api.stop();
+    const removing = t.api.remove(name);
+    await Promise.all([stopping, removing]);
+    expect(t.api.files().map(file => file.name)).not.toContain(name);
+    const stored = await t.state.memory.list();
+    expect(stored.map(file => file.name)).not.toContain(name);
+  });
+});
+
+describe("a stop with a large queue", () => {
+  it("closes the log at the cap and keeps every line in a short continuation (bug: a stopped log past the cap)", async () => {
+    const cap = 6000;
+    const t = recorder({
+      attached: false,
+      config: { autoStart: true, flushEveryMs: 10_000, maxLogMb: cap / 1_048_576 }
+    });
+    await startRecorder(t.ctx);
+    for (let frame = 1; frame <= 20; frame += 1) t.monitor.emit(sampleLine(frame));
+    await stopRecorder(t.ctx);
+
+    const files = t.api.files();
+    expect(files.length).toBeGreaterThan(1);
+    const all: PerfLogLine[] = [];
+    for (const file of files) {
+      const blob = await t.state.memory.read(file.name);
+      const lines = await storedLines(t.state.memory, file.name);
+      expect({ fits: blob.size <= cap, current: file.current, bytes: file.bytes }).toEqual({
+        fits: true,
+        current: false,
+        bytes: blob.size
+      });
+      expect(kinds(lines)[0]).toBe("header");
+      expect(lines.at(-1)).toMatchObject({ kind: "event", detail: { action: "stop" } });
+      all.push(...lines);
+    }
+    expect(framesOf(all)).toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
+  });
+
+  it("keeps the stop event within the cap when small lines fill the log at the stop", async () => {
+    const cap = 6000;
+    const t = recorder({
+      attached: false,
+      config: { autoStart: true, flushEveryMs: 10_000, maxLogMb: cap / 1_048_576 }
+    });
+    await startRecorder(t.ctx);
+    for (let mark = 1; mark <= 150; mark += 1) t.monitor.emit(markOf("x"));
+    await stopRecorder(t.ctx);
+    expect(t.api.files().length).toBeGreaterThan(1);
+    for (const file of t.api.files()) {
+      const blob = await t.state.memory.read(file.name);
+      expect({ name: file.name, fits: blob.size <= cap }).toEqual({ name: file.name, fits: true });
+    }
   });
 });

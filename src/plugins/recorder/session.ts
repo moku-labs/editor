@@ -5,10 +5,10 @@
  * keepFiles bound.
  */
 
-import type { PerfEventLine, PerfHeaderLine } from "../perf/protocol";
+import type { MonitorLike, PerfEventLine, PerfHeaderLine, PerfLogLine } from "../perf/protocol";
 import type { WriteFailure } from "./flush";
-import { drain, moveToMemory, persistAll, warnFailure } from "./flush";
-import { clearQueue, enqueue } from "./listener";
+import { drain, MEGABYTE, moveToMemory, persistAll, utf8Length, warnFailure } from "./flush";
+import { clearQueue, enqueue, takeQueue } from "./listener";
 import { dropLog, emitStatus, findFile, infoOf } from "./state";
 import { messageOf } from "./store";
 import type { LogFileInfo, RecorderCtx, RecorderState, Session } from "./types";
@@ -17,8 +17,15 @@ import type { LogFileInfo, RecorderCtx, RecorderState, Session } from "./types";
 const NO_MONITOR =
   "[moku-editor] recorder.start: this game has no performance monitor.\n  Run a dev or debug build of @moku-labs/game with the monitor (block 2b).";
 
-/** What finishing a log did: the finished log, and the write that failed on the way. */
-export type Finished = { readonly info: LogFileInfo; readonly failure: WriteFailure | undefined };
+/**
+ * What finishing a log did: the finished log (the last continuation when the stop went over the
+ * cap), the first write that failed on the way, the continuations' names.
+ */
+export type Finished = {
+  readonly info: LogFileInfo;
+  readonly failure: WriteFailure | undefined;
+  readonly continued: readonly string[];
+};
 
 /**
  * Two digits.
@@ -157,13 +164,15 @@ function pruneLogs(ctx: RecorderCtx): void {
  * @param label - A name for the run, as given.
  * @param startedAt - Epoch ms of the start.
  * @param taken - The names already in the list.
+ * @param capBytes - The log's hard cap in UTF-8 bytes.
  * @returns The session.
  */
 function createSession(
   state: RecorderState,
   label: string | undefined,
   startedAt: number,
-  taken: ReadonlySet<string>
+  taken: ReadonlySet<string>,
+  capBytes: number
 ): Session {
   const trimmed = label?.trim() ?? "";
   return {
@@ -179,7 +188,8 @@ function createSession(
     chunks: 0,
     store: state.store,
     inflight: undefined,
-    full: false
+    full: false,
+    capBytes
   };
 }
 
@@ -218,7 +228,7 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
 
   // Build: the session, named by the local minute and the header's model, never a taken name.
   const taken = new Set(state.files.map(file => file.name));
-  const session = createSession(state, label, Date.now(), taken);
+  const session = createSession(state, label, Date.now(), taken, ctx.config.maxLogMb * MEGABYTE);
 
   // Reset: the new log is the current one, with an empty queue and no marks.
   resetForNewLog(state, session);
@@ -269,47 +279,173 @@ async function retryInMemory(
 }
 
 /**
- * Finishes the running log (`stop` and onStop): the `recorder` stop event, the queue drained inside
- * the agent span, every pending text written (to memory when the store fails), the meta rewritten
- * `current: false`. Needs no emit and no log.
+ * Whether a queued line is the `recorder` stop event the stop just wrote.
+ *
+ * @param line - A queued line.
+ * @returns Whether it is the stop event.
+ */
+function isStopEvent(line: PerfLogLine | undefined): line is PerfEventLine {
+  return (
+    line?.kind === "event" &&
+    line.name === "recorder" &&
+    Reflect.get(Object(line.detail), "action") === "stop"
+  );
+}
+
+/**
+ * Opens the continuation of a log a stop closed at its cap: the next name, the same label and cap,
+ * the context lines and the start event; listed as current until it is written.
  *
  * @param state - The recorder's state.
- * @returns The finished log and the failed write; undefined when no log was running.
+ * @param part - The log closed at its cap.
+ * @param monitor - The engine monitor.
+ * @returns The continuation, now the session.
+ */
+function openContinuation(state: RecorderState, part: Session, monitor: MonitorLike): Session {
+  const taken = new Set(state.files.map(file => file.name));
+  const next = createSession(state, part.label ?? undefined, Date.now(), taken, part.capBytes);
+  resetForNewLog(state, next);
+  queueContext(state);
+  monitor.event("recorder", { action: "start", label: next.label });
+  state.files.push(infoOf(next));
+  return next;
+}
+
+/**
+ * The UTF-8 size of the stop event the stop just queued (the last queued line), with its newline;
+ * 0 when it is not queued (no listener).
+ *
+ * @param state - The recorder's state.
+ * @returns The bytes to keep free for it.
+ */
+function queuedStopSize(state: RecorderState): number {
+  if (state.queueSize === 0) return 0;
+  const last = state.queue[(state.queueHead + state.queueSize - 1) % state.queue.length];
+  return isStopEvent(last) ? utf8Length(JSON.stringify(last)) + 1 : 0;
+}
+
+/**
+ * Closes the running log at a stop without passing its cap: the stop event, then the queue drained
+ * up to the cap less the stop event's own size. Lines that do not fit are kept, not dropped: the
+ * stop event closes this log, and the rest goes into a short continuation (the same label, the
+ * context lines, its own start and stop events), as often as needed. State-only, so onStop closes
+ * the same way.
+ *
+ * @param state - The recorder's state.
+ * @param first - The running log.
+ * @param monitor - The engine monitor.
+ * @returns Every log closed, the running one first.
+ */
+function closeWithinCap(state: RecorderState, first: Session, monitor: MonitorLike): Session[] {
+  const parts = [first];
+  let part = first;
+  // Each round takes at least one line into a fresh part, so the queued lines bound the rounds;
+  // the last round takes everything left.
+  const rounds = state.queueSize + 2;
+  for (let round = 1; ; round += 1) {
+    // Stop event, then the queue up to the cap (the tick's own full mark does not count here).
+    part.full = false;
+    monitor.event("recorder", { action: "stop" });
+    const budget =
+      round < rounds ? part.capBytes - queuedStopSize(state) : Number.POSITIVE_INFINITY;
+    drain(state, budget);
+    if (!part.full) return parts;
+
+    // Over the cap: the stop event (queued last) closes this part, within the cap.
+    const rest = takeQueue(state);
+    const stop = rest.at(-1);
+    if (isStopEvent(stop)) {
+      rest.pop();
+      enqueue(state, stop);
+      drain(state);
+    }
+    if (rest.length === 0) return parts;
+
+    // The rest continues in a short log of its own.
+    part = openContinuation(state, part, monitor);
+    parts.push(part);
+    for (const line of rest) enqueue(state, line);
+  }
+}
+
+/**
+ * Writes a closed log: every pending text (to memory when the store fails), then its final info in
+ * the list and its meta rewritten `current: false`.
+ *
+ * @param state - The recorder's state.
+ * @param part - The closed log.
+ * @returns The final info and the failed write.
+ */
+async function writeClosed(
+  state: RecorderState,
+  part: Session
+): Promise<{ readonly info: LogFileInfo; readonly failure: WriteFailure | undefined }> {
+  const written = await persistAll(state, part);
+  const failure = written === undefined ? undefined : await retryInMemory(state, part, written);
+  const info: LogFileInfo = {
+    ...(findFile(state, part.name) ?? infoOf(part)),
+    current: false,
+    storage: part.store.kind
+  };
+  replaceFile(state, info);
+  await part.store.describe(info).catch(() => {});
+  return { info, failure };
+}
+
+/**
+ * Writes every closed log in order and makes the last one `last`.
+ *
+ * @param state - The recorder's state.
+ * @param parts - The closed logs, the running one first.
+ * @returns The last log's info, the first failed write, the continuations' names.
+ */
+async function writeAll(state: RecorderState, parts: readonly Session[]): Promise<Finished> {
+  let info: LogFileInfo | undefined;
+  let failure: WriteFailure | undefined;
+  for (const part of parts) {
+    const written = await writeClosed(state, part);
+    info = written.info;
+    failure ??= written.failure;
+  }
+  const last = info ?? infoOf(parts[0] as Session);
+  state.last = last;
+  return { info: last, failure, continued: parts.slice(1).map(part => part.name) };
+}
+
+/**
+ * Finishes the running log (`stop`, onStop and a rotation): the stop event, the queue drained
+ * inside the agent span without passing the log's cap (lines over it go into a short continuation,
+ * never dropped), every pending text written (to memory when the store fails), the meta rewritten
+ * `current: false`. Needs no emit and no log. A continuation is in `state.finishing` until written.
+ *
+ * @param state - The recorder's state.
+ * @returns The finished log (the last continuation when there is one), the failed write and the
+ *   continuations; undefined when no log was running.
  */
 export async function finishLog(state: RecorderState): Promise<Finished | undefined> {
   // Guard: no log runs, nothing to finish.
   const { session, monitor } = state;
   if (session === undefined || monitor === undefined) return undefined;
 
-  // Close the log: the stop event, then the queue drained inside the agent span.
-  monitor.event("recorder", { action: "stop" });
+  // Close the log: the stop event and the queue, within the cap, inside the agent span.
   monitor.beginAgent();
+  let parts: Session[];
   try {
-    drain(state);
+    parts = closeWithinCap(state, session, monitor);
   } finally {
     monitor.endAgent();
   }
 
-  // Detach: the recorder is idle (or exporting); the log stays current in the list (keepMb and
-  // keepFiles leave it alone) until its text is in the store.
+  // Detach: the recorder is idle (or exporting); each closed log stays current in the list (keepMb
+  // and keepFiles leave it alone) until its text is in the store.
   state.session = undefined;
   state.phase = state.exports > 0 ? "exporting" : "idle";
-  replaceFile(state, infoOf(session));
+  for (const part of parts) replaceFile(state, infoOf(part));
 
-  // Write: every pending text; a failed write moves the log to memory and writes it there.
-  const written = await persistAll(state, session);
-  const failure = written === undefined ? undefined : await retryInMemory(state, session, written);
-
-  // Finish: the final info in the list and as `last`, the meta rewritten `current: false`.
-  const info: LogFileInfo = {
-    ...(findFile(state, session.name) ?? infoOf(session)),
-    current: false,
-    storage: session.store.kind
-  };
-  replaceFile(state, info);
-  state.last = info;
-  await session.store.describe(info).catch(() => {});
-  return { info, failure };
+  // Write: each closed log in order; a continuation is waited for like the log itself.
+  const writing = writeAll(state, parts);
+  for (const part of parts.slice(1)) trackFinish(state, part.name, writing);
+  return writing;
 }
 
 /**
@@ -350,7 +486,12 @@ export async function stopRecording(ctx: RecorderCtx): Promise<LogFileInfo | und
   if (name !== undefined) trackFinish(ctx.state, name, finishing);
   const finished = await finishing;
   if (finished === undefined) return undefined;
-  const { info, failure } = finished;
+  const { info, failure, continued } = finished;
+  let from = name ?? info.name;
+  for (const to of continued) {
+    ctx.log.info("recorder:rotated", { from, to });
+    from = to;
+  }
   warnFailure(ctx, info.name, failure);
   emitStatus(ctx, true);
   ctx.log.info("recorder:stopped", { file: info.name, lines: info.lines, bytes: info.bytes });
@@ -374,9 +515,10 @@ export async function removeLog(ctx: RecorderCtx, name: string): Promise<void> {
       `[moku-editor] recorder.remove: ${name} is being recorded.\n  Stop the recording first.`
     );
   }
-  // A log still being finished is removed after its finish, or the finish would write it again.
+  // A log still being finished is removed after its finish, or the finish would write it again;
+  // its info is read again (the finish may have moved it to memory).
   await state.finishing.get(name);
-  await dropLog(state, info);
+  await dropLog(state, findFile(state, name) ?? info);
   state.files = state.files.filter(file => file.name !== name);
   emitStatus(ctx, true);
 }

@@ -36,7 +36,11 @@ export function rotateIfFull(ctx: RecorderCtx): Promise<void> | undefined {
     ctx.log.warn("recorder:rotate-failed", { file: session.name, message: messageOf(error) });
   };
   const finishing = finishLog(state);
-  if (state.session === session) {
+
+  // Not detached: the finish failed before it let go of the log; nothing rotates and the carried
+  // lines go back to the queue.
+  const detached = state.session !== session;
+  if (!detached) {
     for (const line of carry) enqueue(state, line);
     return finishing.then(() => {}, failed);
   }

@@ -115,10 +115,16 @@ status shows `exporting` while any share runs; the last one to end sets it back 
   in a row the log moves to the memory store for the rest of its life (`recorder:storage`). Nothing is copied into the
   heap: the chunks OPFS already has stay there, later ones go to memory, and a read or share joins both parts (a remove
   takes both). OPFS keeps the meta of its last chunk, so the next launch lists that part as a finished log.
-- **Stop** (`session.ts` `finishLog`, shared by `stop` and onStop): the stop event, the queue drained in the agent
-  span, every pending text written (a write that fails at stop moves the log to memory and is written there, also when
-  it was the third failure in a row), the meta rewritten `current: false`. It needs no emit and no log. onStop also
-  revokes the download URLs still waiting for their timer.
+- **Stop** (`session.ts` `finishLog`, shared by `stop`, onStop and the rotation): the stop event, the queue drained
+  in the agent span without passing the log's cap (kept on the log from its start, so onStop's state-only path has
+  it): the drain stops at the cap less the stop event's own size, the stop event closes the log, and the lines that did
+  not fit go into a short continuation log (the same label, the context lines, its own start and stop events) as
+  often as needed, so a stop with a large queue drops no line and no log passes the cap (`stop` logs
+  `recorder:rotated` for each continuation; onStop logs nothing). Then every pending text is written (a write that
+  fails at stop moves the log to memory and is written there, also when it was the third failure in a row), and the
+  meta rewritten `current: false`. It needs no emit and no log. onStop also revokes the download URLs still waiting
+  for their timer. A remove of a log that was still being finished re-reads its info after the finish, so a log the
+  finish moved to memory is removed from memory.
 
 ## The store
 

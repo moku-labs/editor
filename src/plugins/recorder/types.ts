@@ -149,6 +149,8 @@ export type Session = {
   inflight: Promise<unknown> | undefined;
   /** The tick's drain stopped before a line that would carry the log past maxLogMb: it rotates. */
   full: boolean;
+  /** The hard cap of this log in UTF-8 bytes (maxLogMb when it started): a stop never passes it. */
+  readonly capBytes: number;
 };
 
 /**
