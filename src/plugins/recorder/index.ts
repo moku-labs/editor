@@ -32,6 +32,7 @@ const defaultConfig: RecorderConfig = {
  *
  * @example
  * ```ts
+ * // On a --debug build of the game (agent flag on, dev flag off), a log starts by itself.
  * const editor = createApp({ pluginConfigs: { registry: { game: app } } });
  * await editor.start(); // a log starts: perf-20261014-1532-sm-a266b.jsonl
  * editor.recorder.mark("boss enters"); // true

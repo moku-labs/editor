@@ -12,6 +12,14 @@ import type { RecorderConfig, RecorderCtx, RecorderState, Session } from "./type
 /** Pending text that is written at once, whatever persistEveryMs says. */
 export const PERSIST_BYTES = 65_536;
 
+/**
+ * Room kept free below maxLogMb when the tick rotates: for the stop event (about 120 bytes with a
+ * long build id) and for the lines a manual stop finds in the queue, since `finishLog` writes them
+ * all into the log (one flush tick of a busy page: about 25 KB on the measured dev page, so 64 KiB
+ * leaves 2.5×). At most 1/16 of a smaller cap.
+ */
+export const ROTATE_HEADROOM_BYTES = 65_536;
+
 /** Consecutive failed writes that move a log to the memory store. */
 export const MAX_FAILURES = 3;
 
@@ -38,34 +46,109 @@ function serialize(line: unknown): string | undefined {
 }
 
 /**
- * Serializes the queue in order into the current log: its pending text and the outbox, each line
- * with its index in the log. A line that does not serialize is dropped and counted.
+ * The UTF-8 size of a text without encoding it (no allocation): 1 byte per code point below 0x80,
+ * 2 below 0x800, 3 below 0x10000 (a lone surrogate too: it encodes as U+FFFD), 4 above.
+ *
+ * @param text - A text.
+ * @returns Its UTF-8 bytes.
+ * @example
+ * ```ts
+ * utf8Length("é€🔥"); // 9
+ * ```
+ */
+export function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.codePointAt(index) ?? 0;
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x8_00) bytes += 2;
+    else if (code < 0x1_00_00) bytes += 3;
+    else {
+      bytes += 4;
+      index += 1;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * The UTF-8 bytes a tick lets a log reach before it rotates: maxLogMb less the headroom (64 KiB, at
+ * most 1/16 of the cap).
+ *
+ * @param config - The recorder's config.
+ * @returns The budget in bytes.
+ */
+export function rotationBudget(config: Readonly<RecorderConfig>): number {
+  const cap = config.maxLogMb * MEGABYTE;
+  return cap - Math.min(ROTATE_HEADROOM_BYTES, cap / 16);
+}
+
+/**
+ * Takes the oldest reference out of the ring and frees its slot.
  *
  * @param state - The recorder's state.
  */
-export function drain(state: RecorderState): void {
+function dequeue(state: RecorderState): void {
+  state.queue[state.queueHead] = undefined;
+  state.queueHead = (state.queueHead + 1) % state.queue.length;
+  state.queueSize -= 1;
+}
+
+/**
+ * Whether a line of `size` bytes is kept for the next log: it would carry the log past the
+ * budget, and the log already holds at least half of it (a line bigger than that goes in anyway,
+ * so a rotation always makes progress).
+ *
+ * @param session - The current log.
+ * @param size - The line's UTF-8 bytes with its newline.
+ * @param budget - The bytes the log may reach.
+ * @returns Whether the drain stops before the line.
+ */
+function isOverBudget(session: Session, size: number, budget: number): boolean {
+  return session.bytes + size > budget && session.bytes >= budget / 2;
+}
+
+/**
+ * Serializes the queue in order into the current log: its pending text and the outbox, each line
+ * with its index in the log and its UTF-8 size. A line that does not serialize is dropped and
+ * counted. With a budget (the tick), it stops before a line that would carry the log past it and
+ * marks the log full: the line stays queued for the next log.
+ *
+ * @param state - The recorder's state.
+ * @param budget - The UTF-8 bytes the log may reach; none at a stop.
+ */
+export function drain(state: RecorderState, budget = Number.POSITIVE_INFINITY): void {
   const { queue, session } = state;
   while (state.queueSize > 0) {
-    // Dequeue: the oldest reference leaves the ring (its slot freed); without a log it is dropped.
+    // Peek: the oldest reference; without a log it is dropped.
     const line = queue[state.queueHead];
-    queue[state.queueHead] = undefined;
-    state.queueHead = (state.queueHead + 1) % queue.length;
-    state.queueSize -= 1;
-    if (session === undefined) continue;
+    if (session === undefined) {
+      dequeue(state);
+      continue;
+    }
 
     // Serialize: one JSON text; a line that cannot be serialized is counted as dropped.
     const text = serialize(line);
     if (text === undefined) {
+      dequeue(state);
       state.dropped += 1;
       continue;
     }
 
+    // Fit: a line that would carry the log past the budget waits for the next log.
+    const size = utf8Length(text) + 1;
+    if (isOverBudget(session, size, budget)) {
+      session.full = true;
+      return;
+    }
+
     // Append: to the log's pending text and to the outbox with its index in the log.
+    dequeue(state);
     session.pending.push(text);
     session.pendingBytes += text.length + 1;
     pushOutbox(state, text, session.name, session.lines);
     session.lines += 1;
-    session.bytes += text.length + 1;
+    session.bytes += size;
   }
 }
 
@@ -298,7 +381,7 @@ export function flushTick(ctx: RecorderCtx): void {
   // that is due. The span closes also when a step throws.
   monitor.beginAgent();
   try {
-    drain(state);
+    drain(state, rotationBudget(config));
     trimToKeepMb(ctx);
     if (isChunkDue(session, now, config)) chunk = takeChunk(session, now);
   } finally {

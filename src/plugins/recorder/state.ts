@@ -58,7 +58,8 @@ export function createRecorderState(): RecorderState {
     watchFailing: false,
     failures: 0,
     heads: new Map(),
-    revokes: new Map()
+    revokes: new Map(),
+    finishing: new Map()
   };
 }
 

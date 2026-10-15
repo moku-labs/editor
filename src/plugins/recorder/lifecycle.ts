@@ -79,13 +79,30 @@ function shown(value: unknown): string {
 }
 
 /**
- * Checks the config: every number finite and in range (`keepFiles` whole), `storage` one of its two
- * values.
+ * Whether a value is an autoStart: true, false or "device".
+ *
+ * @param value - The config's value.
+ * @returns Whether it is one of the three.
+ * @example
+ * ```ts
+ * isAutoStart("yes"); // false
+ * ```
+ */
+function isAutoStart(value: unknown): value is boolean | "device" {
+  return value === true || value === false || value === "device";
+}
+
+/**
+ * Checks the config, key by key, and throws for the first bad one: `keepMb` (1 to 512),
+ * `flushEveryMs` (100 to 10000), `persistEveryMs` (1000 to 60000), `keepFiles` (whole, 1 to 100) and
+ * `maxLogMb` (whole, 1 to 512) are numbers in their range; `autoStart` is true, false or "device";
+ * `storage` is "auto" or "memory".
  *
  * @param config - The resolved config.
  * @throws {TypeError} `[moku-editor] recorder.<key> is <value>.\n  Give …` for the first bad key.
  */
 export function checkRecorderConfig(config: Readonly<RecorderConfig>): void {
+  // Numbers: each in its range, whole where the rule says so.
   for (const rule of RULES) {
     const value: unknown = config[rule.key];
     const fits =
@@ -97,12 +114,14 @@ export function checkRecorderConfig(config: Readonly<RecorderConfig>): void {
       throw new TypeError(`[moku-editor] recorder.${rule.key} is ${shown(value)}.\n  ${rule.hint}`);
     }
   }
+  // autoStart: one of its three values.
   const autoStart: unknown = config.autoStart;
-  if (autoStart !== true && autoStart !== false && autoStart !== "device") {
+  if (!isAutoStart(autoStart)) {
     throw new TypeError(
       `[moku-editor] recorder.autoStart is ${shown(autoStart)}.\n  Give true, false or "device" (start a log on a debug build only).`
     );
   }
+  // storage: one of its two values.
   const storage: unknown = config.storage;
   if (storage !== "auto" && storage !== "memory") {
     throw new TypeError(
@@ -181,6 +200,21 @@ function tick(ctx: RecorderCtx): void {
 }
 
 /**
+ * Whether a page is a debug build: the registry's profile `read` (`--debug`) or `full`
+ * (`--debug=full`), the builds with the agent flag on and the dev flag off.
+ *
+ * @param profile - The page's build profile.
+ * @returns Whether it is a debug build.
+ * @example
+ * ```ts
+ * isDebugBuild("dev"); // false
+ * ```
+ */
+function isDebugBuild(profile: BuildProfile): boolean {
+  return profile === "read" || profile === "full";
+}
+
+/**
  * Whether onStart starts a log: "device" on a debug build only (the registry's profile `read` or
  * `full`: agent flag on, dev flag off), true always, false never.
  *
@@ -193,15 +227,15 @@ function tick(ctx: RecorderCtx): void {
  * ```
  */
 export function shouldAutoStart(autoStart: boolean | "device", profile: BuildProfile): boolean {
-  return autoStart === "device" ? profile === "read" || profile === "full" : autoStart;
+  return autoStart === "device" ? isDebugBuild(profile) : autoStart;
 }
 
 /**
  * onStart: opens the store (OPFS may answer memory with a reason) and lists its logs. With a
- * monitor: subscribes to the stream, starts the flush timer and, when autoStart says so for this
- * build (`shouldAutoStart`), starts a log —
- * at once when the header is in, else on the first tick that has it, at most AUTOSTART_WAIT_TICKS
- * later (a native shell holds the header back until it is ready).
+ * monitor it subscribes to the stream and starts the flush timer. When autoStart says so for this
+ * build (`shouldAutoStart`), it starts a log: at once when the header is in, else on the first
+ * tick that has it, at most AUTOSTART_WAIT_TICKS later (a native shell holds the header back until
+ * it is ready).
  *
  * @param ctx - The recorder's context.
  */
@@ -225,8 +259,8 @@ export async function startRecorder(ctx: RecorderCtx): Promise<void> {
 
 /**
  * onStop: clears the timer, revokes the download URLs still waiting, finishes a running log (its
- * errors swallowed: teardown reports nothing, and the text stays in the memory store), unsubscribes
- * and drops the source watches.
+ * errors swallowed: teardown reports nothing, and the text stays in the memory store), waits for
+ * every log a stop or a rotation is still finishing, unsubscribes and drops the source watches.
  *
  * @param ctx - The teardown context: own config and state.
  */
@@ -237,6 +271,8 @@ export async function stopRecorder(ctx: RecorderStopCtx): Promise<void> {
   state.autoStartWait = 0;
   revokeDownloads(state);
   await finishLog(state).catch(() => {});
+  // A log a stop or a rotation is still finishing is finished before the teardown goes on.
+  await Promise.all(state.finishing.values());
   state.unsubscribe?.();
   state.unsubscribe = undefined;
   state.watchers.clear();

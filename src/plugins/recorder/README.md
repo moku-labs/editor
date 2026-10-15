@@ -98,13 +98,19 @@ status shows `exporting` while any share runs; the last one to end sets it back 
 - **keepMb**: while the outbox, the memory store and the pending text pass `keepMb`, the oldest finished log of the
   memory store goes first (`recorder:dropped-log`), then the oldest outbox lines (`recorder:dropped`, once per streak).
   The current log's own text is never removed while it records.
-- **Rotation** (`rotate.ts`, after each tick): when the current log reaches `maxLogMb`, the recorder finishes it (the
-  stop event, every line written, the meta rewritten) and starts the next one at once with the same label and the
-  header/startup/display context again (`recorder:started`, then `recorder:rotated { from, to }`). The switch is
-  synchronous, so no line falls between the two logs or goes into both; a line already queued when the cap is passed
-  goes into the full log before its stop event. The status shows the new log as the current one; the finished part is
-  listed in `files()` and can be shared or removed. The outbox keeps the full log's unsent lines: the bridge ships them
-  first, acked per log. `marks()` belongs to the current log, so it starts empty after a rotation.
+- **Rotation** (`rotate.ts`, after each tick): a log's `bytes` are its UTF-8 bytes (counted without encoding, on the
+  recorder's timer). The tick's drain stops before the line that would carry the log past `maxLogMb` less a headroom
+  (`ROTATE_HEADROOM_BYTES`, 64 KiB, at most 1/16 of the cap: room for the stop event and for the lines a manual stop
+  finds in the queue) and marks the log full; a line bigger than half of that goes in anyway, so a rotation always
+  makes progress. The rotation carries the lines still queued out, finishes the full log (the stop event, every line
+  written, the meta rewritten) and starts the next one at once with the same label and the header/startup/display
+  context again, followed by the carried lines (`recorder:started`, then `recorder:rotated { from, to }`). So no
+  finished log passes `maxLogMb` on disk (the native share's cap at the default 32), and no line falls between two
+  logs or goes into both. A finish that fails before it detached the log rotates nothing (`recorder:rotate-failed`).
+  The status shows the new log as the current one; the finished part is listed in `files()` and can be shared or
+  removed: a remove or a share of a log that is still being finished (a stop, a rotation) waits for its finish, and
+  onStop waits for all of them. The outbox keeps the full log's unsent lines: the bridge ships them first, acked per
+  log. `marks()` belongs to the current log, so it starts empty after a rotation.
 - **Failed writes**: a rejected chunk goes back in front of the pending text (`recorder:persist-failed`); after three
   in a row the log moves to the memory store for the rest of its life (`recorder:storage`). Nothing is copied into the
   heap: the chunks OPFS already has stay there, later ones go to memory, and a read or share joins both parts (a remove
@@ -172,7 +178,8 @@ writes the `command` line; then the overlay calls `recorder.command(id, input, l
 
 `recorder:started`, `recorder:stopped`, `recorder:rotated`, `recorder:shared`, `recorder:storage`,
 `recorder:dropped-log` and `recorder:no-monitor` at info; `recorder:persist-failed`, `recorder:dropped`, `recorder:remove-failed`,
-`recorder:list-failed`, `recorder:flush-failed` and `recorder:watcher-failed` at warn. onStop logs nothing.
+`recorder:list-failed`, `recorder:flush-failed`, `recorder:watcher-failed` and `recorder:rotate-failed` at warn.
+onStop logs nothing.
 
 ## Dependencies
 

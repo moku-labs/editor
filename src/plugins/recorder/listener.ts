@@ -26,6 +26,23 @@ export function enqueue(state: RecorderState, line: PerfLogLine): void {
 }
 
 /**
+ * Takes every queued reference out, oldest first, and empties the ring (a rotation carries them
+ * into the next log).
+ *
+ * @param state - The recorder's state.
+ * @returns The queued lines.
+ */
+export function takeQueue(state: RecorderState): PerfLogLine[] {
+  const lines: PerfLogLine[] = [];
+  for (let index = 0; index < state.queueSize; index += 1) {
+    const line = state.queue[(state.queueHead + index) % state.queue.length];
+    if (line !== undefined) lines.push(line);
+  }
+  clearQueue(state);
+  return lines;
+}
+
+/**
  * Empties the queue ring (a new log starts with its context lines).
  *
  * @param state - The recorder's state.

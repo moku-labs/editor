@@ -67,7 +67,7 @@ export type LogFileInfo = {
   /** Epoch ms of the start. */
   readonly startedAt: number;
   readonly lines: number;
-  /** UTF-16 code units of the text plus one per newline: the UTF-8 size for ASCII JSON. */
+  /** UTF-8 bytes of the text plus one per newline: the size of the file. */
   readonly bytes: number;
   /** Lines of this log the computer confirmed (`ack`). */
   readonly sent: number;
@@ -147,6 +147,8 @@ export type Session = {
   store: LogStore;
   /** The write in flight; one at a time, so the chunks keep their order. */
   inflight: Promise<unknown> | undefined;
+  /** The tick's drain stopped before a line that would carry the log past maxLogMb: it rotates. */
+  full: boolean;
 };
 
 /**
@@ -215,6 +217,11 @@ export type RecorderState = {
   readonly heads: Map<string, LogStore>;
   /** The revoke timers of download URLs, and their URLs: revoked at once at stop. */
   readonly revokes: Map<ReturnType<typeof setTimeout>, string>;
+  /**
+   * Logs being finished (a stop or a rotation), by name, until the finish settled: a remove or a
+   * share of that log waits for it, and onStop waits for all.
+   */
+  readonly finishing: Map<string, Promise<void>>;
 };
 
 /**

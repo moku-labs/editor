@@ -136,6 +136,8 @@ export async function shareLog(ctx: RecorderCtx, name: string): Promise<ShareRes
   const deliver = deliveryOf(state);
   if (deliver === undefined) throw new Error(NO_SHARE);
 
+  // A log still being finished (a stop, a rotation) is shared once its last lines are written.
+  await state.finishing.get(name);
   const { session } = state;
   if (session?.name === name) warnFailure(ctx, name, await persistAll(state, session));
   state.exports += 1;

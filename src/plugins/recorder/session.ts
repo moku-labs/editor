@@ -178,7 +178,8 @@ function createSession(
     lastPersistAt: startedAt,
     chunks: 0,
     store: state.store,
-    inflight: undefined
+    inflight: undefined,
+    full: false
   };
 }
 
@@ -312,6 +313,31 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
 }
 
 /**
+ * Keeps the finish of a log in `state.finishing` until it settles (whatever its outcome), so a
+ * remove or a share of that log, and onStop, wait for it.
+ *
+ * @param state - The recorder's state.
+ * @param name - The log being finished.
+ * @param finish - Its finish.
+ * @returns The entry: settles with the finish, never rejects.
+ */
+export function trackFinish(
+  state: RecorderState,
+  name: string,
+  finish: Promise<unknown>
+): Promise<void> {
+  const entry = finish.then(
+    () => {},
+    () => {}
+  );
+  state.finishing.set(name, entry);
+  entry.then(() => {
+    if (state.finishing.get(name) === entry) state.finishing.delete(name);
+  });
+  return entry;
+}
+
+/**
  * Stops the running log (`stop`, `editor.record { on: false }`): finishes it, warns a failed write,
  * emits the status and logs `recorder:stopped`.
  *
@@ -319,7 +345,10 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
  * @returns The finished log; undefined when no log was running.
  */
 export async function stopRecording(ctx: RecorderCtx): Promise<LogFileInfo | undefined> {
-  const finished = await finishLog(ctx.state);
+  const name = ctx.state.session?.name;
+  const finishing = finishLog(ctx.state);
+  if (name !== undefined) trackFinish(ctx.state, name, finishing);
+  const finished = await finishing;
   if (finished === undefined) return undefined;
   const { info, failure } = finished;
   warnFailure(ctx, info.name, failure);
@@ -345,6 +374,8 @@ export async function removeLog(ctx: RecorderCtx, name: string): Promise<void> {
       `[moku-editor] recorder.remove: ${name} is being recorded.\n  Stop the recording first.`
     );
   }
+  // A log still being finished is removed after its finish, or the finish would write it again.
+  await state.finishing.get(name);
   await dropLog(state, info);
   state.files = state.files.filter(file => file.name !== name);
   emitStatus(ctx, true);
