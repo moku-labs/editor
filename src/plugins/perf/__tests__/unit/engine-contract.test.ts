@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type {
   PerfEventLine as EngineEventLine,
   PerfEventName as EngineEventName,
@@ -14,6 +15,7 @@ import type {
   Renderer,
   Time
 } from "@moku-labs/game";
+import * as engine from "@moku-labs/game";
 import {
   DEMAND_REASONS,
   PERF_GAP_BUCKETS as ENGINE_GAP_BUCKETS,
@@ -32,6 +34,7 @@ import type {
   OverlayWhat,
   PerfEventLine,
   PerfEventName,
+  PerfFramesWire,
   PerfHeaderLine,
   PerfLogLine,
   PerfMeasured,
@@ -45,8 +48,19 @@ import type {
   ThermalStatus,
   WarmDetail
 } from "../../protocol";
-import { CAUSE_BITS, changesOf, PERF_GAP_BUCKETS, PERF_LOG_VERSION, PHASES } from "../../protocol";
+import {
+  CAUSE_BITS,
+  changesOf,
+  MONITOR_SECTIONS,
+  PASS_KINDS,
+  PERF_GAP_BUCKETS,
+  PERF_LOG_VERSION,
+  PHASES,
+  PROBLEM_RULES,
+  SHADER_WHATS
+} from "../../protocol";
 import { REASON_NONE } from "../../ring";
+import { feedRig } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The editor's view of the engine against the engine itself (spec 03 § Against
@@ -184,5 +198,102 @@ describe("the engine's exported lists (game@0fda201: PERF_CAUSES, DEMAND_REASONS
   it("keeps CAUSE_BITS, the engine-free bit order of the wire, the tools page and the server's report, equal to PERF_CAUSES (bug: a tools page naming a spike by another cause)", () => {
     expect([...CAUSE_BITS]).toEqual([...PERF_CAUSES]);
     expectTypeOf<(typeof CAUSE_BITS)[number]>().toEqualTypeOf<(typeof PERF_CAUSES)[number]>();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The 0.15.x patch (spec 03 Delta 2026-10-16 D1, D12, D14; E7): the editor's
+// runtime-free copies of the engine's new lists equal the engine's root exports
+// once the installed engine has them (asserted from the patch on: a patched
+// engine without one fails); before it, each is listed as an engine to-do, never
+// a silent pass. The pass ring's kind2 and the growth of systemNames are read as
+// the engine writes them (the fake follows the engine's rules).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The installed engine's version. */
+const ENGINE_VERSION: string = JSON.parse(
+  readFileSync(
+    new URL("../../../../../node_modules/@moku-labs/game/package.json", import.meta.url),
+    "utf8"
+  )
+).version;
+
+/** The installed engine is older than the 0.15.x patch (0.15.0 or before): its lists are not exported yet. */
+const BEFORE_PATCH = /^0\.(?:\d|1[0-4])\.\d|^0\.15\.0(?:\D|$)/.test(ENGINE_VERSION);
+
+/** The editor's copy of each list and when the engine exports it: the 0.15.x patch, or the next change. */
+const LISTS = [
+  ["SHADER_WHATS", SHADER_WHATS, "patch"],
+  ["PROBLEM_RULES", PROBLEM_RULES, "patch"],
+  ["PASS_KINDS", PASS_KINDS, "patch"],
+  ["MONITOR_SECTIONS", MONITOR_SECTIONS, "next"]
+] as const;
+
+/** The type mirrors of D1 the engine exports from the patch or the next change (types: tsc, once exported). */
+const TYPE_MIRRORS = [
+  "ShaderEventDetail",
+  "ProblemEventDetail",
+  "GcEventDetail",
+  "MonitorSections",
+  "PerfPassesLine",
+  "PassColumnsNext (FrameRing.passes owner, kind2, kindNames, drawsAt, format, resolution)",
+  "PerfSampleNext (sample targets, counts, shaders, sectionsMs, memory.source)"
+] as const;
+
+describe("the editor's copies of the engine's 0.15.x lists (E7)", () => {
+  for (const [name, copy, from] of LISTS) {
+    const exported: unknown = Reflect.get(engine, name);
+    const pending = exported === undefined && (from === "next" || BEFORE_PATCH);
+    if (pending) {
+      it.todo(`TODO(engine): ${name} equals the engine's export (game ${ENGINE_VERSION} has none)`);
+      continue;
+    }
+    it(`keeps ${name} equal to the engine's export (bug: a list the tools page reads drifting from the engine)`, () => {
+      expect(exported).toEqual([...copy]);
+    });
+  }
+  for (const name of TYPE_MIRRORS) {
+    it.todo(
+      `TODO(engine): ${name} is assignable both ways to the engine's export (game ${ENGINE_VERSION})`
+    );
+  }
+});
+
+describe("the pass ring and the system names as perf reads them", () => {
+  it("names a pass's filter kindNames[kind2 - 1] and kind2 0 none (bug: an off-by-one naming the wrong filter)", () => {
+    const { monitor, tick, read } = feedRig({ feedPasses: true });
+    monitor.commit({ t: 0 });
+    monitor.commitPass({ kind: "filter", filter: "fog.blur", owner: 412 });
+    monitor.commitPass({ kind: "filter", filter: "colorMatrix", owner: 412 });
+    monitor.commitPass({ kind: "canvas" });
+    tick();
+    const wire = read("editor.perf.frames") as PerfFramesWire;
+    // eslint-disable-next-line unicorn/no-null -- null is "no filter" on the wire
+    expect(wire.passes?.filter).toEqual(["fog.blur", "colorMatrix", null]);
+    // eslint-disable-next-line unicorn/no-null -- null is "no owner" on the wire
+    expect(wire.passes?.owner).toEqual([412, 412, null]);
+  });
+
+  it.each([
+    "copy",
+    "in-place"
+  ] as const)("copies the system names again only when the ring's names grow (%s) (bug: a newly registered system sent without its name, or the names copied at every read)", grow => {
+    const { monitor, tick, read, state } = feedRig({}, { systemNames: grow });
+    const ward = monitor.addSystem("ward.update");
+    monitor.commit({ t: 0, systems: [{ idx: ward, ms: 1 }] });
+    tick();
+    const sent = state.systemNames;
+    monitor.commit({ t: 16.7, gapMs: 16.7, systems: [{ idx: ward, ms: 1 }] });
+    tick();
+    expect(state.systemNames).toBe(sent);
+
+    const fog = monitor.addSystem("fog.render");
+    monitor.commit({ t: 33.4, gapMs: 16.7, systems: [{ idx: fog, ms: 2 }] });
+    tick();
+    expect(state.systemNames).not.toBe(sent);
+    expect((read("editor.perf.frames") as PerfFramesWire).systems?.names).toEqual([
+      "ward.update",
+      "fog.render"
+    ]);
   });
 });

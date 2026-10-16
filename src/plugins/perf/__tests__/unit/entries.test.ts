@@ -6,7 +6,7 @@ import { addPerfEntries, offText, watchTicks } from "../../entries";
 import type { PerfWindowWire } from "../../protocol";
 import { createPerfWindow, readWireWindow } from "../../protocol";
 import { readTick } from "../../reader";
-import { attach, commitFrames, perfState } from "../helpers";
+import { attach, commitFrames, ENVELOPE, perfState } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // entries: the five registry sources, their watches and the off reason.
@@ -26,7 +26,8 @@ function setup() {
     {
       add: entry => {
         if ("read" in entry) sources.set(entry.descriptor.id, entry);
-      }
+      },
+      envelope: () => ENVELOPE
     },
     perf.state,
     perf.config
@@ -40,7 +41,7 @@ function setup() {
 }
 
 describe("the perf sources", () => {
-  it("adds the five sources with their ids, titles, inputs and changes: frame", () => {
+  it("adds the nine sources with their ids, titles, inputs and changes: frame (the Mission control feeds of spec 03 Delta 2026-10-16 D11 included)", () => {
     const { sources } = setup();
     expect([...sources.values()].map(entry => entry.descriptor)).toEqual([
       { id: "editor.perf.second", title: "Performance, this second", input: {}, changes: "frame" },
@@ -52,7 +53,26 @@ describe("the perf sources", () => {
         input: { frame: "number" },
         changes: "frame"
       },
-      { id: "editor.spikes", title: "Spikes", input: { lastMs: "number?" }, changes: "frame" }
+      { id: "editor.spikes", title: "Spikes", input: { lastMs: "number?" }, changes: "frame" },
+      {
+        id: "editor.perf.frames",
+        title: "Frames after a frame",
+        input: { after: "number?" },
+        changes: "frame"
+      },
+      {
+        id: "editor.perf.events",
+        title: "Timeline events",
+        input: { after: "number?" },
+        changes: "frame"
+      },
+      { id: "editor.perf.passes", title: "GPU passes of a second", input: {}, changes: "frame" },
+      {
+        id: "editor.perf.detail",
+        title: "Frames of a range",
+        input: { from: "number", to: "number" },
+        changes: "frame"
+      }
     ]);
   });
 

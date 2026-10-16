@@ -1,13 +1,24 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" in the engine's lines and perf's values */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
-import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  createFakeMonitor,
+  ENGINE_0_15_0,
+  shaderLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import { agentCoreConfig, createAgentCore } from "../../../../config";
 import { registryPlugin } from "../../../registry";
 import type { Json } from "../../../registry/protocol";
 import type { GameLike } from "../../../registry/types";
 import { perfPlugin } from "../..";
-import { createPerfWindow, readWireWindow } from "../../protocol";
+import type { PerfEventsWire, PerfPassesWire } from "../../protocol";
+import {
+  createPerfWindow,
+  eventsOf,
+  passesSummaryOf,
+  readFramesWire,
+  readWireWindow
+} from "../../protocol";
 import { commitFrames, startedGame } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,5 +161,86 @@ describe("perf on a game without a renderer", () => {
     expect(() => editor.registry.source("editor.perf.second")?.read(null)).toThrow(
       expect.objectContaining({ code: -32_008 })
     );
+  });
+});
+
+/**
+ * Commits 70 frames from page-clock 1000, each with a canvas pass and two `fog.blur` passes of
+ * owner 412, and a `shader` compile line.
+ *
+ * @param monitor - The fake monitor.
+ */
+function commitMission(monitor: FakeMonitor): void {
+  for (let index = 0; index < 70; index += 1) {
+    monitor.commit({ t: 1000 + index * 16.7, gapMs: 16.7, draws: 42 });
+    monitor.commitPass({ label: "main", gpuMs: 2, drawsAt: 0 });
+    for (const drawsAt of [40, 41]) {
+      monitor.commitPass({ kind: "filter", owner: 412, filter: "fog.blur", gpuMs: 3, drawsAt });
+    }
+  }
+  monitor.emit(shaderLine());
+  vi.advanceTimersByTime(250);
+}
+
+describe("Mission control's feeds in an agent app (spec 03 Delta 2026-10-16)", () => {
+  it("on a 0.15.x engine: each frame once with its passes, the compile on the events, a chain on the passes, and sections { passes: false } drops the passes block", async () => {
+    const monitor = createFakeMonitor({ capacity: 512 });
+    const editor = await startEditor(monitor);
+    const read = (id: string, input: Json = {}): Json =>
+      editor.registry.source(id)?.read(input) ?? null;
+    const sections = editor.registry.command("editor.perf.sections");
+    await sections?.run({ passes: true });
+    commitMission(monitor);
+
+    const frames = readFramesWire(read("editor.perf.frames"));
+    expect(frames?.frame).toHaveLength(70);
+    expect(frames?.passes?.row).toHaveLength(210);
+    expect(frames?.passes?.owner.slice(0, 3)).toEqual([null, 412, 412]);
+    const newest = frames?.frame.at(-1) ?? 0;
+    expect(readFramesWire(read("editor.perf.frames", { after: newest }))?.frame).toEqual([]);
+
+    // The agent sends raw lines and rows; the tools page builds the marks and the chains.
+    const events = eventsOf(read("editor.perf.events") as PerfEventsWire);
+    // The switch of the engine's passes section is a timeline mark too, then the compile.
+    expect(events).toMatchObject([
+      { kind: "sections", on: ["passes"] },
+      { kind: "shader", what: "compile", label: "fog.blur" }
+    ]);
+    expect(passesSummaryOf(read("editor.perf.passes") as PerfPassesWire)).toMatchObject({
+      source: "agent",
+      chains: [{ owner: 412, kinds: ["fog.blur", "fog.blur"] }]
+    });
+    expect(editor.perf.second().caps).toMatchObject({ passOwners: true, shaderEvents: true });
+
+    await sections?.run({ passes: false });
+    monitor.commit({ t: 2200, gapMs: 16.7 });
+    vi.advanceTimersByTime(250);
+    expect(readFramesWire(read("editor.perf.frames", { after: newest }))?.passes).toBeUndefined();
+  });
+
+  it("on the installed engine's shape (0.15.0): the same ids answer with the blocks absent and the capabilities false, nothing throws", async () => {
+    const monitor = createFakeMonitor({ capacity: 512, ...ENGINE_0_15_0 });
+    const editor = await startEditor(monitor);
+    const read = (id: string, input: Json = {}): Json =>
+      editor.registry.source(id)?.read(input) ?? null;
+    const answer = await editor.registry.command("editor.perf.sections")?.run({ passes: true });
+    expect(answer?.value).toMatchObject({ engine: false, feeds: { passes: true } });
+    commitMission(monitor);
+
+    const frames = readFramesWire(read("editor.perf.frames"));
+    expect(frames?.passes?.owner.slice(0, 3)).toEqual([null, null, null]);
+    expect(frames?.passes?.draws.slice(0, 3)).toEqual([null, null, null]);
+    expect(read("editor.perf.detail", { from: 10, to: 20 })).toMatchObject({
+      source: "agent",
+      reason: "no-detail"
+    });
+    expect(read("editor.perf.passes")).toMatchObject({ source: "agent" });
+    expect(editor.perf.second().caps).toMatchObject({
+      passOwners: false,
+      passDraws: false,
+      passFormat: false,
+      sections: false,
+      detail: false
+    });
   });
 });

@@ -67,13 +67,14 @@ export type PassChainSummary = {
 };
 
 /**
- * The GPU passes of the newest full second, and the heaviest drawn frame's pass list. `gpuMs` of a
- * pass on a tile GPU (Mali, Adreno, Apple, PowerVR) is a share of the frame, never a ranking:
+ * The GPU passes of a second as the passes panel shows them, and the heaviest drawn frame's pass
+ * list: what `passesSummaryOf` builds on the tools page from an `editor.perf.passes` answer. `gpuMs`
+ * of a pass on a tile GPU (Mali, Adreno, Apple, PowerVR) is a share of the frame, never a ranking:
  * `tiler: true` tells the reader to show `share` (TC §1e).
  *
  * @example
  * ```ts
- * const passes: PerfPassesWire = { v: 1, source: "agent", t: 81000, frames: 60, tiler: true, gpuTimer: true,
+ * const passes: PerfPassesSummary = { v: 1, source: "agent", t: 81000, frames: 60, tiler: true, gpuTimer: true,
  *   chains: [{ owner: 412, view: "fogLayer", kinds: ["fog.blur", "fog.blur"], applies: 120, mpx: 221.2, draws: 4,
  *     gpuMs: { p50: 6.2, max: 6.9 }, share: 0.6 }],
  *   heaviest: { frame: 4852, passes: [{ index: 0, kind: "canvas", view: "main", owner: null, filter: null, w: 1080, h: 2340,
@@ -81,9 +82,9 @@ export type PassChainSummary = {
  *   shaders: null, targets: { created: 6, destroyed: 6 }, lost: 0 };
  * ```
  */
-export type PerfPassesWire = {
+export type PerfPassesSummary = {
   v: 1;
-  /** "engine": the engine's `passes` line as sent (next change); "agent": perf aggregated its pass window (0.15.x). */
+  /** "engine": from the engine's `passes` line (next change); "agent": from perf's pass rows (0.15.x). */
   source: "engine" | "agent";
   /** Page-clock ms of the end of the second. */
   t: number;
@@ -103,6 +104,78 @@ export type PerfPassesWire = {
   } | null;
   /** sample.targets (0.15.x patch); null before. */
   targets: { created: number; destroyed: number } | null;
+  /** Passes the engine's ring overwrote before perf read them, since start. */
+  lost: number;
+};
+
+/**
+ * The engine's per-second `passes` line (N4, next change) as the wire carries it: the line's chains
+ * and heaviest frame, arrays plain (Json).
+ *
+ * @example
+ * ```ts
+ * const line: PassesLineWire = { t: 1_792_000_081_000, heaviest: null,
+ *   chains: [{ owner: 412, view: "fogLayer", kinds: ["fog.blur"], applies: 60, mpx: 37.9, draws: 1, gpuMs: { p50: 3, max: 3.4 } }] };
+ * ```
+ */
+export type PassesLineWire = {
+  t: number;
+  chains: {
+    owner: number | null;
+    view: string | null;
+    kinds: string[];
+    applies: number;
+    mpx: number;
+    draws: number | null;
+    gpuMs: { p50: number; max: number } | null;
+  }[];
+  heaviest: {
+    frame: number;
+    passes: {
+      index: number;
+      kind: PassKind;
+      label: string | null;
+      stencil: boolean | null;
+      w: number;
+      h: number;
+      gpuMs: number | null;
+    }[];
+  } | null;
+};
+
+/**
+ * The wire value of `editor.perf.passes` (owner 2026-10-16: the agent sends raw rows, the tools
+ * page builds the chains): the newest full second, either the pass rows perf read of its drawn
+ * frames and its heaviest drawn frame (`source: "agent"`, 0.15.x), or the engine's own `passes` line
+ * as it came (`source: "engine"`, next change). `passesSummaryOf` turns it into the panel's summary.
+ *
+ * @example
+ * ```ts
+ * const wire: PerfPassesWire = { v: 1, source: "agent", t: 81000, frames: 60, tiler: true, gpuTimer: true,
+ *   rows: { row: [0], index: [0], kind: ["canvas"], view: ["main"], owner: [null], filter: [null], w: [1080], h: [2340],
+ *     format: [null], resolution: [null], draws: [41], gpuMs: [3.1] },
+ *   heaviest: { frame: 4852, row: 0 }, line: null, shaders: null, targets: { created: 6, destroyed: 6 }, lost: 0 };
+ * ```
+ */
+export type PerfPassesWire = {
+  v: 1;
+  source: "engine" | "agent";
+  /** Page-clock ms of the end of the second. */
+  t: number;
+  /** Drawn frames in the second. */
+  frames: number;
+  tiler: boolean;
+  gpuTimer: boolean;
+  /** source "agent": the pass rows of the second, `row` the index of the frame among its frames; null for "engine". */
+  rows: PerfPassRowsWire | null;
+  /** source "agent": the heaviest drawn frame and its row among the second's frames; null when none. */
+  heaviest: { frame: number; row: number } | null;
+  /** source "engine": the engine's `passes` line as sent; null for "agent". */
+  line: PassesLineWire | null;
+  /** sample.shaders of the second (next change); null before. */
+  shaders: PerfPassesSummary["shaders"];
+  /** sample.targets (0.15.x patch); null before. */
+  targets: PerfPassesSummary["targets"];
   /** Passes the engine's ring overwrote before perf read them, since start. */
   lost: number;
 };
@@ -428,4 +501,117 @@ export function gpuShare(passMs: number, frameMs: number): number | null {
   if (!Number.isFinite(passMs) || !Number.isFinite(frameMs) || frameMs <= 0) return null;
   const share = Math.min(1, Math.max(0, passMs / frameMs));
   return Math.round(share * SHARE_STEPS) / SHARE_STEPS;
+}
+
+/**
+ * Adds each pass's share of the list's summed GPU ms (rounded to 0.05, null without a GPU time).
+ *
+ * @param list - One frame's passes, without their share.
+ * @returns The passes with their share.
+ * @example
+ * ```ts
+ * withShares([canvasPass, blurPass]).map(pass => pass.share); // [0.25, 0.75] for 2 ms and 6 ms
+ * ```
+ */
+function withShares(list: readonly Omit<PassRowWire, "share">[]): PassRowWire[] {
+  let frameMs = 0;
+  for (const pass of list) frameMs += pass.gpuMs ?? 0;
+  return list.map(pass => ({ ...pass, share: gpuShare(pass.gpuMs ?? Number.NaN, frameMs) }));
+}
+
+/**
+ * The passes of one frame of pass rows, as the passes panel lists them.
+ *
+ * @param rows - The pass rows.
+ * @param row - The frame's row among them.
+ * @returns The frame's passes, with their shares.
+ * @example
+ * ```ts
+ * passListOf(rows, 0)[0]?.kind; // "canvas"
+ * ```
+ */
+function passListOf(rows: PerfPassRowsWire, row: number): PassRowWire[] {
+  // eslint-disable-next-line unicorn/no-null -- null is "not measured" in a pass row
+  const none = null;
+  const list: Omit<PassRowWire, "share">[] = [];
+  for (const [pass, at] of rows.row.entries()) {
+    if (at !== row) continue;
+    list.push({
+      index: rows.index[pass] ?? 0,
+      kind: rows.kind[pass] ?? "canvas",
+      view: rows.view[pass] ?? none,
+      owner: rows.owner[pass] ?? none,
+      filter: rows.filter[pass] ?? none,
+      w: rows.w[pass] ?? 0,
+      h: rows.h[pass] ?? 0,
+      format: rows.format[pass] ?? none,
+      resolution: rows.resolution[pass] ?? none,
+      draws: rows.draws[pass] ?? none,
+      gpuMs: rows.gpuMs[pass] ?? none
+    });
+  }
+  return withShares(list);
+}
+
+/**
+ * The summary of the engine's `passes` line: its chains as sent (no share: the engine sends none),
+ * its heaviest frame's passes with their shares.
+ *
+ * @param line - The line.
+ * @returns The chains and the heaviest frame.
+ * @example
+ * ```ts
+ * lineSummary(line).chains[0]?.share; // null
+ * ```
+ */
+function lineSummary(line: PassesLineWire): Pick<PerfPassesSummary, "chains" | "heaviest"> {
+  // eslint-disable-next-line unicorn/no-null -- null is "not measured": the engine sends no share
+  const none = null;
+  const { heaviest } = line;
+  const passes = (heaviest?.passes ?? []).map(record => ({
+    index: record.index,
+    kind: record.kind,
+    view: record.label,
+    owner: none,
+    filter: none,
+    w: record.w,
+    h: record.h,
+    format: none,
+    resolution: none,
+    draws: none,
+    gpuMs: record.gpuMs
+  }));
+  return {
+    chains: line.chains.map(chain => ({ ...chain, kinds: [...chain.kinds], share: none })),
+    heaviest: heaviest ? { frame: heaviest.frame, passes: withShares(passes) } : none
+  };
+}
+
+/**
+ * The passes panel's summary of an `editor.perf.passes` answer (the tools page's side of D5): the
+ * engine's line as sent when the agent passed one on, else the filter chains of the agent's pass rows
+ * (`chainsOf`) and the heaviest drawn frame's passes with their GPU shares; the second's facts as
+ * they came. Pure; allocates its answer.
+ *
+ * @param wire - An `editor.perf.passes` answer.
+ * @returns The summary.
+ * @example
+ * ```ts
+ * passesSummaryOf(wire).chains[0]?.kinds; // ["fog.blur", "fog.blur"]
+ * ```
+ */
+export function passesSummaryOf(wire: PerfPassesWire): PerfPassesSummary {
+  const { v, source, t, frames, tiler, gpuTimer, shaders, targets, lost } = wire;
+  const fields = { v, source, t, frames, tiler, gpuTimer, shaders, targets, lost };
+  if (wire.line !== null) return { ...fields, ...lineSummary(wire.line) };
+  const { rows, heaviest } = wire;
+  return {
+    ...fields,
+    chains: rows === null ? [] : chainsOf(rows),
+    heaviest:
+      heaviest === null || rows === null
+        ? // eslint-disable-next-line unicorn/no-null -- null is "no drawn frame in the second"
+          null
+        : { frame: heaviest.frame, passes: passListOf(rows, heaviest.row) }
+  };
 }

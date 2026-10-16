@@ -59,7 +59,7 @@ describe("onInit and onStart", () => {
     initPerf(ctx);
     startPerf(ctx);
     expect(perf.state.off).toBe("no-renderer");
-    expect(added).toHaveLength(5);
+    expect(added).toHaveLength(10);
     expect(log.info).toHaveBeenCalledExactlyOnceWith("perf:off", { reason: "no-renderer" });
     expect([perf.state.timer, perf.state.unsubscribe]).toEqual([undefined, undefined]);
     expect(vi.getTimerCount()).toBe(0);

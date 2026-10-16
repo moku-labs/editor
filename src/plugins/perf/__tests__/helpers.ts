@@ -1,11 +1,19 @@
 import { createApp as createGame, defineGame, type } from "@moku-labs/game";
 import { createHeadless, fakeClock, memory } from "@moku-labs/game/testing";
 import { vi } from "vitest";
-import type { FakeFrame, FakeMonitor } from "../../../../tests/fixtures/fake-monitor";
+import type {
+  FakeFrame,
+  FakeMonitor,
+  FakeMonitorOptions
+} from "../../../../tests/fixtures/fake-monitor";
+import { createFakeMonitor } from "../../../../tests/fixtures/fake-monitor";
 import type { Require } from "../../../config";
-import type { GameLike } from "../../registry/types";
+import type { Json, RunState } from "../../registry/protocol";
+import type { CommandEntry, GameLike, SourceEntry } from "../../registry/types";
+import { addPerfEntries } from "../entries";
 import type { PerfWindow } from "../protocol";
 import { createPerfWindow, primaryCause } from "../protocol";
+import { readTick } from "../reader";
 import { createPerfState } from "../state";
 import { listen } from "../stream";
 import type { PerfConfig, PerfCtx, PerfState } from "../types";
@@ -16,7 +24,17 @@ import type { PerfConfig, PerfCtx, PerfState } from "../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** perf's defaults. */
-export const CONFIG: PerfConfig = { readEveryMs: 250, windowMs: 6000, frames: 1024 };
+export const CONFIG: PerfConfig = {
+  readEveryMs: 250,
+  windowMs: 6000,
+  frames: 1024,
+  feedPasses: false,
+  feedSystems: true,
+  feedNodes: false
+};
+
+/** The run state a fake registry's `envelope` answers. */
+export const ENVELOPE: RunState = { path: "home", frame: 1, tainted: false };
 
 /**
  * A full Log.LogApi made of mocks.
@@ -200,4 +218,68 @@ export function windowOf(
   window.startMs = window.endMs - (options.spanMs ?? 6000);
   window.gpuTimer = options.gpuTimer ?? true;
   return window;
+}
+
+/** The entries perf added to a fake registry, by id. */
+export type TestEntries = {
+  /** The source of an id; throws for an unknown one. */
+  source(id: string): SourceEntry;
+  /** Reads a source of an id. */
+  read(id: string, input?: Json): Json;
+  /** The command of an id; throws for an unknown one. */
+  command(id: string): CommandEntry;
+  /** Every id, in the order perf added them. */
+  readonly ids: string[];
+};
+
+/**
+ * Adds perf's entries to a fake registry (`add` and `envelope`) and answers them by id.
+ *
+ * @param perf - The state and config.
+ * @returns The entries.
+ */
+export function entriesOf(perf: TestPerf): TestEntries {
+  const sources = new Map<string, SourceEntry>();
+  const commands = new Map<string, CommandEntry>();
+  const ids: string[] = [];
+  addPerfEntries(
+    {
+      add: entry => {
+        ids.push(entry.descriptor.id);
+        if ("read" in entry) sources.set(entry.descriptor.id, entry);
+        else commands.set(entry.descriptor.id, entry);
+      },
+      envelope: () => ENVELOPE
+    },
+    perf.state,
+    perf.config
+  );
+  const source = (id: string): SourceEntry => {
+    const found = sources.get(id);
+    if (found === undefined) throw new Error(`no source ${id}`);
+    return found;
+  };
+  const command = (id: string): CommandEntry => {
+    const found = commands.get(id);
+    if (found === undefined) throw new Error(`no command ${id}`);
+    return found;
+  };
+  // eslint-disable-next-line unicorn/no-null -- null is "no input" on the wire
+  return { source, read: (id, input = null) => source(id).read(input), command, ids };
+}
+
+/**
+ * perf on a fake monitor with its entries in a fake registry: the rig of the Mission control feed
+ * tests.
+ *
+ * @param config - Config fields to replace.
+ * @param options - The fake monitor's options (capacity 256 by default).
+ * @returns The perf, the monitor, its entries and a tick.
+ */
+export function feedRig(config: Partial<PerfConfig> = {}, options: FakeMonitorOptions = {}) {
+  const perf = perfState(config);
+  const monitor = createFakeMonitor({ capacity: 256, ...options });
+  attach(perf.state, monitor);
+  const entries = entriesOf(perf);
+  return { ...perf, ...entries, monitor, tick: () => readTick(perf.state, perf.config) };
 }

@@ -62,8 +62,42 @@ function timeOf(frame: number): number {
   return 80_000 + (frame - 4800) * 10;
 }
 
+/** header.timeOrigin of the test page: the raw lines carry epoch ms. */
+const ORIGIN = 1_792_000_000_000;
+
 /**
- * An events wire of the test page.
+ * The raw line the agent would send for a timeline event (the kinds these tests use: gc, rate,
+ * shader), so `appendEvents` builds the event back with `eventsOf`.
+ *
+ * @param event - The event.
+ * @returns The wire item.
+ */
+function itemOf(event: PerfTimelineEvent): PerfEventsWire["items"][number] {
+  const head = {
+    v: 1,
+    kind: "event",
+    t: ORIGIN + event.t,
+    build: null,
+    frame: event.frame
+  } as const;
+  if (event.kind === "gc") {
+    const detail = { freedMb: event.freedMb, heapMb: event.heapMb, hint: true };
+    return { seq: event.seq, line: { ...head, name: "gc", detail } };
+  }
+  if (event.kind === "rate") {
+    const { from, to, mode, reason, displayHz } = event;
+    const window = { drawn: 41, missed: 9, heavy: 0 };
+    const detail = { from, to, mode, reason, displayHz, thermal: "none", window, dwellMs: 5000 };
+    return { seq: event.seq, line: { ...head, name: "rate", detail } };
+  }
+  if (event.kind !== "shader") throw new Error(`no raw line for a ${event.kind} event`);
+  const { what, label, ms, frame, boot, pass, filter, owner, view } = event;
+  const detail = { what, label, ms, frame, boot, during: { pass, filter, owner, view } };
+  return { seq: event.seq, line: { ...head, name: "shader", detail } };
+}
+
+/**
+ * An events wire of the test page: the events as the raw lines the agent sends.
  *
  * @param items - The events, oldest first.
  * @param next - The seq of the next event.
@@ -77,7 +111,14 @@ function eventsWire(
   next: number,
   options: { epoch?: string; lost?: boolean } = {}
 ): PerfEventsWire {
-  return { v: 1, epoch: options.epoch ?? EPOCH, next, lost: options.lost ?? false, items };
+  return {
+    v: 1,
+    epoch: options.epoch ?? EPOCH,
+    timeOrigin: ORIGIN,
+    next,
+    lost: options.lost ?? false,
+    items: items.map(event => itemOf(event))
+  };
 }
 
 /**
@@ -92,22 +133,28 @@ function gcEvent(seq: number, frame: number): PerfTimelineEvent {
 }
 
 /**
- * A passes summary of a second.
+ * An `editor.perf.passes` answer of a second whose engine sent its `passes` line with these chains
+ * (the tools page keeps the line's chains as they came).
  *
  * @param t - Page-clock ms of the end of the second.
  * @param chains - Its chains.
- * @returns The summary.
+ * @returns The answer.
  */
 function passesWire(t: number, chains: PassChainSummary[] = []): PerfPassesWire {
   return {
     v: 1,
-    source: "agent",
+    source: "engine",
     t,
     frames: 60,
     tiler: false,
     gpuTimer: true,
-    chains,
+    rows: null,
     heaviest: null,
+    line: {
+      t: ORIGIN + t,
+      chains: chains.map(({ share: _share, ...chain }) => chain),
+      heaviest: null
+    },
     shaders: null,
     targets: null,
     lost: 0

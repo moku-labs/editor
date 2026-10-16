@@ -1,7 +1,15 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" in the engine's header */
 import { describe, expect, it } from "vitest";
-import { headerLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  ENGINE_0_15_0,
+  gcLine,
+  headerLine,
+  problemLine
+} from "../../../../../tests/fixtures/fake-monitor";
+import type { PerfFramesWire } from "../../protocol";
 import { capsOf } from "../../protocol";
+import { secondOf } from "../../records";
+import { feedRig } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // protocol/guards capsOf (spec 03 Delta 2026-10-16 D2): what this page's engine
@@ -115,5 +123,49 @@ describe("capsOf", () => {
       detail: false,
       passesLine: false
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The agent's capabilities and its pass rows on an engine before the patch.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("perf on an engine without the 0.15.x columns", () => {
+  it("sends its pass rows with owner, filter, draws and format null, and says so in second().caps (bug: '0 draws' or owner 0 shown for an engine that does not count them)", () => {
+    const { monitor, tick, read, state } = feedRig({ feedPasses: true }, ENGINE_0_15_0);
+    monitor.commit({ t: 0, draws: 42 });
+    monitor.commitPass({ kind: "filter", owner: 412, filter: "fog.blur", drawsAt: 3 });
+    tick();
+
+    expect((read("editor.perf.frames") as PerfFramesWire).passes).toEqual({
+      row: [0],
+      index: [0],
+      kind: ["filter"],
+      view: [null],
+      owner: [null],
+      filter: [null],
+      w: [1080],
+      h: [2340],
+      format: [null],
+      resolution: [null],
+      draws: [null],
+      gpuMs: [null]
+    });
+    expect(secondOf(state).caps).toMatchObject({
+      passOwners: false,
+      passDraws: false,
+      passFormat: false,
+      systemNames: true,
+      sections: false,
+      detail: false
+    });
+  });
+
+  it("turns a capability on when its line arrives (bug: a problem the engine sent shown as not measured)", () => {
+    const { monitor, state } = feedRig({}, ENGINE_0_15_0);
+    expect(state.caps.problems).toBe(false);
+    monitor.emit(problemLine());
+    monitor.emit(gcLine());
+    expect(secondOf(state).caps).toMatchObject({ problems: true, gc: true });
   });
 });

@@ -23,7 +23,11 @@ export const FROZEN_SAMPLES = 20;
  */
 export type PerfMemory = {
   readonly heapMb: number | null;
-  readonly source: "performance.memory" | "shell" | null;
+  /**
+   * Where the heap number comes from: the engine's `memory.source` when it says (next change, N6:
+   * `"uasm"` is `measureUserAgentSpecificMemory`), else `"performance.memory"` for a heap number.
+   */
+  readonly source: "performance.memory" | "uasm" | "shell" | null;
   /** True only for a heap number this page can stand behind (the D6 rule). */
   readonly trusted: boolean;
   /** Why not trusted: a WebView (frozen on Android), a counter that has not moved for FROZEN_SAMPLES samples, or none. */

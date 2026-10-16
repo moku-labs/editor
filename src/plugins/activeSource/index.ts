@@ -2,9 +2,8 @@
  * Standard tier — one source per tools page: the local preview or a device session. Switching
  * pauses the local preview while a device is the source and resumes it after; the Connect panel's
  * actions, the telemetry lease, the disconnect notice and the timeline markers (spec 11 § 4).
- * Emits the per-plugin events `activeSource:changed` and `activeSource:connect-requested`.
- * Skeleton of build wave 0: config, events and the typed api stub are final in shape; the api, the
- * `link:status` hook and the lifecycle land in build wave 2.
+ * Emits the per-plugin events `activeSource:changed` and `activeSource:connect-requested`; hooks
+ * the global `link:status`.
  *
  * @see README.md
  */
@@ -12,6 +11,9 @@ import type { RegisterFunction } from "@moku-labs/core";
 import { createToolsPlugin } from "../../config";
 import { linkPlugin } from "../link";
 import { createActiveSourceApi } from "./api";
+import { createActiveSourceHooks } from "./handlers";
+import { checkActiveSourceConfig, startActiveSource, stopActiveSource } from "./lifecycle";
+import { createActiveSourceState } from "./state";
 import type { ActiveSourceConfig, ConnectRequest, SourceChange } from "./types";
 
 const defaultConfig: ActiveSourceConfig = {
@@ -35,7 +37,6 @@ const defaultConfig: ActiveSourceConfig = {
  * ```
  */
 export const activeSourcePlugin = createToolsPlugin("activeSource", {
-  // link: sessions, the choice, runIn and callEditor (wave 2); the order is checked now.
   depends: [linkPlugin],
   config: defaultConfig,
   events: (register: RegisterFunction) => ({
@@ -44,5 +45,11 @@ export const activeSourcePlugin = createToolsPlugin("activeSource", {
     ),
     "activeSource:connect-requested": register<ConnectRequest>("Open the Connect panel")
   }),
-  api: createActiveSourceApi
+  createState: createActiveSourceState,
+  api: createActiveSourceApi,
+  hooks: createActiveSourceHooks,
+  onInit: checkActiveSourceConfig,
+  // @no-resource-check — onStart subscribes to link; onStop drops the subscriptions and timers
+  onStart: startActiveSource,
+  onStop: stopActiveSource
 });

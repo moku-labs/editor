@@ -190,8 +190,38 @@ export type ActiveSourceState = {
   preview: LocalPreview;
   /** The local session this plugin paused (its resume target); undefined when it paused nothing. */
   pausedSession: string | undefined;
-  /** The device id last lost and when (epoch ms), for the rejoin rule; cleared by any explicit choice. */
-  lost: { readonly device: string; readonly model: string | null; readonly at: number } | undefined;
+  /**
+   * The device id last lost and when (epoch ms), for the rejoin rule; cleared by any explicit
+   * choice and by any switch to a device. `waiting` is set by reconnect(): the rejoin rule then
+   * holds without a time limit.
+   */
+  lost:
+    | {
+        readonly device: string;
+        readonly model: string | null;
+        readonly at: number;
+        readonly waiting: boolean;
+      }
+    | undefined;
+  /**
+   * The local preview's session as last seen in link.sessions(): a new one while a device is the
+   * source is paused again (B7, a hot reload of the local frame). Starts undefined.
+   */
+  own: string | undefined;
+  /**
+   * The session a switch in flight is choosing (null: the local source of a page without a local
+   * preview); undefined when no switch is in flight. A `link:status` naming it is not adopted.
+   */
+  target: string | null | undefined;
+  /**
+   * The tail of the local preview's command queue: `game.pause` and `game.resume` run one at a
+   * time, in the order the switches asked for them. Starts resolved.
+   */
+  local: Promise<void>;
+  /** True while stopDevices() is in flight: a loss meanwhile reads "stopped". */
+  stopping: boolean;
+  /** Cancels of the connectDevice() waits in flight; onStop runs them. */
+  waits: Set<() => void>;
   /** The disconnect notice, while it shows. */
   notice: SourceNotice | undefined;
   /** Source changes, newest last, at most config.markers. */
@@ -464,8 +494,11 @@ export type ActiveSourceApi = {
    * @param serial - WireDevice.serial from directory().
    * @returns When the phone is the source.
    * @throws {Error} `[moku-editor] No debug game answered on SM-A266B.\n  Start the debug build on the
-   *   phone; a release build has no agent.` after the wait; "Allow USB debugging on the phone." for an
-   *   unauthorized phone; connect's wire errors (`port_in_use`).
+   *   phone; a release build has no agent.` after the wait (20 s, connect's default answerTimeoutMs);
+   *   `[moku-editor] Allow USB debugging on the phone.\n  Accept the prompt on its screen, then connect
+   *   again.` for an unauthorized phone, at once; `[moku-editor] activeSource.connectDevice: no phone
+   *   "R5CX30ABCDE" in the device directory.\n  Pass a serial from directory().wire.` for a serial the
+   *   directory does not list; connect's wire errors (`port_in_use`).
    * @example
    * ```ts
    * await app.activeSource.connectDevice("R5CX30ABCDE"); // the Galaxy A26 is the source, the local preview paused

@@ -45,7 +45,11 @@ const REASONS: Readonly<Record<ErrorReason, true>> = {
   page_closed: true,
   no_graph: true,
   read_only: true,
-  dev_only: true
+  dev_only: true,
+  port_in_use: true,
+  no_lan: true,
+  not_owner: true,
+  no_ticket: true
 };
 
 /**

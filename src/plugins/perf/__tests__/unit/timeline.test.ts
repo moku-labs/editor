@@ -1,9 +1,27 @@
 /* eslint-disable unicorn/no-null -- null is "between frames" and "not measured" in the engine's lines */
 import { describe, expect, it } from "vitest";
-import { DISPLAY, markLine, rateChange } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  DISPLAY,
+  debugLine,
+  displayLine,
+  gcLine,
+  markLine,
+  nextEventLine,
+  problemLine,
+  rateChange,
+  rateLine,
+  sectionsLine,
+  shaderLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import type { Json } from "../../../registry/protocol";
-import type { PerfEventNameNext, PerfMarkLine, TimelineEventLine } from "../../protocol";
-import { timelineEventOf } from "../../protocol";
+import type {
+  PerfEventNameNext,
+  PerfEventsWire,
+  PerfMarkLine,
+  TimelineEventLine
+} from "../../protocol";
+import { eventsOf, timelineEventOf } from "../../protocol";
+import { feedRig } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // protocol/timeline timelineEventOf (spec 03 Delta 2026-10-16 D4): the mark the
@@ -212,5 +230,118 @@ describe("timelineEventOf", () => {
     for (const name of ["devtools", "command", "overlay", "scene", "warm"] as const) {
       expect(timelineEventOf(line(name, 4851, { mode: "card" }), 0, ORIGIN), name).toBeUndefined();
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The agent's timeline ring and editor.perf.events (D4): the stream lines the
+// timeline marks, kept by reference with a seq, answered from `after` on.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("the timeline ring and editor.perf.events", () => {
+  it("keeps the D4 lines by reference with increasing seq, and none of the editor's own (bug: the editor's own events as timeline marks)", () => {
+    const { state, monitor } = feedRig();
+    const kept = [
+      rateLine(),
+      shaderLine(),
+      gcLine(),
+      problemLine(),
+      sectionsLine(),
+      nextEventLine("pool-trim", 4811, { reason: "rest", freedMb: 41.5 }),
+      nextEventLine("recorder", null, { action: "start", label: "boss", by: "phone", name: null }),
+      markLine("boss fight")
+    ];
+    monitor.emit(nextEventLine("devtools", null, { mode: "card", tab: "frames" }));
+    monitor.emit(nextEventLine("command", null, { id: "game.tap" }));
+    monitor.emit(
+      nextEventLine("overlay", 4811, { entity: 3, label: "dim", what: "open", mode: "freeze" })
+    );
+    monitor.emit(debugLine(true));
+    for (const line of kept) monitor.emit(line);
+
+    expect(state.timelineSeq).toBe(kept.length);
+    for (const [seq, line] of kept.entries()) expect(state.timeline[seq]).toBe(line);
+  });
+
+  it("answers the events from `after` (the last answer's next) on, and lost once more than 256 passed (bug: a tools page that silently misses a GC)", () => {
+    const { monitor, read } = feedRig();
+    for (let index = 0; index < 3; index += 1) monitor.emit(rateLine());
+    const first = read("editor.perf.events") as PerfEventsWire;
+    expect(first).toMatchObject({ v: 1, epoch: "1760453960000", next: 3, lost: false });
+    expect(first.items.map(item => item.seq)).toEqual([0, 1, 2]);
+
+    monitor.emit(gcLine());
+    const second = read("editor.perf.events", { after: first.next }) as PerfEventsWire;
+    expect(eventsOf(second).map(item => [item.seq, item.kind])).toEqual([[3, "gc"]]);
+
+    for (let index = 0; index < 300; index += 1) monitor.emit(markLine(`m${index}`));
+    const third = read("editor.perf.events", { after: second.next }) as PerfEventsWire;
+    expect(third).toMatchObject({ next: 304, lost: true });
+    expect(third.items).toHaveLength(256);
+    expect(third.items[0]?.seq).toBe(48);
+  });
+
+  it("keeps a display line only when its rate changed (bug: a resize drawn as a rate mark)", () => {
+    const { state, monitor } = feedRig();
+    monitor.emit(displayLine(120));
+    monitor.emit(displayLine(120));
+    monitor.emit(displayLine(60));
+    expect(state.timelineSeq).toBe(2);
+  });
+
+  it("keeps an old engine's compile lines only until a shader line arrives (bug: each compile drawn twice on a 0.15.x engine)", () => {
+    const { state, monitor, read } = feedRig();
+    monitor.emit(nextEventLine("compile", 4851, { frame: 4851, count: 2 }));
+    monitor.emit(shaderLine());
+    monitor.emit(nextEventLine("compile", 4852, { frame: 4852, count: 1 }));
+    const events = eventsOf(read("editor.perf.events") as PerfEventsWire);
+    expect(events.map(item => (item.kind === "shader" ? item.ms : undefined))).toEqual([
+      null,
+      38.2
+    ]);
+    expect(state.caps.shaderEvents).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The raw events feed (owner 2026-10-16): the agent sends the kept lines, the
+// tools page builds the marks with eventsOf.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("the raw events feed and eventsOf", () => {
+  it("sends the kept lines as the engine wrote them, with their seq and the page's timeOrigin, and no marks built on the phone (bug: timeline parsing in the phone's bundle)", () => {
+    const { monitor, read } = feedRig();
+    const rate = rateLine();
+    monitor.emit(rate);
+    const wire = read("editor.perf.events") as PerfEventsWire;
+    expect(wire).toEqual({
+      v: 1,
+      epoch: "1760453960000",
+      timeOrigin: 1_760_453_960_000,
+      next: 1,
+      lost: false,
+      items: [{ seq: 0, line: structuredClone(rate) }]
+    });
+  });
+
+  it("places each line on the frames' clock with its seq, skipping lines the timeline does not mark and broken items (bug: epoch ms drawn 1.7e12 ms right of the frames, or one bad item breaking the poll)", () => {
+    const items = [
+      { seq: 7, line: line("rate", 4855, rateChange()) },
+      { seq: 8, line: line("devtools", null, { mode: "card", tab: "frames" }) },
+      { seq: 9, line: null },
+      { seq: 10, line: markLine("boss fight") }
+    ] as unknown as PerfEventsWire["items"];
+    const wire: PerfEventsWire = {
+      v: 1,
+      epoch: "1760453960000",
+      timeOrigin: ORIGIN,
+      next: 11,
+      lost: false,
+      items
+    };
+    expect(eventsOf(wire)).toMatchObject([
+      { seq: 7, kind: "rate", t: 80_310.2, from: 120, to: 60 },
+      { seq: 10, kind: "mark", t: 42_000, label: "boss fight" }
+    ]);
   });
 });

@@ -470,6 +470,15 @@ Errors of `device`, `show` and `node`, next to the two above:
 | `invalid_input` | -32602 | `invalidInput` | no | The params fail their parser; `device` names a preset the page does not have (`field: "preset"`); `node` names a node the graph does not have (`field: "id"`). |
 | `no_graph` | -32003 | `noSession` | yes | `node` arrived before the Flow view had its first graph. |
 
+Errors of connect's editor methods (`connect.*`, spec 11 C1), next to `invalid_input` for params:
+
+| Reason | Code | `errorCode` | Retryable | When |
+|---|---|---|---|---|
+| `port_in_use` | -32000 | `commandFailed` | no | `connect.wire` / `connect.network`: the device port is taken (another `moku-editor perf`). |
+| `no_lan` | -32000 | `commandFailed` | no | `connect.network`: the computer has no LAN address. |
+| `not_owner` | -32007 | `unauthorized` | no | `connect.off`: device mode belongs to `moku-editor perf`. |
+| `no_ticket` | -32602 | `invalidInput` | no | `connect.confirm` / `connect.refuse`: no pairing waits with that ticket. |
+
 Game-channel notifications of the agent and their params:
 
 | Method | Params | Sent by |

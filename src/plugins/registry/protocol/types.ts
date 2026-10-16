@@ -340,7 +340,10 @@ export type Channel = "game" | "files" | "editor";
  * tools page with `role=page` is open) and `page_closed` (-32001, retryable: the page closed before
  * it answered). The `node` request adds `no_graph` (-32003, retryable: the Flow view has no graph
  * yet). A build that refuses a command answers `read_only` (a `--debug` page) or `dev_only` (a page
- * without the dev or debug flag), both -32009 and not retryable.
+ * without the dev or debug flag), both -32009 and not retryable. connect's editor methods add
+ * `port_in_use` and `no_lan` (-32000: device mode could not listen), `not_owner` (-32007: device mode
+ * belongs to `moku-editor perf`) and `no_ticket` (-32602: no pairing waits with that ticket), none
+ * retryable.
  */
 export type ErrorReason =
   | "game_reloaded"
@@ -360,7 +363,11 @@ export type ErrorReason =
   | "page_closed"
   | "no_graph"
   | "read_only"
-  | "dev_only";
+  | "dev_only"
+  | "port_in_use"
+  | "no_lan"
+  | "not_owner"
+  | "no_ticket";
 
 /**
  * A JSON-RPC error object with the editor's data fields.

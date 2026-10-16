@@ -13,10 +13,10 @@ import { perfPlugin } from "../..";
 import type { GraphContext2D, GraphLayer, GraphState, GraphView } from "../../graph";
 import { createGraphState, paintGraph } from "../../graph";
 import { graphLook } from "../../graph/themes";
-import type { PerfWindowView } from "../../protocol";
+import type { PerfFramesWire, PerfWindowView } from "../../protocol";
 import { CAUSE_BITS, GPU_BIT, REST } from "../../protocol";
 import type { WindowRow } from "../helpers";
-import { windowOf } from "../helpers";
+import { feedRig, windowOf } from "../helpers";
 import { stallOnce, startPair } from "../real-engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,6 +123,61 @@ describe("perf memory (M1)", () => {
 
     await editor.stop();
     await game.stop();
+  });
+
+  it("the reader with every feed on and 8 passes a frame keeps its heap flat over 20 000 frames (after 6 000 warm) (spec 03 Delta 2026-10-16 D12; bug: a per-read array in the pass window, the systems or the timeline)", {
+    timeout: TEST_MS
+  }, async () => {
+    const { monitor, state, tick, read } = feedRig(
+      { feedPasses: true, feedSystems: true, feedNodes: true },
+      { capacity: 1024 }
+    );
+    const ward = monitor.addSystem("ward.update");
+    const fog = monitor.addSystem("fog.render");
+    const systems = [
+      { idx: ward, ms: 2 },
+      { idx: fog, ms: 1 }
+    ];
+    let after = 0;
+
+    const frame = (round: number): void => {
+      monitor.commit({
+        t: round * 16.7,
+        gapMs: 16.7,
+        draws: 60,
+        marks: 12,
+        systems,
+        gpuPartial: true
+      });
+      for (let pass = 0; pass < 8; pass += 1) {
+        // eslint-disable-next-line unicorn/no-null -- null is "no filter" in the fake pass ring
+        const filter = pass === 0 ? null : "fog.blur";
+        const sequence = monitor.commitPass({
+          kind: pass === 0 ? "canvas" : "filter",
+          owner: pass === 0 ? 0 : 412,
+          filter,
+          drawsAt: pass * 5
+        });
+        if (round % 3 === 0) monitor.landPassGpu(sequence - 8, 1.5);
+      }
+      if (round % 100 === 0) monitor.mark("round");
+      if (round % 15 === 0) tick();
+      if (round % 240 === 0) {
+        const wire = read("editor.perf.frames", { after }) as PerfFramesWire;
+        after = wire.frame.at(-1) ?? after;
+      }
+    };
+
+    const ceiling = { heapBytes: 256 * KIB, objects: 500 };
+    const growth = await measureGrowth(frame, { warmup: 6000, rounds: 20_000, ceiling });
+    logLeak("perf reader, every feed on, 8 passes a frame, 20 000 frames", {
+      ...growth,
+      counts: { passes: state.passes.count, events: state.timelineSeq }
+    });
+
+    expect(state.passes.count).toBeGreaterThan(1000);
+    if (heapMeasured(growth)) expect(growth.heapBytes).toBeLessThan(ceiling.heapBytes);
+    if (growth.objects !== undefined) expect(growth.objects).toBeLessThan(ceiling.objects);
   });
 
   it("the graph painter keeps its heap flat over 10 000 paints of a full window, every layer in both looks (bug: the allocation-free painter allocating per paint)", {

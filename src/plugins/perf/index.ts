@@ -1,7 +1,8 @@
 /**
  * Complex tier — the performance model of the page agent: reads the engine monitor's frame ring into
  * a 6 s window, ranks spike causes, keeps the newest log lines; serves the overlay through its api
- * and the tools page and MCP through the editor.perf.* sources. No DOM, no IO, no events.
+ * and the tools page and MCP through the editor.perf.* sources, Mission control's feeds (frames,
+ * events, passes, detail) and the `editor.perf.sections` command (feeds/). No DOM, no IO, no events.
  *
  * @see README.md
  */
@@ -12,7 +13,14 @@ import { initPerf, startPerf, stopPerf } from "./lifecycle";
 import { createPerfState } from "./state";
 import type { PerfConfig } from "./types";
 
-const defaultConfig: PerfConfig = { readEveryMs: 250, windowMs: 6000, frames: 1024 };
+const defaultConfig: PerfConfig = {
+  readEveryMs: 250,
+  windowMs: 6000,
+  frames: 1024,
+  feedPasses: false,
+  feedSystems: true,
+  feedNodes: false
+};
 
 /**
  * The perf plugin, a default of the agent core.

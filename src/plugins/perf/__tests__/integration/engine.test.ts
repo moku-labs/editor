@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 /* eslint-disable unicorn/no-null -- null is "not known" in the engine's rate (displayHz without adaptive) */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CAUSE_BITS, causesOf, createPerfWindow, readWireWindow } from "../../protocol";
+import type { Json } from "../../../registry/protocol";
+import {
+  CAUSE_BITS,
+  causesOf,
+  createPerfWindow,
+  readFramesWire,
+  readWireWindow
+} from "../../protocol";
 import { stallOnce, startPair } from "../real-engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -124,4 +131,42 @@ describe("perf on the real engine without the agent flag (a page moku-game dev d
     await editor.stop();
     await game.stop();
   });
+});
+
+describe("Mission control's feeds on the installed engine (0.15.0, spec 03 Delta 2026-10-16 D15)", () => {
+  it("answer every new id with the blocks it does not measure absent and those capabilities false; nothing throws", async () => {
+    const { editor, step } = await startPair();
+    const read = (id: string, input: Json = {}): Json =>
+      editor.registry.source(id)?.read(input) ?? null;
+    await editor.registry.command("editor.perf.sections")?.run({ passes: true, nodes: true });
+    for (let index = 0; index < 90; index += 1) step(16.7);
+    vi.advanceTimersByTime(250);
+
+    const frames = readFramesWire(read("editor.perf.frames"));
+    expect(frames?.frame.length).toBeGreaterThan(60);
+    expect(frames?.gpuTimer).toBe(false);
+    expect(frames?.gpuMs.every(ms => ms === null)).toBe(true);
+    expect(read("editor.perf.events")).toMatchObject({ v: 1, lost: false });
+    const newest = frames?.frame.at(-1) ?? 0;
+    expect(read("editor.perf.detail", { from: newest - 5, to: newest })).toMatchObject({
+      source: "agent",
+      reason: "no-detail"
+    });
+    expect(() => read("editor.perf.passes")).not.toThrow();
+    expect(editor.perf.second()).toMatchObject({
+      caps: {
+        passOwners: false,
+        passDraws: false,
+        sections: false,
+        detail: false,
+        gpuTimer: false
+      },
+      monitor: { engine: false, feeds: { passes: true, systems: true, nodes: true } },
+      memory: { trusted: false }
+    });
+  });
+
+  it.todo(
+    "TODO(engine): on @moku-labs/game 0.15.x the feeds show pass owners, draws, a shader event and system names (delta-data Verification; the installed engine is 0.15.0)"
+  );
 });

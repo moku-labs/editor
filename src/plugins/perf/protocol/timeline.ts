@@ -156,23 +156,29 @@ export type PerfTimelineEvent =
   | { seq: number; kind: "mark"; t: number; frame: number | null; label: string; auto: boolean };
 
 /**
- * The wire value of `editor.perf.events`: the kept events after `after`, oldest first.
+ * The wire value of `editor.perf.events` (owner 2026-10-16: the tools page builds the marks): the
+ * lines the agent kept from seq `after` on, oldest first, each with its seq and as the engine wrote
+ * it, and the page's `timeOrigin` once. The tools page turns them into marks with `eventsOf`
+ * (`timelineEventOf` on each); `appendEvents` does it for the history.
  *
  * @example
  * ```ts
- * const wire: PerfEventsWire = { v: 1, epoch: "1792000000000.5", next: 813, lost: false,
- *   items: [{ seq: 812, kind: "rate", t: 80310.2, frame: 4855, from: 120, to: 60, mode: "auto", reason: "missed", displayHz: 120 }] };
+ * const wire: PerfEventsWire = { v: 1, epoch: "1792000000000.5", timeOrigin: 1_792_000_000_000.5, next: 813, lost: false,
+ *   items: [{ seq: 812, line: { v: 1, kind: "mark", t: 1_792_000_080_310.7, build: null, label: "boss fight", auto: false } }] };
  * ```
  */
 export type PerfEventsWire = {
   v: 1;
   /** The page's clock origin (header.timeOrigin) as text: a new value means a new page (reload), the history restarts. */
   epoch: string | null;
-  /** seq of the next event perf will keep: pass it as `after` next time. */
+  /** header.timeOrigin: a line's `t` is epoch ms, `eventsOf` subtracts this (the frames' page clock); null before a header. */
+  timeOrigin: number | null;
+  /** seq of the next line perf will keep: pass it as `after` next time. */
   next: number;
-  /** True when events after `after` were overwritten before this read (more than TIMELINE_SLOTS since). */
+  /** True when lines after `after` were overwritten before this read (more than TIMELINE_SLOTS since). */
   lost: boolean;
-  items: PerfTimelineEvent[];
+  /** The kept lines with their seq, oldest first, as the engine wrote them. */
+  items: { seq: number; line: PerfTimelineLine }[];
 };
 
 /**
@@ -187,6 +193,17 @@ export type PerfEventsWire = {
  * ```
  */
 export type TimelineEventLine = Omit<PerfEventLine, "name"> & { readonly name: PerfEventNameNext };
+
+/**
+ * A line the agent's timeline keeps and `editor.perf.events` sends: an event line of a name the
+ * timeline marks, or a mark.
+ *
+ * @example
+ * ```ts
+ * const line: PerfTimelineLine = { v: 1, kind: "mark", t: 1_792_000_080_310.7, build: null, label: "boss fight", auto: false };
+ * ```
+ */
+export type PerfTimelineLine = TimelineEventLine | PerfMarkLine;
 
 /** The fields every timeline event starts with. */
 type EventHead = { readonly seq: number; readonly t: number; readonly frame: number | null };
@@ -414,4 +431,50 @@ export function timelineEventOf(
   }
   const build = BUILDERS[line.name];
   return build?.(line, { seq, t, frame: line.frame });
+}
+
+/**
+ * Whether a wire item carries a line `timelineEventOf` can read: a whole seq and an event or mark
+ * line with a finite `t` (a hostile or broken answer is skipped, never a throw).
+ *
+ * @param item - One item of an events wire.
+ * @returns Whether it is readable.
+ * @example
+ * ```ts
+ * isReadableItem({ seq: 1, line: null }); // false
+ * ```
+ */
+function isReadableItem(item: { seq: number; line: PerfTimelineLine } | null): boolean {
+  if (typeof item !== "object" || item === null || !Number.isInteger(item.seq)) return false;
+  const { line } = item;
+  return (
+    typeof line === "object" &&
+    line !== null &&
+    (line.kind === "event" || line.kind === "mark") &&
+    Number.isFinite(line.t)
+  );
+}
+
+/**
+ * The marks of an events wire (the tools page's side of D4): each kept line through
+ * `timelineEventOf` with its seq and the wire's `timeOrigin` (0 before a header), oldest first; a
+ * line the timeline does not mark, a malformed detail or a broken item is skipped. Pure; allocates
+ * its answer.
+ *
+ * @param wire - An `editor.perf.events` answer.
+ * @returns The timeline events.
+ * @example
+ * ```ts
+ * eventsOf(wire)[0]; // { seq: 812, kind: "mark", t: 80310.2, frame: null, label: "boss fight", auto: false }
+ * ```
+ */
+export function eventsOf(wire: PerfEventsWire): PerfTimelineEvent[] {
+  const events: PerfTimelineEvent[] = [];
+  const items = Array.isArray(wire.items) ? wire.items : [];
+  for (const item of items) {
+    if (!isReadableItem(item)) continue;
+    const event = timelineEventOf(item.line, item.seq, wire.timeOrigin ?? 0);
+    if (event !== undefined) events.push(event);
+  }
+  return events;
 }

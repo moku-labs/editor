@@ -8,6 +8,7 @@ import {
   spikeLine
 } from "../../../../../tests/fixtures/fake-monitor";
 import type { PerfCause } from "../../protocol";
+import { SECTION_DEFAULTS } from "../../protocol";
 import { readTick } from "../../reader";
 import type { WhyFacts } from "../../records";
 import { secondOf, spikeRecord, spikeSummaries, whyOf } from "../../records";
@@ -405,7 +406,35 @@ describe("second()", () => {
       device: null,
       gpu: null,
       build: null,
-      engine: null
+      engine: null,
+      // spec 03 Delta 2026-10-16 D11: Mission control's parts, "not measured" before a header.
+      monitor: {
+        engine: false,
+        sections: SECTION_DEFAULTS,
+        feeds: { passes: false, systems: true, nodes: false },
+        costMs: null,
+        monitorMs: null,
+        editorMs: null,
+        overdraw: null
+      },
+      memory: { heapMb: null, source: null, trusted: false, why: "not-measured", processMb: null },
+      caps: {
+        passOwners: false,
+        passDraws: false,
+        passFormat: false,
+        systemNames: false,
+        shaderEvents: false,
+        problems: false,
+        gc: false,
+        sections: false,
+        detail: false,
+        passesLine: false,
+        gpuTimer: false,
+        heap: "none"
+      },
+      epoch: null,
+      counts: null,
+      appId: null
     });
   });
 

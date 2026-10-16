@@ -4,6 +4,8 @@
  * the spike summaries and the spike record of a frame with its one-line `why`. Each call allocates
  * its answer; the window is only read.
  */
+
+import { epochOf, memoryOf, monitorStateOf } from "./feeds";
 import type {
   FrameRecord,
   FrameRing,
@@ -242,7 +244,9 @@ function gpuTimeOf(state: PerfState): PerfGpuTime | null {
 }
 
 /**
- * This second, built once per window version and lines and frozen with its `fps`, `rate`, `render`.
+ * This second, built once per window version and lines and frozen with its `fps`, `rate`, `render`;
+ * with Mission control's monitoring state, memory trust, capabilities, epoch, object counters and
+ * app id (spec 03 Delta 2026-10-16 D11).
  *
  * @param state - perf's state.
  * @returns The cached or a new frozen PerfSecond.
@@ -265,7 +269,13 @@ export function secondOf(state: PerfState): PerfSecond {
     device: header?.device ?? null,
     gpu: header?.gpu ?? null,
     build: header?.build ?? null,
-    engine: header?.engine ?? null
+    engine: header?.engine ?? null,
+    monitor: monitorStateOf(state),
+    memory: memoryOf(state),
+    caps: state.caps,
+    epoch: epochOf(state),
+    counts: state.sample?.counts ?? null,
+    appId: header?.app?.id ?? null
   });
   state.second = second;
   return second;

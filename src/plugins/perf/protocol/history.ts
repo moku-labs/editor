@@ -12,9 +12,10 @@ import { causeName, spikeCause } from "./causes";
 import type { PassKind, PerfCause, PerfSampleLine, RateReason } from "./engine";
 import type { PerfFramesWire, PerfPassRowsWire, PerfSystemsWire } from "./frames";
 import { SYSTEMS_PER_FRAME } from "./frames";
-import type { ChainReader, PerfPassesWire } from "./passes";
-import { PASS_KINDS, walkChains } from "./passes";
+import type { ChainReader, PerfPassesSummary, PerfPassesWire } from "./passes";
+import { PASS_KINDS, passesSummaryOf, walkChains } from "./passes";
 import type { PerfEventsWire, PerfTimelineEvent, ShaderWhat } from "./timeline";
+import { eventsOf } from "./timeline";
 
 /** The history's span, ms: owner item 25, "about 2 min". */
 export const HISTORY_MS = 120_000;
@@ -140,7 +141,7 @@ export type PerfHistory = {
   eventHoleCount: number;
 
   /** Per-second pass summaries (`editor.perf.passes`), oldest first. */
-  readonly seconds: (PerfPassesWire | undefined)[];
+  readonly seconds: (PerfPassesSummary | undefined)[];
   /** Summaries held. */
   secondCount: number;
   /**
@@ -396,7 +397,7 @@ export function createPerfHistory(): PerfHistory {
     eventsNext: undefined,
     eventHoles: new Uint32Array(HISTORY_HOLES),
     eventHoleCount: 0,
-    seconds: Array.from<PerfPassesWire | undefined>({ length: HISTORY_SECONDS }),
+    seconds: Array.from<PerfPassesSummary | undefined>({ length: HISTORY_SECONDS }),
     secondCount: 0,
     samples: Array.from<PerfSampleLine | undefined>({ length: HISTORY_SECONDS }),
     sampleCount: 0,
@@ -1034,9 +1035,10 @@ function freshEvents(items: readonly PerfTimelineEvent[], seen: number): number 
 }
 
 /**
- * Appends an events wire by `seq` (D10): a different epoch clears first; events at or below the
- * newest seq seen are skipped (dedup); `lost` records a hole after the newest held event; past
- * HISTORY_EVENTS the oldest drop; `next` is kept as the next read's `after`.
+ * Appends an events wire by `seq` (D10): its lines become marks here (`eventsOf`: the agent sends
+ * them raw); a different epoch clears first; events at or below the newest seq seen are skipped
+ * (dedup); `lost` records a hole after the newest held event; past HISTORY_EVENTS the oldest drop;
+ * `next` is kept as the next read's `after`.
  *
  * @param history - The history.
  * @param wire - The events wire.
@@ -1056,13 +1058,14 @@ export function appendEvents(history: PerfHistory, wire: PerfEventsWire): number
     history.eventHoleCount = pushValue(history.eventHoles, history.eventHoleCount, newest.seq);
   }
 
-  const fresh = freshEvents(wire.items, seen);
+  const items = eventsOf(wire);
+  const fresh = freshEvents(items, seen);
   const added = Math.min(fresh, HISTORY_EVENTS);
   const drop = history.eventCount + added - HISTORY_EVENTS;
   history.eventCount = shiftList(history.events, history.eventCount, drop);
   let skip = fresh - added;
   let running = seen;
-  for (const item of wire.items) {
+  for (const item of items) {
     if (item.seq <= running) continue;
     running = item.seq;
     if (skip > 0) {
@@ -1080,7 +1083,8 @@ export function appendEvents(history: PerfHistory, wire: PerfEventsWire): number
 }
 
 /**
- * Appends a per-second passes summary by `t` (dedup): a summary at or before the newest held is
+ * Appends a second of `editor.perf.passes` by `t` (dedup), kept as its summary (`passesSummaryOf`:
+ * the chains are built here, the agent sends raw rows): a second at or before the newest held is
  * skipped; past HISTORY_SECONDS the oldest drops.
  *
  * @param history - The history.
@@ -1096,7 +1100,7 @@ export function appendSecond(history: PerfHistory, passes: PerfPassesWire): bool
   if (newest !== undefined && passes.t <= newest.t) return false;
   const full = history.secondCount === HISTORY_SECONDS ? 1 : 0;
   history.secondCount = shiftList(history.seconds, history.secondCount, full);
-  history.seconds[history.secondCount] = passes;
+  history.seconds[history.secondCount] = passesSummaryOf(passes);
   history.secondCount += 1;
   trimSide(history);
   history.version += 1;

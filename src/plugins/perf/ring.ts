@@ -1,14 +1,15 @@
 /**
  * @file perf plugin — how the agent decodes the engine's frame ring: with the engine's own lists,
  * `PERF_CAUSES` (the cause bits in bit order) and `DEMAND_REASONS` (the draw reasons in ring order),
- * root exports of the engine since game@0fda201. The only file of the editor that imports the engine
- * at run time: it runs in the game's page, where the engine is loaded already, and only perf's agent
- * side imports it. perf/protocol and perf/graph stay runtime-free for the tools page and the server
+ * root exports of the engine since game@0fda201; and the pass ring's `kind` byte in the order of
+ * `PASS_KINDS`. The only file of the editor that imports the engine at run time: it runs in the
+ * game's page, where the engine is loaded already, and only perf's agent side imports it.
+ * perf/protocol and perf/graph stay runtime-free for the tools page and the server
  * (`ring-boundary.test.ts`).
  */
 import { DEMAND_REASONS, PERF_CAUSES } from "@moku-labs/game";
-import type { PerfCause } from "./protocol";
-import { CAUSE_BITS } from "./protocol";
+import type { PassKind, PerfCause } from "./protocol";
+import { CAUSE_BITS, PASS_KINDS } from "./protocol";
 
 /** Every value a byte of the ring's `causes` column can hold. */
 const BYTE_VALUES = 256;
@@ -61,3 +62,21 @@ export function ringCauses(bits: number): number {
  * engine's `DEMAND_REASONS`.
  */
 export const REASON_NONE: number = DEMAND_REASONS.indexOf("none");
+
+/**
+ * The pass kind of a pass ring `kind` byte (the engine's `writePass`: 0 canvas, 1 texture, 2
+ * filter). The engine exports this order as `PASS_KINDS` from the 0.15.x patch on; the installed
+ * engine (0.15.0) does not, so the editor's runtime-free copy decodes it, and
+ * `engine-contract.test.ts` asserts the copy equals the engine's export once it exists (an engine
+ * follow-up: import it here at the 0.15.x pin). A byte past the list reads as a texture pass.
+ *
+ * @param byte - The ring's `kind` value.
+ * @returns The pass kind.
+ * @example
+ * ```ts
+ * passKindOf(2); // "filter"
+ * ```
+ */
+export function passKindOf(byte: number): PassKind {
+  return PASS_KINDS[byte] ?? "texture";
+}

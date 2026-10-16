@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // `/* @__PURE__ */` agent core, plugins and core configs apply). With
 // `__MOKU_GAME_DEV__` false nothing of the agent is left; with true the bridge
 // and capture are there, and the whole dev agent (perf, recorder, the overlay
-// with its three Barlow faces) stays at or under 120 KB gzip. An agent export
+// with its three Barlow faces) stays at or under 124 KB gzip. An agent export
 // used outside the dev branch keeps what it references and drops the rest (here:
 // capture). The engine's page agent `@moku-labs/editor/agent/page` is in a
 // debug build (`__MOKU_GAME_AGENT__` true) and out of a release build (both
@@ -38,10 +38,12 @@ const AGENT_MARKS = ["/__editor/hello", "editor.capture", "bridge:", "[moku-edit
 const STORE_CHECK_MARKS = ["/__editor/hello", "[moku-editor]"] as const;
 
 /**
- * The bound of the dev agent, gzip bytes (spec 10 T1, decision "Stage 2 gate approved"). A
- * measurement above it stops the build for the owner: the bound is never raised silently.
+ * The bound of the dev agent, gzip bytes (spec 10 T1, decision "Stage 2 gate approved"; raised from
+ * 120 000 by the owner for Mission control's feeds, decision 2026-10-16 "Owner: agent bundle — move
+ * work to the tools page, bound 124 KB"). A measurement above it stops the build for the owner: the
+ * bound is never raised silently.
  */
-const DEV_AGENT_MAX_GZIP = 120_000;
+const DEV_AGENT_MAX_GZIP = 124_000;
 
 /** A string only the capture plugin carries: its large-series warning. */
 const CAPTURE_MARK = "capture:series-large";
@@ -196,7 +198,7 @@ describe.skipIf(!existsSync(AGENT))("the agent in a game bundle", () => {
     );
   });
 
-  it("keeps the dev agent with perf, recorder and the overlay's fonts at or under 120 KB gzip", async () => {
+  it("keeps the dev agent with perf, recorder and the overlay's fonts at or under 124 KB gzip", async () => {
     const dev = await bundle("dynamic.ts", "true");
 
     expect(dev.gzip).toBeLessThanOrEqual(DEV_AGENT_MAX_GZIP);

@@ -1,0 +1,7 @@
+List of devices attached
+R5CX30ABCDE            device usb:1-1 product:a26xnseea model:SM_A266B device:a26x transport_id:3
+adb-R5CX30ABCDE-Wq3Kc1._adb-tls-connect._tcp device product:a26xnseea model:SM_A266B device:a26x transport_id:4
+RZ8T20QWERT            unauthorized usb:1-2 transport_id:5
+192.168.1.23:37011     device product:a25xnseea model:SM_A256B device:a25x transport_id:6
+emulator-5554          offline transport_id:1
+

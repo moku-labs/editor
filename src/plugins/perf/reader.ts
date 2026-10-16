@@ -1,10 +1,14 @@
 /**
  * @file perf plugin — the read cycle (`readTick`): read the frames after the cursor into the
- * scratch, append them to the window, trim it to `windowMs`, pick up late GPU times, count the
+ * scratch (with the systems and the marks while their feeds are on), append them to the window,
+ * trim it to `windowMs`, read the pass ring (feeds/passes), pick up late GPU times, count the
  * sustained GPU (2 of 3 drawn frames), rebuild the spike index, the headline GPU and the scalars,
- * then tell the watches. Runs on perf's own timer, inside the monitor's agent span. Allocation-free:
- * indexed loops, typed-array `copyWithin` and an in-place sort.
+ * then tell the watches. Runs on perf's own timer, inside the monitor's agent span, and times
+ * itself (`editorMs`). Allocation-free: indexed loops, typed-array `copyWithin` and an in-place sort.
  */
+import { refreshCaps } from "./feeds/caps";
+import { noteSystemNames } from "./feeds/frames";
+import { readPasses } from "./feeds/passes";
 import type { FrameRing, PerfWindow, RestState } from "./protocol";
 import {
   announcedHzOf,
@@ -17,13 +21,14 @@ import {
   nearestRank,
   promoteSustainedGpu,
   REST,
+  SYSTEMS_PER_FRAME,
   sortHead,
   spikeCause,
   spreadGpu
 } from "./protocol";
 import { REASON_NONE, ringCauses } from "./ring";
 import { notifyWatchers } from "./state";
-import type { PerfConfig, PerfState } from "./types";
+import type { NamedRing, PerfConfig, PerfState } from "./types";
 
 /**
  * One value of a column; NaN past its end (`noUncheckedIndexedAccess` reads a typed array as
@@ -49,6 +54,16 @@ const SECOND_MS = 1000;
 
 /** The headline percentile of the awake frame times. */
 const AWAKE_P90 = 0.9;
+
+/** An empty slot of the ring's `sysIdx` (the engine's `NO_SYSTEM`). */
+const NO_SYSTEM = 0xff_ff;
+
+/** The read mask's bits: the read copied the systems, the marks. */
+const READ_SYSTEMS = 1;
+const READ_MARKS = 2;
+
+/** How much of perf's own read time a new read moves the EMA by. */
+const EDITOR_EMA = 0.2;
 
 /**
  * The frame time of a row: the gap before it (the cap when there is no gap), or its work plus its
@@ -96,7 +111,35 @@ function dropRows(state: PerfState, from: number): void {
   state.rowPartial.copyWithin(0, from, end);
   state.rowGapMs.copyWithin(0, from, end);
   state.rowPath.copyWithin(0, from, end);
+  state.rowDraws.copyWithin(0, from, end);
+  state.rowSysIdx.copyWithin(0, from * SYSTEMS_PER_FRAME, end * SYSTEMS_PER_FRAME);
+  state.rowSysMs.copyWithin(0, from * SYSTEMS_PER_FRAME, end * SYSTEMS_PER_FRAME);
+  state.rowMarks.copyWithin(0, from, end);
   window.count = end - from;
+}
+
+/**
+ * Writes the feed columns of scratch row `index` as window row `row`: the draws, the five slowest
+ * systems (−1 each when the read did not copy them or the frame had no timing table), the marks
+ * (NaN when not copied).
+ *
+ * @param state - perf's state.
+ * @param row - The window row.
+ * @param index - The scratch row.
+ */
+function writeFeedColumns(state: PerfState, row: number, index: number): void {
+  const { scratch, readMask, rowSysIdx, rowSysMs } = state;
+  const from = index * SYSTEMS_PER_FRAME;
+  const to = row * SYSTEMS_PER_FRAME;
+  const timed = (readMask & READ_SYSTEMS) !== 0 && Number.isFinite(cell(scratch.sysMs, from));
+  for (let place = 0; place < SYSTEMS_PER_FRAME; place += 1) {
+    const system = timed ? cell(scratch.sysIdx, from + place) : NO_SYSTEM;
+    const known = system !== NO_SYSTEM && Number.isFinite(system);
+    rowSysIdx[to + place] = known ? system : -1;
+    rowSysMs[to + place] = known ? cell(scratch.sysMs, from + place) : 0;
+  }
+  state.rowDraws[row] = cell(scratch.draws, index);
+  state.rowMarks[row] = (readMask & READ_MARKS) === 0 ? Number.NaN : cell(scratch.marks, index);
 }
 
 /**
@@ -251,6 +294,7 @@ function writeRow(state: PerfState, row: number, index: number, written: number)
   state.rowPartial[row] = cell(scratch.gpuPartial, index);
   state.rowGapMs[row] = gapMs;
   state.rowPath[row] = cell(scratch.path, index);
+  writeFeedColumns(state, row, index);
 }
 
 /**
@@ -453,15 +497,17 @@ function updateScalars(state: PerfState, windowMs: number): boolean {
 }
 
 /**
- * Steps 3–10 inside the agent span: read, append, trim, late GPU, the sustained GPU, spike index,
- * headline GPU, scalars; then `version` and the watches when anything changed. A ring whose
- * `written` went below the cursor was rebuilt by the engine: the window starts over.
+ * Steps 3–10 inside the agent span: the capabilities after a new header, read (the feeds'
+ * columns while on), append, trim, the pass ring, late GPU, the sustained GPU, spike index, headline
+ * GPU, scalars; then `version` when a row or scalar changed and the watches when that or the pass
+ * window did. A ring whose `written` went below the cursor was rebuilt by the engine: the window
+ * and the pass window start over.
  *
  * @param state - perf's state.
  * @param ring - The frame ring.
  * @param config - perf's config.
  */
-function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig>): void {
+function readRing(state: PerfState, ring: NamedRing, config: Readonly<PerfConfig>): void {
   // The display's rate, for the vsync judgement of the gaps read now: the hz the display announces,
   // else the one the engine's time learned.
   state.displayHz = announcedHzOf(state.display) ?? displayHzOf(state.game) ?? state.displayHz;
@@ -471,16 +517,25 @@ function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig
     // The engine rebuilt its ring (a new capacity): start over, as at the first read of a run.
     state.cursor = undefined;
     state.window.count = 0;
+    state.passes.count = 0;
+    state.passCursor = undefined;
   }
+  if (reset || state.capsStale) refreshCaps(state, ring);
+
+  // The feeds' columns are copied only while they are on (the systems: with the ring's names).
+  const systems = state.feeds.systems && state.caps.systemNames;
+  if (systems) noteSystemNames(state, ring);
+  state.readMask = (systems ? READ_SYSTEMS : 0) | (state.feeds.nodes ? READ_MARKS : 0);
   const first = state.cursor === undefined;
   const since = state.cursor ?? Math.max(0, ring.written - ring.size);
-  const result = ring.read(state.scratch, since);
+  const result = ring.read(state.readouts[state.readMask] ?? state.scratch, since);
   const { copied, lost } = result;
   if (!first) state.lost += lost;
   state.cursor = ring.written;
 
   const appended = appendRows(state, copied, ring.written - copied);
   const trimmed = trimRows(state, config.windowMs);
+  const passed = readPasses(state, ring);
   const refreshed = refreshPartial(state, ring);
   const promoted = promoteSustainedGpu(state.window);
   const rowsChanged = reset || appended || trimmed || refreshed || promoted;
@@ -491,10 +546,21 @@ function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig
   indexSpikes(state);
   const scalars = updateScalars(state, config.windowMs);
   state.measuring = true;
-  if (!(rowsChanged || scalars)) return;
+  if (rowsChanged || scalars) state.window.version += 1;
+  if (rowsChanged || scalars || passed) notifyWatchers(state);
+}
 
-  state.window.version += 1;
-  notifyWatchers(state);
+/**
+ * Moves perf's own read time per second (an EMA) by one read that took `ms`.
+ *
+ * @param state - perf's state.
+ * @param config - perf's config.
+ * @param ms - The read's time, ms.
+ */
+function noteEditorMs(state: PerfState, config: Readonly<PerfConfig>, ms: number): void {
+  const perSecond = (ms * SECOND_MS) / config.readEveryMs;
+  const was = state.editorMs;
+  state.editorMs = Number.isNaN(was) ? perSecond : was + (perSecond - was) * EDITOR_EMA;
 }
 
 /**
@@ -515,9 +581,11 @@ export function readTick(state: PerfState, config: Readonly<PerfConfig>): void {
   }
 
   monitor.beginAgent();
+  const started = performance.now();
   try {
     readRing(state, ring, config);
   } finally {
+    noteEditorMs(state, config, performance.now() - started);
     monitor.endAgent();
   }
 }

@@ -6,7 +6,8 @@ perf finds the engine's performance monitor (`app.renderer.monitor` of an agent 
 times a second into typed arrays allocated once, keeps the last `windowMs` (6 s) of frames as a struct-of-arrays
 window, decides which frames are spikes and ranks their causes, and keeps the newest `header`, `sample`, `display`,
 `rate`, `spike` and frame-event lines of the monitor's stream. It serves the overlay through its API and the tools
-page and MCP through five registry sources. Without a monitor (a headless game, an engine before block 2b) it is
+page and MCP through nine registry sources and one command (four sources and the command are Mission control's feeds,
+below). Without a monitor (a headless game, an engine before block 2b) it is
 "off": the API answers empty values with the reason and the sources are listed `available: false`.
 
 ## The spike rule
@@ -38,6 +39,9 @@ and 8) and ranks their causes: gpu › upload › compile › longFrame › js �
 | `readEveryMs` | `250` | 50 to 1000 | How often perf reads the ring (4 Hz). |
 | `windowMs` | `6000` | 1000 to 30000 | The window the graph, the spike index and every spike count cover. |
 | `frames` | `1024` | whole, 64 to 16384 | Rows perf keeps: at least `windowMs` at 120 Hz (720). |
+| `feedPasses` | `false` | boolean | Read the engine's pass ring and send the pass rows (the engine's default sections). |
+| `feedSystems` | `true` | boolean | Read and send the top 5 systems of each frame. |
+| `feedNodes` | `false` | boolean | Read and send the demand marks of each frame. |
 
 ```ts
 createApp({ pluginConfigs: { registry: { game }, perf: { windowMs: 10_000, frames: 2048 } } });
@@ -45,6 +49,9 @@ createApp({ pluginConfigs: { registry: { game }, perf: { windowMs: 10_000, frame
 
 A value out of range throws a `TypeError` at `createApp` (the state is checked before any array is sized):
 `[moku-editor] perf.readEveryMs is 20.` / `  Give milliseconds from 50 to 1000; 250 reads four times a second.`
+The feed switches are flat on purpose: per-plugin config merges shallowly, so a nested `feeds` object given by a
+consumer would drop the switches it does not name. A switch that is not a boolean throws
+`[moku-editor] perf.feedPasses is yes.` / `  Give true or false; false reads no passes.`
 
 ## API
 
@@ -79,11 +86,86 @@ listed `available: false` with the reason and their reads answer -32008.
 | `editor.perf.spikes` | `{}` | `PerfSpikeSummary[]` of the whole window |
 | `editor.perf.spike` | `{ frame: "number" }` | `PerfSpikeRecord` or `null` |
 | `editor.spikes` | `{ lastMs: "number?" }` | the MCP mirror of `perf.spikes({ lastMs })` |
+| `editor.perf.frames` | `{ after: "number?" }` | `PerfFramesWire`: the rows after frame `after` (Mission control) |
+| `editor.perf.events` | `{ after: "number?" }` | `PerfEventsWire`: the timeline marks from seq `after` (the last answer's `next`) on |
+| `editor.perf.passes` | `{}` | `PerfPassesWire` of the newest full second, or `null` before one |
+| `editor.perf.detail` | `{ from: "number", to: "number" }` | `PerfDetailWire` of a range |
+
+The command `editor.perf.sections` (effect `cosmetic`, input any subset of `{ gpu, passes, shaders, problems, memory,
+systems, nodes, longFrames }` as `"boolean?"`) switches perf's feeds and the engine's sections and answers
+`PerfMonitorState` (below).
 
 A watch is called after each read that changed the window and after a new header, display, sample or rate line,
 always inside the monitor's agent span. Each watch is isolated: a throw is caught, the other watches still run, and
 the first failure of a streak logs `perf:watcher-failed` at warn. A start whose first read throws leaves no stream
 listener behind.
+
+## Mission control's feeds (spec 03 Delta 2026-10-16)
+
+The Render workspace of the tools page reads the same ids from whichever source it shows (the phone through the
+bridge, the desktop preview in process). Every new engine field is optional: an engine without it answers "not
+measured" (`null`, an absent block, a false capability), never 0.
+
+- **Capabilities** (`second().caps`, `PerfCaps`): computed at the first read after a header (`capsOf`: each new ring
+  column tested once by type and length, cached); a `shader`, `problem`, `gc` or `passes` line turns its capability on
+  when it arrives. The tools page says "not measured on this engine" for a false one and "X is off" for a section
+  switched off.
+- **Frames feed** (`editor.perf.frames { after }`, `feeds/frames.ts`): the window rows with a frame after `after`
+  (binary search), so each frame crosses the wire once; an `after` older than the frame before the window's oldest row
+  (or past its newest: a reload) answers the whole window with `hole: true`. Blocks: `draws` when the ring counts
+  them (absent on WebGL), `systems` (names, then rows × 5 indexes and ms) with `feedSystems` and the ring's system
+  names, `nodes` (−1: not read) with `feedNodes`, `passes` with `feedPasses`; a block whose engine section is off is
+  absent. The system names are copied only when the ring's names grow: by a new array (the 0.15.x patch) or in place
+  (0.15.0); one check per read covers both.
+- **Pass window** (`feeds/passes.ts`): the engine's pass ring copied with perf's own cursor inside the read's agent
+  span (allocation-free), `frames × 4` rows, passes of frames the window holds only (a pass of a frame not read yet
+  waits for it), trimmed with the window, a late pass GPU taken from its own slot only, overwritten passes counted
+  as `lost`. A switch-on starts at the ring's oldest held pass inside the window. The pass `kind` byte decodes with
+  `PASS_KINDS` (`ring.ts`); a filter's name is `kindNames[kind2 − 1]` (0: none).
+- **Passes of a second** (`editor.perf.passes`): raw (owner 2026-10-16). The pass rows of the newest whole second of
+  the page clock the window covers and its heaviest drawn frame (`source: "agent"`), or the engine's `passes` line
+  passed on as it came (`source: "engine"`, next change: nothing more is read of it on the phone, TODO(engine)); the
+  tile-GPU flag, `targets` and `shaders` of the newest sample. The tools page builds the filter chains and the heaviest
+  frame's GPU shares with `passesSummaryOf` (`protocol/passes.ts`); `appendSecond` keeps that summary.
+- **Timeline** (`editor.perf.events { after }`, `feeds/timeline.ts`): `rate`, `shader`, `gc`, `problem`, `sections`,
+  `pool-trim`, `recorder` and `mark` lines kept by reference in a ring of 256 with a seq; a `display` line only when
+  its rate changed; an old engine's `compile` line only until a `shader` line came. The answer sends the kept lines
+  themselves with their seq from `after` (the previous answer's `next`) on, and `timeOrigin` once, and says `lost`
+  when more than 256 passed (owner 2026-10-16). The tools page builds the marks with `eventsOf` (`timelineEventOf` on
+  each, page clock); `appendEvents` does it for the history.
+- **Range detail** (`editor.perf.detail { from, to }`, `feeds/detail.ts`): at most the newest 2048 frames; perf's
+  window rows of the range with `reason: "no-detail"`; else `frames: null`, `reason: "gone"`. Reading the engine's
+  `monitor.detail` (next change; the reasons `control` and `failed`) is deferred until the engine ships it
+  (owner 2026-10-16, TODO(engine)): perf does not call it yet.
+- **Monitoring** (`editor.perf.sections`, `second().monitor`, `feeds/sections.ts`): the engine's sections as last
+  heard (header, a read at start, `sections` lines, a write's answer; the defaults with `engine: false` on an engine
+  without `monitor.sections`), perf's feeds, the cost per section and `monitorMs` of the newest sample, perf's own
+  read time per second (`editorMs`, an EMA timed around each read), and the overdraw switch (header `debug`, `debug`
+  lines). A write the build refuses (`reason: "read-only"` / `"dev-only"`) is the registry's -32009 (`read_only` /
+  `dev_only`), after perf's feeds switched.
+- **Memory trust** (`second().memory`, `feeds/memory.ts`): the newest sample's heap is never trusted in a WebView
+  (frozen on Android, the A26 finding), nor after 20 equal samples while the page was awake (a frozen counter), and
+  is "not measured" without a number (iOS). The phone's Memory card comes from the computer (connect), not from perf.
+- `second()` also carries `epoch` (the page's `timeOrigin` as text: a new one is a reload), `counts` (the sample's
+  object counters, engine U3) and `appId` (`header.app.id`).
+
+**What runs where (owner 2026-10-16).** The phone does the reading only: the frames feed, the raw timeline lines and the
+raw pass rows. Marks (`eventsOf`), pass chains and shares (`passesSummaryOf`) and the history are the tools page's,
+which keeps the agent under its bundle bound: 124 000 B gzip for the dev agent (`tests/integration/agent-bundle.test.ts`,
+spec 10); at the raise it measured 122 121 B (dev) and 123 206 B (debug page).
+
+**The 2-minute history lives on the tools page** (`protocol/history.ts`, filled by renderView): the engine ring holds
+about 8 s and a 2-minute device-side copy would cost the phone megabytes in a page whose memory it cannot even
+measure; pause and rewind are a view of the tools page; a disconnect must not lose what was seen; and the frames feed
+already sends each frame once. A link stall longer than the window leaves a hole the feed reports.
+
+| Engine field | Engine version | Without it |
+|---|---|---|
+| pass ring `owner`, `kind2` + `kindNames`, `drawsAt`, `format`, `resolution`; `shader` lines; sample `targets`, `counts`; header `app.id`, `debug.overdraw`; `problem` lines (two rules) | 0.15.x patch | owner, filter, draws, format, resolution null; old `compile` lines as compiles without ms; `targets`, `counts`, `appId` null |
+| `ring.systemNames` public, copied on growth | 0.15.x patch (present, grown in place, in 0.15.0) | the names copied when their length grows |
+| `monitor.sections`, `sections` lines, header `sections`, sample `sectionsMs` | next change | perf's feeds only, `engine: false`, `costMs` null |
+| `monitor.detail`, the mark ring | next change (perf's reading deferred) | perf's window, `nodes` null |
+| `passes` summary line, sample `shaders`, `gc` lines, sample `memory` | next change | perf's raw pass rows (chains built on the tools page); `shaders` null; no GC marks; `source` inferred (`memory.source`, `"uasm"` included, passed through when sent) |
 
 ## The read cycle
 
@@ -93,7 +175,10 @@ also when the read throws), so perf never makes the spike it measures. It reads 
 quarter), trims rows older than `windowMs`, picks up late GPU times from the same ring slot while the slot still
 holds the frame, counts the sustained GPU, rebuilds the spike index, the headline GPU and the scalars, and moves
 `version` (and tells the watches) only when something changed. The frame time of a row is `max(gap, js + gpu)`, its
-JS time `workMs − agentMs`. It allocates nothing: indexed loops, typed-array `copyWithin` and an in-place sort.
+JS time `workMs − agentMs`. With Mission control it also computes the capabilities after a new header, copies the
+feeds' columns (draws always, the systems and the marks only while their feeds are on: four read targets made once),
+reads the pass ring and times itself (`editorMs`). It allocates nothing: indexed loops, typed-array `copyWithin` and
+an in-place sort (`memory.test.ts` runs it 20 000 frames with every feed on and 8 passes a frame).
 
 The ring is decoded with the engine's own lists, root exports since game@0fda201 (`ring.ts`): the `causes` bits by
 name through `PERF_CAUSES` into the window's bit order (a 256-entry table built once; a bit the engine does not name
@@ -166,10 +251,10 @@ flag on.
 
 | Kind | Name | Used for |
 |---|---|---|
-| `depends` | `registryPlugin` | `game()` in `onInit` (the monitor and the renderer are read from the game app), `add` of the five sources |
+| `depends` | `registryPlugin` | `game()` in `onInit` (the monitor and the renderer are read from the game app), `add` of the nine sources and the command, `envelope()` of the command's answer |
 | events | none | perf emits and hooks nothing; the overlay and the recorder call its API |
 | protocol | `./protocol` (`perf/protocol`) | the engine view, the cause ranking, the window and its wire form, the values, the guards |
-| protocol | `../registry/protocol` | `checkInput`, `toWireValue` and the `InputSchema` / `Json` types of the sources |
+| protocol | `../registry/protocol` | `checkInput`, `toWireValue`, `wireError` and `errorCode` (the sections refusal), the `InputSchema` / `Json` types |
 
 perf imports the engine by type (`import type` in `protocol/engine.ts`) and, in `ring.ts` only, the two plain lists
 `PERF_CAUSES` and `DEMAND_REASONS` at run time, on the agent side (the game's page has the engine already); the
@@ -181,9 +266,9 @@ overlay, the bridge or `hub/protocol`.
 | Phase | What |
 |---|---|
 | `createState` | Checks the config (a `TypeError` at `createApp`) and allocates every typed array once: the window of `frames` rows and the read scratch. |
-| `onInit` | Reads the game from the registry, finds `app.renderer.monitor` (`monitorOf`) or the off reason (`offReasonOf`: `no-renderer`, `no-monitor`), adds the five sources, and logs `perf:off` at info when off. |
-| `onStart` | Without a monitor: nothing. Otherwise subscribes to `monitor.stream`, runs the first read (a throw unsubscribes and fails the start, no timer is left), then starts the read timer every `readEveryMs`; logs `perf:started` at debug. |
-| `onStop` | Clears the timer, unsubscribes the stream, drops the watches and the cursor, and empties the window (its `version` moves, so a painter repaints an empty graph). Emits and logs nothing. |
+| `onInit` | Reads the game from the registry, finds `app.renderer.monitor` (`monitorOf`) or the off reason (`offReasonOf`: `no-renderer`, `no-monitor`), adds the nine sources and the command, and logs `perf:off` at info when off. |
+| `onStart` | Without a monitor: nothing. Otherwise subscribes to `monitor.stream`, reads the engine's sections once (an engine with `monitor.sections`), runs the first read (a throw unsubscribes and fails the start, no timer is left), then starts the read timer every `readEveryMs`; logs `perf:started` at debug. |
+| `onStop` | Clears the timer, unsubscribes the stream, drops the watches and the cursors, empties the window and the pass window (the window's `version` moves, so a painter repaints an empty graph), lets go of the kept timeline lines (the seq goes on) and computes the capabilities again at the next start. Emits and logs nothing. |
 
 ## Files
 
@@ -195,10 +280,11 @@ overlay, the bridge or `hub/protocol`.
 | `api.ts` | `createPerfApi`: thin calls into `records.ts`, the window visitor, `monitor()`. |
 | `lifecycle.ts` | `initPerf`, `startPerf`, `stopPerf`. |
 | `reader.ts` | `readTick`: the read cycle inside the monitor's agent span; allocation-free. |
-| `ring.ts` | The ring's decoding with the engine's `PERF_CAUSES` and `DEMAND_REASONS` (`ringCauses`, `REASON_NONE`); the only run-time engine import. |
-| `stream.ts` | The `monitor.stream` listener: the newest header, display (and the hz it announces) and sample, the last 64 spike lines, 16 `rate` lines and 32 frame-event lines. |
+| `ring.ts` | The ring's decoding with the engine's `PERF_CAUSES` and `DEMAND_REASONS` (`ringCauses`, `REASON_NONE`) and the pass kind byte (`passKindOf`); the only run-time engine import. |
+| `stream.ts` | The `monitor.stream` listener: the newest header, display (and the hz it announces) and sample, the last 64 spike lines, 16 `rate` lines, 32 frame-event lines and 2 `passes` lines, the timeline's lines, the sections and the overdraw switch. |
 | `records.ts` | The values handed out: `status`, `second()` (frozen), the spike summaries, the spike record and its `why`. |
-| `entries.ts` | The five registry sources, their probes and watches. |
+| `entries.ts` | The nine registry sources and the `editor.perf.sections` command, their probes and watches. |
+| `feeds/` | Mission control on the agent: `caps.ts`, `passes.ts` (the pass window, `editor.perf.passes`), `frames.ts`, `timeline.ts`, `detail.ts`, `sections.ts`, `memory.ts`, `wire.ts` (rounding, epoch), `index.ts`. |
 | `protocol/` | Runtime-free: `engine.ts`, `causes.ts`, `gpu.ts`, `rate.ts`, `text.ts`, `values.ts`, `window.ts`, `guards.ts`, `index.ts`. |
 | `graph/` | Runtime-free, DOM-free canvas painter: `paint.ts`, `geometry.ts`, `labels.ts`, `hit.ts`, `palette.ts`, `state.ts`, `types.ts`, `index.ts`; `themes.ts` (the tools page's looks) outside the barrel. |
 
@@ -215,6 +301,9 @@ overlay, the bridge or `hub/protocol`.
 | A wire window without `rest` or `noise` (an agent before the delta) | Every row awake; no noise, the agent's causes as sent. |
 | Lines kept | The last 64 spike lines, 16 `rate` lines and 32 frame-event lines; the window covers `windowMs` (at most 30 s). The recorder keeps the whole stream. |
 | `renderer.stats()` fields the engine does not answer (a release build without them) | `null` in `second().render` (`passesMax`, `kept`, `redraws`, `rebuilds`). |
+| The frames feed | The window only: a reader that falls behind it gets `hole: true`. A late GPU time that lands after a frame was sent does not reach the reader. |
+| The timeline | The newest 256 kept lines; an older `after` answers `lost: true`. |
+| The pass window | `frames × 4` passes, the passes of the frames the window holds; read only while `feedPasses` is on. |
 
 
 ## Why perf and recorder are two plugins

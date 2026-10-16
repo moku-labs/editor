@@ -1,9 +1,23 @@
 /**
- * @file perf plugin — the config check and the state: every array is allocated here, once.
+ * @file perf plugin — the config check and the state: every array is allocated here, once, and the
+ * notify of the source watches.
  */
-import type { PerfEventLine, PerfSpikeLine } from "./protocol";
-import { createPerfWindow } from "./protocol";
-import type { PerfConfig, PerfScratch, PerfState } from "./types";
+import type { PerfEventLine, PerfPassesLine, PerfSpikeLine } from "./protocol";
+import {
+  capsOf,
+  createPerfWindow,
+  PASS_ROWS_PER_FRAME,
+  SYSTEMS_PER_FRAME,
+  TIMELINE_SLOTS
+} from "./protocol";
+import type {
+  PassWindow,
+  PerfConfig,
+  PerfReadout,
+  PerfScratch,
+  PerfState,
+  TimelineLine
+} from "./types";
 
 /** Spike lines kept, newest last. */
 const SPIKE_LINES = 64;
@@ -52,6 +66,13 @@ const RANGES = [
   readonly note: string;
 }[];
 
+/** The feed switches of the config and the word each one's error names. */
+const FEEDS = [
+  ["feedPasses", "passes"],
+  ["feedSystems", "systems"],
+  ["feedNodes", "nodes"]
+] as const;
+
 /**
  * Whether a config value is in its range: a finite number from `low` to `high`, whole when asked.
  *
@@ -78,7 +99,8 @@ function inRange(
 
 /**
  * Checks perf's config: `readEveryMs` 50 to 1000, `windowMs` 1000 to 30000, `frames` a whole number
- * from 64 to 16384. It runs when the state is made, so no array is ever sized from a bad value.
+ * from 64 to 16384, and the three feed switches booleans. It runs when the state is made, so no
+ * array is ever sized from a bad value.
  *
  * @param config - The resolved config.
  * @throws {TypeError} `[moku-editor] perf.<field> is <value>.` with how to fix it.
@@ -91,11 +113,18 @@ export function checkPerfConfig(config: Readonly<PerfConfig>): void {
       `[moku-editor] perf.${range.key} is ${String(value)}.\n  Give ${range.what} from ${String(range.low)} to ${String(range.high)}${range.note}.`
     );
   }
+  for (const [key, what] of FEEDS) {
+    const value: unknown = config[key];
+    if (typeof value === "boolean") continue;
+    throw new TypeError(
+      `[moku-editor] perf.${key} is ${String(value)}.\n  Give true or false; false reads no ${what}.`
+    );
+  }
 }
 
 /**
- * Allocates the read target of a tick: the ring columns perf copies, `frames` long; `budgetMs`
- * starts as NaN, so a ring without that column leaves it NaN.
+ * Allocates the read target of a tick: the ring columns perf copies, `frames` long (the systems
+ * five a frame); `budgetMs` starts as NaN, so a ring without that column leaves it NaN.
  *
  * @param frames - The rows.
  * @returns The scratch columns.
@@ -117,15 +146,62 @@ function createScratch(frames: number): PerfScratch {
     idle: new Uint8Array(frames),
     reason: new Uint8Array(frames),
     causes: new Uint8Array(frames),
-    path: new Uint16Array(frames)
+    path: new Uint16Array(frames),
+    draws: new Float32Array(frames),
+    sysIdx: new Uint16Array(frames * SYSTEMS_PER_FRAME),
+    sysMs: new Float32Array(frames * SYSTEMS_PER_FRAME),
+    marks: new Float32Array(frames)
   };
 }
 
 /**
- * Creates perf's state: checks the config, then allocates the window, the row arrays and the
- * scratch of `config.frames`, and the kept-line slots (64 spike, 16 rate, 32 frame-event lines).
- * No other allocation happens while perf runs except the documented ones (API copies, wire values,
- * `second()`).
+ * The four read targets over one scratch: the base columns, plus the systems (1), the marks (2) or
+ * both (3), so a read copies a feed's columns only while it is on.
+ *
+ * @param scratch - The scratch.
+ * @returns The read targets by mask.
+ */
+function createReadouts(scratch: PerfScratch): PerfState["readouts"] {
+  const { sysIdx, sysMs, marks, ...base } = scratch;
+  const plain: PerfReadout = base;
+  return [plain, { ...base, sysIdx, sysMs }, { ...base, marks }, scratch];
+}
+
+/**
+ * Allocates the pass window of `frames × 4` rows; the 0.15.x columns come later, once the ring has
+ * them.
+ *
+ * @param frames - The window's rows.
+ * @returns The empty pass window.
+ */
+function createPassWindow(frames: number): PassWindow {
+  const capacity = frames * PASS_ROWS_PER_FRAME;
+  return {
+    capacity,
+    count: 0,
+    seq: new Float64Array(capacity),
+    frame: new Uint32Array(capacity),
+    index: new Uint8Array(capacity),
+    kind: new Uint8Array(capacity),
+    w: new Uint16Array(capacity),
+    h: new Uint16Array(capacity),
+    gpuMs: new Float32Array(capacity),
+    // eslint-disable-next-line unicorn/no-null -- null is "no label", as in the engine's ring
+    label: Array.from<string | null>({ length: capacity }).fill(null),
+    owner: undefined,
+    filter: undefined,
+    drawsAt: undefined,
+    format: undefined,
+    resolution: undefined
+  };
+}
+
+/**
+ * Creates perf's state: checks the config, then allocates the window, the row arrays, the scratch
+ * and its read targets of `config.frames`, the pass window, and the kept-line slots (64 spike, 16
+ * rate, 32 frame-event, 256 timeline, 2 `passes` lines). No other allocation happens while perf
+ * runs except the documented ones (API copies, wire values, `second()`, the capabilities once per
+ * header, the pass window's 0.15.x columns once, the system names when they grow).
  *
  * @param ctx - The minimal context.
  * @param ctx.config - The resolved config.
@@ -136,6 +212,7 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
   const { config } = ctx;
   checkPerfConfig(config);
   const { frames } = config;
+  const scratch = createScratch(frames);
   const state: PerfState = {
     game: undefined,
     monitor: undefined,
@@ -146,7 +223,7 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
     rowPartial: new Uint8Array(frames),
     rowGapMs: new Float32Array(frames),
     rowPath: new Uint16Array(frames),
-    scratch: createScratch(frames),
+    scratch,
     idleSinceT: undefined,
     awakeP90Ms: Number.NaN,
     cursor: undefined,
@@ -171,7 +248,37 @@ export function createPerfState(ctx: { readonly config: Readonly<PerfConfig> }):
     log: undefined,
     watchFailed: false,
     watchStreak: false,
-    second: undefined
+    second: undefined,
+    readouts: createReadouts(scratch),
+    readMask: 0,
+    rowDraws: new Float32Array(frames),
+    rowSysIdx: new Int16Array(frames * SYSTEMS_PER_FRAME),
+    rowSysMs: new Float32Array(frames * SYSTEMS_PER_FRAME),
+    rowMarks: new Float32Array(frames),
+    // Nothing measured before the first read: no ring, no header, a monitor without the next change.
+    caps: capsOf(undefined, undefined, {}),
+    capsStale: true,
+    feeds: { passes: config.feedPasses, systems: config.feedSystems, nodes: config.feedNodes },
+    sections: undefined,
+    // eslint-disable-next-line unicorn/no-null -- null is "the engine has not said"
+    overdraw: null,
+    passes: createPassWindow(frames),
+    passCursor: undefined,
+    passesLost: 0,
+    timeline: Array.from<TimelineLine | undefined>({ length: TIMELINE_SLOTS }),
+    timelineSeq: 0,
+    // eslint-disable-next-line unicorn/no-null -- null is "no display rate kept yet"
+    timelineHz: null,
+    shaderSeen: false,
+    passesLines: Array.from<PerfPassesLine | undefined>({ length: 2 }),
+    passesLineNext: 0,
+    // eslint-disable-next-line unicorn/no-null -- null is "no sample yet"
+    heapLast: null,
+    heapSame: 0,
+    editorMs: Number.NaN,
+    systemNames: [],
+    namesRef: undefined,
+    namesLength: 0
   };
   return state;
 }
@@ -209,4 +316,20 @@ export function notifyWatchers(state: PerfState): void {
   // eslint-disable-next-line unicorn/no-array-for-each, unicorn/no-array-callback-reference -- see above
   state.watchers.forEach(state.callWatcher);
   if (!state.watchFailed) state.watchStreak = false;
+}
+
+/**
+ * Tells the watches inside the monitor's agent span (spec 03 step 10: a watch delivery is agent
+ * work), the span closed also when the delivery throws.
+ *
+ * @param state - perf's state.
+ */
+export function notifyInSpan(state: PerfState): void {
+  const { monitor } = state;
+  monitor?.beginAgent();
+  try {
+    notifyWatchers(state);
+  } finally {
+    monitor?.endAgent();
+  }
 }
