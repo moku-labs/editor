@@ -54,14 +54,19 @@ let gcCount = 0;
 const ROWS = { first: 0, end: 0, yMax: 36 };
 
 /**
- * The budget of the newest awake row in the view (the scale's top follows it).
+ * The budget of the newest awake row in the view (the scale's top follows it; the Frame time card's
+ * sparkline takes the same scale and reference).
  *
  * @param history - The history.
  * @param first - The first row drawn.
  * @param end - The row after the last.
  * @returns ms; 16.7 without one.
+ * @example
+ * ```ts
+ * yMaxOf(newestAwakeBudget(history, firstVisibleRow(history, start), rowFrom(history, end))); // 36 at 60 fps
+ * ```
  */
-function newestAwakeBudget(history: PerfHistory, first: number, end: number): number {
+export function newestAwakeBudget(history: PerfHistory, first: number, end: number): number {
   for (let row = end - 1; row >= first; row -= 1) {
     const rest = history.rest[row];
     if (rest === REST.awake || rest === REST.woke) return history.budgetMs[row] ?? 16.7;

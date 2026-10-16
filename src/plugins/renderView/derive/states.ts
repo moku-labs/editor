@@ -135,3 +135,69 @@ const OFF_TITLES = {
 export function cardOffText(section: keyof typeof OFF_TITLES): string {
   return OFF_TITLES[section];
 }
+
+/**
+ * What covers a card instead of its numbers (spec 09 § M9 States): its title, its line, the
+ * Monitoring row "Turn on" switches on, and whether it waits (a spinner).
+ *
+ * @example
+ * ```ts
+ * const off: CardOff = { title: "Memory & GC is off", body: undefined, turnOn: "memory", spinner: false };
+ * ```
+ */
+export type CardOff = {
+  readonly title: string;
+  readonly body: string | undefined;
+  readonly turnOn: "frames" | "render" | "passes" | "memory" | undefined;
+  readonly spinner: boolean;
+};
+
+/**
+ * The panel a card shows instead of its numbers: nothing running, waiting for the first frames (the
+ * values read "—", never 0), no frame monitor, an older agent, or its own section switched off.
+ *
+ * @param overlay - The timeline's overlay (the source's state).
+ * @param section - The card's Monitoring row.
+ * @param state - That row's state; undefined before the first monitoring state.
+ * @param name - The source's name.
+ * @returns The panel; undefined when the card shows its numbers.
+ * @example
+ * ```ts
+ * cardOff("waiting", "frames", undefined, "Galaxy A26"); // { title: "Waiting for frames", body: "from Galaxy A26", turnOn: undefined, spinner: true }
+ * ```
+ */
+export function cardOff(
+  overlay: MissionOverlay,
+  section: "frames" | "render" | "passes" | "memory",
+  state: "on" | "off" | "unavailable" | undefined,
+  name: string
+): CardOff | undefined {
+  const none = { turnOn: undefined, spinner: false };
+  switch (overlay) {
+    case "not-started": {
+      return {
+        ...none,
+        title: "No data yet",
+        body: "Start the local preview or connect a device."
+      };
+    }
+    case "waiting": {
+      return {
+        title: "Waiting for frames",
+        body: `from ${name}`,
+        turnOn: undefined,
+        spinner: true
+      };
+    }
+    case "no-monitor": {
+      return { ...none, title: "No frame monitor", body: undefined };
+    }
+    case "older-agent": {
+      return { ...none, title: "This game's editor agent is older", body: undefined };
+    }
+    default: {
+      if (state !== "off") return undefined;
+      return { title: cardOffText(section), body: undefined, turnOn: section, spinner: false };
+    }
+  }
+}

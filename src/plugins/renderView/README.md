@@ -12,10 +12,9 @@ axis (FPS with the rate switch, frame time, draw calls, textures, GPU passes, me
 a Shaders & passes panel, and one collapsible "Scene details" section (collapsed by default) holding the scene cards.
 Hovering a tree row or a texture row draws a pink box (`--pick-tree`) around the element over the game frame.
 
-Build state: the data (`series/`, `view/`), the painters (`timeline/` except `loop.ts`), the words (`derive/`) and the
-wiring (`source/`, `actions/`, the api, the hooks and the lifecycle) are built (wave 3, RV1–RV4). The components of
-`components/connection|instrument|cards|passes|inspector|scene` and `timeline/loop.ts` land in wave 4 (RV5, RV6); until
-then they are typed stubs and the workspace renders the scene cards.
+Build state: the data (`series/`, `view/`), the painters (`timeline/`), the words (`derive/`) and the wiring
+(`source/`, `actions/`, the api, the hooks and the lifecycle) are wave 3 (RV1–RV4); the components and the paint loop
+(`timeline/loop.ts`) are wave 4 (RV5, RV6).
 
 ## Configuration
 
@@ -107,6 +106,19 @@ The scene cards keep their own reads: `game.render`, `game.assets` (and `game.ef
   counters, device load — trimmed to the same 2 minutes, emptied by `clearSeries`; `series/stats.ts` the frames header
   numbers (spike groups, worst, awake p90, rest clipped to the view, GCs); `series/groups.ts` spike groups.
 
+### The paint loop (spec 09 § M11)
+
+`timeline/loop.ts` `startLoop(ctx, root)` is the one `requestAnimationFrame` loop of the workspace, started while
+Render is shown and stopped on unmount. It paints every `canvas[data-paint]` under the root (`timeline`, `lane`,
+`overview`, `health`, `spark` with `data-spark` = `fps|frame|draws|textures|gpu|memory`, `cpu`, `gpu`), a canvas only
+when its key changed: the notification count, the view's end quantised to one device pixel, the span, the selection,
+the cursor, the palette, the size and the dpr. The live view's end comes from the playout clock every frame; the loop
+sleeps once nothing painted and the clock eased to a stop, and wakes on a Mission control notification (which also
+rescans the canvases a render added or removed), a cursor move (`view/hover.ts`), a resize (one `ResizeObserver`),
+the tab becoming visible or the reduced-motion preference changing. The backing store follows the box at the dpr and
+the transform is set before every paint. The palette is read once per theme and source (`data-src` tints the
+sparklines). `paintedScene(mission)` is the scene the last frame painted, which the pointer handlers hit-test against.
+
 ### Painters (spec 09 § M8, M9)
 
 `timeline/` paints on a `PaintContext` (a `CanvasRenderingContext2D` or a test fake) with a `PaintScene` reused frame
@@ -164,19 +176,43 @@ functions, the feeds' wire types, the monitoring constants, the cause ranking) a
 | `watch.ts`, `derive.ts`, `format.ts`, `actions.ts`, `guards.ts`, `overlay.ts`, `panel.tsx` | The scene cards. |
 | `source/` | `contract.ts` (the one door), `types.ts`, `guards.ts`, `listed.ts`, `sync.ts` (watch set, switch burst), `poll.ts`. |
 | `series/` | `types.ts`, `series.ts` (allocation, `pushSample`, `clearSeries`), `rows.ts` (binary searches), `overview.ts`, `samples.ts`, `telemetry.ts`, `stats.ts`, `groups.ts`. |
-| `view/` | `types.ts`, `clock.ts`, `view.ts`, `selection.ts`, `keys.ts`. |
-| `timeline/` | `layout.ts`, `palette.ts`, `scene.ts`, `labels.ts`, `draw.ts`, `frames.ts`, `marks.ts`, `lane.ts`, `overview.ts`, `spark.ts`, `health.ts`, `hit.ts`, `loop.ts` (wave 4). |
-| `derive/` | Pure words and views: `words.ts`, `connection.ts`, `rate.ts`, `monitoring.ts`, `record.ts`, `connect.ts`, `cards.ts`, `memory.ts`, `load.ts`, `passes.ts`, `inspector.ts`, `states.ts`, `mission.ts`. |
+| `view/` | `types.ts`, `clock.ts`, `view.ts`, `selection.ts`, `keys.ts`, `hover.ts` (the shared cursor). |
+| `timeline/` | `layout.ts`, `palette.ts`, `scene.ts`, `labels.ts`, `draw.ts`, `frames.ts`, `marks.ts`, `lane.ts`, `overview.ts`, `spark.ts`, `health.ts`, `hit.ts`, `loop.ts`. |
+| `derive/` | Pure words and views: `words.ts`, `connection.ts`, `rate.ts`, `monitoring.ts`, `record.ts`, `connect.ts`, `cards.ts`, `memory.ts`, `load.ts`, `passes.ts`, `inspector.ts`, `states.ts`, `mission.ts`, `header.ts`, `tooltip.ts`. |
 | `actions/` | `rate.ts`, `sections.ts`, `record.ts`, `detail.ts`, `files.ts`, `connect.ts` (incl. the local preview's start), `popover.ts`. |
-| `components/` | The scene cards; Mission control's components (wave 4). |
+| `components/` | The scene cards; Mission control's components (see Components); `icons.tsx`, `parts.tsx`, `useMission.ts`, `start.ts`. |
 | `styles/` | `render.css` and its `@scope` sheets. |
 
-## Scene details and narrow layout (wave 4)
+## Components (spec 09 § M7–M10, M15)
 
-The scene cards move into one collapsible "Scene details" section, collapsed by default (`mission.sceneOpen`, not
-persisted); collapsed, nothing inside renders. renderView's root is the inline-size container `render`: below 1180 px
-the inspector moves under the instrument, the cards and the passes panel go to 2 columns and the connection bar stacks;
-below 680 px the timeline is 220 high and the Connect and passes panels are one column. No horizontal scroll.
+`RenderWorkspace` (`data-render="workspace"`, `data-src="local|device"`, `data-stale` while the link is silent) holds
+the connection bar, then the instrument, the sync note, the cards, the Shaders & passes panel, the static facts and
+Scene details, with the inspector on the right. Each part reads `ctx.state.mission` through `useMission` and re-renders
+on `notifyMission`; the cursor's tooltip and the cards' cursor chips re-render only when the hovered frame changes
+(`onHoverFrame`). Popovers (Connect, Monitoring, Record, the split menu, the memory breakdown) are top-layer
+`popover="manual"` elements, one open at a time, placed under their trigger; Esc or a click outside closes one and
+focus returns to its trigger. The timeline, the lane and the overview take the keys of `view/keys.ts`. Reduced motion:
+the workspace's utilities stop the live rings and the spinners, and the loop steps the live view every 500 ms.
+
+| Folder | Parts |
+|---|---|
+| `components/connection/` | `ConnectionBar`, `SourcePill`, `HealthLine`, `Facts`, `PausedChip`, `Actions`, `RecordControl`, `RecordPopover`, `MonitoringPopover`, `ConnectPanel` (`WireTab`, `NetworkTab`, `AskingRow`, `LinkedList`), `Popover`. |
+| `components/instrument/` | `FramesCard`, `FramesHeader`, `TimelineCanvas`, `Tooltip`, `EmptyOverlay`, `LaneCanvas`, `OverviewCanvas`, `Transport`, `Legend`, `usePlotPointer`. |
+| `components/cards/` | `CardsGrid`, `SparkCard`, `FpsCard` with `RateSwitch`, `MemoryCard` with `MemoryBreakdown`, `DeviceLoadCard`, `StaticFacts`, `SyncNote`. |
+| `components/passes/`, `inspector/`, `scene/` | `PassesPanel`; `Inspector` (`Summary`, `RangeView`, `Rows`, `FileLink`); `SceneDetails`. |
+
+Hooks for tests and the e2e (data-* only): `[data-source-pill][data-kind]`, `[data-source-name]`,
+`[data-popover-trigger="connect|split|monitoring|record|memory"]`, `[data-popover="…"]`, `[data-connect-panel][data-tab]`,
+`[role=menuitem][data-tab]`, `[data-linked-row][data-device-id]` with `[data-action="use"]`, `[data-card-kind]`
+(`fps`, `frame`, `draws`, `textures`, `gpu`, `memory`, `load`), `[data-paint]`, `[data-scene-meta]`.
+
+## Scene details and narrow layout
+
+The scene cards sit in one collapsible "Scene details" section, collapsed by default (`mission.sceneOpen`, not
+persisted); collapsed, nothing inside renders, and its heading reads "frame N · nodes · textures · bundles". `reveal`
+and `highlight` open it first. renderView's root is the inline-size container `render`: below 1180 px the inspector
+moves under the instrument, the cards and the passes panel go to 2 columns and the connection bar stacks; below 680 px
+the timeline is 220 high and the Connect and passes panels are one column. No horizontal scroll.
 
 ## Limits
 

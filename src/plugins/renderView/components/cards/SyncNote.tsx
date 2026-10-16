@@ -1,11 +1,13 @@
 /**
- * @file renderView components (cards) — The note that every card reads the same time axis and
- * selection. Typed stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract
- * the other Mission control units build against; build wave 4 (RV6) writes the bodies.
+ * @file renderView components (cards) — the sync note above the cards (spec 09 § M9): "Cards share the
+ * frame window above: {span}, moving live" or "paused {s} s behind live", the selection highlighted in
+ * each, and that hovering any graph moves one cursor across all of them.
  */
 import type { JSX } from "preact";
-import { notBuilt } from "../../stub";
+import { rangeTitle, spanWords } from "../../derive/inspector";
 import type { RenderViewCtx } from "../../types";
+import { viewWindow } from "../../view/view";
+import { useTicker } from "../useMission";
 
 /**
  * Props of `SyncNote`.
@@ -13,12 +15,30 @@ import type { RenderViewCtx } from "../../types";
 export type SyncNoteProps = { readonly ctx: RenderViewCtx };
 
 /**
- * The note that every card reads the same time axis and selection.
+ * The sync note.
  *
- * @param _props - ctx.
- * @returns The element.
- * @throws {Error} Until build wave 4: "renderView components/SyncNote is not built yet".
+ * @param props - ctx.
+ * @returns The note.
  */
-export function SyncNote(_props: SyncNoteProps): JSX.Element {
-  return notBuilt("components/SyncNote", 4);
+export function SyncNote(props: SyncNoteProps): JSX.Element {
+  const { mission } = props.ctx.state;
+  const { live, span } = mission.view;
+  useTicker(1000, !live);
+  const behind = Math.round(viewWindow(mission, performance.now()).behindMs / 1000);
+  const { selection } = mission;
+  return (
+    <p data-sync-note>
+      <span data-dot={live ? "live" : "paused"} aria-hidden="true" />
+      <span>
+        Cards share the frame window above: <b>{spanWords(span)}</b>,{" "}
+        {live ? "moving live" : <b>{`paused ${behind} s behind live`}</b>}
+        {selection === undefined ? undefined : (
+          <>
+            , selection <b>{rangeTitle(selection)}</b> highlighted in each
+          </>
+        )}
+        . Hover any graph to move one cursor across all of them.
+      </span>
+    </p>
+  );
 }

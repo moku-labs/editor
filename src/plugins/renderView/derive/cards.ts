@@ -15,8 +15,9 @@ import type {
   PerfSecond
 } from "../source/contract";
 import { REST, rangeRows, rangeSummary, rateFps } from "../source/contract";
-import type { AssetsUsage, FrameRange } from "../types";
+import type { AssetsUsage, FrameRange, MissionState } from "../types";
 import { rateNow } from "./rate";
+import { framePassGpu } from "./tooltip";
 import type { Line, Tag } from "./words";
 import { DASH, oneDecimal, strong } from "./words";
 
@@ -122,13 +123,18 @@ function ratesIn(
 }
 
 /**
- * The time range of a selection.
+ * The time range of a selection (the Memory and Device load cards' "In selection" read their series
+ * over it).
  *
  * @param history - The history.
  * @param selection - The selection.
  * @returns Its start and end; undefined when none of it is held.
+ * @example
+ * ```ts
+ * selectionTimes(history, { from: 4810, to: 4860 }); // { from: 77_310, to: 78_160 }
+ * ```
  */
-function selectionTimes(
+export function selectionTimes(
   history: PerfHistory,
   selection: FrameRange
 ): { readonly from: number; readonly to: number } | undefined {
@@ -526,4 +532,125 @@ export function spikesInView(history: PerfHistory, startMs: number, endMs: numbe
 export function cursorReadout(history: PerfHistory, frame: number): string | undefined {
   const row = rowOfFrame(history, frame);
   return row < 0 ? undefined : `f${frame} ${oneDecimal(history.ms[row] ?? 0)} ms`;
+}
+
+/** A side-series sample older than this before the hovered frame, ms, is not its value. */
+const READOUT_HOLD_MS = 2000;
+
+/**
+ * The newest sample of a series at or before a time, when it is not older than READOUT_HOLD_MS.
+ *
+ * @param column - The series.
+ * @param t - Source-clock ms.
+ * @returns The value; NaN without one.
+ */
+function heldAt(column: SeriesColumn, t: number): number {
+  let value = Number.NaN;
+  for (let index = 0; index < column.count && (column.t[index] ?? 0) <= t; index += 1) {
+    value =
+      (column.t[index] ?? 0) >= t - READOUT_HOLD_MS ? (column.v[index] ?? Number.NaN) : Number.NaN;
+  }
+  return value;
+}
+
+/**
+ * What a card charts, for its cursor chip.
+ *
+ * @example
+ * ```ts
+ * const kind: ReadoutKind = "memory";
+ * ```
+ */
+export type ReadoutKind =
+  | "fps"
+  | "frame"
+  | "draws"
+  | "textures"
+  | "gpu"
+  | "memory"
+  | "cpu"
+  | "gpuLoad";
+
+/**
+ * The value of a series-backed card at a time, in words.
+ *
+ * @param kind - The card.
+ * @param mission - Mission control's state.
+ * @param t - The frame's time.
+ * @returns The words after "f{n} "; undefined without a value.
+ */
+function seriesReadout(kind: ReadoutKind, mission: MissionState, t: number): string | undefined {
+  const { series } = mission;
+  if (kind === "textures" || kind === "memory") {
+    const mb = heldAt(kind === "memory" ? series.heap : series.textures, t);
+    return Number.isNaN(mb) ? undefined : `${oneDecimal(mb)} MB`;
+  }
+  const { load } = series;
+  if (kind === "cpu") {
+    const app = heldAt(load.cpuApp, t);
+    if (Number.isNaN(app)) return undefined;
+    const renderer = heldAt(load.cpuRenderer, t);
+    const flinger = heldAt(load.cpuFlinger, t);
+    const pct = (value: number): string => (Number.isNaN(value) ? DASH : `${Math.round(value)} %`);
+    return `app ${pct(app)}, renderer ${pct(renderer)}, sf ${pct(flinger)}`;
+  }
+  const busy = heldAt(load.gpuBusy, t);
+  const mhz = heldAt(load.gpuMhz, t);
+  if (Number.isNaN(busy) && Number.isNaN(mhz)) return undefined;
+  const clock = Number.isNaN(mhz) ? "" : ` at ${Math.round(mhz)} MHz`;
+  return `${Number.isNaN(busy) ? DASH : Math.round(busy)} % busy${clock}`;
+}
+
+/**
+ * The value of a frame-backed card at a row, in words.
+ *
+ * @param kind - The card.
+ * @param history - The history.
+ * @param row - The frame's row.
+ * @param frame - The frame.
+ * @returns The words after "f{n} "; undefined without a value.
+ */
+function frameReadout(
+  kind: ReadoutKind,
+  history: PerfHistory,
+  row: number,
+  frame: number
+): string | undefined {
+  if (kind === "frame") return `${oneDecimal(history.ms[row] ?? 0)} ms`;
+  if (kind === "fps") return `${rateFps(history.rateMs[row] ?? 0)} fps`;
+  if (kind === "draws") {
+    const draws = history.draws[row] ?? Number.NaN;
+    return Number.isNaN(draws) ? undefined : String(Math.round(draws));
+  }
+  const gpu = framePassGpu(history, frame);
+  return Number.isNaN(gpu) ? undefined : `${oneDecimal(gpu)} ms`;
+}
+
+/**
+ * A card's cursor chip at the hovered frame: "f4851 16.2 ms" (Frame time), "f4851 60 fps", "f4851
+ * 212" (Draw calls), "f4851 41.3 MB" (Memory), …; each card reads its own measure, from the history
+ * or from its side series at the frame's time.
+ *
+ * @param kind - The card.
+ * @param mission - Mission control's state.
+ * @param frame - The hovered frame.
+ * @returns The chip's words; undefined when the card has no value there (never 0).
+ * @example
+ * ```ts
+ * readoutOf("memory", mission, 4851); // "f4851 41.3 MB"
+ * ```
+ */
+export function readoutOf(
+  kind: ReadoutKind,
+  mission: MissionState,
+  frame: number
+): string | undefined {
+  const { history } = mission;
+  const row = rowOfFrame(history, frame);
+  if (row < 0) return undefined;
+  const series = kind === "textures" || kind === "memory" || kind === "cpu" || kind === "gpuLoad";
+  const words = series
+    ? seriesReadout(kind, mission, history.t[row] ?? 0)
+    : frameReadout(kind, history, row, frame);
+  return words === undefined ? undefined : `f${frame} ${words}`;
 }

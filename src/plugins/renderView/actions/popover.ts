@@ -45,3 +45,25 @@ export function openPopover(mission: MissionState, id: Exclude<PopoverId, "conne
   if (mission.popover !== id) closePopover(mission);
   mission.popover = id;
 }
+
+/**
+ * Opens a popover, or closes it when it is the open one (its trigger clicked twice). The Connect
+ * panel toggles with `openConnect` / `closeConnect`, which also hold its scan lease.
+ *
+ * @param mission - Mission control's state.
+ * @param id - The popover.
+ * @returns Whether it is open now.
+ * @example
+ * ```ts
+ * togglePopover(mission, "record"); // true: the Record popover is open
+ * togglePopover(mission, "record"); // false: closed again
+ * ```
+ */
+export function togglePopover(mission: MissionState, id: Exclude<PopoverId, "connect">): boolean {
+  if (mission.popover === id) {
+    closePopover(mission);
+    return false;
+  }
+  openPopover(mission, id);
+  return true;
+}

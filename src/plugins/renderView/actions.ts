@@ -9,7 +9,7 @@ import { ancestorsOf, refId } from "../panels/shared/scene";
 import { workspacePlugin } from "../workspace";
 import { firstNodeWithTexture, nextSort } from "./derive";
 import { drawBox } from "./overlay";
-import { notify } from "./state";
+import { notify, notifyMission } from "./state";
 import type { RenderViewCtx, RenderViewState, TextureSortKey, TreeRow } from "./types";
 
 /**
@@ -26,7 +26,19 @@ function selectWithAncestors(state: RenderViewState, id: string): void {
 }
 
 /**
- * Shows Render and selects the element with its ancestors open; before the first scene, or when
+ * Opens "Scene details" (collapsed by default) so the scene cards render before a reveal or a
+ * highlight acts on them (spec 09 § M9 Scene details).
+ *
+ * @param state - renderView state.
+ */
+function openScene(state: RenderViewState): void {
+  if (state.mission.sceneOpen) return;
+  state.mission.sceneOpen = true;
+  notifyMission(state.mission);
+}
+
+/**
+ * Shows Render, opens Scene details and selects the element with its ancestors open; before the first scene, or when
  * the element is not in the current scene, the ref waits for the next scene.
  *
  * @param ctx - Domain context of renderView.
@@ -37,6 +49,7 @@ export function revealRef(ctx: RenderViewCtx, ref: ElementRef): void {
   const id = refId(ref);
 
   ctx.require(workspacePlugin).show("render");
+  openScene(state);
   if (state.scene?.nodes.has(id) === true) {
     state.pendingReveal = undefined;
     selectWithAncestors(state, id);
@@ -137,12 +150,13 @@ export function filterTo(ctx: RenderViewCtx, bundle: string): void {
 }
 
 /**
- * Rings an element over the game frame, or clears the ring.
+ * Rings an element over the game frame (Scene details opens first), or clears the ring.
  *
  * @param ctx - Domain context of renderView.
  * @param ref - The element, or undefined.
  */
 export function highlightRef(ctx: RenderViewCtx, ref?: ElementRef): void {
+  if (ref !== undefined) openScene(ctx.state);
   ctx.state.box = ref;
   drawBox(ctx);
 }

@@ -1,11 +1,15 @@
 /**
- * @file renderView components (connection) — The facts row: OS, browser, build, display, rate
- * now, dpr or address. Typed stub of build wave 0 (spec 09 § M17, RV0): the signatures are the
- * contract the other Mission control units build against; build wave 4 (RV5) writes the bodies.
+ * @file renderView components (connection) — the facts row of the bar (spec 09 § M7): label over
+ * value cells — a device's OS, Browser, Build (with its debug and "engine differs" tags), Display,
+ * Rate now (with the adaptive reason, calm or warn) and dpr or Address; the local preview's Browser,
+ * Display, Rate now and dpr; "Source · No game running" when nothing runs.
  */
 import type { JSX } from "preact";
-import { notBuilt } from "../../stub";
+import { activeSourcePlugin } from "../../../activeSource";
+import { linkPlugin } from "../../../link";
+import { factsOf } from "../../derive/connection";
 import type { RenderViewCtx } from "../../types";
+import { Tag } from "../parts";
 
 /**
  * Props of `Facts`.
@@ -13,12 +17,35 @@ import type { RenderViewCtx } from "../../types";
 export type FactsProps = { readonly ctx: RenderViewCtx };
 
 /**
- * The facts row: OS, browser, build, display, rate now, dpr or address.
+ * The facts row.
  *
- * @param _props - ctx.
- * @returns The element.
- * @throws {Error} Until build wave 4: "renderView components/Facts is not built yet".
+ * @param props - ctx.
+ * @returns The row.
  */
-export function Facts(_props: FactsProps): JSX.Element {
-  return notBuilt("components/Facts", 4);
+export function Facts(props: FactsProps): JSX.Element {
+  const { ctx } = props;
+  const activeSource = ctx.require(activeSourcePlugin);
+  const source = ctx.state.mission.source ?? activeSource.current();
+  const facts = factsOf({
+    source,
+    label: activeSource.label(),
+    second: ctx.state.mission.second,
+    computerEngine: ctx.require(linkPlugin).engine()
+  });
+  return (
+    <dl data-facts>
+      {facts.map(fact => (
+        <div key={fact.label} data-fact={fact.label === "Rate now" ? "rate" : undefined}>
+          <dt>{fact.label}</dt>
+          <dd>
+            <span>{fact.value}</span>
+            {fact.em === undefined ? undefined : <em data-tone={fact.em.tone}>{fact.em.text}</em>}
+            {fact.tags?.map(tag => (
+              <Tag key={tag.text} tag={tag} />
+            ))}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
 }

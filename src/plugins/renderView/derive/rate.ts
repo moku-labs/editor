@@ -309,3 +309,19 @@ function choiceOf(mode: string, fps: number): RateChoice | undefined {
 export function rateCommandText(choice: RateChoice): string {
   return choice === "adaptive" ? "game.frameRate {}" : `game.frameRate {"fps":${choice}}`;
 }
+
+/**
+ * The colour of the rate switch's answer line: ok taken, warn a pin the device holds lower ("Asked
+ * 120 fps, the device runs 60": no cause is named), error a refusal.
+ *
+ * @param answer - The last answer of the switch.
+ * @returns The tone.
+ * @example
+ * ```ts
+ * answerTone({ ok: false, choice: 120, text: "Asked 120 fps, the device runs 60" }); // "warn"
+ * ```
+ */
+export function answerTone(answer: RateAnswer): "ok" | "warn" | "error" {
+  if (answer.ok) return "ok";
+  return answer.text.startsWith("Asked ") ? "warn" : "error";
+}

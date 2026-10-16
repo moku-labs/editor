@@ -1,1 +1,275 @@
-/* renderView · connection. The connection bar: source pill, health line, facts, actions (build wave 4, RV5). Empty until then. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · connection. The connection bar over both columns (spec 09 § M7, § M15 Measures): a card of min-height 78, radius 12, a 1 px --line-1 border, with the 4 px --src stripe on its left edge; the source block (padding 10 18 10 20, gap 12, min-width 280, a right rule) with the 40 px icon tile (--src 14 %), the name (Geist 600 17/1.1) and its tag, the sub line (12/500 --text-2), the health line (mono 500 12, gap 7, the 72 × 14 sparkline); the facts row (padding 10 18, gap 8 24, a bottom rule; label 12/500 over a mono 600 13 value with a 12 px em); the action row (min-height 48, padding-left 18) with the dashed paused chip (28 high) and the actions (padding 8 14, gap 8, right-aligned); the split button, the Record ring and the red-tinted recording pill (30 high). Under 1180 px of the container the bar stacks and the chip drops its "while …" text; under 680 px the actions align left. The popovers have their own sheet. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="connection"]) to ([data-popover]) {
+  :scope {
+    position: relative;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    min-block-size: 78px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-12);
+    background: var(--surface-panel);
+  }
+
+  :scope::before {
+    content: "";
+    position: absolute;
+    inset-block: -1px;
+    inset-inline-start: -1px;
+    inline-size: 4px;
+    border-radius: 12px 0 0 12px;
+    background: var(--src);
+  }
+
+  /* ─── The source block ─── */
+  [data-source-pill] {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-inline-size: 280px;
+    padding: 10px 18px 10px 20px;
+    border-inline-end: 1px solid var(--line-1);
+  }
+
+  [data-source-pill] > [data-part="tile"] {
+    display: grid;
+    flex: none;
+    place-items: center;
+    inline-size: 40px;
+    block-size: 40px;
+    border-radius: var(--radius-10);
+    background: color-mix(in srgb, var(--src) 14%, transparent);
+    color: var(--src-ink);
+  }
+
+  [data-source-pill] > [data-part="text"] {
+    min-inline-size: 0;
+  }
+
+  [data-part="name"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--render-size-17);
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  [data-part="sub"] {
+    margin-block-start: 3px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+  }
+
+  [data-health] {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-block-start: 5px;
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-mono);
+    white-space: nowrap;
+  }
+
+  [data-health] > canvas {
+    display: block;
+    inline-size: 72px;
+    block-size: 14px;
+  }
+
+  /* ─── Facts and the action row ─── */
+  [data-part="main"] {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+  }
+
+  [data-facts] {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-content: center;
+    align-items: center;
+    gap: 8px 24px;
+    min-inline-size: 0;
+    padding: 10px 18px;
+    border-block-end: 1px solid var(--line-1);
+  }
+
+  [data-facts] > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  [data-facts] dt {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+  }
+
+  [data-facts] dd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font: 600 var(--font-size-13) / 1 var(--font-mono);
+  }
+
+  [data-facts] em {
+    color: var(--status-warn);
+    font: 500 var(--font-size-12) var(--font-sans);
+    font-style: normal;
+  }
+
+  [data-facts] em[data-tone="calm"] {
+    color: var(--text-2);
+  }
+
+  [data-part="actions-row"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-block-size: 48px;
+    padding-inline-start: 18px;
+  }
+
+  [data-paused-chip] {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-inline-size: 0;
+    block-size: 28px;
+    padding: 0 10px;
+    overflow: hidden;
+    border: 1px dashed var(--line-2);
+    border-radius: 999px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-paused-chip] > b {
+    color: var(--text-ink);
+    font-weight: 600;
+  }
+
+  [data-paused-chip][data-tone="warn"] > b,
+  [data-paused-chip][data-tone="warn"] > svg {
+    color: var(--status-warn);
+  }
+
+  [data-paused-chip] > [data-part="rest"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-part="actions"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-inline-start: auto;
+    padding: 8px 14px;
+  }
+
+  [data-part="actions"] > [data-part="note"] {
+    color: var(--text-muted);
+    font-size: var(--font-size-12);
+  }
+
+  [data-popover-trigger="monitoring"] > small {
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-mono);
+  }
+
+  /* ─── The Connect split button ─── */
+  [data-split] {
+    display: inline-flex;
+  }
+
+  [data-split] > button:first-child {
+    border-radius: 6px 0 0 6px;
+  }
+
+  [data-split] > button:last-child {
+    padding: 0 7px;
+    border-inline-start: 1px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+    border-radius: 0 6px 6px 0;
+  }
+
+  [data-split] > button[data-variant="outline"]:last-child {
+    border-inline-start-color: var(--line-2);
+  }
+
+  /* ─── Record and the recording pill ─── */
+  [data-record-pill] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    block-size: 30px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--status-error) 12%, transparent);
+    font-size: var(--font-size-12);
+  }
+
+  [data-record-pill] > [data-part="summary"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    block-size: 26px;
+    padding: 0 6px 0 2px;
+    border-radius: 999px;
+  }
+
+  [data-record-pill] > [data-part="summary"]:hover {
+    background: color-mix(in srgb, var(--status-error) 10%, transparent);
+  }
+
+  [data-record-pill] > [data-part="summary"][aria-expanded="true"] > svg {
+    rotate: 180deg;
+  }
+
+  [data-record-pill] b {
+    font: 600 var(--font-size-12) var(--font-mono);
+  }
+
+  [data-record-pill] [data-part="by"] {
+    color: var(--text-2);
+  }
+
+  [data-record-pill] > button[data-variant] {
+    block-size: 22px;
+    border-radius: 999px;
+  }
+
+  @container render (width < 1180px) {
+    :scope {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    [data-source-pill] {
+      min-inline-size: 0;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--line-1);
+    }
+
+    [data-paused-chip] > [data-part="rest"] {
+      display: none;
+    }
+  }
+
+  @container render (width < 680px) {
+    [data-part="actions"] {
+      justify-content: flex-start;
+      margin-inline-start: 0;
+      padding-inline-start: 2px;
+    }
+  }
+}

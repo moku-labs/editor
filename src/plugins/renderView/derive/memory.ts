@@ -474,3 +474,93 @@ export function breakdownOf(
     ];
   });
 }
+
+/**
+ * The baselines of the card under the source rule: a device's CDP heap after its inferred GCs, the
+ * local preview's trusted heap after the history's GC events; none for another source.
+ *
+ * @param input - The source's values.
+ * @returns The baselines, oldest first.
+ * @example
+ * ```ts
+ * memoryBaselines(memoryInputOf(mission)); // [{ t: 79_350, mb: 27.4 }, …, { t: 197_100, mb: 31 }]
+ * ```
+ */
+export function memoryBaselines(input: MemoryInput): Baseline[] {
+  const source = memorySource(input);
+  if (source !== "cdp" && source !== "performance.memory") return [];
+  return baselinesOf(input.series.heap, gcTimes(input, source));
+}
+
+/**
+ * The heap line of the view: "Heap {min} → {max} MB over {span}, GC marks on the shared axis".
+ *
+ * @param heap - The heap series.
+ * @param startMs - The view's start.
+ * @param endMs - The view's end.
+ * @param span - The span's words ("2 min").
+ * @returns The line; undefined without a sample in the view.
+ * @example
+ * ```ts
+ * heapRangeLine(series.heap, 20_000, 140_000, "2 min"); // ["Heap ", { strong: "27 → 57 MB" }, " over 2 min, GC marks on the shared axis"]
+ * ```
+ */
+export function heapRangeLine(
+  heap: SeriesColumn,
+  startMs: number,
+  endMs: number,
+  span: string
+): Line | undefined {
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < heap.count; index += 1) {
+    const t = heap.t[index] ?? 0;
+    const mb = heap.v[index] ?? Number.NaN;
+    if (t < startMs || t > endMs || Number.isNaN(mb)) continue;
+    low = Math.min(low, mb);
+    high = Math.max(high, mb);
+  }
+  if (!Number.isFinite(low)) return undefined;
+  return [
+    "Heap ",
+    strong(`${oneDecimal(low)} → ${oneDecimal(high)} MB`),
+    ` over ${span}, GC marks on the shared axis`
+  ];
+}
+
+/**
+ * The GCs of a time range with the MB they freed: a device's CDP GCs, the local preview's GC events.
+ *
+ * @param input - The source's values.
+ * @param from - The range's start, source clock.
+ * @param to - Its end.
+ * @returns "{n} GC(s), freed {mb} MB", or "No GC".
+ * @example
+ * ```ts
+ * gcsInRangeText(memoryInputOf(mission), 78_000, 79_000); // "1 GC, freed 4.2 MB"
+ * ```
+ */
+export function gcsInRangeText(input: MemoryInput, from: number, to: number): string {
+  const source = memorySource(input);
+  let count = 0;
+  let freed = 0;
+  if (source === "cdp") {
+    const { gcs } = input.series;
+    for (let index = 0; index < gcs.count; index += 1) {
+      const t = gcs.t[index] ?? 0;
+      if (t < from || t > to) continue;
+      count += 1;
+      freed += gcs.v[index] ?? 0;
+    }
+  } else {
+    const { history } = input;
+    for (let index = 0; index < history.eventCount; index += 1) {
+      const event = history.events[index];
+      if (event?.kind !== "gc" || event.t < from || event.t > to) continue;
+      count += 1;
+      freed += event.freedMb;
+    }
+  }
+  if (count === 0) return "No GC";
+  return `${count} GC${count === 1 ? "" : "s"}, freed ${oneDecimal(freed)} MB`;
+}

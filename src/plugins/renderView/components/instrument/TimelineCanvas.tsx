@@ -1,24 +1,58 @@
 /**
- * @file renderView components (instrument) — The timeline canvas with its pointer selection and
- * tooltip. Typed stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract the
- * other Mission control units build against; build wave 4 (RV6) writes the bodies.
+ * @file renderView components (instrument) — the frame timeline (spec 09 § M8): the canvas the loop
+ * paints (`data-paint="timeline"`, focusable, its keys), its pointer (flags, click, drag, the shared
+ * cursor), the empty overlay and the hover tooltip while the pointer is over it.
  */
 import type { JSX } from "preact";
-import { notBuilt } from "../../stub";
-import type { RenderViewCtx } from "../../types";
+import { useState } from "preact/hooks";
+import type { RenderViewApi, RenderViewCtx } from "../../types";
+import { EmptyOverlay } from "./EmptyOverlay";
+import { Tooltip } from "./Tooltip";
+import { handlePlotKey, usePlotPointer } from "./usePlotPointer";
 
 /**
  * Props of `TimelineCanvas`.
  */
-export type TimelineCanvasProps = { readonly ctx: RenderViewCtx };
+export type TimelineCanvasProps = { readonly ctx: RenderViewCtx; readonly api: RenderViewApi };
+
+/** The timeline's accessible name (spec 09 § M8). */
+const LABEL =
+  "Frame timeline. Drag to select a range, click a frame, arrow keys step frames, Shift arrows jump spikes, Space pauses.";
 
 /**
- * The timeline canvas with its pointer selection and tooltip.
+ * The frame timeline.
  *
- * @param _props - ctx.
- * @returns The element.
- * @throws {Error} Until build wave 4: "renderView components/TimelineCanvas is not built yet".
+ * @param props - ctx and the api.
+ * @returns The plot.
  */
-export function TimelineCanvas(_props: TimelineCanvasProps): JSX.Element {
-  return notBuilt("components/TimelineCanvas", 4);
+export function TimelineCanvas(props: TimelineCanvasProps): JSX.Element {
+  const { ctx, api } = props;
+  const pointer = usePlotPointer(ctx, api, "timeline");
+  const [width, setWidth] = useState(0);
+  const [over, setOver] = useState(false);
+  return (
+    <div data-plot="timeline">
+      <canvas
+        data-paint="timeline"
+        tabIndex={0}
+        aria-label={LABEL}
+        onPointerDown={pointer.onPointerDown}
+        onPointerMove={event => {
+          const box = event.currentTarget.getBoundingClientRect().width;
+          if (box !== width) setWidth(box);
+          if (!over) setOver(true);
+          pointer.onPointerMove(event);
+        }}
+        onPointerUp={pointer.onPointerUp}
+        onPointerCancel={pointer.onPointerUp}
+        onPointerLeave={() => {
+          setOver(false);
+          pointer.onPointerLeave();
+        }}
+        onKeyDown={event => handlePlotKey(ctx, api, event)}
+      />
+      <EmptyOverlay ctx={ctx} />
+      {over ? <Tooltip ctx={ctx} dragging={pointer.dragging} width={width} /> : undefined}
+    </div>
+  );
 }

@@ -4,6 +4,7 @@
  * filling ("Paused · N s behind live"). A seek pauses and is clamped into the history; a span change
  * keeps the end; a paused view whose start left the history is pushed forward.
  */
+import { newestEnd } from "../series/rows";
 import type { PerfHistory } from "../source/contract";
 import type { MissionState } from "../types";
 import { liveEnd } from "./clock";
@@ -165,4 +166,42 @@ export function viewEnd(view: MissionViewState, liveEndMs: number | undefined): 
 export function behindMs(view: MissionViewState, liveEndMs: number | undefined): number {
   if (view.live || liveEndMs === undefined) return 0;
   return Math.max(0, liveEndMs - view.endMs);
+}
+
+/**
+ * The view as a component renders it (outside the paint loop): the live end (the display clock, or
+ * the newest frame's end before the clock ran), the view's end and start, how far it is behind.
+ *
+ * @example
+ * ```ts
+ * const window: ViewWindow = { liveEndMs: 80_100, endMs: 80_100, startMs: 74_100, behindMs: 0 };
+ * ```
+ */
+export type ViewWindow = {
+  readonly liveEndMs: number | undefined;
+  readonly endMs: number;
+  readonly startMs: number;
+  readonly behindMs: number;
+};
+
+/**
+ * The view now: live, its end is the display clock's right edge; paused, its frozen end.
+ *
+ * @param mission - Mission control's state.
+ * @param now - `performance.now()`.
+ * @returns The window.
+ * @example
+ * ```ts
+ * viewWindow(mission, performance.now()).startMs; // 74_100: six seconds before the live end
+ * ```
+ */
+export function viewWindow(mission: MissionState, now: number): ViewWindow {
+  const liveEndMs = clockEnd(mission.clock, now) ?? newestEnd(mission.history);
+  const endMs = viewEnd(mission.view, liveEndMs) ?? 0;
+  return {
+    liveEndMs,
+    endMs,
+    startMs: endMs - mission.view.span,
+    behindMs: behindMs(mission.view, liveEndMs)
+  };
 }

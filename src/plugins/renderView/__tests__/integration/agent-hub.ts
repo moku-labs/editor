@@ -27,15 +27,22 @@ import {
 /** What the hub routes to: the agent's channel, the project files and the project index. */
 export type Agent = {
   readonly channel: EditorChannel;
+  /** A channel per session (a phone beside the local preview); other sessions use `channel`. */
+  readonly channels?: ReadonlyMap<string, EditorChannel>;
   readonly files: ReadonlyMap<string, string>;
+  /** The project index's `files.find` answers by key (`system:<name>`); others answer []. */
+  readonly finds?: ReadonlyMap<string, Json>;
   /** The `editor.project` state each socket gets after it opens, like the hub's replay. */
   readonly project?: Json;
 };
 
 /** The agent hub: the scripted hub plus the routed watches. */
 export type AgentHub = ScriptedHub & {
-  /** Agent watches still open, by wire sub. */
-  readonly agentWatches: Map<number, { readonly id: string; readonly stop: () => void }>;
+  /** Agent watches still open, by wire sub, with the session they watch. */
+  readonly agentWatches: Map<
+    number,
+    { readonly id: string; readonly session: string | undefined; readonly stop: () => void }
+  >;
   /** `unwatch` requests, with the source id they stopped. */
   readonly unwatched: string[];
 };
@@ -62,7 +69,7 @@ function paramsOf(request: RpcRequest): { readonly [key: string]: Json } {
  */
 export function createAgentHub(agent: Agent): AgentHub {
   const base = createScriptedHub();
-  const agentWatches = new Map<number, { readonly id: string; readonly stop: () => void }>();
+  const agentWatches: AgentHub["agentWatches"] = new Map();
   const unwatched: string[] = [];
   const Base = base.Socket as unknown as new (url: string) => HubSocket;
 
@@ -105,9 +112,18 @@ export function createAgentHub(agent: Agent): AgentHub {
       );
     }
 
+    #channelOf(request: RpcRequest): EditorChannel {
+      const session = request.session;
+      return (session === undefined ? undefined : agent.channels?.get(session)) ?? agent.channel;
+    }
+
     #route(request: RpcRequest): boolean {
       const params = paramsOf(request);
       const key = `${request.channel}.${request.method}`;
+      if (key === "files.find") {
+        this.#reply(request, agent.finds?.get(String(params.key)) ?? []);
+        return true;
+      }
       if (key === "files.read") {
         const text = agent.files.get(String(params.path));
         if (text === undefined) this.#fail(request, "not found");
@@ -115,7 +131,7 @@ export function createAgentHub(agent: Agent): AgentHub {
         return true;
       }
       if (key === "game.read") {
-        agent.channel
+        this.#channelOf(request)
           .read(String(params.id), params.input)
           .then(value => this.#reply(request, value))
           .catch((error: unknown) => this.#fail(request, String(error)));
@@ -124,10 +140,10 @@ export function createAgentHub(agent: Agent): AgentHub {
       if (key === "game.watch") {
         const sub = Number(params.sub);
         const id = String(params.id);
-        const stop = agent.channel.watch(id, params.input, value => {
+        const stop = this.#channelOf(request).watch(id, params.input, value => {
           this.deliver(encode(notification("game", "value", { sub, value }, request.session)));
         });
-        agentWatches.set(sub, { id, stop });
+        agentWatches.set(sub, { id, session: request.session, stop });
         this.#subs.add(sub);
         this.#reply(request, null);
         return true;

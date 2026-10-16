@@ -61,6 +61,25 @@ export function clearSelection(mission: MissionState): void {
 }
 
 /**
+ * Shows the range a drag makes while it is dragged: the painters draw it at once; the drag's end
+ * selects it for real (pause, clamp, detail read) through `select`.
+ *
+ * @param mission - Mission control's state.
+ * @param range - The frames under the press and the pointer.
+ * @example
+ * ```ts
+ * dragSelection(mission, rangeOfDrag(4810, 4860, 120));
+ * mission.selection; // { from: 4810, to: 4860 }, selectionVersion bumped
+ * ```
+ */
+export function dragSelection(mission: MissionState, range: FrameRange): void {
+  const { selection } = mission;
+  if (selection?.from === range.from && selection.to === range.to) return;
+  mission.selection = range;
+  mission.selectionVersion += 1;
+}
+
+/**
  * Moves a paused view so a row lies inside it: a row in the outer 8 % (or outside) is placed at 45 %
  * of the span, clamped into the history.
  *

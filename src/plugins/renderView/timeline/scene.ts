@@ -169,3 +169,27 @@ export function laneColourOf(scene: PaintScene, view: string): string {
   laneColours.set(view, index);
   return scene.palette[LANE_COLOURS[index] ?? "phase1"];
 }
+
+/**
+ * The palette key of a pass view's lane colour for the DOM (the legend and the passes panel): the
+ * colour the lane painted it with, or, before the lane painted it, the colour of its place among the
+ * views in order ("main" first).
+ *
+ * @param scene - The painted scene; undefined while no loop runs.
+ * @param view - The pass's view name.
+ * @param order - Its place among the views shown, from 0.
+ * @returns The palette key.
+ * @example
+ * ```ts
+ * laneColourKey(paintedScene(mission), "fogLayer", 1); // "pickPink"
+ * ```
+ */
+export function laneColourKey(
+  scene: PaintScene | undefined,
+  view: string,
+  order: number
+): (typeof LANE_COLOURS)[number] {
+  const known = scene?.laneColours.get(view);
+  const index = known ?? (view === "main" ? 0 : order % LANE_COLOURS.length);
+  return LANE_COLOURS[index] ?? "phase1";
+}

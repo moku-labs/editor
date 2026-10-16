@@ -95,3 +95,42 @@ export function missionView(
     recording: recordingView(mission.recorder)
   };
 }
+
+/**
+ * What the graphs draw of the source's sections (spec 09 § M8, honest limits): GC marks (on, off
+ * with Memory & GC switched off, none without a memory source), GPU time (on, off, or not measured
+ * without a timer) and the Shaders & passes lane (on unless switched off).
+ *
+ * @example
+ * ```ts
+ * const flags: GraphFlags = { gc: "none", gpu: "not-measured", passes: true }; // an iPhone
+ * ```
+ */
+export type GraphFlags = {
+  readonly gc: "on" | "off" | "none";
+  readonly gpu: "on" | "off" | "not-measured";
+  readonly passes: boolean;
+};
+
+/**
+ * The graph flags of the source now.
+ *
+ * @param mission - Mission control's state.
+ * @returns The flags.
+ * @example
+ * ```ts
+ * graphFlags(mission).gc; // "off" after Memory & GC was switched off
+ * ```
+ */
+export function graphFlags(mission: MissionState): GraphFlags {
+  const { second } = mission;
+  const measured = memoryMeasured(mission);
+  const sections = sectionsView(second?.monitor, second?.caps, measured);
+  let gc: GraphFlags["gc"] = "on";
+  if (!measured) gc = "none";
+  else if (sections?.memory === "off") gc = "off";
+  let gpu: GraphFlags["gpu"] = mission.history.gpuTimer ? "on" : "not-measured";
+  if (sections?.gpu === "off") gpu = "off";
+  if (sections?.gpu === "unavailable" || second?.caps?.gpuTimer === false) gpu = "not-measured";
+  return { gc, gpu, passes: sections?.passes !== "off" };
+}

@@ -1,25 +1,40 @@
 /**
- * @file renderView components (instrument) — The frames card: header, timeline, lane, overview,
- * transport and legend (spec 09 § M8). Typed stub of build wave 0 (spec 09 § M17, RV0): the
- * signatures are the contract the other Mission control units build against; build wave 4 (RV6)
- * writes the bodies.
+ * @file renderView components (instrument) — the frames card (spec 09 § M8): the header, the frame
+ * timeline with its overlay and tooltip, the Shaders & passes lane, the deck (the overview scrubber and
+ * the transport row) and the legend.
  */
 import type { JSX } from "preact";
-import { notBuilt } from "../../stub";
-import type { RenderViewCtx } from "../../types";
+import type { RenderViewApi, RenderViewCtx } from "../../types";
+import { FramesHeader } from "./FramesHeader";
+import { LaneCanvas } from "./LaneCanvas";
+import { Legend } from "./Legend";
+import { OverviewCanvas } from "./OverviewCanvas";
+import { TimelineCanvas } from "./TimelineCanvas";
+import { Transport } from "./Transport";
 
 /**
  * Props of `FramesCard`.
  */
-export type FramesCardProps = { readonly ctx: RenderViewCtx };
+export type FramesCardProps = { readonly ctx: RenderViewCtx; readonly api: RenderViewApi };
 
 /**
- * The frames card: header, timeline, lane, overview, transport and legend (spec 09 § M8).
+ * The frames card.
  *
- * @param _props - ctx.
- * @returns The element.
- * @throws {Error} Until build wave 4: "renderView components/FramesCard is not built yet".
+ * @param props - ctx and the api.
+ * @returns The card.
  */
-export function FramesCard(_props: FramesCardProps): JSX.Element {
-  return notBuilt("components/FramesCard", 4);
+export function FramesCard(props: FramesCardProps): JSX.Element {
+  const { ctx, api } = props;
+  return (
+    <section data-render="frames" data-card aria-label="Frame timeline">
+      <FramesHeader ctx={ctx} api={api} />
+      <TimelineCanvas ctx={ctx} api={api} />
+      <LaneCanvas ctx={ctx} api={api} />
+      <div data-part="deck">
+        <OverviewCanvas ctx={ctx} api={api} />
+        <Transport ctx={ctx} api={api} />
+      </div>
+      <Legend ctx={ctx} />
+    </section>
+  );
 }

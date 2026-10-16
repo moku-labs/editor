@@ -1,24 +1,54 @@
 /**
- * @file renderView components (cards) — The FPS card with the rate switch in its footer. Typed
- * stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract the other Mission
- * control units build against; build wave 4 (RV6) writes the bodies.
+ * @file renderView components (cards) — the FPS card (spec 09 § M9): the rate now ("fps now") with
+ * its tag (pinned, resting, or the display's target in warn below it), the sparkline of each column's
+ * effective fps against the display rate, the rate switch with its lines, the adaptive rate changes in
+ * view, and the missed frames and rate changes of the selection.
  */
 import type { JSX } from "preact";
-import { notBuilt } from "../../stub";
-import type { RenderViewCtx } from "../../types";
+import type { CardsInput } from "../../derive/cards";
+import { fpsCard } from "../../derive/cards";
+import type { CardOff } from "../../derive/states";
+import type { MonitorSection, RenderViewApi, RenderViewCtx } from "../../types";
+import { LineText, lineKey } from "../parts";
+import { RateSwitch } from "./RateSwitch";
+import { cardValue, SparkCard } from "./SparkCard";
 
 /**
  * Props of `FpsCard`.
  */
-export type FpsCardProps = { readonly ctx: RenderViewCtx };
+export type FpsCardProps = {
+  readonly ctx: RenderViewCtx;
+  readonly api: RenderViewApi;
+  readonly input: CardsInput;
+  readonly off: CardOff | undefined;
+  readonly onTurnOn: (section: MonitorSection) => void;
+};
 
 /**
- * The FPS card with the rate switch in its footer.
+ * The FPS card.
  *
- * @param _props - ctx.
- * @returns The element.
- * @throws {Error} Until build wave 4: "renderView components/FpsCard is not built yet".
+ * @param props - ctx, the api, the cards' input and the off panel.
+ * @returns The card.
  */
-export function FpsCard(_props: FpsCardProps): JSX.Element {
-  return notBuilt("components/FpsCard", 4);
+export function FpsCard(props: FpsCardProps): JSX.Element {
+  const { ctx, api, input } = props;
+  const view = fpsCard(input);
+  return (
+    <SparkCard
+      ctx={ctx}
+      kind="fps"
+      title="FPS"
+      value={cardValue(view)}
+      inSelection={view.inSelection}
+      off={props.off}
+      onTurnOn={props.onTurnOn}
+    >
+      <RateSwitch ctx={ctx} api={api} />
+      {view.lines.map(line => (
+        <p key={lineKey(line)}>
+          <LineText line={line} />
+        </p>
+      ))}
+    </SparkCard>
+  );
 }

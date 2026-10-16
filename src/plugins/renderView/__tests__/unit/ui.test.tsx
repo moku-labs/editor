@@ -24,7 +24,9 @@ import {
 } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Render workspace in happy-dom: the title, the C9 render tree with hover
+// The Render workspace in happy-dom: the scene cards inside "Scene details"
+// (opened here; collapsed by default, spec 09 § M9: ui-scene.test.tsx) — the
+// frame of the last game.render in its header, the C9 render tree with hover
 // box, keyboard and "Inspect in Game", the textures card (chips, sort, hover),
 // bundles, pools and the release log. (The metric tiles went with Mission
 // control, spec 09 § M1.)
@@ -90,6 +92,7 @@ async function fill(): Promise<void> {
 
 beforeEach(() => {
   ctx = createCtx();
+  ctx.state.mission.sceneOpen = true;
   frames = stubFrames();
   api = createRenderViewApi(ctx);
   host = document.createElement("div");
@@ -106,7 +109,8 @@ describe("RenderWorkspace", () => {
   it("shows the title and empty cards before any value", () => {
     show();
 
-    expect(q("h1")?.textContent).toBe("Render · game.render · frame —");
+    expect(q("h1")?.textContent).toBe("Render");
+    expect(q("[data-scene-meta]")?.textContent).toContain("frame —");
     expect(q("[data-render='tiles']")).toBeNull();
     expect(q("[data-render='tree']")?.textContent).toContain("Waiting for the scene");
   });
@@ -115,7 +119,7 @@ describe("RenderWorkspace", () => {
     show();
     await fill();
 
-    expect(q("h1")?.textContent).toBe("Render · game.render · frame 1841");
+    expect(q("[data-scene-meta]")?.textContent).toContain("frame 1841");
     expect(q("[data-render='tree'] header")?.textContent).toContain(
       "104 nodes · 24 with textures · 32 entities"
     );
@@ -241,13 +245,13 @@ describe("textures card", () => {
       "board.cell"
     ]);
     expect(q("[data-render='textures']")?.textContent).toContain("GPU MB = w × h × 4");
-    expect(all("[role='radiogroup'] [role='radio']").map(chip => chip.textContent)).toEqual([
-      "All 3",
-      "board 2",
-      "ui 1"
-    ]);
+    expect(
+      all("[data-render='textures'] [role='radiogroup'] [role='radio']").map(
+        chip => chip.textContent
+      )
+    ).toEqual(["All 3", "board 2", "ui 1"]);
 
-    act(() => all("[role='radio']")[1]?.click());
+    act(() => all("[data-render='textures'] [role='radio']")[1]?.click());
     expect(all("tbody tr").map(row => row.dataset.key)).toEqual(["board.board-tray", "board.cell"]);
 
     act(() => q<HTMLButtonElement>("th[data-sort='key'] button")?.click());

@@ -24,7 +24,7 @@ import { closePopover } from "./popover";
  * ctx.state.mission.connect.stopScan; // the lease's stop, called when the panel closes
  * ```
  */
-export function openConnect(ctx: RenderViewCtx, tab: "wire" | "network" | undefined): void {
+export function openConnect(ctx: RenderViewCtx, tab?: "wire" | "network"): void {
   const { mission } = ctx.state;
   const activeSource = ctx.require(activeSourcePlugin);
   if (mission.popover !== "connect") closePopover(mission);
