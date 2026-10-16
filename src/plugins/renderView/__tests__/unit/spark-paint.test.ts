@@ -10,12 +10,16 @@ import {
   createSparkColumns,
   fillFromFrames,
   fillFromSeries,
+  fillPassGpu,
+  markCompiles,
+  markGcs,
   paintCpuSteps,
   paintSpark,
-  SPARK_COLUMNS
+  SPARK_COLUMNS,
+  SPARK_MARK
 } from "../../timeline/spark";
 import { CONFIG } from "../helpers";
-import { bitsOf, rowsOf, wireOf } from "../mission-fixtures";
+import { bitsOf, ENGINE_REST, line, rowsOf, wireOf, withEvents } from "../mission-fixtures";
 import { PALETTE, recorder } from "../paint-recorder";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,6 +49,22 @@ describe("spark columns", () => {
     expect(columns.rested[10]).toBe(0);
   });
 
+  it("the FPS columns of a real engine's rest read the rest rate, 30, not the loop's 60", () => {
+    // Bug: the FPS card drawn flat at 60 through a rest: rateMs stays the loop's 16.67 ms while the
+    // engine rests at a 33.3 ms budget.
+    const { mission } = createRenderViewState({ config: CONFIG });
+    appendFrames(
+      mission.history,
+      wireOf(rowsOf(1, 360, { t0: 10_000, each: index => (index >= 300 ? ENGINE_REST : {}) }))
+    );
+    const columns = createSparkColumns();
+
+    fillFromFrames(columns, mission.history, "fps", { startMs: 10_000, span: 6000 });
+
+    expect(columns.v[SPARK_COLUMNS - 2]).toBe(30);
+    expect(columns.v[10]).toBe(60);
+  });
+
   it("a series column holds the newest sample; a stopped feed leaves a gap, never 0", () => {
     // Bug: the Textures card drawn flat at 0 where the source sent nothing.
     const series = createMissionSeries();
@@ -57,6 +77,111 @@ describe("spark columns", () => {
     expect(columns.v[0]).toBe(120);
     expect(columns.v[30]).toBe(130);
     expect(Number.isNaN(columns.v[SPARK_COLUMNS - 1] ?? 0)).toBe(true);
+  });
+});
+
+/** The view of the marks tests. */
+const VIEW = { startMs: 10_000, span: 6000 };
+
+/**
+ * The column of a time in VIEW.
+ *
+ * @param t - Source-clock ms.
+ * @returns The column.
+ */
+function columnAt(t: number): number {
+  return Math.floor(((t - VIEW.startMs) / VIEW.span) * SPARK_COLUMNS);
+}
+
+describe("marks on the cards' axis", () => {
+  it("a GC marks the column of its time, the engine's filled and a heap drop's hollow; a compile inside a frame marks the GPU card, a boot compile does not", () => {
+    // Bug: an inferred GC drawn as a measured one on the Memory card, or a compile while loading
+    // marked as if it cost a frame.
+    const { mission } = createRenderViewState({ config: CONFIG });
+    appendFrames(mission.history, wireOf(rowsOf(1, 360, { t0: 10_000 })));
+    withEvents(mission.history, [
+      line.gc(11_000, 60, 4.2),
+      line.shader(12_000, 120, "fog.blur", 31),
+      line.shader(13_000, 180, "boot.main", 12, true)
+    ]);
+    pushSample(mission.series.gcs, 14_000, 6);
+    mission.series.gcs.inferred[0] = 1;
+    const memory = createSparkColumns();
+    const gpu = createSparkColumns();
+
+    fillFromSeries(memory, mission.series.heap, VIEW.startMs, VIEW.span);
+    markGcs(memory, mission.history, mission.series.gcs, VIEW);
+    fillPassGpu(gpu, mission.history, VIEW);
+    markCompiles(gpu, mission.history, VIEW);
+
+    expect(memory.marks[columnAt(11_000)]).toBe(SPARK_MARK.gc);
+    expect(memory.marks[columnAt(14_000)]).toBe(SPARK_MARK.inferredGc);
+    expect(memory.marks.filter(mark => mark !== SPARK_MARK.none)).toHaveLength(2);
+    expect(gpu.marks[columnAt(12_000)]).toBe(SPARK_MARK.compile);
+    expect(gpu.marks.filter(mark => mark !== SPARK_MARK.none)).toHaveLength(1);
+  });
+
+  it("a refill forgets the last paint's marks: a GC that scrolled out leaves no diamond", () => {
+    // Bug: a diamond stuck in its column after its GC left the view.
+    const { mission } = createRenderViewState({ config: CONFIG });
+    withEvents(mission.history, [line.gc(11_000, null, 4.2)]);
+    const columns = createSparkColumns();
+    markGcs(columns, mission.history, mission.series.gcs, VIEW);
+
+    fillFromSeries(columns, mission.series.heap, 20_000, 6000);
+    markGcs(columns, mission.history, mission.series.gcs, { startMs: 20_000, span: 6000 });
+
+    expect(columns.marks.every(mark => mark === SPARK_MARK.none)).toBe(true);
+  });
+
+  it("paints each mark as a diamond at top + 4 (teal, hollow and dashed when inferred; pick-blue for a compile) and the trend dashed [4, 3] in warn across the view", () => {
+    // Bug: the Memory card without its baseline trend, or its marks off the shared axis.
+    const columns = createSparkColumns();
+    columns.v.fill(30);
+    columns.marks[20] = SPARK_MARK.gc;
+    columns.marks[80] = SPARK_MARK.inferredGc;
+    columns.marks[140] = SPARK_MARK.compile;
+    const scene = createPaintScene(PALETTE);
+    scene.endMs = 16_000;
+    scene.span = 6000;
+    const trend = { t: 10_000, value: 30, perMs: 0.001 };
+    const { g, calls, of } = recorder();
+
+    paintSpark(
+      g,
+      sparkLayout(160, 46, 1),
+      columns,
+      { min: 20, max: 40, reference: Number.NaN, colour: "src", trend },
+      scene,
+      {
+        history: createRenderViewState({ config: CONFIG }).mission.history,
+        selection: undefined,
+        hoverMs: undefined
+      }
+    );
+
+    expect(
+      of("moveTo")
+        .filter(call => call.args[1] === 7 - 3.5)
+        .map(call => call.args[0])
+    ).toEqual([20.5, 80.5, 140.5]);
+    expect(of("fill").filter(call => call.fillStyle === "teal")).toHaveLength(1);
+    expect(
+      of("stroke").filter(call => call.strokeStyle === "teal" && call.dash.join(",") === "2,2")
+    ).toHaveLength(1);
+    expect(of("fill").filter(call => call.fillStyle === "pickBlue")).toHaveLength(1);
+    const stroke = calls.findIndex(call => call.op === "stroke" && call.strokeStyle === "warn");
+    expect(calls[stroke]).toMatchObject({ lineWidth: 1.25, dash: [4, 3] });
+    const ends = calls
+      .slice(0, stroke)
+      .filter(call => call.op === "moveTo" || call.op === "lineTo")
+      .slice(-2)
+      .map(call => call.args.map(value => Math.round(value * 10) / 10));
+    // 30 MB at the view's start (y 21), 36 MB at its end (y 10.2) on a 20–40 scale.
+    expect(ends).toEqual([
+      [0, 21],
+      [160, 10.2]
+    ]);
   });
 });
 

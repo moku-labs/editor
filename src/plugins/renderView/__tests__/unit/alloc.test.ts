@@ -21,6 +21,8 @@ import {
   fillFromFrames,
   fillFromSeries,
   fillPassGpu,
+  markCompiles,
+  markGcs,
   paintCpuSteps,
   paintGpuSteps,
   paintSpark
@@ -32,8 +34,9 @@ import { PALETTE } from "../paint-recorder";
 // ─────────────────────────────────────────────────────────────────────────────
 // The painters allocate nothing per frame (spec 09 § M11, M16 alloc.test.ts;
 // spec 10 Delta 2026-10-16, memory layer M1): 600 paints of the timeline, the
-// lane, the overview, seven sparklines, the Device load steps and the health
-// line over a full 2-minute history keep nothing alive.
+// lane, the overview, seven sparklines (with their GC and compile marks and a
+// trend), the Device load steps and the health line over a full 2-minute
+// history keep nothing alive.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A 2D context whose calls do nothing (the recorder of the other tests allocates per call). */
@@ -106,6 +109,9 @@ function fullMission() {
     pushSample(mission.series.load.cpuFlinger, t, 11);
     pushSample(mission.series.load.gpuBusy, t, 64);
     pushSample(mission.series.load.gpuMhz, t, 585);
+    if (second % 10 === 5 && pushSample(mission.series.gcs, t, 3)) {
+      mission.series.gcs.inferred[mission.series.gcs.count - 1] = 1;
+    }
   }
   mission.recorder = {
     state: "recording",
@@ -144,7 +150,8 @@ describe("painters allocate nothing per frame", () => {
       head: 0
     };
     const sparks = Array.from({ length: 7 }, () => createSparkColumns());
-    const style = { min: 0, max: 36, reference: 16.7, colour: "src" as const };
+    const trend = { t: 10_000, value: 30, perMs: 0.000_03 };
+    const style = { min: 0, max: 36, reference: 16.7, colour: "src" as const, trend };
     const view = { startMs: 0, span: 6000 };
     const range = { minMhz: 221, maxMhz: 949 };
     const spans = [6000, 30_000, 120_000] as const;
@@ -168,12 +175,14 @@ describe("painters allocate nothing per frame", () => {
         view.span
       );
       fillPassGpu(sparks[4] ?? createSparkColumns(), mission.history, view);
+      markCompiles(sparks[4] ?? createSparkColumns(), mission.history, view);
       fillFromSeries(
         sparks[5] ?? createSparkColumns(),
         mission.series.heap,
         view.startMs,
         view.span
       );
+      markGcs(sparks[5] ?? createSparkColumns(), mission.history, mission.series.gcs, view);
       fillFromSeries(
         sparks[6] ?? createSparkColumns(),
         mission.series.load.gpuBusy,

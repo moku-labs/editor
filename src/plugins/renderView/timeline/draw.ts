@@ -15,9 +15,18 @@ import { plotBottom, xOf } from "./layout";
 import type { PaintScene } from "./scene";
 
 /** The names of the dash patterns. */
-type DashName = "none" | "budget" | "gc" | "leader" | "record" | "rate" | "marker" | "reference";
+type DashName =
+  | "none"
+  | "budget"
+  | "gc"
+  | "leader"
+  | "record"
+  | "rate"
+  | "marker"
+  | "reference"
+  | "trend";
 
-/** The dash patterns of spec 09 § M8, one array each (setLineDash copies it). */
+/** The dash patterns of spec 09 § M8 and M9, one array each (setLineDash copies it). */
 export const DASH: Readonly<Record<DashName, number[]>> = {
   none: [],
   budget: [4, 3],
@@ -26,7 +35,8 @@ export const DASH: Readonly<Record<DashName, number[]>> = {
   record: [3, 3],
   rate: [5, 3],
   marker: [4, 3],
-  reference: [3, 3]
+  reference: [3, 3],
+  trend: [4, 3]
 };
 
 /**

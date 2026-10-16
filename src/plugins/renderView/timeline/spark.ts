@@ -1,17 +1,19 @@
 /**
  * @file renderView timeline — the sparklines of the cards on the shared axis (spec 09 § M9): the
  * card-owned columns (160 over the view's span) filled in one indexed pass from the history or a side
- * series, and the painters — a sparkline (baseline, resting columns, an optional reference line, the
- * selection band, the area and line in the source tint, the cursor) and the Device load card's
- * stacked CPU steps and GPU busy and clock steps (one flat step per 1 s sample; a missing second is
- * a gap, never a ramp). Allocation-free.
+ * series, the marks of their columns (GC diamonds, hollow when inferred from a heap drop; shader
+ * compile diamonds), and the painters — a sparkline (baseline, resting columns, an optional reference
+ * line, the selection band, the area and line in the source tint, an optional trend, the marks at
+ * `top + 4`, the cursor) and the Device load card's stacked CPU steps and GPU busy and clock steps
+ * (one flat step per 1 s sample; a missing second is a gap, never a ramp). Allocation-free.
  */
+import { frameFpsAt } from "../derive/header";
 import { firstVisibleRow, rowFrom, rowOfFrame } from "../series/rows";
-import type { LoadSeries, SeriesColumn } from "../series/types";
+import type { GcColumn, LoadSeries, SeriesColumn } from "../series/types";
 import type { PerfHistory } from "../source/contract";
-import { REST, rateFps } from "../source/contract";
+import { REST } from "../source/contract";
 import type { FrameRange } from "../view/types";
-import { DASH, hline } from "./draw";
+import { DASH, diamond, hline } from "./draw";
 import type { PaintContext, TimelineLayout } from "./layout";
 import { plotBottom, xOf } from "./layout";
 import type { PaletteKey } from "./palette";
@@ -32,9 +34,25 @@ const GAP_MS = 1500;
 /** The share of a missed frame's rate the FPS sparkline shows for its column. */
 const MISSED_SHARE = 0.88;
 
+/** Half the diagonal of a column's mark, px, and its centre below the plot's top ("top + 4"). */
+const MARK_R = 3.5;
+const MARK_Y = 4;
+
+/**
+ * The mark a sparkline column carries (spec 09 § M9): none, a GC the engine reported (a filled teal
+ * diamond), a GC inferred from a heap drop (a hollow teal diamond, dashed), or a shader compile inside
+ * a frame (a pick-blue diamond).
+ *
+ * @example
+ * ```ts
+ * columns.marks[column] === SPARK_MARK.inferredGc; // a wired phone's CDP heap drop
+ * ```
+ */
+export const SPARK_MARK = { none: 0, gc: 1, inferredGc: 2, compile: 3 } as const;
+
 /**
  * The columns of one card's sparkline, owned by the card and filled per paint: a value per column
- * (NaN: no data) and whether the column only rested.
+ * (NaN: no data), whether the column only rested, and its mark (SPARK_MARK).
  *
  * @example
  * ```ts
@@ -42,11 +60,26 @@ const MISSED_SHARE = 0.88;
  * columns.v.length; // 160
  * ```
  */
-export type SparkColumns = { readonly v: Float32Array; readonly rested: Uint8Array };
+export type SparkColumns = {
+  readonly v: Float32Array;
+  readonly rested: Uint8Array;
+  readonly marks: Uint8Array;
+};
 
 /**
- * How a sparkline is drawn: its scale, a reference line (NaN for none) and the colour of its area
- * and line.
+ * A straight trend over a sparkline (the Memory card's baseline after GC): its value at a time and
+ * its slope per ms, on the sparkline's own scale.
+ *
+ * @example
+ * ```ts
+ * const baseline: SparkTrend = { t: 79_350, value: 27.4, perMs: 1.8 / 60_000 }; // +1.8 MB/min
+ * ```
+ */
+export type SparkTrend = { readonly t: number; readonly value: number; readonly perMs: number };
+
+/**
+ * How a sparkline is drawn: its scale, a reference line (NaN for none), the colour of its area and
+ * line, and an optional trend (drawn while its slope is a number).
  *
  * @example
  * ```ts
@@ -58,6 +91,8 @@ export type SparkStyle = {
   readonly max: number;
   readonly reference: number;
   readonly colour: PaletteKey;
+  /** Dashed `[4, 3]` in warn from the view's start to its end; none when undefined. */
+  readonly trend?: SparkTrend | undefined;
 };
 
 /**
@@ -72,7 +107,8 @@ export type SparkStyle = {
 export function createSparkColumns(): SparkColumns {
   return {
     v: new Float32Array(SPARK_COLUMNS).fill(Number.NaN),
-    rested: new Uint8Array(SPARK_COLUMNS)
+    rested: new Uint8Array(SPARK_COLUMNS),
+    marks: new Uint8Array(SPARK_COLUMNS)
   };
 }
 
@@ -93,7 +129,8 @@ function columnOf(t: number, startMs: number, span: number): number {
 
 /**
  * Fills the columns from a side series: each column holds the newest sample at or before its end,
- * when that sample is not older than 2 s before the column; NaN otherwise (a gap stays a gap).
+ * when that sample is not older than 2 s before the column; NaN otherwise (a gap stays a gap). The
+ * last paint's marks are cleared.
  *
  * @param columns - The card's columns.
  * @param column - The series.
@@ -111,6 +148,7 @@ export function fillFromSeries(
   span: number
 ): void {
   columns.rested.fill(0);
+  columns.marks.fill(SPARK_MARK.none);
   let sample = 0;
   for (let index = 0; index < SPARK_COLUMNS; index += 1) {
     const from = startMs + (index / SPARK_COLUMNS) * span;
@@ -126,7 +164,8 @@ export function fillFromSeries(
 type FrameMeasure = "worst" | "fps" | "draws";
 
 /**
- * The value one row adds to its column for a measure.
+ * The value one row adds to its column for a measure: for "fps" the rate it ran at (a resting row's
+ * from its budget), × 0.88 when an awake row missed its budget.
  *
  * @param history - The history.
  * @param row - The row.
@@ -136,7 +175,7 @@ type FrameMeasure = "worst" | "fps" | "draws";
 function rowValue(history: PerfHistory, row: number, measure: FrameMeasure): number {
   if (measure === "worst") return history.ms[row] ?? Number.NaN;
   if (measure === "draws") return history.draws[row] ?? Number.NaN;
-  const fps = rateFps(history.rateMs[row] ?? 0);
+  const fps = frameFpsAt(history, row);
   const missed =
     (history.ms[row] ?? 0) > (history.budgetMs[row] ?? 0) && history.rest[row] === REST.awake;
   return missed ? fps * MISSED_SHARE : fps;
@@ -146,7 +185,7 @@ function rowValue(history: PerfHistory, row: number, measure: FrameMeasure): num
  * Fills the columns from the history's rows in view, one indexed pass: per column the worst frame
  * ms (`"worst"`), the effective fps (`"fps"`: the rate, × 0.88 for a column whose worst frame missed
  * its budget, the rest rate for a column that rested), or the most draw calls (`"draws"`); a column
- * rested when all its rows did.
+ * rested when all its rows did. The last paint's marks are cleared.
  *
  * @param columns - The card's columns.
  * @param history - The history.
@@ -167,6 +206,7 @@ export function fillFromFrames(
 ): void {
   columns.v.fill(Number.NaN);
   columns.rested.fill(1);
+  columns.marks.fill(SPARK_MARK.none);
   const end = rowFrom(history, view.startMs + view.span);
   for (let row = firstVisibleRow(history, view.startMs); row < end; row += 1) {
     const index = columnOf(history.t[row] ?? 0, view.startMs, view.span);
@@ -210,7 +250,8 @@ function keepPassSum(
 }
 
 /**
- * Fills the columns with the frames' summed pass GPU ms, the column's largest.
+ * Fills the columns with the frames' summed pass GPU ms, the column's largest. The last paint's marks
+ * are cleared.
  *
  * @param columns - The card's columns.
  * @param history - The history.
@@ -229,6 +270,7 @@ export function fillPassGpu(
 ): void {
   columns.v.fill(Number.NaN);
   columns.rested.fill(0);
+  columns.marks.fill(SPARK_MARK.none);
   const first = history.frame[firstVisibleRow(history, view.startMs)] ?? 0;
   const last = history.frame[rowFrom(history, view.startMs + view.span) - 1] ?? -1;
   let frame = -1;
@@ -245,6 +287,72 @@ export function fillPassGpu(
     if (Number.isFinite(gpu)) sum += gpu;
   }
   keepPassSum(columns, history, frame, sum, view);
+}
+
+/**
+ * Marks the columns of the GCs in view (the Memory card's GC diamonds, after its fill): the history's
+ * `gc` events and the series' GCs (a wired phone's, hollow when inferred from a heap drop); a GC the
+ * engine reported wins a column it shares with an inferred one.
+ *
+ * @param columns - The card's filled columns.
+ * @param history - The history (its `gc` events).
+ * @param gcs - The GC series.
+ * @param view - The view's start and span.
+ * @param view.startMs - Its start.
+ * @param view.span - Its span.
+ * @example
+ * ```ts
+ * fillFromSeries(columns, series.heap, startMs, span);
+ * markGcs(columns, history, series.gcs, { startMs, span }); // the Memory card
+ * ```
+ */
+export function markGcs(
+  columns: SparkColumns,
+  history: PerfHistory,
+  gcs: GcColumn,
+  view: { readonly startMs: number; readonly span: number }
+): void {
+  const end = view.startMs + view.span;
+  for (let index = 0; index < history.eventCount; index += 1) {
+    const event = history.events[index];
+    if (event?.kind !== "gc" || event.t < view.startMs || event.t > end) continue;
+    columns.marks[columnOf(event.t, view.startMs, view.span)] = SPARK_MARK.gc;
+  }
+  for (let index = 0; index < gcs.count; index += 1) {
+    const t = gcs.t[index] ?? 0;
+    if (t < view.startMs || t > end) continue;
+    const column = columnOf(t, view.startMs, view.span);
+    if (columns.marks[column] === SPARK_MARK.gc) continue;
+    columns.marks[column] = gcs.inferred[index] === 1 ? SPARK_MARK.inferredGc : SPARK_MARK.gc;
+  }
+}
+
+/**
+ * Marks the columns of the shader compiles inside a frame in view (the GPU passes card's compile
+ * diamonds, after its fill); a compile while loading (`boot`) cost no frame and is left out.
+ *
+ * @param columns - The card's filled columns.
+ * @param history - The history (its `shader` events).
+ * @param view - The view's start and span.
+ * @param view.startMs - Its start.
+ * @param view.span - Its span.
+ * @example
+ * ```ts
+ * fillPassGpu(columns, history, view);
+ * markCompiles(columns, history, view); // the GPU passes card
+ * ```
+ */
+export function markCompiles(
+  columns: SparkColumns,
+  history: PerfHistory,
+  view: { readonly startMs: number; readonly span: number }
+): void {
+  const end = view.startMs + view.span;
+  for (let index = 0; index < history.eventCount; index += 1) {
+    const event = history.events[index];
+    if (event?.kind !== "shader" || event.boot || event.t < view.startMs || event.t > end) continue;
+    columns.marks[columnOf(event.t, view.startMs, view.span)] = SPARK_MARK.compile;
+  }
 }
 
 /**
@@ -303,6 +411,71 @@ function columnPath(
   else g.stroke();
 }
 
+/**
+ * The trend: a straight line dashed `[4, 3]` in warn, 1.25 px, from its value at the view's start
+ * to its value at the view's end (clamped to the scale).
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param style - The scale and the trend.
+ * @param scene - The view and the palette.
+ */
+function paintTrend(
+  g: PaintContext,
+  layout: TimelineLayout,
+  style: SparkStyle,
+  scene: PaintScene
+): void {
+  const { trend } = style;
+  if (trend === undefined || !Number.isFinite(trend.perMs)) return;
+  const start = scene.endMs - scene.span;
+  g.globalAlpha = 1;
+  g.strokeStyle = scene.palette.warn;
+  g.lineWidth = 1.25;
+  g.setLineDash(DASH.trend);
+  g.beginPath();
+  g.moveTo(0, yOfValue(layout, style, trend.value + trend.perMs * (start - trend.t)));
+  g.lineTo(
+    layout.plot.w,
+    yOfValue(layout, style, trend.value + trend.perMs * (scene.endMs - trend.t))
+  );
+  g.stroke();
+  g.setLineDash(DASH.none);
+}
+
+/**
+ * The marks of the columns: a diamond at the column's middle, `top + 4` — teal for a GC (hollow and
+ * dashed when inferred), pick-blue for a compile.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param columns - The columns.
+ * @param scene - The palette.
+ */
+function paintMarks(
+  g: PaintContext,
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  scene: PaintScene
+): void {
+  const { palette } = scene;
+  const step = layout.plot.w / SPARK_COLUMNS;
+  const y = layout.plot.y + MARK_Y;
+  g.globalAlpha = 1;
+  g.lineWidth = 1;
+  for (let index = 0; index < SPARK_COLUMNS; index += 1) {
+    const mark = columns.marks[index] ?? SPARK_MARK.none;
+    if (mark === SPARK_MARK.none) continue;
+    const colour = mark === SPARK_MARK.compile ? palette.pickBlue : palette.teal;
+    const hollow = mark === SPARK_MARK.inferredGc;
+    g.fillStyle = colour;
+    g.strokeStyle = colour;
+    g.setLineDash(hollow ? DASH.leader : DASH.none);
+    diamond(g, (index + 0.5) * step, y, MARK_R, hollow);
+  }
+  g.setLineDash(DASH.none);
+}
+
 /** The x range of the selection (reused). */
 const SELECTED = { left: 0, right: 0 };
 
@@ -333,7 +506,8 @@ function selectedSpan(
 /**
  * Paints a sparkline: the baseline, resting columns (the edge colour at 20 %), the reference line
  * (dashed `[3, 3]`, muted at 70 %), the selection band, the area (the tint at 12 %) and the line
- * (1.5 px), and the shared cursor.
+ * (1.5 px), the trend (dashed `[4, 3]` in warn), the columns' marks (diamonds at `top + 4`) and the
+ * shared cursor.
  *
  * @param g - The canvas context.
  * @param layout - The canvas's geometry (`sparkLayout`).
@@ -401,6 +575,8 @@ export function paintSpark(
   g.strokeStyle = colour;
   g.lineWidth = 1.5;
   columnPath(g, layout, columns, style, false);
+  paintTrend(g, layout, style, scene);
+  paintMarks(g, layout, columns, scene);
   if (marks.hoverMs === undefined) return;
   const x = xOf(layout, marks.hoverMs, scene.endMs - scene.span, scene.span);
   g.globalAlpha = 0.55;

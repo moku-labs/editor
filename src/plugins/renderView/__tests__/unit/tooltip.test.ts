@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { tooltipOf } from "../../derive/tooltip";
 import { REST } from "../../source/contract";
-import { bitsOf, historyOf, line, rowsOf, withEvents } from "../mission-fixtures";
+import { bitsOf, ENGINE_REST, historyOf, line, rowsOf, withEvents } from "../mission-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // derive/tooltip.ts (spec 09 § M8 Hover tooltip): the frame's numbers and the
@@ -31,6 +31,14 @@ describe("the hover tooltip", () => {
       })
     );
     expect(tooltipOf(history, 4801, ON)?.line).toBe("Resting at 30 fps, not a problem");
+  });
+
+  it("a resting frame of the real engine rests at its budget's rate, 30 fps, not the loop's 60", () => {
+    // Bug: "Resting at 60 fps" from rateMs, the loop's rate the engine keeps while resting.
+    const history = historyOf(rowsOf(4800, 3, { each: () => ENGINE_REST }));
+    const view = tooltipOf(history, 4801, ON);
+    expect(view?.line).toBe("Resting at 30 fps, not a problem");
+    expect(rowsOfTip(view).Rate).toBe("30 fps");
   });
 
   it("names a spike's cause and how far it went over its budget", () => {

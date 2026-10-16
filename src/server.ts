@@ -2,8 +2,9 @@
 /**
  * The `@moku-labs/editor/server` entry: the server core for Bun. Default plugins: files (the
  * project-root sandbox and the computer's engine fingerprint), hub (the websocket switchboard, and
- * the device listeners of `moku-editor perf`), collector (the device logs of `moku-editor perf`;
- * idle on a dev server) and pages (the tools page, its assets, the hello route and the bin).
+ * the device listeners of `moku-editor perf`), connect (connect a phone from the tools page: device
+ * mode on request, the device directory, the pairing confirm, wired telemetry), collector (the device
+ * logs; idle on a dev server) and pages (the tools page, its assets, the hello route and the bin).
  * `hub.serve()` wraps the game's `Bun.serve` options.
  *
  * Plugin options and their defaults, set through `pluginConfigs`:
@@ -24,6 +25,17 @@
  * | hub | deviceOrigins | ["tauri://localhost", "https://tauri.localhost", "http://tauri.localhost"] |
  * | hub | pairing | "lan": only a LAN phone is asked; an adb phone is confirmed at once |
  * | hub | pairTimeoutMs | 60000 |
+ * | connect | adb | "adb" |
+ * | connect | adbTimeoutMs | 5000 |
+ * | connect | scanEveryMs | 2000 |
+ * | connect | answerTimeoutMs | 20000 |
+ * | connect | leaseMs | 10000 |
+ * | connect | telemetryEveryMs | 1000 |
+ * | connect | meminfoEveryMs | 5000 |
+ * | connect | heapEveryMs | 250 |
+ * | connect | gcDropMb | 0.5 |
+ * | connect | gcTrace | false |
+ * | connect | wire | "manual": device mode starts from the tools page; "auto": the adb listener at start |
  * | collector | out | ".moku/perf" |
  * | collector | everyS | 10 |
  * | collector | reverseEveryMs | 2000 |

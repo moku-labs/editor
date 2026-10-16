@@ -1,15 +1,19 @@
 // @vitest-environment happy-dom
+/* eslint-disable unicorn/no-null -- null is a JSON value on the wire and the engine's "not reported" */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pushSample } from "../../series/series";
+import type { PerfSecond } from "../../source/contract";
 import { appendFrames } from "../../source/contract";
 import { notifyMission } from "../../state";
 import { paintFrames } from "../../timeline/frames";
 import { paintedScene, startLoop } from "../../timeline/loop";
 import { readPalette } from "../../timeline/palette";
-import { paintSpark } from "../../timeline/spark";
+import { paintSpark, SPARK_MARK } from "../../timeline/spark";
 import { noteArrival } from "../../view/clock";
 import { setHover } from "../../view/hover";
+import { secondOf } from "../device-fixtures";
 import { createCtx, type MotionQuery, stubMotion, type TestCtx } from "../helpers";
-import { rowsOf, wireOf } from "../mission-fixtures";
+import { line, rowsOf, wireOf, withEvents } from "../mission-fixtures";
 import { PALETTE } from "../paint-recorder";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,6 +215,68 @@ describe("the paint loop", () => {
     runFrame();
     expect(readPalette).toHaveBeenCalledTimes(2);
     expect(paintFrames).toHaveBeenCalledTimes(3);
+  });
+
+  it("reads the palette once per theme and source kind across starts: a restart reuses it, another kind reads its own", () => {
+    // Bug: every start of the loop (each mount, each time Render is shown) resolving the 20 tokens
+    // again through getComputedStyle.
+    canvasOf("timeline");
+    root.dataset.src = "local";
+    stop = startLoop(ctx, root);
+    runFrame();
+    stop();
+    stop = startLoop(ctx, root);
+    runFrame();
+    expect(readPalette).toHaveBeenCalledTimes(1);
+
+    root.dataset.src = "device";
+    notifyMission(ctx.state.mission);
+    runFrame();
+    expect(readPalette).toHaveBeenCalledTimes(2);
+
+    root.dataset.src = "local";
+    notifyMission(ctx.state.mission);
+    runFrame();
+    expect(readPalette).toHaveBeenCalledTimes(2);
+  });
+
+  it("hands the Memory sparkline its GC marks and, while Leak?, the baseline trend, and the GPU passes one its compile marks", () => {
+    // Bug: the cards' diamonds and trend never reaching their canvases.
+    const memory = canvasOf("spark", "memory");
+    const gpu = canvasOf("spark", "gpu");
+    const { mission } = ctx.state;
+    mission.second = secondOf({
+      memory: {
+        heapMb: 31,
+        source: "performance.memory",
+        trusted: true,
+        why: null,
+        processMb: null
+      }
+    } as Partial<PerfSecond>);
+    withEvents(mission.history, [
+      line.gc(11_000, null, 4),
+      line.shader(11_500, 4890, "fog.blur", 31),
+      line.gc(41_000, null, 4),
+      line.gc(71_000, null, 4)
+    ]);
+    for (const [t, mb] of [
+      [11_200, 30],
+      [41_200, 30.9],
+      [71_200, 31.8]
+    ] as const)
+      pushSample(mission.series.heap, t, mb);
+
+    stop = startLoop(ctx, root);
+    runFrame();
+
+    const calls = vi.mocked(paintSpark).mock.calls;
+    const memoryCall = calls.find(call => call[0] === (memory.g as never));
+    const gpuCall = calls.find(call => call[0] === (gpu.g as never));
+    expect(memoryCall?.[2].marks.includes(SPARK_MARK.gc)).toBe(true);
+    expect((memoryCall?.[3].trend?.perMs ?? 0) * 60_000).toBeCloseTo(1.8, 4);
+    expect(gpuCall?.[2].marks.includes(SPARK_MARK.compile)).toBe(true);
+    expect(gpuCall?.[3].trend).toBeUndefined();
   });
 
   it("finds a canvas added by a render after a notification, and drops one that left", () => {

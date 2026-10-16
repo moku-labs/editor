@@ -6,6 +6,7 @@ import {
   breakdownOf,
   counterGrowing,
   isLeak,
+  leakTrend,
   memorySourceLine,
   memoryView,
   objectsLine,
@@ -295,6 +296,41 @@ describe("baselines and Leak?", () => {
       })
     );
     expect(view).toMatchObject({ leak: true, slopeMbPerMin: 1 });
+  });
+});
+
+/**
+ * A local preview's input with three GCs a minute apart and the heap after each.
+ *
+ * @param after - The heap 200 ms after each GC, MB.
+ * @returns The input.
+ */
+function localWith(after: readonly [number, number, number]) {
+  const history = withEvents(createPerfHistory(), [
+    line.gc(1000, null, 4),
+    line.gc(61_000, null, 4),
+    line.gc(121_000, null, 4)
+  ]);
+  const series = createMissionSeries();
+  for (const [index, mb] of after.entries()) pushSample(series.heap, 1200 + index * 60_000, mb);
+  return inputOf({
+    device: false,
+    history,
+    series,
+    second: secondOf({ memory: TRUSTED } as Partial<PerfSecond>)
+  });
+}
+
+describe("the trend the Memory card draws", () => {
+  it("is the baselines' least-squares line while Leak? holds, and none while the heap is steady", () => {
+    // Bug: the warn trend drawn over a steady heap, or a leak shown without its line.
+    const trend = leakTrend(localWith([30, 31.8, 33.6]));
+    expect((trend?.perMs ?? 0) * 60_000).toBeCloseTo(1.8, 4);
+    const lineAt = (t: number) => (trend?.mb ?? 0) + (trend?.perMs ?? 0) * (t - (trend?.t ?? 0));
+    expect(lineAt(1200)).toBeCloseTo(30, 4);
+    expect(lineAt(121_200)).toBeCloseTo(33.6, 4);
+
+    expect(leakTrend(localWith([30, 30.2, 30.1]))).toBeUndefined();
   });
 });
 

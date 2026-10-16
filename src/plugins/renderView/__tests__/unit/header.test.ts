@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { framesHeadline, restFpsOf } from "../../derive/header";
 import { REST } from "../../source/contract";
-import { historyOf, rowsOf } from "../mission-fixtures";
+import { ENGINE_REST, historyOf, rowsOf } from "../mission-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // derive/header.ts (spec 09 § M8 Frames header): the headline of the view —
@@ -63,5 +63,13 @@ describe("the frames headline", () => {
     );
     expect(restFpsOf(history, 10_000, 11_000)).toBe(30);
     expect(restFpsOf(history, 10_400, 11_000)).toBeNull();
+  });
+
+  it("reads the rest rate of the real engine's resting rows from their budget: 30 fps, not the loop's 60", () => {
+    // Bug: "rest 1.4 s at 60 fps": rateMs stays the loop's 16.67 ms while the rows rest at 33.3 ms.
+    const history = historyOf(
+      rowsOf(4800, 40, { each: index => (index >= 10 && index < 20 ? ENGINE_REST : {}) })
+    );
+    expect(restFpsOf(history, 10_000, 11_000)).toBe(30);
   });
 });

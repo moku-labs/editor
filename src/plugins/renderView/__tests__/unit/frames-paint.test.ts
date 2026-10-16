@@ -10,7 +10,7 @@ import { createPaintScene, markerTime, setMarker } from "../../timeline/scene";
 import type { MissionState } from "../../types";
 import { recorderOf } from "../device-fixtures";
 import { CONFIG } from "../helpers";
-import { bitsOf, eventsOf, line, type Row, rowsOf, wireOf } from "../mission-fixtures";
+import { bitsOf, ENGINE_REST, eventsOf, line, type Row, rowsOf, wireOf } from "../mission-fixtures";
 import { PALETTE, recorder } from "../paint-recorder";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +251,24 @@ describe("marks", () => {
         call => call.fillStyle === "warn" && call.args[2] === 1 && call.args[3] === 3
       )
     ).toHaveLength(1);
+  });
+});
+
+describe("the rest rate (real engine rows)", () => {
+  it("a resting run of the real engine is labelled at its budget's rate, 30 fps, not the loop's 60", () => {
+    // Bug: the rest rate read from rateMs, which the engine keeps at the loop's 16.67 ms while it
+    // rests at a 33.3 ms budget: "Resting at 60 fps, budget 33.3 ms".
+    const mission = missionOf([
+      ...rowsOf(1, 60, { t0: 10_000 }),
+      { frame: 61, t: 11_100, ...ENGINE_REST, ms: 2000 },
+      ...rowsOf(62, 20, { t0: 13_200 })
+    ]);
+    const { g, texts } = recorder();
+
+    paintFrames(g, LAYOUT, mission, sceneAt(14_000));
+
+    expect(texts()).toContain("Resting at 30 fps, budget 33.3 ms");
+    expect(texts().some(text => text.startsWith("Resting at 60"))).toBe(false);
   });
 });
 

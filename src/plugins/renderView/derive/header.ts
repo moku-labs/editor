@@ -2,7 +2,8 @@
  * @file renderView derive — the frames header's headline (spec 09 § M8 Frames header): "{n} spikes in
  * view" (warn when there is one), "worst {ms} ms" (only with a spike), "p90 {ms} ms" of the awake
  * frames, "rest {s} s at {fps} fps" when the view rests, "{n} GC" while GCs are shown; nothing (the
- * component says "No frames yet") without frames. Pure.
+ * component says "No frames yet") without frames. Also the rate a row ran at, read the same way
+ * everywhere: a resting row's from its budget, never from `rateMs`. Pure.
  */
 import { firstVisibleRow, rowFrom } from "../series/rows";
 import type { PerfHistory } from "../source/contract";
@@ -26,7 +27,42 @@ export type HeadlinePart = {
 };
 
 /**
- * The rest rate of a view: the rate of its newest resting row.
+ * The rate a resting row runs at: its budget's (`1000 / budgetMs`). The engine keeps `rateMs` at one
+ * frame of the loop's rate while it rests (16.67 ms beside a 33.3 ms rest budget), so the rest rate
+ * is never read from `rateMs`.
+ *
+ * @param history - The history.
+ * @param row - A resting row.
+ * @returns fps; 0 without a budget.
+ * @example
+ * ```ts
+ * restFpsAt(history, row); // 30: rateMs 16.67, budgetMs 33.3
+ * ```
+ */
+export function restFpsAt(history: PerfHistory, row: number): number {
+  return rateFps(history.budgetMs[row] ?? 0);
+}
+
+/**
+ * The rate a row ran at: a resting row's (resting or a break) is its budget's, an awake row's the
+ * loop's (`rateMs`).
+ *
+ * @param history - The history.
+ * @param row - The row.
+ * @returns fps; 0 when the row has no rate.
+ * @example
+ * ```ts
+ * frameFpsAt(history, row); // 60 awake at 60 fps, 30 while resting
+ * ```
+ */
+export function frameFpsAt(history: PerfHistory, row: number): number {
+  const rest = history.rest[row];
+  if (rest === REST.idle || rest === REST.break) return restFpsAt(history, row);
+  return rateFps(history.rateMs[row] ?? 0);
+}
+
+/**
+ * The rest rate of a view: the rate of its newest resting row (its budget's).
  *
  * @param history - The history.
  * @param startMs - The view's start.
@@ -40,7 +76,7 @@ export type HeadlinePart = {
 export function restFpsOf(history: PerfHistory, startMs: number, endMs: number): number | null {
   const first = firstVisibleRow(history, startMs);
   for (let row = rowFrom(history, endMs) - 1; row >= first; row -= 1) {
-    if (history.rest[row] === REST.idle) return rateFps(history.rateMs[row] ?? 0);
+    if (history.rest[row] === REST.idle) return restFpsAt(history, row);
   }
   // eslint-disable-next-line unicorn/no-null -- null: the view does not rest
   return null;

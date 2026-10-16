@@ -232,18 +232,18 @@ function driver(page: Page): Tools {
       page.locator("[data-ui=session-chip]"),
       page.locator("[data-ui=preview] [data-preview-body]"),
       page.locator("[data-frame-box]"),
-      page.locator("[data-render=workspace] > h1"),
-      page.locator("[data-render=tiles]"),
       page.locator("[data-render=textures] tbody"),
-      // The Render strip's live readings of the browser's frames: the headline, the graph with its
-      // spike counter, the More counters, the newest frame's budget, the device line (its Hz is
-      // the sample's) and how long ago the last value came.
-      page.locator("[data-render=device-strip] [data-part=headline]"),
-      page.locator("[data-render=device-strip] [data-part=graph-row]"),
-      page.locator("[data-render=device-strip] [data-part=more]"),
-      page.locator("[data-render=device-strip] [data-part=budget]"),
-      page.locator("[data-render=device-strip] [data-part=about]"),
-      page.locator("[data-render=device-strip] [data-cell=link] em"),
+      // Render's Mission control reads the local preview live: the source pill's health line, the
+      // connection bar's facts (the rate now), the frames header's numbers, every painted canvas
+      // (timeline, lane, overview, health line, sparklines), the cards' live numbers, the passes
+      // panel's headline and the inspector's summary of the view.
+      page.locator("[data-source-pill] [data-health]"),
+      page.locator("[data-render=connection] [data-facts]"),
+      page.locator("[data-render=frames] [data-headline]"),
+      page.locator("[data-paint]"),
+      page.locator("[data-card-kind]"),
+      page.locator("[data-render=passes] [data-headline]"),
+      page.locator("[data-render=inspector]"),
       page.locator("[data-part=title]"),
       page.locator("[data-part=runner-card]"),
       page.locator("[data-part=session-card]"),

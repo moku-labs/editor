@@ -3,7 +3,8 @@
  * to believe (a device's comes from its CDP telemetry, a native shell's process memory is never
  * called heap, a WebView's `performance.memory` is never shown; the local preview's when trusted),
  * process memory beside the heap, baselines after GCs, the trend and Leak? (baselines or a growing
- * object counter), the source line and the breakdown popover. Pure.
+ * object counter), the trend line the sparkline draws while Leak? holds, the source line and the
+ * breakdown popover. Pure.
  */
 import type { MissionSeries, ObjectSeries, SeriesColumn } from "../series/types";
 import type {
@@ -54,6 +55,17 @@ export type MemoryInput = {
 
 /** A baseline: the lowest heap after a GC. */
 export type Baseline = { readonly t: number; readonly mb: number };
+
+/**
+ * A least-squares line through baselines: a point on it (their mean time and MB) and its slope per
+ * ms.
+ *
+ * @example
+ * ```ts
+ * const trend: BaselineTrend = { t: 138_000, mb: 29.2, perMs: 1.8 / 60_000 }; // +1.8 MB/min
+ * ```
+ */
+export type BaselineTrend = { readonly t: number; readonly mb: number; readonly perMs: number };
 
 /**
  * Where the heap comes from (the source rule): a device's CDP heap, a native shell's process memory,
@@ -129,18 +141,13 @@ export function baselinesOf(heap: SeriesColumn, gcs: readonly number[]): Baselin
 }
 
 /**
- * The least-squares slope of points, per minute.
+ * The least-squares line of points.
  *
  * @param points - Times (ms) and values.
- * @returns The slope per minute; null for fewer than two points or no time between them.
- * @example
- * ```ts
- * slopePerMinute([{ t: 0, mb: 27.4 }, { t: 120_000, mb: 31 }]); // 1.8
- * ```
+ * @returns The line; undefined for fewer than two points or no time between them.
  */
-export function slopePerMinute(points: readonly Baseline[]): number | null {
-  // eslint-disable-next-line unicorn/no-null -- null: no trend
-  if (points.length < 2) return null;
+function trendOf(points: readonly Baseline[]): BaselineTrend | undefined {
+  if (points.length < 2) return undefined;
   let meanT = 0;
   let meanV = 0;
   for (const point of points) {
@@ -153,8 +160,23 @@ export function slopePerMinute(points: readonly Baseline[]): number | null {
     covariance += (point.t - meanT) * (point.mb - meanV);
     variance += (point.t - meanT) ** 2;
   }
-  // eslint-disable-next-line unicorn/no-null -- null: every point at one time
-  return variance === 0 ? null : (covariance / variance) * MINUTE_MS;
+  return variance === 0 ? undefined : { t: meanT, mb: meanV, perMs: covariance / variance };
+}
+
+/**
+ * The least-squares slope of points, per minute.
+ *
+ * @param points - Times (ms) and values.
+ * @returns The slope per minute; null for fewer than two points or no time between them.
+ * @example
+ * ```ts
+ * slopePerMinute([{ t: 0, mb: 27.4 }, { t: 120_000, mb: 31 }]); // 1.8
+ * ```
+ */
+export function slopePerMinute(points: readonly Baseline[]): number | null {
+  const trend = trendOf(points);
+  // eslint-disable-next-line unicorn/no-null -- null: no trend
+  return trend === undefined ? null : trend.perMs * MINUTE_MS;
 }
 
 /**
@@ -490,6 +512,23 @@ export function memoryBaselines(input: MemoryInput): Baseline[] {
   const source = memorySource(input);
   if (source !== "cdp" && source !== "performance.memory") return [];
   return baselinesOf(input.series.heap, gcTimes(input, source));
+}
+
+/**
+ * The baseline trend the Memory card's sparkline draws (spec 09 § M9): the least-squares line of the
+ * baselines after GC while the card says Leak?; none while the heap is steady, not measured, or has
+ * fewer than two baselines.
+ *
+ * @param input - The source's values.
+ * @returns The line; undefined for none.
+ * @example
+ * ```ts
+ * leakTrend(memoryInputOf(mission))?.perMs; // 0.00003: +1.8 MB/min on the demo A26
+ * ```
+ */
+export function leakTrend(input: MemoryInput): BaselineTrend | undefined {
+  const baselines = memoryBaselines(input);
+  return isLeak(baselines, input.series.objects) ? trendOf(baselines) : undefined;
 }
 
 /**

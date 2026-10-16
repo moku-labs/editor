@@ -7,12 +7,16 @@
  * the loop sleeps when nothing changes and the clock has eased to a stop, and wakes on new data, a
  * cursor move, a resize, a shown tab or a reduced-motion change. The canvases are found again after
  * every notification of Mission control (the only renders that add or drop one: a source change). Canvas sizes come from a
- * ResizeObserver; colours from the scope root's tokens, read once per theme and source. A frame
- * allocates nothing: every value it keeps is a number on an object made once.
+ * ResizeObserver; colours from the scope root's tokens, read once per theme and source kind (the
+ * root's `data-src`, which sets the `--src` tint) and kept for the life of Mission control, so a
+ * later start of the loop reads none. The Memory card's sparkline gets its GC marks and, while
+ * Leak?, the baseline trend; the GPU passes card its compile marks. A frame allocates nothing:
+ * every value it keeps is a number on an object made once.
  */
 import { activeSourcePlugin } from "../../activeSource";
 import { workspacePlugin } from "../../workspace";
-import { graphFlags } from "../derive/mission";
+import { leakTrend } from "../derive/memory";
+import { graphFlags, memoryInputOf } from "../derive/mission";
 import { firstVisibleRow, newestEnd, rowFrom } from "../series/rows";
 import type { SourceMarker } from "../source/contract";
 import { HISTORY_MS } from "../source/contract";
@@ -27,16 +31,18 @@ import { paintLane } from "./lane";
 import type { TimelineLayout } from "./layout";
 import { boxLayout, framesLayout, laneLayout, sparkLayout, yMaxOf } from "./layout";
 import { paintOverview } from "./overview";
-import type { PaletteKey } from "./palette";
+import type { MissionPalette, PaletteKey } from "./palette";
 import { readPalette } from "./palette";
 import type { PaintScene } from "./scene";
 import { createPaintScene, markerTime, setMarker } from "./scene";
-import type { SparkColumns } from "./spark";
+import type { SparkColumns, SparkTrend } from "./spark";
 import {
   createSparkColumns,
   fillFromFrames,
   fillFromSeries,
   fillPassGpu,
+  markCompiles,
+  markGcs,
   paintCpuSteps,
   paintGpuSteps,
   paintSpark,
@@ -49,8 +55,17 @@ type SurfaceKind = "timeline" | "lane" | "overview" | "health" | "spark" | "cpu"
 /** What a card's sparkline charts (its `data-spark`). */
 type SparkKind = "fps" | "frame" | "draws" | "textures" | "gpu" | "memory";
 
-/** A sparkline's scale and colour, changed in place per paint. */
-type MutableStyle = { min: number; max: number; reference: number; colour: PaletteKey };
+/** A sparkline's scale, colour and trend, changed in place per paint. */
+type MutableStyle = {
+  min: number;
+  max: number;
+  reference: number;
+  colour: PaletteKey;
+  trend: SparkTrend | undefined;
+};
+
+/** The Memory card's baseline trend, changed in place on a notification (`perMs` NaN for none). */
+type MutableTrend = { t: number; value: number; perMs: number };
 
 /** One canvas the loop paints, with the key of its last paint. */
 type Surface = {
@@ -82,6 +97,41 @@ const NO_MHZ = null;
 
 /** The painted scene of each running loop (the components read its flag boxes and view). */
 const SCENES = new WeakMap<MissionState, PaintScene>();
+
+/**
+ * The palettes read for each Mission control by theme and source kind (at most 2 × 4), kept across
+ * the starts of its loop.
+ */
+const PALETTES = new WeakMap<MissionState, Map<string, MissionPalette>>();
+
+/**
+ * The palette of a theme and source kind: read from the root's tokens the first time, then the same
+ * object for every later frame and start of the loop of this Mission control.
+ *
+ * @param mission - Mission control's state (the cache's owner).
+ * @param root - The Render workspace's root (its tokens).
+ * @param theme - The theme now.
+ * @param kind - The root's `data-src` now.
+ * @returns The palette.
+ */
+function paletteOf(
+  mission: MissionState,
+  root: HTMLElement,
+  theme: string,
+  kind: string | undefined
+): MissionPalette {
+  let palettes = PALETTES.get(mission);
+  if (palettes === undefined) {
+    palettes = new Map();
+    PALETTES.set(mission, palettes);
+  }
+  const key = `${theme} ${kind ?? ""}`;
+  const known = palettes.get(key);
+  if (known !== undefined) return known;
+  const palette = readPalette(root);
+  palettes.set(key, palette);
+  return palette;
+}
 
 /**
  * The scene a running loop painted last: the view's end and span, the live end and the spike flags'
@@ -171,7 +221,7 @@ function surfaceOf(canvas: HTMLCanvasElement, kind: SurfaceKind): Surface {
     dpr,
     layout: layoutOf(kind, rect.width, rect.height, dpr),
     columns: kind === "spark" ? createSparkColumns() : undefined,
-    style: { min: 0, max: 1, reference: Number.NaN, colour: "src" },
+    style: { min: 0, max: 1, reference: Number.NaN, colour: "src", trend: undefined },
     painted: false,
     notified: -1,
     endPx: Number.NaN,
@@ -218,8 +268,11 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
   const activeSource = ctx.require(activeSourcePlugin);
   const surfaces: Surface[] = [];
   const byCanvas = new Map<Element, Surface>();
-  const scene = createPaintScene(readPalette(root));
+  let theme = workspace.theme();
+  let tint = root.dataset.src;
+  const scene = createPaintScene(paletteOf(mission, root, theme, tint));
   const sparkView = { startMs: 0, span: 6000 };
+  const trend: MutableTrend = { t: 0, value: 0, perMs: Number.NaN };
   const gpuRange: { minMhz: number | null; maxMhz: number | null } = {
     minMhz: NO_MHZ,
     maxMhz: NO_MHZ
@@ -234,8 +287,6 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
   let rescan = true;
   let notified = 0;
   let paletteVersion = 0;
-  let theme = workspace.theme();
-  let source = mission.source;
   let state = -1;
   let healthAt = Number.NEGATIVE_INFINITY;
   let healthHead = -1;
@@ -291,7 +342,7 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
     }
   };
 
-  /** What changed with a notify: the sections, the marker, the clock range, the scales. */
+  /** What changed with a notify: the sections, the marker, the clock range, the scales, the trend. */
   const refreshState = (): void => {
     state = notified;
     const flags = graphFlags(mission);
@@ -312,15 +363,25 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
     gpuRange.maxMhz = gpu?.available === true ? gpu.value.maxMhz : NO_MHZ;
     texturesBudget = ctx.state.assets?.budgetMb ?? Number.NaN;
     displayHz = mission.second?.rate.displayHz ?? mission.second?.display?.hz ?? 60;
+    const fit = leakTrend(memoryInputOf(mission));
+    trend.t = fit?.t ?? 0;
+    trend.value = fit?.mb ?? 0;
+    trend.perMs = fit?.perMs ?? Number.NaN;
   };
 
-  /** Reads the colours again after a theme or source change (the source tints the sparklines). */
+  /**
+   * Takes the palette of the theme and source kind now after either changed (the source kind tints
+   * the sparklines): the cached one, read only the first time.
+   */
   const refreshPalette = (): void => {
     const now = workspace.theme();
-    if (now === theme && mission.source === source) return;
+    const kind = root.dataset.src;
+    if (now === theme && kind === tint) return;
     theme = now;
-    source = mission.source;
-    scene.palette = readPalette(root);
+    tint = kind;
+    const palette = paletteOf(mission, root, now, kind);
+    if (palette === scene.palette) return;
+    scene.palette = palette;
     paletteVersion += 1;
   };
 
@@ -402,7 +463,30 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
   };
 
   /**
-   * Fills a card's columns from the history or its series and sets its scale (spec 09 § M9).
+   * Fills the Memory card's columns with the heap and sets its scale (the heap's range and 15 % on
+   * each side); while GC marks are drawn, its GC marks and the baseline trend (a number only while
+   * Leak?).
+   *
+   * @param columns - Its columns.
+   * @param style - Its style.
+   */
+  const fillMemory = (columns: SparkColumns, style: MutableStyle): void => {
+    const { history, series } = mission;
+    fillFromSeries(columns, series.heap, sparkView.startMs, sparkView.span);
+    if (scene.gc === "on") {
+      markGcs(columns, history, series.gcs, sparkView);
+      style.trend = trend;
+    }
+    extentOf(columns, style);
+    const spread = Math.max(1, (style.max || 0) - (style.min || 0));
+    style.min = Number.isNaN(style.min) ? 0 : Math.max(0, style.min - spread * 0.15);
+    style.max = Number.isNaN(style.max) ? 1 : style.max + spread * 0.15;
+  };
+
+  /**
+   * Fills a card's columns from the history or its series and sets its scale (spec 09 § M9): the GPU
+   * passes card's compile marks while the lane draws, the Memory card's GC marks and baseline trend
+   * while GC marks are drawn.
    *
    * @param surface - A sparkline surface.
    * @param columns - Its columns.
@@ -413,6 +497,7 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
     sparkView.startMs = scene.endMs - scene.span;
     sparkView.span = scene.span;
     style.reference = Number.NaN;
+    style.trend = undefined;
     switch (surface.spark) {
       case "fps": {
         fillFromFrames(columns, history, "fps", sparkView);
@@ -448,17 +533,14 @@ export function startLoop(ctx: RenderViewCtx, root: HTMLElement): () => void {
       }
       case "gpu": {
         fillPassGpu(columns, history, sparkView);
+        if (scene.passes) markCompiles(columns, history, sparkView);
         extentOf(columns, style);
         style.max = Math.max(4, (Number.isNaN(style.max) ? 0 : style.max) * 1.15);
         style.min = 0;
         return;
       }
       default: {
-        fillFromSeries(columns, series.heap, sparkView.startMs, sparkView.span);
-        extentOf(columns, style);
-        const spread = Math.max(1, (style.max || 0) - (style.min || 0));
-        style.min = Number.isNaN(style.min) ? 0 : Math.max(0, style.min - spread * 0.15);
-        style.max = Number.isNaN(style.max) ? 1 : style.max + spread * 0.15;
+        fillMemory(columns, style);
       }
     }
   };

@@ -5,7 +5,7 @@ import { pushSample } from "../../series/series";
 import { appendFrames } from "../../source/contract";
 import { createRenderViewState } from "../../state";
 import { CONFIG } from "../helpers";
-import { rowsOf, wireOf } from "../mission-fixtures";
+import { ENGINE_REST, rowsOf, wireOf } from "../mission-fixtures";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // derive/cards.ts readoutOf (spec 09 § M9 "a cursor readout chip … while
@@ -39,6 +39,14 @@ describe("the cards' cursor chips", () => {
     expect(readoutOf("fps", mission, 4851)).toBe("f4851 60 fps");
     expect(readoutOf("draws", mission, 4851)).toBe("f4851 212");
     expect(readoutOf("memory", mission, 4851)).toBe("f4851 41.3 MB");
+  });
+
+  it("the FPS chip over a real engine's resting frame reads the rest rate, 30 fps, not the loop's 60", () => {
+    // Bug: "f4851 60 fps" over a rest: rateMs stays the loop's 16.67 ms beside a 33.3 ms rest budget.
+    const { mission } = createRenderViewState({ config: CONFIG });
+    appendFrames(mission.history, wireOf(rowsOf(4850, 3, { t0: 10_000, each: () => ENGINE_REST })));
+
+    expect(readoutOf("fps", mission, 4851)).toBe("f4851 30 fps");
   });
 
   it("shows no chip where the measure has no value, never a 0", () => {

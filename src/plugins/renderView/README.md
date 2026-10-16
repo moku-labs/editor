@@ -116,16 +116,21 @@ the cursor, the palette, the size and the dpr. The live view's end comes from th
 sleeps once nothing painted and the clock eased to a stop, and wakes on a Mission control notification (which also
 rescans the canvases a render added or removed), a cursor move (`view/hover.ts`), a resize (one `ResizeObserver`),
 the tab becoming visible or the reduced-motion preference changing. The backing store follows the box at the dpr and
-the transform is set before every paint. The palette is read once per theme and source (`data-src` tints the
-sparklines). `paintedScene(mission)` is the scene the last frame painted, which the pointer handlers hit-test against.
+the transform is set before every paint. The palette is read once per theme and source kind (the root's `data-src`
+tints the sparklines) and kept for the life of Mission control, so a later start of the loop reads none. The Memory
+card's sparkline gets its GC marks and, while the card says Leak?, the baseline trend; the GPU passes card its compile
+marks. `paintedScene(mission)` is the scene the last frame painted, which the pointer handlers hit-test against.
 
 ### Painters (spec 09 § M8, M9)
 
 `timeline/` paints on a `PaintContext` (a `CanvasRenderingContext2D` or a test fake) with a `PaintScene` reused frame
 after frame: the frame timeline (`frames.ts`, `marks.ts`), the Shaders & passes lane (`lane.ts`), the overview
-(`overview.ts`), the cards' sparklines and the Device load steps (`spark.ts`) and the health line (`health.ts`). Rows
-newer than the view's end are not drawn yet (the playout delay); rows older than the view are skipped by a binary
-search. Painters allocate nothing per frame: strings come from bounded caches (`labels.ts`), flag boxes go into
+(`overview.ts`), the cards' sparklines and the Device load steps (`spark.ts`) and the health line (`health.ts`). A
+sparkline's marks sit at its column's middle, `top + 4`: GC diamonds in teal (hollow and dashed when inferred from a
+heap drop), compile diamonds in pick-blue (boot compiles left out); its optional trend is a dashed `[4, 3]` warn line
+across the view. A resting row's rate is its budget's (`1000 / budgetMs`, `derive/header.ts` `restFpsAt`): the engine
+keeps `rateMs` at the loop's rate while it rests. Rows newer than the view's end are not drawn yet (the playout
+delay); rows older than the view are skipped by a binary search. Painters allocate nothing per frame: strings come from bounded caches (`labels.ts`), flag boxes go into
 preallocated typed arrays (`hit.ts`), dash patterns are module arrays. Colours are the workspace tokens resolved once
 per theme (`palette.ts`, `MISSION_CAUSE`: JS warn, GPU pick-pink, upload phase-2, compile pick-blue, long frame error).
 

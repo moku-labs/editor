@@ -8,7 +8,8 @@
 import { spikeCodeAt } from "../series/groups";
 import { rowOfFrame } from "../series/rows";
 import type { PerfHistory, PerfTimelineEvent } from "../source/contract";
-import { causeName, REST, rateFps } from "../source/contract";
+import { causeName, REST } from "../source/contract";
+import { frameFpsAt, restFpsAt } from "./header";
 import { CAUSE_LABELS } from "./inspector";
 import { oneDecimal } from "./words";
 
@@ -140,7 +141,7 @@ function pauseOf(history: PerfHistory, row: number): number {
 }
 
 /**
- * The tooltip's last line: what the frame was.
+ * The tooltip's last line: what the frame was (a resting frame at its rest rate, its budget's).
  *
  * @param history - The history.
  * @param row - The frame's row.
@@ -152,7 +153,7 @@ function lineOf(history: PerfHistory, row: number, gc: GcEvent | undefined): str
   const ms = history.ms[row] ?? 0;
   const budget = history.budgetMs[row] ?? 0;
   if (rest === REST.idle || rest === REST.break) {
-    return `Resting at ${rateFps(history.rateMs[row] ?? 0)} fps, not a problem`;
+    return `Resting at ${restFpsAt(history, row)} fps, not a problem`;
   }
   const cause = causeName(spikeCodeAt(history, row));
   if (cause !== undefined) {
@@ -190,7 +191,7 @@ export function tooltipOf(
   const rows: TooltipRow[] = [
     { label: "JS", value: oneDecimal(history.jsMs[row] ?? 0) },
     { label: "GPU", value: gpuValue(history.gpuMs[row] ?? Number.NaN, options) },
-    { label: "Rate", value: `${rateFps(history.rateMs[row] ?? 0)} fps` }
+    { label: "Rate", value: `${frameFpsAt(history, row)} fps` }
   ];
   const pause = shownGc === undefined ? 0 : pauseOf(history, row);
   if (pause > 0) rows.push({ label: "GC pause", value: oneDecimal(pause) });

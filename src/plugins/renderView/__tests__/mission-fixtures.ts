@@ -7,7 +7,13 @@ import type {
   PerfTimelineLine,
   RestState
 } from "../source/contract";
-import { appendEvents, appendFrames, CAUSE_BITS, createPerfHistory } from "../source/contract";
+import {
+  appendEvents,
+  appendFrames,
+  CAUSE_BITS,
+  createPerfHistory,
+  REST
+} from "../source/contract";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Builders of Mission control's data for the unit tests of series/, view/,
@@ -37,6 +43,17 @@ export type Row = {
   draws?: number | null;
   nodes?: number;
   systems?: readonly (readonly [string, number])[];
+};
+
+/**
+ * A resting row as the real engine (0.15.x) writes it: `rateMs` stays one frame of the loop's rate
+ * (60 fps) while the rest budget is 33.3 ms, so the rest rate (30 fps) is the budget's.
+ */
+export const ENGINE_REST: Readonly<Partial<Row>> = {
+  rest: REST.idle,
+  ms: 33.3,
+  budgetMs: 33.3,
+  rateMs: 16.67
 };
 
 /** One pass row of a wire; `row` indexes the wire's frame rows. */

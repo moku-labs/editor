@@ -2,7 +2,7 @@
 
 **Devtools for a running `@moku-labs/game`: see the flow, the state, the render and the files of the live game, and change them, from one tools page.**
 
-One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, MCP and headless tests. On a phone, a debug build carries the same agent: a frame graph that names each spike's cause, a log on the device, and `moku-editor perf` on the computer. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it ships in a release build (see [Production builds](#production-builds)).
+One registry of sources and commands feeds everything: the in-game overlay, the tools page served by the dev server, MCP and headless tests. On a phone, a debug build carries the same agent: a frame graph that names each spike's cause, a log on the device, and `moku-editor perf` on the computer. The Render workspace, Mission control, shows one source at a time: the local preview, or a phone you connect from the editor by wire or on the network. The editor reaches the game only through its two doors, `@moku-labs/game/inspect` and `@moku-labs/game/control` — no private hooks into the engine, no engine fork. It is a dev dependency, not a runtime: nothing of it ships in a release build (see [Production builds](#production-builds)).
 
 <br/>
 
@@ -26,8 +26,9 @@ One registry of sources and commands feeds everything: the in-game overlay, the 
 - **Three runtimes, three cores.** The game page, the Bun server and the tools page each get their own Moku core with their own events (`editor-agent`, `editor-server`, `editor-tools`). Bun code never reaches the browser; Preact never reaches the server.
 - **A panel is data.** `definePanel` returns a frozen spec of sources, commands and a view. The `panels` host owns every subscription, stale marking and teardown — views never poll.
 - **Edits keep the game state.** With Bun hot reload on (the bin's default), a save of a game source reloads the game page and the bridge restores the bookmark it took just before: "Game reloaded · state restored", in about a second on merge-game. With `@moku-labs/game` 0.5.0 and its hot swap plugin in the game's `bunfig.toml`, a save of a view module (styles, components, strings) swaps in place without a reload: "Game updated". Without hot reload the editor bookmarks, reloads the frame and restores it itself (D-07). Only the game reloads: the editor does not move, and one spinner on the game frame shows the reload.
-- **A cockpit on the phone.** A debug build (`moku-game build --debug`) carries the agent with its overlay: fps and spikes in a pill, a 6 s frame graph that names the cause of each spike, and a log of every frame second on the device. `moku-editor perf` on the computer pairs the phone, keeps its logs and compares two runs (see [On a phone](#on-a-phone)).
-- **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. `moku-editor perf --lan` adds one LAN listener that takes nothing but the sockets of paired phones (a four-digit code typed in the terminal). The server runs no shell; it spawns `adb` (the collector) only while `moku-editor perf` runs. The MCP bridge starts the bin when none runs, and stops only that one.
+- **A cockpit on the phone.** A debug build (`moku-game build --debug`) carries the agent with its overlay: fps and spikes in a pill, a 6 s frame graph that names the cause of each spike, and a log on the device once someone records. `moku-editor perf` on the computer pairs the phone, keeps its logs and compares two runs (see [On a phone](#on-a-phone)).
+- **Mission control, one source at a time.** The Render workspace reads exactly one source: the local preview, or a phone. Connect device links a phone from the tools page, by wire (Android over adb) or on the network, and the local preview pauses while the phone is the source. A 2-minute frame timeline, the shaders and passes, memory and device load all come from that one source (see [The Render workspace](#the-render-workspace-mission-control)).
+- **Loopback and sandboxed by construction.** The server binds `127.0.0.1` only, checks Host, Origin and a per-start token before any upgrade, and `files` reads and writes only inside one project root and an allowlist. Device mode adds one listener on `127.0.0.1:47600` for phones by wire and, on request (`moku-editor perf --lan`, or On the network in the tools page), one LAN listener that takes nothing but the sockets of paired phones (a four-digit code typed in the terminal or the tools page). The server runs no shell; it spawns `adb` only while device mode runs or the Connect panel lists phones (the collector's `adb reverse`, connect's phone list and wired telemetry). The MCP bridge starts the bin when none runs, and stops only that one.
 
 ## Install
 
@@ -49,6 +50,8 @@ The engine writes the dev page with the editor's page agent on it, so the game n
 > **Breaking in this change:** the project index is the only source of code locations. See [Breaking](#breaking-the-project-index) for what was removed.
 >
 > **Breaking (phone tools, unreleased):** the agent has two more default plugins, `perf` and `recorder`, and a new `overlay`; a game's dev entry keeps working unchanged. `pluginConfigs.overlay.open` and `corner` are `mode` and `dock` (the old keys throw a `TypeError` naming the new field); `editor.overlay` takes `{ mode: "hidden" | "pill" | "card" }` instead of `{ on }`; the overlay's one-click cheat buttons are gone: a game marks its own `.dev` commands `overlay: "button"` or `"toggle"`. A custom server composition with `pagesPlugin` composes `collectorPlugin` before it (the server entry's defaults do). `bridge:status` gains the optional `link`. The phone tools need the engine release with the renderer monitor (see [On a phone](#on-a-phone) and [Requirements](#requirements)).
+>
+> **Breaking (Mission control, unreleased):** the server core has one more default plugin, `connect`, and the tools core one more, `activeSource`. A custom server composition with `collectorPlugin` composes `connectPlugin` between `hubPlugin` and `collectorPlugin` (the collector hooks `connect:telemetry`); a custom tools composition with `workspacePlugin` or `renderViewPlugin` composes `activeSourcePlugin` right after `linkPlugin`. The recorder starts no log by itself: `recorder.autoStart` is `false` (a game that wants a log from launch sets `"device"` or `true`), and `editor.record` takes `{ on?, label?, mark? }` and answers `{ on, file, startedBy, marked }`. `renderView.fpsSamples` is removed, and so are `renderView.device()`, `stepSpike`, `openSpike`, `closeSpike` and `setMore` with the device strip: Render is Mission control (`mission()`, `inspect()`, `select`, `step`, `jump`, …). `WorkspaceApi` gains `startLocalPreview()`. The Game workspace reads no scene from a phone.
 >
 > **Breaking (editor UI cleanup):** Reference mode is gone: key R, the top-bar toggle, `workspace.reference()` and `setReference()`, the event `workspace:reference` and the `data-moku-*` proxies over the game. The element picker (the Select button of the Game toolbar, ⇧⌘C, I) is the one way to pick. A click of the picker writes the reference and copies its line only while the "Copy Ref" switch of the Game toolbar is on (the default; the preference "Copy reference on select"). With it off the click only selects the element and writes nothing. The Flow Inspector has two tabs, Info and Code: its Styles tab, the palette group "Styles" and the config key `flowView.styleSaveDelayMs` are removed. A series no longer opens the contact sheet when it ends.
 >
@@ -309,8 +312,8 @@ controls overlap at 480, 600, 640, 720, 899, 960 and 1440 px (`e2e/top-bar.spec.
 
 | Width | The bar shows |
 |---|---|
-| 900 px and wider | The game mark, game name, session chip, the computer's engine fingerprint (from 1100 px), link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Registry (an icon; the counts are in its title, "Registry · 20 sources · 23 commands"), theme. |
-| Below 900 px | The game mark, game name, link pill (the session id is in its tooltip), Pause and Step as icons, the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
+| 900 px and wider | The game mark, game name, source pill, session chip, the computer's engine fingerprint (from 1100 px), link pill, Pause, Step, the search box, the switches **Preview** (G), **Overlay** (O) and **Hot reload** (H) with their labels, Registry (an icon; the counts are in its title, "Registry · 20 sources · 23 commands"), theme. |
+| Below 900 px | The game mark, game name, source pill (its name only), link pill (the session id is in its tooltip), Pause and Step as icons, the **Hot reload** icon (flame, a dot while on, H), a search icon and **⋯**. |
 | 560 px and narrower | As below 900 px, without the game name. |
 
 The bar starts with the **game mark**: the initials of the game name on a small tile coloured from
@@ -327,6 +330,8 @@ popover), Density (auto → compact → comfortable) and Theme. Hot reload
 stays in the menu while the bar shows its icon. A toggle row keeps the menu open. Esc, a second ⋯
 click or a press outside closes it; ↑/↓ move through the rows. The Game toolbar has no Overlay
 switch of its own.
+
+The **source pill** names the page's one source (see [The Render workspace](#the-render-workspace-mission-control)): "Local preview", "Galaxy A26 · by wire" or "Galaxy A26 · on the network" for a phone, "<game> · another page"; its dot pulses while the source beats. A click opens the source menu: Local preview, every linked phone with Use, and Connect device…, which opens Render's Connect panel. When the active phone leaves, a notice under the top bar says so in every workspace ("Galaxy A26 disconnected. Showing the local preview.", Reconnect, Dismiss), the timeline gets the marker "Galaxy A26 disconnected here · Local preview resumed", and the page is back on the local preview. While a phone is the source, the local game frame is paused under a veil: "Paused · Galaxy A26 is the source." with Use local preview.
 
 The preference **Copy reference on select** has no control in the top bar: it is the **Copy Ref**
 switch of the Game toolbar (see [The Game workspace](#the-game-workspace)).
@@ -560,6 +565,100 @@ A game that serves itself with its own `Bun.serve` owns the setting; the switch 
 Without hot reload, a save in the editor still keeps the state: the editor bookmarks, reloads the
 frame and restores (D-07).
 
+### The Render workspace (Mission control)
+
+Render shows **one source** at a time, named in its connection bar, and every number on the page
+comes from it: the **local preview** (this page's own game frame) or **one phone**. The
+`activeSource` plugin keeps the choice for the whole page, so a view never mixes two games.
+
+- **The connection bar**: the source pill (the name, Running or Connected, the browser or the
+  model, a health line with the link's latency), the facts (Rate now, Build, Browser, Display, dpr
+  or the phone's address, OS), a Paused chip, and the actions: Connect device (Switch device once a
+  phone is linked), Record, Monitoring and Use local preview.
+- **The frame timeline**: a 2-minute history kept on the tools page (the engine's ring on the
+  phone holds about 8 s), live with a small playout delay so it scrolls smoothly, with a GC lane
+  and the rate-change, recording, compile and source-switch marks; a Shaders & passes lane on the
+  same axis; an overview with pause, rewind and step, and spans of 6 s, 30 s and 2 min. → steps a
+  frame, Shift+→ jumps to the next spike, Space pauses, Esc clears. A click or a drag selects
+  frames; the inspector beside the timeline reads the range (systems with their files, nodes,
+  passes, filters, compiles, rate changes, spikes, GCs, object counts).
+- **The cards**, on the same time axis: FPS with the rate switch (60, 120 or adaptive, through
+  `game.frameRate`), frame time, draw calls, textures, GPU passes, memory, and device load for a
+  phone by wire. Then the static facts, the Shaders & passes panel, and Scene details, collapsed
+  by default (render tree, textures, bundles, pools, release log).
+- **Record** starts, stops and marks the source's log (`editor.record`), and says who started it:
+  the phone, the editor or an agent. Stop toasts "Recording saved: .moku/perf/<file>, 3.1 MB".
+- **Monitoring** says what is measured (GPU, passes, shaders, problems, memory, systems, nodes,
+  long frames; `editor.perf.sections`) and switches the overdraw heat map (`game.debug
+  { overdraw }`). A switch the build refuses says so ("Refused: needs a debug build").
+
+**Memory, measured honestly.** A phone's JS heap comes from the computer: the bin attaches CDP to
+the game's WebView over USB (`adb forward`, `Runtime.getHeapUsage`), labelled "JS heap via DevTools
+over USB". The WebView's own `performance.memory` is never shown as the phone's heap: on a Galaxy
+A26 it stays at 10.68 MB while the real heap swings between 27 and 57 MB. A phone on the network
+reads "Not available: connect by wire to read the heap". The local preview's heap is the
+browser's `performance.memory`, labelled coarse.
+
+**Wired telemetry** (Android by wire): once a second the bin reads the GPU clock and busy %, CPU
+and memory per process (the game, its renderer, surfaceflinger), the exact JS heap and the
+inferred GCs over adb, and publishes them as `editor.deviceTelemetry`. Every reading names its
+source (`/sys/kernel/gpu`, `dumpsys meminfo`, `cdp Runtime.getHeapUsage`, …), or says why it is
+not available. A phone's GPU ms carry their clock ("8.1 at 221 MHz"). While the phone records, the
+collector writes each record as a `telemetry` line into the computer's copy of its log.
+
+**Not measured is never 0.** An engine without a block (0.15.0 has no pass owners, filters or
+draws), an iPhone (no GPU timer, no JS heap) and a section switched off each say so in words.
+
+Where the numbers come from: the source's agent (perf and recorder) serves them, and the tools
+page builds the marks, the pass chains and the history itself, so the phone only reads.
+
+| Read | How Render reads it |
+|---|---|
+| `editor.perf.second` | watched, once a second: rate, facts, Monitoring, capabilities |
+| `editor.perf.frames { after }` | read once a second: only the frames after the last one |
+| `editor.perf.events { after }` | read after the frames: rate, GC, shader, problem, recording and mark lines |
+| `editor.perf.passes` | watched, once a second: the pass rows of the newest full second |
+| `editor.perf.detail { from, to }` | read once per selection |
+| `editor.recorder` | watched: the recording, who started it, the last 32 marks |
+| `editor.deviceTelemetry` | published by the server for a phone by wire, once a second |
+
+A source whose agent is older than these feeds gets nothing new and the page says its editor
+agent is older; it never fails.
+
+#### Connect a device
+
+Connect device (in the connection bar, or Connect device… in the top bar's source menu) opens the
+Connect panel:
+
+- **By wire** (Android with USB debugging, or wireless debugging). While the panel is open the
+  editor lists the phones `adb devices -l` reports, every 2 s: "Allow USB debugging on the phone (a
+  prompt is on its screen)" for an unauthorized one, the model and Android version for a ready one.
+  Connect turns device mode on (the listener `127.0.0.1:47600`), the collector runs `adb reverse
+  tcp:47600 tcp:47600`, the debug build on the phone dials that address and is linked at once (a
+  phone by wire needs no code), and the phone becomes the source. A ready phone with no debug game
+  after 20 s reads "No debug game answered on SM-A266B. Start the debug build on the phone; a
+  release build has no agent." Without adb: "adb not found: install Android platform-tools to
+  connect by wire. On the network works without it." The panel shows the fixed line "iPhone and
+  iPad: not available yet. There is no iOS debug build to link."
+- **On the network** (the same Wi-Fi). Listen on the network adds the LAN listener and shows the
+  address the phone dials, `192.168.1.5:47600`: build the game with `--editor 192.168.1.5:47600`,
+  or pick the address on the overlay's Link tab. A phone that dials asks to link ("SM-A266B at
+  192.168.1.23"): type the four-digit code on its screen and press Link, or Refuse. Nothing is
+  scanned: the phone dials the computer. Android needs a debug build from `@moku-labs/native`
+  0.3.9 or newer; a game in a phone browser cannot link.
+- **Linked devices**: the phones linked in this run, each with Use. Stop device mode unlinks every
+  phone, and the page returns to the local preview.
+
+Using a phone pauses the local preview first (`game.pause`; a game you paused yourself stays yours
+and is not resumed), and going back resumes it. A phone that links while the local preview is the
+source becomes the source, once per phone. When the active phone leaves, the page returns to the
+local preview, shows the notice and marks the timeline; the same phone back within 15 s is the
+source again. The Game workspace reads no scene from a phone: the picker stays off and the Element
+tab says to switch to the local preview, while the game's commands still run on the phone.
+
+On the tools page of `moku-editor perf` device mode belongs to perf: a LAN phone's code is typed in
+the terminal, and there is no local preview.
+
 ### Devices
 
 These are the viewport presets of the game frame; for real phones see [On a phone](#on-a-phone).
@@ -612,7 +711,7 @@ pinned preview, and in the dark theme the bezel (`#2c2c34`, 1 px outline) stands
 
 ## On a phone
 
-A frame rate measured in the desktop browser says little about a phone. A **debug build** puts the editor's agent into the game the phone runs, with no dev server: the overlay shows the frames, the device keeps a log, and `moku-editor perf` on the computer pairs the phone, keeps its logs and serves the tools page with the phone's frame graph.
+A frame rate measured in the desktop browser says little about a phone. A **debug build** puts the editor's agent into the game the phone runs, with no dev server: the overlay shows the frames, the device keeps a log once someone records, and the computer links the phone two ways: from the dev tools page (Connect device in Render, see [Connect a device](#connect-a-device)), or with `moku-editor perf`, which pairs the phone, keeps its logs and serves the tools page with the phone as its source.
 
 ```mermaid
 flowchart LR
@@ -624,34 +723,40 @@ flowchart LR
   end
   B -- "ws kind=agent role=device<br/>pair · hello · perf.lines" --> H["hub<br/>device listener :47600"]
   H --> C["collector<br/>.moku/perf/*.jsonl"]
-  H --> T["tools page<br/>Render · device strip"]
+  H --> T["tools page<br/>Render · Mission control"]
+  K["connect<br/>adb list · CDP · telemetry"] -- "editor.devices<br/>editor.deviceTelemetry" --> T
+  K -- "connect:telemetry" --> C
+  T -- "connect.wire · connect.network" --> K
   C --> CLI["moku-editor perf<br/>live lines · summary"]
   classDef u fill:#0b7285,stroke:#08525f,color:#fff;
   classDef m fill:#1864ab,stroke:#0d3d6e,color:#fff;
   class O,T,CLI u
-  class P,R,B,H,C m
+  class P,R,B,H,C,K m
 ```
 
 ### A debug build
 
 ```sh
-bunx moku-game build --debug                                  # read and cosmetic commands
-bunx moku-game build --debug=full --editor 192.168.1.5:47600  # every command; the computer's LAN address
+bunx moku-game build --debug                                  # every command (engine 0.15.1)
+bunx moku-game build --debug --editor 192.168.1.5:47600       # the computer's LAN address, for On the network
+bunx moku-game build --debug=read                             # the rare read-only page: read and cosmetic commands
 bunx moku-game native build android --debug                   # the debug app <appId>.debug, beside the store app
 ```
 
 The engine builds the release page plus the editor's page agent (`@moku-labs/editor/agent/page`, resolved from the game) and the game's `.dev` modules. The agent starts after the game, behind the inline guard `__MOKU_GAME_DEV__ || __MOKU_GAME_AGENT__`, with the default plugins and bridge and capture.
 
-| Flag | `moku-game dev` | `build --debug` | `build --debug=full` | `build` (release) |
+| Flag | `moku-game dev` | `build --debug` | `build --debug=read` | `build` (release) |
 |---|---|---|---|---|
 | `__MOKU_GAME_DEV__` | `true` | `false` | `false` | `false` |
 | `__MOKU_GAME_AGENT__` | `true` | `true` | `true` | `false` |
-| `__MOKU_GAME_CONTROL__` | `true` | `false` | `true` | `false` |
-| Commands the page runs | every one | `read` and `cosmetic` | every one | none: no agent |
+| `__MOKU_GAME_CONTROL__` | `true` | `true` | `false` | `false` |
+| Commands the page runs | every one | every one | `read` and `cosmetic` | none: no agent |
+
+Control on `--debug` comes with engine 0.15.1 (`--debug=full` is its alias). On 0.15.0 `--debug` had no control: it ran `read` and `cosmetic` commands only, and `--debug=full` added control.
 
 - `--editor host:port` (default `127.0.0.1:47600`, which `adb reverse` maps to the computer) is where the bridge dials; the engine bakes it into `__MOKU_GAME_EDITOR__`. The engine takes a host of `[\w.-]+` or a bracketed IPv6 (`[fe80::1]:47600`); the bridge dials DNS names, IPv4 and bracketed IPv6, so a host it cannot dial (one with `_`) is warned `bridge:bad-address` and the default is used. An address picked on the overlay's Link tab is remembered on the phone and wins over the build's.
 - A native debug build is a second Android app, `<appId>.debug`, installed beside the store app. The collector prefers it for the system frames when it is installed (`moku-editor perf` takes the app id from `native.identifier` of the game's `config.ts`).
-- The overlay's Game tab greys a command the build refuses ("needs a --debug=full build"); a refused run answers -32009 `read_only`. `game.capture` is a `read` command, so screenshots work on `--debug`.
+- The overlay's Game tab greys a command the build refuses ("needs a debug build of a newer engine, or without --debug=read"); a refused run answers -32009 `read_only`. `game.capture` is a `read` command, so screenshots work on every debug build.
 
 ### Opening the overlay
 
@@ -667,7 +772,7 @@ The game decides when the overlay shows; the editor ships no gesture and no debu
 - **Card**: docked to the left or right edge, dragged by its grip and snapped inside the safe area; the device remembers place, mode and tab. Four tabs:
   - **Frames**: the frame graph of the last 6 s with the cause of every spike (gpu, upload, compile, long frame, js, gc?, gap), prev / next spike keys, the counters (drawn / loop fps with the rate, `54 / 60 @120`; the p90 frame; GPU; device; heap; passes, draws and texture MB), a More disclosure and the spike record. The header names the engine fingerprint and the build, and shows **STALE** when the phone's engine differs from the computer's.
   - **Game**: only the commands the game marked in its `.dev` module, `overlay: "toggle"` (a switch with its value) or `overlay: "button"`.
-  - **Record**: the device log: start, stop, mark, the files, share, remove.
+  - **Record**: the device log: off until someone records ("Nothing is saved until you record."), start, stop, mark, who started it ("started here", "started from the editor", "started by an agent (Claude)"), the files, share, remove.
   - **Link**: the device link the bridge reports (no computer, connecting with the pairing code, live over adb or the LAN) and Connect / Pair to another `host:port`.
 - `editor.overlay { mode: "hidden" | "pill" | "card" }` switches it from the tools page or MCP.
 
@@ -679,7 +784,9 @@ The game decides when the overlay shows; the editor ships no gesture and no debu
 
 ### The log
 
-The recorder keeps every line of the engine monitor's stream, for hours, in one file per run on the phone: OPFS in chunks when the page has it, else memory (bounded by `recorder.keepMb`, 64 MB). A log is JSONL, `perf-<yyyymmdd>-<hhmm>-<model>.jsonl`. The Record tab shares a finished log through the native share sheet, else as a download; a log over 32 MiB is refused for the native share: pull it with `moku-editor perf` over adb instead. While the phone is linked, the bridge ships the log to the computer and the hub confirms each batch, so a dropped Wi-Fi loses nothing.
+Nothing is recorded until someone starts it (`recorder.autoStart` is `false`): the Record tab on the phone, Record in Render on the tools page, or an agent through MCP with `editor.record` (the door tool `editor_record`, or `moku_run`). `editor.record { on?, label?, mark? }` starts (`on: true`), stops (`on: false`) and marks (`{ on: true, mark: "boss intro" }` starts and marks in one call), and answers `{ on, file, startedBy, marked }`; any of the three can stop or mark a log another one started. `startedBy` says who started the log: `{ by: "phone" }`, `{ by: "editor" }`, `{ by: "agent", name: "Claude Code" }` (the hub stamps the MCP client's name), `"code"` for the game's own code, `"auto"` for a game that opts into `autoStart: "device"` or `true`.
+
+A running log keeps every line of the engine monitor's stream, for hours, in one file per run on the phone: OPFS in chunks when the page has it, else memory (bounded by `recorder.keepMb`, 64 MB). A log is JSONL, `perf-<yyyymmdd>-<hhmm>-<model>.jsonl`. The Record tab shares a finished log through the native share sheet, else as a download; a log over 32 MiB is refused for the native share: pull it with `moku-editor perf` over adb instead. While the phone is linked, the bridge ships the log to the computer and the hub confirms each batch, so a dropped Wi-Fi loses nothing.
 
 Besides the game's lines the log holds the editor's own events: `devtools` (the window's mode and tab), `command` (every command run, once, with who ran it: the overlay, the tools page or MCP through the bridge, or the page itself) and `recorder` (start, stop, export). The editor never writes `overlay`: that event is the game's overlays.
 
@@ -724,7 +831,7 @@ bunx moku-editor perf --lan
   ```
 
   `STALE: SM-A266B runs engine 0.14.12+9c41e0, this computer has 0.14.13+1ab7f2` warns once when the phone's engine differs from the computer's: rebuild the game so the logs match.
-- **The tools page** at `http://127.0.0.1:47600/__editor/#render` shows the phone in the Render workspace's device strip: the device row, the frame graph, the spike record and REC.
+- **The tools page** at `http://127.0.0.1:47600/__editor/#render` shows the phone in Render's [Mission control](#the-render-workspace-mission-control): the timeline, the cards and the recording. Device mode belongs to perf there: a LAN phone's code is typed in the terminal, and the page has no local preview.
 - **The files**: one JSONL file per phone log in `.moku/perf/`, every line with `rx` (the computer's clock at receipt); a phone that reconnects appends to the same file. Ctrl+C stops device mode, writes the files and prints the summary of each log. `.moku/perf.json` (mode 0600, it holds the hub token; removed on stop) lets `perf mark` find the run: add `.moku/` to the game's `.gitignore`.
 
 ```sh
@@ -766,7 +873,11 @@ Compare A before.jsonl → B after.jsonl
 | A GPU timer | GPU cells read `—` with "no timer"; the causes come from the other columns. |
 | OPFS | The log stays in memory, bounded by `keepMb`, and is gone with the page. |
 | A native share sheet | Share downloads the file. |
-| `adb` on the computer | No `adb reverse`, so a USB phone cannot reach the computer, and no adb heat and system frames. A LAN phone pairs and logs as usual. |
+| `adb` on the computer | No `adb reverse`, so a USB phone cannot reach the computer, no adb heat and system frames, and no wired telemetry or CDP heap. Connect's By wire tab reads "adb not found". A LAN phone pairs and logs as usual. |
+| WebView debugging in the build (a native debug build has it on Android) | No CDP: the phone's JS heap reads not available; GPU, CPU and memory per process still read over adb. |
+| A phone by wire | On the network there is no wired telemetry: the Memory card reads "Not available: connect by wire to read the heap", and device load is not shown. |
+| An iPhone or iPad | No iOS debug build yet: nothing to link, by wire or on the network. |
+| Engine 0.15.1 | On 0.15.0 the pass owners, filters and draws, the `shader` and `problem` events, the object counts, the render targets and the app id are not measured, and a `--debug` build runs read and cosmetic commands only. |
 
 ## Production builds
 
@@ -787,11 +898,11 @@ Measured with `Bun.build` (browser, minified, the game itself external) in
 | Entry | Flags | Editor code in the bundle | Size |
 |---|---|---|---|
 | The dev entry above | `__MOKU_GAME_DEV__` `false` | None: no `/__editor/hello`, no `editor.capture`, no `bridge:` log line, no `[moku-editor]` | 0 B (the whole entry is 73 B, the game's own lines) |
-| The dev entry above | `__MOKU_GAME_DEV__` `true` | Agent core, registry, channel, perf, recorder, the overlay with its three Barlow faces, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 265,098 B minified, 110,705 B gzip |
-| The engine's page, debug build | `__MOKU_GAME_DEV__` `false`, `__MOKU_GAME_AGENT__` `true` | The same agent through `@moku-labs/editor/agent/page` | 265,039 B minified, 111,454 B gzip |
-| The engine's page, release build | both `false` | None: the guard folds | 0 B (the whole entry is 155 B) |
+| The dev entry above | `__MOKU_GAME_DEV__` `true` | Agent core, registry, channel, perf with Mission control's feeds, recorder, the overlay with its three Barlow faces, bridge, capture, Preact, `@moku-labs/core`, `@moku-labs/common` | 299,859 B minified, 122,297 B gzip |
+| The engine's page, debug build | `__MOKU_GAME_DEV__` `false`, `__MOKU_GAME_AGENT__` `true` | The same agent through `@moku-labs/editor/agent/page` | 299,807 B minified, 123,404 B gzip |
+| The engine's page, release build | both `false` | None: the guard folds | 0 B (the whole entry is 155 B, 141 B gzip) |
 
-The test bounds the dev agent at 120 KB gzip: a measurement above it fails the suite, and the bound is never raised silently. The overlay's faces are subset to the glyphs it prints (43,424 bytes of woff2). The store check of a release build looks for `/__editor/hello` and `[moku-editor]`: neither is in a release bundle.
+The test bounds the dev agent at 124 KB gzip (124,000 B; raised from 120 KB by the owner for Mission control's feeds): a measurement above it fails the suite, and the bound is never raised silently. To stay under it the phone only reads: the marks, the pass chains and the 2-minute history are built on the tools page. The overlay's faces are subset to the glyphs it prints (43,424 bytes of woff2). The store check of a release build looks for `/__editor/hello` and `[moku-editor]`: neither is in a release bundle.
 
 The package is `"sideEffects": false`. The agent core, each agent plugin and each core config are
 created `/* @__PURE__ */`. So a static import used only inside `if (__MOKU_GAME_DEV__)` drops out
@@ -802,17 +913,16 @@ An agent export used outside that branch keeps what it references. A game entry 
 
 | Plugins created | Editor code in the bundle | Size |
 |---|---|---|
-| Without `/* @__PURE__ */` | The whole agent, capture included | 265,906 B minified, 112,023 B gzip |
-| With `/* @__PURE__ */` | The agent without capture: capture drops out | 254,165 B minified, 107,965 B gzip |
+| With `/* @__PURE__ */` | The agent without capture: capture drops out | 288,933 B minified, 119,887 B gzip |
 
 ## How it works
 
 ```mermaid
 flowchart LR
   G["Game page<br/>@moku-labs/game app"] --> A["agent core<br/>registry · channel · perf · recorder · overlay<br/>+ bridge · capture"]
-  A -- "ws kind=agent<br/>hello · heartbeat · value" --> H["server core (Bun)<br/>files · hub · collector · pages"]
+  A -- "ws kind=agent<br/>hello · heartbeat · value" --> H["server core (Bun)<br/>files · hub · connect · collector · pages"]
   P["Phone (debug build)<br/>the same agent core"] -- "ws kind=agent role=device<br/>pair · hello · perf.lines" --> H
-  H -- "ws kind=tools<br/>sessions · game · files" --> T["tools core<br/>link · workspace · panels<br/>+ six workspaces"]
+  H -- "ws kind=tools<br/>sessions · game · files · devices" --> T["tools core<br/>link · activeSource · workspace · panels<br/>+ six workspaces"]
   T --> D["Developer<br/>tools page"]
   H --> F["Project root<br/>sandboxed files"]
   classDef u fill:#0b7285,stroke:#08525f,color:#fff;
@@ -825,7 +935,8 @@ flowchart LR
 2. The **bridge** fetches `{path}/hello` for `{ ws, token }`, opens the socket with `kind=agent`, sends `hello { manifest }`, then a `heartbeat` every `heartbeatMs`.
 3. The **hub** opens a session (`s-` + 4 hex), emits `hub:session`, routes `game` requests from tools connections to the chosen session and `files` requests to the `files` sandbox. One agent-side watch is shared by every tools subscriber.
 4. The **link** on the tools page reads the boot JSON `pages` injected, picks a session, caches its manifest and exposes the remote `EditorChannel`. Every panel reads through it.
-5. **On a phone** the bridge dials `moku-editor perf` at the hub's device listener (`127.0.0.1:47600` through `adb reverse`, or the LAN address) as `kind=agent role=device`, pairs with a four-digit code, and then runs as an ordinary agent session that every tools page sees. It also ships the recorder's log as `perf.lines`; the collector writes it to `.moku/perf/`.
+5. **On a phone** the bridge dials the hub's device listener (`127.0.0.1:47600` through `adb reverse`, or the LAN address) as `kind=agent role=device`, pairs (at once by wire, with a four-digit code on the network), and then runs as an ordinary agent session that every tools page sees. Device mode is turned on by `moku-editor perf`, or from the tools page through **connect** (`connect.wire`, `connect.network`), which also lists the phones adb sees and reads a wired phone's telemetry. While the phone records, the bridge ships its log as `perf.lines`; the collector writes it to `.moku/perf/`.
+6. **activeSource** on the tools page keeps one source per page: it pauses the local preview (`game.pause`) before link chooses the phone, and resumes it when the page goes back. Every workspace reads the chosen session through link.
 
 The game page and the tools page never talk directly. The game frame inside the tools page is a plain same-origin iframe that runs its own agent.
 
@@ -849,27 +960,32 @@ flowchart LR
   end
   subgraph server ["editor-server (Bun)"]
     files --> hub
+    hub --> connect
     files --> collector
     hub --> collector
+    connect --> collector
     files --> pages
     hub --> pages
     collector --> pages
   end
   subgraph tools ["editor-tools (tools page)"]
+    link --> activeSource
     link --> workspace
+    activeSource --> workspace
     link --> panels
     workspace --> panels
     panels --> views["flowView · gameView · renderView<br/>stateView · filesView · consoleView"]
     link --> views
     workspace --> views
+    activeSource --> views
   end
   classDef m fill:#1864ab,stroke:#0d3d6e,color:#fff;
   classDef u fill:#0b7285,stroke:#08525f,color:#fff;
-  class registry,channel,perf,recorder,overlay,files,hub,collector,pages,link,workspace,panels m
+  class registry,channel,perf,recorder,overlay,files,hub,connect,collector,pages,link,activeSource,workspace,panels m
   class bridge,capture,views u
 ```
 
-Arrows point from a dependency to the plugin that requires it. Teal = opt-in (`bridge`, `capture`) or a leaf (the views). `stateView` does not require `workspace`. **No view depends on another view**: cross-view requests are global tools events. The runtime-free modules are imports, not edges: renderView reads the pure `perf/graph` and `perf/protocol`, pages reads `collector/report`, bridge and overlay read `hub/protocol`.
+Arrows point from a dependency to the plugin that requires it. Teal = opt-in (`bridge`, `capture`) or a leaf (the views). `stateView` does not require `workspace`; of the views only `renderView` requires `activeSource`. **No view depends on another view**: cross-view requests are global tools events. The runtime-free modules are imports, not edges: renderView reads the pure `perf/protocol` (the history, the feeds' wire types) and, by type, `connect/protocol`; the overlay reads `perf/graph` and `perf/protocol`; link reads `connect/protocol`; pages reads `collector/report`; bridge, overlay and the MCP bridge read `hub/protocol`.
 
 ### Event flow (agent and server cores)
 
@@ -885,11 +1001,13 @@ flowchart LR
   end
   subgraph server ["editor-server"]
     HU["hub"] -- "hub:device · per-plugin" --> CO["collector"]
+    HU -- "hub:device · per-plugin" --> CN["connect"]
+    CN -- "connect:telemetry · per-plugin" --> CO
     CO -- "collector:session · per-plugin" --> PA["pages"]
   end
   classDef m fill:#1864ab,stroke:#0d3d6e,color:#fff;
   classDef u fill:#0b7285,stroke:#08525f,color:#fff;
-  class RG,RE,HU,CO m
+  class RG,RE,HU,CN,CO m
   class OV,BR,PA u
 ```
 
@@ -905,10 +1023,12 @@ flowchart LR
   V -- "workspace:select-node<br/>workspace:focus-frame" --> FL["flowView"]
   V -- "workspace:reveal" --> RV["renderView"]
   V -- "workspace:inspect<br/>workspace:open-sheet" --> GV["gameView"]
+  AS["activeSource"] -- "activeSource:changed · per-plugin" --> WR["workspace · renderView"]
+  AS -- "activeSource:connect-requested · per-plugin" --> RV
   classDef m fill:#1864ab,stroke:#0d3d6e,color:#fff;
   classDef u fill:#0b7285,stroke:#08525f,color:#fff;
-  class L,P,V m
-  class W,CS,FV,FL,RV,GV u
+  class L,P,V,AS m
+  class W,CS,FV,FL,RV,GV,WR u
 ```
 
 ## The three cores
@@ -918,8 +1038,8 @@ flowchart LR
 | Entry | Core name | Runtime | Default plugins | Opt-in |
 |---|---|---|---|---|
 | `@moku-labs/editor/agent` | `editor-agent` | game page (browser) or headless Bun | `registry`, `channel`, `perf`, `recorder`, `overlay` | `bridgePlugin`, `capturePlugin` |
-| `@moku-labs/editor/server` | `editor-server` | Bun | `files`, `hub`, `collector`, `pages` | — |
-| `@moku-labs/editor/tools` | `editor-tools` | tools page (browser) | `link`, `workspace`, `panels`, `flowView`, `gameView`, `renderView`, `stateView`, `filesView`, `consoleView` | — |
+| `@moku-labs/editor/server` | `editor-server` | Bun | `files`, `hub`, `connect`, `collector`, `pages` | — |
+| `@moku-labs/editor/tools` | `editor-tools` | tools page (browser) | `link`, `activeSource`, `workspace`, `panels`, `flowView`, `gameView`, `renderView`, `stateView`, `filesView`, `consoleView` | — |
 | `@moku-labs/editor` | — | anywhere | Runtime-free: the wire protocol (types and pure helpers) and `definePanel` | — |
 | `@moku-labs/editor/agent/page` | `editor-agent` | the engine's dev page and debug builds | The default export is the engine's `PageAgent`: behind `__MOKU_GAME_DEV__ \|\| __MOKU_GAME_AGENT__` it starts the agent core with `bridgePlugin` and `capturePlugin` and sets `globalThis.editor` | — |
 
@@ -955,14 +1075,18 @@ From the app, every plugin's api is mounted under its name. From another plugin,
 await editor.channel.run("game.step", { frames: 1 }); // agent
 editor.bridge.status(); // { kind: "live", frame: 1840 }
 editor.perf.second().fps; // { loop: 60, drawn: 54 } on the phone
+editor.recorder.start({ label: "boss run" }); // nothing records until someone starts it
 editor.recorder.mark("boss enters"); // true while a log records
 
 editor.hub.sessions(); // server: [{ id: "s-7f3a", game: "merge-game 0.0.0", … }]
 await editor.files.list("src");
+editor.connect.directory().mode; // { on: true, owner: "connect", listen: { port: 47600, adb: "127.0.0.1:47600", lan: null } }
 
 const ran = await tools.link.run("game.step", { frames: 1 }); // tools: ran.state.frame === 1841
 tools.workspace.show("game");
 await tools.gameView.capture(); // { path: ".moku/captures/2026-10-05/0846-board.jpg", … }
+tools.activeSource.current(); // { kind: "local", session: "s-1" }: the local preview is the source
+tools.renderView.mission()?.source; // { session: "s-9", kind: "device", name: "Galaxy A26", link: "wire", state: "live" } with a phone
 ```
 
 ### Writing a plugin
@@ -1001,27 +1125,29 @@ ctx.require(panelsPlugin).register(statePanel);
 
 ## Plugins
 
-All 20, in core order. Tiers follow the Moku plugin tiers. Each name links to its README.
+All 22, in core order. Tiers follow the Moku plugin tiers. Each name links to its README.
 
 | Plugin | Core | Tier | Purpose | Key APIs |
 |---|---|---|---|---|
-| [`registry`](src/plugins/registry/README.md) | agent | Complex | The only place the editor touches the game's doors. Wraps doors, `.dev` modules and `editor.*` commands into entries; builds the `Manifest` with the page's build (profile, id, engine) and every command's `allowed` / `reason` and `overlay` marker; emits `registry:command` for every run; owns the runtime-free protocol. | `manifest`, `source`, `command`, `add`, `envelope`, `clock`, `game`, `build` |
+| [`registry`](src/plugins/registry/README.md) | agent | Complex | The only place the editor touches the game's doors. Wraps doors, `.dev` modules and `editor.*` commands into entries; builds the `Manifest` with the page's build (profile, id, engine, app id) and every command's `allowed` / `reason` and `overlay` marker; emits `registry:command` for every run, with who ran it (`via`: overlay, tools, mcp); owns the runtime-free protocol. | `manifest`, `source`, `command`, `add`, `envelope`, `clock`, `game`, `build` |
 | [`channel`](src/plugins/channel/README.md) | agent | Standard | The in-process `EditorChannel`: immediate read on watch, runs off the frame loop, a timer heartbeat that beats while paused. | `read`, `watch`, `run`, `status`, `heartbeat`, `onHeartbeat` |
-| [`perf`](src/plugins/perf/README.md) | agent | Complex | The performance read model: reads the engine monitor's frame ring four times a second into a 6 s window, ranks every spike's causes, serves the overlay and the `editor.perf.*` sources; off with its reason without a monitor. Houses the runtime-free `perf/protocol` and the frame graph painter `perf/graph`. | `status`, `readWindow`, `second`, `spikes`, `spike`, `monitor`; sources `editor.perf.second`, `editor.perf.window`, `editor.perf.spikes`, `editor.perf.spike`, `editor.spikes` |
-| [`recorder`](src/plugins/recorder/README.md) | agent | Complex | The performance log on the device: every monitor line for hours, serialized on its own timer into OPFS chunks or memory, shared, and kept in an outbox the bridge ships; writes the editor's `devtools`, `command` and `recorder` events. | `start`, `stop`, `mark`, `status`, `files`, `share`, `remove`, `unsentRun`, `ack`; commands `editor.record`, `editor.mark`; source `editor.recorder` |
+| [`perf`](src/plugins/perf/README.md) | agent | Complex | The performance read model: reads the engine monitor's frame ring four times a second into a 6 s window, ranks every spike's causes, serves the overlay and the `editor.perf.*` sources, and Mission control's feeds (frames after a frame, timeline lines, raw pass rows, a range's detail, the monitor's sections); off with its reason without a monitor. Houses the runtime-free `perf/protocol` (with the tools page's 2-minute history) and the frame graph painter `perf/graph`. | `status`, `readWindow`, `second`, `spikes`, `spike`, `monitor`; sources `editor.perf.second`, `editor.perf.window`, `editor.perf.spikes`, `editor.perf.spike`, `editor.spikes`, `editor.perf.frames`, `editor.perf.events`, `editor.perf.passes`, `editor.perf.detail`; command `editor.perf.sections` |
+| [`recorder`](src/plugins/recorder/README.md) | agent | Complex | The performance log on the device, off until the phone, the tools page or an agent starts it (`startedBy` says who): every monitor line for hours, serialized on its own timer into OPFS chunks or memory, rotated at 32 MB, shared, and kept in an outbox the bridge ships; writes the editor's `devtools`, `command` and `recorder` events. | `start`, `stop`, `mark`, `status`, `files`, `share`, `remove`, `unsentRun`, `ack`; commands `editor.record { on?, label?, mark? }`, `editor.mark`; source `editor.recorder` (with the last 32 marks) |
 | [`overlay`](src/plugins/overlay/README.md) | agent | Complex | The editor's window over the game, on a phone or a dev page: hidden, pill or card with the tabs Frames, Game, Record and Link; all its work inside the engine's agent bracket. Sets `globalThis.__MOKU_GAME_OVERLAY__` for `app.debug.overlay`. | `open`, `close`, `toggle`, `isOpen`, `mode`, `commands`; command `editor.overlay` |
-| [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect, the checkpoint across Bun's reload. On a phone the device link: dials `moku-editor perf`, pairs by a code, ships the recorder's log. | `status`, `session`, `link`, `connect`; commands `editor.reload`, `editor.clock` |
+| [`bridge`](src/plugins/bridge/README.md) | agent, opt-in | Complex | The websocket from the game page to the hub: hello, requests, throttled values, backoff reconnect, the checkpoint across Bun's reload. Runs each hub `run` with who sent it (`from`: the tools page or an agent's MCP client). On a phone the device link: dials the hub's device listener, pairs by a code (sending the build's app id), ships the recorder's log. | `status`, `session`, `link`, `connect`; commands `editor.reload`, `editor.clock` |
 | [`capture`](src/plugins/capture/README.md) | agent, opt-in | Standard | Screenshots on demand, never on its own. | commands `editor.capture`, `editor.series`, `editor.seriesStop`, `editor.sheet` |
 | [`files`](src/plugins/files/README.md) | server | Standard | The project-root sandbox: list, read, atomic write with version check, image captures, the project index, the computer's engine fingerprint. | `list`, `read`, `write`, `writeBinary`, `readBinary`, `resolve`, `root`, `find`, `project`, `engine`, `refreshEngine` |
-| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` and `engine` notifications, the editor page's selection and the `editor.select` relay to it. Wraps `Bun.serve`. Device mode: the listeners of `moku-editor perf` (adb and LAN), pairing, `hub:device`, the runtime-free `hub/protocol`. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `closeAll`, `path`, `listenDevices`, `stopDevices`, `devices` |
-| [`collector`](src/plugins/collector/README.md) | server | Complex | Device logs on the computer: one JSONL file per phone log, `adb reverse`, heat and system frames while device mode is on, the computer mark route; idle on a dev server. Houses the runtime-free `collector/report` (parse, summary, compare). | `sessions`, `mark`, `adb`, `settled` |
+| [`hub`](src/plugins/hub/README.md) | server | Complex | The websocket switchboard: guard and token, sessions, routing, fan-out, backpressure, the `hotReload` and `engine` notifications, the editor page's selection and the `editor.select` relay to it. Wraps `Bun.serve`. Device mode: the device listeners (adb and LAN, the LAN one on and off while it runs), pairing, a ping for each phone's latency, `hub:device`, the runtime-free `hub/protocol`. Stamps a tools page's runs with `from` and the MCP client's name; registers other plugins' editor methods (`connect.*`) for tools sockets only. | `serve`, `token`, `sessions`, `fetch`, `websocket`, `addRoutes`, `guard`, `publish`, `closeAll`, `path`, `listenDevices`, `stopDevices`, `devices`, `listenLan`, `stopLan`, `addEditorMethods` |
+| [`connect`](src/plugins/connect/README.md) | server | Complex | Connect a phone from the tools page: device mode on and off on request (`connect.wire`, `connect.network`, `connect.off`), the device directory (`editor.devices`: phones adb lists, pairings asking, linked devices), the pairing confirm in the page, and for a phone by wire CDP over `adb forward` and the wired telemetry (`editor.deviceTelemetry`, 1 Hz). Houses the runtime-free `connect/protocol`. | `directory`, `telemetry`; editor methods `connect.scan`, `connect.wire`, `connect.network`, `connect.off`, `connect.confirm`, `connect.refuse`, `connect.watch`, `connect.unwatch` |
+| [`collector`](src/plugins/collector/README.md) | server | Complex | Device logs on the computer: one JSONL file per phone log, `adb reverse`, heat and system frames while device mode is on (matched by model and app id), a wired phone's `telemetry` lines while it records, the computer mark route; idle on a dev server. Houses the runtime-free `collector/report` (parse, summary, compare). | `sessions`, `mark`, `adb`, `settled` |
 | [`pages`](src/plugins/pages/README.md) | server | Complex | Serves the prebuilt tools page with its boot JSON, its assets, the `hello` and `hmr` routes. Home of the `moku-editor` bin (the engine page of a moku-game folder, or a game HTML file; Bun hot reload on, switched by restarting its server), of `moku-editor mcp`, the MCP bridge for Claude Code, and of `moku-editor perf` (`perf`, `perf mark`, `perf summary`, `perf compare`). | `routes`, `attachServer`, `hotReload`, `setHotReload`, `attachPerf` |
-| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state, the computer's engine, the editor page role (publishes the selection, answers `editor.select`). | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `frameUrl`, `files`, `hotReload`, `setHotReload`, `selection`, `notify`, `handle`, `engine`, `onEngine` |
-| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with the game mark, the computer's engine, the Hot reload icon toggle and the ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag and Copy on select), the twenty-one devices, the one game iframe, the scenario picker (dev only), the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload`, `copyOnSelect`, `setCopyOnSelect`, `scenarios`, `setScenario` |
+| [`link`](src/plugins/link/README.md) | tools | Complex | The tools page's only connection: boot JSON, one socket, session choice, the remote `EditorChannel`, the files client, the link status, the hot reload state, the computer's engine, the editor page role (publishes the selection, answers `editor.select`), and the policy-free seams of the device source: published values, session and heartbeat listeners, the own frame's session, runs on a named session, the server's editor methods. | `read`, `watch`, `run`, `status`, `manifest`, `onManifest`, `sessions`, `choose`, `retry`, `boot`, `frameUrl`, `files`, `hotReload`, `setHotReload`, `selection`, `notify`, `handle`, `engine`, `onEngine`, `published`, `onPublished`, `onSessions`, `onHeartbeat`, `ownSession`, `runIn`, `callEditor` |
+| [`activeSource`](src/plugins/activeSource/README.md) | tools | Standard | One source per tools page: the local preview, a phone or another page. Pauses the local preview while a phone is the source and resumes it after, follows phones that link and leave (the notice, the timeline markers, a rejoin within 15 s), holds connect's scan and watch leases, estimates a phone's clock offset. | `current`, `preview`, `useDevice`, `useLocal`, `onChange`, `directory`, `scan`, `connectWire`, `connectNetwork`, `connectDevice`, `confirmPairing`, `refusePairing`, `stopDevices`, `telemetry`, `onTelemetry`, `markers`, `notice`, `reconnect`, `label`, `health`, `clockOffsetMs`, `openConnect` |
+| [`workspace`](src/plugins/workspace/README.md) | tools | Complex | The shell: top bar with the game mark, the computer's engine, the Hot reload icon toggle and the ⋯ menu, rail, palette, toasts, keys and Esc, preferences (with the sound flag and Copy on select), the twenty-one devices, the one game iframe, the source pill and its menu, the disconnect notice, the paused veil over the local frame, the scenario picker (dev only), the D-07 reload and the Hot reload switch. | `show`, `device`, `setDevice`, `gameFrame`, `palette`, `toast`, `keys`, `mount`, `host`, `setOverlayInGame`, `hotReload`, `copyOnSelect`, `setCopyOnSelect`, `scenarios`, `setScenario`, `startLocalPreview` |
 | [`panels`](src/plugins/panels/README.md) | tools | Standard | The panel host: watches sources, waits for first values, stale marking, re-checks on manifest change. Holds `shared/` view modules. | `register`, `run`, `list`, `mountInto` |
 | [`flowView`](src/plugins/flowView/README.md) | tools | VeryComplex | The Flow workspace: a canvas of the flow graph with ELK layout, focus, trail, the Inspector with its Info and Code tabs. | `camera`, `focus`, `flows`, `layout` |
-| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound and Copy Ref switches, element picker, style card, the Code section, the Styles fields with their pending edits for the agent, area drags, the pick for the chat (bookmark, two JPEGs, the card file, one line), the selection published to MCP and `editor.select`, screenshots, series, the capture card and the contact sheet. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks`, `editStyle`, `clearEdits`, `edits`, `copyEdits` |
-| [`renderView`](src/plugins/renderView/README.md) | tools | Complex | The Render workspace: metric tiles, render tree, textures, bundles, pools, release log, and the device strip of a phone (or of the game page when its agent has perf): device row, frame graph, spike record, STALE. | `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh`, `device`, `stepSpike`, `openSpike`, `closeSpike` |
+| [`gameView`](src/plugins/gameView/README.md) | tools | Complex | The Game workspace (the default): device stage with one Fit scale per kind, the device frames and Fold, the Sound and Copy Ref switches, element picker, style card, the Code section, the Styles fields with their pending edits for the agent, area drags, the pick for the chat (bookmark, two JPEGs, the card file, one line), the selection published to MCP and `editor.select`, screenshots, series, the capture card and the contact sheet. Reads no scene from a phone. | `pick`, `inspect`, `scene`, `locate`, `capture`, `series`, `openSheet`, `copyReference`, `fold`, `bookmarks`, `editStyle`, `clearEdits`, `edits`, `copyEdits` |
+| [`renderView`](src/plugins/renderView/README.md) | tools | Complex | The Render workspace, Mission control, of the page's one source: the connection bar and the Connect panel, a 2-minute frame timeline with GC, shader and pass lanes, range selection and its inspector, the cards (FPS with the rate switch, frame time, draws, textures, GPU passes, memory, device load), Record and Monitoring; Scene details (render tree, textures, bundles, pools, release log), never read from a phone. | `mission`, `inspect`, `pause`, `live`, `setSpan`, `seek`, `select`, `step`, `jump`, `setRate`, `setSection`, `setOverdraw`, `record`, `mark`, `snapshot`, `reveal`, `highlight`, `sortTextures`, `filterBundle`, `refresh` |
 | [`stateView`](src/plugins/stateView/README.md) | tools | Standard | The State workspace: player and session trees, the last commit derived by diffing `game.model`, the runner. | `lastCommit`, `onCommit`, `note`, `tainted`, `expandAll` |
 | [`filesView`](src/plugins/filesView/README.md) | tools | Complex | The Files workspace: project tree, tabs, viewer, in-place editor, previews, conflict bar, Used by. | `open`, `save`, `resolveConflict`, `fileOf`, `usedBy`, `editorUrl` |
 | [`consoleView`](src/plugins/consoleView/README.md) | tools | Standard | The Console workspace: `game.log` as a table, level filter, search, Preserve log, command errors, rail badge. | `lines`, `visible`, `counts`, `setFilter`, `clear`, `focusFrame` |
@@ -1041,12 +1167,16 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | perf | `readEveryMs` | `250` | How often perf reads the monitor's frame ring, 50 to 1000. |
 | perf | `windowMs` | `6000` | The window the graph, the spike index and every spike count cover, 1000 to 30000. |
 | perf | `frames` | `1024` | Rows perf keeps: at least `windowMs` at 120 Hz. Whole number, 64 to 16384. |
-| recorder | `autoStart` | `true` | Start a log when the plugin starts. |
+| perf | `feedPasses` | `false` | Read the engine's pass ring and send the pass rows (Mission control's Shaders & passes). |
+| perf | `feedSystems` | `true` | Read and send the top 5 systems of each frame. |
+| perf | `feedNodes` | `false` | Read and send the demand marks of each frame. |
+| recorder | `autoStart` | `false` | `false`: nothing records until the phone, the tools page or an agent starts it. `"device"`: a log starts by itself on a debug build. `true`: on every page. |
 | recorder | `keepMb` | `64` | Most MB in memory: unconfirmed outbox lines, memory-store logs, pending text. 1 to 512. |
 | recorder | `flushEveryMs` | `1000` | How often the queue is serialized, 100 to 10000. |
 | recorder | `persistEveryMs` | `5000` | How often text is written to the store (also at 64 KB pending and at stop), 1000 to 60000. |
 | recorder | `storage` | `"auto"` | `"auto"`: OPFS when the page has it, else memory. `"memory"`: never on disk. |
 | recorder | `keepFiles` | `10` | Finished logs kept; the oldest beyond go when a log starts. Whole number, 1 to 100. |
+| recorder | `maxLogMb` | `32` | The size of one log: at it the recorder rotates to the next log (32 is the native share's cap). Whole number, 1 to 512. |
 | overlay | `mode` | `"hidden"` | `"hidden"`, `"pill"` or `"card"` at start when the device remembers none. |
 | overlay | `dock` | `"right"` | `"left"` or `"right"`: the edge the window docks to until the person drags it. |
 | overlay | `remember` | `true` | Remember place, mode and tab in `localStorage["moku-editor:overlay"]`. |
@@ -1077,6 +1207,17 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | hub | `deviceOrigins` | `["tauri://localhost", "https://tauri.localhost", "http://tauri.localhost"]` | Exact Origins a phone's WebView sends. |
 | hub | `pairing` | `"lan"` | `"lan"`: only a LAN phone is asked for its code, an adb phone is confirmed at once. `"always"`: every phone is asked. |
 | hub | `pairTimeoutMs` | `60000` | How long a pairing waits for the person before it is refused. |
+| connect | `adb` | `"adb"` | The adb command: a name on `PATH` or a path. |
+| connect | `adbTimeoutMs` | `5000` | One adb call is killed after this, 500 to 60000. |
+| connect | `scanEveryMs` | `2000` | `adb devices -l` period while the Connect panel is open or device mode runs, 500 to 60000. |
+| connect | `answerTimeoutMs` | `20000` | A ready phone with no session after this reads "No debug game answered", 1000 to 300000. |
+| connect | `leaseMs` | `10000` | A scan or watch lease the tools page does not renew for this long ends, 2000 to 120000. |
+| connect | `telemetryEveryMs` | `1000` | The wired telemetry tick, 250 to 10000. |
+| connect | `meminfoEveryMs` | `5000` | `dumpsys meminfo` period, 1000 to 60000. |
+| connect | `heapEveryMs` | `250` | CDP `Runtime.getHeapUsage` period, 100 to 5000. |
+| connect | `gcDropMb` | `0.5` | A heap drop of at least this is an inferred GC, 0.05 to 64. |
+| connect | `gcTrace` | `false` | Allows CDP tracing of GCs; GCs stay inferred until it is measured on a phone. |
+| connect | `wire` | `"manual"` | `"auto"`: the adb listener on at start when `adb version` answers and the port is free (never the LAN). |
 | collector | `out` | `".moku/perf"` | Folder of the device logs, relative to the files root or absolute (`--out`). |
 | collector | `everyS` | `10` | Seconds between two adb readings of heat and system frames (`--every`), 1 to 3600. |
 | collector | `reverseEveryMs` | `2000` | Ms between two `adb devices` + `adb reverse` rounds, ≥ 500. |
@@ -1097,7 +1238,14 @@ The switches of `moku-editor perf` are not options of their own: one pure functi
 |---|---|---|---|
 | link | `retryMs` | `1000` | Base of the reconnect backoff, capped at 8 s. |
 | link | `boot` | `"#moku-editor-boot"` | Selector of the boot JSON tag. |
+| link | `role` | `"page"` | `"page"`: the editor page (publishes the selection, answers `editor.select`, `device`, `show`, `node`). `"tools"`: a plain tools client, such as a headless test. |
 | link | `reloadGraceMs` | `8000` | How long an expected reload reads as "reloading" (neutral, the spinner on the frame) before a game that has not come back reads as lost (red). |
+| activeSource | `autoUse` | `true` | A phone that links while the local preview is the source becomes the source. |
+| activeSource | `pauseLocal` | `true` | Pause the local preview while a phone is the source. |
+| activeSource | `rejoinMs` | `15000` | A lost phone that comes back within this is the source again (0: never), 0 to 600000. |
+| activeSource | `noticeMs` | `12000` | How long the disconnect notice shows, 1000 to 120000. |
+| activeSource | `renewMs` | `4000` | How often the scan and watch leases on connect are renewed, 500 to 60000. |
+| activeSource | `markers` | `32` | Source-switch markers kept for the timeline, 1 to 512. |
 | workspace | `defaultWorkspace` | `"game"` | Shown at start when the hash names none. |
 | workspace | `storageKey` | `"moku-editor"` | localStorage key of the preferences. |
 | workspace | `reloadTimeoutMs` | `15000` | How long `reload()` waits for the new session. |
@@ -1111,7 +1259,7 @@ The switches of `moku-editor perf` are not options of their own: one pure functi
 | gameView | `capturesDir` | `".moku/captures"` | Where captures and pick shots go, each in a day folder `<yyyy-mm-dd>/`. `.moku/captures` or a folder under it. |
 | gameView | `captureCardMs` · `seriesWarnShots` | `10000` · `200` | Capture card timeout, series warning. |
 | gameView | `seriesDurationsMs` · `seriesIntervalsMs` | `[1000, 2000, 5000, 10000, 20000]` · `[16, 50, 100, 250, 500, 1000]` | Series popover chips. |
-| renderView | `fpsSamples` · `releaseLogMax` | `60` · `50` | Sparkline samples, release log size. |
+| renderView | `releaseLogMax` | `50` | Release log entries kept. Mission control has no option: its history is 2 minutes (perf's `HISTORY_MS`). |
 | stateView | `expandDepth` · `maxPatches` · `pageSize` | `2` · `200` · `100` | Tree depth open, patches kept, children per page. |
 | filesView | `maxFiles` · `maxHighlightChars` | `5000` · `512000` | Index cap, highlight cap. |
 | filesView | `reloadExtensions` · `revalidateMs` | `[".ts", ".tsx", ".css", ".json"]` · `2000` | Saves that reload the game, tab re-read age. |
@@ -1146,10 +1294,13 @@ Global events are declared per core in `src/config.ts`. An event is global only 
 
 | Core | Event | Payload | Emitter | Hooked by |
 |---|---|---|---|---|
-| agent | `registry:command` | `RegistryCommandEvent` = `{ id, input, via: "overlay" \| "bridge" \| "local", ok }`: every command run | registry | recorder (the `command` log event) |
+| agent | `registry:command` | `RegistryCommandEvent` = `{ id, input, via: "overlay" \| "tools" \| "mcp" \| "bridge" \| "local", ok }`: every command run, with who ran it | registry | recorder (the `command` log event) |
 | agent | `recorder:status` | `RecorderStatusEvent` = `{ state, lines, bytes, sent, pending }` | recorder | overlay, bridge (ships the pending lines) |
-| server | `hub:device` | `HubDeviceEvent`: `listening`, `connected`, `lines`, `closed`, `stopped` | hub | collector |
+| server | `hub:device` | `HubDeviceEvent`: `listening`, `connected`, `lines`, `closed`, `stopped` | hub | collector, connect |
+| server | `connect:telemetry` | `DeviceTelemetry` = `{ v: 1, device, serial, at, wired, gpu, cpu, memory, heap }`: one record a second of a watched phone by wire | connect | collector (the `telemetry` line while the phone records) |
 | server | `collector:session` | `CollectorSessionEvent` = `{ device, file, state, lines, lost, last }` | collector | pages (the perf CLI's live lines) |
+| tools | `activeSource:changed` | `SourceChange` = `{ from, to, reason: "connected" \| "user" \| "lost" \| "rejoined" \| "stopped" \| "adopted", at }` | activeSource | workspace (pill, notice, veil), renderView (the switch) |
+| tools | `activeSource:connect-requested` | `{ tab: "wire" \| "network" \| undefined }` | activeSource (`openConnect`) | renderView (shows Render with the Connect panel open) |
 
 `LinkStatus` is `connecting` · `live { frame }` · `paused { frame }` · `silent { since, lastFrame }` · `lost { reason, lastFrame, retryInMs }` · `empty`. The bridge only ever reports `connecting`, `live`, `paused` and `lost`; `silent` and `empty` are tools-side states.
 
@@ -1171,13 +1322,17 @@ JSON-RPC 2.0 text frames with a `channel` (`game`, `files`, `editor`) and, for f
 | -32006 | `notJson` | `not_json` | no |
 | -32007 | `unauthorized` | `unauthorized` | no |
 | -32008 | `notInstalled` | `not_installed`: the game does not have the source (its game plugin is missing) | no |
-| -32009 | `readOnly`, `devOnly` | `read_only`: the page's build refuses the command (a `--debug` build runs read and cosmetic commands only); `dev_only`: a page with neither the dev nor the debug flag | no |
+| -32009 | `readOnly`, `devOnly` | `read_only`: the page's build refuses the command (a `--debug=read` build, or `--debug` of engine 0.15.0, runs read and cosmetic commands only); `dev_only`: a page with neither the dev nor the debug flag | no |
 
 The files channel has `find { key }` (the `ProjectFound[]` of a project-index key; -32008 while the index is off), and the editor channel the published `project` notification (the `ProjectState`, replayed after each tools hello). Every message starts with `[moku-editor] ` (`ERROR_PREFIX`); no stack ever crosses the wire. A source the game does not have (a game without `effectsPlugin`, a screenless game without `ui` or `world`) is listed in the manifest with `available: false` and a `reason`; its reads and watches answer -32008, which the link neither logs nor retries, and the Render workspace reads "Effects not installed in this game". A run of `editor.series` gets its `durationMs`, and a run of `editor.sheet` its `frames × everyMs`, on top of the deadline (capped at +60 s) in bridge, hub and link alike. The `sessions` notification gives each `SessionInfo` a `heartbeat { frame, paused, silent }` once the game has sent one, and is sent again when `paused` or `silent` flips.
 
 **The manifest of a build.** `Manifest.build` is `{ profile, id?, engine? }` of the page (`profile` `dev`, `full`, `read` or `none`). Every command descriptor carries `allowed`, with `reason` (`"read-only"` or `"dev-only"`) when the page refuses it, and `overlay` (`"toggle"` or `"button"`) when the game lists it in the overlay. `refusalOf(profile, effect)` and `isAllowed(descriptor)` are root exports.
 
-**The device role** (`moku-editor perf`). A phone connects to the hub's device listener as `{path}/ws?kind=agent&role=device`, plus `&device=<id>&token=<token>` once paired, with its WebView's Origin (`deviceOrigins`). Without credentials its first message is the `editor` notification `pair { code, device: { model?, os?, engine?, build? } }`: four digits the phone shows. A LAN phone is confirmed by typing the code in the terminal, an adb phone under `pairing: "lan"` at once; the hub answers `paired { device, token, engine }`, and the phone goes on as any agent (`hello` first). Log lines go out as `perf.lines { log, from, lines }` (JSON objects, 1 to 5000 a batch) and are confirmed with `perf.ack { log, next, n }`. A device token the hub does not know is closed with **4401 `unpaired`** right after the open: the bridge drops it and pairs again. The session of a phone carries `SessionInfo.device` `{ id, model, link, address, port, engine, build }`. Tools pages get the computer's engine fingerprint as the `editor` notification `engine` (`EngineInfo` `{ id, version, dist, patch? }`). The device-link types and their parsers are the runtime-free `src/plugins/hub/protocol/`.
+**The device role** (`moku-editor perf`). A phone connects to the hub's device listener as `{path}/ws?kind=agent&role=device`, plus `&device=<id>&token=<token>` once paired, with its WebView's Origin (`deviceOrigins`). Without credentials its first message is the `editor` notification `pair { code, device: { model?, os?, engine?, build? } }`: four digits the phone shows. A LAN phone is confirmed by typing the code in the terminal, an adb phone under `pairing: "lan"` at once; the hub answers `paired { device, token, engine }`, and the phone goes on as any agent (`hello` first). Log lines go out as `perf.lines { log, from, lines }` (JSON objects, 1 to 5000 a batch) and are confirmed with `perf.ack { log, next, n }`. A device token the hub does not know is closed with **4401 `unpaired`** right after the open: the bridge drops it and pairs again. The `pair` device may name `appId` (the build's app id, `.debug` kept on a native debug install), so two phones of one model are told apart. The session of a phone carries `SessionInfo.device` `{ id, model, link, address, port, engine, build, appId? }`. The hub pings each phone once a second for its latency. Tools pages get the computer's engine fingerprint as the `editor` notification `engine` (`EngineInfo` `{ id, version, dist, patch? }`). The device-link types and their parsers are the runtime-free `src/plugins/hub/protocol/`.
+
+**Who ran a command.** An agent whose `hello` names the capability `run-from` (`hello { manifest, caps: ["run-from"] }`) gets every `run` the hub forwards stamped `{ id, input?, from: "page" | "mcp", client? }`: `page` for the editor page, `mcp` for an agent's MCP bridge, which names its client once with the `editor` notification `client { name }` ("Claude Code"). The bridge turns `from` into the registry's `via`, so the log's `command` event and the recorder's `startedBy` say who ran it. A `from` the tools client writes itself is dropped; an older agent gets `{ id, input? }` as before.
+
+**Connect from the tools page.** The server's `connect` plugin registers editor-channel methods that only tools sockets reach (hub token, loopback): `connect.scan {}` (renews the scan lease; answers the `DeviceDirectory`), `connect.wire {}` and `connect.network {}` (device mode on, answer `{ listen }`), `connect.off { lan? }`, `connect.confirm { ticket, code }` and `connect.refuse { ticket }` (a LAN phone's pairing), `connect.watch { device }` and `connect.unwatch { device }` (the telemetry lease of a phone by wire; answers `{ wired, reason? }`). It publishes `editor.devices` (the directory: device mode and its owner, adb's state, the phones adb lists with their phase, the pairings asking without their codes, the linked devices) and `editor.deviceTelemetry` (1 Hz), both replayed to a tools page that connects later. Errors: `port_in_use` (-32000, "[moku-editor] port 47600 is in use." / "Is moku-editor perf running? Stop it, or connect from its tools page."), `no_lan` (-32000), `not_owner` (-32007: device mode belongs to `moku-editor perf`), `no_ticket` (-32602). The types and their guards are the runtime-free `src/plugins/connect/protocol/`.
 
 ## Scripts
 
@@ -1209,14 +1364,15 @@ cd <demos>/merge-game && bun install && bun run test:editor --e2e --editor <edit
 
 - **Node `>= 24`** and **Bun `>= 1.4.2`** — use `bun` exclusively (never npm/yarn/pnpm). The server core and the bin need Bun.
 - **TypeScript** in strict mode, with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`.
-- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.15.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder and watches its keys. The phone tools (perf, recorder, the overlay's frame graph, debug builds) need the engine release that ships the build flags (`__MOKU_GAME_AGENT__` and friends), the renderer monitor and the `debug` plugin (0.15.0, the peer floor). The tools page's pass owners, filters and draws, the `shader` and `problem` events, the sample's object counts and render targets and the app id need 0.15.1, the engine the editor is developed and tested against; on 0.15.0 those blocks are absent and their cells read not measured.
-- **Android:** `adb` on the `PATH` for `moku-editor perf` over USB (optional: LAN pairing works without it).
+- **[`@moku-labs/game`](https://github.com/moku-labs/game) `>= 0.15.0`** — the peer the editor inspects and controls; its project index tells the editor where code lives, and its `cli` writes the engine page of a moku-game folder and watches its keys. The phone tools (perf, recorder, the overlay's frame graph, debug builds) need the engine release that ships the build flags (`__MOKU_GAME_AGENT__` and friends), the renderer monitor and the `debug` plugin (0.15.0, the peer floor). The tools page's pass owners, filters and draws, the `shader` and `problem` events, the sample's object counts and render targets, the app id and control on `--debug` builds need 0.15.1, the engine the editor is developed and tested against; on 0.15.0 those blocks are absent and their cells read not measured, and a `--debug` build runs read and cosmetic commands only.
+- **Android:** `adb` on the `PATH` to connect a phone by wire (Connect device in Render, or `moku-editor perf` over USB) and for the wired telemetry; optional: On the network works without it. CDP reads the JS heap of a debug build with WebView debugging on (a native debug build from `@moku-labs/native` 0.3.9 has it).
+- **iPhone and iPad:** not available yet: there is no iOS debug build to link.
 - **`typescript` `>= 5.5`** — a required peer: the project index parses the game sources with it.
 - Built on **[`@moku-labs/core`](https://github.com/moku-labs/core)** and **[`@moku-labs/common`](https://github.com/moku-labs/common)** (`log`, `env`, the branded CLI); views use **Preact**, Flow layout uses **elkjs**.
 
 ## Docs
 
-- Per-plugin READMEs: [registry](src/plugins/registry/README.md) · [channel](src/plugins/channel/README.md) · [perf](src/plugins/perf/README.md) · [recorder](src/plugins/recorder/README.md) · [overlay](src/plugins/overlay/README.md) · [bridge](src/plugins/bridge/README.md) · [capture](src/plugins/capture/README.md) · [files](src/plugins/files/README.md) · [hub](src/plugins/hub/README.md) · [collector](src/plugins/collector/README.md) · [pages](src/plugins/pages/README.md) · [link](src/plugins/link/README.md) · [workspace](src/plugins/workspace/README.md) · [panels](src/plugins/panels/README.md) · [flowView](src/plugins/flowView/README.md) · [gameView](src/plugins/gameView/README.md) · [renderView](src/plugins/renderView/README.md) · [stateView](src/plugins/stateView/README.md) · [filesView](src/plugins/filesView/README.md) · [consoleView](src/plugins/consoleView/README.md)
+- Per-plugin READMEs: [registry](src/plugins/registry/README.md) · [channel](src/plugins/channel/README.md) · [perf](src/plugins/perf/README.md) · [recorder](src/plugins/recorder/README.md) · [overlay](src/plugins/overlay/README.md) · [bridge](src/plugins/bridge/README.md) · [capture](src/plugins/capture/README.md) · [files](src/plugins/files/README.md) · [hub](src/plugins/hub/README.md) · [connect](src/plugins/connect/README.md) · [collector](src/plugins/collector/README.md) · [pages](src/plugins/pages/README.md) · [link](src/plugins/link/README.md) · [activeSource](src/plugins/activeSource/README.md) · [workspace](src/plugins/workspace/README.md) · [panels](src/plugins/panels/README.md) · [flowView](src/plugins/flowView/README.md) · [gameView](src/plugins/gameView/README.md) · [renderView](src/plugins/renderView/README.md) · [stateView](src/plugins/stateView/README.md) · [filesView](src/plugins/filesView/README.md) · [consoleView](src/plugins/consoleView/README.md)
 - Tools page styles: [workspace/styles](src/plugins/workspace/styles/README.md)
 - LLM docs: [`llms.txt`](./llms.txt) (overview) · [`llms-full.txt`](./llms-full.txt) (every Config, Api and event type verbatim)
 - [Moku Core specification](https://github.com/moku-labs/core/tree/main/specification)

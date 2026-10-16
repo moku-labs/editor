@@ -15,6 +15,12 @@
  * | link | boot | "#moku-editor-boot" |
  * | link | role | "page" |
  * | link | reloadGraceMs | 8000 |
+ * | activeSource | autoUse | true |
+ * | activeSource | pauseLocal | true |
+ * | activeSource | rejoinMs | 15000 |
+ * | activeSource | noticeMs | 12000 |
+ * | activeSource | renewMs | 4000 |
+ * | activeSource | markers | 32 |
  * | workspace | defaultWorkspace | "game" |
  * | workspace | storageKey | "moku-editor" |
  * | workspace | reloadTimeoutMs | 15000 |

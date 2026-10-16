@@ -6,9 +6,10 @@
  * cursor. Rows newer than the view's end are not drawn yet (the playout delay); rows older than the
  * view are skipped by a binary search. Allocation-free: strings come from the label caches.
  */
+import { restFpsAt } from "../derive/header";
 import { firstVisibleRow, rowFrom } from "../series/rows";
 import type { PerfHistory } from "../source/contract";
-import { REST, rateFps, spikeCause } from "../source/contract";
+import { REST, spikeCause } from "../source/contract";
 import type { MissionState } from "../types";
 import { at, DASH, hline, label, paintCursor, paintMarker, paintSelection, vline } from "./draw";
 import { axisText, labelOf, msText } from "./labels";
@@ -253,7 +254,8 @@ function breakLabel(scene: PaintScene, ms: number): string {
 }
 
 /**
- * The words of a resting run: the long form when it is wider than 190 px.
+ * The words of a resting run: the long form when it is wider than 190 px, at the run's rest rate
+ * (its budget's, never `rateMs`: the engine keeps the loop's rate there while it rests).
  *
  * @param scene - The scene.
  * @param history - The history.
@@ -263,7 +265,7 @@ function breakLabel(scene: PaintScene, ms: number): string {
  */
 function runLabel(scene: PaintScene, history: PerfHistory, row: number, width: number): string {
   if (width <= 190) return "Resting";
-  const fps = rateFps(history.rateMs[row] ?? 0);
+  const fps = restFpsAt(history, row);
   const key = fps * 10_000 + Math.round((history.budgetMs[row] ?? 0) * 10);
   return labelOf(scene.labels.flag, RESTING_KEYS + key, key, restingText);
 }

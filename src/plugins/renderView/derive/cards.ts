@@ -16,6 +16,7 @@ import type {
 } from "../source/contract";
 import { REST, rangeRows, rangeSummary, rateFps } from "../source/contract";
 import type { AssetsUsage, FrameRange, MissionState } from "../types";
+import { frameFpsAt } from "./header";
 import { rateNow } from "./rate";
 import { framePassGpu } from "./tooltip";
 import type { Line, Tag } from "./words";
@@ -617,7 +618,7 @@ function frameReadout(
   frame: number
 ): string | undefined {
   if (kind === "frame") return `${oneDecimal(history.ms[row] ?? 0)} ms`;
-  if (kind === "fps") return `${rateFps(history.rateMs[row] ?? 0)} fps`;
+  if (kind === "fps") return `${frameFpsAt(history, row)} fps`;
   if (kind === "draws") {
     const draws = history.draws[row] ?? Number.NaN;
     return Number.isNaN(draws) ? undefined : String(Math.round(draws));

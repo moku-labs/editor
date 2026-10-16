@@ -16,7 +16,10 @@
  * | perf | readEveryMs | 250 |
  * | perf | windowMs | 6000 |
  * | perf | frames | 1024 |
- * | recorder | autoStart | "device": a log starts by itself on a debug build only |
+ * | perf | feedPasses | false: no pass rows sent |
+ * | perf | feedSystems | true: the top 5 systems of each frame |
+ * | perf | feedNodes | false: no demand marks sent |
+ * | recorder | autoStart | false: nothing records until the phone, the tools page or an agent starts it ("device": a debug build only; true: always) |
  * | recorder | keepMb | 64 |
  * | recorder | flushEveryMs | 1000 |
  * | recorder | persistEveryMs | 5000 |
