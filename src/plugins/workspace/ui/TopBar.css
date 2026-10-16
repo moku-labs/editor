@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar, with the computer's engine fingerprint after the session chip from 1100 px (spec 09 W3, ENGINE_TEXT_FROM_PX); under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: the game mark, game name, the source pill (its name only), link pill, Pause and Step as icons, the Hot reload icon toggle (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar, with the computer's engine fingerprint after the session chip from 1100 px (spec 09 W3, ENGINE_TEXT_FROM_PX). The wide bar gives up room in steps as the window narrows, so its controls always fit on one row: under 1360 px the ghost buttons (Pause, Step) drop their visible label, the game name its version and the source pill how the source is reached, while the Preview, Overlay and Hot reload switches keep their labels; under 1140 px the source pill shows its dot only (spec 11 § 5.3 W9; the name stays its accessible name, the title the full label). The search box gives up its room before the game name shrinks, keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: the game mark, game name, the source pill (its name only), link pill, Pause and Step as icons, the Hot reload icon toggle (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -67,10 +67,10 @@
     white-space: nowrap;
   }
 
-  /* The wide search box: grows to 380 px; it shrinks before the game name does (factor 8), down to 88 px, and clips its content there. */
+  /* The wide search box grows from a zero basis between 88 and 380 px: it only takes the room the other controls leave, so it is down to 88 px before the game name starts to shrink, and it clips its content there. */
   [data-search] {
     display: flex;
-    flex: 1 8 auto;
+    flex: 1 1 0;
     align-items: center;
     gap: 8px;
     min-width: 88px;
@@ -161,8 +161,8 @@
     max-width: 140px;
   }
 
-  /* Wide bar under 1180 px: the ghost buttons become icons (the label stays the accessible name); the switches keep their labels in a tighter box. */
-  @media (max-width: 1180px) {
+  /* Wide bar under 1360 px, where the engine fingerprint, the source pill and the labels no longer fit together: the ghost buttons become icons (the label stays the accessible name); the switches keep their labels in a tighter box; the game name drops its version and the source pill how the source is reached (its title keeps it). */
+  @media (max-width: 1359.98px) {
     :scope[data-layout="wide"] {
       gap: 4px;
     }
@@ -191,6 +191,26 @@
 
     :scope[data-layout="wide"] [data-game-name] [data-part="version"] {
       display: none;
+    }
+
+    :scope[data-layout="wide"] [data-ui="source-pill"] [data-part="via"] {
+      display: none;
+    }
+
+    :scope[data-layout="wide"] [data-ui="source-pill"] > button {
+      max-width: 140px;
+    }
+  }
+
+  /* Wide bar under 1140 px: the source pill shows its dot only, the live or away state and the device tint; its name stays the accessible name and its title the full label (spec 11 § 5.3 W9). */
+  @media (max-width: 1139.98px) {
+    :scope[data-layout="wide"] [data-ui="source-pill"] [data-part="name"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
   }
 

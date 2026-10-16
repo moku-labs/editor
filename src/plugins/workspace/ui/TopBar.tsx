@@ -6,7 +6,10 @@
  * computer's engine fingerprint (`engine 0.14.13+1ab7f2`, once link knows it; TopBar.css hides it
  * below 1100 px), link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G),
  * Overlay (O) and Hot reload (H) switches with visible labels, Registry (icon; counts in its
- * title), theme toggle.
+ * title), theme toggle. TopBar.css gives up room in steps as the window narrows, so the row always
+ * fits: under 1360 px Pause and Step show their icons, the game name drops its version and the
+ * source pill how the source is reached; under 1140 px the source pill shows its dot only (its
+ * title keeps the full label).
  *
  * Below 900 px (`data-layout="compact"`): the game mark, game name, source pill (the name only),
  * link pill (the session id in its title; it opens the session menu), Pause/Resume and Step as

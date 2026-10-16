@@ -110,7 +110,10 @@ The bar picks its layout from the window width and writes it as `data-layout` on
   nothing while it is unknown; hidden below 1100 px of window width), link pill, Pause, Step,
   the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels,
   Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
-  theme. Under 1180 px Pause and Step show their icons only.
+  theme. The row always fits: under 1360 px Pause and Step show their icons only, the game name
+  drops its version and the source pill how the source is reached (its title keeps it); under
+  1140 px the source pill shows its dot only (the name stays its accessible name). The search box
+  gives up its room first: it is at its 88 px minimum before the game name shrinks.
 - **Below 900 px (`compact`)**: the game mark, game name (hidden at 560 px and narrower), source
   pill (its name only), link pill, Pause and Step as icons (the label is their accessible name, the title says the key), then
   at the end the icon toggle Hot reload (`data-action="hot-reload"`, flame icon with a dot while

@@ -217,6 +217,13 @@ export const DEMO_GCS = [
 const REST_FROM = 40;
 const REST_TO = 81;
 
+/**
+ * A resting row as the real engine (0.15.x) writes it: the rest budget is 33.3 ms (30 fps) while
+ * `rateMs` stays one frame of the loop's rate, 16.67 ms. The rest rate is the budget's.
+ */
+const REST_BUDGET_MS = 33.3;
+const REST_RATE_MS = 16.67;
+
 /** The loop indexes where adaptive drops 120 → 60 (missed frames) and rises back. */
 const DROP_AT = 254;
 const RISE_AT = 329;
@@ -339,7 +346,9 @@ export type DemoRow = {
   readonly ms: number;
   readonly jsMs: number;
   readonly gpuMs: number;
+  /** The loop's frame, ms: 16.67 while resting (the engine keeps the loop's rate there). */
   readonly rateMs: number;
+  /** The frame's budget, ms: 33.3 while resting (the rest rate, 30 fps, is the budget's). */
   readonly budgetMs: number;
   readonly rest: RestState;
   readonly causes: number;
@@ -446,8 +455,8 @@ export function demoRow(frame: number): DemoRow {
     ms: Math.round(ms * 100) / 100,
     jsMs: Math.round(work.js * 100) / 100,
     gpuMs: Math.round(work.gpu * 100) / 100,
-    rateMs: step,
-    budgetMs: step,
+    rateMs: resting ? REST_RATE_MS : step,
+    budgetMs: resting ? REST_BUDGET_MS : step,
     rest: resting ? 1 : 0,
     causes: work.causes,
     draws: drawsOf(frame, resting, spike),
