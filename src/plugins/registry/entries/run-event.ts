@@ -47,15 +47,17 @@ export function withRunEvent(
   return Object.freeze({
     ...entry,
     /**
-     * Runs the inner entry and emits the run event when it settles.
+     * Runs the inner entry with who runs it and the MCP client's name, and emits the run event when
+     * it settles.
      *
      * @param raw - Raw input (`null` = none).
      * @param via - Who runs it; absent: `"local"`.
+     * @param client - The MCP client's name, with `via: "mcp"` only.
      * @returns What the inner entry answered.
      */
-    run: async (raw: Json, via?: CommandVia): Promise<RunResult> => {
+    run: async (raw: Json, via?: CommandVia, client?: string): Promise<RunResult> => {
       try {
-        const result = await entry.run(raw, via);
+        const result = await entry.run(raw, via, client);
         settled(raw, via, true);
         return result;
       } catch (error) {

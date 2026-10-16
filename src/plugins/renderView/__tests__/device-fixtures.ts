@@ -1,21 +1,24 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire and the engine's "not reported" */
 import type { SessionDevice } from "../../hub/protocol";
-import type { PerfCause, PerfSampleLine, PerfSpikeLine } from "../../perf/protocol";
-import { CAUSE_BITS } from "../../perf/protocol";
-import type { Json, SessionInfo } from "../../registry/protocol";
-import { toWireValue } from "../../registry/protocol";
 import type {
+  PerfCause,
+  PerfSampleLine,
   PerfSecond,
+  PerfSpikeLine,
   PerfSpikeRecord,
   PerfSpikeSummary,
-  PerfWindowWire,
-  RecorderStatus
-} from "../device/contract";
+  PerfWindowWire
+} from "../../perf/protocol";
+import { CAUSE_BITS } from "../../perf/protocol";
+import type { RecorderStatus } from "../../recorder/protocol";
+import type { Json, SessionInfo } from "../../registry/protocol";
+import { toWireValue } from "../../registry/protocol";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixtures of the D1 device strip in the owners' shapes (01 SessionDevice, 03
+// Fixtures of the design's demo phone in the owners' shapes (01 SessionDevice, 03
 // PerfSecond / PerfWindowWire / PerfSpikeSummary / PerfSpikeRecord, 05
-// RecorderStatus): the design's demo phone, six spikes in the 6 s window.
+// RecorderStatus): six spikes in a 6 s window. Kept from the D1 device strip for
+// Mission control's demo series (build wave 4, RV6, spec 09 § M17).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The phone of the design: an A26 over adb. */
@@ -380,6 +383,7 @@ export function recorderOf(overrides: Partial<RecorderStatus> = {}): RecorderSta
     sinceMs: 192_000,
     storage: "opfs",
     dropped: 0,
+    startedBy: { by: "editor", name: null },
     ...overrides
   };
 }

@@ -32,22 +32,28 @@ const FILES = readdirSync(PROTOCOL)
 const SPECIFIER = /^\s*(import|export)\s+(type\s+)?[^;]*?from\s+"([^"]+)"/gm;
 
 describe("protocol boundary", () => {
-  it("keeps the skeleton's barrel and extends it with window, values, guards and the GPU rule", () => {
-    expect(FILES.map(file => file.name).toSorted()).toEqual([
-      "causes.ts",
-      "engine.ts",
-      "gpu.ts",
-      "guards.ts",
-      "index.ts",
-      "rate.ts",
-      "text.ts",
-      "values.ts",
-      "window.ts"
-    ]);
+  it("keeps the skeleton's barrel and extends it with window, values, guards, the GPU rule and the Mission control feeds", () => {
+    const parts = [
+      "causes",
+      "engine",
+      "frames",
+      "gpu",
+      "guards",
+      "history",
+      "memory",
+      "passes",
+      "rate",
+      "sections",
+      "text",
+      "timeline",
+      "values",
+      "window"
+    ];
+    expect(FILES.map(file => file.name).toSorted()).toEqual(
+      [...parts, "index"].map(part => `${part}.ts`).toSorted()
+    );
     const barrel = FILES.find(file => file.name === "index.ts")?.text ?? "";
-    for (const part of ["causes", "engine", "gpu", "guards", "rate", "text", "values", "window"]) {
-      expect(barrel).toContain(`export * from "./${part}";`);
-    }
+    for (const part of parts) expect(barrel).toContain(`export * from "./${part}";`);
   });
 
   it("imports only its own files, registry/protocol by type and the engine by type (bug: a plugin, the kernel or the engine dragged into the server or tools bundle)", () => {

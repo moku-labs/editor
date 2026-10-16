@@ -141,7 +141,9 @@ export function statusOf(state: RecorderState): RecorderStatus {
     label: log?.label ?? null,
     sinceMs: session === undefined ? 0 : Date.now() - session.startedAt,
     storage: (session?.store ?? state.store).kind,
-    dropped: state.dropped
+    dropped: state.dropped,
+    // Who started it arrives with build wave 1 (spec 05 Delta 2026-10-16 R2-R4); none is recorded yet.
+    startedBy: null
   };
 }
 

@@ -10,8 +10,8 @@ import { linkPlugin } from "../../link";
 import type { WorkspaceApi } from "../../workspace/types";
 import { collapseAll, expandAll, moveInTree } from "../actions";
 import { treeCounts } from "../derive";
-import { sessionDevice } from "../device/watch";
 import type { RenderViewCtx, TreeRow as TreeRowData } from "../types";
+import { sessionDevice } from "../watch";
 import { TreeRow } from "./TreeRow";
 
 /**

@@ -24,8 +24,7 @@ const PRINTING_SOURCES = [
   "src/plugins/overlay",
   "src/plugins/perf/graph",
   "src/plugins/perf/protocol",
-  "src/plugins/perf/records.ts",
-  "src/plugins/renderView/device"
+  "src/plugins/perf/records.ts"
 ];
 
 /** A character a face can draw. */

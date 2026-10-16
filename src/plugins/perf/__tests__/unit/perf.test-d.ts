@@ -4,9 +4,15 @@ import type { Json } from "../../../registry/protocol";
 import type { GraphContext2D } from "../../graph";
 import type {
   MonitorLike,
+  PerfDetailWire,
+  PerfEventsWire,
   PerfFrameEvent,
+  PerfFramesWire,
+  PerfMemory,
+  PerfPassesWire,
   PerfRenderStats,
   PerfSecond,
+  PerfTimelineEvent,
   PerfWindow,
   PerfWindowView,
   PerfWindowWire
@@ -76,4 +82,25 @@ export function labelOf(event: PerfFrameEvent): string {
   // @ts-expect-error — a pool-trim or warm event has no label
   expectTypeOf(event.label).toBeString();
   return event.kind === "overlay" ? event.label : "";
+}
+
+// spec 03 Delta 2026-10-16 D14 "Type-level": the Mission control wires travel as Json as they are
+// (bug: a readonly array or an undefined field forcing a copy per read, or a value the wire cannot
+// carry); a timeline event narrows on its kind; an older agent's second has no memory.
+expectTypeOf<PerfFramesWire>().toExtend<Json>();
+expectTypeOf<PerfEventsWire>().toExtend<Json>();
+expectTypeOf<PerfPassesWire>().toExtend<Json>();
+expectTypeOf<PerfDetailWire>().toExtend<Json>();
+expectTypeOf<PerfSecond["memory"]>().toEqualTypeOf<PerfMemory | undefined>();
+
+/**
+ * A timeline event narrows on kind: only a GC frees MB.
+ *
+ * @param event - A timeline event.
+ * @returns The MB a GC freed, else 0.
+ */
+export function freedOf(event: PerfTimelineEvent): number {
+  // @ts-expect-error — a rate, shader or mark event frees nothing
+  expectTypeOf(event.freedMb).toBeNumber();
+  return event.kind === "gc" ? event.freedMb : 0;
 }

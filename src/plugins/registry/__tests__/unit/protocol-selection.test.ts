@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the wire value of "nothing is selected" */
 import { describe, expect, expectTypeOf, it } from "vitest";
+import type { DeviceDirectory, DeviceTelemetry } from "../../../connect/protocol";
 import type { ElementRef, PageRect } from "../../../panels/shared/scene";
 import type {
   EditorNotificationMethod,
@@ -480,13 +481,19 @@ describe("selection types", () => {
     expect(json).toBe(area);
   });
 
-  it("PublishMethod is hotReload, selection, project or engine, typed by PublishParams", () => {
-    expectTypeOf<PublishMethod>().toEqualTypeOf<"hotReload" | "selection" | "project" | "engine">();
+  it("PublishMethod is hotReload, selection, project, engine, devices or deviceTelemetry, typed by PublishParams", () => {
+    expectTypeOf<PublishMethod>().toEqualTypeOf<
+      "hotReload" | "selection" | "project" | "engine" | "devices" | "deviceTelemetry"
+    >();
     expectTypeOf<PublishParams["hotReload"]>().toEqualTypeOf<HotReload>();
     expectTypeOf<PublishParams["selection"]>().toEqualTypeOf<SelectionInfo | null>();
     expectTypeOf<PublishParams["project"]>().toEqualTypeOf<ProjectState>();
+    // spec 11 § 5.4: connect's two values, typed by connect/protocol.
+    expectTypeOf<PublishParams["devices"]>().toEqualTypeOf<DeviceDirectory>();
+    expectTypeOf<PublishParams["deviceTelemetry"]>().toEqualTypeOf<DeviceTelemetry>();
 
-    const params: PublishParams = {
+    // connect's two are published only in device mode; the other four on every server.
+    const params: Omit<PublishParams, "devices" | "deviceTelemetry"> = {
       hotReload: { hmr: true, owner: "bin" },
       selection: null,
       project: { state: "off", reason: "disabled" },
@@ -543,7 +550,14 @@ describe("selection types", () => {
 
   it("the editor channel names its notifications and requests", () => {
     expectTypeOf<EditorNotificationMethod>().toEqualTypeOf<
-      "session" | "sessions" | "hotReload" | "selection" | "project" | "engine"
+      | "session"
+      | "sessions"
+      | "hotReload"
+      | "selection"
+      | "project"
+      | "engine"
+      | "devices"
+      | "deviceTelemetry"
     >();
     expectTypeOf<EditorNotifications["selection"]>().toEqualTypeOf<SelectionInfo | null>();
     expectTypeOf<EditorNotifications["hotReload"]>().toEqualTypeOf<HotReload>();

@@ -92,7 +92,7 @@ describe("link:status", () => {
       status: { kind: "lost", reason: "bye", lastFrame: 1841, retryInMs: 1 }
     });
 
-    expect(ctx.state.fps).toEqual([60]);
+    expect(ctx.state.releases).toHaveLength(2);
     expect(ctx.state.scene?.nodes.size).toBe(104);
   });
 
@@ -105,7 +105,6 @@ describe("link:status", () => {
     hooks["link:status"]({ status: { kind: "paused", frame: 5 }, session: "s-2" });
 
     expect(ctx.state.session).toBe("s-2");
-    expect(ctx.state.fps).toEqual([]);
     expect(ctx.state.loaded.size).toBe(0);
     expect(ctx.state.releases).toEqual([]);
     expect(ctx.state.seen.size).toBe(0);
@@ -143,27 +142,11 @@ describe("link:status", () => {
     expect(ctx.state.effectsInstalled).toBe(true);
   });
 
-  it("clears the heap after a session change and on empty, keeps it on the same session", () => {
-    const heap = { usedMb: 12.8, limitMb: 4095.8 };
-    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
-    ctx.state.heap = heap;
-
-    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
-    expect(ctx.state.heap).toEqual(heap);
-
-    hooks["link:status"]({ status: { kind: "live", frame: 3 }, session: "s-2" });
-    expect(ctx.state.heap).toBeUndefined();
-
-    ctx.state.heap = heap;
-    hooks["link:status"]({ status: { kind: "empty" } });
-    expect(ctx.state.heap).toBeUndefined();
-  });
-
   it("does not clear on the same session and does not refresh while hidden", async () => {
     hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
     await fill();
     hooks["link:status"]({ status: { kind: "live", frame: 9 }, session: "s-1" });
-    expect(ctx.state.fps).toEqual([60]);
+    expect(ctx.state.releases).toHaveLength(2);
 
     hooks["workspace:changed"]({ ws: "flow" });
     vi.mocked(ctx.link.api.files.read).mockClear();

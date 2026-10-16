@@ -4,14 +4,14 @@
  * fontsource Latin woff2 (`@fontsource/barlow`, `@fontsource/barlow-condensed`, SIL OFL 1.1)
  * subset with HarfBuzz (`subset-font`) to the glyphs the overlay prints, then written beside
  * `faces.ts`, which carries the bytes as base64 (a shadow root ignores `@font-face`, so they travel
- * inside the module) and the glyph set as `GLYPHS`. The tools page's device strip names the same
- * files (`workspace/styles/fonts.css`).
+ * inside the module) and the glyph set as `GLYPHS`.
  *
  * The glyph set: printable ASCII U+0020–U+007E (BASE_RANGES), plus every printable non-ASCII character written in
  * the sources that print in these faces (literal, or as a `\uXXXX` escape): the overlay
  * (`src/plugins/overlay`, tests excluded), the graph painter (`src/plugins/perf/graph`), perf's
- * cause words and why sentences (`src/plugins/perf/protocol`, `src/plugins/perf/records.ts`) and
- * the tools strip (`src/plugins/renderView/device`). On 2026-10-15 that is NBSP U+00A0 and
+ * cause words and why sentences (`src/plugins/perf/protocol`, `src/plugins/perf/records.ts`); the
+ * tools page's Render workspace sets its text in Geist (spec 09 Delta 2026-10-15), not in these
+ * faces. On 2026-10-15 that is NBSP U+00A0 and
  * § ° ± · × – — … → − ≥. Text a game supplies (labels, paths, system names) outside the set falls
  * back to the stacks' next face. The faces are registered under private families
  * ("Moku Overlay Barlow Condensed", "Moku Overlay Barlow"), so a game's own Barlow never draws from
@@ -47,8 +47,7 @@ const SOURCES = [
   "src/plugins/overlay",
   "src/plugins/perf/graph",
   "src/plugins/perf/protocol",
-  "src/plugins/perf/records.ts",
-  "src/plugins/renderView/device"
+  "src/plugins/perf/records.ts"
 ] as const;
 
 /**

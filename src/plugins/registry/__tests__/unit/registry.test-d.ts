@@ -4,6 +4,7 @@ import { describe, expectTypeOf, it } from "vitest";
 import type { AgentEvents } from "../../../../config";
 import { createAgentPlugin } from "../../../../config";
 import { registryPlugin } from "../..";
+import type { CommandVia, Json, RunResult } from "../../protocol";
 import type {
   CommandEntry,
   DoorCommand,
@@ -91,5 +92,23 @@ describe("registry types", () => {
       // @ts-expect-error -- registry:command reaches only plugins that depend on the registry
       hooks: () => ({ "registry:command": () => undefined })
     });
+  });
+
+  // delta-data cross-unit "registry": the tools page and an agent are named runners, and the MCP
+  // client's name rides as a third, optional argument. Bugs: the bridge unable to pass the origin;
+  // the widened signature breaking every entry written with two parameters.
+  it("names tools and mcp as runners and keeps a two-parameter run assignable", () => {
+    expectTypeOf<"tools">().toExtend<CommandVia>();
+    expectTypeOf<"mcp">().toExtend<CommandVia>();
+    // @ts-expect-error -- "agent" is a RecordStarter, not who ran a command
+    const wrong: CommandVia = "agent";
+    expectTypeOf(wrong).toEqualTypeOf<CommandVia>();
+
+    const twoParameters = async (_raw: Json, _via?: CommandVia): Promise<RunResult> => ({
+      value: null, // eslint-disable-line unicorn/no-null -- the wire value of "no answer"
+      state: { path: "home", frame: 1, tainted: false }
+    });
+    expectTypeOf(twoParameters).toExtend<CommandEntry["run"]>();
+    expectTypeOf<CommandEntry["run"]>().parameter(2).toEqualTypeOf<string | undefined>();
   });
 });

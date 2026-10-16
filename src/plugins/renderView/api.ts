@@ -1,11 +1,12 @@
 /**
- * @file renderView plugin — api factory: refresh, snapshot, reveal, highlight, sortTextures,
- * filterBundle, and the device strip's device, stepSpike, openSpike, closeSpike, setMore (which
- * delegate to `device/`). The contract of each member lives on RenderViewApi in types.ts.
+ * @file renderView plugin — api factory: the scene cards' refresh, snapshot, reveal, highlight,
+ * sortTextures, filterBundle, and Mission control's members (mission, inspect, pause, live, setSpan,
+ * seek, select, step, jump, setRate, setSection, setOverdraw, record, mark), which are typed stubs
+ * until build wave 3 (RV4). The contract of each member lives on RenderViewApi in types.ts.
  */
 import { filterTo, highlightRef, revealRef, sortBy } from "./actions";
 import { deriveSnapshot } from "./derive";
-import { closeSpike, deviceView, openSpike, setMore, stepToSpike } from "./device/watch";
+import { notBuilt } from "./stub";
 import type { RenderViewApi, RenderViewCtx } from "./types";
 import { refreshRenderView } from "./watch";
 
@@ -23,14 +24,19 @@ export function createRenderViewApi(ctx: RenderViewCtx): RenderViewApi {
     highlight: ref => highlightRef(ctx, ref),
     sortTextures: key => sortBy(ctx, key),
     filterBundle: bundle => filterTo(ctx, bundle),
-    device: () => deviceView(ctx),
-    stepSpike: dir => stepToSpike(ctx, dir),
-    openSpike: frame => openSpike(ctx, frame),
-    closeSpike: () => {
-      closeSpike(ctx);
-    },
-    setMore: open => {
-      setMore(ctx, open);
-    }
+    mission: () => notBuilt("api.mission", 3),
+    inspect: () => notBuilt("api.inspect", 3),
+    pause: () => notBuilt("api.pause", 3),
+    live: () => notBuilt("api.live", 3),
+    setSpan: () => notBuilt("api.setSpan", 3),
+    seek: () => notBuilt("api.seek", 3),
+    select: () => notBuilt("api.select", 3),
+    step: () => notBuilt("api.step", 3),
+    jump: () => notBuilt("api.jump", 3),
+    setRate: () => notBuilt("api.setRate", 3),
+    setSection: () => notBuilt("api.setSection", 3),
+    setOverdraw: () => notBuilt("api.setOverdraw", 3),
+    record: () => notBuilt("api.record", 3),
+    mark: () => notBuilt("api.mark", 3)
   };
 }

@@ -4,7 +4,7 @@ import { createRegistryApi } from "../../api";
 import { buildCatalogue } from "../../catalogue";
 import { doorFailed, readOnlyRefusal } from "../../entries/failures";
 import { withRunEvent } from "../../entries/run-event";
-import type { CommandDescriptor, Json } from "../../protocol";
+import type { CommandDescriptor, CommandVia, Json } from "../../protocol";
 import { checkInput } from "../../protocol";
 import type { CommandEntry } from "../../types";
 import type { EmitMock, LogMock } from "../helpers";
@@ -140,5 +140,30 @@ describe("withRunEvent", () => {
       ["registry:command", { id: "game.pause", input: null, via: "bridge", ok: true }],
       ["registry:command", { id: "editor.ping", input: null, via: "local", ok: true }]
     ]);
+  });
+
+  // spec 05 Delta 2026-10-16 R4, delta-data cross-unit "registry": editor.record names who started
+  // the log from the run's via and, for an agent, the MCP client's name. Bug: the registry's wrappers
+  // drop them, so every log the tools page or an agent starts reads "started by the game".
+  it("hands an editor command of add the via of the run and the MCP client's name", async () => {
+    const ctx = createCtx();
+    const registry = createRegistryApi(ctx);
+    const seen: [CommandVia | undefined, string | undefined][] = [];
+    registry.add({
+      descriptor: { id: "editor.record", title: "Record", input: {}, effect: "cosmetic" },
+      run: async (_raw, via, client) => {
+        seen.push([via, client]);
+        return { value: null, state };
+      }
+    });
+
+    await registry.command("editor.record")?.run(null, "mcp", "Claude");
+    await registry.command("editor.record")?.run(null, "tools");
+
+    expect(seen).toEqual([
+      ["mcp", "Claude"],
+      ["tools", undefined]
+    ]);
+    expect(ctx.emit.mock.calls.map(([, event]) => event.via)).toEqual(["mcp", "tools"]);
   });
 });

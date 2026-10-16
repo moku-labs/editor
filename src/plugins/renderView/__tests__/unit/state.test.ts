@@ -1,14 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { createRenderViewState } from "../../state";
+/* eslint-disable unicorn/no-null -- null is the history's "no epoch yet" */
+import { describe, expect, it, vi } from "vitest";
+import { HISTORY_ROWS } from "../../../perf/protocol";
+import {
+  createRenderViewState,
+  notify,
+  notifyMission,
+  subscribe,
+  subscribeMission
+} from "../../state";
 import { CONFIG } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// state.ts: the state factory — the initial shape, including session,
-// calibrationAsked and palette, and a fresh object with fresh collections per call.
+// state.ts: the state factory — the initial shape of the scene cards' fields and
+// of Mission control (spec 09 § M12), including session, calibrationAsked and
+// palette, a fresh object with fresh collections per call, and the two UI
+// stores.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("createRenderViewState", () => {
-  it("starts empty: no data, sort GPU MB descending, every bundle, nothing open", () => {
+  it("starts empty: no data, sort GPU MB descending, every bundle, nothing open, Mission control live at 6 s", () => {
     const state = createRenderViewState({ config: CONFIG });
 
     expect(state).toEqual({
@@ -24,7 +34,6 @@ describe("createRenderViewState", () => {
       calibration: undefined,
       calibrationAsked: false,
       catalogue: undefined,
-      fps: [],
       loaded: new Map(),
       releases: [],
       seen: new Map(),
@@ -38,30 +47,35 @@ describe("createRenderViewState", () => {
       tracker: [],
       watching: [],
       listeners: new Set(),
-      device: {
-        session: undefined,
-        second: undefined,
-        secondAt: undefined,
-        window: expect.objectContaining({ capacity: 1024, count: 0, spikeCount: 0 }),
-        windowAt: undefined,
-        playout: {
-          ms: undefined,
-          at: 0,
-          gapMs: undefined,
-          gapDevMs: 0,
-          delayMs: 1000,
-          cutMs: 1000
-        },
-        spikes: [],
-        recorder: undefined,
-        perf: "absent",
-        selected: undefined,
-        record: { kind: "closed" },
-        more: true,
-        dirty: false,
+      mission: {
+        source: undefined,
         watches: [],
-        reading: undefined,
-        stopPaint: undefined,
+        poll: { timer: undefined, inFlight: false, eventsAfter: undefined },
+        history: expect.objectContaining({ capacity: HISTORY_ROWS, count: 0, epoch: null }),
+        series: expect.objectContaining({ version: 0 }),
+        second: undefined,
+        passes: undefined,
+        recorder: undefined,
+        telemetry: undefined,
+        clock: expect.objectContaining({ ms: undefined, delayMs: 1000, endMs: undefined }),
+        view: { live: true, endMs: 0, span: 6000 },
+        selection: undefined,
+        selectionVersion: 0,
+        detail: { kind: "idle" },
+        hoverMs: undefined,
+        rate: { pending: undefined, answer: undefined },
+        sectionPending: undefined,
+        popover: undefined,
+        connect: {
+          tab: "wire",
+          stopScan: undefined,
+          codes: new Map(),
+          pending: undefined,
+          error: undefined
+        },
+        sceneOpen: false,
+        files: new Map(),
+        stopLoop: undefined,
         listeners: new Set()
       }
     });
@@ -75,13 +89,12 @@ describe("createRenderViewState", () => {
     expect(state).toHaveProperty("palette", undefined);
   });
 
-  it("returns a fresh object with fresh collections on every call", () => {
+  it("returns a fresh object with fresh collections on every call, Mission control's history and series included", () => {
     const first = createRenderViewState({ config: CONFIG });
     const second = createRenderViewState({ config: CONFIG });
 
     expect(second).not.toBe(first);
     expect(second.sources).not.toBe(first.sources);
-    expect(second.fps).not.toBe(first.fps);
     expect(second.loaded).not.toBe(first.loaded);
     expect(second.releases).not.toBe(first.releases);
     expect(second.seen).not.toBe(first.seen);
@@ -91,12 +104,42 @@ describe("createRenderViewState", () => {
     expect(second.tracker).not.toBe(first.tracker);
     expect(second.watching).not.toBe(first.watching);
     expect(second.listeners).not.toBe(first.listeners);
+    expect(second.mission.history.frame).not.toBe(first.mission.history.frame);
+    expect(second.mission.series.heap.v).not.toBe(first.mission.series.heap.v);
+    expect(second.mission.clock).not.toBe(first.mission.clock);
 
-    first.fps.push(60);
     first.tree.open.add("ui:boardScreen");
     first.table.bundle = "ui";
-    expect(second.fps).toEqual([]);
+    first.mission.history.frame[0] = 4810;
+    first.mission.view.live = false;
     expect(second.tree.open.size).toBe(0);
     expect(second.table.bundle).toBe("all");
+    expect(second.mission.history.frame[0]).toBe(0);
+    expect(second.mission.view.live).toBe(true);
+  });
+});
+
+// A Mission control value (a frames answer every second, a telemetry record) re-renders Mission
+// control only; a scene value re-renders the scene cards only. Bug: the 1 Hz Mission control
+// values re-rendering the scene cards (or the cards never hearing of a new scene).
+describe("the two UI stores", () => {
+  it("notifyMission calls Mission control's listeners, notify the scene cards', each until they unsubscribe", () => {
+    const state = createRenderViewState({ config: CONFIG });
+    const cards = vi.fn();
+    const mission = vi.fn();
+    const offCards = subscribe(state, cards);
+    const offMission = subscribeMission(state.mission, mission);
+
+    notifyMission(state.mission);
+    expect([cards.mock.calls.length, mission.mock.calls.length]).toEqual([0, 1]);
+    notify(state);
+    expect([cards.mock.calls.length, mission.mock.calls.length]).toEqual([1, 1]);
+
+    offMission();
+    offMission();
+    offCards();
+    notifyMission(state.mission);
+    notify(state);
+    expect([cards.mock.calls.length, mission.mock.calls.length]).toEqual([1, 1]);
   });
 });

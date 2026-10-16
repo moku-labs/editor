@@ -3,6 +3,7 @@
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createToolsCore, type ToolsEvents, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { ElementRef } from "../../../panels/shared/scene";
@@ -19,14 +20,14 @@ import {
 } from "./agent-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The tools core with the real link, workspace, panels and renderView over an
+// The tools core with the real link, activeSource, workspace, panels and renderView over an
 // in-process hub to a scripted agent channel serving the merge-game board
 // capture, plus a probe plugin (no depends) that emits workspace:reveal and
 // hooks workspace:inspect. No gameView plugin.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, renderViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, renderViewPlugin]
 });
 
 const BOOT: ToolsBoot = {
@@ -172,7 +173,7 @@ describe("renderView integration", () => {
     // The tracker watches for the session; the scene only while Render is shown.
     await until(() => watched().length === 3, "tracker watches");
     expect(watched()).toEqual(["game.assets", "game.effects", "game.render"]);
-    await until(() => app.renderView.snapshot().tiles.fps !== undefined, "game.render value");
+    await until(() => app.renderView.snapshot().frame !== undefined, "game.render value");
 
     act(() => app.workspace.show("render"));
     await until(() => app.renderView.snapshot().tree.length > 0, "scene");
@@ -195,9 +196,6 @@ describe("renderView integration", () => {
       pooled: 24,
       effects: { particles: 18, emitters: 1, filters: 24, renderPasses: 49 }
     });
-    expect(root.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "18 particles · 1 emitter · 24 filters"
-    );
 
     // One pushed game.effects value reaches the Scene tile.
     agent.set("game.effects", { particles: 30, emitters: 2, filters: 24, renderPasses: 51 });
@@ -284,15 +282,12 @@ describe("renderView integration", () => {
     hub.open(SESSION, older);
     hub.heartbeat(SESSION.id, 1841, false);
 
-    await until(() => app.renderView.snapshot().tiles.fps !== undefined, "game.render value");
+    await until(() => app.renderView.snapshot().frame !== undefined, "game.render value");
     act(() => app.workspace.show("render"));
     await until(() => app.renderView.snapshot().tiles.scene !== undefined, "scene tile");
 
     expect(agent.watch.mock.calls.map(call => call[0])).not.toContain("game.effects");
     expect(app.renderView.snapshot().tiles.scene).not.toHaveProperty("effects");
-    expect(root.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "Particles and filters are not reported (follow-up F-R1)"
-    );
 
     await app.stop();
     expect(watched()).toEqual([]);

@@ -131,8 +131,12 @@ export type SourceEntry = {
  */
 export type CommandEntry = {
   readonly descriptor: CommandDescriptor;
-  /** Runs it; `via` names the source for `registry:command` (absent: "local"). */
-  run(raw: Json, via?: CommandVia): Promise<RunResult>;
+  /**
+   * Runs it; `via` names the source for `registry:command` (absent: "local"); `client` is the MCP
+   * client's name the hub stamped, passed only with `via: "mcp"` (the recorder's `editor.record`
+   * names the agent with it). An entry that does not read them ignores them.
+   */
+  run(raw: Json, via?: CommandVia, client?: string): Promise<RunResult>;
   /** Overlay toggles of the game only: the switch's state now; undefined when value(app) failed. */
   value?(): boolean | undefined;
 };

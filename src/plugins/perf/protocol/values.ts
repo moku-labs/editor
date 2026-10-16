@@ -11,11 +11,14 @@ import type {
   PerfDisplay,
   PerfHeaderLine,
   PerfSampleLine,
+  PerfSampleNext,
   PerfSpikeLine,
   PoolTrimDetail,
   RateMode,
   RateReason
 } from "./engine";
+import type { PerfMemory } from "./memory";
+import type { PerfMonitorState } from "./sections";
 
 /**
  * Why perf has no monitor: a headless game (no renderer), or an engine before block 2b.
@@ -132,6 +135,44 @@ export type PerfGpuTime = {
 };
 
 /**
+ * What this page's engine and build measure (spec 03 Delta 2026-10-16 D2): computed when the header
+ * arrives and at the first read of a ring, cached until the next header. The tools page shows "not
+ * measured on this engine" for a false capability and "X is off" for a section switched off (D7).
+ *
+ * @example
+ * ```ts
+ * const caps: PerfCaps = { passOwners: true, passDraws: true, passFormat: true, systemNames: true, shaderEvents: true,
+ *   problems: false, gc: false, sections: false, detail: false, passesLine: false, gpuTimer: true, heap: "untrusted" };
+ * ```
+ */
+export type PerfCaps = {
+  /** ring.passes.owner and kind2 present. */
+  readonly passOwners: boolean;
+  /** ring.passes.drawsAt present. */
+  readonly passDraws: boolean;
+  /** ring.passes.format and resolution present. */
+  readonly passFormat: boolean;
+  /** ring.systemNames present. */
+  readonly systemNames: boolean;
+  /** A `shader` event line seen, or the engine lists the name. */
+  readonly shaderEvents: boolean;
+  /** header.measured includes "problems", or a `problem` line seen. */
+  readonly problems: boolean;
+  /** header.measured includes "gc", or a `gc` line seen. */
+  readonly gc: boolean;
+  /** The monitor has `sections` (next change). */
+  readonly sections: boolean;
+  /** The monitor has `detail` (next change). */
+  readonly detail: boolean;
+  /** A `passes` summary line seen (next change). */
+  readonly passesLine: boolean;
+  /** header.gpu.timer is not null (false on iOS: every gpuMs null). */
+  readonly gpuTimer: boolean;
+  /** "trusted": a heap number that moves; "untrusted": a WebView or a frozen counter (D6); "none": null (iOS). */
+  readonly heap: "trusted" | "untrusted" | "none";
+};
+
+/**
  * The pill, the header and the counters: the window's fps and spike count, and the newest sample
  * and screen facts as the engine sent them.
  *
@@ -178,6 +219,21 @@ export type PerfSecond = {
   readonly build: string | null;
   /** header.engine: spec 10's engine fingerprint. */
   readonly engine: string | null;
+  /**
+   * Monitoring: the sections, perf's feeds and their cost (spec 03 Delta 2026-10-16 D7). Absent from
+   * an agent before that delta.
+   */
+  readonly monitor?: PerfMonitorState;
+  /** The page's memory and whether to trust it (D6). Absent from an agent before that delta. */
+  readonly memory?: PerfMemory;
+  /** What the engine and build measure (D2). Absent from an agent before that delta. */
+  readonly caps?: PerfCaps;
+  /** header.timeOrigin as text: a new value means a new page (reload). Absent from an older agent. */
+  readonly epoch?: string | null;
+  /** The newest sample's object counters (engine U3, D1); null on an engine without them. */
+  readonly counts?: PerfSampleNext["counts"];
+  /** header.app.id, with the `.debug` suffix on native debug installs (S-E3, D1); null without it. */
+  readonly appId?: string | null;
 };
 
 /**

@@ -15,10 +15,18 @@ import type {
 } from "../perf/protocol";
 import type { Json } from "../registry/protocol";
 import type { RegistryCommandEvent } from "../registry/types";
-import type { RecorderStatus, RecorderStatusEvent } from "./protocol";
+import type { LogMark, RecorderStatus, RecorderStatusEvent } from "./protocol";
 import type { LogStore } from "./store/types";
 
-export type { RecorderStatus, RecorderStatusEvent } from "./protocol";
+export type {
+  LogMark,
+  MarkInput,
+  RecorderSource,
+  RecorderStatus,
+  RecorderStatusEvent,
+  RecordOrigin,
+  RecordStarter
+} from "./protocol";
 
 /**
  * recorder configuration.
@@ -74,23 +82,6 @@ export type LogFileInfo = {
   /** The log being recorded now. */
   readonly current: boolean;
   readonly storage: "opfs" | "memory";
-};
-
-/**
- * A mark of the current (or last) log: one the user added, or an automatic one for a game command
- * the overlay ran (then `command` names it).
- *
- * @example
- * ```ts
- * const mark: LogMark = { atMs: 150_000, label: "Glow off", auto: true, command: { id: "garden.glow", input: { on: false } } };
- * ```
- */
-export type LogMark = {
-  /** ms since the log started. */
-  readonly atMs: number;
-  readonly label: string;
-  readonly auto: boolean;
-  readonly command?: { readonly id: string; readonly input: Json };
 };
 
 /**

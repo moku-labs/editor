@@ -50,15 +50,17 @@
  */
 import { createServerCore, serverCoreConfig } from "./config";
 import { collectorPlugin } from "./plugins/collector";
+import { connectPlugin } from "./plugins/connect";
 import { filesPlugin } from "./plugins/files";
 import { hubPlugin } from "./plugins/hub";
 import { pagesPlugin } from "./plugins/pages";
 
 const framework = createServerCore(serverCoreConfig, {
-  // Plugin order (D-03): files ← hub ← collector ← pages. collector is idle until hub's device
-  // listener reports a phone (`hub:device`); pages depends on collector and hooks its per-plugin
-  // `collector:session` for the perf CLI's live lines.
-  plugins: [filesPlugin, hubPlugin, collectorPlugin, pagesPlugin]
+  // Plugin order (D-03, spec 11 § 1): files ← hub ← connect ← collector ← pages. connect requires
+  // hub (device mode, editor methods); collector is idle until hub's device listener reports a phone
+  // (`hub:device`); pages depends on collector and hooks its per-plugin `collector:session` for the
+  // perf CLI's live lines.
+  plugins: [filesPlugin, hubPlugin, connectPlugin, collectorPlugin, pagesPlugin]
 });
 
 // ─── Framework API ────────────────────────────────────────────
@@ -84,12 +86,14 @@ export const createPlugin = framework.createPlugin;
 
 // ─── Plugins ──────────────────────────────────────────────────
 export { collectorPlugin } from "./plugins/collector";
+export { connectPlugin } from "./plugins/connect";
 export { filesPlugin } from "./plugins/files";
 export { hubPlugin } from "./plugins/hub";
 export { pagesPlugin } from "./plugins/pages";
 
 // ─── Plugin Types (namespace re-exports) ──────────────────────
 export * as Collector from "./plugins/collector/types";
+export * as Connect from "./plugins/connect/types";
 export * as Files from "./plugins/files/types";
 export * as Hub from "./plugins/hub/types";
 export * as Pages from "./plugins/pages/types";

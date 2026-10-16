@@ -7,11 +7,15 @@
  * server bundle.
  *
  * Every type is the engine's own, re-exported (the rate types from its `Time` namespace, the
- * monitor, `KeptStats` and the render stats from `Renderer`). The only editor type left is
- * `DevtoolsDetail`, the detail of the editor's own `devtools` event, which the engine names but
- * does not type. `engine-contract.test.ts` asserts each re-export equals the engine's type.
+ * monitor, `KeptStats` and the render stats from `Renderer`), except `DevtoolsDetail`, the detail of
+ * the editor's own `devtools` event, which the engine names but does not type, and the mirrors of
+ * the 0.15.x patch and the next engine change at the end of the file (spec 03 Delta 2026-10-16 D1):
+ * the editor's structural copies until the installed engine exports them.
+ * `engine-contract.test.ts` asserts each re-export equals the engine's type.
  */
-import type { FrameRing, Renderer, Time } from "@moku-labs/game";
+import type { FrameRing, PassRecord, PerfEventName, Renderer, Time } from "@moku-labs/game";
+import type { MonitorSectionName, MonitorSections } from "./sections";
+import type { ProblemRule, ShaderWhat } from "./timeline";
 
 export type {
   FrameColumns,
@@ -191,3 +195,236 @@ export type RenderStatsLike = Pick<
  * ```
  */
 export type MonitorLike = Renderer.PerfMonitorApi;
+
+// Mirrors of the 0.15.x patch and the next engine change (spec 03 Delta 2026-10-16 D1).
+// The engine installed here (0.15.0) exports none of these yet: each is the editor's structural copy,
+// optional for a reader (an older engine sends none of it). `engine-contract.test.ts` compares each
+// with the engine's export once the engine has it (ask E7).
+
+/**
+ * The pass ring columns of the 0.15.x patch (E2, TC §2.1): the owner entity (0 = none), the filter
+ * kind (`kind2`, 1-based, 0 = none: the name is `kindNames[kind2 - 1]`), the draw-call counter at
+ * the pass's start, the target format and the resolution. Every column is absent on an older engine.
+ *
+ * @example
+ * ```ts
+ * const extra: PassColumnsNext = { owner: new Uint32Array(4096), kind2: new Uint8Array(4096), kindNames: ["fog.blur"] };
+ * ```
+ */
+export type PassColumnsNext = {
+  readonly owner?: Uint32Array;
+  readonly kind2?: Uint8Array;
+  readonly kindNames?: readonly string[];
+  readonly drawsAt?: Uint16Array;
+  readonly format?: readonly (string | null)[];
+  readonly resolution?: Float32Array;
+};
+
+/**
+ * The event names the 0.15.x patch and the next change add to the engine's `PerfEventName`: `shader`
+ * (E4), `problem` (N3, two rules in 0.15.x), `debug` (U6, overdraw), `gc` (N6) and `sections` (N1).
+ *
+ * @example
+ * ```ts
+ * const name: PerfEventNameNext = "shader";
+ * ```
+ */
+export type PerfEventNameNext = PerfEventName | "shader" | "problem" | "debug" | "gc" | "sections";
+
+/**
+ * The detail of a `shader` event line (E4): what was compiled (`"compile"` or `"module"` in 0.15.x;
+ * `"variant"` / `"relink"` with the next change, kept as their string), its label, its ms, the
+ * frame, whether it ran at boot, and the pass it ran during.
+ *
+ * @example
+ * ```ts
+ * const detail: ShaderEventDetail = { what: "compile", label: "fog.blur", ms: 38.2, frame: 4851, boot: false,
+ *   during: { pass: 2, filter: "fog.blur", owner: 412, view: "fogLayer" } };
+ * ```
+ */
+export type ShaderEventDetail = {
+  readonly what: ShaderWhat;
+  readonly label: string | null;
+  readonly ms: number;
+  readonly frame: number;
+  readonly boot: boolean;
+  readonly during: {
+    readonly pass: number | null;
+    readonly filter: string | null;
+    readonly owner: number | null;
+    readonly view: string | null;
+  };
+};
+
+/**
+ * The detail of a `problem` event line (N3): a rule that flagged an owner and view, or the same
+ * rule cleared for them (`cleared` carries owner and view, engine U5). `filter-still` also says why
+ * (`budget` or `not-eligible`).
+ *
+ * @example
+ * ```ts
+ * const flagged: ProblemEventDetail = { rule: "filter-still", severity: "warn", owner: 412, view: "fogLayer", filter: "fog.blur",
+ *   value: 6.2, threshold: 2, since: 4802, frames: 53, reason: "budget" };
+ * const cleared: ProblemEventDetail = { rule: "filter-still", cleared: true, owner: 412, view: "fogLayer" };
+ * ```
+ */
+export type ProblemEventDetail =
+  | {
+      readonly rule: ProblemRule;
+      readonly severity: "info" | "warn";
+      readonly owner: number | null;
+      readonly view: string | null;
+      readonly filter: string | null;
+      readonly value: number | null;
+      readonly threshold: number | null;
+      readonly since: number | null;
+      readonly frames: number | null;
+      readonly reason?: "budget" | "not-eligible";
+    }
+  | {
+      readonly rule: ProblemRule;
+      readonly cleared: true;
+      readonly owner: number | null;
+      readonly view: string | null;
+    };
+
+/**
+ * The detail of a `gc` event line (N6, next change): MB freed, the heap after, and whether it is a
+ * hint (inferred from a drop).
+ *
+ * @example
+ * ```ts
+ * const gc: GcEventDetail = { freedMb: 4.2, heapMb: 41.9, hint: true };
+ * ```
+ */
+export type GcEventDetail = {
+  readonly freedMb: number;
+  readonly heapMb: number | null;
+  readonly hint: boolean;
+};
+
+/**
+ * The detail of a `sections` event line (N1, next change): the sections switched on and off.
+ *
+ * @example
+ * ```ts
+ * const switched: SectionsEventDetail = { on: ["passes", "shaders"], off: [] };
+ * ```
+ */
+export type SectionsEventDetail = {
+  readonly on: readonly MonitorSectionName[];
+  readonly off: readonly MonitorSectionName[];
+};
+
+/**
+ * The detail of a `debug` event line (engine U6): the overdraw heat map turned on or off; frames
+ * drawn with it on are not real cost.
+ *
+ * @example
+ * ```ts
+ * const debug: DebugEventDetail = { overdraw: true };
+ * ```
+ */
+export type DebugEventDetail = { readonly overdraw: boolean };
+
+/**
+ * The fields a `sample` line gains with the 0.15.x patch and the next change: render-target
+ * churn (E5), the object counters (engine U3: entities, views, timers, frame listeners and the
+ * registered counts), the shader counters (N7), the cost per section (N2) and the memory source
+ * (N6, beside the kept `heapMb`).
+ *
+ * @example
+ * ```ts
+ * const extra: PerfSampleNext = { targets: { created: 6, destroyed: 6 }, counts: { entities: 104, views: 180, timers: 3, frameListeners: 2 } };
+ * ```
+ */
+export type PerfSampleNext = {
+  readonly targets?: { readonly created: number; readonly destroyed: number } | null;
+  readonly counts?: {
+    readonly entities: number;
+    readonly views: number;
+    readonly timers: number;
+    readonly frameListeners: number;
+    readonly [registered: string]: number;
+  } | null;
+  readonly shaders?: {
+    readonly pipelines: number;
+    readonly hits: number;
+    readonly compiles: number;
+    readonly variants: number;
+    readonly relinks: number;
+  } | null;
+  readonly sectionsMs?: Readonly<Partial<Record<MonitorSectionName, number>>>;
+  readonly memory?: {
+    readonly source: "performance.memory" | "uasm" | "shell" | null;
+    readonly heapMb: number | null;
+    readonly processMb: number | null;
+  };
+};
+
+/**
+ * The fields the header gains with the 0.15.x patch and the next change: the app id (with the
+ * `.debug` suffix on native debug installs, S-E3), the overdraw flag (U6) and the sections (N1).
+ *
+ * @example
+ * ```ts
+ * const extra: PerfHeaderNext = { app: { id: "com.moku.garden.debug" }, debug: { overdraw: false } };
+ * ```
+ */
+export type PerfHeaderNext = {
+  readonly app?: { readonly id: string };
+  readonly debug?: { readonly overdraw: boolean };
+  readonly sections?: MonitorSections;
+};
+
+/**
+ * The fields the engine's `FrameRate` (the `game.frameRate` answer) gains with the 0.15.x patch (E6):
+ * the rate the loop is told to hold (null only in mode `"auto"`) and who holds it back (`"panel"`:
+ * the asked rate is above the display's).
+ *
+ * @example
+ * ```ts
+ * const held: FrameRateNext = { asked: 120, heldBy: "panel" }; // "This display runs at 60 Hz"
+ * ```
+ */
+export type FrameRateNext = {
+  readonly asked?: number | null;
+  readonly heldBy?: "panel" | null;
+};
+
+/**
+ * One filter chain of a `passes` summary (N4, next change): an owner and view's consecutive filter
+ * passes over the second.
+ *
+ * @example
+ * ```ts
+ * const chain: PassesLineChain = { owner: 412, view: "fogLayer", kinds: ["fog.blur", "fog.blur"], applies: 120, mpx: 221.2, draws: 4,
+ *   gpuMs: { p50: 6.2, max: 6.9 } };
+ * ```
+ */
+export type PassesLineChain = {
+  readonly owner: number | null;
+  readonly view: string | null;
+  readonly kinds: readonly string[];
+  readonly applies: number;
+  readonly mpx: number;
+  readonly draws: number | null;
+  readonly gpuMs: { readonly p50: number; readonly max: number } | null;
+};
+
+/**
+ * The engine's per-second `passes` summary line (N4, next change): the chains of the second and the
+ * heaviest drawn frame's passes. perf answers it as is (`source: "engine"`).
+ *
+ * @example
+ * ```ts
+ * const line: PerfPassesLine = { v: 1, kind: "passes", t: 81000, chains: [], heaviest: null };
+ * ```
+ */
+export type PerfPassesLine = {
+  readonly v: 1;
+  readonly kind: "passes";
+  readonly t: number;
+  readonly chains: readonly PassesLineChain[];
+  readonly heaviest: { readonly frame: number; readonly passes: readonly PassRecord[] } | null;
+};

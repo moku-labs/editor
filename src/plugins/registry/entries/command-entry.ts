@@ -8,7 +8,7 @@
 import type { Log } from "@moku-labs/common/browser";
 import type { ControlReadOnlyError, ControlRefusedError } from "@moku-labs/game/control";
 import { run } from "@moku-labs/game/control";
-import type { InputOf, InputSchema, Json, RunResult } from "../protocol";
+import type { CommandVia, InputOf, InputSchema, Json, RunResult } from "../protocol";
 import { ProtocolError, refusalOf } from "../protocol";
 import type { CommandEntry, DoorCommand, GameLike, RunnableCommand } from "../types";
 import { describeCommand } from "./descriptor";
@@ -127,14 +127,18 @@ export function guardEntry(entry: CommandEntry): CommandEntry {
   return Object.freeze({
     descriptor,
     /**
-     * Runs the editor command; a non-ProtocolError failure becomes -32000 with the id.
+     * Runs the editor command with who runs it and the MCP client's name (the recorder's
+     * `editor.record` names the log's origin with them); a non-ProtocolError failure becomes -32000
+     * with the id.
      *
      * @param raw - Raw input; the editor command checks it itself.
+     * @param via - Who runs it.
+     * @param client - The MCP client's name, with `via: "mcp"` only.
      * @returns What the editor command answered.
      */
-    run: async (raw: Json): Promise<RunResult> => {
+    run: async (raw: Json, via?: CommandVia, client?: string): Promise<RunResult> => {
       try {
-        return await entry.run(raw);
+        return await entry.run(raw, via, client);
       } catch (error) {
         throw error instanceof ProtocolError ? error : doorFailed(id, firstLine(messageOf(error)));
       }

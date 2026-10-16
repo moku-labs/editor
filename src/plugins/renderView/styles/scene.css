@@ -1,0 +1,51 @@
+/* renderView · scene. The Render workspace frame (title, error line) and the scene cards' two columns (they stack into one under 560 px of the render container). Build wave 4 (RV6) lays Mission control out around them and folds the cards into "Scene details". No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="workspace"]) to (
+  [data-render="tree"],
+  [data-render="textures"],
+  [data-render="bundles"],
+  [data-render="pools"],
+  [data-render="releases"]
+) {
+  :scope {
+    container: render / inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    block-size: 100%;
+    padding: 16px 20px 24px;
+    overflow: auto;
+    background: var(--surface-ground);
+    color: var(--text-ink);
+  }
+
+  h1 {
+    font-size: var(--font-size-15);
+    font-weight: 600;
+  }
+
+  [data-error] {
+    color: var(--status-warn);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-11-5);
+  }
+
+  [data-columns] {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  [data-column] {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-inline-size: 0;
+  }
+
+  @container render (width < 560px) {
+    [data-columns] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

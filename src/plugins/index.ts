@@ -7,10 +7,12 @@
  */
 
 // ─── Plugin Instances ────────────────────────────────────────
+export { activeSourcePlugin } from "./activeSource";
 export { bridgePlugin } from "./bridge";
 export { capturePlugin } from "./capture";
 export { channelPlugin } from "./channel";
 export { collectorPlugin } from "./collector";
+export { connectPlugin } from "./connect";
 export { consoleViewPlugin } from "./consoleView";
 export { filesPlugin } from "./files";
 export { filesViewPlugin } from "./filesView";
@@ -30,10 +32,12 @@ export { workspacePlugin } from "./workspace";
 
 // ─── Plugin Types (namespace re-exports) ─────────────────────
 // Consumers access types as Registry.RegistryApi, Link.LinkApi, Workspace.WorkspaceId, …
+export * as ActiveSource from "./activeSource/types";
 export * as Bridge from "./bridge/types";
 export * as Capture from "./capture/types";
 export * as Channel from "./channel/types";
 export * as Collector from "./collector/types";
+export * as Connect from "./connect/types";
 export * as ConsoleView from "./consoleView/types";
 export * as Files from "./files/types";
 export * as FilesView from "./filesView/types";

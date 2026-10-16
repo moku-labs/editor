@@ -87,7 +87,7 @@ registry.clock(); // { frame: 1840, paused: true, held: true, reasons: ["backgro
 | `SourceEntry.watch` | `(raw: Json, fn: (value: Json) => void) => () => void` | Checks availability and the input now. Delivers on the next frame, not at once. Returns the door's unsubscribe (idempotent). |
 | `SourceEntry.probe?` | `() => string \| undefined` | Editor sources only, given to `add`: why the source is not available now. The registry runs it at each manifest build; the stored copy has none. |
 | `CommandEntry.descriptor` | `CommandDescriptor` | Fresh frozen `{ id, title, input, effect, overlay?, allowed, reason? }`. |
-| `CommandEntry.run` | `(raw: Json, via?: CommandVia) => Promise<RunResult>` | Async. Never throws synchronously. Door and module commands go through the game's `run` (dev guard, cheat journal). `via` names who ran it for `registry:command` (absent: `"local"`). |
+| `CommandEntry.run` | `(raw: Json, via?: CommandVia, client?: string) => Promise<RunResult>` | Async. Never throws synchronously. Door and module commands go through the game's `run` (dev guard, cheat journal). `via` names who ran it for `registry:command` (absent: `"local"`); `client` is the MCP client's name the hub stamped, passed only with `via: "mcp"`. The registry's wrappers hand both to the entry, so an editor command added with `add` (the recorder's `editor.record`) reads who started it. An entry written with two parameters (or one) stays assignable and ignores them. |
 | `CommandEntry.value?` | `() => boolean \| undefined` | Overlay toggles of the game only: `door.value(game)` now; `undefined` when it threw or answered no boolean. |
 
 A watch never throws into the game's frame loop. A door read error, a `toWireValue` error or a
@@ -242,8 +242,8 @@ a plugin with `depends: [registryPlugin]` can hook it.
 
 Every command entry the registry hands out (door and module commands, and the guarded copies of
 editor commands) is wrapped once: when its run settles it emits `registry:command` with the raw
-input (`null` when none), `via` from `run(raw, via)` (`"overlay"`, `"bridge"`, or `"local"` when
-absent) and `ok` (true on resolve, false on reject, -32009 included). A run whose input check
+input (`null` when none), `via` from `run(raw, via)` (`"overlay"`, `"tools"`, `"mcp"`, `"bridge"`, or
+`"local"` when absent) and `ok` (true on resolve, false on reject, -32009 included). A run whose input check
 refused it (-32602) is not a run and emits nothing. A throwing hook is logged
 `registry:emit-failed` and never changes the caller's result. Reads and watches emit nothing.
 
@@ -339,7 +339,7 @@ Shapes of the selection relay (change selection-hmr-switch, A4, A5, A10, A15):
 | `SelectionItem` | All readonly. One element of an area selection: `ref`, `name`, `type` required; `key`, `rect`, `source` optional. |
 | Area selection (U9) | `type: "area"`, `name: "area"`, `rect` = `area` = the dragged area in page CSS px, `items` = the group roots inside, top to bottom then left to right, at most 40. `ref` = the first item's ref, or `{ kind: "ui", path: "" }` when no element is inside (`items: []`). |
 | `StyleEdit` (editor-ui-cleanup, U8) | All readonly. One pending style edit of the selected element: `path` (the style property, dotted for a nested one: `padding.top`), `from` and `to` (`StyleValue`: `number \| string \| boolean`). `SelectionInfo.edits` is the list: `[{ path: "minWidth", from: 556, to: 600 }]`. `parseSelectionInfo` answers `undefined` for a malformed entry (`edits` not an array, an empty or missing `path`, a `from` or `to` that is not a finite number, a string or a boolean) and drops an empty list, so the field is absent when the element has no edits. |
-| `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null, project: ProjectState }`. `PublishMethod` is its keys: `"hotReload" \| "selection" \| "project"`. |
+| `PublishParams` | `{ hotReload: HotReload, selection: SelectionInfo \| null, project: ProjectState, engine: EngineInfo, devices: DeviceDirectory, deviceTelemetry: DeviceTelemetry }` (connect's two typed by `connect/protocol`, a type-only edge). `PublishMethod` is its keys. |
 | `PictureFormat` | `"jpeg" \| "png"`: the format of a picture on the wire (editor.capture, editor.sheet, a crop). JPEG is the default (D-34). capture, gameView and the MCP bridge use this one type. |
 | `SelectParams` | `{ key?: string, ref?: SelectionRef, rect?: SelectionRect, card?: boolean }`. `rect` picks an area like an area drag of the picker and wins over `key` and `ref`. The page treats an absent `card` as `true`. |
 | `EditorNotifications`, `EditorRequests` | The editor channel by method, below. `EditorNotificationMethod` and `EditorRequestMethod` are their keys. `RelayedEditorMethod` is the four requests the hub relays to the page. |
@@ -385,7 +385,7 @@ allowed, no overlay commands, build unknown"; an older hub ignores the new field
 | `CommandRefusal` | `"read-only" \| "dev-only"`. |
 | `BuildProfile` | `"dev" \| "full" \| "read" \| "none"`. |
 | `BuildInfo` | `{ profile, id?, engine? }`, all readonly. |
-| `CommandVia` | `"overlay" \| "bridge" \| "local"`: who ran a command. Agent-side only, never on the wire. |
+| `CommandVia` | `"overlay" \| "bridge" \| "tools" \| "mcp" \| "local"`: who ran a command. The bridge turns the hub's `from` into `"tools"` or `"mcp"`; `"bridge"` is a hub that does not say who. Agent-side only, never on the wire. |
 | `CommandDescriptor` | Gains `overlay?`, `allowed?` and `reason?`. This registry always writes `allowed`, writes `reason` only with `allowed: false`, `overlay` only when set. |
 | `Manifest.build?` | The page's `BuildInfo`. |
 | `ErrorReason`, `errorCode` | `"read_only"`, `readOnly: -32009`: a command the page's build refuses, not retryable; `"dev_only"`, `devOnly: -32009` (the same code): a command a page without the dev or debug flag refuses. |

@@ -14,10 +14,8 @@ import {
   ASSETS,
   createCtx,
   deliverBoard,
-  EFFECTS,
   type FrameQueue,
   flush,
-  manifestOf,
   projectWith,
   RENDER,
   serveManifest,
@@ -26,9 +24,10 @@ import {
 } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Render workspace in happy-dom: title, six tiles, the C9 render tree with
-// hover box, keyboard and "Inspect in Game", the textures card (chips, sort,
-// hover), bundles, pools and the release log.
+// The Render workspace in happy-dom: the title, the C9 render tree with hover
+// box, keyboard and "Inspect in Game", the textures card (chips, sort, hover),
+// bundles, pools and the release log. (The metric tiles went with Mission
+// control, spec 09 § M1.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 let ctx: TestCtx;
@@ -104,112 +103,25 @@ afterEach(() => {
 });
 
 describe("RenderWorkspace", () => {
-  it("shows the title, five tiles without the heap tile and empty cards before any value", () => {
+  it("shows the title and empty cards before any value", () => {
     show();
 
     expect(q("h1")?.textContent).toBe("Render · game.render · frame —");
-    expect(all("[data-render='tiles'] [data-tile]")).toHaveLength(5);
-    expect(q("[data-tile='draws']")?.textContent).toContain("Waiting for game.render");
-    expect(q("[data-tile='heap']")).toBeNull();
+    expect(q("[data-render='tiles']")).toBeNull();
     expect(q("[data-render='tree']")?.textContent).toContain("Waiting for the scene");
   });
 
-  it("re-renders on every notify with the tiles, the tree and the cards", async () => {
+  it("re-renders on every notify with the tree and the cards", async () => {
     show();
     await fill();
 
     expect(q("h1")?.textContent).toBe("Render · game.render · frame 1841");
-    expect(q("[data-tile='fps']")?.textContent).toContain("last 1 sample · low 60");
-    expect(q("[data-tile='fps'] svg polyline")).not.toBeNull();
-    expect(q("[data-tile='draws']")?.getAttribute("aria-label")).toBe(
-      "Draw calls: not counted in a production build"
-    );
-    expect(q("[data-tile='draws']")?.dataset.absent).toBe("");
     expect(q("[data-render='tree'] header")?.textContent).toContain(
       "104 nodes · 24 with textures · 32 entities"
     );
     expect(q("[data-render='bundles']")?.textContent).toContain("Budget 192 MB · used 6 MB");
     expect(q("[data-render='pools']")?.textContent).toContain("All pools · 24 pooled · 180 in use");
     expect(q("[data-render='releases']")?.textContent).toContain("No bundle released");
-  });
-
-  it("shows the JS heap tile once the page reports it, and hides it again when it stops", async () => {
-    show();
-    ctx.link.api.heap = () => ({ usedMb: 12.8, limitMb: 4095.8 });
-    await fill();
-
-    expect(all("[data-render='tiles'] [data-tile]")).toHaveLength(6);
-    expect(q("[data-tile='heap'] h2")?.textContent).toBe("JS heap");
-    expect(q("[data-tile='heap'] [data-value]")?.textContent).toBe("12.8MB");
-    expect(q("[data-tile='heap'] [data-sub]")?.textContent).toBe("of 4095.8 MB");
-    expect(q("[data-tile='heap']")?.hasAttribute("data-absent")).toBe(false);
-
-    ctx.link.api.heap = () => undefined;
-    act(() => ctx.link.send("game.render", RENDER));
-    expect(q("[data-tile='heap']")).toBeNull();
-  });
-
-  it("names the game's 30 fps rest on the FPS tile and keeps the sparkline", async () => {
-    show();
-    await fill();
-    act(() => ctx.link.send("game.render", { ...(RENDER as object), fps: 30 }));
-
-    expect(q("[data-tile='fps'] [data-sub]")?.textContent).toBe(
-      "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)"
-    );
-    expect(q("[data-tile='fps'] svg polyline")).not.toBeNull();
-  });
-
-  it("shows the effects line and the render passes on game 0.0.3, the old texts before", async () => {
-    show();
-    await fill();
-
-    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "Particles and filters are not reported (follow-up F-R1)"
-    );
-    expect(q("[data-tile='draws']")?.textContent).toContain("Not counted in a production build");
-
-    ctx.link.attach(manifestOf(["game.render", "game.assets", "game.effects"]));
-    await flush();
-    act(() => {
-      ctx.link.send("game.effects", EFFECTS);
-      ctx.link.send("game.render", { ...(RENDER as object), renderPasses: 1, drawCalls: 14 });
-    });
-
-    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "18 particles · 1 emitter · 24 filters"
-    );
-    expect(q("[data-tile='draws'] [data-value]")?.textContent).toBe("14per frame");
-    expect(q("[data-tile='draws'] [data-sub]")?.textContent).toBe("1 render pass");
-    expect(q("[data-tile='draws']")?.hasAttribute("data-absent")).toBe(false);
-  });
-
-  it("reads 'Effects not installed in this game' when the game has no effects plugin", async () => {
-    show();
-    await fill();
-    const manifest = manifestOf(["game.render", "game.assets"]);
-
-    ctx.link.attach({
-      ...manifest,
-      sources: [
-        ...manifest.sources,
-        {
-          id: "game.effects",
-          title: "Effects",
-          input: {},
-          changes: "frame",
-          available: false,
-          reason: "app.effects is undefined"
-        }
-      ]
-    });
-    await flush();
-    show();
-
-    expect(q("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "Effects not installed in this game"
-    );
-    expect(ctx.link.active("game.effects")).toEqual([]);
   });
 
   it("marks stale data and lists the release log", async () => {

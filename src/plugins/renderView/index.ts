@@ -1,13 +1,19 @@
 /**
- * Complex tier — the Render workspace: the D1 device strip (the `device/` sub-domain: device row,
- * headline, frame graph, spike record) for any session whose agent lists `editor.perf.*`, metric
- * tiles, render tree, textures, bundles, pools and the release log, from watched frame sources
- * (R6). Emits the global `workspace:inspect` (R9); hooks `workspace:changed`, `link:status`,
- * `link:project`, `workspace:reveal`.
+ * Complex tier — the Render workspace, "Mission control" (spec 09 § Delta 2026-10-16): one active
+ * source named in a connection bar (from activeSource), a live frame timeline over a 2-minute
+ * history with pause, rewind, step and range selection, an inspector, sparkline cards on the shared
+ * time axis, a Shaders & passes panel, and the scene cards (render tree, textures, bundles, pools,
+ * release log) in "Scene details". Sub-domains `source/`, `series/`, `view/`, `timeline/`,
+ * `derive/`, `actions/`, `components/` share one root state. Emits the global `workspace:inspect`
+ * and `workspace:open-file`; hooks `workspace:changed`, `link:status`, `link:project`,
+ * `workspace:reveal` and activeSource's `activeSource:changed` and `activeSource:connect-requested`.
+ * Skeleton of build wave 0 (RV0): the types, the state and the display clock are built; Mission
+ * control's files are typed stubs until build waves 3 and 4.
  *
  * @see README.md
  */
 import { createToolsPlugin } from "../../config";
+import { activeSourcePlugin } from "../activeSource";
 import { linkPlugin } from "../link";
 import { panelsPlugin } from "../panels";
 import { workspacePlugin } from "../workspace";
@@ -18,7 +24,6 @@ import { createRenderViewState } from "./state";
 import type { RenderViewConfig } from "./types";
 
 const defaultConfig: RenderViewConfig = {
-  fpsSamples: 60,
   releaseLogMax: 50
 };
 
@@ -32,13 +37,13 @@ const defaultConfig: RenderViewConfig = {
  * ```
  */
 export const renderViewPlugin = createToolsPlugin("renderView", {
-  depends: [linkPlugin, workspacePlugin, panelsPlugin],
+  depends: [linkPlugin, workspacePlugin, panelsPlugin, activeSourcePlugin],
   config: defaultConfig,
   createState: createRenderViewState,
   api: createRenderViewApi,
   hooks: createHandlers,
   onInit: initRenderView,
-  // @no-resource-check — onStart opens the link watches; onStop drops them, the device watches and the overlay root
+  // @no-resource-check — onStart opens the link watches; onStop drops them, Mission control's listeners and the overlay root
   onStart: startRenderView,
   onStop: stopRenderView
 });

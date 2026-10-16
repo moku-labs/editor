@@ -8,9 +8,11 @@
  * change makes it stale. No timer
  * reads a frame source. On a device session (a phone, `SessionInfo.device`) no scene source is
  * watched and nothing is calibrated (spec 09 R4: serializing a scene tree costs the phone the
- * frames the strip measures); the D1 strip's own watches live in `device/watch.ts`. Each entry point resolves link once and passes it down: no delivered value
- * resolves it again.
+ * frames Mission control measures). Each entry point resolves link once and passes it down: no
+ * delivered value resolves it again.
  */
+
+import type { SessionDevice } from "../hub/protocol";
 import { linkPlugin } from "../link";
 import type { LinkApi } from "../link/types";
 import { manifestOf } from "../panels/shared/project";
@@ -26,7 +28,6 @@ import { rectOf } from "../panels/shared/scene/wire";
 import type { Json, LinkStatus, Manifest, ProjectDelta, ProjectState } from "../registry/protocol";
 import { applyPendingReveal, setTexturePalette } from "./actions";
 import { releasesOf, updateTextureUse } from "./derive";
-import { sessionDevice, syncDevice } from "./device/watch";
 import { asAssetsUsage, asEffectsStats, asRenderStats } from "./guards";
 import { drawBox } from "./overlay";
 import { notify } from "./state";
@@ -55,6 +56,18 @@ const EFFECTS_ID = "game.effects";
  * The states with a scene build queued for the next animation frame.
  */
 const queued = new WeakSet<RenderViewState>();
+
+/**
+ * The device of the chosen session: set for a device session (a phone), undefined for a browser
+ * session or no session. A device session gets no scene watch and no calibration (spec 09 R4).
+ *
+ * @param link - The link api.
+ * @returns The device.
+ */
+export function sessionDevice(link: LinkApi): SessionDevice | undefined {
+  const id = link.session();
+  return id === undefined ? undefined : link.sessions().find(session => session.id === id)?.device;
+}
 
 /**
  * The frame a link status reports, or a fallback.
@@ -122,15 +135,14 @@ function currentFrame(ctx: RenderViewCtx, link: LinkApi): number {
 }
 
 /**
- * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples) and the page heap
- * link holds from the last heartbeat.
+ * One game.render value: stats and frame.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API, resolved once by the caller.
  * @param value - The value.
  */
 function onRender(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
-  const { state, config } = ctx;
+  const { state } = ctx;
   const stats = asRenderStats(value);
   if (stats === undefined) {
     shapeError(ctx, "game.render");
@@ -138,13 +150,10 @@ function onRender(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
   }
 
   const frame = currentFrame(ctx, link);
-  const heap = link.heap();
   clearError(state, "game.render");
   state.render = stats;
   state.lastFrame = frame;
   state.firstFrame ??= frame;
-  state.fps = [...state.fps, stats.fps].slice(-config.fpsSamples);
-  state.heap = heap === undefined ? undefined : { usedMb: heap.usedMb, limitMb: heap.limitMb };
   notify(state);
 }
 
@@ -237,9 +246,9 @@ export function syncEffects(
 }
 
 /**
- * Follows the kind of the chosen session on every attach: its D1 strip (`editor.perf.second`
- * listed or not), and the scene watches while Render is shown — none on a device session (R4),
- * the usual three on any other. An undefined manifest (session lost) keeps everything.
+ * Follows the kind of the chosen session on every attach: the scene watches while Render is shown —
+ * none on a device session (R4), the usual three on any other. An undefined manifest (session lost)
+ * keeps everything.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API, resolved once by the caller.
@@ -250,9 +259,7 @@ export function syncSession(
   link: LinkApi,
   manifest: Manifest | undefined
 ): void {
-  if (manifest === undefined) return;
-  syncDevice(ctx, link, manifest);
-  if (!ctx.state.active) return;
+  if (manifest === undefined || !ctx.state.active) return;
   if (sessionDevice(link) === undefined) startScene(ctx);
   else stopScene(ctx);
 }

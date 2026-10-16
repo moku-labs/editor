@@ -369,7 +369,8 @@ export const IDLE: RecorderStatus = {
   label: null,
   sinceMs: 0,
   storage: "memory",
-  dropped: 0
+  dropped: 0,
+  startedBy: null
 };
 
 /** A recording status: 03:12 in, 1 840 lines, 412 KB, 1 790 sent, 50 pending. */

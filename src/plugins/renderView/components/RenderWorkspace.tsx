@@ -1,48 +1,22 @@
 /**
- * @file renderView plugin — the Render workspace (design A3): the title with the frame, the D1
- * device strip under it for a session whose agent lists `editor.perf.*` (spec 09 R2), the metric
- * tiles (the JS heap tile only where the page reports it), the left column (render tree, textures) and the right column (bundles, pools, release
- * log). Re-renders on every notify; marks stale data while the link is silent or lost.
+ * @file renderView plugin — the Render workspace. Skeleton of build wave 0 (spec 09 § M17, RV0): the
+ * title with the frame and the scene cards, the left column (render tree, textures) and the right
+ * column (bundles, pools, release log); Mission control (the connection bar, the instrument, the
+ * cards and the inspector, with the scene cards in "Scene details") arrives in build wave 4 (RV5,
+ * RV6). Re-renders on every notify;
+ * marks stale data while the link is silent or lost.
  */
 import type { JSX } from "preact";
 import type { LinkStatus } from "../../registry/protocol";
 import type { WorkspaceApi } from "../../workspace/types";
 import { deriveSnapshot } from "../derive";
-import { DeviceStrip } from "../device/components/DeviceStrip";
-import { tileViews } from "../format";
 import type { RenderViewCtx } from "../types";
 import { BundlesCard } from "./BundlesCard";
-import { MetricTile } from "./MetricTile";
 import { PoolsCard } from "./PoolsCard";
 import { ReleaseLogCard } from "./ReleaseLogCard";
 import { RenderTreeCard } from "./RenderTreeCard";
-import { Sparkline } from "./Sparkline";
 import { TexturesCard } from "./TexturesCard";
 import { useRenderView } from "./useRenderView";
-
-/**
- * The frame budget the frame-time bar is drawn against (60 fps).
- */
-const FRAME_BUDGET_MS = 1000 / 60;
-
-/**
- * A full frame-time bar.
- */
-const FULL_BAR_PERCENT = 100;
-
-/**
- * The frame-time bar fill: the share of the frame budget used, capped at a full bar.
- *
- * @param frameMs - The frame time.
- * @returns The fill in percent, 0 to 100.
- * @example
- * ```ts
- * frameBarPercent(8); // 48
- * ```
- */
-function frameBarPercent(frameMs: number): number {
-  return Math.min(FULL_BAR_PERCENT, Math.round((frameMs / FRAME_BUDGET_MS) * FULL_BAR_PERCENT));
-}
 
 /**
  * Props of `RenderWorkspace`.
@@ -63,7 +37,6 @@ export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
   const { ctx, status, workspace } = props;
   const snapshot = useRenderView(ctx.state, () => deriveSnapshot(ctx.state));
   const stale = status.kind === "silent" || status.kind === "lost";
-  const { fps, frameMs } = snapshot.tiles;
 
   return (
     <div data-render="workspace" data-stale={stale ? "" : undefined}>
@@ -73,28 +46,6 @@ export function RenderWorkspace(props: RenderWorkspaceProps): JSX.Element {
           {ctx.state.error}
         </p>
       )}
-      {ctx.state.device.session === undefined ? undefined : (
-        <DeviceStrip ctx={ctx} status={status} />
-      )}
-      <div data-render="tiles">
-        {tileViews(snapshot.tiles).map(view => (
-          <MetricTile key={view.id} view={view}>
-            {view.id === "fps" && fps !== undefined ? (
-              <Sparkline samples={fps.samples} />
-            ) : undefined}
-            {view.id === "frame" && frameMs !== undefined ? (
-              <span data-bar>
-                <span
-                  data-phase="1"
-                  style={{
-                    inlineSize: `${frameBarPercent(frameMs)}%`
-                  }}
-                />
-              </span>
-            ) : undefined}
-          </MetricTile>
-        ))}
-      </div>
       <div data-columns>
         <div data-column="left">
           <RenderTreeCard ctx={ctx} rows={snapshot.tree} workspace={workspace} />

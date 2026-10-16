@@ -12,6 +12,7 @@ import {
   createToolsCore,
   toolsCoreConfig
 } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { channelPlugin } from "../../../channel";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
@@ -48,7 +49,7 @@ const SESSION: SessionInfo = {
 };
 
 const tools = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, renderViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, renderViewPlugin]
 });
 const agentCore = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, channelPlugin] });
 
@@ -119,7 +120,7 @@ describe("renderView on the tiny screen game", () => {
     hub.open(SESSION, manifest);
     hub.heartbeat(SESSION.id, 1841, false);
 
-    await until(() => app.renderView.snapshot().tiles.fps !== undefined, "game.render");
+    await until(() => app.renderView.snapshot().frame !== undefined, "game.render");
     app.workspace.show("render");
     await until(() => app.renderView.snapshot().tree.length > 0, "scene");
     await until(() => app.renderView.snapshot().textures.length > 0, "texture rows");
@@ -127,7 +128,6 @@ describe("renderView on the tiny screen game", () => {
 
     const snapshot = app.renderView.snapshot();
     const loaded = new Set(snapshot.bundles.map(row => row.name));
-    expect(snapshot.tiles.fps?.now).toBe(0);
     // game 0.0.3 in a dev build: a draw counter with the render passes, and the live effects.
     expect(snapshot.tiles.drawCalls).toMatchObject({ kind: "value", value: 0 });
     expect(snapshot.tiles.drawCalls?.renderPasses).toBeTypeOf("number");

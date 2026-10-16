@@ -1,9 +1,11 @@
 /**
- * @file renderView plugin — type definitions: config, state, the game.render / game.assets /
- * game.effects shapes,
- * derived rows and tiles, the snapshot, the api, the domain context and the hooks. Scene types
- * come from panels/shared/scene (R8), never from gameView (R4). The D1 device strip's types live
- * in `device/types.ts`; the api's `DeviceStripView` and `RecordState` are re-exported here.
+ * @file renderView plugin — type definitions: config, state (the scene cards' fields and Mission
+ * control's `mission`), the game.render / game.assets / game.effects shapes, derived rows and the
+ * scene tiles, the snapshot, Mission control's views and answers, the api, the domain context and the
+ * hooks. Scene types come from panels/shared/scene (R8), never from gameView (R4). The values of the
+ * other units (perf/protocol, recorder/protocol, activeSource, connect/protocol) arrive through the
+ * one door `source/contract.ts`; the side series and the view clock live in `series/types.ts` and
+ * `view/types.ts` (spec 09 § M12).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -15,21 +17,35 @@ import type {
   TextureCatalogue
 } from "../panels/shared/scene";
 import type { Json } from "../registry/protocol";
-import type { DeviceStripState, DeviceStripView } from "./device/types";
+import type { MissionSeries } from "./series/types";
+import type {
+  ActiveSource,
+  ConnectRequest,
+  DeviceTelemetry,
+  LogMark,
+  PerfCause,
+  PerfDetailWire,
+  PerfHistory,
+  PerfPassesWire,
+  PerfSecond,
+  RecorderSource,
+  RecordOrigin,
+  SourceChange
+} from "./source/contract";
+import type { DisplayClock, FrameRange, MissionSpan, MissionViewState } from "./view/types";
 
-export type { DeviceStripState, DeviceStripView, RecordState } from "./device/types";
+export type { FrameRange, MissionSpan } from "./view/types";
 
 /**
- * renderView configuration.
+ * renderView configuration. No Mission control option: the history's size is perf's HISTORY_MS /
+ * HISTORY_ROWS, a rule of the data (spec 09 § M12).
  *
  * @example
  * ```ts
- * createApp({ pluginConfigs: { renderView: { fpsSamples: 120 } } });
+ * createApp({ pluginConfigs: { renderView: { releaseLogMax: 100 } } });
  * ```
  */
 export type RenderViewConfig = {
-  /** FPS samples kept for the sparkline (one per changed game.render value). */
-  fpsSamples: number;
   /** Release log entries kept, newest first. */
   releaseLogMax: number;
 };
@@ -109,6 +125,165 @@ export type ReleaseEntry = {
 export type TextureSortKey = "key" | "bundle" | "size" | "gpuMb" | "fileMb" | "use";
 
 /**
+ * A frame rate the rate switch asks for: pinned 60 or 120, or the adaptive rule.
+ *
+ * @example
+ * ```ts
+ * const choice: RateChoice = "adaptive";
+ * ```
+ */
+export type RateChoice = 60 | 120 | "adaptive";
+
+/**
+ * A row of the Monitoring popover (spec 09 § M7): `nodes` is the "Nodes" sub-row and runs
+ * `editor.perf.sections { nodes }`; `passes` covers the engine's passes and shaders sections.
+ *
+ * @example
+ * ```ts
+ * const row: MonitorSection = "nodes";
+ * ```
+ */
+export type MonitorSection =
+  | "frames"
+  | "gpu"
+  | "memory"
+  | "render"
+  | "systems"
+  | "nodes"
+  | "passes";
+
+/**
+ * What a rate switch answered: the new rate and mode, or a refusal, held pin or failure in words.
+ *
+ * @example
+ * ```ts
+ * const pinned: RateAnswer = { ok: true, choice: 120, text: "Pinned at 120, adaptive off", fps: 120, mode: "fixed" };
+ * const held: RateAnswer = { ok: false, choice: 120, text: "Refused: this display runs at 60 Hz" };
+ * ```
+ */
+export type RateAnswer =
+  | {
+      readonly ok: true;
+      readonly choice: RateChoice;
+      readonly text: string;
+      readonly fps: number;
+      readonly mode: "fixed" | "auto" | "forced";
+    }
+  | { readonly ok: false; readonly choice: RateChoice; readonly text: string };
+
+/**
+ * What a Monitoring switch answered: ok or a refusal in words, and every row's state after it.
+ *
+ * @example
+ * ```ts
+ * const answer: SectionsAnswer = { ok: false, text: "Frames are always measured", sections: undefined };
+ * ```
+ */
+export type SectionsAnswer = {
+  readonly ok: boolean;
+  readonly text: string;
+  readonly sections: Readonly<Record<MonitorSection, "on" | "off" | "unavailable">> | undefined;
+};
+
+/**
+ * What Record or Stop answered: ok or a refusal in words, and the log's file name.
+ *
+ * @example
+ * ```ts
+ * const answer: RecordAnswer = { ok: true, text: "Recording on Galaxy A26", file: "perf-20261016-1102-sm-a266b.jsonl" };
+ * ```
+ */
+export type RecordAnswer = {
+  readonly ok: boolean;
+  readonly text: string;
+  readonly file: string | null;
+};
+
+/**
+ * The detail read of the current selection (`editor.perf.detail`, spec 03 D8): idle, loading,
+ * shown (with why the rows are partial and the nodes the engine named) or failed.
+ *
+ * @example
+ * ```ts
+ * const shown: MissionDetail = { kind: "shown", range: { from: 4810, to: 4860 }, reason: "no-detail", nodes: null };
+ * ```
+ */
+export type MissionDetail =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading"; readonly range: FrameRange }
+  | {
+      readonly kind: "shown";
+      readonly range: FrameRange;
+      readonly reason: PerfDetailWire["reason"];
+      readonly nodes: PerfDetailWire["nodes"];
+    }
+  | { readonly kind: "failed"; readonly range: FrameRange; readonly message: string };
+
+/**
+ * Mission control's data and UI state (spec 09 § M12): the active source, its watches and the
+ * poll, the 2-minute history and the side series, the last source values, the clock, the view and
+ * the selection, the commands in flight, the open popover and the Connect panel.
+ */
+export type MissionState = {
+  /** activeSource.current() at the last activeSource:changed (spec 11 § 4); the label is read live with label(). */
+  source: ActiveSource | undefined;
+  /** Unwatch of every § M2 watch of the active source; empty while Render is hidden. */
+  watches: (() => void)[];
+  /** The poll of editor.perf.frames / editor.perf.events (M2 rule 2): its timer, the read in flight, the next events seq. */
+  poll: {
+    timer: ReturnType<typeof setInterval> | undefined;
+    inFlight: boolean;
+    eventsAfter: number | undefined;
+  };
+  /** perf's 2-minute history (spec 03 D10), allocated once with createPerfHistory(). */
+  readonly history: PerfHistory;
+  /** renderView's own side series (M11), allocated once. */
+  readonly series: MissionSeries;
+  /** The last editor.perf.second of the source; undefined before the first. */
+  second: PerfSecond | undefined;
+  /** The last editor.perf.passes (null before the agent's first full second); undefined before a read. */
+  passes: PerfPassesWire | null | undefined;
+  /** The last editor.recorder; undefined when the agent has no recorder source. */
+  recorder: RecorderSource | undefined;
+  /** activeSource.telemetry() at the last record (wired devices only). */
+  telemetry: DeviceTelemetry | undefined;
+  /** The playout-delay clock of every live graph (M11). */
+  readonly clock: DisplayClock;
+  /** Live or paused, the view's end while paused (source clock), the span. */
+  view: MissionViewState;
+  /** The selected frames; undefined: none. */
+  selection: FrameRange | undefined;
+  /** Bumped on every selection change: painters and the inspector key on it. */
+  selectionVersion: number;
+  /** The detail read of the current selection (editor.perf.detail, spec 03 D8). */
+  detail: MissionDetail;
+  /** Source time under the pointer on any graph; undefined: no hover. Painters read it; it never notifies. */
+  hoverMs: number | undefined;
+  /** The rate switch: the choice in flight and the last answer. */
+  rate: { pending: RateChoice | undefined; answer: RateAnswer | undefined };
+  /** A Monitoring switch waiting for its answer. */
+  sectionPending: MonitorSection | "overdraw" | undefined;
+  /** The one open popover. */
+  popover: "monitoring" | "record" | "connect" | "split" | "memory" | undefined;
+  /** The Connect panel: tab, the scan lease's stop while open, the typed codes per pairing ticket, a pending row, an error. */
+  connect: {
+    tab: "wire" | "network";
+    stopScan: (() => void) | undefined;
+    codes: Map<string, string>;
+    pending: string | undefined;
+    error: { readonly key: string; readonly message: string } | undefined;
+  };
+  /** "Scene details" is open (collapsed by default; not persisted). */
+  sceneOpen: boolean;
+  /** project-index answers for system names (undefined: not asked; null: not found or an engine system). */
+  readonly files: Map<string, { readonly path: string; readonly line: number } | null>;
+  /** Stops the rAF loop of the mounted instrument; undefined while none runs. */
+  stopLoop: (() => void) | undefined;
+  /** Mission control's own UI subscribers (values re-render it, not the scene cards). */
+  readonly listeners: Set<() => void>;
+};
+
+/**
  * renderView state.
  */
 export type RenderViewState = {
@@ -136,10 +311,6 @@ export type RenderViewState = {
   calibrationAsked: boolean;
   /** undefined = not asked, null = no manifest. */
   catalogue: TextureCatalogue | null | undefined;
-  /** Last `fpsSamples` fps values. */
-  fps: number[];
-  /** The page heap `link.heap()` reported at the last game.render change; undefined = not reported. */
-  heap: { usedMb: number; limitMb: number } | undefined;
   /** Bundles of the previous game.assets value. */
   loaded: Map<string, { tier: string; mb: number }>;
   /** Newest first, at most releaseLogMax. */
@@ -164,10 +335,10 @@ export type RenderViewState = {
   tracker: (() => void)[];
   /** Unwatch of the scene sources; empty while Render is hidden. */
   watching: (() => void)[];
-  /** UI subscribers. */
+  /** UI subscribers of the scene cards. */
   listeners: Set<() => void>;
-  /** The D1 device strip. */
-  device: DeviceStripState;
+  /** Mission control (spec 09 § M12). */
+  readonly mission: MissionState;
 };
 
 /**
@@ -239,11 +410,15 @@ export type TreeRow = {
 };
 
 /**
- * The six metric tiles.
+ * The scene numbers of the snapshot (the metric tiles' data without the FPS, frame-time and heap
+ * tiles, which went with Mission control, spec 09 § M1).
+ *
+ * @example
+ * ```ts
+ * const tiles: MetricTiles = { drawCalls: { kind: "absent" }, textures: undefined, scene: { entities: 104, views: 180, pooled: 24 } };
+ * ```
  */
 export type MetricTiles = {
-  fps: { now: number; samples: readonly number[]; low: number } | undefined;
-  frameMs: number | undefined;
   /** The counter, or absent in a production build; renderPasses only when game.render reports it. */
   drawCalls:
     | (({ kind: "value"; value: number } | { kind: "absent" }) & { renderPasses?: number })
@@ -262,15 +437,13 @@ export type MetricTiles = {
   scene: { entities: number; views: number; pooled: number; effects?: EffectsStats } | undefined;
   /**
    * Present, and false, only when the game has no effects plugin: the manifest lists game.effects
-   * with `available: false` and the Scene tile reads "Effects not installed in this game".
+   * with `available: false`.
    */
   effectsInstalled?: false;
-  /** The page heap from its heartbeat (Chromium `performance.memory`); absent elsewhere. */
-  heap: { kind: "value"; usedMb: number; limitMb: number } | { kind: "absent" };
 };
 
 /**
- * The derived view data (copies, never the live maps).
+ * The derived view data of the scene cards (copies, never the live maps).
  */
 export type RenderSnapshot = {
   frame: number | undefined;
@@ -284,12 +457,260 @@ export type RenderSnapshot = {
 };
 
 /**
- * The renderView api (`app.renderView`, `ctx.require(renderViewPlugin)`).
+ * What Mission control shows (copies): the source and its state, live or paused, the span and the
+ * selection, the frames header numbers, the rate, the Monitoring rows, the overdraw view, memory and
+ * the recording.
+ *
+ * @example
+ * ```ts
+ * const view: MissionView = app.renderView.mission()!;
+ * view.source; // { session: "s-9", kind: "device", name: "Galaxy A26", link: "wire", state: "live" }
+ * view.stats; // { frames: 720, spikes: 3, worstMs: 41.3, p90Ms: 17.6, restMs: 0, gcs: 2 }
+ * ```
+ */
+export type MissionView = {
+  readonly source: {
+    readonly session: string | null;
+    readonly kind: "local" | "device" | "page";
+    readonly name: string;
+    readonly link: "wire" | "network" | "local";
+    readonly state: "live" | "waiting" | "not-started" | "no-monitor";
+  };
+  readonly live: boolean;
+  /** ms the paused view is behind live; 0 live. */
+  readonly behindMs: number;
+  readonly span: MissionSpan;
+  readonly selection: FrameRange | undefined;
+  /** The frames header numbers of the view. */
+  readonly stats: {
+    readonly frames: number;
+    readonly spikes: number;
+    readonly worstMs: number | null;
+    readonly p90Ms: number | null;
+    readonly restMs: number;
+    readonly gcs: number | null;
+  };
+  readonly rate: {
+    readonly fps: number | null;
+    readonly mode: "pinned" | "adaptive" | undefined;
+    readonly why: string | undefined;
+    readonly pending: RateChoice | undefined;
+    readonly answer: RateAnswer | undefined;
+  };
+  readonly sections: Readonly<Record<MonitorSection, "on" | "off" | "unavailable">> | undefined;
+  readonly overdraw: boolean | undefined;
+  readonly memory: {
+    readonly source: "cdp" | "performance.memory" | "shell" | "none";
+    readonly heapMb: number | null;
+    readonly processMb: { readonly app: number | null; readonly renderer: number | null } | null;
+    readonly leak: boolean;
+    readonly slopeMbPerMin: number | null;
+  };
+  readonly recording:
+    | {
+        readonly state: "idle" | "recording" | "exporting";
+        readonly startedBy: RecordOrigin | null;
+        readonly sinceMs: number;
+        readonly bytes: number;
+        readonly file: string | null;
+        readonly marks: readonly LogMark[];
+      }
+    | undefined;
+};
+
+/**
+ * One system of the inspector: total ms, its share of the range's JS work, its largest frame.
+ *
+ * @example
+ * ```ts
+ * const row: SystemRow = { name: "ward.update", totalMs: 312.4, share: 0.41, maxMs: 9.1 };
+ * ```
+ */
+export type SystemRow = {
+  readonly name: string;
+  readonly totalMs: number;
+  readonly share: number;
+  readonly maxMs: number;
+};
+
+/**
+ * A node the range updated or redrew, in words.
+ *
+ * @example
+ * ```ts
+ * const row: NodeRow = { label: "fogLayer", how: "redrawn", count: 51 };
+ * ```
+ */
+export type NodeRow = {
+  readonly label: string;
+  readonly how: "updated" | "moved" | "loosened" | "invalidated" | "redrawn";
+  readonly count: number;
+};
+
+/**
+ * A file a system of the range lives in (the project index's `system:<name>`).
+ *
+ * @example
+ * ```ts
+ * const row: FileRow = { path: "src/systems/ward.ts", line: 12, system: "ward.update" };
+ * ```
+ */
+export type FileRow = { readonly path: string; readonly line: number; readonly system: string };
+
+/**
+ * A pass of the range: how often, its GPU ms and its share (a tile GPU shows the share).
+ *
+ * @example
+ * ```ts
+ * const row: PassRow = { label: "fogLayer · filter", count: 102, gpuMs: 316.2, share: 0.58 };
+ * ```
+ */
+export type PassRow = {
+  readonly label: string;
+  readonly count: number;
+  readonly gpuMs: number | null;
+  readonly share: number | null;
+};
+
+/**
+ * A filter chain of the range.
+ *
+ * @example
+ * ```ts
+ * const row: FilterRow = { chain: "fog.blur → fog.blur", target: "fogLayer", count: 102, gpuMs: 316.2 };
+ * ```
+ */
+export type FilterRow = {
+  readonly chain: string;
+  readonly target: string | null;
+  readonly count: number;
+  readonly gpuMs: number | null;
+};
+
+/**
+ * A shader compile of the range.
+ *
+ * @example
+ * ```ts
+ * const row: CompileRow = { frame: 4851, label: "fog.blur", ms: 38.2, by: "fogLayer" };
+ * ```
+ */
+export type CompileRow = {
+  readonly frame: number;
+  readonly label: string;
+  readonly ms: number;
+  readonly by: string | null;
+};
+
+/**
+ * A rate change of the range, in words.
+ *
+ * @example
+ * ```ts
+ * const row: RateRow = { frame: 4855, from: 120, to: 60, why: "missed frames" };
+ * ```
+ */
+export type RateRow = {
+  readonly frame: number | null;
+  readonly from: number;
+  readonly to: number;
+  readonly why: string;
+};
+
+/**
+ * A spike group of the range: its frames, primary cause, label, worst ms and why.
+ *
+ * @example
+ * ```ts
+ * const row: SpikeRow = { from: 4851, to: 4853, cause: "compile", label: "Compile", maxMs: 41.3, why: "fog.blur compiled for 38.2 ms" };
+ * ```
+ */
+export type SpikeRow = {
+  readonly from: number;
+  readonly to: number;
+  readonly cause: PerfCause;
+  readonly label: string;
+  readonly maxMs: number;
+  readonly why: string;
+};
+
+/**
+ * A GC of the range.
+ *
+ * @example
+ * ```ts
+ * const row: GcRow = { frame: 4818, freedMb: 4.2, pauseMs: null };
+ * ```
+ */
+export type GcRow = {
+  readonly frame: number;
+  readonly freedMb: number;
+  readonly pauseMs: number | null;
+};
+
+/**
+ * An object counter of the range and whether it grows.
+ *
+ * @example
+ * ```ts
+ * const row: ObjectRow = { name: "listeners", from: 212, to: 224, growing: true };
+ * ```
+ */
+export type ObjectRow = {
+  readonly name: string;
+  readonly from: number;
+  readonly to: number;
+  readonly growing: boolean;
+};
+
+/**
+ * The inspector (copies): the summary of the view, or the range view of a selection.
+ *
+ * @example
+ * ```ts
+ * app.renderView.inspect()?.kind; // "range" after a selection
+ * ```
+ */
+export type InspectorView =
+  | {
+      readonly kind: "summary";
+      readonly title: string;
+      readonly frames: number;
+      readonly systems: readonly SystemRow[];
+      readonly passes: readonly PassRow[];
+      readonly spikes: readonly SpikeRow[];
+      readonly moreSpikes: number;
+      readonly gcs: readonly GcRow[];
+      readonly moreGcs: number;
+      readonly rates: readonly RateRow[];
+    }
+  | {
+      readonly kind: "range";
+      readonly range: FrameRange;
+      readonly frames: number;
+      readonly durationMs: number;
+      readonly worstMs: number;
+      readonly detail: "full" | "top5" | "per-second" | "loading";
+      readonly systems: readonly SystemRow[];
+      readonly nodes: readonly NodeRow[];
+      readonly files: readonly FileRow[];
+      readonly passes: readonly PassRow[];
+      readonly filters: readonly FilterRow[];
+      readonly compiles: readonly CompileRow[];
+      readonly rates: readonly RateRow[];
+      readonly spikes: readonly SpikeRow[];
+      readonly gcs: readonly GcRow[];
+      readonly objects: readonly ObjectRow[];
+    };
+
+/**
+ * The renderView api (`app.renderView`, `ctx.require(renderViewPlugin)`): the scene cards and
+ * Mission control.
  *
  * @example
  * ```ts
  * app.workspace.show("render");
- * app.renderView.snapshot().tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium
+ * app.renderView.mission()?.source.name; // "Galaxy A26"
  * ```
  */
 export type RenderViewApi = {
@@ -309,8 +730,8 @@ export type RenderViewApi = {
   refresh(): Promise<void>;
 
   /**
-   * The derived view data: tiles, visible tree rows, texture rows (filter and sort applied),
-   * bundles, pools and the release log. Copies, never the live maps (spec/11 §2.4).
+   * The derived view data of the scene cards: the scene tiles (draw calls, textures, scene), visible
+   * tree rows, texture rows (filter and sort applied), bundles, pools and the release log. Copies, never the live maps (spec/11 §2.4).
    *
    * @returns The snapshot.
    * @example
@@ -320,8 +741,6 @@ export type RenderViewApi = {
    * tiles.drawCalls; // { kind: "absent" } in a production build
    * tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
    * tiles.effectsInstalled; // false on a game without the effects plugin, else absent
-   * tiles.fps; // { now: 0, samples: [0], low: 0 } on the inert renderer
-   * tiles.heap; // { kind: "absent" } outside Chromium: the page reports no heap
    * ```
    */
   snapshot(): RenderSnapshot;
@@ -384,80 +803,182 @@ export type RenderViewApi = {
   filterBundle(bundle: string): void;
 
   /**
-   * The device strip as it shows now: the device row, the spikes on the graph, the selection and
-   * the record panel. Copies. undefined while the chosen session's agent lists no
-   * `editor.perf.second` (a device session and a browser session with perf both have a strip).
+   * What Mission control shows now, in copies: the source, live or paused, the span, the selection,
+   * the frames header numbers, the rate, Monitoring, memory and the recording.
    *
-   * @returns The view, or undefined.
+   * @returns The view; undefined without an active source.
    * @example
    * ```ts
-   * // An MCP tool reports which phone is attached and whether its engine matches the computer's.
-   * app.renderView.device()?.engine;
-   * // { device: "0.14.12+9c41e0", computer: "0.14.13+1ab7f2", stale: true }
+   * // An MCP tool reports what the Render workspace shows.
+   * app.renderView.mission()?.source.name; // "Galaxy A26"
    * ```
    */
-  device(): DeviceStripView | undefined;
+  mission(): MissionView | undefined;
 
   /**
-   * Steps to the next (1) or previous (-1) spike on the graph, wrapping, and opens its record (the
-   * chevron keys). From no selection, next takes the oldest spike and previous the newest.
-   * Without spikes, or without a strip, nothing changes.
+   * The inspector's summary of the view or its range view of the selection, in copies (the same
+   * derivation the component renders).
    *
-   * @param dir - 1 for next, -1 for previous.
-   * @returns The frame now selected; undefined when there is no spike.
+   * @returns The inspector; undefined without an active source.
    * @example
    * ```ts
-   * // Six spikes on the graph, the record of frame 4812 (the fifth) is open: the next key.
-   * app.renderView.stepSpike(1); // 4845, the sixth; the record of 4845 loads
-   * app.renderView.stepSpike(1); // 4572, wrapped to the oldest
+   * app.renderView.select({ from: 4810, to: 4860 });
+   * app.renderView.inspect()?.kind; // "range"
    * ```
    */
-  stepSpike(dir: 1 | -1): number | undefined;
+  inspect(): InspectorView | undefined;
 
   /**
-   * Selects a frame and opens its spike record in the side panel: reads `editor.perf.spike
-   * { frame }` once (an open of the same frame while it loads shares the read). The record is a
-   * copy and stays when the frame later leaves the 6 s window. `null` from perf shows "Frame N is
-   * no longer on the phone"; a failed read shows its bare message. A late answer for a record
-   * closed or replaced since is dropped. Never rejects.
+   * Pauses the view (Space): freezes its end while the history keeps filling. No-op without frames.
    *
-   * @param frame - A frame number of a spike on the graph (a flag or a bar was clicked).
-   * @returns Resolves when the read settled.
    * @example
    * ```ts
-   * // The UP flag of frame 4812 was clicked.
-   * await app.renderView.openSpike(4812);
-   * app.renderView.device()?.record; // "shown"
+   * app.renderView.pause();
+   * app.renderView.mission()?.live; // false
    * ```
    */
-  openSpike(frame: number): Promise<void>;
+  pause(): void;
 
   /**
-   * Closes the record side panel; the selection stays on the graph and the panel shows its empty
-   * state ("No spike selected").
+   * Back to live: the view follows the clock again and the selection is cleared.
    *
    * @example
    * ```ts
-   * // The close key of the record.
-   * app.renderView.closeSpike();
-   * app.renderView.device()?.record; // "closed"
+   * app.renderView.live();
+   * app.renderView.mission()?.selection; // undefined
    * ```
    */
-  closeSpike(): void;
+  live(): void;
 
   /**
-   * Opens or closes More, the secondary counters under the graph. Open by default on the strip;
-   * kept for the life of the tools page, not persisted.
+   * Sets the view's span (6 s, 30 s or 2 min); the view end is kept.
    *
-   * @param open - True to show the secondary counters.
+   * @param span - 6000, 30000 or 120000 ms.
    * @example
    * ```ts
-   * // The Less key under the graph.
-   * app.renderView.setMore(false);
-   * app.renderView.device()?.more; // false
+   * app.renderView.setSpan(30_000);
+   * app.renderView.mission()?.span; // 30000
    * ```
    */
-  setMore(open: boolean): void;
+  setSpan(span: MissionSpan): void;
+
+  /**
+   * Pauses and moves the view's end (source clock) through the history: the overview drag.
+   *
+   * @param endMs - The new end, clamped into the history.
+   * @example
+   * ```ts
+   * app.renderView.seek(78_000);
+   * app.renderView.mission()?.behindMs; // 12000: twelve seconds behind live
+   * ```
+   */
+  seek(endMs: number): void;
+
+  /**
+   * Selects frames: pauses, clamps to the history, scrolls the range into view and starts the
+   * detail read; undefined clears the selection.
+   *
+   * @param range - The frames, inclusive; undefined to clear.
+   * @returns The range kept; undefined when no frame of it is in the history.
+   * @example
+   * ```ts
+   * app.renderView.select({ from: 4810, to: 4860 }); // { from: 4810, to: 4860 }
+   * ```
+   */
+  select(range: FrameRange | undefined): FrameRange | undefined;
+
+  /**
+   * Steps one frame from the selection (no selection: the frame at the centre of the view).
+   *
+   * @param dir - 1 for the next frame, -1 for the previous.
+   * @returns The frame selected; undefined at an end or without frames.
+   * @example
+   * ```ts
+   * app.renderView.select({ from: 4851, to: 4851 });
+   * app.renderView.step(1); // 4852
+   * ```
+   */
+  step(dir: 1 | -1): number | undefined;
+
+  /**
+   * Jumps to the next or previous spike group, GC or rate change in the history and selects it; a
+   * toast says so when there is none.
+   *
+   * @param kind - What to jump to.
+   * @param dir - 1 for later, -1 for earlier.
+   * @returns The range selected; undefined when there is none.
+   * @example
+   * ```ts
+   * app.renderView.jump("spike", 1); // { from: 4851, to: 4853 }
+   * ```
+   */
+  jump(kind: "spike" | "gc" | "rate", dir: 1 | -1): FrameRange | undefined;
+
+  /**
+   * Runs `game.frameRate` on the active source: `{ fps: 60 }`, `{ fps: 120 }` or `{}` for adaptive.
+   * Never rejects: a refusal or a held pin is `{ ok: false, text }`; a call while one is pending
+   * answers "Busy: a rate change is still pending" at once.
+   *
+   * @param choice - 60, 120 or "adaptive".
+   * @returns The answer.
+   * @example
+   * ```ts
+   * await app.renderView.setRate(120); // { ok: true, choice: 120, text: "Pinned at 120, adaptive off", fps: 120, mode: "fixed" }
+   * ```
+   */
+  setRate(choice: RateChoice): Promise<RateAnswer>;
+
+  /**
+   * Runs `editor.perf.sections` with a Monitoring row's keys (`gpu`, `memory`, `systems`, `nodes`,
+   * `passes` + `shaders`); Frames and Render stats are always on. Never rejects.
+   *
+   * @param section - The row.
+   * @param on - Turn it on or off.
+   * @returns The answer with every row's state.
+   * @example
+   * ```ts
+   * await app.renderView.setSection("frames", false); // { ok: false, text: "Frames are always measured", sections: undefined }
+   * ```
+   */
+  setSection(section: MonitorSection, on: boolean): Promise<SectionsAnswer>;
+
+  /**
+   * Runs `game.debug { overdraw }`: the overdraw heat map on the source (RE1).
+   *
+   * @param on - Turn it on or off.
+   * @returns The engine's flag after it (the old flag on a refusal, with a toast).
+   * @example
+   * ```ts
+   * await app.renderView.setOverdraw(true); // true
+   * ```
+   */
+  setOverdraw(on: boolean): Promise<boolean>;
+
+  /**
+   * Runs `editor.record { on, label }` on the source (the hub stamps who: the log reads "started by
+   * you"). Never rejects.
+   *
+   * @param on - Start or stop.
+   * @param label - The log's label.
+   * @returns The answer.
+   * @example
+   * ```ts
+   * await app.renderView.record(true, "boss intro"); // { ok: true, text: "Recording on Galaxy A26", file: "perf-20261016-1102-sm-a266b.jsonl" }
+   * ```
+   */
+  record(on: boolean, label?: string): Promise<RecordAnswer>;
+
+  /**
+   * Runs `editor.record { mark }`: marks the recording; an empty label becomes "mark {n + 1}".
+   *
+   * @param label - The mark's label.
+   * @returns The answer's `marked`; false when nothing records.
+   * @example
+   * ```ts
+   * await app.renderView.mark("boss intro"); // true
+   * ```
+   */
+  mark(label?: string): Promise<boolean>;
 };
 
 /**
@@ -466,17 +987,20 @@ export type RenderViewApi = {
 export type RenderViewCtx = {
   readonly config: Readonly<RenderViewConfig>;
   state: RenderViewState;
-  readonly emit: EmitFn<Pick<ToolsEvents, "workspace:inspect">>;
+  readonly emit: EmitFn<Pick<ToolsEvents, "workspace:inspect" | "workspace:open-file">>;
   readonly log: Log.LogApi;
   readonly require: Require;
 };
 
 /**
- * renderView's hooks (global tools events, R4).
+ * renderView's hooks: the global tools events (R4) and activeSource's per-plugin events (spec 09
+ * § M12), visible through `depends`.
  */
 export type RenderViewHooks = {
   readonly "workspace:changed": (payload: ToolsEvents["workspace:changed"]) => void;
   readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
   readonly "link:project": (payload: ToolsEvents["link:project"]) => void;
   readonly "workspace:reveal": (payload: ToolsEvents["workspace:reveal"]) => void;
+  readonly "activeSource:changed": (change: SourceChange) => void;
+  readonly "activeSource:connect-requested": (request: ConnectRequest) => void;
 };

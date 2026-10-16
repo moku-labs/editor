@@ -481,17 +481,14 @@ describe("cross-plugin panels", () => {
     // The tiny game has no effects plugin: the tiles carry `effectsInstalled: false`.
     const snapshot = renderView.snapshot();
     expect(snapshot.tiles.effectsInstalled).toBe(false);
+    // The FPS, frame-time and heap tiles went with Mission control (spec 09 § M1).
     expect(Object.keys(snapshot.tiles).toSorted()).toEqual([
       "drawCalls",
       "effectsInstalled",
-      "fps",
-      "frameMs",
-      "heap",
       "scene",
       "textures"
     ]);
     expect(snapshot.tiles.drawCalls?.kind ?? "absent").toBe("absent");
-    expect(snapshot.tiles.heap).toEqual({ kind: "absent" });
 
     // The catalogue knows the manifest textures, but no bundle is loaded on a screenless game:
     // the rows come only from loaded bundles, so there are none, sorted or filtered.

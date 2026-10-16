@@ -192,13 +192,14 @@ describe("protocol types", () => {
     expect(json).toEqual({ x: 206, y: 640, at: 15_234.5 });
   });
 
-  it("PublishParams keeps hotReload, selection, project and engine", () => {
+  it("PublishParams keeps hotReload, selection, project, engine, devices and deviceTelemetry", () => {
     expectTypeOf<keyof PublishParams>().toEqualTypeOf<
-      "hotReload" | "selection" | "project" | "engine"
+      "hotReload" | "selection" | "project" | "engine" | "devices" | "deviceTelemetry"
     >();
     expectTypeOf<PublishParams["project"]>().toEqualTypeOf<ProjectState>();
 
-    const kept: PublishParams = {
+    // connect's devices and deviceTelemetry are published only in device mode (spec 11 § 5.4).
+    const kept: Omit<PublishParams, "devices" | "deviceTelemetry"> = {
       hotReload: { hmr: true, owner: "bin" },
       selection: null, // eslint-disable-line unicorn/no-null -- the wire value of "nothing is selected"
       project: { state: "off", reason: "not opened" },

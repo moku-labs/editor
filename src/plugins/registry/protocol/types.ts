@@ -1,10 +1,12 @@
 /**
  * @file Protocol — every wire and channel type of the editor (contracts §2, R1, R6) and the shared
- * wire shapes of the server and the tools page (D-17). Runtime-free: its only import is the
- * type-only edge to hub/protocol (the device of a session, the computer's engine); hub/protocol
- * never imports this module. Values that hold readonly arrays (Manifest, SessionInfo[]) are not
+ * wire shapes of the server and the tools page (D-17). Runtime-free: its only imports are the
+ * type-only edges to hub/protocol (the device of a session, the computer's engine) and to
+ * connect/protocol (the device directory and the wired telemetry the hub publishes, spec 11 § 5.4);
+ * neither imports this module. Values that hold readonly arrays (Manifest, SessionInfo[]) are not
  * assignable to the mutable Json: senders pass them through toWireValue first.
  */
+import type { DeviceDirectory, DeviceTelemetry } from "../../connect/protocol";
 import type { EngineInfo, SessionDevice } from "../../hub/protocol";
 
 /**
@@ -149,16 +151,17 @@ export type BuildInfo = {
 };
 
 /**
- * Who ran a command: the overlay's Game tab, the hub through the bridge (the tools page and MCP), or
- * an in-process caller (a test, the game's own code, `channel.run` without a source). Agent-side
- * only; never on the wire.
+ * Who ran a command: the overlay's Game tab, the tools page, an agent through MCP, a hub that does
+ * not say who (`"bridge"`: an editor server from before the hub stamped `from`), or an in-process
+ * caller (a test, the game's own code, `channel.run` without a source). The bridge turns the hub's
+ * `from` into it (spec 07 Delta 2026-10-16 B1). Agent-side only; never on the wire.
  *
  * @example
  * ```ts
- * const via: CommandVia = "overlay";
+ * const via: CommandVia = "mcp"; // the recorder's editor.record names the log "started by agent"
  * ```
  */
-export type CommandVia = "overlay" | "bridge" | "local";
+export type CommandVia = "overlay" | "bridge" | "tools" | "mcp" | "local";
 
 /**
  * A command the way the manifest describes it (no functions). An agent from before the build
@@ -923,7 +926,8 @@ export type SelectionInfo = {
 
 /**
  * The value of each method `publish` sends to the tools pages (A5): the hub keeps the last one
- * per method and replays it to every tools connection that opens.
+ * per method and replays it to every tools connection that opens. `devices` and `deviceTelemetry`
+ * are connect's (spec 11 § 5.4): the device directory and the wired telemetry of a watched phone.
  *
  * @example
  * ```ts
@@ -943,11 +947,15 @@ export type PublishParams = {
   readonly project: ProjectState;
   /** The engine of the computer's project (`files.engine()`), as `editor.engine`. */
   readonly engine: EngineInfo;
+  /** connect's device directory, as `editor.devices`. */
+  readonly devices: DeviceDirectory;
+  /** The newest wired telemetry record of a watched phone, as `editor.deviceTelemetry`. */
+  readonly deviceTelemetry: DeviceTelemetry;
 };
 
 /**
- * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"`, `"project"` or
- * `"engine"`.
+ * A method `publish` sends to the tools pages (R6): `"hotReload"`, `"selection"`, `"project"`,
+ * `"engine"`, `"devices"` or `"deviceTelemetry"`.
  */
 export type PublishMethod = keyof PublishParams;
 

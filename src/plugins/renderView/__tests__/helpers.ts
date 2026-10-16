@@ -42,7 +42,6 @@ function stopNothing(): void {}
 
 /** The default config of the plugin. */
 export const CONFIG: RenderViewConfig = {
-  fpsSamples: 60,
   releaseLogMax: 50
 };
 
